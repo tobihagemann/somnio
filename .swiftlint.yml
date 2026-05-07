@@ -1,0 +1,34 @@
+included:
+  - Sources/SomnioProtocol
+  - Sources/SomnioCore
+  - Sources/SomnioData
+  - Sources/SomnioUI
+  - Sources/SomnioApp
+  - Sources/SomnioEditor
+  - Sources/SomnioServer
+  - Sources/SomnioCLI
+  - Tests
+
+excluded:
+  - .build
+  - DerivedData
+  - IntegrationTests
+
+disabled_rules:
+  - closure_parameter_position
+  - file_length
+  - line_length
+  - optional_data_string_conversion
+  - todo
+  - type_body_length
+
+opt_in_rules:
+  - redundant_sendable
+
+identifier_name:
+  min_length: 1
+  allowed_symbols:
+    - _
+
+nesting:
+  type_level: 2

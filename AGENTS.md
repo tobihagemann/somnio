@@ -1,0 +1,167 @@
+# Somnio
+
+A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + macOS map editor + admin CLI, all in one SwiftPM workspace.
+
+## Tech Stack
+
+- Swift 6.2, macOS 26+, SwiftPM (no Xcode project)
+- SwiftUI + SpriteKit for the player client and editor; Sparkle for auto-updates
+- Hummingbird + WebSockets + PostgresNIO for the server (server lands later)
+- swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
+- swift-argument-parser for the admin CLI
+- swift-service-lifecycle for graceful server shutdown
+- All types use Swift strict concurrency (`Sendable`, actors, structured concurrency); value types preferred
+
+## Module Boundaries
+
+```
+SomnioProtocol   # message catalog + wire framing — Foundation only
+SomnioCore       # game models (Sector, Character, NPC, Monster, Inventory, World, MapCodec)
+                 # depends on SomnioProtocol
+SomnioData       # Postgres persistence (schema, migrations, repositories)
+                 # depends on SomnioCore
+SomnioUI         # SwiftUI views + SpriteKit scene
+                 # depends on SomnioCore (NOT on SomnioData)
+SomnioApp        # macOS executable: player client + UI + Sparkle
+                 # depends on SomnioCore + SomnioUI + SomnioProtocol
+SomnioEditor     # macOS executable: document-based map editor + Sparkle
+                 # depends on SomnioCore + SomnioUI (NOT on SomnioProtocol or SomnioData)
+SomnioServer     # Hummingbird executable: gameplay + admin WebSockets, AI ticks
+                 # depends on SomnioCore + SomnioData + SomnioProtocol
+SomnioCLI        # Admin CLI invoked as `somniocli <verb>`
+                 # depends on SomnioCore + SomnioProtocol + ArgumentParser
+```
+
+These boundaries are strict:
+
+- SomnioProtocol must never import another Somnio module.
+- SomnioCore must never import SomnioData or SomnioUI.
+- SomnioUI must never import SomnioData.
+- SomnioApp must never import SomnioData (the client never opens a Postgres connection; all server data flows in over the wire protocol).
+- SomnioEditor must never import SomnioProtocol, SomnioData, or SomnioServer (the editor is offline).
+- SomnioCLI must never import SomnioUI or Sparkle.
+
+Enforce by reading `Package.swift` dependency lists and grepping for forbidden imports per module.
+
+## Build & Test
+
+```
+swift build
+swift build --build-tests            # compile test targets without running them
+swift test
+swift test --filter SomnioCoreTests  # run a specific test target
+swift run SomnioApp                  # run the player client
+swift run SomnioServer               # run the server placeholder
+swift run SomnioCLI                  # run the CLI
+```
+
+Note: `swift build` only compiles executable and library targets. Use `swift build --build-tests` to verify test target compilation.
+
+After `swift build`, binaries are directly runnable from `.build/debug/` (e.g., `.build/debug/SomnioCLI`).
+
+### Integration Tests
+
+Integration tests live in a sibling SwiftPM package at `IntegrationTests/` so a plain `swift test` at the repo root never runs them. The package is currently scaffolding only — repository and server-flow tests land later, alongside a `PostgresContainer` helper that auto-spawns Postgres on demand so the suite needs no env-var setup.
+
+```
+swift test --package-path IntegrationTests
+```
+
+## Packaging
+
+`version.env` is the single source of truth for app metadata (`APP_NAME`, `BUNDLE_ID`, `EXEC_NAME`, `CLI_NAME`, `EDITOR_EXEC_NAME`, `SERVER_EXEC_NAME`). All scripts source it.
+
+```
+Scripts/package_app.sh [debug|release] [player|editor]   # build + assemble .app bundle
+Scripts/compile_and_run.sh                               # package + launch player (dev loop)
+Scripts/create_dmg.sh [player|editor]                    # wrap .app in DMG
+Scripts/release.sh                                       # build, sign, notarize, DMG, zip both bundles
+```
+
+`Resources/Entitlements.plist` holds app entitlements (`network.client`, `files.user-selected.read-write`).
+
+`Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
+
+### Asset bundling
+
+Tilesets, character sprites, and animation strips are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
+
+- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing.
+- `SOMNIO_ASSET_DEST` — set automatically by `package_app.sh` to the bundle's `Resources/` path.
+
+Runtime apps load assets exclusively from `Bundle.main`. There is no env var or Preferences UI for asset paths.
+
+`bundle-assets.sh` is currently a stub (the asset pack itself isn't ready yet). The env-var contract is stable, so the call site in `package_app.sh` won't churn when the body is filled in.
+
+## Logging
+
+Uses `swift-log` as a facade. Two bootstrap surfaces:
+
+- `LoggingConfiguration.bootstrap()` (in `SomnioCore`) — used by the player client, editor, and CLI. On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`. On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.
+- `ServerLoggingConfiguration.bootstrap()` (in `SomnioServer`) — composes a JSON stdout backend (container-friendly) with two label-filtered file backends: `gameplay-log.log` for `de.tobiha.somnio.server.gameplay.*` and `admin-log.log` for `de.tobiha.somnio.server.admin.*`. Records that don't match either prefix go only to stdout.
+
+Logger labels use dot notation: `Logger(label: "de.tobiha.somnio.app.lifecycle")` — last component is the category (flat lowercase), rest is the OSLog subsystem.
+
+File log verbosity is controlled by the `advancedLogLevel` UserDefaults key — `"default"` → info, `"debug"` → debug, `"verbose"` → trace.
+
+## Dev/Prod Isolation
+
+`BuildEnvironment` (in SomnioCore) centralizes `#if DEBUG` config. Debug builds use separate storage to avoid polluting production data:
+
+| Component | Prod | Dev |
+|-----------|------|-----|
+| Application Support | `~/Library/Application Support/Somnio/` | `~/Library/Application Support/Somnio-Dev/` |
+| Credentials | macOS Keychain | file-based under `Somnio-Dev/` |
+| UserDefaults | `.standard` | `UserDefaults(suiteName: "de.tobiha.somnio.dev")` |
+
+Set `SOMNIO_USE_KEYCHAIN=1` to use real Keychain in debug builds.
+
+Set `SOMNIO_PROFILE=<name>` to run multiple isolated instances side by side:
+
+| Component | Default Dev | `SOMNIO_PROFILE=alice` |
+|-----------|-------------|------------------------|
+| Application Support | `Somnio-Dev/` | `Somnio-Dev-alice/` |
+| UserDefaults | `de.tobiha.somnio.dev` | `de.tobiha.somnio.dev.alice` |
+
+## Lint & Format
+
+SwiftFormat, SwiftLint, and Periphery are installed via Homebrew:
+
+```
+./Scripts/format.sh            # auto-format + autocorrect
+./Scripts/lint.sh              # check format + lint + unused code (read-only)
+./Scripts/install-hooks.sh     # install pre-commit hook (runs lint.sh before commit)
+```
+
+CI on GitHub Actions mirrors the same checks (`.github/workflows/ci.yml`).
+
+## Code Conventions
+
+- **No Objective-C**: pure Swift, no `@objc`, no NSObject subclasses.
+- **Value types preferred**: structs and enums over classes, except where reference semantics are required (`@Observable`, actors).
+- **Concurrency**: value types are automatically `Sendable`. Never use `@unchecked Sendable`. Use actors for mutable shared state.
+- **Testing**: Swift Testing (`import Testing`, `@Test`, `#expect`, `#require`), not XCTest. Struct-based suites; parameterized via `@Test(arguments:)`.
+- **Exhaustive switches**: never use `default:` when switching on project-defined enums. List all cases explicitly so the compiler catches new cases at build time.
+- **Identifiers in English**: Swift types, properties, packet/message names, Postgres column names, file names. The original source's German identifiers are translated; only user-facing strings stay localizable.
+
+### Localization
+
+Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` resources live in `Bundle.module`, not `Bundle.main`, so the bare `NSLocalizedString("key")` and `Text("key")` overloads silently miss the catalog. Use `String(localized: key, bundle: .module)` from Foundation paths and `Text(_, bundle: .module)` from SwiftUI views. When the player client and editor add user-facing views, define a per-target `Loc` enum that wraps these calls so the bundle pinning stays in one place.
+
+For custom views that accept a "localized title" parameter, prefer `LocalizedStringResource` — it defers locale resolution to the consumer's bundle.
+
+`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land. The admin CLI is English-only.
+
+ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
+
+### Wire protocol
+
+Messages are modelled as discriminated-union enums in `SomnioProtocol`, serialized as compact binary frames over WebSocket: `[u8 tag][u32 LE payload_length][payload]`. Each payload struct conforms to `Codable` with an explicit `CodingKeys: String, CaseIterable, CodingKey` — the wire layout walks fields in declaration order, so `CodingKeys` ordering is load-bearing. `Tests/SomnioProtocolTests/FieldOrderTests.swift` is the regression guard.
+
+`BinaryEncoder` / `BinaryDecoder` are positional (key-name agnostic) `Encoder` / `Decoder` adapters. Primitives encode as little-endian integers; strings carry a `u16 LE` length prefix; arrays carry a `u16 LE` count prefix.
+
+No raw `Dictionary` fields on `Codable` payloads — Swift's standard `Dictionary` `Codable` iterates in unspecified order and breaks the positional binary form. Use ordered struct arrays instead (e.g., `[InventoryExtra]`).
+
+### Sector binary format
+
+The `MapCodec` (in `SomnioCore`) reads and writes the original record-type sector binary. The reader is byte-faithful: it stores the file's authored `spawnOrigin` verbatim. Runtime placement adjustments (NPC centering) live in `NPCPlacement.runtimePosition(for:)`, not in the codec, so a sector round-trips between editor and server without semantic loss. The writer canonicalizes record ordering: version → header → objects → masks → portals → NPCs → monster spawns.

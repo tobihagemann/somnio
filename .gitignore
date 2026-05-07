@@ -1,0 +1,20 @@
+# SwiftPM
+.build/
+.swiftpm/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+._*
+
+# App bundles & packaging artifacts
+*.app/
+*.dmg
+
+# Test credentials
+.env.test
+
+# Asset staging directory used by Scripts/package_app.sh + Scripts/bundle-assets.sh at build time.
+Resources/Assets/
