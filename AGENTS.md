@@ -165,3 +165,19 @@ No raw `Dictionary` fields on `Codable` payloads — Swift's standard `Dictionar
 ### Sector binary format
 
 The `MapCodec` (in `SomnioCore`) reads and writes the original record-type sector binary. The reader is byte-faithful: it stores the file's authored `spawnOrigin` verbatim. Runtime placement adjustments (NPC centering) live in `NPCPlacement.runtimePosition(for:)`, not in the codec, so a sector round-trips between editor and server without semantic loss. The writer canonicalizes record ordering: version → header → objects → masks → portals → NPCs → monster spawns.
+
+## Agentic Setup
+
+Skill kit at `Skills/`, symlinked from `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex CLI). Both tools share the same set:
+
+- `swift-architecture`, `swift-concurrency`, `swift-language`, `swift-security`, `swift-testing` — Swift 6.2 patterns and APIs
+- `swiftui`, `swiftui-performance-audit` — SwiftUI guidance
+- `macos-spm-app-packaging` — SPM-built `.app` bundle workflows (generic; not Somnio's two-bundle player+editor pipeline)
+
+All upstream-derived from MIT-licensed agent-skill repos; provenance and copyright notices in `Skills/ATTRIBUTION.md`.
+
+`AGENTS.md` is the shared instructions file; `.claude/CLAUDE.md` is symlinked to it so Claude Code picks up the same content.
+
+`.mcp.json` configures `sosumi` (`https://sosumi.ai/mcp`) for live Apple developer documentation lookups.
+
+Project-specific skills for Somnio's two-bundle packaging (`Scripts/package_app.sh [debug|release] [player|editor]`, `Scripts/create_dmg.sh [player|editor]`, `Scripts/release.sh`) are not shipped here yet. Author them under `Skills/` when the workflow stabilizes.
