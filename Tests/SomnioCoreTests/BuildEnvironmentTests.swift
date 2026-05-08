@@ -35,6 +35,20 @@ struct BuildEnvironmentTests {
         #expect(BuildEnvironment.computeUserDefaultsSuiteName(profile: "alice", isDebug: true) == "de.tobiha.somnio.dev.alice")
     }
 
+    @Test func `release build uses the production database name`() {
+        #expect(BuildEnvironment.computeDatabaseName(profile: nil, isDebug: false) == "somnio")
+        #expect(BuildEnvironment.computeDatabaseName(profile: "alice", isDebug: false) == "somnio")
+    }
+
+    @Test func `debug default uses the dev database name`() {
+        #expect(BuildEnvironment.computeDatabaseName(profile: nil, isDebug: true) == "somnio_dev")
+    }
+
+    @Test func `debug with profile suffixes the dev database name`() {
+        #expect(BuildEnvironment.computeDatabaseName(profile: "alice", isDebug: true) == "somnio_dev_alice")
+        #expect(BuildEnvironment.computeDatabaseName(profile: "bob", isDebug: true) == "somnio_dev_bob")
+    }
+
     @Test func `live properties match the build configuration`() {
         // On a debug build the live properties should resolve to the dev path; on a release
         // build they should resolve to the production path. Either way they must agree with
@@ -42,9 +56,11 @@ struct BuildEnvironmentTests {
         #if DEBUG
             #expect(BuildEnvironment.appSupportDirectoryName.hasPrefix("Somnio-Dev"))
             #expect(BuildEnvironment.userDefaultsSuiteName?.hasPrefix("de.tobiha.somnio.dev") == true)
+            #expect(BuildEnvironment.databaseName.hasPrefix("somnio_dev"))
         #else
             #expect(BuildEnvironment.appSupportDirectoryName == "Somnio")
             #expect(BuildEnvironment.userDefaultsSuiteName == nil)
+            #expect(BuildEnvironment.databaseName == "somnio")
         #endif
     }
 }

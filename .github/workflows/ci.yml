@@ -20,6 +20,9 @@ jobs:
       - name: Install tools
         run: brew install swiftlint swiftformat periphery
 
+      - name: Install build prerequisites
+        run: brew install argon2
+
       - name: Lint & Format Check
         run: ./Scripts/lint.sh
 
@@ -29,9 +32,31 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install build prerequisites
+        run: brew install argon2
+
       - name: Build
         run: swift build
 
       - name: Test
         run: swift test --no-parallel
         timeout-minutes: 5
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+      - name: Install libargon2-dev
+        run: sudo apt-get update && sudo apt-get install -y libargon2-dev
+      - name: Verify Docker is reachable
+        # Fails the job loudly rather than letting every suite skip silently via the
+        # `.requiresContainerRuntime` trait. If this passes, ContainerRuntime.detected
+        # will return .docker on the runner.
+        run: docker info -f '{{.ServerVersion}}'
+      - name: Run integration tests
+        run: swift test --package-path IntegrationTests --no-parallel
+        timeout-minutes: 15

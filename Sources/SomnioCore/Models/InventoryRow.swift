@@ -4,7 +4,7 @@ import Foundation
 /// The ordered-array form replaces a raw `[String: Int16]` so binary serialization is
 /// deterministic; runtime code that needs map-style lookup constructs a transient
 /// `Dictionary(uniqueKeysWithValues: row.extras.map { ($0.key, $0.value) })`.
-public struct InventoryExtra: Sendable, Equatable, Hashable {
+public struct InventoryExtra: Codable, Sendable, Equatable, Hashable {
     public var key: String
     public var value: Int16
 

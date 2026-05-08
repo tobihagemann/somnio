@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Character: Sendable, Identifiable, Equatable {
+public struct Character: Sendable, Identifiable, Equatable, Hashable {
     public var id: UUID
     public var name: String
     public var figure: Int16

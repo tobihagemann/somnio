@@ -18,7 +18,9 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 SomnioProtocol   # message catalog + wire framing — Foundation only
 SomnioCore       # game models (Sector, Character, NPC, Monster, Inventory, World, MapCodec)
                  # depends on SomnioProtocol
-SomnioData       # Postgres persistence (schema, migrations, repositories)
+SomnioData       # Postgres persistence (schema, migrations, repositories) +
+                 # server bootstrap helpers (config resolution, readiness wait) +
+                 # Argon2id password hashing (lives next to the accounts table).
                  # depends on SomnioCore
 SomnioUI         # SwiftUI views + SpriteKit scene
                  # depends on SomnioCore (NOT on SomnioData)
@@ -59,9 +61,11 @@ Note: `swift build` only compiles executable and library targets. Use `swift bui
 
 After `swift build`, binaries are directly runnable from `.build/debug/` (e.g., `.build/debug/SomnioCLI`).
 
+Build prerequisites: `libargon2-dev` (Debian/Ubuntu: `apt install libargon2-dev`; macOS: `brew install argon2`; Alpine: `apk add argon2-dev`). The `CArgon2` SwiftPM system-library target links against this; `swift build` fails with a `pkg-config` / linker error pointing at the missing library if it's not installed.
+
 ### Integration Tests
 
-Integration tests live in a sibling SwiftPM package at `IntegrationTests/` so a plain `swift test` at the repo root never runs them. The package is currently scaffolding only — repository and server-flow tests land later, alongside a `PostgresContainer` helper that auto-spawns Postgres on demand so the suite needs no env-var setup.
+Integration tests live in a sibling SwiftPM package at `IntegrationTests/` so a plain `swift test` at the repo root never runs them. The suite is self-contained: each test auto-spawns a `postgres:16` container via Docker (or Podman if Docker isn't on PATH), applies migrations, runs, and tears the container down. No env vars, no manual setup. The suite skips cleanly when neither container runtime is available; the only hard prerequisite for actually running the tests is having `docker` or `podman` installed.
 
 ```
 swift test --package-path IntegrationTests
