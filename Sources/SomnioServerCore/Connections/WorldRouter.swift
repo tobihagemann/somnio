@@ -3,6 +3,7 @@ import Logging
 import ServiceLifecycle
 import SomnioCore
 import SomnioData
+import SomnioProtocol
 
 /// Cross-sector router. Owns one `PerSectorActor` per loaded sector and the dictionary
 /// of currently logged-in connection actors keyed by account id (single-character-per-account
@@ -14,19 +15,31 @@ public actor WorldRouter: Service {
     private var loggedInConnections: [UUID: ConnectionActor] = [:]
     private let logger: Logger
     private let characters: any CharacterRepository
+    private let npcDialogStates: any NPCDialogStateRepository
 
     public init(
         sectors: [String: Sector],
         characters: any CharacterRepository,
+        npcDialogStates: any NPCDialogStateRepository,
         logger: Logger
-    ) {
+    ) async throws {
         let sectorLogger = Logger(label: "de.tobiha.somnio.server.gameplay.sector")
         var actors: [String: PerSectorActor] = [:]
         for (name, sector) in sectors {
-            actors[name] = PerSectorActor(staticSector: sector, logger: sectorLogger)
+            let states = try await npcDialogStates.loadAll(sectorName: name)
+            var cursors: [Int16: Int16] = [:]
+            for state in states {
+                cursors[state.npcIndex] = state.scriptStep
+            }
+            actors[name] = PerSectorActor(
+                staticSector: sector,
+                logger: sectorLogger,
+                initialDialogCursors: cursors
+            )
         }
         self.sectorActors = actors
         self.characters = characters
+        self.npcDialogStates = npcDialogStates
         self.logger = logger
     }
 
@@ -64,6 +77,70 @@ public actor WorldRouter: Service {
                     context: ["sector": "\(sectorName)"]
                 )
             }
+        }
+    }
+
+    /// One AI-tick pass across every loaded sector. Persists each digest's dialog upserts
+    /// and resets through the repository; persistence failure logs a warning but does not
+    /// tear down the loop — the next emit's upsert rewrites the row, and the in-process
+    /// cursor is the source of truth between writes.
+    public func runAITickAcrossSectors() async {
+        for (sectorName, sector) in sectorActors {
+            let digest = await sector.runAITick()
+            for state in digest.dialogUpserts {
+                do {
+                    try await npcDialogStates.upsert(state)
+                } catch {
+                    logger.warning(
+                        "npc dialog upsert failed",
+                        metadata: [
+                            "error": "\(error)",
+                            "sector": "\(sectorName)",
+                            "npc_index": "\(state.npcIndex)"
+                        ]
+                    )
+                }
+            }
+            for key in digest.dialogResets {
+                do {
+                    try await npcDialogStates.reset(sectorName: key.sectorName, npcIndex: key.npcIndex)
+                } catch {
+                    logger.warning(
+                        "npc dialog reset failed",
+                        metadata: [
+                            "error": "\(error)",
+                            "sector": "\(key.sectorName)",
+                            "npc_index": "\(key.npcIndex)"
+                        ]
+                    )
+                }
+            }
+        }
+    }
+
+    /// Encode once and fan out to every logged-in *and attached* connection's outbox. The
+    /// dictionary is snapshotted before the per-connection `await connectionOutbox` so a
+    /// reentrant register/unregister call during the iteration cannot mutate the underlying
+    /// dictionary while we walk it. The attach gate is load-bearing: `LoginHandler` registers
+    /// the connection before it sends `loginResult.ok` and the join sequence, so a tick that
+    /// landed an unguarded broadcast in the gap would put a `dateTick` on the wire ahead of
+    /// `loginResult` — violating the documented join-sequence ordering.
+    public func broadcastToAllConnections(_ message: SomnioMessage) async {
+        let frame: Data
+        do {
+            frame = try SomnioMessageEncoder.encode(message)
+        } catch {
+            logger.warning(
+                "failed to encode broadcast",
+                metadata: ["error": "\(error)"]
+            )
+            return
+        }
+        let snapshot = Array(loggedInConnections.values)
+        for actor in snapshot {
+            guard case .attached = await actor.currentState else { continue }
+            let outbox = await actor.connectionOutbox
+            outbox.send(frame)
         }
     }
 

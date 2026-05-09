@@ -110,6 +110,10 @@ public enum GameplayHandlers {
                 inventory: checkpoint.inventory,
                 outbox: outbox
             )
+            // Re-emit the day/night state so the destination sector renders with the right
+            // tint as soon as the client renders the new sector.
+            let dateTick = await dependencies.worldClock.currentDateTickMessage()
+            outbox.sendEncoded(.dateTick(dateTick), logger: dependencies.logger)
             return PortalOutcome(sectorName: portal.targetSectorName, entityIndex: newEntityIndex)
         } catch {
             portalLogger.error("failed to attach on portal", metadata: ["error": "\(error)"])

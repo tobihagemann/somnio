@@ -8,8 +8,9 @@ import SomnioData
 /// logging → config resolution → `PostgresClient` construction → `ServiceGroup` setup
 /// (with `PostgresClient` as the initial service) → post-readiness sequence
 /// (`waitForClientQueryable` → `MigrationRunner.applyPending` → `SectorCache.load` →
-/// `WorldRouter` construction) → append `Application`, `WorldRouter`, `CheckpointService`
-/// → terminal `try await groupTask.value`.
+/// `WorldRouter` construction → world-clock pre-load → `WorldClockService` construction)
+/// → append `Application`, `WorldRouter`, `CheckpointService`, `WorldClockService`,
+/// `AITickService` → terminal `try await groupTask.value`.
 ///
 /// `(environment, isDebug)` are injected so tests can drive the entry with a synthesized
 /// environment without monkey-patching globals.
@@ -56,6 +57,7 @@ public func runServer(
     let groupTask = Task { try await group.run() }
 
     let worldRouter: WorldRouter
+    let worldClockService: WorldClockService
     let dependencies: ConnectionDependencies
     do {
         try await waitForClientQueryable(client, logger: postgresLogger)
@@ -71,12 +73,25 @@ public func runServer(
         let characters = PostgresCharacterRepository(client: client, logger: postgresLogger)
         let inventories = PostgresInventoryRepository(client: client, logger: postgresLogger)
         let registrations = PostgresRegistrationRepository(client: client, logger: postgresLogger)
+        let npcDialogStates = PostgresNPCDialogStateRepository(client: client, logger: postgresLogger)
+        let worldClocks = PostgresWorldClockRepository(client: client, logger: postgresLogger)
         let passwordHasher = PasswordHasher(logger: postgresLogger)
         let worldRouterLogger = Logger(label: "de.tobiha.somnio.server.gameplay.world")
-        worldRouter = await WorldRouter(
+        worldRouter = try await WorldRouter(
             sectors: sectorCache.snapshotByName(),
             characters: characters,
+            npcDialogStates: npcDialogStates,
             logger: worldRouterLogger
+        )
+        // Pre-load the world clock synchronously on the readiness path so a login that
+        // arrives in the first 100 ms after the service group reports ready sees the
+        // persisted clock rather than the boot-default fallback.
+        let initialClock = try await worldClocks.load()
+        worldClockService = WorldClockService(
+            worldRouter: worldRouter,
+            worldClocks: worldClocks,
+            initialClock: initialClock,
+            logger: Logger(label: "de.tobiha.somnio.server.gameplay.worldclock")
         )
         dependencies = ConnectionDependencies(
             accounts: accounts,
@@ -85,6 +100,7 @@ public func runServer(
             registrations: registrations,
             passwordHasher: passwordHasher,
             worldRouter: worldRouter,
+            worldClock: worldClockService,
             configuration: serverConfiguration,
             logger: Logger(label: "de.tobiha.somnio.server.gameplay.connection")
         )
@@ -105,18 +121,31 @@ public func runServer(
         interval: serverConfiguration.checkpointInterval,
         logger: Logger(label: "de.tobiha.somnio.server.gameplay.checkpoint")
     )
+    let aiTickService = AITickService(
+        worldRouter: worldRouter,
+        logger: Logger(label: "de.tobiha.somnio.server.gameplay.aitick")
+    )
 
     // Reverse-shutdown order is the inverse of registration order:
-    // `CheckpointService` stops first (no new writes contend with the drain), then
-    // `WorldRouter.run()` drains every logged-in connection, then the Hummingbird app
-    // closes the accept loop, then `PostgresClient` tears down. The chosen ordering keeps
-    // WebSocket connections live during the world drain so per-connection writer tasks can
-    // flush their outboxes before the accept loop closes; the trade-off is that a login
-    // racing in mid-drain can be silently dropped from `loggedInConnections.removeAll()`,
-    // but its own `ConnectionActor` cleanup still snapshots through the disconnect path.
-    // `addServiceUnlessShutdown` silently no-ops if the group is already shutting down,
-    // which is the actual safety net against a SIGTERM during the readiness window.
-    let postReadinessServices: [any Service] = [application, worldRouter, checkpointService]
+    // `AITickService` stops first so no in-flight tick contends with the connection drain;
+    // `WorldClockService` stops second so no `DateTick` races into closing outboxes (and its
+    // final per-shutdown clock save lands before any subsequent service teardown);
+    // `CheckpointService` stops third so no new periodic writes contend with the drain; then
+    // `WorldRouter.run()` drains every logged-in connection; the Hummingbird app closes the
+    // accept loop; `PostgresClient` tears down. WebSocket connections stay live during the
+    // world drain so per-connection writer tasks can flush their outboxes before the accept
+    // loop closes; the trade-off is that a login racing in mid-drain can be silently dropped
+    // from `loggedInConnections.removeAll()`, but its own `ConnectionActor` cleanup still
+    // snapshots through the disconnect path. `addServiceUnlessShutdown` silently no-ops if
+    // the group is already shutting down, which is the actual safety net against a SIGTERM
+    // during the readiness window.
+    let postReadinessServices: [any Service] = [
+        application,
+        worldRouter,
+        checkpointService,
+        worldClockService,
+        aiTickService
+    ]
     for service in postReadinessServices {
         await group.addServiceUnlessShutdown(
             ServiceGroupConfiguration.ServiceConfiguration(

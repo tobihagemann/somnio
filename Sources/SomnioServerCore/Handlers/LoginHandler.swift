@@ -82,6 +82,11 @@ public enum LoginHandler {
                     sectorName: character.currentSector,
                     accountId: account.id
                 )
+                // Hand the freshly-attached client the current world clock so the day/night
+                // tint applies immediately rather than at the next minute boundary (≤3
+                // wall-clock minutes away).
+                let dateTick = await dependencies.worldClock.currentDateTickMessage()
+                outbox.sendEncoded(.dateTick(dateTick), logger: logger)
             } catch {
                 logger.error("failed to attach to sector", metadata: ["error": "\(error)"])
                 await dependencies.worldRouter.unregister(accountId: account.id)

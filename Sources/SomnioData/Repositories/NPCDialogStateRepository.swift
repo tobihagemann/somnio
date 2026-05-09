@@ -5,6 +5,7 @@ import SomnioCore
 
 public protocol NPCDialogStateRepository: Sendable {
     func find(sectorName: String, npcIndex: Int16) async throws -> NPCDialogState?
+    func loadAll(sectorName: String) async throws -> [NPCDialogState]
     func upsert(_ state: NPCDialogState) async throws
     func reset(sectorName: String, npcIndex: Int16) async throws
 }
@@ -31,6 +32,22 @@ public actor PostgresNPCDialogStateRepository: NPCDialogStateRepository {
             return try row.decodeNPCDialogState()
         }
         return nil
+    }
+
+    public func loadAll(sectorName: String) async throws -> [NPCDialogState] {
+        let rows = try await client.query(
+            """
+            SELECT sector_name, npc_index, script_step
+            FROM npc_dialog_states
+            WHERE sector_name = \(sectorName)
+            """,
+            logger: logger
+        )
+        var states: [NPCDialogState] = []
+        for try await row in rows {
+            try states.append(row.decodeNPCDialogState())
+        }
+        return states
     }
 
     public func upsert(_ state: NPCDialogState) async throws {

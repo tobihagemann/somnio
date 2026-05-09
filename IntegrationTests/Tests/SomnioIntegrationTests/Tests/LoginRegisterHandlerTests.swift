@@ -11,7 +11,7 @@ import Testing
 struct LoginRegisterHandlerTests {
     @Test func `register success enqueues registerResult ok`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            let dependencies = try await makeDependencies(client: client)
             let actor = ConnectionActor(dependencies: dependencies)
             let outbox = await actor.connectionOutbox
 
@@ -30,7 +30,7 @@ struct LoginRegisterHandlerTests {
             outbox.finish()
 
             let frames = await IntegrationTestFixtures.collectFrames(from: outbox)
-            #expect(!frames.isEmpty)
+            #expect(frames.isEmpty == false)
             try IntegrationTestFixtures.expectLastRegisterResult(.ok, in: frames)
         }
     }
@@ -61,7 +61,7 @@ struct LoginRegisterHandlerTests {
 
     @Test func `duplicate nickname through the handler maps to nicknameExists`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            let dependencies = try await makeDependencies(client: client)
             let actorA = ConnectionActor(dependencies: dependencies)
             let actorB = ConnectionActor(dependencies: dependencies)
 
@@ -86,7 +86,16 @@ struct LoginRegisterHandlerTests {
 
     @Test func `login success streams the join sequence`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            // Seed `world_clock` with a non-default `(hour, minute)` so the per-login
+            // `dateTick` payload assertion catches a regression to `WorldClock.bootDefault`.
+            // The `WorldClockService` constructed inside `makeDependencies` calls
+            // `worldClocks.load()` once on bootstrap and pre-loads this state into the
+            // service — exactly what `LoginHandler` snapshots via `currentDateTickMessage()`.
+            let seededClockLogger = Logger(label: "test.login.world-clock-seed")
+            let worldClocks = PostgresWorldClockRepository(client: client, logger: seededClockLogger)
+            try await worldClocks.save(WorldClock(second: 0, minute: 33, hour: 7, day: 1, month: 1, year: 500))
+
+            let dependencies = try await makeDependencies(client: client)
             try await registerLoginUser(dependencies: dependencies)
 
             let loginActor = ConnectionActor(dependencies: dependencies)
@@ -111,6 +120,26 @@ struct LoginRegisterHandlerTests {
             #expect(tags.contains(.mainCharacter))
             #expect(tags.contains(.inventory))
             #expect(tags.contains(.energy))
+            // The join sequence ends with a `dateTick` so the client renders day/night
+            // immediately rather than at the next minute boundary. The ordering matters:
+            // a `dateTick` ahead of `enterSector`/`mainCharacter`/`energy` would arrive
+            // before the client has a sector context to apply it to.
+            #expect(tags.last == .dateTick)
+            if let dateTickIndex = tags.firstIndex(of: .dateTick) {
+                if let energyIndex = tags.firstIndex(of: .energy) {
+                    #expect(dateTickIndex > energyIndex)
+                }
+                if let enterSectorIndex = tags.firstIndex(of: .enterSector) {
+                    #expect(dateTickIndex > enterSectorIndex)
+                }
+            }
+            // Payload must reflect the seeded clock, not `bootDefault`.
+            if case let .dateTick(payload) = messages.last {
+                #expect(payload.hour == 7)
+                #expect(payload.minute == 33)
+            } else {
+                Issue.record("expected last frame to be dateTick")
+            }
         }
     }
 
@@ -126,7 +155,7 @@ struct LoginRegisterHandlerTests {
 
     @Test func `login with wrong password for an existing account returns badCredentials`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            let dependencies = try await makeDependencies(client: client)
             try await registerLoginUser(dependencies: dependencies)
 
             let actor = ConnectionActor(dependencies: dependencies)
@@ -145,7 +174,7 @@ struct LoginRegisterHandlerTests {
 
     @Test func `second login for the same account returns alreadyLoggedIn`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            let dependencies = try await makeDependencies(client: client)
             try await registerLoginUser(dependencies: dependencies)
 
             let firstActor = ConnectionActor(dependencies: dependencies)
@@ -219,7 +248,7 @@ struct LoginRegisterHandlerTests {
 
     @Test func `register with malformed class raw returns failure`() async throws {
         try await TestHarness.withDatabase { client in
-            let dependencies = try makeDependencies(client: client)
+            let dependencies = try await makeDependencies(client: client)
             let actor = ConnectionActor(dependencies: dependencies)
             let outbox = await actor.connectionOutbox
 
@@ -244,9 +273,9 @@ struct LoginRegisterHandlerTests {
 
     // MARK: - Helpers
 
-    private func makeDependencies(client: PostgresClient) throws -> ConnectionDependencies {
+    private func makeDependencies(client: PostgresClient) async throws -> ConnectionDependencies {
         let logger = Logger(label: "test.login-register-handler")
-        return try IntegrationTestFixtures.makeConnectionDependencies(
+        return try await IntegrationTestFixtures.makeConnectionDependencies(
             client: client,
             sectors: IntegrationTestFixtures.defaultSectors(),
             logger: logger
@@ -276,7 +305,7 @@ struct LoginRegisterHandlerTests {
         passwordRepeat: String,
         email: String
     ) async throws {
-        let dependencies = try makeDependencies(client: client)
+        let dependencies = try await makeDependencies(client: client)
         let actor = ConnectionActor(dependencies: dependencies)
         let outbox = await actor.connectionOutbox
 
@@ -298,7 +327,7 @@ struct LoginRegisterHandlerTests {
     }
 
     private func runLoginFailure(client: PostgresClient, nickname: String, password: String) async throws {
-        let dependencies = try makeDependencies(client: client)
+        let dependencies = try await makeDependencies(client: client)
         let actor = ConnectionActor(dependencies: dependencies)
         let outbox = await actor.connectionOutbox
 

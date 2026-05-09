@@ -23,7 +23,7 @@ struct CheckpointServiceTests {
                 starterInventory: StarterInventory.rows
             )
 
-            let dependencies = try IntegrationTestFixtures.makeConnectionDependencies(
+            let dependencies = try await IntegrationTestFixtures.makeConnectionDependencies(
                 client: client,
                 sectors: IntegrationTestFixtures.defaultSectors(),
                 logger: logger

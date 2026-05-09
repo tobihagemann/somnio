@@ -14,6 +14,7 @@ public struct ConnectionDependencies: Sendable {
     public let registrations: any RegistrationRepository
     public let passwordHasher: PasswordHasher
     public let worldRouter: WorldRouter
+    public let worldClock: WorldClockService
     public let configuration: ServerConfiguration
     public let logger: Logger
 
@@ -24,6 +25,7 @@ public struct ConnectionDependencies: Sendable {
         registrations: any RegistrationRepository,
         passwordHasher: PasswordHasher,
         worldRouter: WorldRouter,
+        worldClock: WorldClockService,
         configuration: ServerConfiguration,
         logger: Logger
     ) {
@@ -33,6 +35,7 @@ public struct ConnectionDependencies: Sendable {
         self.registrations = registrations
         self.passwordHasher = passwordHasher
         self.worldRouter = worldRouter
+        self.worldClock = worldClock
         self.configuration = configuration
         self.logger = logger
     }

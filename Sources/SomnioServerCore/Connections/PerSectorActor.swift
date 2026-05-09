@@ -13,12 +13,22 @@ struct PlayerSlot {
 
 /// Per-NPC runtime state. `position` is materialized via `NPCPlacement.runtimePosition`
 /// at sector load time so the codec stays byte-faithful (sector definitions on disk are
-/// unchanged, runtime centering happens here).
+/// unchanged, runtime centering happens here). `dialogSteps` caches the parsed script so
+/// the AI tick does not allocate on every pass.
 struct NPCRuntime {
+    /// Cap that the per-tick dialog cooldown counter advances toward. Once reached, the next
+    /// in-radius tick emits the current step; seeding to the cap at sector-actor init arms
+    /// the first bump for an immediate emit.
+    static let dialogCooldownCap: Int16 = 59
+
     let entityIndex: Int16
     let definition: NPC
     var position: GridPoint
     var targetingEntity: Int16?
+    let dialogSteps: [String]
+    var cooldownTicks: Int16
+    /// 0-based cursor into `dialogSteps`. Persisted as 1-based; translated at the seam.
+    var scriptStepIndex: Int16
 }
 
 /// Per-monster-spawn runtime state. `attach` emits one Entity for each spawned monster
@@ -28,6 +38,9 @@ struct MonsterSpawnRuntime {
     let entityIndex: Int16
     let definition: MonsterSpawn
     var position: GridPoint
+    /// Live facing the AI tick rotates toward the chase target. Idle monsters render with
+    /// the default so a join-sequence `entity` frame stays consistent with `runAITick()`.
+    var facing: Direction = .south
 }
 
 /// Snapshot of one player's persistent state, returned by `snapshotForCheckpoint` so the
@@ -53,6 +66,32 @@ public struct EquipApplyResult: Sendable, Equatable {
     }
 }
 
+/// One sector's per-tick AI digest. The actor returns this so the world router can dispatch
+/// persistence outside the actor's isolation domain — actor mutations finish before the
+/// repository calls land, so transient persistence failure cannot corrupt in-process state.
+public struct AITickDigest: Sendable {
+    public var dialogUpserts: [NPCDialogState]
+    public var dialogResets: [NPCDialogResetKey]
+
+    public init(dialogUpserts: [NPCDialogState] = [], dialogResets: [NPCDialogResetKey] = []) {
+        self.dialogUpserts = dialogUpserts
+        self.dialogResets = dialogResets
+    }
+}
+
+/// Identifies the (sector, npc) row to delete from `npc_dialog_states`. Dialog reset persists
+/// a row deletion, so the digest carries only the key — the full `NPCDialogState` would
+/// imply the wrong write.
+public struct NPCDialogResetKey: Sendable, Equatable {
+    public let sectorName: String
+    public let npcIndex: Int16
+
+    public init(sectorName: String, npcIndex: Int16) {
+        self.sectorName = sectorName
+        self.npcIndex = npcIndex
+    }
+}
+
 /// Per-sector actor. Owns the sector's runtime player set, NPC + monster placement, and
 /// the broadcast frame stream that funnels all peer-visible mutations through outboxes
 /// without touching connection actors directly.
@@ -67,17 +106,32 @@ public actor PerSectorActor {
     private var nextEntityIndex: Int16 = 1
     private let logger: Logger
 
-    public init(staticSector: Sector, logger: Logger) {
+    public init(
+        staticSector: Sector,
+        logger: Logger,
+        initialDialogCursors: [Int16: Int16] = [:]
+    ) {
         self.staticSector = staticSector
         self.logger = logger
         var nextIndex: Int16 = 1
         for npc in staticSector.npcs {
             let index = nextIndex
+            let dialogSteps = npc.dialogSteps
+            let scriptStepIndex = Self.resolveSeedStepIndex(
+                persisted: initialDialogCursors[index],
+                stepCount: dialogSteps.count,
+                sectorName: staticSector.name,
+                npcIndex: index,
+                logger: logger
+            )
             npcs[index] = NPCRuntime(
                 entityIndex: index,
                 definition: npc,
                 position: NPCPlacement.runtimePosition(for: npc),
-                targetingEntity: nil
+                targetingEntity: nil,
+                dialogSteps: dialogSteps,
+                cooldownTicks: NPCRuntime.dialogCooldownCap,
+                scriptStepIndex: scriptStepIndex
             )
             nextIndex = Self.advance(nextIndex)
         }
@@ -91,6 +145,47 @@ public actor PerSectorActor {
             nextIndex = Self.advance(nextIndex)
         }
         self.nextEntityIndex = nextIndex
+    }
+
+    /// Translate a persisted 1-based `script_step` into the 0-based runtime cursor. Out-of-range
+    /// values (zero, negative, missing-step, or beyond the parsed step count) clamp to `0` and
+    /// log a warning so a script edit that shortens the step count is visible to operators
+    /// rather than silently rewinding the cursor. The range check runs before the subtraction
+    /// so a corrupt `Int16.min` cannot trap during boot.
+    private static func resolveSeedStepIndex(
+        persisted: Int16?,
+        stepCount: Int,
+        sectorName: String,
+        npcIndex: Int16,
+        logger: Logger
+    ) -> Int16 {
+        guard let persisted else { return 0 }
+        if stepCount == 0 {
+            if persisted != 1 {
+                logger.warning(
+                    "npc dialog cursor reset (script empty)",
+                    metadata: [
+                        "sector": "\(sectorName)",
+                        "npc_index": "\(npcIndex)",
+                        "persisted_step": "\(persisted)"
+                    ]
+                )
+            }
+            return 0
+        }
+        guard persisted >= 1, Int(persisted) <= stepCount else {
+            logger.warning(
+                "npc dialog cursor clamped (out of range)",
+                metadata: [
+                    "sector": "\(sectorName)",
+                    "npc_index": "\(npcIndex)",
+                    "persisted_step": "\(persisted)",
+                    "step_count": "\(stepCount)"
+                ]
+            )
+            return 0
+        }
+        return persisted - 1
     }
 
     /// Increment with `&+=` and skip 0 — reserved for client-originated `clientPosition`
@@ -227,12 +322,219 @@ public actor PerSectorActor {
     /// bump from another player is a no-op so the dialog isn't retargeted mid-script. The
     /// dialog-tick that walks the script cursor is implemented elsewhere; this only marks
     /// targeting.
+    ///
+    /// The proximity gate prevents an authenticated client from spamming `bumpNPC` for
+    /// far-away NPCs to force per-call DB writes through the AI tick's out-of-radius reset
+    /// path. Bumps that don't satisfy the dialog radius are dropped silently here, so the
+    /// reset path only fires when an actually-bumped player walks away mid-script.
     public func handleBumpNPC(npcIndex: Int16, from entityIndex: Int16) {
-        guard players[entityIndex] != nil else { return }
+        guard let player = players[entityIndex] else { return }
         guard var npc = npcs[npcIndex] else { return }
         guard npc.targetingEntity == nil else { return }
+        let npcCenter = VisualCenter.center(position: npc.position, mask: npc.definition.maskSize)
+        let playerCenter = VisualCenter.center(
+            position: player.character.position,
+            mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
+        )
+        guard VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius) else {
+            return
+        }
         npc.targetingEntity = entityIndex
         npcs[npcIndex] = npc
+    }
+
+    /// One AI tick across the sector's NPCs and monsters. The deterministic mutator is the
+    /// contracted test seam: `AITickService` calls this on a `Duration` cadence; tests drive
+    /// it directly without sleeping. The returned `AITickDigest` flows out of actor isolation
+    /// so the world router can persist dialog cursor changes through the repository without
+    /// holding the actor.
+    public func runAITick() -> AITickDigest {
+        var digest = AITickDigest()
+        runNPCTick(into: &digest)
+        runMonsterTick()
+        return digest
+    }
+
+    /// Walks every NPC and takes exactly one of the mutually exhaustive branches: idle
+    /// cooldown advance, target-gone reset, out-of-radius reset, in-radius cooldown advance,
+    /// or in-radius emit + cursor advance. The legacy `$name` token is substituted at emit
+    /// time against the targeting player's character name.
+    private func runNPCTick(into digest: inout AITickDigest) {
+        for (index, npcSnapshot) in npcs {
+            var npc = npcSnapshot
+            guard let targetIndex = npc.targetingEntity else {
+                // (a) idle: advance the cooldown so the next bump fires immediately.
+                advanceCooldown(&npc)
+                npcs[index] = npc
+                continue
+            }
+            guard let targetSlot = players[targetIndex] else {
+                // (b) target left the sector: reset cursor + clear targeting; persist a
+                // delete so the in-process reset survives a restart.
+                resetTargeting(&npc, into: &digest)
+                npcs[index] = npc
+                continue
+            }
+            let npcCenter = VisualCenter.center(position: npc.position, mask: npc.definition.maskSize)
+            let targetCenter = VisualCenter.center(
+                position: targetSlot.character.position,
+                mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
+            )
+            guard VisualCenter.isWithin(npcCenter, targetCenter, radius: SomnioConstants.npcInteractionRadius) else {
+                // (c) target walked out of radius: same reset as (b). The legacy server
+                // resets both targeting and cursor when the target leaves the radius so one
+                // player who walks away mid-script cannot lock the NPC for everyone else.
+                resetTargeting(&npc, into: &digest)
+                npcs[index] = npc
+                continue
+            }
+            guard npc.cooldownTicks == NPCRuntime.dialogCooldownCap else {
+                // (d) in-radius but pre-cooldown: advance toward the cap and skip emit.
+                advanceCooldown(&npc)
+                npcs[index] = npc
+                continue
+            }
+            // (e) emit the current step, advance the cursor, wrap at the final line.
+            guard !npc.dialogSteps.isEmpty else {
+                // Empty script is a no-op: clear targeting so the next bump can re-arm.
+                npc.targetingEntity = nil
+                npcs[index] = npc
+                continue
+            }
+            let step = npc.dialogSteps[Int(npc.scriptStepIndex)]
+            let text = step.replacingOccurrences(of: "$name", with: targetSlot.character.name)
+            do {
+                try broadcastToAll(.serverSay(SayMessage(entityIndex: npc.entityIndex, text: text)))
+            } catch {
+                logger.warning(
+                    "failed to broadcast npc dialog",
+                    metadata: ["error": "\(error)", "npc_index": "\(npc.entityIndex)"]
+                )
+            }
+            npc.cooldownTicks = 0
+            let nextIndex = npc.scriptStepIndex + 1
+            if nextIndex >= Int16(npc.dialogSteps.count) {
+                npc.scriptStepIndex = 0
+                npc.targetingEntity = nil
+                digest.dialogResets.append(
+                    NPCDialogResetKey(sectorName: staticSector.name, npcIndex: npc.entityIndex)
+                )
+            } else {
+                npc.scriptStepIndex = nextIndex
+                digest.dialogUpserts.append(
+                    NPCDialogState(
+                        sectorName: staticSector.name,
+                        npcIndex: npc.entityIndex,
+                        scriptStep: nextIndex + 1
+                    )
+                )
+            }
+            npcs[index] = npc
+        }
+    }
+
+    /// Advance an NPC's cooldown toward `NPCRuntime.dialogCooldownCap`. Pulled out so every
+    /// non-emit branch (idle, target-gone, out-of-radius, in-radius pre-cooldown) shares
+    /// one definition of "cooldown progresses while the next emit is still pending."
+    private func advanceCooldown(_ npc: inout NPCRuntime) {
+        if npc.cooldownTicks < NPCRuntime.dialogCooldownCap {
+            npc.cooldownTicks += 1
+        }
+    }
+
+    /// Clear targeting + reset the cursor + advance cooldown + record a reset key on the
+    /// digest. Both the target-left-sector and out-of-radius branches use this shape.
+    private func resetTargeting(_ npc: inout NPCRuntime, into digest: inout AITickDigest) {
+        npc.targetingEntity = nil
+        npc.scriptStepIndex = 0
+        advanceCooldown(&npc)
+        digest.dialogResets.append(
+            NPCDialogResetKey(sectorName: staticSector.name, npcIndex: npc.entityIndex)
+        )
+    }
+
+    /// Branch-0 monsters orient + chase the nearest in-aggro player. Other AI scripts idle
+    /// (no broadcast, no mutation). Combat hooks intentionally absent — no damage, death,
+    /// drop, or respawn yet; this is the single integration surface for a future combat
+    /// extension so future readers find one place to wire the new behavior in.
+    private func runMonsterTick() {
+        for (index, monsterSnapshot) in monsters {
+            guard monsterSnapshot.definition.aiScriptIndex == 0 else { continue }
+            var monster = monsterSnapshot
+            let monsterCenter = VisualCenter.center(
+                position: monster.position,
+                mask: monster.definition.spawnedMonsterSize
+            )
+            let playerMask = GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
+            let aggroRadius = Int64(SomnioConstants.monsterAggroRadius)
+            let aggroRadiusSquared = aggroRadius * aggroRadius
+            // The chase only needs the closest-target's center, so the running candidate
+            // tracks `(center, squared)` rather than the full `PlayerSlot`. The single
+            // `squaredDistance` per candidate doubles as the aggro-radius gate to avoid
+            // recomputing the distance twice.
+            var closest: (center: (x: Int32, y: Int32), squared: Int64)?
+            for slot in players.values {
+                let candidateCenter = VisualCenter.center(position: slot.character.position, mask: playerMask)
+                let squared = VisualCenter.squaredDistance(monsterCenter, candidateCenter)
+                guard squared <= aggroRadiusSquared else { continue }
+                if let existing = closest, squared >= existing.squared { continue }
+                closest = (candidateCenter, squared)
+            }
+            guard let target = closest else { continue }
+            let dx = target.center.x - monsterCenter.x
+            let dy = target.center.y - monsterCenter.y
+            // Dominant-axis facing with a horizontal tie-break at exact 45 degrees so the
+            // chase orientation matches the legacy quadrant function for every (dx, dy).
+            let facing: Direction = if abs(dx) >= abs(dy) {
+                dx > 0 ? .east : .west
+            } else {
+                dy > 0 ? .south : .north
+            }
+            monster.facing = facing
+            // Chase step: 6 px Euclidean per tick once the Manhattan gate clears. On a 45°
+            // diagonal this yields ≈(4, 4); Manhattan-based scaling would yield (3, 3),
+            // visibly slower.
+            let manhattan = abs(dx) + abs(dy)
+            let stepDx: Int32
+            let stepDy: Int32
+            if manhattan >= 6 {
+                let length = (Double(dx) * Double(dx) + Double(dy) * Double(dy)).squareRoot()
+                stepDx = Int32((Double(dx) * 6.0 / length).rounded())
+                stepDy = Int32((Double(dy) * 6.0 / length).rounded())
+            } else {
+                stepDx = dx
+                stepDy = dy
+            }
+            // Clamp into `Int16` so a monster near a near-`Int16.max` sector edge cannot
+            // trap on the position add. The subsequent `isInside` gate keeps in-bounds
+            // semantics intact for the runtime position.
+            let proposed = GridPoint(
+                x: Int16(clamping: Int32(monster.position.x) + stepDx),
+                y: Int16(clamping: Int32(monster.position.y) + stepDy)
+            )
+            if isInside(proposed, of: staticSector), !collides(proposed, with: staticSector.collisionMasks) {
+                monster.position = proposed
+            }
+            monsters[index] = monster
+            do {
+                try broadcastToAll(
+                    .serverPosition(
+                        PositionMessage(
+                            entityIndex: monster.entityIndex,
+                            x: monster.position.x,
+                            y: monster.position.y,
+                            facing: monster.facing.rawValue,
+                            tempo: Tempo.default.rawValue
+                        )
+                    )
+                )
+            } catch {
+                logger.warning(
+                    "failed to broadcast monster position",
+                    metadata: ["error": "\(error)", "monster_index": "\(monster.entityIndex)"]
+                )
+            }
+        }
     }
 
     /// Re-emit the player's current `serverPosition` to the originating connection so the
@@ -282,9 +584,18 @@ public actor PerSectorActor {
     }
 
     private func collides(_ position: GridPoint, with masks: [CollisionMask]) -> Bool {
+        // Mask endpoints (`x + width`, `y + height`) widen to `Int32` for the same reason
+        // `VisualCenter` uses wider arithmetic: a corrupt sector with an authored mask near
+        // `Int16.max` cannot be allowed to trap the AI tick on the bounds check.
+        let positionX = Int32(position.x)
+        let positionY = Int32(position.y)
         for mask in masks {
-            if position.x >= mask.x, position.x < mask.x + mask.width,
-               position.y >= mask.y, position.y < mask.y + mask.height {
+            let maskX = Int32(mask.x)
+            let maskY = Int32(mask.y)
+            let maskRight = maskX + Int32(mask.width)
+            let maskBottom = maskY + Int32(mask.height)
+            if positionX >= maskX, positionX < maskRight,
+               positionY >= maskY, positionY < maskBottom {
                 return true
             }
         }
@@ -294,6 +605,16 @@ public actor PerSectorActor {
     private func broadcastToPeers(_ message: SomnioMessage, excluding entityIndex: Int16) throws {
         let frame = try SomnioMessageEncoder.encode(message)
         for (index, slot) in players where index != entityIndex {
+            slot.outbox.send(frame)
+        }
+    }
+
+    /// Encode once and fan out to every slot's outbox. Used by the AI tick where a monster
+    /// reorientation or NPC dialog line should reach every player in the sector — including
+    /// the one whose proximity caused the broadcast.
+    private func broadcastToAll(_ message: SomnioMessage) throws {
+        let frame = try SomnioMessageEncoder.encode(message)
+        for slot in players.values {
             slot.outbox.send(frame)
         }
     }
@@ -341,7 +662,7 @@ public actor PerSectorActor {
             name: monster.definition.name,
             x: monster.position.x,
             y: monster.position.y,
-            facing: 0,
+            facing: monster.facing.rawValue,
             tempo: 0
         )
     }

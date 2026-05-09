@@ -63,14 +63,35 @@ private struct StubRegistrationRepository: RegistrationRepository {
     }
 }
 
+private struct StubNPCDialogStateRepository: NPCDialogStateRepository {
+    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
+        nil
+    }
+
+    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
+        []
+    }
+
+    func upsert(_: NPCDialogState) async throws {}
+    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
+}
+
+private struct StubWorldClockRepository: WorldClockRepository {
+    func load() async throws -> WorldClock {
+        .bootDefault
+    }
+
+    func save(_: WorldClock) async throws {}
+}
+
 /// Unit-level coverage for `ConnectionActor` state-transition primitives that don't require
 /// driving the full inbound dispatch loop. These are the regression sentinels for the portal-
 /// hop entity-index propagation contract: `setAttached` must replace both the entity index and
 /// the sector name while preserving the `accountId`, and must be a no-op when the connection
 /// hasn't completed login yet.
 struct ConnectionActorTests {
-    @Test func `setAttached replaces entityIndex and sectorName while preserving accountId`() async {
-        let connection = ConnectionActor(dependencies: makeStubDependencies())
+    @Test func `setAttached replaces entityIndex and sectorName while preserving accountId`() async throws {
+        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
         let accountId = UUID()
 
         await connection.markAttached(entityIndex: 1, sectorName: "EdariaBibliothek", accountId: accountId)
@@ -86,8 +107,8 @@ struct ConnectionActorTests {
         #expect(observedAccountId == accountId)
     }
 
-    @Test func `setAttached is a no-op while the connection is awaitingLogin`() async {
-        let connection = ConnectionActor(dependencies: makeStubDependencies())
+    @Test func `setAttached is a no-op while the connection is awaitingLogin`() async throws {
+        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
 
         await connection.setAttached(entityIndex: 99, sectorName: "Phantom")
 
@@ -99,19 +120,28 @@ struct ConnectionActorTests {
 
     // MARK: - Helpers
 
-    private func makeStubDependencies() -> ConnectionDependencies {
+    private func makeStubDependencies() async throws -> ConnectionDependencies {
         let logger = Logger(label: "test.connection-actor")
+        let worldRouter = try await WorldRouter(
+            sectors: [:],
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
+            logger: logger
+        )
+        let worldClockService = WorldClockService(
+            worldRouter: worldRouter,
+            worldClocks: StubWorldClockRepository(),
+            initialClock: .bootDefault,
+            logger: logger
+        )
         return ConnectionDependencies(
             accounts: StubAccountRepository(),
             characters: StubCharacterRepository(),
             inventories: StubInventoryRepository(),
             registrations: StubRegistrationRepository(),
             passwordHasher: PasswordHasher(logger: logger),
-            worldRouter: WorldRouter(
-                sectors: [:],
-                characters: StubCharacterRepository(),
-                logger: logger
-            ),
+            worldRouter: worldRouter,
+            worldClock: worldClockService,
             configuration: ServerConfiguration(
                 httpHost: "127.0.0.1",
                 httpPort: 8080,

@@ -46,14 +46,24 @@ public enum IntegrationTestFixtures {
         client: PostgresClient,
         sectors: [String: Sector],
         logger: Logger
-    ) -> ConnectionDependencies {
+    ) async throws -> ConnectionDependencies {
         let characters = PostgresCharacterRepository(client: client, logger: logger)
         let inventories = PostgresInventoryRepository(client: client, logger: logger)
         let accounts = PostgresAccountRepository(client: client, logger: logger)
         let registrations = PostgresRegistrationRepository(client: client, logger: logger)
-        let worldRouter = WorldRouter(
+        let npcDialogStates = PostgresNPCDialogStateRepository(client: client, logger: logger)
+        let worldClocks = PostgresWorldClockRepository(client: client, logger: logger)
+        let worldRouter = try await WorldRouter(
             sectors: sectors,
             characters: characters,
+            npcDialogStates: npcDialogStates,
+            logger: logger
+        )
+        let initialClock = try await worldClocks.load()
+        let worldClockService = WorldClockService(
+            worldRouter: worldRouter,
+            worldClocks: worldClocks,
+            initialClock: initialClock,
             logger: logger
         )
         return ConnectionDependencies(
@@ -63,6 +73,7 @@ public enum IntegrationTestFixtures {
             registrations: registrations,
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: worldRouter,
+            worldClock: worldClockService,
             configuration: ServerConfiguration(
                 httpHost: "127.0.0.1",
                 httpPort: 8080,
