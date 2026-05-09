@@ -7,8 +7,9 @@ import Synchronization
 /// On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`.
 /// On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.
 ///
-/// The server uses `ServerLoggingConfiguration` (in `SomnioServer`) instead, which composes
-/// a JSON stdout backend with two label-filtered file backends for gameplay and admin logs.
+/// The server uses `ServerLoggingConfiguration` (in `SomnioServerCore`) instead, which
+/// composes a JSON stdout backend with two label-filtered file backends for gameplay and
+/// admin logs.
 public enum LoggingConfiguration {
     public static let clientLogFileName = "somnio.log"
 

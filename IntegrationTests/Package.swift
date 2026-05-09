@@ -16,6 +16,7 @@ let package = Package(
                 .product(name: "SomnioCore", package: "Somnio"),
                 .product(name: "SomnioData", package: "Somnio"),
                 .product(name: "SomnioProtocol", package: "Somnio"),
+                .product(name: "SomnioServerCore", package: "Somnio"),
                 .product(name: "PostgresNIO", package: "postgres-nio"),
                 .product(name: "Logging", package: "swift-log")
             ]

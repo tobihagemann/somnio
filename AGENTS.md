@@ -6,7 +6,7 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 
 - Swift 6.2, macOS 26+, SwiftPM (no Xcode project)
 - SwiftUI + SpriteKit for the player client and editor; Sparkle for auto-updates
-- Hummingbird + WebSockets + PostgresNIO for the server (server lands later)
+- Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
 - swift-argument-parser for the admin CLI
 - swift-service-lifecycle for graceful server shutdown
@@ -28,8 +28,12 @@ SomnioApp        # macOS executable: player client + UI + Sparkle
                  # depends on SomnioCore + SomnioUI + SomnioProtocol
 SomnioEditor     # macOS executable: document-based map editor + Sparkle
                  # depends on SomnioCore + SomnioUI (NOT on SomnioProtocol or SomnioData)
-SomnioServer     # Hummingbird executable: gameplay + admin WebSockets, AI ticks
-                 # depends on SomnioCore + SomnioData + SomnioProtocol
+SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
+                 # Hummingbird app, sector cache, registration repo, checkpoint service
+                 # depends on SomnioCore + SomnioData + SomnioProtocol +
+                 # Hummingbird + HummingbirdWebSocket
+SomnioServer     # Hummingbird executable: thin shim that calls SomnioServerCore.runServer()
+                 # depends on SomnioServerCore + Logging
 SomnioCLI        # Admin CLI invoked as `somniocli <verb>`
                  # depends on SomnioCore + SomnioProtocol + ArgumentParser
 ```
@@ -39,9 +43,9 @@ These boundaries are strict:
 - SomnioProtocol must never import another Somnio module.
 - SomnioCore must never import SomnioData or SomnioUI.
 - SomnioUI must never import SomnioData.
-- SomnioApp must never import SomnioData (the client never opens a Postgres connection; all server data flows in over the wire protocol).
-- SomnioEditor must never import SomnioProtocol, SomnioData, or SomnioServer (the editor is offline).
-- SomnioCLI must never import SomnioUI or Sparkle.
+- SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).
+- SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline).
+- SomnioCLI must never import SomnioUI, Sparkle, or SomnioServerCore.
 
 Enforce by reading `Package.swift` dependency lists and grepping for forbidden imports per module.
 
@@ -53,7 +57,7 @@ swift build --build-tests            # compile test targets without running them
 swift test
 swift test --filter SomnioCoreTests  # run a specific test target
 swift run SomnioApp                  # run the player client
-swift run SomnioServer               # run the server placeholder
+swift run SomnioServer               # run the gameplay server
 swift run SomnioCLI                  # run the CLI
 ```
 
@@ -102,7 +106,7 @@ Runtime apps load assets exclusively from `Bundle.main`. There is no env var or 
 Uses `swift-log` as a facade. Two bootstrap surfaces:
 
 - `LoggingConfiguration.bootstrap()` (in `SomnioCore`) — used by the player client, editor, and CLI. On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`. On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.
-- `ServerLoggingConfiguration.bootstrap()` (in `SomnioServer`) — composes a JSON stdout backend (container-friendly) with two label-filtered file backends: `gameplay-log.log` for `de.tobiha.somnio.server.gameplay.*` and `admin-log.log` for `de.tobiha.somnio.server.admin.*`. Records that don't match either prefix go only to stdout.
+- `ServerLoggingConfiguration.bootstrap()` (in `SomnioServerCore`) — composes a JSON stdout backend (container-friendly) with two label-filtered file backends: `gameplay-log.log` for `de.tobiha.somnio.server.gameplay.*` and `admin-log.log` for `de.tobiha.somnio.server.admin.*`. Records that don't match either prefix go only to stdout.
 
 Logger labels use dot notation: `Logger(label: "de.tobiha.somnio.app.lifecycle")` — last component is the category (flat lowercase), rest is the OSLog subsystem.
 
@@ -126,6 +130,22 @@ Set `SOMNIO_PROFILE=<name>` to run multiple isolated instances side by side:
 |-----------|-------------|------------------------|
 | Application Support | `Somnio-Dev/` | `Somnio-Dev-alice/` |
 | UserDefaults | `de.tobiha.somnio.dev` | `de.tobiha.somnio.dev.alice` |
+
+## Deployment
+
+The gameplay server speaks **plain HTTP/WebSocket** — TLS is terminated by a reverse proxy at the deployment boundary. The `HTTP1WebSocketUpgrade` `Application` listens on `SOMNIO_HTTP_HOST:SOMNIO_HTTP_PORT` (default `0.0.0.0:8080`) without certificates. Do not push TLS into the app process; the docker-compose example pins the proxy contract.
+
+Server runtime configuration is resolved from environment variables (resolution lives in `SomnioServerCore.ServerConfiguration`):
+
+| Variable | Default (debug) | Required in release |
+|----------|-----------------|---------------------|
+| `SOMNIO_HTTP_HOST` | `0.0.0.0` | no |
+| `SOMNIO_HTTP_PORT` | `8080` | no |
+| `SOMNIO_ADMIN_TOKEN` | `dev-admin` | yes |
+| `SOMNIO_SECTORS_DIR` | `Tests/SomnioCoreTests/Resources/MapFixtures` | yes |
+| `SOMNIO_DATABASE_URL` | localhost fallback | yes |
+
+The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate).
 
 ## Lint & Format
 

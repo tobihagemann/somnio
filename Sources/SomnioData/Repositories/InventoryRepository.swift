@@ -97,8 +97,10 @@ private extension PostgresRow {
 
 /// Single-value JSONB carrier for the ordered `[InventoryExtra]` list. The custom
 /// `Codable` impl keeps the stored shape as a bare JSON array (not `{"values": [...]}`),
-/// matching the column comment authored in migration 3.
-private struct InventoryExtrasJSONB: Codable {
+/// matching the column comment authored in migration 3. Internal so other repository
+/// writers (e.g. the transactional inserts in `RegistrationRepository`) can produce the
+/// same wire shape without redeclaring the carrier.
+struct InventoryExtrasJSONB: Codable {
     let values: [InventoryExtra]
 
     init(values: [InventoryExtra]) {

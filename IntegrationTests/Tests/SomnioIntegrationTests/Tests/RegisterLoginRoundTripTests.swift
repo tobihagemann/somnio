@@ -35,7 +35,11 @@ struct RegisterLoginRoundTripTests {
             moved.position = GridPoint(x: 4, y: 7)
             moved.facing = .east
             moved.energy.hpCurrent = 75
-            try await characters.snapshot(moved)
+            // Bump `lastSeen` so the SQL skip-if-stale guard in `snapshot` accepts the write.
+            // Production paths bump this in `PerSectorActor.snapshotForPlayer`/`snapshotForCheckpoint`.
+            moved.lastSeen = character.lastSeen.addingTimeInterval(60)
+            let updated = try await characters.snapshot(moved)
+            #expect(updated == true)
 
             let reloadedCharacter = try #require(try await characters.findByName("Alice the Bold"))
             #expect(reloadedCharacter.position == GridPoint(x: 4, y: 7))

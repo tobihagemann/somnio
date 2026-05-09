@@ -11,6 +11,12 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
     /// Release builds require an explicit `SOMNIO_DATABASE_URL`; the no-URL plaintext
     /// localhost fallback is a dev-only convenience.
     case missingDatabaseURLInRelease
+    /// Release builds require `SOMNIO_ADMIN_TOKEN`; the `dev-admin` fallback is debug-only.
+    case missingAdminTokenInRelease
+    /// Release builds require `SOMNIO_SECTORS_DIR`; the bundled fixtures fallback is debug-only.
+    case missingSectorsDirectoryInRelease
+    /// `SOMNIO_HTTP_PORT` did not parse as an integer in 1...65535.
+    case invalidPort(String)
 
     public var description: String {
         switch self {
@@ -20,6 +26,12 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
             return "Postgres did not become reachable within the startup timeout"
         case .missingDatabaseURLInRelease:
             return "SOMNIO_DATABASE_URL must be set in a release build"
+        case .missingAdminTokenInRelease:
+            return "SOMNIO_ADMIN_TOKEN must be set in a release build"
+        case .missingSectorsDirectoryInRelease:
+            return "SOMNIO_SECTORS_DIR must be set in a release build"
+        case let .invalidPort(raw):
+            return "SOMNIO_HTTP_PORT is not a valid TCP port: \(raw)"
         }
     }
 }

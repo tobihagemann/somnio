@@ -66,7 +66,7 @@ struct CharacterRepositoryTests {
         }
     }
 
-    @Test func `snapshot throws when no row matches the character id`() async throws {
+    @Test func `snapshot returns false when no row matches the character id`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.character.snapshot.miss")
             let characters = PostgresCharacterRepository(client: client, logger: logger)
@@ -82,9 +82,35 @@ struct CharacterRepositoryTests {
                 energy: Energy(hpCurrent: 100, hpMax: 100, balanceCurrent: 100, balanceMax: 100, manaCurrent: 100, manaMax: 100),
                 lastSeen: Date()
             )
-            await #expect(throws: RepositoryError.self) {
-                try await characters.snapshot(phantom)
-            }
+            let updated = try await characters.snapshot(phantom)
+            #expect(updated == false)
+        }
+    }
+
+    @Test func `snapshot skips the write when last_seen is older than the persisted row`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.character.snapshot.skip-stale")
+            let accounts = PostgresAccountRepository(client: client, logger: logger)
+            let characters = PostgresCharacterRepository(client: client, logger: logger)
+            let account = try await accounts.create(name: "stale-tester", passwordHash: "stub", email: "s@x")
+            let original = try await characters.create(accountId: account.id, name: "Stale", figure: 0, gender: .male)
+
+            // First write: bump last_seen to T1.
+            var fresh = original
+            fresh.position = GridPoint(x: 5, y: 5)
+            fresh.lastSeen = original.lastSeen.addingTimeInterval(60)
+            let firstUpdated = try await characters.snapshot(fresh)
+            #expect(firstUpdated == true)
+
+            // Second write: lastSeen older than T1 must skip and leave the row untouched.
+            var stale = original
+            stale.position = GridPoint(x: 99, y: 99)
+            stale.lastSeen = original.lastSeen
+            let secondUpdated = try await characters.snapshot(stale)
+            #expect(secondUpdated == false)
+
+            let reloaded = try #require(try await characters.findByName("Stale"))
+            #expect(reloaded.position == GridPoint(x: 5, y: 5))
         }
     }
 

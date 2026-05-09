@@ -83,6 +83,19 @@ public struct PasswordHasher: Sendable {
         return try await task.value
     }
 
+    /// Variant of `verify` that accepts `nil` for the encoded hash and pays an equivalent
+    /// Argon2id cost so callers can't distinguish "unknown account" from "wrong password" by
+    /// response timing. Returns `false` whenever `encodedHash == nil`.
+    public func verifyAccountPassword(_ rawPassword: String, against encodedHash: String?) async throws -> Bool {
+        if let encodedHash {
+            return try await verify(rawPassword, against: encodedHash)
+        }
+        // Equalize timing: hash the supplied password so the unknown-account branch costs the
+        // same Argon2id work as the verify branch. Discard the result.
+        _ = try await hash(rawPassword)
+        return false
+    }
+
     public func verify(_ rawPassword: String, against encodedHash: String) async throws -> Bool {
         let logger = logger
         let task: Task<Bool, any Error> = Task.detached(priority: .userInitiated) {

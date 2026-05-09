@@ -12,7 +12,15 @@ public protocol CharacterRepository: Sendable {
     ) async throws -> Character
     func findByAccount(_ accountId: UUID) async throws -> [Character]
     func findByName(_ name: String) async throws -> Character?
-    func snapshot(_ character: Character) async throws
+    @discardableResult
+    func snapshot(_ character: Character) async throws -> Bool
+    /// Atomically persists `character` and replaces all inventory rows for that character
+    /// in a single Postgres transaction, gated by the same `last_seen` skip-if-stale guard
+    /// `snapshot` enforces. Returns `true` if the transaction committed; `false` if the
+    /// character UPDATE was skipped because the row's `last_seen` was already at or past
+    /// the supplied timestamp (in which case the inventory was not touched either).
+    @discardableResult
+    func persistCheckpoint(character: Character, inventory: [InventoryRow]) async throws -> Bool
 }
 
 public actor PostgresCharacterRepository: CharacterRepository {
@@ -119,11 +127,19 @@ public actor PostgresCharacterRepository: CharacterRepository {
         return nil
     }
 
-    /// Persists `character` over an existing row. Throws `RepositoryError.noSuchCharacter`
-    /// when no row matches `character.id` so a missing/deleted character can't silently
-    /// drop a logout/checkpoint snapshot. We use `UPDATE ... RETURNING id` because
-    /// PostgresNIO doesn't surface command-tag affected-row counts for plain `UPDATE`.
-    public func snapshot(_ character: Character) async throws {
+    /// Persists `character` over an existing row. Returns `true` when the update committed,
+    /// `false` when it was skipped because the row's existing `last_seen` is greater than or
+    /// equal to the snapshot's — i.e., another writer (typically the per-disconnect snapshot)
+    /// already committed a fresher state for this character. The skip-if-stale guard is
+    /// enforced at the SQL boundary so the periodic checkpoint pass and the disconnect path
+    /// can't race-overwrite each other.
+    ///
+    /// 0 rows updated also covers a missing character row; both cases collapse to "no
+    /// fresher state was committed". Callers that need to differentiate must look up the row
+    /// separately. We use `UPDATE ... RETURNING id` because PostgresNIO doesn't surface
+    /// command-tag affected-row counts for plain `UPDATE`.
+    @discardableResult
+    public func snapshot(_ character: Character) async throws -> Bool {
         let rows = try await client.query(
             """
             UPDATE characters SET
@@ -141,7 +157,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
                 mana_current = \(character.energy.manaCurrent),
                 mana_max = \(character.energy.manaMax),
                 last_seen = \(character.lastSeen)
-            WHERE id = \(character.id)
+            WHERE id = \(character.id) AND last_seen < \(character.lastSeen)
             RETURNING id
             """,
             logger: logger
@@ -150,8 +166,63 @@ public actor PostgresCharacterRepository: CharacterRepository {
         for try await _ in rows {
             affected += 1
         }
-        guard affected > 0 else {
-            throw RepositoryError.noSuchCharacter(id: character.id)
+        return affected > 0
+    }
+
+    // swiftlint:disable:next function_body_length
+    public func persistCheckpoint(character: Character, inventory: [InventoryRow]) async throws -> Bool {
+        let logger = logger
+        return try await client.withTransaction(logger: logger) { connection in
+            let updateRows = try await connection.query(
+                """
+                UPDATE characters SET
+                    figure = \(character.figure),
+                    gender = \(character.gender.rawValue),
+                    current_sector = \(character.currentSector),
+                    position_x = \(character.position.x),
+                    position_y = \(character.position.y),
+                    facing = \(character.facing.rawValue),
+                    tempo = \(character.tempo.rawValue),
+                    hp_current = \(character.energy.hpCurrent),
+                    hp_max = \(character.energy.hpMax),
+                    balance_current = \(character.energy.balanceCurrent),
+                    balance_max = \(character.energy.balanceMax),
+                    mana_current = \(character.energy.manaCurrent),
+                    mana_max = \(character.energy.manaMax),
+                    last_seen = \(character.lastSeen)
+                WHERE id = \(character.id) AND last_seen < \(character.lastSeen)
+                RETURNING id
+                """,
+                logger: logger
+            )
+            var affected = 0
+            for try await _ in updateRows {
+                affected += 1
+            }
+            guard affected > 0 else { return false }
+            try await connection.query(
+                "DELETE FROM inventory_rows WHERE character_id = \(character.id)",
+                logger: logger
+            )
+            for row in inventory {
+                let extras = InventoryExtrasJSONB(values: row.extras)
+                let equippedHandRaw: Int16? = row.equippedHand?.rawValue
+                try await connection.query(
+                    """
+                    INSERT INTO inventory_rows (character_id, slot, category, item_id, extras, equipped_hand)
+                    VALUES (
+                        \(character.id),
+                        \(row.slot),
+                        \(row.category),
+                        \(row.itemId),
+                        \(extras),
+                        \(equippedHandRaw)
+                    )
+                    """,
+                    logger: logger
+                )
+            }
+            return true
         }
     }
 }
