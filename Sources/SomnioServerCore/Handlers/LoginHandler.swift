@@ -54,7 +54,11 @@ public enum LoginHandler {
             }
             let inventory = try await dependencies.inventories.loadAll(forCharacter: character.id)
 
-            let registered = await dependencies.worldRouter.register(actor: connectionActor, accountId: account.id)
+            let registered = await dependencies.worldRouter.register(
+                actor: connectionActor,
+                accountId: account.id,
+                characterName: character.name
+            )
             guard registered else {
                 outbox.sendEncoded(.loginResult(LoginResultMessage(result: .alreadyLoggedIn)), logger: logger)
                 return

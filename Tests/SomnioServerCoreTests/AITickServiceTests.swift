@@ -3,6 +3,7 @@ import Logging
 import ServiceLifecycle
 import SomnioCore
 import SomnioData
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
 
@@ -14,8 +15,8 @@ struct AITickServiceTests {
         let logger = Logger(label: "test.ai-tick-service")
         let router = try await WorldRouter(
             sectors: [:],
-            characters: AITickServiceStubCharacterRepository(),
-            npcDialogStates: AITickServiceStubDialogRepository(),
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
             logger: logger
         )
         let service = AITickService(
@@ -32,39 +33,4 @@ struct AITickServiceTests {
         // here as `task.value` throwing.
         try await task.value
     }
-}
-
-private struct AITickServiceStubCharacterRepository: CharacterRepository {
-    func create(accountId _: UUID, name _: String, figure _: Int16, gender _: Gender) async throws -> Character {
-        fatalError("not used in ai-tick-service tests")
-    }
-
-    func findByAccount(_: UUID) async throws -> [Character] {
-        []
-    }
-
-    func findByName(_: String) async throws -> Character? {
-        nil
-    }
-
-    func snapshot(_: Character) async throws -> Bool {
-        false
-    }
-
-    func persistCheckpoint(character _: Character, inventory _: [InventoryRow]) async throws -> Bool {
-        false
-    }
-}
-
-private struct AITickServiceStubDialogRepository: NPCDialogStateRepository {
-    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
-        nil
-    }
-
-    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
-        []
-    }
-
-    func upsert(_: NPCDialogState) async throws {}
-    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
 }

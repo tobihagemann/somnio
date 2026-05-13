@@ -2,87 +2,9 @@ import Foundation
 import Logging
 import SomnioCore
 import SomnioData
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
-
-private struct StubAccountRepository: AccountRepository {
-    func create(name _: String, passwordHash _: String, email _: String) async throws -> Account {
-        fatalError("StubAccountRepository — handler under test does not invoke this")
-    }
-
-    func findByName(_: String) async throws -> Account? {
-        nil
-    }
-
-    func findById(_: UUID) async throws -> Account? {
-        nil
-    }
-}
-
-private struct StubCharacterRepository: CharacterRepository {
-    func create(accountId _: UUID, name _: String, figure _: Int16, gender _: Gender) async throws -> Character {
-        fatalError("StubCharacterRepository — handler under test does not invoke this")
-    }
-
-    func findByAccount(_: UUID) async throws -> [Character] {
-        []
-    }
-
-    func findByName(_: String) async throws -> Character? {
-        nil
-    }
-
-    func snapshot(_: Character) async throws -> Bool {
-        false
-    }
-
-    func persistCheckpoint(character _: Character, inventory _: [InventoryRow]) async throws -> Bool {
-        false
-    }
-}
-
-private struct StubInventoryRepository: InventoryRepository {
-    func loadAll(forCharacter _: UUID) async throws -> [InventoryRow] {
-        []
-    }
-
-    func replaceAll(forCharacter _: UUID, rows _: [InventoryRow]) async throws {}
-}
-
-private struct StubRegistrationRepository: RegistrationRepository {
-    // swiftlint:disable:next function_parameter_count
-    func register(
-        name _: String,
-        passwordHash _: String,
-        email _: String,
-        gender _: Gender,
-        figure _: Int16,
-        starterInventory _: [InventoryRow]
-    ) async throws -> (Account, Character) {
-        fatalError("StubRegistrationRepository — handler under test does not invoke this")
-    }
-}
-
-private struct StubNPCDialogStateRepository: NPCDialogStateRepository {
-    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
-        nil
-    }
-
-    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
-        []
-    }
-
-    func upsert(_: NPCDialogState) async throws {}
-    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
-}
-
-private struct StubWorldClockRepository: WorldClockRepository {
-    func load() async throws -> WorldClock {
-        .bootDefault
-    }
-
-    func save(_: WorldClock) async throws {}
-}
 
 /// Unit-level coverage for `ConnectionActor` state-transition primitives that don't require
 /// driving the full inbound dispatch loop. These are the regression sentinels for the portal-
@@ -115,6 +37,18 @@ struct ConnectionActorTests {
         let state = await connection.currentState
         if case .attached = state {
             Issue.record("setAttached must not promote a connection out of awaitingLogin, but state is \(state)")
+        }
+    }
+
+    @Test func `disconnectForAdminKick is a no-op when there is no active read loop`() async throws {
+        // Outside of `runConnection`, the actor holds no `readLoopTask`. The kick path must
+        // be safe to call regardless — the cancellation is a fire-and-forget signal owned by
+        // the read loop's exit path.
+        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
+        await connection.disconnectForAdminKick()
+        let state = await connection.currentState
+        if case .attached = state {
+            Issue.record("disconnectForAdminKick must not mutate state, but observed \(state)")
         }
     }
 

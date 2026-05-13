@@ -8,7 +8,6 @@ import HummingbirdCore
 import HummingbirdWebSocket
 import Logging
 import PostgresNIO
-import ServiceLifecycle
 import SomnioProtocol
 
 /// `/health` response body. Codable-shaped so `Application` can encode it via the default
@@ -38,7 +37,8 @@ struct HealthResponse: ResponseEncodable {
 public func makeSomnioServerApplication(
     configuration: ServerConfiguration,
     postgres: PostgresClient,
-    dependencies: ConnectionDependencies
+    dependencies: ConnectionDependencies,
+    adminDependencies: AdminConnectionDependencies
 ) -> Application<RouterResponder<BasicWebSocketRequestContext>> {
     let router = Router(context: BasicWebSocketRequestContext.self)
     let healthLogger = Logger(label: "de.tobiha.somnio.server.gameplay.health")
@@ -48,24 +48,7 @@ public func makeSomnioServerApplication(
         await actor.runConnection(inbound: inbound, outbound: outbound)
     }
 
-    let adminBearer = "Bearer \(configuration.adminToken)"
-    let adminLogger = Logger(label: "de.tobiha.somnio.server.admin.connection")
-    router.ws("/admin") { request, _ -> RouterShouldUpgrade in
-        let header = request.headers[.authorization] ?? ""
-        guard constantTimeEquals(header, adminBearer) else {
-            adminLogger.warning("rejected /admin upgrade", metadata: ["reason": "missing_or_bad_token"])
-            return .dontUpgrade
-        }
-        return .upgrade([:])
-    } onUpgrade: { _, _, _ in
-        // Admin command dispatch is implemented in a follow-up; until then keep the socket
-        // open and idle so the operator's CLI can connect end-to-end against the auth gate.
-        // `gracefulShutdown()` is `async throws` and surfaces a `CancellationError` when the
-        // surrounding service group cancels this task; `try?` swallows that so the upgrade
-        // closure returns cleanly when shutdown begins.
-        adminLogger.info("admin connection upgraded; awaiting command dispatch implementation")
-        try? await gracefulShutdown()
-    }
+    mountAdminRoute(on: router, adminToken: configuration.adminToken, adminDependencies: adminDependencies)
 
     router.get("/health") { _, _ -> EditedResponse<HealthResponse> in
         do {
@@ -103,6 +86,29 @@ public func makeSomnioServerApplication(
     )
 }
 
+/// Wire the `/admin` WebSocket route onto an existing router. Extracted so test fixtures
+/// can mount the same gate + dispatch shape on a minimal router without standing up the
+/// full Postgres-backed gameplay application.
+public func mountAdminRoute(
+    on router: some RouterMethods<some WebSocketRequestContext>,
+    adminToken: String,
+    adminDependencies: AdminConnectionDependencies
+) {
+    let adminBearer = "Bearer \(adminToken)"
+    let adminLogger = Logger(label: "de.tobiha.somnio.server.admin.connection")
+    router.ws("/admin") { request, _ -> RouterShouldUpgrade in
+        let header = request.headers[.authorization] ?? ""
+        guard constantTimeEquals(header, adminBearer) else {
+            adminLogger.warning("rejected /admin upgrade", metadata: ["reason": "missing_or_bad_token"])
+            return .dontUpgrade
+        }
+        return .upgrade([:])
+    } onUpgrade: { inbound, outbound, _ in
+        let actor = AdminConnectionActor(dependencies: adminDependencies)
+        await actor.runConnection(inbound: inbound, outbound: outbound)
+    }
+}
+
 /// Constant-time string comparison so the admin token can't be recovered byte-by-byte by
 /// timing the response. The loop walks `max(lhs.count, rhs.count)` bytes, treating the
 /// shorter side's missing bytes as `0`, then folds a length-difference flag into the
@@ -111,8 +117,8 @@ public func makeSomnioServerApplication(
 /// inputs; for candidates shorter than the token the bound is constant (the token's length),
 /// for candidates longer it scales with attacker-supplied length, so the only timing channel
 /// is the secret's length itself — the byte-by-byte recovery the helper exists to prevent
-/// is closed.
-private func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+/// is closed. `internal` so tests can pin the invariant directly.
+func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
     let lhsBytes = Array(lhs.utf8)
     let rhsBytes = Array(rhs.utf8)
     let length = max(lhsBytes.count, rhsBytes.count)

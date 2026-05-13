@@ -34,8 +34,15 @@ SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
                  # Hummingbird + HummingbirdWebSocket
 SomnioServer     # Hummingbird executable: thin shim that calls SomnioServerCore.runServer()
                  # depends on SomnioServerCore + Logging
-SomnioCLI        # Admin CLI invoked as `somniocli <verb>`
-                 # depends on SomnioCore + SomnioProtocol + ArgumentParser
+SomnioCLICore    # Admin CLI command tree, transport, output rendering, localization
+                 # depends on SomnioCore + SomnioProtocol + ArgumentParser +
+                 # HummingbirdWSClient + NIOCore + NIOFoundationCompat + Logging
+SomnioCLI        # macOS/Linux executable: thin @main shim invoking SomnioCLICore.SomnioCLITool
+                 # depends on SomnioCLICore
+SomnioTestSupport # Shared test fixtures (no-op repository stubs, AdminRouteTestApplication,
+                 # StubAdminWorldRouter) consumed by SomnioServerCoreTests and SomnioCLICoreTests
+                 # depends on SomnioCore + SomnioData + SomnioProtocol + SomnioServerCore +
+                 # Hummingbird + HummingbirdWebSocket + Logging
 ```
 
 These boundaries are strict:
@@ -45,7 +52,8 @@ These boundaries are strict:
 - SomnioUI must never import SomnioData.
 - SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).
 - SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline).
-- SomnioCLI must never import SomnioUI, Sparkle, or SomnioServerCore.
+- SomnioCLICore must never import SomnioUI, Sparkle, or SomnioServerCore.
+- SomnioCLI is a thin executable shim and must depend only on SomnioCLICore.
 
 Enforce by reading `Package.swift` dependency lists and grepping for forbidden imports per module.
 
@@ -145,7 +153,7 @@ Server runtime configuration is resolved from environment variables (resolution 
 | `SOMNIO_SECTORS_DIR` | `Tests/SomnioCoreTests/Resources/MapFixtures` | yes |
 | `SOMNIO_DATABASE_URL` | localhost fallback | yes |
 
-The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate).
+The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
 
 ## Lint & Format
 
@@ -170,11 +178,11 @@ CI on GitHub Actions mirrors the same checks (`.github/workflows/ci.yml`).
 
 ### Localization
 
-Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` resources live in `Bundle.module`, not `Bundle.main`, so the bare `NSLocalizedString("key")` and `Text("key")` overloads silently miss the catalog. Use `String(localized: key, bundle: .module)` from Foundation paths and `Text(_, bundle: .module)` from SwiftUI views. When the player client and editor add user-facing views, define a per-target `Loc` enum that wraps these calls so the bundle pinning stays in one place.
+Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` resources live in `Bundle.module`, not `Bundle.main`, so the bare `NSLocalizedString("key")` and `Text("key")` overloads silently miss the catalog. Use `String(localized: key, bundle: .module)` from Foundation paths and `Text(_, bundle: .module)` from SwiftUI views. When the player client and editor add user-facing views, define a per-target `L` enum (matching `Sources/SomnioCLICore/Localization.swift`) that wraps these calls so the bundle pinning stays in one place.
 
 For custom views that accept a "localized title" parameter, prefer `LocalizedStringResource` — it defers locale resolution to the consumer's bundle.
 
-`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land. The admin CLI is English-only.
+`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land. The admin CLI ships a bilingual catalog at `Sources/SomnioCLICore/Resources/Localizable.xcstrings` covering the admin output strings; access goes through `enum L` in `Sources/SomnioCLICore/Localization.swift` with the standard `Bundle.module` pinning.
 
 ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
 

@@ -1,0 +1,244 @@
+{
+  "sourceLanguage" : "en",
+  "version" : "1.0",
+  "strings" : {
+    "%@ could not be found on the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konnte im Server nicht gefunden werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not be found on the server."
+          }
+        }
+      }
+    },
+    "%@ was kicked from the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wurde aus dem Server gekickt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ was kicked from the server."
+          }
+        }
+      }
+    },
+    "Broadcast message: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broadcast Nachricht: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broadcast message: %@"
+          }
+        }
+      }
+    },
+    "It is the year %1$@, the month %2$@, the day %3$@ and the time is %4$@:%5$@:%6$@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wir schreiben das Jahr %1$@, den Monat %2$@, den Tag %3$@ und es ist %4$@:%5$@:%6$@ Uhr."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It is the year %1$@, the month %2$@, the day %3$@ and the time is %4$@:%5$@:%6$@."
+          }
+        }
+      }
+    },
+    "Log file deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log Datei wurde gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log file deleted."
+          }
+        }
+      }
+    },
+    "Log file is empty or does not exist." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log Datei ist leer bzw. existiert nicht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log file is empty or does not exist."
+          }
+        }
+      }
+    },
+    "Number of players on the server: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzahl an Spieler im Server: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Number of players on the server: %@"
+          }
+        }
+      }
+    },
+    "Successfully logged into the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfolgreich in den Server eingeloggt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Successfully logged into the server."
+          }
+        }
+      }
+    },
+    "The error %@ occurred." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Fehler %@ ist aufgetaucht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The error %@ occurred."
+          }
+        }
+      }
+    },
+    "The server is running version: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server läuft mit der Version: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is running version: %@"
+          }
+        }
+      }
+    },
+    "Unknown command." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unbekannter Befehl."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown command."
+          }
+        }
+      }
+    },
+    "WebLog file deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebLog Datei wurde gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebLog file deleted."
+          }
+        }
+      }
+    },
+    "WebLog file is empty or does not exist." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebLog Datei ist leer bzw. existiert nicht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebLog file is empty or does not exist."
+          }
+        }
+      }
+    },
+    "Welcome to the Somnio Console!" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willkommen zur Somnio Console!"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to the Somnio Console!"
+          }
+        }
+      }
+    }
+  }
+}

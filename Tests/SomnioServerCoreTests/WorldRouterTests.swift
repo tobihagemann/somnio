@@ -3,6 +3,7 @@ import Logging
 import SomnioCore
 import SomnioData
 import SomnioProtocol
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
 
@@ -24,7 +25,7 @@ struct WorldRouterTests {
                 "A": makeSector(name: "A", npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "hi $name.")]),
                 "B": makeSector(name: "B", npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "")])
             ],
-            characters: WorldRouterStubCharacterRepository(),
+            characters: StubCharacterRepository(),
             npcDialogStates: dialogRepo,
             logger: routerLogger
         )
@@ -78,7 +79,7 @@ struct WorldRouterTests {
                     npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "first line.\n---\nsecond line.")]
                 )
             ],
-            characters: WorldRouterStubCharacterRepository(),
+            characters: StubCharacterRepository(),
             npcDialogStates: dialogRepo,
             logger: Logger(label: "test.world-router.preload")
         )
@@ -115,7 +116,7 @@ struct WorldRouterTests {
                     npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "first.\n---\nsecond.\n---\nthird.")]
                 )
             ],
-            characters: WorldRouterStubCharacterRepository(),
+            characters: StubCharacterRepository(),
             npcDialogStates: dialogRepo,
             logger: Logger(label: "test.world-router.upsert")
         )
@@ -153,7 +154,7 @@ struct WorldRouterTests {
                     npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "first.\n---\nsecond.\n---\nthird.")]
                 )
             ],
-            characters: WorldRouterStubCharacterRepository(),
+            characters: StubCharacterRepository(),
             npcDialogStates: dialogRepo,
             logger: Logger(label: "test.world-router.upsert-fault")
         )
@@ -187,7 +188,7 @@ struct WorldRouterTests {
                     npcs: [makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: "Once: $name.")]
                 )
             ],
-            characters: WorldRouterStubCharacterRepository(),
+            characters: StubCharacterRepository(),
             npcDialogStates: dialogRepo,
             logger: Logger(label: "test.world-router.fault")
         )
@@ -218,8 +219,8 @@ struct WorldRouterTests {
         let logger = Logger(label: "test.world-router.broadcast")
         let router = try await WorldRouter(
             sectors: [:],
-            characters: WorldRouterStubCharacterRepository(),
-            npcDialogStates: WorldRouterStubNPCDialogStateRepository(),
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
             logger: logger
         )
         let dependencies = makeDependencies(router: router, logger: logger)
@@ -229,8 +230,8 @@ struct WorldRouterTests {
         let outboxB = await connectionB.connectionOutbox
         let accountA = UUID()
         let accountB = UUID()
-        _ = await router.register(actor: connectionA, accountId: accountA)
-        _ = await router.register(actor: connectionB, accountId: accountB)
+        _ = await router.register(actor: connectionA, accountId: accountA, characterName: "TestPlayerA")
+        _ = await router.register(actor: connectionB, accountId: accountB, characterName: "TestPlayerB")
         // Both connections need to be in `attached` state to receive the broadcast.
         await connectionA.markAttached(entityIndex: 1, sectorName: "X", accountId: accountA)
         await connectionB.markAttached(entityIndex: 1, sectorName: "X", accountId: accountB)
@@ -254,15 +255,15 @@ struct WorldRouterTests {
         let logger = Logger(label: "test.world-router.gate")
         let router = try await WorldRouter(
             sectors: [:],
-            characters: WorldRouterStubCharacterRepository(),
-            npcDialogStates: WorldRouterStubNPCDialogStateRepository(),
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
             logger: logger
         )
         let dependencies = makeDependencies(router: router, logger: logger)
         let connection = ConnectionActor(dependencies: dependencies)
         let outbox = await connection.connectionOutbox
         let accountId = UUID()
-        _ = await router.register(actor: connection, accountId: accountId)
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "TestPlayer")
         // Deliberately do not mark as attached: the connection is in the same window where
         // a real login has registered but not yet streamed `loginResult.ok`.
 
@@ -271,6 +272,94 @@ struct WorldRouterTests {
 
         let frames = await collect(outbox: outbox)
         #expect(frames.isEmpty)
+        await router.unregister(accountId: accountId)
+    }
+
+    @Test func `loggedInPlayerCount counts only attached connections`() async throws {
+        let logger = Logger(label: "test.world-router.player-count")
+        let router = try await WorldRouter(
+            sectors: [:],
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
+            logger: logger
+        )
+        let dependencies = makeDependencies(router: router, logger: logger)
+        let attachedConnection = ConnectionActor(dependencies: dependencies)
+        let unattachedConnection = ConnectionActor(dependencies: dependencies)
+        let attachedAccount = UUID()
+        let unattachedAccount = UUID()
+        _ = await router.register(actor: attachedConnection, accountId: attachedAccount, characterName: "Alice")
+        _ = await router.register(actor: unattachedConnection, accountId: unattachedAccount, characterName: "Bob")
+        await attachedConnection.markAttached(entityIndex: 1, sectorName: "X", accountId: attachedAccount)
+
+        let count = await router.loggedInPlayerCount()
+        #expect(count == 1)
+
+        await router.unregister(accountId: attachedAccount)
+        await router.unregister(accountId: unattachedAccount)
+    }
+
+    @Test func `kickByCharacterName returns false when nobody matches`() async throws {
+        let logger = Logger(label: "test.world-router.kick-miss")
+        let router = try await WorldRouter(
+            sectors: [:],
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
+            logger: logger
+        )
+        let dependencies = makeDependencies(router: router, logger: logger)
+        let connection = ConnectionActor(dependencies: dependencies)
+        let accountId = UUID()
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "Alice")
+
+        let kicked = await router.kickByCharacterName("Bob")
+        #expect(kicked == false)
+
+        await router.unregister(accountId: accountId)
+    }
+
+    @Test func `kickByCharacterName normalizes case to match the schema collation`() async throws {
+        let logger = Logger(label: "test.world-router.kick-normalize")
+        let router = try await WorldRouter(
+            sectors: [:],
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
+            logger: logger
+        )
+        let dependencies = makeDependencies(router: router, logger: logger)
+        let connection = ConnectionActor(dependencies: dependencies)
+        let accountId = UUID()
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "Saibot")
+
+        // `LOWER(NORMALIZE(name, NFKC))` is the schema collation that `findByName` uses;
+        // the operator can type the name in any case and still match.
+        let kicked = await router.kickByCharacterName("saibot")
+        #expect(kicked)
+
+        await router.unregister(accountId: accountId)
+    }
+
+    @Test func `kickByCharacterName matches NFKC compatibility equivalent names`() async throws {
+        // The schema's `name_normalized` column uses `LOWER(NORMALIZE(name, NFKC))`, so a
+        // character registered under a full-width form must match a kick request using the
+        // ASCII-folded form (and vice versa). The ASCII-only test above can't catch a
+        // regression that drops `.precomposedStringWithCompatibilityMapping`.
+        let logger = Logger(label: "test.world-router.kick-nfkc")
+        let router = try await WorldRouter(
+            sectors: [:],
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
+            logger: logger
+        )
+        let dependencies = makeDependencies(router: router, logger: logger)
+        let connection = ConnectionActor(dependencies: dependencies)
+        let accountId = UUID()
+        // Full-width "Ｓａｉｂｏｔ" — every codepoint has an NFKC-equivalent ASCII form.
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "Ｓａｉｂｏｔ")
+
+        let kicked = await router.kickByCharacterName("saibot")
+        #expect(kicked)
+
         await router.unregister(accountId: accountId)
     }
 
@@ -326,15 +415,15 @@ struct WorldRouterTests {
     private func makeDependencies(router: WorldRouter, logger: Logger) -> ConnectionDependencies {
         let worldClockService = WorldClockService(
             worldRouter: router,
-            worldClocks: WorldRouterStubWorldClockRepository(),
+            worldClocks: StubWorldClockRepository(),
             initialClock: .bootDefault,
             logger: logger
         )
         return ConnectionDependencies(
-            accounts: WorldRouterStubAccountRepository(),
-            characters: WorldRouterStubCharacterRepository(),
-            inventories: WorldRouterStubInventoryRepository(),
-            registrations: WorldRouterStubRegistrationRepository(),
+            accounts: StubAccountRepository(),
+            characters: StubCharacterRepository(),
+            inventories: StubInventoryRepository(),
+            registrations: StubRegistrationRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: router,
             worldClock: worldClockService,
@@ -454,83 +543,4 @@ private actor FaultyNPCDialogStateRepository: NPCDialogStateRepository {
             throw Fault.rigged
         }
     }
-}
-
-private struct WorldRouterStubAccountRepository: AccountRepository {
-    func create(name _: String, passwordHash _: String, email _: String) async throws -> Account {
-        fatalError("not used in world-router tests")
-    }
-
-    func findByName(_: String) async throws -> Account? {
-        nil
-    }
-
-    func findById(_: UUID) async throws -> Account? {
-        nil
-    }
-}
-
-private struct WorldRouterStubCharacterRepository: CharacterRepository {
-    func create(accountId _: UUID, name _: String, figure _: Int16, gender _: Gender) async throws -> Character {
-        fatalError("not used in world-router tests")
-    }
-
-    func findByAccount(_: UUID) async throws -> [Character] {
-        []
-    }
-
-    func findByName(_: String) async throws -> Character? {
-        nil
-    }
-
-    func snapshot(_: Character) async throws -> Bool {
-        false
-    }
-
-    func persistCheckpoint(character _: Character, inventory _: [InventoryRow]) async throws -> Bool {
-        false
-    }
-}
-
-private struct WorldRouterStubInventoryRepository: InventoryRepository {
-    func loadAll(forCharacter _: UUID) async throws -> [InventoryRow] {
-        []
-    }
-
-    func replaceAll(forCharacter _: UUID, rows _: [InventoryRow]) async throws {}
-}
-
-private struct WorldRouterStubRegistrationRepository: RegistrationRepository {
-    // swiftlint:disable:next function_parameter_count
-    func register(
-        name _: String,
-        passwordHash _: String,
-        email _: String,
-        gender _: Gender,
-        figure _: Int16,
-        starterInventory _: [InventoryRow]
-    ) async throws -> (Account, Character) {
-        fatalError("not used in world-router tests")
-    }
-}
-
-private struct WorldRouterStubNPCDialogStateRepository: NPCDialogStateRepository {
-    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
-        nil
-    }
-
-    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
-        []
-    }
-
-    func upsert(_: NPCDialogState) async throws {}
-    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
-}
-
-private struct WorldRouterStubWorldClockRepository: WorldClockRepository {
-    func load() async throws -> WorldClock {
-        .bootDefault
-    }
-
-    func save(_: WorldClock) async throws {}
 }

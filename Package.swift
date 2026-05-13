@@ -13,7 +13,8 @@ let package = Package(
         .library(name: "SomnioCore", targets: ["SomnioCore"]),
         .library(name: "SomnioData", targets: ["SomnioData"]),
         .library(name: "SomnioUI", targets: ["SomnioUI"]),
-        .library(name: "SomnioServerCore", targets: ["SomnioServerCore"])
+        .library(name: "SomnioServerCore", targets: ["SomnioServerCore"]),
+        .library(name: "SomnioCLICore", targets: ["SomnioCLICore"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -104,9 +105,27 @@ let package = Package(
                 .product(name: "NIOFoundationCompat", package: "swift-nio")
             ]
         ),
+        .target(
+            name: "SomnioTestSupport",
+            dependencies: [
+                "SomnioCore",
+                "SomnioData",
+                "SomnioProtocol",
+                "SomnioServerCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
+                .product(name: "Logging", package: "swift-log")
+            ]
+        ),
+
         .testTarget(
             name: "SomnioServerCoreTests",
-            dependencies: ["SomnioServerCore"],
+            dependencies: [
+                "SomnioServerCore",
+                "SomnioTestSupport",
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+                .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
+            ],
             resources: [
                 .copy("Resources/Corrupt"),
                 .copy("Resources/MapFixtures")
@@ -121,14 +140,33 @@ let package = Package(
             ]
         ),
 
-        .executableTarget(
-            name: "SomnioCLI",
+        .target(
+            name: "SomnioCLICore",
             dependencies: [
                 "SomnioCore",
                 "SomnioProtocol",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "Logging", package: "swift-log")
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio")
+            ],
+            resources: [.process("Resources/Localizable.xcstrings")]
+        ),
+        .testTarget(
+            name: "SomnioCLICoreTests",
+            dependencies: [
+                "SomnioCLICore",
+                "SomnioServerCore",
+                "SomnioTestSupport",
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+                .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
             ]
+        ),
+
+        .executableTarget(
+            name: "SomnioCLI",
+            dependencies: ["SomnioCLICore"]
         )
     ]
 )

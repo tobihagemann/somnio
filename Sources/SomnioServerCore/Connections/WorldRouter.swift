@@ -11,8 +11,25 @@ import SomnioProtocol
 /// shutdown-order *before* the Hummingbird app exits its accept loop and *after* the
 /// checkpoint timer is stopped.
 public actor WorldRouter: Service {
+    /// Per-account record in `loggedInConnections`. The normalized name is cached at
+    /// register time so `kickByCharacterName` has a synchronous lookup against the
+    /// snapshot — see the helper below — and there is no transient `nil` window an
+    /// after-attach write would create. The normalized form mirrors the Postgres
+    /// `LOWER(NORMALIZE(name, NFKC))` collation so a `kick saibot` lands the character the
+    /// operator looked up by name elsewhere (e.g. through the data layer).
+    private struct LoggedInEntry {
+        let actor: ConnectionActor
+        let normalizedName: String
+    }
+
+    /// Mirrors the SQL `LOWER(NORMALIZE(name, NFKC))` collation used by every `name_normalized`
+    /// generated column in the schema.
+    private static func normalize(_ name: String) -> String {
+        name.precomposedStringWithCompatibilityMapping.lowercased()
+    }
+
     private let sectorActors: [String: PerSectorActor]
-    private var loggedInConnections: [UUID: ConnectionActor] = [:]
+    private var loggedInConnections: [UUID: LoggedInEntry] = [:]
     private let logger: Logger
     private let characters: any CharacterRepository
     private let npcDialogStates: any NPCDialogStateRepository
@@ -49,15 +66,56 @@ public actor WorldRouter: Service {
 
     /// Returns `false` when the same `accountId` is already registered — the caller maps
     /// that to `LoginResultCode.alreadyLoggedIn` and closes the second connection after the
-    /// response.
-    public func register(actor: ConnectionActor, accountId: UUID) -> Bool {
+    /// response. `characterName` is pinned at registration so admin kick-by-name lookups
+    /// work the moment the connection enters `loggedInConnections`, before
+    /// `LoginHandler` has had a chance to call `markAttached`.
+    public func register(actor: ConnectionActor, accountId: UUID, characterName: String) -> Bool {
         guard loggedInConnections[accountId] == nil else { return false }
-        loggedInConnections[accountId] = actor
+        loggedInConnections[accountId] = LoggedInEntry(
+            actor: actor,
+            normalizedName: Self.normalize(characterName)
+        )
         return true
     }
 
     public func unregister(accountId: UUID) {
         loggedInConnections.removeValue(forKey: accountId)
+    }
+
+    /// Number of currently logged-in *and attached* connections. Mirrors the attached-only
+    /// gate in `broadcastToAllConnections` so the count excludes the post-register /
+    /// pre-attach window. The per-connection `currentState` check is cross-actor, so the
+    /// helper is `async`; the count is therefore a near-real-time approximation rather
+    /// than a transactional snapshot, matching the legacy semantics. The snapshot is
+    /// taken once at entry, so a connection that unregisters during the iteration may
+    /// still be counted, and a connection that registers after the snapshot is missed
+    /// — an operator polling `players` immediately around a login/logout sees this
+    /// drift, but the steady-state count is correct.
+    public func loggedInPlayerCount() async -> Int {
+        let snapshot = Array(loggedInConnections.values)
+        var count = 0
+        for entry in snapshot {
+            guard case .attached = await entry.actor.currentState else { continue }
+            count += 1
+        }
+        return count
+    }
+
+    /// Disconnect every logged-in connection whose cached character name matches `name`.
+    /// The scan over the snapshot is synchronous — no cross-actor calls between matches —
+    /// so the router's isolation is not yielded mid-iteration; only the per-match
+    /// `disconnectForAdminKick()` cross-actor hop suspends. Returns `true` when at least
+    /// one match was kicked. The kicked connection's own read-loop exit path owns
+    /// `worldRouter.unregister`, so the dictionary entry leaves `loggedInConnections`
+    /// asynchronously after the cancelled loop unwinds.
+    public func kickByCharacterName(_ name: String) async -> Bool {
+        let needle = Self.normalize(name)
+        let snapshot = Array(loggedInConnections.values)
+        let matches = snapshot.filter { $0.normalizedName == needle }
+        for entry in matches {
+            await entry.actor.disconnectForAdminKick()
+        }
+        return !matches.isEmpty
     }
 
     /// Periodic checkpoint pass — write every logged-in player's full character + inventory
@@ -137,9 +195,9 @@ public actor WorldRouter: Service {
             return
         }
         let snapshot = Array(loggedInConnections.values)
-        for actor in snapshot {
-            guard case .attached = await actor.currentState else { continue }
-            let outbox = await actor.connectionOutbox
+        for entry in snapshot {
+            guard case .attached = await entry.actor.currentState else { continue }
+            let outbox = await entry.actor.connectionOutbox
             outbox.send(frame)
         }
     }
@@ -153,9 +211,9 @@ public actor WorldRouter: Service {
         let connections = Array(loggedInConnections.values)
         guard !connections.isEmpty else { return }
         await withTaskGroup(of: Void.self) { group in
-            for actor in connections {
+            for entry in connections {
                 group.addTask {
-                    await actor.drainForShutdown()
+                    await entry.actor.drainForShutdown()
                 }
             }
             await group.waitForAll()

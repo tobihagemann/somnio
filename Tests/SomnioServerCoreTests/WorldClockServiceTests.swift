@@ -4,6 +4,7 @@ import ServiceLifecycle
 import SomnioCore
 import SomnioData
 import SomnioProtocol
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
 
@@ -23,7 +24,7 @@ struct WorldClockServiceTests {
         let connection = try await ConnectionActor(dependencies: makeStubDependencies(router: router))
         let outbox = await connection.connectionOutbox
         let accountId = UUID()
-        _ = await router.register(actor: connection, accountId: accountId)
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "TestPlayer")
         // The world-clock broadcast gates on `attached` state so the post-login join
         // sequence cannot get a stray `dateTick` ahead of `loginResult`/`enterSector`.
         await connection.markAttached(entityIndex: 1, sectorName: "X", accountId: accountId)
@@ -53,7 +54,7 @@ struct WorldClockServiceTests {
         let connection = try await ConnectionActor(dependencies: makeStubDependencies(router: router))
         let outbox = await connection.connectionOutbox
         let accountId = UUID()
-        _ = await router.register(actor: connection, accountId: accountId)
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "TestPlayer")
         // The world-clock broadcast gates on `attached` state so the post-login join
         // sequence cannot get a stray `dateTick` ahead of `loginResult`/`enterSector`.
         await connection.markAttached(entityIndex: 1, sectorName: "X", accountId: accountId)
@@ -81,7 +82,7 @@ struct WorldClockServiceTests {
         let connection = try await ConnectionActor(dependencies: makeStubDependencies(router: router))
         let outbox = await connection.connectionOutbox
         let accountId = UUID()
-        _ = await router.register(actor: connection, accountId: accountId)
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "TestPlayer")
         // The world-clock broadcast gates on `attached` state so the post-login join
         // sequence cannot get a stray `dateTick` ahead of `loginResult`/`enterSector`.
         await connection.markAttached(entityIndex: 1, sectorName: "X", accountId: accountId)
@@ -127,7 +128,7 @@ struct WorldClockServiceTests {
         let connection = try await ConnectionActor(dependencies: makeStubDependencies(router: router))
         let outbox = await connection.connectionOutbox
         let accountId = UUID()
-        _ = await router.register(actor: connection, accountId: accountId)
+        _ = await router.register(actor: connection, accountId: accountId, characterName: "TestPlayer")
         // The world-clock broadcast gates on `attached` state so the post-login join
         // sequence cannot get a stray `dateTick` ahead of `loginResult`/`enterSector`.
         await connection.markAttached(entityIndex: 1, sectorName: "X", accountId: accountId)
@@ -199,8 +200,8 @@ struct WorldClockServiceTests {
     private func makeEmptyRouter() async throws -> WorldRouter {
         try await WorldRouter(
             sectors: [:],
-            characters: WorldClockStubCharacterRepository(),
-            npcDialogStates: WorldClockStubNPCDialogStateRepository(),
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
             logger: Logger(label: "test.world-clock-router")
         )
     }
@@ -214,10 +215,10 @@ struct WorldClockServiceTests {
             logger: logger
         )
         return ConnectionDependencies(
-            accounts: WorldClockStubAccountRepository(),
-            characters: WorldClockStubCharacterRepository(),
-            inventories: WorldClockStubInventoryRepository(),
-            registrations: WorldClockStubRegistrationRepository(),
+            accounts: StubAccountRepository(),
+            characters: StubCharacterRepository(),
+            inventories: StubInventoryRepository(),
+            registrations: StubRegistrationRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: router,
             worldClock: worldClockService,
@@ -284,75 +285,4 @@ private actor ThrowingSaveRecorder: WorldClockRepository {
     func attemptCount() -> Int {
         attempts
     }
-}
-
-private struct WorldClockStubAccountRepository: AccountRepository {
-    func create(name _: String, passwordHash _: String, email _: String) async throws -> Account {
-        fatalError("not used in world-clock tests")
-    }
-
-    func findByName(_: String) async throws -> Account? {
-        nil
-    }
-
-    func findById(_: UUID) async throws -> Account? {
-        nil
-    }
-}
-
-private struct WorldClockStubCharacterRepository: CharacterRepository {
-    func create(accountId _: UUID, name _: String, figure _: Int16, gender _: Gender) async throws -> Character {
-        fatalError("not used in world-clock tests")
-    }
-
-    func findByAccount(_: UUID) async throws -> [Character] {
-        []
-    }
-
-    func findByName(_: String) async throws -> Character? {
-        nil
-    }
-
-    func snapshot(_: Character) async throws -> Bool {
-        false
-    }
-
-    func persistCheckpoint(character _: Character, inventory _: [InventoryRow]) async throws -> Bool {
-        false
-    }
-}
-
-private struct WorldClockStubInventoryRepository: InventoryRepository {
-    func loadAll(forCharacter _: UUID) async throws -> [InventoryRow] {
-        []
-    }
-
-    func replaceAll(forCharacter _: UUID, rows _: [InventoryRow]) async throws {}
-}
-
-private struct WorldClockStubRegistrationRepository: RegistrationRepository {
-    // swiftlint:disable:next function_parameter_count
-    func register(
-        name _: String,
-        passwordHash _: String,
-        email _: String,
-        gender _: Gender,
-        figure _: Int16,
-        starterInventory _: [InventoryRow]
-    ) async throws -> (Account, Character) {
-        fatalError("not used in world-clock tests")
-    }
-}
-
-private struct WorldClockStubNPCDialogStateRepository: NPCDialogStateRepository {
-    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
-        nil
-    }
-
-    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
-        []
-    }
-
-    func upsert(_: NPCDialogState) async throws {}
-    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
 }

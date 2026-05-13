@@ -2,6 +2,7 @@ import Foundation
 import Logging
 import PostgresNIO
 import ServiceLifecycle
+import SomnioCore
 import SomnioData
 
 /// Entry point the `SomnioServer` executable shim calls. Owns the entire bootstrap:
@@ -59,6 +60,7 @@ public func runServer(
     let worldRouter: WorldRouter
     let worldClockService: WorldClockService
     let dependencies: ConnectionDependencies
+    let adminDependencies: AdminConnectionDependencies
     do {
         try await waitForClientQueryable(client, logger: postgresLogger)
         try await MigrationRunner(client: client, logger: migrationsLogger).applyPending()
@@ -104,6 +106,15 @@ public func runServer(
             configuration: serverConfiguration,
             logger: Logger(label: "de.tobiha.somnio.server.gameplay.connection")
         )
+        adminDependencies = AdminConnectionDependencies(
+            worldRouter: worldRouter as any AdminWorldRouter,
+            worldClock: worldClockService,
+            serverVersion: SomnioServerVersion.value,
+            logsDirectory: LoggingPaths.logsDirectory,
+            gameplayLogFileName: ServerLoggingConfiguration.gameplayLogFileName,
+            adminLogFileName: ServerLoggingConfiguration.adminLogFileName,
+            logger: Logger(label: "de.tobiha.somnio.server.admin.dispatch")
+        )
     } catch {
         lifecycleLogger.error("startup failed; shutting down", metadata: ["error": "\(error)"])
         await group.triggerGracefulShutdown()
@@ -114,7 +125,8 @@ public func runServer(
     let application = makeSomnioServerApplication(
         configuration: serverConfiguration,
         postgres: client,
-        dependencies: dependencies
+        dependencies: dependencies,
+        adminDependencies: adminDependencies
     )
     let checkpointService = CheckpointService(
         worldRouter: worldRouter,

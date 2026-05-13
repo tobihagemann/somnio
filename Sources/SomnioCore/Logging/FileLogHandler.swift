@@ -140,6 +140,36 @@ public final class FileLogWriter: Sendable {
         }
     }
 
+    /// Atomically close the cached file handle and unlink the current log file *plus
+    /// every rotated archive* under the same lock that gates `write(_:)`. The admin
+    /// `log rm` / `weblog rm` verbs imply the operator wants the contents gone,
+    /// including rotated copies that still contain the lines that motivated the
+    /// removal. Splitting close and unlink into two public calls would re-introduce
+    /// the failure mode this method exists to close: a concurrent `write` between the
+    /// two would acquire the mutex via `ensureFileHandle`, recreate the file, and
+    /// resume streaming into an already-unlinked inode. Returns `true` when the
+    /// *active* log file was unlinked; archive deletions are best-effort and their
+    /// individual outcomes do not affect the return value.
+    public func closeAndRemove() -> Bool {
+        handleState.withLock { handle in
+            try? handle?.close()
+            handle = nil
+            let fm = FileManager.default
+            let activeRemoved = (try? fm.removeItem(at: currentLogFile)) != nil
+            // Walk the fixed archive index range rather than computing `allLogFiles`
+            // (which also re-checks the active file). Each archive may or may not
+            // exist; ignore "no such file" failures and any other transient error so
+            // a partially-rotated chain still gets wiped as far as possible.
+            for index in 1 ... maxArchivedFiles {
+                let archive = archivedFile(index: index)
+                if fm.fileExists(atPath: archive.path) {
+                    try? fm.removeItem(at: archive)
+                }
+            }
+            return activeRemoved
+        }
+    }
+
     // MARK: - Rotation
 
     private func rotateIfNeeded(_ handle: inout FileHandle?) {

@@ -3,6 +3,7 @@ import Logging
 import SomnioCore
 import SomnioData
 import SomnioProtocol
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
 
@@ -64,21 +65,21 @@ struct PortalDateTickTests {
         let sectorB = makeSector(name: "B", portals: [])
         let worldRouter = try await WorldRouter(
             sectors: ["A": sectorA, "B": sectorB],
-            characters: PortalStubCharacterRepository(),
-            npcDialogStates: PortalStubNPCDialogStateRepository(),
+            characters: StubCharacterRepository(),
+            npcDialogStates: StubNPCDialogStateRepository(),
             logger: logger
         )
         let worldClockService = WorldClockService(
             worldRouter: worldRouter,
-            worldClocks: PortalStubWorldClockRepository(),
+            worldClocks: StubWorldClockRepository(),
             initialClock: initialClock,
             logger: logger
         )
         return ConnectionDependencies(
-            accounts: PortalStubAccountRepository(),
-            characters: PortalStubCharacterRepository(),
-            inventories: PortalStubInventoryRepository(),
-            registrations: PortalStubRegistrationRepository(),
+            accounts: StubAccountRepository(),
+            characters: StubCharacterRepository(),
+            inventories: StubInventoryRepository(),
+            registrations: StubRegistrationRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: worldRouter,
             worldClock: worldClockService,
@@ -133,83 +134,4 @@ struct PortalDateTickTests {
         }
         return frames
     }
-}
-
-private struct PortalStubAccountRepository: AccountRepository {
-    func create(name _: String, passwordHash _: String, email _: String) async throws -> Account {
-        fatalError("not used in portal tests")
-    }
-
-    func findByName(_: String) async throws -> Account? {
-        nil
-    }
-
-    func findById(_: UUID) async throws -> Account? {
-        nil
-    }
-}
-
-private struct PortalStubCharacterRepository: CharacterRepository {
-    func create(accountId _: UUID, name _: String, figure _: Int16, gender _: Gender) async throws -> Character {
-        fatalError("not used in portal tests")
-    }
-
-    func findByAccount(_: UUID) async throws -> [Character] {
-        []
-    }
-
-    func findByName(_: String) async throws -> Character? {
-        nil
-    }
-
-    func snapshot(_: Character) async throws -> Bool {
-        false
-    }
-
-    func persistCheckpoint(character _: Character, inventory _: [InventoryRow]) async throws -> Bool {
-        false
-    }
-}
-
-private struct PortalStubInventoryRepository: InventoryRepository {
-    func loadAll(forCharacter _: UUID) async throws -> [InventoryRow] {
-        []
-    }
-
-    func replaceAll(forCharacter _: UUID, rows _: [InventoryRow]) async throws {}
-}
-
-private struct PortalStubRegistrationRepository: RegistrationRepository {
-    // swiftlint:disable:next function_parameter_count
-    func register(
-        name _: String,
-        passwordHash _: String,
-        email _: String,
-        gender _: Gender,
-        figure _: Int16,
-        starterInventory _: [InventoryRow]
-    ) async throws -> (Account, Character) {
-        fatalError("not used in portal tests")
-    }
-}
-
-private struct PortalStubNPCDialogStateRepository: NPCDialogStateRepository {
-    func find(sectorName _: String, npcIndex _: Int16) async throws -> NPCDialogState? {
-        nil
-    }
-
-    func loadAll(sectorName _: String) async throws -> [NPCDialogState] {
-        []
-    }
-
-    func upsert(_: NPCDialogState) async throws {}
-    func reset(sectorName _: String, npcIndex _: Int16) async throws {}
-}
-
-private struct PortalStubWorldClockRepository: WorldClockRepository {
-    func load() async throws -> WorldClock {
-        .bootDefault
-    }
-
-    func save(_: WorldClock) async throws {}
 }

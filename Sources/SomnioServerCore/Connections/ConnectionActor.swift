@@ -27,6 +27,7 @@ public actor ConnectionActor {
     private let outbox: ConnectionOutbox
     private var state: State = .awaitingLogin
     private var writerTask: Task<Void, Never>?
+    private var readLoopTask: Task<CloseDecision, Never>?
     private var logger: Logger {
         dependencies.logger
     }
@@ -45,9 +46,10 @@ public actor ConnectionActor {
     }
 
     /// Drive one gameplay WebSocket from accept to disconnect. Spawns the writer task,
-    /// emits the `Hello` protocol-version frame first, then runs the read loop until it
-    /// returns, and finally writes a per-disconnect snapshot before unregistering with
-    /// the world router.
+    /// emits the `Hello` protocol-version frame first, then runs the read loop in a
+    /// stored child task so an admin kick can `cancel()` it out-of-band. After the loop
+    /// returns (peer EOF, protocol-error close, or admin kick), writes a per-disconnect
+    /// snapshot before unregistering with the world router.
     public func runConnection(
         inbound: WebSocketInboundStream,
         outbound: WebSocketOutboundWriter
@@ -55,23 +57,62 @@ public actor ConnectionActor {
         startWriterTask(outbound: outbound)
         sendHello()
 
-        var closeDecision: CloseDecision = .keepOpen
+        let task = Task { [weak self] () -> CloseDecision in
+            guard let self else { return .keepOpen }
+            return await runReadLoop(inbound: inbound)
+        }
+        readLoopTask = task
+        // `Task { ... }` is unstructured and does not inherit cancellation from the
+        // enclosing Hummingbird upgrade task, so the cancellation handler below bridges
+        // a parent-task cancel (e.g. graceful shutdown) into a `cancel()` on the read
+        // loop. Admin kicks still call `disconnectForAdminKick()` directly; both paths
+        // converge on the same `cancel()`.
+        let closeDecision = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        readLoopTask = nil
+
+        await snapshotAndCleanup()
+        // Three-step exit:
+        //   1. Finish the outbox so the writer task sees end-of-stream.
+        //   2. Await the writer task so every queued frame lands on the wire.
+        //   3. Write the close frame on top of the now-drained stream.
+        // Reordering 1↔2 would deadlock (writer never observes EOF); reordering 2↔3
+        // would race queued frames past the close frame.
+        outbox.finish()
+        await writerTask?.value
+        await close(decision: closeDecision, outbound: outbound)
+    }
+
+    private func runReadLoop(inbound: WebSocketInboundStream) async -> CloseDecision {
+        var decision: CloseDecision = .keepOpen
         do {
             let maxSize = Int(SomnioProtocolConstants.maxFrameLength) + 5
             for try await message in inbound.messages(maxSize: maxSize) {
-                let decision = await handleInboundMessage(message)
-                if case .close = decision {
-                    closeDecision = decision
+                let outcome = await handleInboundMessage(message)
+                if case .close = outcome {
+                    decision = outcome
                     break
                 }
             }
+        } catch is CancellationError {
+            // Admin kick cancelled the loop. Routine, not an error path — log at debug so
+            // the gameplay file backend isn't polluted with a warning per kick.
+            logger.debug("WebSocket read loop cancelled (admin kick)")
         } catch {
             logger.warning("WebSocket read loop error", metadata: ["error": "\(error)"])
         }
+        return decision
+    }
 
-        await snapshotAndCleanup()
-        await close(decision: closeDecision, outbound: outbound)
-        await writerTask?.value
+    /// Synchronous kick affordance: cancel the read-loop task so
+    /// `inbound.messages(...)` unblocks with `CancellationError` immediately. Teardown
+    /// (snapshot, unregister, outbox finish, outbound close) is owned by
+    /// `runConnection`'s exit path, so the kick path here only releases the loop.
+    public func disconnectForAdminKick() {
+        readLoopTask?.cancel()
     }
 
     /// Used by the shutdown drain (Step 11): broadcasts `leave(leftGame: true)` to old peers
@@ -259,7 +300,8 @@ public actor ConnectionActor {
     }
 
     private func close(decision: CloseDecision, outbound: WebSocketOutboundWriter) async {
-        outbox.finish()
+        // The outbox is already finished and drained by the time `runConnection` calls this
+        // helper, so the only work here is selecting the wire close-code and reason.
         switch decision {
         case .keepOpen:
             try? await outbound.close(.goingAway, reason: "connection closed")

@@ -158,6 +158,69 @@ struct LoggingTests {
         #expect(!fm.fileExists(atPath: writer.archivedFile(index: 3).path))
     }
 
+    @Test func `closeAndRemove deletes the active log and clears the cached handle`() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("somnio-log-rm-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let writer = FileLogWriter(directory: tmp, fileName: "rm.log")
+        writer.write("primed\n")
+        #expect(FileManager.default.fileExists(atPath: writer.currentLogFile.path))
+
+        let removed = writer.closeAndRemove()
+        #expect(removed)
+        #expect(FileManager.default.fileExists(atPath: writer.currentLogFile.path) == false)
+
+        // The next write must re-open the file cleanly. If `closeAndRemove` had left the
+        // cached `FileHandle` alive, this write would stream into the unlinked inode and
+        // the new file would stay empty.
+        writer.write("after-rm\n")
+        let after = try String(contentsOf: writer.currentLogFile, encoding: .utf8)
+        #expect(after == "after-rm\n")
+    }
+
+    @Test func `closeAndRemove returns false when no log file exists yet`() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("somnio-log-absent-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let writer = FileLogWriter(directory: tmp, fileName: "absent.log")
+        // The writer was never primed, so `currentLogFile` does not exist on disk.
+        #expect(FileManager.default.fileExists(atPath: writer.currentLogFile.path) == false)
+        let removed = writer.closeAndRemove()
+        #expect(removed == false)
+    }
+
+    @Test func `closeAndRemove also wipes rotated archives`() throws {
+        // Operator-visible semantics of `log rm` / `weblog rm` are "the log is gone",
+        // so the writer expunges every rotated copy in the same lock. A partial wipe
+        // would leave the bytes that motivated the `rm` on disk in `<base>.1.log`.
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("somnio-log-rm-archives-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let writer = FileLogWriter(
+            directory: tmp,
+            fileName: "rotate.log",
+            maxFileSize: 16,
+            maxArchivedFiles: 2
+        )
+        for index in 0 ..< 3 {
+            writer.write("line \(index) padding padding\n")
+        }
+        // Confirm we actually have at least one archive on disk before removing.
+        #expect(FileManager.default.fileExists(atPath: writer.archivedFile(index: 1).path))
+
+        _ = writer.closeAndRemove()
+        // Active log and every archive in `[1, maxArchivedFiles]` are gone.
+        #expect(FileManager.default.fileExists(atPath: writer.currentLogFile.path) == false)
+        #expect(FileManager.default.fileExists(atPath: writer.archivedFile(index: 1).path) == false)
+        #expect(FileManager.default.fileExists(atPath: writer.archivedFile(index: 2).path) == false)
+    }
+
     @Test func `file log writer shared cache returns same instance per path`() {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
         let a = FileLogWriter.shared(directory: tmp, fileName: "shared-\(UUID().uuidString).log")

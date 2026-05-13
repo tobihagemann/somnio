@@ -1,4 +1,5 @@
 import Foundation
+import SomnioCore
 import SomnioData
 
 /// Runtime configuration for the gameplay server, resolved from process environment variables.
@@ -31,10 +32,11 @@ public struct ServerConfiguration: Sendable, Equatable {
     }
 
     public static let defaultHttpHost: String = "0.0.0.0"
-    public static let defaultHttpPort: Int = 8080
+    public static let defaultHttpPort: Int = AdminDebugDefaults.port
     /// Debug-only fallback so a fresh dev clone with no env can still spin up `/admin`. Release
-    /// builds require an explicit token via `SOMNIO_ADMIN_TOKEN`.
-    public static let debugAdminToken: String = "dev-admin"
+    /// builds require an explicit token via `SOMNIO_ADMIN_TOKEN`. Re-exported from
+    /// `SomnioCore.AdminDebugDefaults` so the CLI and server can't silently drift.
+    public static let debugAdminToken: String = AdminDebugDefaults.bearerToken
     /// Debug-only fallback resolved against the working directory at boot. Release builds
     /// require `SOMNIO_SECTORS_DIR` so a misconfigured deployment fails closed instead of
     /// loading the bundled test fixtures.
