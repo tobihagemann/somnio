@@ -40,9 +40,11 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioCoreTests",
-            dependencies: ["SomnioCore"],
+            dependencies: ["SomnioCore", "SomnioCatalogTestSupport"],
             resources: [.copy("Resources/MapFixtures")]
         ),
+
+        .target(name: "SomnioCatalogTestSupport"),
 
         .systemLibrary(
             name: "CArgon2",
@@ -62,11 +64,15 @@ let package = Package(
         ),
         .testTarget(name: "SomnioDataTests", dependencies: ["SomnioData"]),
 
-        .target(name: "SomnioUI", dependencies: [
-            "SomnioCore",
-            .product(name: "Logging", package: "swift-log")
-        ]),
-        .testTarget(name: "SomnioUITests", dependencies: ["SomnioUI"]),
+        .target(
+            name: "SomnioUI",
+            dependencies: [
+                "SomnioCore",
+                .product(name: "Logging", package: "swift-log")
+            ],
+            resources: [.process("Resources/Localizable.xcstrings")]
+        ),
+        .testTarget(name: "SomnioUITests", dependencies: ["SomnioUI", "SomnioCatalogTestSupport"]),
 
         .executableTarget(
             name: "SomnioApp",
@@ -159,6 +165,7 @@ let package = Package(
                 "SomnioCLICore",
                 "SomnioServerCore",
                 "SomnioTestSupport",
+                "SomnioCatalogTestSupport",
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
             ]

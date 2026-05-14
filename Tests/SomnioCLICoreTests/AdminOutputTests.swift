@@ -1,4 +1,5 @@
 import Foundation
+import SomnioCatalogTestSupport
 import SomnioProtocol
 import Testing
 @testable import SomnioCLICore
@@ -67,7 +68,7 @@ struct AdminOutputTests {
     // positional placeholders that would silently fall back to EN at run time.
 
     @Test func `german worldClock template carries the correct positional placeholders`() throws {
-        let catalog = try loadCatalog()
+        let catalog = try CatalogParser.parse(from: Bundle.module)
         let key = "It is the year %1$@, the month %2$@, the day %3$@ and the time is %4$@:%5$@:%6$@."
         let de = try #require(catalog[key]?["de"])
         #expect(de == "Wir schreiben das Jahr %1$@, den Monat %2$@, den Tag %3$@ und es ist %4$@:%5$@:%6$@ Uhr.")
@@ -108,7 +109,7 @@ struct AdminOutputTests {
     }
 
     @Test func `every catalog key carries an English and German translation`() throws {
-        let catalog = try loadCatalog()
+        let catalog = try CatalogParser.parse(from: Bundle.module)
         let expectedKeys = [
             "%@ could not be found on the server.",
             "%@ was kicked from the server.",
@@ -130,31 +131,5 @@ struct AdminOutputTests {
             #expect(entry["en"]?.isEmpty == false, "missing English value for \(key)")
             #expect(entry["de"]?.isEmpty == false, "missing German value for \(key)")
         }
-    }
-
-    /// Loads the bilingual catalog as `[key: [locale: value]]` straight out of the
-    /// resource bundle's JSON. Bypasses Foundation's localization runtime since
-    /// SwiftPM does not compile `.xcstrings` into per-locale `.strings` artifacts.
-    private func loadCatalog() throws -> [String: [String: String]] {
-        let url = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "xcstrings"))
-        let data = try Data(contentsOf: url)
-        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try #require(json["strings"] as? [String: Any])
-        var output: [String: [String: String]] = [:]
-        for (key, entryAny) in strings {
-            guard let entry = entryAny as? [String: Any],
-                  let localizations = entry["localizations"] as? [String: Any]
-            else { continue }
-            var bucket: [String: String] = [:]
-            for (locale, value) in localizations {
-                guard let valueDict = value as? [String: Any],
-                      let stringUnit = valueDict["stringUnit"] as? [String: Any],
-                      let text = stringUnit["value"] as? String
-                else { continue }
-                bucket[locale] = text
-            }
-            output[key] = bucket
-        }
-        return output
     }
 }

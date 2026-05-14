@@ -43,6 +43,11 @@ SomnioTestSupport # Shared test fixtures (no-op repository stubs, AdminRouteTest
                  # StubAdminWorldRouter) consumed by SomnioServerCoreTests and SomnioCLICoreTests
                  # depends on SomnioCore + SomnioData + SomnioProtocol + SomnioServerCore +
                  # Hummingbird + HummingbirdWebSocket + Logging
+SomnioCatalogTestSupport # Foundation-only helper that reads SwiftPM `.xcstrings` JSON
+                 # resources straight out of a `Bundle`. Consumed by SomnioCoreTests,
+                 # SomnioUITests, and SomnioCLICoreTests to verify bilingual catalogs
+                 # bypassing Foundation's runtime locale resolution.
+                 # depends on Foundation only
 ```
 
 These boundaries are strict:
@@ -182,7 +187,7 @@ Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` r
 
 For custom views that accept a "localized title" parameter, prefer `LocalizedStringResource` — it defers locale resolution to the consumer's bundle.
 
-`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land. The admin CLI ships a bilingual catalog at `Sources/SomnioCLICore/Resources/Localizable.xcstrings` covering the admin output strings; access goes through `enum L` in `Sources/SomnioCLICore/Localization.swift` with the standard `Bundle.module` pinning.
+`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set and the `ItemCatalog` inventory labels). The admin CLI and the UI module each ship their own bilingual catalogs (`Sources/SomnioCLICore/Resources/Localizable.xcstrings`, `Sources/SomnioUI/Resources/Localizable.xcstrings`) and per-target `enum L` shims (`Sources/SomnioCLICore/Localization.swift`, `Sources/SomnioUI/Localization.swift`). The UI shim adds `L.resource(_:)` returning a `LocalizedStringResource` pinned to `Bundle.module` for SwiftUI surfaces that need that type (`.help`, custom view title parameters). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land.
 
 ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
 

@@ -2,6 +2,40 @@
   "sourceLanguage" : "en",
   "version" : "1.0",
   "strings" : {
+    "Cudgel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knüppel"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cudgel"
+          }
+        }
+      }
+    },
+    "Purse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geldbeutel"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purse"
+          }
+        }
+      }
+    },
     "Cleric" : {
       "extractionState" : "manual",
       "localizations" : {
