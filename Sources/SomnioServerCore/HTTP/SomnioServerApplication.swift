@@ -73,7 +73,7 @@ public func makeSomnioServerApplication(
     // Wire frame layout = `[u8 tag][u32 LE payload_length][payload]`, so the WebSocket layer
     // needs to accept `maxFrameLength + 5` bytes to admit a max-sized Somnio frame.
     let webSocketConfiguration = WebSocketServerConfiguration(
-        maxFrameSize: Int(SomnioProtocolConstants.maxFrameLength) + 5
+        maxFrameSize: SomnioProtocolConstants.maxWireFrameSize
     )
     return Application(
         router: router,

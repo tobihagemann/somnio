@@ -16,6 +16,10 @@ public enum ChatLineRenderer {
             return L.string("The connection was lost.", locale: locale)
         case .serverUnreachable:
             return L.string("The server is currently not reachable. Try again later.", locale: locale)
+        case .badCredentials:
+            return L.string("Bad credentials.", locale: locale)
+        case .alreadyLoggedIn:
+            return L.string("Already logged in.", locale: locale)
         case let .errorCode(code):
             return String(format: L.string("Error %@ occurred.", locale: locale), code)
         case let .joined(playerName):

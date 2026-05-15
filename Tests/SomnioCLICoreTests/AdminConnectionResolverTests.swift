@@ -45,6 +45,19 @@ struct AdminConnectionResolverTests {
         #expect(resolved.url == "ws://127.0.0.1:8080/admin")
     }
 
+    @Test func `URLs with userinfo are rejected with a ValidationError`() {
+        // The userinfo bypass closes the URL.host vs WebSocketClient parser-disagreement
+        // attack: Foundation reports `host == "localhost"` for the URL below (passing
+        // the loopback gate), but the WebSocket layer would dial `attacker.example`,
+        // leaking the bearer token over plaintext.
+        #expect(throws: ValidationError.self) {
+            try AdminConnectionResolver.resolve(
+                serverURL: "ws://attacker.example:80@localhost/admin",
+                environment: ["SOMNIO_ADMIN_TOKEN": "tok"]
+            )
+        }
+    }
+
     @Test func `non loopback plaintext URLs are rejected with a ValidationError`() {
         #expect(throws: ValidationError.self) {
             try AdminConnectionResolver.resolve(

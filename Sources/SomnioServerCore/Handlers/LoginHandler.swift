@@ -12,15 +12,13 @@ import SomnioProtocol
 /// the same Argon2id cost via `PasswordHasher.verifyAccountPassword`, so callers can't
 /// distinguish the two by response timing.
 public enum LoginHandler {
-    /// Maximum accepted plaintext password length on inbound login frames. Password length
-    /// caps the Argon2id input cost; without this an unauthenticated attacker can pipeline
-    /// 64 KB password frames to saturate the cooperative hasher pool.
-    public static let maxPasswordLength = 128
-    /// Mirrors `RegisterHandler.maxIdentifierLength`. Login can't accept a nickname the
-    /// register handler would reject — and the symmetric cap prevents an attacker from
-    /// shipping a near-1 MiB nickname that pays Postgres `LOWER(NORMALIZE(..., NFKC))` cost
-    /// plus full Argon2 verify cost on the unknown-account path.
-    public static let maxNicknameLength = RegisterHandler.maxIdentifierLength
+    /// Maximum accepted plaintext password length on inbound login frames. Lifted to
+    /// `SomnioProtocolConstants.maxPasswordUTF8Bytes` so the client (which cannot import
+    /// SomnioServerCore) can mirror the same cap from the protocol module.
+    public static let maxPasswordLength = SomnioProtocolConstants.maxPasswordUTF8Bytes
+    /// Maximum accepted nickname length, mirroring `RegisterHandler.maxIdentifierLength`.
+    /// Lifted to `SomnioProtocolConstants.maxIdentifierUTF8Bytes`.
+    public static let maxNicknameLength = SomnioProtocolConstants.maxIdentifierUTF8Bytes
 
     public static func handle(
         _ message: LoginMessage,

@@ -19,7 +19,7 @@ public enum AdminRouteTestApplication {
         let router = Router(context: BasicWebSocketRequestContext.self)
         mountAdminRoute(on: router, adminToken: adminToken, adminDependencies: adminDependencies)
         let webSocketConfiguration = WebSocketServerConfiguration(
-            maxFrameSize: Int(SomnioProtocolConstants.maxFrameLength) + 5
+            maxFrameSize: SomnioProtocolConstants.maxWireFrameSize
         )
         return Application(
             router: router,

@@ -584,22 +584,7 @@ public actor PerSectorActor {
     }
 
     private func collides(_ position: GridPoint, with masks: [CollisionMask]) -> Bool {
-        // Mask endpoints (`x + width`, `y + height`) widen to `Int32` for the same reason
-        // `VisualCenter` uses wider arithmetic: a corrupt sector with an authored mask near
-        // `Int16.max` cannot be allowed to trap the AI tick on the bounds check.
-        let positionX = Int32(position.x)
-        let positionY = Int32(position.y)
-        for mask in masks {
-            let maskX = Int32(mask.x)
-            let maskY = Int32(mask.y)
-            let maskRight = maskX + Int32(mask.width)
-            let maskBottom = maskY + Int32(mask.height)
-            if positionX >= maskX, positionX < maskRight,
-               positionY >= maskY, positionY < maskBottom {
-                return true
-            }
-        }
-        return false
+        CollisionMaskOverlap.contains(position, in: masks)
     }
 
     private func broadcastToPeers(_ message: SomnioMessage, excluding entityIndex: Int16) throws {

@@ -89,7 +89,7 @@ public actor ConnectionActor {
     private func runReadLoop(inbound: WebSocketInboundStream) async -> CloseDecision {
         var decision: CloseDecision = .keepOpen
         do {
-            let maxSize = Int(SomnioProtocolConstants.maxFrameLength) + 5
+            let maxSize = SomnioProtocolConstants.maxWireFrameSize
             for try await message in inbound.messages(maxSize: maxSize) {
                 let outcome = await handleInboundMessage(message)
                 if case .close = outcome {

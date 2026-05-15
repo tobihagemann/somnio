@@ -87,6 +87,34 @@ struct LegacyDatabaseTests {
   - create separate serial test plan for integration path
 - Prefer architecture that supports both fast in-memory tests and selective real integration tests.
 
+### Shared on-disk state across cases of the same suite
+
+When every case in a suite mutates the same well-known on-disk file (e.g. a
+file-backed credential store under `~/Library/Application Support/...`,
+`/tmp` artifacts written under a fixed name, a single SQLite file the suite
+seeds and tears down), default parallel execution lets one case's `delete()`
+race another case's `save()`, producing intermittent `noSuchFile` errors.
+
+The minimum-friction fix is `@Suite(.serialized)` on the suite — it preserves
+parallelism with every other suite and only forces sequential execution
+within. Pair it with a leading `delete()` (or equivalent reset) inside each
+case so a prior crash can't leak state into the next run.
+
+```swift
+@Suite(.serialized) struct CredentialStoreTests {
+    @Test func roundTrip() throws {
+        CredentialStore.delete()
+        try CredentialStore.save(...)
+        // ...
+        CredentialStore.delete()
+    }
+}
+```
+
+Better still: refactor toward an injectable backend that the suite can point
+at a temporary directory. `.serialized` is the right transition step, not the
+permanent home.
+
 ## Do / Don't
 
 - Do fix shared-state coupling before adding broad serialization.

@@ -87,6 +87,40 @@
         }
       }
     },
+    "Already logged in." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du bist bereits angemeldet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already logged in."
+          }
+        }
+      }
+    },
+    "Bad credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falsche Zugangsdaten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bad credentials."
+          }
+        }
+      }
+    },
     "Balance" : {
       "extractionState" : "manual",
       "localizations" : {

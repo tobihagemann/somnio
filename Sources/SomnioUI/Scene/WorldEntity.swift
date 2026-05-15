@@ -21,9 +21,7 @@ public struct WorldEntity: Sendable, Identifiable, Equatable, Hashable {
     public var gender: Gender?
     public var position: GridPoint
     public var facing: Direction
-    // periphery:ignore
     public var tempo: Tempo
-    // periphery:ignore
     public var maskSize: GridSize
     public var name: String
 

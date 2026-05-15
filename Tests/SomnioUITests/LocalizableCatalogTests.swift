@@ -12,6 +12,8 @@ struct LocalizableCatalogTests {
         "Welcome to Somnio!",
         "The connection was lost.",
         "The server is currently not reachable. Try again later.",
+        "Bad credentials.",
+        "Already logged in.",
         "Error %@ occurred.",
         "%@ entered the game.",
         "%@ left the game.",
@@ -38,7 +40,7 @@ struct LocalizableCatalogTests {
             let englishValue = try #require(entry["en"])
             let germanValue = try #require(entry["de"])
             #expect(
-                placeholderSignature(englishValue) == placeholderSignature(germanValue),
+                PlaceholderSignature.parse(englishValue) == PlaceholderSignature.parse(germanValue),
                 "placeholder signature mismatch for \(key): en=\(englishValue) de=\(germanValue)"
             )
         }
@@ -74,59 +76,6 @@ struct LocalizableCatalogTests {
         ("trailing %", PlaceholderSignature(positionalIndices: [], bareCount: 0))
     ])
     func `placeholder parser`(input: String, expected: PlaceholderSignature) {
-        #expect(placeholderSignature(input) == expected)
-    }
-
-    /// `(positionalIndices, bareCount)` — `%N$@` placeholders contribute their index to
-    /// `positionalIndices`; bare `%@` placeholders (those not part of a positional
-    /// `%N$@` sequence and not preceded by a `%` escape) contribute to `bareCount`.
-    /// The same signature on both locales proves the translator did not drop, add,
-    /// or reorder placeholders. `%%` is treated as a literal percent escape per
-    /// `String(format:)` semantics and consumes both characters without counting.
-    struct PlaceholderSignature: Equatable {
-        // periphery:ignore
-        var positionalIndices: Set<Int>
-        // periphery:ignore
-        var bareCount: Int
-    }
-
-    private func placeholderSignature(_ value: String) -> PlaceholderSignature {
-        var positional: Set<Int> = []
-        var bareCount = 0
-        let characters = Array(value)
-        var index = 0
-        while index < characters.count {
-            guard characters[index] == "%", index + 1 < characters.count else {
-                index += 1
-                continue
-            }
-            if characters[index + 1] == "%" {
-                index += 2
-                continue
-            }
-            var cursor = index + 1
-            var digits = ""
-            while cursor < characters.count, characters[cursor].isNumber {
-                digits.append(characters[cursor])
-                cursor += 1
-            }
-            if !digits.isEmpty,
-               cursor < characters.count,
-               characters[cursor] == "$",
-               cursor + 1 < characters.count,
-               characters[cursor + 1] == "@",
-               let parsed = Int(digits) {
-                positional.insert(parsed)
-                index = cursor + 2
-                continue
-            }
-            if characters[index + 1] == "@" {
-                bareCount += 1
-                index += 2
-                continue
-            }
-            index += 1
-        }
-        return PlaceholderSignature(positionalIndices: positional, bareCount: bareCount)
+        #expect(PlaceholderSignature.parse(input) == expected)
     }
 }

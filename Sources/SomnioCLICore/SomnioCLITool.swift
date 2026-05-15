@@ -37,13 +37,6 @@ struct AdminConnectionOptions: ParsableArguments {
 }
 
 enum AdminConnectionResolver {
-    /// Exact hostnames whose loopback semantics make plaintext `ws://` acceptable. The
-    /// allowlist is intentionally narrow — the broader `127.0.0.0/8` block is rare in
-    /// practice and an operator running on, say, `127.0.0.2` can switch to `localhost` or
-    /// the canonical `127.0.0.1`. Anything else carrying a bearer token over `ws://` is a
-    /// leak vector.
-    private static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
-
     static func resolve(
         serverURL: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -58,31 +51,22 @@ enum AdminConnectionResolver {
         guard let token = resolvedToken else {
             throw ValidationError("SOMNIO_ADMIN_TOKEN environment variable is required.")
         }
-        try requireSecureTransport(url)
-        return (url, token)
-    }
-
-    /// Reject non-loopback `ws://` so the bearer token can't travel over plaintext to a
-    /// remote endpoint. The scheme must be lowercase `ws` or `wss` — `WebSocketClient`
-    /// compares the scheme case-sensitively when deciding whether to enable TLS, so an
-    /// uppercase `WSS://` URL would otherwise pass this guard and then connect in the
-    /// clear. `wss://` is always accepted (TLS is the operator's responsibility);
-    /// loopback is exempt because the local kernel never puts those packets on the wire.
-    private static func requireSecureTransport(_ url: String) throws {
-        guard let parsed = URL(string: url) else {
+        do {
+            try SecureTransportValidator.validate(url)
+        } catch SecureTransportValidationError.invalidURL {
             throw ValidationError("--server-url is not a valid URL.")
-        }
-        let scheme = parsed.scheme ?? ""
-        guard scheme == "ws" || scheme == "wss" else {
+        } catch SecureTransportValidationError.unsupportedScheme {
             throw ValidationError("--server-url must use the ws:// or wss:// scheme (lowercase).")
-        }
-        guard scheme == "ws" else { return }
-        let host = parsed.host?.lowercased() ?? ""
-        guard loopbackHosts.contains(host) else {
+        } catch SecureTransportValidationError.insecureRemoteURL {
             throw ValidationError(
                 "Refusing to send the admin token over plaintext ws://. Use wss:// for remote endpoints."
             )
+        } catch SecureTransportValidationError.userinfoNotAllowed {
+            throw ValidationError(
+                "--server-url must not embed user:password@host. Pass the bearer token via SOMNIO_ADMIN_TOKEN."
+            )
         }
+        return (url, token)
     }
 }
 

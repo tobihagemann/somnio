@@ -67,10 +67,36 @@ import SpriteKit
         node.position = CGPoint(x: CGFloat(position.x), y: CGFloat(position.y))
     }
 
-    public func showSpeechBubble(above entityID: Int16, text: String, lifetime: TimeInterval) {
+    /// Animates the entity sprite from its current screen position to the new grid position
+    /// over `duration` seconds. `duration` should match the server tick period so the action
+    /// completes before the next position arrives; callers driving an authoritative replay
+    /// pass the wire tick rate (legacy server is 50 ms = 0.05 s).
+    public func animateEntity(_ id: Int16, to position: GridPoint, facing _: Direction, duration: TimeInterval) {
+        guard let node = entityNodes[id] else {
+            WorldScene.logger.debug("animateEntity called for unknown entity \(id)")
+            return
+        }
+        node.removeAllActions()
+        node.run(SKAction.move(to: CGPoint(x: CGFloat(position.x), y: CGFloat(position.y)), duration: duration))
+    }
+
+    /// Removes the entity's sprite node and clears its bubble, if any. Called on `.leave`.
+    public func removeEntity(id: Int16) {
+        if let node = entityNodes.removeValue(forKey: id) {
+            node.removeFromParent()
+        }
+        if let bubble = bubbleNodes.removeValue(forKey: id) {
+            bubble.removeFromParent()
+        }
+    }
+
+    /// Renders pre-wrapped speech bubble lines above the entity's sprite. `lifetimeMs` is
+    /// integer milliseconds matching the legacy `2000 + lines × 1000` rule; callers pass
+    /// the result of `SpeechBubbleText.wrap`.
+    public func showSpeechBubble(above entityID: Int16, lines: [String], lifetimeMs: Int) {
         guard let anchor = entityNodes[entityID] else { return }
         bubbleNodes[entityID]?.removeFromParent()
-        let bubble = SpeechBubbleNode(lines: [text], lifetime: lifetime)
+        let bubble = SpeechBubbleNode(lines: lines, lifetime: TimeInterval(lifetimeMs) / 1000.0)
         bubble.position = CGPoint(x: anchor.position.x, y: anchor.position.y + anchor.size.height)
         sectorRoot?.addChild(bubble)
         bubbleNodes[entityID] = bubble

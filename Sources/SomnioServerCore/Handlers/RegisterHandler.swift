@@ -14,12 +14,12 @@ public enum RegisterHandler {
     /// against UX migration: accounts created before this floor still authenticate via the
     /// stored Argon2id PHC string.
     public static let minPasswordLength = 8
-    /// Upper bound mirroring `LoginHandler.maxPasswordLength`; caps the Argon2id input cost
-    /// an unauthenticated frame can request.
-    public static let maxPasswordLength = LoginHandler.maxPasswordLength
-    /// Cap on `nickname`/`email` length so an oversized GENERATED-column input can't blow up
-    /// transactional INSERT cost or trip storage policies upstream.
-    public static let maxIdentifierLength = 64
+    /// Upper bound mirroring `LoginHandler.maxPasswordLength` /
+    /// `SomnioProtocolConstants.maxPasswordUTF8Bytes`.
+    public static let maxPasswordLength = SomnioProtocolConstants.maxPasswordUTF8Bytes
+    /// Cap on `nickname`/`email` length, lifted to
+    /// `SomnioProtocolConstants.maxIdentifierUTF8Bytes`.
+    public static let maxIdentifierLength = SomnioProtocolConstants.maxIdentifierUTF8Bytes
 
     public static func handle(
         _ message: RegisterMessage,

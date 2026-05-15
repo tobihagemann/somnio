@@ -22,7 +22,7 @@ public actor AdminConnectionActor {
     ) async {
         let logger = dependencies.logger
         do {
-            let maxSize = Int(SomnioProtocolConstants.maxFrameLength) + 5
+            let maxSize = SomnioProtocolConstants.maxWireFrameSize
             for try await message in inbound.messages(maxSize: maxSize) {
                 let outcome = await Self.process(message, dependencies: dependencies)
                 switch outcome {

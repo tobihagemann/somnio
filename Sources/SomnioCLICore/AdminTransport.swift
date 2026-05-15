@@ -53,7 +53,7 @@ enum AdminTransport {
         }
 
         var configuration = WebSocketClientConfiguration()
-        configuration.maxFrameSize = Int(SomnioProtocolConstants.maxFrameLength) + 5
+        configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
         configuration.additionalHeaders[.authorization] = "Bearer \(token)"
 
         let box = ResponseBox()
@@ -64,7 +64,7 @@ enum AdminTransport {
                 logger: logger
             ) { inbound, outbound, _ in
                 try await outbound.write(.binary(ByteBuffer(data: frame)))
-                for try await message in inbound.messages(maxSize: Int(SomnioProtocolConstants.maxFrameLength) + 5) {
+                for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
                     switch message {
                     case let .binary(buffer):
                         let response: AdminResponse

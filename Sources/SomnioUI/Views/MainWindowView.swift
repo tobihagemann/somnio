@@ -13,6 +13,8 @@ public struct MainWindowView<PlayField: View>: View {
     public let chatLines: [ChatLine]
     @Binding public var chatInput: String
     public let onSubmitChat: () -> Void
+    public let onItemTap: ((InventoryRow, Hand) -> Void)?
+    public let onChatFocusChange: ((Bool) -> Void)?
     public let locale: Locale?
 
     public init(
@@ -23,6 +25,8 @@ public struct MainWindowView<PlayField: View>: View {
         chatLines: [ChatLine],
         chatInput: Binding<String>,
         onSubmitChat: @escaping () -> Void,
+        onItemTap: ((InventoryRow, Hand) -> Void)? = nil,
+        onChatFocusChange: ((Bool) -> Void)? = nil,
         locale: Locale? = nil
     ) {
         self.playField = playField
@@ -32,6 +36,8 @@ public struct MainWindowView<PlayField: View>: View {
         self.chatLines = chatLines
         self._chatInput = chatInput
         self.onSubmitChat = onSubmitChat
+        self.onItemTap = onItemTap
+        self.onChatFocusChange = onChatFocusChange
         self.locale = locale
     }
 
@@ -66,13 +72,13 @@ public struct MainWindowView<PlayField: View>: View {
             ChatScrollbackView(chatLines: chatLines, locale: locale)
                 .offset(x: 20, y: 61)
 
-            ChatInputView(text: $chatInput, onSubmit: onSubmitChat)
+            ChatInputView(text: $chatInput, onSubmit: onSubmitChat, onFocusChange: onChatFocusChange)
                 .offset(x: 20, y: 409)
 
             OnlinePlayersList(players: players, locale: locale)
                 .offset(x: 834, y: 14)
 
-            ItemsListView(items: items, locale: locale)
+            ItemsListView(items: items, locale: locale, onItemTap: onItemTap)
                 .offset(x: 834, y: 380)
         }
         .frame(width: 1004, height: 514, alignment: .topLeading)
