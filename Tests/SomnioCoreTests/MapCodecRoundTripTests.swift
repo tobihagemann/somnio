@@ -1,22 +1,11 @@
 import Foundation
+import SomnioMapFixturesTestSupport
 import Testing
 @testable import SomnioCore
 
-// Map fixtures live under Tests/SomnioCoreTests/Resources/MapFixtures/ and are committed
-// verbatim copies of the original sector binaries.
-
 struct MapCodecRoundTripTests {
-    private func loadFixture(_ name: String) throws -> Data {
-        guard let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "MapFixtures") else {
-            throw FixtureError.notFound(name)
-        }
-        return try Data(contentsOf: url)
-    }
-
-    private enum FixtureError: Error { case notFound(String) }
-
-    private func roundTrip(_ name: String) throws {
-        let bytes = try loadFixture(name)
+    private func roundTrip(_ name: MapFixtures.Name) throws {
+        let bytes = try MapFixtures.data(name)
         let original = try MapCodec.read(bytes)
         let rewrittenBytes = try MapCodec.write(original)
         let rewritten = try MapCodec.read(rewrittenBytes)
@@ -24,19 +13,19 @@ struct MapCodecRoundTripTests {
     }
 
     @Test func `edaria mitte round trips`() throws {
-        try roundTrip("EdariaMitte")
+        try roundTrip(.edariaMitte)
     }
 
     @Test func `edaria arena round trips`() throws {
-        try roundTrip("EdariaArena")
+        try roundTrip(.edariaArena)
     }
 
     @Test func `edaria bibliothek round trips`() throws {
-        try roundTrip("EdariaBibliothek")
+        try roundTrip(.edariaBibliothek)
     }
 
     @Test func `edaria mitte has four portals and is unpopulated`() throws {
-        let sector = try MapCodec.read(loadFixture("EdariaMitte"))
+        let sector = try MapCodec.read(MapFixtures.data(.edariaMitte))
         #expect(sector.portals.count == 4)
         #expect(sector.npcs.isEmpty)
         #expect(sector.monsterSpawns.isEmpty)
@@ -44,7 +33,7 @@ struct MapCodecRoundTripTests {
     }
 
     @Test func `edaria arena has gespenst with uncorrupted balance`() throws {
-        let sector = try MapCodec.read(loadFixture("EdariaArena"))
+        let sector = try MapCodec.read(MapFixtures.data(.edariaArena))
         #expect(sector.light.indoor == true)
         #expect(sector.light.brightness == 75)
         #expect(sector.monsterSpawns.count == 1)
@@ -58,7 +47,7 @@ struct MapCodecRoundTripTests {
     }
 
     @Test func `edaria bibliothek has libus NPC`() throws {
-        let sector = try MapCodec.read(loadFixture("EdariaBibliothek"))
+        let sector = try MapCodec.read(MapFixtures.data(.edariaBibliothek))
         #expect(sector.light.indoor == true)
         #expect(sector.light.brightness == 100)
         #expect(sector.npcs.count == 1)
@@ -116,7 +105,7 @@ struct MapCodecRoundTripTests {
     /// file's authored `spawnOrigin` value, not a centered runtime position, and
     /// `NPCPlacement.runtimePosition(for:)` produces the legacy-equivalent centered coordinate.
     @Test func `npc spawn origin is raw not centered`() throws {
-        let sector = try MapCodec.read(loadFixture("EdariaBibliothek"))
+        let sector = try MapCodec.read(MapFixtures.data(.edariaBibliothek))
         let libus = sector.npcs[0]
         let runtime = NPCPlacement.runtimePosition(for: libus)
         let expectedRuntimeX = libus.spawnOrigin.x + (libus.spawnBoxSize.width - libus.maskSize.width) / 2

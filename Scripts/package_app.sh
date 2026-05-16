@@ -56,6 +56,44 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Framewor
 BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
+if [[ "$TARGET" == "editor" ]]; then
+  EDITOR_DOCUMENT_KEYS=$(cat <<'EDITOR_KEYS'
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Somnio Sector</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>de.tobiha.somnio.sector</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>de.tobiha.somnio.sector</string>
+            <key>UTTypeDescription</key><string>Somnio Sector</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>somnio-sector</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+EDITOR_KEYS
+)
+else
+  EDITOR_DOCUMENT_KEYS=""
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -75,6 +113,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
     <key>SomnioBuildConfiguration</key><string>${CONF}</string>
+${EDITOR_DOCUMENT_KEYS}
 </dict>
 </plist>
 PLIST

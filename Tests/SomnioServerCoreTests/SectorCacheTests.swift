@@ -1,10 +1,11 @@
 import Foundation
 import SomnioCore
+import SomnioMapFixturesTestSupport
 import Testing
 @testable import SomnioServerCore
 
 struct SectorCacheTests {
-    private static let mapFixturesDirectory: URL = Bundle.module.url(forResource: "MapFixtures", withExtension: nil)!
+    private static let mapFixturesDirectory: URL = MapFixtures.directoryURL
 
     private static let corruptDirectory: URL = Bundle.module.url(forResource: "Corrupt", withExtension: nil)!
 

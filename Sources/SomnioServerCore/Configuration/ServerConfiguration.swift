@@ -40,7 +40,7 @@ public struct ServerConfiguration: Sendable, Equatable {
     /// Debug-only fallback resolved against the working directory at boot. Release builds
     /// require `SOMNIO_SECTORS_DIR` so a misconfigured deployment fails closed instead of
     /// loading the bundled test fixtures.
-    public static let debugSectorsDirectoryRelativePath: String = "Tests/SomnioCoreTests/Resources/MapFixtures"
+    public static let debugSectorsDirectoryRelativePath: String = "Tests/SomnioMapFixturesTestSupport/MapFixtures"
 
     public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,

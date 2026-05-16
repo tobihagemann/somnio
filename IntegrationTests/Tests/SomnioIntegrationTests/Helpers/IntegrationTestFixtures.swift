@@ -9,9 +9,9 @@ import Testing
 
 /// Shared fixtures for the integration suites. Avoids duplicating the brittle
 /// `deletingLastPathComponent` chain and the `ConnectionDependencies` literal across every
-/// new test file. The map fixtures themselves live under `Tests/SomnioCoreTests/Resources/MapFixtures`
-/// so the SwiftPM `.copy` is owned by the unit-test target and the integration package walks
-/// up to the repo root to read them as plain files.
+/// new test file. The map fixtures themselves live under `Tests/SomnioMapFixturesTestSupport/MapFixtures`
+/// so the SwiftPM `.copy` is owned by the shared test-support target and the integration
+/// package walks up to the repo root to read them as plain files.
 public enum IntegrationTestFixtures {
     /// The three sectors every integration suite loads. Centralized so adding a fourth
     /// fixture, renaming one, or reordering the dictionary literal happens in one place.
@@ -35,7 +35,7 @@ public enum IntegrationTestFixtures {
             .deletingLastPathComponent() // IntegrationTests
             .deletingLastPathComponent() // somnio (repo root)
         let fixtureURL = repoRoot
-            .appendingPathComponent("Tests/SomnioCoreTests/Resources/MapFixtures", isDirectory: true)
+            .appendingPathComponent("Tests/SomnioMapFixturesTestSupport/MapFixtures", isDirectory: true)
             .appendingPathComponent(name)
         let data = try Data(contentsOf: fixtureURL)
         let body = try MapCodec.read(data)

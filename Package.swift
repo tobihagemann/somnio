@@ -41,11 +41,16 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioCoreTests",
-            dependencies: ["SomnioCore", "SomnioCatalogTestSupport"],
-            resources: [.copy("Resources/MapFixtures")]
+            dependencies: ["SomnioCore", "SomnioCatalogTestSupport", "SomnioMapFixturesTestSupport"]
         ),
 
         .target(name: "SomnioCatalogTestSupport"),
+
+        .target(
+            name: "SomnioMapFixturesTestSupport",
+            path: "Tests/SomnioMapFixturesTestSupport",
+            resources: [.copy("MapFixtures")]
+        ),
 
         .systemLibrary(
             name: "CArgon2",
@@ -105,6 +110,10 @@ let package = Package(
             ],
             resources: [.process("Resources/Localizable.xcstrings")]
         ),
+        .testTarget(
+            name: "SomnioEditorTests",
+            dependencies: ["SomnioEditor", "SomnioCatalogTestSupport", "SomnioMapFixturesTestSupport"]
+        ),
 
         .target(
             name: "SomnioServerCore",
@@ -138,12 +147,12 @@ let package = Package(
             dependencies: [
                 "SomnioServerCore",
                 "SomnioTestSupport",
+                "SomnioMapFixturesTestSupport",
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
             ],
             resources: [
-                .copy("Resources/Corrupt"),
-                .copy("Resources/MapFixtures")
+                .copy("Resources/Corrupt")
             ]
         ),
 
