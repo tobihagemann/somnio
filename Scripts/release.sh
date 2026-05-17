@@ -69,14 +69,27 @@ for TARGET in player editor; do
   xcrun stapler validate "$BUNDLE"
 done
 
-# Create, sign, and notarize the player DMG. Editor DMG wiring lands later.
-"$ROOT/Scripts/create_dmg.sh" player
-DMG_NAME="${APP_NAME}-${MARKETING_VERSION}.dmg"
-codesign --force --timestamp --sign "$APP_IDENTITY" "$ROOT/$DMG_NAME"
+package_and_notarize_dmg() {
+  local target="$1"
+  local dmg_basename
+  case "$target" in
+    player) dmg_basename="${APP_NAME}" ;;
+    editor) dmg_basename="${APP_NAME}Editor" ;;
+    *)
+      echo "ERROR: unknown DMG target '$target'" >&2
+      exit 1
+      ;;
+  esac
+  local dmg_name="${dmg_basename}-${MARKETING_VERSION}.dmg"
+  "$ROOT/Scripts/create_dmg.sh" "$target"
+  codesign --force --timestamp --sign "$APP_IDENTITY" "$ROOT/$dmg_name"
+  local notarize_zip="$SCRATCH_DIR/${dmg_basename}DmgNotarize.zip"
+  "$DITTO_BIN" --norsrc -c -k "$ROOT/$dmg_name" "$notarize_zip"
+  submit_for_notarization "$notarize_zip"
+  xcrun stapler staple "$ROOT/$dmg_name"
+}
 
-DMG_NOTARIZE_ZIP="$SCRATCH_DIR/${APP_NAME}DmgNotarize.zip"
-"$DITTO_BIN" --norsrc -c -k "$ROOT/$DMG_NAME" "$DMG_NOTARIZE_ZIP"
-submit_for_notarization "$DMG_NOTARIZE_ZIP"
-xcrun stapler staple "$ROOT/$DMG_NAME"
+package_and_notarize_dmg player
+package_and_notarize_dmg editor
 
 echo "Done."

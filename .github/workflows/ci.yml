@@ -59,4 +59,4 @@ jobs:
         run: docker info -f '{{.ServerVersion}}'
       - name: Run integration tests
         run: swift test --package-path IntegrationTests --no-parallel
-        timeout-minutes: 15
+        timeout-minutes: 25

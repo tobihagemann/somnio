@@ -76,6 +76,9 @@ jobs:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          SPARKLE_FEED_URL_PLAYER: ${{ secrets.SPARKLE_FEED_URL_PLAYER }}
+          SPARKLE_FEED_URL_EDITOR: ${{ secrets.SPARKLE_FEED_URL_EDITOR }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           ARCHES: "arm64 x86_64"
         run: ./Scripts/release.sh
 
@@ -85,7 +88,8 @@ jobs:
           shasum -a 256 \
             "${APP_NAME}-${MARKETING_VERSION}.zip" \
             "${APP_NAME}Editor-${MARKETING_VERSION}.zip" \
-            "${APP_NAME}-${MARKETING_VERSION}.dmg" > checksums.txt
+            "${APP_NAME}-${MARKETING_VERSION}.dmg" \
+            "${APP_NAME}Editor-${MARKETING_VERSION}.dmg" > checksums.txt
           cat checksums.txt
 
       - name: Generate Sparkle appcast
@@ -95,23 +99,34 @@ jobs:
           source version.env
           SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin"
 
-          # generate_appcast needs the private key as a file.
+          # generate_appcast needs the private key as a file; the same key signs both
+          # appcasts so write it once outside the loop.
           KEY_FILE=$(mktemp)
           echo "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          # Stage the zip in a temp dir so generate_appcast can read it.
-          RELEASE_DIR=$(mktemp -d)
-          cp "${APP_NAME}-${MARKETING_VERSION}.zip" "$RELEASE_DIR/"
+          generate_for() {
+            local zip_name="$1"
+            local appcast_name="$2"
+            local release_dir
+            release_dir=$(mktemp -d)
+            cp "$zip_name" "$release_dir/"
+            # `-o` pins the output filename — without it, Sparkle derives the file from
+            # `SUFeedURL.lastPathComponent`, which makes the editor branch fail to find
+            # `$release_dir/appcast.xml` if `SPARKLE_FEED_URL_EDITOR` ends in a different
+            # path component.
+            "$SPARKLE_BIN/generate_appcast" \
+              --ed-key-file "$KEY_FILE" \
+              --download-url-prefix "https://github.com/tobihagemann/somnio/releases/download/${MARKETING_VERSION}/" \
+              -o "$appcast_name" \
+              "$release_dir"
+            rm -rf "$release_dir"
+          }
 
-          "$SPARKLE_BIN/generate_appcast" \
-            --ed-key-file "$KEY_FILE" \
-            --download-url-prefix "https://github.com/tobihagemann/somnio/releases/download/${MARKETING_VERSION}/" \
-            "$RELEASE_DIR"
+          generate_for "${APP_NAME}-${MARKETING_VERSION}.zip" appcast.xml
+          generate_for "${APP_NAME}Editor-${MARKETING_VERSION}.zip" appcast-editor.xml
 
-          cp "$RELEASE_DIR/appcast.xml" appcast.xml
           rm -f "$KEY_FILE"
-          rm -rf "$RELEASE_DIR"
 
       - name: Extract release notes from CHANGELOG.md
         run: |
@@ -144,11 +159,14 @@ jobs:
             "${APP_NAME}-${MARKETING_VERSION}.zip" \
             "${APP_NAME}Editor-${MARKETING_VERSION}.zip" \
             "${APP_NAME}-${MARKETING_VERSION}.dmg" \
+            "${APP_NAME}Editor-${MARKETING_VERSION}.dmg" \
             checksums.txt \
+            appcast.xml \
+            appcast-editor.xml \
             --title "${APP_NAME} ${MARKETING_VERSION}" \
             --notes-file release_notes.txt
 
-      - name: Commit appcast.xml to main
+      - name: Commit appcasts to main
         if: |
           !inputs.dry_run && (
             startsWith(github.ref, 'refs/tags/') ||
@@ -164,16 +182,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          # Save generated appcast.xml — git checkout would fail if main
-          # already tracks it from a previous release.
+          # Save generated appcasts — git checkout would overwrite them if main
+          # already tracks the files from a previous release.
           cp appcast.xml /tmp/appcast.xml
+          cp appcast-editor.xml /tmp/appcast-editor.xml
           git checkout main
           cp /tmp/appcast.xml appcast.xml
-          git add appcast.xml
+          cp /tmp/appcast-editor.xml appcast-editor.xml
+          git add appcast.xml appcast-editor.xml
           if git diff --cached --quiet; then
-            echo "appcast.xml unchanged, skipping commit."
+            echo "Appcasts unchanged, skipping commit."
           else
-            git commit -m "Update appcast.xml for ${MARKETING_VERSION}"
+            git commit -m "Update appcasts for ${MARKETING_VERSION}"
             git push origin main
           fi
 
@@ -186,6 +206,7 @@ jobs:
             *.dmg
             checksums.txt
             appcast.xml
+            appcast-editor.xml
 
       - name: Cleanup keychain
         if: always()

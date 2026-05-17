@@ -1,0 +1,54 @@
+# Example only. Operators copy + fill in real credentials, populate the sectors volume
+# from their asset pack, set `SOMNIO_DATABASE_TLS` to match their Postgres deployment,
+# and front this with a TLS-terminating reverse proxy (the server speaks plain HTTP/WS
+# inside the container network).
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: somnio
+      # Generate with: openssl rand -hex 32
+      POSTGRES_PASSWORD: CHANGE_ME_DB_PASSWORD
+      POSTGRES_DB: somnio
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "somnio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    # Bind to loopback only — the reverse proxy is the public surface. A public bind
+    # would expose `/ws` and bearer-gated `/admin` over plaintext, contradicting the
+    # documented TLS-at-proxy invariant.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SOMNIO_DATABASE_URL: postgres://somnio:CHANGE_ME_DB_PASSWORD@db:5432/somnio
+      # Local Postgres doesn't terminate TLS; production deployments should leave this
+      # unset (or set to `require`) so the connection fails closed if TLS is missing.
+      SOMNIO_DATABASE_TLS: disable
+      # Generate with: openssl rand -hex 32 — distinct from POSTGRES_PASSWORD above.
+      SOMNIO_ADMIN_TOKEN: CHANGE_ME_ADMIN_TOKEN
+      SOMNIO_HTTP_PORT: "8080"
+      SOMNIO_SECTORS_DIR: /opt/somnio/sectors
+    # Populate `./sectors` from your asset pack before starting the stack. For a local
+    # smoke test against the bundled fixtures, rebuild the image with
+    # `docker compose build --build-arg SOMNIO_SECTORS_SOURCE=Tests/SomnioMapFixturesTestSupport/MapFixtures`
+    # and drop this mount.
+    volumes:
+      - ./sectors:/opt/somnio/sectors:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  db-data:

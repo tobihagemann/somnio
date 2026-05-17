@@ -42,6 +42,44 @@ if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
   ARCH_LIST=("$HOST_ARCH")
 fi
 
+case "$TARGET" in
+  player)
+    SPARKLE_FEED_URL=${SPARKLE_FEED_URL_PLAYER:-}
+    SPARKLE_FEED_VAR_NAME="SPARKLE_FEED_URL_PLAYER"
+    ;;
+  editor)
+    SPARKLE_FEED_URL=${SPARKLE_FEED_URL_EDITOR:-}
+    SPARKLE_FEED_VAR_NAME="SPARKLE_FEED_URL_EDITOR"
+    ;;
+esac
+SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_ED_KEY:-}
+
+# Sparkle keys are all-or-none per target: both the feed URL and the public key must be
+# set together. The release-mode hard-fail must run *before* `swift build` so a missing
+# secret short-circuits without consuming build time. Debug builds skip injection silently
+# when both are unset and warn (but continue) when only one is set so a local typo is
+# visible. The actual Info.plist splice happens after the build via `${SPARKLE_KEYS}`.
+if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_KEY" ]]; then
+  SPARKLE_KEYS=$(cat <<SPARKLE
+    <key>SUFeedURL</key><string>${SPARKLE_FEED_URL}</string>
+    <key>SUPublicEDKey</key><string>${SPARKLE_PUBLIC_KEY}</string>
+SPARKLE
+)
+elif [[ -z "$SPARKLE_FEED_URL" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
+  if [[ "$CONF" == "release" ]]; then
+    echo "ERROR: ${SPARKLE_FEED_VAR_NAME} and SPARKLE_PUBLIC_ED_KEY both required for release builds" >&2
+    exit 1
+  fi
+  SPARKLE_KEYS=""
+else
+  if [[ "$CONF" == "release" ]]; then
+    echo "ERROR: ${SPARKLE_FEED_VAR_NAME} and SPARKLE_PUBLIC_ED_KEY must both be set for release builds (only one was provided)" >&2
+    exit 1
+  fi
+  echo "WARNING: only one of ${SPARKLE_FEED_VAR_NAME} / SPARKLE_PUBLIC_ED_KEY is set; skipping Sparkle injection" >&2
+  SPARKLE_KEYS=""
+fi
+
 for ARCH in "${ARCH_LIST[@]}"; do
   swift build -c "$CONF" --arch "$ARCH" --target "$APP_TARGET_NAME"
   if [[ "$INCLUDE_CLI" == "1" ]]; then
@@ -113,6 +151,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
     <key>SomnioBuildConfiguration</key><string>${CONF}</string>
+${SPARKLE_KEYS}
 ${EDITOR_DOCUMENT_KEYS}
 </dict>
 </plist>

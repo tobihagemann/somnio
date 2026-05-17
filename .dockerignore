@@ -1,0 +1,16 @@
+.build/
+IntegrationTests/.build/
+*.app/
+*.dmg
+*.zip
+.git/
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.p8
+*credentials*
+*secrets*
+appcast*.xml
+sectors/

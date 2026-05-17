@@ -124,4 +124,35 @@ public enum IntegrationTestFixtures {
         }
         #expect(payload.result == expected, sourceLocation: sourceLocation)
     }
+
+    /// Decodes a single frame and returns the typed `LeaveMessage` payload, or `nil` if the
+    /// frame is not a `.leave`.
+    public static func leavePayload(of frame: Data) -> LeaveMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .leave(payload) = message { return payload }
+        return nil
+    }
+
+    /// Decodes a single frame and returns the typed `SayMessage` payload for the
+    /// `.serverSay` case (peer chat / NPC dialog broadcasts), or `nil` otherwise.
+    public static func serverSayPayload(of frame: Data) -> SayMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .serverSay(payload) = message { return payload }
+        return nil
+    }
+
+    /// Decodes a single frame and returns the typed `DateTickMessage` payload.
+    public static func dateTickPayload(of frame: Data) -> DateTickMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .dateTick(payload) = message { return payload }
+        return nil
+    }
+
+    /// Decodes a single frame and returns the typed `PositionMessage` payload for the
+    /// server-broadcast `.serverPosition` case (peer position updates).
+    public static func serverPositionPayload(of frame: Data) -> PositionMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .serverPosition(payload) = message { return payload }
+        return nil
+    }
 }

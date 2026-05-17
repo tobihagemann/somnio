@@ -38,7 +38,8 @@ public func makeSomnioServerApplication(
     configuration: ServerConfiguration,
     postgres: PostgresClient,
     dependencies: ConnectionDependencies,
-    adminDependencies: AdminConnectionDependencies
+    adminDependencies: AdminConnectionDependencies,
+    onServerRunning: (@Sendable (any Channel) async -> Void)? = nil
 ) -> Application<RouterResponder<BasicWebSocketRequestContext>> {
     let router = Router(context: BasicWebSocketRequestContext.self)
     let healthLogger = Logger(label: "de.tobiha.somnio.server.gameplay.health")
@@ -75,6 +76,10 @@ public func makeSomnioServerApplication(
     let webSocketConfiguration = WebSocketServerConfiguration(
         maxFrameSize: SomnioProtocolConstants.maxWireFrameSize
     )
+    // Hummingbird stores `onServerRunning` privately at init, so it can't be retrofitted
+    // after construction. Tests pass an `onServerRunning:` closure to read the bound port
+    // when binding to port 0; production calls leave the parameter `nil` and the no-op
+    // default matches Hummingbird's own initializer default.
     return Application(
         router: router,
         server: .http1WebSocketUpgrade(
@@ -82,6 +87,7 @@ public func makeSomnioServerApplication(
             configuration: webSocketConfiguration
         ),
         configuration: applicationConfiguration,
+        onServerRunning: onServerRunning ?? { _ in },
         logger: Logger(label: "de.tobiha.somnio.server.gameplay.app")
     )
 }
