@@ -1,5 +1,4 @@
 import Foundation
-import HTTPTypes
 import Hummingbird
 import HummingbirdTesting
 import HummingbirdWebSocket
@@ -8,10 +7,7 @@ import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
-import PostgresNIO
-import ServiceLifecycle
 import SomnioCore
-import SomnioData
 import SomnioProtocol
 import SomnioServerCore
 import Testing
@@ -29,11 +25,11 @@ struct GameplayE2ETests {
             let logger = Logger(label: "test.gameplay-e2e.register-login")
             let nickname = "alice-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
-            let rig = try await makeApplication(client: client, logger: logger)
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             try await rig.application.test(.live) { testClient in
-                _ = try await testClient.ws("/ws", configuration: wsConfig(), logger: logger) { inbound, outbound, _ in
-                    try await registerAndLogin(nickname: nickname, on: outbound)
-                    try await drainUntilLoginOk(inbound: inbound, recorder: recorder)
+                _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
+                    try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
+                    try await WSGameplayClient.drainUntilLoginOk(inbound: inbound, recorder: recorder)
                     try await outbound.close(.normalClosure, reason: nil)
                 }
             }
@@ -58,7 +54,7 @@ struct GameplayE2ETests {
             let nicknameA = "peer-a-\(UUID().uuidString.prefix(6))"
             let nicknameB = "peer-b-\(UUID().uuidString.prefix(6))"
             let peerARecorder = FrameRecorder()
-            let rig = try await makeApplication(client: client, logger: logger)
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             try await rig.application.test(.live) { testClient in
                 try await runPeerScenario(
                     testClient: testClient,
@@ -66,7 +62,7 @@ struct GameplayE2ETests {
                     actor: nicknameB,
                     logger: logger
                 ) { outbound in
-                    try await sendMessage(
+                    try await WSGameplayClient.sendMessage(
                         .clientPosition(
                             PositionMessage(
                                 entityIndex: 0,
@@ -98,7 +94,7 @@ struct GameplayE2ETests {
             let nicknameA = "stay-\(UUID().uuidString.prefix(6))"
             let nicknameB = "hop-\(UUID().uuidString.prefix(6))"
             let peerARecorder = FrameRecorder()
-            let rig = try await makeApplication(client: client, logger: logger)
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             try await rig.application.test(.live) { testClient in
                 try await runPeerScenario(
                     testClient: testClient,
@@ -106,7 +102,7 @@ struct GameplayE2ETests {
                     actor: nicknameB,
                     logger: logger
                 ) { outbound in
-                    try await sendMessage(.enterPortal(EnterPortalMessage(portalIndex: 0)), on: outbound)
+                    try await WSGameplayClient.sendMessage(.enterPortal(EnterPortalMessage(portalIndex: 0)), on: outbound)
                     try await Task.sleep(for: .milliseconds(500))
                 }
             }
@@ -137,10 +133,10 @@ struct GameplayE2ETests {
             let libusRuntime = NPCPlacement.runtimePosition(for: libus)
             let nickname = "bumper-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
-            let rig = try await makeApplication(client: client, logger: logger, sectors: sectors)
-            try await withServiceGroup(rig: rig, client: client, logger: logger) { port in
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger, sectors: sectors)
+            try await WSGameplayClient.withServiceGroup(rig: rig, client: client, logger: logger) { port in
                 try await driveSingleSession(port: port, logger: logger) { inbound, outbound in
-                    try await registerAndLogin(nickname: nickname, on: outbound)
+                    try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     try await runBumpPhases(
                         inbound: inbound,
                         outbound: outbound,
@@ -158,21 +154,25 @@ struct GameplayE2ETests {
     @Test func `world clock tick broadcasts DateTick frames to all connected clients`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.gameplay-e2e.clock-tick")
-            try await seedClock(client: client)
+            // Seed second=50/minute=11 with a 200 ms tick: the first 10 ticks (2 seconds wall
+            // time) cross into minute 12 — a `SomnioConstants.dateTickMinutes` member — which
+            // gives the WS client ~2 seconds to register, log in, and reach the `attached`
+            // state before the service-driven broadcast lands.
+            try await WSGameplayClient.seedClock(client: client)
             let nickname = "ticker-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
-            let rig = try await makeApplication(client: client, logger: logger)
-            try await withServiceGroup(
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
+            try await WSGameplayClient.withServiceGroup(
                 rig: rig,
                 client: client,
                 logger: logger,
                 worldClockInterval: .milliseconds(200)
             ) { port in
                 try await driveSingleSession(port: port, logger: logger) { inbound, outbound in
-                    try await registerAndLogin(nickname: nickname, on: outbound)
+                    try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     // Collect at least 2 `dateTick` frames: the join-sequence snapshot, plus
                     // at least one service-driven broadcast crossing the minute mark.
-                    try await drainCountingMatches(
+                    try await WSGameplayClient.drainCountingMatches(
                         inbound: inbound,
                         recorder: recorder,
                         timeout: .seconds(10),
@@ -194,15 +194,15 @@ struct GameplayE2ETests {
             let nickname = "drainer-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let observedClose = CloseRecorder()
-            let rig = try await makeApplication(client: client, logger: logger)
-            try await withServiceGroup(rig: rig, client: client, logger: logger, triggerShutdownEarly: true) { port in
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
+            try await WSGameplayClient.withServiceGroup(rig: rig, client: client, logger: logger, triggerShutdownEarly: true) { port in
                 let closeFrame = try await WebSocketClient.connect(
                     url: "ws://localhost:\(port)/ws",
-                    configuration: wsConfig(),
+                    configuration: WSGameplayClient.wsConfig(),
                     logger: logger
                 ) { inbound, outbound, _ in
-                    try await registerAndLogin(nickname: nickname, on: outbound)
-                    try await drainUntilPeerClosed(inbound: inbound, recorder: recorder)
+                    try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
+                    try await WSGameplayClient.drainUntilPeerClosed(inbound: inbound, recorder: recorder)
                 }
                 if let observed = closeFrame {
                     await observedClose.set(observed.closeCode)
@@ -221,133 +221,12 @@ struct GameplayE2ETests {
         }
     }
 
-    // MARK: - Setup helpers
-
-    private struct Rig {
-        let application: Application<RouterResponder<BasicWebSocketRequestContext>>
-        let dependencies: ConnectionDependencies
-        let onServerRunning: PortPromise
-    }
-
-    private func makeApplication(
-        client: PostgresClient,
-        logger: Logger,
-        sectors: [String: Sector]? = nil
-    ) async throws -> Rig {
-        let resolvedSectors = try sectors ?? IntegrationTestFixtures.defaultSectors()
-        let dependencies = try await IntegrationTestFixtures.makeConnectionDependencies(
-            client: client,
-            sectors: resolvedSectors,
-            logger: logger
-        )
-        let adminDependencies = try await GameplayRouteTestApplication.makeAdminDependencies(
-            worldRouter: dependencies.worldRouter,
-            worldClock: dependencies.worldClock,
-            logger: logger
-        )
-        let portPromise = PortPromise()
-        let application = GameplayRouteTestApplication.make(
-            postgres: client,
-            dependencies: dependencies,
-            adminDependencies: adminDependencies,
-            adminToken: "test"
-        ) { channel in
-            if let port = channel.localAddress?.port {
-                await portPromise.set(port)
-            }
-        }
-        return Rig(
-            application: application,
-            dependencies: dependencies,
-            onServerRunning: portPromise
-        )
-    }
-
-    private func seedClock(client: PostgresClient) async throws {
-        let seedLogger = Logger(label: "test.gameplay-e2e.clock-tick.seed")
-        // Seed second=50/minute=11 with a 200 ms tick: the first 10 ticks (2 seconds wall
-        // time) cross into minute 12 — a `SomnioConstants.dateTickMinutes` member — which
-        // gives the WS client ~2 seconds to register, log in, and reach the `attached`
-        // state before the service-driven broadcast lands.
-        let seedRepo = PostgresWorldClockRepository(client: client, logger: seedLogger)
-        try await seedRepo.save(WorldClock(second: 50, minute: 11, hour: 7, day: 1, month: 1, year: 500))
-    }
-
-    private func wsConfig() -> WebSocketClientConfiguration {
-        var configuration = WebSocketClientConfiguration()
-        configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
-        return configuration
-    }
-
-    // MARK: - Wire helpers
-
-    private func makeRegister(nickname: String, email: String) -> RegisterMessage {
-        RegisterMessage(
-            nickname: nickname,
-            password: "passw0rd",
-            passwordRepeat: "passw0rd",
-            characterClass: CharacterClass.fighter.rawValue,
-            gender: Gender.female.rawValue,
-            email: email
-        )
-    }
-
-    private func sendMessage(_ message: SomnioMessage, on outbound: WebSocketOutboundWriter) async throws {
-        let frame = try SomnioMessageEncoder.encode(message)
-        try await outbound.write(.binary(ByteBuffer(data: frame)))
-    }
-
-    private func sendPosition(_ origin: GridPoint, on outbound: WebSocketOutboundWriter) async throws {
-        try await sendMessage(
-            .clientPosition(
-                PositionMessage(
-                    entityIndex: 0,
-                    x: origin.x,
-                    y: origin.y,
-                    facing: Direction.south.rawValue,
-                    tempo: Tempo.default.rawValue
-                )
-            ),
-            on: outbound
-        )
-    }
-
-    private func registerAndLogin(nickname: String, on outbound: WebSocketOutboundWriter) async throws {
-        try await sendMessage(
-            .register(makeRegister(nickname: nickname, email: "\(nickname)@example.com")),
-            on: outbound
-        )
-        try await sendMessage(
-            .login(LoginMessage(nickname: nickname, password: "passw0rd")),
-            on: outbound
-        )
-    }
-
-    // MARK: - Drain helpers
-
-    private func drainUntilLoginOk(inbound: WebSocketInboundStream, recorder: FrameRecorder) async throws {
-        try await drainUntil(inbound: inbound, recorder: recorder) {
-            if case let .loginResult(payload) = $0, payload.result == .ok { return true }
-            return false
-        }
-    }
-
-    /// Wait for the join sequence to land — `.dateTick` is the documented last frame
-    /// (`LoginRegisterHandlerTests` asserts `tags.last == .dateTick`) so once it arrives
-    /// the connection is fully `attached`. Sending gameplay frames before this races
-    /// against `ConnectionActor.markAttached`, dropping them through the protocol-error
-    /// guard for `.awaitingLogin`.
-    private func drainUntilJoinComplete(inbound: WebSocketInboundStream, recorder: FrameRecorder) async throws {
-        try await drainUntil(inbound: inbound, recorder: recorder) {
-            if case .dateTick = $0 { return true }
-            return false
-        }
-    }
+    // MARK: - State machines (test-specific)
 
     /// Combines "drain until join completes" with "drain until predicate" in a single
     /// inbound iterator: WebSocketInboundStream asserts on a second iterator creation.
-    /// The phased loop sends `actionOnJoin` once `.dateTick` lands, then keeps draining
-    /// until the second predicate matches or `timeout` elapses.
+    /// The phased loop sends the bump after `.dateTick` lands, then keeps draining until
+    /// the first non-empty `.serverSay` arrives or `timeout` elapses.
     private func runBumpPhases(
         inbound: WebSocketInboundStream,
         outbound: WebSocketOutboundWriter,
@@ -367,70 +246,8 @@ struct GameplayE2ETests {
                         if case let .serverSay(payload) = decoded, payload.text.isEmpty == false { return }
                     } else if case .dateTick = decoded {
                         attached = true
-                        try await sendPosition(libusRuntime, on: outbound)
-                        try await sendMessage(.bumpNPC(BumpNPCMessage(npcIndex: 1)), on: outbound)
-                    }
-                }
-            }
-            group.addTask { try await Task.sleep(for: timeout) }
-            _ = try await group.next()
-            group.cancelAll()
-        }
-    }
-
-    private func drainUntil(
-        inbound: WebSocketInboundStream,
-        recorder: FrameRecorder,
-        predicate: @Sendable @escaping (SomnioMessage) -> Bool
-    ) async throws {
-        for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-            if case let .binary(buffer) = message {
-                let frame = Data(buffer: buffer)
-                await recorder.append(frame)
-                if let decoded = try? SomnioMessageDecoder.decode(frame), predicate(decoded) { return }
-            }
-        }
-    }
-
-    private func drainUntilPeerClosed(inbound: WebSocketInboundStream, recorder: FrameRecorder) async throws {
-        for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-            if case let .binary(buffer) = message {
-                await recorder.append(Data(buffer: buffer))
-            }
-        }
-    }
-
-    private func drainWithTimeout(
-        inbound: WebSocketInboundStream,
-        recorder: FrameRecorder,
-        timeout: Duration,
-        predicate: @Sendable @escaping (SomnioMessage) -> Bool
-    ) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await drainUntil(inbound: inbound, recorder: recorder, predicate: predicate) }
-            group.addTask { try await Task.sleep(for: timeout) }
-            _ = try await group.next()
-            group.cancelAll()
-        }
-    }
-
-    private func drainCountingMatches(
-        inbound: WebSocketInboundStream,
-        recorder: FrameRecorder,
-        timeout: Duration,
-        targetMatches: Int,
-        predicate: @Sendable @escaping (SomnioMessage) -> Bool
-    ) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                var matches = 0
-                for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                    guard case let .binary(buffer) = message else { continue }
-                    let frame = Data(buffer: buffer)
-                    await recorder.append(frame)
-                    if let decoded = try? SomnioMessageDecoder.decode(frame), predicate(decoded) {
-                        matches += 1
-                        if matches >= targetMatches { return }
+                        try await WSGameplayClient.sendPosition(libusRuntime, on: outbound)
+                        try await WSGameplayClient.sendMessage(.bumpNPC(BumpNPCMessage(npcIndex: 1)), on: outbound)
                     }
                 }
             }
@@ -449,7 +266,7 @@ struct GameplayE2ETests {
     ) async throws {
         _ = try await WebSocketClient.connect(
             url: "ws://localhost:\(port)/ws",
-            configuration: wsConfig(),
+            configuration: WSGameplayClient.wsConfig(),
             logger: logger
         ) { inbound, outbound, _ in
             try await body(inbound, outbound)
@@ -504,9 +321,9 @@ struct GameplayE2ETests {
         listenForTag tag: SomnioMessageTag,
         logger: Logger
     ) async throws {
-        _ = try await testClient.ws("/ws", configuration: wsConfig(), logger: logger) { inbound, outbound, _ in
-            try await registerAndLogin(nickname: nickname, on: outbound)
-            try await drainWithTimeout(inbound: inbound, recorder: recorder, timeout: .seconds(4)) {
+        _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
+            try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
+            try await WSGameplayClient.drainWithTimeout(inbound: inbound, recorder: recorder, timeout: .seconds(4)) {
                 $0.tag == tag
             }
             try await outbound.close(.normalClosure, reason: nil)
@@ -519,106 +336,11 @@ struct GameplayE2ETests {
         logger: Logger,
         action: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
     ) async throws {
-        _ = try await testClient.ws("/ws", configuration: wsConfig(), logger: logger) { inbound, outbound, _ in
-            try await registerAndLogin(nickname: nickname, on: outbound)
-            try await drainUntilJoinComplete(inbound: inbound, recorder: FrameRecorder())
+        _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
+            try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
+            try await WSGameplayClient.drainUntilJoinComplete(inbound: inbound, recorder: FrameRecorder())
             try await action(outbound)
             try await outbound.close(.normalClosure, reason: nil)
-        }
-    }
-
-    // MARK: - ServiceGroup rig
-
-    private func withServiceGroup(
-        rig: Rig,
-        client: PostgresClient,
-        logger: Logger,
-        worldClockInterval: Duration = .milliseconds(250),
-        aiTickInterval: Duration = .milliseconds(50),
-        triggerShutdownEarly: Bool = false,
-        _ body: @Sendable @escaping (Int) async throws -> Void
-    ) async throws {
-        let group = try await makeServiceGroup(
-            rig: rig,
-            client: client,
-            logger: logger,
-            worldClockInterval: worldClockInterval,
-            aiTickInterval: aiTickInterval
-        )
-        let runTask = Task { try await group.run() }
-        let port = await rig.onServerRunning.value()
-        do {
-            try await runBody(group: group, port: port, triggerShutdownEarly: triggerShutdownEarly, body: body)
-        } catch {
-            await group.triggerGracefulShutdown()
-            _ = try? await runTask.value
-            throw error
-        }
-        try await runTask.value
-    }
-
-    private func makeServiceGroup(
-        rig: Rig,
-        client: PostgresClient,
-        logger: Logger,
-        worldClockInterval: Duration,
-        aiTickInterval: Duration
-    ) async throws -> ServiceGroup {
-        let worldClocks = PostgresWorldClockRepository(client: client, logger: logger)
-        let initialClock = try await worldClocks.load()
-        let checkpointService = CheckpointService(
-            worldRouter: rig.dependencies.worldRouter,
-            interval: .seconds(60),
-            logger: logger
-        )
-        let worldClockService = WorldClockService(
-            worldRouter: rig.dependencies.worldRouter,
-            worldClocks: worldClocks,
-            initialClock: initialClock,
-            interval: worldClockInterval,
-            logger: logger
-        )
-        let aiTickService = AITickService(
-            worldRouter: rig.dependencies.worldRouter,
-            interval: aiTickInterval,
-            logger: logger
-        )
-        let services: [any Service] = [
-            rig.application,
-            rig.dependencies.worldRouter,
-            checkpointService,
-            worldClockService,
-            aiTickService
-        ]
-        return ServiceGroup(
-            configuration: ServiceGroupConfiguration(
-                services: services.map {
-                    ServiceGroupConfiguration.ServiceConfiguration(
-                        service: $0,
-                        successTerminationBehavior: .gracefullyShutdownGroup,
-                        failureTerminationBehavior: .gracefullyShutdownGroup
-                    )
-                },
-                gracefulShutdownSignals: [],
-                logger: logger
-            )
-        )
-    }
-
-    private func runBody(
-        group: ServiceGroup,
-        port: Int,
-        triggerShutdownEarly: Bool,
-        body: @Sendable @escaping (Int) async throws -> Void
-    ) async throws {
-        if triggerShutdownEarly {
-            async let bodyTask: Void = body(port)
-            try? await Task.sleep(for: .milliseconds(500))
-            await group.triggerGracefulShutdown()
-            try await bodyTask
-        } else {
-            try await body(port)
-            await group.triggerGracefulShutdown()
         }
     }
 
@@ -636,58 +358,5 @@ struct GameplayE2ETests {
             guard case let .loginResult(payload) = try? SomnioMessageDecoder.decode(frame) else { return false }
             return payload.result == expected
         }
-    }
-}
-
-// MARK: - Async-safe collectors
-
-/// Frame collector shared across the WS handler closure and the post-handler assertion.
-/// Modeled as an `actor` so the WS task and the test body don't race on `frames`.
-actor FrameRecorder {
-    private var frames: [Data] = []
-
-    func append(_ frame: Data) {
-        frames.append(frame)
-    }
-
-    func snapshot() -> [Data] {
-        frames
-    }
-}
-
-/// Resolves to the bound port once `set(_:)` is called from `onServerRunning`. Modeled
-/// as an `actor` so the WS Channel's task and the test body don't race on `port`.
-actor PortPromise {
-    private var port: Int?
-    private var continuations: [CheckedContinuation<Int, Never>] = []
-
-    func set(_ value: Int) {
-        if port == nil { port = value }
-        let resumers = continuations
-        continuations.removeAll()
-        for continuation in resumers {
-            continuation.resume(returning: value)
-        }
-    }
-
-    func value() async -> Int {
-        if let port { return port }
-        return await withCheckedContinuation { continuation in
-            continuations.append(continuation)
-        }
-    }
-}
-
-/// Captures the server-driven WebSocket close code so the shutdown-drain test can assert
-/// `.goingAway` after the handler returns.
-actor CloseRecorder {
-    private var observed: WebSocketErrorCode?
-
-    func set(_ code: WebSocketErrorCode) {
-        if observed == nil { observed = code }
-    }
-
-    func value() -> WebSocketErrorCode? {
-        observed
     }
 }

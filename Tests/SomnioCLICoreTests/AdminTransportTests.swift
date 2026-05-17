@@ -102,6 +102,25 @@ struct AdminTransportTests {
         }
     }
 
+    @Test(arguments: [
+        // Each entry exercises one `SecureTransportValidationError` variant that the
+        // public `AdminTransport.send` gate must reject before opening a WebSocket.
+        "ws://attacker@localhost:8080/admin", // userinfo present
+        "WSS://localhost/admin", // uppercase scheme (case-sensitive TLS gate)
+        "ws://example.com/admin", // plaintext to a remote host
+        "" // unparseable URL
+    ])
+    func `send rejects URLs that fail the secure transport gate`(rawURL: String) async {
+        await Self.expectTransportError(.invalidTransportURL) {
+            try await AdminTransport.send(
+                .players,
+                to: rawURL,
+                token: token,
+                logger: Logger(label: "test.transport.invalid-url")
+            )
+        }
+    }
+
     // MARK: - Error-case matcher
 
     /// Tag used by `expectTransportError(_:)` to match an `AdminTransportError` variant
@@ -113,6 +132,7 @@ struct AdminTransportTests {
         case encodeFailed
         case decodeFailed
         case connectFailed
+        case invalidTransportURL
     }
 
     private static func expectTransportError(
@@ -130,6 +150,7 @@ struct AdminTransportTests {
             case .encodeFailed: .encodeFailed
             case .decodeFailed: .decodeFailed
             case .connectFailed: .connectFailed
+            case .invalidTransportURL: .invalidTransportURL
             }
             #expect(observed == expected, "expected \(expected), got \(observed)", sourceLocation: sourceLocation)
         } catch {

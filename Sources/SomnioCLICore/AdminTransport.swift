@@ -4,15 +4,17 @@ import HummingbirdWSClient
 import Logging
 import NIOCore
 import NIOFoundationCompat
+import SomnioCore
 import SomnioProtocol
 import Synchronization
 
-enum AdminTransportError: Error {
+public enum AdminTransportError: Error, Sendable, Equatable {
     case noResponse
     case unexpectedTextFrame
-    case encodeFailed(Error)
-    case decodeFailed(Error)
-    case connectFailed(Error)
+    case encodeFailed(description: String)
+    case decodeFailed(description: String)
+    case connectFailed(description: String)
+    case invalidTransportURL(SecureTransportValidationError)
 }
 
 /// Captures the single response frame the admin server sends back across the
@@ -38,18 +40,28 @@ private final class ResponseBox: Sendable {
 /// Single-shot request/response over the `/admin` WebSocket. Opens an authenticated
 /// connection, writes the encoded `AdminRequest`, reads the first inbound binary frame
 /// as an `AdminResponse`, then closes normally.
-enum AdminTransport {
-    static func send(
+public enum AdminTransport {
+    public static func send(
         _ request: AdminRequest,
         to url: String,
         token: String,
         logger: Logger
     ) async throws -> AdminResponse {
+        // Defense in depth against `ws://attacker@localhost/...` parser-disagreement attacks
+        // and against an importer constructing an admin URL that would carry the bearer
+        // token over plaintext to a remote host. The CLI's arg-parse layer validates the
+        // same URL upstream; this gate protects every other public caller of `send`.
+        do {
+            try SecureTransportValidator.validate(url)
+        } catch let error as SecureTransportValidationError {
+            throw AdminTransportError.invalidTransportURL(error)
+        }
+
         let frame: Data
         do {
             frame = try BinaryEncoder().encode(request)
         } catch {
-            throw AdminTransportError.encodeFailed(error)
+            throw AdminTransportError.encodeFailed(description: "\(error)")
         }
 
         var configuration = WebSocketClientConfiguration()
@@ -72,7 +84,7 @@ enum AdminTransport {
                             response = try BinaryDecoder().decode(AdminResponse.self, from: Data(buffer: buffer))
                         } catch {
                             try? await outbound.close(.protocolError, reason: "decode failed")
-                            throw AdminTransportError.decodeFailed(error)
+                            throw AdminTransportError.decodeFailed(description: "\(error)")
                         }
                         box.set(response)
                         // `try?` so a peer-initiated close racing the normal-close write
@@ -89,7 +101,7 @@ enum AdminTransport {
         } catch let error as AdminTransportError {
             throw error
         } catch {
-            throw AdminTransportError.connectFailed(error)
+            throw AdminTransportError.connectFailed(description: "\(error)")
         }
 
         guard let response = box.take() else {

@@ -155,4 +155,46 @@ public enum IntegrationTestFixtures {
         if case let .serverPosition(payload) = message { return payload }
         return nil
     }
+
+    public static func helloPayload(of frame: Data) -> HelloMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .hello(payload) = message { return payload }
+        return nil
+    }
+
+    public static func mainCharacterPayload(of frame: Data) -> MainCharacterMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .mainCharacter(payload) = message { return payload }
+        return nil
+    }
+
+    public static func entityPayload(of frame: Data) -> EntityMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .entity(payload) = message { return payload }
+        return nil
+    }
+
+    public static func inventoryPayload(of frame: Data) -> InventoryMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .inventory(payload) = message { return payload }
+        return nil
+    }
+
+    public static func energyPayload(of frame: Data) -> Energy? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .energy(payload) = message { return payload }
+        return nil
+    }
+
+    public static func enterSectorPayload(of frame: Data) -> EnterSectorMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .enterSector(payload) = message { return payload }
+        return nil
+    }
+
+    public static func adminSayPayload(of frame: Data) -> AdminSayMessage? {
+        guard let message = try? SomnioMessageDecoder.decode(frame) else { return nil }
+        if case let .adminSay(payload) = message { return payload }
+        return nil
+    }
 }
