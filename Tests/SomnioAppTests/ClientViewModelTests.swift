@@ -27,26 +27,40 @@ struct ClientViewModelTests {
         #expect(viewModel.selfDisplayName == "Alice")
     }
 
-    @Test func `mainCharacter classifies the self entity as player even after a peer entity stream`() {
+    @Test func `mainCharacter does not synthesize a placeholder; the authoritative self-Entity creates the player entry`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingEnterSector
         viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+
+        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        // `handleMainCharacter` no longer synthesizes a placeholder; the entity entry only
+        // appears after the authoritative `.entity` message arrives.
+        #expect(viewModel.entities[7] == nil)
+        #expect(viewModel.selfEntityIndex == 7)
+        #expect(viewModel.connectionState == .attached)
+
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 7,
-            figure: 0,
-            gender: 0,
+            figure: 3,
+            gender: Gender.female.rawValue,
             maskWidth: 128,
             maskHeight: 128,
             type: .player,
-            name: "Peer",
+            name: "Alice",
             x: 5,
-            y: 5,
-            facing: Direction.south.rawValue,
-            tempo: Tempo.default.rawValue
+            y: 9,
+            facing: Direction.east.rawValue,
+            tempo: Tempo.run.rawValue
         ))))
-        #expect(viewModel.entities[7]?.kind == .peer)
-        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
-        #expect(viewModel.entities[7]?.kind == .player)
+
+        let entity = viewModel.entities[7]
+        #expect(entity?.kind == .player)
+        #expect(entity?.figure == 3)
+        #expect(entity?.gender == .female)
+        #expect(entity?.position == GridPoint(x: 5, y: 9))
+        #expect(entity?.facing == .east)
+        #expect(entity?.tempo == .run)
+        #expect(entity?.name == "Alice")
     }
 
     @Test func `decodeFailed event appends errorCode and disconnects`() {

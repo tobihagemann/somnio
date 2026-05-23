@@ -220,10 +220,9 @@ public actor PerSectorActor {
             outbox: outbox
         )
 
-        // Stream the newcomer's full join sequence first so the client sees the sector before
-        // any peer entities.
         try outbox.send(SomnioMessageEncoder.encode(.enterSector(EnterSectorMessage(sector: staticSector.asWire))))
         try outbox.send(SomnioMessageEncoder.encode(.mainCharacter(MainCharacterMessage(entityIndex: entityIndex))))
+        try outbox.send(SomnioMessageEncoder.encode(.entity(makeEntityMessage(for: slot))))
         try outbox.send(SomnioMessageEncoder.encode(.inventory(InventoryMessage(rows: inventory.map(\.asWire)))))
         try outbox.send(SomnioMessageEncoder.encode(.energy(character.energy)))
 
@@ -237,7 +236,8 @@ public actor PerSectorActor {
             try outbox.send(SomnioMessageEncoder.encode(.entity(makeEntityMessage(for: monster))))
         }
 
-        // Insert *after* streaming peers so the newcomer doesn't receive its own Entity.
+        // Insert after streaming peers so a `try outbox.send` failure above leaves no
+        // ghost slot in `players`.
         players[entityIndex] = slot
         let newcomerEntity = SomnioMessage.entity(makeEntityMessage(for: slot))
         try broadcastToPeers(newcomerEntity, excluding: entityIndex)

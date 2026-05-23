@@ -17,7 +17,6 @@ public struct WorldEntity: Sendable, Identifiable, Equatable, Hashable {
     public var id: Int16
     public var kind: Kind
     public var figure: Int16
-    // periphery:ignore
     public var gender: Gender?
     public var position: GridPoint
     public var facing: Direction

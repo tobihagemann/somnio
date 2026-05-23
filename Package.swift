@@ -14,7 +14,8 @@ let package = Package(
         .library(name: "SomnioData", targets: ["SomnioData"]),
         .library(name: "SomnioUI", targets: ["SomnioUI"]),
         .library(name: "SomnioServerCore", targets: ["SomnioServerCore"]),
-        .library(name: "SomnioCLICore", targets: ["SomnioCLICore"])
+        .library(name: "SomnioCLICore", targets: ["SomnioCLICore"]),
+        .library(name: "SomnioTestSupport", targets: ["SomnioTestSupport"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -78,7 +79,11 @@ let package = Package(
             ],
             resources: [.process("Resources/Localizable.xcstrings")]
         ),
-        .testTarget(name: "SomnioUITests", dependencies: ["SomnioUI", "SomnioCatalogTestSupport"]),
+        .testTarget(
+            name: "SomnioUITests",
+            dependencies: ["SomnioUI", "SomnioCatalogTestSupport"],
+            resources: [.copy("Resources/Tilesets")]
+        ),
 
         .executableTarget(
             name: "SomnioApp",
@@ -138,6 +143,8 @@ let package = Package(
                 "SomnioServerCore",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
+                .product(name: "PostgresNIO", package: "postgres-nio"),
+                .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "Logging", package: "swift-log")
             ]
         ),

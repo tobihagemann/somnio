@@ -4,32 +4,27 @@ import HummingbirdWebSocket
 import Logging
 import NIOCore
 import PostgresNIO
-import SomnioCore
-import SomnioData
-import SomnioProtocol
 import SomnioServerCore
 
-/// Builds a minimal Hummingbird application that mounts the production `/ws`, `/health`,
-/// and `/admin` routes via `makeSomnioServerApplication`. The factory is the integration
-/// suite's counterpart to `SomnioServerCore`'s admin-only `AdminRouteTestApplication`,
-/// but it stays inside the integration package so the test target can keep its dependency
-/// graph independent of `SomnioTestSupport`.
-enum GameplayRouteTestApplication {
-    /// Build a configured application bound to `127.0.0.1:0` with the supplied gameplay +
-    /// admin dependencies. `onServerRunning` is forwarded to Hummingbird so the
-    /// `ServiceGroup` rig in tick-driven tests can hand back the bound port.
-    static func make(
+/// Builds a Hummingbird application mounting the production `/ws`, `/health`, and
+/// `/admin` routes for live E2E tests.
+public enum GameplayRouteTestApplication {
+    /// Build a configured application bound to `127.0.0.1:0`. `onServerRunning` is
+    /// forwarded so a `ServiceGroup` rig can hand back the bound port. `sectorsDirectory`
+    /// only matters for callers that exercise sector reload from disk.
+    public static func make(
         postgres: PostgresClient,
         dependencies: ConnectionDependencies,
         adminDependencies: AdminConnectionDependencies,
         adminToken: String,
+        sectorsDirectory: URL = URL(fileURLWithPath: "/tmp", isDirectory: true),
         onServerRunning: (@Sendable (any Channel) async -> Void)? = nil
     ) -> Application<RouterResponder<BasicWebSocketRequestContext>> {
         let configuration = ServerConfiguration(
             httpHost: "127.0.0.1",
             httpPort: 0,
             adminToken: adminToken,
-            sectorsDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true)
+            sectorsDirectory: sectorsDirectory
         )
         return makeSomnioServerApplication(
             configuration: configuration,
@@ -40,11 +35,9 @@ enum GameplayRouteTestApplication {
         )
     }
 
-    /// Build a minimal `AdminConnectionDependencies` suitable for the E2E flows that don't
-    /// exercise admin routes. Mirrors `AdminRouteTestApplication.makeDependencies` in shape
-    /// but stays inside the integration package — the integration target intentionally does
-    /// not depend on `SomnioTestSupport`, which is private to the main package's siblings.
-    static func makeAdminDependencies(
+    /// Bag built around a pre-existing `WorldClockService`. Allocates a temp dir for
+    /// the gameplay/admin log file pair.
+    public static func makeAdminDependencies(
         worldRouter: WorldRouter,
         worldClock: WorldClockService,
         logger: Logger

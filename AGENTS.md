@@ -40,9 +40,12 @@ SomnioCLICore    # Admin CLI command tree, transport, output rendering, localiza
 SomnioCLI        # macOS/Linux executable: thin @main shim invoking SomnioCLICore.SomnioCLITool
                  # depends on SomnioCLICore
 SomnioTestSupport # Shared test fixtures (no-op repository stubs, AdminRouteTestApplication,
-                 # StubAdminWorldRouter) consumed by SomnioServerCoreTests and SomnioCLICoreTests
+                 # GameplayRouteTestApplication, StubAdminWorldRouter). Exported as a SwiftPM
+                 # library product so the sibling IntegrationTests package can consume the
+                 # same factories without re-implementing them; also consumed by
+                 # SomnioServerCoreTests and SomnioCLICoreTests.
                  # depends on SomnioCore + SomnioData + SomnioProtocol + SomnioServerCore +
-                 # Hummingbird + HummingbirdWebSocket + Logging
+                 # Hummingbird + HummingbirdWebSocket + PostgresNIO + NIOCore + Logging
 SomnioCatalogTestSupport # Foundation-only helper that reads SwiftPM `.xcstrings` JSON
                  # resources straight out of a `Bundle`. Consumed by SomnioCoreTests,
                  # SomnioUITests, and SomnioCLICoreTests to verify bilingual catalogs
@@ -107,12 +110,12 @@ Scripts/release.sh                                       # build, sign, notarize
 
 Tilesets, character sprites, and animation strips are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
 
-- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing.
+- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing. Must contain `Tilesets/`, `Characters/`, `Animations/`, `System/`, and `Buttons/` subdirectories.
 - `SOMNIO_ASSET_DEST` — set automatically by `package_app.sh` to the bundle's `Resources/` path.
 
-Runtime apps load assets exclusively from `Bundle.main`. There is no env var or Preferences UI for asset paths.
+`bundle-assets.sh` rsyncs each of the five subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. Runtime apps load assets exclusively from `Bundle.main` via `BundleMainSpriteAssets`. There is no env var or Preferences UI for asset paths.
 
-`bundle-assets.sh` is currently a stub (the asset pack itself isn't ready yet). The env-var contract is stable, so the call site in `package_app.sh` won't churn when the body is filled in.
+No asset pack is committed to the repo. A runtime app launched without an operator-supplied `SOMNIO_ASSET_SOURCE` renders with the loader's nil-fallback path: untextured ground tiles, untextured object decals, and a solid-color splash.
 
 ## Logging
 

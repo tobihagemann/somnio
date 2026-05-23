@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Asset bundling step. Currently a stub; the actual rsync / xcrun actool invocations that
-# copy tilesets / sprites / animation strips from SOMNIO_ASSET_SOURCE into SOMNIO_ASSET_DEST
-# land in a later iteration. The env-var contract is stable so callers don't have to churn.
+# Asset bundling step. Copies tilesets / character sprite sheets / animation strips /
+# system images / editor buttons from SOMNIO_ASSET_SOURCE into the .app bundle's
+# Resources/ directory. The asset pack itself is never committed (it lives on the
+# build machine); a release run sets SOMNIO_ASSET_SOURCE, a dev run via
+# compile_and_run.sh leaves it unset and falls through to the silent-skip path.
 #
 # Env-var contract:
 #   SOMNIO_ASSET_SOURCE — required at release time. Absolute path to the asset root
-#                         containing tilesets, sprites, sound. Set on the build machine;
-#                         never committed.
-#   SOMNIO_ASSET_DEST   — required. The .app/Resources destination set by package_app.sh.
+#                         containing Tilesets/, Characters/, Animations/, System/,
+#                         Buttons/ subdirectories. Set on the build machine; never
+#                         committed.
+#   SOMNIO_ASSET_DEST   — required. The .app/Resources destination set by
+#                         package_app.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../version.env"
@@ -25,6 +29,31 @@ if [[ -z "${SOMNIO_ASSET_SOURCE:-}" ]]; then
   exit 0
 fi
 
-# Real copy logic lands when the asset pack is finalized.
-echo "Asset bundling: would copy from $SOMNIO_ASSET_SOURCE to $SOMNIO_ASSET_DEST."
-exit 0
+SUBTREES=(Tilesets Characters Animations System Buttons)
+
+# Per-subtree copy. Each missing subtree is a soft warning so an in-progress
+# operator-supplied pack still produces a runnable bundle; the loader's nil-fallback
+# path renders untextured nodes and a solid-color splash in that case.
+for subtree in "${SUBTREES[@]}"; do
+  src="${SOMNIO_ASSET_SOURCE%/}/${subtree}"
+  dest="${SOMNIO_ASSET_DEST%/}/${subtree}"
+  if [[ ! -d "$src" ]]; then
+    echo "WARN: Asset bundling: subtree '${subtree}' missing at ${src}; skipping."
+    continue
+  fi
+  mkdir -p "$dest"
+  rsync -a "${src}/" "${dest}/"
+done
+
+summary=()
+for subtree in "${SUBTREES[@]}"; do
+  dest="${SOMNIO_ASSET_DEST%/}/${subtree}"
+  if [[ -d "$dest" ]]; then
+    count=$(find "$dest" -type f | wc -l | tr -d ' ')
+  else
+    count=0
+  fi
+  lower=$(printf '%s' "$subtree" | tr '[:upper:]' '[:lower:]')
+  summary+=("${count} ${lower}")
+done
+echo "Asset bundling: copied ${summary[*]}."

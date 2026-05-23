@@ -292,34 +292,8 @@ import SpriteKit
 
     private func handleMainCharacter(_ payload: MainCharacterMessage) {
         selfEntityIndex = payload.entityIndex
-        // The server's `PerSectorActor.attach` deliberately does NOT stream an entity
-        // for the joining player (the loop excludes self), so the join sequence is
-        // `enterSector → mainCharacter → inventory → energy → peer-entity*` with
-        // nothing for the self-entity. Without a synthesized placeholder the gameplay
-        // tick early-returns forever (`guard let selfEntity = entities[selfIndex]`).
-        // The placeholder uses neutral defaults rather than the registration form so
-        // a returning user who logs in does not stamp `fighter`/`male` over their
-        // actual character — the first authoritative `serverPosition` for the
-        // self-entity corrects the position once the player moves.
-        if entities[payload.entityIndex] == nil {
-            let placeholder = WorldEntity(
-                id: payload.entityIndex,
-                kind: .player,
-                figure: 0,
-                gender: nil,
-                position: GridPoint(x: 0, y: 0),
-                facing: .south,
-                tempo: .default,
-                maskSize: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize),
-                name: selfDisplayName
-            )
-            entities[payload.entityIndex] = placeholder
-            worldScene.placeEntity(placeholder)
-        } else {
-            // Defensive: reclassify any pre-existing entry as `.player` (would only
-            // happen if a future server change started streaming the self-entity).
-            entities[payload.entityIndex]?.kind = .player
-        }
+        // The authoritative self-Entity is the next frame on the wire; `handleEntity`
+        // populates `entities[selfEntityIndex]` from it.
         connectionState = .attached
         startGameplayTicker()
     }

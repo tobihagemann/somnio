@@ -71,6 +71,90 @@ struct PerSectorActorTests {
         #expect(snapshot?.character.facing == .east)
     }
 
+    @Test func `attach streams the self-Entity between MainCharacter and Inventory on a no-peer sector`() async throws {
+        let sector = makeSector()
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        let character = makeCharacter(at: GridPoint(x: 2, y: 2))
+        let entityIndex = try await actor.attach(
+            character: character,
+            inventory: [],
+            outbox: outbox
+        )
+
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let messages = try frames.map { try SomnioMessageDecoder.decode($0) }
+
+        #expect(messages.count == 5)
+        guard case .enterSector = messages[0] else {
+            Issue.record("expected enterSector at index 0, got \(messages[0])")
+            return
+        }
+        guard case let .mainCharacter(mainPayload) = messages[1] else {
+            Issue.record("expected mainCharacter at index 1, got \(messages[1])")
+            return
+        }
+        #expect(mainPayload.entityIndex == entityIndex)
+        guard case let .entity(selfEntity) = messages[2] else {
+            Issue.record("expected self-Entity at index 2, got \(messages[2])")
+            return
+        }
+        #expect(selfEntity.entityIndex == entityIndex)
+        #expect(selfEntity.type == .player)
+        #expect(selfEntity.name == character.name)
+        #expect(selfEntity.x == character.position.x)
+        #expect(selfEntity.y == character.position.y)
+        guard case .inventory = messages[3] else {
+            Issue.record("expected inventory at index 3, got \(messages[3])")
+            return
+        }
+        guard case .energy = messages[4] else {
+            Issue.record("expected energy at index 4, got \(messages[4])")
+            return
+        }
+    }
+
+    @Test func `attach with an existing peer emits exactly one self-Entity to the newcomer and one newcomer-Entity to the peer`() async throws {
+        let sector = makeSector()
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let firstOutbox = ConnectionOutbox(highWatermark: 1024)
+        let firstIndex = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: firstOutbox
+        )
+
+        let secondOutbox = ConnectionOutbox(highWatermark: 1024)
+        let secondIndex = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 5, y: 5)),
+            inventory: [],
+            outbox: secondOutbox
+        )
+
+        firstOutbox.finish()
+        secondOutbox.finish()
+        let firstFrames = try await collect(outbox: firstOutbox).map { try SomnioMessageDecoder.decode($0) }
+        let secondFrames = try await collect(outbox: secondOutbox).map { try SomnioMessageDecoder.decode($0) }
+
+        let firstEntities = firstFrames.compactMap { message -> EntityMessage? in
+            if case let .entity(payload) = message { return payload }
+            return nil
+        }
+        #expect(firstEntities.count == 2)
+        #expect(firstEntities[0].entityIndex == firstIndex, "first frame is the first peer's own self-Entity")
+        #expect(firstEntities[1].entityIndex == secondIndex, "second frame is the newcomer broadcast")
+
+        let secondEntities = secondFrames.compactMap { message -> EntityMessage? in
+            if case let .entity(payload) = message { return payload }
+            return nil
+        }
+        #expect(secondEntities.count == 2)
+        #expect(secondEntities[0].entityIndex == secondIndex, "newcomer self-Entity is first")
+        #expect(secondEntities[1].entityIndex == firstIndex, "existing peer's Entity follows")
+        #expect(secondEntities.allSatisfy { $0.entityIndex != 0 })
+    }
+
     @Test func `entity indices are sector-local so a portal hop must propagate the new index`() async throws {
         let sectorA = PerSectorActor(staticSector: makeSector(), logger: testLogger)
         let sectorB = PerSectorActor(staticSector: makeSector(), logger: testLogger)
@@ -138,5 +222,13 @@ struct PerSectorActorTests {
 
     private var testLogger: Logger {
         Logger(label: "test.per-sector-actor")
+    }
+
+    private func collect(outbox: ConnectionOutbox) async -> [Data] {
+        var frames: [Data] = []
+        for await frame in outbox.stream {
+            frames.append(frame)
+        }
+        return frames
     }
 }

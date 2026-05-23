@@ -25,11 +25,11 @@ COPY . .
 # `-D NAME=value` discards the value at the Swift command line (active-compilation
 # conditions are booleans), so the build-time version is injected by rewriting the
 # constant before compilation. Keeps the source path identical to a dev build. The
-# `grep` guard fails the image build if `SomnioServerVersion.value`'s `"1.0.0"`
+# `grep` guard fails the image build if `SomnioServerVersion.value`'s `"0.0.0-dev"`
 # placeholder ever drifts.
 RUN test -n "${MARKETING_VERSION}" \
         || (echo "ERROR: --build-arg MARKETING_VERSION=<x.y.z> is required" >&2; exit 1) \
-    && sed -i "s/public static let value: String = \"1.0.0\"/public static let value: String = \"${MARKETING_VERSION}\"/" \
+    && sed -i "s/public static let value: String = \"0.0.0-dev\"/public static let value: String = \"${MARKETING_VERSION}\"/" \
         Sources/SomnioServerCore/Configuration/SomnioServerVersion.swift \
     && grep -q "public static let value: String = \"${MARKETING_VERSION}\"" \
         Sources/SomnioServerCore/Configuration/SomnioServerVersion.swift \

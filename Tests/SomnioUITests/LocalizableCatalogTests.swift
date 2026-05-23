@@ -25,7 +25,7 @@ struct LocalizableCatalogTests {
     ]
 
     @Test func `every key ships English and German values`() throws {
-        let catalog = try CatalogParser.parse(from: Bundle.module)
+        let catalog = try CatalogParser.parse(from: Bundle.somnioUIModule)
         for key in LocalizableCatalogTests.expectedKeys {
             let entry = try #require(catalog[key], "missing catalog entry for \(key)")
             #expect(entry["en"]?.isEmpty == false, "missing English value for \(key)")
@@ -34,7 +34,7 @@ struct LocalizableCatalogTests {
     }
 
     @Test func `placeholder signature matches across English and German for every key`() throws {
-        let catalog = try CatalogParser.parse(from: Bundle.module)
+        let catalog = try CatalogParser.parse(from: Bundle.somnioUIModule)
         for key in LocalizableCatalogTests.expectedKeys {
             let entry = try #require(catalog[key])
             let englishValue = try #require(entry["en"])
@@ -47,7 +47,7 @@ struct LocalizableCatalogTests {
     }
 
     @Test func `no Unicode ellipsis appears in any catalog value`() throws {
-        let catalog = try CatalogParser.parse(from: Bundle.module)
+        let catalog = try CatalogParser.parse(from: Bundle.somnioUIModule)
         for (key, entry) in catalog {
             for (locale, value) in entry {
                 #expect(!value.contains("\u{2026}"), "Unicode ellipsis in \(key) [\(locale)]: \(value)")

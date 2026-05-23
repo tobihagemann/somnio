@@ -4,5 +4,5 @@ import Foundation
 /// will inject the real value from `version.env` at build time; this placeholder lets
 /// the dispatcher and CLI wire up end-to-end before that lands.
 public enum SomnioServerVersion {
-    public static let value: String = "1.0.0"
+    public static let value: String = "0.0.0-dev"
 }

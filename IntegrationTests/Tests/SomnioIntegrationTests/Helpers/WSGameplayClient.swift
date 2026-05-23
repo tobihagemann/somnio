@@ -12,6 +12,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 
 /// Shared WebSocket + service-group helpers consumed by every gameplay-side integration suite.
 /// Extracted from `GameplayE2ETests.swift` so the additional faithfulness suites (R5, R7, R8,
