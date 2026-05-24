@@ -24,9 +24,12 @@ import SpriteKit
         sourceWidth: Int16,
         sourceHeight: Int16
     ) -> SKTexture?
-    func characterTexture(figure: Int16, frame: Int) -> SKTexture?
-    func npcTexture(figure: Int16, frame: Int) -> SKTexture?
-    func monsterTexture(figure: Int16, frame: Int) -> SKTexture?
+    func entityTexture(
+        figureIndex: Int16,
+        kind: WorldEntity.Kind,
+        facing: Direction,
+        frame: Int
+    ) -> SKTexture?
     func animationStrip(name: String) -> SKTexture?
     func splash() -> SKTexture?
 }
@@ -39,6 +42,16 @@ import SpriteKit
     private static let logger = Logger(label: "de.tobiha.somnio.ui.assets")
     private static let sourceCellSize = 32
 
+    // Main player sheet (`001-Main01.png`, 1024 × 384): an 8 × 2 grid of character regions;
+    // each region is a 4-frame × 4-direction grid of 32 × 48 cells. NPC/monster sheets hold
+    // a single character region whose cell size is the sheet divided by frames/directions.
+    private static let playerSheetColumns = 8
+    private static let playerSheetRows = 2
+    private static let entityWalkFrames = 4
+    private static let entityDirections = 4
+    private static let playerCellWidth = 32
+    private static let playerCellHeight = 48
+
     private struct GroundKey: Hashable {
         // periphery:ignore
         let tilesetIndex: Int16
@@ -48,9 +61,24 @@ import SpriteKit
         let sourceY: Int16
     }
 
+    private struct EntityTextureKey: Hashable {
+        // periphery:ignore
+        let figureIndex: Int16
+        // periphery:ignore
+        let kind: WorldEntity.Kind
+        // periphery:ignore
+        let facing: Direction
+        // periphery:ignore
+        let frame: Int
+    }
+
     private let bundle: Bundle
     private var tilesetImageCache: [Int16: CGImage] = [:]
     private var groundTextureCache: [GroundKey: SKTexture] = [:]
+    private var characterImageCache: [Int16: CGImage] = [:]
+    private var characterImageMisses: Set<Int16> = []
+    private var characterSheetTextureCache: [Int16: SKTexture] = [:]
+    private var entityTextureCache: [EntityTextureKey: SKTexture] = [:]
 
     public init(bundle: Bundle = .main) {
         self.bundle = bundle
@@ -123,17 +151,80 @@ import SpriteKit
         return SKTexture(rect: CGRect(x: uvX, y: uvY, width: uvW, height: uvH), in: whole)
     }
 
-    /// Character/NPC/monster slots are unwired — the scene does not read these accessors.
-    public func characterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
+    public func entityTexture(
+        figureIndex: Int16,
+        kind: WorldEntity.Kind,
+        facing: Direction,
+        frame: Int
+    ) -> SKTexture? {
+        guard frame >= 0, frame < Self.entityWalkFrames,
+              facing.rawValue >= 0, facing.rawValue < Int16(Self.entityDirections)
+        else { return nil }
+        let key = EntityTextureKey(figureIndex: figureIndex, kind: kind, facing: facing, frame: frame)
+        if let cached = entityTextureCache[key] { return cached }
+
+        let sheet: CGImage
+        let sheetIndex: Int16
+        let pixelRect: CGRect
+        switch kind {
+        case .player, .peer:
+            // All players share `001-Main01.png` (sheet index 0); the wire figure selects
+            // the character region within it, not the sheet file.
+            guard figureIndex >= 0, figureIndex < Int16(Self.playerSheetColumns * Self.playerSheetRows),
+                  let playerSheet = characterSheetImage(for: 0) else { return nil }
+            let charColumn = Int(figureIndex) % Self.playerSheetColumns
+            let charRow = Int(figureIndex) / Self.playerSheetColumns
+            let regionWidth = Self.entityWalkFrames * Self.playerCellWidth
+            let regionHeight = Self.entityDirections * Self.playerCellHeight
+            sheet = playerSheet
+            sheetIndex = 0
+            pixelRect = CGRect(
+                x: charColumn * regionWidth + frame * Self.playerCellWidth,
+                y: charRow * regionHeight + Int(facing.rawValue) * Self.playerCellHeight,
+                width: Self.playerCellWidth,
+                height: Self.playerCellHeight
+            )
+        case .npc, .monster:
+            guard let npcSheet = characterSheetImage(for: figureIndex) else { return nil }
+            let cellWidth = npcSheet.width / Self.entityWalkFrames
+            let cellHeight = npcSheet.height / Self.entityDirections
+            guard cellWidth > 0, cellHeight > 0 else { return nil }
+            sheet = npcSheet
+            sheetIndex = figureIndex
+            pixelRect = CGRect(
+                x: frame * cellWidth,
+                y: Int(facing.rawValue) * cellHeight,
+                width: cellWidth,
+                height: cellHeight
+            )
+        }
+        guard let texture = entitySlice(in: sheet, sheetIndex: sheetIndex, pixelRect: pixelRect) else { return nil }
+        entityTextureCache[key] = texture
+        return texture
     }
 
-    public func npcTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
-    }
-
-    public func monsterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
+    /// Slices a top-left pixel rect out of a whole-sheet `CGImage`, returning a UV-rect
+    /// `SKTexture` against a cached whole-sheet texture. Mirrors `objectTexture`'s Y-flip
+    /// (`SKTexture(rect:in:)` is bottom-left UV; the sheet rect is top-left pixels).
+    private func entitySlice(in sheetImage: CGImage, sheetIndex: Int16, pixelRect: CGRect) -> SKTexture? {
+        let imageWidth = CGFloat(sheetImage.width)
+        let imageHeight = CGFloat(sheetImage.height)
+        guard imageWidth > 0, imageHeight > 0,
+              pixelRect.minX >= 0, pixelRect.minY >= 0,
+              pixelRect.maxX <= imageWidth, pixelRect.maxY <= imageHeight
+        else { return nil }
+        let whole: SKTexture
+        if let cached = characterSheetTextureCache[sheetIndex] {
+            whole = cached
+        } else {
+            whole = SKTexture(cgImage: sheetImage)
+            characterSheetTextureCache[sheetIndex] = whole
+        }
+        let uvX = pixelRect.minX / imageWidth
+        let uvY = (imageHeight - pixelRect.minY - pixelRect.height) / imageHeight
+        let uvW = pixelRect.width / imageWidth
+        let uvH = pixelRect.height / imageHeight
+        return SKTexture(rect: CGRect(x: uvX, y: uvY, width: uvW, height: uvH), in: whole)
     }
 
     public func animationStrip(name: String) -> SKTexture? {
@@ -160,7 +251,9 @@ import SpriteKit
         guard let urls = bundle.urls(forResourcesWithExtension: "png", subdirectory: "Tilesets") else {
             return nil
         }
-        let prefix = String(format: "%03d-", tilesetIndex)
+        // Binary stores 0-based indices; filenames are 1-based (`001-`...`051-`). Widen to
+        // `Int` before `+ 1` so an out-of-range `Int16.max` index can't trap the add.
+        let prefix = String(format: "%03d-", Int(tilesetIndex) + 1)
         let matches = urls
             .filter { $0.lastPathComponent.hasPrefix(prefix) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -177,6 +270,43 @@ import SpriteKit
         }
         guard let image = Self.cgImage(at: pick) else { return nil }
         tilesetImageCache[tilesetIndex] = image
+        return image
+    }
+
+    private func characterSheetImage(for figureIndex: Int16) -> CGImage? {
+        if let cached = characterImageCache[figureIndex] { return cached }
+        // Negative cache: `entityTexture` is hit per walk-frame, so without this a missing
+        // sheet (no-asset-pack fallback) re-scans/sorts the bundle every frame.
+        if characterImageMisses.contains(figureIndex) { return nil }
+        guard let urls = bundle.urls(forResourcesWithExtension: "png", subdirectory: "Characters") else {
+            characterImageMisses.insert(figureIndex)
+            return nil
+        }
+        // Binary stores 0-based indices; filenames are 1-based (`001-`...`128-`). Widen to
+        // `Int` before `+ 1` so a hostile/corrupt `Int16.max` figure index can't trap the add.
+        let prefix = String(format: "%03d-", Int(figureIndex) + 1)
+        let matches = urls
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard let pick = matches.first else {
+            characterImageMisses.insert(figureIndex)
+            return nil
+        }
+        if matches.count > 1 {
+            Self.logger.warning(
+                "duplicate character prefix; picking lexicographically-first match",
+                metadata: [
+                    "figure_index": "\(figureIndex)",
+                    "picked": "\(pick.lastPathComponent)",
+                    "candidates": "\(matches.map(\.lastPathComponent))"
+                ]
+            )
+        }
+        guard let image = Self.cgImage(at: pick) else {
+            characterImageMisses.insert(figureIndex)
+            return nil
+        }
+        characterImageCache[figureIndex] = image
         return image
     }
 

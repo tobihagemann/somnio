@@ -54,15 +54,82 @@ struct PortalDateTickTests {
         }
     }
 
+    @Test func `portal hop places the player at the destination arrival spawn`() async throws {
+        // Destination "B" has a self-targeting arrival portal, so a hop should relocate the
+        // player to its arrival spawn rather than carrying the old sector's coordinates.
+        let arrivalPortal = SectorPortal(
+            x: 0, y: 0, width: 256, height: 256, targetSectorName: "B", direction: .arrivalPlacement
+        )
+        let dependencies = try await makeDependencies(initialClock: .bootDefault, destinationPortals: [arrivalPortal])
+        let connection = ConnectionActor(dependencies: dependencies)
+        let outbox = await connection.connectionOutbox
+
+        let actorA = try #require(await dependencies.worldRouter.sectorActor(named: "A"))
+        let entityIndex = try await actorA.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: outbox
+        )
+        await connection.markAttached(entityIndex: entityIndex, sectorName: "A", accountId: UUID())
+
+        let outcome = try #require(await GameplayHandlers.handleEnterPortal(
+            EnterPortalMessage(portalIndex: 0),
+            entityIndex: entityIndex,
+            sectorName: "A",
+            connectionActor: connection,
+            dependencies: dependencies
+        ))
+        #expect(outcome.sectorName == "B")
+
+        let actorB = try #require(await dependencies.worldRouter.sectorActor(named: "B"))
+        let expectedSpawn = await actorB.staticSector.arrivalSpawn
+        let placed = await actorB.snapshotForPlayer(entityIndex: outcome.entityIndex)
+        #expect(placed?.character.position == expectedSpawn)
+    }
+
+    @Test func `portal hop recenters an out-of-bounds carry into a sector without an arrival portal`() async throws {
+        // Destination "B" has no arrival portal (default), and the carried coordinate is well
+        // outside B's pixel bounds, so the hop must recenter to B's pixel center rather than
+        // attach the player off-map.
+        let dependencies = try await makeDependencies(initialClock: .bootDefault)
+        let connection = ConnectionActor(dependencies: dependencies)
+        let outbox = await connection.connectionOutbox
+
+        let actorA = try #require(await dependencies.worldRouter.sectorActor(named: "A"))
+        let entityIndex = try await actorA.attach(
+            character: makeCharacter(at: GridPoint(x: 5000, y: 5000)), // out of B's 1024px extent
+            inventory: [],
+            outbox: outbox
+        )
+        await connection.markAttached(entityIndex: entityIndex, sectorName: "A", accountId: UUID())
+
+        let outcome = try #require(await GameplayHandlers.handleEnterPortal(
+            EnterPortalMessage(portalIndex: 0),
+            entityIndex: entityIndex,
+            sectorName: "A",
+            connectionActor: connection,
+            dependencies: dependencies
+        ))
+        #expect(outcome.sectorName == "B")
+
+        let actorB = try #require(await dependencies.worldRouter.sectorActor(named: "B"))
+        let expectedCenter = await actorB.staticSector.pixelCenter
+        let placed = await actorB.snapshotForPlayer(entityIndex: outcome.entityIndex)
+        #expect(placed?.character.position == expectedCenter)
+    }
+
     // MARK: - Helpers
 
-    private func makeDependencies(initialClock: WorldClock) async throws -> ConnectionDependencies {
+    private func makeDependencies(
+        initialClock: WorldClock,
+        destinationPortals: [SectorPortal] = []
+    ) async throws -> ConnectionDependencies {
         let logger = Logger(label: "test.portal-date-tick")
         let sectorA = makeSector(
             name: "A",
             portals: [SectorPortal(x: 0, y: 0, width: 8, height: 8, targetSectorName: "B", direction: .outboundTrigger)]
         )
-        let sectorB = makeSector(name: "B", portals: [])
+        let sectorB = makeSector(name: "B", portals: destinationPortals)
         let worldRouter = try await WorldRouter(
             sectors: ["A": sectorA, "B": sectorB],
             characters: StubCharacterRepository(),

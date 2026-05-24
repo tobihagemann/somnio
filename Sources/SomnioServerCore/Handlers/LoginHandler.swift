@@ -72,16 +72,31 @@ public enum LoginHandler {
                 return
             }
 
+            var resolvedCharacter = character
+            let sector = await sectorActor.staticSector
+            if let spawn = resolvedSpawn(for: character, in: sector) {
+                resolvedCharacter.position = spawn
+                resolvedCharacter.lastSeen = Date() // bump so `snapshot`'s stale-write guard accepts the row
+                do {
+                    _ = try await dependencies.characters.snapshot(resolvedCharacter)
+                } catch {
+                    logger.warning(
+                        "failed to persist resolved spawn point",
+                        metadata: ["error": "\(error)", "name": "\(character.name)", "spawn": "(\(spawn.x),\(spawn.y))"]
+                    )
+                }
+            }
+
             outbox.sendEncoded(.loginResult(LoginResultMessage(result: .ok)), logger: logger)
             do {
                 let entityIndex = try await sectorActor.attach(
-                    character: character,
+                    character: resolvedCharacter,
                     inventory: inventory,
                     outbox: outbox
                 )
                 await connectionActor.markAttached(
                     entityIndex: entityIndex,
-                    sectorName: character.currentSector,
+                    sectorName: resolvedCharacter.currentSector,
                     accountId: account.id
                 )
                 // Hand the freshly-attached client the current world clock so the day/night
@@ -97,5 +112,20 @@ public enum LoginHandler {
             logger.error("login failed", metadata: ["error": "\(error)"])
             outbox.sendEncoded(.loginResult(LoginResultMessage(result: .badCredentials)), logger: logger)
         }
+    }
+
+    /// Self-healing spawn point used when the persisted position is unwalkable (out of bounds
+    /// or inside a collision mask). Returns `nil` when the position is already walkable (no
+    /// correction needed). It catches fresh characters (registration writes the `(0, 0)`
+    /// sentinel, which sits inside the north-wall mask) and any row stuck inside geometry or
+    /// off-map from before the spawn-resolution wiring. A character can never be legitimately
+    /// saved unwalkable under normal play (movement into masks and out of bounds is blocked),
+    /// so "unwalkable" is a reliable corruption signal. Prefers the sector's arrival portal,
+    /// falling back to its pixel-space center when the sector has no arrival portal.
+    static func resolvedSpawn(for character: Character, in sector: Sector) -> GridPoint? {
+        guard !sector.isWalkable(character.position) else {
+            return nil
+        }
+        return sector.arrivalSpawn ?? sector.pixelCenter
     }
 }

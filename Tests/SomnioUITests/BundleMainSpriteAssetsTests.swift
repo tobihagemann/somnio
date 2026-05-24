@@ -112,6 +112,101 @@ struct BundleMainSpriteAssetsTests {
         #expect(assets.animationStrip(name: "AnyName") == nil)
     }
 
+    // MARK: - entityTexture
+
+    // Fixtures `Resources/Characters/001-TestMain.png` (1024x384 player sheet) and
+    // `003-TestNPC.png` (128x192 NPC sheet) carry solid-color marker cells (32x48) on a black
+    // field. Direction rawValue is N=0, E=1, S=2, W=3. The off-by-one (`figureIndex + 1`)
+    // resolves figure 2 → `003-` prefix. Cell layout (regenerate by filling these top-left
+    // pixel rects):
+    //   001-TestMain: (charCol*128 + frame*32, charRow*192 + dir*48, 32, 48)
+    //     red    charCol0 charRow0 south frame0   green  charCol0 charRow0 east  frame2
+    //     blue   charCol7 charRow1 north frame0   yellow charCol7 charRow1 west  frame3
+    //   003-TestNPC: (frame*32, dir*48, 32, 48)
+    //     red    north frame0   green  south frame2   yellow west frame3
+
+    @Test func `entityTexture returns nil for a player figureIndex out of range`() {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        #expect(assets.entityTexture(figureIndex: 99, kind: .player, facing: .south, frame: 0) == nil)
+    }
+
+    @Test func `entityTexture returns nil for an NPC figure with no matching file`() {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        #expect(assets.entityTexture(figureIndex: 999, kind: .npc, facing: .north, frame: 0) == nil)
+    }
+
+    @Test func `entityTexture returns nil for a frame out of range`() {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        #expect(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 4) == nil)
+    }
+
+    @Test func `entityTexture returns the red cell for player figureIndex 0 facing south frame 0`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .player, facing: .south, frame: 0))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyRed(color))
+    }
+
+    @Test func `entityTexture returns the green cell for player figureIndex 0 facing east frame 2`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .player, facing: .east, frame: 2))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyGreen(color))
+    }
+
+    @Test func `entityTexture returns the blue cell for player figureIndex 15 facing north frame 0`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 15, kind: .player, facing: .north, frame: 0))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyBlue(color))
+    }
+
+    @Test func `entityTexture returns the yellow cell for player figureIndex 15 facing west frame 3`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 15, kind: .player, facing: .west, frame: 3))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyYellow(color))
+    }
+
+    @Test func `entityTexture returns the red cell for NPC figureIndex 2 facing north frame 0`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyRed(color))
+    }
+
+    @Test func `entityTexture returns the green cell for NPC figureIndex 2 facing south frame 2`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .south, frame: 2))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyGreen(color))
+    }
+
+    @Test func `entityTexture returns the yellow cell for NPC figureIndex 2 facing west frame 3`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .west, frame: 3))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyYellow(color))
+    }
+
+    @Test func `entityTexture uses the same cell for player and peer`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let playerTexture = try #require(assets.entityTexture(figureIndex: 0, kind: .player, facing: .south, frame: 0))
+        let peerTexture = try #require(assets.entityTexture(figureIndex: 0, kind: .peer, facing: .south, frame: 0))
+        let playerColor = try #require(centerColor(of: playerTexture))
+        let peerColor = try #require(centerColor(of: peerTexture))
+        #expect(abs(playerColor.redComponent - peerColor.redComponent) < 0.02)
+        #expect(abs(playerColor.greenComponent - peerColor.greenComponent) < 0.02)
+        #expect(abs(playerColor.blueComponent - peerColor.blueComponent) < 0.02)
+    }
+
+    @Test func `entityTexture caches across calls`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let first = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
+        let second = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
+        #expect(first === second, "expected the same SKTexture instance from the cache")
+    }
+
     // MARK: - Helpers
 
     private struct ColorCounts {
@@ -143,6 +238,11 @@ struct BundleMainSpriteAssetsTests {
     private func makeBitmap(from texture: SKTexture) -> NSBitmapImageRep? {
         let cgImage = texture.cgImage()
         return NSBitmapImageRep(cgImage: cgImage)
+    }
+
+    private func centerColor(of texture: SKTexture) -> NSColor? {
+        guard let bitmap = makeBitmap(from: texture) else { return nil }
+        return bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)
     }
 
     private func approximatelyRed(_ color: NSColor) -> Bool {

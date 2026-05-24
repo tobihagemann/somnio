@@ -223,6 +223,19 @@ struct ClientViewModelTests {
         #expect(viewModel.chatLines.contains(.spokenByPeer(senderName: "Bob", message: "hi")))
     }
 
+    @Test func `clampX and clampY bound to the sector's pixel extent, not its tile count`() {
+        let viewModel = makeViewModel()
+        let sector = tinySector() // 4x4 tiles -> 512px extent (max valid pixel 511)
+        // A mid-sector pixel is preserved; the prior tile-count clamp confined it to [0, 3].
+        #expect(viewModel.clampX(200, sector: sector) == 200)
+        #expect(viewModel.clampY(200, sector: sector) == 200)
+        // Bounds: floor at 0, ceiling at widthPx - 1.
+        #expect(viewModel.clampX(-5, sector: sector) == 0)
+        #expect(viewModel.clampX(1000, sector: sector) == 511)
+        #expect(viewModel.clampY(-5, sector: sector) == 0)
+        #expect(viewModel.clampY(1000, sector: sector) == 511)
+    }
+
     private func makeViewModel() -> ClientViewModel {
         let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
         return ClientViewModel(worldScene: scene)
@@ -249,15 +262,7 @@ private final class NullSpriteAssets: SpriteAssets {
         nil
     }
 
-    func characterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
-    }
-
-    func npcTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
-    }
-
-    func monsterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
+    func entityTexture(figureIndex _: Int16, kind _: WorldEntity.Kind, facing _: Direction, frame _: Int) -> SKTexture? {
         nil
     }
 

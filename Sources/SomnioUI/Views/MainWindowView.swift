@@ -16,6 +16,13 @@ public struct MainWindowView<PlayField: View>: View {
     public let onItemTap: ((InventoryRow, Hand) -> Void)?
     public let onChatFocusChange: ((Bool) -> Void)?
     public let locale: Locale?
+    /// Focus state for the chat input lives here (not inside `ChatInputView`) so a tap
+    /// on the play field can force-blur the field. SwiftUI's standard "click outside the
+    /// TextField to blur" path doesn't work because `SpriteView`'s underlying `SKView`
+    /// returns `false` for `acceptsFirstResponder` — without this hoist, focus would
+    /// stick on the chat field after the first interaction and swallow all subsequent
+    /// keypresses.
+    @FocusState private var chatFocused: Bool
 
     public init(
         playField: PlayField,
@@ -45,6 +52,7 @@ public struct MainWindowView<PlayField: View>: View {
         ZStack(alignment: .topLeading) {
             playField
                 .frame(width: 640, height: 480)
+                .simultaneousGesture(TapGesture().onEnded { chatFocused = false })
                 .offset(x: 182, y: 14)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -72,7 +80,7 @@ public struct MainWindowView<PlayField: View>: View {
             ChatScrollbackView(chatLines: chatLines, locale: locale)
                 .offset(x: 20, y: 61)
 
-            ChatInputView(text: $chatInput, onSubmit: onSubmitChat, onFocusChange: onChatFocusChange)
+            ChatInputView(text: $chatInput, onSubmit: onSubmitChat, isFocused: $chatFocused)
                 .offset(x: 20, y: 409)
 
             OnlinePlayersList(players: players, locale: locale)
@@ -83,5 +91,8 @@ public struct MainWindowView<PlayField: View>: View {
         }
         .frame(width: 1004, height: 514, alignment: .topLeading)
         .fixedSize()
+        .onChange(of: chatFocused) { _, newValue in
+            onChatFocusChange?(newValue)
+        }
     }
 }

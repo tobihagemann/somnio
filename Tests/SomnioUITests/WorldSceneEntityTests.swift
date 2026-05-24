@@ -17,15 +17,7 @@ import Testing
         nil
     }
 
-    func characterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
-    }
-
-    func npcTexture(figure _: Int16, frame _: Int) -> SKTexture? {
-        nil
-    }
-
-    func monsterTexture(figure _: Int16, frame _: Int) -> SKTexture? {
+    func entityTexture(figureIndex _: Int16, kind _: WorldEntity.Kind, facing _: Direction, frame _: Int) -> SKTexture? {
         nil
     }
 
@@ -58,6 +50,46 @@ struct WorldSceneEntityTests {
         scene.removeEntity(id: 7)
         // Re-placing after removal should succeed without crashing.
         scene.placeEntity(entity)
+    }
+
+    @Test func `removeEntity clears render state`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+        #expect(scene._entityRenderStateContains(7))
+        scene.removeEntity(id: 7)
+        #expect(!scene._entityRenderStateContains(7))
+    }
+
+    @Test func `loading a sector clears render state`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+        #expect(scene._entityRenderStateContains(7))
+        scene.load(sector: tinySector())
+        #expect(!scene._entityRenderStateContains(7))
+    }
+
+    @Test func `showSplash clears render state`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+        #expect(scene._entityRenderStateContains(7))
+        scene.showSplash()
+        #expect(!scene._entityRenderStateContains(7))
+    }
+
+    private func sampleEntity() -> WorldEntity {
+        WorldEntity(
+            id: 7,
+            kind: .peer,
+            figure: 0,
+            position: GridPoint(x: 10, y: 20),
+            facing: .south,
+            tempo: .default,
+            maskSize: GridSize(width: 128, height: 128),
+            name: "Peer"
+        )
     }
 
     private func tinySector() -> Sector {

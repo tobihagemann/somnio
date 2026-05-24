@@ -492,6 +492,12 @@ import SpriteKit
     }
 
     private func runOneGameplayTick() {
+        // Gate the sampler's WASD capture on the live gameplay state. Refreshed each tick
+        // (60 Hz, ~16ms latency) so opening a sheet or focusing the chat input releases
+        // gameplay keys back to the responder chain without an explicit notify path.
+        keyboard.isGameplayActive = connectionState == .attached
+            && presentedSheet == nil
+            && !isChatInputFocused
         guard !isChatInputFocused else { return }
         guard let selfIndex = selfEntityIndex,
               var selfEntity = entities[selfIndex],
@@ -523,7 +529,9 @@ import SpriteKit
             let dyPx = Int32((velocity.dy * Double(stepPx)).rounded())
             let proposedX = clampX(Int32(selfEntity.position.x) + dxPx, sector: sector)
             let proposedY = clampY(Int32(selfEntity.position.y) + dyPx, sector: sector)
-            let proposed = GridPoint(x: Int16(proposedX), y: Int16(proposedY))
+            // `clamping:` because a sector wider/taller than 255 tiles has a pixel extent
+            // beyond `Int16.max`; a plain `Int16(...)` would trap near the far edge.
+            let proposed = GridPoint(x: Int16(clamping: proposedX), y: Int16(clamping: proposedY))
             if !CollisionMaskOverlap.contains(proposed, in: sector.collisionMasks) {
                 selfEntity.position = proposed
             }
@@ -617,12 +625,14 @@ import SpriteKit
         return Velocity(dx: dx / length, dy: dy / length)
     }
 
-    private func clampX(_ x: Int32, sector: Sector) -> Int32 {
-        max(0, min(x, Int32(sector.dimensions.width) - 1))
+    /// Bounds the player to the sector's pixel extent (`Sector.pixelWidth/Height`); positions
+    /// are pixels while dimensions are tiles. Internal (not private) for `@testable` access.
+    func clampX(_ x: Int32, sector: Sector) -> Int32 {
+        max(0, min(x, sector.pixelWidth - 1))
     }
 
-    private func clampY(_ y: Int32, sector: Sector) -> Int32 {
-        max(0, min(y, Int32(sector.dimensions.height) - 1))
+    func clampY(_ y: Int32, sector: Sector) -> Int32 {
+        max(0, min(y, sector.pixelHeight - 1))
     }
 
     /// Returns the cursor position in window-local coordinates. The play-field origin

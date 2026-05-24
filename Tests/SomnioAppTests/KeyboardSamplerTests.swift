@@ -49,4 +49,32 @@ struct KeyboardSamplerTests {
         sampler.resetForTest()
         #expect(sampler.snapshot == KeyboardSampler.Held())
     }
+
+    @Test func `disabling gameplay clears held keys so they don't resume on reactivation`() {
+        let sampler = KeyboardSampler()
+        sampler.isGameplayActive = true
+        sampler.updateForTest(keyCode: 13, down: true) // W held while active
+        #expect(sampler.snapshot.w == true)
+        // Capture released mid-hold (e.g. a sheet opens): the keyUp won't be consumed, so
+        // the held bit must be cleared here to avoid phantom movement when gameplay resumes.
+        sampler.isGameplayActive = false
+        #expect(sampler.snapshot == KeyboardSampler.Held())
+    }
+
+    @Test func `shouldConsume gates WASD on gameplay state and lets command shortcuts through`() {
+        let sampler = KeyboardSampler()
+        // Inactive: nothing consumed, so keys reach the responder chain (text fields, menus).
+        #expect(sampler.shouldConsume(keyCode: 13, modifierFlags: []) == false)
+
+        sampler.isGameplayActive = true
+        // Active: bare WASD consumed; Shift/Option (tempo) combos still consumed.
+        #expect(sampler.shouldConsume(keyCode: 13, modifierFlags: []) == true) // W
+        #expect(sampler.shouldConsume(keyCode: 1, modifierFlags: [.shift]) == true) // Shift-S (run)
+        #expect(sampler.shouldConsume(keyCode: 2, modifierFlags: [.option]) == true) // Option-D (walk)
+        // Active: Command/Control combos pass through so menu shortcuts still work.
+        #expect(sampler.shouldConsume(keyCode: 13, modifierFlags: [.command]) == false) // Cmd-W
+        #expect(sampler.shouldConsume(keyCode: 1, modifierFlags: [.control]) == false) // Ctrl-S
+        // Active: non-gameplay keys are never consumed.
+        #expect(sampler.shouldConsume(keyCode: 12, modifierFlags: []) == false) // Q
+    }
 }

@@ -34,6 +34,13 @@ SUBTREES=(Tilesets Characters Animations System Buttons)
 # Per-subtree copy. Each missing subtree is a soft warning so an in-progress
 # operator-supplied pack still produces a runnable bundle; the loader's nil-fallback
 # path renders untextured nodes and a solid-color splash in that case.
+#
+# Case-sensitivity hazard: the loader resolves character/tileset sheets via
+# `Bundle.urls(forResourcesWithExtension: "png", ...)`, which matches the lowercase
+# `png` extension only. A sheet shipped with an uppercase extension (e.g.
+# `025-Beast03.PNG`) resolves on case-insensitive macOS (HFS+/APFS default) but
+# silently fails on a case-sensitive Linux bundle, leaving that one sheet untextured.
+# Keep asset filenames lowercase-`.png`.
 for subtree in "${SUBTREES[@]}"; do
   src="${SOMNIO_ASSET_SOURCE%/}/${subtree}"
   dest="${SOMNIO_ASSET_DEST%/}/${subtree}"

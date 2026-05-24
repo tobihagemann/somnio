@@ -82,7 +82,7 @@ let package = Package(
         .testTarget(
             name: "SomnioUITests",
             dependencies: ["SomnioUI", "SomnioCatalogTestSupport"],
-            resources: [.copy("Resources/Tilesets")]
+            resources: [.copy("Resources/Tilesets"), .copy("Resources/Characters")]
         ),
 
         .executableTarget(

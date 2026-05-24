@@ -11,12 +11,20 @@ func renderTiles(sector: Sector, into parent: SKNode, assets: any SpriteAssets) 
     let tileSize = CGFloat(SomnioConstants.tileSize)
     let width = Int(sector.dimensions.width)
     let height = Int(sector.dimensions.height)
+    let sectorHeightPx = CGFloat(sector.pixelHeight)
+
+    // The sector binary uses Mac-classic top-left origin (Y grows downward); SpriteKit's
+    // default scene uses Y-up. Flip every Y at placement so the legacy-authored layout
+    // (north = top of screen, south = bottom) renders right-side-up.
 
     for row in 0 ..< height {
         for column in 0 ..< width {
             let node = SKSpriteNode()
             node.size = CGSize(width: tileSize, height: tileSize)
-            node.position = CGPoint(x: CGFloat(column) * tileSize, y: CGFloat(row) * tileSize)
+            node.position = CGPoint(
+                x: CGFloat(column) * tileSize,
+                y: sectorHeightPx - CGFloat(row + 1) * tileSize
+            )
             node.anchorPoint = CGPoint(x: 0, y: 0)
             if let texture = assets.groundTexture(
                 tilesetIndex: sector.ground.tilesetIndex,
@@ -33,7 +41,10 @@ func renderTiles(sector: Sector, into parent: SKNode, assets: any SpriteAssets) 
     for object in sortedObjects {
         let node = SKSpriteNode()
         node.size = CGSize(width: CGFloat(object.sourceWidth), height: CGFloat(object.sourceHeight))
-        node.position = CGPoint(x: CGFloat(object.x), y: CGFloat(object.y))
+        node.position = CGPoint(
+            x: CGFloat(object.x),
+            y: sectorHeightPx - CGFloat(object.y) - CGFloat(object.sourceHeight)
+        )
         node.anchorPoint = CGPoint(x: 0, y: 0)
         node.zPosition = CGFloat(object.priority)
         if let texture = assets.objectTexture(

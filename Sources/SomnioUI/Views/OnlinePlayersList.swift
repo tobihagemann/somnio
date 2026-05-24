@@ -19,6 +19,7 @@ public struct OnlinePlayersList: View {
             }
             .listStyle(.plain)
             .frame(width: 150, height: 340)
+            .border(Color.black, width: 1)
             Text(verbatim: String(format: L.string("Players: %@", locale: locale), String(players.count)))
                 .frame(width: 150, height: 14, alignment: .leading)
         }

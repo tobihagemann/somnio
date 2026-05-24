@@ -103,6 +103,17 @@ public enum GameplayHandlers {
         await oldSectorActor.detach(entityIndex: entityIndex, leftGame: false)
         var movedCharacter = checkpoint.character
         movedCharacter.currentSector = portal.targetSectorName
+        // Place the player at the destination's arrival portal rather than carrying the old
+        // sector's coordinates (meaningless in the new sector and liable to land in geometry or
+        // out of bounds — `attach` does not validate position). Falls back to the destination
+        // center when the carried coordinates are unwalkable or out of bounds and the sector
+        // has no arrival portal.
+        let destination = newSectorActor.staticSector
+        if let spawn = destination.arrivalSpawn {
+            movedCharacter.position = spawn
+        } else if !destination.isWalkable(movedCharacter.position) {
+            movedCharacter.position = destination.pixelCenter
+        }
         do {
             let outbox = await connectionActor.connectionOutbox
             let newEntityIndex = try await newSectorActor.attach(

@@ -41,23 +41,43 @@ import Foundation
     private var monitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
 
+    /// Set by the host (view model) — `true` when gameplay should respond to WASD
+    /// (player attached, no sheet up, chat input not focused). Defaults to `false` so
+    /// the sampler doesn't capture keys before the gameplay loop is wired up. When
+    /// `false`, key events pass through to AppKit's responder chain so text fields
+    /// receive them normally.
+    public var isGameplayActive: Bool = false {
+        didSet {
+            // Releasing capture mid-hold means the matching keyUp is never consumed, so drop
+            // held keys to avoid phantom movement when gameplay resumes (e.g. a sheet closes).
+            if !isGameplayActive { held = Held() }
+        }
+    }
+
     public init() {}
 
     public func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
+            let consumed: Bool
             switch event.type {
             case .keyDown:
-                update(keyCode: event.keyCode, down: true)
+                consumed = shouldConsume(keyCode: event.keyCode, modifierFlags: event.modifierFlags)
+                if consumed { update(keyCode: event.keyCode, down: true) }
             case .keyUp:
+                // Always clear the held bit, independent of whether the event is consumed: a
+                // key pressed bare (set + consumed) may be released while Cmd/Ctrl is held
+                // (not consumed), and the bit must still clear or the key sticks on.
                 update(keyCode: event.keyCode, down: false)
+                consumed = shouldConsume(keyCode: event.keyCode, modifierFlags: event.modifierFlags)
             case .flagsChanged:
                 handleFlagsChanged(event)
+                consumed = false
             default:
-                break
+                consumed = false
             }
-            return event
+            return consumed ? nil : event
         }
         // Clear held keys whenever the app loses focus. `addLocalMonitorForEvents`
         // only delivers events while the app is active; without this hook a user who
@@ -101,6 +121,23 @@ import Foundation
     /// Test seam: drives the `(keyCode, down)` path the event monitor would invoke.
     func updateForTest(keyCode: UInt16, down: Bool) {
         update(keyCode: keyCode, down: down)
+    }
+
+    private func isGameplayKey(_ keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case Self.keyW, Self.keyA, Self.keyS, Self.keyD:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Whether a key event is swallowed for gameplay. Consumes bare W/A/S/D (and Shift/Option
+    /// tempo combos) while gameplay is active, but lets Command/Control combos through so menu
+    /// shortcuts (Cmd-W, Cmd-S, ...) still reach the responder chain. Internal for `@testable`.
+    func shouldConsume(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        guard isGameplayActive, isGameplayKey(keyCode) else { return false }
+        return modifierFlags.isDisjoint(with: [.command, .control])
     }
 
     private func update(keyCode: UInt16, down: Bool) {

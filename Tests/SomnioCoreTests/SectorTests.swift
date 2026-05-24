@@ -54,4 +54,61 @@ struct SectorTests {
         let sector = Sector(body: body, name: "round-trip")
         #expect(sector.body == body)
     }
+
+    @Test func `arrivalSpawn is nil without a self-targeting arrival portal`() {
+        // The only portal targets a different sector, so it is not "S"'s arrival point.
+        let sector = makeArrivalSector(
+            portals: [SectorPortal(x: 0, y: 0, width: 128, height: 128,
+                                   targetSectorName: "Other", direction: .arrivalPlacement)]
+        )
+        #expect(sector.arrivalSpawn == nil)
+    }
+
+    @Test func `arrivalSpawn returns the portal center when it is walkable`() {
+        let sector = makeArrivalSector(
+            portals: [selfPortal(x: 0, y: 0, width: 128, height: 128)]
+        )
+        #expect(sector.arrivalSpawn == GridPoint(x: 64, y: 64))
+    }
+
+    @Test func `arrivalSpawn scans for a walkable cell when the center is masked`() throws {
+        let mask = CollisionMask(x: 60, y: 60, width: 68, height: 68) // covers center (64, 64)
+        let sector = makeArrivalSector(
+            collisionMasks: [mask],
+            portals: [selfPortal(x: 0, y: 0, width: 128, height: 128)]
+        )
+        #expect(CollisionMaskOverlap.contains(GridPoint(x: 64, y: 64), in: [mask]))
+        let spawn = try #require(sector.arrivalSpawn)
+        #expect(spawn != GridPoint(x: 64, y: 64))
+        #expect(!CollisionMaskOverlap.contains(spawn, in: [mask]))
+        #expect(spawn.x >= 0 && spawn.x < 128 && spawn.y >= 0 && spawn.y < 128)
+    }
+
+    @Test func `arrivalSpawn falls back to the portal center when fully masked`() {
+        let sector = makeArrivalSector(
+            collisionMasks: [CollisionMask(x: 0, y: 0, width: 128, height: 128)],
+            portals: [selfPortal(x: 0, y: 0, width: 128, height: 128)]
+        )
+        #expect(sector.arrivalSpawn == GridPoint(x: 64, y: 64))
+    }
+
+    private func selfPortal(x: Int16, y: Int16, width: Int16, height: Int16) -> SectorPortal {
+        SectorPortal(x: x, y: y, width: width, height: height,
+                     targetSectorName: "S", direction: .arrivalPlacement)
+    }
+
+    private func makeArrivalSector(
+        collisionMasks: [CollisionMask] = [],
+        portals: [SectorPortal] = []
+    ) -> Sector {
+        Sector(
+            name: "S",
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100),
+            collisionMasks: collisionMasks,
+            portals: portals
+        )
+    }
 }

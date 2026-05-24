@@ -115,7 +115,7 @@ Tilesets, character sprites, and animation strips are not committed to this repo
 
 `bundle-assets.sh` rsyncs each of the five subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. Runtime apps load assets exclusively from `Bundle.main` via `BundleMainSpriteAssets`. There is no env var or Preferences UI for asset paths.
 
-No asset pack is committed to the repo. A runtime app launched without an operator-supplied `SOMNIO_ASSET_SOURCE` renders with the loader's nil-fallback path: untextured ground tiles, untextured object decals, and a solid-color splash.
+No asset pack is committed to the repo. A runtime app launched without an operator-supplied `SOMNIO_ASSET_SOURCE` renders with the loader's nil-fallback path: untextured ground tiles, untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash.
 
 ## Logging
 

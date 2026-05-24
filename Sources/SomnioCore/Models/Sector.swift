@@ -88,6 +88,76 @@ public struct Sector: Sendable, Equatable {
         )
     }
 
+    /// Pixel extent of the sector. `dimensions` is in tiles; positions and collision masks
+    /// are in pixels. Widened to `Int32` so a large sector cannot trap the multiply.
+    public var pixelWidth: Int32 {
+        Int32(dimensions.width) * Int32(SomnioConstants.tileSize)
+    }
+
+    public var pixelHeight: Int32 {
+        Int32(dimensions.height) * Int32(SomnioConstants.tileSize)
+    }
+
+    /// Sector center in pixel space, clamped into `Int16`. Spawn fallback when a sector has
+    /// no arrival portal.
+    public var pixelCenter: GridPoint {
+        GridPoint(x: Int16(clamping: pixelWidth / 2), y: Int16(clamping: pixelHeight / 2))
+    }
+
+    /// True when `position` is in the sector's pixel bounds and clear of every collision mask
+    /// — a standable pixel.
+    public func isWalkable(_ position: GridPoint) -> Bool {
+        position.x >= 0 && position.y >= 0
+            && Int32(position.x) < pixelWidth && Int32(position.y) < pixelHeight
+            && !CollisionMaskOverlap.contains(position, in: collisionMasks)
+    }
+
+    /// Spawn point inside the self-pointing arrival-placement portal (legacy "Hierhin"
+    /// record), in pixel coordinates. The legacy server uses this as the spawn point for
+    /// new characters and as the login destination. Prefers the portal's geometric center,
+    /// but the portal rect can span collision masks (e.g., a bookshelf row crosses it), so
+    /// when the center is blocked this scans the portal on an 8px grid and returns the
+    /// walkable cell closest to the center. Returns `nil` if the sector has no arrival
+    /// portal targeting itself — callers should fall back to the sector's pixel-space
+    /// center in that case.
+    public var arrivalSpawn: GridPoint? {
+        guard let portal = portals.first(where: { $0.direction == .arrivalPlacement && $0.targetSectorName == name }) else {
+            return nil
+        }
+        // Widen to `Int32` throughout so a malformed authored portal near `Int16.max` cannot
+        // trap the center/bounds arithmetic; clamp candidates back into the `Int16` GridPoint.
+        let centerX = Int32(portal.x) + Int32(portal.width) / 2
+        let centerY = Int32(portal.y) + Int32(portal.height) / 2
+        let center = GridPoint(x: Int16(clamping: centerX), y: Int16(clamping: centerY))
+        if isWalkable(center) {
+            return center
+        }
+        let step: Int32 = 8
+        let maxX = Int32(portal.x) + Int32(portal.width)
+        let maxY = Int32(portal.y) + Int32(portal.height)
+        var best: GridPoint?
+        var bestDistance = Int32.max
+        var y = Int32(portal.y)
+        while y < maxY {
+            var x = Int32(portal.x)
+            while x < maxX {
+                let candidate = GridPoint(x: Int16(clamping: x), y: Int16(clamping: y))
+                if isWalkable(candidate) {
+                    let dx = x - centerX
+                    let dy = y - centerY
+                    let distance = dx * dx + dy * dy
+                    if distance < bestDistance {
+                        bestDistance = distance
+                        best = candidate
+                    }
+                }
+                x += step
+            }
+            y += step
+        }
+        return best ?? center
+    }
+
     public var body: SectorBody {
         SectorBody(
             version: version,

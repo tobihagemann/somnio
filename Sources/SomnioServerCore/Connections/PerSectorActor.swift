@@ -580,7 +580,8 @@ public actor PerSectorActor {
     // MARK: - Helpers
 
     private func isInside(_ position: GridPoint, of sector: Sector) -> Bool {
-        position.x >= 0 && position.y >= 0 && position.x < sector.dimensions.width && position.y < sector.dimensions.height
+        position.x >= 0 && position.y >= 0
+            && Int32(position.x) < sector.pixelWidth && Int32(position.y) < sector.pixelHeight
     }
 
     private func collides(_ position: GridPoint, with masks: [CollisionMask]) -> Bool {

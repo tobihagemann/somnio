@@ -28,6 +28,7 @@ public struct ChatScrollbackView: View {
             .padding(4)
         }
         .frame(width: 150, height: 336)
+        .border(Color.black, width: 1)
     }
 
     private var renderedLines: [ChatLine] {

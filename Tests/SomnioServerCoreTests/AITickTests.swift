@@ -461,22 +461,19 @@ struct AITickTests {
     }
 
     @Test func `branch zero monster blocked by sector edge broadcasts facing without moving`() async throws {
-        // Sector 400×200. Monster top-left at (50, 194); player attached at (50, 200) — the
-        // player attach is intentionally beyond the sector floor so we can stage a chase
-        // step that the `isInside` gate rejects (`attach` does not validate position).
-        // Monster center (114, 258), player center (114, 264). dx = 0, dy = 6, manhattan
-        // = 6 >= 6 → Euclidean step (0, 6). Proposed top-left = (50, 200), which fails
-        // `isInside` (200 < 200 is false). The broadcast still fires with the unchanged
-        // position and the post-tick facing south. Mirror sentinel for the collision-
-        // blocked test, but exercises the boundary path (`isInside`) rather than `collides`.
+        // Boundary-rejection sentinel (mirrors the collision-blocked test but exercises the
+        // `isInside` gate, not `collides`): the player is attached at the sector floor of a
+        // short 2-tile-tall sector, so the monster's one-step chase lands exactly on the
+        // half-open bottom edge and `isInside` rejects it — the monster broadcasts its updated
+        // facing without moving. (`attach` does not validate the player's out-of-floor position.)
         let sector = makeSector(
-            dimensions: GridSize(width: 400, height: 200),
-            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 50, y: 194), aiScriptIndex: 0)]
+            dimensions: GridSize(width: 4, height: 2),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 50, y: 250), aiScriptIndex: 0)]
         )
         let actor = PerSectorActor(staticSector: sector, logger: testLogger)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
-            character: makeCharacter(name: "alice", at: GridPoint(x: 50, y: 200)),
+            character: makeCharacter(name: "alice", at: GridPoint(x: 50, y: 256)),
             inventory: [],
             outbox: outbox
         )
@@ -488,7 +485,7 @@ struct AITickTests {
         let broadcast = try #require(monsterPositions.first)
         // Position unchanged from the spawn origin; only the facing has been updated.
         #expect(broadcast.x == 50)
-        #expect(broadcast.y == 194)
+        #expect(broadcast.y == 250)
         #expect(broadcast.facing == Direction.south.rawValue)
     }
 

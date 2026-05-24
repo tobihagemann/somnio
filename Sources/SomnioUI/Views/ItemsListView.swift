@@ -45,6 +45,7 @@ public struct ItemsListView: View {
             }
             .listStyle(.plain)
             .frame(width: 150, height: 100)
+            .border(Color.black, width: 1)
             Text(verbatim: String(format: L.string("Items: %@", locale: locale), String(items.count)))
                 .frame(width: 150, height: 14, alignment: .leading)
         }
