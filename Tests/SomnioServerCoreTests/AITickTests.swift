@@ -259,14 +259,21 @@ struct AITickTests {
 
     // MARK: - Monster aggro + chase
 
+    //
+    // These spawn a single monster on the first tick via `monsterSpawnThreshold: 0`, then assert
+    // the same-tick chase behaviour. With the single-cell spawn box (see `makeMonsterSpawn`) the
+    // monster materializes at the 4-aligned spawn origin, so positions are deterministic. The
+    // monster is the only entity that broadcasts `serverPosition` here (the player never calls
+    // `handlePosition`), so the first decoded `serverPosition` is the monster's chase frame.
+
     @Test func `branch zero monster moves toward an in radius player`() async throws {
         let sector = makeSector(
             dimensions: GridSize(width: 512, height: 512),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outbox = ConnectionOutbox(highWatermark: 1024)
-        let entityIndex = try await actor.attach(
+        _ = try await actor.attach(
             character: makeCharacter(name: "alice", at: GridPoint(x: 250, y: 250)),
             inventory: [],
             outbox: outbox
@@ -275,15 +282,12 @@ struct AITickTests {
         _ = await actor.runAITick()
         outbox.finish()
         let frames = await collect(outbox: outbox)
-        let positions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        let monsterFrame = try #require(positions.first)
-        // Monster started at (200, 200) and should have moved toward (250, 250). Manhattan
-        // 100 >= 6 so the Euclidean step lands at ≈(4, 4).
+        let monsterFrame = try #require(decodeServerPositions(in: frames).first)
+        // Monster spawned at (200, 200); player feet-center is south-east of the monster's, so a
+        // single chase step lands at ≈(204, 204) facing east (45° tie-break favors horizontal).
         #expect(monsterFrame.x > 200)
         #expect(monsterFrame.y > 200)
         #expect(monsterFrame.facing == Direction.east.rawValue || monsterFrame.facing == Direction.south.rawValue)
-        // Player slot lives at entityIndex 2; only the monster's broadcast lands.
-        _ = entityIndex
     }
 
     @Test func `branch zero monster idles when no player is in radius`() async throws {
@@ -291,7 +295,7 @@ struct AITickTests {
             dimensions: GridSize(width: 1024, height: 1024),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 0, y: 0), aiScriptIndex: 0)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
             character: makeCharacter(name: "alice", at: GridPoint(x: 900, y: 900)),
@@ -301,10 +305,9 @@ struct AITickTests {
         _ = await actor.runAITick()
         outbox.finish()
         let frames = await collect(outbox: outbox)
-        // The join sequence emits an `entity` frame for the monster but no `serverPosition`,
-        // so any monster-keyed `serverPosition` would have come from the chase branch.
-        let monsterPositions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        #expect(monsterPositions.isEmpty)
+        // The spawn emits an `entity` frame for the monster but no `serverPosition`, so any
+        // `serverPosition` would have come from the chase branch.
+        #expect(decodeServerPositions(in: frames).isEmpty)
     }
 
     @Test func `attaching after a chase delivers the post tick monster facing in the entity frame`() async throws {
@@ -312,17 +315,16 @@ struct AITickTests {
             dimensions: GridSize(width: 512, height: 512),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outboxA = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
             character: makeCharacter(name: "alice", at: GridPoint(x: 100, y: 100)),
             inventory: [],
             outbox: outboxA
         )
-        // Player A is north-west of the monster (centers (164,164) vs (264,264), distance
-        // squared 20000 < radius² 36864). One chase tick orients the monster west on the
-        // 45° diagonal tie-break. Confirm the join sequence for a second player carries
-        // that post-tick facing rather than the seed default.
+        // Player A's feet-center is north-west of the spawned monster's, so one chase tick orients
+        // the monster west on the 45° tie-break. Confirm a second player's join sequence carries
+        // that post-tick facing rather than the seed default (`.south`).
         _ = await actor.runAITick()
 
         let outboxB = ConnectionOutbox(highWatermark: 1024)
@@ -333,69 +335,23 @@ struct AITickTests {
         )
         outboxB.finish()
         let framesB = await collect(outbox: outboxB)
-        let monsterEntity = decodeEntities(in: framesB)
-            .first { $0.entityIndex == 1 && $0.type == .monster }
+        let monsterEntity = decodeEntities(in: framesB).first { $0.type == .monster }
         let entityFrame = try #require(monsterEntity)
-        // The default facing on `MonsterSpawnRuntime` is `.south` (rawValue 2). After a
-        // post-tick orientation toward (50, 50), the runtime facing should be `.west`
-        // (rawValue 3) or `.north` (rawValue 0). The join sequence must reflect that
-        // post-tick value rather than the seed default.
         #expect([Direction.west.rawValue, Direction.north.rawValue].contains(entityFrame.facing))
     }
 
-    // MARK: - Combat carve-out
-
-    @Test func `monster combat is inert across two hundred ticks`() async throws {
+    @Test(arguments: [true, false])
+    func `branch zero monster targets the nearest in radius player regardless of attach order`(
+        closerFirst: Bool
+    ) async throws {
+        // Monster spawns at (200, 200), feet-center (216, 240). alice (320, 200) feet-center
+        // (336, 240) → dx 120; bob (50, 200) feet-center (66, 240) → dx -150. alice is closer, so
+        // the closest-target gate selects her regardless of attach order and faces the monster east.
         let sector = makeSector(
             dimensions: GridSize(width: 512, height: 512),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
-        let outbox = ConnectionOutbox(highWatermark: 4096)
-        _ = try await actor.attach(
-            character: makeCharacter(name: "alice", at: GridPoint(x: 250, y: 250)),
-            inventory: [],
-            outbox: outbox
-        )
-
-        for _ in 0 ..< 200 {
-            _ = await actor.runAITick()
-        }
-        outbox.finish()
-        let frames = await collect(outbox: outbox)
-        let messages = frames.compactMap { try? SomnioMessageDecoder.decode($0) }
-        let damageSayCount = messages.count(where: { message in
-            if case let .serverSay(say) = message { return say.text.lowercased().contains("dmg") }
-            return false
-        })
-        let monsterLeaveCount = messages.count(where: { message in
-            if case let .leave(leave) = message { return leave.entityIndex == 1 }
-            return false
-        })
-        #expect(damageSayCount == 0)
-        #expect(monsterLeaveCount == 0)
-    }
-
-    @Test(arguments: [
-        // (closerFirst, label) — runs the same sector setup with the two attach orders
-        // swapped so the result must be order-independent. A regression to "first in-radius
-        // player wins" would pass when iteration happens to surface the closer player
-        // first, so both orders must be checked.
-        (true, "closer attached first"),
-        (false, "closer attached second")
-    ])
-    func `branch zero monster targets the nearest in radius player regardless of attach order`(closerFirst: Bool, label _: String) async throws {
-        // Monster center is at (264, 264) (mask 128 around (200, 200)).
-        // alice at (320, 200) → center (384, 264), monster→player dx=120, distance² = 14400.
-        // bob at (50, 200)   → center (114, 264), monster→player dx=-150, distance² = 22500.
-        // alice is the closer target; the closest-target gate must select her regardless of
-        // attach/iteration order, and the dominant-axis tie-break with `dx > 0` orients the
-        // monster east.
-        let sector = makeSector(
-            dimensions: GridSize(width: 512, height: 512),
-            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
-        )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let aliceOutbox = ConnectionOutbox(highWatermark: 1024)
         let bobOutbox = ConnectionOutbox(highWatermark: 1024)
         let attachAlice = {
@@ -424,56 +380,23 @@ struct AITickTests {
         aliceOutbox.finish()
         bobOutbox.finish()
         let aliceFrames = await collect(outbox: aliceOutbox)
-        let monsterPosition = decodeServerPositions(in: aliceFrames)
-            .first { $0.entityIndex == 1 }
-        let frame = try #require(monsterPosition)
+        let frame = try #require(decodeServerPositions(in: aliceFrames).first)
         #expect(frame.facing == Direction.east.rawValue)
     }
 
-    @Test func `branch zero monster takes the close range step at exact center coincidence`() async throws {
-        // Monster mask 128 at (200, 200): center (264, 264). Player mask 128 at (200, 200):
-        // center also (264, 264). manhattan == 0 < 6 takes the close-range else branch.
-        // dx == dy == 0 → step (0, 0) → no movement. The chase still broadcasts the post-
-        // tick facing: dominant-axis with horizontal tie-break (`|dx|>=|dy|` is true at
-        // 0/0), and `dx > 0` is false → `.west`.
-        let sector = makeSector(
-            dimensions: GridSize(width: 512, height: 512),
-            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
-        )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
-        let outbox = ConnectionOutbox(highWatermark: 1024)
-        _ = try await actor.attach(
-            character: makeCharacter(name: "alice", at: GridPoint(x: 200, y: 200)),
-            inventory: [],
-            outbox: outbox
-        )
-
-        _ = await actor.runAITick()
-        outbox.finish()
-        let frames = await collect(outbox: outbox)
-        let monsterPositions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        let broadcast = try #require(monsterPositions.first)
-        // No movement — close-range path with dx=dy=0 keeps the position pinned.
-        #expect(broadcast.x == 200)
-        #expect(broadcast.y == 200)
-        // Tie-break facing pinned: `|0|>=|0|` is true, `0 > 0` is false → west.
-        #expect(broadcast.facing == Direction.west.rawValue)
-    }
-
     @Test func `branch zero monster blocked by sector edge broadcasts facing without moving`() async throws {
-        // Boundary-rejection sentinel (mirrors the collision-blocked test but exercises the
-        // `isInside` gate, not `collides`): the player is attached at the sector floor of a
-        // short 2-tile-tall sector, so the monster's one-step chase lands exactly on the
-        // half-open bottom edge and `isInside` rejects it — the monster broadcasts its updated
-        // facing without moving. (`attach` does not validate the player's out-of-floor position.)
+        // Boundary-rejection sentinel (exercises the feet-box bounds gate). The monster spawns at
+        // (48, 208) in a 512x256 sector, so its feet box already sits flush on the bottom edge
+        // (feet maxY == 256). The player below the floor pulls it south, but the one-step chase
+        // would push the feet box past the edge, so the move is rejected — only the facing updates.
         let sector = makeSector(
             dimensions: GridSize(width: 4, height: 2),
-            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 50, y: 250), aiScriptIndex: 0)]
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 48, y: 208), aiScriptIndex: 0)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
-            character: makeCharacter(name: "alice", at: GridPoint(x: 50, y: 256)),
+            character: makeCharacter(name: "alice", at: GridPoint(x: 48, y: 260)),
             inventory: [],
             outbox: outbox
         )
@@ -481,26 +404,22 @@ struct AITickTests {
         _ = await actor.runAITick()
         outbox.finish()
         let frames = await collect(outbox: outbox)
-        let monsterPositions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        let broadcast = try #require(monsterPositions.first)
-        // Position unchanged from the spawn origin; only the facing has been updated.
-        #expect(broadcast.x == 50)
-        #expect(broadcast.y == 250)
+        let broadcast = try #require(decodeServerPositions(in: frames).first)
+        #expect(broadcast.x == 48)
+        #expect(broadcast.y == 208)
         #expect(broadcast.facing == Direction.south.rawValue)
     }
 
     @Test func `branch zero monster blocked by collision broadcasts facing without moving`() async throws {
-        // Monster center (264, 264), player center (314, 314); chase wants east+south.
-        // Compute the proposed step: dx=50, dy=50, manhattan=100>=6, length=sqrt(5000)≈70.71,
-        // step.x = round(50*6/70.71) ≈ 4, step.y same. Proposed = (204, 204). Place a 1x1
-        // collision mask there so the position commit is rejected but the broadcast still
-        // fires with the unchanged position and the new facing.
+        // Monster spawns at (200, 200), chases the player at (250, 250): proposed step ≈ (204, 204),
+        // feet box (204, 236, 32, 16). A mask at (232, 248, 2, 2) overlaps that feet box but not the
+        // spawn feet box (200, 232, 32, 16), so the spawn is clean while the chase move is rejected.
         let sector = makeSector(
             dimensions: GridSize(width: 512, height: 512),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)],
-            collisionMasks: [CollisionMask(x: 204, y: 204, width: 1, height: 1)]
+            collisionMasks: [CollisionMask(x: 232, y: 248, width: 2, height: 2)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
             character: makeCharacter(name: "alice", at: GridPoint(x: 250, y: 250)),
@@ -511,23 +430,21 @@ struct AITickTests {
         _ = await actor.runAITick()
         outbox.finish()
         let frames = await collect(outbox: outbox)
-        let monsterPositions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        let broadcast = try #require(monsterPositions.first)
-        // Position unchanged from the spawn origin; only the facing has been updated.
+        let broadcast = try #require(decodeServerPositions(in: frames).first)
         #expect(broadcast.x == 200)
         #expect(broadcast.y == 200)
         #expect(broadcast.facing == Direction.east.rawValue)
     }
 
     @Test func `non zero ai script index monster idles even when player is in radius`() async throws {
-        // Branch 0 is the only ported AI; any other index must stay still even when a
-        // player is well inside the aggro radius. Without this gate, removing the
-        // `aiScriptIndex == 0` check in `runMonsterTick` would silently start chasing.
+        // Branch 0 is the only ported AI; any other index stays still even with a player well
+        // inside the aggro radius. The spawn still materializes the monster, but `runMonsterTick`
+        // skips it, so no `serverPosition` is ever broadcast.
         let sector = makeSector(
             dimensions: GridSize(width: 512, height: 512),
             monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 1)]
         )
-        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         _ = try await actor.attach(
             character: makeCharacter(name: "alice", at: GridPoint(x: 250, y: 250)),
@@ -540,8 +457,209 @@ struct AITickTests {
         }
         outbox.finish()
         let frames = await collect(outbox: outbox)
-        let monsterPositions = decodeServerPositions(in: frames).filter { $0.entityIndex == 1 }
-        #expect(monsterPositions.isEmpty)
+        #expect(decodeServerPositions(in: frames).isEmpty)
+    }
+
+    // MARK: - Monster spawn cadence
+
+    @Test func `the default monster spawn threshold is the faithful 1199 ticks`() {
+        #expect(PerSectorActor.defaultMonsterSpawnThreshold == 1199)
+    }
+
+    @Test func `no monster exists at boot`() async throws {
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        // Attach without running a tick: the join sequence must carry no monster (nothing spawned).
+        _ = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        #expect(decodeEntities(in: frames).allSatisfy { $0.type != .monster })
+    }
+
+    @Test func `a monster spawns on the tick the timer reaches the threshold, not before`() async throws {
+        // With threshold T the counter reaches T on tick T and spawns on tick T+1. After exactly T
+        // ticks no monster exists; after T+1 a monster entity has been broadcast.
+        let threshold: Int16 = 3
+        func monsterCount(afterTicks ticks: Int) async throws -> Int {
+            let sector = makeSector(
+                dimensions: GridSize(width: 1024, height: 1024),
+                monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+            )
+            let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: threshold)
+            let outbox = ConnectionOutbox(highWatermark: 1024)
+            // Player far from the spawn so no chase noise — only the spawn `entity` lands.
+            _ = try await actor.attach(
+                character: makeCharacter(name: "alice", at: GridPoint(x: 900, y: 900)),
+                inventory: [],
+                outbox: outbox
+            )
+            for _ in 0 ..< ticks {
+                _ = await actor.runAITick()
+            }
+            outbox.finish()
+            let frames = await collect(outbox: outbox)
+            return decodeEntities(in: frames).count { $0.type == .monster }
+        }
+        try await #expect(monsterCount(afterTicks: Int(threshold)) == 0)
+        try await #expect(monsterCount(afterTicks: Int(threshold) + 1) == 1)
+    }
+
+    @Test func `the sector never exceeds the live monster cap`() async throws {
+        // A wide spawn box (≈24 non-overlapping 32 px cells) so all `perSectorMonsterCap` monsters
+        // find distinct feet-clear cells — each placement avoids the live monsters already spawned,
+        // so they never stack. Seeded RNG keeps the sampled cells deterministic.
+        let sector = makeSector(
+            dimensions: GridSize(width: 1024, height: 1024),
+            monsterSpawns: [makeWideMonsterSpawn(at: GridPoint(x: 200, y: 200), boxWidth: 768)]
+        )
+        let actor = PerSectorActor(
+            staticSector: sector,
+            logger: testLogger,
+            rng: SeededGenerator(seed: 7),
+            monsterSpawnThreshold: 0
+        )
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        _ = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 900, y: 900)),
+            inventory: [],
+            outbox: outbox
+        )
+        // Threshold 0 spawns a monster every tick until the sector-wide cap is reached; running
+        // well past the cap must not exceed it.
+        for _ in 0 ..< 10 {
+            _ = await actor.runAITick()
+        }
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let spawnedIndices = Set(decodeEntities(in: frames).filter { $0.type == .monster }.map(\.entityIndex))
+        #expect(spawnedIndices.count == SomnioConstants.perSectorMonsterCap)
+    }
+
+    @Test func `a spawned monster is placed clear of static masks`() async throws {
+        // A wide spawn box overlapping a mask at its left edge: the placement retry must land the
+        // monster on a cell whose feet box clears the mask.
+        let mask = CollisionMask(x: 200, y: 232, width: 32, height: 16)
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            monsterSpawns: [makeWideMonsterSpawn(at: GridPoint(x: 200, y: 200), boxWidth: 256)],
+            collisionMasks: [mask]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        _ = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        _ = await actor.runAITick()
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let monster = try #require(decodeEntities(in: frames).first { $0.type == .monster })
+        let feet = FeetMask.rect(
+            forSpriteAt: GridPoint(x: monster.x, y: monster.y),
+            spriteSize: GridSize(width: monster.maskWidth, height: monster.maskHeight)
+        )
+        #expect(!CollisionMaskOverlap.intersects(feet, [mask]))
+    }
+
+    @Test func `a fully blocked spawn box keeps the timer armed and spawns once a cell frees`() async throws {
+        // A blocker player occupies the single spawn cell at (200, 200), so placement finds no clear
+        // cell. With a positive threshold (2), ticks 1-2 advance the cooldown to armed; tick 3 is
+        // armed but blocked, so no monster materializes (the old unchecked fallback would have stacked
+        // one onto the blocker) AND the cooldown must stay armed. After the blocker detaches, the very
+        // next tick spawns. If a regression reset the cooldown on the failed attempt, that next tick
+        // would not yet be re-armed and no monster would appear — so exactly one monster proves both
+        // the no-fallback fix and the stays-armed retry.
+        let sector = makeSector(
+            dimensions: GridSize(width: 1024, height: 1024),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 2)
+        let observerOutbox = ConnectionOutbox(highWatermark: 4096)
+        _ = try await actor.attach(
+            character: makeCharacter(name: "observer", at: GridPoint(x: 900, y: 900)),
+            inventory: [],
+            outbox: observerOutbox
+        )
+        let blockerOutbox = ConnectionOutbox(highWatermark: 1024)
+        let blockerIndex = try await actor.attach(
+            character: makeCharacter(name: "blocker", at: GridPoint(x: 200, y: 200)),
+            inventory: [],
+            outbox: blockerOutbox
+        )
+
+        // Ticks 1-2 advance the cooldown to the threshold; tick 3 is armed but blocked (no spawn,
+        // cooldown stays armed).
+        for _ in 0 ..< 3 {
+            _ = await actor.runAITick()
+        }
+        await actor.detach(entityIndex: blockerIndex, leftGame: false)
+        _ = await actor.runAITick() // still armed + cell now free -> spawns immediately
+
+        observerOutbox.finish()
+        let frames = await collect(outbox: observerOutbox)
+        let spawned = decodeEntities(in: frames).filter { $0.type == .monster }
+        #expect(spawned.count == 1)
+    }
+
+    @Test func `a spawned monster entity is broadcast to an already-attached player`() async throws {
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        // Player attaches before any spawn; the later spawn must still reach its outbox.
+        _ = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        _ = await actor.runAITick()
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        #expect(decodeEntities(in: frames).contains { $0.type == .monster })
+    }
+
+    // MARK: - Combat carve-out
+
+    @Test func `monster combat is inert across two hundred ticks`() async throws {
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
+        let outbox = ConnectionOutbox(highWatermark: 4096)
+        _ = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 250, y: 250)),
+            inventory: [],
+            outbox: outbox
+        )
+
+        for _ in 0 ..< 200 {
+            _ = await actor.runAITick()
+        }
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let messages = frames.compactMap { try? SomnioMessageDecoder.decode($0) }
+        let damageSayCount = messages.count(where: { message in
+            if case let .serverSay(say) = message { return say.text.lowercased().contains("dmg") }
+            return false
+        })
+        let leaveCount = messages.count(where: { message in
+            if case .leave = message { return true }
+            return false
+        })
+        #expect(damageSayCount == 0)
+        #expect(leaveCount == 0)
     }
 
     // MARK: - Helpers
@@ -567,13 +685,13 @@ struct AITickTests {
     }
 
     private func makeNPC(at origin: GridPoint, dialogScript: String) -> NPC {
-        // 128 px mask matches the legacy single-tile NPC convention so the visual center
-        // sits one tile-half from the spawn origin, well inside the player's interaction
-        // radius when both are at adjacent grid coordinates.
+        // 32x48 sprite cell (box == mask, so no centering offset): with feet-center proximity the
+        // NPC's feet center sits ~(origin + (16, 40)), within the 64 px interaction radius of a
+        // player standing at adjacent grid coordinates.
         NPC(
             spawnOrigin: origin,
-            spawnBoxSize: GridSize(width: 128, height: 128),
-            maskSize: GridSize(width: 128, height: 128),
+            spawnBoxSize: GridSize(width: 32, height: 48),
+            maskSize: GridSize(width: 32, height: 48),
             name: "test-npc",
             figure: 0,
             direction: 0,
@@ -583,10 +701,13 @@ struct AITickTests {
     }
 
     private func makeMonsterSpawn(at origin: GridPoint, aiScriptIndex: Int16) -> MonsterSpawn {
+        // 32x48 sprite. The spawn box is sized so the 4 px-grid placement range collapses to a
+        // single cell (width == sprite width; height == feet height = 48/4 + 4 = 16), making the
+        // spawn position deterministic at a 4-aligned `origin`, independent of the RNG.
         MonsterSpawn(
             spawnOrigin: origin,
-            spawnBoxSize: GridSize(width: 128, height: 128),
-            spawnedMonsterSize: GridSize(width: 128, height: 128),
+            spawnBoxSize: GridSize(width: 32, height: 16),
+            spawnedMonsterSize: GridSize(width: 32, height: 48),
             name: "test-monster",
             figure: 0,
             bounded: false,
@@ -594,6 +715,23 @@ struct AITickTests {
             spawnBalance: 100,
             spawnMana: 100,
             aiScriptIndex: aiScriptIndex
+        )
+    }
+
+    /// Monster spawn with a wide spawn box so placement samples multiple cells (used to verify
+    /// collision-free placement when part of the box is blocked).
+    private func makeWideMonsterSpawn(at origin: GridPoint, boxWidth: Int16) -> MonsterSpawn {
+        MonsterSpawn(
+            spawnOrigin: origin,
+            spawnBoxSize: GridSize(width: boxWidth, height: 16),
+            spawnedMonsterSize: GridSize(width: 32, height: 48),
+            name: "test-monster",
+            figure: 0,
+            bounded: false,
+            spawnHP: 100,
+            spawnBalance: 100,
+            spawnMana: 100,
+            aiScriptIndex: 0
         )
     }
 

@@ -27,6 +27,11 @@ import Foundation
     private static let keyA: UInt16 = 0
     private static let keyS: UInt16 = 1
     private static let keyD: UInt16 = 2
+    // Arrow keys drive the same four direction bits as WASD, so a player can walk with either.
+    private static let keyUp: UInt16 = 126
+    private static let keyDown: UInt16 = 125
+    private static let keyLeft: UInt16 = 123
+    private static let keyRight: UInt16 = 124
     private static let keyLeftShift: UInt16 = 56
     private static let keyLeftOption: UInt16 = 58
     /// Device-specific modifier bitmasks from `<IOKit/hidsystem/IOLLEvent.h>`. AppKit's
@@ -125,7 +130,8 @@ import Foundation
 
     private func isGameplayKey(_ keyCode: UInt16) -> Bool {
         switch keyCode {
-        case Self.keyW, Self.keyA, Self.keyS, Self.keyD:
+        case Self.keyW, Self.keyA, Self.keyS, Self.keyD,
+             Self.keyUp, Self.keyDown, Self.keyLeft, Self.keyRight:
             return true
         default:
             return false
@@ -142,10 +148,10 @@ import Foundation
 
     private func update(keyCode: UInt16, down: Bool) {
         switch keyCode {
-        case Self.keyW: held.w = down
-        case Self.keyA: held.a = down
-        case Self.keyS: held.s = down
-        case Self.keyD: held.d = down
+        case Self.keyW, Self.keyUp: held.w = down
+        case Self.keyA, Self.keyLeft: held.a = down
+        case Self.keyS, Self.keyDown: held.s = down
+        case Self.keyD, Self.keyRight: held.d = down
         case Self.keyLeftShift: held.leftShift = down
         case Self.keyLeftOption: held.leftOption = down
         default: break

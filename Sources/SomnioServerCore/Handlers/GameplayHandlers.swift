@@ -103,15 +103,20 @@ public enum GameplayHandlers {
         await oldSectorActor.detach(entityIndex: entityIndex, leftGame: false)
         var movedCharacter = checkpoint.character
         movedCharacter.currentSector = portal.targetSectorName
-        // Place the player at the destination's arrival portal rather than carrying the old
-        // sector's coordinates (meaningless in the new sector and liable to land in geometry or
-        // out of bounds — `attach` does not validate position). Falls back to the destination
-        // center when the carried coordinates are unwalkable or out of bounds and the sector
-        // has no arrival portal.
+        // Place the player at a collision-free random point inside the destination's inbound portal
+        // keyed to the source sector (faithful arrival placement), rather than carrying the old
+        // sector's coordinates (meaningless in the new sector and liable to land in geometry or out
+        // of bounds — `attach` does not validate position). Falls back to the self-arrival spawn,
+        // then the sector center, so the player never lands on stale source coordinates.
         let destination = newSectorActor.staticSector
-        if let spawn = destination.arrivalSpawn {
+        if let arrival = await newSectorActor.arrivalPlacement(
+            fromSector: sectorName,
+            spriteSize: SomnioConstants.playerSpriteSize
+        ) {
+            movedCharacter.position = arrival
+        } else if let spawn = destination.arrivalSpawn {
             movedCharacter.position = spawn
-        } else if !destination.isWalkable(movedCharacter.position) {
+        } else {
             movedCharacter.position = destination.pixelCenter
         }
         do {

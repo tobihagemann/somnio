@@ -19,6 +19,29 @@ struct KeyboardSamplerTests {
         #expect(sampler.snapshot == expected)
     }
 
+    @Test func `each arrow key drives the matching WASD direction bit`() {
+        func heldAfter(_ keyCode: UInt16) -> KeyboardSampler.Held {
+            let sampler = KeyboardSampler()
+            sampler.updateForTest(keyCode: keyCode, down: true)
+            return sampler.snapshot
+        }
+        var up = KeyboardSampler.Held(); up.w = true
+        var down = KeyboardSampler.Held(); down.s = true
+        var left = KeyboardSampler.Held(); left.a = true
+        var right = KeyboardSampler.Held(); right.d = true
+        #expect(heldAfter(126) == up) // Up -> W
+        #expect(heldAfter(125) == down) // Down -> S
+        #expect(heldAfter(123) == left) // Left -> A
+        #expect(heldAfter(124) == right) // Right -> D
+    }
+
+    @Test func `arrow keys are consumed during gameplay so they don't leak to the responder chain`() {
+        let sampler = KeyboardSampler()
+        sampler.isGameplayActive = true
+        #expect(sampler.shouldConsume(keyCode: 126, modifierFlags: []) == true) // Up
+        #expect(sampler.shouldConsume(keyCode: 124, modifierFlags: []) == true) // Right
+    }
+
     @Test func `keyUp clears the bit`() {
         let sampler = KeyboardSampler()
         sampler.updateForTest(keyCode: 13, down: true)

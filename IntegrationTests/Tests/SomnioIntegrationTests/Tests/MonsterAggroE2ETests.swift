@@ -7,10 +7,16 @@ import SomnioServerCore
 import Testing
 
 struct MonsterAggroE2ETests {
+    /// Spawn threshold that materializes exactly one monster within a 7-tick window: the timer
+    /// reaches 3 on tick 3 and spawns on tick 4; the next spawn would be tick 8. Distances/facing
+    /// use the feet-center, matching `runMonsterTick`.
+    private static let singleSpawnThreshold: Int16 = 3
+    private static let singleSpawnTicks = 7
+
     @Test func `monster idles when no player is within aggro radius`() async throws {
         let logger = Logger(label: "test.monster.idle")
         let sector = makeAggroSector(monsterOrigin: GridPoint(x: 200, y: 200))
-        let actor = PerSectorActor(staticSector: sector, logger: logger)
+        let actor = PerSectorActor(staticSector: sector, logger: logger, monsterSpawnThreshold: Self.singleSpawnThreshold)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         let sink = FrameRecorder()
         let drainTask = startOutboxDrain(outbox: outbox, into: sink)
@@ -18,60 +24,52 @@ struct MonsterAggroE2ETests {
         let farPosition = farPositionFrom(GridPoint(x: 200, y: 200), distance: 1000)
         _ = try await PerSectorActorClient.attachPlayer(actor: actor, nickname: "outsider", sector: sector, position: farPosition, outbox: outbox)
 
-        let monsterEntityIndex = try await captureMonsterEntityIndex(from: sink)
-
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< Self.singleSpawnTicks {
             _ = await actor.runAITick()
         }
         outbox.finish()
         await drainTask.value
         let frames = await sink.snapshot()
+        // A monster spawned (entity frame present) but, out of aggro range, broadcast no position.
+        let monsterIndex = try requireMonsterIndex(in: frames)
         let monsterBroadcasts = frames
             .compactMap(IntegrationTestFixtures.serverPositionPayload(of:))
-            .filter { $0.entityIndex == monsterEntityIndex }
+            .filter { $0.entityIndex == monsterIndex }
         #expect(monsterBroadcasts.isEmpty, "monster outside any player's aggro radius must not broadcast position, got \(monsterBroadcasts.count) frames")
     }
 
     @Test func `monster chases player who enters aggro radius`() async throws {
         let logger = Logger(label: "test.monster.chase")
-        let monsterOrigin = GridPoint(x: 200, y: 200)
-        let sector = makeAggroSector(monsterOrigin: monsterOrigin)
+        let sector = makeAggroSector(monsterOrigin: GridPoint(x: 200, y: 200))
         let monster = try #require(sector.monsterSpawns.first)
-        let monsterCenter = VisualCenter.center(position: monster.spawnOrigin, mask: monster.spawnedMonsterSize)
+        let monsterCenter = FeetMask.center(forSpriteAt: monster.spawnOrigin, spriteSize: monster.spawnedMonsterSize)
 
-        let actor = PerSectorActor(staticSector: sector, logger: logger)
+        let actor = PerSectorActor(staticSector: sector, logger: logger, monsterSpawnThreshold: Self.singleSpawnThreshold)
         let outbox = ConnectionOutbox(highWatermark: 1024)
         let sink = FrameRecorder()
         let drainTask = startOutboxDrain(outbox: outbox, into: sink)
 
-        let halfTile = Int32(SomnioConstants.tileSize) / 2
-        let playerPosition = GridPoint(
-            x: Int16(clamping: monsterCenter.x + 150 - halfTile),
-            y: Int16(clamping: monsterCenter.y - halfTile)
-        )
+        // Player feet-center ~150 px east of the monster's — inside the 192 px aggro radius.
+        let playerPosition = playerPositionForFeetCenter(x: monsterCenter.x + 150, y: monsterCenter.y)
         _ = try await PerSectorActorClient.attachPlayer(actor: actor, nickname: "chased", sector: sector, position: playerPosition, outbox: outbox)
+        let playerCenter = FeetMask.center(forSpriteAt: playerPosition, spriteSize: SomnioConstants.playerSpriteSize)
 
-        let monsterEntityIndex = try await captureMonsterEntityIndex(from: sink)
-        let playerCenter = VisualCenter.center(
-            position: playerPosition,
-            mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
-        )
-
-        for _ in 0 ..< 4 {
+        for _ in 0 ..< Self.singleSpawnTicks {
             _ = await actor.runAITick()
         }
         outbox.finish()
         await drainTask.value
         let frames = await sink.snapshot()
+        let monsterIndex = try requireMonsterIndex(in: frames)
         let chaseFrames = frames
             .compactMap(IntegrationTestFixtures.serverPositionPayload(of:))
-            .filter { $0.entityIndex == monsterEntityIndex }
+            .filter { $0.entityIndex == monsterIndex }
         #expect(chaseFrames.count >= 4)
         var previousDistance: Int64?
         for frame in chaseFrames {
-            let broadcastCenter = VisualCenter.center(
-                position: GridPoint(x: frame.x, y: frame.y),
-                mask: monster.spawnedMonsterSize
+            let broadcastCenter = FeetMask.center(
+                forSpriteAt: GridPoint(x: frame.x, y: frame.y),
+                spriteSize: monster.spawnedMonsterSize
             )
             let distance = VisualCenter.squaredDistance(broadcastCenter, playerCenter)
             if let previous = previousDistance {
@@ -83,14 +81,13 @@ struct MonsterAggroE2ETests {
         #expect(previousDistance ?? initialDistance < initialDistance, "monster never closed the gap; chase code may have broken")
     }
 
-    // swiftlint:disable:next function_body_length
     @Test func `monster targets nearest of multiple players in aggro radius`() async throws {
         let logger = Logger(label: "test.monster.nearest")
         let sector = makeAggroSector(monsterOrigin: GridPoint(x: 200, y: 200))
         let monster = try #require(sector.monsterSpawns.first)
-        let monsterCenter = VisualCenter.center(position: monster.spawnOrigin, mask: monster.spawnedMonsterSize)
+        let monsterCenter = FeetMask.center(forSpriteAt: monster.spawnOrigin, spriteSize: monster.spawnedMonsterSize)
 
-        let actor = PerSectorActor(staticSector: sector, logger: logger)
+        let actor = PerSectorActor(staticSector: sector, logger: logger, monsterSpawnThreshold: 0)
         let outboxA = ConnectionOutbox(highWatermark: 1024)
         let outboxB = ConnectionOutbox(highWatermark: 1024)
         let sinkA = FrameRecorder()
@@ -98,28 +95,17 @@ struct MonsterAggroE2ETests {
         let drainA = startOutboxDrain(outbox: outboxA, into: sinkA)
         let drainB = startOutboxDrain(outbox: outboxB, into: sinkB)
 
-        // Place A east of the monster (dx > 0, dy = 0 → expected facing .east) and B north
-        // of the monster (dx = 0, dy < 0 → expected facing .north). Choosing different
-        // axes makes the facing assertion below distinguish "picks B" from "picks A" —
-        // if both were on the same axis the chase would head the same way either way.
-        // B is closer (80 px) than A (150 px), so the nearest-target gate must select B.
-        let halfTile = Int32(SomnioConstants.tileSize) / 2
-        let positionA = GridPoint(
-            x: Int16(clamping: monsterCenter.x + 150 - halfTile),
-            y: Int16(clamping: monsterCenter.y - halfTile)
-        )
-        let positionB = GridPoint(
-            x: Int16(clamping: monsterCenter.x - halfTile),
-            y: Int16(clamping: monsterCenter.y - 80 - halfTile)
-        )
+        // A's feet-center is 150 px east of the monster (dominant +x → facing east); B's is 100 px
+        // north (dominant -y → facing north). B is closer, so the nearest-target gate must select
+        // B and the monster must face north — distinguishing "picks B" from "picks A".
+        let positionA = playerPositionForFeetCenter(x: monsterCenter.x + 150, y: monsterCenter.y)
+        let positionB = playerPositionForFeetCenter(x: monsterCenter.x, y: monsterCenter.y - 100)
         _ = try await PerSectorActorClient.attachPlayer(actor: actor, nickname: "alice", sector: sector, position: positionA, outbox: outboxA)
         _ = try await PerSectorActorClient.attachPlayer(actor: actor, nickname: "bob", sector: sector, position: positionB, outbox: outboxB)
+        let centerA = FeetMask.center(forSpriteAt: positionA, spriteSize: SomnioConstants.playerSpriteSize)
+        let centerB = FeetMask.center(forSpriteAt: positionB, spriteSize: SomnioConstants.playerSpriteSize)
 
-        let monsterEntityIndex = try await captureMonsterEntityIndex(from: sinkA)
-        let playerMask = GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
-        let centerA = VisualCenter.center(position: positionA, mask: playerMask)
-        let centerB = VisualCenter.center(position: positionB, mask: playerMask)
-
+        // A single tick spawns exactly one monster and runs its first chase step.
         _ = await actor.runAITick()
         outboxA.finish()
         outboxB.finish()
@@ -127,22 +113,20 @@ struct MonsterAggroE2ETests {
         await drainB.value
 
         let framesA = await sinkA.snapshot()
+        let monsterIndex = try requireMonsterIndex(in: framesA)
         let monsterFrame = try #require(
             framesA
                 .compactMap(IntegrationTestFixtures.serverPositionPayload(of:))
-                .first { $0.entityIndex == monsterEntityIndex }
+                .first { $0.entityIndex == monsterIndex }
         )
-        let postTickCenter = VisualCenter.center(
-            position: GridPoint(x: monsterFrame.x, y: monsterFrame.y),
-            mask: monster.spawnedMonsterSize
+        let postTickCenter = FeetMask.center(
+            forSpriteAt: GridPoint(x: monsterFrame.x, y: monsterFrame.y),
+            spriteSize: monster.spawnedMonsterSize
         )
         let distanceToA = VisualCenter.squaredDistance(postTickCenter, centerA)
         let distanceToB = VisualCenter.squaredDistance(postTickCenter, centerB)
         #expect(distanceToB < distanceToA, "monster must move toward B (the nearest player), got d(A)=\(distanceToA) d(B)=\(distanceToB)")
 
-        // Facing must point at B (north of the monster), not at A (east). If the
-        // nearest-target gate were broken and the monster picked A, the dominant-axis
-        // facing computation would yield `.east` and this assertion would catch it.
         let dx = centerB.x - monsterCenter.x
         let dy = centerB.y - monsterCenter.y
         let expectedFacing: Direction = if abs(dx) >= abs(dy) {
@@ -154,26 +138,20 @@ struct MonsterAggroE2ETests {
         #expect(monsterFrame.facing == expectedFacing.rawValue, "expected facing \(expectedFacing), got raw \(monsterFrame.facing)")
     }
 
-    // swiftlint:disable:next function_body_length
     @Test func `monster stops chasing after player leaves the aggro radius`() async throws {
         let logger = Logger(label: "test.monster.aggro-release")
         let sector = makeAggroSector(monsterOrigin: GridPoint(x: 200, y: 200))
         let monster = try #require(sector.monsterSpawns.first)
-        let monsterCenter = VisualCenter.center(position: monster.spawnOrigin, mask: monster.spawnedMonsterSize)
+        let monsterCenter = FeetMask.center(forSpriteAt: monster.spawnOrigin, spriteSize: monster.spawnedMonsterSize)
 
-        // Phase 1 actor: chase a player who's inside the aggro radius. We tear it down
-        // and capture its broadcast count BEFORE moving on — reading mid-test snapshots
-        // from a still-draining outbox races against the background drain task.
+        // Phase 1: chase a player inside the aggro radius. Tear down and capture the broadcast
+        // count BEFORE moving on — reading a still-draining outbox races the background drain.
         let phase1Outbox = ConnectionOutbox(highWatermark: 1024)
         let phase1Sink = FrameRecorder()
         let phase1Drain = startOutboxDrain(outbox: phase1Outbox, into: phase1Sink)
-        let phase1Actor = PerSectorActor(staticSector: sector, logger: logger)
+        let phase1Actor = PerSectorActor(staticSector: sector, logger: logger, monsterSpawnThreshold: Self.singleSpawnThreshold)
 
-        let halfTile = Int32(SomnioConstants.tileSize) / 2
-        let nearPosition = GridPoint(
-            x: Int16(clamping: monsterCenter.x + 100 - halfTile),
-            y: Int16(clamping: monsterCenter.y - halfTile)
-        )
+        let nearPosition = playerPositionForFeetCenter(x: monsterCenter.x + 100, y: monsterCenter.y)
         _ = try await PerSectorActorClient.attachPlayer(
             actor: phase1Actor,
             nickname: "kiter",
@@ -181,28 +159,24 @@ struct MonsterAggroE2ETests {
             position: nearPosition,
             outbox: phase1Outbox
         )
-        let phase1MonsterIndex = try await captureMonsterEntityIndex(from: phase1Sink)
-        for _ in 0 ..< 3 {
+        for _ in 0 ..< Self.singleSpawnTicks {
             _ = await phase1Actor.runAITick()
         }
         phase1Outbox.finish()
         await phase1Drain.value
-        let chasingCount = await countMonsterBroadcasts(in: phase1Sink.snapshot(), entityIndex: phase1MonsterIndex)
-        #expect(chasingCount >= 3, "phase 1 must produce chase broadcasts, got \(chasingCount)")
+        let phase1Frames = await phase1Sink.snapshot()
+        let phase1MonsterIndex = try requireMonsterIndex(in: phase1Frames)
+        let chasingCount = countMonsterBroadcasts(in: phase1Frames, entityIndex: phase1MonsterIndex)
+        #expect(chasingCount >= 4, "phase 1 must produce chase broadcasts, got \(chasingCount)")
 
-        // Phase 2 actor: same sector, but the player attaches OUTSIDE the aggro radius
-        // (visual-centre distance ~565 px vs the 192 px gate). `runMonsterTick`'s
-        // closest-target gate must reject the candidate, so the outbox accumulates zero
-        // monster `.serverPosition` frames across the 5-tick window.
+        // Phase 2: same sector, but the player attaches well outside the aggro radius, so the
+        // closest-target gate rejects it and no monster `serverPosition` frames accumulate.
         let phase2Outbox = ConnectionOutbox(highWatermark: 1024)
         let phase2Sink = FrameRecorder()
         let phase2Drain = startOutboxDrain(outbox: phase2Outbox, into: phase2Sink)
-        let phase2Actor = PerSectorActor(staticSector: sector, logger: logger)
+        let phase2Actor = PerSectorActor(staticSector: sector, logger: logger, monsterSpawnThreshold: Self.singleSpawnThreshold)
 
-        let farPosition = GridPoint(
-            x: Int16(clamping: monsterCenter.x + 400 - halfTile),
-            y: Int16(clamping: monsterCenter.y + 400 - halfTile)
-        )
+        let farPosition = playerPositionForFeetCenter(x: monsterCenter.x + 400, y: monsterCenter.y + 400)
         _ = try await PerSectorActorClient.attachPlayer(
             actor: phase2Actor,
             nickname: "kiter2",
@@ -210,19 +184,23 @@ struct MonsterAggroE2ETests {
             position: farPosition,
             outbox: phase2Outbox
         )
-        let phase2MonsterIndex = try await captureMonsterEntityIndex(from: phase2Sink)
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< Self.singleSpawnTicks {
             _ = await phase2Actor.runAITick()
         }
         phase2Outbox.finish()
         await phase2Drain.value
-        let idleCount = await countMonsterBroadcasts(in: phase2Sink.snapshot(), entityIndex: phase2MonsterIndex)
+        let phase2Frames = await phase2Sink.snapshot()
+        let phase2MonsterIndex = try requireMonsterIndex(in: phase2Frames)
+        let idleCount = countMonsterBroadcasts(in: phase2Frames, entityIndex: phase2MonsterIndex)
         #expect(idleCount == 0, "monster must not broadcast when the only player is out of aggro range, got \(idleCount) frames")
     }
 
     // MARK: - Helpers
 
     private func makeAggroSector(monsterOrigin: GridPoint) -> Sector {
+        // The 128x36 spawn box (width == sprite width; height == the 128-sprite feet height,
+        // 128/4 + 4 = 36) collapses the 4 px-grid placement to the single 4-aligned `monsterOrigin`,
+        // so the spawn position is deterministic and the chase geometry is predictable.
         let body = SectorBody(
             version: 3,
             dimensions: GridSize(width: 512, height: 512),
@@ -235,7 +213,7 @@ struct MonsterAggroE2ETests {
             monsterSpawns: [
                 MonsterSpawn(
                     spawnOrigin: monsterOrigin,
-                    spawnBoxSize: GridSize(width: 128, height: 128),
+                    spawnBoxSize: GridSize(width: 128, height: 36),
                     spawnedMonsterSize: GridSize(width: 128, height: 128),
                     name: "Gespenst",
                     figure: 0,
@@ -257,27 +235,20 @@ struct MonsterAggroE2ETests {
         )
     }
 
-    /// Poll `sink` until at least one monster `.entity` frame surfaces from the join
-    /// sequence, then return its index. A blind `Task.yield()` would not guarantee the
-    /// background drain has consumed the frame; an outright `nil`-fallback would mask a
-    /// regression in `PerSectorActor.attach` that stopped emitting monster entities.
-    /// 1 s budget × 20 ms steps gives ample time on local CI without prolonging the
-    /// happy path past a single tick.
-    private func captureMonsterEntityIndex(
-        from sink: FrameRecorder,
+    /// Top-left position for a 32x48 player sprite whose feet-center lands at `(x, y)`.
+    /// Feet-center = (px + 16, py + 40) for the 32x48 cell (feet height 16).
+    private func playerPositionForFeetCenter(x: Int32, y: Int32) -> GridPoint {
+        GridPoint(x: Int16(clamping: x - 16), y: Int16(clamping: y - 40))
+    }
+
+    /// The single live monster's entity index from a drained frame snapshot.
+    private func requireMonsterIndex(
+        in frames: [Data],
         sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws -> Int16 {
-        for _ in 0 ..< 50 {
-            await Task.yield()
-            let frames = await sink.snapshot()
-            if let monster = frames.compactMap(IntegrationTestFixtures.entityPayload(of:))
-                .first(where: { $0.type == .monster }) {
-                return monster.entityIndex
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        Issue.record("attach never broadcast a monster Entity frame within the budget", sourceLocation: sourceLocation)
-        return 0
+    ) throws -> Int16 {
+        let monster = frames.compactMap(IntegrationTestFixtures.entityPayload(of:))
+            .first { $0.type == .monster }
+        return try #require(monster, "no monster entity was broadcast", sourceLocation: sourceLocation).entityIndex
     }
 
     private func countMonsterBroadcasts(in frames: [Data], entityIndex: Int16) -> Int {

@@ -381,10 +381,12 @@ struct WorldRouterTests {
     }
 
     private func makeNPC(at origin: GridPoint, dialogScript: String) -> NPC {
+        // 32x48 sprite (box == mask): with feet-center proximity the NPC's feet center sits within
+        // the 64 px interaction radius of a player at adjacent grid coordinates.
         NPC(
             spawnOrigin: origin,
-            spawnBoxSize: GridSize(width: 128, height: 128),
-            maskSize: GridSize(width: 128, height: 128),
+            spawnBoxSize: GridSize(width: 32, height: 48),
+            maskSize: GridSize(width: 32, height: 48),
             name: "test-npc",
             figure: 0,
             direction: 0,

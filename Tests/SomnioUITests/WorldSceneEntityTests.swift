@@ -28,6 +28,10 @@ import Testing
     func splash() -> SKTexture? {
         nil
     }
+
+    func speechBubble() -> SKTexture? {
+        nil
+    }
 }
 
 @MainActor

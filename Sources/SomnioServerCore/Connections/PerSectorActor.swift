@@ -32,8 +32,8 @@ struct NPCRuntime {
 }
 
 /// Per-monster-spawn runtime state. `attach` emits one Entity for each spawned monster
-/// currently in the sector. The actual monster spawn cadence (timing/respawn) is handled
-/// elsewhere; this layer mirrors the static `MonsterSpawn` so peers see authored monsters.
+/// currently in the sector. Live monsters are materialized lazily by the spawn cadence
+/// (`MonsterSpawnTimer`), not at sector-actor init.
 struct MonsterSpawnRuntime {
     let entityIndex: Int16
     let definition: MonsterSpawn
@@ -41,6 +41,15 @@ struct MonsterSpawnRuntime {
     /// Live facing the AI tick rotates toward the chase target. Idle monsters render with
     /// the default so a join-sequence `entity` frame stays consistent with `runAITick()`.
     var facing: Direction = .south
+}
+
+/// Per-`MonsterSpawn` spawn cadence state. Each AI tick advances `cooldownTicks` toward the
+/// spawn threshold while the sector is below the live-monster cap; at the threshold a live
+/// monster materializes and the counter resets. Seeded to 0 so the first spawn fires after
+/// ~60 s (the threshold of ticks), not at boot.
+struct MonsterSpawnTimer {
+    let definition: MonsterSpawn
+    var cooldownTicks: Int16 = 0
 }
 
 /// Snapshot of one player's persistent state, returned by `snapshotForCheckpoint` so the
@@ -96,10 +105,23 @@ public struct NPCDialogResetKey: Sendable, Equatable {
 /// the broadcast frame stream that funnels all peer-visible mutations through outboxes
 /// without touching connection actors directly.
 public actor PerSectorActor {
+    /// Tick count a spawn timer advances to before materializing a live monster — ~60 s at the
+    /// 50 ms AI-tick cadence (1199 ticks → first spawn on tick 1200). Injectable so tests don't
+    /// run the full cadence; the default is the faithful value.
+    public static let defaultMonsterSpawnThreshold: Int16 = 1199
+    /// Random placement retry cap for arrival/spawn before falling back.
+    private static let placementAttempts = 64
+
     public let staticSector: Sector
     private var players: [Int16: PlayerSlot] = [:]
     private var npcs: [Int16: NPCRuntime] = [:]
     private var monsters: [Int16: MonsterSpawnRuntime] = [:]
+    /// One per authored `MonsterSpawn`; advanced by the AI tick to drive the spawn cadence.
+    private var spawnTimers: [MonsterSpawnTimer] = []
+    /// Random source for arrival/spawn placement. Injectable so tests can seed it for
+    /// deterministic placement; defaults to the system generator in production.
+    private var rng: any RandomNumberGenerator
+    private let monsterSpawnThreshold: Int16
     /// Monotonic so peer indices remain stable for a given sector for the process lifetime.
     /// Index 0 is reserved for client-originated `clientPosition` (`PositionMessage.entityIndex == 0`),
     /// so allocation starts at 1.
@@ -109,10 +131,15 @@ public actor PerSectorActor {
     public init(
         staticSector: Sector,
         logger: Logger,
-        initialDialogCursors: [Int16: Int16] = [:]
+        initialDialogCursors: [Int16: Int16] = [:],
+        rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
+        monsterSpawnThreshold: Int16 = PerSectorActor.defaultMonsterSpawnThreshold
     ) {
         self.staticSector = staticSector
         self.logger = logger
+        self.rng = rng
+        self.monsterSpawnThreshold = monsterSpawnThreshold
+        self.spawnTimers = staticSector.monsterSpawns.map { MonsterSpawnTimer(definition: $0) }
         var nextIndex: Int16 = 1
         for npc in staticSector.npcs {
             let index = nextIndex
@@ -135,15 +162,8 @@ public actor PerSectorActor {
             )
             nextIndex = Self.advance(nextIndex)
         }
-        for spawn in staticSector.monsterSpawns {
-            let index = nextIndex
-            monsters[index] = MonsterSpawnRuntime(
-                entityIndex: index,
-                definition: spawn,
-                position: spawn.spawnOrigin
-            )
-            nextIndex = Self.advance(nextIndex)
-        }
+        // Monsters are not materialized here — the spawn cadence (`runMonsterSpawns`) creates them
+        // at runtime and allocates their indices then, so `nextEntityIndex` advances past the NPCs.
         self.nextEntityIndex = nextIndex
     }
 
@@ -256,13 +276,24 @@ public actor PerSectorActor {
     }
 
     /// Validate against sector bounds and collision masks; on success mutate the slot and
-    /// broadcast the new position to peers. On failure drop silently — clients re-send.
+    /// broadcast the new position to peers. On failure snap the originating client back to the
+    /// authoritative position so a move the client predicted against stale blocker data (a peer or
+    /// monster it had not yet seen) cannot leave the local and authoritative positions diverged.
     public func handlePosition(_ message: PositionMessage, from entityIndex: Int16) {
         guard var slot = players[entityIndex] else { return }
-        let newPosition = GridPoint(x: message.x, y: message.y)
-        guard isInside(newPosition, of: staticSector) else { return }
-        guard !collides(newPosition, with: staticSector.collisionMasks) else { return }
         guard let facing = Direction(rawValue: message.facing), let tempo = Tempo(rawValue: message.tempo) else {
+            return
+        }
+        let newPosition = GridPoint(x: message.x, y: message.y)
+        // Feet-box gate: bounds + static masks + every other live entity's feet box. The client
+        // predictor owns the axis-separated sliding that keeps motion smooth, so a position reaching
+        // here is expected to already be clear; a rejection means the client's blocker view is stale.
+        guard feetBoxClear(
+            at: newPosition,
+            spriteSize: SomnioConstants.playerSpriteSize,
+            excludingPlayer: entityIndex
+        ) else {
+            snapBack(entityIndex: entityIndex)
             return
         }
         slot.character.position = newPosition
@@ -331,10 +362,10 @@ public actor PerSectorActor {
         guard let player = players[entityIndex] else { return }
         guard var npc = npcs[npcIndex] else { return }
         guard npc.targetingEntity == nil else { return }
-        let npcCenter = VisualCenter.center(position: npc.position, mask: npc.definition.maskSize)
-        let playerCenter = VisualCenter.center(
-            position: player.character.position,
-            mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
+        let npcCenter = FeetMask.center(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize)
+        let playerCenter = FeetMask.center(
+            forSpriteAt: player.character.position,
+            spriteSize: SomnioConstants.playerSpriteSize
         )
         guard VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius) else {
             return
@@ -351,8 +382,107 @@ public actor PerSectorActor {
     public func runAITick() -> AITickDigest {
         var digest = AITickDigest()
         runNPCTick(into: &digest)
+        runMonsterSpawns()
         runMonsterTick()
         return digest
+    }
+
+    /// Advance every spawn timer and materialize a live monster when one reaches the threshold,
+    /// gated by the sector-wide live-monster cap (`SomnioConstants.perSectorMonsterCap`). The cap
+    /// freezes the timers across all spawns combined — a sector with several spawns shares one
+    /// pool of three live monsters, matching the original's per-sector (not per-spawn) cap.
+    private func runMonsterSpawns() {
+        for index in spawnTimers.indices {
+            guard monsters.count < SomnioConstants.perSectorMonsterCap else { continue }
+            if spawnTimers[index].cooldownTicks >= monsterSpawnThreshold {
+                // Only restart the cooldown once a monster actually materializes; if every cell in
+                // the spawn box is blocked the timer stays armed and retries next tick, matching the
+                // original's "loop placement until KollisionChecken clears" rather than dropping a
+                // monster onto a blocked cell.
+                if spawnMonster(from: spawnTimers[index].definition) {
+                    spawnTimers[index].cooldownTicks = 0
+                }
+            } else {
+                spawnTimers[index].cooldownTicks += 1
+            }
+        }
+    }
+
+    /// Materialize one live monster from a spawn definition: allocate its entity index, place it at
+    /// a collision-free random point in the spawn box, and broadcast its `entity` to every attached
+    /// player (there is no later join for an already-attached peer otherwise). Returns `false`
+    /// without spawning when no clear cell is sampled, so the caller can retry rather than drop a
+    /// monster onto geometry or another entity.
+    private func spawnMonster(from definition: MonsterSpawn) -> Bool {
+        let spawnRect = PixelRect(
+            x: Int32(definition.spawnOrigin.x),
+            y: Int32(definition.spawnOrigin.y),
+            width: Int32(definition.spawnBoxSize.width),
+            height: Int32(definition.spawnBoxSize.height)
+        )
+        guard let position = randomFreePoint(in: spawnRect, spriteSize: definition.spawnedMonsterSize) else {
+            return false
+        }
+        let index = allocateEntityIndex()
+        let runtime = MonsterSpawnRuntime(entityIndex: index, definition: definition, position: position)
+        monsters[index] = runtime
+        do {
+            try broadcastToAll(.entity(makeEntityMessage(for: runtime)))
+        } catch {
+            logger.warning(
+                "failed to broadcast monster spawn",
+                metadata: ["error": "\(error)", "monster_index": "\(index)"]
+            )
+        }
+        return true
+    }
+
+    /// Destination-side arrival point for a player entering from `sourceSector`: a collision-free
+    /// random cell inside the inbound (`arrivalPlacement`) portal whose `targetSectorName` is the
+    /// source. Returns the rect center when no clear cell is sampled, or `nil` when the sector has
+    /// no matching inbound portal (the caller then falls back to its own login spawn). Validates
+    /// against live entities because this runs inside the actor that owns the roster.
+    public func arrivalPlacement(fromSector sourceSector: String, spriteSize: GridSize) -> GridPoint? {
+        guard let portal = staticSector.portals.first(where: {
+            $0.direction == .arrivalPlacement && $0.targetSectorName == sourceSector
+        }) else {
+            return nil
+        }
+        let rect = PixelRect(
+            x: Int32(portal.x),
+            y: Int32(portal.y),
+            width: Int32(portal.width),
+            height: Int32(portal.height)
+        )
+        if let point = randomFreePoint(in: rect, spriteSize: spriteSize) {
+            return point
+        }
+        return GridPoint(x: Int16(clamping: rect.x + rect.width / 2), y: Int16(clamping: rect.y + rect.height / 2))
+    }
+
+    /// Random collision-free top-left point for a `spriteSize` sprite inside `rect`, retried up to
+    /// `placementAttempts`. Mirrors the original `r.InRange(rect/4, (rect+box−mask)/4) * 4` 4px-grid
+    /// sampling looped until `KollisionChecken` clears: the far edges are inset by the feet mask so
+    /// the sprite fits, and each candidate is validated against static masks and live entities.
+    private func randomFreePoint(in rect: PixelRect, spriteSize: GridSize) -> GridPoint? {
+        let feetHeight = Int32(spriteSize.height) / 4 + 4
+        let loX = rect.x / 4
+        let loY = rect.y / 4
+        let hiX = max(loX, loX + rect.width / 4 - Int32(spriteSize.width) / 4)
+        let hiY = max(loY, loY + rect.height / 4 - feetHeight / 4)
+        // The roster can't change across the placement retries (we're inside actor isolation and
+        // place a not-yet-allocated entity), so gather the blockers once instead of per candidate.
+        let blockers = liveEntityFeetRects(excludingPlayer: nil, excludingMonster: nil)
+        for _ in 0 ..< Self.placementAttempts {
+            let candidate = GridPoint(
+                x: Int16(clamping: Int32.random(in: loX ... hiX, using: &rng) * 4),
+                y: Int16(clamping: Int32.random(in: loY ... hiY, using: &rng) * 4)
+            )
+            if FeetMask.isClear(at: candidate, spriteSize: spriteSize, sector: staticSector, blockers: blockers) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     /// Walks every NPC and takes exactly one of the mutually exhaustive branches: idle
@@ -375,10 +505,10 @@ public actor PerSectorActor {
                 npcs[index] = npc
                 continue
             }
-            let npcCenter = VisualCenter.center(position: npc.position, mask: npc.definition.maskSize)
-            let targetCenter = VisualCenter.center(
-                position: targetSlot.character.position,
-                mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
+            let npcCenter = FeetMask.center(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize)
+            let targetCenter = FeetMask.center(
+                forSpriteAt: targetSlot.character.position,
+                spriteSize: SomnioConstants.playerSpriteSize
             )
             guard VisualCenter.isWithin(npcCenter, targetCenter, radius: SomnioConstants.npcInteractionRadius) else {
                 // (c) target walked out of radius: same reset as (b). The legacy server
@@ -461,11 +591,10 @@ public actor PerSectorActor {
         for (index, monsterSnapshot) in monsters {
             guard monsterSnapshot.definition.aiScriptIndex == 0 else { continue }
             var monster = monsterSnapshot
-            let monsterCenter = VisualCenter.center(
-                position: monster.position,
-                mask: monster.definition.spawnedMonsterSize
+            let monsterCenter = FeetMask.center(
+                forSpriteAt: monster.position,
+                spriteSize: monster.definition.spawnedMonsterSize
             )
-            let playerMask = GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
             let aggroRadius = Int64(SomnioConstants.monsterAggroRadius)
             let aggroRadiusSquared = aggroRadius * aggroRadius
             // The chase only needs the closest-target's center, so the running candidate
@@ -474,7 +603,10 @@ public actor PerSectorActor {
             // recomputing the distance twice.
             var closest: (center: (x: Int32, y: Int32), squared: Int64)?
             for slot in players.values {
-                let candidateCenter = VisualCenter.center(position: slot.character.position, mask: playerMask)
+                let candidateCenter = FeetMask.center(
+                    forSpriteAt: slot.character.position,
+                    spriteSize: SomnioConstants.playerSpriteSize
+                )
                 let squared = VisualCenter.squaredDistance(monsterCenter, candidateCenter)
                 guard squared <= aggroRadiusSquared else { continue }
                 if let existing = closest, squared >= existing.squared { continue }
@@ -491,20 +623,13 @@ public actor PerSectorActor {
                 dy > 0 ? .south : .north
             }
             monster.facing = facing
-            // Chase step: 6 px Euclidean per tick once the Manhattan gate clears. On a 45°
-            // diagonal this yields ≈(4, 4); Manhattan-based scaling would yield (3, 3),
-            // visibly slower.
-            let manhattan = abs(dx) + abs(dy)
-            let stepDx: Int32
-            let stepDy: Int32
-            if manhattan >= 6 {
-                let length = (Double(dx) * Double(dx) + Double(dy) * Double(dy)).squareRoot()
-                stepDx = Int32((Double(dx) * 6.0 / length).rounded())
-                stepDy = Int32((Double(dy) * 6.0 / length).rounded())
-            } else {
-                stepDx = dx
-                stepDy = dy
-            }
+            // Chase step: 6 px Euclidean per tick toward the target. On a 45° diagonal this
+            // yields ≈(4, 4); Manhattan-based scaling would yield (3, 3), visibly slower.
+            // `max(length, 1)` keeps the division safe at coincident centers — unreachable in
+            // bounds, since the move gate forbids feet-box overlap, but cheap to guard.
+            let length = max((Double(dx) * Double(dx) + Double(dy) * Double(dy)).squareRoot(), 1)
+            let stepDx = Int32((Double(dx) * 6.0 / length).rounded())
+            let stepDy = Int32((Double(dy) * 6.0 / length).rounded())
             // Clamp into `Int16` so a monster near a near-`Int16.max` sector edge cannot
             // trap on the position add. The subsequent `isInside` gate keeps in-bounds
             // semantics intact for the runtime position.
@@ -512,7 +637,14 @@ public actor PerSectorActor {
                 x: Int16(clamping: Int32(monster.position.x) + stepDx),
                 y: Int16(clamping: Int32(monster.position.y) + stepDy)
             )
-            if isInside(proposed, of: staticSector), !collides(proposed, with: staticSector.collisionMasks) {
+            // Feet-box gate against static masks and every other live entity, so a monster
+            // neither walks into geometry nor stacks onto another entity (`excludingMonster`
+            // keeps it from blocking itself).
+            if feetBoxClear(
+                at: proposed,
+                spriteSize: monster.definition.spawnedMonsterSize,
+                excludingMonster: monster.entityIndex
+            ) {
                 monster.position = proposed
             }
             monsters[index] = monster
@@ -537,9 +669,9 @@ public actor PerSectorActor {
         }
     }
 
-    /// Re-emit the player's current `serverPosition` to the originating connection so the
-    /// client snaps back when an `enterPortal` resolves to an unknown destination
-    /// (application-layer mismatch, not a wire-protocol violation).
+    /// Re-emit the player's authoritative `serverPosition` to the originating connection so the
+    /// client snaps back after the server rejects a client-proposed change — an `enterPortal` to an
+    /// unknown destination, or a move that fails the feet-box gate.
     public func snapBack(entityIndex: Int16) {
         guard let slot = players[entityIndex] else { return }
         let message = PositionMessage(
@@ -579,13 +711,33 @@ public actor PerSectorActor {
 
     // MARK: - Helpers
 
-    private func isInside(_ position: GridPoint, of sector: Sector) -> Bool {
-        position.x >= 0 && position.y >= 0
-            && Int32(position.x) < sector.pixelWidth && Int32(position.y) < sector.pixelHeight
+    /// Feet-box clearance for a `spriteSize` sprite at `position` against this sector's static masks
+    /// and every other live entity. `excludingPlayer` / `excludingMonster` drop the mover from the
+    /// blocker set so it never collides with itself; the geometry lives in `FeetMask.isClear`.
+    private func feetBoxClear(
+        at position: GridPoint,
+        spriteSize: GridSize,
+        excludingPlayer: Int16? = nil,
+        excludingMonster: Int16? = nil
+    ) -> Bool {
+        let blockers = liveEntityFeetRects(excludingPlayer: excludingPlayer, excludingMonster: excludingMonster)
+        return FeetMask.isClear(at: position, spriteSize: spriteSize, sector: staticSector, blockers: blockers)
     }
 
-    private func collides(_ position: GridPoint, with masks: [CollisionMask]) -> Bool {
-        CollisionMaskOverlap.contains(position, in: masks)
+    /// Feet boxes of every live entity (players, NPCs, monsters), optionally excluding one player
+    /// or one monster so the mover does not block itself.
+    private func liveEntityFeetRects(excludingPlayer: Int16?, excludingMonster: Int16?) -> [PixelRect] {
+        var rects: [PixelRect] = []
+        for (index, slot) in players where index != excludingPlayer {
+            rects.append(FeetMask.rect(forSpriteAt: slot.character.position, spriteSize: SomnioConstants.playerSpriteSize))
+        }
+        for npc in npcs.values {
+            rects.append(FeetMask.rect(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize))
+        }
+        for (index, monster) in monsters where index != excludingMonster {
+            rects.append(FeetMask.rect(forSpriteAt: monster.position, spriteSize: monster.definition.spawnedMonsterSize))
+        }
+        return rects
     }
 
     private func broadcastToPeers(_ message: SomnioMessage, excluding entityIndex: Int16) throws {
@@ -610,8 +762,10 @@ public actor PerSectorActor {
             entityIndex: slot.entityIndex,
             figure: slot.character.figure,
             gender: slot.character.gender.rawValue,
-            maskWidth: SomnioConstants.tileSize,
-            maskHeight: SomnioConstants.tileSize,
+            // The player sprite cell is 32 x 48, not the 128 x 128 engine tile; the wire mask is
+            // the sprite cell (also the untextured-fallback size and the feet-box source).
+            maskWidth: SomnioConstants.playerSpriteSize.width,
+            maskHeight: SomnioConstants.playerSpriteSize.height,
             type: .player,
             name: slot.character.name,
             x: slot.character.position.x,
@@ -632,7 +786,10 @@ public actor PerSectorActor {
             name: npc.definition.name,
             x: npc.position.x,
             y: npc.position.y,
-            facing: npc.definition.direction,
+            // `NPC.direction` is the on-disk legacy `richtung` (S=0,W=1,E=2,N=3); convert it to
+            // a semantic `Direction` so the wire carries `Direction.rawValue` like every other
+            // entity. `MapCodec` stays byte-faithful — the conversion lives at the emit seam.
+            facing: (Direction(legacyRichtung: npc.definition.direction) ?? .south).rawValue,
             tempo: 0
         )
     }

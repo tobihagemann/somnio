@@ -30,6 +30,9 @@ import SpriteKit
         var walkPhase: TimeInterval
         var renderedFacing: Direction?
         var renderedFrame: Int?
+        /// Name label under the sprite (players + NPCs; `nil` for monsters). A child of `node`,
+        /// created once on first placement and removed with the node on despawn.
+        var namePlaque: NamePlaqueNode?
 
         init(node: SKSpriteNode, kind: WorldEntity.Kind, figure: Int16, facing: Direction, position: CGPoint) {
             self.node = node
@@ -45,6 +48,9 @@ import SpriteKit
         }
     }
 
+    /// Name-plaque backgrounds: players gray `RGB(221,221,221)`, NPCs cyan `RGB(204,255,255)`.
+    private static let playerPlaqueColor = SKColor(red: 221 / 255, green: 221 / 255, blue: 221 / 255, alpha: 1)
+    private static let npcPlaqueColor = SKColor(red: 204 / 255, green: 255 / 255, blue: 255 / 255, alpha: 1)
     /// One walk frame; matches the legacy 5 frames/s cadence (one 4-frame cycle in 800 ms).
     private static let framePeriod: TimeInterval = 0.2
     /// Idle threshold: an entity counts as moving for this long after its last position change.
@@ -57,6 +63,9 @@ import SpriteKit
     private let assets: any SpriteAssets
     private var sectorRoot: SKNode?
     private var splashNode: SKSpriteNode?
+    /// Title text shown over the splash when no splash asset is available (no-asset-pack
+    /// fallback), mirroring the PoC. A child of `splashNode`, cleared when a sector loads.
+    private var splashLabelNode: SKLabelNode?
     private var tintNode: SKSpriteNode?
     private var entityRenderStates: [Int16: EntityRenderState] = [:]
     private var bubbleNodes: [Int16: SpeechBubbleNode] = [:]
@@ -96,6 +105,7 @@ import SpriteKit
     public func load(sector: Sector) {
         splashNode?.removeFromParent()
         splashNode = nil
+        splashLabelNode = nil
         sectorRoot?.removeFromParent()
         entityRenderStates.removeAll()
         bubbleNodes.removeAll()
@@ -129,7 +139,6 @@ import SpriteKit
         } else {
             let node = SKSpriteNode()
             node.anchorPoint = CGPoint(x: 0, y: 0)
-            node.zPosition = 100
             state = EntityRenderState(
                 node: node,
                 kind: entity.kind,
@@ -163,13 +172,43 @@ import SpriteKit
             x: legacyPosition.x,
             y: sceneY(forLegacyY: legacyPosition.y, nodeHeight: state.node.size.height)
         )
+        // Initial feet-line depth; `update(_:)` recomputes it from the live node position each
+        // frame so a tweening peer's depth tracks its motion (mirrors per-frame `PrioritySetzen`).
+        state.node.zPosition = ScreenDepth.entity(legacyY: legacyPosition.y, height: state.node.size.height)
         state.renderedFacing = entity.facing
         state.renderedFrame = 0
+        updateNamePlaque(for: state, entity: entity)
 
         if entity.kind == .player {
             cameraFollowID = entity.id
             centerCamera(onNodeOrigin: state.node.position, size: state.node.size)
         }
+    }
+
+    /// Creates the entity's name plaque on first placement (players + NPCs; monsters get none),
+    /// and re-pins it centered 1px below the sprite's feet. The local player's plaque is bold.
+    private func updateNamePlaque(for state: EntityRenderState, entity: WorldEntity) {
+        let background: SKColor
+        let bold: Bool
+        switch entity.kind {
+        case .player:
+            background = Self.playerPlaqueColor
+            bold = true
+        case .peer:
+            background = Self.playerPlaqueColor
+            bold = false
+        case .npc:
+            background = Self.npcPlaqueColor
+            bold = false
+        case .monster:
+            return
+        }
+        if state.namePlaque == nil {
+            let plaque = NamePlaqueNode(name: entity.name, background: background, bold: bold)
+            state.node.addChild(plaque)
+            state.namePlaque = plaque
+        }
+        state.namePlaque?.position = CGPoint(x: state.node.size.width / 2, y: -1)
     }
 
     public func updatePosition(entityID: Int16, to position: GridPoint, facing: Direction) {
@@ -253,6 +292,10 @@ import SpriteKit
                 state.renderedFacing = state.facing
                 state.renderedFrame = targetFrame
             }
+            // Recompute feet-line depth from the live (possibly mid-tween) scene position so the
+            // entity sorts against objects and peers as it moves, like the original per-frame pass.
+            let legacyY = sectorHeightPx - state.node.position.y - state.node.size.height
+            state.node.zPosition = ScreenDepth.entity(legacyY: legacyY, height: state.node.size.height)
         }
     }
 
@@ -278,7 +321,11 @@ import SpriteKit
     public func showSpeechBubble(above entityID: Int16, lines: [String], lifetimeMs: Int) {
         guard let anchor = entityRenderStates[entityID]?.node else { return }
         bubbleNodes[entityID]?.removeFromParent()
-        let bubble = SpeechBubbleNode(lines: lines, lifetime: TimeInterval(lifetimeMs) / 1000.0)
+        let bubble = SpeechBubbleNode(
+            lines: lines,
+            lifetime: TimeInterval(lifetimeMs) / 1000.0,
+            template: assets.speechBubble()
+        )
         bubble.position = CGPoint(x: anchor.position.x, y: anchor.position.y + anchor.size.height)
         sectorRoot?.addChild(bubble)
         bubbleNodes[entityID] = bubble
@@ -306,11 +353,34 @@ import SpriteKit
         node.zPosition = 0
         if let texture = assets.splash() {
             node.texture = texture
+            splashLabelNode?.removeFromParent()
+            splashLabelNode = nil
+        } else {
+            // No splash asset: show the title text centered over the scene background instead
+            // of a blank node, matching the PoC's text fallback.
+            node.texture = nil
+            let label = splashLabelNode ?? makeSplashLabel()
+            label.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            if label.parent == nil {
+                node.addChild(label)
+            }
+            splashLabelNode = label
         }
         if splashNode == nil {
             addChild(node)
             splashNode = node
         }
+    }
+
+    private func makeSplashLabel() -> SKLabelNode {
+        let label = SKLabelNode(text: "Somnio")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 48
+        label.fontColor = .white
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.zPosition = 1
+        return label
     }
 
     private func makeTintNode() -> SKSpriteNode {

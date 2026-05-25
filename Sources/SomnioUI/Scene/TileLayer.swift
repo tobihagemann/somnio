@@ -46,7 +46,11 @@ func renderTiles(sector: Sector, into parent: SKNode, assets: any SpriteAssets) 
             y: sectorHeightPx - CGFloat(object.y) - CGFloat(object.sourceHeight)
         )
         node.anchorPoint = CGPoint(x: 0, y: 0)
-        node.zPosition = CGFloat(object.priority)
+        node.zPosition = ScreenDepth.object(
+            legacyY: CGFloat(object.y),
+            height: CGFloat(object.sourceHeight),
+            priority: object.priority
+        )
         if let texture = assets.objectTexture(
             tilesetIndex: object.tilesetIndex,
             sourceX: object.sourceX,

@@ -28,4 +28,29 @@ public enum CollisionMaskOverlap {
         }
         return false
     }
+
+    /// Rect-vs-rect AABB overlap. Right and bottom edges are exclusive (same polarity as
+    /// `contains(_:in:)`), so two rects flush along a far edge do not count as overlapping.
+    /// Mirrors the original `KollisionChecken` bounding-box test. Used by the feet-box move
+    /// gate on both client and server.
+    public static func overlaps(_ a: PixelRect, _ b: PixelRect) -> Bool {
+        a.x < b.maxX && a.maxX > b.x && a.y < b.maxY && a.maxY > b.y
+    }
+
+    /// Returns `true` when `rect` overlaps any mask in `masks`. Mask endpoints widen to `Int32`
+    /// so a corrupt sector with an authored mask near `Int16.max` cannot trap the bounds check.
+    public static func intersects(_ rect: PixelRect, _ masks: [CollisionMask]) -> Bool {
+        for mask in masks {
+            let maskRect = PixelRect(
+                x: Int32(mask.x),
+                y: Int32(mask.y),
+                width: Int32(mask.width),
+                height: Int32(mask.height)
+            )
+            if overlaps(rect, maskRect) {
+                return true
+            }
+        }
+        return false
+    }
 }

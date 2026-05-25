@@ -223,17 +223,48 @@ struct ClientViewModelTests {
         #expect(viewModel.chatLines.contains(.spokenByPeer(senderName: "Bob", message: "hi")))
     }
 
-    @Test func `clampX and clampY bound to the sector's pixel extent, not its tile count`() {
+    @Test func `resolvedMove passes a move that overlaps only the head, blocks one that overlaps the feet`() {
         let viewModel = makeViewModel()
-        let sector = tinySector() // 4x4 tiles -> 512px extent (max valid pixel 511)
-        // A mid-sector pixel is preserved; the prior tile-count clamp confined it to [0, 3].
-        #expect(viewModel.clampX(200, sector: sector) == 200)
-        #expect(viewModel.clampY(200, sector: sector) == 200)
-        // Bounds: floor at 0, ceiling at widthPx - 1.
-        #expect(viewModel.clampX(-5, sector: sector) == 0)
-        #expect(viewModel.clampX(1000, sector: sector) == 511)
-        #expect(viewModel.clampY(-5, sector: sector) == 0)
-        #expect(viewModel.clampY(1000, sector: sector) == 511)
+        // Player sprite 32x48: at (100, 200) the feet box is (100, 232, 32, 16). A mask over the
+        // head row (y 200-216) must not block; a mask over the feet row (y 232-248) must.
+        let headMaskSector = collisionSector(masks: [CollisionMask(x: 100, y: 200, width: 32, height: 16)])
+        #expect(
+            viewModel.resolvedMove(from: GridPoint(x: 100, y: 100), to: GridPoint(x: 100, y: 200), sector: headMaskSector, blockers: [])
+                == GridPoint(x: 100, y: 200)
+        )
+        let feetMaskSector = collisionSector(masks: [CollisionMask(x: 100, y: 232, width: 32, height: 16)])
+        #expect(
+            viewModel.resolvedMove(from: GridPoint(x: 100, y: 100), to: GridPoint(x: 100, y: 200), sector: feetMaskSector, blockers: [])
+                == GridPoint(x: 100, y: 100)
+        )
+    }
+
+    @Test func `resolvedMove is blocked by another entity's feet box`() {
+        let viewModel = makeViewModel()
+        let sector = collisionSector(masks: [])
+        // A blocker whose feet box covers the target's feet box (100, 232, 32, 16).
+        let blocker = FeetMask.rect(forSpriteAt: GridPoint(x: 100, y: 200), spriteSize: SomnioConstants.playerSpriteSize)
+        #expect(
+            viewModel.resolvedMove(from: GridPoint(x: 100, y: 100), to: GridPoint(x: 100, y: 200), sector: sector, blockers: [blocker])
+                == GridPoint(x: 100, y: 100)
+        )
+        // Without the blocker the same move is accepted.
+        #expect(
+            viewModel.resolvedMove(from: GridPoint(x: 100, y: 100), to: GridPoint(x: 100, y: 200), sector: sector, blockers: [])
+                == GridPoint(x: 100, y: 200)
+        )
+    }
+
+    @Test func `resolvedMove slides along a wall that blocks one axis`() {
+        let viewModel = makeViewModel()
+        // Moving diagonally (100,100) -> (200,200). A mask over the X-candidate's feet box
+        // (200, 132, 32, 16) blocks the X step, but the Y-candidate's feet box (100, 232, 32, 16)
+        // is clear, so the player slides down the wall: X stays, Y advances.
+        let sector = collisionSector(masks: [CollisionMask(x: 200, y: 132, width: 40, height: 40)])
+        #expect(
+            viewModel.resolvedMove(from: GridPoint(x: 100, y: 100), to: GridPoint(x: 200, y: 200), sector: sector, blockers: [])
+                == GridPoint(x: 100, y: 200)
+        )
     }
 
     private func makeViewModel() -> ClientViewModel {
@@ -248,6 +279,17 @@ struct ClientViewModelTests {
             dimensions: GridSize(width: 4, height: 4),
             ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
             light: LightSetting(indoor: true, brightness: 100)
+        )
+    }
+
+    private func collisionSector(masks: [CollisionMask]) -> Sector {
+        Sector(
+            name: "Test",
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100),
+            collisionMasks: masks
         )
     }
 }
@@ -271,6 +313,10 @@ private final class NullSpriteAssets: SpriteAssets {
     }
 
     func splash() -> SKTexture? {
+        nil
+    }
+
+    func speechBubble() -> SKTexture? {
         nil
     }
 }

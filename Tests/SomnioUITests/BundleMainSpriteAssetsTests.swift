@@ -114,16 +114,21 @@ struct BundleMainSpriteAssetsTests {
 
     // MARK: - entityTexture
 
-    // Fixtures `Resources/Characters/001-TestMain.png` (1024x384 player sheet) and
-    // `003-TestNPC.png` (128x192 NPC sheet) carry solid-color marker cells (32x48) on a black
-    // field. Direction rawValue is N=0, E=1, S=2, W=3. The off-by-one (`figureIndex + 1`)
-    // resolves figure 2 → `003-` prefix. Cell layout (regenerate by filling these top-left
-    // pixel rects):
-    //   001-TestMain: (charCol*128 + frame*32, charRow*192 + dir*48, 32, 48)
+    // Fixtures in `Resources/Characters/` carry solid-color marker cells (32x48) on a black
+    // field. Sheet rows follow the original `richtung` order (S/W/E/N), so the row index is the
+    // `Direction.legacyRichtung` value (south=0, west=1, east=2, north=3) — not `rawValue`.
+    // Filenames are banded by their leading number exactly like the runtime: `001-TestMain`
+    // (number 1) is player band index 0; `003-TestNPC` (number 3 ∈ 2...10) is NPC band index 0;
+    // `011-TestMonster` (number 11 ∈ 11...60) is monster band index 0. So NPC figure 0 and
+    // monster figure 0 resolve to different sheets — the regression guard for Libus-as-snake /
+    // Gespenst-as-character-sheet. Cell layout (regenerate by filling these top-left pixel rects):
+    //   001-TestMain (1024x384): (charCol*128 + frame*32, charRow*192 + legacyRichtung*48, 32, 48)
     //     red    charCol0 charRow0 south frame0   green  charCol0 charRow0 east  frame2
     //     blue   charCol7 charRow1 north frame0   yellow charCol7 charRow1 west  frame3
-    //   003-TestNPC: (frame*32, dir*48, 32, 48)
+    //   003-TestNPC (128x192): (frame*32, legacyRichtung*48, 32, 48)
     //     red    north frame0   green  south frame2   yellow west frame3
+    //   011-TestMonster (128x192): (frame*32, legacyRichtung*48, 32, 48)
+    //     cyan   south frame0
 
     @Test func `entityTexture returns nil for a player figureIndex out of range`() {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
@@ -137,7 +142,7 @@ struct BundleMainSpriteAssetsTests {
 
     @Test func `entityTexture returns nil for a frame out of range`() {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        #expect(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 4) == nil)
+        #expect(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .north, frame: 4) == nil)
     }
 
     @Test func `entityTexture returns the red cell for player figureIndex 0 facing south frame 0`() throws {
@@ -168,25 +173,36 @@ struct BundleMainSpriteAssetsTests {
         #expect(approximatelyYellow(color))
     }
 
-    @Test func `entityTexture returns the red cell for NPC figureIndex 2 facing north frame 0`() throws {
+    @Test func `entityTexture returns the red cell for NPC figureIndex 0 facing north frame 0`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .north, frame: 0))
         let color = try #require(centerColor(of: texture))
         #expect(approximatelyRed(color))
     }
 
-    @Test func `entityTexture returns the green cell for NPC figureIndex 2 facing south frame 2`() throws {
+    @Test func `entityTexture returns the green cell for NPC figureIndex 0 facing south frame 2`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .south, frame: 2))
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .south, frame: 2))
         let color = try #require(centerColor(of: texture))
         #expect(approximatelyGreen(color))
     }
 
-    @Test func `entityTexture returns the yellow cell for NPC figureIndex 2 facing west frame 3`() throws {
+    @Test func `entityTexture returns the yellow cell for NPC figureIndex 0 facing west frame 3`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        let texture = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .west, frame: 3))
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .west, frame: 3))
         let color = try #require(centerColor(of: texture))
         #expect(approximatelyYellow(color))
+    }
+
+    @Test func `entityTexture resolves NPC and monster bands to different sheets for the same figure index`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        // NPC figure 0 → `003-TestNPC` (red at north frame 0); monster figure 0 → `011-TestMonster`
+        // (cyan at south frame 0). Sharing the figure index across kinds must not collide on the
+        // per-band caches — the band is part of the key.
+        let npcTexture = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .north, frame: 0))
+        let monsterTexture = try #require(assets.entityTexture(figureIndex: 0, kind: .monster, facing: .south, frame: 0))
+        #expect(try approximatelyRed(#require(centerColor(of: npcTexture))))
+        #expect(try approximatelyCyan(#require(centerColor(of: monsterTexture))))
     }
 
     @Test func `entityTexture uses the same cell for player and peer`() throws {
@@ -202,8 +218,8 @@ struct BundleMainSpriteAssetsTests {
 
     @Test func `entityTexture caches across calls`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        let first = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
-        let second = try #require(assets.entityTexture(figureIndex: 2, kind: .npc, facing: .north, frame: 0))
+        let first = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .north, frame: 0))
+        let second = try #require(assets.entityTexture(figureIndex: 0, kind: .npc, facing: .north, frame: 0))
         #expect(first === second, "expected the same SKTexture instance from the cache")
     }
 

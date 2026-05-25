@@ -150,6 +150,29 @@ func apiEndpoint(testCase: APITestCase) async throws {
 }
 ```
 
+## Arguments Must Be Sendable
+
+`@Test(arguments:)` elements cross into the test function's isolation domain, so every argument type must be `Sendable`. Most value types are, but `KeyPath` is **not** reliably `Sendable` — it cannot be used as a parameter:
+
+```swift
+// FAILS to compile: "type 'KeyPath<Held, Bool>' does not conform to 'Sendable' protocol ...
+// crossing of an isolation boundary requires parameter and result types to conform to 'Sendable'"
+@Test(arguments: [(UInt16(126), \Held.w), (UInt16(125), \Held.s)])
+func arrowMapsToBit(keyCode: UInt16, bit: KeyPath<Held, Bool>) { }
+```
+
+Pass a concrete `Sendable` value (e.g. the expected result) instead, or replace the parameterization with explicit per-case assertions in a single test:
+
+```swift
+// Pass the expected value, not a KeyPath.
+@Test(arguments: [(UInt16(126), Held(w: true)), (UInt16(125), Held(s: true))])
+func arrowMapsToBit(keyCode: UInt16, expected: Held) {
+    var sampler = Sampler()
+    sampler.press(keyCode)
+    #expect(sampler.held == expected)
+}
+```
+
 ## Best Practices
 
 1. **Keep test cases focused**: Each should test one thing

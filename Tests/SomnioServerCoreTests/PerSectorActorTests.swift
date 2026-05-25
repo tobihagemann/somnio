@@ -35,8 +35,13 @@ struct PerSectorActorTests {
         #expect(secondSnapshot?.character.position == GridPoint(x: 1, y: 1))
     }
 
-    @Test func `handlePosition rejects positions inside a collision mask`() async throws {
-        let actor = PerSectorActor(staticSector: makeSector(), logger: testLogger)
+    @Test func `handlePosition rejects a move whose feet box overlaps a collision mask`() async throws {
+        // Player sprite 32x48: at (5, 5) the feet box is (5, 37, 32, 16). A mask there blocks the
+        // move (the move is dropped, leaving the position unchanged).
+        let actor = PerSectorActor(
+            staticSector: maskedSector(masks: [CollisionMask(x: 5, y: 37, width: 32, height: 16)]),
+            logger: testLogger
+        )
         let outbox = ConnectionOutbox(highWatermark: 1024)
         let entityIndex = try await actor.attach(
             character: makeCharacter(at: GridPoint(x: 1, y: 1)),
@@ -44,14 +49,95 @@ struct PerSectorActorTests {
             outbox: outbox
         )
 
-        // The fixture sector has a 1x1 collision mask at (3, 3).
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 3, y: 3, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
 
         let snapshot = await actor.snapshotForPlayer(entityIndex: entityIndex)
         #expect(snapshot?.character.position == GridPoint(x: 1, y: 1))
+    }
+
+    @Test func `handlePosition accepts a move whose head, but not feet, would overlap a mask`() async throws {
+        // A mask over (5, 5)'s head row (y 5-21) must not block — only the feet box (y 37-53)
+        // gates collision, so the move is accepted. This is the head-vs-feet fidelity fix.
+        let actor = PerSectorActor(
+            staticSector: maskedSector(masks: [CollisionMask(x: 5, y: 5, width: 32, height: 16)]),
+            logger: testLogger
+        )
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        let entityIndex = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: outbox
+        )
+
+        await actor.handlePosition(
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            from: entityIndex
+        )
+
+        let snapshot = await actor.snapshotForPlayer(entityIndex: entityIndex)
+        #expect(snapshot?.character.position == GridPoint(x: 5, y: 5))
+    }
+
+    @Test func `handlePosition rejects a move whose feet box overlaps another player`() async throws {
+        // A peer's feet box at (5, 5) blocks a mover trying to step onto it.
+        let actor = PerSectorActor(staticSector: maskedSector(masks: []), logger: testLogger)
+        let peerOutbox = ConnectionOutbox(highWatermark: 1024)
+        _ = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 5, y: 5)),
+            inventory: [],
+            outbox: peerOutbox
+        )
+        let moverOutbox = ConnectionOutbox(highWatermark: 1024)
+        let moverIndex = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: moverOutbox
+        )
+
+        await actor.handlePosition(
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            from: moverIndex
+        )
+
+        let snapshot = await actor.snapshotForPlayer(entityIndex: moverIndex)
+        #expect(snapshot?.character.position == GridPoint(x: 1, y: 1))
+    }
+
+    @Test func `handlePosition snaps the originating client back on a rejected move`() async throws {
+        // A peer occupies (5, 5); the mover's step onto it is rejected. The server must emit a
+        // serverPosition snap-back to the mover's own outbox carrying the authoritative (unchanged)
+        // position, so a client that predicted against stale blocker data re-syncs rather than
+        // diverging. (The accepted-move case below confirms no spurious snap-back is sent.)
+        let actor = PerSectorActor(staticSector: maskedSector(masks: []), logger: testLogger)
+        let peerOutbox = ConnectionOutbox(highWatermark: 1024)
+        _ = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 5, y: 5)),
+            inventory: [],
+            outbox: peerOutbox
+        )
+        let moverOutbox = ConnectionOutbox(highWatermark: 1024)
+        let moverIndex = try await actor.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: moverOutbox
+        )
+
+        await actor.handlePosition(
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            from: moverIndex
+        )
+
+        moverOutbox.finish()
+        let messages = try await collect(outbox: moverOutbox).map { try SomnioMessageDecoder.decode($0) }
+        let snapBack = try #require(messages.compactMap { message -> PositionMessage? in
+            if case let .serverPosition(payload) = message, payload.entityIndex == moverIndex { return payload }
+            return nil
+        }.first)
+        #expect(snapBack.x == 1)
+        #expect(snapBack.y == 1)
     }
 
     @Test func `handlePosition accepts bounded, non-colliding coordinates`() async throws {
@@ -71,6 +157,15 @@ struct PerSectorActorTests {
         let snapshot = await actor.snapshotForPlayer(entityIndex: entityIndex)
         #expect(snapshot?.character.position == GridPoint(x: 5, y: 5))
         #expect(snapshot?.character.facing == .east)
+
+        // An accepted move must not snap the mover back to its own outbox.
+        outbox.finish()
+        let messages = try await collect(outbox: outbox).map { try SomnioMessageDecoder.decode($0) }
+        let snappedBack = messages.contains { message in
+            if case let .serverPosition(payload) = message, payload.entityIndex == entityIndex { return true }
+            return false
+        }
+        #expect(!snappedBack)
     }
 
     @Test func `attach streams the self-Entity between MainCharacter and Inventory on a no-peer sector`() async throws {
@@ -189,13 +284,17 @@ struct PerSectorActorTests {
     // MARK: - Helpers
 
     private func makeSector() -> Sector {
+        maskedSector(masks: [CollisionMask(x: 3, y: 3, width: 1, height: 1)])
+    }
+
+    private func maskedSector(masks: [CollisionMask]) -> Sector {
         let body = SectorBody(
             version: 3,
             dimensions: GridSize(width: 8, height: 8),
             ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
             light: LightSetting(indoor: false, brightness: 100),
             objects: [],
-            collisionMasks: [CollisionMask(x: 3, y: 3, width: 1, height: 1)],
+            collisionMasks: masks,
             portals: [],
             npcs: [],
             monsterSpawns: []

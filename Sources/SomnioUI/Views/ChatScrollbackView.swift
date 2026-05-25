@@ -14,21 +14,32 @@ public struct ChatScrollbackView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(renderedLines.enumerated()), id: \.offset) { _, line in
-                    let style = ChatLineStyle.style(for: line.category)
-                    Text(verbatim: ChatLineRenderer.render(line, locale: locale))
-                        .foregroundStyle(style.foreground.color)
-                        .bold(style.bold)
-                        .italic(style.italic)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(renderedLines.enumerated()), id: \.offset) { _, line in
+                        let style = ChatLineStyle.style(for: line.category)
+                        Text(verbatim: ChatLineRenderer.render(line, locale: locale))
+                            .foregroundStyle(style.foreground.color)
+                            .bold(style.bold)
+                            .italic(style.italic)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .padding(4)
             }
-            .padding(4)
+            .frame(width: 150, height: 336)
+            .border(Color.black, width: 1)
+            // Keep the newest line in view as chat arrives, matching the legacy scrollback's
+            // auto-scroll. `\.offset` is the row identity, so the last offset is the scroll
+            // target; `chatLines.count` is the change signal (the prepended greeting is fixed).
+            .onChange(of: chatLines.count) {
+                proxy.scrollTo(renderedLines.count - 1, anchor: .bottom)
+            }
+            .onAppear {
+                proxy.scrollTo(renderedLines.count - 1, anchor: .bottom)
+            }
         }
-        .frame(width: 150, height: 336)
-        .border(Color.black, width: 1)
     }
 
     private var renderedLines: [ChatLine] {

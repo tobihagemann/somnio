@@ -9,6 +9,10 @@ public enum SpeechBubbleText {
     /// 150 px bubble width, matching the legacy `Sprechblase` template width.
     public static let bubbleWidth: CGFloat = 150
 
+    /// Font size the wrap measurement and the renderer must share so pre-wrapped lines fit the
+    /// width they were measured against.
+    public static let fontSize: CGFloat = 10
+
     /// Greedy word-wraps `text` to fit `bubbleWidth` at System-10 metrics, then caps
     /// the result with `cap`. The wrap respects existing whitespace token boundaries
     /// only — long unbreakable words exceeding `bubbleWidth` are emitted as single
@@ -68,7 +72,7 @@ public enum SpeechBubbleText {
 
     @MainActor
     private static func defaultWidth(of text: String) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 10)
+        let font = NSFont.systemFont(ofSize: fontSize)
         return (text as NSString).size(withAttributes: [.font: font]).width
     }
 }

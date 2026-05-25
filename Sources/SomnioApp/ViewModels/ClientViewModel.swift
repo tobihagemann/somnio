@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Logging
 import SomnioCore
@@ -48,6 +47,10 @@ import SpriteKit
     private var lastEmittedPosition: GridPoint?
     private var lastEmittedFacing: Direction?
     private var lastEmittedTempo: Tempo?
+    /// Wall-clock time of the last position frame sent to the server (the 2 Hz heartbeat gate).
+    private var lastEmitTime: Date?
+    /// Wall-clock time of the previous gameplay tick, for the elapsed-time-scaled movement step.
+    private var lastTickTime: Date?
     private var lastBumpedNPC: Int16?
     private var lastBumpedPortalIndex: Int?
     private let logger = Logger(label: "de.tobiha.somnio.app.gameplay")
@@ -264,6 +267,8 @@ import SpriteKit
             lastEmittedPosition = nil
             lastEmittedFacing = nil
             lastEmittedTempo = nil
+            lastEmitTime = nil
+            lastTickTime = nil
             lastBumpedNPC = nil
             lastBumpedPortalIndex = nil
             currentSector = sector
@@ -336,7 +341,14 @@ import SpriteKit
         entity.facing = facing
         entity.tempo = tempo
         entities[payload.entityIndex] = entity
-        worldScene.animateEntity(payload.entityIndex, to: newPosition, facing: facing, duration: 0.05)
+        // Peers arrive on the ~500 ms position heartbeat, so tween them across that gap; NPCs and
+        // monsters arrive on the 50 ms server AI tick, so keep their shorter interpolation or they
+        // would visibly lag the server.
+        let duration: TimeInterval = switch entity.kind {
+        case .peer, .player: Self.peerInterpolationDuration
+        case .npc, .monster: Self.aiTickInterpolationDuration
+        }
+        worldScene.animateEntity(payload.entityIndex, to: newPosition, facing: facing, duration: duration)
     }
 
     private func handleServerSay(_ payload: SayMessage) {
@@ -455,22 +467,38 @@ import SpriteKit
         lastEmittedPosition = nil
         lastEmittedFacing = nil
         lastEmittedTempo = nil
+        lastEmitTime = nil
+        lastTickTime = nil
         lastBumpedNPC = nil
         lastBumpedPortalIndex = nil
+        latestMouseFacing = nil
         pendingRegistration = nil
     }
 
     // MARK: - Gameplay ticker
 
     private let keyboard = KeyboardSampler()
+    /// Latest cursor-derived facing from the play-field tracking area, applied by the gameplay tick.
+    /// `nil` until the tracking area first reports the cursor (seeded on attach, then on each move).
+    private var latestMouseFacing: Direction?
     private static let tickPeriodNanoseconds: UInt64 = 16_666_666
-    /// Centre of the 640 × 480 play field in `NSWindow.mouseLocationOutsideOfEventStream`
-    /// coordinates (Cocoa origin bottom-left, Y-up). `MainWindowView` offsets the
-    /// play field at SwiftUI top-left `(182, 14)` inside a content area of height
-    /// `1004 × 514`; in Cocoa Y-up, the play-field centre is therefore
-    /// `(182 + 320, 514 - 14 - 240) = (502, 260)`. `MouseFacingSampler` uses
-    /// `dy >= 0 → .north`, which agrees with the same Y-up convention.
-    private static let playFieldCenterInWindow = CGPoint(x: 502, y: 260)
+    /// Position-broadcast heartbeat (legacy `UpdateTimer`, 2 Hz): the local player moves smoothly
+    /// via prediction every tick, but reports its position to the server at most this often.
+    private static let positionHeartbeatInterval: TimeInterval = 0.5
+    /// Peer-player interpolation matches the heartbeat so remote players tween across the ~500 ms
+    /// gap rather than stepping; NPCs/monsters stay on the 50 ms server AI-tick cadence so they
+    /// don't visibly lag the server.
+    private static let peerInterpolationDuration: TimeInterval = 0.5
+    private static let aiTickInterpolationDuration: TimeInterval = 0.05
+    /// Upper bound on a single tick's elapsed time so a stall (or the first tick) cannot teleport
+    /// the player; mirrors the PoC's clamp.
+    private static let maxTickElapsed: TimeInterval = 0.1
+
+    /// Receives the cursor-derived facing from the play-field tracking area
+    /// (`MouseFacingTrackingView`). The gameplay tick applies it each frame.
+    public func updateMouseFacing(_ direction: Direction) {
+        latestMouseFacing = direction
+    }
 
     public func startGameplayTicker() {
         guard tickerTask == nil else { return }
@@ -515,26 +543,35 @@ import SpriteKit
 
         // Refresh facing every tick regardless of velocity so a stationary player still
         // tracks the cursor — the legacy `quadrant()` rule is independent of movement.
-        if let mouseLocation = currentMouseLocation() {
-            selfEntity.facing = MouseFacingSampler.facingQuadrant(
-                mouseLocation: mouseLocation,
-                viewCenter: Self.playFieldCenterInWindow
-            )
+        if let facing = latestMouseFacing {
+            selfEntity.facing = facing
         }
+
+        let now = Date()
+        let elapsedSeconds = max(0, min(lastTickTime.map { now.timeIntervalSince($0) } ?? 0, Self.maxTickElapsed))
+        lastTickTime = now
 
         let velocity = velocity(from: held)
         if velocity != .zero {
-            let stepPx = Int32(tempo.rawValue)
-            let dxPx = Int32((velocity.dx * Double(stepPx)).rounded())
-            let dyPx = Int32((velocity.dy * Double(stepPx)).rounded())
-            let proposedX = clampX(Int32(selfEntity.position.x) + dxPx, sector: sector)
-            let proposedY = clampY(Int32(selfEntity.position.y) + dyPx, sector: sector)
-            // `clamping:` because a sector wider/taller than 255 tiles has a pixel extent
-            // beyond `Int16.max`; a plain `Int16(...)` would trap near the far edge.
-            let proposed = GridPoint(x: Int16(clamping: proposedX), y: Int16(clamping: proposedY))
-            if !CollisionMaskOverlap.contains(proposed, in: sector.collisionMasks) {
-                selfEntity.position = proposed
-            }
+            // Elapsed-time-scaled step (legacy `tempo * 60 * frameintervall`) keeps speed
+            // frame-rate-independent. `clamping:` because a sector wider/taller than 255 tiles has
+            // a pixel extent beyond `Int16.max`; a plain `Int16(...)` would trap near the far edge.
+            let pixels = tempo.pixelsPerSecond * elapsedSeconds
+            let dxPx = Int32((velocity.dx * pixels).rounded())
+            let dyPx = Int32((velocity.dy * pixels).rounded())
+            // Clamp the step target to the sector's feet-box bounds so a move toward an edge lands
+            // flush against it rather than stopping up to one tick short; `resolvedMove` still gates
+            // collision masks and other entities per axis.
+            let target = FeetMask.clamped(
+                GridPoint(
+                    x: Int16(clamping: Int32(selfEntity.position.x) + dxPx),
+                    y: Int16(clamping: Int32(selfEntity.position.y) + dyPx)
+                ),
+                spriteSize: SomnioConstants.playerSpriteSize,
+                sector: sector
+            )
+            let blockers = entityBlockerFeetRects(excludingSelf: selfIndex)
+            selfEntity.position = resolvedMove(from: selfEntity.position, to: target, sector: sector, blockers: blockers)
         }
         selfEntity.tempo = velocity == .zero ? .default : tempo
         entities[selfIndex] = selfEntity
@@ -550,6 +587,14 @@ import SpriteKit
            lastEmittedTempo == tempo {
             return
         }
+        // Heartbeat gate: report at most every `positionHeartbeatInterval` (legacy 2 Hz
+        // `UpdateTimer`). The last-emitted snapshot is left unchanged when throttled, so the next
+        // tick past the interval still sees the move as pending and reports the final position.
+        let now = Date()
+        if let last = lastEmitTime, now.timeIntervalSince(last) < Self.positionHeartbeatInterval {
+            return
+        }
+        lastEmitTime = now
         lastEmittedPosition = entity.position
         lastEmittedFacing = entity.facing
         lastEmittedTempo = tempo
@@ -564,13 +609,12 @@ import SpriteKit
     }
 
     private func checkBumpsAndPortals(selfEntity: WorldEntity, sector: Sector) {
-        let playerCenter = VisualCenter.center(
-            position: selfEntity.position,
-            mask: GridSize(width: SomnioConstants.tileSize, height: SomnioConstants.tileSize)
-        )
+        // Feet-center, not sprite-top-left, so bumps and portal exits trigger at the character's
+        // feet (the original `maskxy + maskgroesse / 2` distance), matching the server gates.
+        let playerCenter = FeetMask.center(forSpriteAt: selfEntity.position, spriteSize: SomnioConstants.playerSpriteSize)
         var bumped: Int16?
         for entity in entities.values where entity.kind == .npc {
-            let npcCenter = VisualCenter.center(position: entity.position, mask: entity.maskSize)
+            let npcCenter = FeetMask.center(forSpriteAt: entity.position, spriteSize: entity.maskSize)
             if VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius) {
                 bumped = entity.id
                 break
@@ -591,10 +635,10 @@ import SpriteKit
                 width: Int32(portal.width),
                 height: Int32(portal.height)
             )
-            if Int32(selfEntity.position.x) >= portalRect.x,
-               Int32(selfEntity.position.x) < portalRect.x + portalRect.width,
-               Int32(selfEntity.position.y) >= portalRect.y,
-               Int32(selfEntity.position.y) < portalRect.y + portalRect.height {
+            if playerCenter.x >= portalRect.x,
+               playerCenter.x < portalRect.x + portalRect.width,
+               playerCenter.y >= portalRect.y,
+               playerCenter.y < portalRect.y + portalRect.height {
                 portalHit = index
                 break
             }
@@ -625,23 +669,36 @@ import SpriteKit
         return Velocity(dx: dx / length, dy: dy / length)
     }
 
-    /// Bounds the player to the sector's pixel extent (`Sector.pixelWidth/Height`); positions
-    /// are pixels while dimensions are tiles. Internal (not private) for `@testable` access.
-    func clampX(_ x: Int32, sector: Sector) -> Int32 {
-        max(0, min(x, sector.pixelWidth - 1))
+    /// Axis-separated feet-box slide from `from` toward `to`. Each axis is committed only if the
+    /// player's feet box at the candidate clears sector bounds, static masks, and `blockers`
+    /// (other entities' feet boxes), so the player glides along a wall/entity instead of sticking
+    /// — the original client-side `KollisionChecken` + `move`. Internal for `@testable` access.
+    func resolvedMove(from: GridPoint, to: GridPoint, sector: Sector, blockers: [PixelRect]) -> GridPoint {
+        var resolved = from
+        let xCandidate = GridPoint(x: to.x, y: from.y)
+        if Self.feetClear(at: xCandidate, sector: sector, blockers: blockers) {
+            resolved.x = to.x
+        }
+        let yCandidate = GridPoint(x: resolved.x, y: to.y)
+        if Self.feetClear(at: yCandidate, sector: sector, blockers: blockers) {
+            resolved.y = to.y
+        }
+        return resolved
     }
 
-    func clampY(_ y: Int32, sector: Sector) -> Int32 {
-        max(0, min(y, sector.pixelHeight - 1))
+    /// Feet-box clearance for the local player, pinning `playerSpriteSize`. Routes through the shared
+    /// `FeetMask.isClear` so the predicted move uses the identical gate the per-sector actor accepts.
+    static func feetClear(at position: GridPoint, sector: Sector, blockers: [PixelRect]) -> Bool {
+        FeetMask.isClear(at: position, spriteSize: SomnioConstants.playerSpriteSize, sector: sector, blockers: blockers)
     }
 
-    /// Returns the cursor position in window-local coordinates. The play-field origin
-    /// inside the window is `(182, 14)` per `MainWindowView`; the quadrant test only
-    /// needs the *direction* of the delta from the play-field centre, which the caller
-    /// computes against `viewCenter`.
-    private func currentMouseLocation() -> CGPoint? {
-        guard let window = NSApp.keyWindow else { return nil }
-        return window.mouseLocationOutsideOfEventStream
+    /// Feet boxes of every entity except the local player, used as movement blockers so the
+    /// predictor won't let the player walk through peers, NPCs, or monsters.
+    private func entityBlockerFeetRects(excludingSelf selfIndex: Int16) -> [PixelRect] {
+        entities.values.compactMap { entity in
+            guard entity.id != selfIndex else { return nil }
+            return FeetMask.rect(forSpriteAt: entity.position, spriteSize: entity.maskSize)
+        }
     }
 }
 

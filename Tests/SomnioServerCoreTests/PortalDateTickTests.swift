@@ -87,6 +87,44 @@ struct PortalDateTickTests {
         #expect(placed?.character.position == expectedSpawn)
     }
 
+    @Test func `portal hop places the player inside the inbound arrival portal keyed to the source`() async throws {
+        // Destination "B" has an inbound `.arrivalPlacement` portal back to the source "A", so the
+        // hop must land the player inside that portal rect (the primary placement branch), not at
+        // an arrival spawn. B has no self-targeting portal, so the fallback would recenter to the
+        // pixel center (512, 512) — outside this rect — and asserting "inside the rect" proves the
+        // primary branch ran.
+        let inbound = SectorPortal(
+            x: 128, y: 128, width: 256, height: 256, targetSectorName: "A", direction: .arrivalPlacement
+        )
+        let dependencies = try await makeDependencies(initialClock: .bootDefault, destinationPortals: [inbound])
+        let connection = ConnectionActor(dependencies: dependencies)
+        let outbox = await connection.connectionOutbox
+
+        let actorA = try #require(await dependencies.worldRouter.sectorActor(named: "A"))
+        let entityIndex = try await actorA.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: outbox
+        )
+        await connection.markAttached(entityIndex: entityIndex, sectorName: "A", accountId: UUID())
+
+        let outcome = try #require(await GameplayHandlers.handleEnterPortal(
+            EnterPortalMessage(portalIndex: 0),
+            entityIndex: entityIndex,
+            sectorName: "A",
+            connectionActor: connection,
+            dependencies: dependencies
+        ))
+        #expect(outcome.sectorName == "B")
+
+        let actorB = try #require(await dependencies.worldRouter.sectorActor(named: "B"))
+        let placed = try #require(await actorB.snapshotForPlayer(entityIndex: outcome.entityIndex))
+        #expect(placed.character.position.x >= inbound.x)
+        #expect(placed.character.position.x < inbound.x + inbound.width)
+        #expect(placed.character.position.y >= inbound.y)
+        #expect(placed.character.position.y < inbound.y + inbound.height)
+    }
+
     @Test func `portal hop recenters an out-of-bounds carry into a sector without an arrival portal`() async throws {
         // Destination "B" has no arrival portal (default), and the carried coordinate is well
         // outside B's pixel bounds, so the hop must recenter to B's pixel center rather than

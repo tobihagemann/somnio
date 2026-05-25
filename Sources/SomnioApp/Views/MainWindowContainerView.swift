@@ -16,7 +16,10 @@ import SwiftUI
 
     public var body: some View {
         MainWindowView(
-            playField: WorldSceneView(scene: viewModel.worldScene),
+            playField: WorldSceneView(scene: viewModel.worldScene)
+                .overlay {
+                    MouseFacingTrackingView { facing in viewModel.updateMouseFacing(facing) }
+                },
             energy: viewModel.energy,
             players: viewModel.players,
             items: viewModel.inventory,
