@@ -6,7 +6,10 @@ public enum ChatColor: Sendable, Equatable, Hashable, CaseIterable {
     case purple
     case red
     case blue
-    case black
+    /// Default body text. The legacy palette used plain black on its light chat box; this maps to
+    /// the adaptive primary label color so it stays black in light mode and flips to white in dark
+    /// mode (the box has no opaque background of its own).
+    case primary
 }
 
 /// Visual treatment applied to one chat scrollback row.
@@ -28,7 +31,7 @@ public struct ChatLineStyle: Sendable, Equatable, Hashable {
         case .ownMessage:
             return ChatLineStyle(foreground: .purple, bold: false, italic: false)
         case .peerMessage, .npcMessage:
-            return ChatLineStyle(foreground: .black, bold: false, italic: false)
+            return ChatLineStyle(foreground: .primary, bold: false, italic: false)
         case .adminBroadcast, .error:
             return ChatLineStyle(foreground: .red, bold: false, italic: false)
         case .joinLeave, .startupGreeting:

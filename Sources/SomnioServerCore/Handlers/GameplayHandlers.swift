@@ -91,6 +91,17 @@ public enum GameplayHandlers {
             return nil
         }
         let portal = oldSectorActor.staticSector.portals[portalIndex]
+        // Only outbound triggers are walk-into portals. The faithful client only ever sends those
+        // indices, but a crafted frame could name an `.arrivalPlacement` portal (a destination
+        // marker, not an exit) to teleport without reaching a trigger zone — reject it at the gate.
+        guard portal.direction == .outboundTrigger else {
+            portalLogger.warning(
+                "enter_portal non-trigger direction",
+                metadata: ["direction": "\(portal.direction)", "portal_index": "\(portalIndex)", "sector": "\(sectorName)"]
+            )
+            await oldSectorActor.snapBack(entityIndex: entityIndex)
+            return nil
+        }
         guard let newSectorActor = await dependencies.worldRouter.sectorActor(named: portal.targetSectorName) else {
             portalLogger.warning(
                 "enter_portal unknown target",

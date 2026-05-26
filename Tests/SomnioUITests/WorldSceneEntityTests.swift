@@ -83,6 +83,132 @@ struct WorldSceneEntityTests {
         #expect(!scene._entityRenderStateContains(7))
     }
 
+    @Test func `speech bubble parents under the speaker and sorts above the day-night tint`() throws {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+        // The tint node only exists once the day/night pass has run.
+        scene.updateDayNightTint(hour: 0, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        scene.showSpeechBubble(above: 7, lines: ["hello"], lifetimeMs: 3000)
+        let probe = try #require(scene._overlayProbe(for: 7))
+        #expect(probe.bubbleParentIsEntityNode)
+        #expect(probe.bubbleEffectiveZ > probe.tintEffectiveZ)
+        #expect(probe.bubbleEffectiveZ > 1000)
+    }
+
+    @Test func `name plates parent under the entity and sort by screen-Y`() throws {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        let north = WorldEntity(
+            id: 1, kind: .peer, figure: 0,
+            position: GridPoint(x: 100, y: 50),
+            facing: .south, tempo: .default,
+            maskSize: GridSize(width: 32, height: 48), name: "North"
+        )
+        let south = WorldEntity(
+            id: 2, kind: .peer, figure: 0,
+            position: GridPoint(x: 100, y: 400),
+            facing: .south, tempo: .default,
+            maskSize: GridSize(width: 32, height: 48), name: "South"
+        )
+        scene.placeEntity(north)
+        scene.placeEntity(south)
+        let northProbe = try #require(scene._overlayProbe(for: 1))
+        let southProbe = try #require(scene._overlayProbe(for: 2))
+        #expect(northProbe.namePlateParentIsEntityNode)
+        #expect(southProbe.namePlateParentIsEntityNode)
+        // Larger legacy Y is further south, so its plate's accumulated z sorts in front.
+        #expect(southProbe.namePlateEffectiveZ > northProbe.namePlateEffectiveZ)
+    }
+
+    @Test func `held sector switch hides the incoming sector until the player is placed`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(playerEntity())
+
+        // Portal hop: load with the held swap. The incoming sector is hidden, the outgoing parked.
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: true)
+        let held = scene._heldSwapProbe()
+        #expect(held.sectorRootHidden)
+        #expect(held.hasParkedPreviousRoot)
+        #expect(held.pendingPlayerReveal)
+
+        // Placing the player swaps atomically: incoming revealed, parked root dropped.
+        scene.placeEntity(playerEntity())
+        let revealed = scene._heldSwapProbe()
+        #expect(!revealed.sectorRootHidden)
+        #expect(!revealed.hasParkedPreviousRoot)
+        #expect(!revealed.pendingPlayerReveal)
+    }
+
+    @Test func `destination tint is deferred until the held sector is revealed`() throws {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(playerEntity())
+        // Apply a noon (bright) outgoing tint so the tint node exists with a known alpha.
+        scene.updateDayNightTint(hour: 12, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        let outgoingAlpha = scene._heldSwapProbe().appliedTintAlpha
+
+        // Start a held switch, then push the destination's midnight (dark, different) tint: it must
+        // be stashed, not applied, so the still-visible outgoing sector keeps its own lighting.
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: true)
+        scene.updateDayNightTint(hour: 0, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        let duringSwitch = scene._heldSwapProbe()
+        #expect(duringSwitch.pendingTintAlpha != nil)
+        #expect(duringSwitch.appliedTintAlpha == outgoingAlpha)
+
+        // Reveal applies the stashed tint. `SKNode.alpha` is `Float`-backed, so compare with a
+        // tolerance rather than bit-exact against the `Double` that was stashed.
+        scene.placeEntity(playerEntity())
+        let afterReveal = scene._heldSwapProbe()
+        #expect(afterReveal.pendingTintAlpha == nil)
+        let applied = try #require(afterReveal.appliedTintAlpha)
+        let stashed = try #require(duringSwitch.pendingTintAlpha)
+        #expect(abs(applied - stashed) < 0.0001)
+    }
+
+    @Test func `showSplash drops a sector parked for an in-flight switch`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(playerEntity())
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: true)
+        scene.updateDayNightTint(hour: 0, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        #expect(scene._heldSwapProbe().hasParkedPreviousRoot)
+        scene.showSplash()
+        let after = scene._heldSwapProbe()
+        #expect(!after.hasParkedPreviousRoot)
+        #expect(!after.pendingPlayerReveal)
+        #expect(after.pendingTintAlpha == nil)
+    }
+
+    @Test func `the last deferred tint wins when several arrive before the reveal`() throws {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        scene.placeEntity(playerEntity())
+        // Held switch: push two destination tints before placement; only the last must be applied.
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: true)
+        scene.updateDayNightTint(hour: 12, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        scene.updateDayNightTint(hour: 0, minute: 0, sectorLight: LightSetting(indoor: false, brightness: 100))
+        let lastDeferred = try #require(scene._heldSwapProbe().pendingTintAlpha)
+
+        scene.placeEntity(playerEntity())
+        let applied = try #require(scene._heldSwapProbe().appliedTintAlpha)
+        #expect(abs(applied - lastDeferred) < 0.0001)
+    }
+
+    private func playerEntity() -> WorldEntity {
+        WorldEntity(
+            id: 1,
+            kind: .player,
+            figure: 0,
+            position: GridPoint(x: 100, y: 100),
+            facing: .south,
+            tempo: .default,
+            maskSize: GridSize(width: 32, height: 48),
+            name: "Player"
+        )
+    }
+
     private func sampleEntity() -> WorldEntity {
         WorldEntity(
             id: 7,

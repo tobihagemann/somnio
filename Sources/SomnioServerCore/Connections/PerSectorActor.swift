@@ -448,16 +448,27 @@ public actor PerSectorActor {
         }) else {
             return nil
         }
-        let rect = PixelRect(
+        // The original bounds the spawn top by the feet-mask height, but the feet mask sits at the
+        // sprite's bottom, so that lets the feet box slide past the arrival rect's bottom edge —
+        // onto a door directly below it. Reserve the full sprite height below the top instead, so a
+        // random placement keeps the whole sprite (feet included) inside the authored arrival zone.
+        // Random placement is otherwise preserved; this only corrects the original's off-by-one bound.
+        let feetHeight = FeetMask.feetHeight(for: spriteSize)
+        let reservedBelowTop = Int32(spriteSize.height) - feetHeight
+        let samplingRect = PixelRect(
             x: Int32(portal.x),
             y: Int32(portal.y),
             width: Int32(portal.width),
-            height: Int32(portal.height)
+            height: max(feetHeight, Int32(portal.height) - reservedBelowTop)
         )
-        if let point = randomFreePoint(in: rect, spriteSize: spriteSize) {
+        if let point = randomFreePoint(in: samplingRect, spriteSize: spriteSize) {
             return point
         }
-        return GridPoint(x: Int16(clamping: rect.x + rect.width / 2), y: Int16(clamping: rect.y + rect.height / 2))
+        // No clear cell: fall back to the geometric center of the full authored arrival zone.
+        return GridPoint(
+            x: Int16(clamping: Int32(portal.x) + Int32(portal.width) / 2),
+            y: Int16(clamping: Int32(portal.y) + Int32(portal.height) / 2)
+        )
     }
 
     /// Random collision-free top-left point for a `spriteSize` sprite inside `rect`, retried up to
@@ -465,7 +476,7 @@ public actor PerSectorActor {
     /// sampling looped until `KollisionChecken` clears: the far edges are inset by the feet mask so
     /// the sprite fits, and each candidate is validated against static masks and live entities.
     private func randomFreePoint(in rect: PixelRect, spriteSize: GridSize) -> GridPoint? {
-        let feetHeight = Int32(spriteSize.height) / 4 + 4
+        let feetHeight = FeetMask.feetHeight(for: spriteSize)
         let loX = rect.x / 4
         let loY = rect.y / 4
         let hiX = max(loX, loX + rect.width / 4 - Int32(spriteSize.width) / 4)

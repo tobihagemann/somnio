@@ -51,16 +51,17 @@ import SpriteKit
     private var lastEmitTime: Date?
     /// Wall-clock time of the previous gameplay tick, for the elapsed-time-scaled movement step.
     private var lastTickTime: Date?
-    private var lastBumpedNPC: Int16?
     private var lastBumpedPortalIndex: Int?
     private let logger = Logger(label: "de.tobiha.somnio.app.gameplay")
 
     public init(
         worldScene: WorldScene,
-        transport: GameplayTransport = GameplayTransport()
+        transport: GameplayTransport = GameplayTransport(),
+        keyboard: KeyboardSampler = KeyboardSampler()
     ) {
         self.worldScene = worldScene
         self.transport = transport
+        self.keyboard = keyboard
     }
 
     /// Pulls a saved credential into the login form (without opening a connection).
@@ -269,10 +270,13 @@ import SpriteKit
             lastEmittedTempo = nil
             lastEmitTime = nil
             lastTickTime = nil
-            lastBumpedNPC = nil
             lastBumpedPortalIndex = nil
             currentSector = sector
-            worldScene.load(sector: sector)
+            // On a portal hop (already `.attached`) keep the outgoing sector on screen until the
+            // new character is placed, then swap — avoids a frame of the new sector framed on its
+            // origin with no character. First login (`.awaitingEnterSector`) swaps immediately
+            // since there is no outgoing sector to hold.
+            worldScene.load(sector: sector, awaitingPlayerPlacement: connectionState == .attached)
             // Re-apply the most recent date tint so the new sector's `LightSetting`
             // takes effect without waiting for the next `DateTick`.
             worldScene.updateDayNightTint(
@@ -283,11 +287,11 @@ import SpriteKit
             // Drop back to `.awaitingEnterSector` until the next `mainCharacter`
             // arrives so chat / movement that depend on `selfEntityIndex` cannot fire
             // in the few-tick gap between `enterSector` and `mainCharacter` on a
-            // portal hop. Also stops the gameplay ticker so it doesn't reference the
-            // old sector's collision masks while `currentSector` already points at
-            // the new one.
+            // portal hop. The ticker keeps running (its `selfEntityIndex` guard makes it a
+            // no-op until `mainCharacter`), so the keyboard monitor stays installed across the
+            // hop: keys are still consumed (no responder-chain beep) and held WASD survives so
+            // motion resumes on arrival, matching the legacy live-keyboard read.
             connectionState = .awaitingEnterSector
-            stopGameplayTicker()
             presentedSheet = nil
         } catch {
             chatLines.append(.errorCode(code: "\(error)"))
@@ -425,9 +429,21 @@ import SpriteKit
     /// the boilerplate keeps the seven call sites from each carrying their own
     /// `Task { [transport] in await transport.enqueue(...) }` chain.
     private func enqueue(_ message: SomnioMessage) {
+        _outboundProbe?(message)
         Task { [transport] in
             await transport.enqueue(message)
         }
+    }
+
+    /// Test seam: when set, every outbound message is delivered here synchronously (before the async
+    /// transport hop) so unit tests can assert what a tick enqueued without standing up a socket.
+    /// `nil` in production.
+    var _outboundProbe: ((SomnioMessage) -> Void)?
+
+    /// Test seam: drives exactly one gameplay tick (the timer's per-frame body) so unit tests can
+    /// assert per-tick outbound behavior without the `RunLoop`-paced ticker task.
+    func _runSingleTick() {
+        runOneGameplayTick()
     }
 
     private func beginAuthSocketTeardown() {
@@ -469,7 +485,6 @@ import SpriteKit
         lastEmittedTempo = nil
         lastEmitTime = nil
         lastTickTime = nil
-        lastBumpedNPC = nil
         lastBumpedPortalIndex = nil
         latestMouseFacing = nil
         pendingRegistration = nil
@@ -477,7 +492,7 @@ import SpriteKit
 
     // MARK: - Gameplay ticker
 
-    private let keyboard = KeyboardSampler()
+    private let keyboard: KeyboardSampler
     /// Latest cursor-derived facing from the play-field tracking area, applied by the gameplay tick.
     /// `nil` until the tracking area first reports the cursor (seeded on attach, then on each move).
     private var latestMouseFacing: Direction?
@@ -519,11 +534,16 @@ import SpriteKit
         keyboard.stop()
     }
 
+    // swiftlint:disable:next function_body_length
     private func runOneGameplayTick() {
         // Gate the sampler's WASD capture on the live gameplay state. Refreshed each tick
         // (60 Hz, ~16ms latency) so opening a sheet or focusing the chat input releases
-        // gameplay keys back to the responder chain without an explicit notify path.
-        keyboard.isGameplayActive = connectionState == .attached
+        // gameplay keys back to the responder chain without an explicit notify path. The
+        // mid-switch `.awaitingEnterSector` state still counts as active so keys keep being
+        // consumed (no responder-chain beep) and held state survives the hop — the tick's
+        // `selfEntityIndex` guard below stops actual movement until the new character arrives,
+        // and the legacy read the live keyboard across a sector switch so motion resumes if held.
+        keyboard.isGameplayActive = (connectionState == .attached || connectionState == .awaitingEnterSector)
             && presentedSheet == nil
             && !isChatInputFocused
         guard !isChatInputFocused else { return }
@@ -552,6 +572,7 @@ import SpriteKit
         lastTickTime = now
 
         let velocity = velocity(from: held)
+        var enteredPortal = false
         if velocity != .zero {
             // Elapsed-time-scaled step (legacy `tempo * 60 * frameintervall`) keeps speed
             // frame-rate-independent. `clamping:` because a sector wider/taller than 255 tiles has
@@ -570,15 +591,56 @@ import SpriteKit
                 spriteSize: SomnioConstants.playerSpriteSize,
                 sector: sector
             )
+            // Resolve bounds + static masks + solid entities (peers/monsters) first; NPCs are
+            // excluded from the blocker set so the slide reaches the NPC's feet box rather than
+            // stopping short of it (otherwise the feet-box overlap is never seen, no bump).
             let blockers = entityBlockerFeetRects(excludingSelf: selfIndex)
-            selfEntity.position = resolvedMove(from: selfEntity.position, to: target, sector: sector, blockers: blockers)
+            let candidate = resolvedMove(from: selfEntity.position, to: target, sector: sector, blockers: blockers)
+            // Faithful unified collision (legacy `KollisionChecken`): the wall-resolved candidate's
+            // feet box overlapping an NPC feet box or a portal trigger blocks the step at the
+            // threshold (decision B) and fires the trigger. Testing the post-resolution candidate
+            // (not the raw step) avoids triggering through a wall the player can't actually cross.
+            let candidateFeet = FeetMask.rect(forSpriteAt: candidate, spriteSize: SomnioConstants.playerSpriteSize)
+            let triggers = Self.collisionTriggers(
+                playerFeetRect: candidateFeet,
+                npcFeetRects: npcFeetRects(),
+                portalTriggerRects: Self.portalTriggerRects(in: sector)
+            )
+            if !triggers.blocked {
+                selfEntity.position = candidate
+            }
+            enteredPortal = dispatchTriggers(triggers)
         }
         selfEntity.tempo = velocity == .zero ? .default : tempo
         entities[selfIndex] = selfEntity
         worldScene.updatePosition(entityID: selfIndex, to: selfEntity.position, facing: selfEntity.facing)
 
-        emitIfChanged(entity: selfEntity, tempo: selfEntity.tempo)
-        checkBumpsAndPortals(selfEntity: selfEntity, sector: sector)
+        // A portal-blocked tick must not also report its now-stale old-sector position: the server
+        // processes `.enterPortal` first and switches the connection to the destination sector, so a
+        // trailing `.clientPosition` would apply the old coordinates in the new sector and snap the
+        // player off the arrival placement. Suppress the heartbeat on the tick a portal fires.
+        if !enteredPortal {
+            emitIfChanged(entity: selfEntity, tempo: selfEntity.tempo)
+        }
+    }
+
+    /// Sends the NPC-bump and portal-enter triggers for an overlapping step and reports whether a
+    /// portal fired this tick. NPC bump is continuous (no latch — the server's `targetingEntity`
+    /// gate makes repeats no-ops, the faithful 50 Hz re-send); the portal is latched so one
+    /// threshold contact fires a single sector switch, cleared when the overlap releases.
+    private func dispatchTriggers(_ triggers: CollisionTriggers) -> Bool {
+        if let bumpedNPC = triggers.bumpedNPC {
+            enqueue(.bumpNPC(BumpNPCMessage(npcIndex: bumpedNPC)))
+        }
+        guard let portalHit = triggers.portal else {
+            lastBumpedPortalIndex = nil
+            return false
+        }
+        if portalHit != lastBumpedPortalIndex {
+            lastBumpedPortalIndex = portalHit
+            enqueue(.enterPortal(EnterPortalMessage(portalIndex: Int16(portalHit))))
+        }
+        return true
     }
 
     private func emitIfChanged(entity: WorldEntity, tempo: Tempo) {
@@ -608,46 +670,63 @@ import SpriteKit
         enqueue(.clientPosition(message))
     }
 
-    private func checkBumpsAndPortals(selfEntity: WorldEntity, sector: Sector) {
-        // Feet-center, not sprite-top-left, so bumps and portal exits trigger at the character's
-        // feet (the original `maskxy + maskgroesse / 2` distance), matching the server gates.
-        let playerCenter = FeetMask.center(forSpriteAt: selfEntity.position, spriteSize: SomnioConstants.playerSpriteSize)
-        var bumped: Int16?
-        for entity in entities.values where entity.kind == .npc {
-            let npcCenter = FeetMask.center(forSpriteAt: entity.position, spriteSize: entity.maskSize)
-            if VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius) {
-                bumped = entity.id
-                break
-            }
+    /// Outcome of the unified collision test: whether the step is blocked at the threshold, plus the
+    /// NPC index to bump and/or the portal index to enter when their feet boxes were the blockers.
+    struct CollisionTriggers {
+        var bumpedNPC: Int16?
+        var portal: Int?
+        var blocked: Bool {
+            bumpedNPC != nil || portal != nil
         }
-        if let bumped, bumped != lastBumpedNPC {
-            lastBumpedNPC = bumped
-            enqueue(.bumpNPC(BumpNPCMessage(npcIndex: bumped)))
-        } else if bumped == nil {
-            lastBumpedNPC = nil
-        }
+    }
 
-        var portalHit: Int?
-        for (index, portal) in sector.portals.enumerated() where portal.direction == .outboundTrigger {
-            let portalRect = (
+    /// Faithful unification of the legacy `KollisionChecken` for both NPC bumps and portal
+    /// triggers: the player's feet box at the attempted next step overlapping an NPC feet box or a
+    /// portal `.outboundTrigger` rect is a hit that blocks the step and fires the trigger. AABB
+    /// overlap via `CollisionMaskOverlap.overlaps` (right/bottom-exclusive — the move gate's
+    /// polarity). Pure and `internal` for `@testable` unit coverage, mirroring `resolvedMove`.
+    static func collisionTriggers(
+        playerFeetRect: PixelRect,
+        npcFeetRects: [(index: Int16, rect: PixelRect)],
+        portalTriggerRects: [(index: Int, rect: PixelRect)]
+    ) -> CollisionTriggers {
+        var bumpedNPC: Int16?
+        for npc in npcFeetRects where CollisionMaskOverlap.overlaps(playerFeetRect, npc.rect) {
+            bumpedNPC = npc.index
+            break
+        }
+        var portal: Int?
+        for trigger in portalTriggerRects where CollisionMaskOverlap.overlaps(playerFeetRect, trigger.rect) {
+            portal = trigger.index
+            break
+        }
+        return CollisionTriggers(bumpedNPC: bumpedNPC, portal: portal)
+    }
+
+    /// NPC feet boxes paired with their entity index, fed to `collisionTriggers`. NPCs are
+    /// excluded from the movement blocker set (`entityBlockerFeetRects`) so the slide reaches the
+    /// NPC's feet box; this re-introduces them as bump targets for the unified trigger.
+    private func npcFeetRects() -> [(index: Int16, rect: PixelRect)] {
+        entities.values.compactMap { entity in
+            guard entity.kind == .npc else { return nil }
+            return (entity.id, FeetMask.rect(forSpriteAt: entity.position, spriteSize: entity.maskSize))
+        }
+    }
+
+    /// `.outboundTrigger` portal rects paired with their offset in the FULL `sector.portals`
+    /// array — the server's `handleEnterPortal` indexes `staticSector.portals[portalIndex]`
+    /// against the full array, so the offset must survive the trigger filter (a filtered
+    /// re-enumeration would send the wrong index → wrong-portal teleport / `snapBack`). Static and
+    /// `internal` for `@testable` offset-fidelity coverage, mirroring `collisionTriggers`.
+    static func portalTriggerRects(in sector: Sector) -> [(index: Int, rect: PixelRect)] {
+        sector.portals.enumerated().compactMap { offset, portal in
+            guard portal.direction == .outboundTrigger else { return nil }
+            return (offset, PixelRect(
                 x: Int32(portal.x),
                 y: Int32(portal.y),
                 width: Int32(portal.width),
                 height: Int32(portal.height)
-            )
-            if playerCenter.x >= portalRect.x,
-               playerCenter.x < portalRect.x + portalRect.width,
-               playerCenter.y >= portalRect.y,
-               playerCenter.y < portalRect.y + portalRect.height {
-                portalHit = index
-                break
-            }
-        }
-        if let portalHit, portalHit != lastBumpedPortalIndex {
-            lastBumpedPortalIndex = portalHit
-            enqueue(.enterPortal(EnterPortalMessage(portalIndex: Int16(portalHit))))
-        } else if portalHit == nil {
-            lastBumpedPortalIndex = nil
+            ))
         }
     }
 
@@ -692,11 +771,13 @@ import SpriteKit
         FeetMask.isClear(at: position, spriteSize: SomnioConstants.playerSpriteSize, sector: sector, blockers: blockers)
     }
 
-    /// Feet boxes of every entity except the local player, used as movement blockers so the
-    /// predictor won't let the player walk through peers, NPCs, or monsters.
+    /// Feet boxes of peers and monsters — not the local player, and deliberately not NPCs — used
+    /// as movement blockers so the predictor won't let the player walk through other players or
+    /// monsters. NPCs are excluded so the slide reaches an NPC's feet box and the unified collision
+    /// trigger fires the bump (and blocks the step at the threshold) instead of stopping short.
     private func entityBlockerFeetRects(excludingSelf selfIndex: Int16) -> [PixelRect] {
         entities.values.compactMap { entity in
-            guard entity.id != selfIndex else { return nil }
+            guard entity.id != selfIndex, entity.kind != .npc else { return nil }
             return FeetMask.rect(forSpriteAt: entity.position, spriteSize: entity.maskSize)
         }
     }

@@ -24,9 +24,17 @@ public struct ChatInputView: View {
     public var body: some View {
         TextField("", text: $text, axis: .vertical)
             .textFieldStyle(.plain)
+            // Inset the text 4px inside the border to match `ChatScrollbackView`'s content padding,
+            // so the input row and the history above it share the same left/top text margin.
+            .padding(4)
             .frame(width: 150, height: 85, alignment: .topLeading)
             .border(Color.black, width: 1)
             .focused($isFocused)
+            // The TextField's single-line intrinsic hit area covers only the top row, but the
+            // bordered box looks 85 px tall. Make the whole footprint focusable so a tap on the
+            // lower rows focuses the field (same idiom as `ItemsListView`'s hand cells).
+            .contentShape(Rectangle())
+            .onTapGesture { isFocused = true }
             .onSubmit {
                 onSubmit()
                 isFocused = false

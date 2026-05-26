@@ -28,7 +28,10 @@ import SpriteKit
         box.lineWidth = 1
         addChild(box)
         label.position = CGPoint(x: 0, y: -boxHeight / 2)
-        label.zPosition = 1
+        // Keep the label at the box's zPosition (drawn above it via add order) rather than lifting
+        // it. A local z above the box would let this label leapfrog a neighbouring plate's box when
+        // two entities sit at near-equal screen-Y (their entity-node z differs by < 1), so the rear
+        // plate's text would render over the front plate's box without its own box behind it.
         addChild(label)
     }
 

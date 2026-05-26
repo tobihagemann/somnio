@@ -39,8 +39,15 @@ public struct PixelRect: Sendable, Equatable {
 /// (`Somnio_Server.txt` decoded lines 389-390, 770-771). Lives next to `CollisionMaskOverlap`
 /// so the client predictor and the server's per-sector actor derive the identical box.
 public enum FeetMask {
+    /// Bottom-aligned feet-box height for a sprite, from the original `maskgroesse(1) = groesse(1)
+    /// / 4 + 4`. The single definition the feet `rect`, the movement `clamped` bound, and the
+    /// server's arrival-zone placement all derive from, so a fidelity correction lands in one place.
+    public static func feetHeight(for spriteSize: GridSize) -> Int32 {
+        Int32(spriteSize.height) / 4 + 4
+    }
+
     public static func rect(forSpriteAt position: GridPoint, spriteSize: GridSize) -> PixelRect {
-        let feetHeight = Int32(spriteSize.height) / 4 + 4
+        let feetHeight = feetHeight(for: spriteSize)
         let feetWidth = Int32(spriteSize.width)
         let originX = Int32(position.x)
         let originY = Int32(position.y) + Int32(spriteSize.height) - feetHeight
@@ -75,7 +82,7 @@ public enum FeetMask {
     /// (feet width == sprite width, feet bottom == sprite bottom); the inner `max` keeps a sector
     /// narrower/shorter than the sprite from inverting the clamp range.
     public static func clamped(_ position: GridPoint, spriteSize: GridSize, sector: Sector) -> GridPoint {
-        let feetHeight = Int32(spriteSize.height) / 4 + 4
+        let feetHeight = feetHeight(for: spriteSize)
         let maxX = Int32(sector.pixelWidth) - Int32(spriteSize.width)
         let minY = feetHeight - Int32(spriteSize.height)
         let maxY = Int32(sector.pixelHeight) - Int32(spriteSize.height)

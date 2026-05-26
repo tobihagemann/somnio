@@ -4,8 +4,8 @@ import Testing
 struct ChatLineStyleTests {
     @Test(arguments: [
         (ChatLineCategory.ownMessage, ChatLineStyle(foreground: .purple, bold: false, italic: false)),
-        (ChatLineCategory.peerMessage, ChatLineStyle(foreground: .black, bold: false, italic: false)),
-        (ChatLineCategory.npcMessage, ChatLineStyle(foreground: .black, bold: false, italic: false)),
+        (ChatLineCategory.peerMessage, ChatLineStyle(foreground: .primary, bold: false, italic: false)),
+        (ChatLineCategory.npcMessage, ChatLineStyle(foreground: .primary, bold: false, italic: false)),
         (ChatLineCategory.adminBroadcast, ChatLineStyle(foreground: .red, bold: false, italic: false)),
         (ChatLineCategory.error, ChatLineStyle(foreground: .red, bold: false, italic: false)),
         (ChatLineCategory.joinLeave, ChatLineStyle(foreground: .blue, bold: false, italic: true)),

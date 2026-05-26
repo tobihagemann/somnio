@@ -156,17 +156,54 @@ struct PortalDateTickTests {
         #expect(placed?.character.position == expectedCenter)
     }
 
+    @Test func `enter portal rejects a non-outbound-trigger direction and snaps back`() async throws {
+        // Source sector index 1 is an arrival-placement portal (a destination marker, not an exit).
+        // A crafted enterPortal naming it must be refused: no PortalOutcome, a serverPosition
+        // snapback, and the player left in the source sector.
+        let dependencies = try await makeDependencies(
+            initialClock: .bootDefault,
+            sourcePortals: [
+                SectorPortal(x: 0, y: 0, width: 8, height: 8, targetSectorName: "B", direction: .outboundTrigger),
+                SectorPortal(x: 16, y: 16, width: 8, height: 8, targetSectorName: "B", direction: .arrivalPlacement)
+            ]
+        )
+        let connection = ConnectionActor(dependencies: dependencies)
+        let outbox = await connection.connectionOutbox
+
+        let actorA = try #require(await dependencies.worldRouter.sectorActor(named: "A"))
+        let entityIndex = try await actorA.attach(
+            character: makeCharacter(at: GridPoint(x: 1, y: 1)),
+            inventory: [],
+            outbox: outbox
+        )
+        await connection.markAttached(entityIndex: entityIndex, sectorName: "A", accountId: UUID())
+
+        let outcome = await GameplayHandlers.handleEnterPortal(
+            EnterPortalMessage(portalIndex: 1),
+            entityIndex: entityIndex,
+            sectorName: "A",
+            connectionActor: connection,
+            dependencies: dependencies
+        )
+        #expect(outcome == nil)
+
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let tags = frames.compactMap { try? SomnioMessageDecoder.decode($0) }.map(\.tag)
+        #expect(tags.contains(.serverPosition)) // snapBack correction frame
+        let stillInA = try #require(await actorA.snapshotForPlayer(entityIndex: entityIndex))
+        #expect(stillInA.character.currentSector == "A")
+    }
+
     // MARK: - Helpers
 
     private func makeDependencies(
         initialClock: WorldClock,
+        sourcePortals: [SectorPortal] = [SectorPortal(x: 0, y: 0, width: 8, height: 8, targetSectorName: "B", direction: .outboundTrigger)],
         destinationPortals: [SectorPortal] = []
     ) async throws -> ConnectionDependencies {
         let logger = Logger(label: "test.portal-date-tick")
-        let sectorA = makeSector(
-            name: "A",
-            portals: [SectorPortal(x: 0, y: 0, width: 8, height: 8, targetSectorName: "B", direction: .outboundTrigger)]
-        )
+        let sectorA = makeSector(name: "A", portals: sourcePortals)
         let sectorB = makeSector(name: "B", portals: destinationPortals)
         let worldRouter = try await WorldRouter(
             sectors: ["A": sectorA, "B": sectorB],

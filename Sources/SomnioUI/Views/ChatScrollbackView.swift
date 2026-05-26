@@ -13,31 +13,44 @@ public struct ChatScrollbackView: View {
         self.locale = locale
     }
 
+    /// Scroll target: a zero-height tail placed *below* the content's bottom padding so `scrollTo`
+    /// reaches the true content bottom. A row ID instead anchors to the row's bottom edge, which
+    /// sits the padding's worth above the content's end and leaves a sliver still scrollable.
+    private static let bottomAnchorID = "chat-bottom-anchor"
+
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(renderedLines.enumerated()), id: \.offset) { _, line in
-                        let style = ChatLineStyle.style(for: line.category)
-                        Text(verbatim: ChatLineRenderer.render(line, locale: locale))
-                            .foregroundStyle(style.foreground.color)
-                            .bold(style.bold)
-                            .italic(style.italic)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(renderedLines.enumerated()), id: \.offset) { _, line in
+                            let style = ChatLineStyle.style(for: line.category)
+                            Text(verbatim: ChatLineRenderer.render(line, locale: locale))
+                                .foregroundStyle(style.foreground.color)
+                                .bold(style.bold)
+                                .italic(style.italic)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+                    .padding(4)
+                    Color.clear
+                        .frame(height: 0)
+                        .id(Self.bottomAnchorID)
                 }
-                .padding(4)
             }
             .frame(width: 150, height: 336)
             .border(Color.black, width: 1)
-            // Keep the newest line in view as chat arrives, matching the legacy scrollback's
-            // auto-scroll. `\.offset` is the row identity, so the last offset is the scroll
-            // target; `chatLines.count` is the change signal (the prepended greeting is fixed).
+            // The scrollback fills from the top and only scrolls once it overflows: a no-op while a
+            // few lines fit, pinning the newest line to the bottom past that. The scroll is deferred
+            // into a `Task` so the freshly appended row is laid out before `scrollTo` runs — a
+            // synchronous scroll in the same `onChange` lands one row short of the bottom.
             .onChange(of: chatLines.count) {
-                proxy.scrollTo(renderedLines.count - 1, anchor: .bottom)
+                Task { @MainActor in
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
             }
             .onAppear {
-                proxy.scrollTo(renderedLines.count - 1, anchor: .bottom)
+                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
             }
         }
     }

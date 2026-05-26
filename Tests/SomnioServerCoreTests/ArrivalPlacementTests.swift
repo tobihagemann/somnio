@@ -33,6 +33,22 @@ struct ArrivalPlacementTests {
         #expect(point.y >= portal.y && point.y < portal.y + portal.height)
     }
 
+    @Test(arguments: [UInt64(1), 2, 3, 4, 5, 6, 7, 8])
+    func `arrival keeps the feet box inside the arrival zone`(seed: UInt64) async throws {
+        // Reverse arrival rect into EdariaBibliothek, whose door exit sits just below the zone — the
+        // case where the feet box must stay fully inside the rect rather than sliding onto the door.
+        let portal = inboundPortal(from: "EdariaMitte", x: 64, y: 384, width: 160, height: 96)
+        let actor = PerSectorActor(
+            staticSector: sectorWithInboundPortal(name: "EdariaBibliothek", portal: portal),
+            logger: testLogger,
+            rng: SeededGenerator(seed: seed)
+        )
+        let point = try #require(await actor.arrivalPlacement(fromSector: portal.targetSectorName, spriteSize: SomnioConstants.playerSpriteSize))
+        let feet = FeetMask.rect(forSpriteAt: point, spriteSize: SomnioConstants.playerSpriteSize)
+        #expect(feet.y >= Int32(portal.y))
+        #expect(feet.maxY <= Int32(portal.y) + Int32(portal.height))
+    }
+
     @Test func `arrival returns nil when no inbound portal targets the source sector`() async {
         let portal = inboundPortal(from: "EdariaBibliothek", x: 1344, y: 208, width: 160, height: 96)
         let actor = PerSectorActor(

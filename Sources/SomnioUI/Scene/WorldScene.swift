@@ -59,14 +59,36 @@ import SpriteKit
     /// `update(_:)` requests `frame % walkFrameCount` and `entityTexture` rejects any
     /// `frame >= entityWalkFrames`, so a drift would freeze sprites on a stale frame.
     private static let walkFrameCount = 4
+    /// Speech bubbles render above the day/night tint (decision: readable at night). The tint sits
+    /// at z 1000 on the camera; the bubble is a child of the entity node — a sibling subtree of the
+    /// camera — so its accumulated z (the entity's feet-line z + this constant) clears 1000.
+    private static let bubbleZ: CGFloat = 1100
+    /// Gap in points between the speaker's head (sprite top) and the bubble's content bottom.
+    private static let bubbleHeadGap: CGFloat = 2
+    /// Local z lifting a name plate just above its own sprite cell within the entity node. The
+    /// parent entity node's per-frame `ScreenDepth.entity` z drives inter-entity (screen-Y)
+    /// ordering, so an absolute screen depth here would double-apply onto the parent's.
+    private static let namePlateZ: CGFloat = 1
 
     private let assets: any SpriteAssets
     private var sectorRoot: SKNode?
+    /// On a player-driven sector switch the incoming `sectorRoot` is added hidden and the outgoing
+    /// root is parked here (kept on screen) until the player is placed, then swapped — so the new
+    /// sector never shows framed on its origin without a character. `nil` outside a switch.
+    private var previousRoot: SKNode?
+    /// `true` between an `awaitingPlayerPlacement` load and the player's placement: the gate that
+    /// triggers the atomic swap (reveal new root, drop `previousRoot`) in `placeEntity`.
+    private var pendingPlayerReveal = false
     private var splashNode: SKSpriteNode?
     /// Title text shown over the splash when no splash asset is available (no-asset-pack
     /// fallback), mirroring the PoC. A child of `splashNode`, cleared when a sector loads.
     private var splashLabelNode: SKLabelNode?
     private var tintNode: SKSpriteNode?
+    /// During a held sector switch the incoming sector's tint alpha is stashed here instead of being
+    /// applied, so the parked outgoing sector keeps its own lighting until the atomic reveal rather
+    /// than briefly rendering under the new sector's `LightSetting`. Consumed by
+    /// `revealHeldSectorIfPending`; `nil` when no tint is deferred.
+    private var pendingTintAlpha: CGFloat?
     private var entityRenderStates: [Int16: EntityRenderState] = [:]
     private var bubbleNodes: [Int16: SpeechBubbleNode] = [:]
     /// Scene-clock time of the last `update(_:)`; `nil` until the first tick. Drives the
@@ -102,24 +124,41 @@ import SpriteKit
         fatalError("WorldScene must be created with init(size:assets:)")
     }
 
-    public func load(sector: Sector) {
+    /// Swaps the rendered sector. When `awaitingPlayerPlacement` is `true` (a player sector
+    /// switch) the outgoing sector and the camera are held on screen and the incoming sector is
+    /// added hidden, until `placeEntity` places the player and swaps atomically — avoiding a frame
+    /// of the new sector framed on its origin with no character. Other callers (editor, first
+    /// load) swap immediately and re-center the camera to view-center.
+    public func load(sector: Sector, awaitingPlayerPlacement: Bool = false) {
         splashNode?.removeFromParent()
         splashNode = nil
         splashLabelNode = nil
-        sectorRoot?.removeFromParent()
+        previousRoot?.removeFromParent()
+        if awaitingPlayerPlacement {
+            // Park the outgoing sector (kept visible) for an atomic swap on player placement.
+            previousRoot = sectorRoot
+        } else {
+            sectorRoot?.removeFromParent()
+            previousRoot = nil
+        }
         entityRenderStates.removeAll()
         bubbleNodes.removeAll()
         cameraFollowID = nil
         sectorHeightPx = CGFloat(sector.pixelHeight)
-        // Default the camera to view-center (scene origin-anchored) so consumers without a
-        // player — the editor — keep an origin-aligned canvas for click mapping. The player
-        // client's `placeEntity` re-centers on the character immediately after load.
-        cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
 
         let root = SKNode()
         renderTiles(sector: sector, into: root, assets: assets)
+        root.isHidden = awaitingPlayerPlacement
         addChild(root)
         sectorRoot = root
+        pendingPlayerReveal = awaitingPlayerPlacement
+        if !awaitingPlayerPlacement {
+            // Default the camera to view-center (scene origin-anchored) so consumers without a
+            // player — the editor — keep an origin-aligned canvas for click mapping. The player
+            // client's `placeEntity` re-centers on the character immediately after load. During a
+            // held switch the camera stays on the outgoing sector until the swap re-centers it.
+            cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        }
     }
 
     /// Flips legacy top-left Y (binary / wire coords) to SpriteKit Y-up. Assumes anchor
@@ -182,6 +221,21 @@ import SpriteKit
         if entity.kind == .player {
             cameraFollowID = entity.id
             centerCamera(onNodeOrigin: state.node.position, size: state.node.size)
+            revealHeldSectorIfPending()
+        }
+    }
+
+    /// Atomic swap once the local player lands in a freshly loaded sector: drops the held outgoing
+    /// sector and reveals the new one, so there's no empty-origin frame between load and placement.
+    private func revealHeldSectorIfPending() {
+        guard pendingPlayerReveal else { return }
+        previousRoot?.removeFromParent()
+        previousRoot = nil
+        sectorRoot?.isHidden = false
+        pendingPlayerReveal = false
+        if let alpha = pendingTintAlpha {
+            (tintNode ?? makeTintNode()).alpha = alpha
+            pendingTintAlpha = nil
         }
     }
 
@@ -205,6 +259,7 @@ import SpriteKit
         }
         if state.namePlaque == nil {
             let plaque = NamePlaqueNode(name: entity.name, background: background, bold: bold)
+            plaque.zPosition = Self.namePlateZ
             state.node.addChild(plaque)
             state.namePlaque = plaque
         }
@@ -315,6 +370,64 @@ import SpriteKit
         entityRenderStates[id] != nil
     }
 
+    /// Overlay-layering test seam: surfaced through the `_overlayProbe(for:)` accessor, visible to
+    /// `@testable import SomnioUI` and kept out of the public surface (mirrors
+    /// `_entityRenderStateContains`). Exposes accumulated z + parent identity so overlay-depth tests
+    /// can assert the bubble sorts above the tint and the plate tracks its node.
+    struct OverlayProbe {
+        var bubbleParentIsEntityNode: Bool
+        var bubbleEffectiveZ: CGFloat
+        var tintEffectiveZ: CGFloat
+        var namePlateParentIsEntityNode: Bool
+        var namePlateEffectiveZ: CGFloat
+    }
+
+    func _overlayProbe(for entityID: Int16) -> OverlayProbe? {
+        guard let state = entityRenderStates[entityID] else { return nil }
+        let bubble = bubbleNodes[entityID]
+        return OverlayProbe(
+            bubbleParentIsEntityNode: bubble?.parent === state.node,
+            bubbleEffectiveZ: bubble.map { effectiveZ(of: $0) } ?? 0,
+            tintEffectiveZ: tintNode.map { effectiveZ(of: $0) } ?? 0,
+            namePlateParentIsEntityNode: state.namePlaque?.parent === state.node,
+            namePlateEffectiveZ: state.namePlaque.map { effectiveZ(of: $0) } ?? 0
+        )
+    }
+
+    /// Sum of a node's zPosition and all its ancestors' — SpriteKit's accumulated (global) z used
+    /// to sort across sibling subtrees. Test-only helper backing `_overlayProbe`.
+    private func effectiveZ(of node: SKNode) -> CGFloat {
+        var total: CGFloat = 0
+        var current: SKNode? = node
+        while let here = current {
+            total += here.zPosition
+            current = here.parent
+        }
+        return total
+    }
+
+    /// Held-sector-swap test seam: visible to `@testable import SomnioUI`, kept out of the public
+    /// surface (mirrors `_overlayProbe`). Exposes the swap state machine's observable flags so the
+    /// load/reveal/showSplash transitions and the deferred destination tint can be asserted
+    /// headlessly.
+    struct HeldSwapProbe {
+        var sectorRootHidden: Bool
+        var hasParkedPreviousRoot: Bool
+        var pendingPlayerReveal: Bool
+        var pendingTintAlpha: CGFloat?
+        var appliedTintAlpha: CGFloat?
+    }
+
+    func _heldSwapProbe() -> HeldSwapProbe {
+        HeldSwapProbe(
+            sectorRootHidden: sectorRoot?.isHidden ?? false,
+            hasParkedPreviousRoot: previousRoot != nil,
+            pendingPlayerReveal: pendingPlayerReveal,
+            pendingTintAlpha: pendingTintAlpha,
+            appliedTintAlpha: tintNode?.alpha
+        )
+    }
+
     /// Renders pre-wrapped speech bubble lines above the entity's sprite. `lifetimeMs` is
     /// integer milliseconds matching the legacy `2000 + lines × 1000` rule; callers pass
     /// the result of `SpeechBubbleText.wrap`.
@@ -326,14 +439,28 @@ import SpriteKit
             lifetime: TimeInterval(lifetimeMs) / 1000.0,
             template: assets.speechBubble()
         )
-        bubble.position = CGPoint(x: anchor.position.x, y: anchor.position.y + anchor.size.height)
-        sectorRoot?.addChild(bubble)
+        // Parent under the entity node so the bubble auto-follows the speaker via the node's
+        // position and `animateEntity` tweens — no per-frame repositioning. The bubble's origin is
+        // its tail tip, so place it centered over the sprite, just above the head; the balloon then
+        // rises centered above. `bubbleZ` forces it above the day/night tint.
+        bubble.position = CGPoint(
+            x: anchor.size.width / 2,
+            y: anchor.size.height + Self.bubbleHeadGap
+        )
+        bubble.zPosition = Self.bubbleZ
+        anchor.addChild(bubble)
         bubbleNodes[entityID] = bubble
     }
 
     public func updateDayNightTint(hour: Int16, minute: Int16, sectorLight: LightSetting) {
         let ambient = DayNightTint.ambientLight(hour: hour, minute: minute, sectorLight: sectorLight)
         let alpha = max(0, min(1, 1 - ambient / 100))
+        guard !pendingPlayerReveal else {
+            // Mid-switch: stash the destination tint and keep the outgoing sector's lighting until
+            // the reveal, so the parked old sector isn't recolored a few frames before it leaves.
+            pendingTintAlpha = alpha
+            return
+        }
         let tint = tintNode ?? makeTintNode()
         tint.alpha = alpha
     }
@@ -341,6 +468,11 @@ import SpriteKit
     public func showSplash() {
         sectorRoot?.removeFromParent()
         sectorRoot = nil
+        // Drop any sector parked for an in-flight switch the splash interrupts (e.g. Leave Game).
+        previousRoot?.removeFromParent()
+        previousRoot = nil
+        pendingPlayerReveal = false
+        pendingTintAlpha = nil
         entityRenderStates.removeAll()
         bubbleNodes.removeAll()
         cameraFollowID = nil

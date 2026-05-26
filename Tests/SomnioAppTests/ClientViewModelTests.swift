@@ -267,6 +267,134 @@ struct ClientViewModelTests {
         )
     }
 
+    @Test func `collisionTriggers fires the NPC bump and blocks when the step overlaps an NPC feet box`() {
+        // 32x48 NPC feet box (faithful happy path): the AABB-blocked player sits well within the
+        // server's 64 px center-to-center dialog gate.
+        let npc = (index: Int16(3), rect: FeetMask.rect(forSpriteAt: GridPoint(x: 100, y: 100), spriteSize: SomnioConstants.playerSpriteSize))
+        let steppingIn = FeetMask.rect(forSpriteAt: GridPoint(x: 110, y: 100), spriteSize: SomnioConstants.playerSpriteSize)
+        let hit = ClientViewModel.collisionTriggers(playerFeetRect: steppingIn, npcFeetRects: [npc], portalTriggerRects: [])
+        #expect(hit.bumpedNPC == 3)
+        #expect(hit.blocked)
+        #expect(hit.portal == nil)
+        // One tile away: feet boxes don't overlap, so no hit and the step is not blocked.
+        let away = FeetMask.rect(forSpriteAt: GridPoint(x: 100 + Int16(SomnioConstants.tileSize), y: 100), spriteSize: SomnioConstants.playerSpriteSize)
+        let miss = ClientViewModel.collisionTriggers(playerFeetRect: away, npcFeetRects: [npc], portalTriggerRects: [])
+        #expect(miss.bumpedNPC == nil)
+        #expect(miss.blocked == false)
+    }
+
+    @Test(arguments: [
+        // Two outbound bands: a narrow 32x8 that a center-point can step clean over (so the AABB
+        // feet box must catch it) and a wide 180x18.
+        PixelRect(x: 200, y: 300, width: 32, height: 8),
+        PixelRect(x: 0, y: 300, width: 180, height: 18)
+    ])
+    func `collisionTriggers fires the portal trigger when the step overlaps an outbound rect`(portalRect: PixelRect) {
+        let portal = (index: 2, rect: portalRect)
+        // 32x16 player feet box landing on the band's top-left corner — overlaps both the narrow
+        // and the wide exit.
+        let onBand = PixelRect(x: portalRect.x, y: portalRect.y, width: 32, height: 16)
+        let hit = ClientViewModel.collisionTriggers(playerFeetRect: onBand, npcFeetRects: [], portalTriggerRects: [portal])
+        #expect(hit.portal == 2)
+        #expect(hit.blocked)
+        #expect(hit.bumpedNPC == nil)
+    }
+
+    @Test func `collisionTriggers reports both an NPC bump and a portal from one step`() {
+        // A step whose feet box overlaps both an NPC feet box and a portal trigger fires both
+        // (the tick enqueues a bumpNPC and an enterPortal) and blocks.
+        let feet = FeetMask.rect(forSpriteAt: GridPoint(x: 100, y: 100), spriteSize: SomnioConstants.playerSpriteSize)
+        let hit = ClientViewModel.collisionTriggers(
+            playerFeetRect: feet,
+            npcFeetRects: [(index: Int16(7), rect: feet)],
+            portalTriggerRects: [(index: 4, rect: feet)]
+        )
+        #expect(hit.bumpedNPC == 7)
+        #expect(hit.portal == 4)
+        #expect(hit.blocked)
+    }
+
+    @Test func `collisionTriggers with no NPCs or portals is an all-clear`() {
+        let feet = FeetMask.rect(forSpriteAt: GridPoint(x: 100, y: 100), spriteSize: SomnioConstants.playerSpriteSize)
+        let clear = ClientViewModel.collisionTriggers(playerFeetRect: feet, npcFeetRects: [], portalTriggerRects: [])
+        #expect(clear.bumpedNPC == nil)
+        #expect(clear.portal == nil)
+        #expect(clear.blocked == false)
+    }
+
+    @Test func `portalTriggerRects keeps each trigger's offset in the full portals array`() {
+        // Arrival-placement portals (filtered out) interleaved between outbound triggers: a naive
+        // re-enumeration would renumber the triggers 0,1. The server indexes the FULL array, so the
+        // offsets must stay the original 1 and 3 (a wrong index → wrong-portal teleport).
+        let sector = sectorWithPortals([
+            SectorPortal(x: 0, y: 0, width: 32, height: 16, targetSectorName: "A", direction: .arrivalPlacement),
+            SectorPortal(x: 32, y: 0, width: 32, height: 16, targetSectorName: "B", direction: .outboundTrigger),
+            SectorPortal(x: 64, y: 0, width: 32, height: 16, targetSectorName: "C", direction: .arrivalPlacement),
+            SectorPortal(x: 96, y: 0, width: 32, height: 16, targetSectorName: "D", direction: .outboundTrigger)
+        ])
+        let triggers = ClientViewModel.portalTriggerRects(in: sector)
+        #expect(triggers.count == 2)
+        #expect(triggers[0].index == 1)
+        #expect(triggers[0].rect.x == 32)
+        #expect(triggers[1].index == 3)
+        #expect(triggers[1].rect.x == 96)
+    }
+
+    @Test func `a portal tick enqueues enterPortal and suppresses the stale clientPosition`() {
+        // Holding a movement key, with the player's feet box already on an outbound trigger, fires
+        // the portal this tick — the heartbeat must NOT also send a (now stale) old-sector position.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 2, down: true) // 'D'
+        let viewModel = makeViewModel(keyboard: keyboard)
+
+        let position = GridPoint(x: 100, y: 100)
+        let feet = FeetMask.rect(forSpriteAt: position, spriteSize: SomnioConstants.playerSpriteSize)
+        let portal = SectorPortal(
+            x: Int16(feet.x), y: Int16(feet.y), width: Int16(feet.width), height: Int16(feet.height),
+            targetSectorName: "B", direction: .outboundTrigger
+        )
+        prepareAttachedSelf(viewModel, at: position, sector: sectorWithPortals([portal]))
+
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel._runSingleTick()
+
+        #expect(outbound.contains { if case .enterPortal = $0 { true } else { false } })
+        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+    }
+
+    @Test func `a non-portal moving tick still emits the clientPosition heartbeat`() {
+        // Same setup minus the portal: the suppression is portal-specific, so a normal moving tick
+        // reports position as before.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 2, down: true) // 'D'
+        let viewModel = makeViewModel(keyboard: keyboard)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel._runSingleTick()
+
+        #expect(outbound.contains { if case .clientPosition = $0 { true } else { false } })
+        #expect(!outbound.contains { if case .enterPortal = $0 { true } else { false } })
+    }
+
+    private func prepareAttachedSelf(_ viewModel: ClientViewModel, at position: GridPoint, sector: Sector) {
+        viewModel.currentSector = sector
+        viewModel.selfEntityIndex = 1
+        viewModel.entities[1] = WorldEntity(
+            id: 1, kind: .player, figure: 0, position: position, facing: .south,
+            tempo: .default, maskSize: SomnioConstants.playerSpriteSize, name: "Me"
+        )
+        viewModel.connectionState = .attached
+        viewModel.presentedSheet = nil
+    }
+
+    private func makeViewModel(keyboard: KeyboardSampler) -> ClientViewModel {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        return ClientViewModel(worldScene: scene, keyboard: keyboard)
+    }
+
     private func makeViewModel() -> ClientViewModel {
         let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
         return ClientViewModel(worldScene: scene)
@@ -290,6 +418,17 @@ struct ClientViewModelTests {
             ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
             light: LightSetting(indoor: true, brightness: 100),
             collisionMasks: masks
+        )
+    }
+
+    private func sectorWithPortals(_ portals: [SectorPortal]) -> Sector {
+        Sector(
+            name: "Test",
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100),
+            portals: portals
         )
     }
 }
