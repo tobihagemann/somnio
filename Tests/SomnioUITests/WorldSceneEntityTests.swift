@@ -121,6 +121,14 @@ struct WorldSceneEntityTests {
         #expect(southProbe.namePlateEffectiveZ > northProbe.namePlateEffectiveZ)
     }
 
+    @Test func `a non-deferred load tears down the splash immediately`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        // A fresh scene shows the splash; a normal (editor) load with no deferral drops it at once.
+        #expect(scene._heldSwapProbe().splashPresent)
+        scene.load(sector: tinySector())
+        #expect(!scene._heldSwapProbe().splashPresent)
+    }
+
     @Test func `held sector switch hides the incoming sector until the player is placed`() {
         let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
         scene.load(sector: tinySector())
@@ -139,6 +147,27 @@ struct WorldSceneEntityTests {
         #expect(!revealed.sectorRootHidden)
         #expect(!revealed.hasParkedPreviousRoot)
         #expect(!revealed.pendingPlayerReveal)
+    }
+
+    @Test func `first login defers the reveal so the sector is never shown framed on its origin`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        // Fresh scene shows the splash. The first sector load (the client always passes
+        // awaitingPlayerPlacement) must keep the sector hidden — no origin-framed flicker — until the
+        // player is placed. There is no outgoing sector to park; the splash is the held visual.
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: true)
+        let held = scene._heldSwapProbe()
+        #expect(held.sectorRootHidden)
+        #expect(held.pendingPlayerReveal)
+        #expect(!held.hasParkedPreviousRoot)
+        #expect(held.splashPresent) // the splash is the held visual during the deferred load
+
+        // Placing the player reveals the sector centered on the character AND drops the splash, so
+        // the first game frame is the sector, not the splash still overlaying it.
+        scene.placeEntity(playerEntity())
+        let revealed = scene._heldSwapProbe()
+        #expect(!revealed.sectorRootHidden)
+        #expect(!revealed.pendingPlayerReveal)
+        #expect(!revealed.splashPresent)
     }
 
     @Test func `destination tint is deferred until the held sector is revealed`() throws {

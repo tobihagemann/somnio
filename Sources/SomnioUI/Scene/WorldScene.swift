@@ -119,25 +119,35 @@ import SpriteKit
         cameraNode.position = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
     }
 
+    /// Tears down the splash node and its text fallback.
+    private func clearSplash() {
+        splashNode?.removeFromParent()
+        splashNode = nil
+        splashLabelNode = nil
+    }
+
     @available(*, unavailable)
     public required init?(coder _: NSCoder) {
         fatalError("WorldScene must be created with init(size:assets:)")
     }
 
-    /// Swaps the rendered sector. When `awaitingPlayerPlacement` is `true` (a player sector
-    /// switch) the outgoing sector and the camera are held on screen and the incoming sector is
-    /// added hidden, until `placeEntity` places the player and swaps atomically — avoiding a frame
-    /// of the new sector framed on its origin with no character. Other callers (editor, first
-    /// load) swap immediately and re-center the camera to view-center.
+    /// Swaps the rendered sector. When `awaitingPlayerPlacement` is `true` the held visual — the
+    /// outgoing sector on a portal hop, or the splash on first login — stays on screen and the
+    /// incoming sector is added hidden, until `placeEntity` places the player and swaps atomically,
+    /// avoiding a frame of the new sector framed on its origin with no character. When `false` (the
+    /// editor) the swap is immediate and the camera re-centers to view-center.
     public func load(sector: Sector, awaitingPlayerPlacement: Bool = false) {
-        splashNode?.removeFromParent()
-        splashNode = nil
-        splashLabelNode = nil
-        previousRoot?.removeFromParent()
         if awaitingPlayerPlacement {
-            // Park the outgoing sector (kept visible) for an atomic swap on player placement.
+            // Hold the current visual on screen until `placeEntity` reveals the new sector centered
+            // on the player. On a portal hop that visual is the outgoing sector (parked below); on
+            // first login there is no outgoing sector, so the splash stays up as the held visual and
+            // `revealHeldSectorIfPending` drops it at the swap. Either way no frame of the new sector
+            // is shown framed on its origin with no character.
+            previousRoot?.removeFromParent()
             previousRoot = sectorRoot
         } else {
+            clearSplash()
+            previousRoot?.removeFromParent()
             sectorRoot?.removeFromParent()
             previousRoot = nil
         }
@@ -231,6 +241,9 @@ import SpriteKit
         guard pendingPlayerReveal else { return }
         previousRoot?.removeFromParent()
         previousRoot = nil
+        // On first login the splash was the held visual kept up during the deferred load; drop it
+        // now so the first game frame is the sector already centered on the player.
+        clearSplash()
         sectorRoot?.isHidden = false
         pendingPlayerReveal = false
         if let alpha = pendingTintAlpha {
@@ -414,6 +427,7 @@ import SpriteKit
         var sectorRootHidden: Bool
         var hasParkedPreviousRoot: Bool
         var pendingPlayerReveal: Bool
+        var splashPresent: Bool
         var pendingTintAlpha: CGFloat?
         var appliedTintAlpha: CGFloat?
     }
@@ -423,8 +437,32 @@ import SpriteKit
             sectorRootHidden: sectorRoot?.isHidden ?? false,
             hasParkedPreviousRoot: previousRoot != nil,
             pendingPlayerReveal: pendingPlayerReveal,
+            splashPresent: splashNode != nil,
             pendingTintAlpha: pendingTintAlpha,
             appliedTintAlpha: tintNode?.alpha
+        )
+    }
+
+    /// Entity-node test seam (mirrors `_overlayProbe`): exposes a placed entity's node position,
+    /// whether it has a running `SKAction` (a tween in flight), and whether the camera is centered on
+    /// it — so reconciliation tests can assert the self player is moved by a direct set with camera
+    /// follow rather than a competing tween.
+    struct EntityNodeProbe {
+        var nodePosition: CGPoint
+        var hasRunningActions: Bool
+        var cameraCenteredOnNode: Bool
+    }
+
+    func _entityNodeProbe(for entityID: Int16) -> EntityNodeProbe? {
+        guard let state = entityRenderStates[entityID] else { return nil }
+        let nodeCenter = CGPoint(
+            x: state.node.position.x + state.node.size.width / 2,
+            y: state.node.position.y + state.node.size.height / 2
+        )
+        return EntityNodeProbe(
+            nodePosition: state.node.position,
+            hasRunningActions: state.node.hasActions(),
+            cameraCenteredOnNode: cameraNode.position == nodeCenter
         )
     }
 

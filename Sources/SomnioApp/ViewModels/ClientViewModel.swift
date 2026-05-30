@@ -272,11 +272,10 @@ import SpriteKit
             lastTickTime = nil
             lastBumpedPortalIndex = nil
             currentSector = sector
-            // On a portal hop (already `.attached`) keep the outgoing sector on screen until the
-            // new character is placed, then swap — avoids a frame of the new sector framed on its
-            // origin with no character. First login (`.awaitingEnterSector`) swaps immediately
-            // since there is no outgoing sector to hold.
-            worldScene.load(sector: sector, awaitingPlayerPlacement: connectionState == .attached)
+            // Hold the current visual until the self entity is placed, then swap — avoids a frame of
+            // the new sector framed on its origin with no character. The held visual is the outgoing
+            // sector on a portal hop, or the splash on first login (no outgoing sector to hold).
+            worldScene.load(sector: sector, awaitingPlayerPlacement: true)
             // Re-apply the most recent date tint so the new sector's `LightSetting`
             // takes effect without waiting for the next `DateTick`.
             worldScene.updateDayNightTint(
@@ -345,14 +344,18 @@ import SpriteKit
         entity.facing = facing
         entity.tempo = tempo
         entities[payload.entityIndex] = entity
-        // Peers arrive on the ~500 ms position heartbeat, so tween them across that gap; NPCs and
-        // monsters arrive on the 50 ms server AI tick, so keep their shorter interpolation or they
-        // would visibly lag the server.
-        let duration: TimeInterval = switch entity.kind {
-        case .peer, .player: Self.peerInterpolationDuration
-        case .npc, .monster: Self.aiTickInterpolationDuration
+        // The local player's node is owned by the 60 Hz predictor (`updatePosition`, which also
+        // drives the camera), so apply a server position for self — an authoritative `snapBack` after
+        // a rejected move — as a direct set: a competing `SKAction` tween would fight the predictor's
+        // per-frame node write and de-center the camera. Peers arrive on the ~500 ms heartbeat and
+        // NPCs/monsters on the 50 ms AI tick, so those still tween across their gap or they lag.
+        switch entity.kind {
+        case .player:
+            worldScene.updatePosition(entityID: payload.entityIndex, to: newPosition, facing: facing)
+        case .peer, .npc, .monster:
+            let duration = entity.kind == .peer ? Self.peerInterpolationDuration : Self.aiTickInterpolationDuration
+            worldScene.animateEntity(payload.entityIndex, to: newPosition, facing: facing, duration: duration)
         }
-        worldScene.animateEntity(payload.entityIndex, to: newPosition, facing: facing, duration: duration)
     }
 
     private func handleServerSay(_ payload: SayMessage) {
@@ -594,7 +597,8 @@ import SpriteKit
             // Resolve bounds + static masks + solid entities (peers/monsters) first; NPCs are
             // excluded from the blocker set so the slide reaches the NPC's feet box rather than
             // stopping short of it (otherwise the feet-box overlap is never seen, no bump).
-            let blockers = entityBlockerFeetRects(excludingSelf: selfIndex)
+            let selfFeet = FeetMask.rect(forSpriteAt: selfEntity.position, spriteSize: SomnioConstants.playerSpriteSize)
+            let blockers = entityBlockerFeetRects(excludingSelf: selfIndex, playerFeet: selfFeet)
             let candidate = resolvedMove(from: selfEntity.position, to: target, sector: sector, blockers: blockers)
             // Faithful unified collision (legacy `KollisionChecken`): the wall-resolved candidate's
             // feet box overlapping an NPC feet box or a portal trigger blocks the step at the
@@ -771,14 +775,30 @@ import SpriteKit
         FeetMask.isClear(at: position, spriteSize: SomnioConstants.playerSpriteSize, sector: sector, blockers: blockers)
     }
 
-    /// Feet boxes of peers and monsters — not the local player, and deliberately not NPCs — used
-    /// as movement blockers so the predictor won't let the player walk through other players or
-    /// monsters. NPCs are excluded so the slide reaches an NPC's feet box and the unified collision
-    /// trigger fires the bump (and blocks the step at the threshold) instead of stopping short.
-    private func entityBlockerFeetRects(excludingSelf selfIndex: Int16) -> [PixelRect] {
-        entities.values.compactMap { entity in
+    /// Movement blockers for the predictor, wrapping the pure `entityBlockers` with the live entity
+    /// map and the player's current feet box.
+    private func entityBlockerFeetRects(excludingSelf selfIndex: Int16, playerFeet: PixelRect) -> [PixelRect] {
+        Self.entityBlockers(among: entities.values, excludingSelf: selfIndex, playerFeet: playerFeet)
+    }
+
+    /// Feet-box blockers for the predictor: peers are always solid; monsters are *soft-solid* — a
+    /// monster the player is clear of blocks the step (no walking into one), but a monster already
+    /// overlapping the player's feet box is dropped so the player can always slide free. Monsters
+    /// move every 50 ms AI tick and can lag onto the player; a hard block there would trap the player
+    /// with no escape — the legacy original avoided this by making monsters pass-through for the
+    /// player entirely. NPCs are excluded so the slide reaches an NPC's feet box and
+    /// `collisionTriggers` fires the bump instead of stopping short. Static and `internal` for
+    /// `@testable` coverage, mirroring `resolvedMove` / `collisionTriggers`.
+    static func entityBlockers(
+        among entities: some Sequence<WorldEntity>,
+        excludingSelf selfIndex: Int16,
+        playerFeet: PixelRect
+    ) -> [PixelRect] {
+        entities.compactMap { entity in
             guard entity.id != selfIndex, entity.kind != .npc else { return nil }
-            return FeetMask.rect(forSpriteAt: entity.position, spriteSize: entity.maskSize)
+            let rect = FeetMask.rect(forSpriteAt: entity.position, spriteSize: entity.maskSize)
+            if entity.kind == .monster, CollisionMaskOverlap.overlaps(playerFeet, rect) { return nil }
+            return rect
         }
     }
 }

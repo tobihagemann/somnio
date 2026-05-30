@@ -63,6 +63,54 @@ struct ClientViewModelTests {
         #expect(entity?.name == "Alice")
     }
 
+    @Test func `a server position for self is applied as a direct camera-following set, not a tween`() throws {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .awaitingEnterSector
+        viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
+            maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
+            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+
+        // The server snaps the self player back to an authoritative position (a rejected move).
+        viewModel.handle(.message(.serverPosition(PositionMessage(
+            entityIndex: 7, x: 2, y: 3, facing: Direction.north.rawValue, tempo: Tempo.default.rawValue
+        ))))
+
+        let probe = try #require(viewModel.worldScene._entityNodeProbe(for: 7))
+        // Direct set, not a tween: the node itself moved to the authoritative position (x is not
+        // Y-flipped, so the legacy x surfaces directly; it was placed at x=1), it holds no in-flight
+        // `SKAction` (a tween would have left one running), and the camera re-centered to follow it.
+        #expect(probe.nodePosition.x == 2)
+        #expect(!probe.hasRunningActions)
+        #expect(probe.cameraCenteredOnNode)
+        #expect(viewModel.entities[7]?.position == GridPoint(x: 2, y: 3))
+    }
+
+    @Test func `first-login enterSector defers the sector reveal until the self entity is placed`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .awaitingEnterSector
+        viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        // Held hidden with the splash up until the self entity lands — no origin-framed flicker.
+        let held = viewModel.worldScene._heldSwapProbe()
+        #expect(held.sectorRootHidden)
+        #expect(held.pendingPlayerReveal)
+        #expect(held.splashPresent)
+
+        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
+            maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
+            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        let revealed = viewModel.worldScene._heldSwapProbe()
+        #expect(!revealed.sectorRootHidden)
+        #expect(!revealed.pendingPlayerReveal)
+        #expect(!revealed.splashPresent)
+    }
+
     @Test func `decodeFailed event appends errorCode and disconnects`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingHello
@@ -255,6 +303,55 @@ struct ClientViewModelTests {
         )
     }
 
+    @Test func `entityBlockers makes a clear monster solid but drops one overlapping the player (soft-solid), peers always solid`() {
+        let selfIndex: Int16 = 1
+        let playerPos = GridPoint(x: 100, y: 100)
+        let mask = GridSize(width: 32, height: 48)
+        let playerFeet = FeetMask.rect(forSpriteAt: playerPos, spriteSize: SomnioConstants.playerSpriteSize)
+
+        let selfEntity = worldEntity(selfIndex, .player, at: playerPos, mask: mask)
+        let farMonster = worldEntity(2, .monster, at: GridPoint(x: 300, y: 300), mask: mask) // clear -> solid
+        let onPlayerMonster = worldEntity(3, .monster, at: playerPos, mask: mask) // lagged onto player -> dropped
+        let onPlayerPeer = worldEntity(4, .peer, at: playerPos, mask: mask) // peers stay solid when overlapping
+
+        let blockers = ClientViewModel.entityBlockers(
+            among: [selfEntity, farMonster, onPlayerMonster, onPlayerPeer],
+            excludingSelf: selfIndex,
+            playerFeet: playerFeet
+        )
+
+        // Four entities in, two blockers out: self and the overlapping monster are dropped; the far
+        // monster and the (overlapping) peer remain.
+        #expect(blockers.count == 2)
+        #expect(blockers.contains(FeetMask.rect(forSpriteAt: farMonster.position, spriteSize: mask)))
+        #expect(blockers.contains(FeetMask.rect(forSpriteAt: onPlayerPeer.position, spriteSize: mask)))
+    }
+
+    @Test func `soft-solid integration: resolvedMove lets the player slide off an overlapping monster but an overlapping peer still blocks`() {
+        let viewModel = makeViewModel()
+        let sector = collisionSector(masks: [])
+        let selfIndex: Int16 = 1
+        let mask = GridSize(width: 32, height: 48)
+        let playerPos = GridPoint(x: 100, y: 100)
+        let playerFeet = FeetMask.rect(forSpriteAt: playerPos, spriteSize: SomnioConstants.playerSpriteSize)
+        // A small nudge whose feet box still overlaps a blocker sitting on the player — so the move
+        // is decided by whether that blocker is solid, not by escaping its feet box outright.
+        let nudge = GridPoint(x: 100, y: 104)
+        let selfEntity = worldEntity(selfIndex, .player, at: playerPos, mask: mask)
+
+        // Monster lagged onto the player -> dropped from the blocker set -> the nudge is allowed.
+        let monsterBlockers = ClientViewModel.entityBlockers(
+            among: [selfEntity, worldEntity(2, .monster, at: playerPos, mask: mask)], excludingSelf: selfIndex, playerFeet: playerFeet
+        )
+        #expect(viewModel.resolvedMove(from: playerPos, to: nudge, sector: sector, blockers: monsterBlockers) == nudge)
+
+        // A peer at the same overlapping position stays solid -> the identical nudge is blocked.
+        let peerBlockers = ClientViewModel.entityBlockers(
+            among: [selfEntity, worldEntity(3, .peer, at: playerPos, mask: mask)], excludingSelf: selfIndex, playerFeet: playerFeet
+        )
+        #expect(viewModel.resolvedMove(from: playerPos, to: nudge, sector: sector, blockers: peerBlockers) == playerPos)
+    }
+
     @Test func `resolvedMove slides along a wall that blocks one axis`() {
         let viewModel = makeViewModel()
         // Moving diagonally (100,100) -> (200,200). A mask over the X-candidate's feet box
@@ -398,6 +495,16 @@ struct ClientViewModelTests {
     private func makeViewModel() -> ClientViewModel {
         let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
         return ClientViewModel(worldScene: scene)
+    }
+
+    private func worldEntity(
+        _ id: Int16, _ kind: WorldEntity.Kind, at position: GridPoint,
+        mask: GridSize = GridSize(width: 32, height: 48)
+    ) -> WorldEntity {
+        WorldEntity(
+            id: id, kind: kind, figure: 0, position: position,
+            facing: .south, tempo: .default, maskSize: mask, name: "e\(id)"
+        )
     }
 
     private func tinySector() -> Sector {

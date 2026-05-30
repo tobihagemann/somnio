@@ -662,6 +662,43 @@ struct AITickTests {
         #expect(leaveCount == 0)
     }
 
+    // MARK: - Player move gate vs monsters
+
+    @Test func `handlePosition accepts a player move onto a monster's feet box (monsters are not player blockers)`() async throws {
+        // Monsters move every AI tick, so the client's monster view is routinely a frame stale. The
+        // player move gate excludes monsters (the monster AI keeps monsters off players instead), so
+        // a step whose feet box overlaps a monster is accepted rather than snapped back — the player
+        // isn't rubber-banded when walking near a chasing monster.
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 200, y: 200), aiScriptIndex: 0)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        // Player attaches ~268 px away — outside the 192 px aggro radius — so the spawn tick leaves
+        // the monster stationary at (200, 200).
+        let playerIndex = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        _ = await actor.runAITick() // spawns the idle monster at (200, 200)
+
+        await actor.handlePosition(
+            PositionMessage(entityIndex: 0, x: 200, y: 200, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            from: playerIndex
+        )
+
+        let snapshot = await actor.snapshotForPlayer(entityIndex: playerIndex)
+        #expect(snapshot?.character.position == GridPoint(x: 200, y: 200))
+
+        // The overlapping move must not snap the player back to their own outbox.
+        outbox.finish()
+        let snappedBack = await decodeServerPositions(in: collect(outbox: outbox))
+            .contains { $0.entityIndex == playerIndex }
+        #expect(!snappedBack)
+    }
+
     // MARK: - Helpers
 
     private func makeSector(

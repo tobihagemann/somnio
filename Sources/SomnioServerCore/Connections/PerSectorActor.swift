@@ -277,21 +277,27 @@ public actor PerSectorActor {
 
     /// Validate against sector bounds and collision masks; on success mutate the slot and
     /// broadcast the new position to peers. On failure snap the originating client back to the
-    /// authoritative position so a move the client predicted against stale blocker data (a peer or
-    /// monster it had not yet seen) cannot leave the local and authoritative positions diverged.
+    /// authoritative position so a move the client predicted against stale blocker data (a peer it
+    /// had not yet seen) cannot leave the local and authoritative positions diverged.
     public func handlePosition(_ message: PositionMessage, from entityIndex: Int16) {
         guard var slot = players[entityIndex] else { return }
         guard let facing = Direction(rawValue: message.facing), let tempo = Tempo(rawValue: message.tempo) else {
             return
         }
         let newPosition = GridPoint(x: message.x, y: message.y)
-        // Feet-box gate: bounds + static masks + every other live entity's feet box. The client
-        // predictor owns the axis-separated sliding that keeps motion smooth, so a position reaching
-        // here is expected to already be clear; a rejection means the client's blocker view is stale.
+        // Feet-box gate: bounds + static masks + peers and NPCs — but deliberately NOT monsters. Static
+        // blockers never move, so a client rejection there is a genuine stale-view bug worth a
+        // `snapBack`. Monsters move every 50 ms AI tick, so the client's monster view is routinely a
+        // frame stale; snapping the player back for a transient monster overlap would rubber-band
+        // them backwards by up to a heartbeat. The monster AI tick already forbids a monster stepping
+        // onto a player, and the client predictor keeps monsters soft-solid, so excluding them here
+        // only relaxes the rare divergence frame instead of correcting it. Faithful to the legacy
+        // trust-the-client model.
         guard feetBoxClear(
             at: newPosition,
             spriteSize: SomnioConstants.playerSpriteSize,
-            excludingPlayer: entityIndex
+            excludingPlayer: entityIndex,
+            includingMonsters: false
         ) else {
             snapBack(entityIndex: entityIndex)
             return
@@ -723,21 +729,32 @@ public actor PerSectorActor {
     // MARK: - Helpers
 
     /// Feet-box clearance for a `spriteSize` sprite at `position` against this sector's static masks
-    /// and every other live entity. `excludingPlayer` / `excludingMonster` drop the mover from the
-    /// blocker set so it never collides with itself; the geometry lives in `FeetMask.isClear`.
+    /// and other live entities. `excludingPlayer` / `excludingMonster` drop the mover from the
+    /// blocker set so it never collides with itself; `includingMonsters` drops every monster from
+    /// the set (the player move gate uses this — see `handlePosition`). Geometry lives in
+    /// `FeetMask.isClear`.
     private func feetBoxClear(
         at position: GridPoint,
         spriteSize: GridSize,
         excludingPlayer: Int16? = nil,
-        excludingMonster: Int16? = nil
+        excludingMonster: Int16? = nil,
+        includingMonsters: Bool = true
     ) -> Bool {
-        let blockers = liveEntityFeetRects(excludingPlayer: excludingPlayer, excludingMonster: excludingMonster)
+        let blockers = liveEntityFeetRects(
+            excludingPlayer: excludingPlayer,
+            excludingMonster: excludingMonster,
+            includingMonsters: includingMonsters
+        )
         return FeetMask.isClear(at: position, spriteSize: spriteSize, sector: staticSector, blockers: blockers)
     }
 
-    /// Feet boxes of every live entity (players, NPCs, monsters), optionally excluding one player
-    /// or one monster so the mover does not block itself.
-    private func liveEntityFeetRects(excludingPlayer: Int16?, excludingMonster: Int16?) -> [PixelRect] {
+    /// Feet boxes of live entities (players, NPCs, and — when `includingMonsters` — monsters),
+    /// optionally excluding one player or one monster so the mover does not block itself.
+    private func liveEntityFeetRects(
+        excludingPlayer: Int16?,
+        excludingMonster: Int16?,
+        includingMonsters: Bool = true
+    ) -> [PixelRect] {
         var rects: [PixelRect] = []
         for (index, slot) in players where index != excludingPlayer {
             rects.append(FeetMask.rect(forSpriteAt: slot.character.position, spriteSize: SomnioConstants.playerSpriteSize))
@@ -745,8 +762,10 @@ public actor PerSectorActor {
         for npc in npcs.values {
             rects.append(FeetMask.rect(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize))
         }
-        for (index, monster) in monsters where index != excludingMonster {
-            rects.append(FeetMask.rect(forSpriteAt: monster.position, spriteSize: monster.definition.spawnedMonsterSize))
+        if includingMonsters {
+            for (index, monster) in monsters where index != excludingMonster {
+                rects.append(FeetMask.rect(forSpriteAt: monster.position, spriteSize: monster.definition.spawnedMonsterSize))
+            }
         }
         return rects
     }
