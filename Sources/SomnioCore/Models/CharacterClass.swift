@@ -14,10 +14,10 @@ public enum CharacterClass: Int16, Sendable, Equatable, Hashable, CaseIterable {
     /// source string doubles as the catalog key per Apple's `String(localized:)` convention;
     /// the German translations carry the original game's authoritative labels.
     public var displayName: String {
-        String(localized: localizationKey, bundle: .module)
+        CoreCatalog.localized(localizationKey)
     }
 
-    private var localizationKey: String.LocalizationValue {
+    private var localizationKey: String {
         switch self {
         case .fighter: return "Fighter"
         case .lancer: return "Lancer"

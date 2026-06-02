@@ -7,10 +7,10 @@ public enum Gender: Int16, Sendable, Equatable, Hashable, CaseIterable {
     /// The gender display label resolved through the SomnioCore string catalog. Mirrors
     /// `CharacterClass.displayName` so registration sheets resolve both pickers the same way.
     public var displayName: String {
-        String(localized: localizationKey, bundle: .module)
+        CoreCatalog.localized(localizationKey)
     }
 
-    private var localizationKey: String.LocalizationValue {
+    private var localizationKey: String {
         switch self {
         case .male: return "Male"
         case .female: return "Female"
