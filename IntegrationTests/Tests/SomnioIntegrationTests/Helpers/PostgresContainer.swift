@@ -51,13 +51,20 @@ public struct PostgresContainer: Sendable {
     private static func runStart(runtime: ContainerRuntime, password: String) throws -> String {
         let output = try ProcessRunner.runCapturingOutput(
             runtime: runtime,
-            arguments: ["run", "-d", "--rm", "-e", "POSTGRES_PASSWORD=\(password)", "-p", "127.0.0.1::5432", "postgres:16"]
+            arguments: ["run", "-d", "--rm", "--quiet", "-e", "POSTGRES_PASSWORD=\(password)", "-p", "127.0.0.1::5432", "postgres:16"]
         )
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        // On a cold image cache, `run` pulls `postgres:16` first and that pull progress goes to
+        // stderr, which ProcessRunner merges into stdout. `--quiet` suppresses it at the source
+        // so the container id is the only output; the last-non-empty-line parse guards a stray line.
+        let containerId = output
+            .split(whereSeparator: \.isNewline)
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
+        guard let containerId else {
             throw PostgresContainerError.startFailed("\(runtime.executableName) run returned empty container id")
         }
-        return trimmed
+        return containerId
     }
 
     private static func readAssignedPort(runtime: ContainerRuntime, containerId: String) async throws -> Int {

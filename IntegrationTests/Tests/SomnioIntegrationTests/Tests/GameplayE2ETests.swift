@@ -84,11 +84,18 @@ struct GameplayE2ETests {
     }
 
     @Test func `sector switch via portal moves the player and broadcasts leave`() async throws {
-        // Bibliothek ships three `SectorPortal` records, so `EnterPortal(portalIndex: 0)`
-        // is a real hop. The server detaches the actor from the source sector (broadcasting
-        // `.leave(leftGame: false)` to peers in the source) and attaches to the target.
+        // Only an `.outboundTrigger` portal is a walk-into exit; the server rejects
+        // `.arrivalPlacement` markers as triggers (anti-spoof gate), so we resolve the trigger
+        // index from the fixture rather than hardcoding it — Bibliothek's portal order is not a
+        // test invariant. On a real hop the server detaches the actor from the source sector
+        // (broadcasting `.leave(leftGame: false)` to peers there) and attaches to the target.
         // The listener catches the leave-false broadcast and returns before the actor's
         // subsequent normal-close triggers a separate leave-true broadcast.
+        let bibliothek = try IntegrationTestFixtures.mapFixture(named: "EdariaBibliothek")
+        let triggerIndex = try #require(
+            bibliothek.portals.firstIndex { $0.direction == .outboundTrigger },
+            "EdariaBibliothek fixture has no outboundTrigger portal to hop through"
+        )
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.gameplay-e2e.portal")
             let nicknameA = "stay-\(UUID().uuidString.prefix(6))"
@@ -102,7 +109,7 @@ struct GameplayE2ETests {
                     actor: nicknameB,
                     logger: logger
                 ) { outbound in
-                    try await WSGameplayClient.sendMessage(.enterPortal(EnterPortalMessage(portalIndex: 0)), on: outbound)
+                    try await WSGameplayClient.sendMessage(.enterPortal(EnterPortalMessage(portalIndex: Int16(triggerIndex))), on: outbound)
                     try await Task.sleep(for: .milliseconds(500))
                 }
             }
