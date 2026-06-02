@@ -6,6 +6,4 @@ public struct HelloMessage: Codable, Sendable, Equatable {
     public init(protocolVersion: UInt16) {
         self.protocolVersion = protocolVersion
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case protocolVersion }
 }

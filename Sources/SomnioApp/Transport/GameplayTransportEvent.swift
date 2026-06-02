@@ -9,7 +9,7 @@ public enum GameplayTransportEvent: Sendable {
     case message(SomnioMessage)
     case connectFailed(Error)
     case decodeFailed(Error)
-    case unexpectedTextFrame
+    case unexpectedBinaryFrame
     case peerEOF
 }
 

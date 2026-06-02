@@ -1,8 +1,8 @@
 import Foundation
 
-/// Discriminated-union for the `/admin` WebSocket request/response set. The verb is always
-/// the first byte of the encoded form; payload-bearing variants append a `u16 LE`
-/// length-prefixed UTF-8 string.
+/// Discriminated-union for the `/admin` WebSocket request/response set. Travels as JSON over
+/// text frames in the shape `{"tag":"<verb>","payload":"<text>"}`; payload-bearing variants
+/// carry their string in `payload`.
 public enum AdminRequest: Sendable, Equatable {
     case log
     case weblog
@@ -17,47 +17,50 @@ public enum AdminRequest: Sendable, Equatable {
 
 extension AdminRequest: Codable {
     private enum AdminCodingKeys: String, CodingKey { case tag; case payload }
+    private enum Tag: String { case log, weblog, players, time, say, kick, version, logRemove, weblogRemove }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AdminCodingKeys.self)
-        let tag = try container.decode(UInt8.self, forKey: .tag)
+        let tagString = try container.decode(String.self, forKey: .tag)
+        guard let tag = Tag(rawValue: tagString) else {
+            throw SomnioProtocolError.unrecognizedTag(tagString)
+        }
         switch tag {
-        case 0: self = .log
-        case 1: self = .weblog
-        case 2: self = .players
-        case 3: self = .time
-        case 4: self = try .say(text: container.decode(String.self, forKey: .payload))
-        case 5: self = try .kick(name: container.decode(String.self, forKey: .payload))
-        case 6: self = .version
-        case 7: self = .logRemove
-        case 8: self = .weblogRemove
-        default: throw SomnioProtocolError.unrecognizedTag(tag)
+        case .log: self = .log
+        case .weblog: self = .weblog
+        case .players: self = .players
+        case .time: self = .time
+        case .say: self = try .say(text: container.decode(String.self, forKey: .payload))
+        case .kick: self = try .kick(name: container.decode(String.self, forKey: .payload))
+        case .version: self = .version
+        case .logRemove: self = .logRemove
+        case .weblogRemove: self = .weblogRemove
         }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: AdminCodingKeys.self)
         switch self {
-        case .log: try container.encode(UInt8(0), forKey: .tag)
-        case .weblog: try container.encode(UInt8(1), forKey: .tag)
-        case .players: try container.encode(UInt8(2), forKey: .tag)
-        case .time: try container.encode(UInt8(3), forKey: .tag)
+        case .log: try container.encode(Tag.log.rawValue, forKey: .tag)
+        case .weblog: try container.encode(Tag.weblog.rawValue, forKey: .tag)
+        case .players: try container.encode(Tag.players.rawValue, forKey: .tag)
+        case .time: try container.encode(Tag.time.rawValue, forKey: .tag)
         case let .say(text):
-            try container.encode(UInt8(4), forKey: .tag)
+            try container.encode(Tag.say.rawValue, forKey: .tag)
             try container.encode(text, forKey: .payload)
         case let .kick(name):
-            try container.encode(UInt8(5), forKey: .tag)
+            try container.encode(Tag.kick.rawValue, forKey: .tag)
             try container.encode(name, forKey: .payload)
-        case .version: try container.encode(UInt8(6), forKey: .tag)
-        case .logRemove: try container.encode(UInt8(7), forKey: .tag)
-        case .weblogRemove: try container.encode(UInt8(8), forKey: .tag)
+        case .version: try container.encode(Tag.version.rawValue, forKey: .tag)
+        case .logRemove: try container.encode(Tag.logRemove.rawValue, forKey: .tag)
+        case .weblogRemove: try container.encode(Tag.weblogRemove.rawValue, forKey: .tag)
         }
     }
 }
 
-/// Server reply to an `AdminRequest`. The first byte echoes the request verb; payload-bearing
-/// responses append a `u16 LE` length-prefixed UTF-8 string carrying the localized output the
-/// CLI prints to the operator's terminal.
+/// Server reply to an `AdminRequest`. Travels as JSON over text frames in the shape
+/// `{"tag":"<verb>","payload":"<text>"}`; payload-bearing responses carry the localized output
+/// the CLI prints to the operator's terminal in `payload`.
 public enum AdminResponse: Sendable, Equatable {
     case logContents(text: String)
     case weblogContents(text: String)
@@ -76,26 +79,33 @@ public enum AdminResponse: Sendable, Equatable {
 
 extension AdminResponse: Codable {
     private enum AdminCodingKeys: String, CodingKey { case tag; case payload }
+    private enum Tag: String {
+        case logContents, weblogContents, logEmpty, logRemoved, weblogEmpty, weblogRemoved
+        case playerCount, worldClock, sayBroadcast, kickedPlayer, kickedPlayerNotFound
+        case versionString, unknownCommand
+    }
 
     // swiftlint:disable:next cyclomatic_complexity
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AdminCodingKeys.self)
-        let tag = try container.decode(UInt8.self, forKey: .tag)
+        let tagString = try container.decode(String.self, forKey: .tag)
+        guard let tag = Tag(rawValue: tagString) else {
+            throw SomnioProtocolError.unrecognizedTag(tagString)
+        }
         switch tag {
-        case 0: self = try .logContents(text: container.decode(String.self, forKey: .payload))
-        case 1: self = try .weblogContents(text: container.decode(String.self, forKey: .payload))
-        case 2: self = .logEmpty
-        case 3: self = .logRemoved
-        case 4: self = .weblogEmpty
-        case 5: self = .weblogRemoved
-        case 6: self = try .playerCount(text: container.decode(String.self, forKey: .payload))
-        case 7: self = try .worldClock(text: container.decode(String.self, forKey: .payload))
-        case 8: self = try .sayBroadcast(text: container.decode(String.self, forKey: .payload))
-        case 9: self = try .kickedPlayer(text: container.decode(String.self, forKey: .payload))
-        case 10: self = try .kickedPlayerNotFound(text: container.decode(String.self, forKey: .payload))
-        case 11: self = try .versionString(text: container.decode(String.self, forKey: .payload))
-        case 12: self = .unknownCommand
-        default: throw SomnioProtocolError.unrecognizedTag(tag)
+        case .logContents: self = try .logContents(text: container.decode(String.self, forKey: .payload))
+        case .weblogContents: self = try .weblogContents(text: container.decode(String.self, forKey: .payload))
+        case .logEmpty: self = .logEmpty
+        case .logRemoved: self = .logRemoved
+        case .weblogEmpty: self = .weblogEmpty
+        case .weblogRemoved: self = .weblogRemoved
+        case .playerCount: self = try .playerCount(text: container.decode(String.self, forKey: .payload))
+        case .worldClock: self = try .worldClock(text: container.decode(String.self, forKey: .payload))
+        case .sayBroadcast: self = try .sayBroadcast(text: container.decode(String.self, forKey: .payload))
+        case .kickedPlayer: self = try .kickedPlayer(text: container.decode(String.self, forKey: .payload))
+        case .kickedPlayerNotFound: self = try .kickedPlayerNotFound(text: container.decode(String.self, forKey: .payload))
+        case .versionString: self = try .versionString(text: container.decode(String.self, forKey: .payload))
+        case .unknownCommand: self = .unknownCommand
         }
     }
 
@@ -104,26 +114,26 @@ extension AdminResponse: Codable {
         var container = encoder.container(keyedBy: AdminCodingKeys.self)
         switch self {
         case let .logContents(text):
-            try container.encode(UInt8(0), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.logContents.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .weblogContents(text):
-            try container.encode(UInt8(1), forKey: .tag); try container.encode(text, forKey: .payload)
-        case .logEmpty: try container.encode(UInt8(2), forKey: .tag)
-        case .logRemoved: try container.encode(UInt8(3), forKey: .tag)
-        case .weblogEmpty: try container.encode(UInt8(4), forKey: .tag)
-        case .weblogRemoved: try container.encode(UInt8(5), forKey: .tag)
+            try container.encode(Tag.weblogContents.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
+        case .logEmpty: try container.encode(Tag.logEmpty.rawValue, forKey: .tag)
+        case .logRemoved: try container.encode(Tag.logRemoved.rawValue, forKey: .tag)
+        case .weblogEmpty: try container.encode(Tag.weblogEmpty.rawValue, forKey: .tag)
+        case .weblogRemoved: try container.encode(Tag.weblogRemoved.rawValue, forKey: .tag)
         case let .playerCount(text):
-            try container.encode(UInt8(6), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.playerCount.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .worldClock(text):
-            try container.encode(UInt8(7), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.worldClock.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .sayBroadcast(text):
-            try container.encode(UInt8(8), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.sayBroadcast.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .kickedPlayer(text):
-            try container.encode(UInt8(9), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.kickedPlayer.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .kickedPlayerNotFound(text):
-            try container.encode(UInt8(10), forKey: .tag); try container.encode(text, forKey: .payload)
+            try container.encode(Tag.kickedPlayerNotFound.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
         case let .versionString(text):
-            try container.encode(UInt8(11), forKey: .tag); try container.encode(text, forKey: .payload)
-        case .unknownCommand: try container.encode(UInt8(12), forKey: .tag)
+            try container.encode(Tag.versionString.rawValue, forKey: .tag); try container.encode(text, forKey: .payload)
+        case .unknownCommand: try container.encode(Tag.unknownCommand.rawValue, forKey: .tag)
         }
     }
 }

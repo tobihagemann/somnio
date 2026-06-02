@@ -6,6 +6,4 @@ public struct EnterPortalMessage: Codable, Sendable, Equatable {
     public init(portalIndex: Int16) {
         self.portalIndex = portalIndex
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case portalIndex }
 }

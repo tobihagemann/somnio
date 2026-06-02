@@ -8,6 +8,4 @@ public struct DateTickMessage: Codable, Sendable, Equatable {
         self.hour = hour
         self.minute = minute
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case hour; case minute }
 }

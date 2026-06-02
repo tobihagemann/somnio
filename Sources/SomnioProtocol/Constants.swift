@@ -16,20 +16,27 @@ public enum SomnioProtocolConstants {
     /// pipelining 64 KB password attempts that each pay full Argon2id verify cost.
     public static let maxPasswordUTF8Bytes = 128
 
-    /// Total bytes of WebSocket framing overhead the wire format adds on top of the
-    /// `[u8 tag][u32 LE payload_length][payload]` payload — one byte for the tag
-    /// plus four bytes for the little-endian length. Every transport that sets a
-    /// max-frame-size on its WebSocket configuration adds this constant to
-    /// `maxFrameLength`.
-    public static let frameHeaderBytes: Int = 5
+    /// UTF-8 byte cap for `SayMessage` / `AdminSayMessage` text. A chat line renders in a
+    /// 4-line speech bubble, so anything beyond a couple hundred bytes is never shown; the
+    /// server enforces this on the inbound chat and admin-say paths so a single message
+    /// cannot fan out a large payload to every peer in a sector.
+    public static let maxSayUTF8Bytes = 256
+
+    /// Slack the WebSocket-layer `maxFrameSize` keeps above the encoder's `maxFrameLength`
+    /// guard. Holding `maxWireFrameSize` strictly larger than `maxFrameLength` means an
+    /// oversized message throws `SomnioProtocolError.oversizedFrame` cleanly at encode time
+    /// rather than the receiver hard-closing the connection on a `maxFrameSize` overrun. The
+    /// value is an arbitrary cushion — any positive amount satisfies the strict-inequality
+    /// invariant; with JSON text frames there is no fixed header to size it against.
+    public static let frameSizeSlack: Int = 64
 
     /// Convenience: the WebSocket-layer `maxFrameSize` every transport should ship.
-    public static let maxWireFrameSize: Int = .init(maxFrameLength) + frameHeaderBytes
+    public static let maxWireFrameSize: Int = .init(maxFrameLength) + frameSizeSlack
 }
 
 public enum SomnioProtocolError: Error, Equatable, Sendable {
-    case truncated
-    case invalidPayload(reason: String)
-    case unrecognizedTag(UInt8)
+    case unrecognizedTag(String)
+    /// Emitted only by `SomnioMessageEncoder.encode` (outbound) when a message exceeds
+    /// `maxFrameLength`; no decode path throws this.
     case oversizedFrame(UInt32)
 }

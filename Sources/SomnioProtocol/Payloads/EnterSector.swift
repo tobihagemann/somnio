@@ -6,6 +6,4 @@ public struct EnterSectorMessage: Codable, Sendable, Equatable {
     public init(sector: WireSector) {
         self.sector = sector
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case sector }
 }

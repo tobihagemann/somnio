@@ -1,20 +1,17 @@
 import Foundation
 
-/// Custom `Codable` for `SomnioMessage`. Encodes as `[u8 tag][payload]` (without the outer
-/// `[u32 LE payload_length]` framing — that lives in `SomnioMessageEncoder.encode`). Decodes
-/// the same shape via the leading `u8` tag, dispatching to the matching payload type.
-///
-/// This conformance only fires when `SomnioMessage` is nested inside another `Codable` value;
-/// the framing-aware path runs through `SomnioMessageEncoder` / `SomnioMessageDecoder`.
+/// `Codable` for `SomnioMessage`. Encodes as the keyed JSON shape `{"tag":"<verb>","payload":{...}}`,
+/// dispatching to the matching payload type via the string discriminator. `SomnioMessageEncoder` /
+/// `SomnioMessageDecoder` are thin wrappers that move this shape across the WebSocket text frame.
 extension SomnioMessage: Codable {
     private enum SomnioMessageCodingKeys: String, CodingKey { case tag; case payload }
 
     // swiftlint:disable:next cyclomatic_complexity
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: SomnioMessageCodingKeys.self)
-        let tagByte = try container.decode(UInt8.self, forKey: .tag)
-        guard let tag = SomnioMessageTag(rawValue: tagByte) else {
-            throw SomnioProtocolError.unrecognizedTag(tagByte)
+        let tagString = try container.decode(String.self, forKey: .tag)
+        guard let tag = SomnioMessageTag(rawValue: tagString) else {
+            throw SomnioProtocolError.unrecognizedTag(tagString)
         }
         switch tag {
         case .login: self = try .login(container.decode(LoginMessage.self, forKey: .payload))
@@ -69,110 +66,24 @@ extension SomnioMessage: Codable {
     }
 }
 
-/// Single parser entrypoint. Reads `[u8 tag][u32 LE payload_length][payload]`; rejects
-/// oversized frames, truncated input, and unknown tags per `SomnioProtocolError`.
+/// Single parser entrypoint. Decodes one JSON text frame into a `SomnioMessage`. Malformed input
+/// surfaces as `Swift.DecodingError`; an unknown discriminator surfaces as
+/// `SomnioProtocolError.unrecognizedTag` from the hand-written `SomnioMessage.init(from:)`.
 public enum SomnioMessageDecoder {
-    // swiftlint:disable:next cyclomatic_complexity
     public static func decode(_ data: Data) throws -> SomnioMessage {
-        guard data.count >= 5 else { throw SomnioProtocolError.truncated }
-        let tagByte = data[data.startIndex]
-        guard let tag = SomnioMessageTag(rawValue: tagByte) else {
-            throw SomnioProtocolError.unrecognizedTag(tagByte)
-        }
-        let payloadLength = readUInt32LE(data, at: data.startIndex + 1)
-        guard payloadLength <= SomnioProtocolConstants.maxFrameLength else {
-            throw SomnioProtocolError.oversizedFrame(payloadLength)
-        }
-        let payloadStart = data.startIndex + 5
-        let payloadEnd = payloadStart + Int(payloadLength)
-        guard payloadEnd <= data.endIndex else {
-            throw SomnioProtocolError.truncated
-        }
-        guard payloadEnd == data.endIndex else {
-            throw SomnioProtocolError.invalidPayload(reason: "trailing \(data.endIndex - payloadEnd) byte(s) past end of frame")
-        }
-        let payload = data[payloadStart ..< payloadEnd]
-        let decoder = BinaryDecoder()
-
-        switch tag {
-        case .login: return try .login(decoder.decode(LoginMessage.self, from: payload))
-        case .register: return try .register(decoder.decode(RegisterMessage.self, from: payload))
-        case .clientPosition: return try .clientPosition(decoder.decode(PositionMessage.self, from: payload))
-        case .clientSay: return try .clientSay(decoder.decode(SayMessage.self, from: payload))
-        case .equipToggle: return try .equipToggle(decoder.decode(EquipToggleMessage.self, from: payload))
-        case .bumpNPC: return try .bumpNPC(decoder.decode(BumpNPCMessage.self, from: payload))
-        case .enterPortal: return try .enterPortal(decoder.decode(EnterPortalMessage.self, from: payload))
-        case .hello: return try .hello(decoder.decode(HelloMessage.self, from: payload))
-        case .loginResult: return try .loginResult(decoder.decode(LoginResultMessage.self, from: payload))
-        case .registerResult: return try .registerResult(decoder.decode(RegisterResultMessage.self, from: payload))
-        case .enterSector: return try .enterSector(decoder.decode(EnterSectorMessage.self, from: payload))
-        case .mainCharacter: return try .mainCharacter(decoder.decode(MainCharacterMessage.self, from: payload))
-        case .entity: return try .entity(decoder.decode(EntityMessage.self, from: payload))
-        case .serverPosition: return try .serverPosition(decoder.decode(PositionMessage.self, from: payload))
-        case .serverSay: return try .serverSay(decoder.decode(SayMessage.self, from: payload))
-        case .energy: return try .energy(decoder.decode(Energy.self, from: payload))
-        case .dateTick: return try .dateTick(decoder.decode(DateTickMessage.self, from: payload))
-        case .inventory: return try .inventory(decoder.decode(InventoryMessage.self, from: payload))
-        case .leave: return try .leave(decoder.decode(LeaveMessage.self, from: payload))
-        case .adminSay: return try .adminSay(decoder.decode(AdminSayMessage.self, from: payload))
-        }
+        try JSONDecoder().decode(SomnioMessage.self, from: data)
     }
 }
 
-/// Single emitter entrypoint. Emits `[u8 tag][u32 LE payload_length][payload]`.
+/// Single emitter entrypoint. Encodes a `SomnioMessage` as UTF-8 JSON bytes. Guards against an
+/// oversized frame so an abusive `EnterSector` throws cleanly rather than tripping the receiver's
+/// `maxFrameSize` hard close.
 public enum SomnioMessageEncoder {
-    // swiftlint:disable:next cyclomatic_complexity
     public static func encode(_ message: SomnioMessage) throws -> Data {
-        let encoder = BinaryEncoder()
-        let payload: Data = try {
-            switch message {
-            case let .login(m): return try encoder.encode(m)
-            case let .register(m): return try encoder.encode(m)
-            case let .clientPosition(m): return try encoder.encode(m)
-            case let .clientSay(m): return try encoder.encode(m)
-            case let .equipToggle(m): return try encoder.encode(m)
-            case let .bumpNPC(m): return try encoder.encode(m)
-            case let .enterPortal(m): return try encoder.encode(m)
-            case let .hello(m): return try encoder.encode(m)
-            case let .loginResult(m): return try encoder.encode(m)
-            case let .registerResult(m): return try encoder.encode(m)
-            case let .enterSector(m): return try encoder.encode(m)
-            case let .mainCharacter(m): return try encoder.encode(m)
-            case let .entity(m): return try encoder.encode(m)
-            case let .serverPosition(m): return try encoder.encode(m)
-            case let .serverSay(m): return try encoder.encode(m)
-            case let .energy(m): return try encoder.encode(m)
-            case let .dateTick(m): return try encoder.encode(m)
-            case let .inventory(m): return try encoder.encode(m)
-            case let .leave(m): return try encoder.encode(m)
-            case let .adminSay(m): return try encoder.encode(m)
-            }
-        }()
-        guard payload.count <= Int(SomnioProtocolConstants.maxFrameLength) else {
-            throw SomnioProtocolError.oversizedFrame(UInt32(payload.count))
+        let data = try JSONEncoder().encode(message)
+        guard data.count <= Int(SomnioProtocolConstants.maxFrameLength) else {
+            throw SomnioProtocolError.oversizedFrame(UInt32(data.count))
         }
-
-        var frame = Data(capacity: 5 + payload.count)
-        frame.append(message.tag.rawValue)
-        appendUInt32LE(UInt32(payload.count), to: &frame)
-        frame.append(payload)
-        return frame
+        return data
     }
-}
-
-// File-private helpers shared between the encoder and decoder so the u32 LE wire
-// representation lives in one place.
-
-private func appendUInt32LE(_ value: UInt32, to data: inout Data) {
-    data.append(UInt8(value & 0xFF))
-    data.append(UInt8((value >> 8) & 0xFF))
-    data.append(UInt8((value >> 16) & 0xFF))
-    data.append(UInt8((value >> 24) & 0xFF))
-}
-
-private func readUInt32LE(_ data: Data, at offset: Int) -> UInt32 {
-    UInt32(data[offset])
-        | (UInt32(data[offset + 1]) << 8)
-        | (UInt32(data[offset + 2]) << 16)
-        | (UInt32(data[offset + 3]) << 24)
 }

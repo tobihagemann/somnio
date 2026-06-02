@@ -1,7 +1,7 @@
 import Foundation
 import SomnioCore
 
-/// Sendable enqueue-only mailbox for outbound binary frames. Composes
+/// Sendable enqueue-only mailbox for outbound encoded frames. Composes
 /// `SendableMailbox` (the shared shell used by both this client transport and the
 /// server's `ConnectionOutbox`) so the continuation lifecycle and `Mutex`-guarded
 /// `finished` flag live in one place. The transport actor hands the mailbox reference

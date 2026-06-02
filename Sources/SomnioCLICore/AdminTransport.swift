@@ -10,7 +10,7 @@ import Synchronization
 
 public enum AdminTransportError: Error, Sendable, Equatable {
     case noResponse
-    case unexpectedTextFrame
+    case unexpectedBinaryFrame
     case encodeFailed(description: String)
     case decodeFailed(description: String)
     case connectFailed(description: String)
@@ -38,8 +38,8 @@ private final class ResponseBox: Sendable {
 }
 
 /// Single-shot request/response over the `/admin` WebSocket. Opens an authenticated
-/// connection, writes the encoded `AdminRequest`, reads the first inbound binary frame
-/// as an `AdminResponse`, then closes normally.
+/// connection, writes the encoded `AdminRequest` as a JSON text frame, reads the first
+/// inbound text frame as an `AdminResponse`, then closes normally.
 public enum AdminTransport {
     public static func send(
         _ request: AdminRequest,
@@ -59,7 +59,7 @@ public enum AdminTransport {
 
         let frame: Data
         do {
-            frame = try BinaryEncoder().encode(request)
+            frame = try JSONEncoder().encode(request)
         } catch {
             throw AdminTransportError.encodeFailed(description: "\(error)")
         }
@@ -75,13 +75,13 @@ public enum AdminTransport {
                 configuration: configuration,
                 logger: logger
             ) { inbound, outbound, _ in
-                try await outbound.write(.binary(ByteBuffer(data: frame)))
+                try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
                 for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
                     switch message {
-                    case let .binary(buffer):
+                    case let .text(string):
                         let response: AdminResponse
                         do {
-                            response = try BinaryDecoder().decode(AdminResponse.self, from: Data(buffer: buffer))
+                            response = try JSONDecoder().decode(AdminResponse.self, from: Data(string.utf8))
                         } catch {
                             try? await outbound.close(.protocolError, reason: "decode failed")
                             throw AdminTransportError.decodeFailed(description: "\(error)")
@@ -92,9 +92,9 @@ public enum AdminTransport {
                         // response is already in `box`; the close frame is best-effort.
                         try? await outbound.close(.normalClosure, reason: nil)
                         return
-                    case .text:
-                        try? await outbound.close(.protocolError, reason: "unexpected text frame")
-                        throw AdminTransportError.unexpectedTextFrame
+                    case .binary:
+                        try? await outbound.close(.protocolError, reason: "unexpected binary frame")
+                        throw AdminTransportError.unexpectedBinaryFrame
                     }
                 }
             }

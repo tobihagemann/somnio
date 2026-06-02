@@ -158,7 +158,7 @@ public actor GameplayTransport {
         let writerTask = Task<Void, Never> {
             for await frame in drainStream {
                 do {
-                    try await outbound.write(.binary(ByteBuffer(data: frame)))
+                    try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
                 } catch {
                     // Peer disconnected mid-write; drop the rest and let the read loop
                     // tear the connection down.
@@ -192,8 +192,8 @@ public actor GameplayTransport {
         }
     }
 
-    /// One read-loop body. Decodes binary frames, forwards events, and surfaces
-    /// terminal failures via `.decodeFailed` / `.unexpectedTextFrame`. Emits
+    /// One read-loop body. Decodes JSON text frames, forwards events, and surfaces
+    /// terminal failures via `.decodeFailed` / `.unexpectedBinaryFrame`. Emits
     /// `.peerEOF` when the loop reaches end-of-stream from a peer-initiated close
     /// (the unprompted disconnect case). Intentional cancellation by `disconnect()`
     /// suppresses `.peerEOF` so an explicit Leave Game does not append a misleading
@@ -244,8 +244,8 @@ public actor GameplayTransport {
         logger: Logger
     ) async -> InboundOutcome {
         switch message {
-        case let .binary(buffer):
-            let data = Data(buffer: buffer)
+        case let .text(string):
+            let data = Data(string.utf8)
             do {
                 let decoded = try SomnioMessageDecoder.decode(data)
                 await deliver(.message(decoded), to: delegate)
@@ -259,10 +259,10 @@ public actor GameplayTransport {
                 try? await outbound.close(.protocolError, reason: "decode failed")
                 return .terminate
             }
-        case .text:
-            logger.warning("unexpected text frame on gameplay socket")
-            await deliver(.unexpectedTextFrame, to: delegate)
-            try? await outbound.close(.protocolError, reason: "unexpected text frame")
+        case .binary:
+            logger.warning("unexpected binary frame on gameplay socket")
+            await deliver(.unexpectedBinaryFrame, to: delegate)
+            try? await outbound.close(.protocolError, reason: "unexpected binary frame")
             return .terminate
         }
     }

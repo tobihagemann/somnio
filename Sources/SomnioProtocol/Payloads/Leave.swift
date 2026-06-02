@@ -8,6 +8,4 @@ public struct LeaveMessage: Codable, Sendable, Equatable {
         self.entityIndex = entityIndex
         self.leftGame = leftGame
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case entityIndex; case leftGame }
 }

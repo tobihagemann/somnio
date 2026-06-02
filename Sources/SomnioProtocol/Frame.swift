@@ -1,35 +1,31 @@
 import Foundation
 
-/// Tag byte that identifies which `SomnioMessage` variant is in a frame. Tag values are
-/// fixed and load-bearing: server and client must agree on the tag→payload mapping.
-///
-/// Frame wire format: `[u8 tag][u32 LE payload_length][payload]`. The `u32 LE payload_length`
-/// is defensive — inside a WebSocket binary frame the message boundary is already provided
-/// by the transport, but the inner length lets the decoder validate against a payload-length
-/// value independent of WebSocket framing, so a transport-layer truncation bug still trips a
-/// decode error rather than being silently accepted as a short frame.
-public enum SomnioMessageTag: UInt8, CaseIterable, Sendable, Equatable {
+/// Tag that identifies which `SomnioMessage` variant is in a frame. Tag values are fixed and
+/// load-bearing: server and client must agree on the tag→payload mapping. Messages travel as
+/// JSON over WebSocket text frames in the shape `{"tag":"<verb>","payload":{...}}`, so the tag
+/// is a self-documenting string equal to the case name.
+public enum SomnioMessageTag: String, CaseIterable, Sendable, Equatable {
     // C→S
-    case login = 0x01
-    case register = 0x02
-    case clientPosition = 0x03
-    case clientSay = 0x04
-    case equipToggle = 0x05
-    case bumpNPC = 0x06
-    case enterPortal = 0x07
+    case login
+    case register
+    case clientPosition
+    case clientSay
+    case equipToggle
+    case bumpNPC
+    case enterPortal
 
     // S→C
-    case hello = 0x10
-    case loginResult = 0x11
-    case registerResult = 0x12
-    case enterSector = 0x13
-    case mainCharacter = 0x14
-    case entity = 0x15
-    case serverPosition = 0x16
-    case serverSay = 0x17
-    case energy = 0x18
-    case dateTick = 0x19
-    case inventory = 0x1A
-    case leave = 0x1B
-    case adminSay = 0x1C
+    case hello
+    case loginResult
+    case registerResult
+    case enterSector
+    case mainCharacter
+    case entity
+    case serverPosition
+    case serverSay
+    case energy
+    case dateTick
+    case inventory
+    case leave
+    case adminSay
 }

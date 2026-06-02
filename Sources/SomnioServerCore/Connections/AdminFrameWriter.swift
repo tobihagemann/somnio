@@ -7,9 +7,8 @@ import SomnioProtocol
 
 /// Single-shot frame writer for the admin connection. The admin protocol is
 /// request/response with no broadcast fan-out, so the per-connection `ConnectionOutbox`
-/// machinery is unnecessary — the response is written inline. Non-throwing: every
-/// `AdminResponse` is constructed from strings that the dispatcher capped at
-/// `UInt16.max` UTF-8 bytes, so a `BinaryEncoder` failure is unreachable in practice,
+/// machinery is unnecessary — the response is written inline as a JSON text frame.
+/// Non-throwing: a `JSONEncoder` failure is unreachable for these string-only payloads,
 /// and an `outbound.write` failure means the peer has already disconnected (no useful
 /// recovery distinct from "log and continue").
 enum AdminFrameWriter {
@@ -19,8 +18,8 @@ enum AdminFrameWriter {
         logger: Logger
     ) async {
         do {
-            let frame = try BinaryEncoder().encode(response)
-            try await outbound.write(.binary(ByteBuffer(data: frame)))
+            let frame = try JSONEncoder().encode(response)
+            try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
         } catch {
             // Log the case name only — never the full `\(response)`. Payload-bearing
             // variants like `.logContents`/`.weblogContents` can carry up to ~65 KB of

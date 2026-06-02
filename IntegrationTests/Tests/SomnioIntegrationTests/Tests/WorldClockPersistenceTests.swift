@@ -123,8 +123,8 @@ struct WorldClockPersistenceTests {
                 ) { inbound, outbound, _ in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                        guard case let .binary(buffer) = message else { continue }
-                        if let payload = IntegrationTestFixtures.dateTickPayload(of: Data(buffer: buffer)) {
+                        guard case let .text(string) = message else { continue }
+                        if let payload = IntegrationTestFixtures.dateTickPayload(of: Data(string.utf8)) {
                             await joinDateTick.set(payload)
                             try await outbound.close(.normalClosure, reason: nil)
                             return
@@ -201,8 +201,8 @@ struct WorldClockPersistenceTests {
             group.addTask {
                 var attached = false
                 for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                    guard case let .binary(buffer) = message else { continue }
-                    let frame = Data(buffer: buffer)
+                    guard case let .text(string) = message else { continue }
+                    let frame = Data(string.utf8)
                     guard let decoded = try? SomnioMessageDecoder.decode(frame) else { continue }
                     if case let .dateTick(payload) = decoded {
                         if attached {

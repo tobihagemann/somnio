@@ -9,10 +9,10 @@ import Testing
 @testable import SomnioServerCore
 
 struct AdminConnectionActorTests {
-    @Test func `unrecognized tag yields write unknownCommand and keeps loop open`() async throws {
+    @Test func `unrecognized verb yields write unknownCommand and keeps loop open`() async throws {
         let dependencies = try await makeAdminDependencies()
         let outcome = await AdminConnectionActor.process(
-            .binary(ByteBuffer(bytes: [0xFF])),
+            .text(#"{"tag":"bogus"}"#),
             dependencies: dependencies
         )
         #expect(outcome == .write(.unknownCommand))
@@ -20,9 +20,9 @@ struct AdminConnectionActorTests {
 
     @Test func `well formed players request yields write playerCount`() async throws {
         let dependencies = try await makeAdminDependencies()
-        let frame = try BinaryEncoder().encode(AdminRequest.players)
+        let frame = try JSONEncoder().encode(AdminRequest.players)
         let outcome = await AdminConnectionActor.process(
-            .binary(ByteBuffer(data: frame)),
+            .text(String(decoding: frame, as: UTF8.self)),
             dependencies: dependencies
         )
         guard case let .write(response) = outcome else {
@@ -36,11 +36,10 @@ struct AdminConnectionActorTests {
         }
     }
 
-    @Test func `truncated say payload closes with protocolError`() async throws {
+    @Test func `malformed JSON closes with protocolError`() async throws {
         let dependencies = try await makeAdminDependencies()
-        // Tag 4 == .say(text:), then a length-prefix-truncated body.
         let outcome = await AdminConnectionActor.process(
-            .binary(ByteBuffer(bytes: [0x04, 0x05])),
+            .text("{ not json"),
             dependencies: dependencies
         )
         guard case let .closeProtocolError(reason) = outcome else {
@@ -50,10 +49,10 @@ struct AdminConnectionActorTests {
         #expect(reason == "frame validation failed")
     }
 
-    @Test func `text frame closes with protocolError`() async throws {
+    @Test func `binary frame closes with protocolError`() async throws {
         let dependencies = try await makeAdminDependencies()
         let outcome = await AdminConnectionActor.process(
-            .text("anything"),
+            .binary(ByteBuffer(bytes: [0x00])),
             dependencies: dependencies
         )
         guard case .closeProtocolError = outcome else {

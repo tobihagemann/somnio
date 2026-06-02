@@ -1,7 +1,7 @@
 import Foundation
 
 /// Canonical `Energy` value type for the project. Carries three `(current, max)` pairs
-/// (HP, balance, mana) as a 12-byte LE block. SomnioCore re-exports this via a
+/// (HP, balance, mana). SomnioCore re-exports this via a
 /// `public typealias Energy = SomnioProtocol.Energy` so runtime code reads `Energy` without
 /// a module qualifier.
 public struct Energy: Codable, Sendable, Equatable, Hashable {
@@ -26,11 +26,5 @@ public struct Energy: Codable, Sendable, Equatable, Hashable {
         self.balanceMax = balanceMax
         self.manaCurrent = manaCurrent
         self.manaMax = manaMax
-    }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case hpCurrent; case hpMax
-        case balanceCurrent; case balanceMax
-        case manaCurrent; case manaMax
     }
 }

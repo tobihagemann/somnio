@@ -36,6 +36,7 @@ public enum GameplayHandlers {
         sectorName: String,
         dependencies: ConnectionDependencies
     ) async {
+        guard message.text.utf8.count <= SomnioProtocolConstants.maxSayUTF8Bytes else { return }
         guard let sectorActor = await dependencies.worldRouter.sectorActor(named: sectorName) else { return }
         await sectorActor.handleSay(message, from: entityIndex)
     }

@@ -59,21 +59,22 @@ public actor AdminConnectionActor {
         dependencies: AdminConnectionDependencies
     ) async -> ProcessOutcome {
         switch message {
-        case let .binary(buffer):
-            return await processBinary(buffer, dependencies: dependencies)
-        case .text:
-            dependencies.logger.error("admin received text frame; closing")
-            return .closeProtocolError(reason: "text frames are not part of the wire protocol")
+        case let .text(string):
+            return await processText(string, dependencies: dependencies)
+        case .binary:
+            dependencies.logger.error("admin received binary frame; closing")
+            return .closeProtocolError(reason: "binary frames are not part of the wire protocol")
         }
     }
 
-    private static func processBinary(
-        _ buffer: ByteBuffer,
+    private static func processText(
+        _ string: String,
         dependencies: AdminConnectionDependencies
     ) async -> ProcessOutcome {
-        let frameSize = buffer.readableBytes
+        let data = Data(string.utf8)
+        let frameSize = data.count
         do {
-            let request = try BinaryDecoder().decode(AdminRequest.self, from: Data(buffer: buffer))
+            let request = try JSONDecoder().decode(AdminRequest.self, from: data)
             if let response = await AdminCommandDispatcher.handle(request, dependencies: dependencies) {
                 return .write(response)
             }
@@ -84,7 +85,7 @@ public actor AdminConnectionActor {
                 // Admin-channel carve-out: a CLI built against a newer server should not
                 // tear down the session for an unknown verb. Reply `unknown` and stay open.
                 return .write(.unknownCommand)
-            case .truncated, .invalidPayload, .oversizedFrame:
+            case .oversizedFrame:
                 dependencies.logger.error(
                     "admin frame validation failed",
                     metadata: ["error": "\(error)", "frame_size": "\(frameSize)"]

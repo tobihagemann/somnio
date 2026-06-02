@@ -8,6 +8,4 @@ public struct EquipToggleMessage: Codable, Sendable, Equatable {
         self.slot = slot
         self.hand = hand
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case slot; case hand }
 }

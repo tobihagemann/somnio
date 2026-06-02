@@ -46,7 +46,7 @@ struct AdminCommandDispatcherTests {
         }
         #expect(text.utf8.count <= Int(UInt16.max))
         #expect(text.hasSuffix("ü"))
-        _ = try BinaryEncoder().encode(AdminResponse.logContents(text: text))
+        _ = try JSONEncoder().encode(AdminResponse.logContents(text: text))
     }
 
     @Test func `log truncation keeps the trailing window, not the leading prefix`() async throws {
@@ -171,6 +171,16 @@ struct AdminCommandDispatcherTests {
         let router = StubAdminWorldRouter()
         let dependencies = try await makeDependencies(worldRouter: router)
         let response = await AdminCommandDispatcher.handle(.say(text: ""), dependencies: dependencies)
+        #expect(response == nil)
+        let broadcasts = await router.recordedBroadcasts()
+        #expect(broadcasts.isEmpty)
+    }
+
+    @Test func `say text over the wire cap returns nil and records no broadcast`() async throws {
+        let router = StubAdminWorldRouter()
+        let dependencies = try await makeDependencies(worldRouter: router)
+        let oversized = String(repeating: "x", count: SomnioProtocolConstants.maxSayUTF8Bytes + 1)
+        let response = await AdminCommandDispatcher.handle(.say(text: oversized), dependencies: dependencies)
         #expect(response == nil)
         let broadcasts = await router.recordedBroadcasts()
         #expect(broadcasts.isEmpty)

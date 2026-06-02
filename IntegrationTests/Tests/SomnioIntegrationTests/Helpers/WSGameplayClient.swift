@@ -92,7 +92,7 @@ enum WSGameplayClient {
 
     static func sendMessage(_ message: SomnioMessage, on outbound: WebSocketOutboundWriter) async throws {
         let frame = try SomnioMessageEncoder.encode(message)
-        try await outbound.write(.binary(ByteBuffer(data: frame)))
+        try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
     }
 
     static func sendPosition(_ origin: GridPoint, on outbound: WebSocketOutboundWriter) async throws {
@@ -158,8 +158,8 @@ enum WSGameplayClient {
         predicate: @Sendable @escaping (SomnioMessage) -> Bool
     ) async throws {
         for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-            if case let .binary(buffer) = message {
-                let frame = Data(buffer: buffer)
+            if case let .text(string) = message {
+                let frame = Data(string.utf8)
                 await recorder.append(frame)
                 if let decoded = try? SomnioMessageDecoder.decode(frame), predicate(decoded) { return }
             }
@@ -168,8 +168,8 @@ enum WSGameplayClient {
 
     static func drainUntilPeerClosed(inbound: WebSocketInboundStream, recorder: FrameRecorder) async throws {
         for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-            if case let .binary(buffer) = message {
-                await recorder.append(Data(buffer: buffer))
+            if case let .text(string) = message {
+                await recorder.append(Data(string.utf8))
             }
         }
     }
@@ -199,8 +199,8 @@ enum WSGameplayClient {
             group.addTask {
                 var matches = 0
                 for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                    guard case let .binary(buffer) = message else { continue }
-                    let frame = Data(buffer: buffer)
+                    guard case let .text(string) = message else { continue }
+                    let frame = Data(string.utf8)
                     await recorder.append(frame)
                     if let decoded = try? SomnioMessageDecoder.decode(frame), predicate(decoded) {
                         matches += 1

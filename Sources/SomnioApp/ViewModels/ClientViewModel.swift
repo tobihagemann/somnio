@@ -125,8 +125,8 @@ import SpriteKit
         case let .decodeFailed(error):
             chatLines.append(.errorCode(code: "\(error)"))
             beginAuthSocketTeardown()
-        case .unexpectedTextFrame:
-            chatLines.append(.errorCode(code: "unexpected_text_frame"))
+        case .unexpectedBinaryFrame:
+            chatLines.append(.errorCode(code: "unexpected_binary_frame"))
             beginAuthSocketTeardown()
         case .peerEOF:
             // Mid-session peer EOF surfaces as connection lost; pre-attach EOF is

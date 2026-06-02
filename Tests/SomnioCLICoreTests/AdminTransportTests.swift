@@ -33,26 +33,26 @@ struct AdminTransportTests {
         }
     }
 
-    @Test func `send rejects an unexpected text frame from the server`() async throws {
-        let app = Self.makeTextFrameApplication(token: token)
+    @Test func `send rejects an unexpected binary frame from the server`() async throws {
+        let app = Self.makeBinaryFrameApplication(token: token)
         try await app.test(.live) { client in
             guard let port = client.port else {
                 Issue.record("test client has no port; live framework misconfigured")
                 return
             }
             let url = "ws://localhost:\(port)/admin"
-            await Self.expectTransportError(.unexpectedTextFrame) {
+            await Self.expectTransportError(.unexpectedBinaryFrame) {
                 try await AdminTransport.send(
                     .players,
                     to: url,
                     token: token,
-                    logger: Logger(label: "test.transport.text")
+                    logger: Logger(label: "test.transport.binary")
                 )
             }
         }
     }
 
-    @Test func `send surfaces decodeFailed when the server returns a malformed binary frame`() async throws {
+    @Test func `send surfaces decodeFailed when the server returns a malformed text frame`() async throws {
         let app = Self.makeMalformedFrameApplication(token: token)
         try await app.test(.live) { client in
             guard let port = client.port else {
@@ -128,7 +128,7 @@ struct AdminTransportTests {
     /// `Equatable`, so `#expect(throws:)` can't pin the case directly).
     enum ErrorCase {
         case noResponse
-        case unexpectedTextFrame
+        case unexpectedBinaryFrame
         case encodeFailed
         case decodeFailed
         case connectFailed
@@ -146,7 +146,7 @@ struct AdminTransportTests {
         } catch let error as AdminTransportError {
             let observed: ErrorCase = switch error {
             case .noResponse: .noResponse
-            case .unexpectedTextFrame: .unexpectedTextFrame
+            case .unexpectedBinaryFrame: .unexpectedBinaryFrame
             case .encodeFailed: .encodeFailed
             case .decodeFailed: .decodeFailed
             case .connectFailed: .connectFailed
@@ -175,17 +175,17 @@ struct AdminTransportTests {
         }
     }
 
-    private static func makeTextFrameApplication(token: String) -> some ApplicationProtocol {
+    private static func makeBinaryFrameApplication(token: String) -> some ApplicationProtocol {
         makeApplication(token: token) { _, outbound in
-            try? await outbound.write(.text("plaintext"))
+            try? await outbound.write(.binary(ByteBuffer(bytes: [0x00])))
         }
     }
 
     private static func makeMalformedFrameApplication(token: String) -> some ApplicationProtocol {
         makeApplication(token: token) { _, outbound in
-            // Tag 0 == .logContents which requires a length-prefixed string; payload of just
-            // the tag byte will fail `BinaryDecoder.readString` with `.truncated`.
-            try? await outbound.write(.binary(ByteBuffer(bytes: [0x00])))
+            // Not valid JSON, so the client's `JSONDecoder().decode(AdminResponse.self, ...)`
+            // throws and `AdminTransport.send` surfaces `.decodeFailed`.
+            try? await outbound.write(.text("not json"))
         }
     }
 
@@ -213,7 +213,7 @@ struct AdminTransportTests {
             try? await handler(inbound, outbound)
         }
         let webSocketConfiguration = WebSocketServerConfiguration(
-            maxFrameSize: Int(SomnioProtocolConstants.maxFrameLength) + 5
+            maxFrameSize: SomnioProtocolConstants.maxWireFrameSize
         )
         return Application(
             router: router,

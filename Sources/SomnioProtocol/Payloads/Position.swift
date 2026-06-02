@@ -17,8 +17,4 @@ public struct PositionMessage: Codable, Sendable, Equatable {
         self.facing = facing
         self.tempo = tempo
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case entityIndex; case x; case y; case facing; case tempo
-    }
 }

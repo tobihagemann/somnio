@@ -3,18 +3,25 @@ import Testing
 @testable import SomnioProtocol
 
 // `AdminRequest` and `AdminResponse` ship hand-rolled `Codable` conformances dispatching
-// on a leading `u8` tag with payload-bearing variants. Round-trips through `BinaryEncoder` /
-// `BinaryDecoder` confirm every variant's tag and payload survive the wire form.
+// on a string `tag` with payload-bearing variants carrying a `payload` string. Round-trips
+// through `JSONEncoder` / `JSONDecoder` confirm every variant's tag and payload survive the
+// wire form; the tag-string tests pin the discriminator names that the CLI and server share.
 
 struct AdminCodableTests {
     private func roundTripRequest(_ value: AdminRequest) throws -> AdminRequest {
-        let bytes = try BinaryEncoder().encode(value)
-        return try BinaryDecoder().decode(AdminRequest.self, from: bytes)
+        let bytes = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(AdminRequest.self, from: bytes)
     }
 
     private func roundTripResponse(_ value: AdminResponse) throws -> AdminResponse {
-        let bytes = try BinaryEncoder().encode(value)
-        return try BinaryDecoder().decode(AdminResponse.self, from: bytes)
+        let bytes = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(AdminResponse.self, from: bytes)
+    }
+
+    private func tag(of value: some Encodable) throws -> String {
+        let bytes = try JSONEncoder().encode(value)
+        let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
+        return object?["tag"] as? String ?? ""
     }
 
     @Test(arguments: [
@@ -52,46 +59,46 @@ struct AdminCodableTests {
     }
 
     @Test func `admin request rejects unrecognized tag`() {
-        let bytes = Data([0xFF])
-        #expect(throws: SomnioProtocolError.unrecognizedTag(0xFF)) {
-            try BinaryDecoder().decode(AdminRequest.self, from: bytes)
+        let bytes = Data(#"{"tag":"bogus"}"#.utf8)
+        #expect(throws: SomnioProtocolError.unrecognizedTag("bogus")) {
+            try JSONDecoder().decode(AdminRequest.self, from: bytes)
         }
     }
 
     @Test func `admin response rejects unrecognized tag`() {
-        let bytes = Data([0xFF])
-        #expect(throws: SomnioProtocolError.unrecognizedTag(0xFF)) {
-            try BinaryDecoder().decode(AdminResponse.self, from: bytes)
+        let bytes = Data(#"{"tag":"bogus"}"#.utf8)
+        #expect(throws: SomnioProtocolError.unrecognizedTag("bogus")) {
+            try JSONDecoder().decode(AdminResponse.self, from: bytes)
         }
     }
 
-    @Test func `admin request tag bytes are stable`() throws {
-        // Pin the wire-byte assignments — re-numbering would be a silent admin-channel break.
-        #expect(try BinaryEncoder().encode(AdminRequest.log).first == 0)
-        #expect(try BinaryEncoder().encode(AdminRequest.weblog).first == 1)
-        #expect(try BinaryEncoder().encode(AdminRequest.players).first == 2)
-        #expect(try BinaryEncoder().encode(AdminRequest.time).first == 3)
-        #expect(try BinaryEncoder().encode(AdminRequest.say(text: "")).first == 4)
-        #expect(try BinaryEncoder().encode(AdminRequest.kick(name: "")).first == 5)
-        #expect(try BinaryEncoder().encode(AdminRequest.version).first == 6)
-        #expect(try BinaryEncoder().encode(AdminRequest.logRemove).first == 7)
-        #expect(try BinaryEncoder().encode(AdminRequest.weblogRemove).first == 8)
+    @Test func `admin request tag strings are stable`() throws {
+        // Pin the wire discriminator strings — renaming one would be a silent admin-channel break.
+        #expect(try tag(of: AdminRequest.log) == "log")
+        #expect(try tag(of: AdminRequest.weblog) == "weblog")
+        #expect(try tag(of: AdminRequest.players) == "players")
+        #expect(try tag(of: AdminRequest.time) == "time")
+        #expect(try tag(of: AdminRequest.say(text: "")) == "say")
+        #expect(try tag(of: AdminRequest.kick(name: "")) == "kick")
+        #expect(try tag(of: AdminRequest.version) == "version")
+        #expect(try tag(of: AdminRequest.logRemove) == "logRemove")
+        #expect(try tag(of: AdminRequest.weblogRemove) == "weblogRemove")
     }
 
-    @Test func `admin response tag bytes are stable`() throws {
-        // Same regression guard as the request side — admin replies live or die by these bytes.
-        #expect(try BinaryEncoder().encode(AdminResponse.logContents(text: "")).first == 0)
-        #expect(try BinaryEncoder().encode(AdminResponse.weblogContents(text: "")).first == 1)
-        #expect(try BinaryEncoder().encode(AdminResponse.logEmpty).first == 2)
-        #expect(try BinaryEncoder().encode(AdminResponse.logRemoved).first == 3)
-        #expect(try BinaryEncoder().encode(AdminResponse.weblogEmpty).first == 4)
-        #expect(try BinaryEncoder().encode(AdminResponse.weblogRemoved).first == 5)
-        #expect(try BinaryEncoder().encode(AdminResponse.playerCount(text: "")).first == 6)
-        #expect(try BinaryEncoder().encode(AdminResponse.worldClock(text: "")).first == 7)
-        #expect(try BinaryEncoder().encode(AdminResponse.sayBroadcast(text: "")).first == 8)
-        #expect(try BinaryEncoder().encode(AdminResponse.kickedPlayer(text: "")).first == 9)
-        #expect(try BinaryEncoder().encode(AdminResponse.kickedPlayerNotFound(text: "")).first == 10)
-        #expect(try BinaryEncoder().encode(AdminResponse.versionString(text: "")).first == 11)
-        #expect(try BinaryEncoder().encode(AdminResponse.unknownCommand).first == 12)
+    @Test func `admin response tag strings are stable`() throws {
+        // Same regression guard as the request side — admin replies live or die by these tags.
+        #expect(try tag(of: AdminResponse.logContents(text: "")) == "logContents")
+        #expect(try tag(of: AdminResponse.weblogContents(text: "")) == "weblogContents")
+        #expect(try tag(of: AdminResponse.logEmpty) == "logEmpty")
+        #expect(try tag(of: AdminResponse.logRemoved) == "logRemoved")
+        #expect(try tag(of: AdminResponse.weblogEmpty) == "weblogEmpty")
+        #expect(try tag(of: AdminResponse.weblogRemoved) == "weblogRemoved")
+        #expect(try tag(of: AdminResponse.playerCount(text: "")) == "playerCount")
+        #expect(try tag(of: AdminResponse.worldClock(text: "")) == "worldClock")
+        #expect(try tag(of: AdminResponse.sayBroadcast(text: "")) == "sayBroadcast")
+        #expect(try tag(of: AdminResponse.kickedPlayer(text: "")) == "kickedPlayer")
+        #expect(try tag(of: AdminResponse.kickedPlayerNotFound(text: "")) == "kickedPlayerNotFound")
+        #expect(try tag(of: AdminResponse.versionString(text: "")) == "versionString")
+        #expect(try tag(of: AdminResponse.unknownCommand) == "unknownCommand")
     }
 }

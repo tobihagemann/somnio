@@ -22,8 +22,8 @@ struct ProtocolHandshakeTests {
             try await rig.application.test(.live) { testClient in
                 _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                        guard case let .binary(buffer) = message else { continue }
-                        let frame = Data(buffer: buffer)
+                        guard case let .text(string) = message else { continue }
+                        let frame = Data(string.utf8)
                         if let hello = IntegrationTestFixtures.helloPayload(of: frame) {
                             await helloSlot.set(hello)
                             try await outbound.close(.normalClosure, reason: nil)
@@ -37,12 +37,18 @@ struct ProtocolHandshakeTests {
         }
     }
 
-    @Test func `server closes connection on unrecognized tag byte`() async throws {
-        try await assertProtocolErrorClose(payload: [0xFF, 0, 0, 0, 0])
+    @Test func `server closes connection on unrecognized tag`() async throws {
+        try await assertProtocolErrorClose { try await $0.write(.text(#"{"tag":"notAVerb","payload":{}}"#)) }
     }
 
-    @Test func `server closes connection on truncated frame header`() async throws {
-        try await assertProtocolErrorClose(payload: [0x00, 0x01])
+    @Test func `server closes connection on malformed JSON`() async throws {
+        try await assertProtocolErrorClose { try await $0.write(.text("{ not json")) }
+    }
+
+    @Test func `server closes connection on a binary frame`() async throws {
+        // Binary frames are no longer part of the wire protocol; the gameplay socket must
+        // reject one with a protocol-error close, mirroring the admin socket.
+        try await assertProtocolErrorClose { try await $0.write(.binary(ByteBuffer(bytes: [0x00]))) }
     }
 
     @Test func `admin upgrade requires Authorization Bearer header`() async throws {
@@ -59,14 +65,16 @@ struct ProtocolHandshakeTests {
 
     // MARK: - Helpers
 
-    private func assertProtocolErrorClose(payload: [UInt8]) async throws {
+    private func assertProtocolErrorClose(
+        send: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
+    ) async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.handshake.malformed")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             let observedClose = CloseRecorder()
             try await rig.application.test(.live) { testClient in
                 let closeFrame = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
-                    try await outbound.write(.binary(ByteBuffer(bytes: payload)))
+                    try await send(outbound)
                     for try await _ in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
                         // Drain inbound (Hello, then anything else) until the server-driven
                         // close ends the stream.
@@ -103,12 +111,12 @@ struct ProtocolHandshakeTests {
         configuration.additionalHeaders[.authorization] = "Bearer test"
         configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
         let responseSlot = AdminResponseSlot()
-        let frame = try BinaryEncoder().encode(AdminRequest.players)
+        let frame = try JSONEncoder().encode(AdminRequest.players)
         try await client.ws("/admin", configuration: configuration, logger: logger) { inbound, outbound, _ in
-            try await outbound.write(.binary(ByteBuffer(data: frame)))
+            try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
             for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                if case let .binary(buffer) = message {
-                    let decoded = try BinaryDecoder().decode(AdminResponse.self, from: Data(buffer: buffer))
+                if case let .text(string) = message {
+                    let decoded = try JSONDecoder().decode(AdminResponse.self, from: Data(string.utf8))
                     await responseSlot.set(decoded)
                     try await outbound.close(.normalClosure, reason: nil)
                     return

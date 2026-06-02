@@ -70,9 +70,9 @@ public func makeSomnioServerApplication(
     )
     // Match the WebSocket frame ceiling to the protocol decoder so legitimate large frames
     // are not rejected by the WS layer before they reach `SomnioMessageDecoder`. The default
-    // (`1 << 14` = 16 KiB) is far below the protocol's 1 MiB limit.
-    // Wire frame layout = `[u8 tag][u32 LE payload_length][payload]`, so the WebSocket layer
-    // needs to accept `maxFrameLength + 5` bytes to admit a max-sized Somnio frame.
+    // (`1 << 14` = 16 KiB) is far below the protocol's 1 MiB limit. Frames are JSON over text
+    // frames; `maxWireFrameSize` keeps a small slack above `maxFrameLength` so an oversized
+    // message trips the encoder's `oversizedFrame` guard rather than this hard ceiling.
     let webSocketConfiguration = WebSocketServerConfiguration(
         maxFrameSize: SomnioProtocolConstants.maxWireFrameSize
     )

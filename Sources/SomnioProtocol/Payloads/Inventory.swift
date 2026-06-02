@@ -6,6 +6,4 @@ public struct InventoryMessage: Codable, Sendable, Equatable {
     public init(rows: [WireInventoryRow]) {
         self.rows = rows
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case rows }
 }

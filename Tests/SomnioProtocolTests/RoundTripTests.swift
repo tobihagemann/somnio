@@ -168,11 +168,11 @@ struct RoundTripTests {
     // nested inside another `Codable` value (i.e., not via `SomnioMessageEncoder` /
     // `SomnioMessageDecoder`). The framing path is exercised by every test above; these
     // tests pin the keyed-container `init(from:)` / `encode(to:)` switches by going through
-    // a fresh `BinaryEncoder` / `BinaryDecoder` on `SomnioMessage` itself.
+    // a fresh `JSONEncoder` / `JSONDecoder` on `SomnioMessage` itself.
 
     private func nestedRoundTrip(_ message: SomnioMessage) throws -> SomnioMessage {
-        let bytes = try BinaryEncoder().encode(message)
-        return try BinaryDecoder().decode(SomnioMessage.self, from: bytes)
+        let bytes = try JSONEncoder().encode(message)
+        return try JSONDecoder().decode(SomnioMessage.self, from: bytes)
     }
 
     @Test(arguments: [
@@ -189,9 +189,9 @@ struct RoundTripTests {
     }
 
     @Test func `nested codable rejects unrecognized tag`() {
-        let bytes = Data([0xFF, 0x00])
-        #expect(throws: SomnioProtocolError.unrecognizedTag(0xFF)) {
-            try BinaryDecoder().decode(SomnioMessage.self, from: bytes)
+        let bytes = Data(#"{"tag":"bogusTag","payload":{}}"#.utf8)
+        #expect(throws: SomnioProtocolError.unrecognizedTag("bogusTag")) {
+            try JSONDecoder().decode(SomnioMessage.self, from: bytes)
         }
     }
 }

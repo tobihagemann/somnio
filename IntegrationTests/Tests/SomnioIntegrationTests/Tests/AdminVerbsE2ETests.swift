@@ -300,25 +300,25 @@ struct AdminVerbsE2ETests {
                 configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
                 let unknownSlot = AdminResponseSlot()
                 let followUpSlot = AdminResponseSlot()
-                let followUpFrame = try BinaryEncoder().encode(AdminRequest.players)
+                let followUpFrame = try JSONEncoder().encode(AdminRequest.players)
 
                 try await WebSocketClient.connect(
                     url: url,
                     configuration: configuration,
                     logger: logger
                 ) { inbound, outbound, _ in
-                    // The admin protocol writes the encoded request body straight onto the
-                    // WS binary-frame channel — no length prefix. A single-byte body with
-                    // an unrecognized tag (`0xFF`) must round-trip to `.unknownCommand`.
-                    try await outbound.write(.binary(ByteBuffer(bytes: [0xFF])))
+                    // The admin protocol writes the encoded request as a JSON text frame. A
+                    // JSON frame with an unrecognized verb tag must round-trip to
+                    // `.unknownCommand` rather than tearing down the session.
+                    try await outbound.write(.text(#"{"tag":"bogus"}"#))
                     var receivedUnknown = false
                     for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                        guard case let .binary(buffer) = message else { continue }
-                        let response = try BinaryDecoder().decode(AdminResponse.self, from: Data(buffer: buffer))
+                        guard case let .text(string) = message else { continue }
+                        let response = try JSONDecoder().decode(AdminResponse.self, from: Data(string.utf8))
                         if !receivedUnknown {
                             await unknownSlot.set(response)
                             receivedUnknown = true
-                            try await outbound.write(.binary(ByteBuffer(data: followUpFrame)))
+                            try await outbound.write(.text(String(decoding: followUpFrame, as: UTF8.self)))
                             continue
                         }
                         await followUpSlot.set(response)

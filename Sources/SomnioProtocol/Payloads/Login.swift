@@ -8,6 +8,4 @@ public struct LoginMessage: Codable, Sendable, Equatable {
         self.nickname = nickname
         self.password = password
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case nickname; case password }
 }

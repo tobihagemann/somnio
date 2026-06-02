@@ -6,6 +6,4 @@ public struct BumpNPCMessage: Codable, Sendable, Equatable {
     public init(npcIndex: Int16) {
         self.npcIndex = npcIndex
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case npcIndex }
 }

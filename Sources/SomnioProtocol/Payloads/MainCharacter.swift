@@ -6,6 +6,4 @@ public struct MainCharacterMessage: Codable, Sendable, Equatable {
     public init(entityIndex: Int16) {
         self.entityIndex = entityIndex
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case entityIndex }
 }

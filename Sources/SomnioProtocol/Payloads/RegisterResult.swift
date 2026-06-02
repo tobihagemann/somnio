@@ -12,6 +12,4 @@ public struct RegisterResultMessage: Codable, Sendable, Equatable {
     public init(result: RegisterResultCode) {
         self.result = result
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case result }
 }

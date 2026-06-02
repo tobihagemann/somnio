@@ -196,11 +196,11 @@ ASCII `...` ellipsis throughout, with one historical exception: the editor's "La
 
 ### Wire protocol
 
-Messages are modelled as discriminated-union enums in `SomnioProtocol`, serialized as compact binary frames over WebSocket: `[u8 tag][u32 LE payload_length][payload]`. Each payload struct conforms to `Codable` with an explicit `CodingKeys: String, CaseIterable, CodingKey` — the wire layout walks fields in declaration order, so `CodingKeys` ordering is load-bearing. `Tests/SomnioProtocolTests/FieldOrderTests.swift` is the regression guard.
+Messages are modelled as discriminated-union enums in `SomnioProtocol`, serialized as JSON over WebSocket **text** frames in the shape `{"tag":"<verb>","payload":{...}}`. `SomnioMessageEncoder.encode` / `SomnioMessageDecoder.decode` are the framing entrypoints; boundaries convert `Data` ⇄ `String` at the `.text` frame edge. The `tag` is a string equal to the `SomnioMessageTag` case name; `SomnioMessage.init(from:)` is hand-written so an unknown tag throws `SomnioProtocolError.unrecognizedTag(String)` (a synthesized decode would throw `DecodingError` and break the admin unknown-verb carve-out). `AdminRequest`/`AdminResponse` follow the same `{tag, payload}` string-discriminator shape. `Tests/SomnioProtocolTests/RoundTripTests.swift` (+ `AdminCodableTests.swift`, `WireFrameLimitsTests.swift`) are the regression guards.
 
-`BinaryEncoder` / `BinaryDecoder` are positional (key-name agnostic) `Encoder` / `Decoder` adapters. Primitives encode as little-endian integers; strings carry a `u16 LE` length prefix; arrays carry a `u16 LE` count prefix.
+`SomnioMessageEncoder.encode` throws `oversizedFrame` if the JSON exceeds `maxFrameLength`; `maxWireFrameSize` (the WS-layer `maxFrameSize`) sits a small `frameSizeSlack` above it so the guard fires cleanly instead of the receiver hard-closing. A malformed/unrecognized inbound frame logs + closes the connection.
 
-No raw `Dictionary` fields on `Codable` payloads — Swift's standard `Dictionary` `Codable` iterates in unspecified order and breaks the positional binary form. Use ordered struct arrays instead (e.g., `[InventoryExtra]`).
+Payload structs use synthesized `Codable`, so JSON keys are the property names — renaming a property changes the wire key. Avoid raw `Dictionary` fields on payloads — prefer ordered struct arrays (e.g., `[WireInventoryExtra]`) for stable, self-documenting output.
 
 ### Sector binary format
 

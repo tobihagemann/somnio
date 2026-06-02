@@ -44,9 +44,4 @@ public struct EntityMessage: Codable, Sendable, Equatable {
         self.facing = facing
         self.tempo = tempo
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case entityIndex; case figure; case gender; case maskWidth; case maskHeight
-        case type; case name; case x; case y; case facing; case tempo
-    }
 }

@@ -194,8 +194,8 @@ struct InventoryRoundTripTests {
                 var attached = false
                 var equipSent = false
                 for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
-                    guard case let .binary(buffer) = message else { continue }
-                    let frame = Data(buffer: buffer)
+                    guard case let .text(string) = message else { continue }
+                    let frame = Data(string.utf8)
                     await recorder.append(frame)
                     guard let decoded = try? SomnioMessageDecoder.decode(frame) else { continue }
                     if !attached {

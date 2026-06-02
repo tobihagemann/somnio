@@ -11,6 +11,4 @@ public struct SayMessage: Codable, Sendable, Equatable {
         self.entityIndex = entityIndex
         self.text = text
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case entityIndex; case text }
 }

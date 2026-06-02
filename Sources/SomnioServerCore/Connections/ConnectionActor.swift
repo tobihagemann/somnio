@@ -8,7 +8,7 @@ import SomnioData
 import SomnioProtocol
 
 /// One connection's complete lifecycle. Owns the per-connection writer task that drains
-/// `ConnectionOutbox.stream` and writes binary frames to the WebSocket. State transitions:
+/// `ConnectionOutbox.stream` and writes JSON text frames to the WebSocket. State transitions:
 /// `awaitingLogin` (Hello already on the wire after start) → `attached(entityIndex, sectorName, accountId)`
 /// once Login succeeds. The `/ws` route closure calls `runConnection` and the actor handles
 /// every subsequent step until disconnect.
@@ -127,8 +127,8 @@ public actor ConnectionActor {
 
     private func handleInboundMessage(_ message: WebSocketMessage) async -> CloseDecision {
         switch message {
-        case let .binary(buffer):
-            let data = Data(buffer: buffer)
+        case let .text(string):
+            let data = Data(string.utf8)
             let frameSize = data.count
             do {
                 let decoded = try SomnioMessageDecoder.decode(data)
@@ -142,17 +142,21 @@ public actor ConnectionActor {
                 )
                 return .close(code: .protocolError, reason: "frame validation failed")
             }
-        case .text:
-            return protocolErrorClose("text frames are not part of the wire protocol", frameSize: 0)
+        case .binary:
+            return protocolErrorClose("binary frames are not part of the wire protocol", frameSize: 0)
         }
     }
 
     /// Logs a frame-validation failure and returns the standard `.close(.protocolError, ...)`
-    /// decision the wire-protocol layer uses for any unrecoverable inbound frame.
+    /// decision the wire-protocol layer uses for any unrecoverable inbound frame. The reason
+    /// can embed attacker-controlled data (e.g. an unrecognized JSON tag string up to the full
+    /// frame size on the unauthenticated socket), so it is truncated before logging to bound
+    /// log amplification.
     private func protocolErrorClose(_ reason: String, frameSize: Int) -> CloseDecision {
+        let bounded = String(decoding: reason.utf8.prefix(256), as: UTF8.self)
         logger.error(
             "frame validation failed",
-            metadata: ["error": "\(reason)", "frame_size": "\(frameSize)"]
+            metadata: ["error": "\(bounded)", "frame_size": "\(frameSize)"]
         )
         return .close(code: .protocolError, reason: "frame validation failed")
     }
@@ -255,7 +259,7 @@ public actor ConnectionActor {
         let task = Task<Void, Never> {
             for await frame in outbox.stream {
                 do {
-                    try await outbound.write(.binary(ByteBuffer(data: frame)))
+                    try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
                     outbox.recordWrite()
                 } catch {
                     // Peer disconnected mid-write; drop the rest and let the read loop tear

@@ -54,7 +54,7 @@ public enum AdminCommandDispatcher {
             let text = "\(clock.year);\(clock.month);\(clock.day);\(hour);\(minute);\(second)"
             return .worldClock(text: text)
         case let .say(text):
-            guard !text.isEmpty else { return nil }
+            guard !text.isEmpty, text.utf8.count <= SomnioProtocolConstants.maxSayUTF8Bytes else { return nil }
             await dependencies.worldRouter.broadcastToAllConnections(.adminSay(AdminSayMessage(text: text)))
             return .sayBroadcast(text: text)
         case let .kick(name):
@@ -108,9 +108,9 @@ public enum AdminCommandDispatcher {
         }
     }
 
-    /// Cap `text` to fit `BinaryEncoder.writeString`'s `UInt16.max` UTF-8 byte limit.
-    /// Operators read log tails to diagnose recent events, so we keep the trailing
-    /// window rather than the leading prefix. The UTF-8 byte position is walked
+    /// Cap `text` to a 65535-byte UTF-8 window so a single admin log reply stays a
+    /// bounded frame. Operators read log tails to diagnose recent events, so we keep the
+    /// trailing window rather than the leading prefix. The UTF-8 byte position is walked
     /// forward to the next valid character boundary so we never split a multi-byte
     /// codepoint mid-sequence; UTF-8 codepoints are at most 4 bytes, so at worst three
     /// trailing bytes are dropped from a 65535-byte window.

@@ -66,19 +66,19 @@ struct AdminAuthGateTests {
             await stubRouter.setPlayerCount(3)
             var configuration = WebSocketClientConfiguration()
             configuration.additionalHeaders[.authorization] = "Bearer secret"
-            configuration.maxFrameSize = Int(SomnioProtocolConstants.maxFrameLength) + 5
+            configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
 
-            let frame = try BinaryEncoder().encode(AdminRequest.players)
+            let frame = try JSONEncoder().encode(AdminRequest.players)
             let response = ResponseSlot()
             try await client.ws(
                 "/admin",
                 configuration: configuration,
                 logger: Logger(label: "test.admin.upgrade.client")
             ) { inbound, outbound, _ in
-                try await outbound.write(.binary(ByteBuffer(data: frame)))
-                for try await message in inbound.messages(maxSize: Int(SomnioProtocolConstants.maxFrameLength) + 5) {
-                    if case let .binary(buffer) = message {
-                        let decoded = try BinaryDecoder().decode(AdminResponse.self, from: Data(buffer: buffer))
+                try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
+                for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
+                    if case let .text(string) = message {
+                        let decoded = try JSONDecoder().decode(AdminResponse.self, from: Data(string.utf8))
                         await response.set(decoded)
                         try await outbound.close(.normalClosure, reason: nil)
                         return

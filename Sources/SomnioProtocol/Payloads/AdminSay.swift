@@ -6,6 +6,4 @@ public struct AdminSayMessage: Codable, Sendable, Equatable {
     public init(text: String) {
         self.text = text
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case text }
 }

@@ -12,6 +12,4 @@ public struct LoginResultMessage: Codable, Sendable, Equatable {
     public init(result: LoginResultCode) {
         self.result = result
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case result }
 }

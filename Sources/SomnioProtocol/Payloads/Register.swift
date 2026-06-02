@@ -23,9 +23,4 @@ public struct RegisterMessage: Codable, Sendable, Equatable {
         self.gender = gender
         self.email = email
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case nickname; case password; case passwordRepeat
-        case characterClass; case gender; case email
-    }
 }

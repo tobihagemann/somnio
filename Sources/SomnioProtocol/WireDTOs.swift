@@ -13,8 +13,6 @@ public struct WireGridPoint: Codable, Sendable, Equatable, Hashable {
         self.x = x
         self.y = y
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case x; case y }
 }
 
 public struct WireGridSize: Codable, Sendable, Equatable, Hashable {
@@ -25,8 +23,6 @@ public struct WireGridSize: Codable, Sendable, Equatable, Hashable {
         self.width = width
         self.height = height
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case width; case height }
 }
 
 public struct WireGroundTile: Codable, Sendable, Equatable, Hashable {
@@ -39,8 +35,6 @@ public struct WireGroundTile: Codable, Sendable, Equatable, Hashable {
         self.sourceX = sourceX
         self.sourceY = sourceY
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case tilesetIndex; case sourceX; case sourceY }
 }
 
 public struct WireLightSetting: Codable, Sendable, Equatable, Hashable {
@@ -51,8 +45,6 @@ public struct WireLightSetting: Codable, Sendable, Equatable, Hashable {
         self.indoor = indoor
         self.brightness = brightness
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case indoor; case brightness }
 }
 
 public struct WireObject: Codable, Sendable, Equatable, Hashable {
@@ -84,11 +76,6 @@ public struct WireObject: Codable, Sendable, Equatable, Hashable {
         self.sourceHeight = sourceHeight
         self.priority = priority
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case x; case y; case tilesetIndex; case sourceX; case sourceY
-        case sourceWidth; case sourceHeight; case priority
-    }
 }
 
 public struct WireCollisionMask: Codable, Sendable, Equatable, Hashable {
@@ -103,8 +90,6 @@ public struct WireCollisionMask: Codable, Sendable, Equatable, Hashable {
         self.width = width
         self.height = height
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case x; case y; case width; case height }
 }
 
 public struct WireSectorPortal: Codable, Sendable, Equatable, Hashable {
@@ -129,10 +114,6 @@ public struct WireSectorPortal: Codable, Sendable, Equatable, Hashable {
         self.height = height
         self.targetSectorName = targetSectorName
         self.direction = direction
-    }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case x; case y; case width; case height; case targetSectorName; case direction
     }
 }
 
@@ -173,12 +154,6 @@ public struct WireNPC: Codable, Sendable, Equatable, Hashable {
         self.direction = direction
         self.behaviorTag = behaviorTag
         self.dialogScript = dialogScript
-    }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case spawnX; case spawnY; case spawnBoxWidth; case spawnBoxHeight
-        case maskWidth; case maskHeight; case name; case figure; case direction
-        case behaviorTag; case dialogScript
     }
 }
 
@@ -226,12 +201,6 @@ public struct WireMonsterSpawn: Codable, Sendable, Equatable, Hashable {
         self.spawnMana = spawnMana
         self.aiScriptIndex = aiScriptIndex
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case spawnX; case spawnY; case spawnBoxWidth; case spawnBoxHeight
-        case monsterWidth; case monsterHeight; case name; case figure; case bounded
-        case spawnHP; case spawnBalance; case spawnMana; case aiScriptIndex
-    }
 }
 
 public struct WireSector: Codable, Sendable, Equatable, Hashable {
@@ -269,11 +238,6 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
         self.npcs = npcs
         self.monsterSpawns = monsterSpawns
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case name; case version; case dimensions; case ground; case light
-        case objects; case collisionMasks; case portals; case npcs; case monsterSpawns
-    }
 }
 
 public struct WireInventoryExtra: Codable, Sendable, Equatable, Hashable {
@@ -284,8 +248,6 @@ public struct WireInventoryExtra: Codable, Sendable, Equatable, Hashable {
         self.key = key
         self.value = value
     }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey { case key; case value }
 }
 
 public enum WireHand: Int16, Codable, Sendable, Equatable, Hashable, CaseIterable {
@@ -313,9 +275,5 @@ public struct WireInventoryRow: Codable, Sendable, Equatable, Hashable {
         self.itemId = itemId
         self.extras = extras
         self.equippedHand = equippedHand
-    }
-
-    public enum CodingKeys: String, CaseIterable, CodingKey {
-        case slot; case category; case itemId; case extras; case equippedHand
     }
 }
