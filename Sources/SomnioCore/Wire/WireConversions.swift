@@ -116,6 +116,7 @@ public extension SectorPortal {
 
 public enum WireConversionError: Error, Equatable, Sendable {
     case unknownPortalDirection(Int)
+    case sectorDimensionsOutOfRange(width: Int16, height: Int16)
 }
 
 // MARK: - NPC
@@ -178,11 +179,23 @@ public extension MonsterSpawn {
 // MARK: - Sector
 
 public extension Sector {
+    /// Throws `WireConversionError.sectorDimensionsOutOfRange` when a peer sends a sector whose
+    /// tile dimensions are non-positive, exceed `SomnioConstants.maxSectorDimension` per axis, or
+    /// exceed `SomnioConstants.maxSectorArea` in total, so a hostile server can't drive the client
+    /// into an unbounded ground-tile-map / entity-graph allocation.
     init(_ wire: WireSector) throws {
+        let dimensions = GridSize(wire.dimensions)
+        guard dimensions.width >= 1, dimensions.height >= 1,
+              dimensions.width <= SomnioConstants.maxSectorDimension,
+              dimensions.height <= SomnioConstants.maxSectorDimension,
+              Int32(dimensions.width) * Int32(dimensions.height) <= SomnioConstants.maxSectorArea
+        else {
+            throw WireConversionError.sectorDimensionsOutOfRange(width: dimensions.width, height: dimensions.height)
+        }
         try self.init(
             name: wire.name,
             version: wire.version,
-            dimensions: GridSize(wire.dimensions),
+            dimensions: dimensions,
             ground: GroundTile(wire.ground),
             light: LightSetting(wire.light),
             objects: wire.objects.map(Object.init),

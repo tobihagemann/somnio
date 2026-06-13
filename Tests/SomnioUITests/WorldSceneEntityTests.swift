@@ -6,8 +6,9 @@ import Testing
 @testable import SomnioUI
 
 /// Stub `SpriteAssets` that returns `nil` for every accessor. The scene falls back to
-/// untextured nodes — sufficient to verify placement/animation/removal at the public
-/// surface without bundling a real asset pack into the test target.
+/// untextured entity nodes (and skips the ground tile map entirely) — sufficient to verify
+/// placement/animation/removal at the public surface without bundling a real asset pack
+/// into the test target.
 @MainActor private final class NullSpriteAssets: SpriteAssets {
     func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> SKTexture? {
         nil
@@ -223,6 +224,35 @@ struct WorldSceneEntityTests {
         scene.placeEntity(playerEntity())
         let applied = try #require(scene._heldSwapProbe().appliedTintAlpha)
         #expect(abs(applied - lastDeferred) < 0.0001)
+    }
+
+    @Test func `load builds a single ground tile map sized to the sector`() throws {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: assets)
+        // `tilesetIndex: 999` resolves (off-by-one) to the `1000-TestTile.png` fixture; a 4x4-tile
+        // sector is 512x512 px, an exact 16x16 grid of 32 px ground cells.
+        let sector = Sector(
+            name: "Ground",
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            ground: GroundTile(tilesetIndex: 999, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100)
+        )
+        scene.load(sector: sector)
+        let probe = try #require(scene._groundTileMapProbe())
+        #expect(probe.numberOfColumns == 16)
+        #expect(probe.numberOfRows == 16)
+        #expect(probe.tileSize == CGSize(width: 32, height: 32))
+        #expect(probe.anchorPoint == CGPoint(x: 0, y: 0))
+        #expect(probe.position == .zero)
+        // zPosition 0 sits below every object/entity depth (ScreenDepth floors at 1).
+        #expect(probe.zPosition == 0)
+    }
+
+    @Test func `load builds no ground tile map when the asset pack is absent`() {
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+        scene.load(sector: tinySector())
+        #expect(scene._groundTileMapProbe() == nil)
     }
 
     private func playerEntity() -> WorldEntity {

@@ -11,10 +11,10 @@ import SpriteKit
 /// bound to the main actor; the scene that calls these methods is itself main-actor
 /// isolated, so the protocol-level isolation matches its call sites.
 ///
-/// `groundTexture` takes only three params because each engine tile is composed at
-/// load time from a 4 × 4 grid of 32 × 32 source-pack pixels — the slicing is implicit
-/// in the implementation. `objectTexture` takes an explicit five-param source rect
-/// because the `Object` record carries its own width and height which can be any size.
+/// `groundTexture` takes only three params because it returns one uniform 32 × 32
+/// source-pack cell, which the caller's `SKTileMapNode` repeats across the sector.
+/// `objectTexture` takes an explicit five-param source rect because the `Object` record
+/// carries its own width and height which can be any size.
 @MainActor public protocol SpriteAssets {
     func groundTexture(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16) -> SKTexture?
     func objectTexture(
@@ -41,7 +41,7 @@ import SpriteKit
 /// zero-padded three-digit numeric prefix in their filename.
 @MainActor public final class BundleMainSpriteAssets: SpriteAssets {
     private static let logger = Logger(label: "de.tobiha.somnio.ui.assets")
-    private static let sourceCellSize = 32
+    private static let sourceCellSize = Int(SomnioConstants.groundCellSize)
 
     // Main player sheet (`001-Main01.png`, 1024 × 384): an 8 × 2 grid of character regions;
     // each region is a 4-frame × 4-direction grid of 32 × 48 cells. NPC/monster sheets hold
@@ -111,38 +111,15 @@ import SpriteKit
         let key = GroundKey(tilesetIndex: tilesetIndex, sourceX: sourceX, sourceY: sourceY)
         if let cached = groundTextureCache[key] { return cached }
         guard let tileset = tilesetImage(for: tilesetIndex) else { return nil }
-        let composedSize = Int(SomnioConstants.tileSize)
         let sourceRect = CGRect(x: Int(sourceX), y: Int(sourceY), width: Self.sourceCellSize, height: Self.sourceCellSize)
+        // Crop the source cell as a standalone `CGImage` rather than a UV sub-rect of the whole
+        // tileset: a cropped image clamps at its own edges, so the tile map's default `.linear`
+        // sampling can't bleed neighboring tileset cells at the tile seams.
         guard sourceRect.maxX <= CGFloat(tileset.width),
               sourceRect.maxY <= CGFloat(tileset.height),
-              let cell = tileset.cropping(to: sourceRect),
-              let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(
-                  data: nil,
-                  width: composedSize,
-                  height: composedSize,
-                  bitsPerComponent: 8,
-                  bytesPerRow: 0,
-                  space: space,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              )
+              let cell = tileset.cropping(to: sourceRect)
         else { return nil }
-        let tilesPerSide = composedSize / Self.sourceCellSize
-        for row in 0 ..< tilesPerSide {
-            for column in 0 ..< tilesPerSide {
-                context.draw(
-                    cell,
-                    in: CGRect(
-                        x: column * Self.sourceCellSize,
-                        y: row * Self.sourceCellSize,
-                        width: Self.sourceCellSize,
-                        height: Self.sourceCellSize
-                    )
-                )
-            }
-        }
-        guard let composite = context.makeImage() else { return nil }
-        let texture = SKTexture(cgImage: composite)
+        let texture = SKTexture(cgImage: cell)
         groundTextureCache[key] = texture
         return texture
     }
@@ -156,21 +133,13 @@ import SpriteKit
     ) -> SKTexture? {
         guard sourceX >= 0, sourceY >= 0, sourceWidth > 0, sourceHeight > 0 else { return nil }
         guard let tileset = tilesetImage(for: tilesetIndex) else { return nil }
-        let imageWidth = CGFloat(tileset.width)
-        let imageHeight = CGFloat(tileset.height)
-        guard imageWidth > 0, imageHeight > 0,
-              CGFloat(sourceX) + CGFloat(sourceWidth) <= imageWidth,
-              CGFloat(sourceY) + CGFloat(sourceHeight) <= imageHeight
-        else { return nil }
-        let whole = SKTexture(cgImage: tileset)
-        // `SKTexture(rect:in:)` uses normalized UV coordinates with the origin at the
-        // bottom-left of the source image, but the legacy Object record's source rect
-        // is in top-left pixel coordinates. Flip the Y axis so the slice matches.
-        let uvX = CGFloat(sourceX) / imageWidth
-        let uvY = (imageHeight - CGFloat(sourceY) - CGFloat(sourceHeight)) / imageHeight
-        let uvW = CGFloat(sourceWidth) / imageWidth
-        let uvH = CGFloat(sourceHeight) / imageHeight
-        return SKTexture(rect: CGRect(x: uvX, y: uvY, width: uvW, height: uvH), in: whole)
+        let pixelRect = CGRect(x: Int(sourceX), y: Int(sourceY), width: Int(sourceWidth), height: Int(sourceHeight))
+        guard let uv = uvRect(
+            forTopLeftPixelRect: pixelRect,
+            imageWidth: CGFloat(tileset.width),
+            imageHeight: CGFloat(tileset.height)
+        ) else { return nil }
+        return SKTexture(rect: uv, in: SKTexture(cgImage: tileset))
     }
 
     public func entityTexture(
@@ -233,15 +202,14 @@ import SpriteKit
     }
 
     /// Slices a top-left pixel rect out of a whole-sheet `CGImage`, returning a UV-rect
-    /// `SKTexture` against a cached whole-sheet texture. Mirrors `objectTexture`'s Y-flip
-    /// (`SKTexture(rect:in:)` is bottom-left UV; the sheet rect is top-left pixels).
+    /// `SKTexture` against a cached whole-sheet texture. The top-left-pixel-to-bottom-left-UV
+    /// flip `SKTexture(rect:in:)` needs is delegated to `uvRect`.
     private func entitySlice(in sheetImage: CGImage, sheetKey: CharacterSheetKey, pixelRect: CGRect) -> SKTexture? {
-        let imageWidth = CGFloat(sheetImage.width)
-        let imageHeight = CGFloat(sheetImage.height)
-        guard imageWidth > 0, imageHeight > 0,
-              pixelRect.minX >= 0, pixelRect.minY >= 0,
-              pixelRect.maxX <= imageWidth, pixelRect.maxY <= imageHeight
-        else { return nil }
+        guard let uv = uvRect(
+            forTopLeftPixelRect: pixelRect,
+            imageWidth: CGFloat(sheetImage.width),
+            imageHeight: CGFloat(sheetImage.height)
+        ) else { return nil }
         let whole: SKTexture
         if let cached = characterSheetTextureCache[sheetKey] {
             whole = cached
@@ -249,11 +217,7 @@ import SpriteKit
             whole = SKTexture(cgImage: sheetImage)
             characterSheetTextureCache[sheetKey] = whole
         }
-        let uvX = pixelRect.minX / imageWidth
-        let uvY = (imageHeight - pixelRect.minY - pixelRect.height) / imageHeight
-        let uvW = pixelRect.width / imageWidth
-        let uvH = pixelRect.height / imageHeight
-        return SKTexture(rect: CGRect(x: uvX, y: uvY, width: uvW, height: uvH), in: whole)
+        return SKTexture(rect: uv, in: whole)
     }
 
     public func animationStrip(name: String) -> SKTexture? {

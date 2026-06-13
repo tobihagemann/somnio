@@ -3,38 +3,42 @@ import Foundation
 import SomnioCore
 import SpriteKit
 
-/// Renders a sector's ground tiles and object decals into `parent`. Three passes run
-/// in order: ground tiling, object decals sorted by priority, and `zPosition` from
-/// `Object.priority` so high-priority decals draw above low-priority ones.
+/// Renders a sector's ground as one repeating tile map and its object decals into `parent`.
+/// The ground is a single `SKTileMapNode` (the ground is uniform per sector); object decals
+/// are sprites sorted by priority and depth-ordered via `zPosition` so high-priority decals
+/// draw above low-priority ones.
 @MainActor
 func renderTiles(sector: Sector, into parent: SKNode, assets: any SpriteAssets) {
-    let tileSize = CGFloat(SomnioConstants.tileSize)
-    let width = Int(sector.dimensions.width)
-    let height = Int(sector.dimensions.height)
     let sectorHeightPx = CGFloat(sector.pixelHeight)
 
-    // The sector binary uses Mac-classic top-left origin (Y grows downward); SpriteKit's
-    // default scene uses Y-up. Flip every Y at placement so the legacy-authored layout
-    // (north = top of screen, south = bottom) renders right-side-up.
-
-    for row in 0 ..< height {
-        for column in 0 ..< width {
-            let node = SKSpriteNode()
-            node.size = CGSize(width: tileSize, height: tileSize)
-            node.position = CGPoint(
-                x: CGFloat(column) * tileSize,
-                y: sectorHeightPx - CGFloat(row + 1) * tileSize
-            )
-            node.anchorPoint = CGPoint(x: 0, y: 0)
-            if let texture = assets.groundTexture(
-                tilesetIndex: sector.ground.tilesetIndex,
-                sourceX: sector.ground.sourceX,
-                sourceY: sector.ground.sourceY
-            ) {
-                node.texture = texture
-            }
-            parent.addChild(node)
-        }
+    // The ground is uniform per sector, so a single tile map filled with one tile group
+    // covers it — no per-row Y-flip is needed (a uniform fill has no orientation). Skip the
+    // tile map entirely when the asset pack is absent so the scene renders empty ground
+    // rather than untextured rectangles.
+    if let cell = assets.groundTexture(
+        tilesetIndex: sector.ground.tilesetIndex,
+        sourceX: sector.ground.sourceX,
+        sourceY: sector.ground.sourceY
+    ) {
+        let cellPx = Int(SomnioConstants.groundCellSize)
+        let tileSize = CGSize(width: cellPx, height: cellPx)
+        let definition = SKTileDefinition(texture: cell, size: tileSize)
+        let group = SKTileGroup(tileDefinition: definition)
+        let tileSet = SKTileSet(tileGroups: [group])
+        let map = SKTileMapNode(
+            tileSet: tileSet,
+            columns: Int(sector.pixelWidth) / cellPx,
+            rows: Int(sector.pixelHeight) / cellPx,
+            tileSize: tileSize,
+            fillWith: group
+        )
+        // Anchor the grid's bottom-left at scene origin so its extent matches the legacy
+        // ground span `[0, pixelWidth] × [0, pixelHeight]`. `zPosition` 0 sits below every
+        // object/entity depth, which `ScreenDepth` floors at 1.
+        map.anchorPoint = CGPoint(x: 0, y: 0)
+        map.position = .zero
+        map.zPosition = 0
+        parent.addChild(map)
     }
 
     let sortedObjects = sector.objects.sorted { $0.priority < $1.priority }

@@ -8,21 +8,20 @@ import Testing
 
 @MainActor
 struct BundleMainSpriteAssetsTests {
-    @Test func `groundTexture tiles the source cell into a composed engine tile`() throws {
+    @Test func `groundTexture returns the source cell as a 32x32 texture`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
         let texture = try #require(
             assets.groundTexture(tilesetIndex: 999, sourceX: 0, sourceY: 0)
         )
         let size = texture.size()
-        #expect(size.width == CGFloat(SomnioConstants.tileSize))
-        #expect(size.height == CGFloat(SomnioConstants.tileSize))
+        #expect(size.width == CGFloat(SomnioConstants.groundCellSize))
+        #expect(size.height == CGFloat(SomnioConstants.groundCellSize))
 
-        // The cell at (0,0) carries red/green/blue at corner pixels; a correctly tiled
-        // 4x4 composite carries exactly 16 of each.
+        // The cell at (0,0) carries one red, one green, and one blue marker pixel.
         let counts = countColors(in: texture)
-        #expect(counts.red == 16)
-        #expect(counts.green == 16)
-        #expect(counts.blue == 16)
+        #expect(counts.red == 1)
+        #expect(counts.green == 1)
+        #expect(counts.blue == 1)
     }
 
     @Test func `groundTexture interprets sourceX as a pixel offset (not a cell index)`() throws {
@@ -34,9 +33,9 @@ struct BundleMainSpriteAssetsTests {
             assets.groundTexture(tilesetIndex: 999, sourceX: 32, sourceY: 0)
         )
         let counts = countColors(in: texture)
-        #expect(counts.yellow == 16)
-        #expect(counts.magenta == 16)
-        #expect(counts.cyan == 16)
+        #expect(counts.yellow == 1)
+        #expect(counts.magenta == 1)
+        #expect(counts.cyan == 1)
     }
 
     @Test func `groundTexture returns nil when the source rect extends past the tileset bounds`() {
@@ -66,7 +65,7 @@ struct BundleMainSpriteAssetsTests {
         #expect(assets.groundTexture(tilesetIndex: 42, sourceX: 0, sourceY: 0) == nil)
     }
 
-    @Test func `groundTexture caches the composed texture per source cell`() throws {
+    @Test func `groundTexture caches the source-cell texture`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
         let first = try #require(assets.groundTexture(tilesetIndex: 999, sourceX: 0, sourceY: 0))
         let second = try #require(assets.groundTexture(tilesetIndex: 999, sourceX: 0, sourceY: 0))
@@ -110,6 +109,27 @@ struct BundleMainSpriteAssetsTests {
     @Test func `animationStrip returns nil when Animations asset is absent`() {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
         #expect(assets.animationStrip(name: "AnyName") == nil)
+    }
+
+    // MARK: - uvRect
+
+    @Test func `uvRect flips a top-left pixel rect into bottom-left UV space`() throws {
+        // A 10x10 rect at top-left (20, 5) in a 100x50 image: x = 20/100, the flipped
+        // y = (50 - 5 - 10)/50, width = 10/100, height = 10/50.
+        let uv = try #require(
+            uvRect(forTopLeftPixelRect: CGRect(x: 20, y: 5, width: 10, height: 10), imageWidth: 100, imageHeight: 50)
+        )
+        #expect(uv.minX == 0.2)
+        #expect(uv.minY == 0.7)
+        #expect(uv.width == 0.1)
+        #expect(uv.height == 0.2)
+    }
+
+    @Test func `uvRect returns nil when the rect escapes the image or the image is degenerate`() {
+        #expect(uvRect(forTopLeftPixelRect: CGRect(x: 95, y: 0, width: 10, height: 10), imageWidth: 100, imageHeight: 50) == nil)
+        #expect(uvRect(forTopLeftPixelRect: CGRect(x: -1, y: 0, width: 10, height: 10), imageWidth: 100, imageHeight: 50) == nil)
+        #expect(uvRect(forTopLeftPixelRect: CGRect(x: 0, y: 0, width: 10, height: 10), imageWidth: 0, imageHeight: 50) == nil)
+        #expect(uvRect(forTopLeftPixelRect: CGRect(x: 0, y: 0, width: 10, height: 10), imageWidth: 100, imageHeight: 0) == nil)
     }
 
     // MARK: - entityTexture

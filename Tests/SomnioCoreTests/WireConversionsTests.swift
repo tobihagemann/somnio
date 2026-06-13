@@ -117,4 +117,41 @@ struct WireConversionsTests {
         )
         #expect(try Sector(sector.asWire) == sector)
     }
+
+    @Test func `sector init accepts dimensions at the boundary`() throws {
+        // Width at the per-axis cap and height chosen so the product hits the area cap exactly:
+        // accepted on both bounds at once.
+        let height = Int16(SomnioConstants.maxSectorArea / Int32(SomnioConstants.maxSectorDimension))
+        let wire = Self.wireSector(width: SomnioConstants.maxSectorDimension, height: height)
+        #expect(try Sector(wire).dimensions == GridSize(width: SomnioConstants.maxSectorDimension, height: height))
+    }
+
+    @Test(arguments: [
+        (Int16(0), Int16(16)),
+        (Int16(-1), Int16(16)),
+        (Int16(16), Int16(0)),
+        (Int16(16), Int16(-1)),
+        (SomnioConstants.maxSectorDimension + 1, Int16(16)),
+        (Int16(16), Int16(SomnioConstants.maxSectorDimension + 1)),
+        // Both axes within the per-axis cap but the product exceeds the area cap: isolates the
+        // area guard (512 * 512 = 262144 > 65536).
+        (Int16(512), Int16(512))
+    ])
+    func `sector init throws on out-of-range dimensions`(width: Int16, height: Int16) {
+        // A hostile server could otherwise size the ground tile map from unbounded dimensions.
+        let wire = Self.wireSector(width: width, height: height)
+        #expect(throws: WireConversionError.sectorDimensionsOutOfRange(width: width, height: height)) {
+            try Sector(wire)
+        }
+    }
+
+    private static func wireSector(width: Int16, height: Int16) -> WireSector {
+        Sector(
+            name: "EdariaArena",
+            version: 1,
+            dimensions: GridSize(width: width, height: height),
+            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            light: LightSetting(indoor: true, brightness: 75)
+        ).asWire
+    }
 }

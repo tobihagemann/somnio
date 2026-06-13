@@ -79,16 +79,14 @@ import SpriteKit
     }
 
     /// Slices `frame` (top-left pixels) out of the whole balloon sheet as a UV sub-rect texture,
-    /// flipping Y to bridge `SKTexture(rect:in:)`'s bottom-left UV origin (mirrors
-    /// `BundleMainSpriteAssets.entitySlice`). Falls back to the whole sheet if its size is unknown.
+    /// delegating the top-left-pixel-to-bottom-left-UV flip to `uvRect`. Falls back to the whole
+    /// sheet if its size is unknown.
     private static func frameTexture(from sheet: SKTexture, frame: CGRect) -> SKTexture {
         let size = sheet.size()
-        guard size.width > 0, size.height > 0 else { return sheet }
-        let uvX = frame.minX / size.width
-        let uvY = (size.height - frame.minY - frame.height) / size.height
-        let uvW = frame.width / size.width
-        let uvH = frame.height / size.height
-        let sliced = SKTexture(rect: CGRect(x: uvX, y: uvY, width: uvW, height: uvH), in: sheet)
+        guard let uv = uvRect(forTopLeftPixelRect: frame, imageWidth: size.width, imageHeight: size.height) else {
+            return sheet
+        }
+        let sliced = SKTexture(rect: uv, in: sheet)
         // Nearest sampling so the slice's bottom edge doesn't linearly blend in the next stacked
         // frame's black top border (a thin dark line). The balloon is pixel art drawn at native
         // size, so nearest is the correct filter regardless.

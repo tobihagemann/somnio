@@ -466,6 +466,31 @@ import SpriteKit
         )
     }
 
+    /// Ground-tile-map test seam (mirrors `_entityNodeProbe`): locates the `SKTileMapNode` in
+    /// `sectorRoot` and snapshots its grid shape and placement, or `nil` on the no-asset-pack path
+    /// where no tile map is built. Visible to `@testable import SomnioUI`, kept off the public
+    /// surface because `sectorRoot` is private.
+    struct GroundTileMapProbe {
+        var numberOfColumns: Int
+        var numberOfRows: Int
+        var tileSize: CGSize
+        var anchorPoint: CGPoint
+        var position: CGPoint
+        var zPosition: CGFloat
+    }
+
+    func _groundTileMapProbe() -> GroundTileMapProbe? {
+        guard let map = sectorRoot?.children.compactMap({ $0 as? SKTileMapNode }).first else { return nil }
+        return GroundTileMapProbe(
+            numberOfColumns: map.numberOfColumns,
+            numberOfRows: map.numberOfRows,
+            tileSize: map.tileSize,
+            anchorPoint: map.anchorPoint,
+            position: map.position,
+            zPosition: map.zPosition
+        )
+    }
+
     /// Renders pre-wrapped speech bubble lines above the entity's sprite. `lifetimeMs` is
     /// integer milliseconds matching the legacy `2000 + lines × 1000` rule; callers pass
     /// the result of `SpeechBubbleText.wrap`.
