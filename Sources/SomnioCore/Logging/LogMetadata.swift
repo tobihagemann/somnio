@@ -22,13 +22,20 @@ enum LogMetadata {
         return merged
     }
 
+    /// Render each merged metadata value as text. The single place the
+    /// `Logger.MetadataValue` → string rule lives, so the JSON envelope and the flat-text
+    /// suffix can't diverge on how a value is rendered.
+    static func flatStrings(_ merged: Logger.Metadata) -> [String: String] {
+        merged.mapValues { "\($0)" }
+    }
+
     /// Render merged metadata + an optional error as a flat-text suffix for the file and
     /// OSLog handlers. JSON output uses its own envelope. Empty metadata + nil error yields
     /// the empty string so the caller can append it unconditionally.
     static func flatTextSuffix(merged: Logger.Metadata, error: (any Error)?) -> String {
         let metadataPart = merged.isEmpty
             ? ""
-            : " " + merged.sorted(by: { $0.key < $1.key })
+            : " " + flatStrings(merged).sorted(by: { $0.key < $1.key })
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: " ")
         let errorPart = error.map { " error=\(String(describing: $0))" } ?? ""

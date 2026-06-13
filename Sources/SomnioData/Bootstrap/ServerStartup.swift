@@ -2,12 +2,11 @@ import Foundation
 import PostgresNIO
 import SomnioCore
 
-/// Errors thrown by the server bootstrap (config resolution, readiness wait, migrations).
+/// Errors thrown by the server bootstrap (config resolution, migrations).
 public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConvertible {
     /// `SOMNIO_DATABASE_URL` failed to parse. The associated value carries a redacted shape
     /// (scheme + host) so credentials embedded in the URL never reach logs.
     case invalidDatabaseURL(redacted: String)
-    case databaseUnreachable
     /// Release builds require an explicit `SOMNIO_DATABASE_URL`; the no-URL plaintext
     /// localhost fallback is a dev-only convenience.
     case missingDatabaseURLInRelease
@@ -22,8 +21,6 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
         switch self {
         case let .invalidDatabaseURL(redacted):
             return "SOMNIO_DATABASE_URL is malformed: \(redacted)"
-        case .databaseUnreachable:
-            return "Postgres did not become reachable within the startup timeout"
         case .missingDatabaseURLInRelease:
             return "SOMNIO_DATABASE_URL must be set in a release build"
         case .missingAdminTokenInRelease:

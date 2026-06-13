@@ -4,35 +4,55 @@ import Synchronization
 import Testing
 @testable import SomnioCore
 
-// Coverage for the small but load-bearing pieces of the logging surface: JSON escaping,
+// Coverage for the small but load-bearing pieces of the logging surface: JSON line emission,
 // label parsing, prefix-based label filtering, and rotating-file-writer rotation.
 
 struct LoggingTests {
-    @Test func `JSON escape passes plain text through`() {
-        #expect(JSONLogHandler.escape("hello world") == "hello world")
+    private func parseJSONLine(_ line: String) throws -> [String: Any] {
+        let object = try JSONSerialization.jsonObject(with: Data(line.utf8))
+        return try #require(object as? [String: Any])
     }
 
-    @Test func `JSON escape handles required JSON specials`() {
-        #expect(JSONLogHandler.escape("\"quoted\"") == "\\\"quoted\\\"")
-        #expect(JSONLogHandler.escape("path\\to\\file") == "path\\\\to\\\\file")
-        #expect(JSONLogHandler.escape("line1\nline2") == "line1\\nline2")
-        #expect(JSONLogHandler.escape("col1\tcol2") == "col1\\tcol2")
-        #expect(JSONLogHandler.escape("cr\rlf") == "cr\\rlf")
+    @Test func `JSON line carries the core fields and a trailing newline`() throws {
+        let handler = JSONLogHandler(label: "de.tobiha.somnio.test")
+        let line = try #require(handler.jsonLine(for: LogEvent(
+            level: .info, message: "hello", metadata: nil,
+            source: "test", file: #file, function: #function, line: #line
+        )))
+        #expect(line.hasSuffix("}\n"))
+        let object = try parseJSONLine(line)
+        #expect(object["level"] as? String == "info")
+        #expect(object["label"] as? String == "de.tobiha.somnio.test")
+        #expect(object["message"] as? String == "hello")
+        #expect(object["ts"] is String)
+        #expect(object["error"] == nil)
+        #expect(object["metadata"] == nil)
     }
 
-    @Test func `JSON escape handles control characters with u-escapes`() {
-        // 0x01 → ; 0x1F → .
-        #expect(JSONLogHandler.escape("\u{01}") == "\\u0001")
-        #expect(JSONLogHandler.escape("\u{1F}") == "\\u001f")
-        #expect(JSONLogHandler.escape("\u{08}") == "\\b")
-        #expect(JSONLogHandler.escape("\u{0C}") == "\\f")
+    @Test func `JSON line escapes specials and round-trips them`() throws {
+        let handler = JSONLogHandler(label: "t")
+        let tricky = "\"quoted\" back\\slash\nnewline\ttab\u{01}ctrl /slash/ Lädiert 🐉"
+        let line = try #require(handler.jsonLine(for: LogEvent(
+            level: .error, message: "\(tricky)", metadata: nil,
+            source: "t", file: #file, function: #function, line: #line
+        )))
+        // Forward slashes stay unescaped (`.withoutEscapingSlashes`).
+        #expect(line.contains("/slash/"))
+        let object = try parseJSONLine(line)
+        #expect(object["message"] as? String == tricky)
     }
 
-    @Test func `JSON escape preserves non-ASCII characters`() {
-        // Unicode above 0x1F is left alone; the field is wrapped in JSON quotes upstream
-        // so multi-byte UTF-8 stays as-is.
-        #expect(JSONLogHandler.escape("Lädiert") == "Lädiert")
-        #expect(JSONLogHandler.escape("emoji 🐉") == "emoji 🐉")
+    @Test func `JSON line includes error and lexically sorted metadata`() throws {
+        var handler = JSONLogHandler(label: "t")
+        handler.metadata = ["zebra": "z"]
+        let line = try #require(handler.jsonLine(for: LogEvent(
+            level: .warning, message: "m", error: LogTestError(description: "boom"),
+            metadata: ["alpha": "a"], source: "t", file: #file, function: #function, line: #line
+        )))
+        #expect(line.contains("\"metadata\":{\"alpha\":\"a\",\"zebra\":\"z\"}"))
+        let object = try parseJSONLine(line)
+        #expect(object["error"] as? String == "boom")
+        #expect(object["metadata"] as? [String: String] == ["alpha": "a", "zebra": "z"])
     }
 
     #if canImport(OSLog)

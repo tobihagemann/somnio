@@ -1,27 +1,17 @@
 import Logging
 import PostgresNIO
 
-/// Polls the `PostgresClient` with `SELECT 1` until it succeeds or the deadline elapses.
+/// Confirms the database answers a `SELECT 1`.
 ///
-/// Intended for the brief startup window where `PostgresClient.run()` is up but Postgres
-/// itself may still be coming online (e.g., docker-compose, ephemeral test container). The
-/// retry loop only catches `PSQLError.code == .connectionError` — all other Postgres
-/// failures propagate immediately so genuine misconfiguration fails fast.
+/// No bespoke backoff loop: `PostgresClient`'s connection pool is itself the readiness
+/// mechanism — while Postgres is still coming online (docker-compose, ephemeral test
+/// container) the pool retries dials internally until it connects or its circuit breaker
+/// trips, so this probe blocks until the database answers or the pool gives up. A genuine
+/// misconfiguration (bad credentials, unresolvable host) surfaces its underlying error
+/// directly so startup fails fast with a meaningful diagnostic.
 public func waitForClientQueryable(
     _ client: PostgresClient,
-    logger: Logger,
-    timeout: Duration = .seconds(5)
+    logger: Logger
 ) async throws {
-    var delayMilliseconds: UInt64 = 100
-    let deadline = ContinuousClock.now.advanced(by: timeout)
-    while ContinuousClock.now < deadline {
-        do {
-            _ = try await client.query("SELECT 1", logger: logger)
-            return
-        } catch let error as PSQLError where error.code == .connectionError {
-            try await Task.sleep(for: .milliseconds(delayMilliseconds))
-            delayMilliseconds = min(delayMilliseconds * 2, 2000)
-        }
-    }
-    throw ServerStartupError.databaseUnreachable
+    _ = try await client.query("SELECT 1", logger: logger)
 }

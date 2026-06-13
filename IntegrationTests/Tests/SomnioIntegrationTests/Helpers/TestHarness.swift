@@ -35,7 +35,7 @@ public enum TestHarness {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { await client.run() }
             do {
-                try await waitForClientQueryable(client, logger: logger, timeout: .seconds(15))
+                try await waitForClientQueryable(client, logger: logger)
                 if applyMigrations {
                     try await MigrationRunner(client: client, logger: logger).applyPending()
                 }
