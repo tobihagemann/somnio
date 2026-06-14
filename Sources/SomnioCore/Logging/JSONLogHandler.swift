@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import Synchronization
 
 /// A swift-log `LogHandler` that emits one JSON object per line to stdout. Used by the
 /// server for container-friendly structured logging. Pure-Swift; no `os` dependency, so it
@@ -25,9 +26,9 @@ public struct JSONLogHandler: LogHandler {
         // `FileHandle.write` is not atomic for arbitrary-sized payloads — concurrent emitters
         // would let JSON objects interleave on stdout, breaking the "one object per line"
         // contract. Serialize across all `JSONLogHandler` instances via a process-wide lock.
-        Self.stdoutLock.lock()
-        defer { Self.stdoutLock.unlock() }
-        try? FileHandle.standardOutput.write(contentsOf: Data(line.utf8))
+        Self.stdoutLock.withLock { _ in
+            try? FileHandle.standardOutput.write(contentsOf: Data(line.utf8))
+        }
     }
 
     /// Internal rather than private so tests can assert the emission shape without capturing stdout.
@@ -75,5 +76,5 @@ public struct JSONLogHandler: LogHandler {
     }
 
     private static let timestampStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-    private static let stdoutLock = NSLock()
+    private static let stdoutLock = Mutex<Void>(())
 }
