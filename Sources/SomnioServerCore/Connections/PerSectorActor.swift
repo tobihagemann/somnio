@@ -368,16 +368,21 @@ public actor PerSectorActor {
         guard let player = players[entityIndex] else { return }
         guard var npc = npcs[npcIndex] else { return }
         guard npc.targetingEntity == nil else { return }
+        guard isWithinDialogRadius(npc: npc, player: player) else { return }
+        npc.targetingEntity = entityIndex
+        npcs[npcIndex] = npc
+    }
+
+    /// True when `player` sits inside the NPC dialog interaction radius, measured between
+    /// visual (feet) centers so off-center sprite art doesn't skew the gate (R10). Shared by
+    /// the bump gate and the dialog tick so both resolve "within dialog range" identically.
+    private func isWithinDialogRadius(npc: NPCRuntime, player: PlayerSlot) -> Bool {
         let npcCenter = FeetMask.center(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize)
         let playerCenter = FeetMask.center(
             forSpriteAt: player.character.position,
             spriteSize: SomnioConstants.playerSpriteSize
         )
-        guard VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius) else {
-            return
-        }
-        npc.targetingEntity = entityIndex
-        npcs[npcIndex] = npc
+        return VisualCenter.isWithin(npcCenter, playerCenter, radius: SomnioConstants.npcInteractionRadius)
     }
 
     /// One AI tick across the sector's NPCs and monsters. The deterministic mutator is the
@@ -502,87 +507,108 @@ public actor PerSectorActor {
         return nil
     }
 
-    /// Walks every NPC and takes exactly one of the mutually exhaustive branches: idle
-    /// cooldown advance, target-gone reset, out-of-radius reset, in-radius cooldown advance,
-    /// or in-radius emit + cursor advance. The legacy `$name` token is substituted at emit
-    /// time against the targeting player's character name.
+    /// The single action `runNPCTick` resolves for one NPC on one tick. Computing it up
+    /// front as a pure function of targeting + radius + cooldown + script state lets the
+    /// apply step switch exhaustively, so a future state can't silently slip through an
+    /// unhandled guard.
+    private enum NPCDialogAction {
+        /// No emit yet: progress the cooldown toward the cap. Covers idle (no target) and
+        /// in-radius-but-pre-cooldown.
+        case holdCooldown
+        /// Target left the sector or walked out of radius: clear targeting + reset cursor,
+        /// and persist the reset so it survives a restart.
+        case resetTargeting
+        /// In radius, cooldown ready, non-empty script: emit the current step substituting
+        /// `targetName` for `$name`, then advance the cursor (wrapping at the final line).
+        case emit(targetName: String)
+        /// In radius, cooldown ready, but empty script: clear targeting so the next bump can
+        /// re-arm. No emit, no cursor movement, no digest write.
+        case clearTargetingNoEmit
+    }
+
+    /// Walks every NPC, resolves its one action for this tick, and applies it. The legacy
+    /// `$name` token is substituted at emit time against the targeting player's name.
     private func runNPCTick(into digest: inout AITickDigest) {
         for (index, npcSnapshot) in npcs {
             var npc = npcSnapshot
-            guard let targetIndex = npc.targetingEntity else {
-                // (a) idle: advance the cooldown so the next bump fires immediately.
+            switch resolveDialogAction(for: npc) {
+            case .holdCooldown:
                 advanceCooldown(&npc)
-                npcs[index] = npc
-                continue
-            }
-            guard let targetSlot = players[targetIndex] else {
-                // (b) target left the sector: reset cursor + clear targeting; persist a
-                // delete so the in-process reset survives a restart.
+            case .resetTargeting:
                 resetTargeting(&npc, into: &digest)
-                npcs[index] = npc
-                continue
-            }
-            let npcCenter = FeetMask.center(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize)
-            let targetCenter = FeetMask.center(
-                forSpriteAt: targetSlot.character.position,
-                spriteSize: SomnioConstants.playerSpriteSize
-            )
-            guard VisualCenter.isWithin(npcCenter, targetCenter, radius: SomnioConstants.npcInteractionRadius) else {
-                // (c) target walked out of radius: same reset as (b). The legacy server
-                // resets both targeting and cursor when the target leaves the radius so one
-                // player who walks away mid-script cannot lock the NPC for everyone else.
-                resetTargeting(&npc, into: &digest)
-                npcs[index] = npc
-                continue
-            }
-            guard npc.cooldownTicks == NPCRuntime.dialogCooldownCap else {
-                // (d) in-radius but pre-cooldown: advance toward the cap and skip emit.
-                advanceCooldown(&npc)
-                npcs[index] = npc
-                continue
-            }
-            // (e) emit the current step, advance the cursor, wrap at the final line.
-            guard !npc.dialogSteps.isEmpty else {
-                // Empty script is a no-op: clear targeting so the next bump can re-arm.
+            case .clearTargetingNoEmit:
                 npc.targetingEntity = nil
-                npcs[index] = npc
-                continue
-            }
-            let step = npc.dialogSteps[Int(npc.scriptStepIndex)]
-            let text = step.replacingOccurrences(of: "$name", with: targetSlot.character.name)
-            do {
-                try broadcastToAll(.serverSay(SayMessage(entityIndex: npc.entityIndex, text: text)))
-            } catch {
-                logger.warning(
-                    "failed to broadcast npc dialog",
-                    metadata: ["error": "\(error)", "npc_index": "\(npc.entityIndex)"]
-                )
-            }
-            npc.cooldownTicks = 0
-            let nextIndex = npc.scriptStepIndex + 1
-            if nextIndex >= Int16(npc.dialogSteps.count) {
-                npc.scriptStepIndex = 0
-                npc.targetingEntity = nil
-                digest.dialogResets.append(
-                    NPCDialogResetKey(sectorName: staticSector.name, npcIndex: npc.entityIndex)
-                )
-            } else {
-                npc.scriptStepIndex = nextIndex
-                digest.dialogUpserts.append(
-                    NPCDialogState(
-                        sectorName: staticSector.name,
-                        npcIndex: npc.entityIndex,
-                        scriptStep: nextIndex + 1
-                    )
-                )
+            case let .emit(targetName):
+                emitDialogStep(&npc, targetName: targetName, into: &digest)
             }
             npcs[index] = npc
         }
     }
 
-    /// Advance an NPC's cooldown toward `NPCRuntime.dialogCooldownCap`. Pulled out so every
-    /// non-emit branch (idle, target-gone, out-of-radius, in-radius pre-cooldown) shares
-    /// one definition of "cooldown progresses while the next emit is still pending."
+    /// Classify what an NPC should do this tick. Pure read of `npc` + the live player set —
+    /// no mutation, no broadcast — so the guard order is the single source of truth for the
+    /// state machine and the apply step stays a flat exhaustive switch.
+    private func resolveDialogAction(for npc: NPCRuntime) -> NPCDialogAction {
+        guard let targetIndex = npc.targetingEntity else {
+            // Idle: advance the cooldown so the next bump fires immediately.
+            return .holdCooldown
+        }
+        guard let targetSlot = players[targetIndex] else {
+            // Target left the sector.
+            return .resetTargeting
+        }
+        guard isWithinDialogRadius(npc: npc, player: targetSlot) else {
+            // Target walked out of radius. The legacy server resets both targeting and cursor
+            // so one player who walks away mid-script cannot lock the NPC for everyone else.
+            return .resetTargeting
+        }
+        guard npc.cooldownTicks == NPCRuntime.dialogCooldownCap else {
+            // In radius but pre-cooldown: advance toward the cap and skip emit.
+            return .holdCooldown
+        }
+        guard !npc.dialogSteps.isEmpty else {
+            return .clearTargetingNoEmit
+        }
+        return .emit(targetName: targetSlot.character.name)
+    }
+
+    /// Emit the current dialog step, reset the cooldown, and advance the cursor — wrapping to
+    /// step 0 + clearing targeting at the final line (so re-collision is required to restart).
+    /// Records a digest reset on wrap or an upsert otherwise so the cursor survives a restart.
+    private func emitDialogStep(_ npc: inout NPCRuntime, targetName: String, into digest: inout AITickDigest) {
+        let step = npc.dialogSteps[Int(npc.scriptStepIndex)]
+        let text = step.replacingOccurrences(of: "$name", with: targetName)
+        do {
+            try broadcastToAll(.serverSay(SayMessage(entityIndex: npc.entityIndex, text: text)))
+        } catch {
+            logger.warning(
+                "failed to broadcast npc dialog",
+                metadata: ["error": "\(error)", "npc_index": "\(npc.entityIndex)"]
+            )
+        }
+        npc.cooldownTicks = 0
+        let nextIndex = npc.scriptStepIndex + 1
+        if nextIndex >= Int16(npc.dialogSteps.count) {
+            npc.scriptStepIndex = 0
+            npc.targetingEntity = nil
+            digest.dialogResets.append(
+                NPCDialogResetKey(sectorName: staticSector.name, npcIndex: npc.entityIndex)
+            )
+        } else {
+            npc.scriptStepIndex = nextIndex
+            digest.dialogUpserts.append(
+                NPCDialogState(
+                    sectorName: staticSector.name,
+                    npcIndex: npc.entityIndex,
+                    scriptStep: nextIndex + 1
+                )
+            )
+        }
+    }
+
+    /// Advance an NPC's cooldown toward `NPCRuntime.dialogCooldownCap`. Shared by every
+    /// non-emit path so "cooldown progresses while the next emit is still pending" has one
+    /// definition.
     private func advanceCooldown(_ npc: inout NPCRuntime) {
         if npc.cooldownTicks < NPCRuntime.dialogCooldownCap {
             npc.cooldownTicks += 1
