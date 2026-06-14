@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CollisionMask: Sendable, Equatable, Hashable {
+public struct CollisionMask: Sendable, Equatable, Hashable, Codable {
     public var x: Int16
     public var y: Int16
     public var width: Int16

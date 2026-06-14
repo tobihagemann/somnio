@@ -16,6 +16,9 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
     case missingSectorsDirectoryInRelease
     /// `SOMNIO_HTTP_PORT` did not parse as an integer in 1...65535.
     case invalidPort(String)
+    /// The sectors directory yielded no loadable `.somnio-sector` files, so the world would
+    /// boot empty (every login would fail). Boot fails closed instead.
+    case noSectorsLoaded
 
     public var description: String {
         switch self {
@@ -29,7 +32,19 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
             return "SOMNIO_SECTORS_DIR must be set in a release build"
         case let .invalidPort(raw):
             return "SOMNIO_HTTP_PORT is not a valid TCP port: \(raw)"
+        case .noSectorsLoaded:
+            return "no sectors loaded from SOMNIO_SECTORS_DIR (expected at least one .somnio-sector file)"
         }
+    }
+}
+
+/// Guards the boot path against an empty sector set. `SectorCache.load` succeeds silently when a
+/// directory has no `.somnio-sector` files (e.g. a stale binary-only dir), and the server would
+/// otherwise boot a world no player can enter. Pure and free-standing so it can be unit-tested
+/// without a live database or full `runServer` harness.
+public func requireSectorsLoaded(_ names: [String]) throws {
+    guard !names.isEmpty else {
+        throw ServerStartupError.noSectorsLoaded
     }
 }
 

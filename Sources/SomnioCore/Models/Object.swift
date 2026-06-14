@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Object: Sendable, Equatable, Hashable {
+public struct Object: Sendable, Equatable, Hashable, Codable {
     public var x: Int16
     public var y: Int16
     public var tilesetIndex: Int16

@@ -1,5 +1,6 @@
 import Foundation
 import SomnioCore
+import SomnioData
 import SomnioMapFixturesTestSupport
 import Testing
 @testable import SomnioServerCore
@@ -53,6 +54,29 @@ struct SectorCacheTests {
             Issue.record("expected SectorCacheError.unreadable")
         } catch let SectorCacheError.unreadable(url) {
             #expect(url == bogus)
+        }
+    }
+
+    @Test func `directory without somnio-sector files loads an empty snapshot`() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SectorCacheTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // A stale binary-only sector (no `.somnio-sector` extension) must be skipped, not loaded.
+        try Data([0x00]).write(to: directory.appendingPathComponent("EdariaMitte"))
+
+        let cache = SectorCache()
+        try await cache.load(from: directory)
+        let snapshot = await cache.snapshotByName()
+        #expect(snapshot.isEmpty)
+    }
+
+    @Test func `requireSectorsLoaded throws on empty and returns on non-empty`() throws {
+        #expect(throws: ServerStartupError.noSectorsLoaded) {
+            try requireSectorsLoaded([])
+        }
+        #expect(throws: Never.self) {
+            try requireSectorsLoaded(["EdariaMitte"])
         }
     }
 }

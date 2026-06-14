@@ -91,9 +91,10 @@ public extension CollisionMask {
 // MARK: - SectorPortal
 
 public extension SectorPortal {
-    /// Throws `WireConversionError.unknownPortalDirection` for unknown raw values, mirroring
-    /// the codec path in `MapCodec.read` so client-side wire decoding fails just as loudly as
-    /// editor/server-side file decoding.
+    /// Throws `WireConversionError.unknownPortalDirection` for unknown raw values so client-side
+    /// wire decoding fails just as loudly as editor/server-side file decoding, where `MapCodec`'s
+    /// synthesized `PortalDirection` `Codable` rejects the same out-of-range value as a
+    /// `DecodingError`.
     init(_ wire: WireSectorPortal) throws {
         guard let direction = PortalDirection(rawValue: wire.direction) else {
             throw WireConversionError.unknownPortalDirection(Int(wire.direction))
@@ -185,11 +186,7 @@ public extension Sector {
     /// into an unbounded ground-tile-map / entity-graph allocation.
     init(_ wire: WireSector) throws {
         let dimensions = GridSize(wire.dimensions)
-        guard dimensions.width >= 1, dimensions.height >= 1,
-              dimensions.width <= SomnioConstants.maxSectorDimension,
-              dimensions.height <= SomnioConstants.maxSectorDimension,
-              Int32(dimensions.width) * Int32(dimensions.height) <= SomnioConstants.maxSectorArea
-        else {
+        guard dimensions.isWithinSectorBounds else {
             throw WireConversionError.sectorDimensionsOutOfRange(width: dimensions.width, height: dimensions.height)
         }
         try self.init(

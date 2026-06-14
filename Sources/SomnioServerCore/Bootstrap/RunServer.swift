@@ -71,6 +71,7 @@ public func runServer(
             "sector cache populated",
             metadata: ["count": "\(sectorNames.count)"]
         )
+        try requireSectorsLoaded(sectorNames)
         let accounts = PostgresAccountRepository(client: client, logger: postgresLogger)
         let characters = PostgresCharacterRepository(client: client, logger: postgresLogger)
         let inventories = PostgresInventoryRepository(client: client, logger: postgresLogger)

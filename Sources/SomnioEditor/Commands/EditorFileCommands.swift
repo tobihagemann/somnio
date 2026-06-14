@@ -11,9 +11,9 @@ import UniformTypeIdentifiers
 /// internal NSDocument bridge listens for; `.disabled(saveDisabled)` gates the items
 /// while the document is uninitialized so an empty New-map sheet cannot Save to disk.
 ///
-/// Import / Export form the bare-name file pair the server's on-disk convention
-/// requires: the canonical document type is `.somnio-sector`, but operators copy bytes
-/// to and from `Server/Maps/<Name>` (no extension) through these two menu items.
+/// Import / Export copy a `.somnio-sector` file to and from the server's `SOMNIO_SECTORS_DIR`
+/// directly, separate from the document's own Save location; both sides use the same canonical
+/// extension and JSON bytes.
 public struct EditorFileCommands: Commands {
     @FocusedValue(\.editorWorkspace) private var focused
     private let logger = Logger(label: "de.tobiha.somnio.editor.io")
@@ -78,7 +78,7 @@ public struct EditorFileCommands: Commands {
     private func importFromServer() {
         guard let focused else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.data]
+        panel.allowedContentTypes = [.somnioSector]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.treatsFilePackagesAsDirectories = false
@@ -101,9 +101,8 @@ public struct EditorFileCommands: Commands {
     private func exportToServer() {
         guard let focused, !focused.document.isUninitialized else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.data]
-        panel.allowsOtherFileTypes = true
-        panel.nameFieldStringValue = focused.document.sectorName
+        panel.allowedContentTypes = [.somnioSector]
+        panel.nameFieldStringValue = "\(focused.document.sectorName).somnio-sector"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try SectorDocument.data(for: focused.document.body)

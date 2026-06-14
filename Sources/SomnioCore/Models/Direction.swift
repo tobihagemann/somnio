@@ -11,7 +11,7 @@ public enum Direction: Int16, Sendable, Equatable, Hashable, CaseIterable {
 
 public extension Direction {
     /// The original `richtung` encoding (south=0, west=1, east=2, north=3) — the order the
-    /// legacy sprite sheets lay their rows (S/W/E/N) and the on-disk NPC `direction` byte uses.
+    /// legacy sprite sheets lay their rows (S/W/E/N) and the `NPC.direction` field stores.
     /// `Direction.rawValue` (N=0/E=1/S=2/W=3) is load-bearing across the wire, DB columns, sprite
     /// row math, the editor, and the test pins, so it is never reordered; this property is the
     /// single conversion seam consumed by sprite-row slicing and legacy NPC-facing conversion.

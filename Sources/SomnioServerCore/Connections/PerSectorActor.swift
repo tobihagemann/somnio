@@ -12,9 +12,9 @@ struct PlayerSlot {
 }
 
 /// Per-NPC runtime state. `position` is materialized via `NPCPlacement.runtimePosition`
-/// at sector load time so the codec stays byte-faithful (sector definitions on disk are
-/// unchanged, runtime centering happens here). `dialogSteps` caches the parsed script so
-/// the AI tick does not allocate on every pass.
+/// at sector load time so the codec stays placement-agnostic (the authored `spawnOrigin`
+/// on disk is unchanged, runtime centering happens here). `dialogSteps` caches the parsed
+/// script so the AI tick does not allocate on every pass.
 struct NPCRuntime {
     /// Cap that the per-tick dialog cooldown counter advances toward. Once reached, the next
     /// in-radius tick emits the current step; seeding to the cap at sector-actor init arms
@@ -816,9 +816,9 @@ public actor PerSectorActor {
             name: npc.definition.name,
             x: npc.position.x,
             y: npc.position.y,
-            // `NPC.direction` is the on-disk legacy `richtung` (S=0,W=1,E=2,N=3); convert it to
+            // `NPC.direction` stores the legacy `richtung` (S=0,W=1,E=2,N=3); convert it to
             // a semantic `Direction` so the wire carries `Direction.rawValue` like every other
-            // entity. `MapCodec` stays byte-faithful — the conversion lives at the emit seam.
+            // entity. The field stays richtung-encoded — the conversion lives at the emit seam.
             facing: (Direction(legacyRichtung: npc.definition.direction) ?? .south).rawValue,
             tempo: 0
         )

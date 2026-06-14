@@ -1,11 +1,11 @@
 import Foundation
 
-public enum PortalDirection: Int16, Sendable, Equatable, Hashable, CaseIterable {
+public enum PortalDirection: Int16, Sendable, Equatable, Hashable, CaseIterable, Codable {
     case outboundTrigger = 0
     case arrivalPlacement = 1
 }
 
-public struct SectorPortal: Sendable, Equatable, Hashable {
+public struct SectorPortal: Sendable, Equatable, Hashable, Codable {
     public var x: Int16
     public var y: Int16
     public var width: Int16

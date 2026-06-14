@@ -5,7 +5,7 @@ import SomnioCore
 /// operator can fix the input without grepping logs for the per-file load message.
 public enum SectorCacheError: Error, Sendable, Equatable {
     case unreadable(URL)
-    case parseFailed(name: String, underlying: MapCodecError)
+    case parseFailed(name: String, underlying: String)
 }
 
 /// In-memory holder for the parsed sector binaries the server serves at runtime.
@@ -18,10 +18,11 @@ public actor SectorCache {
 
     public init() {}
 
-    /// Reads every non-dotfile in `directoryURL`, parses it via `MapCodec.read`, and stores
-    /// the result keyed by the bare filename (no extension) — sector files use the original's
-    /// filename-as-sector-id convention so portal targets resolve without transformation.
-    /// Throws on the first failure so startup fails closed.
+    /// Reads every `.somnio-sector` JSON file in `directoryURL`, parses it via `MapCodec.read`,
+    /// and stores the result keyed by the extension-stripped filename — sector files use the
+    /// original's filename-as-sector-id convention so portal targets resolve without
+    /// transformation. Non-`.somnio-sector` entries are skipped. Throws on the first parse
+    /// failure so startup fails closed.
     public func load(from directoryURL: URL) async throws {
         let entries: [URL]
         do {
@@ -34,6 +35,7 @@ public actor SectorCache {
             throw SectorCacheError.unreadable(directoryURL)
         }
         for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard entry.pathExtension == "somnio-sector" else { continue }
             let name = entry.deletingPathExtension().lastPathComponent
             let data: Data
             do {
@@ -44,8 +46,8 @@ public actor SectorCache {
             let body: SectorBody
             do {
                 body = try MapCodec.read(data)
-            } catch let error as MapCodecError {
-                throw SectorCacheError.parseFailed(name: name, underlying: error)
+            } catch {
+                throw SectorCacheError.parseFailed(name: name, underlying: String(describing: error))
             }
             sectorsByName[name] = Sector(body: body, name: name)
         }

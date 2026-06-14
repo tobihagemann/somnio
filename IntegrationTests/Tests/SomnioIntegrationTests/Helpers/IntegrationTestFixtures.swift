@@ -36,7 +36,7 @@ public enum IntegrationTestFixtures {
             .deletingLastPathComponent() // somnio (repo root)
         let fixtureURL = repoRoot
             .appendingPathComponent("Tests/SomnioMapFixturesTestSupport/MapFixtures", isDirectory: true)
-            .appendingPathComponent(name)
+            .appendingPathComponent("\(name).somnio-sector")
         let data = try Data(contentsOf: fixtureURL)
         let body = try MapCodec.read(data)
         return Sector(body: body, name: name)

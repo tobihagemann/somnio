@@ -1,7 +1,9 @@
 import Foundation
 
-/// Shared accessor for the record-type sector fixtures (`EdariaArena`, `EdariaBibliothek`,
-/// `EdariaMitte`). Lives in a stand-alone resource target so unit tests in `SomnioCoreTests`,
+/// Shared accessor for the `.somnio-sector` JSON sector fixtures (`EdariaArena`,
+/// `EdariaBibliothek`, `EdariaMitte`). The `Name` rawValue is the bare sector id (no extension),
+/// matching the filename-as-sector-id convention; `data(_:)` resolves the `.somnio-sector` file.
+/// Lives in a stand-alone resource target so unit tests in `SomnioCoreTests`,
 /// `SomnioServerCoreTests`, and `SomnioEditorTests` can load the same bytes without each
 /// target shipping its own `.copy` of the fixture directory. Integration tests in the sibling
 /// SwiftPM package reach the same files via a relative filesystem path; this helper only
@@ -17,9 +19,9 @@ public enum MapFixtures {
         case notFound(String)
     }
 
-    /// Returns the bytes of the named fixture loaded from this target's resource bundle.
+    /// Returns the bytes of the named `.somnio-sector` fixture from this target's resource bundle.
     public static func data(_ name: Name) throws -> Data {
-        guard let url = Bundle.module.url(forResource: name.rawValue, withExtension: nil, subdirectory: "MapFixtures") else {
+        guard let url = Bundle.module.url(forResource: name.rawValue, withExtension: "somnio-sector", subdirectory: "MapFixtures") else {
             throw FixtureError.notFound(name.rawValue)
         }
         return try Data(contentsOf: url)

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct MonsterSpawn: Sendable, Equatable, Hashable {
+public struct MonsterSpawn: Sendable, Equatable, Hashable, Codable {
     public var spawnOrigin: GridPoint
     public var spawnBoxSize: GridSize
     public var spawnedMonsterSize: GridSize

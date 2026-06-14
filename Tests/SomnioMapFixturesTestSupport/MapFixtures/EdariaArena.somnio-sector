@@ -1,0 +1,86 @@
+{
+  "collisionMasks" : [
+    {
+      "height" : 30,
+      "width" : 6,
+      "x" : 160,
+      "y" : 482
+    },
+    {
+      "height" : 30,
+      "width" : 6,
+      "x" : 346,
+      "y" : 482
+    }
+  ],
+  "dimensions" : {
+    "height" : 4,
+    "width" : 4
+  },
+  "ground" : {
+    "sourceX" : 0,
+    "sourceY" : 0,
+    "tilesetIndex" : 25
+  },
+  "light" : {
+    "brightness" : 75,
+    "indoor" : true
+  },
+  "monsterSpawns" : [
+    {
+      "aiScriptIndex" : 0,
+      "bounded" : false,
+      "figure" : 0,
+      "name" : "Gespenst",
+      "spawnBalance" : 100,
+      "spawnBoxSize" : {
+        "height" : 256,
+        "width" : 384
+      },
+      "spawnHP" : 100,
+      "spawnMana" : 100,
+      "spawnOrigin" : {
+        "x" : 64,
+        "y" : 64
+      },
+      "spawnedMonsterSize" : {
+        "height" : 48,
+        "width" : 32
+      }
+    }
+  ],
+  "npcs" : [
+
+  ],
+  "objects" : [
+    {
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 192,
+      "sourceX" : 64,
+      "sourceY" : 32,
+      "tilesetIndex" : 50,
+      "x" : 160,
+      "y" : 480
+    }
+  ],
+  "portals" : [
+    {
+      "direction" : 0,
+      "height" : 18,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 180,
+      "x" : 166,
+      "y" : 494
+    },
+    {
+      "direction" : 1,
+      "height" : 96,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 160,
+      "x" : 176,
+      "y" : 384
+    }
+  ],
+  "version" : 5
+}

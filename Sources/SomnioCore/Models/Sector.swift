@@ -3,7 +3,7 @@ import Foundation
 /// Parsed sector contents *without* a name. `MapCodec.read` returns this — naming a sector
 /// requires context the codec doesn't have (the file path, an asset key, the editor document
 /// title), so the type system forces the caller to provide it via `Sector(body:, name:)`.
-public struct SectorBody: Sendable, Equatable {
+public struct SectorBody: Sendable, Equatable, Codable {
     public var version: Int16
     public var dimensions: GridSize
     public var ground: GroundTile

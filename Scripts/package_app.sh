@@ -115,7 +115,7 @@ if [[ "$TARGET" == "editor" ]]; then
             <key>UTTypeDescription</key><string>Somnio Sector</string>
             <key>UTTypeConformsTo</key>
             <array>
-                <string>public.data</string>
+                <string>public.json</string>
             </array>
             <key>UTTypeTagSpecification</key>
             <dict>

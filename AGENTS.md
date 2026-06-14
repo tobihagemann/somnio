@@ -158,7 +158,7 @@ Server runtime configuration is resolved from environment variables (resolution 
 | `SOMNIO_HTTP_HOST` | `0.0.0.0` | no |
 | `SOMNIO_HTTP_PORT` | `8080` | no |
 | `SOMNIO_ADMIN_TOKEN` | `dev-admin` | yes |
-| `SOMNIO_SECTORS_DIR` | `Tests/SomnioCoreTests/Resources/MapFixtures` | yes |
+| `SOMNIO_SECTORS_DIR` | `Tests/SomnioMapFixturesTestSupport/MapFixtures` | yes |
 | `SOMNIO_DATABASE_URL` | localhost fallback | yes |
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
@@ -202,9 +202,13 @@ Messages are modelled as discriminated-union enums in `SomnioProtocol`, serializ
 
 Payload structs use synthesized `Codable`, so JSON keys are the property names — renaming a property changes the wire key. Avoid raw `Dictionary` fields on payloads — prefer ordered struct arrays (e.g., `[WireInventoryExtra]`) for stable, self-documenting output.
 
-### Sector binary format
+### Sector format
 
-The `MapCodec` (in `SomnioCore`) reads and writes the original record-type sector binary. The reader is byte-faithful: it stores the file's authored `spawnOrigin` verbatim. Runtime placement adjustments (NPC centering) live in `NPCPlacement.runtimePosition(for:)`, not in the codec, so a sector round-trips between editor and server without semantic loss. The writer canonicalizes record ordering: version → header → objects → masks → portals → NPCs → monster spawns.
+Sectors are JSON, stored in `.somnio-sector` files. `MapCodec` (in `SomnioCore`) is a thin facade over `JSONDecoder`/`JSONEncoder` (per-call instances): `read(_ data: Data) throws -> SectorBody` decodes, `write(_ sector: SectorBody) throws -> Data` encodes with `[.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]` so committed fixtures stay human-diffable. Decode failures surface as `Swift.DecodingError`. `read` also bounds the decoded `dimensions` against `SomnioConstants.maxSectorDimension`/`maxSectorArea` (mirroring the wire boundary in `Sector(_ wire:)`) so a hostile `.somnio-sector` can't drive an unbounded tile-map allocation when opened in the editor or loaded from `SOMNIO_SECTORS_DIR`.
+
+`SectorBody` and its sub-models (`GridSize`, `GroundTile`, `LightSetting`, `Object`, `CollisionMask`, `SectorPortal`/`PortalDirection`, `MonsterSpawn`, `NPC`) are `Codable` with synthesized property-name keys — modern English, so the JSON is self-documenting. The one exception is `NPC`, whose `Codable` is hand-written so `direction` serializes as a semantic `Direction` case name (`"south"`); the stored field stays `Int16` (legacy `richtung`) because the wire/sprite/DB seams read its rawValue. An out-of-range direction throws on encode/decode. The reader stays placement-agnostic — it carries the authored `spawnOrigin` verbatim; NPC centering lives in `NPCPlacement.runtimePosition(for:)`.
+
+The canonical `.somnio-sector` extension is used everywhere: the editor's exported UTType (conforming to `public.json`), the three shipped fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`), and the server's `SOMNIO_SECTORS_DIR`. `SectorCache` loads only `.somnio-sector` files and keys each by its extension-stripped filename (the filename-as-sector-id convention); a directory with no `.somnio-sector` files fails server startup with `ServerStartupError.noSectorsLoaded` rather than booting an empty world.
 
 ## Agentic Setup
 

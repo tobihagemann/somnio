@@ -61,9 +61,9 @@ public enum EditorSpawnVariant: String, CaseIterable, Identifiable, Sendable {
             maskSize: maskSize,
             name: name,
             figure: figure,
-            // Persist the original `richtung` encoding (S=0,W=1,E=2,N=3) so the saved bytes
-            // match the legacy on-disk format and `MapCodec` round-trips byte-identically.
-            // `Direction.rawValue` (N=0,E=1,S=2,W=3) would write the wrong encoding.
+            // Store the original `richtung` encoding (S=0,W=1,E=2,N=3) in the field; `MapCodec`
+            // serializes it as a semantic `Direction` on disk and the wire/sprite/DB seams read
+            // it back. `Direction.rawValue` (N=0,E=1,S=2,W=3) would store the wrong encoding.
             direction: direction.legacyRichtung,
             behaviorTag: behaviorTag,
             dialogScript: dialogScript
