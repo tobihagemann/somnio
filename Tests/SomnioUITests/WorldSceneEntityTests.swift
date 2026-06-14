@@ -10,6 +10,10 @@ import Testing
 /// placement/animation/removal at the public surface without bundling a real asset pack
 /// into the test target.
 @MainActor private final class NullSpriteAssets: SpriteAssets {
+    var entityFrameCount: Int {
+        AssetManifest.legacyFallback.entityFrameCount
+    }
+
     func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> SKTexture? {
         nil
     }
@@ -20,6 +24,43 @@ import Testing
 
     func entityTexture(figureIndex _: Int16, kind _: WorldEntity.Kind, facing _: Direction, frame _: Int) -> SKTexture? {
         nil
+    }
+
+    func animationStrip(name _: String) -> SKTexture? {
+        nil
+    }
+
+    func splash() -> SKTexture? {
+        nil
+    }
+
+    func speechBubble() -> SKTexture? {
+        nil
+    }
+}
+
+/// Spying stub recording the walk-frame indices the scene requests, with a configurable
+/// `entityFrameCount` so a test can prove the scene wraps frames within the manifest value rather
+/// than a hardcoded constant.
+@MainActor private final class FrameCountSpy: SpriteAssets {
+    let entityFrameCount: Int
+    private(set) var requestedFrames: [Int] = []
+
+    init(entityFrameCount: Int) {
+        self.entityFrameCount = entityFrameCount
+    }
+
+    func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> SKTexture? {
+        nil
+    }
+
+    func objectTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16, sourceWidth _: Int16, sourceHeight _: Int16) -> SKTexture? {
+        nil
+    }
+
+    func entityTexture(figureIndex _: Int16, kind _: WorldEntity.Kind, facing _: Direction, frame: Int) -> SKTexture? {
+        requestedFrames.append(frame)
+        return nil
     }
 
     func animationStrip(name _: String) -> SKTexture? {
@@ -253,6 +294,31 @@ struct WorldSceneEntityTests {
         let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
         scene.load(sector: tinySector())
         #expect(scene._groundTileMapProbe() == nil)
+    }
+
+    @Test func `update wraps the walk frame within the manifest entityFrameCount`() {
+        // A 3-frame manifest must cycle frames 0,1,2 and never request frame 3 — a regression to a
+        // hardcoded 4-frame count would request frame 3, so this pins the scene to the data-driven
+        // value rather than a constant.
+        let spy = FrameCountSpy(entityFrameCount: 3)
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: spy)
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+
+        var time = 0.0
+        scene.update(time) // seeds the per-frame clock; advances no walk frame yet
+        for step in 1 ... 20 {
+            // Move every step so the motion grace window keeps the entity "moving" and the walk
+            // clock accumulates across several full 3-frame cycles.
+            scene.updatePosition(entityID: 7, to: GridPoint(x: Int16(10 + step), y: 20), facing: .south)
+            time += 0.1
+            scene.update(time)
+        }
+
+        let frames = spy.requestedFrames
+        #expect(frames.allSatisfy { $0 >= 0 && $0 < 3 })
+        #expect(frames.contains(2))
+        #expect(!frames.contains(3))
     }
 
     private func playerEntity() -> WorldEntity {

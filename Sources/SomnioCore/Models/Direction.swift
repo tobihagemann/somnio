@@ -35,4 +35,29 @@ public extension Direction {
         default: return nil
         }
     }
+
+    /// Lowercase semantic name (`"north"/"east"/"south"/"west"`). The single seam for
+    /// serializing a `Direction` by case name rather than `rawValue` — shared by `NPC`'s
+    /// hand-written `Codable` and the asset manifest's `directionRows`, so a direction reads
+    /// the same way on disk in both. `rawValue` stays the in-memory/wire/DB encoding.
+    var caseName: String {
+        switch self {
+        case .north: return "north"
+        case .east: return "east"
+        case .south: return "south"
+        case .west: return "west"
+        }
+    }
+
+    /// Inverse of `caseName`: maps a semantic name back to a `Direction`. Returns `nil` for an
+    /// unrecognized name, so a corrupt serialized record throws at the decode seam.
+    init?(caseName: String) {
+        switch caseName {
+        case "north": self = .north
+        case "east": self = .east
+        case "south": self = .south
+        case "west": self = .west
+        default: return nil
+        }
+    }
 }

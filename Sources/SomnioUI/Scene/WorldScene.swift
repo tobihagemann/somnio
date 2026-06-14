@@ -55,10 +55,6 @@ import SpriteKit
     private static let framePeriod: TimeInterval = 0.2
     /// Idle threshold: an entity counts as moving for this long after its last position change.
     private static let motionGraceWindow: TimeInterval = 0.15
-    /// Walk frames per direction. Must equal `BundleMainSpriteAssets.entityWalkFrames`:
-    /// `update(_:)` requests `frame % walkFrameCount` and `entityTexture` rejects any
-    /// `frame >= entityWalkFrames`, so a drift would freeze sprites on a stale frame.
-    private static let walkFrameCount = 4
     /// Speech bubbles render above the day/night tint (decision: readable at night). The tint sits
     /// at z 1000 on the camera; the bubble is a child of the entity node — a sibling subtree of the
     /// camera — so its accumulated z (the entity's feet-line z + this constant) clears 1000.
@@ -343,7 +339,7 @@ import SpriteKit
             let targetFrame: Int
             if isMoving {
                 state.walkPhase += dt
-                targetFrame = Int(state.walkPhase / Self.framePeriod) % Self.walkFrameCount
+                targetFrame = Int(state.walkPhase / Self.framePeriod) % assets.entityFrameCount
             } else {
                 state.walkPhase = 0
                 targetFrame = 0

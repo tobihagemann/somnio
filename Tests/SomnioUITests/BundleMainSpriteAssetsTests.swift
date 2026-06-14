@@ -243,6 +243,22 @@ struct BundleMainSpriteAssetsTests {
         #expect(first === second, "expected the same SKTexture instance from the cache")
     }
 
+    @Test func `entityTexture facing-row follows the injected manifest directionRows`() throws {
+        // The default manifest's row 0 is `.south` (it carries player figure 0's red marker). Permute
+        // directionRows so `.west` selects row 0 instead; facing `.west` frame 0 must then resolve to
+        // that red cell — proving the sprite-row order is genuinely data-driven, not hardcoded.
+        let permuted = AssetManifest(
+            directionRows: [.west, .south, .east, .north],
+            entityFrameCount: AssetManifest.legacyFallback.entityFrameCount,
+            tilesets: AssetManifest.legacyFallback.tilesets,
+            characterBands: AssetManifest.legacyFallback.characterBands
+        )
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module, manifest: permuted)
+        let texture = try #require(assets.entityTexture(figureIndex: 0, kind: .player, facing: .west, frame: 0))
+        let color = try #require(centerColor(of: texture))
+        #expect(approximatelyRed(color))
+    }
+
     // MARK: - Helpers
 
     private struct ColorCounts {

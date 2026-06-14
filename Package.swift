@@ -38,7 +38,10 @@ let package = Package(
                 "SomnioProtocol",
                 .product(name: "Logging", package: "swift-log")
             ],
-            resources: [.process("Resources/Localizable.xcstrings")]
+            resources: [
+                .process("Resources/Localizable.xcstrings"),
+                .process("Resources/AssetManifest.json")
+            ]
         ),
         .testTarget(
             name: "SomnioCoreTests",

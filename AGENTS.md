@@ -210,6 +210,12 @@ Sectors are JSON, stored in `.somnio-sector` files. `MapCodec` (in `SomnioCore`)
 
 The canonical `.somnio-sector` extension is used everywhere: the editor's exported UTType (conforming to `public.json`), the three shipped fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`), and the server's `SOMNIO_SECTORS_DIR`. `SectorCache` loads only `.somnio-sector` files and keys each by its extension-stripped filename (the filename-as-sector-id convention); a directory with no `.somnio-sector` files fails server startup with `ServerStartupError.noSectorsLoaded` rather than booting an empty world.
 
+### Asset manifest
+
+The 2003 art-pack layout conventions are data, not hardcoded Swift: a committed `Sources/SomnioCore/Resources/AssetManifest.json` states the figure-banding ranges (player=1, npc=2-10&61-109, monster=11-60), the tileset filename format + 1-based offset, the sprite-sheet row order (legacy S/W/E/N), the per-band cell geometry, and the walk-frame count. The manifest references no filenames, so it never drifts from the uncommitted, operator-supplied art pack. Output must stay **pixel-identical** to the hardcoded behavior — `Tests/SomnioUITests/BundleMainSpriteAssetsTests.swift` is the guard.
+
+The data type + pure rule helpers (`AssetManifest`, `band(forLeadingNumber:)`, `tilesetFilenamePrefix(forIndex:)`, `rowIndex(for:)`) live in **SomnioCore** (expressible from `Direction`/`Int16`/`GridSize`); the consuming loader stays in **SomnioUI** (`BundleMainSpriteAssets` owns bundle I/O, caching, and the `WorldEntity.Kind -> CharacterBand` mapping, since `WorldEntity.Kind` is a SomnioUI type). `AssetManifestCodec` mirrors `MapCodec` (stateless `enum`, per-call coders, sorted-keys pretty-print); `read` throws `DecodingError` and `write` throws `EncodingError` on the structural invariants the synthesized `Codable` can't express (all four directions present once, positive frame count, player band carries both `sheetGrid`+`cell` while single-region bands carry neither, non-inverted ranges). `directionRows` serializes by `Direction` case name via the shared `Direction.caseName` seam, decoupling the asset path from `legacyRichtung` (which survives only for the NPC/DB seam). `BundleMainSpriteAssets(bundle:manifest:)` resolves the committed manifest in its initializer, degrading to `AssetManifest.legacyFallback` with a logged error if the bundled JSON is missing or corrupt.
+
 ## Agentic Setup
 
 Skill kit at `Skills/`, symlinked from `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex CLI). Both tools share the same set:

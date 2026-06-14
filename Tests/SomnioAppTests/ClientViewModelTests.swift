@@ -542,6 +542,10 @@ struct ClientViewModelTests {
 
 @MainActor
 private final class NullSpriteAssets: SpriteAssets {
+    var entityFrameCount: Int {
+        AssetManifest.legacyFallback.entityFrameCount
+    }
+
     func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> SKTexture? {
         nil
     }
