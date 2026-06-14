@@ -1,0 +1,105 @@
+name: Docker Image
+
+on:
+  push:
+    tags: ["[0-9]*.[0-9]*.[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "x.y.z to stamp into the image; blank => 0.0.0-<short-sha>"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish:
+    name: Build & Publish Server Image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the main-ancestry guard below can resolve origin/main.
+          fetch-depth: 0
+          # The guard's `git fetch origin main` is an unauthenticated read on a public
+          # repo and nothing pushes, so the persisted packages:write token isn't needed —
+          # drop it from .git/config to keep it off the runner for later steps to read.
+          persist-credentials: false
+
+      - name: Verify ref is reachable from main
+        run: |
+          # Only publish images for commits already on main, mirroring release.yml.
+          # Applies to both tag pushes and `workflow_dispatch` so a tag or manual run on
+          # an unreviewed side branch cannot publish a trusted-looking ghcr tag (e.g.
+          # `latest` or `<version>`).
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Commit ${GITHUB_SHA} is not an ancestor of origin/main." >&2
+            exit 1
+          fi
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          else
+            VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          # The Dockerfile interpolates MARKETING_VERSION into a `sed` replacement of
+          # SomnioServerVersion.swift, so reject any value containing sed-/Swift-breaking
+          # characters (/, &, quotes, whitespace) before the build can run.
+          if [[ ! "${VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "ERROR: version '${VERSION}' contains characters unsafe for the Dockerfile sed" >&2
+            exit 1
+          fi
+          echo "marketing=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.marketing }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=sha,prefix=sha-
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MARKETING_VERSION=${{ steps.version.outputs.marketing }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

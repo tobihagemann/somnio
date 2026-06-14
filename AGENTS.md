@@ -106,6 +106,8 @@ Scripts/release.sh                                       # build, sign, notarize
 
 `Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
 
+Release tags are **bare-numeric** (`[0-9]*.[0-9]*.[0-9]*`, e.g. `1.2.3`), not `v`-prefixed. `release.yml` triggers on this glob; any new release-triggered workflow must mirror it.
+
 ### Asset bundling
 
 Tilesets, character sprites, and animation strips are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
@@ -162,6 +164,8 @@ Server runtime configuration is resolved from environment variables (resolution 
 | `SOMNIO_DATABASE_URL` | localhost fallback | yes |
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
+
+A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v26)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
 
 ## Lint & Format
 

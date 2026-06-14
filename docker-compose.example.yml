@@ -20,6 +20,8 @@ services:
       retries: 10
 
   server:
+    # Builds the image locally. To run a published build instead, replace this with
+    # `image: ghcr.io/tobihagemann/somnio:<version>` (see .github/workflows/docker-image.yml).
     build: .
     depends_on:
       db:
