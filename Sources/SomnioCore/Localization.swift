@@ -11,9 +11,9 @@ enum CoreCatalog {
         #if canImport(Darwin)
             let value = String.LocalizationValue(key)
             if let locale {
-                return String(localized: value, bundle: .module, locale: locale)
+                return String(localized: value, bundle: .somnioCoreModule, locale: locale)
             }
-            return String(localized: value, bundle: .module)
+            return String(localized: value, bundle: .somnioCoreModule)
         #else
             return key
         #endif

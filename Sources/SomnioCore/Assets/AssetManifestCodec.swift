@@ -24,10 +24,10 @@ public enum AssetManifestCodec {
         return try encoder.encode(manifest)
     }
 
-    /// Reads the committed manifest from `SomnioCore`'s own bundle. Keeps SomnioCore's `Bundle.module`
+    /// Reads the committed manifest from `SomnioCore`'s own bundle. Keeps SomnioCore's bundle
     /// access inside SomnioCore — SomnioUI consumes this API, never the bundle directly.
     public static func bundledLegacy() throws -> AssetManifest {
-        guard let url = Bundle.module.url(forResource: "AssetManifest", withExtension: "json") else {
+        guard let url = Bundle.somnioCoreModule.url(forResource: "AssetManifest", withExtension: "json") else {
             throw DecodingError.dataCorrupted(DecodingError.Context(
                 codingPath: [],
                 debugDescription: "AssetManifest.json missing from SomnioCore bundle"
