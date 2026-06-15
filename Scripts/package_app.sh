@@ -18,12 +18,16 @@ case "$TARGET" in
     APP_EXEC_NAME=${EXEC_NAME:-Somnio}
     APP_TARGET_NAME="SomnioApp"
     INCLUDE_CLI=1
+    APP_ICON_SRC="Resources/Icons/Somnio.icns"
+    APP_CATEGORY="public.app-category.role-playing-games"
     ;;
   editor)
     APP_BUNDLE_NAME="${APP_NAME}Editor"
     APP_EXEC_NAME=${EDITOR_EXEC_NAME:-SomnioEditor}
     APP_TARGET_NAME="SomnioEditor"
     INCLUDE_CLI=0
+    APP_ICON_SRC="Resources/Icons/SomnioEditor.icns"
+    APP_CATEGORY="public.app-category.developer-tools"
     ;;
   *)
     echo "ERROR: unknown target '$TARGET' (expected 'player' or 'editor')" >&2
@@ -113,6 +117,7 @@ if [[ "$TARGET" == "editor" ]]; then
         <dict>
             <key>CFBundleTypeName</key><string>Somnio Sector</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>CFBundleTypeIconFile</key><string>SomnioSector</string>
             <key>LSHandlerRank</key><string>Owner</string>
             <key>LSItemContentTypes</key>
             <array>
@@ -157,7 +162,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key><string>${MACOS_MIN_VERSION}</string>
-    <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSApplicationCategoryType</key><string>${APP_CATEGORY}</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Tobias Hagemann. All rights reserved.</string>
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
@@ -168,6 +174,15 @@ ${EDITOR_DOCUMENT_KEYS}
 </dict>
 </plist>
 PLIST
+
+# CFBundleIconFile (not CFBundleIconName, which needs a compiled asset catalog this
+# SwiftPM build never produces) resolves Resources/AppIcon.icns. Classic 128px art;
+# macOS upscales it at larger sizes.
+cp "$ROOT/$APP_ICON_SRC" "$APP/Contents/Resources/AppIcon.icns"
+# Editor-only .somnio-sector document icon (CFBundleTypeIconFile).
+if [[ "$TARGET" == "editor" ]]; then
+  cp "$ROOT/Resources/Icons/SomnioSector.icns" "$APP/Contents/Resources/SomnioSector.icns"
+fi
 
 build_product_path() {
   local name="$1"

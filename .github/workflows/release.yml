@@ -84,6 +84,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 
+      - name: Install packaging tools
+        # create-dmg builds the install DMG; argon2 provides libargon2 for the CArgon2
+        # link in the release swift build.
+        run: brew install create-dmg argon2
+
       - name: Build, sign, and notarize
         env:
           APP_IDENTITY: ${{ secrets.APP_IDENTITY }}

@@ -104,6 +104,8 @@ Scripts/release.sh                                       # build, sign, notarize
 
 `Resources/Entitlements.plist` holds app entitlements (`network.client`, `files.user-selected.read-write`).
 
+`Scripts/create_dmg.sh` (and `release.sh`, which calls it) require `create-dmg` (`brew install create-dmg`). It lays out the retro install window from `Resources/DMG/` (the `background.png` cloud art, `VolumeIcon.icns`, the app icon over the left drop-zone, no `/Applications` symlink). The per-target app/document icons live in `Resources/Icons/` and are copied into the bundle by `package_app.sh`, referenced from `Info.plist` via `CFBundleIconFile`/`CFBundleTypeIconFile`.
+
 `Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
 
 Release tags are **bare-numeric** (`[0-9]*.[0-9]*.[0-9]*`, e.g. `1.2.3`), not `v`-prefixed. `release.yml` triggers on this glob; any new release-triggered workflow must mirror it.

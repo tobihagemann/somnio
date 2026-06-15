@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Retro single-icon install window: the app icon sits over the background's drop-zone,
+# deliberately no /Applications symlink. Uses create-dmg (brew) to lay out the Finder
+# window -- the background-picture AppleScript it relies on is unreliable to hand-roll on
+# current macOS.
+
 TARGET=${1:-player}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/version.env"
@@ -23,20 +28,32 @@ esac
 MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")}
 APP_BUNDLE="$ROOT/${APP_BUNDLE_NAME}.app"
 DMG_NAME="${DMG_BASENAME}-${MARKETING_VERSION}.dmg"
-TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
 
 if [[ ! -d "$APP_BUNDLE" ]]; then
   echo "ERROR: ${APP_BUNDLE} not found. Run Scripts/package_app.sh first." >&2
   exit 1
 fi
 
-cp -R "$APP_BUNDLE" "$TEMP_DIR/"
-ln -s /Applications "$TEMP_DIR/Applications"
+if ! command -v create-dmg >/dev/null 2>&1; then
+  echo "ERROR: create-dmg not found. Install it with: brew install create-dmg" >&2
+  exit 1
+fi
 
-hdiutil create -volname "$APP_BUNDLE_NAME" \
-  -srcfolder "$TEMP_DIR" \
-  -ov -format UDZO \
-  "$ROOT/$DMG_NAME"
+rm -f "$ROOT/$DMG_NAME"
+
+# --window-size matches background.png's 632x364; --icon X Y is the app icon's center in
+# the window (top-left origin) over the drop-zone; --window-pos is just where it opens
+# on screen.
+create-dmg \
+  --volname "$APP_BUNDLE_NAME" \
+  --volicon "$ROOT/Resources/DMG/VolumeIcon.icns" \
+  --background "$ROOT/Resources/DMG/background.png" \
+  --window-pos 200 120 \
+  --window-size 632 364 \
+  --icon-size 96 \
+  --icon "${APP_BUNDLE_NAME}.app" 120 120 \
+  --no-internet-enable \
+  "$ROOT/$DMG_NAME" \
+  "$APP_BUNDLE"
 
 echo "Created $ROOT/$DMG_NAME"
