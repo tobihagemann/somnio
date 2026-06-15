@@ -303,6 +303,13 @@ sign_frameworks() {
 }
 sign_frameworks
 
+# Sign the bundled CLI explicitly: it lives in Resources/, which the outer codesign does
+# not deep-sign, yet notarization requires every Mach-O to carry a Developer ID, secure
+# timestamp, and hardened runtime. Must precede the app signing so inner code is sealed first.
+if [[ "$INCLUDE_CLI" == "1" ]]; then
+  codesign "${CODESIGN_ARGS[@]}" "$APP/Contents/Resources/$CLI_NAME"
+fi
+
 codesign "${CODESIGN_ARGS[@]}" \
   --entitlements "$APP_ENTITLEMENTS" \
   "$APP"
