@@ -96,10 +96,13 @@ if [[ "$TARGET" == "player" && "$CONF" == "release" ]]; then
   "$ROOT/Scripts/inject-release-transport.sh"
 fi
 
+# Build by --product, not --target: `swift build --target <exe>` compiles the module but
+# can skip the link step, leaving no executable at the bin-path for install_binary below
+# (it builds "complete" yet produces nothing). All executables are declared products.
 for ARCH in "${ARCH_LIST[@]}"; do
-  swift build -c "$CONF" --arch "$ARCH" --target "$APP_TARGET_NAME"
+  swift build -c "$CONF" --arch "$ARCH" --product "$APP_TARGET_NAME"
   if [[ "$INCLUDE_CLI" == "1" ]]; then
-    swift build -c "$CONF" --arch "$ARCH" --target SomnioCLI
+    swift build -c "$CONF" --arch "$ARCH" --product SomnioCLI
   fi
 done
 
