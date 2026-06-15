@@ -374,7 +374,7 @@ public actor PerSectorActor {
     }
 
     /// True when `player` sits inside the NPC dialog interaction radius, measured between
-    /// visual (feet) centers so off-center sprite art doesn't skew the gate (R10). Shared by
+    /// visual (feet) centers so off-center sprite art doesn't skew the gate. Shared by
     /// the bump gate and the dialog tick so both resolve "within dialog range" identically.
     private func isWithinDialogRadius(npc: NPCRuntime, player: PlayerSlot) -> Bool {
         let npcCenter = FeetMask.center(forSpriteAt: npc.position, spriteSize: npc.definition.maskSize)

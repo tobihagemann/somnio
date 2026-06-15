@@ -4,7 +4,7 @@ import SomnioData
 
 // Shared no-op repository conformances for integration suites that need a structurally
 // valid `ConnectionDependencies` / `AdminConnectionDependencies` bag but don't exercise
-// the gameplay or admin write paths (e.g., R33's degraded-DB /health probe and R5's
+// the gameplay or admin write paths (e.g., the degraded-DB /health probe and the
 // world-clock restart fixture that only reads `WorldClockService.currentTime()`).
 // `SomnioTestSupport` is intentionally not a `.library` product, so the integration
 // package can't import its stubs — these mirror the same contract.

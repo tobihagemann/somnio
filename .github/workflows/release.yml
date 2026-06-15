@@ -52,6 +52,20 @@ jobs:
           fi
           echo "MARKETING_VERSION=${VERSION}" >> "$GITHUB_ENV"
 
+      - name: Check out asset pack
+        uses: actions/checkout@v6
+        with:
+          # Tilesets / sprites / animation strips are licensed art that can be bundled
+          # into the shipped binary but not redistributed as source, so they live in a
+          # separate private repo. The default GITHUB_TOKEN only reaches this repo;
+          # ASSETS_DEPLOY_KEY is a read-only SSH deploy key scoped to somnio-assets.
+          # Pin to a tag/SHA here instead of the default branch if you want releases to
+          # reference an immutable asset revision.
+          repository: tobihagemann/somnio-assets
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          path: assets
+          persist-credentials: false
+
       - name: Import code signing certificate
         env:
           P12_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12 }}
@@ -80,6 +94,13 @@ jobs:
           SPARKLE_FEED_URL_EDITOR: ${{ secrets.SPARKLE_FEED_URL_EDITOR }}
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           ARCHES: "arm64 x86_64"
+          # Asset pack root (five subtrees at the repo root) consumed by
+          # Scripts/bundle-assets.sh, and the production gameplay endpoint baked into
+          # the player by Scripts/inject-release-transport.sh. The URL is not sensitive
+          # (every player sees it), so it lives in a repo *variable*, not a secret; the
+          # pinned trust root is the committed Scripts/release-trust-roots.pem.
+          SOMNIO_ASSET_SOURCE: ${{ github.workspace }}/assets
+          SOMNIO_GAMEPLAY_PRODUCTION_URL: ${{ vars.SOMNIO_GAMEPLAY_PRODUCTION_URL }}
         run: ./Scripts/release.sh
 
       - name: Compute checksums

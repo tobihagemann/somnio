@@ -7,7 +7,7 @@ import NIOSSL
 /// silently MitM the login flow. The packaging shell rewrites this file alongside
 /// `GameplayServerURL.swift` to populate the operator-provided PEM bundle and
 /// delete the `#error` directive; both must be done before a release build will
-/// compile, satisfying R23's hardcoded-credential guarantee.
+/// compile, guaranteeing no release ships without a hardcoded trust root.
 ///
 /// Debug builds skip pinning so loopback `ws://` and developer `wss://` endpoints
 /// against staging continue to work without trust-store gymnastics.

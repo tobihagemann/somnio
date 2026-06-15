@@ -119,6 +119,16 @@ Tilesets, character sprites, and animation strips are not committed to this repo
 
 No asset pack is committed to the repo. A runtime app launched without an operator-supplied `SOMNIO_ASSET_SOURCE` renders with the loader's nil-fallback path: empty ground (no ground tile map is built), untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash.
 
+### CI release configuration
+
+CI-driven releases (`release.yml`) inject three externalized inputs at build time, so the public repo never carries licensed art or the production endpoint:
+
+- **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the five subtrees (`Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/`) at its root. `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
+- **Production gameplay endpoint** — the `SOMNIO_GAMEPLAY_PRODUCTION_URL` repo *variable* (e.g. `wss://somnio.tobiha.de/ws`; not a secret — every player sees it). `Scripts/inject-release-transport.sh` rewrites `GameplayServerURL.swift`, replacing the `#error` placeholder with the literal. Required for **player + release** only; the editor and debug builds never reach the guard.
+- **Pinned TLS trust root** — `Scripts/release-trust-roots.pem` (committed) holds the Let's Encrypt ISRG Root X1 + X2 roots (publicly verifiable by fingerprint). The same inject script embeds them into `gameplayProductionTrustRootPEM` in `GameplayServerPin.swift`. Pinning the long-lived roots (not the 90-day leaf) means certificate renewals never break the shipped player; both roots cover an RSA→ECDSA key-type switch.
+
+`package_app.sh` runs the injection immediately before the player release build, backing up and restoring the sources on exit so a local release leaves the tree clean; it is gated on `player + release` (signing mode is irrelevant — what matters is that release config compiles the `#if !DEBUG` branch). The default `compile_and_run.sh` dev loop builds debug and never injects, but `compile_and_run.sh --release-*` is an adhoc release build that does inject and so needs `SOMNIO_GAMEPLAY_PRODUCTION_URL` like any release. A player release is connectable only once the current server is deployed (see Deployment) and `SOMNIO_GAMEPLAY_PRODUCTION_URL` is set; the editor release is self-contained and needs neither.
+
 ## Logging
 
 Uses `swift-log` as a facade. Two bootstrap surfaces:

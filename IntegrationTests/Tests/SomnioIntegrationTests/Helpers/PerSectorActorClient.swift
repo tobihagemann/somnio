@@ -51,7 +51,7 @@ enum PerSectorActorClient {
 enum CharacterCheckpointPoller {
     /// Resolve a `Character` row whose `last_seen` is strictly after `precloseLastSeen`.
     /// 5 s budget × 100 ms steps mirrors the persistence-test timing established by the
-    /// R7/R8 suites. The strict `>` comparator is what distinguishes a fresh
+    /// checkpoint-persistence suites. The strict `>` comparator is what distinguishes a fresh
     /// `persistCheckpoint` write from the registration row whose `last_seen` already sits
     /// at `Date()` when the test began.
     static func waitForFreshCheckpoint(
@@ -73,7 +73,7 @@ enum CharacterCheckpointPoller {
     }
 
     /// Resolve the character row once the WS-close cleanup has had a chance to commit.
-    /// Used as the baseline-capturing step for the strict-advance R8 round-trip: the
+    /// Used as the baseline-capturing step for the strict-advance checkpoint round-trip: the
     /// row may carry either the registration `lastSeen` or the post-close
     /// `persistCheckpoint` value when first observed; both serve as a valid lower bound
     /// for the next session's strict `>` advance.

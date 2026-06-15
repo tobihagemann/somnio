@@ -80,6 +80,18 @@ else
   SPARKLE_KEYS=""
 fi
 
+# Player release builds bake in the production gameplay endpoint and its pinned trust
+# root by rewriting GameplayServerURL.swift / GameplayServerPin.swift before the build;
+# their `#error` placeholders make a release compile fail otherwise. Scoped to player +
+# release: the editor never imports these files, and debug builds (including the
+# compile_and_run.sh dev loop) compile the `#if DEBUG` branch. The injector validates its
+# input before consuming build time and owns backup/restore; the EXIT trap restores
+# pristine sources so a local release leaves no injected endpoint behind.
+if [[ "$TARGET" == "player" && "$CONF" == "release" ]]; then
+  trap '"$ROOT/Scripts/inject-release-transport.sh" --restore' EXIT
+  "$ROOT/Scripts/inject-release-transport.sh"
+fi
+
 for ARCH in "${ARCH_LIST[@]}"; do
   swift build -c "$CONF" --arch "$ARCH" --target "$APP_TARGET_NAME"
   if [[ "$INCLUDE_CLI" == "1" ]]; then

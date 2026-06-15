@@ -15,9 +15,9 @@ import SomnioServerCore
 import SomnioTestSupport
 
 /// Shared WebSocket + service-group helpers consumed by every gameplay-side integration suite.
-/// Extracted from `GameplayE2ETests.swift` so the additional faithfulness suites (R5, R7, R8,
-/// R10/R11, R12, R14/R15, R27, R33) can reuse one canonical implementation of the rig builder,
-/// the wire-send shims, the drain state-machine helpers, and the world-clock seed step.
+/// Extracted from `GameplayE2ETests.swift` so the additional faithfulness suites can reuse one
+/// canonical implementation of the rig builder, the wire-send shims, the drain state-machine
+/// helpers, and the world-clock seed step.
 enum WSGameplayClient {
     struct Rig {
         let application: Application<RouterResponder<BasicWebSocketRequestContext>>
