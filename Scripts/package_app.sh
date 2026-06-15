@@ -17,7 +17,6 @@ case "$TARGET" in
     APP_BUNDLE_NAME="${APP_NAME}"
     APP_EXEC_NAME=${EXEC_NAME:-Somnio}
     APP_TARGET_NAME="SomnioApp"
-    INCLUDE_CLI=1
     APP_ICON_SRC="Resources/Icons/Somnio.icns"
     APP_CATEGORY="public.app-category.role-playing-games"
     ;;
@@ -25,7 +24,6 @@ case "$TARGET" in
     APP_BUNDLE_NAME="${APP_NAME}Editor"
     APP_EXEC_NAME=${EDITOR_EXEC_NAME:-SomnioEditor}
     APP_TARGET_NAME="SomnioEditor"
-    INCLUDE_CLI=0
     APP_ICON_SRC="Resources/Icons/SomnioEditor.icns"
     APP_CATEGORY="public.app-category.developer-tools"
     ;;
@@ -35,7 +33,6 @@ case "$TARGET" in
     ;;
 esac
 
-CLI_NAME=${CLI_NAME:-somniocli}
 MACOS_MIN_VERSION=${MACOS_MIN_VERSION:-26.0}
 SIGNING_MODE=${SIGNING_MODE:-}
 APP_IDENTITY=${APP_IDENTITY:-}
@@ -101,9 +98,6 @@ fi
 # (it builds "complete" yet produces nothing). All executables are declared products.
 for ARCH in "${ARCH_LIST[@]}"; do
   swift build -c "$CONF" --arch "$ARCH" --product "$APP_TARGET_NAME"
-  if [[ "$INCLUDE_CLI" == "1" ]]; then
-    swift build -c "$CONF" --arch "$ARCH" --product SomnioCLI
-  fi
 done
 
 APP="$ROOT/${APP_BUNDLE_NAME}.app"
@@ -241,11 +235,6 @@ install_binary() {
 # Install main app binary.
 install_binary "$APP_TARGET_NAME" "$APP/Contents/MacOS/$APP_EXEC_NAME"
 
-# Install CLI binary into Resources (player bundle only).
-if [[ "$INCLUDE_CLI" == "1" ]]; then
-  install_binary "SomnioCLI" "$APP/Contents/Resources/$CLI_NAME"
-fi
-
 # SwiftPM resource bundles are emitted next to the built binary.
 PREFERRED_BUILD_DIR="$(dirname "$(build_product_path "$APP_TARGET_NAME" "${ARCH_LIST[0]}")")"
 shopt -s nullglob
@@ -302,13 +291,6 @@ sign_frameworks() {
   done
 }
 sign_frameworks
-
-# Sign the bundled CLI explicitly: it lives in Resources/, which the outer codesign does
-# not deep-sign, yet notarization requires every Mach-O to carry a Developer ID, secure
-# timestamp, and hardened runtime. Must precede the app signing so inner code is sealed first.
-if [[ "$INCLUDE_CLI" == "1" ]]; then
-  codesign "${CODESIGN_ARGS[@]}" "$APP/Contents/Resources/$CLI_NAME"
-fi
 
 codesign "${CODESIGN_ARGS[@]}" \
   --entitlements "$APP_ENTITLEMENTS" \
