@@ -4,10 +4,6 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 
 This is a from-scratch Swift port of an old REALbasic project; the macOS player and editor ship as code-signed `.app` bundles via Sparkle, and the server ships as a Docker image alongside Postgres.
 
-## Status
-
-Foundation only. The workspace builds, tests pass, lint/format is wired, and the wire protocol + sector codec round-trip cleanly. The actual gameplay server, persistence, UI, and packaging are not implemented yet.
-
 ## Build & Run
 
 ```
@@ -34,4 +30,6 @@ See [AGENTS.md](AGENTS.md) for the deeper guide — module boundaries, dev/prod 
 
 ## License
 
-TBD.
+Distributed under the GNU Affero General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+
+The license covers the source code in this repository. The game's art assets are separately licensed, are not included here, and are bundled only into official release builds.
