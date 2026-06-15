@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>SomnioEditor</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Mon, 15 Jun 2026 09:22:54 +0000</pubDate>
+            <sparkle:version>32</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/tobihagemann/somnio/releases/download/0.1.0/SomnioEditor-0.1.0.zip" length="8434662" type="application/octet-stream" sparkle:edSignature="vMr2ciADD5w1yDvutq5HT5brh1uxHg4Xap18LJV4LmDGwH1F/vFfX0dIWD3q5Nyww64eJgDriO7YISTUrGesCA=="/>
+        </item>
+    </channel>
+</rss>
