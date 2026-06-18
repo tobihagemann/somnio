@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "SomnioIntegrationTests",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     dependencies: [
         .package(name: "Somnio", path: ".."),
         .package(url: "https://github.com/vapor/postgres-nio", from: "1.21.0"),

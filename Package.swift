@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Somnio",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "SomnioApp", targets: ["SomnioApp"]),
         .executable(name: "SomnioEditor", targets: ["SomnioEditor"]),

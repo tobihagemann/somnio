@@ -4,7 +4,7 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 
 ## Tech Stack
 
-- Swift 6.2, macOS 26+, SwiftPM (no Xcode project)
+- Swift 6.2, macOS 15+, SwiftPM (no Xcode project)
 - SwiftUI + SpriteKit for the player client and editor; Sparkle for player auto-updates only
 - Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
@@ -177,7 +177,7 @@ Server runtime configuration is resolved from environment variables (resolution 
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
 
-A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v26)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
+A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v15)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
 
 ## Lint & Format
 
