@@ -341,8 +341,12 @@ import SpriteKit
         )
         entities[payload.entityIndex] = entity
         worldScene.placeEntity(entity)
-        if kind == .peer, !players.contains(entity.name) {
+        // Mirror the legacy `SpielerBox`, which listed every character including the
+        // local player and kept the roster sorted. Self is dropped on leave/teardown,
+        // which clear the roster wholesale.
+        if kind == .peer || kind == .player, !players.contains(entity.name) {
             players.append(entity.name)
+            players.sort { $0.localizedStandardCompare($1) == .orderedAscending }
         }
     }
 

@@ -63,6 +63,30 @@ struct ClientViewModelTests {
         #expect(entity?.name == "Alice")
     }
 
+    @Test func `the self entity is added to the online-players roster sorted, faithful to the legacy SpielerBox`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .awaitingEnterSector
+        viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        // Deliberately non-alphabetical arrival order to exercise the sort.
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 7, figure: 0, gender: Gender.female.rawValue,
+            maskWidth: 128, maskHeight: 128, type: .player, name: "Mallory",
+            x: 5, y: 9, facing: Direction.east.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 5, figure: 0, gender: Gender.female.rawValue,
+            maskWidth: 128, maskHeight: 128, type: .player, name: "Zoe",
+            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 3, figure: 0, gender: Gender.female.rawValue,
+            maskWidth: 128, maskHeight: 128, type: .player, name: "Alice",
+            x: 2, y: 2, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        #expect(viewModel.players == ["Alice", "Mallory", "Zoe"])
+    }
+
     @Test func `a server position for self is applied as a direct camera-following set, not a tween`() throws {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingEnterSector
