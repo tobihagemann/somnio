@@ -3,6 +3,14 @@
     <channel>
         <title>Somnio</title>
         <item>
+            <title>0.1.1</title>
+            <pubDate>Thu, 18 Jun 2026 17:39:06 +0000</pubDate>
+            <sparkle:version>43</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/tobihagemann/somnio/releases/download/player-0.1.1/Somnio-0.1.1.zip" length="17290497" type="application/octet-stream" sparkle:edSignature="8ipz5LIp4Ee2YSbaosleN1jAMdRK/thdyBdzUsovwfv2GMonRHegZzn9wXntaCJDk8WdctwXaFb7K7zdbAYjDQ=="/>
+        </item>
+        <item>
             <title>0.1.0</title>
             <pubDate>Thu, 18 Jun 2026 10:22:09 +0000</pubDate>
             <sparkle:version>39</sparkle:version>
