@@ -82,10 +82,9 @@ struct LocalizableCatalogTests {
         "Import from server...",
         "Export to server...",
         "Edit script...",
-        // About sheet / Sparkle / menu
+        // About sheet / menu
         "OK",
         "Cancel",
-        "Check for Updates...",
         "Version: %@",
         "Copyright",
         "Thanks paragraph",

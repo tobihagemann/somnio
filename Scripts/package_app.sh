@@ -8,8 +8,11 @@ cd "$ROOT"
 
 source "$ROOT/version.env"
 
-# Derive version from git tag and build number from commit count.
-MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")}
+# Derive version from this target's latest component tag (player-*/editor-*) and build number
+# from commit count. Matching the target's own prefix avoids picking another component's newer
+# tag; the strip then yields the bare X.Y.Z for CFBundleShortVersionString.
+MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "${TARGET}-*" 2>/dev/null || echo "0.0.0")}
+MARKETING_VERSION=$(sed -E 's/^(player|server|editor)-//' <<<"$MARKETING_VERSION")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 
 case "$TARGET" in
@@ -43,42 +46,34 @@ if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
   ARCH_LIST=("$HOST_ARCH")
 fi
 
-case "$TARGET" in
-  player)
-    SPARKLE_FEED_URL=${SPARKLE_FEED_URL_PLAYER:-}
-    SPARKLE_FEED_VAR_NAME="SPARKLE_FEED_URL_PLAYER"
-    ;;
-  editor)
-    SPARKLE_FEED_URL=${SPARKLE_FEED_URL_EDITOR:-}
-    SPARKLE_FEED_VAR_NAME="SPARKLE_FEED_URL_EDITOR"
-    ;;
-esac
-SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_ED_KEY:-}
-
-# Sparkle keys are all-or-none per target: both the feed URL and the public key must be
-# set together. The release-mode hard-fail must run *before* `swift build` so a missing
-# secret short-circuits without consuming build time. Debug builds skip injection silently
-# when both are unset and warn (but continue) when only one is set so a local typo is
-# visible. The actual Info.plist splice happens after the build via `${SPARKLE_KEYS}`.
-if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_KEY" ]]; then
-  SPARKLE_KEYS=$(cat <<SPARKLE
+# Sparkle auto-update is player-only; the editor ships without an updater and never injects
+# Sparkle keys. For the player the feed URL and public key are all-or-none: both must be set
+# together. The release-mode hard-fail runs *before* `swift build` so a missing secret
+# short-circuits without consuming build time. Debug builds skip injection silently when
+# both are unset and warn (but continue) when only one is set so a local typo is visible.
+# The actual Info.plist splice happens after the build via `${SPARKLE_KEYS}`.
+SPARKLE_KEYS=""
+if [[ "$TARGET" == "player" ]]; then
+  SPARKLE_FEED_URL=${SPARKLE_FEED_URL_PLAYER:-}
+  SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_ED_KEY:-}
+  if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_KEY" ]]; then
+    SPARKLE_KEYS=$(cat <<SPARKLE
     <key>SUFeedURL</key><string>${SPARKLE_FEED_URL}</string>
     <key>SUPublicEDKey</key><string>${SPARKLE_PUBLIC_KEY}</string>
 SPARKLE
 )
-elif [[ -z "$SPARKLE_FEED_URL" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
-  if [[ "$CONF" == "release" ]]; then
-    echo "ERROR: ${SPARKLE_FEED_VAR_NAME} and SPARKLE_PUBLIC_ED_KEY both required for release builds" >&2
-    exit 1
+  elif [[ -z "$SPARKLE_FEED_URL" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
+    if [[ "$CONF" == "release" ]]; then
+      echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY both required for release builds" >&2
+      exit 1
+    fi
+  else
+    if [[ "$CONF" == "release" ]]; then
+      echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY must both be set for release builds (only one was provided)" >&2
+      exit 1
+    fi
+    echo "WARNING: only one of SPARKLE_FEED_URL_PLAYER / SPARKLE_PUBLIC_ED_KEY is set; skipping Sparkle injection" >&2
   fi
-  SPARKLE_KEYS=""
-else
-  if [[ "$CONF" == "release" ]]; then
-    echo "ERROR: ${SPARKLE_FEED_VAR_NAME} and SPARKLE_PUBLIC_ED_KEY must both be set for release builds (only one was provided)" >&2
-    exit 1
-  fi
-  echo "WARNING: only one of ${SPARKLE_FEED_VAR_NAME} / SPARKLE_PUBLIC_ED_KEY is set; skipping Sparkle injection" >&2
-  SPARKLE_KEYS=""
 fi
 
 # Player release builds bake in the production gameplay endpoint and its pinned trust
@@ -251,16 +246,21 @@ fi
 SOMNIO_ASSET_DEST="$APP/Contents/Resources" \
   "${ROOT}/Scripts/bundle-assets.sh"
 
-# Embed frameworks if any exist in the build folder.
-FRAMEWORK_DIRS=(".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
-for dir in "${FRAMEWORK_DIRS[@]}"; do
-  if compgen -G "${dir}/"*.framework >/dev/null; then
-    cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
-    chmod -R a+rX "$APP/Contents/Frameworks"
-    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_EXEC_NAME"
-    break
-  fi
-done
+# Embed frameworks if any exist in the build folder. Player-only: Sparkle is the project's
+# sole framework dependency and ships only with the player. SwiftPM leaves Sparkle.framework
+# in the shared build dir across builds, so an unguarded glob would embed it into the editor
+# bundle (the editor doesn't link it).
+if [[ "$TARGET" == "player" ]]; then
+  FRAMEWORK_DIRS=(".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
+  for dir in "${FRAMEWORK_DIRS[@]}"; do
+    if compgen -G "${dir}/"*.framework >/dev/null; then
+      cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
+      chmod -R a+rX "$APP/Contents/Frameworks"
+      install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_EXEC_NAME"
+      break
+    fi
+  done
+fi
 
 # Ensure contents are writable before stripping attributes and signing.
 chmod -R u+w "$APP"

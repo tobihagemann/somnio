@@ -87,23 +87,6 @@
         }
       }
     },
-    "Check for Updates...": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auf Updates prüfen..."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check for Updates..."
-          }
-        }
-      }
-    },
     "Copyright": {
       "extractionState": "manual",
       "localizations": {

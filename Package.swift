@@ -113,7 +113,6 @@ let package = Package(
             dependencies: [
                 "SomnioCore",
                 "SomnioUI",
-                .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
                 .product(name: "Logging", package: "swift-log")
             ],
             resources: [.process("Resources/Localizable.xcstrings")]

@@ -5,7 +5,7 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 ## Tech Stack
 
 - Swift 6.2, macOS 26+, SwiftPM (no Xcode project)
-- SwiftUI + SpriteKit for the player client and editor; Sparkle for auto-updates
+- SwiftUI + SpriteKit for the player client and editor; Sparkle for player auto-updates only
 - Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
 - swift-argument-parser for the admin CLI
@@ -26,7 +26,7 @@ SomnioUI         # SwiftUI views + SpriteKit scene
                  # depends on SomnioCore (NOT on SomnioData)
 SomnioApp        # macOS executable: player client + UI + Sparkle
                  # depends on SomnioCore + SomnioUI + SomnioProtocol
-SomnioEditor     # macOS executable: document-based map editor + Sparkle
+SomnioEditor     # macOS executable: document-based map editor (no Sparkle; built locally)
                  # depends on SomnioCore + SomnioUI (NOT on SomnioProtocol or SomnioData)
 SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
                  # Hummingbird app, sector cache, registration repo, checkpoint service
@@ -99,7 +99,7 @@ swift test --package-path IntegrationTests
 Scripts/package_app.sh [debug|release] [player|editor]   # build + assemble .app bundle
 Scripts/compile_and_run.sh                               # package + launch player (dev loop)
 Scripts/create_dmg.sh [player|editor]                    # wrap .app in DMG
-Scripts/release.sh                                       # build, sign, notarize, DMG, zip both bundles
+Scripts/release.sh [player|editor ...]                   # build, sign, notarize, DMG, zip (default: both bundles)
 ```
 
 `Resources/Entitlements.plist` holds app entitlements (`network.client`, `files.user-selected.read-write`).
@@ -108,7 +108,7 @@ Scripts/release.sh                                       # build, sign, notarize
 
 `Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
 
-Release tags are **bare-numeric** (`[0-9]*.[0-9]*.[0-9]*`, e.g. `1.2.3`), not `v`-prefixed. `release.yml` triggers on this glob; any new release-triggered workflow must mirror it.
+Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` triggers `release.yml` (player `.app`/DMG + Sparkle appcast + GitHub Release) and `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image). Each workflow strips its own prefix to get the bare `X.Y.Z` marketing version; in `release.yml` the full tag (`RELEASE_TAG`) names the GitHub Release and the Sparkle `--download-url-prefix`, so the two stay aligned. The **editor is not released by CI** — build it locally with `Scripts/release.sh editor` (CI calls `Scripts/release.sh player`). Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob (which would collide with all components at once).
 
 ### Asset bundling
 
@@ -246,4 +246,4 @@ All upstream-derived from MIT-licensed agent-skill repos; provenance and copyrig
 
 `.mcp.json` configures `sosumi` (`https://sosumi.ai/mcp`) for live Apple developer documentation lookups.
 
-Project-specific skills for Somnio's two-bundle packaging (`Scripts/package_app.sh [debug|release] [player|editor]`, `Scripts/create_dmg.sh [player|editor]`, `Scripts/release.sh`) are not shipped here yet. Author them under `Skills/` when the workflow stabilizes.
+Project-specific skills for Somnio's two-bundle packaging (`Scripts/package_app.sh [debug|release] [player|editor]`, `Scripts/create_dmg.sh [player|editor]`, `Scripts/release.sh [player|editor ...]`) are not shipped here yet. Author them under `Skills/` when the workflow stabilizes.

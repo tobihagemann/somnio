@@ -4,7 +4,17 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/version.env"
 
-export MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")}
+# An explicitly-set MARKETING_VERSION applies to every target built; otherwise each target
+# derives its own version from its latest component tag (player-*/editor-*), so a local
+# editor build is never stamped with the player's (or server's) version. The prefix strip
+# yields the bare X.Y.Z for bundle versions and asset filenames.
+MARKETING_VERSION_OVERRIDE="${MARKETING_VERSION:-}"
+
+resolve_marketing_version() {
+  local target="$1" version
+  version="${MARKETING_VERSION_OVERRIDE:-$(git describe --tags --abbrev=0 --match "${target}-*" 2>/dev/null || echo "0.0.0")}"
+  sed -E 's/^(player|server|editor)-//' <<<"$version"
+}
 
 if [[ -z "${APP_IDENTITY:-}" ]]; then
   echo "APP_IDENTITY env var must be set (e.g., 'Developer ID Application: Name (TEAMID)')." >&2
@@ -45,8 +55,26 @@ notarize_and_staple() {
   find "$bundle" -name '._*' -delete
 }
 
-# Build, package, sign, notarize, and zip both bundles (player + editor).
-for TARGET in player editor; do
+# Build targets to sign, notarize, and zip. No args defaults to both bundles; CI passes `player`.
+TARGETS=("$@")
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  TARGETS=(player editor)
+fi
+
+# Validate every target up front so a typo fails before any expensive build/notarize, and
+# so the loops below (and package_and_notarize_dmg) can assume a known target.
+for TARGET in "${TARGETS[@]}"; do
+  case "$TARGET" in
+    player | editor) ;;
+    *)
+      echo "ERROR: unknown release target '$TARGET' (expected 'player' or 'editor')" >&2
+      exit 1
+      ;;
+  esac
+done
+
+for TARGET in "${TARGETS[@]}"; do
+  export MARKETING_VERSION="$(resolve_marketing_version "$TARGET")"
   case "$TARGET" in
     player)
       BUNDLE="$ROOT/${APP_NAME}.app"
@@ -71,14 +99,13 @@ done
 
 package_and_notarize_dmg() {
   local target="$1"
+  # Re-resolve per target; the build loop above left MARKETING_VERSION at the last target's value.
+  export MARKETING_VERSION="$(resolve_marketing_version "$target")"
   local dmg_basename
+  # target is already validated against player/editor before this runs.
   case "$target" in
     player) dmg_basename="${APP_NAME}" ;;
     editor) dmg_basename="${APP_NAME}Editor" ;;
-    *)
-      echo "ERROR: unknown DMG target '$target'" >&2
-      exit 1
-      ;;
   esac
   local dmg_name="${dmg_basename}-${MARKETING_VERSION}.dmg"
   "$ROOT/Scripts/create_dmg.sh" "$target"
@@ -89,7 +116,8 @@ package_and_notarize_dmg() {
   xcrun stapler staple "$ROOT/$dmg_name"
 }
 
-package_and_notarize_dmg player
-package_and_notarize_dmg editor
+for TARGET in "${TARGETS[@]}"; do
+  package_and_notarize_dmg "$TARGET"
+done
 
 echo "Done."

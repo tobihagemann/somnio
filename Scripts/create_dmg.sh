@@ -25,7 +25,10 @@ case "$TARGET" in
     ;;
 esac
 
-MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")}
+# Derive from this target's latest component tag (player-*/editor-*) so the DMG filename
+# isn't stamped with another component's newer version; the strip yields the bare X.Y.Z.
+MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "${TARGET}-*" 2>/dev/null || echo "0.0.0")}
+MARKETING_VERSION=$(sed -E 's/^(player|server|editor)-//' <<<"$MARKETING_VERSION")
 APP_BUNDLE="$ROOT/${APP_BUNDLE_NAME}.app"
 DMG_NAME="${DMG_BASENAME}-${MARKETING_VERSION}.dmg"
 

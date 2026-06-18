@@ -2,7 +2,8 @@ name: Docker Image
 
 on:
   push:
-    tags: ["[0-9]*.[0-9]*.[0-9]*"]
+    # Server releases only. The player publishes from release.yml on `player-*` tags.
+    tags: ["server-[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
     inputs:
       version:
@@ -55,7 +56,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${GITHUB_REF#refs/tags/server-}"
           elif [[ -n "${INPUT_VERSION}" ]]; then
             VERSION="${INPUT_VERSION}"
           else

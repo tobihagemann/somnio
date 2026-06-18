@@ -2,11 +2,12 @@ name: Release
 
 on:
   push:
-    tags: ["[0-9]*.[0-9]*.[0-9]*"]
+    # Player releases only (editor builds locally; server publishes from docker-image.yml).
+    tags: ["player-[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version number"
+        description: "Version number (e.g. 0.2.0; the player- prefix is added)"
         type: string
         required: true
       dry_run:
@@ -44,13 +45,32 @@ jobs:
           fi
 
       - name: Resolve version
+        env:
+          # Route the dispatch input through env rather than splicing ${{ }} into the
+          # shell, so a hostile value can't inject commands into this run.
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
+          # RELEASE_TAG is the full git tag (player-X.Y.Z) — it names the GitHub Release
+          # and the Sparkle download URL prefix. MARKETING_VERSION is the bare X.Y.Z used
+          # for bundle versions and asset filenames.
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${RELEASE_TAG#player-}"
           else
-            VERSION="${{ inputs.version }}"
+            # Strip a player- prefix the operator may type by habit, so it isn't doubled
+            # into RELEASE_TAG / asset filenames (symmetric with the push path's strip).
+            VERSION="${INPUT_VERSION#player-}"
+            RELEASE_TAG="player-${VERSION}"
+          fi
+          # Reject characters unsafe for the GitHub Release tag, the Sparkle download URL,
+          # asset filenames, and the $GITHUB_ENV writes below (newlines would inject extra
+          # entries). The push glob is fnmatch, not a regex, so a malformed tag can reach here.
+          if [[ ! "${VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "ERROR: version '${VERSION}' contains unsafe characters" >&2
+            exit 1
           fi
           echo "MARKETING_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
 
       - name: Check out asset pack
         uses: actions/checkout@v6
@@ -96,7 +116,6 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           SPARKLE_FEED_URL_PLAYER: ${{ secrets.SPARKLE_FEED_URL_PLAYER }}
-          SPARKLE_FEED_URL_EDITOR: ${{ secrets.SPARKLE_FEED_URL_EDITOR }}
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           ARCHES: "arm64 x86_64"
           # Asset pack root (five subtrees at the repo root) consumed by
@@ -106,16 +125,14 @@ jobs:
           # pinned trust root is the committed Scripts/release-trust-roots.pem.
           SOMNIO_ASSET_SOURCE: ${{ github.workspace }}/assets
           SOMNIO_GAMEPLAY_PRODUCTION_URL: ${{ vars.SOMNIO_GAMEPLAY_PRODUCTION_URL }}
-        run: ./Scripts/release.sh
+        run: ./Scripts/release.sh player
 
       - name: Compute checksums
         run: |
           source version.env
           shasum -a 256 \
             "${APP_NAME}-${MARKETING_VERSION}.zip" \
-            "${APP_NAME}Editor-${MARKETING_VERSION}.zip" \
-            "${APP_NAME}-${MARKETING_VERSION}.dmg" \
-            "${APP_NAME}Editor-${MARKETING_VERSION}.dmg" > checksums.txt
+            "${APP_NAME}-${MARKETING_VERSION}.dmg" > checksums.txt
           cat checksums.txt
 
       - name: Generate Sparkle appcast
@@ -125,32 +142,21 @@ jobs:
           source version.env
           SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin"
 
-          # generate_appcast needs the private key as a file; the same key signs both
-          # appcasts so write it once outside the loop.
           KEY_FILE=$(mktemp)
           echo "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          generate_for() {
-            local zip_name="$1"
-            local appcast_name="$2"
-            local release_dir
-            release_dir=$(mktemp -d)
-            cp "$zip_name" "$release_dir/"
-            # `-o` pins the output filename — without it, Sparkle derives the file from
-            # `SUFeedURL.lastPathComponent`, which makes the editor branch fail to find
-            # `$release_dir/appcast.xml` if `SPARKLE_FEED_URL_EDITOR` ends in a different
-            # path component.
-            "$SPARKLE_BIN/generate_appcast" \
-              --ed-key-file "$KEY_FILE" \
-              --download-url-prefix "https://github.com/tobihagemann/somnio/releases/download/${MARKETING_VERSION}/" \
-              -o "$appcast_name" \
-              "$release_dir"
-            rm -rf "$release_dir"
-          }
-
-          generate_for "${APP_NAME}-${MARKETING_VERSION}.zip" appcast.xml
-          generate_for "${APP_NAME}Editor-${MARKETING_VERSION}.zip" appcast-editor.xml
+          release_dir=$(mktemp -d)
+          cp "${APP_NAME}-${MARKETING_VERSION}.zip" "$release_dir/"
+          # The download URL prefix must point at this release's assets, which live under
+          # the full tag (player-X.Y.Z), not the bare version. `-o` pins the output name
+          # (otherwise Sparkle derives it from SUFeedURL.lastPathComponent).
+          "$SPARKLE_BIN/generate_appcast" \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "https://github.com/tobihagemann/somnio/releases/download/${RELEASE_TAG}/" \
+            -o appcast.xml \
+            "$release_dir"
+          rm -rf "$release_dir"
 
           rm -f "$KEY_FILE"
 
@@ -181,18 +187,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           source version.env
-          gh release create "${MARKETING_VERSION}" \
+          # --target pins a dispatch-created tag to the built commit; on a tag push the tag
+          # already exists and --target is ignored.
+          gh release create "${RELEASE_TAG}" \
             "${APP_NAME}-${MARKETING_VERSION}.zip" \
-            "${APP_NAME}Editor-${MARKETING_VERSION}.zip" \
             "${APP_NAME}-${MARKETING_VERSION}.dmg" \
-            "${APP_NAME}Editor-${MARKETING_VERSION}.dmg" \
             checksums.txt \
             appcast.xml \
-            appcast-editor.xml \
+            --target "${GITHUB_SHA}" \
             --title "${APP_NAME} ${MARKETING_VERSION}" \
             --notes-file release_notes.txt
 
-      - name: Commit appcasts to main
+      - name: Commit appcast to main
         if: |
           !inputs.dry_run && (
             startsWith(github.ref, 'refs/tags/') ||
@@ -208,18 +214,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          # Save generated appcasts — git checkout would overwrite them if main
-          # already tracks the files from a previous release.
+          # Save generated appcast — git checkout would overwrite it if main
+          # already tracks the file from a previous release.
           cp appcast.xml /tmp/appcast.xml
-          cp appcast-editor.xml /tmp/appcast-editor.xml
           git checkout main
           cp /tmp/appcast.xml appcast.xml
-          cp /tmp/appcast-editor.xml appcast-editor.xml
-          git add appcast.xml appcast-editor.xml
+          git add appcast.xml
           if git diff --cached --quiet; then
-            echo "Appcasts unchanged, skipping commit."
+            echo "Appcast unchanged, skipping commit."
           else
-            git commit -m "Update appcasts for ${MARKETING_VERSION}"
+            git commit -m "Update appcast for ${MARKETING_VERSION}"
             git push origin main
           fi
 
@@ -232,7 +236,6 @@ jobs:
             *.dmg
             checksums.txt
             appcast.xml
-            appcast-editor.xml
 
       - name: Cleanup keychain
         if: always()

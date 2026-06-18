@@ -2,7 +2,7 @@
 
 A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + macOS map editor + admin CLI, all in one SwiftPM workspace.
 
-This is a from-scratch Swift port of an old REALbasic project; the macOS player and editor ship as code-signed `.app` bundles via Sparkle, and the server ships as a Docker image alongside Postgres.
+This is a from-scratch Swift port of an old REALbasic project; the macOS player and editor ship as code-signed `.app` bundles (the player with Sparkle auto-updates; the editor is built and distributed locally), and the server ships as a Docker image alongside Postgres.
 
 ## Build & Run
 
