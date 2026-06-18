@@ -17,12 +17,12 @@ public struct MainWindowView<PlayField: View>: View {
     public let onChatFocusChange: ((Bool) -> Void)?
     public let locale: Locale?
     /// Focus state for the chat input lives here (not inside `ChatInputView`) so a tap
-    /// on the play field can force-blur the field. SwiftUI's standard "click outside the
-    /// TextField to blur" path doesn't work because `SpriteView`'s underlying `SKView`
-    /// returns `false` for `acceptsFirstResponder` — without this hoist, focus would
-    /// stick on the chat field after the first interaction and swallow all subsequent
-    /// keypresses.
-    @FocusState private var chatFocused: Bool
+    /// on the play field can force-blur the field. `SpriteView`'s underlying `SKView`
+    /// returns `false` for `acceptsFirstResponder`, so the macOS-standard "click outside the
+    /// field to blur" path never fires; setting this to `false` is the only way to resign the
+    /// chat field's first-responder status. `ChatInputView` syncs it to the text view's
+    /// first-responder state, so a plain `Bool` (not `@FocusState`) carries it.
+    @State private var chatFocused = false
 
     public init(
         playField: PlayField,

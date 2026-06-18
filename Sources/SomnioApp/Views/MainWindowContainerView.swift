@@ -4,9 +4,8 @@ import SwiftUI
 
 /// Hosts `MainWindowView` plus the modal sheet stack and the chat-input focus
 /// bridge. Lives in the player client because it stitches together view-model state
-/// with the SomnioUI composition contract. The focus state is owned by
-/// `ChatInputView` (which holds the `@FocusState` next to the actual `TextField`)
-/// and reported here through the `onChatFocusChange` callback.
+/// with the SomnioUI composition contract. `MainWindowView` owns the chat focus state
+/// and reports changes here through the `onChatFocusChange` callback.
 @MainActor public struct MainWindowContainerView: View {
     @Bindable var viewModel: ClientViewModel
 

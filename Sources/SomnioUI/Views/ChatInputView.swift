@@ -1,20 +1,23 @@
+import AppKit
 import SwiftUI
 
-/// Multi-line chat-input field. Return submits via `onSubmit`; the field expands
-/// vertically as text is typed. Focus is owned by the parent (`MainWindowView`) and
-/// threaded in as a `FocusState.Binding` so a tap on the play field can force-blur
-/// the chat — `SpriteView`'s underlying `SKView` returns `false` for
-/// `acceptsFirstResponder`, so the macOS-standard "click outside the field to blur"
-/// path does not work without explicit handling.
+/// Multi-line chat-input field backed by an `NSTextView` rather than a SwiftUI
+/// `TextField(axis:)`. SwiftUI's multi-line field spawns an empty automatic-text-completion
+/// popover at launch (a stray translucent popover-level window) and exposes no hook to
+/// suppress it; an owned `NSTextView` with completion disabled does not. Return submits via
+/// `onSubmit`; Escape blurs. Focus is a plain `Bool` binding synced to the text view's
+/// first-responder state, because `SpriteView`'s underlying `SKView` returns `false` for
+/// `acceptsFirstResponder` — the play field can never steal first responder, so the parent
+/// blurs the chat by driving `isFocused` to `false`.
 public struct ChatInputView: View {
     @Binding public var text: String
     public let onSubmit: () -> Void
-    @FocusState.Binding public var isFocused: Bool
+    @Binding public var isFocused: Bool
 
     public init(
         text: Binding<String>,
         onSubmit: @escaping () -> Void,
-        isFocused: FocusState<Bool>.Binding
+        isFocused: Binding<Bool>
     ) {
         self._text = text
         self.onSubmit = onSubmit
@@ -22,26 +25,135 @@ public struct ChatInputView: View {
     }
 
     public var body: some View {
-        TextField("", text: $text, axis: .vertical)
-            .textFieldStyle(.plain)
-            // Inset the text 4px inside the border to match `ChatScrollbackView`'s content padding,
-            // so the input row and the history above it share the same left/top text margin.
-            .padding(4)
+        ChatInputTextView(text: $text, isFocused: $isFocused, onSubmit: onSubmit)
             .frame(width: 150, height: 85, alignment: .topLeading)
             .border(Color.black, width: 1)
-            .focused($isFocused)
-            // The TextField's single-line intrinsic hit area covers only the top row, but the
-            // bordered box looks 85 px tall. Make the whole footprint focusable so a tap on the
-            // lower rows focuses the field (same idiom as `ItemsListView`'s hand cells).
-            .contentShape(Rectangle())
-            .onTapGesture { isFocused = true }
-            .onSubmit {
-                onSubmit()
-                isFocused = false
-            }
-            .onKeyPress(.escape) {
-                isFocused = false
-                return .handled
-            }
+    }
+}
+
+/// `NSTextView` host. Completion is off to suppress the launch popover; substitutions are off
+/// so chat text is never silently rewritten.
+private struct ChatInputTextView: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isFocused: $isFocused)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+
+        let textView = ReturnSubmittingTextView()
+        textView.delegate = context.coordinator
+        textView.onFocusChange = { [coordinator = context.coordinator] focused in
+            coordinator.setFocused(focused)
+        }
+        textView.isRichText = false
+        textView.isAutomaticTextCompletionEnabled = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.drawsBackground = false
+        // 13pt matches `ChatScrollbackView`'s implicit SwiftUI body font so the input row and the
+        // scrollback above it render at the same size; keep it in sync if that font changes.
+        textView.font = .systemFont(ofSize: 13)
+        // Match `ChatScrollbackView`'s 4px content padding so the input row and the history
+        // above it share the same left/top text margin. `lineFragmentPadding` (default 5) would
+        // otherwise stack on top of `textContainerInset` and push the text further in.
+        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(
+            width: scrollView.contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context _: Context) {
+        guard let textView = scrollView.documentView as? ReturnSubmittingTextView else { return }
+        textView.onSubmit = onSubmit
+        // Keep the (empty) text view at least as tall as the visible area so a click anywhere
+        // in the bordered box lands on the text view and focuses it, rather than hitting the
+        // scroll view's bare background below a collapsed one-line document view.
+        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+        if textView.string != text {
+            textView.string = text
+        }
+        let isFirstResponder = textView.window?.firstResponder === textView
+        if isFocused, !isFirstResponder {
+            textView.window?.makeFirstResponder(textView)
+        } else if !isFocused, isFirstResponder {
+            // Resign here on unfocus — the play field can't take first responder to do it for us.
+            textView.window?.makeFirstResponder(nil)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        @Binding var isFocused: Bool
+
+        init(text: Binding<String>, isFocused: Binding<Bool>) {
+            _text = text
+            _isFocused = isFocused
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text = textView.string
+        }
+
+        /// Driven by the text view's first-responder transitions, which fire before the first
+        /// keystroke — in time to release the gameplay-key monitor so the field can be typed
+        /// into. `makeFirstResponder` in `updateNSView` can call this re-entrantly, so only
+        /// write the binding on a real change to avoid tripping SwiftUI's "modifying state
+        /// during update" guard.
+        func setFocused(_ focused: Bool) {
+            if isFocused != focused { isFocused = focused }
+        }
+    }
+}
+
+/// Submits on Return and blurs on Escape instead of inserting a newline / beeping. `mouseDown`
+/// marks the user's intent to focus before the click is processed, so only a deliberate click
+/// registers as focus — an auto/programmatic first-responder gain on launch does not.
+private final class ReturnSubmittingTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onFocusChange?(true)
+        super.mouseDown(with: event)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
+    }
+
+    override func doCommand(by selector: Selector) {
+        switch selector {
+        case #selector(insertNewline(_:)):
+            onSubmit?()
+            window?.makeFirstResponder(nil)
+        case #selector(cancelOperation(_:)):
+            window?.makeFirstResponder(nil)
+        default:
+            super.doCommand(by: selector)
+        }
     }
 }
