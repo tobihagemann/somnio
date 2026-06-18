@@ -167,8 +167,12 @@ jobs:
           # consumed by the next step's `gh release create --notes-file`.
           # Must run before checking out main so we read the tagged commit's file.
           if [[ -f CHANGELOG.md ]]; then
+            # Match the version's section heading, whether bare (## 0.1.0 ...) or the
+            # bracketed Keep a Changelog form (## [0.1.0] ...). Stop at the next ## heading
+            # or at the trailing link-reference block ([0.1.0]: ...) so neither leaks in.
             awk -v ver="$MARKETING_VERSION" '
-              /^## / { if (found) exit; if ($2 == ver) found=1; next }
+              /^## / { if (found) exit; if ($2 == ver || $2 == "[" ver "]") found=1; next }
+              found && /^\[[^]]+\]:/ { exit }
               found { print }
             ' CHANGELOG.md > release_notes.txt
           fi

@@ -1,39 +1,70 @@
 ---
 name: release-player
-description: "Cut a player (macOS client) release by pushing a player-X.Y.Z tag, which triggers the release.yml CI workflow to build, sign, notarize, DMG, generate the Sparkle appcast, and publish a GitHub Release. Use when the user asks to release the player, ship a new player/client version, or cut a player-X.Y.Z release."
+description: "Cut a player (macOS client) release: update CHANGELOG.md on main, then push the player-X.Y.Z tag that triggers the release.yml CI workflow (build, sign, notarize, DMG, Sparkle appcast, GitHub Release). Use when the user asks to release the player, prepare/cut a player release, or ship a new client version."
 ---
 
 # Release Player
 
-Releasing the player is just pushing a `player-X.Y.Z` git tag; CI (`.github/workflows/release.yml`) does the rest, and all secrets (signing/notarization, the `ASSETS_DEPLOY_KEY` asset pack, the `SOMNIO_GAMEPLAY_PRODUCTION_URL` variable) are already configured. The bare `X.Y.Z` is the marketing version that names the bundle and assets; the full tag (`RELEASE_TAG`, `player-X.Y.Z`) names the GitHub Release and the Sparkle download URL, so the two must stay aligned.
+Cut a player release straight from `main`: update the changelog, then push a `player-X.Y.Z` tag. CI does the build — the tag triggers `.github/workflows/release.yml`, which builds, signs, notarizes, packages a DMG, regenerates the Sparkle appcast, and publishes a GitHub Release whose body comes from `CHANGELOG.md`. Signing, asset-pack, and production-endpoint secrets are already configured in CI.
 
-## Step 1: Pick the version and confirm the commit is on main
+There is no version file to bump — the marketing version comes from the tag, and `CHANGELOG.md` is the only prep artifact (`version.env` holds names, not the version).
 
-Choose the bare version `X.Y.Z`. The workflow signs only commits reachable from `origin/main`, so the release commit must already be pushed to `main`. Confirm with `git merge-base --is-ancestor <commit> origin/main`.
+## Step 1: Determine the version
 
-## Step 2: Trigger the release
-
-Preferred — push a component-prefixed tag:
+If the user did not give one, infer the next `X.Y.Z` from the latest player tag and propose a patch/minor/major bump, then confirm:
 
 ```bash
-git tag player-X.Y.Z <commit>
+git tag -l 'player-*' --sort=-v:refname | head -1
+```
+
+## Step 2: Update the changelog
+
+Make sure `main` is clean and current (`git checkout main && git pull origin main`), then add a new section at the top of `CHANGELOG.md`, above the previous version, in Keep a Changelog form:
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+
+- ...
+```
+
+- Use the bracketed heading `## [X.Y.Z] - <today>` (ISO 8601 date) and add a matching link reference at the bottom: `[X.Y.Z]: https://github.com/tobihagemann/somnio/releases/tag/player-X.Y.Z`.
+- `release.yml` extracts this section (everything from the heading down to the link-reference block) as the GitHub Release notes. Omitting the section makes the notes fall back to a bare "X.Y.Z release".
+- Write user-facing entries grouped under Added / Changed / Fixed / etc., describing outcomes for players. To find what changed since the last release, run `git log <last-player-tag>..HEAD --oneline` and read PR bodies (`gh pr view <n> --json title,body`) for user impact rather than relying on commit messages. Propose entries or ask the user.
+
+## Step 3: Commit and push to main
+
+```bash
+git add CHANGELOG.md
+git commit -m "Prepare player X.Y.Z"
+git push origin main
+```
+
+The tag must land on a `main` commit: `release.yml` signs only commits reachable from `origin/main`, and it reads `CHANGELOG.md` at the tagged commit.
+
+## Step 4: Tag and trigger the release
+
+Tag the changelog commit and push the tag — this is what starts CI:
+
+```bash
+git tag -a player-X.Y.Z -m "player-X.Y.Z"
 git push origin player-X.Y.Z
 ```
 
-Alternative — manual dispatch (enter the bare version; the `player-` prefix is added). The `dry_run` input defaults to true (build + sign + notarize, skip publish); set it false to publish:
+`release.yml` then builds, signs, notarizes, generates the appcast, creates the `player-X.Y.Z` GitHub Release (notes from the changelog section), and commits the updated `appcast.xml` back to `main`.
+
+To rehearse the build without publishing, dispatch a dry run instead of tagging: `gh workflow run release.yml -f version=X.Y.Z -f dry_run=true`.
+
+## Step 5: Finish
 
 ```bash
-gh workflow run release.yml -f version=X.Y.Z -f dry_run=false
+git pull origin main            # pick up the appcast commit CI pushed
+gh release view player-X.Y.Z    # verify the Release and its assets
 ```
-
-## Step 3: Monitor and finish
-
-1. Watch the run: `gh run watch` (or `gh run list --workflow=release.yml`).
-2. On success the workflow commits the regenerated `appcast.xml` to `main` — run `git pull` so local `main` keeps it.
-3. Verify the GitHub Release and its assets: `gh release view player-X.Y.Z`.
 
 ## Notes
 
 - A published player connects to production only once the matching server is deployed (run the `/release-server` skill) and `SOMNIO_GAMEPLAY_PRODUCTION_URL` points at it.
-- Reserve each `X.Y.Z` for one set of artifacts — re-tagging a published version reuses Release/appcast URLs for different content.
-- The editor is not released here; build a signed, notarized editor DMG locally with `Scripts/release.sh editor`.
+- Reserve each `X.Y.Z` for one set of artifacts — re-tagging a published version reuses the Release and appcast URLs for different content.
+- The editor and server release separately: a signed editor DMG via `Scripts/release.sh editor`, the server via the `/release-server` skill.
