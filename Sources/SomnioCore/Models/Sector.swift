@@ -35,6 +35,17 @@ public struct SectorBody: Sendable, Equatable, Codable {
         self.npcs = npcs
         self.monsterSpawns = monsterSpawns
     }
+
+    /// Pixel extent of the sector (tiles × `tileSize`), widened to `Int32` so a large sector
+    /// cannot trap the multiply. Mirrors `Sector.pixelWidth`/`pixelHeight` for callers holding a
+    /// `SectorBody` (the editor canvas) rather than a named `Sector`.
+    public var pixelWidth: Int32 {
+        Int32(dimensions.width) * Int32(SomnioConstants.tileSize)
+    }
+
+    public var pixelHeight: Int32 {
+        Int32(dimensions.height) * Int32(SomnioConstants.tileSize)
+    }
 }
 
 public struct Sector: Sendable, Equatable {

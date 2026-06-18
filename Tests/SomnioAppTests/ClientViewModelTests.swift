@@ -180,10 +180,37 @@ struct ClientViewModelTests {
         #expect(viewModel.presentedSheet == .login)
     }
 
-    @Test func `peer leave removes from entities and players and appends left chat line`() {
+    @Test func `peer disconnect removes from entities and players and appends left chat line`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .attached
-        let peer = WorldEntity(
+        viewModel.entities[5] = carol()
+        viewModel.players = ["Carol"]
+        viewModel.worldScene.placeEntity(carol())
+        // A true disconnect carries `leftGame: true`.
+        viewModel.handle(.message(.leave(LeaveMessage(entityIndex: 5, leftGame: true))))
+        #expect(viewModel.entities[5] == nil)
+        #expect(viewModel.players.contains("Carol") == false)
+        #expect(viewModel.chatLines.contains(.left(playerName: "Carol")))
+    }
+
+    @Test func `peer sector change removes from entities and players without a left chat line`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        viewModel.entities[5] = carol()
+        viewModel.players = ["Carol"]
+        viewModel.worldScene.placeEntity(carol())
+        let chatBefore = viewModel.chatLines.count
+        // A portal hop to another sector detaches with `leftGame: false` — the peer is removed from
+        // this sector's roster but did not quit, so no "left the game" line should appear.
+        viewModel.handle(.message(.leave(LeaveMessage(entityIndex: 5, leftGame: false))))
+        #expect(viewModel.entities[5] == nil)
+        #expect(viewModel.players.contains("Carol") == false)
+        #expect(viewModel.chatLines.count == chatBefore)
+        #expect(!viewModel.chatLines.contains(.left(playerName: "Carol")))
+    }
+
+    private func carol() -> WorldEntity {
+        WorldEntity(
             id: 5,
             kind: .peer,
             figure: 0,
@@ -193,13 +220,6 @@ struct ClientViewModelTests {
             maskSize: GridSize(width: 128, height: 128),
             name: "Carol"
         )
-        viewModel.entities[5] = peer
-        viewModel.players = ["Carol"]
-        viewModel.worldScene.placeEntity(peer)
-        viewModel.handle(.message(.leave(LeaveMessage(entityIndex: 5, leftGame: false))))
-        #expect(viewModel.entities[5] == nil)
-        #expect(viewModel.players.contains("Carol") == false)
-        #expect(viewModel.chatLines.contains(.left(playerName: "Carol")))
     }
 
     @Test func `self leave with leftGame triggers teardown`() {
@@ -231,6 +251,56 @@ struct ClientViewModelTests {
         #expect(viewModel.entities[11] == nil)
         #expect(viewModel.players == ["Carol"])
         #expect(viewModel.chatLines.count == chatBefore)
+    }
+
+    @Test func `activating the cudgel enqueues an equip toggle for the right hand`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.activateInventoryItem(InventoryRow(slot: 1, category: 1, itemId: 0, equippedHand: nil))
+        let equips = outbound.compactMap { message -> EquipToggleMessage? in
+            if case let .equipToggle(payload) = message { payload } else { nil }
+        }
+        #expect(equips.count == 1)
+        #expect(equips.first?.slot == 1)
+        #expect(equips.first?.hand == .right)
+    }
+
+    @Test func `activating an equipped cudgel enqueues an unequip`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.activateInventoryItem(InventoryRow(slot: 1, category: 1, itemId: 0, equippedHand: .right))
+        let equips = outbound.compactMap { message -> EquipToggleMessage? in
+            if case let .equipToggle(payload) = message { payload } else { nil }
+        }
+        #expect(equips.first?.hand == WireHand.none)
+    }
+
+    @Test func `activating the purse posts the coin balance to chat without equipping`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        let purse = InventoryRow(
+            slot: 0, category: 0, itemId: 0,
+            extras: [InventoryExtra(key: InventoryExtra.goldKey, value: 100)]
+        )
+        viewModel.activateInventoryItem(purse)
+        #expect(viewModel.chatLines.contains(.purseBalance(coins: 100)))
+        #expect(!outbound.contains { if case .equipToggle = $0 { true } else { false } })
+    }
+
+    @Test func `activating an item while not attached does nothing`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .disconnected
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.activateInventoryItem(InventoryRow(slot: 1, category: 1, itemId: 0, equippedHand: nil))
+        #expect(outbound.isEmpty)
+        #expect(viewModel.chatLines.isEmpty)
     }
 
     @Test func `enterSector clears stale entities and self-index from the previous sector`() {

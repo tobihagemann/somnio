@@ -33,6 +33,16 @@ SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Contents/MacOS/Somnio
 
 Launch the binary directly rather than via Finder or `open`: environment variables don't propagate through `open`, and the debug client otherwise falls back to `ws://127.0.0.1:8080/ws`, missing the dev server on 8090.
 
+## Testing multiplayer behaviors
+
+To verify behavior that is only visible to *other* players (peer walk animation, "joined"/"left the game" chat lines, peer speech bubbles), launch a second instance with an isolated profile so two characters can be logged in at once:
+
+```bash
+SOMNIO_PROFILE=alice SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Contents/MacOS/Somnio
+```
+
+`SOMNIO_PROFILE` gives each instance its own Application Support storage + UserDefaults (see CLAUDE.md "Dev/Prod Isolation"), so register/log in a different character in each. Fresh characters spawn in the `EdariaBibliothek` starter sector, so both land in the same sector and can see each other.
+
 ## Notes
 
 - Rebuild and repackage after code changes — a running app holds the old code.

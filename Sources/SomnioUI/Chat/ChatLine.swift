@@ -16,6 +16,9 @@ public enum ChatLine: Sendable, Equatable, Hashable {
     case joined(playerName: String)
     case left(playerName: String)
     case startupGreeting
+    /// Coin balance reported when the purse is double-clicked. The legacy original wrote this to
+    /// the chat log ("Du besitzt Nc.") in plain body text, not to the inventory row.
+    case purseBalance(coins: Int16)
 
     /// The visual-treatment bucket that selects this line's foreground color, weight,
     /// and slant via `ChatLineStyle.style(for:)`.
@@ -28,6 +31,7 @@ public enum ChatLine: Sendable, Equatable, Hashable {
         case .connectionLost, .serverUnreachable, .badCredentials, .alreadyLoggedIn, .errorCode: return .error
         case .joined, .left: return .joinLeave
         case .startupGreeting: return .startupGreeting
+        case .purseBalance: return .itemInfo
         }
     }
 }

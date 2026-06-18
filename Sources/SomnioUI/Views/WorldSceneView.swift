@@ -7,13 +7,18 @@ import SwiftUI
 /// redraws.
 @MainActor public struct WorldSceneView: View {
     private let scene: WorldScene
+    private let size: CGSize
 
-    public init(scene: WorldScene) {
+    /// The player client renders the fixed 640×480 scrolling viewport (the default); the editor
+    /// passes the full sector pixel size and hosts the view inside a scroll view so a sector larger
+    /// than the window can be panned to in full.
+    public init(scene: WorldScene, size: CGSize = CGSize(width: 640, height: 480)) {
         self.scene = scene
+        self.size = size
     }
 
     public var body: some View {
         SpriteView(scene: scene)
-            .frame(width: 640, height: 480)
+            .frame(width: size.width, height: size.height)
     }
 }

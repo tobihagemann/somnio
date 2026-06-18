@@ -43,23 +43,33 @@ import SpriteKit
         gridNode.removeAllChildren()
         selectionNode.removeAllChildren()
 
+        // Records are authored in legacy top-left pixel space; the ground/object graphics are
+        // rendered Y-flipped to SpriteKit's bottom-left origin (see `WorldScene.sceneY`), so the
+        // overlay has to flip by the same sector pixel height or the masks land mirrored against
+        // the art they describe.
+        let sectorHeightPx = CGFloat(body.pixelHeight)
+
         for mask in body.collisionMasks {
             masksNode.addChild(filledRectangle(
                 origin: GridPoint(x: mask.x, y: mask.y),
                 size: GridSize(width: mask.width, height: mask.height),
                 fill: SKColor.red.withAlphaComponent(0.25),
-                stroke: .red
+                stroke: .red,
+                sectorHeightPx: sectorHeightPx
             ))
         }
         for portal in body.portals {
             let stroke: SKColor = portal.direction == .outboundTrigger ? .blue : .systemTeal
+            let origin = GridPoint(x: portal.x, y: portal.y)
+            let size = GridSize(width: portal.width, height: portal.height)
             let rect = filledRectangle(
-                origin: GridPoint(x: portal.x, y: portal.y),
-                size: GridSize(width: portal.width, height: portal.height),
+                origin: origin,
+                size: size,
                 fill: stroke.withAlphaComponent(0.2),
-                stroke: stroke
+                stroke: stroke,
+                sectorHeightPx: sectorHeightPx
             )
-            rect.addChild(label(text: portal.targetSectorName, at: GridPoint(x: portal.x, y: portal.y)))
+            rect.addChild(label(text: portal.targetSectorName, at: origin, sectorHeightPx: sectorHeightPx))
             portalsNode.addChild(rect)
         }
         for npc in body.npcs {
@@ -67,9 +77,10 @@ import SpriteKit
                 origin: npc.spawnOrigin,
                 size: npc.spawnBoxSize,
                 fill: SKColor.green.withAlphaComponent(0.2),
-                stroke: .green
+                stroke: .green,
+                sectorHeightPx: sectorHeightPx
             )
-            rect.addChild(label(text: npc.name, at: npc.spawnOrigin))
+            rect.addChild(label(text: npc.name, at: npc.spawnOrigin, sectorHeightPx: sectorHeightPx))
             spawnsNode.addChild(rect)
         }
         for spawn in body.monsterSpawns {
@@ -77,14 +88,15 @@ import SpriteKit
                 origin: spawn.spawnOrigin,
                 size: spawn.spawnBoxSize,
                 fill: SKColor.orange.withAlphaComponent(0.2),
-                stroke: .orange
+                stroke: .orange,
+                sectorHeightPx: sectorHeightPx
             )
-            rect.addChild(label(text: spawn.name, at: spawn.spawnOrigin))
+            rect.addChild(label(text: spawn.name, at: spawn.spawnOrigin, sectorHeightPx: sectorHeightPx))
             spawnsNode.addChild(rect)
         }
 
         if let selection {
-            if let highlight = highlightShape(for: selection, in: body) {
+            if let highlight = highlightShape(for: selection, in: body, sectorHeightPx: sectorHeightPx) {
                 selectionNode.addChild(highlight)
             }
         }
@@ -94,45 +106,47 @@ import SpriteKit
         }
     }
 
+    /// `CGRect` for a record authored at legacy top-left `origin`/`size`, flipped into the scene's
+    /// bottom-left space (the same flip the ground/object art uses).
+    private func flippedRect(origin: GridPoint, size: GridSize, sectorHeightPx: CGFloat) -> CGRect {
+        CGRect(
+            x: CGFloat(origin.x),
+            y: sectorHeightPx - CGFloat(origin.y) - CGFloat(size.height),
+            width: CGFloat(size.width),
+            height: CGFloat(size.height)
+        )
+    }
+
     private func filledRectangle(
         origin: GridPoint,
         size: GridSize,
         fill: SKColor,
-        stroke: SKColor
+        stroke: SKColor,
+        sectorHeightPx: CGFloat
     ) -> SKShapeNode {
-        let rect = CGRect(
-            x: CGFloat(origin.x),
-            y: CGFloat(origin.y),
-            width: CGFloat(size.width),
-            height: CGFloat(size.height)
-        )
-        let shape = SKShapeNode(rect: rect)
+        let shape = SKShapeNode(rect: flippedRect(origin: origin, size: size, sectorHeightPx: sectorHeightPx))
         shape.fillColor = fill
         shape.strokeColor = stroke
         shape.lineWidth = 1
         return shape
     }
 
-    private func label(text: String, at origin: GridPoint) -> SKLabelNode {
+    private func label(text: String, at origin: GridPoint, sectorHeightPx: CGFloat) -> SKLabelNode {
         let node = SKLabelNode(text: text)
         node.fontName = "Menlo"
         node.fontSize = 10
         node.fontColor = .white
         node.horizontalAlignmentMode = .left
         node.verticalAlignmentMode = .top
-        node.position = CGPoint(x: CGFloat(origin.x) + 2, y: CGFloat(origin.y) - 2)
+        // Pin to the box's visual top-left edge in the flipped scene space (the box top is the
+        // higher scene Y), 2px in, so the label still reads from the corner the user authored.
+        node.position = CGPoint(x: CGFloat(origin.x) + 2, y: sectorHeightPx - CGFloat(origin.y) - 2)
         return node
     }
 
-    private func highlightShape(for selection: EditorSelection, in body: SectorBody) -> SKShapeNode? {
+    private func highlightShape(for selection: EditorSelection, in body: SectorBody, sectorHeightPx: CGFloat) -> SKShapeNode? {
         guard let (origin, size) = selection.bounds(in: body) else { return nil }
-        let rect = CGRect(
-            x: CGFloat(origin.x),
-            y: CGFloat(origin.y),
-            width: CGFloat(size.width),
-            height: CGFloat(size.height)
-        )
-        let shape = SKShapeNode(rect: rect)
+        let shape = SKShapeNode(rect: flippedRect(origin: origin, size: size, sectorHeightPx: sectorHeightPx))
         shape.fillColor = .clear
         shape.strokeColor = .yellow
         shape.lineWidth = 2

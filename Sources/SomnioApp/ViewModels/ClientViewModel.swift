@@ -150,10 +150,21 @@ import SpriteKit
 
     // MARK: - Inventory
 
-    public func toggleEquip(_ row: InventoryRow, hand: Hand) {
+    /// Double-clicking an inventory row activates that item, faithful to the legacy `InventarBox`
+    /// DoubleClick: the cudgel toggles equip in its fixed hand (the right) — the player never picks
+    /// a hand — and the purse reports its coin balance to the chat log rather than equipping.
+    /// Re-toggling the cudgel sends `.none` to unequip; the server clears whatever else held that hand.
+    public func activateInventoryItem(_ row: InventoryRow) {
         guard connectionState == .attached else { return }
-        let wireHand: WireHand = row.equippedHand == hand ? .none : (hand == .left ? .left : .right)
-        enqueue(.equipToggle(EquipToggleMessage(slot: row.slot, hand: wireHand)))
+        switch (row.category, row.itemId) {
+        case (0, 0): // purse: report the coin balance to the chat log; not equippable
+            chatLines.append(.purseBalance(coins: row.goldBalance))
+        case (1, 0): // cudgel: toggle equip in the right hand
+            let wireHand: WireHand = row.equippedHand == nil ? .right : .none
+            enqueue(.equipToggle(EquipToggleMessage(slot: row.slot, hand: wireHand)))
+        default:
+            break
+        }
     }
 
     // MARK: - Inbound dispatch
@@ -388,7 +399,11 @@ import SpriteKit
             worldScene.removeEntity(id: payload.entityIndex)
             if leaving.kind == .peer {
                 players.removeAll { $0 == leaving.name }
-                chatLines.append(.left(playerName: leaving.name))
+                // A peer changing sectors detaches with `leftGame: false`; only a real
+                // disconnect (`leftGame: true`) is a "left the game" event.
+                if payload.leftGame {
+                    chatLines.append(.left(playerName: leaving.name))
+                }
             }
         }
     }

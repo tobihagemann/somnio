@@ -321,6 +321,28 @@ struct WorldSceneEntityTests {
         #expect(!frames.contains(3))
     }
 
+    @Test func `a tweening peer keeps animating across the whole tween between sparse updates`() {
+        // A peer's position arrives on the ~500 ms heartbeat but its node tweens across the gap, so
+        // a single `animateEntity` call must drive the walk cycle for the whole `duration`, not just
+        // the 0.15s grace window. With a 0.2s/frame cadence, reaching frame 2 needs ~0.4s of
+        // sustained motion — impossible if the entity reverts to idle after the grace window.
+        let spy = FrameCountSpy(entityFrameCount: 3)
+        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: spy)
+        scene.load(sector: tinySector())
+        scene.placeEntity(sampleEntity())
+
+        scene.update(0.0) // seed the per-frame clock
+        // One heartbeat: a single animate with no further position updates for the whole duration.
+        scene.animateEntity(7, to: GridPoint(x: 200, y: 20), facing: .east, duration: 0.5)
+        var time = 0.0
+        for _ in 1 ... 5 {
+            time += 0.1
+            scene.update(time)
+        }
+
+        #expect(spy.requestedFrames.contains(2))
+    }
+
     private func playerEntity() -> WorldEntity {
         WorldEntity(
             id: 1,

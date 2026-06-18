@@ -290,6 +290,23 @@
           }
         }
       }
+    },
+    "You own %@c." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du besitzt %@c."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You own %@c."
+          }
+        }
+      }
     }
   }
 }

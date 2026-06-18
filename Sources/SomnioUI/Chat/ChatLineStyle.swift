@@ -30,7 +30,7 @@ public struct ChatLineStyle: Sendable, Equatable, Hashable {
         switch category {
         case .ownMessage:
             return ChatLineStyle(foreground: .purple, bold: false, italic: false)
-        case .peerMessage, .npcMessage:
+        case .peerMessage, .npcMessage, .itemInfo:
             return ChatLineStyle(foreground: .primary, bold: false, italic: false)
         case .adminBroadcast, .error:
             return ChatLineStyle(foreground: .red, bold: false, italic: false)

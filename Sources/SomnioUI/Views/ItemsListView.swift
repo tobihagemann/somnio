@@ -1,47 +1,40 @@
 import SomnioCore
 import SwiftUI
 
-/// `[L]` / `[R]` glyphs are layout-only markers, not translatable text — the legacy
-/// original hardcodes them too. They are deliberately not catalog entries; the
-/// localization-compliance sweep whitelists them.
-private extension Hand {
-    var bracketGlyph: String {
-        switch self {
-        case .left: return "[L]"
-        case .right: return "[R]"
-        }
-    }
-}
-
-/// Two-column inventory list with a name column and a per-hand `[L]` / `[R]` flag pair,
-/// plus an "Items: N" footer. The legacy `InventarBox` flag column maps to two ~20 px
-/// cells: the left cell shows `[L]` when equipped to the left hand, the right cell shows
-/// `[R]` when equipped to the right hand. Tapping either cell forwards `(row, hand)` to
-/// `onItemTap`; the name column is non-interactive.
+/// Inventory list with a name column, a display-only equip marker, and an "Items: N" footer.
+/// Mirrors the legacy `InventarBox`: double-clicking a row toggles that item's equip state and
+/// forwards the row to `onItemActivate`; the `[L]` / `[R]` marker only reflects the hand the
+/// server reports — the player never picks a hand (each item equips to its own fixed hand).
 public struct ItemsListView: View {
     public let items: [InventoryRow]
     public let locale: Locale?
-    public let onItemTap: ((InventoryRow, Hand) -> Void)?
+    public let onItemActivate: ((InventoryRow) -> Void)?
 
     public init(
         items: [InventoryRow],
         locale: Locale? = nil,
-        onItemTap: ((InventoryRow, Hand) -> Void)? = nil
+        onItemActivate: ((InventoryRow) -> Void)? = nil
     ) {
         self.items = items
         self.locale = locale
-        self.onItemTap = onItemTap
+        self.onItemActivate = onItemActivate
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             List(Array(items.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 0) {
+                HStack(spacing: 4) {
                     Text(verbatim: ItemCatalog.displayName(category: row.category, itemId: row.itemId, locale: locale))
-                        .frame(width: 110, alignment: .leading)
-                    handCell(row: row, hand: .left)
-                    handCell(row: row, hand: .right)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(verbatim: marker(for: row))
+                        .frame(width: 24, alignment: .trailing)
                 }
+                .contentShape(Rectangle())
+                // Double-click the whole row, matching the legacy `InventarBox` DoubleClick handler.
+                // A double-click (not a single tap) is also required because the macOS `List`
+                // swallows single taps on row content via its table-view row handling.
+                .onTapGesture(count: 2) { onItemActivate?(row) }
             }
             .listStyle(.plain)
             .frame(width: 150, height: 100)
@@ -51,12 +44,14 @@ public struct ItemsListView: View {
         }
     }
 
-    @ViewBuilder
-    private func handCell(row: InventoryRow, hand: Hand) -> some View {
-        let glyph = row.equippedHand == hand ? hand.bracketGlyph : ""
-        Text(verbatim: glyph)
-            .frame(width: 20, height: 20, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { onItemTap?(row, hand) }
+    /// `[L]` / `[R]` are layout-only status markers, not translatable text — the legacy original
+    /// hardcodes them too, so they are deliberately not catalog entries (localization sweep
+    /// whitelists them).
+    private func marker(for row: InventoryRow) -> String {
+        switch row.equippedHand {
+        case .left: return "[L]"
+        case .right: return "[R]"
+        case nil: return ""
+        }
     }
 }

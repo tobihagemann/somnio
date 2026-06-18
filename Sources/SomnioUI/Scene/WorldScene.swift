@@ -27,6 +27,13 @@ import SpriteKit
         var lastMotionTime: TimeInterval
         /// One-shot: set when a driver path sees a position delta, consumed in `update(_:)`.
         var pendingMotion: Bool
+        /// Seconds of motion still owed to an in-flight `animateEntity` tween. A peer's position
+        /// arrives on the ~500 ms heartbeat but its node tweens across the whole gap, so the
+        /// one-shot `pendingMotion` flag alone would keep it "moving" for only `motionGraceWindow`
+        /// after each sparse update and then freeze its walk cycle for the rest of the tween.
+        /// `update(_:)` drains this each frame and treats any remaining time as live motion, so the
+        /// walk cycle runs for the entire move. Direct-set drivers (the local player) leave it 0.
+        var remainingTweenMotion: TimeInterval
         var walkPhase: TimeInterval
         var renderedFacing: Direction?
         var renderedFrame: Int?
@@ -42,6 +49,7 @@ import SpriteKit
             self.lastPosition = position
             self.lastMotionTime = -.infinity
             self.pendingMotion = false
+            self.remainingTweenMotion = 0
             self.walkPhase = 0
             self.renderedFacing = nil
             self.renderedFrame = nil
@@ -113,6 +121,14 @@ import SpriteKit
     /// Centers the scrolling camera on a node's center given its anchor-(0,0) origin.
     private func centerCamera(onNodeOrigin origin: CGPoint, size: CGSize) {
         cameraNode.position = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+    }
+
+    /// Editor-only: centers the camera on the whole sector. The player client follows its character
+    /// via `cameraFollowID`; the editor instead renders the scene at full sector size inside a scroll
+    /// view, so the camera must sit at the sector's center rather than the viewport center
+    /// `load(sector:)` defaults to (which depends on `resizeFill` having already sized the scene).
+    public func centerCameraOnSector(pixelWidth: Int32, pixelHeight: Int32) {
+        cameraNode.position = CGPoint(x: CGFloat(pixelWidth) / 2, y: CGFloat(pixelHeight) / 2)
     }
 
     /// Tears down the splash node and its text fallback.
@@ -304,10 +320,13 @@ import SpriteKit
             WorldScene.logger.debug("animateEntity called for unknown entity \(id)")
             return
         }
-        // Position delta is the moving signal; tempo is intentionally not consumed here.
+        // Position delta is the moving signal; tempo is intentionally not consumed here. Owe
+        // `duration` of motion to the walk cycle so the tween animates the whole glide (see
+        // `remainingTweenMotion`).
         let legacyPosition = CGPoint(x: CGFloat(position.x), y: CGFloat(position.y))
         if legacyPosition != state.lastPosition {
             state.pendingMotion = true
+            state.remainingTweenMotion = duration
             state.lastPosition = legacyPosition
         }
         state.facing = facing
@@ -334,6 +353,12 @@ import SpriteKit
             if state.pendingMotion {
                 state.lastMotionTime = currentTime
                 state.pendingMotion = false
+            }
+            // Drain owed tween motion so a tweening entity counts as moving for the whole glide,
+            // not just the grace window after its single delta (see `remainingTweenMotion`).
+            if state.remainingTweenMotion > 0 {
+                state.remainingTweenMotion -= dt
+                state.lastMotionTime = currentTime
             }
             let isMoving = (currentTime - state.lastMotionTime) < Self.motionGraceWindow
             let targetFrame: Int

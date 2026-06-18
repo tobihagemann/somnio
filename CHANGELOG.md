@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Fix a stray translucent window appearing beside the player window at startup
+- Show other players' walking animation as they move
+- Stop showing a "left the game" message when another player moves to a different sector instead of leaving
+- Allow equipping the cudgel from the inventory by double-clicking it
+- Show your purse's coin balance in chat when you double-click the purse
 
 ## [0.1.0] - 2026-06-18
 

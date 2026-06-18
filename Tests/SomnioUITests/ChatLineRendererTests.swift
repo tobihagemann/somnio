@@ -58,4 +58,8 @@ struct ChatLineRendererTests {
     @Test func `startup greeting renders the welcome line`() {
         #expect(ChatLineRenderer.render(.startupGreeting, locale: en) == "Welcome to Somnio!")
     }
+
+    @Test func `purse balance substitutes the coin count`() {
+        #expect(ChatLineRenderer.render(.purseBalance(coins: 100), locale: en) == "You own 100c.")
+    }
 }

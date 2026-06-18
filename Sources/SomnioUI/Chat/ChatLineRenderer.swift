@@ -4,6 +4,7 @@ import Foundation
 /// Exhaustive on every `ChatLine` variant so a new case is a build-time error rather
 /// than a silent fallthrough.
 public enum ChatLineRenderer {
+    // swiftlint:disable:next cyclomatic_complexity
     public static func render(_ line: ChatLine, locale: Locale? = nil) -> String {
         switch line {
         case let .spokenByOwn(senderName, message),
@@ -28,6 +29,8 @@ public enum ChatLineRenderer {
             return String(format: L.string("%@ left the game.", locale: locale), playerName)
         case .startupGreeting:
             return L.string("Welcome to Somnio!", locale: locale)
+        case let .purseBalance(coins):
+            return String(format: L.string("You own %@c.", locale: locale), String(coins))
         }
     }
 

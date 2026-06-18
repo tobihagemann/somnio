@@ -49,7 +49,10 @@ import SwiftUI
             .onChange(of: workspace.showGridOverlay) { _, _ in
                 workspace.refreshOverlay(with: document.body)
             }
+            // Focusable so Delete/Backspace routes to `onDeleteCommand`, but suppress the blue
+            // focus ring SwiftUI would otherwise draw around the whole editor surface.
             .focusable(true)
+            .focusEffectDisabled()
             .onDeleteCommand {
                 CanvasController.deleteSelection(document: document, workspace: workspace, undoManager: undoManager)
             }
@@ -73,26 +76,56 @@ import SwiftUI
     }
 
     private var canvas: some View {
-        ZStack {
-            WorldSceneView(scene: workspace.worldScene)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(coordinateSpace: .local) { location in
-                    CanvasController.handleTap(at: location, document: document, workspace: workspace)
-                }
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    switch phase {
-                    case let .active(point):
-                        workspace.cursorReadout.x = Int16(clamping: Int(point.x))
-                        workspace.cursorReadout.y = Int16(clamping: Int(point.y))
-                    case .ended:
-                        workspace.cursorReadout.x = 0
-                        workspace.cursorReadout.y = 0
+        // Full sector size plus a margin inside a scroll view, so large sectors and sprites that
+        // overflow a sector edge (negative coords, or art taller than the footprint) stay reachable
+        // instead of clipped. `CanvasController.gridCoordinate` undoes the margin to recover grid
+        // coordinates from a `.local` point.
+        let tile = CGFloat(SomnioConstants.tileSize)
+        let sectorWidth = CGFloat(document.body.pixelWidth)
+        let sectorHeight = CGFloat(document.body.pixelHeight)
+        let margin = Self.canvasMargin(for: document.body, sectorWidth: sectorWidth, sectorHeight: sectorHeight, tile: tile)
+        let contentSize = CGSize(
+            width: max(sectorWidth + margin * 2, 1),
+            height: max(sectorHeight + margin * 2, 1)
+        )
+        return ScrollView([.horizontal, .vertical]) {
+            ZStack(alignment: .topLeading) {
+                WorldSceneView(scene: workspace.worldScene, size: contentSize)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: contentSize.width, height: contentSize.height)
+                    .onTapGesture(coordinateSpace: .local) { location in
+                        CanvasController.handleTap(at: location, margin: margin, document: document, workspace: workspace)
                     }
-                }
+                    .onContinuousHover(coordinateSpace: .local) { phase in
+                        switch phase {
+                        case let .active(point):
+                            workspace.cursorReadout.x = CanvasController.gridCoordinate(forLocal: point.x, margin: margin)
+                            workspace.cursorReadout.y = CanvasController.gridCoordinate(forLocal: point.y, margin: margin)
+                        case .ended:
+                            workspace.cursorReadout.x = 0
+                            workspace.cursorReadout.y = 0
+                        }
+                    }
+            }
+            .frame(width: contentSize.width, height: contentSize.height)
         }
-        .frame(width: 640, height: 480)
+        .frame(minWidth: 640, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .border(.secondary)
+    }
+
+    /// Scrollable breathing room around the sector: at least one tile, expanded to cover any object
+    /// sprite that extends past a sector edge so it stays visible and selectable in the editor.
+    private static func canvasMargin(for body: SectorBody, sectorWidth: CGFloat, sectorHeight: CGFloat, tile: CGFloat) -> CGFloat {
+        var overflow: CGFloat = 0
+        for object in body.objects {
+            let x = CGFloat(object.x)
+            let y = CGFloat(object.y)
+            let width = CGFloat(object.sourceWidth)
+            let height = CGFloat(object.sourceHeight)
+            overflow = max(overflow, -x, x + width - sectorWidth, -y, y + height - sectorHeight)
+        }
+        return max(tile, overflow.rounded(.up))
     }
 
     private var hudStrip: some View {

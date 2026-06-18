@@ -55,6 +55,31 @@ struct SectorTests {
         #expect(sector.body == body)
     }
 
+    @Test func `pixel extent of a SectorBody multiplies tiles by the tile size and mirrors Sector`() {
+        let body = SectorBody(
+            version: 1,
+            dimensions: GridSize(width: 8, height: 12),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100)
+        )
+        #expect(body.pixelWidth == 8 * Int32(SomnioConstants.tileSize))
+        #expect(body.pixelHeight == 12 * Int32(SomnioConstants.tileSize))
+        let sector = Sector(body: body, name: "S")
+        #expect(body.pixelWidth == sector.pixelWidth)
+        #expect(body.pixelHeight == sector.pixelHeight)
+    }
+
+    @Test func `pixel extent widens past Int16 for large sectors`() {
+        // 300 tiles * 128 = 38400, beyond Int16.max — the Int32 widening must not trap or overflow.
+        let body = SectorBody(
+            version: 1,
+            dimensions: GridSize(width: 300, height: 1),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100)
+        )
+        #expect(body.pixelWidth == 38400)
+    }
+
     @Test func `arrivalSpawn is nil without a self-targeting arrival portal`() {
         // The only portal targets a different sector, so it is not "S"'s arrival point.
         let sector = makeArrivalSector(

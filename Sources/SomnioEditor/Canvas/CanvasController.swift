@@ -8,21 +8,20 @@ import SwiftUI
 @MainActor public enum CanvasController {
     /// Routes a canvas tap to either record selection (when the current palette slot
     /// is `.selectAndEdit`) or to the matching per-tool dialog (when `.placeNew`).
-    /// Coordinates arrive in the SwiftUI top-left local space matching the canvas
-    /// frame; they're flipped against the scene's actual height (so resizing the
-    /// scene doesn't desync the placement transform) and quantized to the active
-    /// grid snap before being passed to the form-state initializer.
+    /// The canvas renders the sector at full pixel size with a sector-centered camera, inset by
+    /// `margin` of scrollable breathing room, so the SwiftUI top-left `.local` point maps to legacy
+    /// top-left grid coordinates by subtracting that margin, then clamping and quantizing.
     public static func handleTap(
         at location: CGPoint,
+        margin: CGFloat,
         document: SectorDocument,
         workspace: SectorWorkspace
     ) {
         let step = EditorDefaults.currentGridStepPx()
-        let sceneHeight = workspace.worldScene.size.height
-        let sceneX = Int16(clamping: Int(location.x))
-        let sceneY = Int16(clamping: Int(sceneHeight - location.y))
-        let snappedX = EditorDefaults.quantize(sceneX, step: step)
-        let snappedY = EditorDefaults.quantize(sceneY, step: step)
+        let gridX = gridCoordinate(forLocal: location.x, margin: margin)
+        let gridY = gridCoordinate(forLocal: location.y, margin: margin)
+        let snappedX = EditorDefaults.quantize(gridX, step: step)
+        let snappedY = EditorDefaults.quantize(gridY, step: step)
         let point = GridPoint(x: snappedX, y: snappedY)
         switch workspace.selectedPaletteSlot {
         case .selectAndEdit:
@@ -44,6 +43,12 @@ import SwiftUI
                 workspace.presentedSheet = .spawnDialog
             }
         }
+    }
+
+    /// Converts a SwiftUI top-left `.local` axis coordinate to a legacy top-left grid coordinate:
+    /// the sector is inset by `margin` of scroll padding, so remove it, then floor into `Int16`.
+    public static func gridCoordinate(forLocal value: CGFloat, margin: CGFloat) -> Int16 {
+        Int16(clamping: Int((value - margin).rounded(.down)))
     }
 
     public static func deleteSelection(

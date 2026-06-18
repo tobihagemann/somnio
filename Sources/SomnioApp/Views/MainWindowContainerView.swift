@@ -25,7 +25,7 @@ import SwiftUI
             chatLines: viewModel.chatLines,
             chatInput: $viewModel.chatInput,
             onSubmitChat: { viewModel.submitChat() },
-            onItemTap: { row, hand in viewModel.toggleEquip(row, hand: hand) },
+            onItemActivate: { row in viewModel.activateInventoryItem(row) },
             onChatFocusChange: { focused in viewModel.isChatInputFocused = focused }
         )
         .onAppear { viewModel.bootstrapAutoLogin() }

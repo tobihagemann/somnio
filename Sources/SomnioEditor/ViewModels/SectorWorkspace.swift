@@ -39,7 +39,11 @@ import SomnioUI
     /// the overlay. Heavy because `WorldScene.load(sector:)` rebuilds the entire tile
     /// graph; selection/grid-only changes should use `refreshOverlay(with:)` instead.
     public func reconcile(with body: SectorBody, sectorName: String) {
-        worldScene.load(sector: Sector(body: body, name: sectorName))
+        let sector = Sector(body: body, name: sectorName)
+        worldScene.load(sector: sector)
+        // The canvas renders the scene at full sector size inside a scroll view, so center the
+        // camera on the whole sector rather than the viewport center `load` defaults to.
+        worldScene.centerCameraOnSector(pixelWidth: sector.pixelWidth, pixelHeight: sector.pixelHeight)
         if let current = selection, !current.isValid(in: body) {
             selection = nil
         }

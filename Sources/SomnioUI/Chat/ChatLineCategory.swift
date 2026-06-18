@@ -12,4 +12,7 @@ public enum ChatLineCategory: Sendable, Equatable, Hashable, CaseIterable {
     case error
     case joinLeave
     case startupGreeting
+    /// Plain body-text item feedback (e.g. the purse's coin balance), matching the legacy
+    /// black-text `Schreiben` call for inventory info.
+    case itemInfo
 }
