@@ -4,6 +4,7 @@ import Logging
 import NIOCore
 import NIOFoundationCompat
 import NIOSSL
+import SomnioCore
 import SomnioProtocol
 
 /// Long-lived gameplay-WebSocket transport. Mirrors `AdminTransport`'s framing decisions
@@ -141,7 +142,7 @@ public actor GameplayTransport {
         delegate: any GameplayTransportDelegate,
         logger: Logger
     ) async {
-        let (outbox, drainStream) = GameplayOutbox.make()
+        let (outbox, drainStream) = SendableMailbox<Data>.make()
         let closeSignal = GameplayCloseSignal()
 
         // Publish the outbox + close signal BEFORE spawning the read loop so a fast

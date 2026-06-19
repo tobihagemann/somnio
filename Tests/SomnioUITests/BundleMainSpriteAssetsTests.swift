@@ -99,16 +99,26 @@ struct BundleMainSpriteAssetsTests {
         #expect(counts.red == 0, "row 0 red must not appear in a sourceY=1 slice")
     }
 
-    @Test func `splash returns nil when System asset is absent from the bundle`() {
+    @Test func `splash returns the System fixture as a 64x48 texture`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        // The test bundle ships only `Tilesets/`; absent `System/` exercises the
-        // runtime's no-asset-pack fallback.
-        #expect(assets.splash() == nil)
+        // The test bundle ships `System/001-SplashScreen01.png` (64x48) — the exact name the
+        // loader resolves, so this guards the subdirectory + filename + decode path.
+        let texture = try #require(assets.splash())
+        #expect(texture.size().width == 64)
+        #expect(texture.size().height == 48)
     }
 
-    @Test func `animationStrip returns nil when Animations asset is absent`() {
+    @Test func `animationStrip returns the named Animations fixture as a 96x32 texture`() throws {
         let assets = BundleMainSpriteAssets(bundle: Bundle.module)
-        #expect(assets.animationStrip(name: "AnyName") == nil)
+        // `Animations/001-TestStrip.png` is 96x32; the name is passed through verbatim.
+        let texture = try #require(assets.animationStrip(name: "001-TestStrip"))
+        #expect(texture.size().width == 96)
+        #expect(texture.size().height == 32)
+    }
+
+    @Test func `animationStrip returns nil for an unknown name`() {
+        let assets = BundleMainSpriteAssets(bundle: Bundle.module)
+        #expect(assets.animationStrip(name: "NoSuchStrip") == nil)
     }
 
     // MARK: - uvRect

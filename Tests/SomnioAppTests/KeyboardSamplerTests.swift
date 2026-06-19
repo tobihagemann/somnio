@@ -65,11 +65,11 @@ struct KeyboardSamplerTests {
         #expect(sampler.snapshot.leftOption == true)
     }
 
-    @Test func `resetForTest clears every bit (mirrors didResignActiveNotification path)`() {
+    @Test func `clearHeldKeys clears every bit (mirrors didResignActiveNotification and chat-focus paths)`() {
         let sampler = KeyboardSampler()
         sampler.updateForTest(keyCode: 13, down: true)
         sampler.updateForTest(keyCode: 56, down: true)
-        sampler.resetForTest()
+        sampler.clearHeldKeys()
         #expect(sampler.snapshot == KeyboardSampler.Held())
     }
 

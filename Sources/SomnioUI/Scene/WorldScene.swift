@@ -11,7 +11,7 @@ import SpriteKit
 /// `DateTick`. Splash is the scene's initial state until the first `EnterSector`
 /// frame arrives.
 @MainActor public final class WorldScene: SKScene {
-    private static let logger = Logger(label: "de.tobiha.somnio.ui.scene")
+    private let logger: Logger
 
     /// Per-entity render state the scene mutates each frame. `WorldEntity` is a value type
     /// rebuilt from every wire `EntityMessage`, so the walk-cycle clock and last-rendered
@@ -108,8 +108,13 @@ import SpriteKit
     /// kind `.player` is first placed.
     private var cameraFollowID: Int16?
 
-    public init(size: CGSize, assets: any SpriteAssets) {
+    public init(
+        size: CGSize,
+        assets: any SpriteAssets,
+        logger: Logger = Logger(label: "de.tobiha.somnio.ui.scene")
+    ) {
         self.assets = assets
+        self.logger = logger
         super.init(size: size)
         anchorPoint = CGPoint(x: 0, y: 0)
         scaleMode = .resizeFill
@@ -293,7 +298,7 @@ import SpriteKit
 
     public func updatePosition(entityID: Int16, to position: GridPoint, facing: Direction) {
         guard let state = entityRenderStates[entityID] else {
-            WorldScene.logger.debug("updatePosition called for unknown entity \(entityID)")
+            logger.debug("updatePosition called for unknown entity \(entityID)")
             return
         }
         let legacyPosition = CGPoint(x: CGFloat(position.x), y: CGFloat(position.y))
@@ -317,7 +322,7 @@ import SpriteKit
     /// pass the wire tick rate (legacy server is 50 ms = 0.05 s).
     public func animateEntity(_ id: Int16, to position: GridPoint, facing: Direction, duration: TimeInterval) {
         guard let state = entityRenderStates[id] else {
-            WorldScene.logger.debug("animateEntity called for unknown entity \(id)")
+            logger.debug("animateEntity called for unknown entity \(id)")
             return
         }
         // Position delta is the moving signal; tempo is intentionally not consumed here. Owe

@@ -80,6 +80,7 @@ import SpriteKit
     private let bundle: Bundle
     private let manifest: AssetManifest
     private var tilesetImageCache: [Int16: CGImage] = [:]
+    private var tilesetImageMisses: Set<Int16> = []
     private var groundTextureCache: [GroundKey: SKTexture] = [:]
     private var characterImageCache: [CharacterSheetKey: CGImage] = [:]
     private var characterImageMisses: Set<CharacterSheetKey> = []
@@ -251,14 +252,21 @@ import SpriteKit
 
     private func tilesetImage(for tilesetIndex: Int16) -> CGImage? {
         if let cached = tilesetImageCache[tilesetIndex] { return cached }
+        // Negative cache: `groundTexture` is hit once per ground tile, so without this a missing
+        // tileset prefix (no-asset-pack fallback) re-walks the bundle for every tile.
+        if tilesetImageMisses.contains(tilesetIndex) { return nil }
         guard let urls = bundle.urls(forResourcesWithExtension: "png", subdirectory: "Tilesets") else {
+            tilesetImageMisses.insert(tilesetIndex)
             return nil
         }
         let prefix = manifest.tilesetFilenamePrefix(forIndex: Int(tilesetIndex))
         let matches = urls
             .filter { $0.lastPathComponent.hasPrefix(prefix) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        guard let pick = matches.first else { return nil }
+        guard let pick = matches.first else {
+            tilesetImageMisses.insert(tilesetIndex)
+            return nil
+        }
         if matches.count > 1 {
             Self.logger.warning(
                 "duplicate tileset prefix; picking lexicographically-first match",
@@ -269,7 +277,10 @@ import SpriteKit
                 ]
             )
         }
-        guard let image = Self.cgImage(at: pick) else { return nil }
+        guard let image = Self.cgImage(at: pick) else {
+            tilesetImageMisses.insert(tilesetIndex)
+            return nil
+        }
         tilesetImageCache[tilesetIndex] = image
         return image
     }

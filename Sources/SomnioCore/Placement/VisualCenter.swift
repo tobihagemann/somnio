@@ -6,17 +6,10 @@ import Foundation
 /// (`SomnioConstants.monsterAggroRadius`). Lives next to `NPCPlacement` because both
 /// helpers materialize runtime geometry the codec deliberately keeps out.
 ///
-/// Centers are computed in `Int32` and squared distances accumulate in `Int64` so a player
-/// at the edge of a sector with `dimensions.width` near `Int16.max` cannot trap the AI
-/// tick on the `position + mask/2` add or on the `dx*dx + dy*dy` square.
+/// Centers are passed in as `Int32` pairs and squared distances accumulate in `Int64` so a
+/// player at the edge of a sector with `dimensions.width` near `Int16.max` cannot trap the
+/// AI tick on the `dx*dx + dy*dy` square.
 public enum VisualCenter {
-    public static func center(position: GridPoint, mask: GridSize) -> (x: Int32, y: Int32) {
-        (
-            Int32(position.x) + Int32(mask.width) / 2,
-            Int32(position.y) + Int32(mask.height) / 2
-        )
-    }
-
     public static func squaredDistance(_ a: (x: Int32, y: Int32), _ b: (x: Int32, y: Int32)) -> Int64 {
         let dx = Int64(a.x) - Int64(b.x)
         let dy = Int64(a.y) - Int64(b.y)

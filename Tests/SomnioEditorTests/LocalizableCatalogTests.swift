@@ -92,39 +92,14 @@ struct LocalizableCatalogTests {
         "Only behaviorTag 0 (greeter) is implemented server-side; other values fall through."
     ]
 
-    @Test func `every key ships English and German values`() throws {
-        let catalog = try CatalogParser.parse(from: Bundle.module)
-        for key in LocalizableCatalogTests.expectedKeys {
-            let entry = try #require(catalog[key], "missing catalog entry for \(key)")
-            #expect(entry["en"]?.isEmpty == false, "missing English value for \(key)")
-            #expect(entry["de"]?.isEmpty == false, "missing German value for \(key)")
-        }
-    }
-
-    @Test func `placeholder signature matches across English and German for every key`() throws {
-        let catalog = try CatalogParser.parse(from: Bundle.module)
-        for key in LocalizableCatalogTests.expectedKeys {
-            let entry = try #require(catalog[key])
-            let englishValue = try #require(entry["en"])
-            let germanValue = try #require(entry["de"])
-            #expect(
-                PlaceholderSignature.parse(englishValue) == PlaceholderSignature.parse(germanValue),
-                "placeholder signature mismatch for \(key): en=\(englishValue) de=\(germanValue)"
-            )
-        }
-    }
-
-    @Test func `loading is the only catalog entry permitted to use Unicode ellipsis`() throws {
-        // Documented carve-out: every other user-visible string uses ASCII `...`; the
-        // editor's `Loading…` window title is the one Unicode-`…` exception across the
-        // whole codebase.
-        let catalog = try CatalogParser.parse(from: Bundle.module)
-        for (key, entry) in catalog {
-            let hasU2026 = key.contains("\u{2026}") || entry.values.contains(where: { $0.contains("\u{2026}") })
-            if hasU2026 {
-                #expect(key == "Loading\u{2026}", "unexpected Unicode ellipsis in \(key)")
-            }
-        }
+    @Test func `catalog ships bilingual values with matching placeholders and only Loading uses Unicode ellipsis`() throws {
+        // Documented carve-out: every other user-visible string uses ASCII `...`; the editor's
+        // `Loading…` window title is the one Unicode-`…` exception across the whole codebase.
+        try assertCatalog(
+            in: Bundle.module,
+            expectedKeys: LocalizableCatalogTests.expectedKeys,
+            allowedUnicodeEllipsisKeys: ["Loading\u{2026}"]
+        )
     }
 
     @Test func `runtime resolution returns the source string for menu keys`() {

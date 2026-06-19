@@ -1,10 +1,11 @@
 import Foundation
 import Synchronization
 
-/// Sendable enqueue-only mailbox over an `AsyncStream`. Both the player client's
-/// `GameplayOutbox` and the server's `ConnectionOutbox` compose this primitive so the
-/// continuation lifecycle and `Mutex`-guarded `finished` flag live in one place. The
-/// composing layer adds policy on top (e.g. server-side overflow watermark).
+/// Sendable enqueue-only mailbox over an `AsyncStream`. The player client's
+/// `GameplayTransport` uses it directly as its outbound outbox, and the server's
+/// `ConnectionOutbox` composes it so the continuation lifecycle and `Mutex`-guarded
+/// `finished` flag live in one place. A composing layer can add policy on top (e.g. the
+/// server-side overflow watermark).
 public final class SendableMailbox<Element: Sendable>: Sendable {
     private struct State {
         var continuation: AsyncStream<Element>.Continuation?

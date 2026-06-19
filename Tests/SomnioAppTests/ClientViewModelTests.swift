@@ -570,6 +570,31 @@ struct ClientViewModelTests {
         #expect(!outbound.contains { if case .enterPortal = $0 { true } else { false } })
     }
 
+    @Test func `gaining chat-input focus clears keys held during the focus transition`() {
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W' captured as focus is gained
+        let viewModel = makeViewModel(keyboard: keyboard)
+
+        viewModel.setChatInputFocused(true)
+
+        #expect(viewModel.isChatInputFocused)
+        #expect(keyboard.snapshot == KeyboardSampler.Held())
+    }
+
+    @Test func `losing chat-input focus clears the flag without dropping held keys`() {
+        // Clearing is asymmetric: only focus *gain* drops held keys. On focus loss the held
+        // bitset must survive so a movement key held across the transition keeps the player moving.
+        let keyboard = KeyboardSampler()
+        let viewModel = makeViewModel(keyboard: keyboard)
+        viewModel.setChatInputFocused(true)
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W' pressed while focused
+
+        viewModel.setChatInputFocused(false)
+
+        #expect(viewModel.isChatInputFocused == false)
+        #expect(keyboard.snapshot.w)
+    }
+
     private func prepareAttachedSelf(_ viewModel: ClientViewModel, at position: GridPoint, sector: Sector) {
         viewModel.currentSector = sector
         viewModel.selfEntityIndex = 1

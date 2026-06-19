@@ -116,10 +116,9 @@ import Foundation
         held
     }
 
-    /// Test seam: clears the held bitset. Used by `KeyboardSamplerTests` to verify
-    /// the `didResignActiveNotification` reset path without synthesising AppKit
-    /// notifications across actor boundaries.
-    func resetForTest() {
+    /// Clears the held bitset so a key with no matching key-up cannot drive phantom movement on
+    /// the next gameplay tick. Invoked when keyboard capture yields to a text surface.
+    public func clearHeldKeys() {
         held = Held()
     }
 

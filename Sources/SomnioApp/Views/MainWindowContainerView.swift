@@ -26,7 +26,7 @@ import SwiftUI
             chatInput: $viewModel.chatInput,
             onSubmitChat: { viewModel.submitChat() },
             onItemActivate: { row in viewModel.activateInventoryItem(row) },
-            onChatFocusChange: { focused in viewModel.isChatInputFocused = focused }
+            onChatFocusChange: { focused in viewModel.setChatInputFocused(focused) }
         )
         .onAppear { viewModel.bootstrapAutoLogin() }
         .sheet(item: $viewModel.presentedSheet) { sheet in

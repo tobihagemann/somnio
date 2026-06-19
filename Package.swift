@@ -85,7 +85,12 @@ let package = Package(
         .testTarget(
             name: "SomnioUITests",
             dependencies: ["SomnioUI", "SomnioCatalogTestSupport"],
-            resources: [.copy("Resources/Tilesets"), .copy("Resources/Characters")]
+            resources: [
+                .copy("Resources/Tilesets"),
+                .copy("Resources/Characters"),
+                .copy("Resources/System"),
+                .copy("Resources/Animations")
+            ]
         ),
 
         .executableTarget(

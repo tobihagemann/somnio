@@ -1,4 +1,5 @@
 import Foundation
+import SomnioCore
 import Synchronization
 
 /// Sendable bag of per-connection state captured into the `WebSocketClient.connect`
@@ -7,7 +8,7 @@ import Synchronization
 /// isolation to reach them.
 final class ActiveConnection: Sendable {
     struct State {
-        var outbox: GameplayOutbox?
+        var outbox: SendableMailbox<Data>?
         var closeSignal: GameplayCloseSignal?
         var readLoopTask: Task<Void, Never>?
         var writerTask: Task<Void, Never>?

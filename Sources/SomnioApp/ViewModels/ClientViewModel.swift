@@ -148,6 +148,15 @@ import SpriteKit
         worldScene.showSpeechBubble(above: selfIndex, lines: lines, lifetimeMs: 2000 + lines.count * 1000)
     }
 
+    /// Tracks whether the chat input owns the keyboard. The gameplay tick already releases the
+    /// sampler's capture while focused, but a movement or modifier key landing during the focus
+    /// transition could survive into the next tick, so clear the held bitset immediately on focus
+    /// gain as well.
+    public func setChatInputFocused(_ focused: Bool) {
+        isChatInputFocused = focused
+        if focused { keyboard.clearHeldKeys() }
+    }
+
     // MARK: - Inventory
 
     /// Double-clicking an inventory row activates that item, faithful to the legacy `InventarBox`
