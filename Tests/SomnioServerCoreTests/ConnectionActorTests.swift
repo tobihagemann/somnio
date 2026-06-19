@@ -1,7 +1,4 @@
 import Foundation
-import Logging
-import SomnioCore
-import SomnioData
 import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
@@ -13,7 +10,7 @@ import Testing
 /// hasn't completed login yet.
 struct ConnectionActorTests {
     @Test func `setAttached replaces entityIndex and sectorName while preserving accountId`() async throws {
-        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
+        let connection = try await ConnectionActor(dependencies: makeStubConnectionDependencies())
         let accountId = UUID()
 
         await connection.markAttached(entityIndex: 1, sectorName: "EdariaBibliothek", accountId: accountId)
@@ -30,7 +27,7 @@ struct ConnectionActorTests {
     }
 
     @Test func `setAttached is a no-op while the connection is awaitingLogin`() async throws {
-        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
+        let connection = try await ConnectionActor(dependencies: makeStubConnectionDependencies())
 
         await connection.setAttached(entityIndex: 99, sectorName: "Phantom")
 
@@ -44,45 +41,11 @@ struct ConnectionActorTests {
         // Outside of `runConnection`, the actor holds no `readLoopTask`. The kick path must
         // be safe to call regardless — the cancellation is a fire-and-forget signal owned by
         // the read loop's exit path.
-        let connection = try await ConnectionActor(dependencies: makeStubDependencies())
+        let connection = try await ConnectionActor(dependencies: makeStubConnectionDependencies())
         await connection.disconnectForAdminKick()
         let state = await connection.currentState
         if case .attached = state {
             Issue.record("disconnectForAdminKick must not mutate state, but observed \(state)")
         }
-    }
-
-    // MARK: - Helpers
-
-    private func makeStubDependencies() async throws -> ConnectionDependencies {
-        let logger = Logger(label: "test.connection-actor")
-        let worldRouter = try await WorldRouter(
-            sectors: [:],
-            characters: StubCharacterRepository(),
-            npcDialogStates: StubNPCDialogStateRepository(),
-            logger: logger
-        )
-        let worldClockService = WorldClockService(
-            worldRouter: worldRouter,
-            worldClocks: StubWorldClockRepository(),
-            initialClock: .bootDefault,
-            logger: logger
-        )
-        return ConnectionDependencies(
-            accounts: StubAccountRepository(),
-            characters: StubCharacterRepository(),
-            inventories: StubInventoryRepository(),
-            registrations: StubRegistrationRepository(),
-            passwordHasher: PasswordHasher(logger: logger),
-            worldRouter: worldRouter,
-            worldClock: worldClockService,
-            configuration: ServerConfiguration(
-                httpHost: "127.0.0.1",
-                httpPort: 8080,
-                adminToken: "test",
-                sectorsDirectory: URL(fileURLWithPath: "/tmp")
-            ),
-            logger: logger
-        )
     }
 }

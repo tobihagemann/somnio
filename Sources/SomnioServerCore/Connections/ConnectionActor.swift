@@ -54,7 +54,17 @@ public actor ConnectionActor {
         inbound: WebSocketInboundStream,
         outbound: WebSocketOutboundWriter
     ) async {
-        startWriterTask(outbound: outbound)
+        await runConnection(inbound: inbound, sink: WebSocketOutboundSink(outbound: outbound))
+    }
+
+    /// Generic over the outbound sink so the live route uses the concrete `WebSocketOutboundSink`
+    /// (static dispatch, no existential on the hot path) while tests inject a recording spy to
+    /// pin the drain-before-close exit ordering. The orchestration is identical for both.
+    func runConnection(
+        inbound: WebSocketInboundStream,
+        sink: some ConnectionOutboundSink
+    ) async {
+        startWriterTask(sink: sink)
         sendHello()
 
         let task = Task { [weak self] () -> CloseDecision in
@@ -75,15 +85,19 @@ public actor ConnectionActor {
         readLoopTask = nil
 
         await snapshotAndCleanup()
-        // Three-step exit:
-        //   1. Finish the outbox so the writer task sees end-of-stream.
-        //   2. Await the writer task so every queued frame lands on the wire.
-        //   3. Write the close frame on top of the now-drained stream.
-        // Reordering 1↔2 would deadlock (writer never observes EOF); reordering 2↔3
-        // would race queued frames past the close frame.
+        await finishDrainAndClose(decision: closeDecision, sink: sink)
+    }
+
+    /// The drain-before-close exit, extracted so the spy test can drive it directly:
+    ///   1. Finish the outbox so the writer task sees end-of-stream.
+    ///   2. Await the writer task so every queued frame lands on the wire.
+    ///   3. Write the close frame on top of the now-drained stream.
+    /// Reordering 1↔2 would deadlock (writer never observes EOF); reordering 2↔3
+    /// would race queued frames past the close frame.
+    func finishDrainAndClose(decision: CloseDecision, sink: some ConnectionOutboundSink) async {
         outbox.finish()
         await writerTask?.value
-        await close(decision: closeDecision, outbound: outbound)
+        await close(decision: decision, sink: sink)
     }
 
     private func runReadLoop(inbound: WebSocketInboundStream) async -> CloseDecision {
@@ -161,7 +175,9 @@ public actor ConnectionActor {
         return .close(code: .protocolError, reason: "frame validation failed")
     }
 
-    private func dispatch(_ message: SomnioMessage, frameSize: Int) async -> CloseDecision {
+    /// `internal` (not `private`) so `SomnioServerCoreTests` can assert the wire-protocol close
+    /// branches directly without driving a live socket.
+    func dispatch(_ message: SomnioMessage, frameSize: Int) async -> CloseDecision {
         switch state {
         case .awaitingLogin:
             switch message {
@@ -254,12 +270,12 @@ public actor ConnectionActor {
 
     // MARK: - Writer task + Hello
 
-    private func startWriterTask(outbound: WebSocketOutboundWriter) {
+    func startWriterTask(sink: some ConnectionOutboundSink) {
         let outbox = outbox
         let task = Task<Void, Never> {
             for await frame in outbox.stream {
                 do {
-                    try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
+                    try await sink.writeText(frame)
                     outbox.recordWrite()
                 } catch {
                     // Peer disconnected mid-write; drop the rest and let the read loop tear
@@ -268,7 +284,7 @@ public actor ConnectionActor {
                 }
             }
             if outbox.isOverflowed {
-                try? await outbound.close(.policyViolation, reason: "outbox overflow")
+                await sink.close(code: .policyViolation, reason: "outbox overflow")
             }
         }
         writerTask = task
@@ -303,14 +319,14 @@ public actor ConnectionActor {
         state = .awaitingLogin
     }
 
-    private func close(decision: CloseDecision, outbound: WebSocketOutboundWriter) async {
-        // The outbox is already finished and drained by the time `runConnection` calls this
-        // helper, so the only work here is selecting the wire close-code and reason.
+    private func close(decision: CloseDecision, sink: some ConnectionOutboundSink) async {
+        // The outbox is already finished and drained by the time `finishDrainAndClose` calls
+        // this helper, so the only work here is selecting the wire close-code and reason.
         switch decision {
         case .keepOpen:
-            try? await outbound.close(.goingAway, reason: "connection closed")
+            await sink.close(code: .goingAway, reason: "connection closed")
         case let .close(code, reason):
-            try? await outbound.close(code, reason: reason)
+            await sink.close(code: code, reason: reason)
         }
     }
 }
