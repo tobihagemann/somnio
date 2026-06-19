@@ -12,6 +12,16 @@ enum GameplayURLResolver {
     static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> String {
+        let resolved = try resolvedURL(environment: environment)
+        // Parity with `AdminTransport`: confirm the WebSocket dialer's URI parser sees the
+        // same host Foundation validated before the client dials this unmodified string.
+        try SecureTransportValidator.validateHostAgreement(resolved)
+        return resolved
+    }
+
+    private static func resolvedURL(
+        environment: [String: String]
+    ) throws -> String {
         #if DEBUG
             if let envValue = environment["SOMNIO_SERVER_URL"] {
                 // The env-var override is constrained to loopback (regardless of

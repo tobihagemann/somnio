@@ -10,8 +10,19 @@ struct SecureTransportValidatorTests {
     }
 
     @Test func `lowercase ws against loopback is accepted`() throws {
-        for url in ["ws://localhost:8080/ws", "ws://127.0.0.1:8080/ws", "ws://[::1]:8080/ws"] {
+        for url in ["ws://localhost:8080/ws", "ws://127.0.0.1:8080/ws"] {
             try SecureTransportValidator.validate(url)
+        }
+    }
+
+    @Test func `bracketed IPv6 literal is rejected`() {
+        // Foundation strips the brackets so `URL.host` reads `::1` and would pass the
+        // loopback gate, but the WebSocket dialer cannot dial a bracketed authority. The
+        // validator owns the policy so a host-disagreeing URL never reaches the dialer.
+        for url in ["ws://[::1]:8080/ws", "wss://[2001:db8::1]/ws"] {
+            #expect(throws: SecureTransportValidationError.invalidURL) {
+                try SecureTransportValidator.validate(url)
+            }
         }
     }
 

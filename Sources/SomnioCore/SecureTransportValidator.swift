@@ -22,6 +22,11 @@ public enum SecureTransportValidationError: Error, Equatable, Sendable {
 ///    (passing the loopback gate), but the WebSocket layer dials `attacker.example`,
 ///    leaking credentials over plaintext to a third-party host. Refusing userinfo
 ///    closes that gap independent of which parser disagreement comes next.
+/// 4. Bracketed IPv6 literals (`ws://[::1]/...`) are rejected. Foundation strips the
+///    brackets so `URL.host` reads back `::1` (passing the loopback gate), but the
+///    WebSocket dialer's URI parser stops the host scan at the first `:` and dials the
+///    literal `[` instead. The validator owns this policy rather than relying on the
+///    dialer to fail closed.
 public enum SecureTransportValidator {
     /// Exact hostnames whose loopback semantics make plaintext `ws://` acceptable.
     public static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
@@ -38,6 +43,10 @@ public enum SecureTransportValidator {
         let scheme = parsed.scheme ?? ""
         guard scheme == "ws" || scheme == "wss" else {
             throw SecureTransportValidationError.unsupportedScheme
+        }
+        if let encodedHost = URLComponents(string: url)?.percentEncodedHost,
+           encodedHost.contains("[") || encodedHost.contains("]") {
+            throw SecureTransportValidationError.invalidURL
         }
         guard scheme == "ws" else { return }
         let host = parsed.host?.lowercased() ?? ""

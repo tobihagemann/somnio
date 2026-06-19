@@ -10,18 +10,32 @@ struct GameplayURLResolverTests {
     }
 
     @Test func `loopback override is accepted via env var`() throws {
-        // IPv6 hostnames carry literal `[]` brackets per RFC 3986; the bare `::1` form
-        // is not a valid URL, so the loopback set is exercised through the textual
-        // URLs the client would actually construct.
         for url in [
             "ws://localhost:8080/ws",
             "ws://127.0.0.1:8080/ws",
-            "ws://[::1]:8080/ws",
             "wss://localhost:8443/ws",
             "wss://127.0.0.1:8443/ws"
         ] {
             let resolved = try GameplayURLResolver.resolve(environment: ["SOMNIO_SERVER_URL": url])
             #expect(resolved == url)
+        }
+    }
+
+    @Test func `bracketed IPv6 override is rejected`() {
+        // Foundation reads `::1` back from the bracketed authority and would pass the
+        // loopback gate, but the WebSocket dialer cannot dial it; the validator rejects
+        // the host-disagreeing URL before it reaches the transport.
+        #expect(throws: SecureTransportValidationError.invalidURL) {
+            try GameplayURLResolver.resolve(environment: ["SOMNIO_SERVER_URL": "ws://[::1]:8080/ws"])
+        }
+    }
+
+    @Test func `fragment override is rejected via host agreement`() {
+        // `validate`/`validateLoopbackOnly` accept this (Foundation host `localhost`),
+        // so rejection proves the resolver also runs `validateHostAgreement`: the dialer
+        // would treat `localhost#evil.com` as the literal host.
+        #expect(throws: SecureTransportValidationError.invalidURL) {
+            try GameplayURLResolver.resolve(environment: ["SOMNIO_SERVER_URL": "ws://localhost#evil.com/ws"])
         }
     }
 
