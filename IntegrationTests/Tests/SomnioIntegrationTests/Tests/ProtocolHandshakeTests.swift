@@ -51,6 +51,24 @@ struct ProtocolHandshakeTests {
         try await assertProtocolErrorClose { try await $0.write(.binary(ByteBuffer(bytes: [0x00]))) }
     }
 
+    @Test func `server closes connection on a recognized tag with a malformed payload`() async throws {
+        // A known verb whose payload omits required fields fails `SomnioMessageDecoder.decode`
+        // with a `DecodingError` — a distinct branch from the unrecognized-tag rejection.
+        try await assertProtocolErrorClose { try await $0.write(.text(#"{"tag":"clientPosition","payload":{}}"#)) }
+    }
+
+    @Test func `server closes connection on a zero-byte text frame`() async throws {
+        try await assertProtocolErrorClose { try await $0.write(.text("")) }
+    }
+
+    @Test func `server closes connection on a frame larger than the wire size cap`() async throws {
+        // A message past `maxWireFrameSize` trips the WebSocket layer's reassembly guard with
+        // `.messageTooLarge` before the decoder runs — the slack above the encoder's
+        // `maxFrameLength` is what keeps a legitimately-sized frame from hitting this.
+        let oversized = String(repeating: "a", count: SomnioProtocolConstants.maxWireFrameSize + 16)
+        try await assertServerClose(expected: .messageTooLarge) { try await $0.write(.text(oversized)) }
+    }
+
     @Test func `admin upgrade requires Authorization Bearer header`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.handshake.admin")
@@ -66,6 +84,13 @@ struct ProtocolHandshakeTests {
     // MARK: - Helpers
 
     private func assertProtocolErrorClose(
+        send: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
+    ) async throws {
+        try await assertServerClose(expected: .protocolError, send: send)
+    }
+
+    private func assertServerClose(
+        expected: WebSocketErrorCode,
         send: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
     ) async throws {
         try await TestHarness.withDatabase { client in
@@ -85,7 +110,7 @@ struct ProtocolHandshakeTests {
                 }
             }
             let received = await observedClose.value()
-            #expect(received == .protocolError, "expected .protocolError, got \(String(describing: received))")
+            #expect(received == expected, "expected \(expected), got \(String(describing: received))")
         }
     }
 

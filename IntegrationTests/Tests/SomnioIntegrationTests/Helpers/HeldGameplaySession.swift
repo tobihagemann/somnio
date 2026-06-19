@@ -46,6 +46,17 @@ actor AttachCountdown {
         }
     }
 
+    /// Deadline-bounded `awaitAll`. Throws `TestTimeoutError` if `expected` signals do not
+    /// land within `timeout`, so a stuck setup surfaces instead of hanging the parent group.
+    func awaitAll(timeout: Duration) async throws {
+        try await withTestTimeout(timeout) { await self.awaitAll() }
+    }
+
+    /// Test-only inspection: waiters currently suspended in `awaitAll`.
+    var waiterCount: Int {
+        waiters.count
+    }
+
     private func installWaiter(_ continuation: CheckedContinuation<Void, Never>, token: UUID) {
         if seen >= expected || Task.isCancelled {
             continuation.resume()
@@ -92,6 +103,17 @@ actor OneShotLatch {
         } onCancel: {
             Task { await self.resumeOnCancel(token: token) }
         }
+    }
+
+    /// Deadline-bounded `wait`. Throws `TestTimeoutError` if `fire()` does not land within
+    /// `timeout`, so a stuck setup surfaces instead of hanging the parent group.
+    func wait(timeout: Duration) async throws {
+        try await withTestTimeout(timeout) { await self.wait() }
+    }
+
+    /// Test-only inspection: waiters currently suspended in `wait`.
+    var waiterCount: Int {
+        waiters.count
     }
 
     /// Role-named entry point for held gameplay sessions: the test body calls

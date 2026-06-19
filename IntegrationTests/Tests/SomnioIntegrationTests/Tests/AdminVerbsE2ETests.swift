@@ -52,7 +52,7 @@ struct AdminVerbsE2ETests {
                             logger: logger
                         )
                     }
-                    await attached.awaitAll()
+                    try await attached.awaitAll(timeout: .seconds(30))
                     let response = try await AdminTransport.send(
                         .players,
                         to: url,
@@ -137,8 +137,8 @@ struct AdminVerbsE2ETests {
                     // Wait for both logged-in sessions to attach AND for the pre-login
                     // stranger to receive Hello, so a "stranger receives no adminSay"
                     // assertion below isn't vacuously true on a still-connecting socket.
-                    await attached.awaitAll()
-                    await strangerHello.wait()
+                    try await attached.awaitAll(timeout: .seconds(30))
+                    try await strangerHello.wait(timeout: .seconds(30))
 
                     let response = try await AdminTransport.send(
                         .say(text: "hello world"),
@@ -209,7 +209,7 @@ struct AdminVerbsE2ETests {
                             logger: logger
                         )
                     }
-                    await attached.awaitAll()
+                    try await attached.awaitAll(timeout: .seconds(30))
 
                     let aliceFramesPreKick = await aliceRecorder.snapshot()
                     let aliceEntity = try #require(
@@ -267,6 +267,24 @@ struct AdminVerbsE2ETests {
                     await release.release()
                     try await group.waitForAll()
                 }
+            }
+        }
+    }
+
+    @Test func `kick verb reports not-found for a name with no logged-in player`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.admin.kick-unknown")
+            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
+            try await rig.application.test(.live) { testClient in
+                let url = try await Self.adminURL(for: testClient)
+                let absentNickname = "ghost-\(UUID().uuidString.prefix(6))"
+                let response = try await AdminTransport.send(
+                    .kick(name: absentNickname),
+                    to: url,
+                    token: "test",
+                    logger: logger
+                )
+                #expect(response == .kickedPlayerNotFound(text: absentNickname))
             }
         }
     }

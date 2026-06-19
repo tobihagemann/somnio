@@ -356,6 +356,17 @@ actor PortPromise {
         }
     }
 
+    /// Deadline-bounded `value`. Throws `TestTimeoutError` if the server does not bind within
+    /// `timeout`, so a stuck setup surfaces instead of hanging the parent group.
+    func value(timeout: Duration) async throws -> Int {
+        try await withTestTimeout(timeout) { await self.value() }
+    }
+
+    /// Test-only inspection: waiters currently suspended in `value`.
+    var waiterCount: Int {
+        continuations.count
+    }
+
     private func installWaiter(_ continuation: CheckedContinuation<Int, Never>, token: UUID) {
         if let port {
             continuation.resume(returning: port)
