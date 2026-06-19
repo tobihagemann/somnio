@@ -15,7 +15,7 @@ import Testing
 
 /// Lives in the CLI tests but stands up a tiny server-side WS endpoint via Hummingbird's
 /// `.test(.live)` helper so we can drive `AdminTransport.send` end-to-end across the
-/// process boundary. Covers the five `AdminTransportError` branches.
+/// process boundary. Covers the `AdminTransportError` branches reachable in a debug build.
 struct AdminTransportTests {
     private let token = "secret"
 
@@ -52,7 +52,9 @@ struct AdminTransportTests {
         }
     }
 
-    @Test func `send surfaces decodeFailed when the server returns a malformed text frame`() async throws {
+    @Test func `send surfaces decodeFailed carrying the underlying typed DecodingError`() async throws {
+        // Asserts both the case tag and the payload: flattening the typed `Error` back to
+        // a string would slip past the tag-only matcher.
         let app = Self.makeMalformedFrameApplication(token: token)
         try await app.test(.live) { client in
             guard let port = client.port else {
@@ -60,13 +62,18 @@ struct AdminTransportTests {
                 return
             }
             let url = "ws://localhost:\(port)/admin"
-            await Self.expectTransportError(.decodeFailed) {
-                try await AdminTransport.send(
+            do {
+                _ = try await AdminTransport.send(
                     .players,
                     to: url,
                     token: token,
                     logger: Logger(label: "test.transport.malformed")
                 )
+                Issue.record("expected decodeFailed")
+            } catch let AdminTransportError.decodeFailed(underlying) {
+                #expect(underlying is DecodingError)
+            } catch {
+                Issue.record("expected decodeFailed, got \(error)")
             }
         }
     }
@@ -121,6 +128,43 @@ struct AdminTransportTests {
         }
     }
 
+    @Test func `send rejects a validate-passing but host-disagreeing URL before dialing`() async {
+        // `wss://ex%41mple.com/admin` clears `SecureTransportValidator` (wss, remote host)
+        // but the host the dialer would parse disagrees with the validated host, so the
+        // public `send` entrypoint must fail closed via the `dialableURL` gate rather than
+        // open a socket. Guards against `send` no longer calling the gate.
+        await Self.expectTransportError(.invalidTransportURL) {
+            try await AdminTransport.send(
+                .players,
+                to: "wss://ex%41mple.com/admin",
+                token: token,
+                logger: Logger(label: "test.transport.host-disagreement")
+            )
+        }
+    }
+
+    @Test func `resolveTLS maps skipPinning to no TLS configuration`() throws {
+        let resolved = try AdminTransport.resolveTLS(.skipPinning, logger: Logger(label: "test.transport.tls"))
+        #expect(resolved == nil)
+    }
+
+    @Test func `resolveTLS surfaces a pinned configuration`() throws {
+        let pinned = try AdminServerTrust.makePinnedConfiguration(fromPEM: adminProductionTrustRootPEM)
+        let resolved = try AdminTransport.resolveTLS(.pinned(pinned), logger: Logger(label: "test.transport.tls"))
+        #expect(resolved != nil)
+    }
+
+    @Test func `resolveTLS fails closed with pinningRefused on a refused pin`() {
+        do {
+            _ = try AdminTransport.resolveTLS(.refused(reason: "bad pem"), logger: Logger(label: "test.transport.tls"))
+            Issue.record("expected pinningRefused")
+        } catch let AdminTransportError.pinningRefused(reason) {
+            #expect(reason == "bad pem")
+        } catch {
+            Issue.record("expected pinningRefused, got \(error)")
+        }
+    }
+
     // MARK: - Error-case matcher
 
     /// Tag used by `expectTransportError(_:)` to match an `AdminTransportError` variant
@@ -133,6 +177,7 @@ struct AdminTransportTests {
         case decodeFailed
         case connectFailed
         case invalidTransportURL
+        case pinningRefused
     }
 
     private static func expectTransportError(
@@ -151,6 +196,7 @@ struct AdminTransportTests {
             case .decodeFailed: .decodeFailed
             case .connectFailed: .connectFailed
             case .invalidTransportURL: .invalidTransportURL
+            case .pinningRefused: .pinningRefused
             }
             #expect(observed == expected, "expected \(expected), got \(observed)", sourceLocation: sourceLocation)
         } catch {

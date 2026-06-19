@@ -59,6 +59,29 @@ struct SecureTransportValidatorTests {
         }
     }
 
+    // MARK: - validateHostAgreement
+
+    @Test(arguments: [
+        "ws://localhost:8080/ws", // canonical loopback
+        "wss://example.com:8443/ws", // explicit port
+        "wss://example.com/ws?x=1" // query preserved by the caller, not rejected here
+    ])
+    func `host agreement accepts canonical ASCII hosts`(url: String) throws {
+        try SecureTransportValidator.validateHostAgreement(url)
+    }
+
+    @Test(arguments: [
+        "wss://\u{2603}.example/ws", // raw-Unicode/IDN host (snowman)
+        "wss://ex%41mple.com/ws", // percent-encoded host
+        "ws://[::1]:8080/ws", // bracketed IPv6 literal
+        "ws://localhost#evil.com/ws" // fragment: Foundation host `localhost`, dialer host `localhost#evil.com`
+    ])
+    func `host agreement rejects parser-disagreeing hosts`(url: String) {
+        #expect(throws: SecureTransportValidationError.invalidURL) {
+            try SecureTransportValidator.validateHostAgreement(url)
+        }
+    }
+
     // MARK: - validateLoopbackOnly
 
     @Test func `loopback override accepts wss to loopback`() throws {

@@ -187,7 +187,8 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
                 .product(name: "NIOCore", package: "swift-nio"),
-                .product(name: "NIOFoundationCompat", package: "swift-nio")
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl")
             ],
             resources: [.process("Resources/Localizable.xcstrings")]
         ),

@@ -46,6 +46,31 @@ public enum SecureTransportValidator {
         }
     }
 
+    /// Companion check a caller runs on the **same string** immediately before handing it,
+    /// unmodified, to a WebSocket client whose URI parser differs from Foundation's. `validate`
+    /// confirms the policy (scheme/userinfo/loopback) using Foundation's `URL.host`; this confirms
+    /// the dialer's parser will see that same host. The raw host token a URI parser reads
+    /// (`URLComponents.percentEncodedHost`) is compared byte-for-byte against `URL.host` with no
+    /// normalization — equal for plain ASCII hosts, divergent for percent-encoded/IDN forms
+    /// (`wss://☃.example` → `xn--n3h.example` vs `%E2%98%83.example`) and bracketed IPv6 literals
+    /// (`ws://[::1]` → `::1` vs `[::1]`, which such a parser cannot dial anyway). A fragment is
+    /// rejected outright: Foundation reads `ws://host#x` as host `host` + fragment `x`, but a URI
+    /// parser with no fragment concept dials the literal `host#x`. Throws on any disagreement so
+    /// the caller fails closed; on success the caller dials the original validated string,
+    /// preserving query, port, and path exactly. Kept separate from `validate` because callers
+    /// that dial a compile-time literal URL have no need for it.
+    public static func validateHostAgreement(_ url: String) throws {
+        guard
+            let components = URLComponents(string: url),
+            components.fragment == nil,
+            let parsedHost = URL(string: url)?.host,
+            let componentsHost = components.percentEncodedHost,
+            parsedHost == componentsHost
+        else {
+            throw SecureTransportValidationError.invalidURL
+        }
+    }
+
     /// Stricter variant for the debug-only env-var override path: also requires the
     /// host to be loopback regardless of scheme. Closes the env-var-injection
     /// vector where a tampered shell profile redirects the client to a

@@ -4,17 +4,25 @@ import HummingbirdWSClient
 import Logging
 import NIOCore
 import NIOFoundationCompat
+import NIOSSL
 import SomnioCore
 import SomnioProtocol
 import Synchronization
 
-public enum AdminTransportError: Error, Sendable, Equatable {
+/// Transport-level failures from `AdminTransport.send`. The encode/decode/connect cases
+/// carry the underlying typed `Error` (not a flattened `String`) so callers keep the
+/// failure's type, `localizedDescription`, and downstream `as?` branching. Carrying a
+/// typed `Error` drops `Equatable`, mirroring `GameplayTransportEvent`.
+public enum AdminTransportError: Error, Sendable {
     case noResponse
     case unexpectedBinaryFrame
-    case encodeFailed(description: String)
-    case decodeFailed(description: String)
-    case connectFailed(description: String)
+    case encodeFailed(Error)
+    case decodeFailed(Error)
+    case connectFailed(Error)
     case invalidTransportURL(SecureTransportValidationError)
+    /// The release build's pinned trust root failed to load. `send` refuses to fall back
+    /// to the system trust store, mirroring `GameplayTransportError.pinningRefused`.
+    case pinningRefused(reason: String)
 }
 
 /// Captures the single response frame the admin server sends back across the
@@ -57,12 +65,20 @@ public enum AdminTransport {
             throw AdminTransportError.invalidTransportURL(error)
         }
 
+        // `validate` parses `url` with Foundation, but the dialer hands the unmodified
+        // string to swift-websocket's own URI parser. Confirm both see the same host
+        // before dialing — otherwise a percent-encoded/IDN host could pass `validate`
+        // yet be dialed elsewhere. Returns the original string unchanged on agreement.
+        let dialURL = try dialableURL(url)
+
         let frame: Data
         do {
             frame = try JSONEncoder().encode(request)
         } catch {
-            throw AdminTransportError.encodeFailed(description: "\(error)")
+            throw AdminTransportError.encodeFailed(error)
         }
+
+        let tlsConfiguration = try resolveTLS(AdminServerTrust.resolve(), logger: logger)
 
         var configuration = WebSocketClientConfiguration()
         configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
@@ -71,8 +87,9 @@ public enum AdminTransport {
         let box = ResponseBox()
         do {
             _ = try await WebSocketClient.connect(
-                url: url,
+                url: dialURL,
                 configuration: configuration,
+                tlsConfiguration: tlsConfiguration,
                 logger: logger
             ) { inbound, outbound, _ in
                 try await outbound.write(.text(String(decoding: frame, as: UTF8.self)))
@@ -84,7 +101,7 @@ public enum AdminTransport {
                             response = try JSONDecoder().decode(AdminResponse.self, from: Data(string.utf8))
                         } catch {
                             try? await outbound.close(.protocolError, reason: "decode failed")
-                            throw AdminTransportError.decodeFailed(description: "\(error)")
+                            throw AdminTransportError.decodeFailed(error)
                         }
                         box.set(response)
                         // `try?` so a peer-initiated close racing the normal-close write
@@ -101,12 +118,43 @@ public enum AdminTransport {
         } catch let error as AdminTransportError {
             throw error
         } catch {
-            throw AdminTransportError.connectFailed(description: "\(error)")
+            throw AdminTransportError.connectFailed(error)
         }
 
         guard let response = box.take() else {
             throw AdminTransportError.noResponse
         }
         return response
+    }
+
+    /// Maps an `AdminServerTrust.Resolution` to the TLS configuration the dial uses.
+    /// Debug builds skip pinning (`nil`, so loopback `ws://` and the test suite are
+    /// unaffected); release builds return the pinned config or fail closed with
+    /// `.pinningRefused` rather than silently downgrading to system trust. Takes the
+    /// resolution as a parameter so the fail-closed mapping is unit-testable without a
+    /// release build.
+    static func resolveTLS(_ resolution: AdminServerTrust.Resolution, logger: Logger) throws -> TLSConfiguration? {
+        switch resolution {
+        case .skipPinning:
+            return nil
+        case let .pinned(configuration):
+            return configuration
+        case let .refused(reason):
+            logger.error("refusing to connect — production pin not loadable", metadata: ["reason": "\(reason)"])
+            throw AdminTransportError.pinningRefused(reason: reason)
+        }
+    }
+
+    /// Confirms via `SecureTransportValidator.validateHostAgreement` that the swift-websocket
+    /// dialer will see the same host the validator validated, then returns the original `url`
+    /// for dialing — no reconstruction, so query, port, and path survive. Fails closed on any
+    /// parser disagreement.
+    static func dialableURL(_ url: String) throws -> String {
+        do {
+            try SecureTransportValidator.validateHostAgreement(url)
+        } catch let error as SecureTransportValidationError {
+            throw AdminTransportError.invalidTransportURL(error)
+        }
+        return url
     }
 }
