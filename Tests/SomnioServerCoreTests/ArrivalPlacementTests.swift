@@ -75,10 +75,11 @@ struct ArrivalPlacementTests {
         #expect(!CollisionMaskOverlap.intersects(feet, [mask]))
     }
 
-    @Test func `arrival falls back to the rect center when every cell is blocked`() async throws {
+    @Test func `arrival returns nil when every cell is blocked`() async {
         // A mask covering the full feet-box region of every candidate cell (the feet box sits
         // below the sprite top-left, so the mask must extend past the portal's bottom). With no
-        // clear cell, placement returns the rect center.
+        // clear cell, placement returns nil so the caller defers to its validating arrival-spawn
+        // fallback rather than landing the player on the blocked rect center.
         let portal = inboundPortal(from: "EdariaBibliothek", x: 1344, y: 208, width: 160, height: 96)
         let mask = CollisionMask(x: 1344, y: 240, width: 160, height: 96)
         let actor = PerSectorActor(
@@ -86,9 +87,8 @@ struct ArrivalPlacementTests {
             logger: testLogger,
             rng: SeededGenerator(seed: 4)
         )
-        let point = try #require(await actor.arrivalPlacement(fromSector: portal.targetSectorName, spriteSize: SomnioConstants.playerSpriteSize))
-        #expect(point.x == portal.x + portal.width / 2)
-        #expect(point.y == portal.y + portal.height / 2)
+        let point = await actor.arrivalPlacement(fromSector: portal.targetSectorName, spriteSize: SomnioConstants.playerSpriteSize)
+        #expect(point == nil)
     }
 
     // MARK: - Helpers

@@ -699,6 +699,33 @@ struct AITickTests {
         #expect(!snappedBack)
     }
 
+    @Test func `handlePosition accepts an implausibly far teleport without snapping back (observe-only instrumentation)`() async throws {
+        // The movement instrumentation is observe-only: an accepted-but-far move is logged, never
+        // rejected. A one-message teleport to a distant walkable cell stays accepted and produces no
+        // serverPosition snap-back to the player's own outbox — proving behavior is unchanged.
+        let sector = makeSector(dimensions: GridSize(width: 512, height: 512))
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        let playerIndex = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+
+        await actor.handlePosition(
+            PositionMessage(entityIndex: 0, x: 400, y: 400, facing: Direction.south.rawValue, tempo: Tempo.run.rawValue),
+            from: playerIndex
+        )
+
+        let snapshot = await actor.snapshotForPlayer(entityIndex: playerIndex)
+        #expect(snapshot?.character.position == GridPoint(x: 400, y: 400))
+
+        outbox.finish()
+        let snappedBack = await decodeServerPositions(in: collect(outbox: outbox))
+            .contains { $0.entityIndex == playerIndex }
+        #expect(!snappedBack)
+    }
+
     // MARK: - Helpers
 
     private func makeSector(

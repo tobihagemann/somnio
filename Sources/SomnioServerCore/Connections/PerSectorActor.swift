@@ -115,6 +115,17 @@ public actor PerSectorActor {
     public static let defaultMonsterSpawnThreshold: Int16 = 1199
     /// Random placement retry cap for arrival/spawn before falling back.
     private static let placementAttempts = 64
+    /// Observe-only movement-anomaly thresholds. A move is flagged (logged, never rejected) when it
+    /// covers more ground than running speed × elapsed × tolerance + a flat slack — the only
+    /// exploitable case being an accepted teleport. See `handlePosition` / `instrumentAcceptedMove`.
+    private static let movementAnomalyToleranceFactor = 2.0
+    private static let movementAnomalyFlatSlackPixels = Double(SomnioConstants.tileSize)
+    /// Floor on the elapsed interval so a near-zero gap between rapid messages can't shrink the
+    /// reference cap to nothing and flag a legitimate move.
+    private static let movementAnomalyMinElapsedSeconds = AITickService.defaultAITickIntervalSeconds
+    /// Minimum gap between anomaly log lines per entity; anomalies in between are coalesced into the
+    /// next line's `suppressed_since_last` count, bounding log output under deliberate teleport spam.
+    private static let movementAnomalyLogIntervalSeconds = 5.0
 
     public let staticSector: Sector
     private var players: [Int16: PlayerSlot] = [:]
@@ -131,6 +142,13 @@ public actor PerSectorActor {
     /// so allocation starts at 1.
     private var nextEntityIndex: Int16 = 1
     private let logger: Logger
+    /// Anomaly records route here so they land in `gameplay-log.log` (the label-filtered backend).
+    private let movementLogger = Logger(label: "de.tobiha.somnio.server.gameplay.movement")
+    /// Per-entity baseline for the movement-anomaly verdict: the timestamp of the last accepted move.
+    /// Set on attach and on every accepted move, removed on detach so it can't grow across churn.
+    private var lastAcceptedMoveAt: [Int16: ContinuousClock.Instant] = [:]
+    /// Per-entity rate-limit/coalesce state for the anomaly log, removed on detach.
+    private var anomalyLogState: [Int16: (lastLoggedAt: ContinuousClock.Instant, suppressedCount: Int)] = [:]
 
     public init(
         staticSector: Sector,
@@ -221,10 +239,41 @@ public actor PerSectorActor {
         return next
     }
 
-    private func allocateEntityIndex() -> Int16 {
-        let index = nextEntityIndex
-        nextEntityIndex = Self.advance(nextEntityIndex)
+    /// First free index at or after `start`, probing the full nonzero `Int16` domain via `advance`
+    /// (so `Int16.max` wraps to `Int16.min`, not 1 — negative indices are wire-valid). Returns `nil`
+    /// when every candidate is occupied: handing back an occupied index would overwrite a live slot's
+    /// broadcast routing, the exact silent-corruption this probe exists to prevent. Pure function of
+    /// `start` + the predicate so it is unit-testable without the actor.
+    static func nextFreeIndex(startingAt start: Int16, isOccupied: (Int16) -> Bool) -> Int16? {
+        var candidate = start
+        for _ in 0 ..< Int(UInt16.max) {
+            if !isOccupied(candidate) { return candidate }
+            candidate = advance(candidate)
+        }
+        return nil
+    }
+
+    /// Allocate the next free entity index, probing live slots so a wrapped cursor never overwrites a
+    /// still-live entity. Returns `nil` only when the full nonzero `Int16` domain is occupied —
+    /// impossible under the per-sector entity caps but defended so exhaustion surfaces as an operator
+    /// log rather than a silent overwrite. Callers handle `nil` per their own contract.
+    private func allocateEntityIndex() -> Int16? {
+        guard let index = Self.nextFreeIndex(
+            startingAt: nextEntityIndex,
+            isOccupied: { players[$0] != nil || npcs[$0] != nil || monsters[$0] != nil }
+        ) else {
+            logger.error("sector full — entity-index space exhausted", metadata: ["sector": "\(staticSector.name)"])
+            return nil
+        }
+        nextEntityIndex = Self.advance(index)
         return index
+    }
+
+    /// Thrown by `attach` when the sector's entity-index space is exhausted — impossible under the
+    /// per-sector entity caps, surfaced so a thrown error aborts the join cleanly rather than reusing
+    /// a live index.
+    enum AttachError: Error {
+        case sectorFull
     }
 
     /// Atomically allocate a slot for the new connection, stream the join sequence to the
@@ -236,7 +285,7 @@ public actor PerSectorActor {
         inventory: [InventoryRow],
         outbox: ConnectionOutbox
     ) throws -> Int16 {
-        let entityIndex = allocateEntityIndex()
+        guard let entityIndex = allocateEntityIndex() else { throw AttachError.sectorFull }
         let slot = PlayerSlot(
             entityIndex: entityIndex,
             character: character,
@@ -263,6 +312,7 @@ public actor PerSectorActor {
         // Insert after streaming peers so a `try outbox.send` failure above leaves no
         // ghost slot in `players`.
         players[entityIndex] = slot
+        lastAcceptedMoveAt[entityIndex] = ContinuousClock().now
         let newcomerEntity = SomnioMessage.entity(makeEntityMessage(for: slot))
         try broadcastToPeers(newcomerEntity, excluding: entityIndex)
         return entityIndex
@@ -272,6 +322,8 @@ public actor PerSectorActor {
     /// means the player disconnected entirely; `false` means a sector switch.
     public func detach(entityIndex: Int16, leftGame: Bool) {
         guard players.removeValue(forKey: entityIndex) != nil else { return }
+        lastAcceptedMoveAt.removeValue(forKey: entityIndex)
+        anomalyLogState.removeValue(forKey: entityIndex)
         do {
             try broadcastToPeers(.leave(LeaveMessage(entityIndex: entityIndex, leftGame: leftGame)), excluding: entityIndex)
         } catch {
@@ -289,6 +341,9 @@ public actor PerSectorActor {
             return
         }
         let newPosition = GridPoint(x: message.x, y: message.y)
+        // Capture the authoritative position before the mutation below overwrites it — the
+        // observe-only anomaly verdict measures the distance from here to `newPosition`.
+        let previousPosition = slot.character.position
         // Feet-box gate: bounds + static masks + peers and NPCs — but deliberately NOT monsters. Static
         // blockers never move, so a client rejection there is a genuine stale-view bug worth a
         // `snapBack`. Monsters move every 50 ms AI tick, so the client's monster view is routinely a
@@ -322,6 +377,98 @@ public actor PerSectorActor {
         } catch {
             logger.warning("failed to broadcast position", metadata: ["error": "\(error)"])
         }
+        // Observe-only: the move is already committed and broadcast above. This neither rejects nor
+        // snaps back — it only records implausibly-far accepted moves for offline analysis.
+        instrumentAcceptedMove(from: previousPosition, to: newPosition, entityIndex: entityIndex, tempo: tempo)
+    }
+
+    /// Observe-only anomaly instrumentation for an already-accepted move. Emits a rate-limited,
+    /// per-entity `warning` when the move covers more ground than running speed could in the elapsed
+    /// interval — without rejecting or snapping back. The verdict baseline refreshes on every accepted
+    /// move, including unflagged ones and early returns, so it always tracks the last accepted move.
+    private func instrumentAcceptedMove(from previousPosition: GridPoint, to newPosition: GridPoint, entityIndex: Int16, tempo: Tempo) {
+        let now = ContinuousClock().now
+        defer { lastAcceptedMoveAt[entityIndex] = now }
+        guard let baseline = lastAcceptedMoveAt[entityIndex] else { return }
+        let elapsed = now - baseline
+        let verdict = Self.movementReferenceVerdict(
+            from: previousPosition,
+            to: newPosition,
+            elapsed: elapsed,
+            toleranceFactor: Self.movementAnomalyToleranceFactor,
+            flatSlackPixels: Self.movementAnomalyFlatSlackPixels,
+            minElapsedSeconds: Self.movementAnomalyMinElapsedSeconds
+        )
+        guard verdict.exceeded else { return }
+        let state = anomalyLogState[entityIndex]
+        let decision = Self.anomalyLogDecision(
+            sinceLastLog: state.map { now - $0.lastLoggedAt },
+            suppressedCount: state?.suppressedCount ?? 0,
+            interval: .seconds(Self.movementAnomalyLogIntervalSeconds)
+        )
+        guard decision.shouldLog else {
+            anomalyLogState[entityIndex] = (lastLoggedAt: state?.lastLoggedAt ?? now, suppressedCount: decision.nextSuppressedCount)
+            return
+        }
+        movementLogger.warning(
+            "movement anomaly (observe-only)",
+            metadata: [
+                "entity_index": "\(entityIndex)",
+                "from": "\(previousPosition.x),\(previousPosition.y)",
+                "to": "\(newPosition.x),\(newPosition.y)",
+                "distance": "\(verdict.distance)",
+                "elapsed_ms": "\(Self.seconds(elapsed) * 1000)",
+                "tempo": "\(tempo.rawValue)",
+                "reference_cap": "\(verdict.referenceCap)",
+                "would_reject": "true",
+                "suppressed_since_last": "\(decision.suppressedSinceLast)"
+            ]
+        )
+        anomalyLogState[entityIndex] = (lastLoggedAt: now, suppressedCount: 0)
+    }
+
+    /// Fractional seconds of a `Duration`, reconstructed from its `(seconds, attoseconds)` components
+    /// (1 attosecond = 1e-18 s). One definition shared by the verdict cap and the `elapsed_ms` log so
+    /// the subtle attoseconds conversion can't drift between the two.
+    private static func seconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) * 1e-18
+    }
+
+    /// Pure movement verdict: the Euclidean distance from `from` to `to`, the maximum distance a
+    /// legitimately-running player could cover in `elapsed` (running speed × elapsed × tolerance + a
+    /// flat slack), and whether the move exceeds it. Deltas widen to `Double` before squaring — like
+    /// the monster-tick step — so a corrupt out-of-bounds baseline can't trap on an `Int16` square.
+    /// `Tempo.run` (the max legitimate speed) is the ceiling, not the claimed `message.tempo`, so
+    /// only faster-than-running moves flag.
+    static func movementReferenceVerdict(
+        from: GridPoint,
+        to: GridPoint,
+        elapsed: Duration,
+        toleranceFactor: Double,
+        flatSlackPixels: Double,
+        minElapsedSeconds: Double
+    ) -> (distance: Double, referenceCap: Double, exceeded: Bool) {
+        let dx = Double(Int32(to.x) - Int32(from.x))
+        let dy = Double(Int32(to.y) - Int32(from.y))
+        let distance = (dx * dx + dy * dy).squareRoot()
+        let referenceCap = Tempo.run.pixelsPerSecond * max(seconds(elapsed), minElapsedSeconds) * toleranceFactor + flatSlackPixels
+        return (distance, referenceCap, distance > referenceCap)
+    }
+
+    /// Pure per-entity rate-limit decision for the anomaly log. `sinceLastLog` is the gap since this
+    /// entity's last emitted line (`nil` when none yet). Emits when that gap is absent or at least
+    /// `interval`, carrying the coalesced `suppressedSinceLast` count and resetting the running
+    /// counter to 0; otherwise stays silent and increments the counter. Keeps output to at most one
+    /// line per entity per interval even under deliberate teleport spam.
+    static func anomalyLogDecision(
+        sinceLastLog: Duration?,
+        suppressedCount: Int,
+        interval: Duration
+    ) -> (shouldLog: Bool, suppressedSinceLast: Int, nextSuppressedCount: Int) {
+        guard let sinceLastLog, sinceLastLog < interval else {
+            return (shouldLog: true, suppressedSinceLast: suppressedCount, nextSuppressedCount: 0)
+        }
+        return (shouldLog: false, suppressedSinceLast: 0, nextSuppressedCount: suppressedCount + 1)
     }
 
     /// Re-broadcast a chat line to peers; the originating client renders its own bubble.
@@ -438,7 +585,7 @@ public actor PerSectorActor {
         guard let position = randomFreePoint(in: spawnRect, spriteSize: definition.spawnedMonsterSize) else {
             return false
         }
-        let index = allocateEntityIndex()
+        guard let index = allocateEntityIndex() else { return false }
         let runtime = MonsterSpawnRuntime(entityIndex: index, definition: definition, position: position)
         monsters[index] = runtime
         do {
@@ -454,9 +601,11 @@ public actor PerSectorActor {
 
     /// Destination-side arrival point for a player entering from `sourceSector`: a collision-free
     /// random cell inside the inbound (`arrivalPlacement`) portal whose `targetSectorName` is the
-    /// source. Returns the rect center when no clear cell is sampled, or `nil` when the sector has
-    /// no matching inbound portal (the caller then falls back to its own login spawn). Validates
-    /// against live entities because this runs inside the actor that owns the roster.
+    /// source. Returns `nil` when no clear cell is sampled (the caller then defers to its own
+    /// arrival-spawn fallback) and also when the sector has no matching inbound portal. Returning
+    /// the unvalidated rect center on a fully-blocked portal would land the player in geometry or on
+    /// another entity, so the `nil` defers placement to a validating fallback. Validates against
+    /// live entities because this runs inside the actor that owns the roster.
     public func arrivalPlacement(fromSector sourceSector: String, spriteSize: GridSize) -> GridPoint? {
         guard let portal = staticSector.portals.first(where: {
             $0.direction == .arrivalPlacement && $0.targetSectorName == sourceSector
@@ -479,11 +628,9 @@ public actor PerSectorActor {
         if let point = randomFreePoint(in: samplingRect, spriteSize: spriteSize) {
             return point
         }
-        // No clear cell: fall back to the geometric center of the full authored arrival zone.
-        return GridPoint(
-            x: Int16(clamping: Int32(portal.x) + Int32(portal.width) / 2),
-            y: Int16(clamping: Int32(portal.y) + Int32(portal.height) / 2)
-        )
+        // No clear cell: defer to the caller's arrival-spawn fallback rather than return the
+        // unvalidated rect center, which could land the player in geometry or on another entity.
+        return nil
     }
 
     /// Random collision-free top-left point for a `spriteSize` sprite inside `rect`, retried up to
