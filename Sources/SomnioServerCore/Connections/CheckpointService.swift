@@ -2,8 +2,8 @@ import Foundation
 import Logging
 import ServiceLifecycle
 
-/// Periodic per-character checkpoint timer. Sleeps for `interval` between passes; on graceful
-/// shutdown the inner sleep cancels and `run()` returns normally.
+/// Periodic per-character checkpoint timer. Each pass calls `WorldRouter.checkpointAll()`; the
+/// shutdown-cancel + error semantics live in `runPeriodically`.
 public actor CheckpointService: Service {
     private let worldRouter: WorldRouter
     private let interval: Duration
@@ -16,24 +16,8 @@ public actor CheckpointService: Service {
     }
 
     public func run() async throws {
-        let interval = interval
-        let logger = logger
-        let worldRouter = worldRouter
-        await cancelWhenGracefulShutdown {
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: interval)
-                } catch is CancellationError {
-                    return
-                } catch {
-                    logger.warning(
-                        "checkpoint sleep failed",
-                        metadata: ["error": "\(error)"]
-                    )
-                    return
-                }
-                await worldRouter.checkpointAll()
-            }
+        await runPeriodically(interval: interval, logger: logger, label: "checkpoint") { [worldRouter] in
+            await worldRouter.checkpointAll()
         }
     }
 }

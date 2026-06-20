@@ -33,23 +33,8 @@ public actor WorldClockService: Service {
     }
 
     public func run() async throws {
-        let interval = interval
-        let logger = logger
-        await cancelWhenGracefulShutdown {
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: interval)
-                } catch is CancellationError {
-                    return
-                } catch {
-                    logger.warning(
-                        "world clock sleep failed",
-                        metadata: ["error": "\(error)"]
-                    )
-                    return
-                }
-                await self.tickOnce()
-            }
+        await runPeriodically(interval: interval, logger: logger, label: "world clock") { [self] in
+            await tickOnce()
         }
         // After graceful-shutdown signals: persist whatever the post-tick state is so the
         // last in-game second isn't lost. The service group is already shutting down, so a

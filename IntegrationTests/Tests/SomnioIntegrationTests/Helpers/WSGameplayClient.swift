@@ -221,7 +221,7 @@ enum WSGameplayClient {
         client: PostgresClient,
         logger: Logger,
         worldClockInterval: Duration = .milliseconds(250),
-        aiTickInterval: Duration = .milliseconds(50),
+        aiTickInterval: Duration = .seconds(AITickService.defaultAITickIntervalSeconds),
         triggerShutdownEarly: Bool = false,
         _ body: @Sendable @escaping (Int) async throws -> Void
     ) async throws {

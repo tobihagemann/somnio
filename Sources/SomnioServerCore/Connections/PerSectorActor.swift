@@ -19,7 +19,11 @@ struct NPCRuntime {
     /// Cap that the per-tick dialog cooldown counter advances toward. Once reached, the next
     /// in-radius tick emits the current step; seeding to the cap at sector-actor init arms
     /// the first bump for an immediate emit.
-    static let dialogCooldownCap: Int16 = 59
+    ///
+    /// Derived from one source of truth — `npcDialogCooldownSeconds / defaultAITickIntervalSeconds`
+    /// ticks per cooldown — minus one, because the counter starts at 0 and the emit gate is `==`,
+    /// so readiness lands one tick early. The `Int16(...)` truncation is intentional.
+    static let dialogCooldownCap = Int16(SomnioConstants.npcDialogCooldownSeconds / AITickService.defaultAITickIntervalSeconds) - 1
 
     let entityIndex: Int16
     let definition: NPC
