@@ -109,12 +109,12 @@ struct SectorTests {
         #expect(spawn.x >= 0 && spawn.x < 128 && spawn.y >= 0 && spawn.y < 128)
     }
 
-    @Test func `arrivalSpawn falls back to the portal center when fully masked`() {
+    @Test func `arrivalSpawn is nil when the portal rect is fully masked`() {
         let sector = makeArrivalSector(
             collisionMasks: [CollisionMask(x: 0, y: 0, width: 128, height: 128)],
             portals: [selfPortal(x: 0, y: 0, width: 128, height: 128)]
         )
-        #expect(sector.arrivalSpawn == GridPoint(x: 64, y: 64))
+        #expect(sector.arrivalSpawn == nil)
     }
 
     private func selfPortal(x: Int16, y: Int16, width: Int16, height: Int16) -> SectorPortal {

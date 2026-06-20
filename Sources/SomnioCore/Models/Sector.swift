@@ -128,9 +128,11 @@ public struct Sector: Sendable, Equatable {
     /// new characters and as the login destination. Prefers the portal's geometric center,
     /// but the portal rect can span collision masks (e.g., a bookshelf row crosses it), so
     /// when the center is blocked this scans the portal on an 8px grid and returns the
-    /// walkable cell closest to the center. Returns `nil` if the sector has no arrival
-    /// portal targeting itself — callers should fall back to the sector's pixel-space
-    /// center in that case.
+    /// walkable cell closest to the center. Returns `nil` when the sector has no arrival
+    /// portal targeting itself, and also when the portal rect is fully blocked by collision
+    /// masks (no walkable cell found) — returning the unwalkable center would land the
+    /// player in geometry, so callers fall back to `pixelCenter` in both cases. Validation
+    /// is static-mask-only (no live-entity check).
     public var arrivalSpawn: GridPoint? {
         guard let portal = portals.first(where: { $0.direction == .arrivalPlacement && $0.targetSectorName == name }) else {
             return nil
@@ -166,7 +168,7 @@ public struct Sector: Sendable, Equatable {
             }
             y += step
         }
-        return best ?? center
+        return best
     }
 
     public var body: SectorBody {

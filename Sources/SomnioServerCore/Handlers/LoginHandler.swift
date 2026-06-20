@@ -122,7 +122,8 @@ public enum LoginHandler {
     /// off-map from before the spawn-resolution wiring. A character can never be legitimately
     /// saved unwalkable under normal play (movement into masks and out of bounds is blocked),
     /// so "unwalkable" is a reliable corruption signal. Prefers the sector's arrival portal,
-    /// falling back to its pixel-space center when the sector has no arrival portal.
+    /// falling back to its pixel-space center when no walkable arrival cell is found (the
+    /// sector has no arrival portal, or its portal rect is fully blocked by collision masks).
     static func resolvedSpawn(for character: Character, in sector: Sector) -> GridPoint? {
         guard !sector.isWalkable(character.position) else {
             return nil

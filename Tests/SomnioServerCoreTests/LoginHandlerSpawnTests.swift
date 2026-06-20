@@ -32,6 +32,20 @@ struct LoginHandlerSpawnTests {
         #expect(LoginHandler.resolvedSpawn(for: character, in: sector) == GridPoint(x: 256, y: 256))
     }
 
+    @Test func `resolvedSpawn falls back to the sector center when the arrival portal is fully masked`() {
+        // A self-arrival portal exists but its rect is entirely covered by a collision mask, so
+        // `arrivalSpawn` returns nil and the fallback must take over (not an unwalkable portal cell).
+        let sector = makeSector(
+            masks: [CollisionMask(x: 0, y: 0, width: 128, height: 128)],
+            portals: [SectorPortal(x: 0, y: 0, width: 128, height: 128,
+                                   targetSectorName: "S", direction: .arrivalPlacement)]
+        )
+        let character = makeCharacter(at: GridPoint(x: 0, y: 0)) // inside the mask
+        #expect(sector.arrivalSpawn == nil)
+        // 4x4 tiles * 128 = 512px extent; center = 256.
+        #expect(LoginHandler.resolvedSpawn(for: character, in: sector) == GridPoint(x: 256, y: 256))
+    }
+
     // MARK: - Helpers
 
     private func makeSector(masks: [CollisionMask], portals: [SectorPortal] = []) -> Sector {
