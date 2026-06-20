@@ -1,6 +1,5 @@
 import Foundation
 import Logging
-import Synchronization
 
 /// Bootstraps the swift-log system for the player client, editor, and CLI.
 ///
@@ -26,14 +25,11 @@ public enum LoggingConfiguration {
         }
     }
 
-    private static let bootstrapState = Mutex(false)
+    private static let latch = BootstrapLatch()
 
     /// Configures the logging system. Safe to call multiple times; only the first call takes effect.
     public static func bootstrap() {
-        bootstrapState.withLock { done in
-            guard !done else { return }
-            done = true
-
+        latch.runOnce {
             LoggingSystem.bootstrap { label in
                 #if canImport(OSLog)
                     return MultiplexLogHandler([

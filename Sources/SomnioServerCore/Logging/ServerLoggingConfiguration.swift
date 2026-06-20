@@ -1,7 +1,6 @@
 import Foundation
 import Logging
 import SomnioCore
-import Synchronization
 
 /// Bootstraps the server's swift-log system with three handlers:
 ///
@@ -18,13 +17,10 @@ public enum ServerLoggingConfiguration {
     public static let gameplayLabelPrefix = "de.tobiha.somnio.server.gameplay"
     public static let adminLabelPrefix = "de.tobiha.somnio.server.admin"
 
-    private static let bootstrapState = Mutex(false)
+    private static let latch = BootstrapLatch()
 
     public static func bootstrap() {
-        bootstrapState.withLock { done in
-            guard !done else { return }
-            done = true
-
+        latch.runOnce {
             LoggingSystem.bootstrap { label in
                 let stdout = JSONLogHandler(label: label)
                 let gameplay = LabelFilteringLogHandler(

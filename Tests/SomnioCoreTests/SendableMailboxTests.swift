@@ -46,4 +46,45 @@ struct SendableMailboxTests {
         mailbox.finish()
         #expect(mailbox.isFinished == true)
     }
+
+    @Test func `concurrent producers lose no elements`() async {
+        let (mailbox, stream) = SendableMailbox<Int>.make()
+        let producers = 1000
+        await withTaskGroup(of: Void.self) { group in
+            for value in 0 ..< producers {
+                group.addTask { mailbox.enqueue(value) }
+            }
+        }
+        mailbox.finish()
+        var collected: [Int] = []
+        for await value in stream {
+            collected.append(value)
+        }
+        #expect(collected.count == producers)
+        #expect(Set(collected) == Set(0 ..< producers))
+    }
+
+    @Test func `finish racing post-finish enqueues stays consistent`() async {
+        let (mailbox, stream) = SendableMailbox<Int>.make()
+        let baseline = 50
+        for value in 0 ..< baseline {
+            mailbox.enqueue(value)
+        }
+        let racers = 1000
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { mailbox.finish() }
+            for value in 0 ..< racers {
+                group.addTask { mailbox.enqueue(baseline + value) }
+            }
+        }
+        #expect(mailbox.isFinished)
+        var collected: [Int] = []
+        for await value in stream {
+            collected.append(value)
+        }
+        #expect(Set(collected).count == collected.count)
+        #expect(Set(collected).isSubset(of: Set(0 ..< (baseline + racers))))
+        #expect(collected.count >= baseline)
+        #expect(collected.count <= baseline + racers)
+    }
 }
