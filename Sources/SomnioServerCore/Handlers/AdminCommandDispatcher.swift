@@ -8,6 +8,7 @@ import SomnioProtocol
 /// non-nil response. Exhaustive on `AdminRequest` so a wire-layer addition is a
 /// compile-time failure here.
 public enum AdminCommandDispatcher {
+    // swiftlint:disable:next function_body_length
     public static func handle(
         _ request: AdminRequest,
         dependencies: AdminConnectionDependencies

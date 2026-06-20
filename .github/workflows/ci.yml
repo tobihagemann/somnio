@@ -60,3 +60,35 @@ jobs:
       - name: Run integration tests
         run: swift test --package-path IntegrationTests --no-parallel
         timeout-minutes: 25
+
+  docker-smoke:
+    name: Docker Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Populate sectors
+        # The server fails startup with ServerStartupError.noSectorsLoaded if its
+        # SOMNIO_SECTORS_DIR is empty. The compose `server` service mounts
+        # ./sectors:/opt/somnio/sectors:ro, so seed it from the bundled fixtures.
+        run: |
+          mkdir -p sectors
+          cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+      - name: Build image
+        # The Dockerfile requires MARKETING_VERSION (no default) and fails the build
+        # without it. `docker compose build --build-arg` forwards the value to the
+        # `server` service because its Dockerfile declares `ARG MARKETING_VERSION`.
+        run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=ci-test
+      - name: Bring stack up and wait for healthy
+        # Gates on the server healthcheck (curl /health -> SELECT 1), not just the db, so a
+        # boot regression fails the job. Runs the shipped example file as-is — its
+        # placeholder secrets are internally consistent.
+        run: docker compose -f docker-compose.example.yml up --wait --wait-timeout 120
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.example.yml ps
+          docker compose -f docker-compose.example.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.example.yml down -v

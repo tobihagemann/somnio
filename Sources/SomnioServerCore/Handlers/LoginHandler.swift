@@ -20,6 +20,7 @@ public enum LoginHandler {
     /// Lifted to `SomnioProtocolConstants.maxIdentifierUTF8Bytes`.
     public static let maxNicknameLength = SomnioProtocolConstants.maxIdentifierUTF8Bytes
 
+    // swiftlint:disable:next function_body_length
     public static func handle(
         _ message: LoginMessage,
         on connectionActor: ConnectionActor,

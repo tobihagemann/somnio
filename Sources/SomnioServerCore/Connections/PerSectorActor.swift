@@ -434,6 +434,7 @@ public actor PerSectorActor {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) * 1e-18
     }
 
+    // swiftlint:disable function_parameter_count large_tuple
     /// Pure movement verdict: the Euclidean distance from `from` to `to`, the maximum distance a
     /// legitimately-running player could cover in `elapsed` (running speed × elapsed × tolerance + a
     /// flat slack), and whether the move exceeds it. Deltas widen to `Double` before squaring — like
@@ -455,6 +456,9 @@ public actor PerSectorActor {
         return (distance, referenceCap, distance > referenceCap)
     }
 
+    // swiftlint:enable function_parameter_count large_tuple
+
+    // swiftlint:disable large_tuple
     /// Pure per-entity rate-limit decision for the anomaly log. `sinceLastLog` is the gap since this
     /// entity's last emitted line (`nil` when none yet). Emits when that gap is absent or at least
     /// `interval`, carrying the coalesced `suppressedSinceLast` count and resetting the running
@@ -470,6 +474,8 @@ public actor PerSectorActor {
         }
         return (shouldLog: false, suppressedSinceLast: 0, nextSuppressedCount: suppressedCount + 1)
     }
+
+    // swiftlint:enable large_tuple
 
     /// Re-broadcast a chat line to peers; the originating client renders its own bubble.
     public func handleSay(_ message: SayMessage, from entityIndex: Int16) {
@@ -777,6 +783,7 @@ public actor PerSectorActor {
         )
     }
 
+    // swiftlint:disable function_body_length
     /// Branch-0 monsters orient + chase the nearest in-aggro player. Other AI scripts idle
     /// (no broadcast, no mutation). Combat hooks intentionally absent — no damage, death,
     /// drop, or respawn yet; this is the single integration surface for a future combat
@@ -862,6 +869,8 @@ public actor PerSectorActor {
             }
         }
     }
+
+    // swiftlint:enable function_body_length
 
     /// Re-emit the player's authoritative `serverPosition` to the originating connection so the
     /// client snaps back after the server rejects a client-proposed change — an `enterPortal` to an

@@ -67,6 +67,7 @@ public enum GameplayHandlers {
         await sectorActor.handleBumpNPC(npcIndex: message.npcIndex, from: entityIndex)
     }
 
+    // swiftlint:disable function_body_length
     /// Returns the new sector + entity index when the portal resolves; otherwise `nil` and
     /// the connection stays in the original sector. An unknown destination logs a warning,
     /// snaps the player back via `serverPosition`, and keeps the socket open — application-
@@ -148,4 +149,5 @@ public enum GameplayHandlers {
             return nil
         }
     }
+    // swiftlint:enable function_body_length
 }

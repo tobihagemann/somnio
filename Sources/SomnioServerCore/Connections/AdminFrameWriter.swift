@@ -33,6 +33,7 @@ enum AdminFrameWriter {
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private static func adminResponseCaseName(_ response: AdminResponse) -> String {
         switch response {
         case .logContents: "logContents"

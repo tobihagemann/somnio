@@ -1,12 +1,5 @@
 included:
-  - Sources/SomnioProtocol
-  - Sources/SomnioCore
-  - Sources/SomnioData
-  - Sources/SomnioUI
-  - Sources/SomnioApp
-  - Sources/SomnioEditor
-  - Sources/SomnioServer
-  - Sources/SomnioCLI
+  - Sources
   - Tests
 
 excluded:

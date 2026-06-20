@@ -5,6 +5,7 @@ import SomnioProtocol
 /// Exhaustive on every `AdminResponse` variant so a future wire-layer addition is a
 /// build-time error rather than a silent fallthrough.
 enum AdminOutput {
+    // swiftlint:disable cyclomatic_complexity
     /// Wire contract for `.worldClock.text`: six semicolon-delimited fields
     /// `"Y;M;D;HH;MM;SS"`. The server formatter pads HH/MM/SS to two digits; year/month/day
     /// are not zero-padded. Both sides of the protocol live by this format.
@@ -50,6 +51,9 @@ enum AdminOutput {
         }
     }
 
+    // swiftlint:enable cyclomatic_complexity
+
+    // swiftlint:disable large_tuple
     /// Splits a wire-format `worldClock` payload into its six text fields. Returns `nil`
     /// when the field count is wrong or any field fails to parse as an `Int`, so a
     /// malformed server payload surfaces as a localized error string rather than a crash.
@@ -68,4 +72,5 @@ enum AdminOutput {
             second: String(fields[5])
         )
     }
+    // swiftlint:enable large_tuple
 }

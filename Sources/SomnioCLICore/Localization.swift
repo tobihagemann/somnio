@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable type_name
+
 /// Localized-string access for the admin CLI. `Bundle.module` resolves to the
 /// `SomnioCLICore` resource bundle and pins the catalog at
 /// `Resources/Localizable.xcstrings`. Production callers omit `locale` so the resolved
@@ -25,3 +27,5 @@ enum L {
         #endif
     }
 }
+
+// swiftlint:enable type_name

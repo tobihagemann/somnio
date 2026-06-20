@@ -175,6 +175,7 @@ public actor ConnectionActor {
         return .close(code: .protocolError, reason: "frame validation failed")
     }
 
+    // swiftlint:disable function_body_length cyclomatic_complexity
     /// `internal` (not `private`) so `SomnioServerCoreTests` can assert the wire-protocol close
     /// branches directly without driving a live socket.
     func dispatch(_ message: SomnioMessage, frameSize: Int) async -> CloseDecision {
@@ -249,6 +250,8 @@ public actor ConnectionActor {
             }
         }
     }
+
+    // swiftlint:enable function_body_length cyclomatic_complexity
 
     // MARK: - State transitions called by handlers
 

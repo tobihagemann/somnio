@@ -49,6 +49,7 @@ private final class ResponseBox: Sendable {
 /// connection, writes the encoded `AdminRequest` as a JSON text frame, reads the first
 /// inbound text frame as an `AdminResponse`, then closes normally.
 public enum AdminTransport {
+    // swiftlint:disable:next function_body_length
     public static func send(
         _ request: AdminRequest,
         to url: String,

@@ -5,6 +5,7 @@ import ServiceLifecycle
 import SomnioCore
 import SomnioData
 
+// swiftlint:disable function_body_length
 /// Entry point the `SomnioServer` executable shim calls. Owns the entire bootstrap:
 /// logging → config resolution → `PostgresClient` construction → `ServiceGroup` setup
 /// (with `PostgresClient` as the initial service) → post-readiness sequence
@@ -173,3 +174,5 @@ public func runServer(
 
     try await groupTask.value
 }
+
+// swiftlint:enable function_body_length
