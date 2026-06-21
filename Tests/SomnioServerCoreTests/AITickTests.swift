@@ -726,6 +726,64 @@ struct AITickTests {
         #expect(!snappedBack)
     }
 
+    // MARK: - Entity index allocation
+
+    @Test func `entity index allocation resumes after the NPC indices`() async throws {
+        // `init` seeds `nextEntityIndex` to the index after the last NPC, so the first runtime
+        // allocation (the joining player) lands at npcCount + 1 and a subsequently spawned monster
+        // takes the index after that. Guards the `nextEntityIndex` re-derivation that monster index
+        // allocation depends on — a drift here would collide a monster with a live NPC slot. The two
+        // NPCs sit far from the spawn box so their feet boxes don't block placement; the idle monster
+        // script (1) keeps it from chasing and emitting extra frames.
+        let sector = makeSector(
+            dimensions: GridSize(width: 512, height: 512),
+            npcs: [
+                makeNPC(at: GridPoint(x: 0, y: 0), dialogScript: ""),
+                makeNPC(at: GridPoint(x: 64, y: 0), dialogScript: "")
+            ],
+            monsterSpawns: [makeMonsterSpawn(at: GridPoint(x: 400, y: 400), aiScriptIndex: 1)]
+        )
+        let actor = PerSectorActor(staticSector: sector, logger: testLogger, monsterSpawnThreshold: 0)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        let playerIndex = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        #expect(playerIndex == 3)
+        _ = await actor.runAITick()
+        outbox.finish()
+        let frames = await collect(outbox: outbox)
+        let monsterIndices = decodeEntities(in: frames).filter { $0.type == .monster }.map(\.entityIndex)
+        #expect(monsterIndices == [4])
+    }
+
+    @Test func `entity index allocation starts at one for a sector with no NPCs`() async throws {
+        // Empty-sector base case for the re-derivation: with no NPCs, `nextEntityIndex` is 1, so the
+        // first joining player takes index 1.
+        let actor = PerSectorActor(staticSector: makeSector(), logger: testLogger)
+        let outbox = ConnectionOutbox(highWatermark: 1024)
+        let playerIndex = try await actor.attach(
+            character: makeCharacter(name: "alice", at: GridPoint(x: 10, y: 10)),
+            inventory: [],
+            outbox: outbox
+        )
+        #expect(playerIndex == 1)
+    }
+
+    @Test func `npcEntityIndices walks the skip-zero wrapping sequence`() {
+        // Small counts map 1:1, but the helper exists for the wrap boundary: the 32768th index
+        // overflows SMALLINT to Int16.min (skip-zero leaves it negative), the case a naive
+        // `Int16(1...count)` would trap on. Locking it keeps the prune's valid-key derivation
+        // aligned with the actor's seeding.
+        #expect(PerSectorActor.npcEntityIndices(count: 0) == [])
+        #expect(PerSectorActor.npcEntityIndices(count: 3) == [1, 2, 3])
+        // Pin the wrap transition itself: the last positive index is immediately followed by
+        // Int16.min (no zero in between), which a naive `Int16(1...count)` would trap on.
+        #expect(Array(PerSectorActor.npcEntityIndices(count: 32768).suffix(2)) == [32767, Int16.min])
+        #expect(PerSectorActor.npcEntityIndices(count: 32769).last == Int16.min + 1)
+    }
+
     // MARK: - Helpers
 
     private func makeSector(

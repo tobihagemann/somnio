@@ -19,6 +19,11 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
     /// The sectors directory yielded no loadable `.somnio-sector` files, so the world would
     /// boot empty (every login would fail). Boot fails closed instead.
     case noSectorsLoaded
+    /// The orphan-dialog-state prune would have deleted a suspiciously large share of the table
+    /// (the realistic footgun: an operator booting a partial `SOMNIO_SECTORS_DIR` against the
+    /// production DB, which orphans every other sector's cursors). Boot fails closed rather than
+    /// wiping cursors; the operator re-runs once with `SOMNIO_DIALOG_PRUNE_FORCE=1` if intentional.
+    case dialogPruneGuardTripped(orphanCount: Int, totalCount: Int)
 
     public var description: String {
         switch self {
@@ -34,6 +39,13 @@ public enum ServerStartupError: Error, Sendable, Equatable, CustomStringConverti
             return "SOMNIO_HTTP_PORT is not a valid TCP port: \(raw)"
         case .noSectorsLoaded:
             return "no sectors loaded from SOMNIO_SECTORS_DIR (expected at least one .somnio-sector file)"
+        case let .dialogPruneGuardTripped(orphanCount, totalCount):
+            return """
+            orphan npc_dialog_states prune aborted: \(orphanCount) of \(totalCount) rows would be \
+            deleted, which exceeds the safety guard. This usually means SOMNIO_SECTORS_DIR is \
+            partial relative to the database. If the large prune is intentional, re-run once with \
+            SOMNIO_DIALOG_PRUNE_FORCE=1
+            """
         }
     }
 }

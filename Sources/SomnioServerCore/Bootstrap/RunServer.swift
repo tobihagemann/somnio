@@ -27,6 +27,7 @@ public func runServer(
     // the label routes through the admin file backend instead of `gameplay-log.log`.
     let migrationsLogger = Logger(label: "de.tobiha.somnio.server.admin.migrations")
     let backfillLogger = Logger(label: "de.tobiha.somnio.server.admin.backfill")
+    let dialogPruneLogger = Logger(label: "de.tobiha.somnio.server.admin.dialogprune")
     let sectorsLogger = Logger(label: "de.tobiha.somnio.server.gameplay.sectors.loader")
 
     let postgresConfiguration: PostgresClient.Configuration
@@ -85,8 +86,13 @@ public func runServer(
         let worldClocks = PostgresWorldClockRepository(client: client, logger: postgresLogger)
         let passwordHasher = PasswordHasher(logger: postgresLogger)
         let worldRouterLogger = Logger(label: "de.tobiha.somnio.server.gameplay.world")
+        // Prune orphan dialog cursors before the router seeds from the table, so it never loads a
+        // cursor for an NPC index the loaded sector no longer has. One snapshot feeds both consumers.
+        let loadedSectors = await sectorCache.snapshotByName()
+        try await OrphanNPCDialogStatePrune(npcDialogStates: npcDialogStates, logger: dialogPruneLogger)
+            .prune(loadedSectors: loadedSectors, allowLargePrune: serverConfiguration.forceDialogPrune)
         worldRouter = try await WorldRouter(
-            sectors: sectorCache.snapshotByName(),
+            sectors: loadedSectors,
             characters: characters,
             npcDialogStates: npcDialogStates,
             logger: worldRouterLogger

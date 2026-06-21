@@ -162,9 +162,10 @@ public actor PerSectorActor {
         self.rng = rng
         self.monsterSpawnThreshold = monsterSpawnThreshold
         self.spawnTimers = staticSector.monsterSpawns.map { MonsterSpawnTimer(definition: $0) }
-        var nextIndex: Int16 = 1
-        for npc in staticSector.npcs {
-            let index = nextIndex
+        // `npcEntityIndices` reproduces the exact wrapping, skip-zero `advance` sequence below, so the
+        // dialog-prune's valid-key derivation and this seeding loop share one source of truth.
+        let indices = Self.npcEntityIndices(count: staticSector.npcs.count)
+        for (index, npc) in zip(indices, staticSector.npcs) {
             let dialogSteps = npc.dialogSteps
             let scriptStepIndex = Self.resolveSeedStepIndex(
                 persisted: initialDialogCursors[index],
@@ -182,11 +183,12 @@ public actor PerSectorActor {
                 cooldownTicks: NPCRuntime.dialogCooldownCap,
                 scriptStepIndex: scriptStepIndex
             )
-            nextIndex = Self.advance(nextIndex)
         }
         // Monsters are not materialized here — the spawn cadence (`runMonsterSpawns`) creates them
-        // at runtime and allocates their indices then, so `nextEntityIndex` advances past the NPCs.
-        self.nextEntityIndex = nextIndex
+        // at runtime and allocates their indices then, so `nextEntityIndex` advances past the NPCs:
+        // the index *after* the last NPC (or 1 for an empty sector), which monster spawning allocates
+        // from. Re-derived from the shared helper's output so the two can't drift.
+        self.nextEntityIndex = indices.last.map(Self.advance) ?? 1
     }
 
     /// Translate a persisted 1-based `script_step` into the 0-based runtime cursor. Out-of-range
@@ -237,6 +239,22 @@ public actor PerSectorActor {
         next &+= 1
         if next == 0 { next = 1 }
         return next
+    }
+
+    /// The entity indices `init` assigns to the first `count` NPCs, in file order — walking `advance`
+    /// from `1`. The single source of truth for the NPC-index sequence: the dialog-prune's valid-key
+    /// derivation calls this so it never drifts from the actor's seeding (e.g. for counts ≥ 32768 the
+    /// sequence wraps to negative `SMALLINT` indices, which a naive `Int16(1...count)` would both
+    /// diverge from and trap on).
+    static func npcEntityIndices(count: Int) -> [Int16] {
+        var indices: [Int16] = []
+        indices.reserveCapacity(count)
+        var index: Int16 = 1
+        for _ in 0 ..< count {
+            indices.append(index)
+            index = advance(index)
+        }
+        return indices
     }
 
     /// First free index at or after `start`, probing the full nonzero `Int16` domain via `advance`

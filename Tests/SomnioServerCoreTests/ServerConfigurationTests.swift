@@ -63,4 +63,21 @@ struct ServerConfigurationTests {
             _ = try ServerConfiguration.resolve(environment: environment, isDebug: false)
         }
     }
+
+    @Test(arguments: ["1", "true", "TRUE", "True"]) func `truthy SOMNIO_DIALOG_PRUNE_FORCE resolves forceDialogPrune true`(_ raw: String) throws {
+        let environment: [String: String] = ["SOMNIO_DIALOG_PRUNE_FORCE": raw]
+        let configuration = try ServerConfiguration.resolve(environment: environment, isDebug: true)
+        #expect(configuration.forceDialogPrune)
+    }
+
+    @Test(arguments: ["", "0", "false", "no", "yes"]) func `absent or non-truthy SOMNIO_DIALOG_PRUNE_FORCE resolves forceDialogPrune false`(_ raw: String) throws {
+        let environment: [String: String] = ["SOMNIO_DIALOG_PRUNE_FORCE": raw]
+        let configuration = try ServerConfiguration.resolve(environment: environment, isDebug: true)
+        #expect(configuration.forceDialogPrune == false)
+    }
+
+    @Test func `absent SOMNIO_DIALOG_PRUNE_FORCE defaults forceDialogPrune false`() throws {
+        let configuration = try ServerConfiguration.resolve(environment: [:], isDebug: true)
+        #expect(configuration.forceDialogPrune == false)
+    }
 }

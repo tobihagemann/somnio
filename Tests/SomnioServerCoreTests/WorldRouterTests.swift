@@ -465,8 +465,13 @@ private actor SeededNPCDialogStateRepository: NPCDialogStateRepository {
         rows.filter { $0.sectorName == sectorName }
     }
 
+    func allKeys() async throws -> [NPCDialogStateKey] {
+        rows.map { NPCDialogStateKey(sectorName: $0.sectorName, npcIndex: $0.npcIndex) }
+    }
+
     func upsert(_: NPCDialogState) async throws {}
     func reset(sectorName _: String, npcIndex _: Int16) async throws {}
+    func deleteOrphans(_: [NPCDialogStateKey]) async throws {}
 }
 
 private actor RecordingNPCDialogStateRepository: NPCDialogStateRepository {
@@ -481,6 +486,10 @@ private actor RecordingNPCDialogStateRepository: NPCDialogStateRepository {
         []
     }
 
+    func allKeys() async throws -> [NPCDialogStateKey] {
+        []
+    }
+
     func upsert(_ state: NPCDialogState) async throws {
         upserted.append(state)
     }
@@ -488,6 +497,8 @@ private actor RecordingNPCDialogStateRepository: NPCDialogStateRepository {
     func reset(sectorName: String, npcIndex: Int16) async throws {
         reset.append((sectorName, npcIndex))
     }
+
+    func deleteOrphans(_: [NPCDialogStateKey]) async throws {}
 
     func upsertedSnapshot() -> [NPCDialogState] {
         upserted
@@ -530,6 +541,10 @@ private actor FaultyNPCDialogStateRepository: NPCDialogStateRepository {
         []
     }
 
+    func allKeys() async throws -> [NPCDialogStateKey] {
+        []
+    }
+
     func upsert(_: NPCDialogState) async throws {
         upsertCalls += 1
         if nextUpsertThrows {
@@ -545,4 +560,6 @@ private actor FaultyNPCDialogStateRepository: NPCDialogStateRepository {
             throw Fault.rigged
         }
     }
+
+    func deleteOrphans(_: [NPCDialogStateKey]) async throws {}
 }

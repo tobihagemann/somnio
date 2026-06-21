@@ -84,8 +84,13 @@ public struct StubNPCDialogStateRepository: NPCDialogStateRepository {
         []
     }
 
+    public func allKeys() async throws -> [NPCDialogStateKey] {
+        []
+    }
+
     public func upsert(_: NPCDialogState) async throws {}
     public func reset(sectorName _: String, npcIndex _: Int16) async throws {}
+    public func deleteOrphans(_: [NPCDialogStateKey]) async throws {}
 }
 
 public struct StubWorldClockRepository: WorldClockRepository {

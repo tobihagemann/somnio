@@ -3,7 +3,6 @@ import Logging
 import PostgresNIO
 import SomnioCore
 import SomnioServerCore
-import Synchronization
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -124,39 +123,5 @@ struct NameSkeletonBackfillTests {
             return value
         }
         return nil
-    }
-}
-
-/// Captures log lines (message plus rendered metadata) so a backfill collision can be asserted.
-private final class CapturingLogHandler: LogHandler, Sendable {
-    private let captured = Mutex<[(Logger.Level, String)]>([])
-
-    var errorLines: [String] {
-        captured.withLock { entries in entries.filter { $0.0 == .error }.map(\.1) }
-    }
-
-    var logLevel: Logger.Level {
-        get { .trace }
-        set { _ = newValue }
-    }
-
-    var metadata: Logger.Metadata {
-        get { [:] }
-        set { _ = newValue }
-    }
-
-    var metadataProvider: Logger.MetadataProvider? {
-        get { nil }
-        set { _ = newValue }
-    }
-
-    subscript(metadataKey key: String) -> Logger.Metadata.Value? {
-        get { nil }
-        set { _ = newValue }
-    }
-
-    func log(event: LogEvent) {
-        let rendered = (event.metadata ?? [:]).map { "\($0.key)=\($0.value)" }.joined(separator: " ")
-        captured.withLock { $0.append((event.level, "\(event.message) \(rendered)")) }
     }
 }
