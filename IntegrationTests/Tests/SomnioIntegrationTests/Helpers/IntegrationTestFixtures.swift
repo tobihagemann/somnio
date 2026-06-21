@@ -45,7 +45,8 @@ public enum IntegrationTestFixtures {
     public static func makeConnectionDependencies(
         client: PostgresClient,
         sectors: [String: Sector],
-        logger: Logger
+        logger: Logger,
+        worldClockInterval: Duration = .milliseconds(250)
     ) async throws -> ConnectionDependencies {
         let characters = PostgresCharacterRepository(client: client, logger: logger)
         let inventories = PostgresInventoryRepository(client: client, logger: logger)
@@ -64,6 +65,7 @@ public enum IntegrationTestFixtures {
             worldRouter: worldRouter,
             worldClocks: worldClocks,
             initialClock: initialClock,
+            interval: worldClockInterval,
             logger: logger
         )
         return ConnectionDependencies(

@@ -88,6 +88,39 @@ struct AdminVerbsE2ETests {
         }
     }
 
+    @Test func `time verb reflects the live ticking world clock under a running service group`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.admin.time-live")
+            // Pin the seed explicitly so `frozenSeedReadout` stays coupled to the value actually seeded
+            // rather than `seedClock()`'s default. Under a running service group with a fast tick the
+            // admin `time` verb must read the live clock and advance past the seed — a regression that
+            // splits the rig into a never-ticking read-side instance would stay stuck at the seed.
+            let seed = WorldClock(second: 50, minute: 11, hour: 7, day: 1, month: 1, year: 500)
+            let frozenSeedReadout = "500;1;1;07;11;50"
+            try await WSGameplayClient.seedClock(client: client, clock: seed)
+            let rig = try await WSGameplayClient.makeApplication(
+                client: client,
+                logger: logger,
+                worldClockInterval: .milliseconds(10)
+            )
+            try await WSGameplayClient.withServiceGroup(rig: rig, logger: logger) { port in
+                let url = "ws://localhost:\(port)/admin"
+                let advanced = try await withTestTimeout(.seconds(10)) { () async throws -> Bool in
+                    while true {
+                        let response = try await AdminTransport.send(.time, to: url, token: "test", logger: logger)
+                        guard case let .worldClock(text) = response else {
+                            Issue.record("expected .worldClock readout, got \(response)")
+                            return false
+                        }
+                        if text != frozenSeedReadout { return true }
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                }
+                #expect(advanced, "admin time readout did not advance past the seed")
+            }
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     @Test func `say verb broadcasts AdminSay frame to every logged-in gameplay client`() async throws {
         try await TestHarness.withDatabase { client in

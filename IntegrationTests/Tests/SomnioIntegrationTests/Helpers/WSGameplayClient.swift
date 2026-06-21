@@ -30,18 +30,19 @@ enum WSGameplayClient {
     static func makeApplication(
         client: PostgresClient,
         logger: Logger,
-        sectors: [String: Sector]? = nil
+        sectors: [String: Sector]? = nil,
+        worldClockInterval: Duration = .milliseconds(250)
     ) async throws -> Rig {
         let resolvedSectors = try sectors ?? IntegrationTestFixtures.defaultSectors()
         let dependencies = try await IntegrationTestFixtures.makeConnectionDependencies(
             client: client,
             sectors: resolvedSectors,
-            logger: logger
+            logger: logger,
+            worldClockInterval: worldClockInterval
         )
         let adminDependencies = try await GameplayRouteTestApplication.makeAdminDependencies(
             worldRouter: dependencies.worldRouter,
-            worldClock: dependencies.worldClock,
-            logger: logger
+            worldClock: dependencies.worldClock
         )
         let portPromise = PortPromise()
         let application = GameplayRouteTestApplication.make(
@@ -218,18 +219,14 @@ enum WSGameplayClient {
 
     static func withServiceGroup(
         rig: Rig,
-        client: PostgresClient,
         logger: Logger,
-        worldClockInterval: Duration = .milliseconds(250),
         aiTickInterval: Duration = .seconds(AITickService.defaultAITickIntervalSeconds),
         triggerShutdownEarly: Bool = false,
         _ body: @Sendable @escaping (Int) async throws -> Void
     ) async throws {
         let group = try await makeServiceGroup(
             rig: rig,
-            client: client,
             logger: logger,
-            worldClockInterval: worldClockInterval,
             aiTickInterval: aiTickInterval
         )
         let runTask = Task { try await group.run() }
@@ -246,23 +243,12 @@ enum WSGameplayClient {
 
     private static func makeServiceGroup(
         rig: Rig,
-        client: PostgresClient,
         logger: Logger,
-        worldClockInterval: Duration,
         aiTickInterval: Duration
     ) async throws -> ServiceGroup {
-        let worldClocks = PostgresWorldClockRepository(client: client, logger: logger)
-        let initialClock = try await worldClocks.load()
         let checkpointService = CheckpointService(
             worldRouter: rig.dependencies.worldRouter,
             interval: .seconds(60),
-            logger: logger
-        )
-        let worldClockService = WorldClockService(
-            worldRouter: rig.dependencies.worldRouter,
-            worldClocks: worldClocks,
-            initialClock: initialClock,
-            interval: worldClockInterval,
             logger: logger
         )
         let aiTickService = AITickService(
@@ -270,11 +256,16 @@ enum WSGameplayClient {
             interval: aiTickInterval,
             logger: logger
         )
+        // Register the single `WorldClockService` the rig already built — the one handlers and
+        // the admin `time` verb read — so snapshot reads reflect the live, ticking clock the
+        // way production does. Keep it ahead of `aiTickService` so reverse shutdown stops it
+        // second, matching `RunServer`. Never run the same `Rig` in two groups concurrently:
+        // the single instance's `run()` must be invoked exactly once.
         let services: [any Service] = [
             rig.application,
             rig.dependencies.worldRouter,
             checkpointService,
-            worldClockService,
+            rig.dependencies.worldClock,
             aiTickService
         ]
         return ServiceGroup(

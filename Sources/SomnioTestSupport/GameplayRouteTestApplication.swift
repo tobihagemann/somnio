@@ -39,9 +39,9 @@ public enum GameplayRouteTestApplication {
     /// the gameplay/admin log file pair.
     public static func makeAdminDependencies(
         worldRouter: WorldRouter,
-        worldClock: WorldClockService,
-        logger: Logger
+        worldClock: WorldClockService
     ) async throws -> AdminConnectionDependencies {
+        let logger = Logger(label: "test.gameplay.route.deps")
         let logsDirectory = FileManager.default
             .temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

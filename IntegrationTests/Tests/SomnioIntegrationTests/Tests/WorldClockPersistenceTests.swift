@@ -45,12 +45,14 @@ struct WorldClockPersistenceTests {
             let seed = WorldClock(second: 55, minute: 11, hour: 12, day: 1, month: 1, year: 500)
             try await WSGameplayClient.seedClock(client: client, clock: seed)
 
-            let rig1 = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(
-                rig: rig1,
+            let rig1 = try await WSGameplayClient.makeApplication(
                 client: client,
                 logger: logger,
                 worldClockInterval: .milliseconds(10)
+            )
+            try await WSGameplayClient.withServiceGroup(
+                rig: rig1,
+                logger: logger
             ) { _ in
                 // Run for ~500 ms wall-clock — at 10 ms / in-game second the seed crosses
                 // the minute boundary into minute 12 well within the window, triggering at
@@ -93,12 +95,14 @@ struct WorldClockPersistenceTests {
 
             // Rig 1 runs briefly so the in-memory clock advances past the seed; graceful
             // shutdown's final save persists whatever the post-tick state is.
-            let rig1 = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(
-                rig: rig1,
+            let rig1 = try await WSGameplayClient.makeApplication(
                 client: client,
                 logger: logger,
                 worldClockInterval: .milliseconds(10)
+            )
+            try await WSGameplayClient.withServiceGroup(
+                rig: rig1,
+                logger: logger
             ) { _ in
                 try await Task.sleep(for: .milliseconds(500))
             }
@@ -115,7 +119,7 @@ struct WorldClockPersistenceTests {
             let nickname = "bootstrap-\(UUID().uuidString.prefix(6))"
             let joinDateTick = DateTickSlot()
             let rig2 = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(rig: rig2, client: client, logger: logger) { port in
+            try await WSGameplayClient.withServiceGroup(rig: rig2, logger: logger) { port in
                 _ = try await WebSocketClient.connect(
                     url: "ws://localhost:\(port)/ws",
                     configuration: WSGameplayClient.wsConfig(),
@@ -151,12 +155,14 @@ struct WorldClockPersistenceTests {
 
             let nickname = "ticker-\(UUID().uuidString.prefix(6))"
             let collected = MinuteCollector()
-            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(
-                rig: rig,
+            let rig = try await WSGameplayClient.makeApplication(
                 client: client,
                 logger: logger,
                 worldClockInterval: .milliseconds(1)
+            )
+            try await WSGameplayClient.withServiceGroup(
+                rig: rig,
+                logger: logger
             ) { port in
                 _ = try await WebSocketClient.connect(
                     url: "ws://localhost:\(port)/ws",

@@ -141,7 +141,7 @@ struct GameplayE2ETests {
             let nickname = "bumper-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger, sectors: sectors)
-            try await WSGameplayClient.withServiceGroup(rig: rig, client: client, logger: logger) { port in
+            try await WSGameplayClient.withServiceGroup(rig: rig, logger: logger) { port in
                 try await driveSingleSession(port: port, logger: logger) { inbound, outbound in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     try await runBumpPhases(
@@ -168,12 +168,14 @@ struct GameplayE2ETests {
             try await WSGameplayClient.seedClock(client: client)
             let nickname = "ticker-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
-            let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(
-                rig: rig,
+            let rig = try await WSGameplayClient.makeApplication(
                 client: client,
                 logger: logger,
                 worldClockInterval: .milliseconds(200)
+            )
+            try await WSGameplayClient.withServiceGroup(
+                rig: rig,
+                logger: logger
             ) { port in
                 try await driveSingleSession(port: port, logger: logger) { inbound, outbound in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
@@ -202,7 +204,7 @@ struct GameplayE2ETests {
             let recorder = FrameRecorder()
             let observedClose = CloseRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await WSGameplayClient.withServiceGroup(rig: rig, client: client, logger: logger, triggerShutdownEarly: true) { port in
+            try await WSGameplayClient.withServiceGroup(rig: rig, logger: logger, triggerShutdownEarly: true) { port in
                 let closeFrame = try await WebSocketClient.connect(
                     url: "ws://localhost:\(port)/ws",
                     configuration: WSGameplayClient.wsConfig(),
