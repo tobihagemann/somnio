@@ -220,8 +220,11 @@ import SpriteKit
             return
         }
         guard payload.protocolVersion == SomnioProtocolConstants.helloVersion else {
-            chatLines.append(.errorCode(code: "\(payload.protocolVersion)"))
+            let skew: VersionSkew = payload.protocolVersion > SomnioProtocolConstants.helloVersion
+                ? .clientOutdated
+                : .serverOutdated
             beginAuthSocketTeardown()
+            presentedSheet = .updateRequired(skew)
             return
         }
         connectionState = .awaitingLoginResult

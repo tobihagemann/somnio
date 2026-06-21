@@ -210,6 +210,8 @@ For custom views that accept a "localized title" parameter, prefer `LocalizedStr
 
 ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
 
+Each target's bilingual catalog is guarded by a per-target catalog test (the `LocalizableCatalogTests` suites for SomnioApp/SomnioEditor/SomnioUI; the CLI's lives in `AdminOutputTests` and SomnioCore's in `CatalogAssertionsTests`) whose `expectedKeys` allowlist is the only thing checked for en/de presence, placeholder parity, and the no-Unicode-ellipsis rule. A catalog key absent from that allowlist ships unguarded, so every new user-facing string must be added both to the `.xcstrings` catalog and to its target's `expectedKeys` list.
+
 ### Wire protocol
 
 Messages are modelled as discriminated-union enums in `SomnioProtocol`, serialized as JSON over WebSocket **text** frames in the shape `{"tag":"<verb>","payload":{...}}`. `SomnioMessageEncoder.encode` / `SomnioMessageDecoder.decode` are the framing entrypoints; boundaries convert `Data` ⇄ `String` at the `.text` frame edge. The `tag` is a string equal to the `SomnioMessageTag` case name; `SomnioMessage.init(from:)` is hand-written so an unknown tag throws `SomnioProtocolError.unrecognizedTag(String)` (a synthesized decode would throw `DecodingError` and break the admin unknown-verb carve-out). `AdminRequest`/`AdminResponse` follow the same `{tag, payload}` string-discriminator shape. `Tests/SomnioProtocolTests/RoundTripTests.swift` (+ `AdminCodableTests.swift`, `WireFrameLimitsTests.swift`) are the regression guards.

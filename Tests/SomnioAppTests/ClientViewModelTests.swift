@@ -9,12 +9,34 @@ import Testing
 
 @MainActor
 struct ClientViewModelTests {
-    @Test func `protocol mismatch on Hello tears down the connection`() {
+    @Test func `hello with the matching protocol version advances to awaitingLoginResult`() {
+        let viewModel = makeViewModel()
+        viewModel.loginForm.nickname = "Alice"
+        viewModel.loginForm.password = "pw"
+        viewModel.connectionState = .awaitingHello
+        viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion))))
+        #expect(viewModel.connectionState == .awaitingLoginResult)
+    }
+
+    @Test func `hello with a newer server version presents the client-outdated update sheet`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .awaitingHello
+        viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion + 1))))
+        #expect(viewModel.connectionState == .disconnected)
+        #expect(viewModel.presentedSheet == .updateRequired(.clientOutdated))
+        let hasVersionErrorCode = viewModel.chatLines.contains { line in
+            if case .errorCode = line { return true }
+            return false
+        }
+        #expect(!hasVersionErrorCode)
+    }
+
+    @Test func `hello with an older server version presents the server-outdated update sheet`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingHello
         viewModel.handle(.message(.hello(HelloMessage(protocolVersion: 0))))
         #expect(viewModel.connectionState == .disconnected)
-        #expect(viewModel.chatLines.contains(.errorCode(code: "0")))
+        #expect(viewModel.presentedSheet == .updateRequired(.serverOutdated))
     }
 
     @Test func `loginResult ok sets selfDisplayName from the form`() {

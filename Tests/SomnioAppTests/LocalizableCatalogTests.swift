@@ -40,7 +40,12 @@ struct LocalizableCatalogTests {
         // SomnioUI's chat scrollback as typed `ChatLine.badCredentials` /
         // `.alreadyLoggedIn` cases)
         "Nickname already exists.",
-        "Registration failed."
+        "Registration failed.",
+        // Update-required sheet
+        "Update required",
+        "A newer version is available. Please update your client to keep playing.",
+        "The server is being updated. Please try again in a few moments.",
+        "Try Again"
     ]
 
     @Test func `catalog ships bilingual values with matching placeholders and no Unicode ellipsis`() throws {

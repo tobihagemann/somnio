@@ -2,6 +2,40 @@
   "sourceLanguage" : "en",
   "version" : "1.0",
   "strings" : {
+    "*: repeat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "*: wiederholen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "*: repeat"
+          }
+        }
+      }
+    },
+    "A newer version is available. Please update your client to keep playing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine neuere Version ist verfügbar. Bitte aktualisiere deinen Client, um weiterzuspielen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A newer version is available. Please update your client to keep playing."
+          }
+        }
+      }
+    },
     "About Somnio" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -427,6 +461,57 @@
         }
       }
     },
+    "The server is being updated. Please try again in a few moments." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server wird gerade aktualisiert. Bitte versuche es in wenigen Augenblicken erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is being updated. Please try again in a few moments."
+          }
+        }
+      }
+    },
+    "Try Again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut versuchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "Update required" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update erforderlich"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update required"
+          }
+        }
+      }
+    },
     "Verbose" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -457,23 +542,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Version: %@"
-          }
-        }
-      }
-    },
-    "*: repeat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "*: wiederholen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "*: repeat"
           }
         }
       }

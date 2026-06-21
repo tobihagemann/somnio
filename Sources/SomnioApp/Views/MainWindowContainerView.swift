@@ -8,9 +8,11 @@ import SwiftUI
 /// and reports changes here through the `onChatFocusChange` callback.
 @MainActor public struct MainWindowContainerView: View {
     @Bindable var viewModel: ClientViewModel
+    private let onCheckForUpdates: () -> Void
 
-    public init(viewModel: ClientViewModel) {
+    public init(viewModel: ClientViewModel, onCheckForUpdates: @escaping () -> Void) {
         self._viewModel = Bindable(viewModel)
+        self.onCheckForUpdates = onCheckForUpdates
     }
 
     public var body: some View {
@@ -37,6 +39,8 @@ import SwiftUI
                 RegistrationSheetView(viewModel: viewModel)
             case .about:
                 AboutView()
+            case let .updateRequired(skew):
+                UpdateRequiredSheetView(viewModel: viewModel, skew: skew, onCheckForUpdates: onCheckForUpdates)
             }
         }
     }

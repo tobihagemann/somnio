@@ -29,7 +29,7 @@ struct SomnioAppEntry: App {
 
     var body: some Scene {
         Window(L.resource("Somnio"), id: "main") {
-            MainWindowContainerView(viewModel: viewModel)
+            MainWindowContainerView(viewModel: viewModel, onCheckForUpdates: { updaterController.checkForUpdates(nil) })
         }
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
