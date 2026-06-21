@@ -1,5 +1,5 @@
 --minversion 0.55.0
---exclude .build,DerivedData,Skills,IntegrationTests/.build
+--exclude .build,DerivedData,Skills,IntegrationTests/.build,Sources/SomnioCore/Generated
 
 # Format options
 --closurevoid preserve

@@ -21,18 +21,22 @@ public actor PostgresAccountRepository: AccountRepository {
     public func create(name: String, passwordHash: String, email: String) async throws -> Account {
         let id = UUID()
         let createdAt = Date()
+        let skeleton = NamePolicy.confusableSkeleton(name)
+        let skeletonVersion = Int32(NamePolicy.skeletonAlgorithmVersion)
         try await client.query(
             """
-            INSERT INTO accounts (id, name, password_hash, email, created_at)
-            VALUES (\(id), \(name), \(passwordHash), \(email), \(createdAt))
+            INSERT INTO accounts (id, name, password_hash, email, created_at, name_skeleton, name_skeleton_version)
+            VALUES (\(id), \(name), \(passwordHash), \(email), \(createdAt), \(skeleton), \(skeletonVersion))
             """,
             logger: logger
         )
         return Account(id: id, name: name, passwordHash: passwordHash, email: email, createdAt: createdAt)
     }
 
-    /// Looks up via the `name_normalized` generated column so case- and Unicode-confusable
-    /// variants of the registered name resolve to the same row.
+    /// Looks up via the `name_normalized` generated column so case- and NFKC-equivalent variants
+    /// (e.g. full-width) of the registered name resolve to the same row. This is NFKC only --
+    /// cross-script confusables are a separate layer (`name_skeleton`) and are intentionally not
+    /// resolved at lookup time (login resolves an exact normalized match only).
     public func findByName(_ name: String) async throws -> Account? {
         let rows = try await client.query(
             """

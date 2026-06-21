@@ -14,10 +14,12 @@ public enum MigrationRegistry {
             version: 1,
             name: "create_accounts",
             statements: [
-                // `name_normalized` is the UNIQUE-enforced column so case- and Unicode-confusable
-                // collisions ("Admin" vs "admin" vs "АDMIN" with Cyrillic А) cannot coexist
-                // and impersonate each other once names surface to other clients. The raw
-                // `name` is preserved verbatim for display.
+                // `name_normalized` is the UNIQUE-enforced column so case- and NFKC-confusable
+                // collisions ("Admin" vs "admin" vs full-width "ａｄｍｉｎ") cannot coexist and
+                // impersonate each other once names surface to other clients. The raw `name` is
+                // preserved verbatim for display. NFKC does NOT fold cross-script lookalikes
+                // ("АDMIN" with Cyrillic А vs Latin "ADMIN"); migration v6's `name_skeleton`
+                // column closes that gap.
                 """
                 CREATE TABLE accounts (
                     id UUID PRIMARY KEY,
@@ -124,6 +126,30 @@ public enum MigrationRegistry {
                     script_step SMALLINT NOT NULL,
                     PRIMARY KEY (sector_name, npc_index)
                 )
+                """
+            ]
+        ),
+        // The TR39 confusable skeleton (Swift-computed, so not a generated column) closes the
+        // cross-script lookalike gap NFKC leaves open. Nullable + a partial UNIQUE index so the
+        // column rolls out ahead of the server-startup backfill: legacy NULL-skeleton rows don't
+        // block, while every new insert is deduplicated immediately. `name_skeleton_version`
+        // records `NamePolicy.skeletonAlgorithmVersion` so the backfill can recompute stale rows
+        // after a Unicode/algorithm bump. The defense-in-depth presence CHECK is deliberately
+        // deferred to a later release (after one boot has run the backfill) so a VALIDATE pass
+        // never fails boot on a populated table.
+        Migration(
+            version: 6,
+            name: "add_name_skeleton",
+            statements: [
+                "ALTER TABLE accounts ADD COLUMN name_skeleton TEXT, ADD COLUMN name_skeleton_version INTEGER",
+                """
+                CREATE UNIQUE INDEX accounts_name_skeleton_key ON accounts (name_skeleton) \
+                WHERE name_skeleton IS NOT NULL
+                """,
+                "ALTER TABLE characters ADD COLUMN name_skeleton TEXT, ADD COLUMN name_skeleton_version INTEGER",
+                """
+                CREATE UNIQUE INDEX characters_name_skeleton_key ON characters (name_skeleton) \
+                WHERE name_skeleton IS NOT NULL
                 """
             ]
         )

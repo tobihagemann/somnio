@@ -43,6 +43,12 @@ public enum RegisterHandler {
             outbox.sendEncoded(.registerResult(RegisterResultMessage(result: .failure)), logger: logger)
             return
         }
+        do {
+            try NamePolicy.validateForRegistration(message.nickname)
+        } catch {
+            outbox.sendEncoded(.registerResult(RegisterResultMessage(result: .nameNotAllowed)), logger: logger)
+            return
+        }
         let figure = SpriteFigure.figureIndex(class: characterClass, gender: gender)
         let passwordHash: String
         do {

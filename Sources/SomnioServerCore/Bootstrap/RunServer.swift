@@ -26,6 +26,7 @@ public func runServer(
     // Migrations are an admin/operator concern (one-shot at boot), not gameplay traffic, so
     // the label routes through the admin file backend instead of `gameplay-log.log`.
     let migrationsLogger = Logger(label: "de.tobiha.somnio.server.admin.migrations")
+    let backfillLogger = Logger(label: "de.tobiha.somnio.server.admin.backfill")
     let sectorsLogger = Logger(label: "de.tobiha.somnio.server.gameplay.sectors.loader")
 
     let postgresConfiguration: PostgresClient.Configuration
@@ -65,6 +66,9 @@ public func runServer(
     do {
         try await waitForClientQueryable(client, logger: postgresLogger)
         try await MigrationRunner(client: client, logger: migrationsLogger).applyPending()
+        // Runs after migrations and before serving so legacy rows are deduplicated before any new
+        // insert; see `NameSkeletonBackfill` for the degraded-on-collision behavior.
+        try await NameSkeletonBackfill(client: client, logger: backfillLogger).reconcile()
         let sectorCache = SectorCache()
         try await sectorCache.load(from: serverConfiguration.sectorsDirectory)
         let sectorNames = await sectorCache.names()

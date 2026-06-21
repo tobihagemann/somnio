@@ -271,6 +271,9 @@ import SpriteKit
         case .nicknameExists:
             registrationForm.lastError = .nicknameExists
             beginAuthSocketTeardown()
+        case .nameNotAllowed:
+            registrationForm.lastError = .nameNotAllowed
+            beginAuthSocketTeardown()
         case .failure:
             registrationForm.lastError = .failure
             beginAuthSocketTeardown()

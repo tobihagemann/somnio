@@ -57,6 +57,18 @@ struct AccountRepositoryTests {
         }
     }
 
+    @Test func `confusable name collides via the skeleton index`() async throws {
+        try await TestHarness.withDatabase { client in
+            let repo = PostgresAccountRepository(client: client, logger: Logger(label: "test.account.skeleton"))
+            _ = try await repo.create(name: "ADMIN", passwordHash: "hash", email: "admin@example.com")
+            // Cyrillic "АDMIN" (U+0410) is not NFKC-equivalent to Latin "ADMIN" but shares its skeleton,
+            // so the `accounts_name_skeleton_key` partial unique index must reject it.
+            await #expect(throws: PSQLError.self) {
+                _ = try await repo.create(name: "\u{0410}DMIN", passwordHash: "hash2", email: "evil@example.com")
+            }
+        }
+    }
+
     @Test func `NFKC-equivalent name collides with the existing one`() async throws {
         try await TestHarness.withDatabase { client in
             let repo = PostgresAccountRepository(client: client, logger: Logger(label: "test.account.findByName.confusable"))

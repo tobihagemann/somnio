@@ -246,6 +246,32 @@ struct LoginRegisterHandlerTests {
         }
     }
 
+    @Test func `register with a mixed-script name returns nameNotAllowed`() async throws {
+        try await TestHarness.withDatabase { client in
+            let dependencies = try await makeDependencies(client: client)
+            let actor = ConnectionActor(dependencies: dependencies)
+            let outbox = await actor.connectionOutbox
+
+            // Mixed Latin + Cyrillic ("Иван-Ivan") trips the script-mixing gate before any DB write.
+            await RegisterHandler.handle(
+                RegisterMessage(
+                    nickname: "\u{0418}\u{0432}\u{0430}\u{043D}-Ivan",
+                    password: "passw0rd",
+                    passwordRepeat: "passw0rd",
+                    characterClass: CharacterClass.fighter.rawValue,
+                    gender: Gender.male.rawValue,
+                    email: "mixed@example.com"
+                ),
+                on: actor,
+                dependencies: dependencies
+            )
+            outbox.finish()
+
+            let frames = await IntegrationTestFixtures.collectFrames(from: outbox)
+            try IntegrationTestFixtures.expectLastRegisterResult(.nameNotAllowed, in: frames)
+        }
+    }
+
     @Test func `register with malformed class raw returns failure`() async throws {
         try await TestHarness.withDatabase { client in
             let dependencies = try await makeDependencies(client: client)

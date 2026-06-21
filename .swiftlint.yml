@@ -6,6 +6,7 @@ excluded:
   - .build
   - DerivedData
   - IntegrationTests
+  - Sources/SomnioCore/Generated
 
 disabled_rules:
   - closure_parameter_position

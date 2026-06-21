@@ -66,8 +66,8 @@ struct RoundTripTests {
         #expect(try roundTrip(m) == m)
     }
 
-    @Test func `register result`() throws {
-        let m = SomnioMessage.registerResult(RegisterResultMessage(result: .nicknameExists))
+    @Test(arguments: RegisterResultCode.allCases) func `register result`(_ result: RegisterResultCode) throws {
+        let m = SomnioMessage.registerResult(RegisterResultMessage(result: result))
         #expect(try roundTrip(m) == m)
     }
 

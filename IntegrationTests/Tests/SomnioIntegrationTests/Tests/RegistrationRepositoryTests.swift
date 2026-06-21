@@ -67,6 +67,64 @@ struct RegistrationRepositoryTests {
         }
     }
 
+    @Test func `confusable second registration collides on the skeleton index`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.registration.confusable")
+            let registrations = PostgresRegistrationRepository(client: client, logger: logger)
+            _ = try await registrations.register(
+                name: "ADMIN",
+                passwordHash: "first",
+                email: "first@example.com",
+                gender: .male,
+                figure: 0,
+                starterInventory: []
+            )
+            // All-Cyrillic "АDMIN" (U+0410) is NOT NFKC-equivalent to Latin "ADMIN", so it slips past
+            // `name_normalized`; the confusable skeleton catches it and the UNIQUE index rejects it.
+            do {
+                _ = try await registrations.register(
+                    name: "\u{0410}DMIN",
+                    passwordHash: "second",
+                    email: "second@example.com",
+                    gender: .male,
+                    figure: 0,
+                    starterInventory: []
+                )
+                Issue.record("expected RegistrationError.nicknameTaken from the skeleton collision")
+            } catch RegistrationError.nicknameTaken {
+                // expected
+            }
+        }
+    }
+
+    @Test func `stored name_normalized matches the Swift NFKC base`() async throws {
+        try await TestHarness.withDatabase { client in
+            // Guards against ICU version skew between the Swift toolchain's Foundation and
+            // postgres:16 -- the two uniqueness layers must agree on the normalized base. Full-width
+            // "Ａdmin" exercises NFKC compatibility folding rather than a no-op.
+            let logger = Logger(label: "test.registration.nfkc")
+            let registrations = PostgresRegistrationRepository(client: client, logger: logger)
+            let name = "\u{FF21}dmin"
+            _ = try await registrations.register(
+                name: name,
+                passwordHash: "hash",
+                email: "nfkc@example.com",
+                gender: .male,
+                figure: 0,
+                starterInventory: []
+            )
+            let rows = try await client.query(
+                "SELECT name_normalized FROM accounts WHERE name = \(name)",
+                logger: logger
+            )
+            var stored: String?
+            for try await value in rows.decode(String.self) {
+                stored = value
+            }
+            #expect(stored == name.precomposedStringWithCompatibilityMapping.lowercased())
+        }
+    }
+
     @Test func `loser of a duplicate race leaves no partial account, character, or inventory`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.registration.partial")

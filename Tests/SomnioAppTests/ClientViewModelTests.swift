@@ -200,6 +200,14 @@ struct ClientViewModelTests {
         #expect(viewModel.connectionState == .disconnected)
     }
 
+    @Test func `registerResult nameNotAllowed surfaces typed error and tears down`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .awaitingLoginResult
+        viewModel.handle(.message(.registerResult(RegisterResultMessage(result: .nameNotAllowed))))
+        #expect(viewModel.registrationForm.lastError == .nameNotAllowed)
+        #expect(viewModel.connectionState == .disconnected)
+    }
+
     @Test func `registerResult failure surfaces typed error and tears down`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingLoginResult

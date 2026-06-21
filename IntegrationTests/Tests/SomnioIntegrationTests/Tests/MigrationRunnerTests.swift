@@ -58,6 +58,31 @@ struct MigrationRunnerTests {
         }
     }
 
+    @Test func `migration v6 adds skeleton columns and partial unique indexes`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.migrations.skeleton")
+            let rows = try await client.query(
+                """
+                SELECT
+                    to_regclass('public.accounts_name_skeleton_key') IS NOT NULL,
+                    to_regclass('public.characters_name_skeleton_key') IS NOT NULL,
+                    EXISTS (SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'accounts' AND column_name = 'name_skeleton'),
+                    EXISTS (SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'characters' AND column_name = 'name_skeleton_version')
+                """,
+                logger: logger
+            )
+            for try await (accountIndex, characterIndex, accountColumn, characterColumn)
+                in rows.decode((Bool, Bool, Bool, Bool).self) {
+                #expect(accountIndex)
+                #expect(characterIndex)
+                #expect(accountColumn)
+                #expect(characterColumn)
+            }
+        }
+    }
+
     @Test func `applyPending applies only newly added migrations on a partially migrated database`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.migrations.partial")

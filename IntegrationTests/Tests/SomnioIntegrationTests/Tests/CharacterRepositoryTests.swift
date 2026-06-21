@@ -33,6 +33,22 @@ struct CharacterRepositoryTests {
         }
     }
 
+    @Test func `create stores a skeleton that rejects a confusable second character`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.character.skeleton")
+            let accounts = PostgresAccountRepository(client: client, logger: logger)
+            let characters = PostgresCharacterRepository(client: client, logger: logger)
+            let accountA = try await accounts.create(name: "owner-a", passwordHash: "h", email: "a@example.com")
+            let accountB = try await accounts.create(name: "owner-b", passwordHash: "h", email: "b@example.com")
+            _ = try await characters.create(accountId: accountA.id, name: "ADMIN", figure: 0, gender: .male)
+            // Cyrillic "АDMIN" is not NFKC-equivalent to Latin "ADMIN" but shares its skeleton, so
+            // the `characters_name_skeleton_key` partial unique index must reject it.
+            await #expect(throws: PSQLError.self) {
+                _ = try await characters.create(accountId: accountB.id, name: "\u{0410}DMIN", figure: 0, gender: .male)
+            }
+        }
+    }
+
     @Test func `CHECK constraint blocks hp_current greater than hp_max`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.character.check")

@@ -79,6 +79,7 @@ import SwiftUI
     private static func message(for error: RegistrationError) -> LocalizedStringResource {
         switch error {
         case .nicknameExists: return L.resource("Nickname already exists.")
+        case .nameNotAllowed: return L.resource("That name uses characters Somnio does not allow.")
         case .failure: return L.resource("Registration failed.")
         }
     }

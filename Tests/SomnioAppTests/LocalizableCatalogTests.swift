@@ -40,6 +40,7 @@ struct LocalizableCatalogTests {
         // SomnioUI's chat scrollback as typed `ChatLine.badCredentials` /
         // `.alreadyLoggedIn` cases)
         "Nickname already exists.",
+        "That name uses characters Somnio does not allow.",
         "Registration failed.",
         // Update-required sheet
         "Update required",

@@ -7,6 +7,7 @@ import SomnioCore
 /// at every dispatch site rather than a runtime catalog miss.
 public enum RegistrationError: Sendable, Equatable {
     case nicknameExists
+    case nameNotAllowed
     case failure
 }
 

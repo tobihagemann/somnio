@@ -43,6 +43,8 @@ public actor PostgresCharacterRepository: CharacterRepository {
     ) async throws -> Character {
         let id = UUID()
         let lastSeen = Date()
+        let skeleton = NamePolicy.confusableSkeleton(name)
+        let skeletonVersion = Int32(NamePolicy.skeletonAlgorithmVersion)
         let character = Character(
             id: id,
             name: name,
@@ -68,7 +70,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
                 id, account_id, name, figure, gender,
                 current_sector, position_x, position_y, facing, tempo,
                 hp_current, hp_max, balance_current, balance_max, mana_current, mana_max,
-                last_seen
+                last_seen, name_skeleton, name_skeleton_version
             )
             VALUES (
                 \(character.id), \(accountId), \(character.name), \(character.figure), \(character.gender.rawValue),
@@ -77,7 +79,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
                 \(character.energy.hpCurrent), \(character.energy.hpMax),
                 \(character.energy.balanceCurrent), \(character.energy.balanceMax),
                 \(character.energy.manaCurrent), \(character.energy.manaMax),
-                \(character.lastSeen)
+                \(character.lastSeen), \(skeleton), \(skeletonVersion)
             )
             """,
             logger: logger
@@ -106,8 +108,10 @@ public actor PostgresCharacterRepository: CharacterRepository {
         return characters
     }
 
-    /// Looks up via the `name_normalized` generated column so case- and Unicode-confusable
-    /// variants of the registered name resolve to the same character.
+    /// Looks up via the `name_normalized` generated column so case- and NFKC-equivalent variants
+    /// (e.g. full-width) of the registered name resolve to the same character. This is NFKC only --
+    /// cross-script confusables are a separate layer (`name_skeleton`) and are intentionally not
+    /// resolved at lookup time.
     public func findByName(_ name: String) async throws -> Character? {
         let rows = try await client.query(
             """

@@ -461,6 +461,23 @@
         }
       }
     },
+    "That name uses characters Somnio does not allow." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Name verwendet Zeichen, die Somnio nicht erlaubt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That name uses characters Somnio does not allow."
+          }
+        }
+      }
+    },
     "The server is being updated. Please try again in a few moments." : {
       "extractionState" : "manual",
       "localizations" : {

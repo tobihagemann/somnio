@@ -48,6 +48,8 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
         let createdAt = Date()
         let lastSeen = createdAt
         let logger = logger
+        let skeleton = NamePolicy.confusableSkeleton(name)
+        let skeletonVersion = Int32(NamePolicy.skeletonAlgorithmVersion)
         let character = Character(
             id: characterId,
             name: name,
@@ -78,8 +80,8 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
             try await client.withTransaction(logger: logger) { connection in
                 try await connection.query(
                     """
-                    INSERT INTO accounts (id, name, password_hash, email, created_at)
-                    VALUES (\(accountId), \(name), \(passwordHash), \(email), \(createdAt))
+                    INSERT INTO accounts (id, name, password_hash, email, created_at, name_skeleton, name_skeleton_version)
+                    VALUES (\(accountId), \(name), \(passwordHash), \(email), \(createdAt), \(skeleton), \(skeletonVersion))
                     """,
                     logger: logger
                 )
@@ -89,7 +91,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
                         id, account_id, name, figure, gender,
                         current_sector, position_x, position_y, facing, tempo,
                         hp_current, hp_max, balance_current, balance_max, mana_current, mana_max,
-                        last_seen
+                        last_seen, name_skeleton, name_skeleton_version
                     )
                     VALUES (
                         \(character.id), \(accountId), \(character.name), \(character.figure), \(character.gender.rawValue),
@@ -98,7 +100,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
                         \(character.energy.hpCurrent), \(character.energy.hpMax),
                         \(character.energy.balanceCurrent), \(character.energy.balanceMax),
                         \(character.energy.manaCurrent), \(character.energy.manaMax),
-                        \(character.lastSeen)
+                        \(character.lastSeen), \(skeleton), \(skeletonVersion)
                     )
                     """,
                     logger: logger
@@ -123,7 +125,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
                 }
             }
         } catch {
-            if isUniqueViolation(error, constraint: accountsNameNormalizedConstraint) {
+            if isNameUniqueViolation(error) {
                 throw RegistrationError.nicknameTaken
             }
             throw error
@@ -134,13 +136,19 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
     /// Starter sector matches the legacy game's spawn point for new accounts.
     private let starterSector: String = "EdariaBibliothek"
 
-    /// PostgreSQL auto-names unnamed inline `UNIQUE` constraints `<table>_<column>_key`, which
-    /// is what the migration produces for `accounts.name_normalized`. Matching the literal
-    /// constraint name keeps the error mapping precise: a future schema addition that adds
-    /// another UNIQUE column won't silently get folded into `nicknameTaken`.
-    private let accountsNameNormalizedConstraint: String = "accounts_name_normalized_key"
+    /// PostgreSQL auto-names unnamed inline `UNIQUE` constraints and `CREATE UNIQUE INDEX` indexes
+    /// `<table>_<column>_key`. Matching the literal names keeps the error mapping precise: a future
+    /// schema addition with another UNIQUE column won't silently get folded into `nicknameTaken`.
+    /// Mapping every name-uniqueness constraint (normalized + skeleton, both tables) keeps the mapping
+    /// correct regardless of which one the DB reports first.
+    private let nameUniqueConstraints: Set<String> = [
+        "accounts_name_normalized_key",
+        "accounts_name_skeleton_key",
+        "characters_name_normalized_key",
+        "characters_name_skeleton_key"
+    ]
 
-    private func isUniqueViolation(_ error: any Error, constraint: String) -> Bool {
+    private func isNameUniqueViolation(_ error: any Error) -> Bool {
         let underlyingError: any Error = if let transactionError = error as? PostgresTransactionError, let closureError = transactionError.closureError {
             closureError
         } else {
@@ -148,6 +156,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
         }
         guard let psqlError = underlyingError as? PSQLError else { return false }
         guard psqlError.serverInfo?[.sqlState] == "23505" else { return false }
-        return psqlError.serverInfo?[.constraintName] == constraint
+        guard let constraint = psqlError.serverInfo?[.constraintName] else { return false }
+        return nameUniqueConstraints.contains(constraint)
     }
 }
