@@ -307,6 +307,23 @@
           }
         }
       }
+    },
+    "Your password could not be saved." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Passwort konnte nicht gespeichert werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your password could not be saved."
+          }
+        }
+      }
     }
   }
 }

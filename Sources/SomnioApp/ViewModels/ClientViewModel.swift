@@ -245,6 +245,7 @@ import SpriteKit
                     try CredentialStore.save(nickname: loginForm.nickname, password: loginForm.password)
                 } catch {
                     logger.warning("failed to persist remembered credential", metadata: ["error": "\(error)"])
+                    chatLines.append(.credentialSaveFailed)
                 }
             } else {
                 CredentialStore.delete()

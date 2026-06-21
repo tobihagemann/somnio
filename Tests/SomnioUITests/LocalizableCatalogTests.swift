@@ -14,6 +14,7 @@ struct LocalizableCatalogTests {
         "The server is currently not reachable. Try again later.",
         "Bad credentials.",
         "Already logged in.",
+        "Your password could not be saved.",
         "Error %@ occurred.",
         "%@ entered the game.",
         "%@ left the game.",

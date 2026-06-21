@@ -12,6 +12,7 @@ public enum ChatLine: Sendable, Equatable, Hashable {
     case serverUnreachable
     case badCredentials
     case alreadyLoggedIn
+    case credentialSaveFailed
     case errorCode(code: String)
     case joined(playerName: String)
     case left(playerName: String)
@@ -28,7 +29,7 @@ public enum ChatLine: Sendable, Equatable, Hashable {
         case .spokenByPeer: return .peerMessage
         case .spokenByNPC: return .npcMessage
         case .adminBroadcast: return .adminBroadcast
-        case .connectionLost, .serverUnreachable, .badCredentials, .alreadyLoggedIn, .errorCode: return .error
+        case .connectionLost, .serverUnreachable, .badCredentials, .alreadyLoggedIn, .credentialSaveFailed, .errorCode: return .error
         case .joined, .left: return .joinLeave
         case .startupGreeting: return .startupGreeting
         case .purseBalance: return .itemInfo

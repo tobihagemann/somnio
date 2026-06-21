@@ -11,6 +11,7 @@ struct ChatLineCategoryTests {
         (ChatLine.serverUnreachable, ChatLineCategory.error),
         (ChatLine.badCredentials, ChatLineCategory.error),
         (ChatLine.alreadyLoggedIn, ChatLineCategory.error),
+        (ChatLine.credentialSaveFailed, ChatLineCategory.error),
         (ChatLine.errorCode(code: "1"), ChatLineCategory.error),
         (ChatLine.joined(playerName: "x"), ChatLineCategory.joinLeave),
         (ChatLine.left(playerName: "x"), ChatLineCategory.joinLeave),

@@ -21,6 +21,8 @@ public enum ChatLineRenderer {
             return L.string("Bad credentials.", locale: locale)
         case .alreadyLoggedIn:
             return L.string("Already logged in.", locale: locale)
+        case .credentialSaveFailed:
+            return L.string("Your password could not be saved.", locale: locale)
         case let .errorCode(code):
             return String(format: L.string("Error %@ occurred.", locale: locale), code)
         case let .joined(playerName):

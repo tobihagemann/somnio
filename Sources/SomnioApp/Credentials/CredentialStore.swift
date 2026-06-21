@@ -55,6 +55,14 @@ public enum CredentialStore {
 
     // MARK: - Keychain backend
 
+    // These SecItem queries deliberately omit `kSecUseDataProtectionKeychain`, so they
+    // target the file-based (login) keychain. The data protection keychain would require
+    // a `keychain-access-groups` entitlement authorized by an embedded provisioning
+    // profile (TN3137); this app ships as a non-sandboxed Developer ID build with no
+    // profile, where data-protection SecItem calls fail with `errSecMissingEntitlement`
+    // (-34018) and the remembered credential silently never persists. The login keychain
+    // needs no entitlement and still stores the credential encrypted.
+
     private static func saveToKeychain(nickname: String, password: String) throws {
         guard let passwordData = password.data(using: .utf8) else { return }
         // Drop any existing credential under this service before writing the new one.
@@ -65,13 +73,15 @@ public enum CredentialStore {
         // per profile"; enforce it by clearing every prior item before adding.
         deleteFromKeychain()
 
+        // No `kSecAttrAccessible`: the file-based keychain governs access through its own
+        // ACL/lock state, and macOS honors `kSecAttrAccessible` only when the query also
+        // sets `kSecUseDataProtectionKeychain` or `kSecAttrSynchronizable` (neither applies
+        // here), so the attribute would be silently ignored and misrepresent the protection.
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: nickname,
-            kSecUseDataProtectionKeychain as String: true,
-            kSecValueData as String: passwordData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecValueData as String: passwordData
         ]
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else {
@@ -83,7 +93,6 @@ public enum CredentialStore {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecUseDataProtectionKeychain as String: true,
             kSecReturnAttributes as String: true,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -112,8 +121,7 @@ public enum CredentialStore {
     private static func deleteFromKeychain() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecUseDataProtectionKeychain as String: true
+            kSecAttrService as String: serviceName
         ]
         let status = SecItemDelete(query as CFDictionary)
         if status != errSecSuccess, status != errSecItemNotFound {

@@ -43,6 +43,10 @@ struct ChatLineRendererTests {
         #expect(ChatLineRenderer.render(.serverUnreachable, locale: en) == "The server is currently not reachable. Try again later.")
     }
 
+    @Test func `credential save failure renders the localized notice`() {
+        #expect(ChatLineRenderer.render(.credentialSaveFailed, locale: en) == "Your password could not be saved.")
+    }
+
     @Test func `error code substitutes the code`() {
         #expect(ChatLineRenderer.render(.errorCode(code: "42"), locale: en) == "Error 42 occurred.")
     }
