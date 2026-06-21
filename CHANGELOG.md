@@ -6,13 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-21
+
 ### Added
 
 - Show a clear update message when your game version no longer matches the server's, telling you whether to update your client or wait for the server, instead of silently disconnecting
 
+### Changed
+
+- List yourself alongside other players in the online-players roster and keep the roster sorted alphabetically
+
 ### Fixed
 
 - Fix "remember password" not working, so your login is restored when you reopen the game instead of the saved password being silently lost
+- Stop your character from drifting when a movement key is still held as you click into the chat input
 
 ### Security
 
@@ -32,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Initial release.
 
-[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.1.1...HEAD
+[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.1.2...HEAD
+[0.1.2]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.2
 [0.1.1]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.1
 [0.1.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.0
