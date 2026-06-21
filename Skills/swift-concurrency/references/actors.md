@@ -279,6 +279,49 @@ extension PersonViewModel: @MainActor Equatable {
 Enable with the `InferIsolatedConformances` upcoming feature.
 
 
+## `SendableMetatype` error with isolated conformances (Swift 6.2+)
+
+An isolated conformance **cannot** satisfy a `SendableMetatype` requirement. This surfaces when you pass a metatype (`MyClass.self`) to a generic function whose type parameter requires `Sendable`:
+
+```swift
+protocol P {
+    static func doSomething()
+}
+
+// Explicitly requires a Sendable type/metatype:
+func doSomethingStatic<T: P & SendableMetatype>(_ type: T.Type) { }
+
+@MainActor
+class C { }
+
+extension C: @MainActor P {
+    static func doSomething() { }
+}
+
+@MainActor
+func test(c: C) {
+    doSomethingStatic(C.self)
+    // ❌ main actor-isolated conformance of 'C' to 'P' cannot satisfy
+    //    conformance requirement for a 'Sendable' type parameter
+}
+```
+
+Three fixes:
+
+1. Drop the actor isolation from the conformance if its requirements don't touch actor state:
+
+   ```swift
+   @MainActor
+   class C: P {
+       nonisolated static func doSomething() { }  // ✅ non-isolated requirement
+   }
+   ```
+
+2. Avoid passing the metatype across the isolation boundary — call the static method directly instead of routing through the generic function.
+
+3. Make the generic function actor-aware so it accepts an isolated conformance (changes the callee's signature).
+
+
 ## `#isolation` macro
 
 Inherit the caller's isolation for generic code:

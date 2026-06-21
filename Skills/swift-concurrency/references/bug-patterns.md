@@ -134,7 +134,7 @@ private var connectionTask: Task<Void, Never>?
 
 func openConnection() {
     connectionTask = Task {
-        for try await message in inbound.messages(...) {
+        for await message in inbound.messages(...) {
             await handle(message)
         }
     }
@@ -157,7 +157,7 @@ connectionTask = Task {
             self.connectionState = .disconnected
         }
     }
-    for try await message in inbound.messages(...) {
+    for await message in inbound.messages(...) {
         await handle(message)
     }
 }

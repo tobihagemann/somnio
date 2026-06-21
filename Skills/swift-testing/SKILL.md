@@ -190,7 +190,7 @@ Structure every test with clear phases:
 - Disabled tests that silently rot → prefer `withKnownIssue` for temporary known failures to preserve signal.
 - Unclear failure values for complex types → conform the type to `CustomTestStringConvertible` for focused diagnostics.
 - Test-plan include/exclude by names → use tags and tag-based filters instead.
-- `.serialized` on a non-parameterized test → it has no effect. It only applies to parameterized tests (and propagates across a suite's parameterized tests).
+- `.serialized` scope matters: on a bare non-parameterized test function → no effect; on a parameterized `@Test` → serializes that test's argument cases; on a `@Suite` → serializes all the suite's contained tests (parameterized or not) and sub-suites.
 - `.timeLimit(.seconds(...))` → only `.minutes(...)` is accepted.
 - Unsafe mutable counters captured by async callbacks → use an actor or thread-safe container.
 

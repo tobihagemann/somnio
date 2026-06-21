@@ -8,14 +8,14 @@ Use this file when controlling test execution behavior, linking bug context, and
 
 - **Informational**: display names, bug links, tags.
 - **Conditional**: `.enabled(if:)`, `.disabled(...)`, availability attributes.
-- **Behavioral**: `.timeLimit(...)`, `.serialized`.
+- **Behavioral**: `.timeLimit(...)`, `.serialized`. Note that `.timeLimit` only accepts `.minutes(_)`; for sub-minute deadlines use the `withTimeout` helper in `async-tests.md`.
 
 ## Basic trait examples
 
 ```swift
 import Testing
 
-@Test("Uploads complete quickly", .timeLimit(.seconds(10)))
+@Test("Uploads complete quickly", .timeLimit(.minutes(1)))  // .timeLimit only accepts .minutes(_), not .seconds(_)
 func uploadWithinTimeLimit() async throws {
  #expect(true)
 }

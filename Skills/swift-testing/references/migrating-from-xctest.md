@@ -32,7 +32,7 @@ To do that, you must bring in Apple's Swift Numerics library and use its `isAppr
 | `func testFoo()` | `@Test func foo()` |
 | `XCTAssertEqual(a, b)` | `#expect(a == b)` |
 | `XCTAssertTrue(x)` | `#expect(x)` |
-| `XCTAssertFalse(x)` | `#expect(!x)` |
+| `XCTAssertFalse(x)` | `#expect(x == false)` |
 | `XCTAssertNil(x)` | `#expect(x == nil)` |
 | `XCTAssertNotNil(x)` | `#expect(x != nil)` or `try #require(x)` |
 | `XCTAssertThrowsError` | `#expect(throws:)` |

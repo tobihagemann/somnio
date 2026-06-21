@@ -6,6 +6,7 @@ Skills under `Skills/` derive from upstream open-source agent skills. All upstre
 
 | Skill | Upstream sources |
 |-------|------------------|
+| `accessibility` | [PasqualeVittoriosi/swift-accessibility-skill](https://github.com/PasqualeVittoriosi/swift-accessibility-skill) + [rgmez/apple-accessibility-skills](https://github.com/rgmez/apple-accessibility-skills) (SwiftUI + AppKit auditor checklists) |
 | `macos-spm-app-packaging` | [Dimillian/Skills — macos-spm-app-packaging](https://github.com/Dimillian/Skills/tree/main/macos-spm-app-packaging) |
 | `swift-architecture` | [efremidze/swift-architecture-skill](https://github.com/efremidze/swift-architecture-skill) |
 | `swift-concurrency` | [twostraws/Swift-Concurrency-Agent-Skill](https://github.com/twostraws/Swift-Concurrency-Agent-Skill) (Paul Hudson) + [AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill) + [Dimillian/Skills — Swift Concurrency Expert](https://github.com/Dimillian/Skills) |
@@ -14,6 +15,7 @@ Skills under `Skills/` derive from upstream open-source agent skills. All upstre
 | `swift-testing` | [twostraws/Swift-Testing-Agent-Skill](https://github.com/twostraws/Swift-Testing-Agent-Skill) (Paul Hudson) + [bocato/swift-testing-agent-skill](https://github.com/bocato/swift-testing-agent-skill) + [AvdLee/Swift-Testing-Agent-Skill](https://github.com/AvdLee/Swift-Testing-Agent-Skill) |
 | `swiftui` | [twostraws/SwiftUI-Agent-Skill](https://github.com/twostraws/SwiftUI-Agent-Skill) (Paul Hudson) + [Dimillian/Skills — SwiftUI UI Patterns, View Refactor, Liquid Glass](https://github.com/Dimillian/Skills) + [arjitj2/swiftui-design-principles](https://github.com/arjitj2/swiftui-design-principles) |
 | `swiftui-performance-audit` | [Dimillian/Skills — SwiftUI Performance Audit](https://github.com/Dimillian/Skills) |
+| `writing-for-interfaces` | [andrewgleave/skills — writing-for-interfaces](https://github.com/andrewgleave/skills) |
 
 ## Upstream copyright notices
 
@@ -28,6 +30,9 @@ Each of the upstream repositories is released under the MIT License. The notices
 - Copyright (c) 2026 Anton Novoselov (@n0an) — n0an/Swift-FormatStyle-Agent-Skill.
 - Copyright (c) 2026 Lasha Efremidze (@efremidze) — efremidze/swift-architecture-skill.
 - Copyright (c) 2026 Ivan Magda (@ivan-magda) — ivan-magda/swift-security-skill.
+- Copyright (c) 2026 Pasquale Vittoriosi (@PasqualeVittoriosi) — PasqualeVittoriosi/swift-accessibility-skill.
+- Copyright (c) 2026 Roberto Gómez Muñoz (@rgmez) — rgmez/apple-accessibility-skills (swiftui-accessibility-auditor, appkit-accessibility-auditor).
+- Copyright (c) 2026 Andrew Gleave (@andrewgleave) — andrewgleave/skills (writing-for-interfaces).
 
 ## MIT License text
 

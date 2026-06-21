@@ -13,6 +13,7 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - Split views and columns: `split-views.md` — Use for iPad/macOS multi-column layouts or custom secondary columns.
 - List and Section: `list.md` — Use for feed-style content and settings rows.
 - ScrollView and Lazy stacks: `scrollview.md` — Use for custom layouts, horizontal scrollers, or grids.
+- Scroll-reveal detail surfaces: `scroll-reveal.md` — Use when a detail screen reveals secondary content or actions as the user scrolls or swipes between full-screen sections.
 - Grids: `grids.md` — Use for icon pickers, media galleries, and tiled layouts.
 - Theming and dynamic type: `theming.md` — Use for app-wide theme tokens, colors, and type scaling.
 - Controls (toggles, pickers, sliders): `controls.md` — Use for settings controls and input selection.
@@ -22,6 +23,8 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - Focus handling: `focus.md` — Use for chaining fields and keyboard focus management.
 - Searchable: `searchable.md` — Use for native search UI with scopes and async results.
 - Async images and media: `media.md` — Use for remote media, previews, and media viewers.
+- Async state and task lifecycle: `async-state.md` — Use when a view loads data, reacts to changing input, or needs cancellation/debouncing guidance.
+- Previews: `previews.md` — Use when adding `#Preview`, fixtures, mock environments, or isolated preview setup.
 - Haptics: `haptics.md` — Use for tactile feedback tied to key actions.
 - Matched transitions: `matched-transitions.md` — Use for smooth source-to-destination animations.
 - Deep links and URL routing: `deeplinks.md` — Use for in-app navigation from URLs.
