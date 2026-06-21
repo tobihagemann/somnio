@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# git stub: drive resolve_marketing_version's `git describe` branch deterministically.
+# release.sh calls `git describe --tags --abbrev=0 --match "<target>-*"`, so the stub
+# extracts <target> from the --match filter and returns a per-target tag
+# (SMOKE_GIT_DESCRIBE_<TARGET>), falling back to the target-agnostic SMOKE_GIT_DESCRIBE.
+# When neither is set it exits non-zero so release.sh falls through to its
+# `|| echo "0.0.0"` default, mirroring "no matching tag found". Other subcommands no-op.
+if [[ "${1:-}" == "describe" ]]; then
+  target=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "--match" ]]; then
+      target="${arg%%-*}"
+      break
+    fi
+    prev="$arg"
+  done
+  target_uc=$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')
+  per_target_var="SMOKE_GIT_DESCRIBE_${target_uc}"
+  value="${!per_target_var:-${SMOKE_GIT_DESCRIBE:-}}"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    exit 0
+  fi
+  exit 1
+fi
+exit 0

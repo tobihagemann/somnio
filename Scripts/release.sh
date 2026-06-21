@@ -35,6 +35,8 @@ ASC_KEY_FILE="$SCRATCH_DIR/app-store-connect-key.p8"
 
 ARCHES_VALUE=${ARCHES:-"arm64 x86_64"}
 DITTO_BIN=${DITTO_BIN:-/usr/bin/ditto}
+PACKAGE_APP_SCRIPT=${PACKAGE_APP_SCRIPT:-$ROOT/Scripts/package_app.sh}
+CREATE_DMG_SCRIPT=${CREATE_DMG_SCRIPT:-$ROOT/Scripts/create_dmg.sh}
 
 submit_for_notarization() {
   local zip_path="$1"
@@ -87,7 +89,7 @@ for TARGET in "${TARGETS[@]}"; do
   esac
 
   APP_IDENTITY="$APP_IDENTITY" ARCHES="${ARCHES_VALUE}" \
-    "$ROOT/Scripts/package_app.sh" release "$TARGET"
+    "$PACKAGE_APP_SCRIPT" release "$TARGET"
 
   notarize_and_staple "$BUNDLE" "$SCRATCH_DIR/${APP_NAME}-${TARGET}-Notarize.zip"
 
@@ -108,7 +110,7 @@ package_and_notarize_dmg() {
     editor) dmg_basename="${APP_NAME}Editor" ;;
   esac
   local dmg_name="${dmg_basename}-${MARKETING_VERSION}.dmg"
-  "$ROOT/Scripts/create_dmg.sh" "$target"
+  "$CREATE_DMG_SCRIPT" "$target"
   codesign --force --timestamp --sign "$APP_IDENTITY" "$ROOT/$dmg_name"
   local notarize_zip="$SCRATCH_DIR/${dmg_basename}DmgNotarize.zip"
   "$DITTO_BIN" --norsrc -c -k "$ROOT/$dmg_name" "$notarize_zip"
