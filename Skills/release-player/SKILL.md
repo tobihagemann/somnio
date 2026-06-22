@@ -19,19 +19,10 @@ git tag -l 'player-*' --sort=-v:refname | head -1
 
 ## Step 2: Update the changelog
 
-Make sure `main` is clean and current (`git checkout main && git pull origin main`), then add a new section at the top of `CHANGELOG.md`, above the previous version, in Keep a Changelog form:
+Make sure `main` is clean and current (`git checkout main && git pull origin main`). `CHANGELOG.md` keeps a running `## [Unreleased]` section, so a release completes that section and then promotes it to a version heading.
 
-```markdown
-## [X.Y.Z] - YYYY-MM-DD
-
-### Added
-
-- ...
-```
-
-- Use the bracketed heading `## [X.Y.Z] - <today>` (ISO 8601 date) and add a matching link reference at the bottom: `[X.Y.Z]: https://github.com/tobihagemann/somnio/releases/tag/player-X.Y.Z`.
-- `release.yml` extracts this section (everything from the heading down to the link-reference block) as the GitHub Release notes. Omitting the section makes the notes fall back to a bare "X.Y.Z release".
-- Write user-facing entries grouped under Added / Changed / Fixed / etc., describing outcomes for players. To find what changed since the last release, run `git log <last-player-tag>..HEAD --oneline` and read PR bodies (`gh pr view <n> --json title,body`) for user impact rather than relying on commit messages. Propose entries or ask the user.
+1. **Complete `[Unreleased]` via `/update-changelog`.** Run it to capture anything missing, then double-check completeness against `git log <last-player-tag>..HEAD --oneline` — that range always includes the prior `Update appcast for <last>` commit (CI pushes it to `main` after the tag) as noise, and real changes can land *after* it, so don't stop scanning there.
+2. **Promote** by inserting the version heading under the kept-empty `## [Unreleased]` heading so the accumulated entries fall under the new version, add the `[X.Y.Z]: .../releases/tag/player-X.Y.Z` link reference, and repoint `[Unreleased]` to `compare/player-X.Y.Z...HEAD` (mirror the previous `Prepare player X.Y.Z` commit's changelog diff). `release.yml` extracts this version section as the GitHub Release notes.
 
 ## Step 3: Commit and push to main
 

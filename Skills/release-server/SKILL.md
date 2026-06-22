@@ -16,7 +16,7 @@ Choose the bare version `X.Y.Z`. The workflow publishes only commits reachable f
 Preferred — push a component-prefixed tag:
 
 ```bash
-git tag server-X.Y.Z <commit>
+git tag -a server-X.Y.Z -m "server-X.Y.Z" <commit>
 git push origin server-X.Y.Z
 ```
 
@@ -30,7 +30,7 @@ Dispatch is not equivalent to tagging: it publishes `:X.Y.Z` and `:sha-<sha>` bu
 
 ## Step 3: Monitor
 
-Watch the run (`gh run watch`) and confirm the new image version appears under the repo's ghcr packages.
+Watch the run to completion — `gh run watch <id> --exit-status`. The reliable confirmation is that workflow's **Build and publish image** step succeeds; that step is what pushes the tags. Querying ghcr directly (`gh api .../packages/container/somnio/versions`) needs a `read:packages`-scoped token and otherwise returns HTTP 403, so don't rely on it.
 
 ## Step 4: Deploy
 
