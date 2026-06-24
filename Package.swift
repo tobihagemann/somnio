@@ -49,6 +49,7 @@ let package = Package(
         ),
 
         .target(name: "SomnioCatalogTestSupport"),
+        .testTarget(name: "SomnioCatalogTestSupportTests", dependencies: ["SomnioCatalogTestSupport"]),
 
         .target(
             name: "SomnioMapFixturesTestSupport",

@@ -16,10 +16,10 @@ public struct PlaceholderSignature: Equatable, Sendable {
         self.bareCount = bareCount
     }
 
-    /// Parses `value` and returns its placeholder signature. Shared by every
-    /// per-target catalog test (`Tests/SomnioUITests/LocalizableCatalogTests.swift`,
-    /// `Tests/SomnioAppTests/LocalizableCatalogTests.swift`) so the parser's `%`
-    /// handling lives in exactly one place.
+    /// Parses `value` and returns its placeholder signature, treating `%%` as an
+    /// escaped percent rather than a placeholder. Keeping the parser factored here
+    /// lets catalog placeholder comparison and direct parser coverage share the same
+    /// rules.
     public static func parse(_ value: String) -> PlaceholderSignature {
         var positional: Set<Int> = []
         var bareCount = 0
