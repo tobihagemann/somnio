@@ -18,6 +18,10 @@ import Testing
 /// post-readiness services in production order so reverse-shutdown matches `RunServer`.
 @Suite(.requiresContainerRuntime)
 struct GameplayE2ETests {
+    /// Hoisted out of the `@Sendable` actor closure so the post-scenario assertion can match the
+    /// broadcast against the exact coordinate the mover sent.
+    private typealias MoveOutcome = (moverIndex: Int16, target: GridPoint)
+
     // MARK: - Non-tick flows via application.test(.live)
 
     @Test func `register then login flow surfaces success codes`() async throws {
@@ -40,46 +44,47 @@ struct GameplayE2ETests {
     }
 
     @Test func `position update propagates to a peer in the same sector`() async throws {
-        // The actor sends `clientPosition` against the spawn tile with a changed facing
-        // and tempo. The bundled `EdariaBibliothek` fixture marks (0, 0) as a collision
-        // tile (sector edges are walls), so `handlePosition` silently drops the move
-        // and no `.serverPosition` reaches the peer. The negative-shape assertion below
-        // pins the routing invariant — if any broadcast did land, it must address a
-        // different entity than the listener's slot (entityIndex 1) — so a regression
-        // in `broadcastToPeers(excluding:)` that echoed the move back to the actor
-        // would be caught. The fully-positive assertion lands once a known-walkable
-        // non-spawn tile in Bibliothek is wired into the fixture metadata.
+        // Both peers register fresh and spawn at the sector's arrival spawn — the (0, 0)
+        // registration sentinel is rewritten by `LoginHandler.resolvedSpawn` because
+        // `isWalkable((0, 0))` is false. The actor derives its move target from the fixture's
+        // committed collision geometry and the listener's actual join-frame-derived feet box via
+        // the server's own feet-box gate (`FeetMask.isClear`), so the chosen tile is one
+        // `handlePosition` provably accepts and broadcasts. The positive-shape assertion below
+        // matches that exact coordinate carried on the mover's slot, so it fails closed if a
+        // regression drops the `broadcastToPeers(excluding:)` propagation (empty recorder). The
+        // actor records its own inbound stream too: the broadcast must reach the listener but never
+        // echo back to the mover, so a regression dropping `excluding:` is caught as a self-frame.
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.gameplay-e2e.position")
+            let sector = try IntegrationTestFixtures.mapFixture(named: "EdariaBibliothek")
             let nicknameA = "peer-a-\(UUID().uuidString.prefix(6))"
             let nicknameB = "peer-b-\(UUID().uuidString.prefix(6))"
             let peerARecorder = FrameRecorder()
+            let actorRecorder = FrameRecorder()
+            let moveOutcome = FirstWriteSlot<MoveOutcome>()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             try await rig.application.test(.live) { testClient in
                 try await runPeerScenario(
                     testClient: testClient,
                     listener: ListenerConfig(nickname: nicknameA, recorder: peerARecorder, tag: .serverPosition),
                     actor: nicknameB,
-                    logger: logger
-                ) { outbound in
-                    try await WSGameplayClient.sendMessage(
-                        .clientPosition(
-                            PositionMessage(
-                                entityIndex: 0,
-                                x: 0,
-                                y: 0,
-                                facing: Direction.east.rawValue,
-                                tempo: Tempo.walk.rawValue
-                            )
-                        ),
-                        on: outbound
-                    )
-                    try await Task.sleep(for: .milliseconds(500))
+                    logger: logger,
+                    actorInboundRecorder: actorRecorder
+                ) { outbound, joinFrames in
+                    guard let outcome = try await Self.sendFirstAcceptedMove(in: sector, joinFrames: joinFrames, on: outbound) else { return }
+                    await moveOutcome.set(outcome)
                 }
             }
+            let outcome = try #require(await moveOutcome.value())
             let serverPositions = await peerARecorder.snapshot()
                 .compactMap(IntegrationTestFixtures.serverPositionPayload(of:))
-            #expect(serverPositions.allSatisfy { $0.entityIndex != 1 })
+            #expect(serverPositions.contains {
+                $0.entityIndex == outcome.moverIndex && $0.x == outcome.target.x && $0.y == outcome.target.y
+            })
+            let actorSelfPositions = await actorRecorder.snapshot()
+                .compactMap(IntegrationTestFixtures.serverPositionPayload(of:))
+                .filter { $0.entityIndex == outcome.moverIndex }
+            #expect(actorSelfPositions.isEmpty)
         }
     }
 
@@ -108,9 +113,8 @@ struct GameplayE2ETests {
                     listener: ListenerConfig(nickname: nicknameA, recorder: peerARecorder, tag: .leave),
                     actor: nicknameB,
                     logger: logger
-                ) { outbound in
+                ) { outbound, _ in
                     try await WSGameplayClient.sendMessage(.enterPortal(EnterPortalMessage(portalIndex: Int16(triggerIndex))), on: outbound)
-                    try await Task.sleep(for: .milliseconds(500))
                 }
             }
             let leaves = await peerARecorder.snapshot()
@@ -122,22 +126,30 @@ struct GameplayE2ETests {
     // MARK: - Tick-driven and shutdown flows via ServiceGroup
 
     @Test func `npc bump triggers a Say frame from the configured dialog cursor`() async throws {
-        // The player teleports onto Libus's runtime tile (computed via
-        // `NPCPlacement.runtimePosition`) so the visual-center radius gate
-        // (`SomnioConstants.npcInteractionRadius = 64` px) collapses to distance zero
-        // after the move. In the bundled `EdariaBibliothek` fixture Libus's runtime tile
-        // sits inside the collision masks for the spawn region, so `handlePosition`
-        // drops the move and the bump's proximity gate drops the `BumpNPC` silently;
-        // the negative-shape assertion below pins the broadcast invariant — any
-        // `.serverSay` observed must come from Libus (entityIndex 1) — so a regression
-        // routing a Say to the wrong entity is caught. The fully-positive assertion
-        // lands once a known-walkable tile adjacent to Libus is wired into the fixture
-        // metadata.
+        // Teleporting exactly onto Libus's runtime tile is dropped by `handlePosition` — not by a
+        // static wall, but by Libus's own NPC feet box (the gate enumerates NPCs as blockers), so
+        // the bump's proximity gate then drops the `BumpNPC` and no `.serverSay` ever fires
+        // (genuinely vacuous on the empty array). Instead derive a target the server accepts:
+        // scan the fixture's committed collision geometry with the server's own feet-box gate
+        // (`FeetMask.isClear`, with Libus's feet box as a blocker) for the clear tile nearest
+        // Libus that still falls inside the dialog radius (`isWithinDialogRadius` geometry). The
+        // positive-shape assertion matches a non-empty Say from Libus (entityIndex 1) and fails
+        // closed if a regression drops the dialog broadcast.
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.gameplay-e2e.bump")
             let sectors = try IntegrationTestFixtures.defaultSectors()
-            let libus = try #require(sectors["EdariaBibliothek"]?.npcs.first)
+            let sector = try #require(sectors["EdariaBibliothek"])
+            let libus = try #require(sector.npcs.first)
             let libusRuntime = NPCPlacement.runtimePosition(for: libus)
+            let libusFeet = FeetMask.rect(forSpriteAt: libusRuntime, spriteSize: libus.maskSize)
+            let libusFeetCenter = FeetMask.center(forSpriteAt: libusRuntime, spriteSize: libus.maskSize)
+            let target = try #require(
+                Self.firstAcceptedPlayerOrigin(
+                    in: sector,
+                    nearestTo: (center: libusFeetCenter, radius: SomnioConstants.npcInteractionRadius),
+                    blockers: [libusFeet]
+                )
+            )
             let nickname = "bumper-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger, sectors: sectors)
@@ -148,13 +160,13 @@ struct GameplayE2ETests {
                         inbound: inbound,
                         outbound: outbound,
                         recorder: recorder,
-                        libusRuntime: libusRuntime,
+                        teleportTarget: target,
                         timeout: .seconds(3)
                     )
                 }
             }
             let says = await recorder.snapshot().compactMap(IntegrationTestFixtures.serverSayPayload(of:))
-            #expect(says.allSatisfy { $0.entityIndex == 1 })
+            #expect(says.contains { $0.entityIndex == 1 && $0.text.isEmpty == false })
         }
     }
 
@@ -240,7 +252,7 @@ struct GameplayE2ETests {
         inbound: WebSocketInboundStream,
         outbound: WebSocketOutboundWriter,
         recorder: FrameRecorder,
-        libusRuntime: GridPoint,
+        teleportTarget: GridPoint,
         timeout: Duration
     ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -255,7 +267,7 @@ struct GameplayE2ETests {
                         if case let .serverSay(payload) = decoded, payload.text.isEmpty == false { return }
                     } else if case .dateTick = decoded {
                         attached = true
-                        try await WSGameplayClient.sendPosition(libusRuntime, on: outbound)
+                        try await WSGameplayClient.sendPosition(teleportTarget, on: outbound)
                         try await WSGameplayClient.sendMessage(.bumpNPC(BumpNPCMessage(npcIndex: 1)), on: outbound)
                     }
                 }
@@ -290,15 +302,17 @@ struct GameplayE2ETests {
     }
 
     /// Runs a peer + actor pair of sessions sequentially registered + logged in. The
-    /// listener session drains inbound until a broadcast matching `tag` lands (or 2 s
-    /// elapse); the actor session sends `actorAction` after logging in. Used by the
-    /// position-propagation and portal tests.
+    /// listener session drains inbound until a broadcast matching `tag` lands (or 4 s
+    /// elapse); the actor session sends `actorAction` after logging in. When
+    /// `actorInboundRecorder` is supplied it captures the actor's own inbound stream so the
+    /// caller can assert on what the server did (or didn't) send the actor.
     private func runPeerScenario(
         testClient: any TestClientProtocol,
         listener: ListenerConfig,
         actor actorNickname: String,
         logger: Logger,
-        actorAction: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
+        actorInboundRecorder: FrameRecorder? = nil,
+        actorAction: @Sendable @escaping (WebSocketOutboundWriter, [Data]) async throws -> Void
     ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -316,6 +330,7 @@ struct GameplayE2ETests {
                     testClient: testClient,
                     nickname: actorNickname,
                     logger: logger,
+                    inboundRecorder: actorInboundRecorder,
                     action: actorAction
                 )
             }
@@ -339,18 +354,124 @@ struct GameplayE2ETests {
         }
     }
 
+    /// Drives the actor session through one inbound iterator (the stream forbids a second): records
+    /// every frame into `inboundRecorder`, fires `action` once the join completes (`.dateTick`) with
+    /// the join frames captured so far, then keeps recording for a fixed window *after* the action so
+    /// the caller can inspect what the server sent the actor in response (e.g. to prove a move
+    /// broadcast was not echoed back to the mover). The post-action window starts only once the
+    /// action fires — the join is bounded separately by the latch timeout — so a slow join can't eat
+    /// into the observation window. `action` must not block on its own timer.
     private func runActorSession(
         testClient: any TestClientProtocol,
         nickname: String,
         logger: Logger,
-        action: @Sendable @escaping (WebSocketOutboundWriter) async throws -> Void
+        inboundRecorder: FrameRecorder? = nil,
+        action: @Sendable @escaping (WebSocketOutboundWriter, [Data]) async throws -> Void
     ) async throws {
+        let settleWindow: Duration = .milliseconds(500)
         _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
             try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
-            try await WSGameplayClient.drainUntilJoinComplete(inbound: inbound, recorder: FrameRecorder())
-            try await action(outbound)
+            let recorder = inboundRecorder ?? FrameRecorder()
+            let actionFired = OneShotLatch()
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    var fired = false
+                    for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
+                        guard case let .text(string) = message else { continue }
+                        let frame = Data(string.utf8)
+                        await recorder.append(frame)
+                        guard fired == false,
+                              let decoded = try? SomnioMessageDecoder.decode(frame),
+                              case .dateTick = decoded
+                        else { continue }
+                        fired = true
+                        try await action(outbound, recorder.snapshot())
+                        await actionFired.fire()
+                    }
+                }
+                group.addTask {
+                    try await actionFired.wait(timeout: .seconds(4))
+                    try await Task.sleep(for: settleWindow)
+                }
+                _ = try await group.next()
+                group.cancelAll()
+            }
             try await outbound.close(.normalClosure, reason: nil)
         }
+    }
+
+    // MARK: - Geometry
+
+    /// Scans `sector` on an 8px grid (mirroring `Sector.arrivalSpawn`) for the first player origin
+    /// the server's own feet-box gate (`FeetMask.isClear`) accepts against `blockers` — the same
+    /// blocker set `handlePosition` enumerates (other players and NPCs, the mover excluded). When
+    /// `dialogGate` is supplied, additionally requires the candidate's feet-center to fall within
+    /// the gate's `radius` of its `center` — mirroring `isWithinDialogRadius` — and returns the
+    /// clear tile nearest that center. Returns `nil` when nothing qualifies, so callers
+    /// `try #require` it and a fixture-geometry regression fails loudly instead of vacuously.
+    private static func firstAcceptedPlayerOrigin(
+        in sector: Sector,
+        nearestTo dialogGate: (center: (x: Int32, y: Int32), radius: Int16)? = nil,
+        blockers: [PixelRect]
+    ) -> GridPoint? {
+        let step: Int32 = 8
+        var nearest: GridPoint?
+        var nearestDistance = Int64.max
+        var y: Int32 = 0
+        while y < sector.pixelHeight {
+            var x: Int32 = 0
+            while x < sector.pixelWidth {
+                let candidate = GridPoint(x: Int16(clamping: x), y: Int16(clamping: y))
+                if FeetMask.isClear(
+                    at: candidate,
+                    spriteSize: SomnioConstants.playerSpriteSize,
+                    sector: sector,
+                    blockers: blockers
+                ) {
+                    guard let dialogGate else { return candidate }
+                    let candidateCenter = FeetMask.center(forSpriteAt: candidate, spriteSize: SomnioConstants.playerSpriteSize)
+                    if VisualCenter.isWithin(dialogGate.center, candidateCenter, radius: dialogGate.radius) {
+                        let distance = VisualCenter.squaredDistance(dialogGate.center, candidateCenter)
+                        if distance < nearestDistance {
+                            nearestDistance = distance
+                            nearest = candidate
+                        }
+                    }
+                }
+                x += step
+            }
+            y += step
+        }
+        return nearest
+    }
+
+    /// Parses the actor's join frames for its own slot index and the other-entity feet boxes the
+    /// server enumerates as move blockers — players and NPCs, matching `handlePosition`'s
+    /// `includingMonsters: false` gate — derives the first origin that gate accepts, and sends the
+    /// move. Returns the slot index and chosen target so the caller can match the broadcast, or
+    /// `nil` when the join frames carry no `.mainCharacter` or no clear origin exists.
+    private static func sendFirstAcceptedMove(
+        in sector: Sector,
+        joinFrames: [Data],
+        on outbound: WebSocketOutboundWriter
+    ) async throws -> MoveOutcome? {
+        guard let moverIndex = joinFrames
+            .compactMap(IntegrationTestFixtures.mainCharacterPayload(of:))
+            .first?
+            .entityIndex
+        else { return nil }
+        let blockers = joinFrames
+            .compactMap(IntegrationTestFixtures.entityPayload(of:))
+            .filter { $0.entityIndex != moverIndex && $0.type != .monster }
+            .map { peer in
+                FeetMask.rect(
+                    forSpriteAt: GridPoint(x: peer.x, y: peer.y),
+                    spriteSize: GridSize(width: peer.maskWidth, height: peer.maskHeight)
+                )
+            }
+        guard let target = firstAcceptedPlayerOrigin(in: sector, blockers: blockers) else { return nil }
+        try await WSGameplayClient.sendPosition(target, on: outbound)
+        return (moverIndex, target)
     }
 
     // MARK: - Match helpers
