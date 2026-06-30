@@ -3,11 +3,10 @@ import Logging
 import SomnioCore
 import SomnioProtocol
 import SomnioUI
-import SpriteKit
 
 /// Main-actor view model orchestrating the connect → splash → login → world flow plus
 /// the gameplay loop. Owns the transport, the per-connection state, the chat-line
-/// buffer, the entity map, and the `WorldScene` reference. Conforms to
+/// buffer, the entity map, and the render surface (`any WorldRenderSurface`). Conforms to
 /// `GameplayTransportDelegate` so the transport feeds events back synchronously on
 /// the main actor.
 @MainActor @Observable public final class ClientViewModel: GameplayTransportDelegate {
@@ -37,7 +36,7 @@ import SpriteKit
 
     public let loginForm = LoginFormState()
     public let registrationForm = RegistrationFormState()
-    public let worldScene: WorldScene
+    public let worldScene: any WorldRenderSurface
 
     // MARK: - Internals
 
@@ -55,7 +54,7 @@ import SpriteKit
     private let logger = Logger(label: "de.tobiha.somnio.app.gameplay")
 
     public init(
-        worldScene: WorldScene,
+        worldScene: any WorldRenderSurface,
         transport: GameplayTransport = GameplayTransport(),
         keyboard: KeyboardSampler = KeyboardSampler()
     ) {

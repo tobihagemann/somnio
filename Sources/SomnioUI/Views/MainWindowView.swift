@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Fixed-size single-window layout matching the legacy `HauptFenster` Carbon control
 /// inventory. Outer dimensions 1004 × 514. The play-field viewport is supplied as the
-/// generic `PlayField` parameter so production code can pass a `WorldSceneView` and
-/// unit-level previews can substitute `EmptyView`.
+/// generic `PlayField` parameter so production code can pass the renderer's host view
+/// and unit-level previews can substitute `EmptyView`.
 public struct MainWindowView<PlayField: View>: View {
     public let playField: PlayField
     public let energy: Energy

@@ -110,7 +110,7 @@ struct ClientViewModelTests {
     }
 
     @Test func `a server position for self is applied as a direct camera-following set, not a tween`() throws {
-        let viewModel = makeViewModel()
+        let (viewModel, scene) = makeViewModelWithScene()
         viewModel.connectionState = .awaitingEnterSector
         viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
         viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
@@ -125,7 +125,7 @@ struct ClientViewModelTests {
             entityIndex: 7, x: 2, y: 3, facing: Direction.north.rawValue, tempo: Tempo.default.rawValue
         ))))
 
-        let probe = try #require(viewModel.worldScene._entityNodeProbe(for: 7))
+        let probe = try #require(scene._entityNodeProbe(for: 7))
         // Direct set, not a tween: the node itself moved to the authoritative position (x is not
         // Y-flipped, so the legacy x surfaces directly; it was placed at x=1), it holds no in-flight
         // `SKAction` (a tween would have left one running), and the camera re-centered to follow it.
@@ -136,11 +136,11 @@ struct ClientViewModelTests {
     }
 
     @Test func `first-login enterSector defers the sector reveal until the self entity is placed`() {
-        let viewModel = makeViewModel()
+        let (viewModel, scene) = makeViewModelWithScene()
         viewModel.connectionState = .awaitingEnterSector
         viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
         // Held hidden with the splash up until the self entity lands — no origin-framed flicker.
-        let held = viewModel.worldScene._heldSwapProbe()
+        let held = scene._heldSwapProbe()
         #expect(held.sectorRootHidden)
         #expect(held.pendingPlayerReveal)
         #expect(held.splashPresent)
@@ -151,10 +151,74 @@ struct ClientViewModelTests {
             maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
             x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
         ))))
-        let revealed = viewModel.worldScene._heldSwapProbe()
+        let revealed = scene._heldSwapProbe()
         #expect(!revealed.sectorRootHidden)
         #expect(!revealed.pendingPlayerReveal)
         #expect(!revealed.splashPresent)
+    }
+
+    @Test func `the view model drives the render surface for each inbound render event`() {
+        // Injecting a non-SpriteKit spy proves the renderer-neutral seam: each inbound message that
+        // should reach the renderer is dispatched through the protocol, guarding against a future
+        // call-site silently dropping a dispatch through the erased `any WorldRenderSurface`.
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy)
+        viewModel.connectionState = .awaitingEnterSector
+
+        viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        #expect(spy.loadedSectors.count == 1)
+        #expect(spy.tintUpdates.count == 1)
+
+        viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
+            maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
+            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        #expect(spy.placedEntities.contains(7))
+
+        // A server position for self is a direct set; for a peer it is an interpolated tween.
+        viewModel.handle(.message(.serverPosition(PositionMessage(
+            entityIndex: 7, x: 2, y: 3, facing: Direction.north.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        #expect(spy.positionedEntities.contains(7))
+
+        viewModel.handle(.message(.entity(EntityMessage(
+            entityIndex: 9, figure: 0, gender: Gender.female.rawValue,
+            maskWidth: 128, maskHeight: 128, type: .player, name: "Bob",
+            x: 4, y: 4, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        viewModel.handle(.message(.serverPosition(PositionMessage(
+            entityIndex: 9, x: 5, y: 5, facing: Direction.east.rawValue, tempo: Tempo.default.rawValue
+        ))))
+        #expect(spy.animatedEntities.contains(9))
+
+        viewModel.handle(.message(.serverSay(SayMessage(entityIndex: 9, text: "hi"))))
+        #expect(spy.speechBubbles.contains(9))
+
+        viewModel.handle(.message(.leave(LeaveMessage(entityIndex: 9, leftGame: true))))
+        #expect(spy.removedEntities.contains(9))
+
+        // `updateDayNightTint` is also reached independently via the inbound `DateTick` path, not
+        // only via `enterSector` — pin that dispatch so a dropped call in `handleDateTick` is caught.
+        let tintBefore = spy.tintUpdates.count
+        viewModel.handle(.message(.dateTick(DateTickMessage(hour: 8, minute: 24))))
+        #expect(spy.tintUpdates.count == tintBefore + 1)
+    }
+
+    @Test func `leaveGame shows the splash on the render surface`() async {
+        // `showSplash` is the one render call no inbound message drives — it fires only from the
+        // async menu-driven leave path. Drive it through `leaveGame()` and poll the spy (bounded so
+        // a regression fails rather than hangs) for the resulting splash.
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy)
+        viewModel.connectionState = .attached
+
+        viewModel.leaveGame()
+        for _ in 0 ..< 1000 where spy.splashCount == 0 {
+            await Task.yield()
+        }
+        #expect(spy.splashCount == 1)
     }
 
     @Test func `decodeFailed event appends errorCode and disconnects`() {
@@ -636,14 +700,24 @@ struct ClientViewModelTests {
         viewModel.presentedSheet = nil
     }
 
+    private func makeWorldScene() -> WorldScene {
+        WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+    }
+
     private func makeViewModel(keyboard: KeyboardSampler) -> ClientViewModel {
-        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
-        return ClientViewModel(worldScene: scene, keyboard: keyboard)
+        ClientViewModel(worldScene: makeWorldScene(), keyboard: keyboard)
     }
 
     private func makeViewModel() -> ClientViewModel {
-        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
-        return ClientViewModel(worldScene: scene)
+        ClientViewModel(worldScene: makeWorldScene())
+    }
+
+    /// Returns the view model alongside the concrete `WorldScene` it drives, for the dispatch-wiring
+    /// tests that reach SpriteKit-only render probes (`_entityNodeProbe`/`_heldSwapProbe`) the
+    /// erased `WorldRenderSurface` seam does not expose.
+    private func makeViewModelWithScene() -> (ClientViewModel, WorldScene) {
+        let scene = makeWorldScene()
+        return (ClientViewModel(worldScene: scene), scene)
     }
 
     private func worldEntity(
@@ -686,6 +760,52 @@ struct ClientViewModelTests {
             light: LightSetting(indoor: true, brightness: 100),
             portals: portals
         )
+    }
+}
+
+/// Records every render call the view model dispatches, so the dispatch-wiring test can assert
+/// the view model drives the renderer-neutral `WorldRenderSurface` seam without a live renderer.
+@MainActor
+private final class RenderSurfaceSpy: WorldRenderSurface {
+    private(set) var loadedSectors: [String] = []
+    private(set) var placedEntities: [Int16] = []
+    private(set) var positionedEntities: [Int16] = []
+    private(set) var animatedEntities: [Int16] = []
+    private(set) var tintUpdates: [(hour: Int16, minute: Int16)] = []
+    private(set) var speechBubbles: [Int16] = []
+    private(set) var removedEntities: [Int16] = []
+    private(set) var splashCount = 0
+
+    func load(sector: Sector, awaitingPlayerPlacement _: Bool) {
+        loadedSectors.append(sector.name)
+    }
+
+    func placeEntity(_ entity: WorldEntity) {
+        placedEntities.append(entity.id)
+    }
+
+    func updatePosition(entityID: Int16, to _: GridPoint, facing _: Direction) {
+        positionedEntities.append(entityID)
+    }
+
+    func animateEntity(_ id: Int16, to _: GridPoint, facing _: Direction, duration _: TimeInterval) {
+        animatedEntities.append(id)
+    }
+
+    func updateDayNightTint(hour: Int16, minute: Int16, sectorLight _: LightSetting) {
+        tintUpdates.append((hour, minute))
+    }
+
+    func showSpeechBubble(above entityID: Int16, lines _: [String], lifetimeMs _: Int) {
+        speechBubbles.append(entityID)
+    }
+
+    func removeEntity(id: Int16) {
+        removedEntities.append(id)
+    }
+
+    func showSplash() {
+        splashCount += 1
     }
 }
 

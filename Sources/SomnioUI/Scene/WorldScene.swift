@@ -10,7 +10,7 @@ import SpriteKit
 /// be reused after a sector switch), and the day/night tint pass updates with each
 /// `DateTick`. Splash is the scene's initial state until the first `EnterSector`
 /// frame arrives.
-@MainActor public final class WorldScene: SKScene {
+@MainActor public final class WorldScene: SKScene, WorldRenderSurface {
     private let logger: Logger
 
     /// Per-entity render state the scene mutates each frame. `WorldEntity` is a value type

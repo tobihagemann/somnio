@@ -1,10 +1,7 @@
-import Foundation
-import SomnioCore
-
-/// Renderable entity in the SpriteKit world scene. `id` is the sector-local
+/// Renderable entity fed to a `WorldRenderSurface`. `id` is the sector-local
 /// `entityIndex` the wire protocol uses, so the scene's update calls consume the
 /// integer the wire layer already has — there is no UUID translation layer. The
-/// scene resets its node map on `WorldScene.load(sector:)` because the wire's
+/// scene resets its entity map on `load(sector:)` because the wire's
 /// `entityIndex` is sector-local and may be reused after a sector switch.
 public struct WorldEntity: Sendable, Identifiable, Equatable, Hashable {
     public enum Kind: Sendable, Equatable, Hashable, CaseIterable {

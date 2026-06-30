@@ -5,7 +5,7 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 ## Tech Stack
 
 - Swift 6.2, macOS 15+, SwiftPM (no Xcode project)
-- SwiftUI + SpriteKit for the player client and editor; Sparkle for player auto-updates only
+- SwiftUI for the player client and editor UIs; RealityKit for the player's 3D world rendering, SpriteKit for the editor's map preview; Sparkle for player auto-updates only
 - Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
 - swift-argument-parser for the admin CLI
@@ -24,8 +24,11 @@ SomnioData       # Postgres persistence (schema, migrations, repositories) +
                  # depends on SomnioCore
 SomnioUI         # SwiftUI views + SpriteKit scene
                  # depends on SomnioCore (NOT on SomnioData)
+SomnioScene3D    # RealityKit 3D render surface for the player world
+                 # (WorldScene3D, WorldScene3DView, OrthographicCameraRig)
+                 # depends on SomnioCore (NOT on SomnioProtocol/SomnioData/SomnioServerCore/SomnioUI)
 SomnioApp        # macOS executable: player client + UI + Sparkle
-                 # depends on SomnioCore + SomnioUI + SomnioProtocol
+                 # depends on SomnioCore + SomnioUI + SomnioScene3D + SomnioProtocol
 SomnioEditor     # macOS executable: document-based map editor (no Sparkle; built locally)
                  # depends on SomnioCore + SomnioUI (NOT on SomnioProtocol or SomnioData)
 SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
@@ -57,7 +60,8 @@ These boundaries are strict:
 
 - SomnioProtocol must never import another Somnio module.
 - SomnioCore must never import SomnioData or SomnioUI.
-- SomnioUI must never import SomnioData.
+- SomnioUI must never import SomnioData, and must never import SomnioScene3D (the render-surface protocol and the `WorldEntity` DTO live in SomnioCore so both renderers conform without a cycle).
+- SomnioScene3D must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioUI (a SomnioCore-only renderer the offline editor can later adopt).
 - SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).
 - SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline).
 - SomnioCLICore must never import SomnioUI, Sparkle, or SomnioServerCore.
@@ -117,9 +121,9 @@ Tilesets, character sprites, and animation strips are not committed to this repo
 - `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing. Must contain `Tilesets/`, `Characters/`, `Animations/`, `System/`, and `Buttons/` subdirectories.
 - `SOMNIO_ASSET_DEST` — set automatically by `package_app.sh` to the bundle's `Resources/` path.
 
-`bundle-assets.sh` rsyncs each of the five subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. Runtime apps load assets exclusively from `Bundle.main` via `BundleMainSpriteAssets`. There is no env var or Preferences UI for asset paths.
+`bundle-assets.sh` rsyncs each of the five subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. The editor's SpriteKit preview loads assets exclusively from `Bundle.main` via `BundleMainSpriteAssets`; the player's RealityKit renderer (`WorldScene3D`) does not consume the 2D pack and renders an untextured floor. There is no env var or Preferences UI for asset paths.
 
-No asset pack is committed to the repo. A runtime app launched without an operator-supplied `SOMNIO_ASSET_SOURCE` renders with the loader's nil-fallback path: empty ground (no ground tile map is built), untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash.
+No asset pack is committed to the repo. Without an operator-supplied `SOMNIO_ASSET_SOURCE`, the SpriteKit loader's nil-fallback path renders empty ground (no ground tile map is built), untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash; the player's RealityKit floor is untextured regardless.
 
 ### CI release configuration
 
@@ -232,7 +236,7 @@ The canonical `.somnio-sector` extension is used everywhere: the editor's export
 
 The 2003 art-pack layout conventions are data, not hardcoded Swift: a committed `Sources/SomnioCore/Resources/AssetManifest.json` states the figure-banding ranges (player=1, npc=2-10&61-109, monster=11-60), the tileset filename format + 1-based offset, the sprite-sheet row order (legacy S/W/E/N), the per-band cell geometry, and the walk-frame count. The manifest references no filenames, so it never drifts from the uncommitted, operator-supplied art pack. Output must stay **pixel-identical** to the hardcoded behavior — `Tests/SomnioUITests/BundleMainSpriteAssetsTests.swift` is the guard.
 
-The data type + pure rule helpers (`AssetManifest`, `band(forLeadingNumber:)`, `tilesetFilenamePrefix(forIndex:)`, `rowIndex(for:)`) live in **SomnioCore** (expressible from `Direction`/`Int16`/`GridSize`); the consuming loader stays in **SomnioUI** (`BundleMainSpriteAssets` owns bundle I/O, caching, and the `WorldEntity.Kind -> CharacterBand` mapping, since `WorldEntity.Kind` is a SomnioUI type). `AssetManifestCodec` mirrors `MapCodec` (stateless `enum`, per-call coders, sorted-keys pretty-print); `read` throws `DecodingError` and `write` throws `EncodingError` on the structural invariants the synthesized `Codable` can't express (all four directions present once, positive frame count, player band carries both `sheetGrid`+`cell` while single-region bands carry neither, non-inverted ranges). `directionRows` serializes by `Direction` case name via the shared `Direction.caseName` seam, decoupling the asset path from `legacyRichtung` (which survives only for the NPC/DB seam). `BundleMainSpriteAssets(bundle:manifest:)` resolves the committed manifest in its initializer, degrading to `AssetManifest.legacyFallback` with a logged error if the bundled JSON is missing or corrupt.
+The data type + pure rule helpers (`AssetManifest`, `band(forLeadingNumber:)`, `tilesetFilenamePrefix(forIndex:)`, `rowIndex(for:)`) live in **SomnioCore** (expressible from `Direction`/`Int16`/`GridSize`); the consuming loader stays in **SomnioUI** (`BundleMainSpriteAssets` owns bundle I/O, caching, and the `WorldEntity.Kind -> CharacterBand` mapping; `WorldEntity.Kind` lives in **SomnioCore** alongside the `WorldEntity` render DTO). `AssetManifestCodec` mirrors `MapCodec` (stateless `enum`, per-call coders, sorted-keys pretty-print); `read` throws `DecodingError` and `write` throws `EncodingError` on the structural invariants the synthesized `Codable` can't express (all four directions present once, positive frame count, player band carries both `sheetGrid`+`cell` while single-region bands carry neither, non-inverted ranges). `directionRows` serializes by `Direction` case name via the shared `Direction.caseName` seam, decoupling the asset path from `legacyRichtung` (which survives only for the NPC/DB seam). `BundleMainSpriteAssets(bundle:manifest:)` resolves the committed manifest in its initializer, degrading to `AssetManifest.legacyFallback` with a logged error if the bundled JSON is missing or corrupt.
 
 ## Agentic Setup
 

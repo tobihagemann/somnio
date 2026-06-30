@@ -1,6 +1,6 @@
 import Logging
 import SomnioCore
-import SomnioUI
+import SomnioScene3D
 import Sparkle
 import SwiftUI
 
@@ -11,15 +11,21 @@ import SwiftUI
 @main
 struct SomnioAppEntry: App {
     @State private var viewModel: ClientViewModel
+    /// The concrete 3D renderer is retained here too: the view model drives it through the erased
+    /// `any WorldRenderSurface` seam, but the host view needs the concrete `WorldScene3D` to vend
+    /// its `RealityView` content, so the app entry threads the same instance to both. SwiftUI
+    /// instantiates the `@main` App once per process, so this `let` and the renderer captured in
+    /// `viewModel` stay the same object.
+    private let renderer: WorldScene3D
     private let updaterController: SPUStandardUpdaterController
 
     init() {
         LoggingConfiguration.bootstrap()
         let lifecycleLog = Logger(label: "de.tobiha.somnio.app.lifecycle")
         lifecycleLog.info("SomnioApp launching")
-        let assets = BundleMainSpriteAssets()
-        let scene = WorldScene(size: CGSize(width: 640, height: 480), assets: assets)
-        _viewModel = State(initialValue: ClientViewModel(worldScene: scene))
+        let renderer = WorldScene3D()
+        self.renderer = renderer
+        _viewModel = State(initialValue: ClientViewModel(worldScene: renderer))
         self.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -29,7 +35,11 @@ struct SomnioAppEntry: App {
 
     var body: some Scene {
         Window(L.resource("Somnio"), id: "main") {
-            MainWindowContainerView(viewModel: viewModel, onCheckForUpdates: { updaterController.checkForUpdates(nil) })
+            MainWindowContainerView(
+                viewModel: viewModel,
+                renderer: renderer,
+                onCheckForUpdates: { updaterController.checkForUpdates(nil) }
+            )
         }
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)

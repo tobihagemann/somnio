@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "SomnioCore", targets: ["SomnioCore"]),
         .library(name: "SomnioData", targets: ["SomnioData"]),
         .library(name: "SomnioUI", targets: ["SomnioUI"]),
+        .library(name: "SomnioScene3D", targets: ["SomnioScene3D"]),
         .library(name: "SomnioServerCore", targets: ["SomnioServerCore"]),
         .library(name: "SomnioCLICore", targets: ["SomnioCLICore"]),
         .library(name: "SomnioTestSupport", targets: ["SomnioTestSupport"])
@@ -94,11 +95,21 @@ let package = Package(
             ]
         ),
 
+        .target(
+            name: "SomnioScene3D",
+            dependencies: ["SomnioCore"]
+        ),
+        .testTarget(
+            name: "SomnioScene3DTests",
+            dependencies: ["SomnioScene3D"]
+        ),
+
         .executableTarget(
             name: "SomnioApp",
             dependencies: [
                 "SomnioCore",
                 "SomnioUI",
+                "SomnioScene3D",
                 "SomnioProtocol",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
                 .product(name: "Logging", package: "swift-log"),
