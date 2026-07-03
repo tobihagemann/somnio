@@ -9,6 +9,7 @@ let package = Package(
         .executable(name: "SomnioEditor", targets: ["SomnioEditor"]),
         .executable(name: "SomnioServer", targets: ["SomnioServer"]),
         .executable(name: "SomnioCLI", targets: ["SomnioCLI"]),
+        .executable(name: "SomnioAssetValidator", targets: ["SomnioAssetValidator"]),
         .library(name: "SomnioProtocol", targets: ["SomnioProtocol"]),
         .library(name: "SomnioCore", targets: ["SomnioCore"]),
         .library(name: "SomnioData", targets: ["SomnioData"]),
@@ -41,7 +42,8 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/Localizable.xcstrings"),
-                .process("Resources/AssetManifest.json")
+                .process("Resources/AssetManifest.json"),
+                .process("Resources/ModelRegistry.json")
             ]
         ),
         .testTarget(
@@ -102,6 +104,14 @@ let package = Package(
         .testTarget(
             name: "SomnioScene3DTests",
             dependencies: ["SomnioScene3D"]
+        ),
+
+        .executableTarget(
+            name: "SomnioAssetValidator",
+            dependencies: [
+                "SomnioCore",
+                .target(name: "SomnioScene3D", condition: .when(platforms: [.macOS]))
+            ]
         ),
 
         .executableTarget(

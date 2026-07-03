@@ -1,0 +1,108 @@
+import Foundation
+import OSLog
+import RealityKit
+import SomnioCore
+
+/// Model-pack accessor for the RealityKit scene. Mirrors the sprite-pack accessor's shape (a
+/// protocol over a `Bundle.main`-backed loader) with one structural difference forced by
+/// RealityKit: `Entity(contentsOf:)` is async, but the render surface that consumes these models
+/// is driven synchronously. Implementations therefore load and cache every registry model in an
+/// async `prewarm()` (called from the sector-load path before placement), and the per-request
+/// accessors are synchronous cache reads — a stem the prewarm has not cached yet resolves `nil`
+/// (⇒ placeholder), never blocking and never trapping.
+@MainActor public protocol ModelAssets {
+    func prewarm() async
+    func entity(forKind kind: WorldEntity.Kind, figure: Int16) -> Entity?
+    func object(forSignature signature: SourceRectSignature) -> Entity?
+    func floorMaterialURL(forID id: String) -> URL?
+}
+
+/// Loads USDZ models from a runtime `Bundle` whose `Resources/` directory follows the subdirectory
+/// layout produced by `Scripts/bundle-assets.sh` (`Models/`, `FloorMaterials/`), resolving stems
+/// through the committed model registry. Loaded roots are cached as prototypes and every accessor
+/// returns a fresh recursive clone — an `Entity` is a mutable scene-graph node (transform, parent,
+/// animation state), so handing the same instance to multiple world entities would share that
+/// state across them.
+@MainActor public final class BundleMainModelAssets: ModelAssets {
+    private static let logger = Logger(subsystem: "de.tobiha.somnio.scene3d", category: "assets")
+
+    private let bundle: Bundle
+    private let registry: ModelRegistry
+    private var prototypes: [String: Entity] = [:]
+    /// Negative cache: a stem whose URL or load already failed is not re-resolved on the next
+    /// prewarm pass (no-asset-pack fallback stays cheap).
+    private var prototypeMisses: Set<String> = []
+
+    public init(bundle: Bundle = .main, registry: ModelRegistry? = nil) {
+        self.bundle = bundle
+        self.registry = registry ?? Self.loadBundledRegistry()
+    }
+
+    /// Resolves the committed model registry, degrading to the empty placeholder fallback with a
+    /// logged error if the bundled JSON is (theoretically) missing or corrupt — the same graceful
+    /// path as an absent model pack rather than a trap.
+    private static func loadBundledRegistry() -> ModelRegistry {
+        do {
+            return try ModelRegistryCodec.bundledRegistry()
+        } catch {
+            logger.error("ModelRegistry.json missing or invalid; using placeholder fallback: \(String(describing: error), privacy: .public)")
+            return .placeholderFallback
+        }
+    }
+
+    /// Loads and caches every registry model as a prototype. Call from the async sector-load path
+    /// before entity placement; the synchronous accessors only ever read the cache this fills.
+    public func prewarm() async {
+        for entry in registry.allModelEntries
+            where prototypes[entry.stem] == nil && !prototypeMisses.contains(entry.stem) {
+            await loadPrototype(for: entry)
+        }
+    }
+
+    public func entity(forKind kind: WorldEntity.Kind, figure: Int16) -> Entity? {
+        guard let entry = registry.model(forKind: kind, figure: figure) else { return nil }
+        return clone(ofStem: entry.stem)
+    }
+
+    public func object(forSignature signature: SourceRectSignature) -> Entity? {
+        guard let entry = registry.model(forSignature: signature) else { return nil }
+        return clone(ofStem: entry.stem)
+    }
+
+    public func floorMaterialURL(forID id: String) -> URL? {
+        guard let stem = registry.floorMaterialStem(forID: id) else { return nil }
+        return bundle.url(forResource: stem, withExtension: "png", subdirectory: "FloorMaterials")
+    }
+
+    private func clone(ofStem stem: String) -> Entity? {
+        prototypes[stem]?.clone(recursive: true)
+    }
+
+    private func loadPrototype(for entry: ModelEntry) async {
+        guard let url = bundle.url(forResource: entry.stem, withExtension: "usdz", subdirectory: "Models") else {
+            prototypeMisses.insert(entry.stem)
+            Self.logger.info("model \(entry.stem, privacy: .public).usdz absent from bundle; rendering placeholder")
+            return
+        }
+        do {
+            // A rigged USDZ is an entity tree whose skeleton and animation library must survive,
+            // so it loads as a root `Entity` hierarchy, never a flattened single `ModelEntity`.
+            let prototype = try await Entity(contentsOf: url)
+            let missing = ModelRegistry.missingClips(
+                expected: entry.expectedClips,
+                actual: RealityKitAnimationClips.names(in: prototype)
+            )
+            if !missing.isEmpty {
+                Self.logger.error("""
+                model \(entry.stem, privacy: .public) is missing expected animation clips \
+                \(missing.sorted().joined(separator: ", "), privacy: .public); \
+                the glb→USDZ conversion likely collapsed its clip library
+                """)
+            }
+            prototypes[entry.stem] = prototype
+        } catch {
+            prototypeMisses.insert(entry.stem)
+            Self.logger.error("failed to load model \(entry.stem, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+    }
+}

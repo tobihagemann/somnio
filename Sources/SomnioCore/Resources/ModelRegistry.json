@@ -1,0 +1,62 @@
+{
+  "entityBands" : {
+    "monster" : [
+      {
+        "figureRanges" : [
+          {
+            "lower" : 0,
+            "upper" : 0
+          }
+        ],
+        "model" : {
+          "expectedClips" : [
+            "Flying_Idle"
+          ],
+          "stem" : "Ghost"
+        }
+      }
+    ],
+    "npc" : [
+      {
+        "figureRanges" : [
+          {
+            "lower" : 16,
+            "upper" : 16
+          }
+        ],
+        "model" : {
+          "expectedClips" : [
+            "Idle",
+            "Walking_A",
+            "Running_A"
+          ],
+          "stem" : "Mage"
+        }
+      }
+    ],
+    "player" : [
+      {
+        "figureRanges" : [
+          {
+            "lower" : 0,
+            "upper" : 15
+          }
+        ],
+        "model" : {
+          "expectedClips" : [
+            "Idle",
+            "Walking_A",
+            "Running_A"
+          ],
+          "stem" : "Knight"
+        }
+      }
+    ]
+  },
+  "floorMaterials" : [
+
+  ],
+  "objectModels" : [
+
+  ]
+}

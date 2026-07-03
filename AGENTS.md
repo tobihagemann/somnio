@@ -49,6 +49,12 @@ SomnioTestSupport # Shared test fixtures (no-op repository stubs, AdminRouteTest
                  # SomnioServerCoreTests and SomnioCLICoreTests.
                  # depends on SomnioCore + SomnioData + SomnioProtocol + SomnioServerCore +
                  # Hummingbird + HummingbirdWebSocket + PostgresNIO + NIOCore + Logging
+SomnioAssetValidator # macOS build-tool executable: loads a converted .usdz via RealityKit
+                 # and asserts the model registry's expectedClips surface through
+                 # Entity.availableAnimations (the glb->USDZ clip-presence gate,
+                 # invoked by Scripts/convert-glb-to-usdz.sh; never shipped).
+                 # depends on SomnioCore + SomnioScene3D (shares the loader's
+                 # clip-enumeration seam so the gate and runtime never drift)
 SomnioCatalogTestSupport # Foundation-only helper that reads SwiftPM `.xcstrings` JSON
                  # resources straight out of a `Bundle`. Consumed by SomnioCoreTests,
                  # SomnioUITests, and SomnioCLICoreTests to verify bilingual catalogs
@@ -116,20 +122,22 @@ Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` trigge
 
 ### Asset bundling
 
-Tilesets, character sprites, and animation strips are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
+Tilesets, character sprites, animation strips, and 3D models are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
 
-- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing. Must contain `Tilesets/`, `Characters/`, `Animations/`, `System/`, and `Buttons/` subdirectories.
+- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Set this when releasing. Must contain the 2D subtrees `Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/` (retained while the editor's SpriteKit preview still consumes them) and the 3D subtrees `Models/`, `FloorMaterials/`.
 - `SOMNIO_ASSET_DEST` — set automatically by `package_app.sh` to the bundle's `Resources/` path.
 
-`bundle-assets.sh` rsyncs each of the five subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. The editor's SpriteKit preview loads assets exclusively from `Bundle.main` via `BundleMainSpriteAssets`; the player's RealityKit renderer (`WorldScene3D`) does not consume the 2D pack and renders an untextured floor. There is no env var or Preferences UI for asset paths.
+`bundle-assets.sh` rsyncs each of the seven subtrees into the destination and warns (without failing) on any missing subtree, so an in-progress operator-supplied pack still yields a runnable bundle. The editor's SpriteKit preview loads the 2D pack exclusively from `Bundle.main` via `BundleMainSpriteAssets`; the 3D loader (`BundleMainModelAssets` in SomnioScene3D) loads `Models/<stem>.usdz` and `FloorMaterials/<stem>.png` from `Bundle.main` the same way, resolving stems through the committed model registry (`Sources/SomnioCore/Resources/ModelRegistry.json`, read via `ModelRegistryCodec`). There is no env var or Preferences UI for asset paths.
 
-No asset pack is committed to the repo. Without an operator-supplied `SOMNIO_ASSET_SOURCE`, the SpriteKit loader's nil-fallback path renders empty ground (no ground tile map is built), untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash; the player's RealityKit floor is untextured regardless.
+The 3D subtrees are produced by `Scripts/convert-glb-to-usdz.sh` (run against the CC0 `.glb` sources on the build machine): it converts every source model into `Models/<stem>.usdz` via a headless Blender per-clip timeline merge that preserves each model's named animation-clip library, then gates each output on `usdchecker` plus `SomnioAssetValidator` (a build-tool executable that loads the USDZ through RealityKit and asserts the registry's `expectedClips` surface in `Entity.availableAnimations` — a naive export collapses the clip library, which this gate fails loudly). `FloorMaterials/` holds CC0 floor textures copied in as-is; nothing renders them yet (the MVP floor is an untextured solid-color plane), the registry's floor-material table is the forward contract.
+
+No asset pack is committed to the repo. Without an operator-supplied `SOMNIO_ASSET_SOURCE`, the SpriteKit loader's nil-fallback path renders empty ground (no ground tile map is built), untextured object decals, untextured entity sprites (sized to mask), and a solid-color splash; the 3D loader's nil-fallback path renders placeholders for every model and the RealityKit floor stays untextured.
 
 ### CI release configuration
 
 CI-driven releases (`release.yml`) inject three externalized inputs at build time, so the public repo never carries licensed art or the production endpoint:
 
-- **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the five subtrees (`Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/`) at its root. `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
+- **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the seven subtrees (`Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/`, `Models/`, `FloorMaterials/`) at its root. `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
 - **Production gameplay endpoint** — the `SOMNIO_GAMEPLAY_PRODUCTION_URL` repo *variable* (e.g. `wss://somnio.tobiha.de/ws`; not a secret — every player sees it). `Scripts/inject-release-transport.sh` rewrites `GameplayServerURL.swift`, replacing the `#error` placeholder with the literal. Required for **player + release** only; the editor and debug builds never reach the guard.
 - **Pinned TLS trust root** — `Scripts/release-trust-roots.pem` (committed) holds the Let's Encrypt ISRG Root X1 + X2 roots (publicly verifiable by fingerprint). The same inject script embeds them into `gameplayProductionTrustRootPEM` in `GameplayServerPin.swift`. Pinning the long-lived roots (not the 90-day leaf) means certificate renewals never break the shipped player; both roots cover an RSA→ECDSA key-type switch.
 
