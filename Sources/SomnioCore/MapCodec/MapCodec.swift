@@ -2,13 +2,13 @@ import Foundation
 
 /// Bidirectional codec for the sector on-disk format: JSON `Codable` over a semantic
 /// `SectorBody`, carried in `.somnio-sector` files. Modern English field names map directly to
-/// JSON keys; NPC facing serializes as a semantic `Direction` case name (`"south"`) rather than
-/// the legacy `richtung` int (see `NPC`'s hand-written `Codable`).
+/// JSON keys; NPC facing serializes as heading degrees under the stable `"direction"` key
+/// (`"direction" : 270`; see `NPC`'s `CodingKeys`).
 ///
 /// `read`/`write` mirror the wire codec (`SomnioMessageDecoder`/`SomnioMessageEncoder`): a
 /// per-call `JSONDecoder`/`JSONEncoder` (no shared mutable state, Sendable-clean). Decode failures
-/// surface as `Swift.DecodingError`; encode-time model corruption (an out-of-range NPC direction
-/// or sector dimensions) surfaces as `Swift.EncodingError`. Both directions bound `dimensions`
+/// surface as `Swift.DecodingError`; encode-time model corruption (out-of-range sector
+/// dimensions) surfaces as `Swift.EncodingError`. Both directions bound `dimensions`
 /// against `GridSize.isWithinSectorBounds` and the object/collision-mask counts against
 /// `SectorBody.hasContentCountsWithinBounds` (both shared with the wire boundary
 /// `Sector(_ wire:)`) so a hostile `.somnio-sector` — opened in the editor or loaded from

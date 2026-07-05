@@ -9,16 +9,9 @@ struct YawSlewTests {
         abs((target - current).remainder(dividingBy: 2 * .pi))
     }
 
-    @Test func `each facing maps to its compass yaw about plus-Y`() {
-        #expect(YawSlew.yaw(for: .south) == 0)
-        #expect(YawSlew.yaw(for: .east) == .pi / 2)
-        #expect(YawSlew.yaw(for: .north) == .pi)
-        #expect(YawSlew.yaw(for: .west) == -.pi / 2)
-    }
-
     @Test func `a quarter turn completes between 0.15 and 0.2 seconds`() {
-        var yaw: Float = YawSlew.yaw(for: .south)
-        let target = YawSlew.yaw(for: .east)
+        var yaw: Float = Heading(cardinal: .south).radians
+        let target = Heading(cardinal: .east).radians
         for _ in 0 ..< 3 {
             yaw = YawSlew.step(from: yaw, toward: target, deltaTime: 0.05)
         }
@@ -47,8 +40,8 @@ struct YawSlewTests {
     @Test func `an exact 180° turn picks one consistent arc without spinning`() {
         // South ↔ north is the ambiguous case; the IEEE remainder resolves it to the positive
         // arc every step, so the turn converges instead of oscillating.
-        var yaw: Float = YawSlew.yaw(for: .south)
-        let target = YawSlew.yaw(for: .north)
+        var yaw: Float = Heading(cardinal: .south).radians
+        let target = Heading(cardinal: .north).radians
         let first = YawSlew.step(from: yaw, toward: target, deltaTime: 0.01)
         #expect(first > 0)
         for _ in 0 ..< 100 where yaw != target {

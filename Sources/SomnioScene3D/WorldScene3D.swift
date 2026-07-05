@@ -31,7 +31,7 @@ import SomnioCore
         var kind: WorldEntity.Kind
         var figure: Int16
         var maskSize: GridSize
-        var facing: Direction
+        var facing: Heading
         var tempo: Tempo
         var lastPosition: GridPoint
         var currentYaw: Float
@@ -58,7 +58,7 @@ import SomnioCore
             self.facing = entity.facing
             self.tempo = entity.tempo
             self.lastPosition = entity.position
-            self.currentYaw = YawSlew.yaw(for: entity.facing)
+            self.currentYaw = entity.facing.radians
             self.lastMotionTime = -.infinity
             self.pendingMotion = false
             self.remainingTweenMotion = 0
@@ -296,11 +296,11 @@ import SomnioCore
         }
     }
 
-    public func updatePosition(entityID: Int16, to position: GridPoint, facing: Direction) {
+    public func updatePosition(entityID: Int16, to position: GridPoint, facing: Heading) {
         updatePosition(entityID: entityID, to: SubpixelPoint(x: Double(position.x), y: Double(position.y)), facing: facing)
     }
 
-    public func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Direction) {
+    public func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Heading) {
         guard let state = entityRenderStates[entityID] else {
             Self.logger.debug("updatePosition called for unknown entity", metadata: ["entity_id": "\(entityID)"])
             return
@@ -323,7 +323,7 @@ import SomnioCore
     /// `duration` seconds. The glide is integrated in `tick` (not a RealityKit transform
     /// animation) so it composes with the per-tick yaw slew; `remainingTweenMotion` keeps the
     /// walk clip running across the whole glide (peers update on the sparse ~500 ms heartbeat).
-    public func animateEntity(_ id: Int16, to position: GridPoint, facing: Direction, duration: TimeInterval) {
+    public func animateEntity(_ id: Int16, to position: GridPoint, facing: Heading, duration: TimeInterval) {
         guard let state = entityRenderStates[id] else {
             Self.logger.debug("animateEntity called for unknown entity", metadata: ["entity_id": "\(id)"])
             return
@@ -416,7 +416,7 @@ import SomnioCore
             }
             let isMoving = (sceneClock - state.lastMotionTime) < Self.motionGraceWindow
 
-            let targetYaw = YawSlew.yaw(for: state.facing)
+            let targetYaw = state.facing.radians
             if state.currentYaw != targetYaw {
                 state.currentYaw = YawSlew.step(from: state.currentYaw, toward: targetYaw, deltaTime: dt)
                 state.node.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])

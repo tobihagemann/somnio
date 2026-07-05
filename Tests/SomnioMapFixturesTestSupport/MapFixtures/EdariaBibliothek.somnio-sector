@@ -147,7 +147,7 @@
     {
       "behaviorTag" : 0,
       "dialogScript" : "Sei gegrüßt, $name!---Diese Bibliothek ist immer noch in Arbeit.---Außerdem ist das Rennen hier verboten!",
-      "direction" : "west",
+      "direction" : 270,
       "figure" : 16,
       "maskSize" : {
         "height" : 48,

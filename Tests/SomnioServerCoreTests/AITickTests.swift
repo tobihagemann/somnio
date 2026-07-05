@@ -89,7 +89,7 @@ struct AITickTests {
                 entityIndex: 0,
                 x: 800,
                 y: 800,
-                facing: Direction.south.rawValue,
+                facing: Heading(cardinal: .south).degrees,
                 tempo: Tempo.default.rawValue
             ),
             from: entityIndex
@@ -283,11 +283,12 @@ struct AITickTests {
         outbox.finish()
         let frames = await collect(outbox: outbox)
         let monsterFrame = try #require(decodeServerPositions(in: frames).first)
-        // Monster spawned at (200, 200); player feet-center is south-east of the monster's, so a
-        // single chase step lands at ≈(204, 204) facing east (45° tie-break favors horizontal).
+        // Monster spawned at (200, 200); the player feet-center sits exactly 50 px south-east
+        // of the monster's, so a single chase step lands at ≈(204, 204) facing the exact 45°
+        // diagonal.
         #expect(monsterFrame.x > 200)
         #expect(monsterFrame.y > 200)
-        #expect(monsterFrame.facing == Direction.east.rawValue || monsterFrame.facing == Direction.south.rawValue)
+        #expect(monsterFrame.facing == Self.chaseHeading(dx: 50, dy: 50))
     }
 
     @Test func `branch zero monster idles when no player is in radius`() async throws {
@@ -322,9 +323,9 @@ struct AITickTests {
             inventory: [],
             outbox: outboxA
         )
-        // Player A's feet-center is north-west of the spawned monster's, so one chase tick orients
-        // the monster west on the 45° tie-break. Confirm a second player's join sequence carries
-        // that post-tick facing rather than the seed default (`.south`).
+        // Player A's feet-center sits exactly 100 px north-west of the spawned monster's, so
+        // one chase tick orients the monster to the exact 225° diagonal. Confirm a second
+        // player's join sequence carries that post-tick facing rather than the seed default.
         _ = await actor.runAITick()
 
         let outboxB = ConnectionOutbox(highWatermark: 1024)
@@ -337,7 +338,7 @@ struct AITickTests {
         let framesB = await collect(outbox: outboxB)
         let monsterEntity = decodeEntities(in: framesB).first { $0.type == .monster }
         let entityFrame = try #require(monsterEntity)
-        #expect([Direction.west.rawValue, Direction.north.rawValue].contains(entityFrame.facing))
+        #expect(entityFrame.facing == Self.chaseHeading(dx: -100, dy: -100))
     }
 
     @Test(arguments: [true, false])
@@ -381,7 +382,7 @@ struct AITickTests {
         bobOutbox.finish()
         let aliceFrames = await collect(outbox: aliceOutbox)
         let frame = try #require(decodeServerPositions(in: aliceFrames).first)
-        #expect(frame.facing == Direction.east.rawValue)
+        #expect(frame.facing == Self.chaseHeading(dx: 120, dy: 0))
     }
 
     @Test func `branch zero monster blocked by sector edge broadcasts facing without moving`() async throws {
@@ -407,7 +408,7 @@ struct AITickTests {
         let broadcast = try #require(decodeServerPositions(in: frames).first)
         #expect(broadcast.x == 48)
         #expect(broadcast.y == 208)
-        #expect(broadcast.facing == Direction.south.rawValue)
+        #expect(broadcast.facing == Heading(cardinal: .south).degrees)
     }
 
     @Test func `branch zero monster blocked by collision broadcasts facing without moving`() async throws {
@@ -433,7 +434,7 @@ struct AITickTests {
         let broadcast = try #require(decodeServerPositions(in: frames).first)
         #expect(broadcast.x == 200)
         #expect(broadcast.y == 200)
-        #expect(broadcast.facing == Direction.east.rawValue)
+        #expect(broadcast.facing == Self.chaseHeading(dx: 50, dy: 50))
     }
 
     @Test func `non zero ai script index monster idles even when player is in radius`() async throws {
@@ -685,7 +686,7 @@ struct AITickTests {
         _ = await actor.runAITick() // spawns the idle monster at (200, 200)
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 200, y: 200, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 200, y: 200, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: playerIndex
         )
 
@@ -713,7 +714,7 @@ struct AITickTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 400, y: 400, facing: Direction.south.rawValue, tempo: Tempo.run.rawValue),
+            PositionMessage(entityIndex: 0, x: 400, y: 400, facing: Heading(cardinal: .south).degrees, tempo: Tempo.run.rawValue),
             from: playerIndex
         )
 
@@ -816,7 +817,7 @@ struct AITickTests {
             maskSize: GridSize(width: 32, height: 48),
             name: "test-npc",
             figure: 0,
-            direction: 0,
+            facing: Heading(cardinal: .south),
             behaviorTag: 0,
             dialogScript: dialogScript
         )
@@ -865,7 +866,7 @@ struct AITickTests {
             gender: .male,
             currentSector: "TestSector",
             position: position,
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100, hpMax: 100,
@@ -874,6 +875,12 @@ struct AITickTests {
             ),
             lastSeen: Date()
         )
+    }
+
+    /// The exact chase heading `runMonsterTick` computes for a target-center delta — the
+    /// same `Heading(dx:dy:)` conversion, so Float rounding matches bit-for-bit.
+    private static func chaseHeading(dx: Int32, dy: Int32) -> Float {
+        Heading(dx: Float(dx), dy: Float(dy)).degrees
     }
 
     private var testLogger: Logger {

@@ -22,7 +22,7 @@ struct SectorTests {
             npcs: [NPC(spawnOrigin: GridPoint(x: 1, y: 2),
                        spawnBoxSize: GridSize(width: 2, height: 2),
                        maskSize: GridSize(width: 1, height: 1),
-                       name: "Libus", figure: 12, direction: 1, behaviorTag: 0,
+                       name: "Libus", figure: 12, facing: Heading(cardinal: .west), behaviorTag: 0,
                        dialogScript: "Hi.")],
             monsterSpawns: [MonsterSpawn(spawnOrigin: GridPoint(x: 3, y: 3),
                                          spawnBoxSize: GridSize(width: 2, height: 2),

@@ -131,7 +131,7 @@ public extension NPC {
             maskSize: GridSize(width: wire.maskWidth, height: wire.maskHeight),
             name: wire.name,
             figure: wire.figure,
-            direction: wire.direction,
+            facing: Heading(degrees: wire.direction),
             behaviorTag: wire.behaviorTag,
             dialogScript: wire.dialogScript
         )
@@ -142,7 +142,7 @@ public extension NPC {
             spawnX: spawnOrigin.x, spawnY: spawnOrigin.y,
             spawnBoxWidth: spawnBoxSize.width, spawnBoxHeight: spawnBoxSize.height,
             maskWidth: maskSize.width, maskHeight: maskSize.height,
-            name: name, figure: figure, direction: direction,
+            name: name, figure: figure, direction: facing.degrees,
             behaviorTag: behaviorTag, dialogScript: dialogScript
         )
     }

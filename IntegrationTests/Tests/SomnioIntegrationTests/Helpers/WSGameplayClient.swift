@@ -103,7 +103,7 @@ enum WSGameplayClient {
                     entityIndex: 0,
                     x: origin.x,
                     y: origin.y,
-                    facing: Direction.south.rawValue,
+                    facing: Heading(cardinal: .south).degrees,
                     tempo: Tempo.default.rawValue
                 )
             ),

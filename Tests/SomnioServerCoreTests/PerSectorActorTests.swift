@@ -18,7 +18,7 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: -1, y: 0, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: -1, y: 0, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
 
@@ -28,7 +28,7 @@ struct PerSectorActorTests {
         // Bounds are pixel-space: an 8x8-tile sector spans 8 * tileSize = 1024px, so a
         // coordinate at the pixel extent is out of bounds and must be rejected.
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 1024, y: 0, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 1024, y: 0, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
         let secondSnapshot = await actor.snapshotForPlayer(entityIndex: entityIndex)
@@ -50,7 +50,7 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
 
@@ -73,7 +73,7 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
 
@@ -98,7 +98,7 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: moverIndex
         )
 
@@ -126,7 +126,7 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue),
             from: moverIndex
         )
 
@@ -150,13 +150,13 @@ struct PerSectorActorTests {
         )
 
         await actor.handlePosition(
-            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Direction.east.rawValue, tempo: Tempo.default.rawValue),
+            PositionMessage(entityIndex: 0, x: 5, y: 5, facing: Heading(cardinal: .east).degrees, tempo: Tempo.default.rawValue),
             from: entityIndex
         )
 
         let snapshot = await actor.snapshotForPlayer(entityIndex: entityIndex)
         #expect(snapshot?.character.position == GridPoint(x: 5, y: 5))
-        #expect(snapshot?.character.facing == .east)
+        #expect(snapshot?.character.facing == Heading(cardinal: .east))
 
         // An accepted move must not snap the mover back to its own outbox.
         outbox.finish()
@@ -310,7 +310,7 @@ struct PerSectorActorTests {
             gender: .male,
             currentSector: "TestSector",
             position: position,
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100, hpMax: 100,

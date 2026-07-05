@@ -31,7 +31,7 @@ struct NPCDialogScriptTests {
             maskSize: GridSize(width: 0, height: 0),
             name: "tester",
             figure: 0,
-            direction: 0,
+            facing: Heading(cardinal: .south),
             behaviorTag: 0,
             dialogScript: dialogScript
         )

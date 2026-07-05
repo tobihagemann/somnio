@@ -145,19 +145,19 @@ struct BundleMainSpriteAssetsTests {
     // MARK: - entityTexture
 
     // Fixtures in `Resources/Characters/` carry solid-color marker cells (32x48) on a black
-    // field. Sheet rows follow the original `richtung` order (S/W/E/N), so the row index is the
-    // `Direction.legacyRichtung` value (south=0, west=1, east=2, north=3) — not `rawValue`.
+    // field. Sheet rows follow the original `richtung` order (south=0, west=1, east=2, north=3),
+    // mirrored by the manifest's `directionRows` — the row index is not `Direction.rawValue`.
     // Filenames are banded by their leading number exactly like the runtime: `001-TestMain`
     // (number 1) is player band index 0; `003-TestNPC` (number 3 ∈ 2...10) is NPC band index 0;
     // `011-TestMonster` (number 11 ∈ 11...60) is monster band index 0. So NPC figure 0 and
     // monster figure 0 resolve to different sheets — the regression guard for Libus-as-snake /
     // Gespenst-as-character-sheet. Cell layout (regenerate by filling these top-left pixel rects):
-    //   001-TestMain (1024x384): (charCol*128 + frame*32, charRow*192 + legacyRichtung*48, 32, 48)
+    //   001-TestMain (1024x384): (charCol*128 + frame*32, charRow*192 + richtungRow*48, 32, 48)
     //     red    charCol0 charRow0 south frame0   green  charCol0 charRow0 east  frame2
     //     blue   charCol7 charRow1 north frame0   yellow charCol7 charRow1 west  frame3
-    //   003-TestNPC (128x192): (frame*32, legacyRichtung*48, 32, 48)
+    //   003-TestNPC (128x192): (frame*32, richtungRow*48, 32, 48)
     //     red    north frame0   green  south frame2   yellow west frame3
-    //   011-TestMonster (128x192): (frame*32, legacyRichtung*48, 32, 48)
+    //   011-TestMonster (128x192): (frame*32, richtungRow*48, 32, 48)
     //     cyan   south frame0
 
     @Test func `entityTexture returns nil for a player figureIndex out of range`() {

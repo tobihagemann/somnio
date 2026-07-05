@@ -389,7 +389,7 @@ struct WorldRouterTests {
             maskSize: GridSize(width: 32, height: 48),
             name: "test-npc",
             figure: 0,
-            direction: 0,
+            facing: Heading(cardinal: .south),
             behaviorTag: 0,
             dialogScript: dialogScript
         )
@@ -403,7 +403,7 @@ struct WorldRouterTests {
             gender: .male,
             currentSector: sector,
             position: position,
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100, hpMax: 100,

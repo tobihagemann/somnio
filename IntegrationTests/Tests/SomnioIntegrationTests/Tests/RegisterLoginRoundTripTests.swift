@@ -33,7 +33,8 @@ struct RegisterLoginRoundTripTests {
 
             var moved = character
             moved.position = GridPoint(x: 4, y: 7)
-            moved.facing = .east
+            // Fractional degrees pin the REAL column round-trip, not just cardinal values.
+            moved.facing = Heading(degrees: 137.5)
             moved.energy.hpCurrent = 75
             // Bump `lastSeen` so the SQL skip-if-stale guard in `snapshot` accepts the write.
             // Production paths bump this in `PerSectorActor.snapshotForPlayer`/`snapshotForCheckpoint`.
@@ -43,7 +44,7 @@ struct RegisterLoginRoundTripTests {
 
             let reloadedCharacter = try #require(try await characters.findByName("Alice the Bold"))
             #expect(reloadedCharacter.position == GridPoint(x: 4, y: 7))
-            #expect(reloadedCharacter.facing == .east)
+            #expect(reloadedCharacter.facing == Heading(degrees: 137.5))
             #expect(reloadedCharacter.energy.hpCurrent == 75)
 
             let reloadedInventory = try await inventory.loadAll(forCharacter: character.id)

@@ -95,9 +95,9 @@ struct MonsterAggroE2ETests {
         let drainA = startOutboxDrain(outbox: outboxA, into: sinkA)
         let drainB = startOutboxDrain(outbox: outboxB, into: sinkB)
 
-        // A's feet-center is 150 px east of the monster (dominant +x → facing east); B's is 100 px
-        // north (dominant -y → facing north). B is closer, so the nearest-target gate must select
-        // B and the monster must face north — distinguishing "picks B" from "picks A".
+        // A's feet-center is 150 px due east of the monster; B's is 100 px due north. B is
+        // closer, so the nearest-target gate must select B and the monster must face the exact
+        // northward heading (180°) — distinguishing "picks B" from "picks A".
         let positionA = playerPositionForFeetCenter(x: monsterCenter.x + 150, y: monsterCenter.y)
         let positionB = playerPositionForFeetCenter(x: monsterCenter.x, y: monsterCenter.y - 100)
         _ = try await PerSectorActorClient.attachPlayer(actor: actor, nickname: "alice", sector: sector, position: positionA, outbox: outboxA)
@@ -129,13 +129,10 @@ struct MonsterAggroE2ETests {
 
         let dx = centerB.x - monsterCenter.x
         let dy = centerB.y - monsterCenter.y
-        let expectedFacing: Direction = if abs(dx) >= abs(dy) {
-            dx > 0 ? .east : .west
-        } else {
-            dy > 0 ? .south : .north
-        }
-        #expect(expectedFacing == .north, "test setup must place B north of the monster so facing distinguishes B from A")
-        #expect(monsterFrame.facing == expectedFacing.rawValue, "expected facing \(expectedFacing), got raw \(monsterFrame.facing)")
+        #expect(dx == 0 && dy < 0, "test setup must place B due north of the monster so facing distinguishes B from A")
+        // The same Heading(dx:dy:) conversion runMonsterTick uses, so Float rounding matches.
+        let expectedDegrees = Heading(dx: Float(dx), dy: Float(dy)).degrees
+        #expect(monsterFrame.facing == expectedDegrees, "expected heading \(expectedDegrees), got \(monsterFrame.facing)")
     }
 
     @Test func `monster stops chasing after player leaves the aggro radius`() async throws {

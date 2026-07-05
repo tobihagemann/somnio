@@ -151,8 +151,8 @@ public struct AssetManifest: Sendable, Equatable {
 
 /// Hand-written `Codable` so `directionRows` serializes as semantic `Direction` case names
 /// (`["south","west","east","north"]`) via the shared `Direction.caseName` seam — `Direction`'s
-/// `Int16` rawValue is deliberately not its on-disk form here (same reason as `NPC.direction`). All
-/// other fields decode through their synthesized `Codable`.
+/// `Int16` rawValue is deliberately not its on-disk form here, so the manifest stays
+/// self-documenting. All other fields decode through their synthesized `Codable`.
 extension AssetManifest: Codable {
     private enum CodingKeys: String, CodingKey {
         case directionRows, entityFrameCount, tilesets, characterBands

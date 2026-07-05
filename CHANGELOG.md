@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view
+- Face exactly where your cursor points: your character rotates to the precise cursor angle instead of snapping to four directions, other players' facing shows at the same precision, and chasing monsters turn toward their exact target
 - Walk smoothly in any direction without side-to-side jitter, and see matching sneak and run animations while holding Option or Shift, with movement speeds tuned to the new animations
 - Cast without a weapon in hand: characters no longer carry a permanently attached weapon model
 

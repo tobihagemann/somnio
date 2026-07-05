@@ -3,10 +3,10 @@ import SomnioCore
 import SwiftUI
 
 /// Transparent overlay that tracks the cursor over the play field and reports the resulting
-/// 4-quadrant facing. The facing is computed relative to this view's own bounds center, so it
-/// stays correct regardless of where the play field sits in the window.
+/// continuous heading. The heading is computed relative to this view's own bounds center, so
+/// it stays correct regardless of where the play field sits in the window.
 struct MouseFacingTrackingView: NSViewRepresentable {
-    let onFacing: (Direction) -> Void
+    let onFacing: (Heading) -> Void
 
     func makeNSView(context _: Context) -> TrackingNSView {
         let view = TrackingNSView()
@@ -19,16 +19,14 @@ struct MouseFacingTrackingView: NSViewRepresentable {
     }
 }
 
-/// `NSView` whose `NSTrackingArea` follows its visible rect, emitting a `Direction` for every
+/// `NSView` whose `NSTrackingArea` follows its visible rect, emitting a `Heading` for every
 /// cursor move. The default (non-flipped) `NSView` coordinate space is Y-up, matching
-/// `MouseFacingSampler`'s `dy >= 0 -> north` convention, so the cursor point and bounds center
-/// feed the quadrant rule directly.
+/// `MouseFacingSampler`'s expected input, so the cursor point and bounds center feed the
+/// sampler directly. Wire-rate suppression lives in `ClientViewModel`'s emit threshold, not
+/// here — every move reports, and the render-side yaw slew smooths the result.
 final class TrackingNSView: NSView {
-    var onFacing: ((Direction) -> Void)?
+    var onFacing: ((Heading) -> Void)?
     private var facingTrackingArea: NSTrackingArea?
-    /// Last emitted facing, fed back into the sampler's dead band so boundary jitter
-    /// doesn't flap the facing (and twitch the 3D yaw slew).
-    private var lastFacing: Direction?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -62,8 +60,6 @@ final class TrackingNSView: NSView {
 
     private func emitFacing(at point: CGPoint) {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let facing = MouseFacingSampler.facingQuadrant(mouseLocation: point, viewCenter: center, current: lastFacing)
-        lastFacing = facing
-        onFacing?(facing)
+        onFacing?(MouseFacingSampler.heading(mouseLocation: point, viewCenter: center))
     }
 }

@@ -63,7 +63,7 @@ struct WireConversionsTests {
             spawnOrigin: GridPoint(x: 4, y: 5),
             spawnBoxSize: GridSize(width: 2, height: 2),
             maskSize: GridSize(width: 1, height: 1),
-            name: "Libus", figure: 12, direction: 1, behaviorTag: 0,
+            name: "Libus", figure: 12, facing: Heading(degrees: 137.5), behaviorTag: 0,
             dialogScript: "Hallo!"
         )
         #expect(NPC(npc.asWire) == npc)

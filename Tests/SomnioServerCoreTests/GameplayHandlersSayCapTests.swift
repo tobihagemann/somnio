@@ -110,7 +110,7 @@ struct GameplayHandlersSayCapTests {
             gender: .male,
             currentSector: "A",
             position: position,
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100, hpMax: 100,

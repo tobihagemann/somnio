@@ -16,7 +16,9 @@ public struct EntityMessage: Codable, Sendable, Equatable {
     public var name: String
     public var x: Int16
     public var y: Int16
-    public var facing: Int16
+    /// Continuous heading in degrees `[0, 360)` (0° = south, 90° = east); the receiver
+    /// normalizes via `Heading(degrees:)`.
+    public var facing: Float
     public var tempo: Int16
 
     public init(
@@ -29,7 +31,7 @@ public struct EntityMessage: Codable, Sendable, Equatable {
         name: String,
         x: Int16,
         y: Int16,
-        facing: Int16,
+        facing: Float,
         tempo: Int16
     ) {
         self.entityIndex = entityIndex

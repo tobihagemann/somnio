@@ -36,12 +36,12 @@ public struct SubpixelPoint: Sendable, Equatable {
     /// its origin with no character.
     func load(sector: Sector, awaitingPlayerPlacement: Bool)
     func placeEntity(_ entity: WorldEntity)
-    func updatePosition(entityID: Int16, to position: GridPoint, facing: Direction)
+    func updatePosition(entityID: Int16, to position: GridPoint, facing: Heading)
     /// Sub-pixel variant for the locally predicted player, whose per-tick step carries a
     /// rounding fraction. Renderers that can only place entities on the integer grid inherit
     /// the default, which rounds and forwards to the grid variant.
-    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Direction)
-    func animateEntity(_ id: Int16, to position: GridPoint, facing: Direction, duration: TimeInterval)
+    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Heading)
+    func animateEntity(_ id: Int16, to position: GridPoint, facing: Heading, duration: TimeInterval)
     /// Movement-speed change for an already placed entity, so renderers with tempo-specific
     /// motion clips (sneak/walk/run) can switch loops. Defaults to a no-op for renderers
     /// whose walk presentation is tempo-agnostic.
@@ -55,7 +55,7 @@ public struct SubpixelPoint: Sendable, Equatable {
 public extension WorldRenderSurface {
     func updateTempo(entityID _: Int16, tempo _: Tempo) {}
 
-    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Direction) {
+    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Heading) {
         updatePosition(entityID: entityID, to: position.gridRounded, facing: facing)
     }
 }

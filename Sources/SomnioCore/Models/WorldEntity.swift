@@ -16,7 +16,7 @@ public struct WorldEntity: Sendable, Identifiable, Equatable, Hashable {
     public var figure: Int16
     public var gender: Gender?
     public var position: GridPoint
-    public var facing: Direction
+    public var facing: Heading
     public var tempo: Tempo
     public var maskSize: GridSize
     public var name: String
@@ -27,7 +27,7 @@ public struct WorldEntity: Sendable, Identifiable, Equatable, Hashable {
         figure: Int16,
         gender: Gender? = nil,
         position: GridPoint,
-        facing: Direction,
+        facing: Heading,
         tempo: Tempo,
         maskSize: GridSize,
         name: String

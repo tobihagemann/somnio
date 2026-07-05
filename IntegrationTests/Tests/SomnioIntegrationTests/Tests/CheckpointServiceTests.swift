@@ -40,7 +40,7 @@ struct CheckpointServiceTests {
             let sectorActor = try #require(await worldRouter.sectorActor(named: "EdariaBibliothek"))
             var movedCharacter = originalCharacter
             movedCharacter.position = GridPoint(x: 7, y: 11)
-            movedCharacter.facing = .north
+            movedCharacter.facing = Heading(cardinal: .north)
             movedCharacter.energy.hpCurrent = 42
             _ = try await sectorActor.attach(
                 character: movedCharacter,
@@ -52,7 +52,7 @@ struct CheckpointServiceTests {
 
             let reloaded = try #require(try await characters.findByName("checkpoint-tester"))
             #expect(reloaded.position == GridPoint(x: 7, y: 11))
-            #expect(reloaded.facing == .north)
+            #expect(reloaded.facing == Heading(cardinal: .north))
             #expect(reloaded.energy.hpCurrent == 42)
             let reloadedInventory = try await inventory.loadAll(forCharacter: reloaded.id)
             #expect(reloadedInventory.count == StarterInventory.rows.count)

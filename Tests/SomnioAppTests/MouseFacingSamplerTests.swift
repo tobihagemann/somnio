@@ -1,69 +1,63 @@
 import CoreGraphics
 import Foundation
 import SomnioCore
+import SomnioScene3D
 import Testing
 @testable import SomnioApp
 
-/// The sampler classifies in world floor axes (the screen offset rotated through the 3/4
-/// camera's 35° yaw), so pure screen-axis cursor offsets still land in the expected quadrant
-/// — the rotation only moves the boundaries, not the axis centers.
+/// The sampler produces the heading in world floor axes (the screen offset rotated through
+/// the 3/4 camera's 35° yaw), so the tests synthesize screen positions from world-axis
+/// offsets via the inverse rotation and assert the exact resulting heading.
 struct MouseFacingSamplerTests {
     private let center = CGPoint(x: 320, y: 240)
 
-    @Test func `mouse to the east selects east`() {
-        let result = MouseFacingSampler.facingQuadrant(
-            mouseLocation: CGPoint(x: 500, y: 240),
+    /// Screen position whose camera-rotated world offset is `(worldDX, worldDY)` (legacy
+    /// floor axes, dy grows southward) — the inverse of `OrthographicCameraRig.worldMovement`.
+    private func mouseLocation(forWorldDX worldDX: Double, worldDY: Double) -> CGPoint {
+        let yaw = Double(OrthographicCameraRig.yawDegrees) * .pi / 180
+        let screenDX = worldDX * cos(yaw) - worldDY * sin(yaw)
+        let screenDY = worldDX * sin(yaw) + worldDY * cos(yaw)
+        // The sampler receives Y-up view coordinates and converts to screen-down itself.
+        return CGPoint(x: center.x + screenDX, y: center.y - screenDY)
+    }
+
+    @Test(arguments: [
+        (0.0, 100.0, Float(0)), // due south
+        (100.0, 0.0, Float(90)), // due east
+        (0.0, -100.0, Float(180)), // due north
+        (-100.0, 0.0, Float(270)), // due west
+        (100.0, 100.0, Float(45)), // exact south-east diagonal
+        (-100.0, 100.0, Float(315)) // exact south-west diagonal
+    ])
+    func `a world-axis cursor offset yields the exact continuous heading`(
+        worldDX: Double, worldDY: Double, expected: Float
+    ) {
+        let heading = MouseFacingSampler.heading(
+            mouseLocation: mouseLocation(forWorldDX: worldDX, worldDY: worldDY),
             viewCenter: center
         )
-        #expect(result == .east)
+        #expect(abs(heading.angularDistance(to: Heading(degrees: expected))) < 0.01)
     }
 
-    @Test func `mouse to the west selects west`() {
-        let result = MouseFacingSampler.facingQuadrant(
-            mouseLocation: CGPoint(x: 100, y: 240),
+    @Test func `the heading is continuous, not quantized to a quadrant`() {
+        // A shallow offset just east of south must land between the cardinals, not snap to one.
+        let heading = MouseFacingSampler.heading(
+            mouseLocation: mouseLocation(forWorldDX: 50, worldDY: 100),
             viewCenter: center
         )
-        #expect(result == .west)
+        let expected = Float(atan2(50.0, 100.0) * 180 / .pi) // ≈ 26.57°
+        #expect(abs(heading.angularDistance(to: Heading(degrees: expected))) < 0.01)
+        #expect(heading.degrees > 1)
+        #expect(heading.degrees < 89)
     }
 
-    @Test func `mouse up-screen selects north`() {
-        let result = MouseFacingSampler.facingQuadrant(
-            mouseLocation: CGPoint(x: 320, y: 400),
+    @Test func `a screen-axis cursor lands in world axes, not screen axes`() {
+        // A pure screen-right offset rotates through the 35° camera yaw, so the world heading
+        // sits 35° past east toward north (90° + 35° = 125°) rather than due east.
+        let heading = MouseFacingSampler.heading(
+            mouseLocation: CGPoint(x: center.x + 100, y: center.y),
             viewCenter: center
         )
-        #expect(result == .north)
-    }
-
-    @Test func `mouse down-screen selects south`() {
-        let result = MouseFacingSampler.facingQuadrant(
-            mouseLocation: CGPoint(x: 320, y: 100),
-            viewCenter: center
-        )
-        #expect(result == .south)
-    }
-
-    @Test func `the quadrant boundaries sit in world axes, not screen axes`() {
-        // A 45° screen diagonal (up-right) rotates past the world N/E boundary under the
-        // camera's 35° yaw, so it reads as north — the facing that looks right on screen.
-        let result = MouseFacingSampler.facingQuadrant(
-            mouseLocation: CGPoint(x: 420, y: 340),
-            viewCenter: center
-        )
-        #expect(result == .north)
-    }
-
-    @Test func `a cursor just across a boundary keeps the current facing`() {
-        // World offset (dx: 1, dy: -1.1) — nominally north, but not dominant enough to
-        // out-vote an established east facing (dead band, anti-twitch).
-        let nearBoundary = CGPoint(x: center.x + 145, y: center.y + 32.7)
-        #expect(MouseFacingSampler.facingQuadrant(mouseLocation: nearBoundary, viewCenter: center) == .north)
-        let held = MouseFacingSampler.facingQuadrant(mouseLocation: nearBoundary, viewCenter: center, current: .east)
-        #expect(held == .east)
-    }
-
-    @Test func `a clearly dominant cursor direction overrides the current facing`() {
-        let clearlyNorth = CGPoint(x: 320, y: 400)
-        let result = MouseFacingSampler.facingQuadrant(mouseLocation: clearlyNorth, viewCenter: center, current: .east)
-        #expect(result == .north)
+        #expect(abs(heading.angularDistance(to: Heading(degrees: 90 + OrthographicCameraRig.yawDegrees))) < 0.01)
     }
 }

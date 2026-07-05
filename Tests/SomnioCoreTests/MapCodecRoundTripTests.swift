@@ -3,10 +3,10 @@ import Testing
 @testable import SomnioCore
 
 struct MapCodecRoundTripTests {
-    @Test(arguments: [Int16(0), 1, 2, 3])
-    func `npc direction survives a write then read unchanged`(direction: Int16) throws {
-        // `NPC.direction` stores the legacy `richtung` encoding; the JSON codec serializes it as
-        // a semantic `Direction` case name and restores the same int.
+    @Test(arguments: [Float(0), 90, 137.5, 270, 359.96875])
+    func `npc facing survives a write then read unchanged`(degrees: Float) throws {
+        // NPC facing serializes as heading degrees under the stable `"direction"` JSON key,
+        // including fractional headings.
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
@@ -15,10 +15,10 @@ struct MapCodecRoundTripTests {
             npcs: [NPC(spawnOrigin: GridPoint(x: 1, y: 1),
                        spawnBoxSize: GridSize(width: 1, height: 1),
                        maskSize: GridSize(width: 1, height: 1),
-                       name: "Libus", figure: 16, direction: direction, behaviorTag: 0,
+                       name: "Libus", figure: 16, facing: Heading(degrees: degrees), behaviorTag: 0,
                        dialogScript: "Hi $name.")]
         )
         let restored = try MapCodec.read(MapCodec.write(body))
-        #expect(restored.npcs.first?.direction == direction)
+        #expect(restored.npcs.first?.facing == Heading(degrees: degrees))
     }
 }

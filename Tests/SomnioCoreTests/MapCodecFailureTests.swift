@@ -118,21 +118,30 @@ struct MapCodecFailureTests {
         #expect(body.dimensions == GridSize(width: 1024, height: 64))
     }
 
-    @Test func `out-of-range NPC direction throws on encode`() {
-        // The stored `direction` int must be a valid legacy richtung (0-3); the editor constrains
-        // authored values, so an out-of-range field is corruption and fails closed on write.
-        let body = SectorBody(
-            version: 1,
-            dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
-            light: LightSetting(indoor: false, brightness: 0),
-            npcs: [NPC(spawnOrigin: GridPoint(x: 0, y: 0),
-                       spawnBoxSize: GridSize(width: 1, height: 1),
-                       maskSize: GridSize(width: 1, height: 1),
-                       name: "X", figure: 0, direction: 7, behaviorTag: 0,
-                       dialogScript: "")]
-        )
-        #expect(throws: EncodingError.self) { try MapCodec.write(body) }
+    @Test func `out-of-range NPC direction normalizes on read`() throws {
+        // Heading normalization is the validation: a persisted out-of-range degree value wraps
+        // into [0, 360) instead of failing the whole sector file.
+        let json = """
+        {
+          "version": 1,
+          "dimensions": {"width": 4, "height": 4},
+          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "light": {"indoor": false, "brightness": 0},
+          "objects": [],
+          "collisionMasks": [],
+          "portals": [],
+          "npcs": [{
+            "spawnOrigin": {"x": 0, "y": 0},
+            "spawnBoxSize": {"width": 1, "height": 1},
+            "maskSize": {"width": 1, "height": 1},
+            "name": "X", "figure": 0, "direction": -90, "behaviorTag": 0,
+            "dialogScript": ""
+          }],
+          "monsterSpawns": []
+        }
+        """
+        let body = try MapCodec.read(Data(json.utf8))
+        #expect(body.npcs.first?.facing == Heading(cardinal: .west))
     }
 
     @Test(arguments: [

@@ -71,7 +71,7 @@ struct ClientViewModelTests {
             name: "Alice",
             x: 5,
             y: 9,
-            facing: Direction.east.rawValue,
+            facing: Heading(cardinal: .east).degrees,
             tempo: Tempo.run.rawValue
         ))))
 
@@ -80,7 +80,7 @@ struct ClientViewModelTests {
         #expect(entity?.figure == 3)
         #expect(entity?.gender == .female)
         #expect(entity?.position == GridPoint(x: 5, y: 9))
-        #expect(entity?.facing == .east)
+        #expect(entity?.facing == Heading(cardinal: .east))
         #expect(entity?.tempo == .run)
         #expect(entity?.name == "Alice")
     }
@@ -94,17 +94,17 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 7, figure: 0, gender: Gender.female.rawValue,
             maskWidth: 128, maskHeight: 128, type: .player, name: "Mallory",
-            x: 5, y: 9, facing: Direction.east.rawValue, tempo: Tempo.default.rawValue
+            x: 5, y: 9, facing: Heading(cardinal: .east).degrees, tempo: Tempo.default.rawValue
         ))))
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 5, figure: 0, gender: Gender.female.rawValue,
             maskWidth: 128, maskHeight: 128, type: .player, name: "Zoe",
-            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 1, y: 1, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 3, figure: 0, gender: Gender.female.rawValue,
             maskWidth: 128, maskHeight: 128, type: .player, name: "Alice",
-            x: 2, y: 2, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 2, y: 2, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         #expect(viewModel.players == ["Alice", "Mallory", "Zoe"])
     }
@@ -117,12 +117,12 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
             maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
-            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 1, y: 1, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
 
         // The server snaps the self player back to an authoritative position (a rejected move).
         viewModel.handle(.message(.serverPosition(PositionMessage(
-            entityIndex: 7, x: 2, y: 3, facing: Direction.north.rawValue, tempo: Tempo.default.rawValue
+            entityIndex: 7, x: 2, y: 3, facing: Heading(cardinal: .north).degrees, tempo: Tempo.default.rawValue
         ))))
 
         let probe = try #require(scene._entityNodeProbe(for: 7))
@@ -149,7 +149,7 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
             maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
-            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 1, y: 1, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         let revealed = scene._heldSwapProbe()
         #expect(!revealed.sectorRootHidden)
@@ -173,23 +173,23 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 7, figure: 0, gender: Gender.male.rawValue,
             maskWidth: 32, maskHeight: 48, type: .player, name: "Me",
-            x: 1, y: 1, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 1, y: 1, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         #expect(spy.placedEntities.contains(7))
 
         // A server position for self is a direct set; for a peer it is an interpolated tween.
         viewModel.handle(.message(.serverPosition(PositionMessage(
-            entityIndex: 7, x: 2, y: 3, facing: Direction.north.rawValue, tempo: Tempo.default.rawValue
+            entityIndex: 7, x: 2, y: 3, facing: Heading(cardinal: .north).degrees, tempo: Tempo.default.rawValue
         ))))
         #expect(spy.positionedEntities.contains(7))
 
         viewModel.handle(.message(.entity(EntityMessage(
             entityIndex: 9, figure: 0, gender: Gender.female.rawValue,
             maskWidth: 128, maskHeight: 128, type: .player, name: "Bob",
-            x: 4, y: 4, facing: Direction.south.rawValue, tempo: Tempo.default.rawValue
+            x: 4, y: 4, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         viewModel.handle(.message(.serverPosition(PositionMessage(
-            entityIndex: 9, x: 5, y: 5, facing: Direction.east.rawValue, tempo: Tempo.default.rawValue
+            entityIndex: 9, x: 5, y: 5, facing: Heading(cardinal: .east).degrees, tempo: Tempo.default.rawValue
         ))))
         #expect(spy.animatedEntities.contains(9))
 
@@ -333,7 +333,7 @@ struct ClientViewModelTests {
             kind: .peer,
             figure: 0,
             position: GridPoint(x: 1, y: 1),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Carol"
@@ -356,7 +356,7 @@ struct ClientViewModelTests {
             kind: .npc,
             figure: 0,
             position: GridPoint(x: 0, y: 0),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Libus"
@@ -428,7 +428,7 @@ struct ClientViewModelTests {
         viewModel.entities[1] = WorldEntity(
             id: 1, kind: .player, figure: 0,
             position: GridPoint(x: 99, y: 99),
-            facing: .south, tempo: .default,
+            facing: Heading(cardinal: .south), tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Old"
         )
@@ -448,7 +448,7 @@ struct ClientViewModelTests {
             kind: .peer,
             figure: 0,
             position: GridPoint(x: 0, y: 0),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Bob"
@@ -664,6 +664,77 @@ struct ClientViewModelTests {
         #expect(!outbound.contains { if case .enterPortal = $0 { true } else { false } })
     }
 
+    @Test func `a facing turn past the emit threshold reports clientPosition without movement`() async throws {
+        let viewModel = makeViewModel()
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.updateMouseFacing(Heading(degrees: 90))
+        viewModel._runSingleTick() // baseline report
+        outbound.removeAll()
+
+        // Outwait the 0.5 s heartbeat so the threshold gate (not the heartbeat) decides.
+        try await Task.sleep(for: .milliseconds(550))
+        viewModel.updateMouseFacing(Heading(degrees: 95))
+        viewModel._runSingleTick()
+
+        let emitted = outbound.compactMap { if case let .clientPosition(m) = $0 { m } else { nil } }
+        #expect(emitted.last?.facing == 95)
+    }
+
+    @Test func `facing jitter at the exact threshold boundary never reaches the wire`() async throws {
+        let viewModel = makeViewModel()
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.updateMouseFacing(Heading(degrees: 90))
+        viewModel._runSingleTick() // baseline report
+        outbound.removeAll()
+
+        // Past the heartbeat, so only the threshold can be suppressing the report. Exactly
+        // 1° pins the gate's inclusive comparison — the boundary itself is suppressed.
+        try await Task.sleep(for: .milliseconds(550))
+        viewModel.updateMouseFacing(Heading(degrees: 91))
+        viewModel._runSingleTick()
+
+        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+    }
+
+    @Test func `a facing turn inside the heartbeat window stays throttled to 2 Hz`() {
+        // A large turn right after a report must still wait out the heartbeat — otherwise
+        // facing-only updates would bypass the 2 Hz cadence and emit at tick rate.
+        let viewModel = makeViewModel()
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.updateMouseFacing(Heading(degrees: 90))
+        viewModel._runSingleTick() // baseline report
+        outbound.removeAll()
+
+        viewModel.updateMouseFacing(Heading(degrees: 180))
+        viewModel._runSingleTick()
+
+        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+    }
+
+    @Test func `facing jitter across the wrap seam measures as a small turn, not a revolution`() async throws {
+        // 359.75° → 0.25° is a 0.5° wobble across the 0°/360° seam; a naive degree difference
+        // would read it as ~359.5° and emit on every heartbeat.
+        let viewModel = makeViewModel()
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.updateMouseFacing(Heading(degrees: 359.75))
+        viewModel._runSingleTick() // baseline report
+        outbound.removeAll()
+
+        try await Task.sleep(for: .milliseconds(550))
+        viewModel.updateMouseFacing(Heading(degrees: 0.25))
+        viewModel._runSingleTick()
+
+        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+    }
+
     @Test func `a held screen-up walk renders sub-pixel positions on one straight world line`() async throws {
         // The rotated per-tick step rounds to alternating integer offsets; the rendered
         // sub-pixel positions must stay exactly on the continuous world line or the player
@@ -779,7 +850,7 @@ struct ClientViewModelTests {
 
         keyboard.updateForTest(keyCode: 13, down: false)
         viewModel.handle(.message(.serverPosition(PositionMessage(
-            entityIndex: 1, x: 256, y: 256, facing: Direction.south.rawValue, tempo: Tempo.run.rawValue
+            entityIndex: 1, x: 256, y: 256, facing: Heading(cardinal: .south).degrees, tempo: Tempo.run.rawValue
         ))))
         viewModel._runSingleTick()
 
@@ -818,7 +889,7 @@ struct ClientViewModelTests {
         viewModel.currentSector = sector
         viewModel.selfEntityIndex = 1
         viewModel.entities[1] = WorldEntity(
-            id: 1, kind: .player, figure: 0, position: position, facing: .south,
+            id: 1, kind: .player, figure: 0, position: position, facing: Heading(cardinal: .south),
             tempo: .default, maskSize: SomnioConstants.playerSpriteSize, name: "Me"
         )
         viewModel.connectionState = .attached
@@ -851,7 +922,7 @@ struct ClientViewModelTests {
     ) -> WorldEntity {
         WorldEntity(
             id: id, kind: kind, figure: 0, position: position,
-            facing: .south, tempo: .default, maskSize: mask, name: "e\(id)"
+            facing: Heading(cardinal: .south), tempo: .default, maskSize: mask, name: "e\(id)"
         )
     }
 
@@ -923,16 +994,16 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
         placedEntities.append(entity.id)
     }
 
-    func updatePosition(entityID: Int16, to _: GridPoint, facing _: Direction) {
+    func updatePosition(entityID: Int16, to _: GridPoint, facing _: Heading) {
         positionedEntities.append(entityID)
     }
 
-    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing _: Direction) {
+    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing _: Heading) {
         positionedEntities.append(entityID)
         subpixelPositions.append(position)
     }
 
-    func animateEntity(_ id: Int16, to _: GridPoint, facing _: Direction, duration _: TimeInterval) {
+    func animateEntity(_ id: Int16, to _: GridPoint, facing _: Heading, duration _: TimeInterval) {
         animatedEntities.append(id)
     }
 

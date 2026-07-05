@@ -67,7 +67,7 @@ struct SectorJSONGoldenTests {
         #expect(sector.npcs.count == 1)
         let libus = try #require(sector.npcs.first)
         #expect(libus.name == "Libus")
-        #expect(Direction(legacyRichtung: libus.direction) == .west)
+        #expect(libus.facing == Heading(cardinal: .west))
         #expect(libus.dialogScript.contains("$name"))
         // spawnOrigin is the authored top-left, stored verbatim; centering lives in NPCPlacement.
         #expect(libus.spawnOrigin == GridPoint(x: 352, y: 384))

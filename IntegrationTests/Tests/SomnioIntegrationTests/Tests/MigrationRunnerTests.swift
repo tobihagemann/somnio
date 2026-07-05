@@ -1,3 +1,4 @@
+import Foundation
 import Logging
 import PostgresNIO
 import SomnioData
@@ -80,6 +81,63 @@ struct MigrationRunnerTests {
                 #expect(accountColumn)
                 #expect(characterColumn)
             }
+        }
+    }
+
+    @Test func `migration v7 maps legacy facing raw values to heading degrees`() async throws {
+        try await TestHarness.withDatabase(applyMigrations: false) { client in
+            let logger = Logger(label: "test.migrations.facing-heading")
+            // The harness normally applies every migration to an empty database, so no
+            // repository test ever exercises the v7 USING cast on pre-existing rows. Apply
+            // only v1–v6, seed one row per legacy Direction.rawValue, then run the full
+            // registry so v7 converts the rows in place.
+            let preHeading = Array(MigrationRegistry.all.prefix { $0.version <= 6 })
+            try await MigrationRunner(client: client, registry: preHeading, logger: logger).applyPending()
+            try await client.query(
+                """
+                INSERT INTO accounts (id, name, password_hash, email)
+                VALUES ('00000000-0000-0000-0000-0000000000aa'::uuid, 'legacy-account', 'h', 'l@example.com')
+                """,
+                logger: logger
+            )
+            // 99 exercises the ELSE fallback: the SMALLINT column carried no CHECK constraint,
+            // so an out-of-domain legacy value must land on 0° rather than fail the migration.
+            for legacyFacing in [Int16(0), 1, 2, 3, 99] {
+                let name = "legacy-\(legacyFacing)"
+                try await client.query(
+                    """
+                    INSERT INTO characters (
+                        id, account_id, name, figure, gender,
+                        current_sector, position_x, position_y, facing, tempo,
+                        hp_current, hp_max, balance_current, balance_max, mana_current, mana_max,
+                        last_seen
+                    ) VALUES (
+                        \(UUID()), '00000000-0000-0000-0000-0000000000aa'::uuid, \(name), 0, 0,
+                        'EdariaBibliothek', 0, 0, \(legacyFacing), 2,
+                        100, 100, 100, 100, 100, 100,
+                        NOW()
+                    )
+                    """,
+                    logger: logger
+                )
+            }
+
+            try await MigrationRunner(client: client, logger: logger).applyPending()
+
+            let rows = try await client.query("SELECT name, facing FROM characters", logger: logger)
+            var degreesByName: [String: Float] = [:]
+            for try await (name, facing) in rows.decode((String, Float).self) {
+                degreesByName[name] = facing
+            }
+            // Direction.rawValue N=0/E=1/S=2/W=3 maps to heading degrees N=180/E=90/S=0/W=270;
+            // anything out of domain folds to 0.
+            #expect(degreesByName == [
+                "legacy-0": 180,
+                "legacy-1": 90,
+                "legacy-2": 0,
+                "legacy-3": 270,
+                "legacy-99": 0
+            ])
         }
     }
 

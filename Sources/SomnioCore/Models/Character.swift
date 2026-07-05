@@ -7,7 +7,7 @@ public struct Character: Sendable, Identifiable, Equatable, Hashable {
     public var gender: Gender
     public var currentSector: String
     public var position: GridPoint
-    public var facing: Direction
+    public var facing: Heading
     public var tempo: Tempo
     public var energy: Energy
     public var lastSeen: Date
@@ -19,7 +19,7 @@ public struct Character: Sendable, Identifiable, Equatable, Hashable {
         gender: Gender,
         currentSector: String,
         position: GridPoint,
-        facing: Direction,
+        facing: Heading,
         tempo: Tempo,
         energy: Energy,
         lastSeen: Date

@@ -57,7 +57,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
             gender: gender,
             currentSector: starterSector,
             position: GridPoint(x: 0, y: 0),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100,
@@ -96,7 +96,7 @@ public actor PostgresRegistrationRepository: RegistrationRepository {
                     VALUES (
                         \(character.id), \(accountId), \(character.name), \(character.figure), \(character.gender.rawValue),
                         \(character.currentSector), \(character.position.x), \(character.position.y),
-                        \(character.facing.rawValue), \(character.tempo.rawValue),
+                        \(character.facing.degrees), \(character.tempo.rawValue),
                         \(character.energy.hpCurrent), \(character.energy.hpMax),
                         \(character.energy.balanceCurrent), \(character.energy.balanceMax),
                         \(character.energy.manaCurrent), \(character.energy.manaMax),

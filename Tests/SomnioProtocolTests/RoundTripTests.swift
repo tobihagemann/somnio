@@ -21,13 +21,20 @@ struct RoundTripTests {
         #expect(try roundTrip(m) == m)
     }
 
-    @Test func `client position`() throws {
-        let m = SomnioMessage.clientPosition(PositionMessage(entityIndex: 0, x: 10, y: 20, facing: 1, tempo: 2))
+    /// Heading arguments for the float round-trip guards below: `facing` is the codebase's
+    /// first non-integer wire field, so a fractional value, the 0 boundary, and a near-360
+    /// value are pinned to exact JSON round-trip equality.
+    private static let headings: [Float] = [0.0, 137.5, 359.96875]
+
+    @Test(arguments: headings)
+    func `client position round-trips a continuous heading exactly`(heading: Float) throws {
+        let m = SomnioMessage.clientPosition(PositionMessage(entityIndex: 0, x: 10, y: 20, facing: heading, tempo: 2))
         #expect(try roundTrip(m) == m)
     }
 
-    @Test func `server position`() throws {
-        let m = SomnioMessage.serverPosition(PositionMessage(entityIndex: 7, x: 10, y: 20, facing: 1, tempo: 2))
+    @Test(arguments: headings)
+    func `server position round-trips a continuous heading exactly`(heading: Float) throws {
+        let m = SomnioMessage.serverPosition(PositionMessage(entityIndex: 7, x: 10, y: 20, facing: heading, tempo: 2))
         #expect(try roundTrip(m) == m)
     }
 
@@ -103,7 +110,7 @@ struct RoundTripTests {
             npcs: [WireNPC(
                 spawnX: 5, spawnY: 7, spawnBoxWidth: 2, spawnBoxHeight: 2,
                 maskWidth: 1, maskHeight: 1, name: "Libus",
-                figure: 12, direction: 1, behaviorTag: 0,
+                figure: 12, direction: 137.5, behaviorTag: 0,
                 dialogScript: "Hallo $name, willkommen!"
             )],
             monsterSpawns: [WireMonsterSpawn(
@@ -123,10 +130,11 @@ struct RoundTripTests {
         #expect(try roundTrip(m) == m)
     }
 
-    @Test func entity() throws {
+    @Test(arguments: headings)
+    func entity(heading: Float) throws {
         let m = SomnioMessage.entity(EntityMessage(
             entityIndex: 9, figure: 0, gender: 1, maskWidth: 32, maskHeight: 48,
-            type: .player, name: "Libus", x: 10, y: 12, facing: 0, tempo: 2
+            type: .player, name: "Libus", x: 10, y: 12, facing: heading, tempo: 2
         ))
         #expect(try roundTrip(m) == m)
     }

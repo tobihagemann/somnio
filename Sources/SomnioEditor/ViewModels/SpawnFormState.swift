@@ -61,10 +61,9 @@ public enum EditorSpawnVariant: String, CaseIterable, Identifiable, Sendable {
             maskSize: maskSize,
             name: name,
             figure: figure,
-            // Store the original `richtung` encoding (S=0,W=1,E=2,N=3) in the field; `MapCodec`
-            // serializes it as a semantic `Direction` on disk and the wire/sprite/DB seams read
-            // it back. `Direction.rawValue` (N=0,E=1,S=2,W=3) would store the wrong encoding.
-            direction: direction.legacyRichtung,
+            // The picker stays a discrete `Direction`; the persisted NPC carries the
+            // continuous heading, so bridge through the cardinal degrees here.
+            facing: Heading(cardinal: direction),
             behaviorTag: behaviorTag,
             dialogScript: dialogScript
         )

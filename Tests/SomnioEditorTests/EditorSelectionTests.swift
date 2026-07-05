@@ -19,7 +19,7 @@ struct EditorSelectionTests {
         npcs: [NPC(spawnOrigin: GridPoint(x: 1, y: 1),
                    spawnBoxSize: GridSize(width: 16, height: 16),
                    maskSize: GridSize(width: 8, height: 8),
-                   name: "N", figure: 0, direction: 0, behaviorTag: 0,
+                   name: "N", figure: 0, facing: Heading(cardinal: .south), behaviorTag: 0,
                    dialogScript: "")],
         monsterSpawns: [MonsterSpawn(spawnOrigin: GridPoint(x: 2, y: 2),
                                      spawnBoxSize: GridSize(width: 16, height: 16),

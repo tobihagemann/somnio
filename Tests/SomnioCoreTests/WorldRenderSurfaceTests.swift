@@ -6,7 +6,7 @@ import Testing
 struct WorldRenderSurfaceTests {
     @Test func `the default sub-pixel updatePosition rounds onto the grid variant`() {
         let surface = GridOnlyRenderSurface()
-        surface.updatePosition(entityID: 3, to: SubpixelPoint(x: 10.6, y: -2.4), facing: .east)
+        surface.updatePosition(entityID: 3, to: SubpixelPoint(x: 10.6, y: -2.4), facing: Heading(cardinal: .east))
         #expect(surface.positions == [GridPoint(x: 11, y: -2)])
     }
 
@@ -32,11 +32,11 @@ private final class GridOnlyRenderSurface: WorldRenderSurface {
 
     func placeEntity(_: WorldEntity) {}
 
-    func updatePosition(entityID _: Int16, to position: GridPoint, facing _: Direction) {
+    func updatePosition(entityID _: Int16, to position: GridPoint, facing _: Heading) {
         positions.append(position)
     }
 
-    func animateEntity(_: Int16, to _: GridPoint, facing _: Direction, duration _: TimeInterval) {}
+    func animateEntity(_: Int16, to _: GridPoint, facing _: Heading, duration _: TimeInterval) {}
 
     func updateDayNightTint(hour _: Int16, minute _: Int16, sectorLight _: LightSetting) {}
 

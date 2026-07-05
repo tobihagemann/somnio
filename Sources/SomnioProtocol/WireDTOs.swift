@@ -126,7 +126,9 @@ public struct WireNPC: Codable, Sendable, Equatable, Hashable {
     public var maskHeight: Int16
     public var name: String
     public var figure: Int16
-    public var direction: Int16
+    /// NPC facing as a continuous heading in degrees `[0, 360)` (0° = south, 90° = east) —
+    /// unlike `WireSectorPortal.direction`, which stays a `PortalDirection` integer.
+    public var direction: Float
     public var behaviorTag: Int16
     public var dialogScript: String
 
@@ -139,7 +141,7 @@ public struct WireNPC: Codable, Sendable, Equatable, Hashable {
         maskHeight: Int16,
         name: String,
         figure: Int16,
-        direction: Int16,
+        direction: Float,
         behaviorTag: Int16,
         dialogScript: String
     ) {

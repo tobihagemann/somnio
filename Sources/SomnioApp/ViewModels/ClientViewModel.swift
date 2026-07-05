@@ -45,7 +45,7 @@ import SomnioUI
     private var connectionTask: Task<Void, Never>?
     private var tickerTask: Task<Void, Never>?
     private var lastEmittedPosition: GridPoint?
-    private var lastEmittedFacing: Direction?
+    private var lastEmittedFacing: Heading?
     private var lastEmittedTempo: Tempo?
     /// Wall-clock time of the last position frame sent to the server (the 2 Hz heartbeat gate).
     private var lastEmitTime: Date?
@@ -348,7 +348,6 @@ import SomnioUI
         case .monster:
             .monster
         }
-        let direction = Direction(rawValue: payload.facing) ?? .south
         let tempo = Tempo(rawValue: payload.tempo) ?? .default
         let entity = WorldEntity(
             id: payload.entityIndex,
@@ -356,7 +355,7 @@ import SomnioUI
             figure: payload.figure,
             gender: Gender(rawValue: payload.gender),
             position: GridPoint(x: payload.x, y: payload.y),
-            facing: direction,
+            facing: Heading(degrees: payload.facing),
             tempo: tempo,
             maskSize: GridSize(width: payload.maskWidth, height: payload.maskHeight),
             name: payload.name
@@ -375,7 +374,7 @@ import SomnioUI
     private func handleServerPosition(_ payload: PositionMessage) {
         guard var entity = entities[payload.entityIndex] else { return }
         let newPosition = GridPoint(x: payload.x, y: payload.y)
-        let facing = Direction(rawValue: payload.facing) ?? entity.facing
+        let facing = Heading(degrees: payload.facing)
         let tempo = Tempo(rawValue: payload.tempo) ?? entity.tempo
         entity.position = newPosition
         entity.facing = facing
@@ -544,7 +543,7 @@ import SomnioUI
     private let keyboard: KeyboardSampler
     /// Latest cursor-derived facing from the play-field tracking area, applied by the gameplay tick.
     /// `nil` until the tracking area first reports the cursor (seeded on attach, then on each move).
-    private var latestMouseFacing: Direction?
+    private var latestMouseFacing: Heading?
     private static let tickPeriodNanoseconds: UInt64 = 16_666_666
     /// Position-broadcast heartbeat (legacy `UpdateTimer`, 2 Hz): the local player moves smoothly
     /// via prediction every tick, but reports its position to the server at most this often.
@@ -560,8 +559,8 @@ import SomnioUI
 
     /// Receives the cursor-derived facing from the play-field tracking area
     /// (`MouseFacingTrackingView`). The gameplay tick applies it each frame.
-    public func updateMouseFacing(_ direction: Direction) {
-        latestMouseFacing = direction
+    public func updateMouseFacing(_ heading: Heading) {
+        latestMouseFacing = heading
     }
 
     public func startGameplayTicker() {
@@ -713,9 +712,18 @@ import SomnioUI
         return true
     }
 
+    /// A facing change below this shortest-arc threshold does not by itself trigger a wire
+    /// emit — a cursor jittering by fractions of a degree (including across the 0°/360° seam)
+    /// would otherwise report on every heartbeat. This gate is the single wire-suppression
+    /// layer for facing; the sampler reports every cursor move unfiltered.
+    private static let facingEmitThresholdDegrees: Float = 1
+
     private func emitIfChanged(entity: WorldEntity, tempo: Tempo) {
+        let facingUnchanged = lastEmittedFacing.map {
+            abs($0.angularDistance(to: entity.facing)) <= Self.facingEmitThresholdDegrees
+        } ?? false
         if lastEmittedPosition == entity.position,
-           lastEmittedFacing == entity.facing,
+           facingUnchanged,
            lastEmittedTempo == tempo {
             return
         }
@@ -734,7 +742,7 @@ import SomnioUI
             entityIndex: 0,
             x: entity.position.x,
             y: entity.position.y,
-            facing: entity.facing.rawValue,
+            facing: entity.facing.degrees,
             tempo: tempo.rawValue
         )
         enqueue(.clientPosition(message))

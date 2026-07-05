@@ -78,7 +78,7 @@ struct WorldScene3DLifecycleTests {
         id: Int16,
         kind: WorldEntity.Kind = .npc,
         position: GridPoint = GridPoint(x: 96, y: 96),
-        facing: Direction = .south
+        facing: Heading = Heading(cardinal: .south)
     ) -> WorldEntity {
         WorldEntity(
             id: id,
@@ -167,10 +167,10 @@ struct WorldScene3DLifecycleTests {
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
         scene.placeEntity(worldEntity(id: 0, kind: .player))
         scene.placeEntity(worldEntity(id: 1, kind: .peer))
-        scene.updatePosition(entityID: 1, to: GridPoint(x: 200, y: 200), facing: .south)
+        scene.updatePosition(entityID: 1, to: GridPoint(x: 200, y: 200), facing: Heading(cardinal: .south))
         let player = try #require(scene._entityNodeProbe(for: 0))
         #expect(scene.cameraEntity.position == OrthographicCameraRig.cameraPosition(focusing: player.nodePosition))
-        scene.updatePosition(entityID: 0, to: GridPoint(x: 128, y: 128), facing: .south)
+        scene.updatePosition(entityID: 0, to: GridPoint(x: 128, y: 128), facing: Heading(cardinal: .south))
         let moved = try #require(scene._entityNodeProbe(for: 0))
         #expect(scene.cameraEntity.position == OrthographicCameraRig.cameraPosition(focusing: moved.nodePosition))
     }
@@ -234,7 +234,7 @@ struct WorldScene3DLifecycleTests {
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
         scene.placeEntity(worldEntity(id: 0, kind: .player))
         let start = try #require(scene._entityNodeProbe(for: 0)).nodePosition
-        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96.5, y: 96), facing: .south)
+        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96.5, y: 96), facing: Heading(cardinal: .south))
         let moved = try #require(scene._entityNodeProbe(for: 0)).nodePosition
         #expect(abs(moved.x - (start.x + 0.5 * OrthographicCameraRig.worldUnitsPerPixel)) < 0.0001)
         #expect(moved.z == start.z)
@@ -248,7 +248,7 @@ struct WorldScene3DLifecycleTests {
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
         scene.placeEntity(worldEntity(id: 1, kind: .peer, position: GridPoint(x: 0, y: 0)))
         let start = try #require(scene._entityNodeProbe(for: 1)).nodePosition
-        scene.animateEntity(1, to: GridPoint(x: 100, y: 0), facing: .east, duration: 0.5)
+        scene.animateEntity(1, to: GridPoint(x: 100, y: 0), facing: Heading(cardinal: .east), duration: 0.5)
         let target = start + SIMD3<Float>(100 * OrthographicCameraRig.worldUnitsPerPixel, 0, 0)
         scene.tick(deltaTime: 0.1)
         let midway = try #require(scene._entityNodeProbe(for: 1)).nodePosition
@@ -264,8 +264,8 @@ struct WorldScene3DLifecycleTests {
     @Test func `ticks slew the node yaw toward the facing at the fixed turn rate`() throws {
         let scene = scene()
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
-        scene.placeEntity(worldEntity(id: 1, facing: .south))
-        scene.updatePosition(entityID: 1, to: GridPoint(x: 96, y: 96), facing: .east)
+        scene.placeEntity(worldEntity(id: 1, facing: Heading(cardinal: .south)))
+        scene.updatePosition(entityID: 1, to: GridPoint(x: 96, y: 96), facing: Heading(cardinal: .east))
         scene.tick(deltaTime: 0.05)
         let partway = try #require(scene._entityNodeProbe(for: 1)).orientation
         let forward = partway.act(SIMD3<Float>(0, 0, 1))

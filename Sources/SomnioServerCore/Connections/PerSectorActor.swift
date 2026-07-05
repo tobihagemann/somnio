@@ -44,7 +44,7 @@ struct MonsterSpawnRuntime {
     var position: GridPoint
     /// Live facing the AI tick rotates toward the chase target. Idle monsters render with
     /// the default so a join-sequence `entity` frame stays consistent with `runAITick()`.
-    var facing: Direction = .south
+    var facing = Heading(cardinal: .south)
 }
 
 /// Per-`MonsterSpawn` spawn cadence state. Each AI tick advances `cooldownTicks` toward the
@@ -355,9 +355,10 @@ public actor PerSectorActor {
     /// had not yet seen) cannot leave the local and authoritative positions diverged.
     public func handlePosition(_ message: PositionMessage, from entityIndex: Int16) {
         guard var slot = players[entityIndex] else { return }
-        guard let facing = Direction(rawValue: message.facing), let tempo = Tempo(rawValue: message.tempo) else {
+        guard let tempo = Tempo(rawValue: message.tempo) else {
             return
         }
+        let facing = Heading(degrees: message.facing)
         let newPosition = GridPoint(x: message.x, y: message.y)
         // Capture the authoritative position before the mutation below overwrites it — the
         // observe-only anomaly verdict measures the distance from here to `newPosition`.
@@ -387,7 +388,7 @@ public actor PerSectorActor {
             entityIndex: entityIndex,
             x: newPosition.x,
             y: newPosition.y,
-            facing: facing.rawValue,
+            facing: facing.degrees,
             tempo: tempo.rawValue
         )
         do {
@@ -834,14 +835,7 @@ public actor PerSectorActor {
             guard let target = closest else { continue }
             let dx = target.center.x - monsterCenter.x
             let dy = target.center.y - monsterCenter.y
-            // Dominant-axis facing with a horizontal tie-break at exact 45 degrees so the
-            // chase orientation matches the legacy quadrant function for every (dx, dy).
-            let facing: Direction = if abs(dx) >= abs(dy) {
-                dx > 0 ? .east : .west
-            } else {
-                dy > 0 ? .south : .north
-            }
-            monster.facing = facing
+            monster.facing = Heading(dx: Float(dx), dy: Float(dy))
             // Chase step: 6 px Euclidean per tick toward the target. On a 45° diagonal this
             // yields ≈(4, 4); Manhattan-based scaling would yield (3, 3), visibly slower.
             // `max(length, 1)` keeps the division safe at coincident centers — unreachable in
@@ -874,7 +868,7 @@ public actor PerSectorActor {
                             entityIndex: monster.entityIndex,
                             x: monster.position.x,
                             y: monster.position.y,
-                            facing: monster.facing.rawValue,
+                            facing: monster.facing.degrees,
                             tempo: Tempo.default.rawValue
                         )
                     )
@@ -899,7 +893,7 @@ public actor PerSectorActor {
             entityIndex: entityIndex,
             x: slot.character.position.x,
             y: slot.character.position.y,
-            facing: slot.character.facing.rawValue,
+            facing: slot.character.facing.degrees,
             tempo: slot.character.tempo.rawValue
         )
         slot.outbox.sendEncoded(.serverPosition(message), logger: logger)
@@ -1004,7 +998,7 @@ public actor PerSectorActor {
             name: slot.character.name,
             x: slot.character.position.x,
             y: slot.character.position.y,
-            facing: slot.character.facing.rawValue,
+            facing: slot.character.facing.degrees,
             tempo: slot.character.tempo.rawValue
         )
     }
@@ -1020,10 +1014,7 @@ public actor PerSectorActor {
             name: npc.definition.name,
             x: npc.position.x,
             y: npc.position.y,
-            // `NPC.direction` stores the legacy `richtung` (S=0,W=1,E=2,N=3); convert it to
-            // a semantic `Direction` so the wire carries `Direction.rawValue` like every other
-            // entity. The field stays richtung-encoded — the conversion lives at the emit seam.
-            facing: (Direction(legacyRichtung: npc.definition.direction) ?? .south).rawValue,
+            facing: npc.definition.facing.degrees,
             tempo: 0
         )
     }
@@ -1039,7 +1030,7 @@ public actor PerSectorActor {
             name: monster.definition.name,
             x: monster.position.x,
             y: monster.position.y,
-            facing: monster.facing.rawValue,
+            facing: monster.facing.degrees,
             tempo: 0
         )
     }

@@ -52,7 +52,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
             gender: gender,
             currentSector: "EdariaBibliothek",
             position: GridPoint(x: 0, y: 0),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             energy: Energy(
                 hpCurrent: 100,
@@ -75,7 +75,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
             VALUES (
                 \(character.id), \(accountId), \(character.name), \(character.figure), \(character.gender.rawValue),
                 \(character.currentSector), \(character.position.x), \(character.position.y),
-                \(character.facing.rawValue), \(character.tempo.rawValue),
+                \(character.facing.degrees), \(character.tempo.rawValue),
                 \(character.energy.hpCurrent), \(character.energy.hpMax),
                 \(character.energy.balanceCurrent), \(character.energy.balanceMax),
                 \(character.energy.manaCurrent), \(character.energy.manaMax),
@@ -152,7 +152,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
                 current_sector = \(character.currentSector),
                 position_x = \(character.position.x),
                 position_y = \(character.position.y),
-                facing = \(character.facing.rawValue),
+                facing = \(character.facing.degrees),
                 tempo = \(character.tempo.rawValue),
                 hp_current = \(character.energy.hpCurrent),
                 hp_max = \(character.energy.hpMax),
@@ -185,7 +185,7 @@ public actor PostgresCharacterRepository: CharacterRepository {
                     current_sector = \(character.currentSector),
                     position_x = \(character.position.x),
                     position_y = \(character.position.y),
-                    facing = \(character.facing.rawValue),
+                    facing = \(character.facing.degrees),
                     tempo = \(character.tempo.rawValue),
                     hp_current = \(character.energy.hpCurrent),
                     hp_max = \(character.energy.hpMax),
@@ -241,16 +241,13 @@ private extension PostgresRow {
         ) = try decode(
             (
                 UUID, String, Int16, Int16,
-                String, Int16, Int16, Int16, Int16,
+                String, Int16, Int16, Float, Int16,
                 Int16, Int16, Int16, Int16, Int16, Int16,
                 Date
             ).self
         )
         guard let gender = Gender(rawValue: genderRaw) else {
             throw RepositoryDecodingError.invalidEnumRawValue(field: "gender", rawValue: Int(genderRaw))
-        }
-        guard let facing = Direction(rawValue: facingRaw) else {
-            throw RepositoryDecodingError.invalidEnumRawValue(field: "facing", rawValue: Int(facingRaw))
         }
         guard let tempo = Tempo(rawValue: tempoRaw) else {
             throw RepositoryDecodingError.invalidEnumRawValue(field: "tempo", rawValue: Int(tempoRaw))
@@ -262,7 +259,7 @@ private extension PostgresRow {
             gender: gender,
             currentSector: currentSector,
             position: GridPoint(x: positionX, y: positionY),
-            facing: facing,
+            facing: Heading(degrees: facingRaw),
             tempo: tempo,
             energy: Energy(
                 hpCurrent: hpCurrent,

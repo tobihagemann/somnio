@@ -152,6 +152,19 @@ public enum MigrationRegistry {
                 WHERE name_skeleton IS NOT NULL
                 """
             ]
+        ),
+        // Facing becomes a continuous heading in degrees (0 = south, 90 = east, 180 = north,
+        // 270 = west). The USING cast maps existing rows' Direction.rawValue (N=0/E=1/S=2/W=3)
+        // to the heading convention so pre-migration characters keep facing the same way.
+        Migration(
+            version: 7,
+            name: "migrate_facing_to_heading",
+            statements: [
+                """
+                ALTER TABLE characters ALTER COLUMN facing TYPE REAL \
+                USING (CASE facing WHEN 0 THEN 180 WHEN 1 THEN 90 WHEN 2 THEN 0 WHEN 3 THEN 270 ELSE 0 END)
+                """
+            ]
         )
     ]
 }

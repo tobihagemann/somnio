@@ -197,11 +197,14 @@ import SpriteKit
     public func placeEntity(_ entity: WorldEntity) {
         let legacyPosition = CGPoint(x: CGFloat(entity.position.x), y: CGFloat(entity.position.y))
         let state: EntityRenderState
+        // The sprite sheets stay 4-directional, so the continuous heading quantizes to its
+        // nearest cardinal at this render boundary.
+        let facing = entity.facing.nearestCardinal
         if let existing = entityRenderStates[entity.id] {
             state = existing
             state.kind = entity.kind
             state.figure = entity.figure
-            state.facing = entity.facing
+            state.facing = facing
         } else {
             let node = SKSpriteNode()
             node.anchorPoint = CGPoint(x: 0, y: 0)
@@ -209,7 +212,7 @@ import SpriteKit
                 node: node,
                 kind: entity.kind,
                 figure: entity.figure,
-                facing: entity.facing,
+                facing: facing,
                 position: legacyPosition
             )
             sectorRoot?.addChild(node)
@@ -221,7 +224,7 @@ import SpriteKit
         if let texture = assets.entityTexture(
             figureIndex: entity.figure,
             kind: entity.kind,
-            facing: entity.facing,
+            facing: facing,
             frame: 0
         ) {
             state.node.texture = texture
@@ -241,7 +244,7 @@ import SpriteKit
         // Initial feet-line depth; `update(_:)` recomputes it from the live node position each
         // frame so a tweening peer's depth tracks its motion (mirrors per-frame `PrioritySetzen`).
         state.node.zPosition = ScreenDepth.entity(legacyY: legacyPosition.y, height: state.node.size.height)
-        state.renderedFacing = entity.facing
+        state.renderedFacing = facing
         state.renderedFrame = 0
         updateNamePlaque(for: state, entity: entity)
 
@@ -296,7 +299,7 @@ import SpriteKit
         state.namePlaque?.position = CGPoint(x: state.node.size.width / 2, y: -1)
     }
 
-    public func updatePosition(entityID: Int16, to position: GridPoint, facing: Direction) {
+    public func updatePosition(entityID: Int16, to position: GridPoint, facing: Heading) {
         guard let state = entityRenderStates[entityID] else {
             logger.debug("updatePosition called for unknown entity \(entityID)")
             return
@@ -306,7 +309,7 @@ import SpriteKit
             state.pendingMotion = true
             state.lastPosition = legacyPosition
         }
-        state.facing = facing
+        state.facing = facing.nearestCardinal
         state.node.position = CGPoint(
             x: legacyPosition.x,
             y: sceneY(forLegacyY: legacyPosition.y, nodeHeight: state.node.size.height)
@@ -320,7 +323,7 @@ import SpriteKit
     /// over `duration` seconds. `duration` should match the server tick period so the action
     /// completes before the next position arrives; callers driving an authoritative replay
     /// pass the wire tick rate (legacy server is 50 ms = 0.05 s).
-    public func animateEntity(_ id: Int16, to position: GridPoint, facing: Direction, duration: TimeInterval) {
+    public func animateEntity(_ id: Int16, to position: GridPoint, facing: Heading, duration: TimeInterval) {
         guard let state = entityRenderStates[id] else {
             logger.debug("animateEntity called for unknown entity \(id)")
             return
@@ -334,7 +337,7 @@ import SpriteKit
             state.remainingTweenMotion = duration
             state.lastPosition = legacyPosition
         }
-        state.facing = facing
+        state.facing = facing.nearestCardinal
         state.node.removeAllActions()
         let target = CGPoint(
             x: legacyPosition.x,

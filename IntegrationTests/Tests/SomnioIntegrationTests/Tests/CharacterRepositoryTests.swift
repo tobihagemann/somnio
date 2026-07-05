@@ -71,7 +71,7 @@ struct CharacterRepositoryTests {
                         '00000000-0000-0000-0000-000000000002'::uuid,
                         '00000000-0000-0000-0000-000000000001'::uuid,
                         'overflow', 0, 0,
-                        'EdariaBibliothek', 0, 0, 2, 2,
+                        'EdariaBibliothek', 0, 0, 0, 2,
                         100, 50, 100, 100, 100, 100,
                         NOW()
                     )
@@ -93,7 +93,7 @@ struct CharacterRepositoryTests {
                 gender: .female,
                 currentSector: "EdariaBibliothek",
                 position: GridPoint(x: 0, y: 0),
-                facing: .south,
+                facing: Heading(cardinal: .south),
                 tempo: .default,
                 energy: Energy(hpCurrent: 100, hpMax: 100, balanceCurrent: 100, balanceMax: 100, manaCurrent: 100, manaMax: 100),
                 lastSeen: Date()
@@ -165,7 +165,7 @@ struct CharacterRepositoryTests {
                     last_seen
                 ) VALUES (
                     \(UUID()), \(account.id), 'WeirdGender', 0, 99,
-                    'EdariaBibliothek', 0, 0, 2, 2,
+                    'EdariaBibliothek', 0, 0, 0, 2,
                     100, 100, 100, 100, 100, 100,
                     NOW()
                 )

@@ -86,13 +86,13 @@ struct WorldSceneEntityTests {
             kind: .peer,
             figure: 0,
             position: GridPoint(x: 10, y: 20),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Peer"
         )
         scene.placeEntity(entity)
-        scene.animateEntity(7, to: GridPoint(x: 30, y: 40), facing: .east, duration: 0.05)
+        scene.animateEntity(7, to: GridPoint(x: 30, y: 40), facing: Heading(cardinal: .east), duration: 0.05)
         scene.removeEntity(id: 7)
         // Re-placing after removal should succeed without crashing.
         scene.placeEntity(entity)
@@ -144,13 +144,13 @@ struct WorldSceneEntityTests {
         let north = WorldEntity(
             id: 1, kind: .peer, figure: 0,
             position: GridPoint(x: 100, y: 50),
-            facing: .south, tempo: .default,
+            facing: Heading(cardinal: .south), tempo: .default,
             maskSize: GridSize(width: 32, height: 48), name: "North"
         )
         let south = WorldEntity(
             id: 2, kind: .peer, figure: 0,
             position: GridPoint(x: 100, y: 400),
-            facing: .south, tempo: .default,
+            facing: Heading(cardinal: .south), tempo: .default,
             maskSize: GridSize(width: 32, height: 48), name: "South"
         )
         scene.placeEntity(north)
@@ -310,7 +310,7 @@ struct WorldSceneEntityTests {
         for step in 1 ... 20 {
             // Move every step so the motion grace window keeps the entity "moving" and the walk
             // clock accumulates across several full 3-frame cycles.
-            scene.updatePosition(entityID: 7, to: GridPoint(x: Int16(10 + step), y: 20), facing: .south)
+            scene.updatePosition(entityID: 7, to: GridPoint(x: Int16(10 + step), y: 20), facing: Heading(cardinal: .south))
             time += 0.1
             scene.update(time)
         }
@@ -333,7 +333,7 @@ struct WorldSceneEntityTests {
 
         scene.update(0.0) // seed the per-frame clock
         // One heartbeat: a single animate with no further position updates for the whole duration.
-        scene.animateEntity(7, to: GridPoint(x: 200, y: 20), facing: .east, duration: 0.5)
+        scene.animateEntity(7, to: GridPoint(x: 200, y: 20), facing: Heading(cardinal: .east), duration: 0.5)
         var time = 0.0
         for _ in 1 ... 5 {
             time += 0.1
@@ -349,7 +349,7 @@ struct WorldSceneEntityTests {
             kind: .player,
             figure: 0,
             position: GridPoint(x: 100, y: 100),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 32, height: 48),
             name: "Player"
@@ -362,7 +362,7 @@ struct WorldSceneEntityTests {
             kind: .peer,
             figure: 0,
             position: GridPoint(x: 10, y: 20),
-            facing: .south,
+            facing: Heading(cardinal: .south),
             tempo: .default,
             maskSize: GridSize(width: 128, height: 128),
             name: "Peer"
