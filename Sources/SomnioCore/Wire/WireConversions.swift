@@ -118,6 +118,7 @@ public extension SectorPortal {
 public enum WireConversionError: Error, Equatable, Sendable {
     case unknownPortalDirection(Int)
     case sectorDimensionsOutOfRange(width: Int16, height: Int16)
+    case sectorContentCountsOutOfRange(objects: Int, collisionMasks: Int)
 }
 
 // MARK: - NPC
@@ -183,11 +184,21 @@ public extension Sector {
     /// Throws `WireConversionError.sectorDimensionsOutOfRange` when a peer sends a sector whose
     /// tile dimensions are non-positive, exceed `SomnioConstants.maxSectorDimension` per axis, or
     /// exceed `SomnioConstants.maxSectorArea` in total, so a hostile server can't drive the client
-    /// into an unbounded ground-tile-map / entity-graph allocation.
+    /// into an unbounded ground-tile-map / entity-graph allocation. Throws
+    /// `.sectorContentCountsOutOfRange` when the object or collision-mask arrays exceed their
+    /// caps — the renderer's bottom-edge anchor scan is O(objects × collisionMasks), so counts a
+    /// frame-sized payload can still carry would freeze the client.
     init(_ wire: WireSector) throws {
         let dimensions = GridSize(wire.dimensions)
         guard dimensions.isWithinSectorBounds else {
             throw WireConversionError.sectorDimensionsOutOfRange(width: dimensions.width, height: dimensions.height)
+        }
+        guard SomnioConstants.isWithinSectorContentBounds(
+            objectCount: wire.objects.count, collisionMaskCount: wire.collisionMasks.count
+        ) else {
+            throw WireConversionError.sectorContentCountsOutOfRange(
+                objects: wire.objects.count, collisionMasks: wire.collisionMasks.count
+            )
         }
         try self.init(
             name: wire.name,

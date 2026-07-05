@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view
+- Walk smoothly in any direction without side-to-side jitter, and see matching sneak and run animations while holding Option or Shift, with movement speeds tuned to the new animations
+- Cast without a weapon in hand: characters no longer carry a permanently attached weapon model
+
+### Security
+
+- Prevent a malicious game server from freezing the game with a single oversized sector
+
 ## [0.1.2] - 2026-06-21
 
 ### Added

@@ -26,6 +26,12 @@ struct SomnioAppEntry: App {
         let renderer = WorldScene3D()
         self.renderer = renderer
         _viewModel = State(initialValue: ClientViewModel(worldScene: renderer))
+        // Warm the model cache before the first connect — the fixed cast is small, so the
+        // common path never shows placeholders; anything placed before this finishes is
+        // re-resolved in place when it completes.
+        Task {
+            await renderer.prewarmModels()
+        }
         self.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,

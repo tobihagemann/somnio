@@ -664,6 +664,131 @@ struct ClientViewModelTests {
         #expect(!outbound.contains { if case .enterPortal = $0 { true } else { false } })
     }
 
+    @Test func `a held screen-up walk renders sub-pixel positions on one straight world line`() async throws {
+        // The rotated per-tick step rounds to alternating integer offsets; the rendered
+        // sub-pixel positions must stay exactly on the continuous world line or the player
+        // visibly wobbles sideways when walking up/down-screen.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+
+        for _ in 0 ..< 12 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        let points = spy.subpixelPositions
+        let origin = try #require(points.first)
+        let travel = try #require(points.last)
+        // The screen-up key crosses both world axes under the yawed camera.
+        #expect(abs(travel.x - origin.x) > 0.5)
+        #expect(abs(travel.y - origin.y) > 0.5)
+        for point in points {
+            let cross = (point.x - origin.x) * (travel.y - origin.y) - (point.y - origin.y) * (travel.x - origin.x)
+            #expect(abs(cross) < 1e-9)
+        }
+        // Every tick also reports the movement tempo to the renderer's clip-selection seam.
+        #expect(spy.tempoUpdates.last?.entityID == 1)
+        #expect(spy.tempoUpdates.last?.tempo == .default)
+    }
+
+    @Test func `a blocked walk tick drops the whole sub-pixel carry`() async throws {
+        // An NPC feet-box overlap blocks the step outright; the carried fraction from the
+        // rejected path must not bias the rendered position, so every tick renders exactly
+        // the unmoved grid position.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+        // Screen-up walks toward decreasing world x and y under the 35° yaw; an NPC one step
+        // up-screen keeps every candidate feet box overlapping its own.
+        viewModel.entities[3] = worldEntity(3, .npc, at: GridPoint(x: 300, y: 296))
+
+        for _ in 0 ..< 6 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        #expect(!spy.subpixelPositions.isEmpty)
+        for point in spy.subpixelPositions {
+            #expect(point == SubpixelPoint(x: 300, y: 300))
+        }
+    }
+
+    @Test func `a wall-cut axis drops its sub-pixel carry while the free axis keeps moving`() async throws {
+        // A mask band above the feet box blocks the world-Y step of a screen-up walk; the cut
+        // axis must render exactly on the grid while the free X axis still travels sub-pixel.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let walled = openSector(collisionMasks: [CollisionMask(x: 0, y: 316, width: 640, height: 16)])
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: walled)
+
+        for _ in 0 ..< 6 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        let travel = try #require(spy.subpixelPositions.last)
+        #expect(travel.x < 297)
+        for point in spy.subpixelPositions {
+            #expect(point.y == 300)
+        }
+    }
+
+    @Test func `a wall-cut on the other axis mirrors the drop: x pins to the grid while y keeps moving`() async throws {
+        // The vertical twin of the horizontal band above: a wall band just west of the feet
+        // box cuts the world-X step of the same screen-up walk, so the carried fraction must
+        // drop on X while Y still travels sub-pixel.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let walled = openSector(collisionMasks: [CollisionMask(x: 284, y: 0, width: 16, height: 640)])
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: walled)
+
+        for _ in 0 ..< 6 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        let travel = try #require(spy.subpixelPositions.last)
+        #expect(travel.y < 297)
+        for point in spy.subpixelPositions {
+            #expect(point.x == 300)
+        }
+    }
+
+    @Test func `an authoritative self correction drops the sub-pixel carry and applies the server tempo`() async throws {
+        // A few walking ticks accumulate a fractional carry; the snapback replaces the
+        // predicted position outright, so the next rendered position must sit exactly on the
+        // corrected grid with no residual fraction from the rejected path.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+        for _ in 0 ..< 4 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        keyboard.updateForTest(keyCode: 13, down: false)
+        viewModel.handle(.message(.serverPosition(PositionMessage(
+            entityIndex: 1, x: 256, y: 256, facing: Direction.south.rawValue, tempo: Tempo.run.rawValue
+        ))))
+        viewModel._runSingleTick()
+
+        let rendered = try #require(spy.subpixelPositions.last)
+        #expect(rendered == SubpixelPoint(x: 256, y: 256))
+        // The server-position path also forwards the authoritative tempo to the renderer.
+        #expect(spy.tempoUpdates.contains { $0.entityID == 1 && $0.tempo == .run })
+    }
+
     @Test func `gaining chat-input focus clears keys held during the focus transition`() {
         let keyboard = KeyboardSampler()
         keyboard.updateForTest(keyCode: 13, down: true) // 'W' captured as focus is gained
@@ -740,6 +865,18 @@ struct ClientViewModelTests {
         )
     }
 
+    /// Large enough that a dozen ticks of walking from the center never clamps at an edge.
+    private func openSector(collisionMasks: [CollisionMask] = []) -> Sector {
+        Sector(
+            name: "Test",
+            version: 1,
+            dimensions: GridSize(width: 20, height: 20),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: true, brightness: 100),
+            collisionMasks: collisionMasks
+        )
+    }
+
     private func collisionSector(masks: [CollisionMask]) -> Sector {
         Sector(
             name: "Test",
@@ -770,6 +907,8 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
     private(set) var loadedSectors: [String] = []
     private(set) var placedEntities: [Int16] = []
     private(set) var positionedEntities: [Int16] = []
+    private(set) var subpixelPositions: [SubpixelPoint] = []
+    private(set) var tempoUpdates: [(entityID: Int16, tempo: Tempo)] = []
     private(set) var animatedEntities: [Int16] = []
     private(set) var tintUpdates: [(hour: Int16, minute: Int16)] = []
     private(set) var speechBubbles: [Int16] = []
@@ -788,8 +927,17 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
         positionedEntities.append(entityID)
     }
 
+    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing _: Direction) {
+        positionedEntities.append(entityID)
+        subpixelPositions.append(position)
+    }
+
     func animateEntity(_ id: Int16, to _: GridPoint, facing _: Direction, duration _: TimeInterval) {
         animatedEntities.append(id)
+    }
+
+    func updateTempo(entityID: Int16, tempo: Tempo) {
+        tempoUpdates.append((entityID, tempo))
     }
 
     func updateDayNightTint(hour: Int16, minute: Int16, sectorLight _: LightSetting) {

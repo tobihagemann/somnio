@@ -47,8 +47,14 @@ public enum ModelRegistryCodec {
                 }
             }
         }
+        return validationFailure(objectModels: registry.objectModels)
+            ?? validationFailure(floorMaterials: registry.floorMaterials)
+            ?? validationFailure(groundMaterials: registry.groundMaterials, floorIDs: Set(registry.floorMaterials.map(\.id)))
+    }
+
+    private static func validationFailure(objectModels: [ObjectModelRule]) -> String? {
         var signatures = Set<SourceRectSignature>()
-        for rule in registry.objectModels {
+        for rule in objectModels {
             if let reason = validationFailure(model: rule.model, describedAs: "object model \(rule.model.stem)") {
                 return reason
             }
@@ -56,8 +62,12 @@ public enum ModelRegistryCodec {
                 return "duplicate object source-rect signature for tileset \(rule.signature.tilesetIndex) at (\(rule.signature.sourceX), \(rule.signature.sourceY))"
             }
         }
+        return nil
+    }
+
+    private static func validationFailure(floorMaterials: [FloorMaterialRule]) -> String? {
         var floorIDs = Set<String>()
-        for rule in registry.floorMaterials {
+        for rule in floorMaterials {
             if rule.id.isEmpty {
                 return "floor material has an empty id"
             }
@@ -66,6 +76,21 @@ public enum ModelRegistryCodec {
             }
             if !floorIDs.insert(rule.id).inserted {
                 return "duplicate floor material id \(rule.id)"
+            }
+        }
+        return nil
+    }
+
+    private static func validationFailure(groundMaterials: [GroundMaterialRule], floorIDs: Set<String>) -> String? {
+        var groundSignatures = Set<GroundMaterialRule>()
+        for rule in groundMaterials {
+            if !floorIDs.contains(rule.id) {
+                return "ground material references unknown floor material id \(rule.id)"
+            }
+            var signature = rule
+            signature.id = ""
+            if !groundSignatures.insert(signature).inserted {
+                return "duplicate ground material signature for tileset \(rule.tilesetIndex) at (\(rule.sourceX), \(rule.sourceY))"
             }
         }
         return nil

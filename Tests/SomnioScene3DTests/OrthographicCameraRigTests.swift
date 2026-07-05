@@ -62,4 +62,43 @@ struct OrthographicCameraRigTests {
             200 * OrthographicCameraRig.worldUnitsPerPixel
         )))
     }
+
+    @Test func `the authored origin lands on the floor corner and the sector max on the opposite corner`() {
+        #expect(OrthographicCameraRig.worldPosition(forLegacyX: 0, y: 0) == SIMD3<Float>(0, 0, 0))
+        // A 4×4-tile sector spans 512 px per axis; its far corner sits at the full metric extent.
+        let farCorner = OrthographicCameraRig.worldPosition(forLegacyX: 512, y: 512)
+        #expect(approxEqual(farCorner, SIMD3<Float>(
+            512 * OrthographicCameraRig.worldUnitsPerPixel,
+            0,
+            512 * OrthographicCameraRig.worldUnitsPerPixel
+        )))
+    }
+
+    @Test func `screen-relative movement maps W up-screen and D screen-right without changing speed`() {
+        let yaw = Double(OrthographicCameraRig.yawDegrees) * .pi / 180
+        // W (screen up) walks away from the camera: the inverse of the camera's horizontal offset.
+        let up = OrthographicCameraRig.worldMovement(forScreenDX: 0, screenDY: -1)
+        #expect(abs(up.dx - -sin(yaw)) < 1e-9)
+        #expect(abs(up.dy - -cos(yaw)) < 1e-9)
+        // D (screen right) is perpendicular to it, biased east under the fixed 35° swing.
+        let right = OrthographicCameraRig.worldMovement(forScreenDX: 1, screenDY: 0)
+        #expect(abs(right.dx - cos(yaw)) < 1e-9)
+        #expect(abs(right.dy - -sin(yaw)) < 1e-9)
+        // Pure rotation: a unit input stays unit length, so tempo is unchanged.
+        #expect(abs(up.dx * up.dx + up.dy * up.dy - 1) < 1e-9)
+    }
+
+    @Test func `the fractional-point variant agrees with the integer one and keeps half pixels`() {
+        let integer = OrthographicCameraRig.worldPosition(forLegacyX: 100, y: 200)
+        let fractional = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(100, 200))
+        #expect(approxEqual(integer, fractional))
+        // A rect center with odd extent lands on a half pixel — the placement path for
+        // object footprint centers and entity feet-box centers.
+        let center = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(100.5, 200.5))
+        #expect(approxEqual(center, SIMD3<Float>(
+            100.5 * OrthographicCameraRig.worldUnitsPerPixel,
+            0,
+            200.5 * OrthographicCameraRig.worldUnitsPerPixel
+        )))
+    }
 }

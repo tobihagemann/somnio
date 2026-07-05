@@ -10,8 +10,35 @@ struct ModelRegistryTests {
         let registry = try ModelRegistryCodec.bundledRegistry()
         #expect(registry.model(forKind: .player, figure: 0)?.stem == "Knight")
         #expect(registry.model(forKind: .peer, figure: 15)?.stem == "Knight")
-        #expect(registry.model(forKind: .npc, figure: 16)?.stem == "Mage")
+        #expect(registry.model(forKind: .npc, figure: 16)?.stem == "Lorekeeper")
         #expect(registry.model(forKind: .monster, figure: 0)?.stem == "Ghost")
+    }
+
+    /// One entry per distinct source-rect signature across the three shipped Edaria fixtures
+    /// (the Arena counter is the Bibliothek one) — the committed table must resolve every one
+    /// so no shipped sector renders an unmapped-placeholder object.
+    private static let shippedSectorSignatures: [(signature: SourceRectSignature, stem: String)] = [
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 64, sourceY: 512, sourceWidth: 64, sourceHeight: 96), "BookshelfOrnate"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 0, sourceY: 512, sourceWidth: 64, sourceHeight: 96), "Bookshelf"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 128, sourceY: 608, sourceWidth: 32, sourceHeight: 64), "PottedPlant"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 160, sourceY: 608, sourceWidth: 32, sourceHeight: 64), "StudyTable"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 192, sourceY: 608, sourceWidth: 32, sourceHeight: 64), "Bust"),
+        (SourceRectSignature(tilesetIndex: 50, sourceX: 64, sourceY: 32, sourceWidth: 192, sourceHeight: 32), "Door"),
+        (SourceRectSignature(tilesetIndex: 9, sourceX: 0, sourceY: 224, sourceWidth: 96, sourceHeight: 64), "GrandBookcase"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 192, sourceY: 288, sourceWidth: 32, sourceHeight: 32), "Couch"),
+        (SourceRectSignature(tilesetIndex: 9, sourceX: 192, sourceY: 352, sourceWidth: 32, sourceHeight: 64), "FloorLamp"),
+        (SourceRectSignature(tilesetIndex: 25, sourceX: 192, sourceY: 544, sourceWidth: 32, sourceHeight: 64), "SideTable"),
+        (SourceRectSignature(tilesetIndex: 13, sourceX: 128, sourceY: 224, sourceWidth: 32, sourceHeight: 64), "Chair"),
+        (SourceRectSignature(tilesetIndex: 0, sourceX: 0, sourceY: 416, sourceWidth: 160, sourceHeight: 160), "Tent")
+    ]
+
+    @Test(arguments: shippedSectorSignatures.indices)
+    func `bundledRegistry maps every shipped-sector object signature to a static prop`(index: Int) throws {
+        let (signature, stem) = Self.shippedSectorSignatures[index]
+        let registry = try ModelRegistryCodec.bundledRegistry()
+        let model = try #require(registry.model(forSignature: signature))
+        #expect(model.stem == stem)
+        #expect(model.expectedClips.isEmpty)
     }
 
     @Test func `a valid registry round-trips through write and read`() throws {
@@ -189,6 +216,35 @@ struct ModelRegistryTests {
 
     /// Builds registry JSON from seeded defaults, overriding one fragment per test so each
     /// rejection case feeds the validator exactly the JSON a corrupt registry file would carry.
+    @Test func `groundMaterials bridge resolves a ground signature to its floor-material stem`() throws {
+        let registry = try ModelRegistryCodec.read(registryJSON(
+            floorMaterials: #"[{"id": "wood-warm", "stem": "WoodWarm"}]"#,
+            groundMaterials: #"[{"tilesetIndex": 25, "sourceX": 64, "sourceY": 0, "id": "wood-warm"}]"#
+        ))
+        #expect(registry.floorMaterialStem(forGroundTileset: 25, sourceX: 64, sourceY: 0) == "WoodWarm")
+        #expect(registry.floorMaterialStem(forGroundTileset: 25, sourceX: 0, sourceY: 0) == nil)
+    }
+
+    @Test func `a ground material referencing an unknown floor-material id is rejected`() {
+        #expect(throws: DecodingError.self) {
+            _ = try ModelRegistryCodec.read(registryJSON(
+                groundMaterials: #"[{"tilesetIndex": 0, "sourceX": 0, "sourceY": 0, "id": "missing"}]"#
+            ))
+        }
+    }
+
+    @Test func `duplicate ground material signatures are rejected`() {
+        #expect(throws: DecodingError.self) {
+            _ = try ModelRegistryCodec.read(registryJSON(
+                floorMaterials: #"[{"id": "a", "stem": "A"}, {"id": "b", "stem": "B"}]"#,
+                groundMaterials: #"""
+                [{"tilesetIndex": 0, "sourceX": 0, "sourceY": 0, "id": "a"},
+                 {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0, "id": "b"}]
+                """#
+            ))
+        }
+    }
+
     private func registryJSON(
         player: String = """
         [{"figureRanges": [{"lower": 0, "upper": 15}], "model": {"stem": "Knight", "expectedClips": ["Idle", "Walking_A"]}}]
@@ -200,13 +256,15 @@ struct ModelRegistryTests {
         [{"figureRanges": [{"lower": 0, "upper": 0}], "model": {"stem": "Ghost", "expectedClips": ["Flying_Idle"]}}]
         """,
         objectModels: String = "[]",
-        floorMaterials: String = "[]"
+        floorMaterials: String = "[]",
+        groundMaterials: String = "[]"
     ) -> Data {
         Data("""
         {
           "entityBands": {"player": \(player), "npc": \(npc), "monster": \(monster)},
           "objectModels": \(objectModels),
-          "floorMaterials": \(floorMaterials)
+          "floorMaterials": \(floorMaterials),
+          "groundMaterials": \(groundMaterials)
         }
         """.utf8)
     }

@@ -60,6 +60,39 @@ struct BundleMainModelAssetsTests {
         #expect(assets.floorMaterialURL(forID: "grass") == nil)
     }
 
+    @Test func `groundTexture returns nil for negative source coordinates`() {
+        let assets = packAbsentAssets()
+        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: -1, sourceY: 0) == nil)
+        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: -1) == nil)
+    }
+
+    @Test func `groundTexture returns nil when the tileset is absent, including the cached retry`() {
+        let assets = packAbsentAssets()
+        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+        // Second call exercises the negative cache rather than re-walking the bundle.
+        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+    }
+
+    @Test func `groundMaterialTexture returns nil for an unmapped ground signature`() {
+        let assets = packAbsentAssets()
+        #expect(assets.groundMaterialTexture(tilesetIndex: 99, sourceX: 0, sourceY: 0) == nil)
+    }
+
+    @Test func `groundMaterialTexture returns nil for a mapped signature whose PNG is absent, including the cached retry`() {
+        // The registry bridges the signature to a floor-material id, so resolution reaches the
+        // FloorMaterials bundle lookup — which misses because the test bundle has no such subtree.
+        let registry = ModelRegistry(
+            entityBands: EntityModelBands(player: [], npc: [], monster: []),
+            objectModels: [],
+            floorMaterials: [FloorMaterialRule(id: "grass", stem: "GrassAlbedo")],
+            groundMaterials: [GroundMaterialRule(tilesetIndex: 0, sourceX: 0, sourceY: 0, id: "grass")]
+        )
+        let assets = BundleMainModelAssets(bundle: .main, registry: registry)
+        #expect(assets.groundMaterialTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+        // Second call exercises the negative cache rather than re-resolving the stem.
+        #expect(assets.groundMaterialTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+    }
+
     @Test func `a corrupt-registry fallback resolves everything to placeholder`() async {
         let assets = BundleMainModelAssets(bundle: .main, registry: .placeholderFallback)
         await assets.prewarm()

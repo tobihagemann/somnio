@@ -19,7 +19,7 @@ Run with the sandbox disabled (SwiftPM packaging):
 SOMNIO_ASSET_SOURCE="<asset-pack-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug player
 ```
 
-Produces `Somnio.app` at the repo root with textures bundled. The asset-pack root contains `Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/`. Omit `SOMNIO_ASSET_SOURCE` to run with untextured nil-fallback rendering.
+Produces `Somnio.app` at the repo root with textures and models bundled. The asset-pack root is the `somnio-assets` working tree (sibling repo), which carries the 2D subtrees `Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/` plus the 3D subtrees `Models/` (USDZ characters + props) and `FloorMaterials/`. Omit `SOMNIO_ASSET_SOURCE` to run with placeholder/nil-fallback rendering. Repackage after any change to code **or** to the asset pack — the running bundle holds stale copies of both.
 
 Use `Scripts/package_app.sh debug player` here, not `Scripts/compile_and_run.sh`: that script launches via `open` with no `SOMNIO_SERVER_URL` override, so the debug client falls back to `:8080` and misses the `:8090` dev server. (Its `--release-*` variants additionally build release, which hits the unset production-URL `#error`.)
 
@@ -46,5 +46,7 @@ SOMNIO_PROFILE=alice SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Conte
 ## Notes
 
 - Rebuild and repackage after code changes — a running app holds the old code.
+- Never launch via `open`/LaunchServices resolution — the sibling `somnio-poc/Somnio.app` is also named `Somnio.app` (its own bundle ID `de.realtobi.somnio` vs the player's `de.tobiha.somnio.player`), and name/registration-based resolution can silently start that stale POC app instead. Launch the freshly packaged bundle's inner binary by path (as above) and address the process by PID.
+- The chat input cannot be driven by synthetic keyboard/AX automation — key events move the character (WASD works), but the SwiftUI chat TextField overlaid on the RealityKit view never takes focus or accepts synthetic text (its AX value stays nil). Verify chat/speech-bubble behavior manually or over the wire protocol, not via UI automation.
 - Auto-login fires only when "Remember password" was saved; otherwise the login sheet appears. Register via "If you don't have an account, click here!" — fresh characters spawn in the `EdariaBibliothek` starter sector.
 - On teardown, stop the app but keep the Postgres container (see `/somnio-server`) so the dev character persists.

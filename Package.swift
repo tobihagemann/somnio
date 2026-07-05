@@ -99,7 +99,10 @@ let package = Package(
 
         .target(
             name: "SomnioScene3D",
-            dependencies: ["SomnioCore"]
+            dependencies: [
+                "SomnioCore",
+                .product(name: "Logging", package: "swift-log")
+            ]
         ),
         .testTarget(
             name: "SomnioScene3DTests",

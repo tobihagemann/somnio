@@ -39,7 +39,7 @@ SOMNIO_HTTP_HOST=127.0.0.1 SOMNIO_HTTP_PORT=8090 \
 .build/debug/SomnioServer
 ```
 
-The server auto-applies pending migrations on boot (including on a fresh empty DB), so there is no manual migration step. `SOMNIO_SECTORS_DIR` defaults to the committed map fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`) in debug; set it to load a different sector directory.
+The server auto-applies pending migrations on boot (including on a fresh empty DB), so there is no manual migration step. `SOMNIO_SECTORS_DIR` defaults to the committed map fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`) in debug; set it to load a different sector directory. Sectors are loaded **once at startup** — after editing any `.somnio-sector` fixture (objects, collision masks, spawns), restart the server or it keeps serving the old map data.
 
 ## Step 4: Verify
 

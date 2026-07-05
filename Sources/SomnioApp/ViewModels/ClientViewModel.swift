@@ -2,6 +2,7 @@ import Foundation
 import Logging
 import SomnioCore
 import SomnioProtocol
+import SomnioScene3D
 import SomnioUI
 
 /// Main-actor view model orchestrating the connect → splash → login → world flow plus
@@ -51,6 +52,11 @@ import SomnioUI
     /// Wall-clock time of the previous gameplay tick, for the elapsed-time-scaled movement step.
     private var lastTickTime: Date?
     private var lastBumpedPortalIndex: Int?
+    /// Sub-pixel movement carried between ticks. A 60 Hz step is only ~2 px, so rounding the
+    /// rotated world components independently each tick would bend the walked direction away
+    /// from the held one (worst on diagonals); carrying the remainder keeps the long-run
+    /// path exact.
+    private var movementRemainder: (dx: Double, dy: Double) = (0, 0)
     private let logger = Logger(label: "de.tobiha.somnio.app.gameplay")
 
     public init(
@@ -297,6 +303,7 @@ import SomnioUI
             lastEmitTime = nil
             lastTickTime = nil
             lastBumpedPortalIndex = nil
+            movementRemainder = (0, 0)
             currentSector = sector
             // Hold the current visual until the self entity is placed, then swap — avoids a frame of
             // the new sector framed on its origin with no character. The held visual is the outgoing
@@ -374,6 +381,7 @@ import SomnioUI
         entity.facing = facing
         entity.tempo = tempo
         entities[payload.entityIndex] = entity
+        worldScene.updateTempo(entityID: payload.entityIndex, tempo: tempo)
         // The local player's node is owned by the 60 Hz predictor (`updatePosition`, which also
         // drives the camera), so apply a server position for self — an authoritative `snapBack` after
         // a rejected move — as a direct set: a competing `SKAction` tween would fight the predictor's
@@ -381,6 +389,9 @@ import SomnioUI
         // NPCs/monsters on the 50 ms AI tick, so those still tween across their gap or they lag.
         switch entity.kind {
         case .player:
+            // The correction replaces the predicted position outright, so the fraction carried
+            // from the rejected path must not bias the next tick.
+            movementRemainder = (0, 0)
             worldScene.updatePosition(entityID: payload.entityIndex, to: newPosition, facing: facing)
         case .peer, .npc, .monster:
             let duration = entity.kind == .peer ? Self.peerInterpolationDuration : Self.aiTickInterpolationDuration
@@ -523,6 +534,7 @@ import SomnioUI
         lastEmitTime = nil
         lastTickTime = nil
         lastBumpedPortalIndex = nil
+        movementRemainder = (0, 0)
         latestMouseFacing = nil
         pendingRegistration = nil
     }
@@ -614,20 +626,23 @@ import SomnioUI
             // Elapsed-time-scaled step (legacy `tempo * 60 * frameintervall`) keeps speed
             // frame-rate-independent. `clamping:` because a sector wider/taller than 255 tiles has
             // a pixel extent beyond `Int16.max`; a plain `Int16(...)` would trap near the far edge.
+            // WASD is screen-relative under the yawed 3/4 camera: rotate the held-key vector into
+            // world floor axes so "W" walks up-screen rather than along world north.
+            let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: velocity.dx, screenDY: velocity.dy)
             let pixels = tempo.pixelsPerSecond * elapsedSeconds
-            let dxPx = Int32((velocity.dx * pixels).rounded())
-            let dyPx = Int32((velocity.dy * pixels).rounded())
+            let exactDX = worldDX * pixels + movementRemainder.dx
+            let exactDY = worldDY * pixels + movementRemainder.dy
+            let dxPx = Int32(exactDX.rounded())
+            let dyPx = Int32(exactDY.rounded())
+            movementRemainder = (exactDX - Double(dxPx), exactDY - Double(dyPx))
+            let intended = GridPoint(
+                x: Int16(clamping: Int32(selfEntity.position.x) + dxPx),
+                y: Int16(clamping: Int32(selfEntity.position.y) + dyPx)
+            )
             // Clamp the step target to the sector's feet-box bounds so a move toward an edge lands
             // flush against it rather than stopping up to one tick short; `resolvedMove` still gates
             // collision masks and other entities per axis.
-            let target = FeetMask.clamped(
-                GridPoint(
-                    x: Int16(clamping: Int32(selfEntity.position.x) + dxPx),
-                    y: Int16(clamping: Int32(selfEntity.position.y) + dyPx)
-                ),
-                spriteSize: SomnioConstants.playerSpriteSize,
-                sector: sector
-            )
+            let target = FeetMask.clamped(intended, spriteSize: SomnioConstants.playerSpriteSize, sector: sector)
             // Resolve bounds + static masks + solid entities (peers/monsters) first; NPCs are
             // excluded from the blocker set so the slide reaches the NPC's feet box rather than
             // stopping short of it (otherwise the feet-box overlap is never seen, no bump).
@@ -644,14 +659,31 @@ import SomnioUI
                 npcFeetRects: npcFeetRects(),
                 portalTriggerRects: Self.portalTriggerRects(in: sector)
             )
-            if !triggers.blocked {
+            if triggers.blocked {
+                movementRemainder = (0, 0)
+            } else {
+                // Drop the carried fraction on any axis the clamp or collision cut, so the
+                // sub-pixel render position never drifts off the authoritative grid position.
+                if candidate.x != intended.x { movementRemainder.dx = 0 }
+                if candidate.y != intended.y { movementRemainder.dy = 0 }
                 selfEntity.position = candidate
             }
             enteredPortal = dispatchTriggers(triggers)
         }
         selfEntity.tempo = velocity == .zero ? .default : tempo
         entities[selfIndex] = selfEntity
-        worldScene.updatePosition(entityID: selfIndex, to: selfEntity.position, facing: selfEntity.facing)
+        worldScene.updateTempo(entityID: selfIndex, tempo: selfEntity.tempo)
+        // Render at the exact sub-pixel position: the integer step of a screen-straight walk
+        // alternates between neighboring world directions tick to tick, which reads as
+        // left/right jitter if the renderer only ever sees the rounded grid position.
+        worldScene.updatePosition(
+            entityID: selfIndex,
+            to: SubpixelPoint(
+                x: Double(selfEntity.position.x) + movementRemainder.dx,
+                y: Double(selfEntity.position.y) + movementRemainder.dy
+            ),
+            facing: selfEntity.facing
+        )
 
         // A portal-blocked tick must not also report its now-stale old-sector position: the server
         // processes `.enterPortal` first and switches the connection to the destination sector, so a

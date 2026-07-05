@@ -108,6 +108,23 @@ public struct FloorMaterialRule: Sendable, Equatable, Hashable, Codable {
     }
 }
 
+/// Bridges a sector's legacy ground-tile signature to a floor-material id until the sector
+/// format carries per-tile floor-material references (the editor-pivot phase). The semantic
+/// ids survive that migration; only this signature-keyed bridge table is interim.
+public struct GroundMaterialRule: Sendable, Equatable, Hashable, Codable {
+    public var tilesetIndex: Int16
+    public var sourceX: Int16
+    public var sourceY: Int16
+    public var id: String
+
+    public init(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16, id: String) {
+        self.tilesetIndex = tilesetIndex
+        self.sourceX = sourceX
+        self.sourceY = sourceY
+        self.id = id
+    }
+}
+
 /// Data-driven description of the 3D model pack, superseding `AssetManifest`'s 2D sprite
 /// conventions for the RealityKit render path (the 2D manifest stays alongside it while the
 /// editor preview still consumes the sprite pack). The registry references only filename stems,
@@ -118,11 +135,18 @@ public struct ModelRegistry: Sendable, Equatable, Codable {
     public var entityBands: EntityModelBands
     public var objectModels: [ObjectModelRule]
     public var floorMaterials: [FloorMaterialRule]
+    public var groundMaterials: [GroundMaterialRule]
 
-    public init(entityBands: EntityModelBands, objectModels: [ObjectModelRule], floorMaterials: [FloorMaterialRule]) {
+    public init(
+        entityBands: EntityModelBands,
+        objectModels: [ObjectModelRule],
+        floorMaterials: [FloorMaterialRule],
+        groundMaterials: [GroundMaterialRule] = []
+    ) {
         self.entityBands = entityBands
         self.objectModels = objectModels
         self.floorMaterials = floorMaterials
+        self.groundMaterials = groundMaterials
     }
 
     /// The model for an entity's band + figure identity, or `nil` when no rule claims the figure.
@@ -145,6 +169,17 @@ public struct ModelRegistry: Sendable, Equatable, Codable {
     /// The floor-material asset stem for a reference id, or `nil` when the id is unmapped.
     public func floorMaterialStem(forID id: String) -> String? {
         floorMaterials.first { $0.id == id }?.stem
+    }
+
+    /// The floor-material asset stem for a sector's authored ground-tile signature, resolved
+    /// through the interim signature -> id bridge, or `nil` (⇒ the 2D ground-cell fallback)
+    /// when the signature is unmapped.
+    public func floorMaterialStem(forGroundTileset tilesetIndex: Int16, sourceX: Int16, sourceY: Int16) -> String? {
+        let rule = groundMaterials.first {
+            $0.tilesetIndex == tilesetIndex && $0.sourceX == sourceX && $0.sourceY == sourceY
+        }
+        guard let rule else { return nil }
+        return floorMaterialStem(forID: rule.id)
     }
 
     /// The expected clip names for a model stem, searching entity bands before object rules, or

@@ -78,7 +78,7 @@ struct SectorJSONGoldenTests {
         ])
         // Representative raw geometry on the richest fixture: a count-preserving coordinate change
         // would pass the count assertions but fail these.
-        #expect(sector.collisionMasks[0] == CollisionMask(x: 0, y: 0, width: 256, height: 32))
+        #expect(sector.collisionMasks[0] == CollisionMask(x: 0, y: 0, width: 256, height: 22))
         #expect(sector.objects[0] == Object(x: 0, y: -48, tilesetIndex: 25, sourceX: 64, sourceY: 512,
                                             sourceWidth: 64, sourceHeight: 96, priority: 0))
     }

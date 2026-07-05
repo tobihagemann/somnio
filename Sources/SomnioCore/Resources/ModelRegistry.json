@@ -1,62 +1,249 @@
 {
-  "entityBands" : {
-    "monster" : [
+  "entityBands": {
+    "monster": [
       {
-        "figureRanges" : [
+        "figureRanges": [
           {
-            "lower" : 0,
-            "upper" : 0
+            "lower": 0,
+            "upper": 0
           }
         ],
-        "model" : {
-          "expectedClips" : [
+        "model": {
+          "expectedClips": [
             "Flying_Idle"
           ],
-          "stem" : "Ghost"
+          "stem": "Ghost"
         }
       }
     ],
-    "npc" : [
+    "npc": [
       {
-        "figureRanges" : [
+        "figureRanges": [
           {
-            "lower" : 16,
-            "upper" : 16
+            "lower": 16,
+            "upper": 16
           }
         ],
-        "model" : {
-          "expectedClips" : [
+        "model": {
+          "expectedClips": [
             "Idle",
             "Walking_A",
             "Running_A"
           ],
-          "stem" : "Mage"
+          "stem": "Lorekeeper"
         }
       }
     ],
-    "player" : [
+    "player": [
       {
-        "figureRanges" : [
+        "figureRanges": [
           {
-            "lower" : 0,
-            "upper" : 15
+            "lower": 0,
+            "upper": 15
           }
         ],
-        "model" : {
-          "expectedClips" : [
+        "model": {
+          "expectedClips": [
             "Idle",
             "Walking_A",
-            "Running_A"
+            "Running_A",
+            "Sneaking"
           ],
-          "stem" : "Knight"
+          "stem": "Knight"
         }
       }
     ]
   },
-  "floorMaterials" : [
-
+  "floorMaterials": [
+    {
+      "id": "grass-meadow",
+      "stem": "GrassMeadow"
+    },
+    {
+      "id": "stone-arena",
+      "stem": "StoneArena"
+    },
+    {
+      "id": "wood-warm",
+      "stem": "WoodWarm"
+    }
   ],
-  "objectModels" : [
-
+  "groundMaterials": [
+    {
+      "id": "grass-meadow",
+      "sourceX": 0,
+      "sourceY": 0,
+      "tilesetIndex": 0
+    },
+    {
+      "id": "stone-arena",
+      "sourceX": 0,
+      "sourceY": 0,
+      "tilesetIndex": 25
+    },
+    {
+      "id": "wood-warm",
+      "sourceX": 64,
+      "sourceY": 0,
+      "tilesetIndex": 25
+    }
+  ],
+  "objectModels": [
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "BookshelfOrnate"
+      },
+      "signature": {
+        "sourceHeight": 96,
+        "sourceWidth": 64,
+        "sourceX": 64,
+        "sourceY": 512,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Bookshelf"
+      },
+      "signature": {
+        "sourceHeight": 96,
+        "sourceWidth": 64,
+        "sourceX": 0,
+        "sourceY": 512,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "PottedPlant"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 128,
+        "sourceY": 608,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "StudyTable"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 160,
+        "sourceY": 608,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Bust"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 192,
+        "sourceY": 608,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Door"
+      },
+      "signature": {
+        "sourceHeight": 32,
+        "sourceWidth": 192,
+        "sourceX": 64,
+        "sourceY": 32,
+        "tilesetIndex": 50
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "GrandBookcase"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 96,
+        "sourceX": 0,
+        "sourceY": 224,
+        "tilesetIndex": 9
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Couch"
+      },
+      "signature": {
+        "sourceHeight": 32,
+        "sourceWidth": 32,
+        "sourceX": 192,
+        "sourceY": 288,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "FloorLamp"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 192,
+        "sourceY": 352,
+        "tilesetIndex": 9
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "SideTable"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 192,
+        "sourceY": 544,
+        "tilesetIndex": 25
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Chair"
+      },
+      "signature": {
+        "sourceHeight": 64,
+        "sourceWidth": 32,
+        "sourceX": 128,
+        "sourceY": 224,
+        "tilesetIndex": 13
+      }
+    },
+    {
+      "model": {
+        "expectedClips": [],
+        "stem": "Tent"
+      },
+      "signature": {
+        "sourceHeight": 160,
+        "sourceWidth": 160,
+        "sourceX": 0,
+        "sourceY": 416,
+        "tilesetIndex": 0
+      }
+    }
   ]
 }

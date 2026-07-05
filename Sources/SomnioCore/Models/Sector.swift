@@ -46,6 +46,13 @@ public struct SectorBody: Sendable, Equatable, Codable {
     public var pixelHeight: Int32 {
         Int32(dimensions.height) * Int32(SomnioConstants.tileSize)
     }
+
+    /// True when the object and collision-mask counts sit within the shared
+    /// `SomnioConstants.isWithinSectorContentBounds` cap the wire boundary also gates on,
+    /// because the 3D renderer's bottom-edge anchor scan is O(objects × collisionMasks).
+    var hasContentCountsWithinBounds: Bool {
+        SomnioConstants.isWithinSectorContentBounds(objectCount: objects.count, collisionMaskCount: collisionMasks.count)
+    }
 }
 
 public struct Sector: Sendable, Equatable {

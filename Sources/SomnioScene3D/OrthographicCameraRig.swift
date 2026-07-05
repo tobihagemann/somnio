@@ -14,9 +14,10 @@ public enum OrthographicCameraRig {
     /// keep the floor inside `[nearClip, farClip]`.
     public static let cameraDistance: Float = 50
     /// Orthographic `scale` is the vertical world extent the viewport spans; smaller is more
-    /// zoomed in. `defaultScale` is the resting zoom; `clampedScale` bounds interactive zoom.
-    public static let defaultScale: Float = 15
-    public static let minScale: Float = 6
+    /// zoomed in. The fixed close-up framing (~6 tiles of world per viewport height) is tuned
+    /// by eye rather than for legacy parity; `clampedScale` bounds any future interactive zoom.
+    public static let defaultScale: Float = 3
+    public static let minScale: Float = 3
     public static let maxScale: Float = 24
     public static let nearClip: Float = 0.05
     public static let farClip: Float = 500
@@ -31,7 +32,22 @@ public enum OrthographicCameraRig {
     /// Maps a legacy top-left pixel coordinate onto the flat floor (Y = 0): X runs east, the
     /// legacy Y-down axis runs along +Z (into the scene under the 3/4 camera).
     public static func worldPosition(forLegacyX x: Int16, y: Int16) -> SIMD3<Float> {
-        SIMD3<Float>(Float(x) * worldUnitsPerPixel, 0, Float(y) * worldUnitsPerPixel)
+        worldPosition(forLegacyPoint: SIMD2<Float>(Float(x), Float(y)))
+    }
+
+    /// Fractional-pixel variant of `worldPosition(forLegacyX:y:)` for placements derived from
+    /// rect centers (an object's footprint center, an entity's feet-box center), which land on
+    /// half-pixel coordinates when the rect has an odd extent.
+    public static func worldPosition(forLegacyPoint point: SIMD2<Float>) -> SIMD3<Float> {
+        SIMD3<Float>(point.x * worldUnitsPerPixel, 0, point.y * worldUnitsPerPixel)
+    }
+
+    /// Rotates a screen-space movement vector (x right, y down) into legacy floor axes so
+    /// "up" on the yawed 3/4 camera walks away from the viewer instead of drifting along
+    /// world north. Pure rotation, so a unit input stays unit length.
+    public static func worldMovement(forScreenDX dx: Double, screenDY dy: Double) -> (dx: Double, dy: Double) {
+        let yaw = Double(yawDegrees) * .pi / 180
+        return (dx * cos(yaw) + dy * sin(yaw), -dx * sin(yaw) + dy * cos(yaw))
     }
 
     /// Unit direction from the focus point toward the camera, derived from the fixed pitch + yaw.

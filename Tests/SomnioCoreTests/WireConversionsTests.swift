@@ -145,6 +145,29 @@ struct WireConversionsTests {
         }
     }
 
+    @Test func `sector init accepts content counts at the caps`() throws {
+        let wire = Self.wireSector(
+            objectCount: SomnioConstants.maxSectorObjects,
+            maskCount: SomnioConstants.maxSectorCollisionMasks
+        )
+        let sector = try Sector(wire)
+        #expect(sector.objects.count == SomnioConstants.maxSectorObjects)
+        #expect(sector.collisionMasks.count == SomnioConstants.maxSectorCollisionMasks)
+    }
+
+    @Test(arguments: [
+        (SomnioConstants.maxSectorObjects + 1, 0),
+        (0, SomnioConstants.maxSectorCollisionMasks + 1)
+    ])
+    func `sector init throws on content counts over the caps`(objectCount: Int, maskCount: Int) {
+        // The renderer's bottom-edge anchor scan is O(objects × collisionMasks), so a hostile
+        // server could otherwise freeze the client with a single frame-sized sector.
+        let wire = Self.wireSector(objectCount: objectCount, maskCount: maskCount)
+        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(objects: objectCount, collisionMasks: maskCount)) {
+            try Sector(wire)
+        }
+    }
+
     private static func wireSector(width: Int16, height: Int16) -> WireSector {
         Sector(
             name: "EdariaArena",
@@ -152,6 +175,22 @@ struct WireConversionsTests {
             dimensions: GridSize(width: width, height: height),
             ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
             light: LightSetting(indoor: true, brightness: 75)
+        ).asWire
+    }
+
+    private static func wireSector(objectCount: Int, maskCount: Int) -> WireSector {
+        Sector(
+            name: "EdariaArena",
+            version: 1,
+            dimensions: GridSize(width: 16, height: 16),
+            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            light: LightSetting(indoor: true, brightness: 75),
+            objects: Array(
+                repeating: Object(x: 0, y: 0, tilesetIndex: 0, sourceX: 0, sourceY: 0,
+                                  sourceWidth: 1, sourceHeight: 1, priority: 0),
+                count: objectCount
+            ),
+            collisionMasks: Array(repeating: CollisionMask(x: 0, y: 0, width: 1, height: 1), count: maskCount)
         ).asWire
     }
 }

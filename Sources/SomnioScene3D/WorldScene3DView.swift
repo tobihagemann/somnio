@@ -8,6 +8,11 @@ import SwiftUI
 @MainActor public struct WorldScene3DView: View {
     private let scene: WorldScene3D
     private let size: CGSize
+    /// Retains the `SceneEvents.Update` subscription for the view's lifetime; the RealityKit
+    /// scene only exists once `rootEntity` lands in the `RealityView` content, so the
+    /// per-frame tick can't be wired anywhere earlier (the SwiftUI `update:` closure is not
+    /// per-frame — it only fires on view re-evaluation).
+    @State private var updateSubscription: EventSubscription?
 
     /// The player client renders the fixed 640×480 viewport (the default).
     public init(scene: WorldScene3D, size: CGSize = CGSize(width: 640, height: 480)) {
@@ -21,6 +26,9 @@ import SwiftUI
             // to a tracking camera that ignores our `OrthographicCameraComponent`, rendering blank.
             content.camera = .virtual
             content.add(scene.rootEntity)
+            updateSubscription = content.subscribe(to: SceneEvents.Update.self) { [scene] event in
+                scene.tick(deltaTime: event.deltaTime)
+            }
         }
         .frame(width: size.width, height: size.height)
     }

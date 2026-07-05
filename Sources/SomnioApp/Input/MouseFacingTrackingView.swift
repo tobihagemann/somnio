@@ -26,6 +26,9 @@ struct MouseFacingTrackingView: NSViewRepresentable {
 final class TrackingNSView: NSView {
     var onFacing: ((Direction) -> Void)?
     private var facingTrackingArea: NSTrackingArea?
+    /// Last emitted facing, fed back into the sampler's dead band so boundary jitter
+    /// doesn't flap the facing (and twitch the 3D yaw slew).
+    private var lastFacing: Direction?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -59,6 +62,8 @@ final class TrackingNSView: NSView {
 
     private func emitFacing(at point: CGPoint) {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        onFacing?(MouseFacingSampler.facingQuadrant(mouseLocation: point, viewCenter: center))
+        let facing = MouseFacingSampler.facingQuadrant(mouseLocation: point, viewCenter: center, current: lastFacing)
+        lastFacing = facing
+        onFacing?(facing)
     }
 }

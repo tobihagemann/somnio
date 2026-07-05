@@ -151,4 +151,63 @@ struct MapCodecFailureTests {
         )
         #expect(throws: EncodingError.self) { try MapCodec.write(body) }
     }
+
+    @Test(arguments: [
+        (SomnioConstants.maxSectorObjects + 1, 0),
+        (0, SomnioConstants.maxSectorCollisionMasks + 1)
+    ])
+    func `over-cap content counts throw on read and at-cap counts decode`(objectCount: Int, maskCount: Int) throws {
+        // The renderer's bottom-edge anchor scan is O(objects × collisionMasks), so a hostile
+        // file can't smuggle counts a frame-sized payload would otherwise carry; the exact caps
+        // still decode, guarding against a `<` vs `<=` off-by-one.
+        #expect(throws: DecodingError.self) {
+            try MapCodec.read(Self.contentCountJSON(objectCount: objectCount, maskCount: maskCount))
+        }
+        let atCap = try MapCodec.read(Self.contentCountJSON(
+            objectCount: min(objectCount, SomnioConstants.maxSectorObjects),
+            maskCount: min(maskCount, SomnioConstants.maxSectorCollisionMasks)
+        ))
+        #expect(atCap.hasContentCountsWithinBounds)
+    }
+
+    @Test func `over-cap content counts throw on write`() {
+        // The writer gates on the same count caps as the reader so it can't persist a file
+        // `read` would refuse.
+        let body = SectorBody(
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            light: LightSetting(indoor: false, brightness: 0),
+            collisionMasks: Array(
+                repeating: CollisionMask(x: 0, y: 0, width: 1, height: 1),
+                count: SomnioConstants.maxSectorCollisionMasks + 1
+            )
+        )
+        #expect(throws: EncodingError.self) { try MapCodec.write(body) }
+    }
+
+    /// A minimal sector JSON carrying `objectCount` copies of one object and `maskCount` copies
+    /// of one mask, assembled textually so the over-cap case can't be blocked by the writer.
+    private static func contentCountJSON(objectCount: Int, maskCount: Int) -> Data {
+        let object = """
+        {"x": 0, "y": 0, "tilesetIndex": 0, "sourceX": 0, "sourceY": 0, "sourceWidth": 1, "sourceHeight": 1, "priority": 0}
+        """
+        let mask = """
+        {"x": 0, "y": 0, "width": 1, "height": 1}
+        """
+        let json = """
+        {
+          "version": 1,
+          "dimensions": {"width": 4, "height": 4},
+          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "light": {"indoor": false, "brightness": 0},
+          "objects": [\(Array(repeating: object, count: objectCount).joined(separator: ","))],
+          "collisionMasks": [\(Array(repeating: mask, count: maskCount).joined(separator: ","))],
+          "portals": [],
+          "npcs": [],
+          "monsterSpawns": []
+        }
+        """
+        return Data(json.utf8)
+    }
 }

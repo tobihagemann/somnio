@@ -46,7 +46,7 @@ struct MovementVerdictTests {
     }
 
     @Test func `the min-elapsed floor caps a near-zero gap instead of shrinking to slack only`() {
-        // With elapsed below the floor, the cap uses the floor (0.05s): 240 * 0.05 * 2 + 128 = 152.
+        // With elapsed below the floor, the cap uses the floor (0.05s): 150 * 0.05 * 2 + 128 = 143.
         // A 140px hop sits under the floored cap but would exceed the slack-only cap (128) it would
         // get without the floor.
         let verdict = PerSectorActor.movementReferenceVerdict(
@@ -58,23 +58,23 @@ struct MovementVerdictTests {
             minElapsedSeconds: 0.05
         )
         #expect(!verdict.exceeded)
-        #expect(abs(verdict.referenceCap - 152) < 1e-6)
+        #expect(abs(verdict.referenceCap - 143) < 1e-6)
     }
 
     @Test func `a fractional sub-second elapsed contributes to the cap (attoseconds term not dropped)`() {
         // 0.5s is above the 0.05s floor and lives entirely in the attoseconds component (its whole
-        // seconds are 0). The cap must reflect it: 240 * 0.5 * 2 + 128 = 368. A 300px hop sits under
-        // that, but would exceed the 152 cap the move gets if the attoseconds term were dropped to 0.
+        // seconds are 0). The cap must reflect it: 150 * 0.5 * 2 + 128 = 278. A 200px hop sits under
+        // that, but would exceed the 143 cap the move gets if the attoseconds term were dropped to 0.
         let verdict = PerSectorActor.movementReferenceVerdict(
             from: GridPoint(x: 0, y: 0),
-            to: GridPoint(x: 300, y: 0),
+            to: GridPoint(x: 200, y: 0),
             elapsed: .milliseconds(500),
             toleranceFactor: 2.0,
             flatSlackPixels: 128,
             minElapsedSeconds: 0.05
         )
         #expect(!verdict.exceeded)
-        #expect(abs(verdict.referenceCap - 368) < 1e-6)
+        #expect(abs(verdict.referenceCap - 278) < 1e-6)
     }
 
     @Test func `a move exactly at the reference cap is not flagged (strict greater-than boundary)`() {

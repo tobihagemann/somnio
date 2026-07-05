@@ -15,6 +15,23 @@ public enum SomnioConstants {
     /// alone still admits a `1024 × 1024` sector, whose ground tile map is ~16.7M cells; this area
     /// cap bounds the actual allocation driver. 256 × 256 tiles is ~400x the largest real sector.
     public static let maxSectorArea: Int32 = 65536
+    /// Upper bound on a sector's object count. The wire frame cap already bounds it coarsely
+    /// (~10k objects fit in one frame), but the 3D renderer's bottom-edge anchor scans every
+    /// collision mask per object on the main actor, so a frame at the coarse bound still
+    /// freezes the client for seconds. Generous headroom over any real sector (the richest
+    /// fixture carries 33 objects).
+    public static let maxSectorObjects = 4096
+    /// Companion cap for `maxSectorObjects`: the other factor of the renderer's
+    /// objects × collisionMasks anchor scan (the richest fixture carries 21 masks).
+    public static let maxSectorCollisionMasks = 4096
+    /// The one content-count bound both untrusted sector seams gate on — the wire boundary
+    /// (`Sector(_ wire:)`) and the disk codec (`MapCodec` via
+    /// `SectorBody.hasContentCountsWithinBounds`) — mirroring how they share
+    /// `GridSize.isWithinSectorBounds` for dimensions.
+    public static func isWithinSectorContentBounds(objectCount: Int, collisionMaskCount: Int) -> Bool {
+        objectCount <= maxSectorObjects && collisionMaskCount <= maxSectorCollisionMasks
+    }
+
     /// Player sprite cell size (32 × 48 in the `001-Main01.png` sheet). Distinct from
     /// `tileSize`: the player entity emits this as its mask cell size, and the feet collision
     /// box is derived from it. NPC/monster sprite cells carry their own per-record size.
