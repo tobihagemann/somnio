@@ -24,12 +24,39 @@ public enum SomnioConstants {
     /// Companion cap for `maxSectorObjects`: the other factor of the renderer's
     /// objects × collisionMasks anchor scan (the richest fixture carries 21 masks).
     public static let maxSectorCollisionMasks = 4096
+    /// Caps for the remaining record arrays. Each drives per-record work on load — authoring
+    /// overlay rects in the editor, spawn/dialog runtimes on the server — so a hostile file or
+    /// frame with an unbounded array could freeze its consumer. Generous headroom over any
+    /// real sector (the richest fixture carries 3 portals and 1 NPC).
+    public static let maxSectorPortals = 4096
+    public static let maxSectorNPCs = 4096
+    public static let maxSectorMonsterSpawns = 4096
+    /// Cap on the objects × collisionMasks product: the renderer's bottom-edge anchor scan is
+    /// O(objects × collisionMasks), so the per-array caps alone would still admit ~16.7M
+    /// pairings from a hostile sector with both arrays at their limits. 2^20 pairings bounds
+    /// the scan to milliseconds while dwarfing any real sector (the richest fixture pairs
+    /// 33 × 21 ≈ 700).
+    public static let maxSectorAnchorScanPairings = 1_048_576
+    /// Byte cap on a `.somnio-sector` file, checked before JSON decoding: the count caps only
+    /// fire after `JSONDecoder` has already parsed the whole input, so without a size
+    /// preflight a multi-gigabyte hostile file stalls the opener inside the parser. A sector
+    /// at every content cap pretty-prints to a few megabytes, so 16 MiB is generous headroom.
+    public static let maxSectorFileBytes = 16 * 1_048_576
     /// The one content-count bound both untrusted sector seams gate on — the wire boundary
     /// (`Sector(_ wire:)`) and the disk codec (`MapCodec` via
     /// `SectorBody.hasContentCountsWithinBounds`) — mirroring how they share
     /// `GridSize.isWithinSectorBounds` for dimensions.
-    public static func isWithinSectorContentBounds(objectCount: Int, collisionMaskCount: Int) -> Bool {
+    public static func isWithinSectorContentBounds(
+        objectCount: Int,
+        collisionMaskCount: Int,
+        portalCount: Int,
+        npcCount: Int,
+        monsterSpawnCount: Int
+    ) -> Bool {
         objectCount <= maxSectorObjects && collisionMaskCount <= maxSectorCollisionMasks
+            && objectCount * collisionMaskCount <= maxSectorAnchorScanPairings
+            && portalCount <= maxSectorPortals && npcCount <= maxSectorNPCs
+            && monsterSpawnCount <= maxSectorMonsterSpawns
     }
 
     /// Player sprite cell size (32 × 48 in the `001-Main01.png` sheet). Distinct from

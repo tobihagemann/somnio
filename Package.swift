@@ -42,7 +42,6 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/Localizable.xcstrings"),
-                .process("Resources/AssetManifest.json"),
                 .process("Resources/ModelRegistry.json")
             ]
         ),
@@ -88,13 +87,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioUITests",
-            dependencies: ["SomnioUI", "SomnioCatalogTestSupport"],
-            resources: [
-                .copy("Resources/Tilesets"),
-                .copy("Resources/Characters"),
-                .copy("Resources/System"),
-                .copy("Resources/Animations")
-            ]
+            dependencies: ["SomnioUI", "SomnioCatalogTestSupport"]
         ),
 
         .target(
@@ -106,7 +99,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioScene3DTests",
-            dependencies: ["SomnioScene3D"]
+            dependencies: ["SomnioScene3D", "SomnioMapFixturesTestSupport"]
         ),
 
         .executableTarget(
@@ -142,7 +135,7 @@ let package = Package(
             name: "SomnioEditor",
             dependencies: [
                 "SomnioCore",
-                "SomnioUI",
+                "SomnioScene3D",
                 .product(name: "Logging", package: "swift-log")
             ],
             resources: [.process("Resources/Localizable.xcstrings")]

@@ -1,5 +1,30 @@
 import Foundation
 
+/// One character band of the figure-index space. Mirrors the original client's partition: the
+/// player band is shared by players and peers, NPCs and monsters each claim their own ranges.
+public enum CharacterBand: Sendable, Equatable, Hashable, CaseIterable {
+    case player
+    case npc
+    case monster
+}
+
+/// An inclusive `[lower, upper]` range of figure indices assigned to a band. A named struct
+/// rather than `ClosedRange<Int>` so it serializes to self-documenting `lower`/`upper` JSON
+/// keys (the project's "no raw arrays/ranges on the wire" convention).
+public struct BandRange: Sendable, Equatable, Hashable, Codable {
+    public var lower: Int
+    public var upper: Int
+
+    public init(lower: Int, upper: Int) {
+        self.lower = lower
+        self.upper = upper
+    }
+
+    public func contains(_ value: Int) -> Bool {
+        value >= lower && value <= upper
+    }
+}
+
 /// One USDZ model reference: the filename stem resolved under the pack's `Models/` subtree plus
 /// the named animation clips the game plays from it. `expectedClips` doubles as the clip-presence
 /// contract: conversion tooling and the runtime loader both assert these names survive the
@@ -32,8 +57,7 @@ public struct FigureModelRule: Sendable, Equatable, Hashable, Codable {
     }
 }
 
-/// Per-band figure→model rules, mirroring `CharacterBands`' player/npc/monster shape so the
-/// registry JSON reads symmetrically with the 2D manifest it supersedes.
+/// Per-band figure→model rules, keyed by the player/npc/monster band partition.
 public struct EntityModelBands: Sendable, Equatable, Hashable, Codable {
     public var player: [FigureModelRule]
     public var npc: [FigureModelRule]
@@ -54,50 +78,21 @@ public struct EntityModelBands: Sendable, Equatable, Hashable, Codable {
     }
 }
 
-/// The five `Object` fields that identify an authored 2D decal, used as the compatibility lookup
-/// key from the unchanged sector format to a 3D model — the interim keying until the sector
-/// format gains an explicit model-id field.
-public struct SourceRectSignature: Sendable, Equatable, Hashable, Codable {
-    public var tilesetIndex: Int16
-    public var sourceX: Int16
-    public var sourceY: Int16
-    public var sourceWidth: Int16
-    public var sourceHeight: Int16
-
-    public init(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16, sourceWidth: Int16, sourceHeight: Int16) {
-        self.tilesetIndex = tilesetIndex
-        self.sourceX = sourceX
-        self.sourceY = sourceY
-        self.sourceWidth = sourceWidth
-        self.sourceHeight = sourceHeight
-    }
-
-    public init(_ object: Object) {
-        self.init(
-            tilesetIndex: object.tilesetIndex,
-            sourceX: object.sourceX,
-            sourceY: object.sourceY,
-            sourceWidth: object.sourceWidth,
-            sourceHeight: object.sourceHeight
-        )
-    }
-}
-
-/// One authored-object→model mapping. An ordered array of these (not a raw dictionary) keeps the
-/// committed JSON stable and self-documenting, matching the wire-payload convention.
+/// One object-id→model mapping, keyed by the semantic id the sector format's `Object.modelID`
+/// references. An ordered array of these (not a raw dictionary) keeps the committed JSON
+/// stable and self-documenting, matching the wire-payload convention.
 public struct ObjectModelRule: Sendable, Equatable, Hashable, Codable {
-    public var signature: SourceRectSignature
+    public var id: String
     public var model: ModelEntry
 
-    public init(signature: SourceRectSignature, model: ModelEntry) {
-        self.signature = signature
+    public init(id: String, model: ModelEntry) {
+        self.id = id
         self.model = model
     }
 }
 
-/// Maps a floor-material reference id to its asset stem under the pack's `FloorMaterials/`
-/// subtree. The string id key is provisional: the sector format has no per-tile floor-material
-/// field yet, so the key shape is finalized when that field lands with the editor pivot.
+/// Maps a floor-material reference id — the sector format's `floorMaterialID` — to its asset
+/// stem under the pack's `FloorMaterials/` subtree.
 public struct FloorMaterialRule: Sendable, Equatable, Hashable, Codable {
     public var id: String
     public var stem: String
@@ -108,26 +103,7 @@ public struct FloorMaterialRule: Sendable, Equatable, Hashable, Codable {
     }
 }
 
-/// Bridges a sector's legacy ground-tile signature to a floor-material id until the sector
-/// format carries per-tile floor-material references (the editor-pivot phase). The semantic
-/// ids survive that migration; only this signature-keyed bridge table is interim.
-public struct GroundMaterialRule: Sendable, Equatable, Hashable, Codable {
-    public var tilesetIndex: Int16
-    public var sourceX: Int16
-    public var sourceY: Int16
-    public var id: String
-
-    public init(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16, id: String) {
-        self.tilesetIndex = tilesetIndex
-        self.sourceX = sourceX
-        self.sourceY = sourceY
-        self.id = id
-    }
-}
-
-/// Data-driven description of the 3D model pack, superseding `AssetManifest`'s 2D sprite
-/// conventions for the RealityKit render path (the 2D manifest stays alongside it while the
-/// editor preview still consumes the sprite pack). The registry references only filename stems,
+/// Data-driven description of the 3D model pack. The registry references only filename stems,
 /// so it never drifts from the uncommitted, operator-supplied model pack. All resolution is
 /// pure and unit-testable without a live renderer; an unmapped lookup returns `nil`, which the
 /// loader renders as a placeholder rather than an error.
@@ -135,18 +111,15 @@ public struct ModelRegistry: Sendable, Equatable, Codable {
     public var entityBands: EntityModelBands
     public var objectModels: [ObjectModelRule]
     public var floorMaterials: [FloorMaterialRule]
-    public var groundMaterials: [GroundMaterialRule]
 
     public init(
         entityBands: EntityModelBands,
         objectModels: [ObjectModelRule],
-        floorMaterials: [FloorMaterialRule],
-        groundMaterials: [GroundMaterialRule] = []
+        floorMaterials: [FloorMaterialRule]
     ) {
         self.entityBands = entityBands
         self.objectModels = objectModels
         self.floorMaterials = floorMaterials
-        self.groundMaterials = groundMaterials
     }
 
     /// The model for an entity's band + figure identity, or `nil` when no rule claims the figure.
@@ -160,26 +133,16 @@ public struct ModelRegistry: Sendable, Equatable, Codable {
         return entityBands[band].first { $0.containsFigure(Int(figure)) }?.model
     }
 
-    /// The model for an authored object's source-rect signature, or `nil` (⇒ placeholder) when
-    /// the signature is unmapped.
-    public func model(forSignature signature: SourceRectSignature) -> ModelEntry? {
-        objectModels.first { $0.signature == signature }?.model
+    /// The model for an authored object's `modelID`, or `nil` (⇒ placeholder) when the id is
+    /// unmapped.
+    public func model(forObjectID id: String) -> ModelEntry? {
+        objectModels.first { $0.id == id }?.model
     }
 
-    /// The floor-material asset stem for a reference id, or `nil` when the id is unmapped.
+    /// The floor-material asset stem for a sector's `floorMaterialID`, or `nil` when the id is
+    /// unmapped.
     public func floorMaterialStem(forID id: String) -> String? {
         floorMaterials.first { $0.id == id }?.stem
-    }
-
-    /// The floor-material asset stem for a sector's authored ground-tile signature, resolved
-    /// through the interim signature -> id bridge, or `nil` (⇒ the 2D ground-cell fallback)
-    /// when the signature is unmapped.
-    public func floorMaterialStem(forGroundTileset tilesetIndex: Int16, sourceX: Int16, sourceY: Int16) -> String? {
-        let rule = groundMaterials.first {
-            $0.tilesetIndex == tilesetIndex && $0.sourceX == sourceX && $0.sourceY == sourceY
-        }
-        guard let rule else { return nil }
-        return floorMaterialStem(forID: rule.id)
     }
 
     /// The expected clip names for a model stem, searching entity bands before object rules, or

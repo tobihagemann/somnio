@@ -16,9 +16,9 @@ struct SectorJSONGoldenTests {
 
     @Test func `edaria mitte golden`() throws {
         let sector = try MapCodec.read(MapFixtures.data(.edariaMitte))
-        #expect(sector.version == 7)
+        #expect(sector.version == 8)
         #expect(sector.dimensions == GridSize(width: 12, height: 12))
-        #expect(sector.ground == GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0))
+        #expect(sector.floorMaterialID == "grass-meadow")
         #expect(sector.light == LightSetting(indoor: false, brightness: 100))
         #expect(sector.objects.count == 2)
         #expect(sector.collisionMasks.count == 2)
@@ -35,9 +35,9 @@ struct SectorJSONGoldenTests {
 
     @Test func `edaria arena golden`() throws {
         let sector = try MapCodec.read(MapFixtures.data(.edariaArena))
-        #expect(sector.version == 5)
+        #expect(sector.version == 6)
         #expect(sector.dimensions == GridSize(width: 4, height: 4))
-        #expect(sector.ground == GroundTile(tilesetIndex: 25, sourceX: 0, sourceY: 0))
+        #expect(sector.floorMaterialID == "stone-arena")
         #expect(sector.light == LightSetting(indoor: true, brightness: 75))
         #expect(sector.objects.count == 1)
         #expect(sector.collisionMasks.count == 2)
@@ -57,9 +57,9 @@ struct SectorJSONGoldenTests {
 
     @Test func `edaria bibliothek golden`() throws {
         let sector = try MapCodec.read(MapFixtures.data(.edariaBibliothek))
-        #expect(sector.version == 10)
+        #expect(sector.version == 11)
         #expect(sector.dimensions == GridSize(width: 4, height: 4))
-        #expect(sector.ground == GroundTile(tilesetIndex: 25, sourceX: 64, sourceY: 0))
+        #expect(sector.floorMaterialID == "wood-warm")
         #expect(sector.light == LightSetting(indoor: true, brightness: 100))
         #expect(sector.objects.count == 33)
         #expect(sector.collisionMasks.count == 21)
@@ -79,7 +79,7 @@ struct SectorJSONGoldenTests {
         // Representative raw geometry on the richest fixture: a count-preserving coordinate change
         // would pass the count assertions but fail these.
         #expect(sector.collisionMasks[0] == CollisionMask(x: 0, y: 0, width: 256, height: 22))
-        #expect(sector.objects[0] == Object(x: 0, y: -48, tilesetIndex: 25, sourceX: 64, sourceY: 512,
+        #expect(sector.objects[0] == Object(x: 0, y: -48, modelID: "bookshelf-ornate",
                                             sourceWidth: 64, sourceHeight: 96, priority: 0))
     }
 }

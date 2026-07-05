@@ -35,6 +35,7 @@ import SwiftUI
             Stepper(value: $form.brightness, in: 0 ... 100) {
                 StepperLabel(title: L.resource("Light"), value: form.brightness)
             }
+            RegistryIDPicker(title: L.resource("Floor material"), ids: EditorDefaults.floorMaterialIDs, selection: $form.floorMaterialID)
             if let message = validationMessage(form: form) {
                 Text(message)
                     .foregroundStyle(.red)
@@ -69,12 +70,13 @@ import SwiftUI
         let height = form.height
         let indoor = form.indoor
         let brightness = form.brightness
+        let floorMaterialID = form.floorMaterialID
         document.renameSector(to: name, undoManager: undoManager)
         document.mutate("Create new map", undoManager: undoManager) { body in
             body = SectorBody(
                 version: EditorDefaults.defaultSectorVersion,
                 dimensions: GridSize(width: width, height: height),
-                ground: EditorDefaults.defaultGround,
+                floorMaterialID: floorMaterialID,
                 light: LightSetting(indoor: indoor, brightness: brightness),
                 objects: [],
                 collisionMasks: [],

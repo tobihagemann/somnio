@@ -17,6 +17,14 @@ import Foundation
 /// verbatim; NPC centering lives in `NPCPlacement.runtimePosition(for:)`.
 public enum MapCodec {
     public static func read(_ data: Data) throws -> SectorBody {
+        // Size preflight: the count caps below only fire after the decoder has parsed the
+        // whole input, so an unbounded file must be rejected before `JSONDecoder` runs.
+        guard data.count <= SomnioConstants.maxSectorFileBytes else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: [],
+                debugDescription: "sector file size out of range: \(data.count) bytes"
+            ))
+        }
         let body = try JSONDecoder().decode(SectorBody.self, from: data)
         guard body.dimensions.isWithinSectorBounds else {
             throw DecodingError.dataCorrupted(DecodingError.Context(
@@ -27,7 +35,7 @@ public enum MapCodec {
         guard body.hasContentCountsWithinBounds else {
             throw DecodingError.dataCorrupted(DecodingError.Context(
                 codingPath: [],
-                debugDescription: "sector content counts out of range: \(body.objects.count) objects, \(body.collisionMasks.count) collision masks"
+                debugDescription: "sector content counts out of range: \(body.objects.count) objects, \(body.collisionMasks.count) collision masks, \(body.portals.count) portals, \(body.npcs.count) npcs, \(body.monsterSpawns.count) monster spawns"
             ))
         }
         return body
@@ -43,11 +51,18 @@ public enum MapCodec {
         guard sector.hasContentCountsWithinBounds else {
             throw EncodingError.invalidValue(sector, EncodingError.Context(
                 codingPath: [],
-                debugDescription: "sector content counts out of range: \(sector.objects.count) objects, \(sector.collisionMasks.count) collision masks"
+                debugDescription: "sector content counts out of range: \(sector.objects.count) objects, \(sector.collisionMasks.count) collision masks, \(sector.portals.count) portals, \(sector.npcs.count) npcs, \(sector.monsterSpawns.count) monster spawns"
             ))
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(sector)
+        let data = try encoder.encode(sector)
+        guard data.count <= SomnioConstants.maxSectorFileBytes else {
+            throw EncodingError.invalidValue(sector, EncodingError.Context(
+                codingPath: [],
+                debugDescription: "sector file size out of range: \(data.count) bytes"
+            ))
+        }
+        return data
     }
 }

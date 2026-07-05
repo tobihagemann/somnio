@@ -45,7 +45,7 @@ struct EditorDefaultsTests {
         #expect(EditorDefaults.gridSnapPresetsPx == [32, 16, 8, 4])
         #expect(EditorDefaults.userDefaultsKey == "editorGridSnap")
         #expect(EditorDefaults.defaultSectorVersion == 1)
-        #expect(EditorDefaults.defaultGround == GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0))
+        #expect(EditorDefaults.defaultFloorMaterialID == "grass-meadow")
     }
 
     @Test func `grid size zero sentinel compares equal to a fresh document body`() {

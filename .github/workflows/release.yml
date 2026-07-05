@@ -75,7 +75,7 @@ jobs:
       - name: Check out asset pack
         uses: actions/checkout@v6
         with:
-          # Tilesets / sprites / animation strips are licensed art that can be bundled
+          # Converted USDZ models / floor materials are licensed art that can be bundled
           # into the shipped binary but not redistributed as source, so they live in a
           # separate private repo. The default GITHUB_TOKEN only reaches this repo;
           # ASSETS_DEPLOY_KEY is a read-only SSH deploy key scoped to somnio-assets.
@@ -118,7 +118,7 @@ jobs:
           SPARKLE_FEED_URL_PLAYER: ${{ secrets.SPARKLE_FEED_URL_PLAYER }}
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           ARCHES: "arm64 x86_64"
-          # Asset pack root (five subtrees at the repo root) consumed by
+          # Asset pack root (Models/ + FloorMaterials/ at the repo root) consumed by
           # Scripts/bundle-assets.sh, and the production gameplay endpoint baked into
           # the player by Scripts/inject-release-transport.sh. The URL is not sensitive
           # (every player sees it), so it lives in a repo *variable*, not a secret; the

@@ -25,18 +25,6 @@ public struct WireGridSize: Codable, Sendable, Equatable, Hashable {
     }
 }
 
-public struct WireGroundTile: Codable, Sendable, Equatable, Hashable {
-    public var tilesetIndex: Int16
-    public var sourceX: Int16
-    public var sourceY: Int16
-
-    public init(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16) {
-        self.tilesetIndex = tilesetIndex
-        self.sourceX = sourceX
-        self.sourceY = sourceY
-    }
-}
-
 public struct WireLightSetting: Codable, Sendable, Equatable, Hashable {
     public var indoor: Bool
     public var brightness: Int16
@@ -50,9 +38,7 @@ public struct WireLightSetting: Codable, Sendable, Equatable, Hashable {
 public struct WireObject: Codable, Sendable, Equatable, Hashable {
     public var x: Int16
     public var y: Int16
-    public var tilesetIndex: Int16
-    public var sourceX: Int16
-    public var sourceY: Int16
+    public var modelID: String
     public var sourceWidth: Int16
     public var sourceHeight: Int16
     public var priority: Int16
@@ -60,18 +46,14 @@ public struct WireObject: Codable, Sendable, Equatable, Hashable {
     public init(
         x: Int16,
         y: Int16,
-        tilesetIndex: Int16,
-        sourceX: Int16,
-        sourceY: Int16,
+        modelID: String,
         sourceWidth: Int16,
         sourceHeight: Int16,
         priority: Int16
     ) {
         self.x = x
         self.y = y
-        self.tilesetIndex = tilesetIndex
-        self.sourceX = sourceX
-        self.sourceY = sourceY
+        self.modelID = modelID
         self.sourceWidth = sourceWidth
         self.sourceHeight = sourceHeight
         self.priority = priority
@@ -209,7 +191,7 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
     public var name: String
     public var version: Int16
     public var dimensions: WireGridSize
-    public var ground: WireGroundTile
+    public var floorMaterialID: String
     public var light: WireLightSetting
     public var objects: [WireObject]
     public var collisionMasks: [WireCollisionMask]
@@ -221,7 +203,7 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
         name: String,
         version: Int16,
         dimensions: WireGridSize,
-        ground: WireGroundTile,
+        floorMaterialID: String,
         light: WireLightSetting,
         objects: [WireObject],
         collisionMasks: [WireCollisionMask],
@@ -232,7 +214,7 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
         self.name = name
         self.version = version
         self.dimensions = dimensions
-        self.ground = ground
+        self.floorMaterialID = floorMaterialID
         self.light = light
         self.objects = objects
         self.collisionMasks = collisionMasks

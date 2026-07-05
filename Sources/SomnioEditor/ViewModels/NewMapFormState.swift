@@ -9,6 +9,7 @@ import Foundation
     public var height: Int16 = 15
     public var indoor: Bool = false
     public var brightness: Int16 = 100
+    public var floorMaterialID: String = EditorDefaults.defaultFloorMaterialID
 
     public init() {}
 }

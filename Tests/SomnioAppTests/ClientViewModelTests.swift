@@ -1,11 +1,12 @@
 import CoreGraphics
 import Foundation
+import RealityKit
+import simd
 import SomnioCore
 import SomnioProtocol
-import SpriteKit
 import Testing
 @testable import SomnioApp
-@testable import SomnioUI
+@testable import SomnioScene3D
 
 @MainActor
 struct ClientViewModelTests {
@@ -126,12 +127,16 @@ struct ClientViewModelTests {
         ))))
 
         let probe = try #require(scene._entityNodeProbe(for: 7))
-        // Direct set, not a tween: the node itself moved to the authoritative position (x is not
-        // Y-flipped, so the legacy x surfaces directly; it was placed at x=1), it holds no in-flight
-        // `SKAction` (a tween would have left one running), and the camera re-centered to follow it.
-        #expect(probe.nodePosition.x == 2)
-        #expect(!probe.hasRunningActions)
-        #expect(probe.cameraCenteredOnNode)
+        // Direct set, not a tween: the node itself moved to the authoritative position (its
+        // feet-box center mapped onto the floor), no scene tween is in flight (a peer path
+        // would have left one), and the camera re-centered to follow it.
+        let feetCenter = FeetMask.center(forSpriteAt: GridPoint(x: 0, y: 0), spriteSize: GridSize(width: 32, height: 48))
+        let expected = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(
+            Float(feetCenter.x) + 2, Float(feetCenter.y) + 3
+        ))
+        #expect(length(probe.nodePosition - expected) < 1e-4)
+        #expect(!probe.hasActiveTween)
+        #expect(scene.cameraEntity.position == OrthographicCameraRig.cameraPosition(focusing: probe.nodePosition))
         #expect(viewModel.entities[7]?.position == GridPoint(x: 2, y: 3))
     }
 
@@ -139,11 +144,10 @@ struct ClientViewModelTests {
         let (viewModel, scene) = makeViewModelWithScene()
         viewModel.connectionState = .awaitingEnterSector
         viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
-        // Held hidden with the splash up until the self entity lands — no origin-framed flicker.
+        // Held disabled until the self entity lands — no origin-framed flicker.
         let held = scene._heldSwapProbe()
-        #expect(held.sectorRootHidden)
+        #expect(held.sectorRootEnabled == false)
         #expect(held.pendingPlayerReveal)
-        #expect(held.splashPresent)
 
         viewModel.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
         viewModel.handle(.message(.entity(EntityMessage(
@@ -152,9 +156,8 @@ struct ClientViewModelTests {
             x: 1, y: 1, facing: Heading(cardinal: .south).degrees, tempo: Tempo.default.rawValue
         ))))
         let revealed = scene._heldSwapProbe()
-        #expect(!revealed.sectorRootHidden)
+        #expect(revealed.sectorRootEnabled == true)
         #expect(!revealed.pendingPlayerReveal)
-        #expect(!revealed.splashPresent)
     }
 
     @Test func `the view model drives the render surface for each inbound render event`() {
@@ -896,8 +899,8 @@ struct ClientViewModelTests {
         viewModel.presentedSheet = nil
     }
 
-    private func makeWorldScene() -> WorldScene {
-        WorldScene(size: CGSize(width: 640, height: 480), assets: NullSpriteAssets())
+    private func makeWorldScene() -> WorldScene3D {
+        WorldScene3D(modelAssets: NullModelAssets())
     }
 
     private func makeViewModel(keyboard: KeyboardSampler) -> ClientViewModel {
@@ -908,10 +911,10 @@ struct ClientViewModelTests {
         ClientViewModel(worldScene: makeWorldScene())
     }
 
-    /// Returns the view model alongside the concrete `WorldScene` it drives, for the dispatch-wiring
-    /// tests that reach SpriteKit-only render probes (`_entityNodeProbe`/`_heldSwapProbe`) the
-    /// erased `WorldRenderSurface` seam does not expose.
-    private func makeViewModelWithScene() -> (ClientViewModel, WorldScene) {
+    /// Returns the view model alongside the concrete `WorldScene3D` it drives, for the
+    /// dispatch-wiring tests that reach renderer-internal probes (`_entityNodeProbe`/
+    /// `_heldSwapProbe`) the erased `WorldRenderSurface` seam does not expose.
+    private func makeViewModelWithScene() -> (ClientViewModel, WorldScene3D) {
         let scene = makeWorldScene()
         return (ClientViewModel(worldScene: scene), scene)
     }
@@ -931,7 +934,7 @@ struct ClientViewModelTests {
             name: "Test",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100)
         )
     }
@@ -942,7 +945,7 @@ struct ClientViewModelTests {
             name: "Test",
             version: 1,
             dimensions: GridSize(width: 20, height: 20),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             collisionMasks: collisionMasks
         )
@@ -953,7 +956,7 @@ struct ClientViewModelTests {
             name: "Test",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             collisionMasks: masks
         )
@@ -964,7 +967,7 @@ struct ClientViewModelTests {
             name: "Test",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             portals: portals
         )
@@ -1028,33 +1031,25 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
     }
 }
 
+/// Nil-resolving asset double: every entity and object renders the placeholder path, which
+/// is all the view-model dispatch tests need from the renderer.
 @MainActor
-private final class NullSpriteAssets: SpriteAssets {
-    var entityFrameCount: Int {
-        AssetManifest.legacyFallback.entityFrameCount
-    }
+private final class NullModelAssets: ModelAssets {
+    func prewarm() async {}
 
-    func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> SKTexture? {
+    func entity(forKind _: WorldEntity.Kind, figure _: Int16) -> Entity? {
         nil
     }
 
-    func objectTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16, sourceWidth _: Int16, sourceHeight _: Int16) -> SKTexture? {
+    func object(forID _: String) -> Entity? {
         nil
     }
 
-    func entityTexture(figureIndex _: Int16, kind _: WorldEntity.Kind, facing _: Direction, frame _: Int) -> SKTexture? {
+    func floorMaterialTexture(forID _: String) -> TextureResource? {
         nil
     }
 
-    func animationStrip(name _: String) -> SKTexture? {
-        nil
-    }
-
-    func splash() -> SKTexture? {
-        nil
-    }
-
-    func speechBubble() -> SKTexture? {
+    func floorMaterialURL(forID _: String) -> URL? {
         nil
     }
 }

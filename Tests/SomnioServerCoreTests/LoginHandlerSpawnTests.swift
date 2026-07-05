@@ -53,7 +53,7 @@ struct LoginHandlerSpawnTests {
             name: "S",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             collisionMasks: masks,
             portals: portals

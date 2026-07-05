@@ -7,10 +7,10 @@ struct EditorSelectionTests {
     private static let body: SectorBody = .init(
         version: 1,
         dimensions: GridSize(width: 4, height: 4),
-        ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+        floorMaterialID: "grass-meadow",
         light: LightSetting(indoor: false, brightness: 100),
         objects: [
-            Object(x: 0, y: 0, tilesetIndex: 0, sourceX: 0, sourceY: 0,
+            Object(x: 0, y: 0, modelID: "door",
                    sourceWidth: 32, sourceHeight: 32, priority: 0)
         ],
         collisionMasks: [CollisionMask(x: 0, y: 0, width: 32, height: 32)],

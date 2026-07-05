@@ -10,7 +10,7 @@ import Foundation
     /// Idempotent: first call for a given documentID creates and stores the workspace;
     /// every subsequent call returns the same instance. The dictionary lookup is the
     /// only branch in the function body — SwiftUI re-evaluates `body` arbitrarily, so
-    /// preserving workspace identity across redraws is load-bearing for WorldScene
+    /// preserving workspace identity across redraws is load-bearing for WorldScene3D
     /// continuity and in-flight presentedSheet state.
     public static func workspace(forID id: UUID) -> SectorWorkspace {
         if let existing = workspaces[id] { return existing }

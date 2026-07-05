@@ -42,7 +42,7 @@ public struct SectorSnapshot: Sendable, Equatable {
         self.body = SectorBody(
             version: EditorDefaults.defaultSectorVersion,
             dimensions: .zero,
-            ground: EditorDefaults.defaultGround,
+            floorMaterialID: EditorDefaults.defaultFloorMaterialID,
             light: LightSetting(indoor: false, brightness: 0)
         )
     }

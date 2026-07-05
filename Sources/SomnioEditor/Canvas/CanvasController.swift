@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
+import simd
 import SomnioCore
+import SomnioScene3D
 import SwiftUI
 
 /// Stateless dispatcher for canvas click + delete actions. Lives in the canvas layer
@@ -8,21 +10,20 @@ import SwiftUI
 @MainActor public enum CanvasController {
     /// Routes a canvas tap to either record selection (when the current palette slot
     /// is `.selectAndEdit`) or to the matching per-tool dialog (when `.placeNew`).
-    /// The canvas renders the sector at full pixel size with a sector-centered camera, inset by
-    /// `margin` of scrollable breathing room, so the SwiftUI top-left `.local` point maps to legacy
-    /// top-left grid coordinates by subtracting that margin, then clamping and quantizing.
+    /// The 3D canvas frames the sector through the workspace's shared camera framing, so the
+    /// SwiftUI top-left `.local` point unprojects onto the floor plane to a legacy top-left
+    /// grid coordinate, then quantizes.
     public static func handleTap(
         at location: CGPoint,
-        margin: CGFloat,
         document: SectorDocument,
         workspace: SectorWorkspace
     ) {
         let step = EditorDefaults.currentGridStepPx()
-        let gridX = gridCoordinate(forLocal: location.x, margin: margin)
-        let gridY = gridCoordinate(forLocal: location.y, margin: margin)
-        let snappedX = EditorDefaults.quantize(gridX, step: step)
-        let snappedY = EditorDefaults.quantize(gridY, step: step)
-        let point = GridPoint(x: snappedX, y: snappedY)
+        let grid = gridPoint(forViewport: location, viewportSize: workspace.viewportSize, framing: workspace.framing)
+        let point = GridPoint(
+            x: EditorDefaults.quantize(grid.x, step: step),
+            y: EditorDefaults.quantize(grid.y, step: step)
+        )
         switch workspace.selectedPaletteSlot {
         case .selectAndEdit:
             workspace.selection = selectRecord(at: point, in: document.body, mode: workspace.placementMode)
@@ -45,10 +46,46 @@ import SwiftUI
         }
     }
 
-    /// Converts a SwiftUI top-left `.local` axis coordinate to a legacy top-left grid coordinate:
-    /// the sector is inset by `margin` of scroll padding, so remove it, then floor into `Int16`.
-    public static func gridCoordinate(forLocal value: CGFloat, margin: CGFloat) -> Int16 {
-        Int16(clamping: Int((value - margin).rounded(.down)))
+    /// Converts a SwiftUI top-left `.local` viewport point to a legacy top-left grid
+    /// coordinate: unproject through the shared camera framing onto the floor plane, then
+    /// floor each axis into `Int16` (the same downward rounding the 2D pixel canvas used).
+    public static func gridPoint(forViewport location: CGPoint, viewportSize: CGSize, framing: EditorFraming) -> GridPoint {
+        let pixel = OrthographicCameraRig.legacyPoint(
+            forViewport: SIMD2<Float>(location),
+            viewportSize: SIMD2<Float>(viewportSize),
+            framing: framing
+        )
+        return GridPoint(
+            x: Int16(clamping: Int(pixel.x.rounded(.down))),
+            y: Int16(clamping: Int(pixel.y.rounded(.down)))
+        )
+    }
+
+    /// Navigation action a canvas scroll event resolves to.
+    public enum ScrollIntent: Equatable {
+        case zoom(deltaY: CGFloat)
+        case pan(delta: CGSize)
+    }
+
+    /// Routes a scroll event's primitives to a navigation intent: ⌘ zooms, Shift turns a
+    /// mouse wheel's vertical ticks horizontal, and line-based (non-precise) deltas are
+    /// scaled up so one tick moves a readable distance.
+    public static func scrollIntent(
+        deltaX: CGFloat,
+        deltaY: CGFloat,
+        hasPreciseDeltas: Bool,
+        commandHeld: Bool,
+        shiftHeld: Bool
+    ) -> ScrollIntent {
+        let lineScale: CGFloat = hasPreciseDeltas ? 1 : 10
+        if commandHeld {
+            return .zoom(deltaY: deltaY * lineScale)
+        }
+        var delta = CGSize(width: deltaX * lineScale, height: deltaY * lineScale)
+        if shiftHeld, delta.width == 0 {
+            delta = CGSize(width: delta.height, height: 0)
+        }
+        return .pan(delta: delta)
     }
 
     public static func deleteSelection(

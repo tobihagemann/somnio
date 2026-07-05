@@ -796,7 +796,7 @@ struct AITickTests {
         let body = SectorBody(
             version: 3,
             dimensions: dimensions,
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 100),
             objects: [],
             collisionMasks: collisionMasks,

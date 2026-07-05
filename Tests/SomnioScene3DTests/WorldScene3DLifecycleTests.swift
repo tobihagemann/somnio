@@ -34,15 +34,11 @@ struct WorldScene3DLifecycleTests {
             warmed ? Entity() : nil
         }
 
-        func object(forSignature _: SourceRectSignature) -> Entity? {
+        func object(forID _: String) -> Entity? {
             warmed ? Entity() : nil
         }
 
-        func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> TextureResource? {
-            nil
-        }
-
-        func groundMaterialTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> TextureResource? {
+        func floorMaterialTexture(forID _: String) -> TextureResource? {
             nil
         }
 
@@ -56,9 +52,7 @@ struct WorldScene3DLifecycleTests {
             Object(
                 x: Int16(index * 64),
                 y: 32,
-                tilesetIndex: 25,
-                sourceX: 64,
-                sourceY: 512,
+                modelID: "bookshelf-ornate",
                 sourceWidth: 64,
                 sourceHeight: 96,
                 priority: 0
@@ -68,7 +62,7 @@ struct WorldScene3DLifecycleTests {
             name: "Test",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             objects: objects
         )
@@ -206,7 +200,7 @@ struct WorldScene3DLifecycleTests {
 
     private func object(x: Int16, y: Int16, width: Int16, height: Int16) -> Object {
         Object(
-            x: x, y: y, tilesetIndex: 25, sourceX: 0, sourceY: 512,
+            x: x, y: y, modelID: "bookshelf",
             sourceWidth: width, sourceHeight: height, priority: 0
         )
     }
@@ -292,6 +286,95 @@ struct WorldScene3DLifecycleTests {
             scene.tick(deltaTime: 0.1)
         }
         #expect(try #require(scene._entityNodeProbe(for: 1)).hasSpeechBubble == false)
+    }
+
+    // MARK: - Authoring overlay
+
+    @Test func `the authoring overlay renders record rects and the selection under the sector root`() throws {
+        let scene = scene()
+        var sector = tinySector()
+        sector.collisionMasks = [CollisionMask(x: 0, y: 0, width: 32, height: 32)]
+        sector.portals = [SectorPortal(x: 64, y: 0, width: 32, height: 16, targetSectorName: "Other", direction: .outboundTrigger)]
+        sector.npcs = [NPC(
+            spawnOrigin: GridPoint(x: 96, y: 96), spawnBoxSize: GridSize(width: 32, height: 48),
+            maskSize: GridSize(width: 32, height: 48), name: "Libus", figure: 16,
+            facing: Heading(cardinal: .south), behaviorTag: 0, dialogScript: ""
+        )]
+        sector.monsterSpawns = [MonsterSpawn(
+            spawnOrigin: GridPoint(x: 160, y: 160), spawnBoxSize: GridSize(width: 64, height: 64),
+            spawnedMonsterSize: GridSize(width: 32, height: 48), name: "Gespenst", figure: 0,
+            bounded: false, spawnHP: 100, spawnBalance: 100, spawnMana: 100, aiScriptIndex: 0
+        )]
+        scene.load(sector: sector, awaitingPlayerPlacement: false)
+        #expect(scene._authoringOverlayChildCount() == nil)
+
+        scene.updateAuthoringOverlay(
+            body: sector.body,
+            selectionBounds: (origin: GridPoint(x: 0, y: 0), size: GridSize(width: 32, height: 32)),
+            showGridOverlay: false,
+            gridStepPx: 32
+        )
+        // Mask + portal + NPC spawn + monster spawn rects + the selection border container.
+        #expect(scene._authoringOverlayChildCount() == 5)
+        // The overlay container joins the sector root, so a sector swap tears it down.
+        #expect(scene._sectorRootChildCount() == 2) // floor + overlay
+
+        // Rect geometry, not just counts: the mask plane sits at its authored rect's center
+        // on the floor (no Y-flip), lifted just off the plane so it never z-fights the floor.
+        let positions = try #require(scene._authoringOverlayChildPositions())
+        let maskCenter = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(16, 16))
+        let maskPlane = try #require(positions.first { abs($0.x - maskCenter.x) < 1e-4 && abs($0.z - maskCenter.z) < 1e-4 })
+        #expect(maskPlane.y > 0)
+        #expect(maskPlane.y < 0.05)
+        let spawnCenter = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(112, 120))
+        #expect(positions.contains { abs($0.x - spawnCenter.x) < 1e-4 && abs($0.z - spawnCenter.z) < 1e-4 })
+
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        #expect(scene._authoringOverlayChildCount() == 4) // rebuilt from scratch, selection gone
+
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        #expect(scene._authoringOverlayChildCount() == nil)
+    }
+
+    @Test func `the grid toggle adds one grid container with a line per step across both axes`() {
+        let scene = scene()
+        let sector = tinySector()
+        scene.load(sector: sector, awaitingPlayerPlacement: false)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: true, gridStepPx: 32)
+        #expect(scene._authoringOverlayChildCount() == 1)
+        // A 4×4-tile sector spans 512 px: 17 vertical + 17 horizontal lines at the 32 px step.
+        #expect(scene._authoringOverlayGridLineCount() == 34)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        #expect(scene._authoringOverlayChildCount() == 0)
+        #expect(scene._authoringOverlayGridLineCount() == nil)
+    }
+
+    @Test func `a grid past the line cap is suppressed instead of freezing the rebuild`() {
+        // 12×12 tiles at the finest 4 px snap would emit (1536+1536)/4 + 2 = 770 planes,
+        // past the cap — the grid is skipped entirely rather than stalling every refresh.
+        let scene = scene()
+        let sector = Sector(
+            name: "Big",
+            version: 1,
+            dimensions: GridSize(width: 12, height: 12),
+            floorMaterialID: "grass-meadow",
+            light: LightSetting(indoor: false, brightness: 100)
+        )
+        scene.load(sector: sector, awaitingPlayerPlacement: false)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: true, gridStepPx: 4)
+        #expect(scene._authoringOverlayChildCount() == 0)
+        #expect(scene._authoringOverlayGridLineCount() == nil)
+    }
+
+    @Test func `a zero-extent record renders an empty placeholder instead of trapping`() {
+        // An invalidated record mid-edit (width 0) must not reach `generatePlane`.
+        let scene = scene()
+        var sector = tinySector()
+        sector.collisionMasks = [CollisionMask(x: 0, y: 0, width: 0, height: 32)]
+        scene.load(sector: sector, awaitingPlayerPlacement: false)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        #expect(scene._authoringOverlayChildCount() == 1)
+        #expect(scene._authoringOverlayChildPositions() == [.zero])
     }
 
     // MARK: - Deferred reveal
@@ -452,15 +535,11 @@ private final class NPCOnlyStubAssets: ModelAssets {
         kind == .npc ? Entity() : nil
     }
 
-    func object(forSignature _: SourceRectSignature) -> Entity? {
+    func object(forID _: String) -> Entity? {
         nil
     }
 
-    func groundTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> TextureResource? {
-        nil
-    }
-
-    func groundMaterialTexture(tilesetIndex _: Int16, sourceX _: Int16, sourceY _: Int16) -> TextureResource? {
+    func floorMaterialTexture(forID _: String) -> TextureResource? {
         nil
     }
 

@@ -239,7 +239,7 @@ struct PortalDateTickTests {
         let body = SectorBody(
             version: 3,
             dimensions: GridSize(width: 8, height: 8),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 100),
             objects: [],
             collisionMasks: [],

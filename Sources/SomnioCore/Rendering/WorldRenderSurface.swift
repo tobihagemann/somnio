@@ -24,12 +24,12 @@ public struct SubpixelPoint: Sendable, Equatable {
 
 /// Renderer-neutral surface the player client drives to present the world. The view model
 /// holds `any WorldRenderSurface` and calls only these methods, so the concrete renderer —
-/// the SpriteKit `WorldScene` or the RealityKit `WorldScene3D` — is a single wiring choice in
-/// the app entry rather than a coupling baked into the view model.
+/// the RealityKit `WorldScene3D`, or a test spy — is a single wiring choice in the app entry
+/// rather than a coupling baked into the view model.
 ///
 /// `@MainActor`-isolated because the conforming render objects are non-Sendable main-actor
-/// types (an `SKScene`, a RealityKit `Entity` graph) and the driving view model is itself
-/// main-actor isolated — the protocol-level isolation matches its call sites.
+/// types (a RealityKit `Entity` graph) and the driving view model is itself main-actor
+/// isolated — the protocol-level isolation matches its call sites.
 @MainActor public protocol WorldRenderSurface {
     /// Swaps the rendered sector. When `awaitingPlayerPlacement` is `true` the held visual stays
     /// on screen until the local player is placed, avoiding a frame of the new sector framed on

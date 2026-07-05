@@ -12,10 +12,40 @@ struct MapCodecFailureTests {
         #expect(throws: (any Error).self) { try MapCodec.read(bytes) }
     }
 
+    @Test func `an oversized file is rejected before decoding`() {
+        // The size preflight must fire before `JSONDecoder` parses anything — the payload
+        // here is not even JSON, so reaching the parser would throw a different error shape
+        // only after chewing through the whole blob.
+        let oversized = Data(count: SomnioConstants.maxSectorFileBytes + 1)
+        #expect(throws: DecodingError.self) { try MapCodec.read(oversized) }
+    }
+
     @Test func `missing required field throws`() {
         // An object missing every `SectorBody` key; `version` is the first required field.
         let bytes = Data("{}".utf8)
         #expect(throws: DecodingError.self) { try MapCodec.read(bytes) }
+    }
+
+    @Test func `a legacy source-rect-shaped file fails loudly`() {
+        // New-shape-only policy: the pre-3D format carried `ground` tileset crops instead of
+        // `floorMaterialID`/`modelID`. There is no auto-upgrade path — a legacy file throws a
+        // `DecodingError` for the absent id fields rather than silently loading.
+        let json = """
+        {
+          "version": 1,
+          "dimensions": {"width": 4, "height": 4},
+          "ground": {"tilesetIndex": 25, "sourceX": 0, "sourceY": 0},
+          "light": {"indoor": false, "brightness": 100},
+          "objects": [
+            {"x": 0, "y": 0, "tilesetIndex": 25, "sourceX": 64, "sourceY": 512, "sourceWidth": 64, "sourceHeight": 96, "priority": 0}
+          ],
+          "collisionMasks": [],
+          "portals": [],
+          "npcs": [],
+          "monsterSpawns": []
+        }
+        """
+        #expect(throws: DecodingError.self) { try MapCodec.read(Data(json.utf8)) }
     }
 
     @Test func `unknown NPC direction string throws`() {
@@ -25,7 +55,7 @@ struct MapCodecFailureTests {
         {
           "version": 1,
           "dimensions": {"width": 4, "height": 4},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 100},
           "objects": [],
           "collisionMasks": [],
@@ -55,7 +85,7 @@ struct MapCodecFailureTests {
         {
           "version": 1,
           "dimensions": {"width": 4, "height": 4},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 100},
           "objects": [],
           "collisionMasks": [],
@@ -86,7 +116,7 @@ struct MapCodecFailureTests {
         {
           "version": 1,
           "dimensions": {"width": \(width), "height": \(height)},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 0},
           "objects": [],
           "collisionMasks": [],
@@ -105,7 +135,7 @@ struct MapCodecFailureTests {
         {
           "version": 1,
           "dimensions": {"width": 1024, "height": 64},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 0},
           "objects": [],
           "collisionMasks": [],
@@ -125,7 +155,7 @@ struct MapCodecFailureTests {
         {
           "version": 1,
           "dimensions": {"width": 4, "height": 4},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 0},
           "objects": [],
           "collisionMasks": [],
@@ -155,7 +185,7 @@ struct MapCodecFailureTests {
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: width, height: height),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 0)
         )
         #expect(throws: EncodingError.self) { try MapCodec.write(body) }
@@ -179,13 +209,39 @@ struct MapCodecFailureTests {
         #expect(atCap.hasContentCountsWithinBounds)
     }
 
+    @Test func `at-cap portal, npc, and monster-spawn counts decode`() throws {
+        // The exact caps still decode, guarding each new `<=` against an off-by-one.
+        let atCap = try MapCodec.read(Self.contentCountJSON(
+            portalCount: SomnioConstants.maxSectorPortals,
+            npcCount: SomnioConstants.maxSectorNPCs,
+            monsterSpawnCount: SomnioConstants.maxSectorMonsterSpawns
+        ))
+        #expect(atCap.hasContentCountsWithinBounds)
+    }
+
+    @Test(arguments: [
+        (SomnioConstants.maxSectorPortals + 1, 0, 0),
+        (0, SomnioConstants.maxSectorNPCs + 1, 0),
+        (0, 0, SomnioConstants.maxSectorMonsterSpawns + 1)
+    ])
+    func `over-cap portal, npc, and monster-spawn counts throw on read`(portalCount: Int, npcCount: Int, monsterSpawnCount: Int) {
+        // Portals, NPCs, and monster spawns each drive per-record work on load (overlay
+        // rects, spawn/dialog runtimes), so a hostile file can't smuggle unbounded arrays
+        // through the two seams the codec shares with the wire boundary.
+        #expect(throws: DecodingError.self) {
+            try MapCodec.read(Self.contentCountJSON(
+                portalCount: portalCount, npcCount: npcCount, monsterSpawnCount: monsterSpawnCount
+            ))
+        }
+    }
+
     @Test func `over-cap content counts throw on write`() {
         // The writer gates on the same count caps as the reader so it can't persist a file
         // `read` would refuse.
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 0),
             collisionMasks: Array(
                 repeating: CollisionMask(x: 0, y: 0, width: 1, height: 1),
@@ -195,26 +251,45 @@ struct MapCodecFailureTests {
         #expect(throws: EncodingError.self) { try MapCodec.write(body) }
     }
 
-    /// A minimal sector JSON carrying `objectCount` copies of one object and `maskCount` copies
-    /// of one mask, assembled textually so the over-cap case can't be blocked by the writer.
-    private static func contentCountJSON(objectCount: Int, maskCount: Int) -> Data {
+    /// A minimal sector JSON carrying repeated copies of one record per array, assembled
+    /// textually so the over-cap cases can't be blocked by the writer.
+    private static func contentCountJSON(
+        objectCount: Int = 0,
+        maskCount: Int = 0,
+        portalCount: Int = 0,
+        npcCount: Int = 0,
+        monsterSpawnCount: Int = 0
+    ) -> Data {
         let object = """
-        {"x": 0, "y": 0, "tilesetIndex": 0, "sourceX": 0, "sourceY": 0, "sourceWidth": 1, "sourceHeight": 1, "priority": 0}
+        {"x": 0, "y": 0, "modelID": "door", "sourceWidth": 1, "sourceHeight": 1, "priority": 0}
         """
         let mask = """
         {"x": 0, "y": 0, "width": 1, "height": 1}
+        """
+        let portal = """
+        {"x": 0, "y": 0, "width": 1, "height": 1, "targetSectorName": "Other", "direction": 1}
+        """
+        let npc = """
+        {"spawnOrigin": {"x": 0, "y": 0}, "spawnBoxSize": {"width": 1, "height": 1}, \
+        "maskSize": {"width": 1, "height": 1}, "name": "Libus", "figure": 16, "direction": 0, \
+        "behaviorTag": 0, "dialogScript": ""}
+        """
+        let monsterSpawn = """
+        {"spawnOrigin": {"x": 0, "y": 0}, "spawnBoxSize": {"width": 1, "height": 1}, \
+        "spawnedMonsterSize": {"width": 1, "height": 1}, "name": "Gespenst", "figure": 0, \
+        "bounded": false, "spawnHP": 100, "spawnBalance": 100, "spawnMana": 100, "aiScriptIndex": 0}
         """
         let json = """
         {
           "version": 1,
           "dimensions": {"width": 4, "height": 4},
-          "ground": {"tilesetIndex": 0, "sourceX": 0, "sourceY": 0},
+          "floorMaterialID": "grass-meadow",
           "light": {"indoor": false, "brightness": 0},
           "objects": [\(Array(repeating: object, count: objectCount).joined(separator: ","))],
           "collisionMasks": [\(Array(repeating: mask, count: maskCount).joined(separator: ","))],
-          "portals": [],
-          "npcs": [],
-          "monsterSpawns": []
+          "portals": [\(Array(repeating: portal, count: portalCount).joined(separator: ","))],
+          "npcs": [\(Array(repeating: npc, count: npcCount).joined(separator: ","))],
+          "monsterSpawns": [\(Array(repeating: monsterSpawn, count: monsterSpawnCount).joined(separator: ","))]
         }
         """
         return Data(json.utf8)

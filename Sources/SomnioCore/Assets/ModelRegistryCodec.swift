@@ -1,7 +1,7 @@
 import Foundation
 
 /// Bidirectional codec for the committed model registry (`ModelRegistry.json`). Mirrors
-/// `AssetManifestCodec`: per-call `JSONDecoder`/`JSONEncoder`, decode failures surfacing as
+/// `MapCodec`: per-call `JSONDecoder`/`JSONEncoder`, decode failures surfacing as
 /// `Swift.DecodingError` and encode-time model corruption as `Swift.EncodingError`, and a
 /// sorted-keys pretty-print so the committed file stays human-diffable. Both directions validate
 /// the structural invariants the synthesized `Codable` alone can't express, so a malformed
@@ -49,17 +49,19 @@ public enum ModelRegistryCodec {
         }
         return validationFailure(objectModels: registry.objectModels)
             ?? validationFailure(floorMaterials: registry.floorMaterials)
-            ?? validationFailure(groundMaterials: registry.groundMaterials, floorIDs: Set(registry.floorMaterials.map(\.id)))
     }
 
     private static func validationFailure(objectModels: [ObjectModelRule]) -> String? {
-        var signatures = Set<SourceRectSignature>()
+        var ids = Set<String>()
         for rule in objectModels {
+            if rule.id.isEmpty {
+                return "object model \(rule.model.stem) has an empty id"
+            }
             if let reason = validationFailure(model: rule.model, describedAs: "object model \(rule.model.stem)") {
                 return reason
             }
-            if !signatures.insert(rule.signature).inserted {
-                return "duplicate object source-rect signature for tileset \(rule.signature.tilesetIndex) at (\(rule.signature.sourceX), \(rule.signature.sourceY))"
+            if !ids.insert(rule.id).inserted {
+                return "duplicate object model id \(rule.id)"
             }
         }
         return nil
@@ -76,21 +78,6 @@ public enum ModelRegistryCodec {
             }
             if !floorIDs.insert(rule.id).inserted {
                 return "duplicate floor material id \(rule.id)"
-            }
-        }
-        return nil
-    }
-
-    private static func validationFailure(groundMaterials: [GroundMaterialRule], floorIDs: Set<String>) -> String? {
-        var groundSignatures = Set<GroundMaterialRule>()
-        for rule in groundMaterials {
-            if !floorIDs.contains(rule.id) {
-                return "ground material references unknown floor material id \(rule.id)"
-            }
-            var signature = rule
-            signature.id = ""
-            if !groundSignatures.insert(signature).inserted {
-                return "duplicate ground material signature for tileset \(rule.tilesetIndex) at (\(rule.sourceX), \(rule.sourceY))"
             }
         }
         return nil

@@ -15,15 +15,15 @@ From the repo root (run with the sandbox disabled — SwiftPM packaging needs it
 SIGNING_MODE=adhoc Scripts/package_app.sh debug editor
 ```
 
-This builds `SomnioEditor` and assembles `SomnioEditor.app` at the repo root with adhoc signing. A `SOMNIO_ASSET_SOURCE not set; skipping` warning is expected and fine.
+This builds `SomnioEditor` and assembles `SomnioEditor.app` at the repo root with adhoc signing. A `SOMNIO_ASSET_SOURCE not set; skipping` message is expected and fine.
 
-For textured map rendering, point at an asset pack root (containing `Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/`):
+For textured map rendering, point at an asset pack root (containing `Models/` and `FloorMaterials/`; the local pack lives at `../somnio-assets`):
 
 ```bash
 SOMNIO_ASSET_SOURCE="<asset-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug editor
 ```
 
-Without it the editor opens with the nil-fallback (untextured) rendering, which is fine for most editor testing.
+Without it the editor opens with the nil-fallback rendering (placeholder gray models, untextured floor), which is fine for most editor testing.
 
 ## Step 2: Launch
 
@@ -31,9 +31,16 @@ Without it the editor opens with the nil-fallback (untextured) rendering, which 
 open SomnioEditor.app
 ```
 
-Open or create a `.somnio-sector` document to exercise the change.
+Or open a sector file directly (the fixtures under `Tests/SomnioMapFixturesTestSupport/MapFixtures/` make good test documents):
+
+```bash
+open -a "$PWD/SomnioEditor.app" Tests/SomnioMapFixturesTestSupport/MapFixtures/EdariaBibliothek.somnio-sector
+```
+
+Never launch with `open -a SomnioEditor` (by name) — that resolves a stale copy in /Applications, not the freshly built app. Always use the repo-root app by path.
 
 ## Notes
 
 - Rebuild and repackage after any code change — a running instance keeps the old code in memory.
+- To screenshot the editor when its window sits on another Space, find the window id with a swift CGWindowList snippet (`CGWindowListCopyWindowInfo`; system python has no PyObjC/Quartz) and capture via `screencapture -l <id>`.
 - To produce a signed, notarized editor DMG for distribution (not local testing), use `Scripts/release.sh editor`.

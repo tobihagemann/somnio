@@ -131,11 +131,7 @@
     "height" : 4,
     "width" : 4
   },
-  "ground" : {
-    "sourceX" : 64,
-    "sourceY" : 0,
-    "tilesetIndex" : 25
-  },
+  "floorMaterialID" : "wood-warm",
   "light" : {
     "brightness" : 100,
     "indoor" : true
@@ -166,332 +162,266 @@
   ],
   "objects" : [
     {
+      "modelID" : "bookshelf-ornate",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 64,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 0,
       "y" : -48
     },
     {
+      "modelID" : "bookshelf-ornate",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 64,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 64,
       "y" : -48
     },
     {
+      "modelID" : "bookshelf-ornate",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 64,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 128,
       "y" : -48
     },
     {
+      "modelID" : "bookshelf-ornate",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 64,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 192,
       "y" : -48
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 0,
       "y" : 96
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 64,
       "y" : 96
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 128,
       "y" : 96
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 192,
       "y" : 96
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 0,
       "y" : 256
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 64,
       "y" : 256
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 128,
       "y" : 256
     },
     {
+      "modelID" : "bookshelf",
       "priority" : 0,
       "sourceHeight" : 96,
       "sourceWidth" : 64,
-      "sourceX" : 0,
-      "sourceY" : 512,
-      "tilesetIndex" : 25,
       "x" : 192,
       "y" : 256
     },
     {
+      "modelID" : "potted-plant",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 128,
-      "sourceY" : 608,
-      "tilesetIndex" : 25,
       "x" : 256,
       "y" : 288
     },
     {
+      "modelID" : "study-table",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 160,
-      "sourceY" : 608,
-      "tilesetIndex" : 25,
       "x" : 256,
       "y" : 128
     },
     {
+      "modelID" : "bust",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 608,
-      "tilesetIndex" : 25,
       "x" : 256,
       "y" : -32
     },
     {
+      "modelID" : "door",
       "priority" : 0,
       "sourceHeight" : 32,
       "sourceWidth" : 192,
-      "sourceX" : 64,
-      "sourceY" : 32,
-      "tilesetIndex" : 50,
       "x" : 48,
       "y" : 480
     },
     {
+      "modelID" : "grand-bookcase",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 96,
-      "sourceX" : 0,
-      "sourceY" : 224,
-      "tilesetIndex" : 9,
       "x" : 352,
       "y" : -32
     },
     {
+      "modelID" : "couch",
       "priority" : 0,
       "sourceHeight" : 32,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 288,
-      "tilesetIndex" : 25,
       "x" : 320,
       "y" : 48
     },
     {
+      "modelID" : "couch",
       "priority" : 0,
       "sourceHeight" : 32,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 288,
-      "tilesetIndex" : 25,
       "x" : 352,
       "y" : 96
     },
     {
+      "modelID" : "couch",
       "priority" : 0,
       "sourceHeight" : 32,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 288,
-      "tilesetIndex" : 25,
       "x" : 416,
       "y" : 96
     },
     {
+      "modelID" : "couch",
       "priority" : 0,
       "sourceHeight" : 32,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 288,
-      "tilesetIndex" : 25,
       "x" : 448,
       "y" : 48
     },
     {
+      "modelID" : "floor-lamp",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 352,
-      "tilesetIndex" : 9,
       "x" : 480,
       "y" : 160
     },
     {
+      "modelID" : "floor-lamp",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 352,
-      "tilesetIndex" : 9,
       "x" : 384,
       "y" : 160
     },
     {
+      "modelID" : "floor-lamp",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 352,
-      "tilesetIndex" : 9,
       "x" : 480,
       "y" : 288
     },
     {
+      "modelID" : "floor-lamp",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 352,
-      "tilesetIndex" : 9,
       "x" : 384,
       "y" : 288
     },
     {
+      "modelID" : "side-table",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 544,
-      "tilesetIndex" : 25,
       "x" : 448,
       "y" : 176
     },
     {
+      "modelID" : "side-table",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 544,
-      "tilesetIndex" : 25,
       "x" : 352,
       "y" : 176
     },
     {
+      "modelID" : "side-table",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 544,
-      "tilesetIndex" : 25,
       "x" : 448,
       "y" : 304
     },
     {
+      "modelID" : "side-table",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 192,
-      "sourceY" : 544,
-      "tilesetIndex" : 25,
       "x" : 352,
       "y" : 304
     },
     {
+      "modelID" : "chair",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 128,
-      "sourceY" : 224,
-      "tilesetIndex" : 13,
       "x" : 448,
       "y" : 128
     },
     {
+      "modelID" : "chair",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 128,
-      "sourceY" : 224,
-      "tilesetIndex" : 13,
       "x" : 352,
       "y" : 128
     },
     {
+      "modelID" : "chair",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 128,
-      "sourceY" : 224,
-      "tilesetIndex" : 13,
       "x" : 448,
       "y" : 256
     },
     {
+      "modelID" : "chair",
       "priority" : 0,
       "sourceHeight" : 64,
       "sourceWidth" : 32,
-      "sourceX" : 128,
-      "sourceY" : 224,
-      "tilesetIndex" : 13,
       "x" : 352,
       "y" : 256
     }
@@ -522,5 +452,5 @@
       "y" : 384
     }
   ],
-  "version" : 10
+  "version" : 11
 }

@@ -2,15 +2,23 @@ import Foundation
 import SomnioCore
 
 /// Editor-only constants consumed by the canvas placement logic, the per-tool dialogs,
-/// and the Preferences pane. The Object dialog seeds new sectors with `defaultGround`;
-/// the New-map flow stamps `defaultSectorVersion` (the version emitted by the shipped
-/// record-type fixtures).
+/// and the Preferences pane. The New-map flow seeds new sectors with
+/// `defaultFloorMaterialID` and stamps `defaultSectorVersion` (the version emitted by the
+/// shipped record-type fixtures).
 public enum EditorDefaults {
     public static let gridSnapPresetsPx: [Int16] = [32, 16, 8, 4]
     public static let defaultGridSnapPx: Int16 = 32
     public static let userDefaultsKey = "editorGridSnap"
     public static let defaultSectorVersion: Int16 = 1
-    public static let defaultGround = GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0)
+
+    /// Semantic ids sourced from the committed model registry so the pickers can only author
+    /// references the runtime resolves. Degrades to empty lists if the bundled registry is
+    /// (theoretically) corrupt — the dialogs then offer no ids rather than trapping.
+    private static let bundledRegistry: ModelRegistry = (try? ModelRegistryCodec.bundledRegistry()) ?? .placeholderFallback
+    public static let objectModelIDs: [String] = bundledRegistry.objectModels.map(\.id)
+    public static let floorMaterialIDs: [String] = bundledRegistry.floorMaterials.map(\.id)
+    public static let defaultObjectModelID: String = objectModelIDs.first ?? ""
+    public static let defaultFloorMaterialID: String = floorMaterialIDs.first ?? "grass-meadow"
 
     /// Snaps `value` to the nearest multiple of `step` toward zero. `step == 0` means
     /// "free placement" (no quantization). Negative inputs round toward zero in the same

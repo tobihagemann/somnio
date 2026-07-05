@@ -5,18 +5,16 @@ import RealityKit
 import simd
 import SomnioCore
 
-/// RealityKit render surface for the player client. Owns the `Entity` graph hosted by
-/// `WorldScene3DView`: `rootEntity` carries only the scene-persistent pieces — the orthographic
-/// 3/4 camera, the retained sun + ambient fill lights — and the per-sector roots. Everything
-/// sector-scoped (floor, placed objects, entities, speech bubbles) lives under a per-sector
-/// root so a sector swap is a single subtree replace, mirroring the SpriteKit scene's
-/// `sectorRoot`/`previousRoot` held-swap state machine.
+/// RealityKit render surface for the player client and the map editor. Owns the `Entity`
+/// graph hosted by `WorldScene3DView`: `rootEntity` carries only the scene-persistent pieces —
+/// the orthographic 3/4 camera, the retained sun + ambient fill lights — and the per-sector
+/// roots. Everything sector-scoped (floor, placed objects, entities, speech bubbles, the
+/// editor's authoring overlay) lives under a per-sector root so a sector swap is a single
+/// subtree replace (the `sectorRoot`/`previousRoot` held-swap state machine).
 ///
-/// Real 3D depth replaces the SpriteKit painter's algorithm: objects and entities sit on the
-/// floor (Y = 0) at their world XZ and the camera's perspective plus the depth buffer give
-/// draw order for free, superseding the legacy feet-line `ScreenDepth` rule and the two
-/// Y-flips (`WorldScene.sceneY`, the object flip in `renderTiles`) — those survive only in the
-/// retained SpriteKit path serving the editor.
+/// Real 3D depth: objects and entities sit on the floor (Y = 0) at their world XZ, and the
+/// camera's perspective plus the depth buffer give draw order for free — no painter's
+/// algorithm, no Y-flip.
 @MainActor public final class WorldScene3D: WorldRenderSurface {
     private static let logger = Logger(label: "de.tobiha.somnio.scene3d.scene")
 
@@ -175,6 +173,11 @@ import SomnioCore
     private var pendingSunState: SunState?
     private var entityRenderStates: [Int16: EntityRenderState] = [:]
     private var placedObjects: [PlacedObject] = []
+    /// Editor-only authoring gizmos (record rects, selection highlight, grid), parented under
+    /// `sectorRoot` so a sector swap tears them down with everything else sector-scoped.
+    /// Internal (not private) so the overlay extension in `AuthoringOverlay.swift` can own the
+    /// rebuild; `nil` until the editor's first `updateAuthoringOverlay` after a load.
+    var authoringOverlayRoot: Entity?
     private var speechBubbles: [Int16: SpeechBubble] = [:]
     private var sceneClock: TimeInterval = 0
     /// Entity index of the local player — the camera-follow target. Set when an entity of
@@ -241,6 +244,7 @@ import SomnioCore
         entityRenderStates.removeAll()
         speechBubbles.removeAll()
         placedObjects.removeAll()
+        authoringOverlayRoot = nil
         cameraFollowID = nil
 
         let root = Entity()
@@ -386,6 +390,7 @@ import SomnioCore
         entityRenderStates.removeAll()
         speechBubbles.removeAll()
         placedObjects.removeAll()
+        authoringOverlayRoot = nil
         cameraFollowID = nil
         focusCamera(on: .zero)
     }
@@ -435,8 +440,7 @@ import SomnioCore
     private static let floorMaterialTileMeters: Float = 1.6
 
     /// Builds the sector floor under `root` and returns its center (the whole-sector camera
-    /// focus). Prefers a dedicated floor material resolved from the ground signature; falls
-    /// back to the 2D pack's uniform ground cell repeated across a lit plane —
+    /// focus). Resolves the dedicated floor material from the sector's `floorMaterialID` —
     /// `generatePlane` emits 0..1 UVs, so tiling needs both the repeat sampler and the UV
     /// scale on the material's coordinate transform. Nil-fallback: a solid lit gray plane.
     private func makeFloor(for sector: Sector, into root: Entity) -> SIMD3<Float> {
@@ -460,11 +464,7 @@ import SomnioCore
             descriptor.maxAnisotropy = 8
             return .init(descriptor)
         }()
-        if let texture = modelAssets.groundMaterialTexture(
-            tilesetIndex: sector.ground.tilesetIndex,
-            sourceX: sector.ground.sourceX,
-            sourceY: sector.ground.sourceY
-        ) {
+        if let texture = modelAssets.floorMaterialTexture(forID: sector.floorMaterialID) {
             material.baseColor = .init(tint: .white, texture: .init(texture, sampler: sampler))
             // Non-square source textures (plank strips) keep their authored aspect: the v
             // repeat shrinks with the texture's height/width ratio.
@@ -472,16 +472,6 @@ import SomnioCore
             material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
                 widthMeters / Self.floorMaterialTileMeters,
                 depthMeters / (Self.floorMaterialTileMeters * aspect)
-            ))
-        } else if let texture = modelAssets.groundTexture(
-            tilesetIndex: sector.ground.tilesetIndex,
-            sourceX: sector.ground.sourceX,
-            sourceY: sector.ground.sourceY
-        ) {
-            material.baseColor = .init(tint: .white, texture: .init(texture, sampler: sampler))
-            material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
-                Float(sector.pixelWidth) / Float(SomnioConstants.groundCellSize),
-                Float(sector.pixelHeight) / Float(SomnioConstants.groundCellSize)
             ))
         } else {
             material.baseColor = .init(tint: NSColor(white: 0.5, alpha: 1))
@@ -499,7 +489,7 @@ import SomnioCore
     private func placeObjects(of sector: Sector, into root: Entity) {
         for object in sector.objects.sorted(by: { $0.priority < $1.priority }) {
             let node = Entity()
-            let resolved = modelAssets.object(forSignature: SourceRectSignature(object))
+            let resolved = modelAssets.object(forID: object.modelID)
             node.addChild(resolved ?? Self.objectPlaceholder(for: object))
             let anchorBottomY = Self.objectAnchorBottomY(for: object, masks: sector.collisionMasks)
             Self.alignObjectNode(node, for: object, anchorBottomY: anchorBottomY)
@@ -614,7 +604,7 @@ import SomnioCore
     /// shown. Only meshes are swapped; `isEnabled`/`pendingPlayerReveal` stay untouched.
     private func refreshResolvedModels() {
         for placed in placedObjects where placed.isPlaceholder {
-            guard let clone = modelAssets.object(forSignature: SourceRectSignature(placed.object)) else { continue }
+            guard let clone = modelAssets.object(forID: placed.object.modelID) else { continue }
             for child in Array(placed.node.children) {
                 child.removeFromParent()
             }
@@ -632,8 +622,8 @@ import SomnioCore
         }
     }
 
-    /// Gray standing box sized to the entity's mask — the nil-fallback the 2D scene renders
-    /// as an untextured sprite sized to mask.
+    /// Gray standing box sized to the entity's mask — the nil-fallback for a figure whose
+    /// model is unmapped or not yet cached.
     private static func entityPlaceholder(maskSize: GridSize) -> Entity {
         let width = Float(maskSize.width) * OrthographicCameraRig.worldUnitsPerPixel
         let height = Float(maskSize.height) * OrthographicCameraRig.worldUnitsPerPixel
@@ -645,7 +635,7 @@ import SomnioCore
         return box
     }
 
-    /// Gray box over the object's authored footprint for unmapped/unavailable signatures.
+    /// Gray box over the object's authored footprint for unmapped/unavailable model ids.
     private static func objectPlaceholder(for object: Object) -> Entity {
         let width = Float(object.sourceWidth) * OrthographicCameraRig.worldUnitsPerPixel
         let depth = Float(object.sourceHeight) * OrthographicCameraRig.worldUnitsPerPixel
@@ -790,6 +780,28 @@ import SomnioCore
 
     // MARK: - Camera
 
+    /// Editor camera path: applies a whole-sector fit (focus + orthographic scale) computed by
+    /// `OrthographicCameraRig.editorFraming`. Deliberately not clamped to the gameplay zoom
+    /// bounds — the fit for a large sector exceeds `maxScale`, and clamping would crop it.
+    public func applyEditorFraming(_ framing: EditorFraming) {
+        if var camera = cameraEntity.components[OrthographicCameraComponent.self] {
+            camera.scale = framing.scale
+            cameraEntity.components.set(camera)
+        }
+        focusCamera(on: framing.focus)
+    }
+
+    /// Reads the sector graph's current authoring-overlay container, creating and parenting it
+    /// under `sectorRoot` on first use after a load. `nil` when no sector is loaded.
+    func resolvedAuthoringOverlayRoot() -> Entity? {
+        guard let sectorRoot else { return nil }
+        if let existing = authoringOverlayRoot { return existing }
+        let overlay = Entity()
+        sectorRoot.addChild(overlay)
+        authoringOverlayRoot = overlay
+        return overlay
+    }
+
     private func focusCamera(on focus: SIMD3<Float>) {
         cameraEntity.position = OrthographicCameraRig.cameraPosition(focusing: focus)
         cameraEntity.orientation = OrthographicCameraRig.cameraOrientation(focusing: focus)
@@ -849,12 +861,13 @@ import SomnioCore
         entityRenderStates[id] != nil
     }
 
-    /// Entity-node test seam: position, slewed orientation, placeholder status, and bubble
-    /// presence for yaw/tween/re-resolution assertions.
+    /// Entity-node test seam: position, slewed orientation, placeholder status, in-flight
+    /// tween, and bubble presence for yaw/tween/re-resolution assertions.
     struct EntityNodeProbe {
         var nodePosition: SIMD3<Float>
         var orientation: simd_quatf
         var isPlaceholder: Bool
+        var hasActiveTween: Bool
         var hasSpeechBubble: Bool
     }
 
@@ -864,6 +877,7 @@ import SomnioCore
             nodePosition: state.node.position,
             orientation: state.node.orientation,
             isPlaceholder: state.isPlaceholder,
+            hasActiveTween: state.tween != nil,
             hasSpeechBubble: speechBubbles[entityID] != nil
         )
     }

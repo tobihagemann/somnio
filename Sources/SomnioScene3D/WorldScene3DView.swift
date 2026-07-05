@@ -3,8 +3,7 @@ import SwiftUI
 
 /// SwiftUI host for the RealityKit `WorldScene3D`. The scene instance is owned by the caller
 /// and passed in via `init(scene:)` so SwiftUI body invalidations do not recreate it — the
-/// entity graph, camera, and per-sector floor survive redraws. Mirrors `WorldSceneView`'s
-/// caller-owned ownership pattern for the SpriteKit scene.
+/// entity graph, camera, and per-sector floor survive redraws.
 @MainActor public struct WorldScene3DView: View {
     private let scene: WorldScene3D
     private let size: CGSize

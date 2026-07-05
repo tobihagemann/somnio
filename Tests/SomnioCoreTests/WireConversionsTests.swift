@@ -19,18 +19,13 @@ struct WireConversionsTests {
         #expect(GridSize(s.asWire) == s)
     }
 
-    @Test func `ground tile round trip`() {
-        let g = GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3)
-        #expect(GroundTile(g.asWire) == g)
-    }
-
     @Test func `light setting round trip`() {
         let l = LightSetting(indoor: true, brightness: 75)
         #expect(LightSetting(l.asWire) == l)
     }
 
     @Test func `object round trip`() {
-        let o = Object(x: 1, y: 2, tilesetIndex: 3, sourceX: 4, sourceY: 5,
+        let o = Object(x: 1, y: 2, modelID: "door",
                        sourceWidth: 6, sourceHeight: 7, priority: 8)
         #expect(Object(o.asWire) == o)
     }
@@ -105,9 +100,9 @@ struct WireConversionsTests {
             name: "EdariaArena",
             version: 1,
             dimensions: GridSize(width: 16, height: 16),
-            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            floorMaterialID: "stone-arena",
             light: LightSetting(indoor: true, brightness: 75),
-            objects: [Object(x: 1, y: 1, tilesetIndex: 0, sourceX: 0, sourceY: 0,
+            objects: [Object(x: 1, y: 1, modelID: "door",
                              sourceWidth: 1, sourceHeight: 1, priority: 0)],
             collisionMasks: [CollisionMask(x: 0, y: 0, width: 1, height: 1)],
             portals: [SectorPortal(x: 0, y: 0, width: 1, height: 1,
@@ -146,13 +141,36 @@ struct WireConversionsTests {
     }
 
     @Test func `sector init accepts content counts at the caps`() throws {
+        // Every array exactly at its cap decodes, guarding each `<=` against an off-by-one.
+        // Objects sit at their per-array cap with masks chosen so the anchor-scan product
+        // lands exactly on its own cap — both arrays at 4096 would trip the product bound.
+        let atProductCapMasks = SomnioConstants.maxSectorAnchorScanPairings / SomnioConstants.maxSectorObjects
         let wire = Self.wireSector(
             objectCount: SomnioConstants.maxSectorObjects,
-            maskCount: SomnioConstants.maxSectorCollisionMasks
+            maskCount: atProductCapMasks,
+            portalCount: SomnioConstants.maxSectorPortals,
+            npcCount: SomnioConstants.maxSectorNPCs,
+            monsterSpawnCount: SomnioConstants.maxSectorMonsterSpawns
         )
         let sector = try Sector(wire)
         #expect(sector.objects.count == SomnioConstants.maxSectorObjects)
-        #expect(sector.collisionMasks.count == SomnioConstants.maxSectorCollisionMasks)
+        #expect(sector.collisionMasks.count == atProductCapMasks)
+        #expect(sector.portals.count == SomnioConstants.maxSectorPortals)
+        #expect(sector.npcs.count == SomnioConstants.maxSectorNPCs)
+        #expect(sector.monsterSpawns.count == SomnioConstants.maxSectorMonsterSpawns)
+    }
+
+    @Test func `sector init throws when the anchor-scan product exceeds its cap`() {
+        // Both arrays inside their per-array caps, product one mask over the pairing bound:
+        // isolates the quadratic-scan guard the per-array caps alone can't provide.
+        let objectCount = SomnioConstants.maxSectorObjects
+        let maskCount = SomnioConstants.maxSectorAnchorScanPairings / SomnioConstants.maxSectorObjects + 1
+        let wire = Self.wireSector(objectCount: objectCount, maskCount: maskCount)
+        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
+            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0
+        )) {
+            try Sector(wire)
+        }
     }
 
     @Test(arguments: [
@@ -163,7 +181,25 @@ struct WireConversionsTests {
         // The renderer's bottom-edge anchor scan is O(objects × collisionMasks), so a hostile
         // server could otherwise freeze the client with a single frame-sized sector.
         let wire = Self.wireSector(objectCount: objectCount, maskCount: maskCount)
-        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(objects: objectCount, collisionMasks: maskCount)) {
+        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
+            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0
+        )) {
+            try Sector(wire)
+        }
+    }
+
+    @Test(arguments: [
+        (SomnioConstants.maxSectorPortals + 1, 0, 0),
+        (0, SomnioConstants.maxSectorNPCs + 1, 0),
+        (0, 0, SomnioConstants.maxSectorMonsterSpawns + 1)
+    ])
+    func `sector init throws on record counts over the caps`(portalCount: Int, npcCount: Int, monsterSpawnCount: Int) {
+        // Portals, NPCs, and monster spawns each drive per-record work on load (overlay rects,
+        // spawn/dialog runtimes), so they share the same content-count gate.
+        let wire = Self.wireSector(portalCount: portalCount, npcCount: npcCount, monsterSpawnCount: monsterSpawnCount)
+        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
+            objects: 0, collisionMasks: 0, portals: portalCount, npcs: npcCount, monsterSpawns: monsterSpawnCount
+        )) {
             try Sector(wire)
         }
     }
@@ -173,24 +209,51 @@ struct WireConversionsTests {
             name: "EdariaArena",
             version: 1,
             dimensions: GridSize(width: width, height: height),
-            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            floorMaterialID: "stone-arena",
             light: LightSetting(indoor: true, brightness: 75)
         ).asWire
     }
 
-    private static func wireSector(objectCount: Int, maskCount: Int) -> WireSector {
+    private static func wireSector(
+        objectCount: Int = 0,
+        maskCount: Int = 0,
+        portalCount: Int = 0,
+        npcCount: Int = 0,
+        monsterSpawnCount: Int = 0
+    ) -> WireSector {
         Sector(
             name: "EdariaArena",
             version: 1,
             dimensions: GridSize(width: 16, height: 16),
-            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            floorMaterialID: "stone-arena",
             light: LightSetting(indoor: true, brightness: 75),
             objects: Array(
-                repeating: Object(x: 0, y: 0, tilesetIndex: 0, sourceX: 0, sourceY: 0,
+                repeating: Object(x: 0, y: 0, modelID: "door",
                                   sourceWidth: 1, sourceHeight: 1, priority: 0),
                 count: objectCount
             ),
-            collisionMasks: Array(repeating: CollisionMask(x: 0, y: 0, width: 1, height: 1), count: maskCount)
+            collisionMasks: Array(repeating: CollisionMask(x: 0, y: 0, width: 1, height: 1), count: maskCount),
+            portals: Array(
+                repeating: SectorPortal(x: 0, y: 0, width: 1, height: 1,
+                                        targetSectorName: "EdariaMitte", direction: .arrivalPlacement),
+                count: portalCount
+            ),
+            npcs: Array(
+                repeating: NPC(spawnOrigin: GridPoint(x: 0, y: 0),
+                               spawnBoxSize: GridSize(width: 1, height: 1),
+                               maskSize: GridSize(width: 1, height: 1),
+                               name: "Libus", figure: 16, facing: Heading(cardinal: .south),
+                               behaviorTag: 0, dialogScript: ""),
+                count: npcCount
+            ),
+            monsterSpawns: Array(
+                repeating: MonsterSpawn(spawnOrigin: GridPoint(x: 0, y: 0),
+                                        spawnBoxSize: GridSize(width: 1, height: 1),
+                                        spawnedMonsterSize: GridSize(width: 1, height: 1),
+                                        name: "Gespenst", figure: 0, bounded: false,
+                                        spawnHP: 100, spawnBalance: 100, spawnMana: 100, aiScriptIndex: 0),
+                count: monsterSpawnCount
+            )
         ).asWire
     }
 }

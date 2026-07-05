@@ -201,7 +201,7 @@ struct MonsterAggroE2ETests {
         let body = SectorBody(
             version: 3,
             dimensions: GridSize(width: 512, height: 512),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 100),
             objects: [],
             collisionMasks: [],

@@ -31,18 +31,6 @@ public struct GridSize: Sendable, Equatable, Hashable, Codable {
     }
 }
 
-public struct GroundTile: Sendable, Equatable, Hashable, Codable {
-    public var tilesetIndex: Int16
-    public var sourceX: Int16
-    public var sourceY: Int16
-
-    public init(tilesetIndex: Int16, sourceX: Int16, sourceY: Int16) {
-        self.tilesetIndex = tilesetIndex
-        self.sourceX = sourceX
-        self.sourceY = sourceY
-    }
-}
-
 public struct LightSetting: Sendable, Equatable, Hashable, Codable {
     public var indoor: Bool
     public var brightness: Int16

@@ -30,18 +30,6 @@ public extension GridSize {
     }
 }
 
-// MARK: - GroundTile
-
-public extension GroundTile {
-    init(_ wire: WireGroundTile) {
-        self.init(tilesetIndex: wire.tilesetIndex, sourceX: wire.sourceX, sourceY: wire.sourceY)
-    }
-
-    var asWire: WireGroundTile {
-        WireGroundTile(tilesetIndex: tilesetIndex, sourceX: sourceX, sourceY: sourceY)
-    }
-}
-
 // MARK: - LightSetting
 
 public extension LightSetting {
@@ -60,7 +48,7 @@ public extension Object {
     init(_ wire: WireObject) {
         self.init(
             x: wire.x, y: wire.y,
-            tilesetIndex: wire.tilesetIndex, sourceX: wire.sourceX, sourceY: wire.sourceY,
+            modelID: wire.modelID,
             sourceWidth: wire.sourceWidth, sourceHeight: wire.sourceHeight,
             priority: wire.priority
         )
@@ -69,7 +57,7 @@ public extension Object {
     var asWire: WireObject {
         WireObject(
             x: x, y: y,
-            tilesetIndex: tilesetIndex, sourceX: sourceX, sourceY: sourceY,
+            modelID: modelID,
             sourceWidth: sourceWidth, sourceHeight: sourceHeight,
             priority: priority
         )
@@ -118,7 +106,7 @@ public extension SectorPortal {
 public enum WireConversionError: Error, Equatable, Sendable {
     case unknownPortalDirection(Int)
     case sectorDimensionsOutOfRange(width: Int16, height: Int16)
-    case sectorContentCountsOutOfRange(objects: Int, collisionMasks: Int)
+    case sectorContentCountsOutOfRange(objects: Int, collisionMasks: Int, portals: Int, npcs: Int, monsterSpawns: Int)
 }
 
 // MARK: - NPC
@@ -186,25 +174,31 @@ public extension Sector {
     /// exceed `SomnioConstants.maxSectorArea` in total, so a hostile server can't drive the client
     /// into an unbounded ground-tile-map / entity-graph allocation. Throws
     /// `.sectorContentCountsOutOfRange` when the object or collision-mask arrays exceed their
-    /// caps — the renderer's bottom-edge anchor scan is O(objects × collisionMasks), so counts a
-    /// frame-sized payload can still carry would freeze the client.
+    /// caps — the renderer's bottom-edge anchor scan is O(objects × collisionMasks) and every
+    /// record array drives per-record work on load, so counts a frame-sized payload can still
+    /// carry would freeze the client.
     init(_ wire: WireSector) throws {
         let dimensions = GridSize(wire.dimensions)
         guard dimensions.isWithinSectorBounds else {
             throw WireConversionError.sectorDimensionsOutOfRange(width: dimensions.width, height: dimensions.height)
         }
         guard SomnioConstants.isWithinSectorContentBounds(
-            objectCount: wire.objects.count, collisionMaskCount: wire.collisionMasks.count
+            objectCount: wire.objects.count,
+            collisionMaskCount: wire.collisionMasks.count,
+            portalCount: wire.portals.count,
+            npcCount: wire.npcs.count,
+            monsterSpawnCount: wire.monsterSpawns.count
         ) else {
             throw WireConversionError.sectorContentCountsOutOfRange(
-                objects: wire.objects.count, collisionMasks: wire.collisionMasks.count
+                objects: wire.objects.count, collisionMasks: wire.collisionMasks.count,
+                portals: wire.portals.count, npcs: wire.npcs.count, monsterSpawns: wire.monsterSpawns.count
             )
         }
         try self.init(
             name: wire.name,
             version: wire.version,
             dimensions: dimensions,
-            ground: GroundTile(wire.ground),
+            floorMaterialID: wire.floorMaterialID,
             light: LightSetting(wire.light),
             objects: wire.objects.map(Object.init),
             collisionMasks: wire.collisionMasks.map(CollisionMask.init),
@@ -219,7 +213,7 @@ public extension Sector {
             name: name,
             version: version,
             dimensions: dimensions.asWire,
-            ground: ground.asWire,
+            floorMaterialID: floorMaterialID,
             light: light.asWire,
             objects: objects.map(\.asWire),
             collisionMasks: collisionMasks.map(\.asWire),

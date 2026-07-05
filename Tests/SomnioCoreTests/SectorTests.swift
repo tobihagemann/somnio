@@ -12,9 +12,9 @@ struct SectorTests {
         SectorBody(
             version: 3,
             dimensions: GridSize(width: 8, height: 8),
-            ground: GroundTile(tilesetIndex: 1, sourceX: 2, sourceY: 3),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 75),
-            objects: [Object(x: 0, y: 1, tilesetIndex: 0, sourceX: 0, sourceY: 0,
+            objects: [Object(x: 0, y: 1, modelID: "door",
                              sourceWidth: 1, sourceHeight: 1, priority: 0)],
             collisionMasks: [CollisionMask(x: 0, y: 0, width: 1, height: 1)],
             portals: [SectorPortal(x: 0, y: 0, width: 1, height: 1,
@@ -40,7 +40,7 @@ struct SectorTests {
         #expect(sector.name == "EdariaArena")
         #expect(sector.version == body.version)
         #expect(sector.dimensions == body.dimensions)
-        #expect(sector.ground == body.ground)
+        #expect(sector.floorMaterialID == body.floorMaterialID)
         #expect(sector.light == body.light)
         #expect(sector.objects == body.objects)
         #expect(sector.collisionMasks == body.collisionMasks)
@@ -59,7 +59,7 @@ struct SectorTests {
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: 8, height: 12),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100)
         )
         #expect(body.pixelWidth == 8 * Int32(SomnioConstants.tileSize))
@@ -74,7 +74,7 @@ struct SectorTests {
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: 300, height: 1),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100)
         )
         #expect(body.pixelWidth == 38400)
@@ -130,7 +130,7 @@ struct SectorTests {
             name: "S",
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
             collisionMasks: collisionMasks,
             portals: portals

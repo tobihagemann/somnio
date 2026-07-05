@@ -6,7 +6,7 @@ import Foundation
 public struct SectorBody: Sendable, Equatable, Codable {
     public var version: Int16
     public var dimensions: GridSize
-    public var ground: GroundTile
+    public var floorMaterialID: String
     public var light: LightSetting
     public var objects: [Object]
     public var collisionMasks: [CollisionMask]
@@ -17,7 +17,7 @@ public struct SectorBody: Sendable, Equatable, Codable {
     public init(
         version: Int16,
         dimensions: GridSize,
-        ground: GroundTile,
+        floorMaterialID: String,
         light: LightSetting,
         objects: [Object] = [],
         collisionMasks: [CollisionMask] = [],
@@ -27,7 +27,7 @@ public struct SectorBody: Sendable, Equatable, Codable {
     ) {
         self.version = version
         self.dimensions = dimensions
-        self.ground = ground
+        self.floorMaterialID = floorMaterialID
         self.light = light
         self.objects = objects
         self.collisionMasks = collisionMasks
@@ -47,11 +47,18 @@ public struct SectorBody: Sendable, Equatable, Codable {
         Int32(dimensions.height) * Int32(SomnioConstants.tileSize)
     }
 
-    /// True when the object and collision-mask counts sit within the shared
-    /// `SomnioConstants.isWithinSectorContentBounds` cap the wire boundary also gates on,
-    /// because the 3D renderer's bottom-edge anchor scan is O(objects × collisionMasks).
+    /// True when every record-array count sits within the shared
+    /// `SomnioConstants.isWithinSectorContentBounds` cap the wire boundary also gates on —
+    /// the 3D renderer's bottom-edge anchor scan is O(objects × collisionMasks), and each
+    /// remaining array drives per-record work on load.
     var hasContentCountsWithinBounds: Bool {
-        SomnioConstants.isWithinSectorContentBounds(objectCount: objects.count, collisionMaskCount: collisionMasks.count)
+        SomnioConstants.isWithinSectorContentBounds(
+            objectCount: objects.count,
+            collisionMaskCount: collisionMasks.count,
+            portalCount: portals.count,
+            npcCount: npcs.count,
+            monsterSpawnCount: monsterSpawns.count
+        )
     }
 }
 
@@ -59,7 +66,7 @@ public struct Sector: Sendable, Equatable {
     public var name: String
     public var version: Int16
     public var dimensions: GridSize
-    public var ground: GroundTile
+    public var floorMaterialID: String
     public var light: LightSetting
     public var objects: [Object]
     public var collisionMasks: [CollisionMask]
@@ -71,7 +78,7 @@ public struct Sector: Sendable, Equatable {
         name: String,
         version: Int16,
         dimensions: GridSize,
-        ground: GroundTile,
+        floorMaterialID: String,
         light: LightSetting,
         objects: [Object] = [],
         collisionMasks: [CollisionMask] = [],
@@ -82,7 +89,7 @@ public struct Sector: Sendable, Equatable {
         self.name = name
         self.version = version
         self.dimensions = dimensions
-        self.ground = ground
+        self.floorMaterialID = floorMaterialID
         self.light = light
         self.objects = objects
         self.collisionMasks = collisionMasks
@@ -96,7 +103,7 @@ public struct Sector: Sendable, Equatable {
             name: name,
             version: body.version,
             dimensions: body.dimensions,
-            ground: body.ground,
+            floorMaterialID: body.floorMaterialID,
             light: body.light,
             objects: body.objects,
             collisionMasks: body.collisionMasks,
@@ -182,7 +189,7 @@ public struct Sector: Sendable, Equatable {
         SectorBody(
             version: version,
             dimensions: dimensions,
-            ground: ground,
+            floorMaterialID: floorMaterialID,
             light: light,
             objects: objects,
             collisionMasks: collisionMasks,

@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view
+- Author maps in the same 3D view the game renders: the editor's canvas shows the real models and floor materials with click-to-select and click-to-place, a selection highlight, an optional grid, scroll panning, and Cmd-scroll zoom, opening at the game's own zoom level
+- Pick objects and floors by name when editing maps: the object dialog offers the available models and the new-map dialog the available floor materials, replacing the sprite-sheet coordinate fields
+- Store maps with named model and floor-material references instead of sprite-sheet coordinates; sector files saved by older versions no longer open
 - Face exactly where your cursor points: your character rotates to the precise cursor angle instead of snapping to four directions, other players' facing shows at the same precision, and chasing monsters turn toward their exact target
 - Walk smoothly in any direction without side-to-side jitter, and see matching sneak and run animations while holding Option or Shift, with movement speeds tuned to the new animations
 - Cast without a weapon in hand: characters no longer carry a permanently attached weapon model
@@ -16,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Security
 
 - Prevent a malicious game server from freezing the game with a single oversized sector
+- Prevent a hostile map file or server frame from freezing the editor or game with huge record lists, an oversized file, or a sector crafted to overload the renderer's placement scan
 
 ## [0.1.2] - 2026-06-21
 

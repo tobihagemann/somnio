@@ -10,7 +10,7 @@ struct MapCodecRoundTripTests {
         let body = SectorBody(
             version: 1,
             dimensions: GridSize(width: 4, height: 4),
-            ground: GroundTile(tilesetIndex: 0, sourceX: 0, sourceY: 0),
+            floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: false, brightness: 100),
             npcs: [NPC(spawnOrigin: GridPoint(x: 1, y: 1),
                        spawnBoxSize: GridSize(width: 1, height: 1),

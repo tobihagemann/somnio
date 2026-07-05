@@ -17,11 +17,7 @@
     "height" : 12,
     "width" : 12
   },
-  "ground" : {
-    "sourceX" : 0,
-    "sourceY" : 0,
-    "tilesetIndex" : 0
-  },
+  "floorMaterialID" : "grass-meadow",
   "light" : {
     "brightness" : 100,
     "indoor" : false
@@ -34,22 +30,18 @@
   ],
   "objects" : [
     {
+      "modelID" : "tent",
       "priority" : 0,
       "sourceHeight" : 160,
       "sourceWidth" : 160,
-      "sourceX" : 0,
-      "sourceY" : 416,
-      "tilesetIndex" : 0,
       "x" : 1344,
       "y" : 32
     },
     {
+      "modelID" : "tent",
       "priority" : 0,
       "sourceHeight" : 160,
       "sourceWidth" : 160,
-      "sourceX" : 0,
-      "sourceY" : 416,
-      "tilesetIndex" : 0,
       "x" : 1056,
       "y" : 32
     }
@@ -88,5 +80,5 @@
       "y" : 208
     }
   ],
-  "version" : 7
+  "version" : 8
 }

@@ -16,7 +16,7 @@ struct BundleMainModelAssetsTests {
     @Test func `accessors return nil before prewarm has cached anything`() {
         let assets = packAbsentAssets()
         #expect(assets.entity(forKind: .player, figure: 0) == nil)
-        #expect(assets.object(forSignature: SourceRectSignature(tilesetIndex: 0, sourceX: 0, sourceY: 0, sourceWidth: 1, sourceHeight: 1)) == nil)
+        #expect(assets.object(forID: "door") == nil)
         #expect(assets.floorMaterialURL(forID: "grass") == nil)
     }
 
@@ -34,18 +34,23 @@ struct BundleMainModelAssetsTests {
         #expect(assets.entity(forKind: .npc, figure: 99) == nil)
     }
 
-    @Test func `object returns nil for a mapped signature whose model is absent from the bundle`() async {
-        // The registry maps the signature, so resolution reaches the prototype cache — which
-        // missed during prewarm because the test bundle carries no Models/ subtree.
-        let signature = SourceRectSignature(tilesetIndex: 4, sourceX: 0, sourceY: 96, sourceWidth: 64, sourceHeight: 96)
+    @Test func `object returns nil for a mapped id whose model is absent from the bundle`() async {
+        // The registry maps the id, so resolution reaches the prototype cache — which missed
+        // during prewarm because the test bundle carries no Models/ subtree.
         let registry = ModelRegistry(
             entityBands: EntityModelBands(player: [], npc: [], monster: []),
-            objectModels: [ObjectModelRule(signature: signature, model: ModelEntry(stem: "Tree"))],
+            objectModels: [ObjectModelRule(id: "tree", model: ModelEntry(stem: "Tree"))],
             floorMaterials: []
         )
         let assets = BundleMainModelAssets(bundle: .main, registry: registry)
         await assets.prewarm()
-        #expect(assets.object(forSignature: signature) == nil)
+        #expect(assets.object(forID: "tree") == nil)
+    }
+
+    @Test func `object returns nil for an unmapped id`() async {
+        let assets = packAbsentAssets()
+        await assets.prewarm()
+        #expect(assets.object(forID: "no-such-object") == nil)
     }
 
     @Test func `floorMaterialURL returns nil when the mapped stem is absent from the bundle`() {
@@ -60,37 +65,23 @@ struct BundleMainModelAssetsTests {
         #expect(assets.floorMaterialURL(forID: "grass") == nil)
     }
 
-    @Test func `groundTexture returns nil for negative source coordinates`() {
+    @Test func `floorMaterialTexture returns nil for an unmapped id`() {
         let assets = packAbsentAssets()
-        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: -1, sourceY: 0) == nil)
-        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: -1) == nil)
+        #expect(assets.floorMaterialTexture(forID: "no-such-material") == nil)
     }
 
-    @Test func `groundTexture returns nil when the tileset is absent, including the cached retry`() {
-        let assets = packAbsentAssets()
-        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
-        // Second call exercises the negative cache rather than re-walking the bundle.
-        #expect(assets.groundTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
-    }
-
-    @Test func `groundMaterialTexture returns nil for an unmapped ground signature`() {
-        let assets = packAbsentAssets()
-        #expect(assets.groundMaterialTexture(tilesetIndex: 99, sourceX: 0, sourceY: 0) == nil)
-    }
-
-    @Test func `groundMaterialTexture returns nil for a mapped signature whose PNG is absent, including the cached retry`() {
-        // The registry bridges the signature to a floor-material id, so resolution reaches the
-        // FloorMaterials bundle lookup — which misses because the test bundle has no such subtree.
+    @Test func `floorMaterialTexture returns nil for a mapped id whose PNG is absent, including the cached retry`() {
+        // The registry maps the id, so resolution reaches the FloorMaterials bundle lookup —
+        // which misses because the test bundle has no such subtree.
         let registry = ModelRegistry(
             entityBands: EntityModelBands(player: [], npc: [], monster: []),
             objectModels: [],
-            floorMaterials: [FloorMaterialRule(id: "grass", stem: "GrassAlbedo")],
-            groundMaterials: [GroundMaterialRule(tilesetIndex: 0, sourceX: 0, sourceY: 0, id: "grass")]
+            floorMaterials: [FloorMaterialRule(id: "grass", stem: "GrassAlbedo")]
         )
         let assets = BundleMainModelAssets(bundle: .main, registry: registry)
-        #expect(assets.groundMaterialTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+        #expect(assets.floorMaterialTexture(forID: "grass") == nil)
         // Second call exercises the negative cache rather than re-resolving the stem.
-        #expect(assets.groundMaterialTexture(tilesetIndex: 0, sourceX: 0, sourceY: 0) == nil)
+        #expect(assets.floorMaterialTexture(forID: "grass") == nil)
     }
 
     @Test func `a corrupt-registry fallback resolves everything to placeholder`() async {

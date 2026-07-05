@@ -1,8 +1,9 @@
+import AppKit
 import SomnioCore
-import SomnioUI
+import SomnioScene3D
 import SwiftUI
 
-/// Per-document main window. Hosts the SpriteKit canvas, the 2×4 placement palette,
+/// Per-document main window. Hosts the 3D authoring canvas, the 2×4 placement palette,
 /// the X/Y/W/H readouts, the sheet dispatch surface, and the .focusedSceneValue
 /// injection that lets the top-level `.commands { ... }` builder route Grid, Save,
 /// Import, and Export actions back to the focused document.
@@ -35,7 +36,7 @@ import SwiftUI
                 if !workspace.didCompleteInitialSetup, document.isUninitialized {
                     workspace.presentedSheet = .newMap
                 } else if !workspace.didCompleteInitialSetup {
-                    // Opening an existing file leaves the WorldScene in its splash state
+                    // Opening an existing file leaves the scene in its splash state
                     // until the first mutation triggers `reconcile`; force the initial
                     // load here so the canvas renders the document's geometry on open.
                     workspace.reconcile(with: document.body, sectorName: document.sectorName)
@@ -76,56 +77,62 @@ import SwiftUI
     }
 
     private var canvas: some View {
-        // Full sector size plus a margin inside a scroll view, so large sectors and sprites that
-        // overflow a sector edge (negative coords, or art taller than the footprint) stay reachable
-        // instead of clipped. `CanvasController.gridCoordinate` undoes the margin to recover grid
-        // coordinates from a `.local` point.
-        let tile = CGFloat(SomnioConstants.tileSize)
-        let sectorWidth = CGFloat(document.body.pixelWidth)
-        let sectorHeight = CGFloat(document.body.pixelHeight)
-        let margin = Self.canvasMargin(for: document.body, sectorWidth: sectorWidth, sectorHeight: sectorHeight, tile: tile)
-        let contentSize = CGSize(
-            width: max(sectorWidth + margin * 2, 1),
-            height: max(sectorHeight + margin * 2, 1)
-        )
-        return ScrollView([.horizontal, .vertical]) {
-            ZStack(alignment: .topLeading) {
-                WorldSceneView(scene: workspace.worldScene, size: contentSize)
+        // The orthographic camera frames the whole sector (including object footprints past
+        // the sector edge), so the 3D viewport fills the available space instead of scrolling
+        // a full-pixel canvas. Render, framing, and picking must all read the same live size,
+        // so the GeometryReader size drives the view frame AND `workspace.viewportSize` —
+        // `CanvasController.handleTap` unprojects through that shared framing.
+        GeometryReader { proxy in
+            ZStack {
+                WorldScene3DView(scene: workspace.worldScene, size: proxy.size)
+                CanvasScrollMonitor { event in
+                    handleScroll(event)
+                }
                 Color.clear
                     .contentShape(Rectangle())
-                    .frame(width: contentSize.width, height: contentSize.height)
                     .onTapGesture(coordinateSpace: .local) { location in
-                        CanvasController.handleTap(at: location, margin: margin, document: document, workspace: workspace)
+                        CanvasController.handleTap(at: location, document: document, workspace: workspace)
                     }
                     .onContinuousHover(coordinateSpace: .local) { phase in
                         switch phase {
                         case let .active(point):
-                            workspace.cursorReadout.x = CanvasController.gridCoordinate(forLocal: point.x, margin: margin)
-                            workspace.cursorReadout.y = CanvasController.gridCoordinate(forLocal: point.y, margin: margin)
+                            let grid = CanvasController.gridPoint(
+                                forViewport: point,
+                                viewportSize: workspace.viewportSize,
+                                framing: workspace.framing
+                            )
+                            workspace.cursorReadout.x = grid.x
+                            workspace.cursorReadout.y = grid.y
                         case .ended:
                             workspace.cursorReadout.x = 0
                             workspace.cursorReadout.y = 0
                         }
                     }
             }
-            .frame(width: contentSize.width, height: contentSize.height)
+            .onChange(of: proxy.size, initial: true) { _, newSize in
+                workspace.updateViewportSize(newSize, body: document.body)
+            }
         }
         .frame(minWidth: 640, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .border(.secondary)
     }
 
-    /// Scrollable breathing room around the sector: at least one tile, expanded to cover any object
-    /// sprite that extends past a sector edge so it stays visible and selectable in the editor.
-    private static func canvasMargin(for body: SectorBody, sectorWidth: CGFloat, sectorHeight: CGFloat, tile: CGFloat) -> CGFloat {
-        var overflow: CGFloat = 0
-        for object in body.objects {
-            let x = CGFloat(object.x)
-            let y = CGFloat(object.y)
-            let width = CGFloat(object.sourceWidth)
-            let height = CGFloat(object.sourceHeight)
-            overflow = max(overflow, -x, x + width - sectorWidth, -y, y + height - sectorHeight)
+    /// Canvas navigation: scroll pans (trackpads pan both axes; Shift turns a mouse wheel's
+    /// vertical ticks horizontal) and ⌘-scroll zooms toward the game's default close-up.
+    private func handleScroll(_ event: NSEvent) {
+        let intent = CanvasController.scrollIntent(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            hasPreciseDeltas: event.hasPreciseScrollingDeltas,
+            commandHeld: event.modifierFlags.contains(.command),
+            shiftHeld: event.modifierFlags.contains(.shift)
+        )
+        switch intent {
+        case let .zoom(deltaY):
+            workspace.zoomCanvas(byScrollDeltaY: deltaY, body: document.body)
+        case let .pan(delta):
+            workspace.panCanvas(byViewportDelta: delta, body: document.body)
         }
-        return max(tile, overflow.rounded(.up))
     }
 
     private var hudStrip: some View {

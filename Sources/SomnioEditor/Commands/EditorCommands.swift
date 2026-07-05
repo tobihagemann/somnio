@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Grid ⌘G toggle. Bound to the focused window's `SectorWorkspace.showGridOverlay`;
-/// `EditorOverlayLayer` re-renders the grid on the next reconcile cycle.
+/// the authoring overlay re-renders the grid on the next reconcile cycle.
 public struct EditorCommands: Commands {
     @FocusedValue(\.editorWorkspace) private var focused
 

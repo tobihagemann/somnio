@@ -19,20 +19,12 @@ import SwiftUI
             Stepper(value: $form.y, in: 0 ... Int16.max) {
                 StepperLabel(title: L.resource("Y"), value: form.y)
             }
-            Stepper(value: $form.tilesetIndex, in: 0 ... Int16.max) {
-                StepperLabel(title: L.resource("Tileset"), value: form.tilesetIndex)
-            }
-            Stepper(value: $form.sourceX, in: 0 ... Int16.max) {
-                StepperLabel(title: L.resource("Source X"), value: form.sourceX)
-            }
-            Stepper(value: $form.sourceY, in: 0 ... Int16.max) {
-                StepperLabel(title: L.resource("Source Y"), value: form.sourceY)
-            }
+            RegistryIDPicker(title: L.resource("Model"), ids: EditorDefaults.objectModelIDs, selection: $form.modelID)
             Stepper(value: $form.sourceWidth, in: 1 ... Int16.max) {
-                StepperLabel(title: L.resource("Source width"), value: form.sourceWidth)
+                StepperLabel(title: L.resource("Width"), value: form.sourceWidth)
             }
             Stepper(value: $form.sourceHeight, in: 1 ... Int16.max) {
-                StepperLabel(title: L.resource("Source height"), value: form.sourceHeight)
+                StepperLabel(title: L.resource("Height"), value: form.sourceHeight)
             }
             Stepper(value: $form.priority, in: 0 ... Int16.max) {
                 StepperLabel(title: L.resource("Priority"), value: form.priority)

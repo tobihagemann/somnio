@@ -376,6 +376,23 @@
         }
       }
     },
+    "Floor material": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bodenmaterial"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Floor material"
+          }
+        }
+      }
+    },
     "Free": {
       "extractionState": "manual",
       "localizations": {
@@ -525,6 +542,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mask"
+          }
+        }
+      }
+    },
+    "Model": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modell"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
           }
         }
       }
@@ -937,74 +971,6 @@
         }
       }
     },
-    "Source X": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quelle X"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Source X"
-          }
-        }
-      }
-    },
-    "Source Y": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quelle Y"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Source Y"
-          }
-        }
-      }
-    },
-    "Source height": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quelle Höhe"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Source height"
-          }
-        }
-      }
-    },
-    "Source width": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quelle Breite"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Source width"
-          }
-        }
-      }
-    },
     "Spawn": {
       "extractionState": "manual",
       "localizations": {
@@ -1171,23 +1137,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tiled (8x8)"
-          }
-        }
-      }
-    },
-    "Tileset": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tileset"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tileset"
           }
         }
       }

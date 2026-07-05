@@ -68,181 +68,89 @@
       "stem": "WoodWarm"
     }
   ],
-  "groundMaterials": [
-    {
-      "id": "grass-meadow",
-      "sourceX": 0,
-      "sourceY": 0,
-      "tilesetIndex": 0
-    },
-    {
-      "id": "stone-arena",
-      "sourceX": 0,
-      "sourceY": 0,
-      "tilesetIndex": 25
-    },
-    {
-      "id": "wood-warm",
-      "sourceX": 64,
-      "sourceY": 0,
-      "tilesetIndex": 25
-    }
-  ],
   "objectModels": [
     {
+      "id": "bookshelf-ornate",
       "model": {
         "expectedClips": [],
         "stem": "BookshelfOrnate"
-      },
-      "signature": {
-        "sourceHeight": 96,
-        "sourceWidth": 64,
-        "sourceX": 64,
-        "sourceY": 512,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "bookshelf",
       "model": {
         "expectedClips": [],
         "stem": "Bookshelf"
-      },
-      "signature": {
-        "sourceHeight": 96,
-        "sourceWidth": 64,
-        "sourceX": 0,
-        "sourceY": 512,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "potted-plant",
       "model": {
         "expectedClips": [],
         "stem": "PottedPlant"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 128,
-        "sourceY": 608,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "study-table",
       "model": {
         "expectedClips": [],
         "stem": "StudyTable"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 160,
-        "sourceY": 608,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "bust",
       "model": {
         "expectedClips": [],
         "stem": "Bust"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 192,
-        "sourceY": 608,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "door",
       "model": {
         "expectedClips": [],
         "stem": "Door"
-      },
-      "signature": {
-        "sourceHeight": 32,
-        "sourceWidth": 192,
-        "sourceX": 64,
-        "sourceY": 32,
-        "tilesetIndex": 50
       }
     },
     {
+      "id": "grand-bookcase",
       "model": {
         "expectedClips": [],
         "stem": "GrandBookcase"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 96,
-        "sourceX": 0,
-        "sourceY": 224,
-        "tilesetIndex": 9
       }
     },
     {
+      "id": "couch",
       "model": {
         "expectedClips": [],
         "stem": "Couch"
-      },
-      "signature": {
-        "sourceHeight": 32,
-        "sourceWidth": 32,
-        "sourceX": 192,
-        "sourceY": 288,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "floor-lamp",
       "model": {
         "expectedClips": [],
         "stem": "FloorLamp"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 192,
-        "sourceY": 352,
-        "tilesetIndex": 9
       }
     },
     {
+      "id": "side-table",
       "model": {
         "expectedClips": [],
         "stem": "SideTable"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 192,
-        "sourceY": 544,
-        "tilesetIndex": 25
       }
     },
     {
+      "id": "chair",
       "model": {
         "expectedClips": [],
         "stem": "Chair"
-      },
-      "signature": {
-        "sourceHeight": 64,
-        "sourceWidth": 32,
-        "sourceX": 128,
-        "sourceY": 224,
-        "tilesetIndex": 13
       }
     },
     {
+      "id": "tent",
       "model": {
         "expectedClips": [],
         "stem": "Tent"
-      },
-      "signature": {
-        "sourceHeight": 160,
-        "sourceWidth": 160,
-        "sourceX": 0,
-        "sourceY": 416,
-        "tilesetIndex": 0
       }
     }
   ]
