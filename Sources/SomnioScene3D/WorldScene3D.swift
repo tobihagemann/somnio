@@ -116,6 +116,18 @@ import SomnioCore
         }
     }
 
+    /// The floor's re-resolution record, the material analog of `PlacedObject`: when a sector
+    /// loads before the floor-texture cache warms, `makeFloor` builds a gray-fallback floor and
+    /// records `isFallback`, so the post-prewarm pass can re-tint it in place against the warm
+    /// cache — the floor heals like every placed model rather than staying untextured.
+    private struct FloorRenderState {
+        let entity: ModelEntity
+        let materialID: String
+        let widthMeters: Float
+        let depthMeters: Float
+        var isFallback: Bool
+    }
+
     /// Idle threshold: an entity counts as moving for this long after its last position change.
     private static let motionGraceWindow: TimeInterval = 0.15
     /// Upper bound on one tick's dt so a stall cannot teleport tweens or the walk clock.
@@ -173,6 +185,8 @@ import SomnioCore
     private var pendingSunState: SunState?
     private var entityRenderStates: [Int16: EntityRenderState] = [:]
     private var placedObjects: [PlacedObject] = []
+    /// `nil` before the first load and after `showSplash`.
+    private var floorRenderState: FloorRenderState?
     /// Editor-only authoring gizmos (record rects, selection highlight, grid), parented under
     /// `sectorRoot` so a sector swap tears them down with everything else sector-scoped.
     /// Internal (not private) so the overlay extension in `AuthoringOverlay.swift` can own the
@@ -390,6 +404,7 @@ import SomnioCore
         entityRenderStates.removeAll()
         speechBubbles.removeAll()
         placedObjects.removeAll()
+        floorRenderState = nil
         authoringOverlayRoot = nil
         cameraFollowID = nil
         focusCamera(on: .zero)
@@ -447,9 +462,38 @@ import SomnioCore
         let widthMeters = Float(sector.pixelWidth) * OrthographicCameraRig.worldUnitsPerPixel
         let depthMeters = Float(sector.pixelHeight) * OrthographicCameraRig.worldUnitsPerPixel
         let mesh = MeshResource.generatePlane(width: widthMeters, depth: depthMeters)
+        let texture = modelAssets.floorMaterialTexture(forID: sector.floorMaterialID)
+        let floor = ModelEntity(
+            mesh: mesh,
+            materials: [Self.floorMaterial(texture: texture, widthMeters: widthMeters, depthMeters: depthMeters)]
+        )
+        // `generatePlane` centers the mesh at the origin; offset by half so the sector's
+        // top-left pixel origin (0, 0) maps to a floor corner, matching
+        // `OrthographicCameraRig.worldPosition`.
+        let center = SIMD3<Float>(widthMeters / 2, 0, depthMeters / 2)
+        floor.position = center
+        root.addChild(floor)
+        floorRenderState = FloorRenderState(
+            entity: floor,
+            materialID: sector.floorMaterialID,
+            widthMeters: widthMeters,
+            depthMeters: depthMeters,
+            isFallback: texture == nil
+        )
+        return center
+    }
+
+    /// The floor plane's material: the tiled floor texture over a matte PBR base, or a solid gray
+    /// tint when the texture is not (yet) cached. Shared by `makeFloor` and the post-prewarm
+    /// re-tint so a healed floor is byte-for-byte the eager-load result.
+    private static func floorMaterial(texture: TextureResource?, widthMeters: Float, depthMeters: Float) -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
         material.roughness = .init(floatLiteral: 1)
         material.metallic = .init(floatLiteral: 0)
+        guard let texture else {
+            material.baseColor = .init(tint: NSColor(white: 0.5, alpha: 1))
+            return material
+        }
         // Metal sampler defaults are nearest filtering with mipmaps ignored — the generated
         // mip chain only suppresses minification shimmer if the sampler actually filters
         // through it, and the tilted camera needs anisotropy on top or the tiling still
@@ -464,26 +508,15 @@ import SomnioCore
             descriptor.maxAnisotropy = 8
             return .init(descriptor)
         }()
-        if let texture = modelAssets.floorMaterialTexture(forID: sector.floorMaterialID) {
-            material.baseColor = .init(tint: .white, texture: .init(texture, sampler: sampler))
-            // Non-square source textures (plank strips) keep their authored aspect: the v
-            // repeat shrinks with the texture's height/width ratio.
-            let aspect = Float(texture.height) / Float(texture.width)
-            material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
-                widthMeters / Self.floorMaterialTileMeters,
-                depthMeters / (Self.floorMaterialTileMeters * aspect)
-            ))
-        } else {
-            material.baseColor = .init(tint: NSColor(white: 0.5, alpha: 1))
-        }
-        let floor = ModelEntity(mesh: mesh, materials: [material])
-        // `generatePlane` centers the mesh at the origin; offset by half so the sector's
-        // top-left pixel origin (0, 0) maps to a floor corner, matching
-        // `OrthographicCameraRig.worldPosition`.
-        let center = SIMD3<Float>(widthMeters / 2, 0, depthMeters / 2)
-        floor.position = center
-        root.addChild(floor)
-        return center
+        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: sampler))
+        // Non-square source textures (plank strips) keep their authored aspect: the v
+        // repeat shrinks with the texture's height/width ratio.
+        let aspect = Float(texture.height) / Float(texture.width)
+        material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
+            widthMeters / Self.floorMaterialTileMeters,
+            depthMeters / (Self.floorMaterialTileMeters * aspect)
+        ))
+        return material
     }
 
     private func placeObjects(of sector: Sector, into root: Entity) {
@@ -598,10 +631,11 @@ import SomnioCore
         return SIMD3<Float>(repeating: target / canonicalFigureHeight)
     }
 
-    /// Post-prewarm re-resolution pass: swaps every placeholder (entities and placed objects)
-    /// for the now-cached real model in place, reaching the hidden pending `sectorRoot` too —
-    /// its records are the current ones, so a pre-reveal placeholder heals before it is ever
-    /// shown. Only meshes are swapped; `isEnabled`/`pendingPlayerReveal` stay untouched.
+    /// Post-prewarm re-resolution pass: swaps every placeholder (placed objects and entities) for
+    /// the now-cached real model in place and re-tints a gray-fallback floor with its now-cached
+    /// texture, reaching the hidden pending `sectorRoot` too — its records are the current ones, so
+    /// a pre-reveal placeholder heals before it is ever shown. Only meshes and the floor material
+    /// are swapped; `isEnabled`/`pendingPlayerReveal` stay untouched.
     private func refreshResolvedModels() {
         for placed in placedObjects where placed.isPlaceholder {
             guard let clone = modelAssets.object(forID: placed.object.modelID) else { continue }
@@ -619,6 +653,13 @@ import SomnioCore
             // equivalent placeholder box, which this one post-prewarm pass can afford.
             state.isPlaceholder = !resolveModel(into: state.modelHolder, kind: state.kind, figure: state.figure, maskSize: state.maskSize)
             state.pose = nil
+        }
+        if let floor = floorRenderState, floor.isFallback,
+           let texture = modelAssets.floorMaterialTexture(forID: floor.materialID) {
+            floor.entity.model?.materials = [Self.floorMaterial(
+                texture: texture, widthMeters: floor.widthMeters, depthMeters: floor.depthMeters
+            )]
+            floorRenderState?.isFallback = false
         }
     }
 
@@ -885,5 +926,20 @@ import SomnioCore
     /// Re-resolution test seam: how many placed objects still render placeholders.
     func _placeholderObjectCount() -> Int {
         placedObjects.filter(\.isPlaceholder).count
+    }
+
+    /// Floor re-resolution test seam: whether the current floor renders the gray fallback rather
+    /// than its material texture, or `nil` before the first load.
+    func _floorIsFallback() -> Bool? {
+        floorRenderState?.isFallback
+    }
+
+    /// Floor render-effect test seam: whether the live floor entity's material actually carries a
+    /// texture (vs. the gray fallback tint), or `nil` before the first load. Reads the rendered
+    /// material rather than the `isFallback` flag, so a heal that clears the flag without swapping
+    /// the material is caught.
+    func _floorMaterialIsTextured() -> Bool? {
+        guard let material = floorRenderState?.entity.model?.materials.first as? PhysicallyBasedMaterial else { return nil }
+        return material.baseColor.texture != nil
     }
 }

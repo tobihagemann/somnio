@@ -25,7 +25,10 @@ extension WorldScene3D {
     }
 
     private static let selectionBorderThicknessPx: Float = 2
-    private static let gridLineThicknessPx: Float = 1
+    /// Grid lines sit under the busy floor material, so they carry more weight and opacity than a
+    /// thin hairline would — a 1 px @ 0.15 line is invisible over wood at whole-sector zoom.
+    private static let gridLineThicknessPx: Float = 2
+    private static let gridLineOpacity: Float = 0.35
     private static let gridEntityName = "authoring-grid"
     /// The rebuild-from-scratch cost model holds for record rects (a few hundred per sector)
     /// but grid lines scale with sector pixels ÷ snap step, so a huge sector at the finest
@@ -142,7 +145,7 @@ extension WorldScene3D {
         while x <= widthPx {
             grid.addChild(floorPlane(
                 centerPixel: SIMD2(x, heightPx / 2), sizePx: SIMD2(gridLineThicknessPx, heightPx),
-                color: .white, opacity: 0.15, elevation: OverlayElevation.grid
+                color: .white, opacity: gridLineOpacity, elevation: OverlayElevation.grid
             ))
             x += step
         }
@@ -150,7 +153,7 @@ extension WorldScene3D {
         while y <= heightPx {
             grid.addChild(floorPlane(
                 centerPixel: SIMD2(widthPx / 2, y), sizePx: SIMD2(widthPx, gridLineThicknessPx),
-                color: .white, opacity: 0.15, elevation: OverlayElevation.grid
+                color: .white, opacity: gridLineOpacity, elevation: OverlayElevation.grid
             ))
             y += step
         }

@@ -70,17 +70,17 @@ struct BundleMainModelAssetsTests {
         #expect(assets.floorMaterialTexture(forID: "no-such-material") == nil)
     }
 
-    @Test func `floorMaterialTexture returns nil for a mapped id whose PNG is absent, including the cached retry`() {
-        // The registry maps the id, so resolution reaches the FloorMaterials bundle lookup —
-        // which misses because the test bundle has no such subtree.
+    @Test func `floorMaterialTexture returns nil for a mapped id whose PNG is absent, even after prewarm`() async {
+        // The registry maps the id, so prewarm reaches the FloorMaterials bundle lookup — which
+        // misses because the test bundle has no such subtree, recording the stem as a miss. The
+        // accessor is a pure cache read, so it then resolves nil like the model accessors do.
         let registry = ModelRegistry(
             entityBands: EntityModelBands(player: [], npc: [], monster: []),
             objectModels: [],
             floorMaterials: [FloorMaterialRule(id: "grass", stem: "GrassAlbedo")]
         )
         let assets = BundleMainModelAssets(bundle: .main, registry: registry)
-        #expect(assets.floorMaterialTexture(forID: "grass") == nil)
-        // Second call exercises the negative cache rather than re-resolving the stem.
+        await assets.prewarm()
         #expect(assets.floorMaterialTexture(forID: "grass") == nil)
     }
 

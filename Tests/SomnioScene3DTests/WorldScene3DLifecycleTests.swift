@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import RealityKit
 import simd
@@ -20,10 +21,12 @@ struct WorldScene3DLifecycleTests {
     /// for re-resolution tests. The pack-absent case is `resolves: false` forever.
     private final class StubModelAssets: ModelAssets {
         private let resolvesAfterPrewarm: Bool
+        private let floorTexture: TextureResource?
         private var warmed = false
 
-        init(resolvesAfterPrewarm: Bool = true) {
+        init(resolvesAfterPrewarm: Bool = true, floorTexture: TextureResource? = nil) {
             self.resolvesAfterPrewarm = resolvesAfterPrewarm
+            self.floorTexture = floorTexture
         }
 
         func prewarm() async {
@@ -39,7 +42,7 @@ struct WorldScene3DLifecycleTests {
         }
 
         func floorMaterialTexture(forID _: String) -> TextureResource? {
-            nil
+            warmed ? floorTexture : nil
         }
 
         func floorMaterialURL(forID _: String) -> URL? {
@@ -90,6 +93,19 @@ struct WorldScene3DLifecycleTests {
         WorldScene3D(modelAssets: assets)
     }
 
+    /// A 1x1 device-RGB texture — enough to drive the floor re-tint headlessly. Creating a
+    /// `TextureResource` needs the RealityKit runtime but no display, so it runs in CI (see the
+    /// suite doc); the pixel contents are irrelevant, only that the accessor returns non-nil.
+    private func tinyFloorTexture() throws -> TextureResource {
+        let context = try #require(CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let image = try #require(context.makeImage())
+        return try TextureResource(image: image, options: .init(semantic: .color, mipmapsMode: .none))
+    }
+
     // MARK: - Root graph
 
     @Test func `a fresh scene shows only the persistent camera and light rig`() {
@@ -133,6 +149,7 @@ struct WorldScene3DLifecycleTests {
         #expect(scene.rootEntity.children.count == Self.persistentChildren)
         #expect(scene._sectorRootChildCount() == nil)
         #expect(!scene._entityRenderStateContains(1))
+        #expect(scene._floorIsFallback() == nil)
     }
 
     // MARK: - Entity placement
@@ -505,6 +522,28 @@ struct WorldScene3DLifecycleTests {
         await scene.prewarmModels()
         #expect(scene._placeholderObjectCount() == 1)
         #expect(try #require(scene._entityNodeProbe(for: 1)).isPlaceholder)
+    }
+
+    @Test func `prewarm completion re-tints a fallback floor with its now-cached texture`() async throws {
+        let assets = try StubModelAssets(floorTexture: tinyFloorTexture())
+        let scene = scene(assets: assets)
+        // Loading before the texture cache warms renders the gray-fallback floor.
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        #expect(scene._floorIsFallback() == true)
+        #expect(scene._floorMaterialIsTextured() == false)
+        await scene.prewarmModels()
+        // Both the flag and the live material flip — asserting the material catches a heal that
+        // clears the flag without swapping the texture in.
+        #expect(scene._floorIsFallback() == false)
+        #expect(scene._floorMaterialIsTextured() == true)
+    }
+
+    @Test func `an absent pack leaves the floor in fallback after prewarm without trapping`() async {
+        let assets = StubModelAssets(resolvesAfterPrewarm: false)
+        let scene = scene(assets: assets)
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        await scene.prewarmModels()
+        #expect(scene._floorIsFallback() == true)
     }
 
     @Test func `re-placing an id with a changed kind re-resolves its model`() throws {

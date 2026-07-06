@@ -48,10 +48,15 @@ public struct PostgresContainer: Sendable {
     /// publishes container ports on `0.0.0.0` can't expose the test database to the LAN.
     /// `-p 127.0.0.1::5432` lets the runtime pick the host port (same behavior as `-P`)
     /// while pinning the host interface to loopback.
+    ///
+    /// Mount a tmpfs at PGDATA rather than let the image declare an anonymous volume: `--rm`
+    /// removes the container but not that volume under podman, leaking one per run until the
+    /// podman VM disk fills and every spawn fails with `.portUnavailable`. A tmpfs creates no
+    /// volume at all and keeps the ephemeral test DB's I/O in memory.
     private static func runStart(runtime: ContainerRuntime, password: String) throws -> String {
         let output = try ProcessRunner.runCapturingOutput(
             runtime: runtime,
-            arguments: ["run", "-d", "--rm", "--quiet", "-e", "POSTGRES_PASSWORD=\(password)", "-p", "127.0.0.1::5432", "postgres:16"]
+            arguments: ["run", "-d", "--rm", "--quiet", "--mount", "type=tmpfs,destination=/var/lib/postgresql/data", "-e", "POSTGRES_PASSWORD=\(password)", "-p", "127.0.0.1::5432", "postgres:16"]
         )
         // On a cold image cache, `run` pulls `postgres:16` first and that pull progress goes to
         // stderr, which ProcessRunner merges into stdout. `--quiet` suppresses it at the source

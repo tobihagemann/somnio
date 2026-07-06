@@ -54,12 +54,17 @@ import SomnioCore
         }
     }
 
-    /// Loads and caches every registry model as a prototype. Call from the async sector-load path
-    /// before entity placement; the synchronous accessors only ever read the cache this fills.
+    /// Loads and caches every registry model prototype and floor-material texture. Call from the
+    /// async sector-load path before entity placement; the synchronous accessors only ever read
+    /// the caches this fills.
     public func prewarm() async {
         for entry in registry.allModelEntries
             where prototypes[entry.stem] == nil && !prototypeMisses.contains(entry.stem) {
             await loadPrototype(for: entry)
+        }
+        for material in registry.floorMaterials
+            where floorMaterialTextureCache[material.stem] == nil && !floorMaterialMisses.contains(material.stem) {
+            await loadFloorMaterialTexture(stem: material.stem)
         }
     }
 
@@ -73,28 +78,12 @@ import SomnioCore
         return clone(ofStem: entry.stem)
     }
 
-    /// The dedicated floor-material texture for a sector's `floorMaterialID`, or `nil` when the
-    /// id is unmapped or the PNG is absent — the floor then falls back to a solid lit plane.
+    /// The dedicated floor-material texture for a sector's `floorMaterialID`, or `nil` when the id
+    /// is unmapped or its texture was not warmed (absent/unloadable PNG) — the floor then falls
+    /// back to a solid lit plane. A pure read of the cache `prewarm()` fills, like `object`/`entity`.
     public func floorMaterialTexture(forID id: String) -> TextureResource? {
         guard let stem = registry.floorMaterialStem(forID: id) else { return nil }
-        if let cached = floorMaterialTextureCache[stem] { return cached }
-        if floorMaterialMisses.contains(stem) { return nil }
-        guard let url = bundle.url(forResource: stem, withExtension: "png", subdirectory: "FloorMaterials"),
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              // Mipmaps matter here: the material tiles across the whole sector floor, and
-              // un-mipped minification shimmers under the 3/4 camera.
-              let texture = try? TextureResource(
-                  image: image,
-                  options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)
-              )
-        else {
-            Self.logger.error("floor material missing or unloadable; rendering the untextured floor", metadata: ["stem": "\(stem)"])
-            floorMaterialMisses.insert(stem)
-            return nil
-        }
-        floorMaterialTextureCache[stem] = texture
-        return texture
+        return floorMaterialTextureCache[stem]
     }
 
     public func floorMaterialURL(forID id: String) -> URL? {
@@ -131,5 +120,28 @@ import SomnioCore
             prototypeMisses.insert(entry.stem)
             Self.logger.error("failed to load model", metadata: ["stem": "\(entry.stem)", "error": "\(error)"])
         }
+    }
+
+    private func loadFloorMaterialTexture(stem: String) async {
+        guard let url = bundle.url(forResource: stem, withExtension: "png", subdirectory: "FloorMaterials") else {
+            floorMaterialMisses.insert(stem)
+            Self.logger.info("floor material .png absent from bundle; rendering the untextured floor", metadata: ["stem": "\(stem)"])
+            return
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              // The async initializer keeps the (documented main-actor-blocking) synchronous texture
+              // upload off the first sector-load frame. Mipmaps matter here: the material tiles across
+              // the whole sector floor, and un-mipped minification shimmers under the 3/4 camera.
+              let texture = try? await TextureResource(
+                  image: image,
+                  options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)
+              )
+        else {
+            floorMaterialMisses.insert(stem)
+            Self.logger.error("floor material unloadable; rendering the untextured floor", metadata: ["stem": "\(stem)"])
+            return
+        }
+        floorMaterialTextureCache[stem] = texture
     }
 }

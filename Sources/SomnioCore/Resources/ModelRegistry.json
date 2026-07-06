@@ -39,7 +39,7 @@
         "figureRanges": [
           {
             "lower": 0,
-            "upper": 15
+            "upper": 11
           }
         ],
         "model": {
@@ -50,6 +50,40 @@
             "Sneaking"
           ],
           "stem": "Knight"
+        }
+      },
+      {
+        "figureRanges": [
+          {
+            "lower": 12,
+            "upper": 13
+          }
+        ],
+        "model": {
+          "expectedClips": [
+            "Idle",
+            "Walking_A",
+            "Running_A",
+            "Sneaking"
+          ],
+          "stem": "Rogue_Hooded"
+        }
+      },
+      {
+        "figureRanges": [
+          {
+            "lower": 14,
+            "upper": 15
+          }
+        ],
+        "model": {
+          "expectedClips": [
+            "Idle",
+            "Walking_A",
+            "Running_A",
+            "Sneaking"
+          ],
+          "stem": "Mage"
         }
       }
     ]

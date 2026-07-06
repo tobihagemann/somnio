@@ -9,7 +9,13 @@ struct ModelRegistryTests {
     @Test func `bundledRegistry decodes the committed registry and resolves the MVP cast`() throws {
         let registry = try ModelRegistryCodec.bundledRegistry()
         #expect(registry.model(forKind: .player, figure: 0)?.stem == "Knight")
-        #expect(registry.model(forKind: .peer, figure: 15)?.stem == "Knight")
+        #expect(registry.model(forKind: .peer, figure: 11)?.stem == "Knight")
+        // Both split points pinned from both sides so an over-reaching band can't hide: 12/13
+        // are the cleric figures, 14/15 the mage figures (figure = class.rawValue * 2 + gender).
+        #expect(registry.model(forKind: .player, figure: 12)?.stem == "Rogue_Hooded")
+        #expect(registry.model(forKind: .player, figure: 13)?.stem == "Rogue_Hooded")
+        #expect(registry.model(forKind: .player, figure: 14)?.stem == "Mage")
+        #expect(registry.model(forKind: .player, figure: 15)?.stem == "Mage")
         #expect(registry.model(forKind: .npc, figure: 16)?.stem == "Lorekeeper")
         #expect(registry.model(forKind: .monster, figure: 0)?.stem == "Ghost")
     }
