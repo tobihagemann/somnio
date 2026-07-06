@@ -19,7 +19,7 @@ Run with the sandbox disabled (SwiftPM packaging):
 SOMNIO_ASSET_SOURCE="<asset-pack-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug player
 ```
 
-Produces `Somnio.app` at the repo root with textures and models bundled. The asset-pack root is the `somnio-assets` working tree (sibling repo), which carries the 2D subtrees `Tilesets/`, `Characters/`, `Animations/`, `System/`, `Buttons/` plus the 3D subtrees `Models/` (USDZ characters + props) and `FloorMaterials/`. Omit `SOMNIO_ASSET_SOURCE` to run with placeholder/nil-fallback rendering. Repackage after any change to code **or** to the asset pack — the running bundle holds stale copies of both.
+Produces `Somnio.app` at the repo root with textures and models bundled. The asset-pack root is the `somnio-assets` working tree (sibling repo), which carries the two runtime subtrees `Models/` (USDZ characters + props) and `FloorMaterials/`. Omit `SOMNIO_ASSET_SOURCE` to run with placeholder/nil-fallback rendering. Repackage after any change to code **or** to the asset pack — the running bundle holds stale copies of both.
 
 Use `Scripts/package_app.sh debug player` here, not `Scripts/compile_and_run.sh`: that script launches via `open` with no `SOMNIO_SERVER_URL` override, so the debug client falls back to `:8080` and misses the `:8090` dev server. (Its `--release-*` variants additionally build release, which hits the unset production-URL `#error`.)
 

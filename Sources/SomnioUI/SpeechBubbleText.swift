@@ -1,17 +1,19 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import SomnioCore
 
 /// Pure-Foundation truncation + greedy word-wrap helpers for the speech bubble. The
 /// font-driven measurement lives behind `defaultWidth(of:)` so unit tests can drive the
 /// algorithm with a synthetic measurement closure.
 public enum SpeechBubbleText {
-    /// 150 px bubble width, matching the legacy `Sprechblase` template width.
-    public static let bubbleWidth: CGFloat = 150
+    /// Bubble width the wrap measures against — `SomnioConstants` is the single source of
+    /// truth shared with the balloon renderer.
+    public static let bubbleWidth = CGFloat(SomnioConstants.speechBubbleWidthPixels)
 
     /// Font size the wrap measurement and the renderer must share so pre-wrapped lines fit the
     /// width they were measured against.
-    public static let fontSize: CGFloat = 10
+    public static let fontSize = CGFloat(SomnioConstants.speechBubbleFontSize)
 
     /// Greedy word-wraps `text` to fit `bubbleWidth` at System-10 metrics, then caps
     /// the result with `cap`. The wrap respects existing whitespace token boundaries

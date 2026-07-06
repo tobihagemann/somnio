@@ -272,7 +272,7 @@ struct WorldScene3DLifecycleTests {
         #expect(length(arrived - target) < 0.0001)
     }
 
-    @Test func `ticks slew the node yaw toward the facing at the fixed turn rate`() throws {
+    @Test func `ticks slew the model yaw toward the facing at the fixed turn rate`() throws {
         let scene = scene()
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
         scene.placeEntity(worldEntity(id: 1, facing: Heading(cardinal: .south)))
@@ -291,6 +291,21 @@ struct WorldScene3DLifecycleTests {
         #expect(abs(atan2(settledForward.x, settledForward.z) - .pi / 2) < 0.001)
     }
 
+    @Test func `yaw slew rotates the model holder while the node stays unrotated`() throws {
+        // The screen-aligned overlays (plaque, bubble) hang off the node: re-applying the
+        // facing yaw to the node would tilt them with the character's heading.
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 1, facing: Heading(cardinal: .south)))
+        scene.updatePosition(entityID: 1, to: GridPoint(x: 96, y: 96), facing: Heading(cardinal: .east))
+        for _ in 0 ..< 5 {
+            scene.tick(deltaTime: 0.05)
+        }
+        let probe = try #require(scene._entityNodeProbe(for: 1))
+        #expect(probe.orientation.angle > 0)
+        #expect(probe.nodeOrientation.angle == 0)
+    }
+
     // MARK: - Speech bubbles
 
     @Test func `a speech bubble attaches to its speaker and expires on the tick clock`() throws {
@@ -303,6 +318,87 @@ struct WorldScene3DLifecycleTests {
             scene.tick(deltaTime: 0.1)
         }
         #expect(try #require(scene._entityNodeProbe(for: 1)).hasSpeechBubble == false)
+    }
+
+    // MARK: - Name plaques
+
+    @Test func `players and NPCs get a name plaque and monsters get none`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 0, kind: .player))
+        scene.placeEntity(worldEntity(id: 1, kind: .peer))
+        scene.placeEntity(worldEntity(id: 2, kind: .npc))
+        scene.placeEntity(worldEntity(id: 3, kind: .monster))
+        #expect(try #require(scene._entityNodeProbe(for: 0)).hasNamePlaque)
+        #expect(try #require(scene._entityNodeProbe(for: 1)).hasNamePlaque)
+        #expect(try #require(scene._entityNodeProbe(for: 2)).hasNamePlaque)
+        #expect(try #require(scene._entityNodeProbe(for: 3)).hasNamePlaque == false)
+    }
+
+    @Test func `re-placing an entity keeps a single plaque instead of stacking`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 1))
+        let before = try #require(scene._entityNodeProbe(for: 1)).namePlaqueID
+        scene.placeEntity(worldEntity(id: 1))
+        let probe = try #require(scene._entityNodeProbe(for: 1))
+        #expect(probe.hasNamePlaque)
+        #expect(probe.nodeChildCount == 2) // model holder + plaque
+        // Same kind and name: the existing plaque survives — a rebuild here would churn
+        // (remove + re-rasterize) on every re-sent EntityMessage.
+        #expect(probe.namePlaqueID == before)
+    }
+
+    @Test func `a name plaque does not lift the speech bubble`() throws {
+        // The bubble measures head height from the model holder, not the whole node: the
+        // plaque's toward-camera lift gives it upward extent that would otherwise win the
+        // bounds for a short model and shove the bubble up. A tiny mask makes the placeholder
+        // shorter than the plaque, so a node-based measurement would diverge here.
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        let tinyMask = GridSize(width: 8, height: 8)
+        scene.placeEntity(WorldEntity(
+            id: 1, kind: .npc, figure: 16, position: GridPoint(x: 96, y: 96),
+            facing: Heading(cardinal: .south), tempo: .default, maskSize: tinyMask, name: "Probe"
+        ))
+        scene.placeEntity(WorldEntity(
+            id: 2, kind: .monster, figure: 20, position: GridPoint(x: 160, y: 96),
+            facing: Heading(cardinal: .south), tempo: .default, maskSize: tinyMask, name: "Probe"
+        ))
+        scene.showSpeechBubble(above: 1, lines: ["Hallo"], lifetimeMs: 1000)
+        scene.showSpeechBubble(above: 2, lines: ["Hallo"], lifetimeMs: 1000)
+        let plaquedProbe = try #require(scene._entityNodeProbe(for: 1))
+        let bareProbe = try #require(scene._entityNodeProbe(for: 2))
+        let plaqued = try #require(plaquedProbe.speechBubbleHeight)
+        let bare = try #require(bareProbe.speechBubbleHeight)
+        #expect(plaqued == bare)
+    }
+
+    @Test func `a kind change rebuilds the plaque and a monster sheds it`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 1, kind: .npc))
+        scene.placeEntity(worldEntity(id: 1, kind: .monster))
+        let monster = try #require(scene._entityNodeProbe(for: 1))
+        #expect(monster.hasNamePlaque == false)
+        #expect(monster.nodeChildCount == 1) // model holder only
+        scene.placeEntity(worldEntity(id: 1, kind: .npc))
+        #expect(try #require(scene._entityNodeProbe(for: 1)).hasNamePlaque)
+    }
+
+    @Test func `a same-kind name change rebuilds the plaque instead of reusing the stale label`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        var entity = worldEntity(id: 1, kind: .npc)
+        scene.placeEntity(entity)
+        let before = try #require(scene._entityNodeProbe(for: 1)).namePlaqueID
+        entity.name = "Renamed"
+        scene.placeEntity(entity)
+        let after = try #require(scene._entityNodeProbe(for: 1))
+        // A fresh plaque entity carries the new label; the old one is gone, not stacked under.
+        #expect(after.namePlaqueID != nil)
+        #expect(after.namePlaqueID != before)
+        #expect(after.nodeChildCount == 2) // model holder + rebuilt plaque
     }
 
     // MARK: - Authoring overlay

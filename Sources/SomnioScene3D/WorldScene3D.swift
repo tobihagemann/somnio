@@ -8,8 +8,8 @@ import SomnioCore
 /// RealityKit render surface for the player client and the map editor. Owns the `Entity`
 /// graph hosted by `WorldScene3DView`: `rootEntity` carries only the scene-persistent pieces —
 /// the orthographic 3/4 camera, the retained sun + ambient fill lights — and the per-sector
-/// roots. Everything sector-scoped (floor, placed objects, entities, speech bubbles, the
-/// editor's authoring overlay) lives under a per-sector root so a sector swap is a single
+/// roots. Everything sector-scoped (floor, placed objects, entities, name plaques, speech
+/// bubbles, the editor's authoring overlay) lives under a per-sector root so a sector swap is a single
 /// subtree replace (the `sectorRoot`/`previousRoot` held-swap state machine).
 ///
 /// Real 3D depth: objects and entities sit on the floor (Y = 0) at their world XZ, and the
@@ -22,12 +22,15 @@ import SomnioCore
     /// rebuilt from every wire `EntityMessage`, so the walk/tween clocks and the slewed yaw
     /// can't live there — they live here, keyed by the sector-local entity index.
     private final class EntityRenderState {
-        /// Stable transform node: `modelHolder` (the swappable clone/placeholder) and the
-        /// speech bubble hang off it, so a post-prewarm model swap never touches the bubble.
+        /// Stable transform node carrying translation only: `modelHolder` (the swappable
+        /// clone/placeholder), the speech bubble, and the name plaque hang off it, so a
+        /// post-prewarm model swap never touches the overlays. The facing yaw lives on
+        /// `modelHolder`, never here — the screen-aligned overlays must not inherit it.
         let node: Entity
         let modelHolder: Entity
         var kind: WorldEntity.Kind
         var figure: Int16
+        var name: String
         var maskSize: GridSize
         var facing: Heading
         var tempo: Tempo
@@ -43,6 +46,9 @@ import SomnioCore
         var remainingTweenMotion: TimeInterval
         var tween: PositionTween?
         var isPlaceholder: Bool
+        /// Billboarded name label under the feet; created once on first placement (players
+        /// and NPCs; monsters get none) and rebuilt on a kind change.
+        var namePlaque: Entity?
         /// Last pose whose clip was started on the model; `nil` until the first tick (and
         /// reset when a model swap discards the playing clip).
         var pose: AnimationPose?
@@ -52,6 +58,7 @@ import SomnioCore
             self.modelHolder = modelHolder
             self.kind = entity.kind
             self.figure = entity.figure
+            self.name = entity.name
             self.maskSize = entity.maskSize
             self.facing = entity.facing
             self.tempo = entity.tempo
@@ -140,13 +147,16 @@ import SomnioCore
     private static let walkClipNames = ["Walking_A", "Flying_Idle"]
     private static let sneakClipNames = ["Sneaking", "Walking_A", "Flying_Idle"]
     private static let runClipNames = ["Running_A", "Walking_A", "Flying_Idle"]
-    /// Gap between a speaker's head (model bounds top) and the bubble text.
-    private static let bubbleHeadGap: Float = 0.12
-    /// Sized against the orthographic viewport: `OrthographicCameraRig.defaultScale` meters
-    /// span the 480 pt play field, so at the default 3 m scale one text line lands around
-    /// 38 pt — bubbles read clearly at the zoomed-in 3D framing without dwarfing a character.
-    private static let bubbleLineHeight: Float = 0.24
-    private static let bubblePadding: Float = 0.12
+    /// Gap between a speaker's head (model bounds top) and the bubble's tail tip.
+    private static let bubbleHeadGap: Float = 0.2
+    /// Screen-space gap between the feet anchor and the plaque's top edge. Legacy pinned the
+    /// plaque 1 px below the sprite's feet, but the feet anchor is the mask *center* and the
+    /// 3D body visually spills below it, so the plaque needs real clearance or it clips into
+    /// the model's legs.
+    private static let plaqueFeetGap: Float = 0.15
+    /// Extra toward-camera advance past the point where the plaque's below-the-feet quad
+    /// clears the floor plane (see `namePlaqueEntity`).
+    private static let plaqueFloorClearance: Float = 0.15
     private static let placeholderMaterial = SimpleMaterial(color: .gray, isMetallic: false)
 
     /// Added to the `RealityView` by `WorldScene3DView`; internal, not private, so the host view can reach it.
@@ -284,8 +294,16 @@ import SomnioCore
                 state.isPlaceholder = !resolveModel(into: existing.modelHolder, kind: entity.kind, figure: entity.figure, maskSize: entity.maskSize)
                 state.pose = nil
             }
+            if state.kind != entity.kind || state.name != entity.name {
+                // A kind change restyles the plaque and a name change relabels it (an NPC
+                // label would linger on a monster band, a renamed entity would keep its old
+                // label); the attach below rebuilds it.
+                state.namePlaque?.removeFromParent()
+                state.namePlaque = nil
+            }
             state.kind = entity.kind
             state.figure = entity.figure
+            state.name = entity.name
             state.maskSize = entity.maskSize
         } else {
             let node = Entity()
@@ -296,6 +314,7 @@ import SomnioCore
             sectorRoot?.addChild(node)
             entityRenderStates[entity.id] = state
         }
+        attachNamePlaqueIfNeeded(to: state, entity: entity)
 
         state.facing = entity.facing
         if entity.position != state.lastPosition {
@@ -305,7 +324,7 @@ import SomnioCore
         state.tween = nil
         let world = Self.entityWorldPosition(position: entity.position, maskSize: entity.maskSize)
         state.node.position = world
-        state.node.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])
+        state.modelHolder.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])
 
         if entity.kind == .player {
             cameraFollowID = entity.id
@@ -371,7 +390,7 @@ import SomnioCore
         applySunState(sunState)
     }
 
-    /// Renders pre-wrapped speech bubble lines as a billboarded text entity parented to the
+    /// Renders pre-wrapped speech bubble lines as a billboarded balloon parented to the
     /// speaker's node, so it follows tweens and is torn down with the sector root. `lifetimeMs`
     /// is integer milliseconds matching the legacy `2000 + lines × 1000` rule; expiry is
     /// driven by `tick`.
@@ -379,7 +398,9 @@ import SomnioCore
         guard let state = entityRenderStates[entityID] else { return }
         speechBubbles[entityID]?.node.removeFromParent()
         let bubble = Self.speechBubbleEntity(lines: lines)
-        let headHeight = state.node.visualBounds(relativeTo: state.node).max.y
+        // Measure the model only — the persistent name plaque hanging off the node would
+        // otherwise stretch the bounds and push the bubble up.
+        let headHeight = state.modelHolder.visualBounds(relativeTo: state.node).max.y
         bubble.position = SIMD3<Float>(0, max(headHeight, 0) + Self.bubbleHeadGap, 0)
         state.node.addChild(bubble)
         speechBubbles[entityID] = SpeechBubble(node: bubble, remainingLifetime: TimeInterval(lifetimeMs) / 1000)
@@ -439,7 +460,7 @@ import SomnioCore
             let targetYaw = state.facing.radians
             if state.currentYaw != targetYaw {
                 state.currentYaw = YawSlew.step(from: state.currentYaw, toward: targetYaw, deltaTime: dt)
-                state.node.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])
+                state.modelHolder.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])
             }
 
             applyPose(isMoving ? Self.movementPose(kind: state.kind, tempo: state.tempo) : .idle, to: state)
@@ -766,44 +787,111 @@ import SomnioCore
         return nil
     }
 
+    // MARK: - Billboard overlays
+
+    /// Fixed screen-aligned orientation for overlay quads. The camera rig is locked, so a
+    /// constant orientation replaces `BillboardComponent`: the component aims each quad at
+    /// the camera *point* (50 m out), so off-focus speakers rendered visibly tilted text
+    /// lines under the orthographic projection.
+    private static let overlayOrientation = OrthographicCameraRig.cameraOrientation(focusing: .zero)
+
+    /// Overlay world scale: legacy-pixel artwork mapped straight through `worldUnitsPerPixel`
+    /// reads oversized under the zoomed-in 3D framing (the 3D viewport spans ~150 legacy px
+    /// against the 2D game's 480), so plaques and bubbles shrink by this factor while keeping
+    /// their legacy proportions. Preview-tuned: 1.0 dwarfed the characters, 0.6 read too
+    /// tiny to stay legible.
+    private static let overlayScale: Float = 0.8
+
+    /// The world-quad footprint for overlay artwork authored in legacy pixels.
+    private static func overlayWorldSize(_ sizePixels: CGSize) -> SIMD2<Float> {
+        SIMD2<Float>(Float(sizePixels.width), Float(sizePixels.height)) * OrthographicCameraRig.worldUnitsPerPixel * overlayScale
+    }
+
+    /// Unlit textured material for the plaque/bubble quads: unlit so the artwork stays legible
+    /// under the night sun, with the optional grayscale silhouette cutting the quad to shape.
+    /// The overlay textures are tiny, so the (main-actor-blocking) synchronous upload is fine
+    /// here — unlike the whole-sector floor textures the loader creates asynchronously. The
+    /// nil-fallback (a failed upload) keeps the plain tint: a readable blank plate.
+    /// Keep the default mip-chain sampling — mip-free linear sampling reads worse in the
+    /// running game.
+    private static func overlayMaterial(color: CGImage, opacityMask: CGImage?) -> UnlitMaterial {
+        var material = UnlitMaterial(color: .white)
+        if let texture = try? TextureResource(image: color, options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)) {
+            material.color = .init(tint: .white, texture: .init(texture))
+        }
+        if let opacityMask,
+           let mask = try? TextureResource(image: opacityMask, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll)) {
+            material.blending = .transparent(opacity: .init(texture: .init(mask)))
+        }
+        return material
+    }
+
+    /// Shared overlay quad: a screen-aligned container holding one textured plate at the
+    /// given world size. Callers position the plate.
+    private static func overlayQuad(
+        color: CGImage, opacityMask: CGImage?, size: SIMD2<Float>
+    ) -> (container: Entity, plate: ModelEntity) {
+        let container = Entity()
+        container.orientation = overlayOrientation
+        let plate = ModelEntity(
+            mesh: .generatePlane(width: size.x, height: size.y),
+            materials: [overlayMaterial(color: color, opacityMask: opacityMask)]
+        )
+        container.addChild(plate)
+        return (container, plate)
+    }
+
+    // MARK: - Name plaques
+
+    /// Creates the entity's name plaque on first placement (players + NPCs; monsters get
+    /// none), pinned under the feet like the legacy plaque. The local player's text is bold.
+    private func attachNamePlaqueIfNeeded(to state: EntityRenderState, entity: WorldEntity) {
+        guard state.namePlaque == nil else { return }
+        let background: NSColor
+        let bold: Bool
+        switch entity.kind {
+        case .player:
+            background = NamePlaqueArt.playerBackground
+            bold = true
+        case .peer:
+            background = NamePlaqueArt.playerBackground
+            bold = false
+        case .npc:
+            background = NamePlaqueArt.npcBackground
+            bold = false
+        case .monster:
+            return
+        }
+        guard let rendering = NamePlaqueArt.render(name: entity.name, background: background, bold: bold) else { return }
+        let plaque = Self.namePlaqueEntity(rendering: rendering)
+        state.node.addChild(plaque)
+        state.namePlaque = plaque
+    }
+
+    /// Screen-aligned opaque quad hanging just below the feet anchor. In the quad's local
+    /// space +Y is camera-up and +Z is toward the camera: hanging at negative Y alone would
+    /// dip the quad below the floor plane, which always occludes below-ground content under
+    /// the downward 3/4 camera. The toward-camera Z advance compensates — invisible under the
+    /// orthographic projection, but it lifts the quad's world height above the floor and draws
+    /// it in front of the speaker, matching the 2D scene's plaque-over-sprite ordering.
+    private static func namePlaqueEntity(rendering: NamePlaqueArt.Rendering) -> Entity {
+        let size = overlayWorldSize(rendering.sizePixels)
+        let (container, plate) = overlayQuad(color: rendering.image, opacityMask: nil, size: size)
+        let drop = size.y + plaqueFeetGap
+        let pitch = OrthographicCameraRig.pitchDegrees * .pi / 180
+        plate.position = SIMD3<Float>(0, -(size.y / 2 + plaqueFeetGap), drop / tan(pitch) + plaqueFloorClearance)
+        return container
+    }
+
     // MARK: - Speech bubbles
 
+    /// Screen-aligned comic balloon anchored at its tail tip (like the legacy node), so the
+    /// caller can pin the tip just above the speaker's head with the body rising above it.
     private static func speechBubbleEntity(lines: [String]) -> Entity {
-        let container = Entity()
-        container.components.set(BillboardComponent())
-        let textRoot = Entity()
-        for (index, line) in lines.enumerated() {
-            let mesh = MeshResource.generateText(
-                line,
-                extrusionDepth: 0.001,
-                font: .systemFont(ofSize: CGFloat(bubbleLineHeight) * 0.8),
-                containerFrame: .zero,
-                alignment: .center,
-                lineBreakMode: .byWordWrapping
-            )
-            let model = ModelEntity(mesh: mesh, materials: [UnlitMaterial(color: .white)])
-            let bounds = model.visualBounds(relativeTo: model)
-            // Text meshes originate at their baseline start; center each line and stack them
-            // bottom-up so the first line sits on top.
-            model.position = SIMD3<Float>(-bounds.center.x, Float(lines.count - 1 - index) * bubbleLineHeight, 0)
-            textRoot.addChild(model)
-        }
-        container.addChild(textRoot)
-        // Dark translucent balloon behind the white text so the bubble stays readable over
-        // bright floors and at night (the 2D scene's readable-at-night decision).
-        let textBounds = textRoot.visualBounds(relativeTo: container)
-        var backing = UnlitMaterial(color: .black)
-        backing.blending = .transparent(opacity: 0.55)
-        let plate = ModelEntity(
-            mesh: .generatePlane(
-                width: textBounds.extents.x + 2 * bubblePadding,
-                height: textBounds.extents.y + 2 * bubblePadding,
-                cornerRadius: bubblePadding
-            ),
-            materials: [backing]
-        )
-        plate.position = SIMD3<Float>(textBounds.center.x, textBounds.center.y, -0.02)
-        container.addChild(plate)
+        guard !lines.isEmpty, let rendering = SpeechBubbleArt.render(lines: lines) else { return Entity() }
+        let size = overlayWorldSize(rendering.sizePixels)
+        let (container, plate) = overlayQuad(color: rendering.color, opacityMask: rendering.opacityMask, size: size)
+        plate.position = SIMD3<Float>(0, size.y / 2, 0)
         return container
     }
 
@@ -902,24 +990,43 @@ import SomnioCore
         entityRenderStates[id] != nil
     }
 
-    /// Entity-node test seam: position, slewed orientation, placeholder status, in-flight
-    /// tween, and bubble presence for yaw/tween/re-resolution assertions.
+    /// Entity-node test seam: node position, the model holder's slewed yaw orientation,
+    /// placeholder status, in-flight tween, and overlay presence for yaw/tween/re-resolution
+    /// assertions.
     struct EntityNodeProbe {
         var nodePosition: SIMD3<Float>
         var orientation: simd_quatf
+        /// Must stay identity: the screen-aligned overlays hang off the node, so any node
+        /// rotation (e.g. a facing yaw applied to the wrong entity) would tilt them.
+        var nodeOrientation: simd_quatf
         var isPlaceholder: Bool
         var hasActiveTween: Bool
         var hasSpeechBubble: Bool
+        var hasNamePlaque: Bool
+        /// Identity of the plaque entity — a rebuild (kind or name change) mints a new one,
+        /// distinguishing "relabeled" from "stale plaque reused".
+        var namePlaqueID: Entity.ID?
+        /// The bubble container's height above the node origin (`nil` without a bubble) —
+        /// lets tests assert the head measurement ignores the coexisting plaque.
+        var speechBubbleHeight: Float?
+        /// Children of the stable node: the model holder plus any attached overlays — lets
+        /// tests assert a re-place never stacks duplicate plaques or bubbles.
+        var nodeChildCount: Int
     }
 
     func _entityNodeProbe(for entityID: Int16) -> EntityNodeProbe? {
         guard let state = entityRenderStates[entityID] else { return nil }
         return EntityNodeProbe(
             nodePosition: state.node.position,
-            orientation: state.node.orientation,
+            orientation: state.modelHolder.orientation,
+            nodeOrientation: state.node.orientation,
             isPlaceholder: state.isPlaceholder,
             hasActiveTween: state.tween != nil,
-            hasSpeechBubble: speechBubbles[entityID] != nil
+            hasSpeechBubble: speechBubbles[entityID] != nil,
+            hasNamePlaque: state.namePlaque != nil,
+            namePlaqueID: state.namePlaque?.id,
+            speechBubbleHeight: speechBubbles[entityID].map(\.node.position.y),
+            nodeChildCount: state.node.children.count
         )
     }
 

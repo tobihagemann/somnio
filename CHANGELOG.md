@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view
+- Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view; name plaques under players and NPCs and comic-style speech bubbles carry over into the 3D world
 - Author maps in the same 3D view the game renders: the editor's canvas shows the real models and floor materials with click-to-select and click-to-place, a selection highlight, an optional grid, scroll panning, and Cmd-scroll zoom, opening at the game's own zoom level
 - Pick objects and floors by name when editing maps: the object dialog offers the available models and the new-map dialog the available floor materials, replacing the sprite-sheet coordinate fields
 - Store maps with named model and floor-material references instead of sprite-sheet coordinates; sector files saved by older versions no longer open

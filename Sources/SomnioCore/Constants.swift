@@ -1,4 +1,5 @@
 import Foundation
+import SomnioProtocol
 
 public enum SomnioConstants {
     public static let tileSize: Int16 = 128
@@ -58,6 +59,22 @@ public enum SomnioConstants {
             && portalCount <= maxSectorPortals && npcCount <= maxSectorNPCs
             && monsterSpawnCount <= maxSectorMonsterSpawns
     }
+
+    /// Byte cap on a wire-supplied entity display name the renderer rasterizes into a name
+    /// plaque, derived from the protocol's identifier cap that honest servers already
+    /// enforce at registration. Without a client-side clamp a hostile or corrupt
+    /// `EntityMessage` name drives an enormous supersampled plaque bitmap — and a
+    /// world-sized blank quad when the oversized texture upload then fails.
+    public static let maxRenderedNameUTF8Bytes = SomnioProtocolConstants.maxIdentifierUTF8Bytes
+    /// Speech-bubble text metrics shared by the wrap step (SomnioUI's `SpeechBubbleText`)
+    /// and the balloon renderer (SomnioScene3D's `SpeechBubbleArt`): lines are wrapped
+    /// against this width at this font size and drawn back at the same metrics, so both
+    /// consumers must resolve to this single source of truth or wrapped lines overflow the
+    /// balloon body. 150 px matches the legacy balloon template width. Typed like the
+    /// file's other dimensions — the CGFloat-native consumers convert at use, keeping
+    /// SomnioCore free of CoreGraphics types (`DayNightAmbient`'s documented decision).
+    public static let speechBubbleWidthPixels: Int16 = 150
+    public static let speechBubbleFontSize: Double = 10
 
     /// Player sprite cell size (32 × 48 in the `001-Main01.png` sheet). Distinct from
     /// `tileSize`: the player entity emits this as its mask cell size, and the feet collision

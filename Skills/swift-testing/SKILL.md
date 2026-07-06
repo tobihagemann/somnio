@@ -193,6 +193,7 @@ Structure every test with clear phases:
 - `.serialized` scope matters: on a bare non-parameterized test function → no effect; on a parameterized `@Test` → serializes that test's argument cases; on a `@Suite` → serializes all the suite's contained tests (parameterized or not) and sub-suites.
 - `.timeLimit(.seconds(...))` → only `.minutes(...)` is accepted.
 - Unsafe mutable counters captured by async callbacks → use an actor or thread-safe container.
+- `#require` nested inside another `#require`'s argument → fails to compile with "recursive expansion of macro 'require(_:_:sourceLocation:)'" (observed on Swift 6.3.x); bind the outer `try #require(...)` to a local, then `#require` its property.
 
 
 ## Verification checklist
