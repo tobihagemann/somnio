@@ -5,9 +5,11 @@ import Sparkle
 import SwiftUI
 
 /// `@main` shim. Cannot live in a file literally named `main.swift` (SwiftPM treats
-/// those as top-level entry points and `@main` is forbidden). The app declares a
-/// single fixed-size `Window` plus a `Settings` scene; the `Commands` group registers
-/// the legacy menu inventory plus Sparkle's "Check for Updates...".
+/// those as top-level entry points and `@main` is forbidden). The app declares a single
+/// resizable `Window` (fullscreen-first via `WindowConfigurator`); every dialog surface
+/// — including Join/Leave (the Esc game menu) and the app options — is an in-game
+/// overlay, so the menu bar carries only "About Somnio" (opening the overlay) and
+/// Sparkle's "Check for Updates...", with no `Settings` scene.
 @main
 struct SomnioAppEntry: App {
     @State private var viewModel: ClientViewModel
@@ -46,13 +48,15 @@ struct SomnioAppEntry: App {
                 renderer: renderer,
                 onCheckForUpdates: { updaterController.checkForUpdates(nil) }
             )
+            .frame(minWidth: 1024, minHeight: 640)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1440, height: 900)
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button {
-                    viewModel.presentedSheet = .about
+                    viewModel.presentedOverlay = .about
                 } label: {
                     Text(L.resource("About Somnio"))
                 }
@@ -64,26 +68,9 @@ struct SomnioAppEntry: App {
                     Text(L.resource("Check for Updates..."))
                 }
             }
-            CommandGroup(replacing: .newItem) {
-                Button {
-                    viewModel.presentedSheet = .login
-                } label: {
-                    Text(L.resource("Join Game..."))
-                }
-                .keyboardShortcut("j")
-                Button {
-                    viewModel.leaveGame()
-                } label: {
-                    Text(L.resource("Leave Game"))
-                }
-                .keyboardShortcut("l")
-                .disabled(viewModel.connectionState != .attached)
-            }
+            // Strip File > New Window — a second world window makes no sense for the game.
+            CommandGroup(replacing: .newItem) {}
             CommandGroup(replacing: .help) {}
-        }
-
-        Settings {
-            PreferencesView()
         }
     }
 }

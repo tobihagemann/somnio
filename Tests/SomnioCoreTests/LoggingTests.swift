@@ -364,4 +364,15 @@ struct LoggingTests {
         )
         #expect(contents.contains("[INFO] [test] hello alpha=a zebra=z error=boom"))
     }
+
+    @Test func `log-level preference raw values preserve the persisted on-disk strings`() {
+        // `standard` must keep the historical "default" string or every existing user's
+        // persisted preference silently resets.
+        #expect(LogLevelPreference.standard.rawValue == "default")
+        #expect(LogLevelPreference(rawValue: "default") == .standard)
+        #expect(LogLevelPreference(rawValue: "debug") == .debug)
+        #expect(LogLevelPreference(rawValue: "verbose") == .verbose)
+        #expect(LogLevelPreference(rawValue: "bogus") == nil)
+        #expect(LogLevelPreference.allCases.count == 3)
+    }
 }

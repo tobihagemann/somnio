@@ -16,6 +16,11 @@ public enum SomnioProtocolConstants {
     /// pipelining 64 KB password attempts that each pay full Argon2id verify cost.
     public static let maxPasswordUTF8Bytes = 128
 
+    /// Minimum UTF-8 byte floor for a registration password (NIST SP 800-63B §5.1.1.2
+    /// baseline). Lives beside the caps so the server's `RegisterHandler` and the client's
+    /// registration form read the same floor.
+    public static let minPasswordUTF8Bytes = 8
+
     /// UTF-8 byte cap for `SayMessage` / `AdminSayMessage` text. A chat line renders in a
     /// 4-line speech bubble, so anything beyond a couple hundred bytes is never shown; the
     /// server enforces this on the inbound chat and admin-say paths so a single message

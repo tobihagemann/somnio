@@ -19,12 +19,12 @@ struct ClientViewModelTests {
         #expect(viewModel.connectionState == .awaitingLoginResult)
     }
 
-    @Test func `hello with a newer server version presents the client-outdated update sheet`() {
+    @Test func `hello with a newer server version presents the client-outdated update overlay`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingHello
         viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion + 1))))
         #expect(viewModel.connectionState == .disconnected)
-        #expect(viewModel.presentedSheet == .updateRequired(.clientOutdated))
+        #expect(viewModel.presentedOverlay == .updateRequired(.clientOutdated))
         let hasVersionErrorCode = viewModel.chatLines.contains { line in
             if case .errorCode = line { return true }
             return false
@@ -32,12 +32,12 @@ struct ClientViewModelTests {
         #expect(!hasVersionErrorCode)
     }
 
-    @Test func `hello with an older server version presents the server-outdated update sheet`() {
+    @Test func `hello with an older server version presents the server-outdated update overlay`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingHello
         viewModel.handle(.message(.hello(HelloMessage(protocolVersion: 0))))
         #expect(viewModel.connectionState == .disconnected)
-        #expect(viewModel.presentedSheet == .updateRequired(.serverOutdated))
+        #expect(viewModel.presentedOverlay == .updateRequired(.serverOutdated))
     }
 
     @Test func `loginResult ok sets selfDisplayName from the form`() {
@@ -244,7 +244,7 @@ struct ClientViewModelTests {
         #expect(viewModel.chatLines.contains(.connectionLost))
     }
 
-    @Test func `registerResult ok clears form, lastError, and re-presents login sheet`() {
+    @Test func `registerResult ok clears form, lastError, and re-presents login overlay`() {
         let viewModel = makeViewModel()
         viewModel.registrationForm.nickname = "alice"
         viewModel.registrationForm.password = "supersafe"
@@ -255,7 +255,7 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.registerResult(RegisterResultMessage(result: .ok))))
         #expect(viewModel.registrationForm.lastError == nil)
         #expect(viewModel.registrationForm.nickname == "")
-        #expect(viewModel.presentedSheet == .login)
+        #expect(viewModel.presentedOverlay == .login)
         #expect(viewModel.connectionState == .disconnected)
     }
 
@@ -289,7 +289,7 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.loginResult(LoginResultMessage(result: .badCredentials))))
         #expect(viewModel.chatLines.contains(.badCredentials))
         #expect(viewModel.connectionState == .disconnected)
-        #expect(viewModel.presentedSheet == .login)
+        #expect(viewModel.presentedOverlay == .login)
     }
 
     @Test func `loginResult alreadyLoggedIn appends typed chat line`() {
@@ -298,7 +298,7 @@ struct ClientViewModelTests {
         viewModel.handle(.message(.loginResult(LoginResultMessage(result: .alreadyLoggedIn))))
         #expect(viewModel.chatLines.contains(.alreadyLoggedIn))
         #expect(viewModel.connectionState == .disconnected)
-        #expect(viewModel.presentedSheet == .login)
+        #expect(viewModel.presentedOverlay == .login)
     }
 
     @Test func `peer disconnect removes from entities and players and appends left chat line`() {
@@ -411,7 +411,13 @@ struct ClientViewModelTests {
         )
         viewModel.activateInventoryItem(purse)
         #expect(viewModel.chatLines.contains(.purseBalance(coins: 100)))
-        #expect(!outbound.contains { if case .equipToggle = $0 { true } else { false } })
+        #expect(!outbound.contains {
+            if case .equipToggle = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `activating an item while not attached does nothing`() {
@@ -647,8 +653,20 @@ struct ClientViewModelTests {
         viewModel._outboundProbe = { outbound.append($0) }
         viewModel._runSingleTick()
 
-        #expect(outbound.contains { if case .enterPortal = $0 { true } else { false } })
-        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+        #expect(outbound.contains {
+            if case .enterPortal = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        #expect(!outbound.contains {
+            if case .clientPosition = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `a non-portal moving tick still emits the clientPosition heartbeat`() {
@@ -663,8 +681,20 @@ struct ClientViewModelTests {
         viewModel._outboundProbe = { outbound.append($0) }
         viewModel._runSingleTick()
 
-        #expect(outbound.contains { if case .clientPosition = $0 { true } else { false } })
-        #expect(!outbound.contains { if case .enterPortal = $0 { true } else { false } })
+        #expect(outbound.contains {
+            if case .clientPosition = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        #expect(!outbound.contains {
+            if case .enterPortal = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `a facing turn past the emit threshold reports clientPosition without movement`() async throws {
@@ -681,7 +711,11 @@ struct ClientViewModelTests {
         viewModel.updateMouseFacing(Heading(degrees: 95))
         viewModel._runSingleTick()
 
-        let emitted = outbound.compactMap { if case let .clientPosition(m) = $0 { m } else { nil } }
+        let emitted = outbound.compactMap {
+            if case let .clientPosition(m) = $0 {
+                m
+            } else { nil }
+        }
         #expect(emitted.last?.facing == 95)
     }
 
@@ -700,7 +734,13 @@ struct ClientViewModelTests {
         viewModel.updateMouseFacing(Heading(degrees: 91))
         viewModel._runSingleTick()
 
-        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+        #expect(!outbound.contains {
+            if case .clientPosition = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `a facing turn inside the heartbeat window stays throttled to 2 Hz`() {
@@ -717,7 +757,13 @@ struct ClientViewModelTests {
         viewModel.updateMouseFacing(Heading(degrees: 180))
         viewModel._runSingleTick()
 
-        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+        #expect(!outbound.contains {
+            if case .clientPosition = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `facing jitter across the wrap seam measures as a small turn, not a revolution`() async throws {
@@ -735,7 +781,13 @@ struct ClientViewModelTests {
         viewModel.updateMouseFacing(Heading(degrees: 0.25))
         viewModel._runSingleTick()
 
-        #expect(!outbound.contains { if case .clientPosition = $0 { true } else { false } })
+        #expect(!outbound.contains {
+            if case .clientPosition = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test func `a held screen-up walk renders sub-pixel positions on one straight world line`() async throws {
@@ -888,6 +940,98 @@ struct ClientViewModelTests {
         #expect(keyboard.snapshot.w)
     }
 
+    @Test func `escape with chat focused only blurs the chat, leaving the overlay state alone`() {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = nil
+        viewModel.setChatInputFocused(true)
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.isChatInputFocused == false)
+        #expect(viewModel.presentedOverlay == nil)
+    }
+
+    @Test func `escape on the login overlay is a consumed no-op`() {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = .login
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .login)
+    }
+
+    @Test func `escape on the registration overlay backs out to login and drops the inline error`() {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = .registration
+        viewModel.registrationForm.lastError = .nicknameExists
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .login)
+        #expect(viewModel.registrationForm.lastError == nil)
+    }
+
+    @Test func `escape on the update-required overlay backs out to login`() {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = .updateRequired(.clientOutdated)
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .login)
+    }
+
+    @Test(arguments: [OverlayKind.about, OverlayKind.options])
+    func `escape on a layered overlay returns to the game menu while attached`(overlay: OverlayKind) {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        viewModel.presentedOverlay = overlay
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .gameMenu)
+    }
+
+    @Test(arguments: [OverlayKind.about, OverlayKind.options])
+    func `escape on a layered overlay returns to login when not attached`(overlay: OverlayKind) {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = overlay
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .login)
+    }
+
+    @Test func `escape on the game menu resumes play`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        viewModel.presentedOverlay = .gameMenu
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == nil)
+    }
+
+    @Test func `escape during live play opens the game menu`() {
+        let viewModel = makeViewModel()
+        viewModel.connectionState = .attached
+        viewModel.presentedOverlay = nil
+
+        viewModel.handleEscape()
+
+        #expect(viewModel.presentedOverlay == .gameMenu)
+    }
+
+    @Test func `cancelling registration drops the inline error and returns to login`() {
+        let viewModel = makeViewModel()
+        viewModel.presentedOverlay = .registration
+        viewModel.registrationForm.lastError = .failure
+
+        viewModel.cancelRegistration()
+
+        #expect(viewModel.presentedOverlay == .login)
+        #expect(viewModel.registrationForm.lastError == nil)
+    }
+
     private func prepareAttachedSelf(_ viewModel: ClientViewModel, at position: GridPoint, sector: Sector) {
         viewModel.currentSector = sector
         viewModel.selfEntityIndex = 1
@@ -896,7 +1040,7 @@ struct ClientViewModelTests {
             tempo: .default, maskSize: SomnioConstants.playerSpriteSize, name: "Me"
         )
         viewModel.connectionState = .attached
-        viewModel.presentedSheet = nil
+        viewModel.presentedOverlay = nil
     }
 
     private func makeWorldScene() -> WorldScene3D {

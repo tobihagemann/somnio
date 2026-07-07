@@ -87,6 +87,7 @@ import SwiftUI
                 WorldScene3DView(scene: workspace.worldScene, size: proxy.size)
                 CanvasScrollMonitor { event in
                     handleScroll(event)
+                    return true
                 }
                 Color.clear
                     .contentShape(Rectangle())

@@ -14,10 +14,13 @@ public enum OrthographicCameraRig {
     /// keep the floor inside `[nearClip, farClip]`.
     public static let cameraDistance: Float = 50
     /// Orthographic `scale` is the vertical world extent the viewport spans; smaller is more
-    /// zoomed in. The fixed close-up framing (~6 tiles of world per viewport height) is tuned
-    /// by eye rather than for legacy parity; `clampedScale` bounds any future interactive zoom.
+    /// zoomed in. The default close-up framing (~6 tiles of world per viewport height) is tuned
+    /// by eye rather than for legacy parity; `clampedScale` bounds the interactive play zoom.
+    /// `minScale` derives from `PlayerZoom.maxFactor` so the rig bound and the zoom clamp
+    /// agree at the zoomed-in end by construction (`maxScale` already covers the zoomed-out
+    /// end at scale 6).
     public static let defaultScale: Float = 3
-    public static let minScale: Float = 3
+    public static let minScale: Float = defaultScale / Float(PlayerZoom.maxFactor)
     public static let maxScale: Float = 24
     public static let nearClip: Float = 0.05
     public static let farClip: Float = 500

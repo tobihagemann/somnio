@@ -11,9 +11,9 @@ public enum RegistrationError: Sendable, Equatable {
     case failure
 }
 
-/// Mutable registration-sheet state held by `ClientViewModel`. `lastError` is
+/// Mutable registration-overlay state held by `ClientViewModel`. `lastError` is
 /// populated when the server replies with `.nicknameExists` or `.failure` so the
-/// sheet can surface the inline error without rendering it through the chat
+/// overlay can surface the inline error without rendering it through the chat
 /// scrollback.
 @Observable public final class RegistrationFormState {
     public var nickname: String = ""

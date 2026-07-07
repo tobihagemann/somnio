@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Scrollable read-only chat history. Always prepends the localized startup-greeting
-/// line as the first row so the player sees `"Welcome to Somnio!"` before any wire
-/// message arrives — this view is the single owner of the prepend, callers do not
-/// seed it themselves.
+/// Scrollable read-only chat history, sized by its host panel. Always prepends the
+/// localized startup-greeting line as the first row so the player sees
+/// `"Welcome to Somnio!"` before any wire message arrives — this view is the single
+/// owner of the prepend, callers do not seed it themselves.
 public struct ChatScrollbackView: View {
     public let chatLines: [ChatLine]
     public let locale: Locale?
@@ -38,8 +38,6 @@ public struct ChatScrollbackView: View {
                         .id(Self.bottomAnchorID)
                 }
             }
-            .frame(width: 150, height: 336)
-            .border(Color.black, width: 1)
             // The scrollback fills from the top and only scrolls once it overflows: a no-op while a
             // few lines fit, pinning the newest line to the bottom past that. The scroll is deferred
             // into a `Task` so the freshly appended row is laid out before `scrollTo` runs — a

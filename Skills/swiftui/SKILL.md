@@ -375,6 +375,7 @@ End of example.
 - [references/components/loading-placeholders.md](references/components/loading-placeholders.md) — loading and placeholder patterns.
 - [references/components/lightweight-clients.md](references/components/lightweight-clients.md) — lightweight networking clients.
 - [references/components/macos-settings.md](references/components/macos-settings.md) — macOS Settings scene patterns.
+- [references/components/macos-windows.md](references/components/macos-windows.md) — macOS window sizing, frame persistence, and fullscreen.
 - [references/components/matched-transitions.md](references/components/matched-transitions.md) — matched geometry transitions.
 - [references/components/media.md](references/components/media.md) — media playback components.
 - [references/components/menu-bar.md](references/components/menu-bar.md) — macOS menu bar components.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Mutable login-sheet state held by `ClientViewModel`. The view binds to fields here
+/// Mutable login-overlay state held by `ClientViewModel`. The view binds to fields here
 /// directly via `@Bindable`; submission reads the values and forwards them through the
 /// transport.
 @Observable public final class LoginFormState {

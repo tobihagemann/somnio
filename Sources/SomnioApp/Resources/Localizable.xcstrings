@@ -19,6 +19,23 @@
         }
       }
     },
+    "3D characters and props by KayKit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D-Charaktere und -Objekte von KayKit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D characters and props by KayKit."
+          }
+        }
+      }
+    },
     "A newer version is available. Please update your client to keep playing." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -104,6 +121,23 @@
         }
       }
     },
+    "Close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        }
+      }
+    },
     "Copyright" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -172,6 +206,23 @@
         }
       }
     },
+    "Floor textures by ambientCG." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bodentexturen von ambientCG."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Floor textures by ambientCG."
+          }
+        }
+      }
+    },
     "Gender:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -189,6 +240,23 @@
         }
       }
     },
+    "Ghost model by Quaternius." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geist-Modell von Quaternius."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghost model by Quaternius."
+          }
+        }
+      }
+    },
     "If you don't have an account, click here!" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -202,23 +270,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "If you don't have an account, click here!"
-          }
-        }
-      }
-    },
-    "Join Game..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spiel beitreten..."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Join Game..."
           }
         }
       }
@@ -325,6 +376,23 @@
         }
       }
     },
+    "Options" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optionen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Options"
+          }
+        }
+      }
+    },
     "Password" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -406,6 +474,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remember password"
+          }
+        }
+      }
+    },
+    "Resume" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortsetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume"
           }
         }
       }
@@ -508,6 +593,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "UI borders by Kenney." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UI-Rahmen von Kenney."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UI borders by Kenney."
           }
         }
       }

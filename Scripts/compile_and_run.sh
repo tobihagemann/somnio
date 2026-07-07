@@ -30,6 +30,12 @@ for arg in "$@"; do
   esac
 done
 
+# Fail before any build time is spent: package_app.sh's asset step hard-requires the
+# pack for the player bundle (its UI/ subtree styles every panel).
+if [[ -z "${SOMNIO_ASSET_SOURCE:-}" ]]; then
+  fail "SOMNIO_ASSET_SOURCE is not set. Point it at the somnio-assets checkout (the sibling repo carrying Models/, FloorMaterials/, and UI/), e.g. SOMNIO_ASSET_SOURCE=\"\$HOME/Developer/github.com/tobihagemann/somnio-assets\" $(basename "$0")"
+fi
+
 log "==> Killing existing ${APP_NAME} instances"
 pkill -f "${APP_PROCESS_PATTERN}" 2>/dev/null || true
 pkill -f "${DEBUG_PROCESS_PATTERN}" 2>/dev/null || true

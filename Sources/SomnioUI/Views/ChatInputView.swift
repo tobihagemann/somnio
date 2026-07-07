@@ -5,10 +5,10 @@ import SwiftUI
 /// `TextField(axis:)`. SwiftUI's multi-line field spawns an empty automatic-text-completion
 /// popover at launch (a stray translucent popover-level window) and exposes no hook to
 /// suppress it; an owned `NSTextView` with completion disabled does not. Return submits via
-/// `onSubmit`; Escape blurs. Focus is a plain `Bool` binding synced to the text view's
-/// first-responder state, because `SpriteView`'s underlying `SKView` returns `false` for
-/// `acceptsFirstResponder` — the play field can never steal first responder, so the parent
-/// blurs the chat by driving `isFocused` to `false`.
+/// `onSubmit`; Escape is owned by the app-level monitor, which blurs by driving `isFocused`
+/// to `false`. Focus is a plain `Bool` binding synced to the text view's first-responder
+/// state, because the RealityKit play field never takes first responder — the parent blurs
+/// the chat by driving `isFocused` to `false`. Sized and chromed by its host panel.
 public struct ChatInputView: View {
     @Binding public var text: String
     public let onSubmit: () -> Void
@@ -26,8 +26,6 @@ public struct ChatInputView: View {
 
     public var body: some View {
         ChatInputTextView(text: $text, isFocused: $isFocused, onSubmit: onSubmit)
-            .frame(width: 150, height: 85, alignment: .topLeading)
-            .border(Color.black, width: 1)
     }
 }
 
@@ -63,6 +61,10 @@ private struct ChatInputTextView: NSViewRepresentable {
         // 13pt matches `ChatScrollbackView`'s implicit SwiftUI body font so the input row and the
         // scrollback above it render at the same size; keep it in sync if that font changes.
         textView.font = .systemFont(ofSize: 13)
+        // The host panel's plate is dark in either system appearance, so the adaptive label
+        // color (black in light mode) would vanish; pin the text and caret to white.
+        textView.textColor = .white
+        textView.insertionPointColor = .white
         // Match `ChatScrollbackView`'s 4px content padding so the input row and the history
         // above it share the same left/top text margin. `lineFragmentPadding` (default 5) would
         // otherwise stack on top of `textContainerInset` and push the text further in.
@@ -127,9 +129,12 @@ private struct ChatInputTextView: NSViewRepresentable {
     }
 }
 
-/// Submits on Return and blurs on Escape instead of inserting a newline / beeping. `mouseDown`
-/// marks the user's intent to focus before the click is processed, so only a deliberate click
-/// registers as focus — an auto/programmatic first-responder gain on launch does not.
+/// Submits on Return instead of inserting a newline. Escape is deliberately NOT handled
+/// here: the app-level Escape monitor owns that key (chat blur, game menu) and consumes it
+/// before the responder chain would deliver `cancelOperation` — a second owner here would
+/// be dead code. `mouseDown` marks the user's intent to focus before the click is
+/// processed, so only a deliberate click registers as focus — an auto/programmatic
+/// first-responder gain on launch does not.
 private final class ReturnSubmittingTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onFocusChange: ((Bool) -> Void)?
@@ -149,8 +154,6 @@ private final class ReturnSubmittingTextView: NSTextView {
         switch selector {
         case #selector(insertNewline(_:)):
             onSubmit?()
-            window?.makeFirstResponder(nil)
-        case #selector(cancelOperation(_:)):
             window?.makeFirstResponder(nil)
         default:
             super.doCommand(by: selector)

@@ -194,6 +194,7 @@ Structure every test with clear phases:
 - `.timeLimit(.seconds(...))` → only `.minutes(...)` is accepted.
 - Unsafe mutable counters captured by async callbacks → use an actor or thread-safe container.
 - `#require` nested inside another `#require`'s argument → fails to compile with "recursive expansion of macro 'require(_:_:sourceLocation:)'" (observed on Swift 6.3.x); bind the outer `try #require(...)` to a local, then `#require` its property.
+- `#expect` wrapping a `mutating` member call on a local (`#expect(value.advance())`) → fails to compile with "cannot use mutating member on immutable value" (observed on Swift 6.3.x; the macro captures arguments immutably); run the mutation first, bind its result to a `let`, then `#expect` the binding.
 
 
 ## Verification checklist

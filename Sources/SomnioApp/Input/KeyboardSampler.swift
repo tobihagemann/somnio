@@ -47,14 +47,14 @@ import Foundation
     private var resignActiveObserver: NSObjectProtocol?
 
     /// Set by the host (view model) — `true` when gameplay should respond to WASD
-    /// (player attached, no sheet up, chat input not focused). Defaults to `false` so
+    /// (player attached, no overlay up, chat input not focused). Defaults to `false` so
     /// the sampler doesn't capture keys before the gameplay loop is wired up. When
     /// `false`, key events pass through to AppKit's responder chain so text fields
     /// receive them normally.
     public var isGameplayActive: Bool = false {
         didSet {
             // Releasing capture mid-hold means the matching keyUp is never consumed, so drop
-            // held keys to avoid phantom movement when gameplay resumes (e.g. a sheet closes).
+            // held keys to avoid phantom movement when gameplay resumes (e.g. an overlay closes).
             if !isGameplayActive { held = Held() }
         }
     }

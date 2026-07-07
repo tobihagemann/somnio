@@ -21,6 +21,9 @@ struct LocalizableCatalogTests {
         "HP",
         "Balance",
         "Mana",
+        "Chat",
+        "Players",
+        "Items",
         "Players: %@",
         "Items: %@"
     ]

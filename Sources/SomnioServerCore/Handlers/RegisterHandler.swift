@@ -10,10 +10,11 @@ import SomnioProtocol
 /// `nicknameTaken` -> `nicknameExists`; any other error logs and maps to `.failure`. There
 /// is no pre-check `findByName` round-trip — the constraint is the source of truth.
 public enum RegisterHandler {
-    /// Minimum plaintext password length (NIST SP 800-63B §5.1.1.2 baseline). Trades off
-    /// against UX migration: accounts created before this floor still authenticate via the
-    /// stored Argon2id PHC string.
-    public static let minPasswordLength = 8
+    /// Minimum plaintext password length, mirroring
+    /// `SomnioProtocolConstants.minPasswordUTF8Bytes`. Trades off against UX migration:
+    /// accounts created before this floor still authenticate via the stored Argon2id
+    /// PHC string.
+    public static let minPasswordLength = SomnioProtocolConstants.minPasswordUTF8Bytes
     /// Upper bound mirroring `LoginHandler.maxPasswordLength` /
     /// `SomnioProtocolConstants.maxPasswordUTF8Bytes`.
     public static let maxPasswordLength = SomnioProtocolConstants.maxPasswordUTF8Bytes

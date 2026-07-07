@@ -909,6 +909,20 @@ import SomnioCore
 
     // MARK: - Camera
 
+    /// Player camera path: the interactive scroll zoom over the height-independent default
+    /// framing. `defaultScale` is deliberately NOT scaled by viewport height (unlike the
+    /// editor's `playerZoomScale`): every window size shows the same vertical world extent —
+    /// a bigger window magnifies rather than reveals (MMO fairness), with width following
+    /// the aspect ratio. Routed through `clampedScale` so the rig bound and the
+    /// `PlayerZoom` clamp agree by construction. Camera focus is untouched — it keeps
+    /// following the player.
+    public func applyPlayerFraming(zoomFactor: Double) {
+        if var camera = cameraEntity.components[OrthographicCameraComponent.self] {
+            camera.scale = OrthographicCameraRig.clampedScale(OrthographicCameraRig.defaultScale / Float(zoomFactor))
+            cameraEntity.components.set(camera)
+        }
+    }
+
     /// Editor camera path: applies a whole-sector fit (focus + orthographic scale) computed by
     /// `OrthographicCameraRig.editorFraming`. Deliberately not clamped to the gameplay zoom
     /// bounds — the fit for a large sector exceeds `maxScale`, and clamping would crop it.

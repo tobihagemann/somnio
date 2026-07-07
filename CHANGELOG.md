@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Play in fullscreen: the game launches into fullscreen, remembers when you quit windowed instead, and windowed play resizes freely down to 1024×640 at a remembered frame
+- Zoom the world with the scroll wheel between half and double the standard view, while every window size keeps showing the same slice of the world
+- Open an in-game menu with Esc — Resume, Options, Leave Game, and About; Esc also backs out of any dialog and unfocuses the chat, and never drops the game out of fullscreen
+- Collapse the chat, online-players, and inventory panels behind small toggle buttons to keep the view clear
+
 ### Changed
 
+- Show every dialog in the game's own fantasy style: login, registration, options, about, and update prompts appear as bordered in-game panels over the world instead of macOS windows, with the game options moving from the system Settings menu into the new Options overlay and the About dialog crediting the KayKit, Quaternius, ambientCG, and Kenney asset packs
+- Let the world fill the whole window: the HUD bars, chat, and player/inventory lists float over the view instead of sitting in a fixed side layout
 - Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view; name plaques under players and NPCs and comic-style speech bubbles carry over into the 3D world
 - Author maps in the same 3D view the game renders: the editor's canvas shows the real models and floor materials with click-to-select and click-to-place, a selection highlight, an optional grid, scroll panning, and Cmd-scroll zoom, opening at the game's own zoom level
 - Pick objects and floors by name when editing maps: the object dialog offers the available models and the new-map dialog the available floor materials, replacing the sprite-sheet coordinate fields

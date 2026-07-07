@@ -78,7 +78,7 @@ struct KeyboardSamplerTests {
         sampler.isGameplayActive = true
         sampler.updateForTest(keyCode: 13, down: true) // W held while active
         #expect(sampler.snapshot.w == true)
-        // Capture released mid-hold (e.g. a sheet opens): the keyUp won't be consumed, so
+        // Capture released mid-hold (e.g. an overlay opens): the keyUp won't be consumed, so
         // the held bit must be cleared here to avoid phantom movement when gameplay resumes.
         sampler.isGameplayActive = false
         #expect(sampler.snapshot == KeyboardSampler.Held())

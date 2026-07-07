@@ -53,6 +53,18 @@ struct OrthographicCameraRigTests {
         #expect(OrthographicCameraRig.clampedScale(OrthographicCameraRig.defaultScale) == OrthographicCameraRig.defaultScale)
     }
 
+    @Test func `the player zoom range maps inside the rig's scale bounds`() {
+        // Zoomed fully in: the scale the player framing derives lands exactly on the rig's
+        // floor, so the two clamps agree instead of fighting.
+        let zoomedIn = OrthographicCameraRig.defaultScale / Float(PlayerZoom.maxFactor)
+        #expect(OrthographicCameraRig.clampedScale(zoomedIn) == zoomedIn)
+        #expect(zoomedIn == OrthographicCameraRig.minScale)
+        // Zoomed fully out: scale 6 sits well under the editor-facing ceiling.
+        let zoomedOut = OrthographicCameraRig.defaultScale / Float(PlayerZoom.minFactor)
+        #expect(OrthographicCameraRig.clampedScale(zoomedOut) == zoomedOut)
+        #expect(zoomedOut <= OrthographicCameraRig.maxScale)
+    }
+
     @Test func `legacy pixels map onto the flat floor scaled by world-units-per-pixel`() {
         let world = OrthographicCameraRig.worldPosition(forLegacyX: 100, y: 200)
         #expect(world.y == 0)

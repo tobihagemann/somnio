@@ -1,7 +1,8 @@
 import Foundation
 
-/// Top-level identifier for the currently presented editor modal. Mirrors `SheetKind`
-/// in the player client so `.sheet(item:)` can dispatch by case.
+/// Top-level identifier for the currently presented editor modal, dispatched by case
+/// through `.sheet(item:)` (the editor keeps native sheets; the player client's
+/// counterpart is `OverlayKind`).
 public enum EditorSheetKind: Identifiable, Sendable, Equatable {
     case newMap
     case objectDialog

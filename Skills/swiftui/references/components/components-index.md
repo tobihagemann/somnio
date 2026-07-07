@@ -10,6 +10,7 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - App wiring and dependency graph: `app-wiring.md` — Use to wire TabView + NavigationStack + sheets at the root and install global dependencies.
 - Form and Settings: `form.md` — Use for settings, grouped inputs, and structured data entry.
 - macOS Settings: `macos-settings.md` — Use when building a macOS Settings window with SwiftUI's Settings scene.
+- macOS window management: `macos-windows.md` — Use for window sizing/resizability, frame persistence, and fullscreen (incl. launching into fullscreen).
 - Split views and columns: `split-views.md` — Use for iPad/macOS multi-column layouts or custom secondary columns.
 - List and Section: `list.md` — Use for feed-style content and settings rows.
 - ScrollView and Lazy stacks: `scrollview.md` — Use for custom layouts, horizontal scrollers, or grids.

@@ -32,7 +32,7 @@ import SomnioUI
     public var selfDisplayName: String = ""
     public var currentSector: Sector?
     public var currentDateTick: DateTickMessage = .init(hour: 12, minute: 0)
-    public var presentedSheet: SheetKind? = .login
+    public var presentedOverlay: OverlayKind? = .login
     public var isChatInputFocused: Bool = false
 
     public let loginForm = LoginFormState()
@@ -98,7 +98,7 @@ import SomnioUI
             logger.warning("server URL rejected", metadata: ["error": "\(error)"])
             connectionState = .disconnected
             chatLines.append(.serverUnreachable)
-            presentedSheet = .login
+            presentedOverlay = .login
             return
         }
         let transport = transport
@@ -160,6 +160,49 @@ import SomnioUI
     public func setChatInputFocused(_ focused: Bool) {
         isChatInputFocused = focused
         if focused { keyboard.clearHeldKeys() }
+    }
+
+    // MARK: - Escape / overlay routing
+
+    /// Single Esc owner, invoked by the app-level key monitor (which consumes the key
+    /// whenever the main window is key, so macOS's Esc-exits-fullscreen never fires).
+    /// A focused chat input blurs first; otherwise Esc backs the presented overlay out one
+    /// level — mirroring each overlay's own close control — and opens the game menu from
+    /// live play. The login overlay is the floor pre-attach (nothing behind it), so Esc
+    /// there is a consumed no-op.
+    public func handleEscape() {
+        if isChatInputFocused {
+            setChatInputFocused(false)
+            return
+        }
+        switch presentedOverlay {
+        case .login:
+            break
+        case .registration:
+            cancelRegistration()
+        case .updateRequired:
+            presentedOverlay = .login
+        case .about, .options:
+            dismissPresentedOverlay()
+        case .gameMenu:
+            presentedOverlay = nil
+        case nil:
+            presentedOverlay = .gameMenu
+        }
+    }
+
+    /// Backs the registration overlay out to login, dropping any inline error so a
+    /// re-opened form starts clean. Shared by its Cancel button and its Esc row.
+    public func cancelRegistration() {
+        registrationForm.lastError = nil
+        presentedOverlay = .login
+    }
+
+    /// Backs an overlay out to whatever sits behind it: the game menu while attached,
+    /// else the login overlay (which auto-presents whenever the player is not attached).
+    /// Shared by the About/Options close buttons and their Esc rows.
+    public func dismissPresentedOverlay() {
+        presentedOverlay = connectionState == .attached ? .gameMenu : .login
     }
 
     // MARK: - Inventory
@@ -229,7 +272,7 @@ import SomnioUI
                 ? .clientOutdated
                 : .serverOutdated
             beginAuthSocketTeardown()
-            presentedSheet = .updateRequired(skew)
+            presentedOverlay = .updateRequired(skew)
             return
         }
         connectionState = .awaitingLoginResult
@@ -259,11 +302,11 @@ import SomnioUI
             registrationForm.lastError = nil
             chatLines.append(.badCredentials)
             beginAuthSocketTeardown()
-            presentedSheet = .login
+            presentedOverlay = .login
         case .alreadyLoggedIn:
             chatLines.append(.alreadyLoggedIn)
             beginAuthSocketTeardown()
-            presentedSheet = .login
+            presentedOverlay = .login
         }
     }
 
@@ -273,7 +316,7 @@ import SomnioUI
             registrationForm.lastError = nil
             registrationForm.clear()
             beginAuthSocketTeardown()
-            presentedSheet = .login
+            presentedOverlay = .login
         case .nicknameExists:
             registrationForm.lastError = .nicknameExists
             beginAuthSocketTeardown()
@@ -324,7 +367,7 @@ import SomnioUI
             // hop: keys are still consumed (no responder-chain beep) and held WASD survives so
             // motion resumes on arrival, matching the legacy live-keyboard read.
             connectionState = .awaitingEnterSector
-            presentedSheet = nil
+            presentedOverlay = nil
         } catch {
             chatLines.append(.errorCode(code: "\(error)"))
             beginAuthSocketTeardown()
@@ -511,7 +554,7 @@ import SomnioUI
         connectionTask = nil
         resetSession()
         worldScene.showSplash()
-        presentedSheet = .login
+        presentedOverlay = .login
     }
 
     /// Common state reset shared by the authentication-time teardown and the
@@ -585,14 +628,14 @@ import SomnioUI
     // swiftlint:disable:next function_body_length
     private func runOneGameplayTick() {
         // Gate the sampler's WASD capture on the live gameplay state. Refreshed each tick
-        // (60 Hz, ~16ms latency) so opening a sheet or focusing the chat input releases
+        // (60 Hz, ~16ms latency) so opening an overlay or focusing the chat input releases
         // gameplay keys back to the responder chain without an explicit notify path. The
         // mid-switch `.awaitingEnterSector` state still counts as active so keys keep being
         // consumed (no responder-chain beep) and held state survives the hop — the tick's
         // `selfEntityIndex` guard below stops actual movement until the new character arrives,
         // and the legacy read the live keyboard across a sector switch so motion resumes if held.
         keyboard.isGameplayActive = (connectionState == .attached || connectionState == .awaitingEnterSector)
-            && presentedSheet == nil
+            && presentedOverlay == nil
             && !isChatInputFocused
         guard !isChatInputFocused else { return }
         guard let selfIndex = selfEntityIndex,

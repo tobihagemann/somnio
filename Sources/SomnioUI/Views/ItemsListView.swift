@@ -21,7 +21,7 @@ public struct ItemsListView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 4) {
             List(Array(items.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 4) {
                     Text(verbatim: ItemCatalog.displayName(category: row.category, itemId: row.itemId, locale: locale))
@@ -30,6 +30,8 @@ public struct ItemsListView: View {
                     Text(verbatim: marker(for: row))
                         .frame(width: 24, alignment: .trailing)
                 }
+                .foregroundStyle(.white)
+                .listRowSeparator(.hidden)
                 .contentShape(Rectangle())
                 // Double-click the whole row, matching the legacy `InventarBox` DoubleClick handler.
                 // A double-click (not a single tap) is also required because the macOS `List`
@@ -37,10 +39,10 @@ public struct ItemsListView: View {
                 .onTapGesture(count: 2) { onItemActivate?(row) }
             }
             .listStyle(.plain)
-            .frame(width: 150, height: 100)
-            .border(Color.black, width: 1)
+            .scrollContentBackground(.hidden)
             Text(verbatim: String(format: L.string("Items: %@", locale: locale), String(items.count)))
-                .frame(width: 150, height: 14, alignment: .leading)
+                .foregroundStyle(FantasyPalette.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

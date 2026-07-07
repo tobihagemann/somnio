@@ -9,14 +9,15 @@ public enum VersionSkew: Sendable, Equatable, Hashable {
     case serverOutdated
 }
 
-/// Top-level identifier for the currently presented modal. The Preferences pane is
-/// delivered through SwiftUI's `Settings` scene rather than a sheet, so it deliberately
-/// has no case here.
-public enum SheetKind: Identifiable, Sendable, Equatable, Hashable {
+/// Top-level identifier for the currently presented in-game overlay. `gameMenu` is the
+/// Esc menu layered over live gameplay; `options` holds the app preferences.
+public enum OverlayKind: Identifiable, Sendable, Equatable, Hashable {
     case login
     case registration
     case about
     case updateRequired(VersionSkew)
+    case options
+    case gameMenu
 
     public var id: Self {
         self

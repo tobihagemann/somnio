@@ -241,9 +241,11 @@ if [[ ${#SWIFTPM_BUNDLES[@]} -gt 0 ]]; then
   done
 fi
 
-# Bundle assets (tilesets, sprites, animation strips). The script is a stub today; wiring
-# the call here means broken paths surface in CI as soon as packaging is exercised.
+# Bundle assets (3D models, floor materials, UI chrome). SOMNIO_BUNDLE_TARGET tells the
+# script which pack contract to enforce: the player hard-requires the UI/ subtree, the
+# editor keeps warn/skip behavior throughout.
 SOMNIO_ASSET_DEST="$APP/Contents/Resources" \
+SOMNIO_BUNDLE_TARGET="$TARGET" \
   "${ROOT}/Scripts/bundle-assets.sh"
 
 # Embed frameworks if any exist in the build folder. Player-only: Sparkle is the project's

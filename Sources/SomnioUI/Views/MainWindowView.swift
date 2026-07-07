@@ -1,10 +1,11 @@
 import SomnioCore
 import SwiftUI
 
-/// Fixed-size single-window layout matching the legacy `HauptFenster` Carbon control
-/// inventory. Outer dimensions 1004 × 514. The play-field viewport is supplied as the
-/// generic `PlayField` parameter so production code can pass the renderer's host view
-/// and unit-level previews can substitute `EmptyView`.
+/// Full-bleed game layout: the play-field viewport fills the whole window and the HUD
+/// floats over it in `FantasyPanel`s — energy bars top-leading, chat bottom-leading,
+/// online players and inventory as toggleable panels on the trailing edge. The viewport
+/// is supplied as the generic `PlayField` parameter so production code can pass the
+/// renderer's host view and unit-level previews can substitute `EmptyView`.
 public struct MainWindowView<PlayField: View>: View {
     public let playField: PlayField
     public let energy: Energy
@@ -12,17 +13,23 @@ public struct MainWindowView<PlayField: View>: View {
     public let items: [InventoryRow]
     public let chatLines: [ChatLine]
     @Binding public var chatInput: String
+    /// Chat focus is owned by the caller (a plain `Bool` binding, not `@FocusState`):
+    /// `ChatInputView` syncs it to the text view's first-responder state, the play field's
+    /// tap gesture blurs through it, and the view model drives it downward for Esc — the
+    /// RealityKit host view never takes first responder, so this binding is the only blur path.
+    @Binding public var chatFocused: Bool
     public let onSubmitChat: () -> Void
     public let onItemActivate: ((InventoryRow) -> Void)?
-    public let onChatFocusChange: ((Bool) -> Void)?
+    /// Reports whether the cursor sits over any floating panel, so the caller's scroll
+    /// handler can pass wheel events through to the panel (chat scrollback) instead of
+    /// zooming the world underneath it.
+    public let onFloatingUIHoverChange: ((Bool) -> Void)?
     public let locale: Locale?
-    /// Focus state for the chat input lives here (not inside `ChatInputView`) so a tap
-    /// on the play field can force-blur the field. `SpriteView`'s underlying `SKView`
-    /// returns `false` for `acceptsFirstResponder`, so the macOS-standard "click outside the
-    /// field to blur" path never fires; setting this to `false` is the only way to resign the
-    /// chat field's first-responder status. `ChatInputView` syncs it to the text view's
-    /// first-responder state, so a plain `Bool` (not `@FocusState`) carries it.
-    @State private var chatFocused = false
+
+    @State private var showChat = true
+    @State private var showPlayers = true
+    @State private var showItems = true
+    @State private var hoveredPanels: Set<FloatingPanel> = []
 
     public init(
         playField: PlayField,
@@ -31,9 +38,10 @@ public struct MainWindowView<PlayField: View>: View {
         items: [InventoryRow],
         chatLines: [ChatLine],
         chatInput: Binding<String>,
+        chatFocused: Binding<Bool>,
         onSubmitChat: @escaping () -> Void,
         onItemActivate: ((InventoryRow) -> Void)? = nil,
-        onChatFocusChange: ((Bool) -> Void)? = nil,
+        onFloatingUIHoverChange: ((Bool) -> Void)? = nil,
         locale: Locale? = nil
     ) {
         self.playField = playField
@@ -42,20 +50,36 @@ public struct MainWindowView<PlayField: View>: View {
         self.items = items
         self.chatLines = chatLines
         self._chatInput = chatInput
+        self._chatFocused = chatFocused
         self.onSubmitChat = onSubmitChat
         self.onItemActivate = onItemActivate
-        self.onChatFocusChange = onChatFocusChange
+        self.onFloatingUIHoverChange = onFloatingUIHoverChange
         self.locale = locale
     }
 
     public var body: some View {
-        ZStack(alignment: .topLeading) {
-            playField
-                .frame(width: 640, height: 480)
-                .simultaneousGesture(TapGesture().onEnded { chatFocused = false })
-                .offset(x: 182, y: 14)
+        playField
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .simultaneousGesture(TapGesture().onEnded { chatFocused = false })
+            .overlay(alignment: .topLeading) {
+                hudPanel.padding(MainWindowMetrics.edgePadding)
+            }
+            .overlay(alignment: .bottomLeading) {
+                chatPanel.padding(MainWindowMetrics.edgePadding)
+            }
+            .overlay(alignment: .topTrailing) {
+                playersPanel.padding(MainWindowMetrics.edgePadding)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                itemsPanel.padding(MainWindowMetrics.edgePadding)
+            }
+    }
 
-            VStack(alignment: .leading, spacing: 3) {
+    // MARK: - Floating panels
+
+    private var hudPanel: some View {
+        FantasyPanel(fillOpacity: 0.6) {
+            VStack(alignment: .leading, spacing: 6) {
                 HUDBarPair(
                     current: energy.hpCurrent,
                     max: energy.hpMax,
@@ -75,24 +99,93 @@ public struct MainWindowView<PlayField: View>: View {
                     tooltip: L.resource("Mana")
                 )
             }
-            .offset(x: 20, y: 14)
-
-            ChatScrollbackView(chatLines: chatLines, locale: locale)
-                .offset(x: 20, y: 61)
-
-            ChatInputView(text: $chatInput, onSubmit: onSubmitChat, isFocused: $chatFocused)
-                .offset(x: 20, y: 409)
-
-            OnlinePlayersList(players: players, locale: locale)
-                .offset(x: 834, y: 14)
-
-            ItemsListView(items: items, locale: locale, onItemActivate: onItemActivate)
-                .offset(x: 834, y: 380)
         }
-        .frame(width: 1004, height: 514, alignment: .topLeading)
-        .fixedSize()
-        .onChange(of: chatFocused) { _, newValue in
-            onChatFocusChange?(newValue)
+        .onHover { setHovered(.hud, $0) }
+    }
+
+    private var chatPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showChat {
+                FantasyPanel(fillOpacity: 0.6) {
+                    VStack(spacing: 8) {
+                        ChatScrollbackView(chatLines: chatLines, locale: locale)
+                            .frame(height: 180)
+                        ChatInputView(text: $chatInput, onSubmit: onSubmitChat, isFocused: $chatFocused)
+                            .frame(height: 52)
+                            .fantasyFieldChrome()
+                    }
+                }
+                .frame(width: MainWindowMetrics.chatPanelWidth)
+            }
+            panelToggle(tooltip: L.resource("Chat"), systemImage: "bubble.left", isOn: $showChat)
+        }
+        .onHover { setHovered(.chat, $0) }
+    }
+
+    private var playersPanel: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            panelToggle(tooltip: L.resource("Players"), systemImage: "person.2", isOn: $showPlayers)
+            if showPlayers {
+                FantasyPanel(fillOpacity: 0.6) {
+                    OnlinePlayersList(players: players, locale: locale)
+                        .frame(width: MainWindowMetrics.trailingListWidth, height: 260)
+                }
+            }
+        }
+        .onHover { setHovered(.players, $0) }
+    }
+
+    private var itemsPanel: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if showItems {
+                FantasyPanel(fillOpacity: 0.6) {
+                    ItemsListView(items: items, locale: locale, onItemActivate: onItemActivate)
+                        .frame(width: MainWindowMetrics.trailingListWidth, height: 150)
+                }
+            }
+            panelToggle(tooltip: L.resource("Items"), systemImage: "bag", isOn: $showItems)
+        }
+        .onHover { setHovered(.items, $0) }
+    }
+
+    private func panelToggle(tooltip: LocalizedStringResource, systemImage: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            Image(systemName: systemImage)
+        }
+        .buttonStyle(FantasyButtonStyle(compact: true))
+        .help(Text(tooltip))
+    }
+
+    /// Panels never overlap, but a cursor sliding straight from one to the next can report
+    /// the enter before the exit — tracking the hovered set instead of one flag keeps the
+    /// aggregate stable through that reorder.
+    private func setHovered(_ id: FloatingPanel, _ hovering: Bool) {
+        let wasHovering = !hoveredPanels.isEmpty
+        if hovering {
+            hoveredPanels.insert(id)
+        } else {
+            hoveredPanels.remove(id)
+        }
+        let isHovering = !hoveredPanels.isEmpty
+        if wasHovering != isHovering {
+            onFloatingUIHoverChange?(isHovering)
         }
     }
+}
+
+private enum FloatingPanel: Hashable {
+    case hud
+    case chat
+    case players
+    case items
+}
+
+/// Layout constants hoisted out of the generic view (a generic type cannot hold static
+/// stored properties).
+private enum MainWindowMetrics {
+    static let edgePadding: CGFloat = 12
+    static let chatPanelWidth: CGFloat = 380
+    static let trailingListWidth: CGFloat = 180
 }

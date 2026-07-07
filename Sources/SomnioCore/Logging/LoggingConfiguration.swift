@@ -12,16 +12,13 @@ import Logging
 public enum LoggingConfiguration {
     public static let clientLogFileName = "somnio.log"
 
-    private static let logLevelKey = "advancedLogLevel"
-
-    /// Resolves the dynamic file-log level from UserDefaults at every emit, so a runtime change
-    /// (Preferences > Advanced > Log Level) takes effect without re-bootstrapping.
+    /// Resolves the dynamic file-log level from the persisted preference at every emit, so a
+    /// runtime change (Options > Log level) takes effect without re-bootstrapping.
     static var fileLogLevel: Logger.Level {
-        let defaults = UserDefaults(suiteName: BuildEnvironment.userDefaultsSuiteName) ?? .standard
-        switch defaults.string(forKey: logLevelKey) {
-        case "debug": return .debug
-        case "verbose": return .trace
-        default: return .info
+        switch LogLevelPreference.current {
+        case .standard: return .info
+        case .debug: return .debug
+        case .verbose: return .trace
         }
     }
 

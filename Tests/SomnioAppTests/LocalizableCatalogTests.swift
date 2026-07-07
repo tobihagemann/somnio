@@ -5,14 +5,14 @@ import Testing
 
 struct LocalizableCatalogTests {
     private static let expectedKeys: [String] = [
-        // Login sheet
+        // Login overlay
         "Nickname",
         "Password",
         "Remember password",
         "If you don't have an account, click here!",
         "OK",
         "Cancel",
-        // Registration sheet
+        // Registration overlay
         "Nickname:",
         "Password:",
         "Password (*):",
@@ -20,29 +20,36 @@ struct LocalizableCatalogTests {
         "Character:",
         "Gender:",
         "Email:",
-        // About sheet
+        // About overlay
         "Somnio",
         "Version: %@",
         "Copyright",
         "Thanks paragraph",
-        // Preferences sheet
+        "3D characters and props by KayKit.",
+        "Ghost model by Quaternius.",
+        "Floor textures by ambientCG.",
+        "UI borders by Kenney.",
+        // Options overlay
+        "Options",
+        "Close",
         "Log level",
         "Default",
         "Debug",
         "Verbose",
         "Server URL",
+        // Game menu overlay
+        "Resume",
+        "Leave Game",
         // Menu items
         "About Somnio",
         "Check for Updates...",
-        "Join Game...",
-        "Leave Game",
         // Auth-result inline errors (registration only — login failures route through
         // SomnioUI's chat scrollback as typed `ChatLine.badCredentials` /
         // `.alreadyLoggedIn` cases)
         "Nickname already exists.",
         "That name uses characters Somnio does not allow.",
         "Registration failed.",
-        // Update-required sheet
+        // Update-required overlay
         "Update required",
         "A newer version is available. Please update your client to keep playing.",
         "The server is being updated. Please try again in a few moments.",
