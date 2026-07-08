@@ -78,7 +78,7 @@ ForEach(items) { item in
     AnyView(item.isSpecial ? SpecialRow(item: item) : RegularRow(item: item))
 }
 
-// Good - Create a unified row view
+// Good - Create a unified row view with a single top-level container
 ForEach(items) { item in
     ItemRow(item: item)
 }
@@ -87,10 +87,14 @@ struct ItemRow: View {
     let item: Item
 
     var body: some View {
-        if item.isSpecial {
-            SpecialRow(item: item)
-        } else {
-            RegularRow(item: item)
+        // The VStack keeps the row "unary" (one top-level view) so the
+        // List can template row ids without evaluating every row's body.
+        VStack {
+            if item.isSpecial {
+                SpecialRow(item: item)
+            } else {
+                RegularRow(item: item)
+            }
         }
     }
 }
@@ -98,21 +102,42 @@ struct ItemRow: View {
 
 **Why**: Stable identity is critical for performance and animations. Unstable identity causes excessive diffing, broken animations, and potential crashes.
 
+### Prefer unary rows in `List`
+
+`List` needs the identity of every row up front. When each row's body produces a **single top-level view** (a "unary" row), SwiftUI templates the row id from the `ForEach` element's id alone, without running each row's `body`. When the body branches between different top-level shapes — a bare top-level `switch`, a top-level `if` without `else`, or an `AnyView` — structural identity varies per row, so SwiftUI falls back to evaluating every row's body just to compute ids. That cost scales with the number of rows.
+
+The fix is to wrap branching content in any single-root container (`VStack`, `HStack`, `ZStack`, or a custom wrapper) so the row is always exactly one top-level view — as the `ItemRow` above already does. A top-level `if` without an `else` is also "multi" (0 or 1 views); if some elements shouldn't be rows at all, filter the collection before it reaches the `ForEach` rather than producing a zero-view row.
+
+To find non-constant row builders in an existing app, launch with `-LogForEachSlowPath YES`; SwiftUI logs each `ForEach` inside a lazy container whose row body produces a non-constant number of views.
+
+### Keep ids stable, unique, and cheap
+
+- **The id must outlive the view and not change on edit.** Don't derive `id` from a mutable property (e.g. `var id: String { title }`). Editing the title changes the id, so SwiftUI treats it as a removal plus insertion — focus and per-row state are lost mid-edit. Use a stable `let id: UUID` or a persisted key (e.g. a sector filename id).
+- **Don't synthesize a fresh id inside `body`.** `ForEach(items.map { Item(title: $0) })` mints new `UUID`s on every body pass, so the whole collection reads as replaced every update. Create ids once in storage that outlives `body` (the model layer), not inline.
+- **Keep the id cheap to hash.** Avoid `id: \.self` on a large `Hashable` struct; hashing walks every field on every diff. Use a small primitive (`UUID`, `Int`, short `String`, `URL`) and still pass the full element to the row.
+
 ## Enumerated Sequences
 
-**Always convert enumerated sequences to arrays. To be able to use them in a ForEach.**
+**Using `.enumerated()` is fine; the index just must not be the identity.** Using `\.offset` as the id is the same anti-pattern as `\.self` on `items.indices` — the id becomes the position, not the element, so inserts and reorders reset row state and break animations. Keep the element's own identity as the id and treat the index as ordinary row data.
 
 ```swift
-let items = ["A", "B", "C"]
-
-// Correct
-ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-    Text("\(index): \(item)")
+// Wrong - offset is the position, not the element
+ForEach(items.enumerated(), id: \.offset) { index, item in
+    ItemRow(number: index + 1, item: item)
 }
 
-// Wrong - Doesn't compile, enumerated() isn't an array
-ForEach(items.enumerated(), id: \.offset) { index, item in
-    Text("\(index): \(item)")
+// Correct - id comes from the element; index is just data
+ForEach(items.enumerated(), id: \.element.id) { index, item in
+    ItemRow(number: index + 1, item: item)
+}
+```
+
+**Whether you need the `Array(...)` wrapper depends on the deployment target, not just the compiler.** SE-0459 gives `.enumerated()` a conditional `RandomAccessCollection` conformance (so `ForEach` accepts it directly), but that conformance is `@available(SwiftStdlib 6.1, *)` — it requires a **macOS 15.4+ / iOS 18.4+** deployment target at runtime, not merely a Swift 6.1+ toolchain. Somnio floors at macOS 15.0, so the direct `ForEach(items.enumerated(), id: \.element.id)` form fails to compile here; keep the `Array(...)` wrapper (or gate the direct form with `#available(macOS 15.4, *)`). The wrapper forces an eager copy on every body evaluation — that is the price of supporting the macOS 15.0 floor.
+
+```swift
+// Somnio (macOS 15.0 floor): wrap in Array(...)
+ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+    ItemRow(number: index + 1, item: item)
 }
 ```
 
@@ -185,10 +210,11 @@ A `List` does **not** animate size + content changes cleanly. `.frame(height: co
 
 ## Summary Checklist
 
-- [ ] ForEach uses stable identity (never `.indices` for dynamic content)
-- [ ] Constant number of views per ForEach element
+- [ ] ForEach uses stable identity (never `.indices` or `\.offset` for dynamic content)
+- [ ] id is stable across edits (not a mutable property), created outside `body`, and cheap to hash
+- [ ] Constant number of views per ForEach element; rows are unary (single top-level view)
 - [ ] No inline filtering in ForEach (prefilter and cache instead)
 - [ ] No `AnyView` in list rows
-- [ ] Don't convert enumerated sequences to arrays
+- [ ] `.enumerated()` uses the element's id (`\.element.id`, not `\.offset`); wrap in `Array(...)` unless the deployment target is macOS 15.4+ (the direct form's Collection conformance is `@available(SwiftStdlib 6.1, *)`; Somnio floors at 15.0)
 - [ ] Use `.refreshable` for pull-to-refresh
 - [ ] Custom list styling uses appropriate modifiers

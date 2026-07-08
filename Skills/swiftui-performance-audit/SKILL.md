@@ -1,20 +1,22 @@
 ---
 name: swiftui-performance-audit
-description: Audit and improve SwiftUI runtime performance from code review and architecture. Use for requests to diagnose slow rendering, janky scrolling, high CPU/memory usage, excessive view updates, or layout thrash in SwiftUI apps, and to provide guidance for user-run Instruments profiling when code review alone is insufficient.
+description: Audit and improve SwiftUI runtime performance from code review and architecture. Use for requests to diagnose slow rendering, janky scrolling, high CPU/memory usage, excessive view updates, or layout thrash in SwiftUI apps. Can also record and parse Xcode Instruments traces directly via bundled xctrace tooling when the app can be run, or guide the user through profiling when it cannot.
 ---
 
 # SwiftUI Performance Audit
 
 ## Quick start
 
-Use this skill to diagnose SwiftUI performance issues from code first, then request profiling evidence when code review alone cannot explain the symptoms.
+Use this skill to diagnose SwiftUI performance issues from code first, then gather profiling evidence when code review alone cannot explain the symptoms. When you can run the app, capture and analyze an Instruments trace yourself with the bundled `scripts/` tooling; otherwise guide the user through profiling.
 
 ## Workflow
 
 1. Classify the symptom: slow rendering, janky scrolling, high CPU, memory growth, hangs, or excessive view updates.
 2. If code is available, start with a code-first review using `references/code-smells.md`.
 3. If code is not available, ask for the smallest useful slice: target view, data flow, reproduction steps, and deployment target.
-4. If code review is inconclusive or runtime evidence is required, guide the user through profiling with `references/profiling-intake.md`.
+4. If code review is inconclusive or runtime evidence is required, get a trace:
+   - **If you can run the app** (packaged bundle from `Scripts/package_app.sh`, or `swift run SomnioApp`), capture a trace directly with the bundled scripts -- see `references/trace-recording.md` -- then analyze it with `references/trace-analysis.md`. Gate this on the xctrace preflight check below.
+   - **If you cannot run the app**, guide the user through profiling with `references/profiling-intake.md`.
 5. Summarize likely causes, evidence, remediation, and validation steps using `references/report-template.md`.
 
 ## 1. Intake
@@ -51,9 +53,39 @@ Provide:
 - Suggested fixes and refactors.
 - If needed, a minimal repro or instrumentation suggestion.
 
-## 3. Guide the User to Profile
+## 3. Get Runtime Evidence
 
-If code review does not explain the issue, ask for runtime evidence:
+Runtime evidence comes from an Instruments trace. Prefer capturing it yourself when the app can be run; otherwise ask the user for it.
+
+### 3a. Capture and analyze the trace yourself (preferred when you can run the app)
+
+Somnio profiles on the **host Mac** -- no Xcode project or scheme is involved. `xctrace` targets a PID, a process name, or a `.app` bundle path, so you can profile a packaged bundle (`Scripts/package_app.sh [debug|release] player`) or a bare `swift run SomnioApp`.
+
+**Preflight (required):** the bundled scripts need `xctrace`, which ships with the full **Xcode** install, NOT the standalone Command Line Tools. Check first:
+
+```bash
+xcrun -f xctrace && xctrace version
+```
+
+If that errors (`unable to find utility "xctrace"`), stop and tell the user: **install the full Xcode to record or analyze Instruments traces.** Then fall back to guiding the user (3b) if they cannot install it.
+
+With xctrace present:
+
+1. **Record** -- follow `references/trace-recording.md`. Typical call:
+   ```bash
+   python3 "${SKILL_DIR}/scripts/record_trace.py" --attach Somnio --output ~/Desktop/somnio.trace
+   ```
+   (or `--launch /path/to/Somnio.app` for cold-start capture; `--stop-file` for background/agent-driven runs). A Release bundle gives meaningful absolute numbers; a debug `.app` or `swift run` is fine for relative before/after comparisons.
+2. **Analyze** -- follow `references/trace-analysis.md`:
+   ```bash
+   python3 "${SKILL_DIR}/scripts/analyze_trace.py" --trace ~/Desktop/somnio.trace --json-only
+   ```
+
+Note the lane split: the SwiftUI updates + cause-graph lanes only cover the SwiftUI surface (HUD/overlays/editor chrome), while Time Profiler + Hangs + Animation Hitches + the `main_running_coverage_pct` correlation cover the whole process including the RealityKit/Metal render path. A quiet SwiftUI lane does not mean "no problem" when the cost is in Metal.
+
+### 3b. Or guide the user to profile
+
+If you cannot run the app (or xctrace is unavailable), ask for runtime evidence:
 - A trace export or screenshots of the SwiftUI timeline and Time Profiler call tree.
 - Device/OS/build configuration.
 - The exact interaction being profiled.
@@ -64,6 +96,7 @@ Use `references/profiling-intake.md` for the exact checklist and collection step
 ## 4. Analyze and Diagnose
 
 - Map the evidence to the most likely category: invalidation, identity churn, layout thrash, main-thread work, image cost, or animation cost.
+- When you have a trace, read it with `references/trace-analysis.md` -- the parser's `main_running_coverage_pct` classifies blocked-I/O (<25%) vs CPU-bound (>=75%) main-thread windows, and the lanes name the hot views and symbols.
 - Prioritize problems by impact, not by how easy they are to explain.
 - Distinguish code-level suspicion from trace-backed evidence.
 - Call out when profiling is still insufficient and what additional evidence would reduce uncertainty.
@@ -82,8 +115,8 @@ Use `references/code-smells.md` for examples, Observation-specific fan-out guida
 
 ## 6. Verify
 
-Ask the user to re-run the same capture and compare with baseline metrics.
-Summarize the delta (CPU, frame drops, memory peak) if provided.
+Re-run the same capture and compare with baseline metrics. If you recorded the trace yourself, re-record with an identical build configuration and the same interaction, then re-run `analyze_trace.py` and diff the lane metrics.
+Summarize the delta (CPU, frame drops, memory peak).
 
 ## Outputs
 
@@ -96,6 +129,8 @@ Use `references/report-template.md` when formatting the final audit.
 
 ## References
 
+- Recording an Instruments trace (host-Mac recipes, xctrace preflight): `references/trace-recording.md`
+- Analyzing an Instruments trace (lane parser, correlation, interpretation): `references/trace-analysis.md`
 - Profiling intake and collection checklist: `references/profiling-intake.md`
 - Common code smells and remediation patterns: `references/code-smells.md`
 - Audit output template: `references/report-template.md`
@@ -104,3 +139,5 @@ Use `references/report-template.md` when formatting the final audit.
 - Understanding and improving SwiftUI performance: `references/understanding-improving-swiftui-performance.md`
 - Understanding hangs in your app: `references/understanding-hangs-in-your-app.md`
 - Demystify SwiftUI performance (WWDC23): `references/demystify-swiftui-performance-wwdc23.md`
+
+The trace tooling under `scripts/` is imported from AvdLee/SwiftUI-Agent-Skill (MIT); see `scripts/README.md`.

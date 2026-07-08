@@ -9,23 +9,24 @@ Write and review SwiftUI code for correctness, modern API usage, state-flow corr
 
 ## Review process
 
-1. Check for deprecated API using [references/api.md](references/api.md) and [references/modern-apis.md](references/modern-apis.md).
+1. Check for deprecated API using [references/api.md](references/api.md) and [references/modern-apis.md](references/modern-apis.md). Follow the scope rule in [references/soft-deprecation.md](references/soft-deprecation.md) — flag/migrate soft-deprecated APIs only in code you are already changing; never do drive-by swaps.
 2. Check that views, modifiers, and animations have been written optimally using [references/views.md](references/views.md), [references/view-structure.md](references/view-structure.md), [references/animation-basics.md](references/animation-basics.md), [references/animation-transitions.md](references/animation-transitions.md), and [references/animation-advanced.md](references/animation-advanced.md).
 3. Validate state management and data flow using [references/data.md](references/data.md) and [references/state-management.md](references/state-management.md).
 4. Ensure navigation is updated and performant using [references/navigation.md](references/navigation.md) and [references/sheet-navigation-patterns.md](references/sheet-navigation-patterns.md).
 5. Validate list behavior using [references/list-patterns.md](references/list-patterns.md).
 6. Validate scroll behavior using [references/scroll-patterns.md](references/scroll-patterns.md).
 7. Validate text formatting using [references/text-formatting.md](references/text-formatting.md).
-8. Validate image handling using [references/image-optimization.md](references/image-optimization.md).
-9. Ensure the code uses designs that are accessible and compliant with Apple's Human Interface Guidelines using [references/design.md](references/design.md) and [references/design-principles.md](references/design-principles.md).
-10. Validate accessibility compliance (Dynamic Type, VoiceOver, Reduce Motion) using [references/accessibility.md](references/accessibility.md).
-11. Ensure the code runs efficiently using [references/performance.md](references/performance.md) and [references/performance-patterns.md](references/performance-patterns.md).
-12. Check layout best practices using [references/layout-best-practices.md](references/layout-best-practices.md).
-13. For view-file refactoring (ordering, extracting sections, MV pattern), use [references/mv-patterns.md](references/mv-patterns.md).
-14. If adopting Liquid Glass (iOS 26+), use [references/liquid-glass.md](references/liquid-glass.md).
-15. For component-specific patterns (TabView, NavigationStack, sheets, forms, grids, menus, split views, theming, etc.), use the files under `references/components/`. Start with [references/components/components-index.md](references/components/components-index.md).
-16. Quick validation of Swift code using [references/swift.md](references/swift.md).
-17. Final code hygiene check using [references/hygiene.md](references/hygiene.md).
+8. Validate bundle-pinned localization using [references/localization.md](references/localization.md) — SwiftPM `.process` catalogs live in `Bundle.module`, so every user-facing string must pin the bundle (`Text(_, bundle: .module)` / `String(localized:bundle:)`) via the per-target `enum L` shim; the bare overloads silently miss the catalog.
+9. Validate image handling using [references/image-optimization.md](references/image-optimization.md).
+10. Ensure the code uses designs that are accessible and compliant with Apple's Human Interface Guidelines using [references/design.md](references/design.md) and [references/design-principles.md](references/design-principles.md).
+11. Validate accessibility compliance (Dynamic Type, VoiceOver, Reduce Motion) using [references/accessibility.md](references/accessibility.md).
+12. Ensure the code runs efficiently using [references/performance.md](references/performance.md) and [references/performance-patterns.md](references/performance-patterns.md).
+13. Check layout best practices using [references/layout-best-practices.md](references/layout-best-practices.md).
+14. For view-file refactoring (ordering, extracting sections, MV pattern), use [references/mv-patterns.md](references/mv-patterns.md).
+15. If adopting Liquid Glass (iOS 26+), use [references/liquid-glass.md](references/liquid-glass.md).
+16. For component-specific patterns (TabView, NavigationStack, sheets, forms, focus, macOS windows/scenes, AppKit interop, etc.), use the files under `references/components/`. Start with [references/components/components-index.md](references/components/components-index.md).
+17. Quick validation of Swift code using [references/swift.md](references/swift.md).
+18. Final code hygiene check using [references/hygiene.md](references/hygiene.md).
 
 If doing a partial review, load only the relevant reference files.
 
@@ -193,7 +194,7 @@ struct EditItemSheet: View {
     @State private var isSaving = false
 
     var body: some View {
-        Button(isSaving ? "Saving…" : "Save") {
+        Button(isSaving ? "Saving..." : "Save") {
             Task { await save() }
         }
     }
@@ -329,7 +330,9 @@ End of example.
 ### Modern APIs
 
 - [references/modern-apis.md](references/modern-apis.md) — modern API usage and deprecated replacements.
+- [references/soft-deprecation.md](references/soft-deprecation.md) — how to behave with soft-deprecated APIs (scope rule; no drive-by migrations).
 - [references/text-formatting.md](references/text-formatting.md) — modern text formatting and string operations.
+- [references/localization.md](references/localization.md) — bundle-pinned localization (`Bundle.module`/`#bundle`, `enum L` shim, interpolation, `LocalizedStringResource`).
 
 ### Lists, scrolling, sheets, navigation patterns
 
@@ -369,13 +372,15 @@ End of example.
 - [references/components/searchable.md](references/components/searchable.md) — `.searchable` patterns.
 - [references/components/controls.md](references/components/controls.md) — control component patterns.
 - [references/components/input-toolbar.md](references/components/input-toolbar.md) — keyboard/input toolbar patterns.
-- [references/components/focus.md](references/components/focus.md) — focus management.
+- [references/components/focus.md](references/components/focus.md) — focus management (form fields).
+- [references/components/focus-advanced.md](references/components/focus-advanced.md) — focusable non-text views, keyboard-driven game surfaces, `.defaultFocus`, focused-value menu commands, `.focusSection()` (macOS).
 - [references/components/deeplinks.md](references/components/deeplinks.md) — deep-link handling.
 - [references/components/haptics.md](references/components/haptics.md) — haptic feedback.
 - [references/components/loading-placeholders.md](references/components/loading-placeholders.md) — loading and placeholder patterns.
 - [references/components/lightweight-clients.md](references/components/lightweight-clients.md) — lightweight networking clients.
 - [references/components/macos-settings.md](references/components/macos-settings.md) — macOS Settings scene patterns.
-- [references/components/macos-windows.md](references/components/macos-windows.md) — macOS window sizing, frame persistence, and fullscreen.
+- [references/components/macos-windows.md](references/components/macos-windows.md) — macOS window sizing, frame persistence, fullscreen, `.hiddenTitleBar` chrome, `Window`/`WindowGroup`/`UtilityWindow` scenes.
+- [references/components/macos-views.md](references/components/macos-views.md) — AppKit interop: `NSViewRepresentable` layout ownership + Coordinator, and security-scoped file URLs from `fileImporter`.
 - [references/components/matched-transitions.md](references/components/matched-transitions.md) — matched geometry transitions.
 - [references/components/media.md](references/components/media.md) — media playback components.
 - [references/components/menu-bar.md](references/components/menu-bar.md) — macOS menu bar components.

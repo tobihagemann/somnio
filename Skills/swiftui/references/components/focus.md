@@ -4,6 +4,8 @@
 
 Use `@FocusState` to control keyboard focus, chain fields, and coordinate focus across complex forms.
 
+> This file covers form-field focus. For focusable **non-text** views (keyboard-driven game surfaces via `.focusable()` + `onKeyPress`/`onDeleteCommand`), reliable initial focus via `.defaultFocus` (preferred over the `.onAppear` write shown below), and focused-value menu commands keyed to the active editor document, see [focus-advanced.md](focus-advanced.md).
+
 ## Core patterns
 
 - Use an enum to represent focusable fields.
@@ -86,5 +88,5 @@ struct PollView: View {
 
 ## Pitfalls
 
-- Don’t store focus state in shared objects; it is view-local.
+- Don't store focus state in shared objects; it is view-local.
 - Avoid aggressive focus changes during animation; delay if needed.

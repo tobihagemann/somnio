@@ -100,6 +100,22 @@ struct FeedView: View {
 }
 ```
 
+## Prefer `.frame(maxWidth:alignment:)` for full-width views
+
+For a view that should fill its width with its content aligned, prefer `.frame(maxWidth: .infinity, alignment:)` over wrapping it in `HStack { Text(...); Spacer() }` — it achieves the same layout without the extra container.
+
+```swift
+// Prefer
+Text(recipe.title)
+    .frame(maxWidth: .infinity, alignment: .leading)
+
+// Avoid - extra HStack + Spacer just to left-align
+HStack {
+    Text(recipe.title)
+    Spacer()
+}
+```
+
 ## Layout Performance
 
 ### Avoid Layout Thrash

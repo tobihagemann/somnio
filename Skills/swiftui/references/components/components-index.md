@@ -10,7 +10,8 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - App wiring and dependency graph: `app-wiring.md` — Use to wire TabView + NavigationStack + sheets at the root and install global dependencies.
 - Form and Settings: `form.md` — Use for settings, grouped inputs, and structured data entry.
 - macOS Settings: `macos-settings.md` — Use when building a macOS Settings window with SwiftUI's Settings scene.
-- macOS window management: `macos-windows.md` — Use for window sizing/resizability, frame persistence, and fullscreen (incl. launching into fullscreen).
+- macOS window management: `macos-windows.md` — Use for window sizing/resizability, frame persistence, fullscreen, `.hiddenTitleBar` custom chrome, and `Window`/`WindowGroup`/`UtilityWindow` scene choice.
+- macOS AppKit interop: `macos-views.md` — Use when wrapping AppKit in `NSViewRepresentable` (layout ownership, Coordinator) or handling security-scoped `fileImporter` URLs.
 - Split views and columns: `split-views.md` — Use for iPad/macOS multi-column layouts or custom secondary columns.
 - List and Section: `list.md` — Use for feed-style content and settings rows.
 - ScrollView and Lazy stacks: `scrollview.md` — Use for custom layouts, horizontal scrollers, or grids.
@@ -21,7 +22,8 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - Input toolbar (bottom anchored): `input-toolbar.md` — Use for chat/composer screens with a sticky input bar.
 - Top bar overlays (iOS 26+ and fallback): `top-bar.md` — Use for pinned selectors or pills above scroll content.
 - Overlay and toasts: `overlay.md` — Use for transient UI like banners or toasts.
-- Focus handling: `focus.md` — Use for chaining fields and keyboard focus management.
+- Focus handling: `focus.md` — Use for chaining form fields and keyboard focus management.
+- Advanced focus: `focus-advanced.md` — Use for focusable non-text views (keyboard-driven game surfaces), reliable initial focus via `.defaultFocus`, and focused-value menu commands (macOS).
 - Searchable: `searchable.md` — Use for native search UI with scopes and async results.
 - Async images and media: `media.md` — Use for remote media, previews, and media viewers.
 - Async state and task lifecycle: `async-state.md` — Use when a view loads data, reacts to changing input, or needs cancellation/debouncing guidance.
@@ -36,5 +38,5 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 
 ## Adding entries
 
-- Add the component file and link it here with a short “when to use” description.
+- Add the component file and link it here with a short "when to use" description.
 - Keep each component reference short and actionable.

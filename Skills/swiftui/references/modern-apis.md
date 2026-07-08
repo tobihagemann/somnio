@@ -4,6 +4,31 @@
 
 This reference covers modern SwiftUI API usage patterns and deprecated API replacements. Always use the latest APIs to ensure forward compatibility and access to new features.
 
+For *how to behave* when you find a soft-deprecated API — when to migrate and when to leave it alone — see [soft-deprecation.md](soft-deprecation.md).
+
+## Quick Lookup
+
+| Deprecated | Recommended | Since |
+|-----------|-------------|-------|
+| `foregroundColor(_:)` | `foregroundStyle(_:)` | macOS 12+ |
+| `cornerRadius(_:)` | `clipShape(.rect(cornerRadius:))` | macOS 12+ |
+| `edgesIgnoringSafeArea(_:)` | `ignoresSafeArea(_:edges:)` | macOS 12+ |
+| `actionSheet(...)` | `confirmationDialog(...)` | macOS 12+ |
+| `alert(isPresented:content:)` | `alert(_:isPresented:actions:message:)` | macOS 12+ |
+| `TextField` `onCommit`/`onEditingChanged` | `onSubmit` + `focused(_:equals:)` | macOS 12+ |
+| `animation(_:)` (no value) | `animation(_:value:)` | back-deploys |
+| `Section(header:footer:content:)` | `Section(content:header:footer:)` trailing-closure | style |
+| Manual `EnvironmentKey` | `@Entry` macro | Xcode 16+ |
+| `NavigationView` | `NavigationStack` / `NavigationSplitView` | macOS 13+ |
+| `accentColor(_:)` | `tint(_:)` | macOS 13+ |
+| `onChange(of:perform:)` | `onChange(of:) { }` or `{ old, new in }` | macOS 14+ |
+| `MagnificationGesture` | `MagnifyGesture` | macOS 14+ |
+| `RotationGesture` | `RotateGesture` | macOS 14+ |
+| `coordinateSpace(name:)` | `coordinateSpace(.named(...))` | macOS 14+ |
+| `ObservableObject` | `@Observable` | macOS 14+ |
+| `tabItem(_:)` | `Tab` API | macOS 15+ |
+| Manual `animatableData` | `@Animatable` macro | macOS 26+ |
+
 ## Styling and Appearance
 
 ### foregroundStyle() vs foregroundColor()
@@ -379,6 +404,91 @@ Circle()
     .fill(Color.blue)
 Button("Action") { }
     .buttonStyle(BorderedProminentButtonStyle())
+```
+
+## Lists and Forms
+
+### Section trailing-closure initializers
+
+**Prefer the content/header/footer trailing-closure `Section` initializers over the positional `header:`/`footer:` View arguments.** The single-title form (`Section("Settings") { ... }`) is still current — don't treat it as deprecated.
+
+```swift
+// Current - single-title initializer (fine)
+Section("Settings") { Toggle("Notifications", isOn: $notify) }
+
+// Replacement - content/header/footer trailing-closure form
+Section {
+    Toggle("Notifications", isOn: $notify)
+} header: {
+    Text("Settings")
+} footer: {
+    Text("Changes apply immediately.")
+}
+
+// Renamed/future-deprecated - positional header/footer View arguments
+Section(header: Text("Settings"), footer: Text("Changes apply immediately.")) {
+    Toggle("Notifications", isOn: $notify)
+}
+```
+
+## Text Input
+
+### onSubmit + focused, not onCommit/onEditingChanged
+
+**Use `onSubmit(of:_:)` and `focused(_:equals:)` instead of `TextField`'s `onEditingChanged`/`onCommit` callbacks.**
+
+```swift
+@FocusState private var isFocused: Bool
+
+TextField("Search", text: $query)
+    .focused($isFocused)
+    .onSubmit { performSearch() }
+```
+
+## Events
+
+### onChange with two-parameter or no-parameter closure
+
+The single-parameter `onChange(of:) { newValue in }` is deprecated. Use the no-parameter form (most common) or the old/new form:
+
+```swift
+.onChange(of: value) { doSomething() }             // no-parameter (most common)
+.onChange(of: value) { old, new in ... }           // old and new values
+.onChange(of: value, initial: true) { ... }        // also fire on first appearance
+```
+
+## Gestures
+
+- **`MagnifyGesture`** instead of `MagnificationGesture` (magnitude via `value.magnification`).
+- **`RotateGesture`** instead of `RotationGesture` (angle via `value.rotation`).
+- **`.coordinateSpace(.named("scroll"))`** instead of the older `.coordinateSpace(name: "scroll")`.
+
+Relevant to the player's scroll-zoom and pointer gestures — pair a `MagnifyGesture` with a named coordinate space when a gesture's location must be resolved against a specific container.
+
+## Previews
+
+**Use `@Previewable` for dynamic properties directly in a preview body** (macOS 15+):
+
+```swift
+#Preview {
+    @Previewable @State var isOn = false
+    Toggle("Setting", isOn: $isOn)
+}
+```
+
+## Newer toolbar / animation APIs (macOS 26+)
+
+- **`ToolbarSpacer`** controls grouping of toolbar items — a fixed spacer visually separates related groups; a flexible spacer pushes items apart. Prefer it over ad-hoc spacer hacks between `ToolbarItem`s.
+- **`@Animatable` macro** replaces manual `animatableData` on `Shape`/`Animatable` types: it synthesizes `animatableData` from all animatable stored properties. Use `@AnimatableIgnored` to exclude one.
+
+```swift
+@Animatable
+struct Wedge: Shape {
+    var startAngle: Angle
+    var endAngle: Angle
+    @AnimatableIgnored var drawClockwise: Bool
+    func path(in rect: CGRect) -> Path { /* ... */ }
+}
 ```
 
 ## Summary Checklist
