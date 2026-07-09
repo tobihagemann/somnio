@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SomnioProtocolConstants {
-    public static let helloVersion: UInt16 = 1
+    public static let helloVersion: UInt16 = 2
     public static let maxFrameLength: UInt32 = 1 << 20
 
     /// UTF-8 byte cap for the `nickname` and `email` fields in `LoginMessage` /
