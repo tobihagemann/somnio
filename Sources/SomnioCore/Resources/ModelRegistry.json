@@ -47,7 +47,10 @@
             "Idle",
             "Walking_A",
             "Running_A",
-            "Sneaking"
+            "Sneaking",
+            "Walking_Backwards",
+            "Running_Strafe_Left",
+            "Running_Strafe_Right"
           ],
           "stem": "Knight"
         }
@@ -64,7 +67,10 @@
             "Idle",
             "Walking_A",
             "Running_A",
-            "Sneaking"
+            "Sneaking",
+            "Walking_Backwards",
+            "Running_Strafe_Left",
+            "Running_Strafe_Right"
           ],
           "stem": "Rogue_Hooded"
         }
@@ -81,7 +87,10 @@
             "Idle",
             "Walking_A",
             "Running_A",
-            "Sneaking"
+            "Sneaking",
+            "Walking_Backwards",
+            "Running_Strafe_Left",
+            "Running_Strafe_Right"
           ],
           "stem": "Mage"
         }

@@ -820,6 +820,91 @@ struct ClientViewModelTests {
         #expect(spy.tempoUpdates.last?.tempo == .default)
     }
 
+    @Test func `a moving tick threads the intended travel heading to the renderer`() async throws {
+        // The predictor hands the renderer the intended (pre-collision) travel heading so the
+        // directional clip and the speed penalty are driven by one direction and can never disagree.
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+
+        for _ in 0 ..< 3 {
+            viewModel._runSingleTick()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        // Every moving tick threads a heading, and it is the intended world-movement heading of
+        // the held key — not facing or some other non-nil value — so the renderer's clip is driven
+        // by the same vector the speed penalty uses.
+        let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: 0, screenDY: -1)
+        let expected = Heading(dx: Float(worldDX), dy: Float(worldDY))
+        let threaded = spy.subpixelTravels.compactMap(\.self)
+        #expect(threaded.count == spy.subpixelTravels.count)
+        #expect(threaded.last == expected)
+    }
+
+    @Test func `a stationary tick threads nil travel so the renderer holds the last direction`() {
+        // No keys held: the predictor passes nil, letting the renderer preserve the last travel
+        // direction across the grace window rather than snapping the clip back to forward.
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: KeyboardSampler())
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+
+        viewModel._runSingleTick()
+
+        #expect(spy.subpixelTravels == [nil])
+    }
+
+    @Test func `a server snapBack for the local player routes through the grid overload`() {
+        // The GridPoint overload is where the renderer clears its carried travel direction, so a
+        // rejected-move correction can't leave a stale backpedal/strafe clip. The self snapBack
+        // must take that overload, not the sub-pixel one the 60 Hz predictor uses.
+        let spy = RenderSurfaceSpy()
+        let viewModel = ClientViewModel(worldScene: spy)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+
+        viewModel.handle(.message(.serverPosition(PositionMessage(
+            entityIndex: 1, x: 2, y: 3, facing: Heading(cardinal: .north).degrees, tempo: Tempo.default.rawValue
+        ))))
+
+        #expect(spy.gridPositionedEntities == [1])
+        #expect(spy.subpixelPositions.isEmpty)
+    }
+
+    @Test func `the predictor scales the step by the relative-direction speed multiplier`() async throws {
+        func distanceWalked(facing: Heading) async throws -> Double {
+            let keyboard = KeyboardSampler()
+            keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+            let spy = RenderSurfaceSpy()
+            let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+            prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+            viewModel.updateMouseFacing(facing)
+            for _ in 0 ..< 3 {
+                viewModel._runSingleTick()
+                try await Task.sleep(for: .milliseconds(120)) // > maxTickElapsed, so elapsed clamps
+            }
+            let start = try #require(spy.subpixelPositions.first)
+            let end = try #require(spy.subpixelPositions.last)
+            return (pow(end.x - start.x, 2) + pow(end.y - start.y, 2)).squareRoot()
+        }
+        // Same key and tempo; only the facing differs. Backpedaling (facing opposite the travel)
+        // must cover half the ground of moving forward (facing along it) — proof the predictor
+        // applies RelativeDirection.speedMultiplier to the step distance. Sleeping longer than
+        // maxTickElapsed (0.1 s) pins each tick's elapsed time to that clamp, so the step is
+        // deterministic and the ratio is exactly the multiplier ratio, not subject to wall-clock
+        // jitter. 'W' moves up-screen; its world travel heading is what we face along vs against.
+        let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: 0, screenDY: -1)
+        let travelHeading = Heading(dx: Float(worldDX), dy: Float(worldDY))
+        let forward = try await distanceWalked(facing: travelHeading)
+        let backward = try await distanceWalked(facing: Heading(degrees: travelHeading.degrees + 180))
+        #expect(forward > 0)
+        // backward multiplier (0.50) / forward multiplier (1.0), with only a small margin for
+        // integer-pixel rounding at the step boundaries.
+        let ratio = backward / forward
+        #expect(abs(ratio - 0.5) < 0.05)
+    }
+
     @Test func `a blocked walk tick drops the whole sub-pixel carry`() async throws {
         // An NPC feet-box overlap blocks the step outright; the carried fraction from the
         // rejected path must not bias the rendered position, so every tick renders exactly
@@ -1126,6 +1211,11 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
     private(set) var placedEntities: [Int16] = []
     private(set) var positionedEntities: [Int16] = []
     private(set) var subpixelPositions: [SubpixelPoint] = []
+    /// Travel headings threaded through the sub-pixel overload, and the entities routed through
+    /// the grid overload (the local player's `snapBack`), so the direction-threading and the
+    /// discontinuity-clear are both unit-checkable without a live scene.
+    private(set) var subpixelTravels: [Heading?] = []
+    private(set) var gridPositionedEntities: [Int16] = []
     private(set) var tempoUpdates: [(entityID: Int16, tempo: Tempo)] = []
     private(set) var animatedEntities: [Int16] = []
     private(set) var tintUpdates: [(hour: Int16, minute: Int16)] = []
@@ -1143,11 +1233,13 @@ private final class RenderSurfaceSpy: WorldRenderSurface {
 
     func updatePosition(entityID: Int16, to _: GridPoint, facing _: Heading) {
         positionedEntities.append(entityID)
+        gridPositionedEntities.append(entityID)
     }
 
-    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing _: Heading) {
+    func updatePosition(entityID: Int16, to position: SubpixelPoint, facing _: Heading, travel: Heading?) {
         positionedEntities.append(entityID)
         subpixelPositions.append(position)
+        subpixelTravels.append(travel)
     }
 
     func animateEntity(_ id: Int16, to _: GridPoint, facing _: Heading, duration _: TimeInterval) {

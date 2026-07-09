@@ -664,6 +664,9 @@ import SomnioUI
 
         let velocity = velocity(from: held)
         var enteredPortal = false
+        // Declared outside the moving block so it's in scope at the unconditional render update
+        // below; `nil` on a stationary tick preserves the renderer's held travel direction.
+        var travel: Heading?
         if velocity != .zero {
             // Elapsed-time-scaled step (legacy `tempo * 60 * frameintervall`) keeps speed
             // frame-rate-independent. `clamping:` because a sector wider/taller than 255 tiles has
@@ -671,7 +674,12 @@ import SomnioUI
             // WASD is screen-relative under the yawed 3/4 camera: rotate the held-key vector into
             // world floor axes so "W" walks up-screen rather than along world north.
             let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: velocity.dx, screenDY: velocity.dy)
-            let pixels = tempo.pixelsPerSecond * elapsedSeconds
+            // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step,
+            // so a wall-slide keeps clip and speed mutually consistent.
+            let travelHeading = Heading(dx: Float(worldDX), dy: Float(worldDY))
+            travel = travelHeading
+            let direction = RelativeDirection(travel: travelHeading, facing: selfEntity.facing)
+            let pixels = tempo.pixelsPerSecond * elapsedSeconds * direction.speedMultiplier
             let exactDX = worldDX * pixels + movementRemainder.dx
             let exactDY = worldDY * pixels + movementRemainder.dy
             let dxPx = Int32(exactDX.rounded())
@@ -724,7 +732,8 @@ import SomnioUI
                 x: Double(selfEntity.position.x) + movementRemainder.dx,
                 y: Double(selfEntity.position.y) + movementRemainder.dy
             ),
-            facing: selfEntity.facing
+            facing: selfEntity.facing,
+            travel: travel
         )
 
         // A portal-blocked tick must not also report its now-stale old-sector position: the server

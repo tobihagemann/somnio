@@ -35,6 +35,11 @@ import SomnioCore
         var facing: Heading
         var tempo: Tempo
         var lastPosition: GridPoint
+        /// Heading of the most recent travel step, used to bucket the directional movement clip
+        /// against `facing`. Set by whichever driver saw the move (threaded from the local
+        /// predictor's intended vector, or derived from a peer's grid delta) and cleared on an
+        /// authoritative snap; persists across the grace window so the clip holds through a glide.
+        var travelHeading: Heading?
         var currentYaw: Float
         /// Scene-clock time of the most recent position change; `tick` derives the
         /// moving/idle signal from how recently this was.
@@ -63,6 +68,7 @@ import SomnioCore
             self.facing = entity.facing
             self.tempo = entity.tempo
             self.lastPosition = entity.position
+            self.travelHeading = nil
             self.currentYaw = entity.facing.radians
             self.lastMotionTime = -.infinity
             self.pendingMotion = false
@@ -88,19 +94,30 @@ import SomnioCore
         case sneaking
         case walking
         case running
+        case backpedal
+        case strafeLeft
+        case strafeRight
     }
 
-    /// Movement clip per tempo: the legacy Option-slow tempo reads as sneaking and the
-    /// Shift tempo as running — but only for player-kind figures; an NPC ambling at walk
-    /// tempo (the librarian) must not skulk through its own room, and monsters drift on
-    /// their single clip regardless.
-    static func movementPose(kind: WorldEntity.Kind, tempo: Tempo) -> AnimationPose {
+    /// Movement clip per tempo and travel direction: the legacy Option-slow tempo reads as
+    /// sneaking and the Shift tempo as running, but only when moving forward and only for
+    /// player-kind figures. Backpedaling and strafing collapse to their single directional clip
+    /// regardless of tempo (no tier-specific slow/fast variants exist). NPCs amble on the plain
+    /// walk clip (the librarian must not skulk through its own room) and monsters drift on their
+    /// single clip regardless, so `direction` is ignored for both.
+    static func movementPose(kind: WorldEntity.Kind, tempo: Tempo, direction: RelativeDirection) -> AnimationPose {
         switch kind {
         case .player, .peer:
-            switch tempo {
-            case .walk: .sneaking
-            case .default: .walking
-            case .run: .running
+            switch direction {
+            case .forward:
+                switch tempo {
+                case .walk: .sneaking
+                case .default: .walking
+                case .run: .running
+                }
+            case .backward: .backpedal
+            case .strafeLeft: .strafeLeft
+            case .strafeRight: .strafeRight
             }
         case .npc, .monster:
             .walking
@@ -147,6 +164,12 @@ import SomnioCore
     private static let walkClipNames = ["Walking_A", "Flying_Idle"]
     private static let sneakClipNames = ["Sneaking", "Walking_A", "Flying_Idle"]
     private static let runClipNames = ["Running_A", "Walking_A", "Flying_Idle"]
+    /// Directional movement clips, each falling back to the forward walk clip so models
+    /// converted before those clips were merged in still render (no reverse-play or rate scaling —
+    /// a gap tier collapses to the single available directional clip regardless of tempo).
+    private static let backpedalClipNames = ["Walking_Backwards", "Walking_A", "Flying_Idle"]
+    private static let strafeLeftClipNames = ["Running_Strafe_Left", "Walking_A", "Flying_Idle"]
+    private static let strafeRightClipNames = ["Running_Strafe_Right", "Walking_A", "Flying_Idle"]
     /// Gap between a speaker's head (model bounds top) and the bubble's tail tip.
     private static let bubbleHeadGap: Float = 0.2
     /// Screen-space gap between the feet anchor and the plaque's top edge. Legacy pinned the
@@ -334,10 +357,15 @@ import SomnioCore
     }
 
     public func updatePosition(entityID: Int16, to position: GridPoint, facing: Heading) {
-        updatePosition(entityID: entityID, to: SubpixelPoint(x: Double(position.x), y: Double(position.y)), facing: facing)
+        // An authoritative snap (arrival, or the local player's post-rejection `snapBack`) is a
+        // position discontinuity: any carried travel direction is the meaningless rejected-move
+        // direction, so clear it before forwarding with `travel: nil` (which now preserves the
+        // clear). The next `RelativeDirection` then defaults to `.forward` rather than a stale clip.
+        entityRenderStates[entityID]?.travelHeading = nil
+        updatePosition(entityID: entityID, to: SubpixelPoint(x: Double(position.x), y: Double(position.y)), facing: facing, travel: nil)
     }
 
-    public func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Heading) {
+    public func updatePosition(entityID: Int16, to position: SubpixelPoint, facing: Heading, travel: Heading? = nil) {
         guard let state = entityRenderStates[entityID] else {
             Self.logger.debug("updatePosition called for unknown entity", metadata: ["entity_id": "\(entityID)"])
             return
@@ -348,6 +376,11 @@ import SomnioCore
             state.lastPosition = grid
         }
         state.facing = facing
+        // Only overwrite on a real travel step; a stationary tick or the tail of a glide passes
+        // `nil` so the last direction persists across the grace window for the held clip.
+        if let travel {
+            state.travelHeading = travel
+        }
         state.tween = nil
         let world = Self.entityWorldPosition(exact: position, maskSize: state.maskSize)
         state.node.position = world
@@ -368,6 +401,13 @@ import SomnioCore
         if position != state.lastPosition {
             state.pendingMotion = true
             state.remainingTweenMotion = duration
+            // Derive the peer's travel heading from the grid delta (they carry no continuous
+            // vector). Widen to Float before subtracting so Int16 grid math never overflows;
+            // grid axes are x east, y south — the `Heading(dx:dy:)` convention.
+            state.travelHeading = Heading(
+                dx: Float(position.x) - Float(state.lastPosition.x),
+                dy: Float(position.y) - Float(state.lastPosition.y)
+            )
             state.lastPosition = position
         }
         state.facing = facing
@@ -463,7 +503,8 @@ import SomnioCore
                 state.modelHolder.orientation = simd_quatf(angle: state.currentYaw, axis: [0, 1, 0])
             }
 
-            applyPose(isMoving ? Self.movementPose(kind: state.kind, tempo: state.tempo) : .idle, to: state)
+            let direction = state.travelHeading.map { RelativeDirection(travel: $0, facing: state.facing) } ?? .forward
+            applyPose(isMoving ? Self.movementPose(kind: state.kind, tempo: state.tempo, direction: direction) : .idle, to: state)
         }
 
         expireSpeechBubbles(after: dt)
@@ -748,6 +789,9 @@ import SomnioCore
         case .sneaking: Self.sneakClipNames
         case .walking: Self.walkClipNames
         case .running: Self.runClipNames
+        case .backpedal: Self.backpedalClipNames
+        case .strafeLeft: Self.strafeLeftClipNames
+        case .strafeRight: Self.strafeRightClipNames
         }
         guard let (owner, clip) = Self.animation(named: names, in: state.modelHolder) else { return }
         owner.playAnimation(Self.loopedClip(clip), transitionDuration: Self.clipTransitionDuration)
@@ -1026,6 +1070,11 @@ import SomnioCore
         /// Children of the stable node: the model holder plus any attached overlays — lets
         /// tests assert a re-place never stacks duplicate plaques or bubbles.
         var nodeChildCount: Int
+        /// Last pose `tick` selected (`nil` before the first tick) and the travel heading a
+        /// driver last recorded (`nil` when cleared) — lets tests observe the directional
+        /// clip selection, the snap-clear, and the grace-window persistence.
+        var pose: AnimationPose?
+        var travelHeading: Heading?
     }
 
     func _entityNodeProbe(for entityID: Int16) -> EntityNodeProbe? {
@@ -1040,7 +1089,9 @@ import SomnioCore
             hasNamePlaque: state.namePlaque != nil,
             namePlaqueID: state.namePlaque?.id,
             speechBubbleHeight: speechBubbles[entityID].map(\.node.position.y),
-            nodeChildCount: state.node.children.count
+            nodeChildCount: state.node.children.count,
+            pose: state.pose,
+            travelHeading: state.travelHeading
         )
     }
 

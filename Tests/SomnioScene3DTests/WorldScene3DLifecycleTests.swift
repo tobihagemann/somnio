@@ -223,11 +223,71 @@ struct WorldScene3DLifecycleTests {
     }
 
     @Test func `movementPose maps player tempo to sneak-walk-run and never makes NPCs skulk`() {
-        #expect(WorldScene3D.movementPose(kind: .player, tempo: .walk) == .sneaking)
-        #expect(WorldScene3D.movementPose(kind: .peer, tempo: .run) == .running)
-        #expect(WorldScene3D.movementPose(kind: .player, tempo: .default) == .walking)
-        #expect(WorldScene3D.movementPose(kind: .npc, tempo: .walk) == .walking)
-        #expect(WorldScene3D.movementPose(kind: .monster, tempo: .run) == .walking)
+        #expect(WorldScene3D.movementPose(kind: .player, tempo: .walk, direction: .forward) == .sneaking)
+        #expect(WorldScene3D.movementPose(kind: .peer, tempo: .run, direction: .forward) == .running)
+        #expect(WorldScene3D.movementPose(kind: .player, tempo: .default, direction: .forward) == .walking)
+        #expect(WorldScene3D.movementPose(kind: .npc, tempo: .walk, direction: .forward) == .walking)
+        #expect(WorldScene3D.movementPose(kind: .monster, tempo: .run, direction: .forward) == .walking)
+    }
+
+    @Test func `movementPose collapses backpedal and strafe to their directional clip across every tempo`() {
+        for tempo in Tempo.allCases {
+            #expect(WorldScene3D.movementPose(kind: .player, tempo: tempo, direction: .backward) == .backpedal)
+            #expect(WorldScene3D.movementPose(kind: .peer, tempo: tempo, direction: .strafeLeft) == .strafeLeft)
+            #expect(WorldScene3D.movementPose(kind: .player, tempo: tempo, direction: .strafeRight) == .strafeRight)
+        }
+    }
+
+    @Test func `movementPose ignores direction for NPCs and monsters`() {
+        for direction in RelativeDirection.allCases {
+            #expect(WorldScene3D.movementPose(kind: .npc, tempo: .default, direction: direction) == .walking)
+            #expect(WorldScene3D.movementPose(kind: .monster, tempo: .run, direction: direction) == .walking)
+        }
+    }
+
+    @Test func `a threaded backward travel drives the backpedal pose through tick`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 0, kind: .player, facing: Heading(cardinal: .south)))
+        // Facing south while travelling north is a backpedal; the threaded travel drives the clip.
+        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96, y: 90), facing: Heading(cardinal: .south), travel: Heading(cardinal: .north))
+        scene.tick(deltaTime: 0.01)
+        let probe = try #require(scene._entityNodeProbe(for: 0))
+        #expect(probe.travelHeading == Heading(cardinal: .north))
+        #expect(probe.pose == .backpedal)
+    }
+
+    @Test func `a nil-travel tick preserves the recorded direction across the grace window`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 0, kind: .player, facing: Heading(cardinal: .south)))
+        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96, y: 90), facing: Heading(cardinal: .south), travel: Heading(cardinal: .north))
+        // A stationary follow-up carries no travel; the last direction must survive for the glide.
+        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96, y: 90), facing: Heading(cardinal: .south))
+        let probe = try #require(scene._entityNodeProbe(for: 0))
+        #expect(probe.travelHeading == Heading(cardinal: .north))
+    }
+
+    @Test func `an authoritative grid snap clears the recorded travel direction`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 0, kind: .player, facing: Heading(cardinal: .south)))
+        scene.updatePosition(entityID: 0, to: SubpixelPoint(x: 96, y: 90), facing: Heading(cardinal: .south), travel: Heading(cardinal: .north))
+        // The GridPoint overload (arrivals / snapBack) is a discontinuity: the stale direction goes.
+        scene.updatePosition(entityID: 0, to: GridPoint(x: 96, y: 96), facing: Heading(cardinal: .south))
+        let probe = try #require(scene._entityNodeProbe(for: 0))
+        #expect(probe.travelHeading == nil)
+    }
+
+    @Test func `a peer's travel direction is derived from its grid delta`() throws {
+        let scene = scene()
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        scene.placeEntity(worldEntity(id: 1, kind: .peer, position: GridPoint(x: 0, y: 0), facing: Heading(cardinal: .south)))
+        // Grid axes are x east, y south: an eastward step from a south-facer strafes to its left.
+        scene.animateEntity(1, to: GridPoint(x: 100, y: 0), facing: Heading(cardinal: .south), duration: 0.5)
+        scene.tick(deltaTime: 0.01)
+        let probe = try #require(scene._entityNodeProbe(for: 1))
+        #expect(probe.pose == .strafeLeft)
     }
 
     @Test func `characterScale is the mask-derived constant for canonically staged models`() {

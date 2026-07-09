@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Pick objects and floors by name when editing maps: the object dialog offers the available models and the new-map dialog the available floor materials, replacing the sprite-sheet coordinate fields
 - Store maps with named model and floor-material references instead of sprite-sheet coordinates; sector files saved by older versions no longer open
 - Face exactly where your cursor points: your character rotates to the precise cursor angle instead of snapping to four directions, other players' facing shows at the same precision, and chasing monsters turn toward their exact target
-- Walk smoothly in any direction without side-to-side jitter, and see matching sneak and run animations while holding Option or Shift, with movement speeds tuned to the new animations
+- Walk smoothly in any direction without side-to-side jitter, and see animations that match your travel direction relative to your cursor — sneak, walk, and run when moving forward (Option or Shift), plus distinct backpedal and strafe animations when moving backward or sideways — with backpedaling and strafing slower than walking forward
 - Cast without a weapon in hand: characters no longer carry a permanently attached weapon model
 
 ### Security

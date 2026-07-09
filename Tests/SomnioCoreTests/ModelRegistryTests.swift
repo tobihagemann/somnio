@@ -47,6 +47,21 @@ struct ModelRegistryTests {
         #expect(model.expectedClips.isEmpty)
     }
 
+    /// The directional locomotion clips must stay in the committed registry for all three
+    /// player models: they are the conversion gate's `expectedClips` contract, so dropping one
+    /// would let a pack ship without the backpedal/strafe clip and silently fall back to
+    /// forward-walk.
+    @Test func `bundledRegistry gives every player model the directional locomotion clips`() throws {
+        let registry = try ModelRegistryCodec.bundledRegistry()
+        let directional = ["Walking_Backwards", "Running_Strafe_Left", "Running_Strafe_Right"]
+        for stem in ["Knight", "Rogue_Hooded", "Mage"] {
+            let clips = try #require(registry.expectedClips(forStem: stem))
+            for clip in directional {
+                #expect(clips.contains(clip), "\(stem) is missing \(clip)")
+            }
+        }
+    }
+
     /// The committed fixtures reference these ids directly, so every fixture reference must
     /// resolve through the committed registry — an unmapped id would ship a placeholder.
     @Test func `bundledRegistry resolves every fixture floor material`() throws {
