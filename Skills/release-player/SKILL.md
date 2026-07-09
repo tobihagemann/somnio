@@ -21,6 +21,11 @@ git tag -l 'player-*' --sort=-v:refname | head -1
 
 Make sure `main` is clean and current (`git checkout main && git pull origin main`). `CHANGELOG.md` keeps a running `## [Unreleased]` section, so a release completes that section and then promotes it to a version heading.
 
+**Scope: player-facing only, framed as a net delta.** `CHANGELOG.md` becomes the *player* GitHub Release notes, so it must describe only what a player experiences between releases. Before promoting, review every `[Unreleased]` entry and:
+
+- **Drop non-player changes.** Editor-only work (map authoring, object/floor pickers, sector-file save/open) does not ship to players — the editor isn't CI-released. Server-only work releases separately via `/release-server` and has no changelog. Neither belongs here.
+- **State the net delta from the last released version, not the development history.** The `[Unreleased]` section accumulates commit-by-commit, so it collects entries that only make sense relative to an intermediate unreleased build (e.g. "no longer does X" / "removed the Y jitter" where X or the Y bug never shipped to players). Rewrite or drop those so each entry reads as a change the previous release's users will actually notice.
+
 1. **Complete `[Unreleased]` via `/update-changelog`.** Run it to capture anything missing, then double-check completeness against `git log <last-player-tag>..HEAD --oneline` — that range always includes the prior `Update appcast for <last>` commit (CI pushes it to `main` after the tag) as noise, and real changes can land *after* it, so don't stop scanning there.
 2. **Promote** by inserting the version heading under the kept-empty `## [Unreleased]` heading so the accumulated entries fall under the new version, add the `[X.Y.Z]: .../releases/tag/player-X.Y.Z` link reference, and repoint `[Unreleased]` to `compare/player-X.Y.Z...HEAD` (mirror the previous `Prepare player X.Y.Z` commit's changelog diff). `release.yml` extracts this version section as the GitHub Release notes.
 
@@ -56,6 +61,7 @@ gh release view player-X.Y.Z    # verify the Release and its assets
 
 ## Notes
 
+- **Check for a breaking wire change before tagging:** `git diff <last-player-tag> HEAD -- Sources/SomnioProtocol/`. If any wire shape, JSON key, or field type changed, bump `SomnioProtocolConstants.helloVersion` first (a fresh commit on `main`) and deploy the matching server. The Hello handshake shows an outdated player the clean "update required" overlay only when the version differs; a stale `helloVersion` lets a skewed pair pass the handshake and then fail with an opaque decode/close.
 - A published player connects to production only once the matching server is deployed (run the `/release-server` skill) and `SOMNIO_GAMEPLAY_PRODUCTION_URL` points at it.
 - Reserve each `X.Y.Z` for one set of artifacts — re-tagging a published version reuses the Release and appcast URLs for different content.
 - The editor and server release separately: a signed editor DMG via `Scripts/release.sh editor`, the server via the `/release-server` skill.

@@ -50,5 +50,6 @@ curl -fsS http://<host>:<port>/health   # expect 200
 
 ## Notes
 
-- Deploy the server **before or together with** a player release whose wire protocol changed: the player and server share `SomnioProtocol` and there is no version negotiation yet, so a skewed pair fails with an opaque decode/close.
+- **Check for a breaking wire change before releasing:** `git diff <last-server-tag> HEAD -- Sources/SomnioProtocol/`. If any wire shape, JSON key, or field type changed, bump `SomnioProtocolConstants.helloVersion` first (a fresh commit on `main`, tagged by both this release and the player release). The player and server share `SomnioProtocol`; the only guard is the Hello handshake, where the server sends `helloVersion` (`ConnectionActor`) and the client compares it (`ClientViewModel`). Bumping it makes a skewed pair show the clean "update required" overlay; a stale `helloVersion` lets the pair pass the handshake and then fail with an opaque decode/close.
+- Deploy the server **before or together with** a player release whose wire protocol changed — with no version negotiation beyond the Hello gate, an old client hitting the new server (or vice versa) only fails gracefully if `helloVersion` was bumped.
 - ghcr image tags are mutable — re-pushing `server-X.Y.Z` overwrites `:X.Y.Z`. A running container keeps its current image until the next pull + recreate.
