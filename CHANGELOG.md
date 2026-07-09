@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-09
+
 ### Added
 
 - Play in fullscreen: the game launches into fullscreen, remembers when you quit windowed instead, and windowed play resizes freely down to 1024×640 at a remembered frame
@@ -63,7 +65,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Initial release.
 
-[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.1.2...HEAD
+[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.2.0...HEAD
+[0.2.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.2.0
 [0.1.2]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.2
 [0.1.1]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.1
 [0.1.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.0
