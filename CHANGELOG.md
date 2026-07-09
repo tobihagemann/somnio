@@ -17,20 +17,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Show every dialog in the game's own fantasy style: login, registration, options, about, and update prompts appear as bordered in-game panels over the world instead of macOS windows, with the game options moving from the system Settings menu into the new Options overlay and the About dialog crediting the KayKit, Quaternius, ambientCG, and Kenney asset packs
+- Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view
 - Let the world fill the whole window: the HUD bars, chat, and player/inventory lists float over the view instead of sitting in a fixed side layout
-- Show the world in full 3D: characters, monsters, and furniture render as real 3D models under sun, shadow, and day/night lighting, with dedicated floor materials, replacing the 2D sprite view; name plaques under players and NPCs and comic-style speech bubbles carry over into the 3D world
-- Author maps in the same 3D view the game renders: the editor's canvas shows the real models and floor materials with click-to-select and click-to-place, a selection highlight, an optional grid, scroll panning, and Cmd-scroll zoom, opening at the game's own zoom level
-- Pick objects and floors by name when editing maps: the object dialog offers the available models and the new-map dialog the available floor materials, replacing the sprite-sheet coordinate fields
-- Store maps with named model and floor-material references instead of sprite-sheet coordinates; sector files saved by older versions no longer open
+- Show every dialog in the game's own fantasy style: login, registration, options, about, and update prompts appear as bordered in-game panels over the world instead of macOS windows, with the game options moving from the system Settings menu into the new Options overlay and the About dialog crediting the KayKit, Quaternius, ambientCG, and Kenney asset packs
 - Face exactly where your cursor points: your character rotates to the precise cursor angle instead of snapping to four directions, other players' facing shows at the same precision, and chasing monsters turn toward their exact target
-- Walk smoothly in any direction without side-to-side jitter, and see animations that match your travel direction relative to your cursor — sneak, walk, and run when moving forward (Option or Shift), plus distinct backpedal and strafe animations when moving backward or sideways — with backpedaling and strafing slower than walking forward
-- Cast without a weapon in hand: characters no longer carry a permanently attached weapon model
+- Walk smoothly in any direction, with animations that match your travel direction relative to your cursor — sneak, walk, and run when moving forward (Option or Shift), plus distinct backpedal and strafe animations when moving backward or sideways, with backpedaling and strafing slower than walking forward
 
 ### Security
 
 - Prevent a malicious game server from freezing the game with a single oversized sector
-- Prevent a hostile map file or server frame from freezing the editor or game with huge record lists, an oversized file, or a sector crafted to overload the renderer's placement scan
+- Prevent a malicious server frame from freezing the game with huge record lists or a sector crafted to overload the renderer's placement scan
 
 ## [0.1.2] - 2026-06-21
 
