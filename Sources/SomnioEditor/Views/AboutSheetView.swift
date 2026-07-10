@@ -16,7 +16,7 @@ import SwiftUI
                 .font(.caption)
             Text(L.resource("Thanks paragraph"))
                 .font(.caption)
-                .multilineTextAlignment(.leading)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
             Button {
                 dismiss()

@@ -22,10 +22,10 @@ import SwiftUI
                     .font(.caption)
                 Text(L.resource("Thanks paragraph"))
                     .font(.caption)
-                    .multilineTextAlignment(.leading)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
                 FantasyDivider()
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .center, spacing: 2) {
                     Text(L.resource("3D characters and props by KayKit."))
                     Text(L.resource("Ghost model by Quaternius."))
                     Text(L.resource("Floor textures by ambientCG."))

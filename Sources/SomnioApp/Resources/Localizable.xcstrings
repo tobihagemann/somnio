@@ -144,13 +144,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "© Copyright 2003-2005 REALtobi"
+            "value" : "© Copyright 2026 Tobias Hagemann"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "© Copyright 2003-2005 REALtobi"
+            "value" : "© Copyright 2026 Tobias Hagemann"
           }
         }
       }
@@ -467,7 +467,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "merken"
+            "value" : "Passwort merken"
           }
         },
         "en" : {
@@ -535,13 +535,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ich danke recht herzlich den folgenden Leuten für die Unterstützung und Hilfe: Tobias Strunz, Robin Dinse, Fabian Schuiki, Georg Schoelly, Michael Schwarz, Mirco Sina, Matthieu Riolo, meine Klassenkameraden (besonders Ingmar Stupp) und der Rest."
+            "value" : "Somnio war mein erstes Herzensprojekt, entwickelt von 2003 bis 2006. Dies ist seine Neuauflage."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Many thanks to the following people for their support and help: Tobias Strunz, Robin Dinse, Fabian Schuiki, Georg Schoelly, Michael Schwarz, Mirco Sina, Matthieu Riolo, my classmates (especially Ingmar Stupp) and the rest."
+            "value" : "Somnio was my first passion project, developed from 2003 to 2006. This is its revival."
           }
         }
       }

@@ -93,13 +93,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "© Copyright 2003-2005 REALtobi"
+            "value": "© Copyright 2026 Tobias Hagemann"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "© Copyright 2003-2005 REALtobi"
+            "value": "© Copyright 2026 Tobias Hagemann"
           }
         }
       }
@@ -1062,13 +1062,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Danke an alle, die zur Entwicklung von Somnio beigetragen haben."
+            "value": "Somnio war mein erstes Herzensprojekt, entwickelt von 2003 bis 2006. Dies ist seine Neuauflage."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thanks to everyone who contributed to Somnio's development."
+            "value": "Somnio was my first passion project, developed from 2003 to 2006. This is its revival."
           }
         }
       }
