@@ -86,6 +86,26 @@ struct ClientViewModelTests {
         #expect(entity?.name == "Alice")
     }
 
+    @Test func `the ticker mode gates whether reaching attached starts the gameplay ticker`() {
+        // Manual mode (the unit-test default): reaching `.attached` via mainCharacter must not spawn
+        // the infinite 60 Hz ticker task, so tests never leak one past teardown.
+        let manual = makeViewModel()
+        manual.connectionState = .awaitingEnterSector
+        manual.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        manual.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        #expect(manual.connectionState == .attached)
+        #expect(!manual._tickerActive)
+
+        // Live mode (production): the same transition starts the ticker. Stop it so this test does
+        // not leak the task it deliberately spawned.
+        let live = ClientViewModel(worldScene: makeWorldScene(), tickerMode: .live)
+        live.connectionState = .awaitingEnterSector
+        live.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        live.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        #expect(live._tickerActive)
+        live.stopGameplayTicker()
+    }
+
     @Test func `the self entity is added to the online-players roster sorted, faithful to the legacy SpielerBox`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingEnterSector
@@ -165,7 +185,7 @@ struct ClientViewModelTests {
         // should reach the renderer is dispatched through the protocol, guarding against a future
         // call-site silently dropping a dispatch through the erased `any WorldRenderSurface`.
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy)
+        let viewModel = ClientViewModel(worldScene: spy, tickerMode: .manual)
         viewModel.connectionState = .awaitingEnterSector
 
         viewModel.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
@@ -1133,11 +1153,11 @@ struct ClientViewModelTests {
     }
 
     private func makeViewModel(keyboard: KeyboardSampler) -> ClientViewModel {
-        ClientViewModel(worldScene: makeWorldScene(), keyboard: keyboard)
+        ClientViewModel(worldScene: makeWorldScene(), keyboard: keyboard, tickerMode: .manual)
     }
 
     private func makeViewModel() -> ClientViewModel {
-        ClientViewModel(worldScene: makeWorldScene())
+        ClientViewModel(worldScene: makeWorldScene(), tickerMode: .manual)
     }
 
     /// Returns the view model alongside the concrete `WorldScene3D` it drives, for the
@@ -1145,7 +1165,7 @@ struct ClientViewModelTests {
     /// `_heldSwapProbe`) the erased `WorldRenderSurface` seam does not expose.
     private func makeViewModelWithScene() -> (ClientViewModel, WorldScene3D) {
         let scene = makeWorldScene()
-        return (ClientViewModel(worldScene: scene), scene)
+        return (ClientViewModel(worldScene: scene, tickerMode: .manual), scene)
     }
 
     private func worldEntity(

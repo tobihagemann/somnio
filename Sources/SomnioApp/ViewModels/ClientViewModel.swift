@@ -19,6 +19,14 @@ import SomnioUI
         case attached
     }
 
+    /// Whether reaching `.attached` auto-starts the 60 Hz gameplay ticker (and its keyboard
+    /// monitor). `.live` in production; `.manual` for unit tests, which drive single ticks
+    /// through `_runSingleTick()` and must not leak an infinite ticker task past teardown.
+    public enum GameplayTickerMode: Sendable {
+        case live
+        case manual
+    }
+
     // MARK: - Observable state
 
     public var connectionState: ConnectionState = .disconnected
@@ -42,6 +50,7 @@ import SomnioUI
     // MARK: - Internals
 
     private let transport: GameplayTransport
+    private let tickerMode: GameplayTickerMode
     private var connectionTask: Task<Void, Never>?
     private var tickerTask: Task<Void, Never>?
     private var lastEmittedPosition: GridPoint?
@@ -62,11 +71,13 @@ import SomnioUI
     public init(
         worldScene: any WorldRenderSurface,
         transport: GameplayTransport = GameplayTransport(),
-        keyboard: KeyboardSampler = KeyboardSampler()
+        keyboard: KeyboardSampler = KeyboardSampler(),
+        tickerMode: GameplayTickerMode = .live
     ) {
         self.worldScene = worldScene
         self.transport = transport
         self.keyboard = keyboard
+        self.tickerMode = tickerMode
     }
 
     /// Pulls a saved credential into the login form (without opening a connection).
@@ -379,7 +390,10 @@ import SomnioUI
         // The authoritative self-Entity is the next frame on the wire; `handleEntity`
         // populates `entities[selfEntityIndex]` from it.
         connectionState = .attached
-        startGameplayTicker()
+        switch tickerMode {
+        case .live: startGameplayTicker()
+        case .manual: break
+        }
     }
 
     private func handleEntity(_ payload: EntityMessage) {
@@ -536,6 +550,12 @@ import SomnioUI
         runOneGameplayTick()
     }
 
+    /// Test seam: whether the 60 Hz ticker task is currently running, so unit tests can assert the
+    /// `.manual`/`.live` gate without observing the private `tickerTask`.
+    var _tickerActive: Bool {
+        tickerTask != nil
+    }
+
     private func beginAuthSocketTeardown() {
         // Detach the disconnect so it cannot self-await a `connectionTask` running the
         // current handler. The parent task's completion clears `connectionTask` and
@@ -611,10 +631,18 @@ import SomnioUI
         keyboard.start()
         tickerTask = Task { [weak self] in
             while !Task.isCancelled {
-                await MainActor.run { [weak self] in
-                    self?.runOneGameplayTick()
+                // Scope the strong ref to the tick so the sleep holds only `weak self`,
+                // keeping the stored `tickerTask` from retaining the view model.
+                if let self {
+                    runOneGameplayTick()
+                } else {
+                    return
                 }
-                try? await Task.sleep(nanoseconds: Self.tickPeriodNanoseconds)
+                do {
+                    try await Task.sleep(nanoseconds: Self.tickPeriodNanoseconds)
+                } catch {
+                    return
+                }
             }
         }
     }
