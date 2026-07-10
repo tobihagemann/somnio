@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Show the game in German for German-language users: menus, dialogs, HUD labels, and chat messages now appear translated instead of always falling back to English
+
 ## [0.2.0] - 2026-07-09
 
 ### Added

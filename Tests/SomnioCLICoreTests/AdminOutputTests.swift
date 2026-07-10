@@ -132,4 +132,9 @@ struct AdminOutputTests {
             #expect(entry["de"]?.isEmpty == false, "missing German value for \(key)")
         }
     }
+
+    @Test func `every catalog key doubles as its own English value for the Linux key fallback`() throws {
+        let catalog = try CatalogParser.parse(from: Bundle.module)
+        try assertKeysAreEnglishFallback(catalog)
+    }
 }

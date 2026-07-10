@@ -62,4 +62,26 @@ struct CatalogAssertionsTests {
             allowedUnicodeEllipsisKeys: ["Loading\u{2026}"]
         )
     }
+
+    @Test func `keys equal to their English values pass the English fallback guard`() throws {
+        try assertKeysAreEnglishFallback(["OK": ["en": "OK", "de": "OK"], "Hi %@": ["en": "Hi %@", "de": "Hallo %@"]])
+    }
+
+    @Test func `a key differing from its English value throws keyNotEnglishFallback`() {
+        #expect(throws: CatalogValidationError.keyNotEnglishFallback("Greeting")) {
+            try assertKeysAreEnglishFallback(["Greeting": ["en": "Hi", "de": "Hallo"]])
+        }
+    }
+
+    @Test func `a key without an English value throws keyNotEnglishFallback`() {
+        #expect(throws: CatalogValidationError.keyNotEnglishFallback("OK")) {
+            try assertKeysAreEnglishFallback(["OK": ["de": "OK"]])
+        }
+    }
+
+    @Test func `an empty catalog throws emptyCatalog instead of passing vacuously`() {
+        #expect(throws: CatalogValidationError.emptyCatalog) {
+            try assertKeysAreEnglishFallback([:])
+        }
+    }
 }

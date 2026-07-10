@@ -3,12 +3,14 @@ import Foundation
 /// The structural defects `assertCatalog(in:expectedKeys:)` rejects. Thrown (rather than
 /// asserted with `Testing`) so the helper stays Foundation-only like the rest of this
 /// module; an uncaught throw fails the calling `@Test`, and `description` names the key.
-public enum CatalogValidationError: Error, CustomStringConvertible, Equatable {
+public enum CatalogValidationError: Error, CustomStringConvertible, Sendable, Equatable {
     case missingKey(String)
     case missingLocaleValue(key: String, locale: String)
     case placeholderMismatch(key: String, english: String, german: String)
     case unicodeEllipsisInKey(String)
     case unicodeEllipsisInValue(key: String, locale: String, value: String)
+    case keyNotEnglishFallback(String)
+    case emptyCatalog
 
     public var description: String {
         switch self {
@@ -22,6 +24,10 @@ public enum CatalogValidationError: Error, CustomStringConvertible, Equatable {
             "Unicode ellipsis in key \(key)"
         case let .unicodeEllipsisInValue(key, locale, value):
             "Unicode ellipsis in \(key) [\(locale)]: \(value)"
+        case let .keyNotEnglishFallback(key):
+            "English value differs from its key \(key)"
+        case .emptyCatalog:
+            "catalog has no entries"
         }
     }
 }
@@ -68,5 +74,17 @@ public func assertCatalog(
         for (locale, value) in entry where value.contains("\u{2026}") {
             throw CatalogValidationError.unicodeEllipsisInValue(key: key, locale: locale, value: value)
         }
+    }
+}
+
+/// Guards the Linux fallback contract of the catalogs reachable from Linux builds: their
+/// lookup shims return the raw key where `String(localized:)` is unavailable, which reads
+/// as English only while every key doubles as its own English source string. Iterates the
+/// whole parsed catalog so new keys are covered without a hand-maintained list, and
+/// rejects an empty catalog so a parse that silently drops every entry cannot pass.
+public func assertKeysAreEnglishFallback(_ catalog: [String: [String: String]]) throws {
+    guard !catalog.isEmpty else { throw CatalogValidationError.emptyCatalog }
+    for (key, entry) in catalog where entry["en"] != key {
+        throw CatalogValidationError.keyNotEnglishFallback(key)
     }
 }

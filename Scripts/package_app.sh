@@ -151,6 +151,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.${TARGET}</string>
     <key>CFBundleExecutable</key><string>${APP_EXEC_NAME}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>de</string>
+    </array>
+    <key>CFBundleAllowMixedLocalizations</key><true/>
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key><string>${MACOS_MIN_VERSION}</string>
@@ -240,6 +247,52 @@ if [[ ${#SWIFTPM_BUNDLES[@]} -gt 0 ]]; then
     cp -R "$bundle" "$APP/Contents/Resources/"
   done
 fi
+
+# SwiftPM copies `.process`-declared String Catalogs into the resource bundles verbatim;
+# compiling them to per-locale .lproj/Localizable.strings is an Xcode build step that
+# `swift build` never runs, leaving German unreachable at runtime. Compile each copied
+# catalog in place — before signing, so the .lproj land inside the sealed bundles — and
+# drop the raw .xcstrings. The host app additionally advertises the locales in its
+# Info.plist above (CFBundleAllowMixedLocalizations et al.); without that, Foundation
+# resolves subordinate bundles against the host's localizations and German stays dead.
+XCSTRINGSTOOL="$(xcrun --find xcstringstool 2>/dev/null || true)"
+if [[ -z "$XCSTRINGSTOOL" ]]; then
+  echo "ERROR: xcstringstool not found; the Xcode toolchain is required to compile String Catalogs" >&2
+  exit 1
+fi
+shopt -s nullglob
+for bundle in "$APP/Contents/Resources/"*.bundle; do
+  if [[ -f "$bundle/Localizable.xcstrings" ]]; then
+    "$XCSTRINGSTOOL" compile "$bundle/Localizable.xcstrings" -o "$bundle"
+    rm "$bundle/Localizable.xcstrings"
+  fi
+done
+shopt -u nullglob
+
+# Validate a per-target required bundle set rather than counting compiles: the shared
+# build dir accumulates bundles from other targets across builds, so a stale catalog
+# could otherwise mask a required bundle that is missing or uncompiled.
+case "$TARGET" in
+  player) REQUIRED_CATALOG_BUNDLES=("Somnio_SomnioCore.bundle" "Somnio_SomnioUI.bundle" "Somnio_SomnioApp.bundle") ;;
+  editor) REQUIRED_CATALOG_BUNDLES=("Somnio_SomnioCore.bundle" "Somnio_SomnioEditor.bundle") ;;
+esac
+for name in "${REQUIRED_CATALOG_BUNDLES[@]}"; do
+  bundle="$APP/Contents/Resources/$name"
+  if [[ ! -d "$bundle" ]]; then
+    echo "ERROR: required resource bundle $name is missing from Contents/Resources" >&2
+    exit 1
+  fi
+  for strings in en.lproj/Localizable.strings de.lproj/Localizable.strings; do
+    if [[ ! -f "$bundle/$strings" ]]; then
+      echo "ERROR: $name is missing compiled $strings" >&2
+      exit 1
+    fi
+  done
+  if [[ -e "$bundle/Localizable.xcstrings" ]]; then
+    echo "ERROR: $name still carries an uncompiled Localizable.xcstrings" >&2
+    exit 1
+  fi
+done
 
 # Bundle assets (3D models, floor materials, UI chrome). SOMNIO_BUNDLE_TARGET tells the
 # script which pack contract to enforce: the player hard-requires the UI/ subtree, the
