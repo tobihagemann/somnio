@@ -330,7 +330,7 @@ public actor PerSectorActor {
         // Insert after streaming peers so a `try outbox.send` failure above leaves no
         // ghost slot in `players`.
         players[entityIndex] = slot
-        lastAcceptedMoveAt[entityIndex] = ContinuousClock().now
+        lastAcceptedMoveAt[entityIndex] = ContinuousClock.now
         let newcomerEntity = SomnioMessage.entity(makeEntityMessage(for: slot))
         try broadcastToPeers(newcomerEntity, excluding: entityIndex)
         return entityIndex
@@ -406,7 +406,7 @@ public actor PerSectorActor {
     /// interval — without rejecting or snapping back. The verdict baseline refreshes on every accepted
     /// move, including unflagged ones and early returns, so it always tracks the last accepted move.
     private func instrumentAcceptedMove(from previousPosition: GridPoint, to newPosition: GridPoint, entityIndex: Int16, tempo: Tempo) {
-        let now = ContinuousClock().now
+        let now = ContinuousClock.now
         defer { lastAcceptedMoveAt[entityIndex] = now }
         guard let baseline = lastAcceptedMoveAt[entityIndex] else { return }
         let elapsed = now - baseline
@@ -436,7 +436,7 @@ public actor PerSectorActor {
                 "from": "\(previousPosition.x),\(previousPosition.y)",
                 "to": "\(newPosition.x),\(newPosition.y)",
                 "distance": "\(verdict.distance)",
-                "elapsed_ms": "\(Self.seconds(elapsed) * 1000)",
+                "elapsed_ms": "\(elapsed.seconds * 1000)",
                 "tempo": "\(tempo.rawValue)",
                 "reference_cap": "\(verdict.referenceCap)",
                 "would_reject": "true",
@@ -444,13 +444,6 @@ public actor PerSectorActor {
             ]
         )
         anomalyLogState[entityIndex] = (lastLoggedAt: now, suppressedCount: 0)
-    }
-
-    /// Fractional seconds of a `Duration`, reconstructed from its `(seconds, attoseconds)` components
-    /// (1 attosecond = 1e-18 s). One definition shared by the verdict cap and the `elapsed_ms` log so
-    /// the subtle attoseconds conversion can't drift between the two.
-    private static func seconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) + Double(duration.components.attoseconds) * 1e-18
     }
 
     // swiftlint:disable function_parameter_count large_tuple
@@ -471,7 +464,7 @@ public actor PerSectorActor {
         let dx = Double(Int32(to.x) - Int32(from.x))
         let dy = Double(Int32(to.y) - Int32(from.y))
         let distance = (dx * dx + dy * dy).squareRoot()
-        let referenceCap = Tempo.run.pixelsPerSecond * max(seconds(elapsed), minElapsedSeconds) * toleranceFactor + flatSlackPixels
+        let referenceCap = Tempo.run.pixelsPerSecond * max(elapsed.seconds, minElapsedSeconds) * toleranceFactor + flatSlackPixels
         return (distance, referenceCap, distance > referenceCap)
     }
 

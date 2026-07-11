@@ -46,6 +46,11 @@ import Foundation
     private var monitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
 
+    /// Test seam: whether `start()` has run without a matching `stop()`, so lifecycle tests can
+    /// assert teardown without poking the AppKit monitor token (which headless test processes
+    /// may not create).
+    private(set) var _isStarted = false
+
     /// Set by the host (view model) — `true` when gameplay should respond to WASD
     /// (player attached, no overlay up, chat input not focused). Defaults to `false` so
     /// the sampler doesn't capture keys before the gameplay loop is wired up. When
@@ -98,6 +103,7 @@ import Foundation
                 self?.held = Held()
             }
         }
+        _isStarted = true
     }
 
     public func stop() {
@@ -110,6 +116,7 @@ import Foundation
         }
         resignActiveObserver = nil
         held = Held()
+        _isStarted = false
     }
 
     public var snapshot: Held {

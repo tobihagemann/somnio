@@ -51,15 +51,20 @@ import SomnioUI
 
     private let transport: GameplayTransport
     private let tickerMode: GameplayTickerMode
+    /// Monotonic time source for the gameplay tick, sampled once per tick. Monotonic (not
+    /// `Date`) because the tick only measures elapsed gameplay time: NTP or manual clock
+    /// adjustments must never freeze movement or suppress the heartbeat, and `ContinuousClock`
+    /// keeps counting across system sleep so the first post-wake tick still clamps normally.
+    private let now: @MainActor @Sendable () -> ContinuousClock.Instant
     private var connectionTask: Task<Void, Never>?
     private var tickerTask: Task<Void, Never>?
     private var lastEmittedPosition: GridPoint?
     private var lastEmittedFacing: Heading?
     private var lastEmittedTempo: Tempo?
-    /// Wall-clock time of the last position frame sent to the server (the 2 Hz heartbeat gate).
-    private var lastEmitTime: Date?
-    /// Wall-clock time of the previous gameplay tick, for the elapsed-time-scaled movement step.
-    private var lastTickTime: Date?
+    /// Instant of the last position frame sent to the server (the 2 Hz heartbeat gate).
+    private var lastEmitTime: ContinuousClock.Instant?
+    /// Instant of the previous gameplay tick, for the elapsed-time-scaled movement step.
+    private var lastTickTime: ContinuousClock.Instant?
     private var lastBumpedPortalIndex: Int?
     /// Sub-pixel movement carried between ticks. A 60 Hz step is only ~2 px, so rounding the
     /// rotated world components independently each tick would bend the walked direction away
@@ -72,12 +77,14 @@ import SomnioUI
         worldScene: any WorldRenderSurface,
         transport: GameplayTransport = GameplayTransport(),
         keyboard: KeyboardSampler = KeyboardSampler(),
-        tickerMode: GameplayTickerMode = .live
+        tickerMode: GameplayTickerMode = .live,
+        now: @escaping @MainActor @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.worldScene = worldScene
         self.transport = transport
         self.keyboard = keyboard
         self.tickerMode = tickerMode
+        self.now = now
     }
 
     /// Pulls a saved credential into the login form (without opening a connection).
@@ -610,7 +617,7 @@ import SomnioUI
     private static let tickPeriodNanoseconds: UInt64 = 16_666_666
     /// Position-broadcast heartbeat (legacy `UpdateTimer`, 2 Hz): the local player moves smoothly
     /// via prediction every tick, but reports its position to the server at most this often.
-    private static let positionHeartbeatInterval: TimeInterval = 0.5
+    private static let positionHeartbeatInterval: Duration = .milliseconds(500)
     /// Peer-player interpolation matches the heartbeat so remote players tween across the ~500 ms
     /// gap rather than stepping; NPCs/monsters stay on the 50 ms server AI-tick cadence so they
     /// don't visibly lag the server.
@@ -618,7 +625,7 @@ import SomnioUI
     private static let aiTickInterpolationDuration: TimeInterval = 0.05
     /// Upper bound on a single tick's elapsed time so a stall (or the first tick) cannot teleport
     /// the player; mirrors the PoC's clamp.
-    private static let maxTickElapsed: TimeInterval = 0.1
+    private static let maxTickElapsed: Duration = .milliseconds(100)
 
     /// Receives the cursor-derived facing from the play-field tracking area
     /// (`MouseFacingTrackingView`). The gameplay tick applies it each frame.
@@ -629,13 +636,16 @@ import SomnioUI
     public func startGameplayTicker() {
         guard tickerTask == nil else { return }
         keyboard.start()
-        tickerTask = Task { [weak self] in
+        tickerTask = Task { [weak self, keyboard] in
             while !Task.isCancelled {
                 // Scope the strong ref to the tick so the sleep holds only `weak self`,
                 // keeping the stored `tickerTask` from retaining the view model.
                 if let self {
                     runOneGameplayTick()
                 } else {
+                    // The owner died without stopGameplayTicker(); tear down the sampler here
+                    // or its NSEvent monitor and resign-active observer outlive the session.
+                    keyboard.stop()
                     return
                 }
                 do {
@@ -686,8 +696,11 @@ import SomnioUI
             selfEntity.facing = facing
         }
 
-        let now = Date()
-        let elapsedSeconds = max(0, min(lastTickTime.map { now.timeIntervalSince($0) } ?? 0, Self.maxTickElapsed))
+        let now = now()
+        // The lower bound guards against a misbehaving injected provider; the production
+        // ContinuousClock source is monotonic and never measures a negative gap.
+        let elapsed = lastTickTime.map { min(max($0.duration(to: now), .zero), Self.maxTickElapsed) } ?? .zero
+        let elapsedSeconds = elapsed.seconds
         lastTickTime = now
 
         let velocity = velocity(from: held)
@@ -769,7 +782,7 @@ import SomnioUI
         // trailing `.clientPosition` would apply the old coordinates in the new sector and snap the
         // player off the arrival placement. Suppress the heartbeat on the tick a portal fires.
         if !enteredPortal {
-            emitIfChanged(entity: selfEntity, tempo: selfEntity.tempo)
+            emitIfChanged(entity: selfEntity, tempo: selfEntity.tempo, now: now)
         }
     }
 
@@ -798,7 +811,9 @@ import SomnioUI
     /// layer for facing; the sampler reports every cursor move unfiltered.
     private static let facingEmitThresholdDegrees: Float = 1
 
-    private func emitIfChanged(entity: WorldEntity, tempo: Tempo) {
+    /// `now` is the enclosing tick's single clock sample, so the movement step and the heartbeat
+    /// gate never see two slightly different instants within one tick.
+    private func emitIfChanged(entity: WorldEntity, tempo: Tempo, now: ContinuousClock.Instant) {
         let facingUnchanged = lastEmittedFacing.map {
             abs($0.angularDistance(to: entity.facing)) <= Self.facingEmitThresholdDegrees
         } ?? false
@@ -810,8 +825,7 @@ import SomnioUI
         // Heartbeat gate: report at most every `positionHeartbeatInterval` (legacy 2 Hz
         // `UpdateTimer`). The last-emitted snapshot is left unchanged when throttled, so the next
         // tick past the interval still sees the move as pending and reports the final position.
-        let now = Date()
-        if let last = lastEmitTime, now.timeIntervalSince(last) < Self.positionHeartbeatInterval {
+        if let last = lastEmitTime, last.duration(to: now) < Self.positionHeartbeatInterval {
             return
         }
         lastEmitTime = now

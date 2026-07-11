@@ -106,6 +106,31 @@ struct ClientViewModelTests {
         live.stopGameplayTicker()
     }
 
+    @Test func `releasing a live view model tears down the ticker and the keyboard sampler`() async throws {
+        // The ticker task holds only weak self, so an owner released without
+        // stopGameplayTicker() must still stop the sampler on the next tick — otherwise its
+        // NSEvent monitor and resign-active observer outlive the session.
+        let keyboard = KeyboardSampler()
+        var viewModel: ClientViewModel? = ClientViewModel(
+            worldScene: makeWorldScene(), keyboard: keyboard, tickerMode: .live
+        )
+        viewModel?.connectionState = .awaitingEnterSector
+        viewModel?.handle(.message(.enterSector(EnterSectorMessage(sector: tinySector().asWire))))
+        viewModel?.handle(.message(.mainCharacter(MainCharacterMessage(entityIndex: 7))))
+        #expect(viewModel?._tickerActive == true)
+        #expect(keyboard._isStarted)
+
+        weak var released = viewModel
+        viewModel = nil
+        #expect(released == nil)
+        // Bounded wait: the sampler stops once the ticker's ~16 ms sleep elapses and the next
+        // iteration observes the dead owner.
+        for _ in 0 ..< 100 where keyboard._isStarted {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!keyboard._isStarted)
+    }
+
     @Test func `the self entity is added to the online-players roster sorted, faithful to the legacy SpielerBox`() {
         let viewModel = makeViewModel()
         viewModel.connectionState = .awaitingEnterSector
@@ -234,7 +259,7 @@ struct ClientViewModelTests {
         // async menu-driven leave path. Drive it through `leaveGame()` and poll the spy (bounded so
         // a regression fails rather than hangs) for the resulting splash.
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy)
+        let viewModel = ClientViewModel(worldScene: spy, tickerMode: .manual)
         viewModel.connectionState = .attached
 
         viewModel.leaveGame()
@@ -717,8 +742,9 @@ struct ClientViewModelTests {
         })
     }
 
-    @Test func `a facing turn past the emit threshold reports clientPosition without movement`() async throws {
-        let viewModel = makeViewModel()
+    @Test func `a facing turn past the emit threshold reports clientPosition without movement`() {
+        let clock = TickClock()
+        let viewModel = makeViewModel(clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
         var outbound: [SomnioMessage] = []
         viewModel._outboundProbe = { outbound.append($0) }
@@ -727,7 +753,7 @@ struct ClientViewModelTests {
         outbound.removeAll()
 
         // Outwait the 0.5 s heartbeat so the threshold gate (not the heartbeat) decides.
-        try await Task.sleep(for: .milliseconds(550))
+        clock.advance(.milliseconds(550))
         viewModel.updateMouseFacing(Heading(degrees: 95))
         viewModel._runSingleTick()
 
@@ -739,8 +765,9 @@ struct ClientViewModelTests {
         #expect(emitted.last?.facing == 95)
     }
 
-    @Test func `facing jitter at the exact threshold boundary never reaches the wire`() async throws {
-        let viewModel = makeViewModel()
+    @Test func `facing jitter at the exact threshold boundary never reaches the wire`() {
+        let clock = TickClock()
+        let viewModel = makeViewModel(clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
         var outbound: [SomnioMessage] = []
         viewModel._outboundProbe = { outbound.append($0) }
@@ -750,7 +777,7 @@ struct ClientViewModelTests {
 
         // Past the heartbeat, so only the threshold can be suppressing the report. Exactly
         // 1° pins the gate's inclusive comparison — the boundary itself is suppressed.
-        try await Task.sleep(for: .milliseconds(550))
+        clock.advance(.milliseconds(550))
         viewModel.updateMouseFacing(Heading(degrees: 91))
         viewModel._runSingleTick()
 
@@ -786,10 +813,11 @@ struct ClientViewModelTests {
         })
     }
 
-    @Test func `facing jitter across the wrap seam measures as a small turn, not a revolution`() async throws {
+    @Test func `facing jitter across the wrap seam measures as a small turn, not a revolution`() {
         // 359.75° → 0.25° is a 0.5° wobble across the 0°/360° seam; a naive degree difference
         // would read it as ~359.5° and emit on every heartbeat.
-        let viewModel = makeViewModel()
+        let clock = TickClock()
+        let viewModel = makeViewModel(clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
         var outbound: [SomnioMessage] = []
         viewModel._outboundProbe = { outbound.append($0) }
@@ -797,7 +825,7 @@ struct ClientViewModelTests {
         viewModel._runSingleTick() // baseline report
         outbound.removeAll()
 
-        try await Task.sleep(for: .milliseconds(550))
+        clock.advance(.milliseconds(550))
         viewModel.updateMouseFacing(Heading(degrees: 0.25))
         viewModel._runSingleTick()
 
@@ -810,19 +838,18 @@ struct ClientViewModelTests {
         })
     }
 
-    @Test func `a held screen-up walk renders sub-pixel positions on one straight world line`() async throws {
+    @Test func `a held screen-up walk renders sub-pixel positions on one straight world line`() throws {
         // The rotated per-tick step rounds to alternating integer offsets; the rendered
         // sub-pixel positions must stay exactly on the continuous world line or the player
         // visibly wobbles sideways when walking up/down-screen.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
 
         for _ in 0 ..< 12 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(5))
+            clock.advance(.milliseconds(5))
         }
 
         let points = spy.subpixelPositions
@@ -840,18 +867,17 @@ struct ClientViewModelTests {
         #expect(spy.tempoUpdates.last?.tempo == .default)
     }
 
-    @Test func `a moving tick threads the intended travel heading to the renderer`() async throws {
+    @Test func `a moving tick threads the intended travel heading to the renderer`() {
         // The predictor hands the renderer the intended (pre-collision) travel heading so the
         // directional clip and the speed penalty are driven by one direction and can never disagree.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
 
         for _ in 0 ..< 3 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(5))
+            clock.advance(.milliseconds(5))
         }
 
         // Every moving tick threads a heading, and it is the intended world-movement heading of
@@ -868,7 +894,7 @@ struct ClientViewModelTests {
         // No keys held: the predictor passes nil, letting the renderer preserve the last travel
         // direction across the grace window rather than snapping the clip back to forward.
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: KeyboardSampler())
+        let viewModel = ClientViewModel(worldScene: spy, keyboard: KeyboardSampler(), tickerMode: .manual)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
 
         viewModel._runSingleTick()
@@ -881,7 +907,7 @@ struct ClientViewModelTests {
         // rejected-move correction can't leave a stale backpedal/strafe clip. The self snapBack
         // must take that overload, not the sub-pixel one the 60 Hz predictor uses.
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy)
+        let viewModel = ClientViewModel(worldScene: spy, tickerMode: .manual)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
 
         viewModel.handle(.message(.serverPosition(PositionMessage(
@@ -892,17 +918,16 @@ struct ClientViewModelTests {
         #expect(spy.subpixelPositions.isEmpty)
     }
 
-    @Test func `the predictor scales the step by the relative-direction speed multiplier`() async throws {
-        func distanceWalked(facing: Heading) async throws -> Double {
-            let keyboard = KeyboardSampler()
-            keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+    @Test func `the predictor scales the step by the relative-direction speed multiplier`() throws {
+        func distanceWalked(facing: Heading) throws -> Double {
             let spy = RenderSurfaceSpy()
-            let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+            let clock = TickClock()
+            let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
             prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
             viewModel.updateMouseFacing(facing)
             for _ in 0 ..< 3 {
                 viewModel._runSingleTick()
-                try await Task.sleep(for: .milliseconds(120)) // > maxTickElapsed, so elapsed clamps
+                clock.advance(.milliseconds(120)) // > maxTickElapsed, so elapsed clamps
             }
             let start = try #require(spy.subpixelPositions.first)
             let end = try #require(spy.subpixelPositions.last)
@@ -910,29 +935,27 @@ struct ClientViewModelTests {
         }
         // Same key and tempo; only the facing differs. Backpedaling (facing opposite the travel)
         // must cover half the ground of moving forward (facing along it) — proof the predictor
-        // applies RelativeDirection.speedMultiplier to the step distance. Sleeping longer than
-        // maxTickElapsed (0.1 s) pins each tick's elapsed time to that clamp, so the step is
-        // deterministic and the ratio is exactly the multiplier ratio, not subject to wall-clock
-        // jitter. 'W' moves up-screen; its world travel heading is what we face along vs against.
+        // applies RelativeDirection.speedMultiplier to the step distance. Advancing the fake clock
+        // past maxTickElapsed (0.1 s) pins each tick's elapsed time to that clamp, so the step is
+        // deterministic. The rendered sub-pixel positions carry the exact fraction, so the ratio
+        // is the multiplier ratio to floating-point precision.
         let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: 0, screenDY: -1)
         let travelHeading = Heading(dx: Float(worldDX), dy: Float(worldDY))
-        let forward = try await distanceWalked(facing: travelHeading)
-        let backward = try await distanceWalked(facing: Heading(degrees: travelHeading.degrees + 180))
+        let forward = try distanceWalked(facing: travelHeading)
+        let backward = try distanceWalked(facing: Heading(degrees: travelHeading.degrees + 180))
         #expect(forward > 0)
-        // backward multiplier (0.50) / forward multiplier (1.0), with only a small margin for
-        // integer-pixel rounding at the step boundaries.
+        // backward multiplier (0.50) / forward multiplier (1.0).
         let ratio = backward / forward
-        #expect(abs(ratio - 0.5) < 0.05)
+        #expect(abs(ratio - 0.5) < 1e-9)
     }
 
-    @Test func `a blocked walk tick drops the whole sub-pixel carry`() async throws {
+    @Test func `a blocked walk tick drops the whole sub-pixel carry`() {
         // An NPC feet-box overlap blocks the step outright; the carried fraction from the
         // rejected path must not bias the rendered position, so every tick renders exactly
         // the unmoved grid position.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
         // Screen-up walks toward decreasing world x and y under the 35° yaw; an NPC one step
         // up-screen keeps every candidate feet box overlapping its own.
@@ -940,7 +963,7 @@ struct ClientViewModelTests {
 
         for _ in 0 ..< 6 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(25))
+            clock.advance(.milliseconds(25))
         }
 
         #expect(!spy.subpixelPositions.isEmpty)
@@ -949,19 +972,18 @@ struct ClientViewModelTests {
         }
     }
 
-    @Test func `a wall-cut axis drops its sub-pixel carry while the free axis keeps moving`() async throws {
+    @Test func `a wall-cut axis drops its sub-pixel carry while the free axis keeps moving`() throws {
         // A mask band above the feet box blocks the world-Y step of a screen-up walk; the cut
         // axis must render exactly on the grid while the free X axis still travels sub-pixel.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
         let walled = openSector(collisionMasks: [CollisionMask(x: 0, y: 316, width: 640, height: 16)])
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: walled)
 
         for _ in 0 ..< 6 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(25))
+            clock.advance(.milliseconds(25))
         }
 
         let travel = try #require(spy.subpixelPositions.last)
@@ -971,20 +993,19 @@ struct ClientViewModelTests {
         }
     }
 
-    @Test func `a wall-cut on the other axis mirrors the drop: x pins to the grid while y keeps moving`() async throws {
+    @Test func `a wall-cut on the other axis mirrors the drop: x pins to the grid while y keeps moving`() throws {
         // The vertical twin of the horizontal band above: a wall band just west of the feet
         // box cuts the world-X step of the same screen-up walk, so the carried fraction must
         // drop on X while Y still travels sub-pixel.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
         let walled = openSector(collisionMasks: [CollisionMask(x: 284, y: 0, width: 16, height: 640)])
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: walled)
 
         for _ in 0 ..< 6 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(25))
+            clock.advance(.milliseconds(25))
         }
 
         let travel = try #require(spy.subpixelPositions.last)
@@ -994,18 +1015,18 @@ struct ClientViewModelTests {
         }
     }
 
-    @Test func `an authoritative self correction drops the sub-pixel carry and applies the server tempo`() async throws {
+    @Test func `an authoritative self correction drops the sub-pixel carry and applies the server tempo`() throws {
         // A few walking ticks accumulate a fractional carry; the snapback replaces the
         // predicted position outright, so the next rendered position must sit exactly on the
         // corrected grid with no residual fraction from the rejected path.
-        let keyboard = KeyboardSampler()
-        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        let keyboard = walkingKeyboard()
         let spy = RenderSurfaceSpy()
-        let viewModel = ClientViewModel(worldScene: spy, keyboard: keyboard)
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: keyboard, clock: clock)
         prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
         for _ in 0 ..< 4 {
             viewModel._runSingleTick()
-            try await Task.sleep(for: .milliseconds(25))
+            clock.advance(.milliseconds(25))
         }
 
         keyboard.updateForTest(keyCode: 13, down: false)
@@ -1018,6 +1039,112 @@ struct ClientViewModelTests {
         #expect(rendered == SubpixelPoint(x: 256, y: 256))
         // The server-position path also forwards the authoritative tempo to the renderer.
         #expect(spy.tempoUpdates.contains { $0.entityID == 1 && $0.tempo == .run })
+    }
+
+    @Test func `the first tick has zero elapsed so a held key produces no movement step`() {
+        // With no previous tick to measure from, the first tick's elapsed time is zero
+        // regardless of the clock value — the player must not jump on attach.
+        let spy = RenderSurfaceSpy()
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+
+        viewModel._runSingleTick()
+
+        #expect(spy.subpixelPositions == [SubpixelPoint(x: 300, y: 300)])
+    }
+
+    @Test func `the tick samples the injected clock exactly once`() {
+        // The movement step and the heartbeat gate must consume one clock snapshot per tick;
+        // a second provider read would let the two consumers disagree about the instant.
+        let clock = TickClock()
+        let viewModel = makeViewModel(clock: clock)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+
+        viewModel._runSingleTick()
+
+        #expect(clock.samples == 1)
+    }
+
+    @Test func `the movement clamp caps a long tick gap and scales a short one proportionally`() throws {
+        func stepDistance(advancing duration: Duration) throws -> Double {
+            let spy = RenderSurfaceSpy()
+            let clock = TickClock()
+            let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
+            prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+            viewModel._runSingleTick() // first tick: zero elapsed, no step
+            clock.advance(duration)
+            viewModel._runSingleTick()
+            let start = try #require(spy.subpixelPositions.first)
+            let end = try #require(spy.subpixelPositions.last)
+            return (pow(end.x - start.x, 2) + pow(end.y - start.y, 2)).squareRoot()
+        }
+        // A gap exactly at maxTickElapsed (0.1 s) and one far beyond it produce the identical
+        // clamped step; a gap below it scales the step down proportionally.
+        let atClamp = try stepDistance(advancing: .milliseconds(100))
+        let beyondClamp = try stepDistance(advancing: .milliseconds(500))
+        let halfClamp = try stepDistance(advancing: .milliseconds(50))
+        #expect(atClamp > 0)
+        #expect(beyondClamp == atClamp)
+        #expect(abs(halfClamp - atClamp / 2) < 1e-9)
+        // Absolute pin on the Duration→seconds conversion: the clamped step must equal
+        // pixelsPerSecond × 0.1 s scaled by the multiplier of the default south facing vs
+        // the screen-up travel heading. A uniform scale error in the attoseconds conversion
+        // would preserve the equality and ratio checks above but not this.
+        let (worldDX, worldDY) = OrthographicCameraRig.worldMovement(forScreenDX: 0, screenDY: -1)
+        let travel = Heading(dx: Float(worldDX), dy: Float(worldDY))
+        let multiplier = RelativeDirection(travel: travel, facing: Heading(cardinal: .south)).speedMultiplier
+        #expect(abs(atClamp - Tempo.default.pixelsPerSecond * 0.1 * multiplier) < 1e-9)
+    }
+
+    @Test func `the heartbeat suppresses below the interval and emits once the boundary is reached`() {
+        let clock = TickClock()
+        let viewModel = makeViewModel(clock: clock)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 100, y: 100), sector: sectorWithPortals([]))
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+        viewModel.updateMouseFacing(Heading(degrees: 90))
+        viewModel._runSingleTick() // baseline report
+        outbound.removeAll()
+
+        // Inside the 0.5 s window the pending turn stays throttled.
+        clock.advance(.milliseconds(250))
+        viewModel.updateMouseFacing(Heading(degrees: 180))
+        viewModel._runSingleTick()
+        #expect(outbound.isEmpty)
+
+        // Reaching exactly the interval emits: the gate suppresses only strictly-below gaps,
+        // and the throttled tick left the last-emitted snapshot unchanged so the turn is
+        // still pending. Duration arithmetic is exact, so 250 ms + 250 ms is the precise
+        // 500 ms boundary.
+        clock.advance(.milliseconds(250))
+        viewModel._runSingleTick()
+        let emitted = outbound.compactMap {
+            if case let .clientPosition(m) = $0 {
+                m
+            } else { nil }
+        }
+        #expect(emitted.last?.facing == 180)
+    }
+
+    @Test func `a backward-jumping injected clock freezes movement for one tick instead of stepping backward`() {
+        // The production ContinuousClock source is monotonic, so a negative gap is unreachable
+        // outside tests — the elapsed clamp's lower bound still pins the failure mode: a
+        // misbehaving provider must freeze the step, never scale it negative. The tick
+        // re-anchors lastTickTime, so movement resumes on the very next tick.
+        let spy = RenderSurfaceSpy()
+        let clock = TickClock()
+        let viewModel = makeViewModel(spy: spy, keyboard: walkingKeyboard(), clock: clock)
+        prepareAttachedSelf(viewModel, at: GridPoint(x: 300, y: 300), sector: openSector())
+        viewModel._runSingleTick() // anchors lastTickTime
+
+        clock.advance(.milliseconds(-1000))
+        viewModel._runSingleTick()
+        #expect(spy.subpixelPositions == [SubpixelPoint(x: 300, y: 300), SubpixelPoint(x: 300, y: 300)])
+
+        clock.advance(.milliseconds(50))
+        viewModel._runSingleTick()
+        #expect(spy.subpixelPositions.last != SubpixelPoint(x: 300, y: 300))
     }
 
     @Test func `gaining chat-input focus clears keys held during the focus transition`() {
@@ -1160,6 +1287,21 @@ struct ClientViewModelTests {
         ClientViewModel(worldScene: makeWorldScene(), tickerMode: .manual)
     }
 
+    private func makeViewModel(clock: TickClock) -> ClientViewModel {
+        ClientViewModel(worldScene: makeWorldScene(), tickerMode: .manual, now: { clock.sample() })
+    }
+
+    private func makeViewModel(spy: RenderSurfaceSpy, keyboard: KeyboardSampler, clock: TickClock) -> ClientViewModel {
+        ClientViewModel(worldScene: spy, keyboard: keyboard, tickerMode: .manual, now: { clock.sample() })
+    }
+
+    /// A sampler already holding 'W', the screen-up walk key.
+    private func walkingKeyboard() -> KeyboardSampler {
+        let keyboard = KeyboardSampler()
+        keyboard.updateForTest(keyCode: 13, down: true) // 'W'
+        return keyboard
+    }
+
     /// Returns the view model alongside the concrete `WorldScene3D` it drives, for the
     /// dispatch-wiring tests that reach renderer-internal probes (`_entityNodeProbe`/
     /// `_heldSwapProbe`) the erased `WorldRenderSurface` seam does not expose.
@@ -1220,6 +1362,26 @@ struct ClientViewModelTests {
             light: LightSetting(indoor: true, brightness: 100),
             portals: portals
         )
+    }
+}
+
+/// Deterministic stand-in for the view model's injected `now` provider: tests advance it
+/// explicitly between ticks instead of sleeping out real time. A class (not a captured
+/// `var`) so the `@Sendable` provider closure captures an immutable reference.
+@MainActor
+private final class TickClock {
+    /// Reads served to the injected provider, for pinning the view model's once-per-tick
+    /// sampling. Every fixture routes through `sample()` so the counter is always trustworthy.
+    private(set) var samples = 0
+    private var instant = ContinuousClock.now
+
+    func advance(_ duration: Duration) {
+        instant = instant.advanced(by: duration)
+    }
+
+    func sample() -> ContinuousClock.Instant {
+        samples += 1
+        return instant
     }
 }
 

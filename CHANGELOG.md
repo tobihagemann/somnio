@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Show the game in German for German-language users: menus, dialogs, HUD labels, and chat messages now appear translated instead of always falling back to English
+- Keep movement speed and position reporting steady when the system clock changes (NTP sync or a manual adjustment): a backward clock jump could previously stall your position updates to the server until wall time caught back up
 
 ## [0.2.0] - 2026-07-09
 
