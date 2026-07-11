@@ -3,8 +3,9 @@ import Foundation
 /// Continuous facing heading in `Float` degrees, normalized into `[0, 360)`. Zero faces south
 /// (+Z, toward the 3/4 camera) and increasing degrees rotate toward east (+X) — the same
 /// convention as `YawSlew`'s radians, so the RealityKit seam is a pure `degrees → radians`
-/// conversion. Replaces the discrete `Direction` at the facing seams (wire, DB, sector-file
-/// NPC, render DTO); `Direction` survives for the 2D sprite-row path, bridged via
+/// conversion. `Heading` is the facing type at the runtime seams (wire, DB, sector-file
+/// NPC, render DTO); `Direction` is the editor's discrete N/E/S/W facing-picker vocabulary
+/// (spawn/portal facing), bridged to and from this continuous heading via
 /// `init(cardinal:)` / `nearestCardinal`.
 public struct Heading: Sendable, Equatable, Hashable {
     public var degrees: Float
@@ -48,10 +49,10 @@ public struct Heading: Sendable, Equatable, Hashable {
         degrees * .pi / 180
     }
 
-    /// Quantizes the heading to the four cardinals for the 2D sprite-row path. Half-open
-    /// buckets centered on each cardinal, every boundary owned deterministically by the
-    /// higher bucket (45° → east, 135° → north, 225° → west, 315° → south) so exact
-    /// diagonals never straddle.
+    /// Quantizes a continuous heading back to a discrete `Direction` — the reverse of the
+    /// cardinal bridge. Half-open buckets centered on each cardinal, every boundary owned
+    /// deterministically by the higher bucket (45° → east, 135° → north, 225° → west,
+    /// 315° → south) so exact diagonals never straddle.
     public var nearestCardinal: Direction {
         switch degrees {
         case 45 ..< 135: .east
