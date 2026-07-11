@@ -1,9 +1,7 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
@@ -18,7 +16,7 @@ struct AdminConnectionActorReadLoopTests {
         let dependencies = try await AdminRouteTestApplication.makeDependencies(worldRouter: stubRouter)
         let application = AdminRouteTestApplication.make(adminToken: "secret", adminDependencies: dependencies)
 
-        try await application.test(.live) { client in
+        try await withLiveServer(application) { client in
             var configuration = WebSocketClientConfiguration()
             configuration.additionalHeaders[.authorization] = "Bearer secret"
             configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize

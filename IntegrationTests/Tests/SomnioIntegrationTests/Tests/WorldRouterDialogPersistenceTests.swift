@@ -5,6 +5,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)

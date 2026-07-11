@@ -1,8 +1,6 @@
 import Foundation
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
@@ -28,7 +26,7 @@ struct ConnectionActorDrainTests {
         let app = GameplayWSDrainTestApplication.make(dependencies: dependencies, preseed: preseed)
         let collector = FrameCollector()
 
-        try await app.test(.live) { client in
+        try await withLiveServer(app) { client in
             var configuration = WebSocketClientConfiguration()
             configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
             let closeFrame = try await client.ws(
@@ -75,7 +73,7 @@ struct ConnectionActorDrainTests {
         let dependencies = try await makeStubConnectionDependencies()
         let app = GameplayWSDrainTestApplication.make(dependencies: dependencies, preseed: [])
 
-        try await app.test(.live) { client in
+        try await withLiveServer(app) { client in
             var configuration = WebSocketClientConfiguration()
             configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
             let closeFrame = try await client.ws(

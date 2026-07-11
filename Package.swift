@@ -167,8 +167,11 @@ let package = Package(
                 "SomnioProtocol",
                 "SomnioServerCore",
                 .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
+                .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
                 .product(name: "PostgresNIO", package: "postgres-nio"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "Logging", package: "swift-log")
             ]
@@ -180,8 +183,7 @@ let package = Package(
                 "SomnioServerCore",
                 "SomnioTestSupport",
                 "SomnioMapFixturesTestSupport",
-                .product(name: "HummingbirdTesting", package: "hummingbird"),
-                .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
+                .product(name: "HummingbirdWSClient", package: "hummingbird-websocket")
             ],
             resources: [
                 .copy("Resources/Corrupt")
@@ -216,9 +218,7 @@ let package = Package(
                 "SomnioCLICore",
                 "SomnioServerCore",
                 "SomnioTestSupport",
-                "SomnioCatalogTestSupport",
-                .product(name: "HummingbirdTesting", package: "hummingbird"),
-                .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
+                "SomnioCatalogTestSupport"
             ]
         ),
 

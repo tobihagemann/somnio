@@ -1,4 +1,5 @@
 import Foundation
+import SomnioTestSupport
 import Testing
 
 /// Unit coverage for the per-token cancellation routing shared by `OneShotLatch`,
@@ -111,16 +112,6 @@ struct LatchTests {
         let value = try await withTestTimeout(.seconds(60)) { 7 }
         #expect(value == 7)
     }
-}
-
-/// Suspend until `condition` holds, polling on a short interval. Throws `TestTimeoutError`
-/// if it never holds within the budget so a wiring regression fails instead of hanging.
-private func pollUntil(_ condition: @Sendable () async -> Bool) async throws {
-    for _ in 0 ..< 500 {
-        if await condition() { return }
-        try await Task.sleep(for: .milliseconds(4))
-    }
-    throw TestTimeoutError()
 }
 
 /// Marker error used to verify `withTestTimeout` rethrows the operation's own failure rather

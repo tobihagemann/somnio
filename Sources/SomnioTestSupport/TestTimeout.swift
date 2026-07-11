@@ -4,7 +4,9 @@ import Foundation
 /// signal/fire/set lands. Surfacing a timeout keeps a stuck setup from hanging a
 /// `withThrowingTaskGroup` parent, which otherwise buffers child errors until
 /// `next()`/`waitForAll()` and never observes the failure.
-struct TestTimeoutError: Error {}
+public struct TestTimeoutError: Error {
+    public init() {}
+}
 
 private enum RaceOutcome<Value: Sendable> {
     case finished(Value)
@@ -16,7 +18,7 @@ private enum RaceOutcome<Value: Sendable> {
 /// cancelled when the deadline wins, so a latch with per-token cancellation routing resumes its
 /// own waiter cleanly. A non-throwing wait is accepted too, so the latch `timeout:` variants
 /// pass theirs unchanged.
-func withTestTimeout<Value: Sendable>(
+public func withTestTimeout<Value: Sendable>(
     _ timeout: Duration,
     _ operation: @Sendable @escaping () async throws -> Value
 ) async throws -> Value {
@@ -33,4 +35,14 @@ func withTestTimeout<Value: Sendable>(
         case .timedOut: throw TestTimeoutError()
         }
     }
+}
+
+/// Suspend until `condition` holds, polling on a short interval. Throws `TestTimeoutError`
+/// if it never holds within the budget so a wiring regression fails instead of hanging.
+public func pollUntil(_ condition: @Sendable () async -> Bool) async throws {
+    for _ in 0 ..< 500 {
+        if await condition() { return }
+        try await Task.sleep(for: .milliseconds(4))
+    }
+    throw TestTimeoutError()
 }

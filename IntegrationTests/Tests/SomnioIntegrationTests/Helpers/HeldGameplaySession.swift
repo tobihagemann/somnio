@@ -1,12 +1,11 @@
 import Foundation
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
 import SomnioProtocol
+import SomnioTestSupport
 
 // Latches used by admin-verb tests to coordinate multiple long-lived gameplay sessions
 // with a single test body that performs admin calls between sessions' setup and teardown.
@@ -153,7 +152,7 @@ typealias HelloReceivedLatch = OneShotLatch
 @discardableResult
 // swiftlint:disable:next function_parameter_count
 func runHeldGameplaySession(
-    testClient: any TestClientProtocol,
+    testClient: LiveTestClient,
     nickname: String,
     recorder: FrameRecorder,
     attached: AttachCountdown,
@@ -173,7 +172,7 @@ func runHeldGameplaySession(
 /// wait for the pre-login socket to be observably alive before broadcasting.
 @discardableResult
 func runHeldPreLoginSession(
-    testClient: any TestClientProtocol,
+    testClient: LiveTestClient,
     recorder: FrameRecorder,
     release: ReleaseLatch,
     helloReceived: HelloReceivedLatch,

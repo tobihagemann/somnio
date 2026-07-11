@@ -1,15 +1,14 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -19,7 +18,7 @@ struct ProtocolHandshakeTests {
             let logger = Logger(label: "test.handshake.hello")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             let helloSlot = HelloSlot()
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     for try await message in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
                         guard case let .text(string) = message else { continue }
@@ -73,7 +72,7 @@ struct ProtocolHandshakeTests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.handshake.admin")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 try await assertAdminUpgradeFails(client: testClient, headers: [:], logger: logger)
                 try await assertAdminUpgradeFails(client: testClient, headers: [.authorization: "Bearer wrong-token"], logger: logger)
                 try await runAdminUpgradeSucceeds(client: testClient, logger: logger)
@@ -97,7 +96,7 @@ struct ProtocolHandshakeTests {
             let logger = Logger(label: "test.handshake.malformed")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
             let observedClose = CloseRecorder()
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 let closeFrame = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     try await send(outbound)
                     for try await _ in inbound.messages(maxSize: SomnioProtocolConstants.maxWireFrameSize) {
@@ -115,7 +114,7 @@ struct ProtocolHandshakeTests {
     }
 
     private func assertAdminUpgradeFails(
-        client: any TestClientProtocol,
+        client: LiveTestClient,
         headers: HTTPFields,
         logger: Logger
     ) async throws {
@@ -131,7 +130,7 @@ struct ProtocolHandshakeTests {
         }
     }
 
-    private func runAdminUpgradeSucceeds(client: any TestClientProtocol, logger: Logger) async throws {
+    private func runAdminUpgradeSucceeds(client: LiveTestClient, logger: Logger) async throws {
         var configuration = WebSocketClientConfiguration()
         configuration.additionalHeaders[.authorization] = "Bearer test"
         configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize

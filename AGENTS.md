@@ -44,12 +44,18 @@ SomnioCLICore    # Admin CLI command tree, transport, output rendering, localiza
 SomnioCLI        # macOS/Linux executable: thin @main shim invoking SomnioCLICore.SomnioCLITool
                  # depends on SomnioCLICore
 SomnioTestSupport # Shared test fixtures (no-op repository stubs, AdminRouteTestApplication,
-                 # GameplayRouteTestApplication, StubAdminWorldRouter). Exported as a SwiftPM
+                 # GameplayRouteTestApplication, StubAdminWorldRouter) plus the live-server
+                 # test harness: `withLiveServer` replaces HummingbirdTesting's
+                 # `.test(.live)` (whose unbounded awaits intermittently hung the whole
+                 # suite) with a bounded startup race + deadline-bounded teardown, backed
+                 # by shared primitives (PortPromise, ServiceEndedPromise, withTestTimeout,
+                 # pollUntil, FirstWriteSlot, LiveTestClient). Exported as a SwiftPM
                  # library product so the sibling IntegrationTests package can consume the
                  # same factories without re-implementing them; also consumed by
                  # SomnioServerCoreTests and SomnioCLICoreTests.
                  # depends on SomnioCore + SomnioData + SomnioProtocol + SomnioServerCore +
-                 # Hummingbird + HummingbirdWebSocket + PostgresNIO + NIOCore + Logging
+                 # Hummingbird + HummingbirdTesting + HummingbirdWebSocket +
+                 # HummingbirdWSClient + PostgresNIO + ServiceLifecycle + NIOCore + Logging
 SomnioAssetValidator # macOS build-tool executable: loads a converted .usdz via RealityKit
                  # and asserts the model registry's expectedClips surface through
                  # Entity.availableAnimations (the glb->USDZ clip-presence gate,

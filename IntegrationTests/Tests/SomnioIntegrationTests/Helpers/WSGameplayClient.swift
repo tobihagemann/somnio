@@ -224,28 +224,89 @@ enum WSGameplayClient {
         triggerShutdownEarly: Bool = false,
         _ body: @Sendable @escaping (Int) async throws -> Void
     ) async throws {
-        let group = try await makeServiceGroup(
-            rig: rig,
-            logger: logger,
-            aiTickInterval: aiTickInterval
-        )
-        let runTask = Task { try await group.run() }
-        let port = await rig.onServerRunning.value()
-        do {
-            try await runBody(group: group, port: port, triggerShutdownEarly: triggerShutdownEarly, body: body)
-        } catch {
-            await group.triggerGracefulShutdown()
-            _ = try? await runTask.value
-            throw error
+        let services = makeSidecarServices(rig: rig, logger: logger, aiTickInterval: aiTickInterval)
+        if triggerShutdownEarly {
+            try await runEarlyShutdownServiceGroup(rig: rig, services: services, logger: logger, body: body)
+        } else {
+            try await withLiveServer(rig.application, extraServices: services, logger: logger) { client in
+                try await body(client.port)
+            }
         }
-        try await runTask.value
     }
 
-    private static func makeServiceGroup(
+    /// The early-shutdown branch cannot delegate to `withLiveServer`: it must trigger the
+    /// group's graceful shutdown while the body is still running, and the shared helper
+    /// owns its `ServiceGroup` privately. It carries the same bounded lifecycle instead —
+    /// the shared startup race whose failure still tears the group down, a body
+    /// completion bounded after the mid-body trigger, and a cancellation-aware drain.
+    private static func runEarlyShutdownServiceGroup(
+        rig: Rig,
+        services: [any Service],
+        logger: Logger,
+        body: @Sendable @escaping (Int) async throws -> Void
+    ) async throws {
+        let group = makeLiveServerServiceGroup(services: [rig.application] + services, logger: logger)
+        let serviceEnded = ServiceEndedPromise()
+        let runTask = serviceEnded.captureRun(of: group)
+        do {
+            let port = try await raceStartup(
+                portPromise: rig.onServerRunning,
+                serviceEnded: serviceEnded,
+                timeout: .seconds(5)
+            )
+            try await runBodyThroughEarlyShutdown(group: group, port: port, body: body)
+        } catch {
+            await group.triggerGracefulShutdown()
+            _ = try? await drainServiceEnded(serviceEnded, runTask: runTask)
+            throw error
+        }
+        let outcome = try await drainServiceEnded(serviceEnded, runTask: runTask)
+        try outcome.get()
+    }
+
+    /// Runs `body` concurrently, triggers graceful shutdown mid-body, then bounds the
+    /// body's completion: its exit depends on the server-driven WS close, so a shutdown
+    /// stall would otherwise hang it before any drain. A body error stays primary. The
+    /// bound is cooperative, matching `withLiveServer`: the group must still await the
+    /// body child, so a body parked in a cancellation-insensitive await can outlive it.
+    private static func runBodyThroughEarlyShutdown(
+        group: ServiceGroup,
+        port: Int,
+        body: @Sendable @escaping (Int) async throws -> Void
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { taskGroup in
+            taskGroup.addTask { try await body(port) }
+            try? await Task.sleep(for: .milliseconds(500))
+            await group.triggerGracefulShutdown()
+            taskGroup.addTask {
+                try await Task.sleep(for: .seconds(10))
+                throw TestTimeoutError()
+            }
+            _ = try await taskGroup.next()
+            taskGroup.cancelAll()
+        }
+    }
+
+    /// Bounded drain of the service task through the cancellation-aware promise — never a
+    /// bare `await runTask.value`, which is not cancellation-responsive. On the deadline:
+    /// cancel the service task and surface `LiveServerShutdownTimeout`.
+    private static func drainServiceEnded(
+        _ serviceEnded: ServiceEndedPromise,
+        runTask: Task<Void, Never>
+    ) async throws -> Result<Void, any Error> {
+        do {
+            return try await serviceEnded.value(timeout: .seconds(10))
+        } catch is TestTimeoutError {
+            runTask.cancel()
+            throw LiveServerShutdownTimeout()
+        }
+    }
+
+    private static func makeSidecarServices(
         rig: Rig,
         logger: Logger,
         aiTickInterval: Duration
-    ) async throws -> ServiceGroup {
+    ) -> [any Service] {
         let checkpointService = CheckpointService(
             worldRouter: rig.dependencies.worldRouter,
             interval: .seconds(60),
@@ -261,43 +322,12 @@ enum WSGameplayClient {
         // way production does. Keep it ahead of `aiTickService` so reverse shutdown stops it
         // second, matching `RunServer`. Never run the same `Rig` in two groups concurrently:
         // the single instance's `run()` must be invoked exactly once.
-        let services: [any Service] = [
-            rig.application,
+        return [
             rig.dependencies.worldRouter,
             checkpointService,
             rig.dependencies.worldClock,
             aiTickService
         ]
-        return ServiceGroup(
-            configuration: ServiceGroupConfiguration(
-                services: services.map {
-                    ServiceGroupConfiguration.ServiceConfiguration(
-                        service: $0,
-                        successTerminationBehavior: .gracefullyShutdownGroup,
-                        failureTerminationBehavior: .gracefullyShutdownGroup
-                    )
-                },
-                gracefulShutdownSignals: [],
-                logger: logger
-            )
-        )
-    }
-
-    private static func runBody(
-        group: ServiceGroup,
-        port: Int,
-        triggerShutdownEarly: Bool,
-        body: @Sendable @escaping (Int) async throws -> Void
-    ) async throws {
-        if triggerShutdownEarly {
-            async let bodyTask: Void = body(port)
-            try? await Task.sleep(for: .milliseconds(500))
-            await group.triggerGracefulShutdown()
-            try await bodyTask
-        } else {
-            try await body(port)
-            await group.triggerGracefulShutdown()
-        }
     }
 }
 
@@ -314,65 +344,6 @@ actor FrameRecorder {
 
     func snapshot() -> [Data] {
         frames
-    }
-}
-
-/// Resolves to the bound port once `set(_:)` is called from `onServerRunning`. Modeled
-/// as an `actor` so the WS Channel's task and the test body don't race on `port`.
-/// Cancellation-aware with per-token routing: if the awaiting task is cancelled before
-/// the server binds (e.g., a sibling service in the task group failed), only that
-/// task's continuation resumes — sibling waiters keep waiting.
-actor PortPromise {
-    private var port: Int?
-    private var continuations: [UUID: CheckedContinuation<Int, Never>] = [:]
-
-    func set(_ value: Int) {
-        if port == nil { port = value }
-        let resumers = continuations
-        continuations.removeAll()
-        for (_, continuation) in resumers {
-            continuation.resume(returning: value)
-        }
-    }
-
-    func value() async -> Int {
-        if let port { return port }
-        let token = UUID()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Int, Never>) in
-                installWaiter(continuation, token: token)
-            }
-        } onCancel: {
-            Task { await self.resumeOnCancel(token: token) }
-        }
-    }
-
-    /// Deadline-bounded `value`. Throws `TestTimeoutError` if the server does not bind within
-    /// `timeout`, so a stuck setup surfaces instead of hanging the parent group.
-    func value(timeout: Duration) async throws -> Int {
-        try await withTestTimeout(timeout) { await self.value() }
-    }
-
-    /// Test-only inspection: waiters currently suspended in `value`.
-    var waiterCount: Int {
-        continuations.count
-    }
-
-    private func installWaiter(_ continuation: CheckedContinuation<Int, Never>, token: UUID) {
-        if let port {
-            continuation.resume(returning: port)
-            return
-        }
-        if Task.isCancelled {
-            continuation.resume(returning: 0)
-            return
-        }
-        continuations[token] = continuation
-    }
-
-    private func resumeOnCancel(token: UUID) {
-        guard let continuation = continuations.removeValue(forKey: token) else { return }
-        continuation.resume(returning: 0)
     }
 }
 

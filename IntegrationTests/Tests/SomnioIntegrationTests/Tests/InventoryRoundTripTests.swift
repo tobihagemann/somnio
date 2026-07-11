@@ -1,9 +1,7 @@
 import Foundation
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import PostgresNIO
@@ -11,6 +9,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -21,7 +20,7 @@ struct InventoryRoundTripTests {
             let nickname = "starter-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     try await WSGameplayClient.drainUntilJoinComplete(inbound: inbound, recorder: recorder)
@@ -47,7 +46,7 @@ struct InventoryRoundTripTests {
             let nickname = "equipper-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     try await runEquipFlow(
@@ -77,7 +76,7 @@ struct InventoryRoundTripTests {
             let inventories = PostgresInventoryRepository(client: client, logger: logger)
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
 
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 try await sessionEquipCudgel(testClient: testClient, nickname: nickname, logger: logger)
                 let postEquipRows = try await pollForCudgelEquippedHand(
                     characters: characters,
@@ -111,7 +110,7 @@ struct InventoryRoundTripTests {
 
     /// Block A: register, log in, equip the cudgel to the right hand, close normally.
     private func sessionEquipCudgel(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         nickname: String,
         logger: Logger
     ) async throws {
@@ -134,7 +133,7 @@ struct InventoryRoundTripTests {
     /// cudgel is still equipped right, then send `EquipToggle(slot: 1, hand: .none)` and
     /// wait for the broadcast confirming the unequip.
     private func sessionVerifyEquippedThenUnequip(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         nickname: String,
         logger: Logger
     ) async throws {
@@ -159,7 +158,7 @@ struct InventoryRoundTripTests {
 
     /// Block C: log in once more and assert the cudgel surfaces with no equipped hand.
     private func sessionVerifyUnequipped(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         nickname: String,
         logger: Logger
     ) async throws {

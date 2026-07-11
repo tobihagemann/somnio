@@ -1,9 +1,7 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import SomnioProtocol
@@ -93,17 +91,17 @@ struct AdminAuthGateTests {
     // MARK: - Helpers
 
     private func withAdminApplication(
-        _ body: @Sendable (StubAdminWorldRouter, any TestClientProtocol) async throws -> Void
+        _ body: @Sendable (StubAdminWorldRouter, LiveTestClient) async throws -> Void
     ) async throws {
         let stubRouter = StubAdminWorldRouter()
         let dependencies = try await AdminRouteTestApplication.makeDependencies(worldRouter: stubRouter)
         let application = AdminRouteTestApplication.make(adminToken: "secret", adminDependencies: dependencies)
-        try await application.test(.live) { client in
+        try await withLiveServer(application) { client in
             try await body(stubRouter, client)
         }
     }
 
-    private func assertUpgradeFails(client: any TestClientProtocol, headers: HTTPFields) async throws {
+    private func assertUpgradeFails(client: LiveTestClient, headers: HTTPFields) async throws {
         var configuration = WebSocketClientConfiguration()
         configuration.additionalHeaders = headers
         do {

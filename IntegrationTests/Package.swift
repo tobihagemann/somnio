@@ -26,10 +26,8 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "Hummingbird", package: "hummingbird"),
-                .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
-                .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
-                .product(name: "HummingbirdWSTesting", package: "hummingbird-websocket")
+                .product(name: "HummingbirdWSClient", package: "hummingbird-websocket")
             ]
         )
     ]

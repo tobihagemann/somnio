@@ -1,9 +1,7 @@
 import Foundation
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import PostgresNIO
@@ -11,6 +9,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)

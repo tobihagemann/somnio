@@ -1,10 +1,8 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOFoundationCompat
@@ -14,6 +12,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -22,8 +21,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.players")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let aliceNickname = "alice-\(UUID().uuidString.prefix(6))"
                 let bobNickname = "bob-\(UUID().uuidString.prefix(6))"
                 let aliceRecorder = FrameRecorder()
@@ -73,8 +72,8 @@ struct AdminVerbsE2ETests {
             let seed = WorldClock(second: 50, minute: 11, hour: 7, day: 1, month: 1, year: 500)
             try await WSGameplayClient.seedClock(client: client, clock: seed)
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let response = try await AdminTransport.send(
                     .time,
                     to: url,
@@ -126,8 +125,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.say")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let aliceNickname = "alice-\(UUID().uuidString.prefix(6))"
                 let bobNickname = "bob-\(UUID().uuidString.prefix(6))"
                 let aliceRecorder = FrameRecorder()
@@ -208,8 +207,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.kick")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let aliceNickname = "alice-\(UUID().uuidString.prefix(6))"
                 let bobNickname = "bob-\(UUID().uuidString.prefix(6))"
                 let aliceRecorder = FrameRecorder()
@@ -308,8 +307,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.kick-unknown")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let absentNickname = "ghost-\(UUID().uuidString.prefix(6))"
                 let response = try await AdminTransport.send(
                     .kick(name: absentNickname),
@@ -326,8 +325,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.version")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 let response = try await AdminTransport.send(
                     .version,
                     to: url,
@@ -344,8 +343,8 @@ struct AdminVerbsE2ETests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.admin.unknown")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
-                let url = try await Self.adminURL(for: testClient)
+            try await withLiveServer(rig.application) { testClient in
+                let url = Self.adminURL(for: testClient)
                 var configuration = WebSocketClientConfiguration()
                 configuration.additionalHeaders[.authorization] = "Bearer test"
                 configuration.maxFrameSize = SomnioProtocolConstants.maxWireFrameSize
@@ -388,9 +387,8 @@ struct AdminVerbsE2ETests {
 
     // MARK: - Helpers
 
-    private static func adminURL(for testClient: any TestClientProtocol) async throws -> String {
-        let port = try #require(testClient.port)
-        return "ws://localhost:\(port)/admin"
+    private static func adminURL(for testClient: LiveTestClient) -> String {
+        "ws://localhost:\(testClient.port)/admin"
     }
 }
 

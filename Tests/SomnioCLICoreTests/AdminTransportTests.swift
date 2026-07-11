@@ -1,7 +1,6 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
 import Logging
@@ -13,8 +12,8 @@ import Testing
 @testable import SomnioCLICore
 @testable import SomnioServerCore
 
-/// Lives in the CLI tests but stands up a tiny server-side WS endpoint via Hummingbird's
-/// `.test(.live)` helper so we can drive `AdminTransport.send` end-to-end across the
+/// Lives in the CLI tests but stands up a tiny server-side WS endpoint via the
+/// `withLiveServer` helper so we can drive `AdminTransport.send` end-to-end across the
 /// process boundary. Covers the `AdminTransportError` branches reachable in a debug build.
 struct AdminTransportTests {
     private let token = "secret"
@@ -35,12 +34,8 @@ struct AdminTransportTests {
 
     @Test func `send rejects an unexpected binary frame from the server`() async throws {
         let app = Self.makeBinaryFrameApplication(token: token)
-        try await app.test(.live) { client in
-            guard let port = client.port else {
-                Issue.record("test client has no port; live framework misconfigured")
-                return
-            }
-            let url = "ws://localhost:\(port)/admin"
+        try await withLiveServer(app) { client in
+            let url = "ws://localhost:\(client.port)/admin"
             await Self.expectTransportError(.unexpectedBinaryFrame) {
                 try await AdminTransport.send(
                     .players,
@@ -56,12 +51,8 @@ struct AdminTransportTests {
         // Asserts both the case tag and the payload: flattening the typed `Error` back to
         // a string would slip past the tag-only matcher.
         let app = Self.makeMalformedFrameApplication(token: token)
-        try await app.test(.live) { client in
-            guard let port = client.port else {
-                Issue.record("test client has no port; live framework misconfigured")
-                return
-            }
-            let url = "ws://localhost:\(port)/admin"
+        try await withLiveServer(app) { client in
+            let url = "ws://localhost:\(client.port)/admin"
             do {
                 _ = try await AdminTransport.send(
                     .players,
@@ -80,12 +71,8 @@ struct AdminTransportTests {
 
     @Test func `send surfaces noResponse when the server closes without sending a frame`() async throws {
         let app = Self.makeSilentApplication(token: token)
-        try await app.test(.live) { client in
-            guard let port = client.port else {
-                Issue.record("test client has no port; live framework misconfigured")
-                return
-            }
-            let url = "ws://localhost:\(port)/admin"
+        try await withLiveServer(app) { client in
+            let url = "ws://localhost:\(client.port)/admin"
             await Self.expectTransportError(.noResponse) {
                 try await AdminTransport.send(
                     .players,
@@ -212,12 +199,8 @@ struct AdminTransportTests {
     ) async throws {
         let dependencies = try await AdminRouteTestApplication.makeDependencies(worldRouter: stubRouter)
         let application = AdminRouteTestApplication.make(adminToken: token, adminDependencies: dependencies)
-        try await application.test(.live) { client in
-            guard let port = client.port else {
-                Issue.record("test client has no port; live framework misconfigured")
-                return
-            }
-            try await body("ws://localhost:\(port)/admin")
+        try await withLiveServer(application) { client in
+            try await body("ws://localhost:\(client.port)/admin")
         }
     }
 

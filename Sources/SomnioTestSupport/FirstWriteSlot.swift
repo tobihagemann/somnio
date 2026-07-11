@@ -4,14 +4,16 @@ import Foundation
 /// post-handler assertion. Replaces the per-test `HelloSlot`, `AdminResponseSlot`,
 /// `DateTickSlot`, and `CloseRecorder` actors that all carry the same single-value
 /// shape — a regression to one would silently fail to propagate to the others.
-actor FirstWriteSlot<Value: Sendable> {
+public actor FirstWriteSlot<Value: Sendable> {
     private var stored: Value?
 
-    func set(_ value: Value) {
+    public init() {}
+
+    public func set(_ value: Value) {
         if stored == nil { stored = value }
     }
 
-    func value() -> Value? {
+    public func value() -> Value? {
         stored
     }
 }

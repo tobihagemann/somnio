@@ -1,19 +1,18 @@
 import Foundation
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import NIOWebSocket
 import SomnioCore
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 /// End-to-end coverage that drives the full Hummingbird app over real WebSockets against
-/// a live `postgres:16` container. Non-tick flows run via `application.test(.live)`; the
+/// a live `postgres:16` container. Non-tick flows run via `withLiveServer`; the
 /// tick-driven and shutdown flows run through a `ServiceGroup` rig that registers the
 /// post-readiness services in production order so reverse-shutdown matches `RunServer`.
 @Suite(.requiresContainerRuntime)
@@ -22,7 +21,7 @@ struct GameplayE2ETests {
     /// broadcast against the exact coordinate the mover sent.
     private typealias MoveOutcome = (moverIndex: Int16, target: GridPoint)
 
-    // MARK: - Non-tick flows via application.test(.live)
+    // MARK: - Non-tick flows via withLiveServer
 
     @Test func `register then login flow surfaces success codes`() async throws {
         try await TestHarness.withDatabase { client in
@@ -30,7 +29,7 @@ struct GameplayE2ETests {
             let nickname = "alice-\(UUID().uuidString.prefix(6))"
             let recorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 _ = try await testClient.ws("/ws", configuration: WSGameplayClient.wsConfig(), logger: logger) { inbound, outbound, _ in
                     try await WSGameplayClient.registerAndLogin(nickname: nickname, on: outbound)
                     try await WSGameplayClient.drainUntilLoginOk(inbound: inbound, recorder: recorder)
@@ -63,7 +62,7 @@ struct GameplayE2ETests {
             let actorRecorder = FrameRecorder()
             let moveOutcome = FirstWriteSlot<MoveOutcome>()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 try await runPeerScenario(
                     testClient: testClient,
                     listener: ListenerConfig(nickname: nicknameA, recorder: peerARecorder, tag: .serverPosition),
@@ -107,7 +106,7 @@ struct GameplayE2ETests {
             let nicknameB = "hop-\(UUID().uuidString.prefix(6))"
             let peerARecorder = FrameRecorder()
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 try await runPeerScenario(
                     testClient: testClient,
                     listener: ListenerConfig(nickname: nicknameA, recorder: peerARecorder, tag: .leave),
@@ -307,7 +306,7 @@ struct GameplayE2ETests {
     /// `actorInboundRecorder` is supplied it captures the actor's own inbound stream so the
     /// caller can assert on what the server did (or didn't) send the actor.
     private func runPeerScenario(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         listener: ListenerConfig,
         actor actorNickname: String,
         logger: Logger,
@@ -339,7 +338,7 @@ struct GameplayE2ETests {
     }
 
     private func runListenerSession(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         nickname: String,
         recorder: FrameRecorder,
         listenForTag tag: SomnioMessageTag,
@@ -362,7 +361,7 @@ struct GameplayE2ETests {
     /// action fires — the join is bounded separately by the latch timeout — so a slow join can't eat
     /// into the observation window. `action` must not block on its own timer.
     private func runActorSession(
-        testClient: any TestClientProtocol,
+        testClient: LiveTestClient,
         nickname: String,
         logger: Logger,
         inboundRecorder: FrameRecorder? = nil,

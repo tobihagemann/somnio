@@ -1,9 +1,7 @@
 import Foundation
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import HummingbirdWSClient
-import HummingbirdWSTesting
 import Logging
 import NIOCore
 import PostgresNIO
@@ -11,6 +9,7 @@ import SomnioCore
 import SomnioData
 import SomnioProtocol
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -22,7 +21,7 @@ struct EnergyPersistenceTests {
             let characters = PostgresCharacterRepository(client: client, logger: logger)
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
 
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 // Session 1: register + drain to attached + close. The server's
                 // `snapshotForPlayer`/`persistCheckpoint` runs on close and bumps
                 // `lastSeen` past the registration write. Capture the first energy

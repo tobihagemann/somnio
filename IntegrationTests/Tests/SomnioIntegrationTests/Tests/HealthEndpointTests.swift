@@ -3,7 +3,6 @@ import Foundation
     import FoundationNetworking
 #endif
 import Hummingbird
-import HummingbirdTesting
 import HummingbirdWebSocket
 import Logging
 import NIOCore
@@ -11,6 +10,7 @@ import PostgresNIO
 import SomnioCore
 import SomnioData
 import SomnioServerCore
+import SomnioTestSupport
 import Testing
 
 @Suite(.requiresContainerRuntime)
@@ -19,7 +19,7 @@ struct HealthEndpointTests {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.health.up")
             let rig = try await WSGameplayClient.makeApplication(client: client, logger: logger)
-            try await rig.application.test(.live) { testClient in
+            try await withLiveServer(rig.application) { testClient in
                 try await testClient.execute(uri: "/health", method: .get) { response in
                     #expect(response.status == .ok)
                     let body = try JSONDecoder().decode([String: String].self, from: Data(buffer: response.body))
@@ -69,14 +69,14 @@ struct HealthEndpointTests {
                 dependencies: connectionDependencies,
                 adminDependencies: adminDependencies
             )
-            try await application.test(.live) { testClient in
+            try await withLiveServer(application) { testClient in
                 // PostgresNIO 1.21+'s pool retries failed dials with exponential backoff
                 // before tripping the circuit breaker and surfacing the failure to the
                 // `/health` handler. The full retry budget runs ~60 s wall-clock on a local
-                // docker-compatible runtime — far past `HummingbirdTesting`'s hardcoded
-                // 20 s `LiveTestFramework` read timeout — so the probe runs through a
+                // docker-compatible runtime — far past the 20 s read timeout on
+                // `withLiveServer`'s wrapped `TestClient` — so the probe runs through a
                 // `URLSession` request whose `timeoutInterval` can be lifted to 120 s.
-                let port = try #require(testClient.port)
+                let port = testClient.port
                 await runProbe(port: port)
             }
         } catch {
