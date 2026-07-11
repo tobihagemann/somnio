@@ -100,4 +100,17 @@ struct KeyboardSamplerTests {
         // Active: non-gameplay keys are never consumed.
         #expect(sampler.shouldConsume(keyCode: 12, modifierFlags: []) == false) // Q
     }
+
+    @Test func `start then stop flips the started flag, and a second stop is an idempotent no-op`() {
+        let sampler = KeyboardSampler()
+        sampler.start()
+        // Asserted via `_isStarted`, not the AppKit monitor token, which a headless test process
+        // may not create.
+        #expect(sampler._isStarted == true)
+        sampler.stop()
+        #expect(sampler._isStarted == false)
+        // The isolated deinit calls stop() again after an owner already tore down; prove that's safe.
+        sampler.stop()
+        #expect(sampler._isStarted == false)
+    }
 }

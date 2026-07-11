@@ -66,6 +66,16 @@ import Foundation
 
     public init() {}
 
+    /// Self-cleaning teardown: an owner that drops the sampler without calling `stop()` would
+    /// otherwise leak the event monitor and resign-active observer. A plain `deinit` can't touch
+    /// the non-Sendable `monitor`/observer under Swift 6 strict concurrency; an `isolated deinit`
+    /// (SE-0371) runs on the MainActor before the storage is freed, so `NSEvent.removeMonitor` /
+    /// `NotificationCenter.removeObserver` execute on the main thread with the tokens still valid.
+    /// `stop()` is idempotent, so this is harmless when the owner already tore down. Unlike the
+    /// monitor-owning `NSView`s that tear down in `viewDidMoveToWindow()`, this plain object has no
+    /// window lifecycle, so the isolated deinit is its only teardown hook.
+    isolated deinit { stop() }
+
     public func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in

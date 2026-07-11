@@ -643,8 +643,9 @@ import SomnioUI
                 if let self {
                     runOneGameplayTick()
                 } else {
-                    // The owner died without stopGameplayTicker(); tear down the sampler here
-                    // or its NSEvent monitor and resign-active observer outlive the session.
+                    // The owner died without stopGameplayTicker(); tear down the sampler promptly
+                    // instead of waiting for its own isolated deinit, and drop this task's strong
+                    // `keyboard` ref so the sampler can deallocate. `stop()` is idempotent.
                     keyboard.stop()
                     return
                 }
