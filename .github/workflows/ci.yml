@@ -52,9 +52,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: swift-actions/setup-swift@v2
+      # swiftly instead of swift-actions/setup-swift@v2: that action's hardcoded version
+      # list caps at 6.2.1, which rejects swift-websocket 1.6.1's Span-across-await code
+      # ("lifetime-dependent variable 'span' escapes its scope"). 6.2.4 compiles it —
+      # the same patch level as the Dockerfile's swift:6.2 tag, which is why Docker
+      # Smoke builds the identical file successfully.
+      - uses: vapor/swiftly-action@v0.2.1
         with:
-          swift-version: "6.2"
+          toolchain: "6.2.4"
       - name: Install libargon2-dev
         run: sudo apt-get update && sudo apt-get install -y libargon2-dev
       - name: Verify Docker is reachable
