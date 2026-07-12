@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared "<localized name>: <value>" label for the per-tool dialog `Stepper`s.
+/// Shared "<localized name>: <value>" label for the overlay form `Stepper`s.
 @MainActor struct StepperLabel: View {
     let title: LocalizedStringResource
     let value: Int16

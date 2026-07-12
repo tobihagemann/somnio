@@ -42,22 +42,25 @@ struct SectorWorkspaceCameraTests {
         #expect(workspace.framing.focus == fitFraming(for: body, workspace: workspace).focus)
     }
 
-    @Test func `zooming out stops at the whole-sector fit and re-centers`() {
+    @Test func `zooming out stops at the player's minimum magnification and keeps the pan`() {
         let body = body()
         let workspace = workspace(with: body)
-        // Pan off-center first: at full zoom-out an off-center focus would shove the sector
-        // against a viewport edge, so reaching the fit scale must restore the centered fit.
         workspace.panCanvas(byViewportDelta: CGSize(width: 200, height: 200), body: body)
+        let panned = workspace.framing.focus
         workspace.zoomCanvas(byScrollDeltaY: -500, body: body)
-        #expect(workspace.framing == fitFraming(for: body, workspace: workspace))
+        // The game's zoom clamp: 0.5× of the player framing is the zoom-out end, and the
+        // panned focus survives (no snap back to the centered fit).
+        #expect(workspace.framing.scale == OrthographicCameraRig.defaultScale / Float(PlayerZoom.minFactor))
+        #expect(workspace.framing.focus == panned)
     }
 
-    @Test func `zooming back in stops at the player's zoom`() {
+    @Test func `zooming back in stops at the player's maximum close-up`() {
         let body = body()
         let workspace = workspace(with: body)
         workspace.zoomCanvas(byScrollDeltaY: -500, body: body)
         workspace.zoomCanvas(byScrollDeltaY: 2000, body: body)
-        #expect(workspace.framing.scale == OrthographicCameraRig.defaultScale)
+        // 2× of the player framing — the same clamp end the game's scroll zoom has.
+        #expect(workspace.framing.scale == OrthographicCameraRig.defaultScale / Float(PlayerZoom.maxFactor))
     }
 
     @Test func `panning moves the focus and clamps to the fit extent`() {
@@ -99,7 +102,7 @@ struct SectorWorkspaceCameraTests {
     @Test func `a viewport resize preserves the user's pan and zoom`() {
         let body = body()
         let workspace = workspace(with: body)
-        workspace.zoomCanvas(byScrollDeltaY: -100, body: body)
+        workspace.zoomCanvas(byScrollDeltaY: -50, body: body)
         workspace.panCanvas(byViewportDelta: CGSize(width: 40, height: 40), body: body)
         let custom = workspace.framing
         workspace.updateViewportSize(CGSize(width: 1280, height: 480), body: body)
@@ -133,7 +136,7 @@ struct SectorWorkspaceCameraTests {
         #expect(workspace.framing == opening)
     }
 
-    @Test func `a sector smaller than the player view opens at its whole-sector fit`() {
+    @Test func `a sector smaller than the player view still opens at the player's zoom`() {
         let tiny = SectorBody(
             version: 1,
             dimensions: GridSize(width: 1, height: 1),
@@ -142,13 +145,12 @@ struct SectorWorkspaceCameraTests {
         )
         let workspace = workspace(with: tiny)
         let fit = fitFraming(for: tiny, workspace: workspace)
+        // The game shows a small sector with void around it rather than magnifying it;
+        // the editor opens the same way, and the game's zoom clamp applies unchanged.
         #expect(fit.scale < OrthographicCameraRig.defaultScale)
-        #expect(workspace.framing.scale == fit.scale)
-        // The zoom-in bound drops to the fit too, so the clamp range stays non-inverted:
-        // zooming can neither pass the fit nor reach the (larger) player zoom.
-        workspace.zoomCanvas(byScrollDeltaY: 500, body: tiny)
-        #expect(workspace.framing.scale == fit.scale)
-        workspace.zoomCanvas(byScrollDeltaY: -500, body: tiny)
-        #expect(workspace.framing.scale == fit.scale)
+        #expect(workspace.framing.scale == OrthographicCameraRig.defaultScale)
+        #expect(workspace.framing.focus == fit.focus)
+        workspace.zoomCanvas(byScrollDeltaY: 2000, body: tiny)
+        #expect(workspace.framing.scale == OrthographicCameraRig.defaultScale / Float(PlayerZoom.maxFactor))
     }
 }

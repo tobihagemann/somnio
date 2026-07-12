@@ -12,10 +12,13 @@ import Testing
     }
 
     @Test func `dropping a document drains the registry after the deinit task runs`() async throws {
-        let baseline = SectorWorkspaceRegistry.count
+        // Track this test's own document IDs rather than the global count — concurrent
+        // suites legitimately register and discard workspaces of their own.
+        var ids: [UUID] = []
         do {
             for _ in 0 ..< 10 {
                 let document = SectorDocument()
+                ids.append(document.id)
                 _ = SectorWorkspaceRegistry.workspace(forID: document.id)
             }
         }
@@ -24,6 +27,8 @@ import Testing
         // on the main actor, so the bounded sleep matches the canonical pattern for
         // "wait for previously-enqueued main-actor work to drain."
         try await Task.sleep(for: .milliseconds(20))
-        #expect(SectorWorkspaceRegistry.count == baseline)
+        for id in ids {
+            #expect(!SectorWorkspaceRegistry._contains(documentID: id))
+        }
     }
 }

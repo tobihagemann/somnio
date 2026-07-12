@@ -11,7 +11,7 @@ import Foundation
     /// every subsequent call returns the same instance. The dictionary lookup is the
     /// only branch in the function body — SwiftUI re-evaluates `body` arbitrarily, so
     /// preserving workspace identity across redraws is load-bearing for WorldScene3D
-    /// continuity and in-flight presentedSheet state.
+    /// continuity and in-flight presentedOverlay state.
     public static func workspace(forID id: UUID) -> SectorWorkspace {
         if let existing = workspaces[id] { return existing }
         let fresh = SectorWorkspace()
@@ -24,8 +24,10 @@ import Foundation
     }
 
     #if DEBUG
-        public static var count: Int {
-            workspaces.count
+        /// Test probe scoped to specific documents, so drain assertions stay immune to
+        /// unrelated suites registering workspaces concurrently.
+        public static func _contains(documentID id: UUID) -> Bool {
+            workspaces[id] != nil
         }
     #endif
 }

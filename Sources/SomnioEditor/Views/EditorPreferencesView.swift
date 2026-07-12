@@ -2,8 +2,8 @@ import SomnioCore
 import SwiftUI
 
 /// Preferences pane delivered through the editor's `Settings` scene. Surfaces the
-/// only editor preference today: the grid-snap preset that `CanvasController.handleTap`
-/// reads on every placement to quantize the click coordinates.
+/// only editor preference today: the grid-snap preset the drag interaction layer
+/// reads on every placement/move/resize to quantize the canvas coordinates.
 @MainActor struct EditorPreferencesView: View {
     @State private var gridSnap: GridSnap = EditorDefaults.currentGridSnap()
 

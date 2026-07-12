@@ -93,13 +93,22 @@ public extension OrthographicCameraRig {
             return EditorFraming(focus: focus, scale: defaultScale)
         }
         let aspect = viewportSize.x / viewportSize.y
-        let fit = max(verticalExtent, horizontalExtent / aspect)
+        // Halved because `scale` is the view volume's vertical half-height (see
+        // `legacyPoint(forViewport:)`): the fit scale renders exactly the rect's extent.
+        let fit = max(verticalExtent, horizontalExtent / aspect) / 2
         return EditorFraming(focus: focus, scale: fit > 0 ? fit : defaultScale)
     }
 
     /// Unprojects a top-left-origin viewport point through the fixed orthographic camera at
     /// `framing`, intersects the floor plane (Y = 0), and returns the legacy pixel coordinate —
     /// the inverse of `worldPosition(forLegacyPoint:)` for the editor's picking path.
+    ///
+    /// RealityKit's `OrthographicCameraComponent.scale` is the view volume's vertical
+    /// HALF-height (SceneKit's `orthographicScale` convention): the render spans `2 × scale`
+    /// meters vertically. Treating it as the full height made every unprojection overshoot
+    /// the drawn geometry by exactly 2× from the view center — measured against the live
+    /// render — so the NDC→camera-plane mapping here (and its inverse below) must scale by
+    /// `framing.scale` per half-axis, not `framing.scale / 2`.
     static func legacyPoint(
         forViewport point: SIMD2<Float>,
         viewportSize: SIMD2<Float>,
@@ -110,8 +119,8 @@ public extension OrthographicCameraRig {
         let ndcX = point.x / viewportSize.x * 2 - 1
         let ndcY = 1 - point.y / viewportSize.y * 2
         let origin = cameraPosition(focusing: framing.focus)
-            + basis.right * (ndcX * framing.scale * aspect / 2)
-            + basis.up * (ndcY * framing.scale / 2)
+            + basis.right * (ndcX * framing.scale * aspect)
+            + basis.up * (ndcY * framing.scale)
         // The fixed 45° pitch keeps `forward.y` strictly negative, so the ray always hits Y = 0.
         let t = -origin.y / basis.forward.y
         return legacyPoint(forWorldPosition: origin + basis.forward * t)
@@ -124,10 +133,10 @@ public extension OrthographicCameraRig {
     }
 
     /// Projects a legacy pixel coordinate to its top-left-origin viewport point at `framing` —
-    /// the forward direction of `legacyPoint(forViewport:viewportSize:framing:)`. Internal:
-    /// only round-trip assertions and tap-point-deriving tests consume it (via `@testable`),
-    /// so it stays off the module's public surface until a production caller needs it.
-    internal static func viewportPoint(
+    /// the forward direction of `legacyPoint(forViewport:viewportSize:framing:)`. Public for
+    /// the editor's direct-manipulation layer, which projects selection bounds back to screen
+    /// space to hit-test resize/facing handles and marquee intersections.
+    static func viewportPoint(
         forLegacyPoint point: SIMD2<Float>,
         viewportSize: SIMD2<Float>,
         framing: EditorFraming
@@ -135,9 +144,10 @@ public extension OrthographicCameraRig {
         let basis = cameraBasis()
         let aspect = viewportSize.x / viewportSize.y
         // The framing focus sits on the camera axis, so plane offsets are relative to it.
+        // `scale` is the vertical half-height (see `legacyPoint(forViewport:)`).
         let relative = worldPosition(forLegacyPoint: point) - framing.focus
-        let ndcX = dot(relative, basis.right) / (framing.scale * aspect / 2)
-        let ndcY = dot(relative, basis.up) / (framing.scale / 2)
+        let ndcX = dot(relative, basis.right) / (framing.scale * aspect)
+        let ndcY = dot(relative, basis.up) / framing.scale
         return SIMD2<Float>(
             (ndcX + 1) / 2 * viewportSize.x,
             (1 - ndcY) / 2 * viewportSize.y

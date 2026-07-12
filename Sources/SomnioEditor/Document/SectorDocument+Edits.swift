@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 public extension SectorDocument {
     /// Single mutation API. Captures the pre-image, applies the change, refreshes the
-    /// per-document workspace (SpriteKit scene + overlay + selection clamp), and
+    /// per-document workspace (3D scene + overlay + selection clamp), and
     /// registers an `UndoManager` callback that re-enters `mutate(...)` to restore the
     /// snapshot. The inner re-entry captures the *current* `body` as its own pre-image,
     /// so undo records redo automatically — symmetric across N steps.

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Registry-sourced id picker shared by the editor dialogs (the Object dialog's model ids,
-/// the New-map dialog's floor-material ids), keeping the verbatim-id `Text`/`tag` idiom in
-/// one place. Mirrors `StepperLabel`'s role as a shared sheet-form helper.
+/// Registry-sourced id picker shared by the inspector (object model ids) and the sector
+/// overlays (floor-material ids), keeping the verbatim-id `Text`/`tag` idiom in one place.
+/// Mirrors `StepperLabel`'s role as a shared form helper.
 @MainActor struct RegistryIDPicker: View {
     let title: LocalizedStringResource
     let ids: [String]

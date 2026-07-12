@@ -483,7 +483,7 @@ struct WorldScene3DLifecycleTests {
 
         scene.updateAuthoringOverlay(
             body: sector.body,
-            selectionBounds: (origin: GridPoint(x: 0, y: 0), size: GridSize(width: 32, height: 32)),
+            selectionBounds: [(origin: GridPoint(x: 0, y: 0), size: GridSize(width: 32, height: 32))],
             showGridOverlay: false,
             gridStepPx: 32
         )
@@ -502,7 +502,7 @@ struct WorldScene3DLifecycleTests {
         let spawnCenter = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(112, 120))
         #expect(positions.contains { abs($0.x - spawnCenter.x) < 1e-4 && abs($0.z - spawnCenter.z) < 1e-4 })
 
-        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: [], showGridOverlay: false, gridStepPx: 32)
         #expect(scene._authoringOverlayChildCount() == 4) // rebuilt from scratch, selection gone
 
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
@@ -513,11 +513,11 @@ struct WorldScene3DLifecycleTests {
         let scene = scene()
         let sector = tinySector()
         scene.load(sector: sector, awaitingPlayerPlacement: false)
-        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: true, gridStepPx: 32)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: [], showGridOverlay: true, gridStepPx: 32)
         #expect(scene._authoringOverlayChildCount() == 1)
         // A 4×4-tile sector spans 512 px: 17 vertical + 17 horizontal lines at the 32 px step.
         #expect(scene._authoringOverlayGridLineCount() == 34)
-        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: [], showGridOverlay: false, gridStepPx: 32)
         #expect(scene._authoringOverlayChildCount() == 0)
         #expect(scene._authoringOverlayGridLineCount() == nil)
     }
@@ -534,7 +534,7 @@ struct WorldScene3DLifecycleTests {
             light: LightSetting(indoor: false, brightness: 100)
         )
         scene.load(sector: sector, awaitingPlayerPlacement: false)
-        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: true, gridStepPx: 4)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: [], showGridOverlay: true, gridStepPx: 4)
         #expect(scene._authoringOverlayChildCount() == 0)
         #expect(scene._authoringOverlayGridLineCount() == nil)
     }
@@ -545,7 +545,7 @@ struct WorldScene3DLifecycleTests {
         var sector = tinySector()
         sector.collisionMasks = [CollisionMask(x: 0, y: 0, width: 0, height: 32)]
         scene.load(sector: sector, awaitingPlayerPlacement: false)
-        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: nil, showGridOverlay: false, gridStepPx: 32)
+        scene.updateAuthoringOverlay(body: sector.body, selectionBounds: [], showGridOverlay: false, gridStepPx: 32)
         #expect(scene._authoringOverlayChildCount() == 1)
         #expect(scene._authoringOverlayChildPositions() == [.zero])
     }

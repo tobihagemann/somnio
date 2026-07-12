@@ -46,6 +46,18 @@ public extension EditorSelection {
         }
     }
 
+    /// The raw array index, for source-order sorting within a kind (the kinds live in
+    /// separate arrays, so cross-kind order is irrelevant).
+    var sourceIndex: Int {
+        switch self {
+        case let .object(index): return index
+        case let .mask(index): return index
+        case let .portal(index): return index
+        case let .npc(index): return index
+        case let .monsterSpawn(index): return index
+        }
+    }
+
     /// True when the selection's index is still in range for the corresponding
     /// `SectorBody` array. Cheaper than `bounds(in:)` when callers only need to clamp
     /// after a mutation invalidates an index.
@@ -59,28 +71,35 @@ public extension EditorSelection {
         }
     }
 
-    /// Removes the selected record from `body`. Returns `true` if the index was valid
-    /// (and the record was removed), `false` otherwise. Centralizes the index-bounds
-    /// switch that the canvas-delete path used to repeat per case.
-    @discardableResult
-    func remove(from body: inout SectorBody) -> Bool {
-        switch self {
-        case let .object(index):
-            guard body.objects.indices.contains(index) else { return false }
-            body.objects.remove(at: index)
-        case let .mask(index):
-            guard body.collisionMasks.indices.contains(index) else { return false }
-            body.collisionMasks.remove(at: index)
-        case let .portal(index):
-            guard body.portals.indices.contains(index) else { return false }
-            body.portals.remove(at: index)
-        case let .npc(index):
-            guard body.npcs.indices.contains(index) else { return false }
-            body.npcs.remove(at: index)
-        case let .monsterSpawn(index):
-            guard body.monsterSpawns.indices.contains(index) else { return false }
-            body.monsterSpawns.remove(at: index)
+    /// Removes every selected record from `body` in one pass. `Set` iteration is unordered
+    /// and each removal shifts the indices behind it, so the selections are partitioned by
+    /// kind and each kind's indices removed in **descending** order — ascending removal would
+    /// delete the wrong records or trap out of range.
+    static func removeAll(_ selections: some Collection<EditorSelection>, from body: inout SectorBody) {
+        var objects: [Int] = []
+        var masks: [Int] = []
+        var portals: [Int] = []
+        var npcs: [Int] = []
+        var monsterSpawns: [Int] = []
+        for selection in selections {
+            switch selection {
+            case let .object(index): objects.append(index)
+            case let .mask(index): masks.append(index)
+            case let .portal(index): portals.append(index)
+            case let .npc(index): npcs.append(index)
+            case let .monsterSpawn(index): monsterSpawns.append(index)
+            }
         }
-        return true
+        removeDescending(objects, from: &body.objects)
+        removeDescending(masks, from: &body.collisionMasks)
+        removeDescending(portals, from: &body.portals)
+        removeDescending(npcs, from: &body.npcs)
+        removeDescending(monsterSpawns, from: &body.monsterSpawns)
+    }
+
+    private static func removeDescending(_ indices: [Int], from records: inout [some Any]) {
+        for index in indices.sorted(by: >) where records.indices.contains(index) {
+            records.remove(at: index)
+        }
     }
 }

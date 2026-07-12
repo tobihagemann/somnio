@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// group (Save / Save As / Duplicate / Revert), so each item is redeclared. The Save
 /// pipeline routes through the standard AppKit selectors which `DocumentGroup`'s
 /// internal NSDocument bridge listens for; `.disabled(saveDisabled)` gates the items
-/// while the document is uninitialized so an empty New-map sheet cannot Save to disk.
+/// while the document is uninitialized so an unconfigured fresh document cannot Save to disk.
 ///
 /// Import / Export copy a `.somnio-sector` file to and from the server's `SOMNIO_SECTORS_DIR`
 /// directly, separate from the document's own Save location; both sides use the same canonical
@@ -87,9 +87,8 @@ public struct EditorFileCommands: Commands {
             let data = try Data(contentsOf: url)
             let parsed = try SectorDocument.snapshot(from: data)
             let derivedName = url.deletingPathExtension().lastPathComponent
-            let undoManager = focused.document.undoManager
-            focused.document.renameSector(to: derivedName, undoManager: undoManager)
-            focused.document.mutate("Create new map", undoManager: undoManager) { body in
+            focused.document.renameSector(to: derivedName, undoManager: focused.undoManager)
+            focused.document.mutate("Create new map", undoManager: focused.undoManager) { body in
                 body = parsed
             }
             focused.workspace.didCompleteInitialSetup = true
@@ -110,19 +109,5 @@ public struct EditorFileCommands: Commands {
         } catch {
             logger.error("export failed", metadata: ["error": "\(error)", "url": "\(url.path)"])
         }
-    }
-}
-
-private extension SectorDocument {
-    /// Inferred `UndoManager` for command-handler dispatch. `@FocusedValue` carries the
-    /// focused document but not its window's undo manager, and the command builder
-    /// can't read `@Environment(\.undoManager)`. The document does not own one
-    /// directly under `ReferenceFileDocument`; returning `nil` is acceptable for the
-    /// rare Import path where the user is replacing the entire body — Save is
-    /// `isUninitialized`-gated immediately afterward, so the undo coverage gap is
-    /// limited to "undo the Import sheet itself," which the user can recover from
-    /// by closing and reopening the source file.
-    var undoManager: UndoManager? {
-        nil
     }
 }

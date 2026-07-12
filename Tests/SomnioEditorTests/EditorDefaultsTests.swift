@@ -52,6 +52,21 @@ struct EditorDefaultsTests {
         #expect(GridSize.zero == GridSize(width: 0, height: 0))
     }
 
+    @Test func `sector dimension validation mirrors the codec gate at its boundaries`() {
+        // Positivity floor.
+        #expect(!EditorDefaults.validSectorDimensions(width: 0, height: 1))
+        #expect(!EditorDefaults.validSectorDimensions(width: 1, height: 0))
+        #expect(EditorDefaults.validSectorDimensions(width: 1, height: 1))
+        // Per-axis cap.
+        #expect(!EditorDefaults.validSectorDimensions(width: SomnioConstants.maxSectorDimension + 1, height: 1))
+        #expect(EditorDefaults.validSectorDimensions(width: SomnioConstants.maxSectorDimension, height: 1))
+        // Area cap: each axis individually legal, product over the limit.
+        #expect(!EditorDefaults.validSectorDimensions(width: 1024, height: 65))
+        #expect(EditorDefaults.validSectorDimensions(width: 1024, height: 64))
+        #expect(EditorDefaults.validSectorDimensions(width: 256, height: 256))
+        #expect(!EditorDefaults.validSectorDimensions(width: 256, height: 257))
+    }
+
     @Test func `absent UserDefaults key resolves through the defaults-fallback path`() throws {
         // Regression guard for the bug where `UserDefaults.integer(forKey:)` returned
         // 0 for an absent key and the result resolved to `GridSnap.free`. The fix

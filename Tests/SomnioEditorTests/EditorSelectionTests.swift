@@ -53,28 +53,26 @@ struct EditorSelectionTests {
         #expect(selection.bounds(in: Self.body) == nil)
     }
 
-    @Test func `remove returns true for valid index and removes the record`() {
+    @Test func `removeAll removes a valid selection's record`() {
         var body = Self.body
-        let removed = EditorSelection.object(0).remove(from: &body)
-        #expect(removed)
+        EditorSelection.removeAll([.object(0)], from: &body)
         #expect(body.objects.isEmpty)
     }
 
-    @Test func `remove returns false for stale index and leaves body unchanged`() {
+    @Test func `removeAll skips stale indices and leaves the body unchanged`() {
         var body = Self.body
         let before = body
-        let removed = EditorSelection.npc(99).remove(from: &body)
-        #expect(!removed)
+        EditorSelection.removeAll([.npc(99)], from: &body)
         #expect(body == before)
     }
 
-    @Test func `remove from inout body covers every case`() {
-        let selections: [EditorSelection] = [
-            .object(0), .mask(0), .portal(0), .npc(0), .monsterSpawn(0)
-        ]
-        for selection in selections {
-            var body = Self.body
-            #expect(selection.remove(from: &body))
-        }
+    @Test func `removeAll covers every case`() {
+        var body = Self.body
+        EditorSelection.removeAll([.object(0), .mask(0), .portal(0), .npc(0), .monsterSpawn(0)], from: &body)
+        #expect(body.objects.isEmpty)
+        #expect(body.collisionMasks.isEmpty)
+        #expect(body.portals.isEmpty)
+        #expect(body.npcs.isEmpty)
+        #expect(body.monsterSpawns.isEmpty)
     }
 }

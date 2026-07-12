@@ -24,7 +24,7 @@ SomnioData       # Postgres persistence (schema, migrations, repositories) +
                  # depends on SomnioCore
 SomnioTheme      # Kenney "Fantasy UI Borders" chrome (FantasyPanel, FantasyButtonStyle,
                  # FantasyPanelTextures) — SwiftUI/AppKit only, loads UI/<stem>.png from
-                 # Bundle.main. imports no Somnio module; consumed by SomnioUI
+                 # Bundle.main. imports no Somnio module; shared by SomnioUI and SomnioEditor
 SomnioUI         # SwiftUI views (chat, HUD, main window composition, SpeechBubbleText)
                  # depends on SomnioCore + SomnioTheme (NOT on SomnioData)
 SomnioScene3D    # RealityKit 3D render surface for the player world and the editor
@@ -34,7 +34,8 @@ SomnioScene3D    # RealityKit 3D render surface for the player world and the edi
 SomnioApp        # macOS executable: player client + UI + Sparkle
                  # depends on SomnioCore + SomnioUI + SomnioTheme + SomnioScene3D + SomnioProtocol
 SomnioEditor     # macOS executable: document-based map editor (no Sparkle; built locally)
-                 # depends on SomnioCore + SomnioScene3D (NOT on SomnioProtocol or SomnioData)
+                 # depends on SomnioCore + SomnioScene3D + SomnioTheme
+                 # (NOT on SomnioProtocol or SomnioData)
 SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
                  # Hummingbird app, sector cache, registration repo, checkpoint service
                  # depends on SomnioCore + SomnioData + SomnioProtocol +
@@ -80,7 +81,7 @@ These boundaries are strict:
 - SomnioUI must never import SomnioData, and must never import SomnioScene3D (the render-surface protocol and the `WorldEntity` DTO live in SomnioCore so both renderers conform without a cycle).
 - SomnioScene3D must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioUI (a SomnioCore-only renderer shared by the player client and the offline editor).
 - SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).
-- SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline).
+- SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline). It may import SomnioTheme — the chrome ban covers SomnioUI, not the shared theme library.
 - SomnioCLICore must never import SomnioUI, Sparkle, or SomnioServerCore.
 - SomnioCLI is a thin executable shim and must depend only on SomnioCLICore.
 

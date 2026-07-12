@@ -2,6 +2,23 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "%lld selected": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ausgewählt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld selected"
+          }
+        }
+      }
+    },
     "About Somnio Editor": {
       "extractionState": "manual",
       "localizations": {
@@ -15,6 +32,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "About Somnio Editor"
+          }
+        }
+      }
+    },
+    "Apply": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übernehmen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply"
           }
         }
       }
@@ -70,6 +104,40 @@
         }
       }
     },
+    "Box height": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boxhöhe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Box height"
+          }
+        }
+      }
+    },
+    "Box width": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boxbreite"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Box width"
+          }
+        }
+      }
+    },
     "Cancel": {
       "extractionState": "manual",
       "localizations": {
@@ -121,6 +189,23 @@
         }
       }
     },
+    "Delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
     "Delete selection": {
       "extractionState": "manual",
       "localizations": {
@@ -155,74 +240,6 @@
         }
       }
     },
-    "Direction.east": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Osten"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "East"
-          }
-        }
-      }
-    },
-    "Direction.north": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Norden"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "North"
-          }
-        }
-      }
-    },
-    "Direction.south": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Süden"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "South"
-          }
-        }
-      }
-    },
-    "Direction.west": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Westen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "West"
-          }
-        }
-      }
-    },
     "Duplicate": {
       "extractionState": "manual",
       "localizations": {
@@ -240,19 +257,121 @@
         }
       }
     },
-    "Edit script...": {
+    "Duplicate Selection": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skript bearbeiten..."
+            "value": "Auswahl duplizieren"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Edit script..."
+            "value": "Duplicate Selection"
+          }
+        }
+      }
+    },
+    "Edit NPC": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NPC bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit NPC"
+          }
+        }
+      }
+    },
+    "Edit collision mask": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kollisionsmaske bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit collision mask"
+          }
+        }
+      }
+    },
+    "Edit monster spawn": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monster-Spawn bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit monster spawn"
+          }
+        }
+      }
+    },
+    "Edit object": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objekt bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit object"
+          }
+        }
+      }
+    },
+    "Edit sector portal": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sektorportal bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit sector portal"
+          }
+        }
+      }
+    },
+    "Edit sector settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sektoreinstellungen bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit sector settings"
           }
         }
       }
@@ -274,6 +393,23 @@
         }
       }
     },
+    "Facing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blickrichtung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facing"
+          }
+        }
+      }
+    },
     "Figure": {
       "extractionState": "manual",
       "localizations": {
@@ -287,74 +423,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Figure"
-          }
-        }
-      }
-    },
-    "Fill in NPC name!": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Füll NPC-Name aus!"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fill in NPC name!"
-          }
-        }
-      }
-    },
-    "Fill in all monster values!": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Füll alle Monster-Werte aus!"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fill in all monster values!"
-          }
-        }
-      }
-    },
-    "Fill in light!": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Füll Licht aus!"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fill in light!"
-          }
-        }
-      }
-    },
-    "Fill in monster name!": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Füll Monster-Name aus!"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fill in monster name!"
           }
         }
       }
@@ -495,6 +563,23 @@
         }
       }
     },
+    "Invalid sector size!": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige Sektorgröße!"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid sector size!"
+          }
+        }
+      }
+    },
     "Light": {
       "extractionState": "manual",
       "localizations": {
@@ -546,6 +631,40 @@
         }
       }
     },
+    "Mask height": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maskenhöhe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mask height"
+          }
+        }
+      }
+    },
+    "Mask width": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maskenbreite"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mask width"
+          }
+        }
+      }
+    },
     "Model": {
       "extractionState": "manual",
       "localizations": {
@@ -580,6 +699,57 @@
         }
       }
     },
+    "Monster height": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monsterhöhe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monster height"
+          }
+        }
+      }
+    },
+    "Monster width": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monsterbreite"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monster width"
+          }
+        }
+      }
+    },
+    "Move selection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswahl verschieben"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move selection"
+          }
+        }
+      }
+    },
     "NPC": {
       "extractionState": "manual",
       "localizations": {
@@ -610,6 +780,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Name"
+          }
+        }
+      }
+    },
+    "New Document": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neues Dokument"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Document"
           }
         }
       }
@@ -682,6 +869,23 @@
         }
       }
     },
+    "Open...": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnen..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open..."
+          }
+        }
+      }
+    },
     "Outbound trigger": {
       "extractionState": "manual",
       "localizations": {
@@ -695,6 +899,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Outbound trigger"
+          }
+        }
+      }
+    },
+    "Paste": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einfügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste"
           }
         }
       }
@@ -784,6 +1005,23 @@
         }
       }
     },
+    "Preferences...": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preferences..."
+          }
+        }
+      }
+    },
     "Priority": {
       "extractionState": "manual",
       "localizations": {
@@ -818,6 +1056,40 @@
         }
       }
     },
+    "Resize selection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswahlgröße ändern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize selection"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fortsetzen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        }
+      }
+    },
     "Revert to Saved": {
       "extractionState": "manual",
       "localizations": {
@@ -831,6 +1103,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Revert to Saved"
+          }
+        }
+      }
+    },
+    "Rotate NPC": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NPC drehen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rotate NPC"
           }
         }
       }
@@ -920,6 +1209,57 @@
         }
       }
     },
+    "Sector": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sektor"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sector"
+          }
+        }
+      }
+    },
+    "Sector Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sektoreinstellungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sector Settings"
+          }
+        }
+      }
+    },
+    "Sector Settings...": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sektoreinstellungen..."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sector Settings..."
+          }
+        }
+      }
+    },
     "Sector name": {
       "extractionState": "manual",
       "localizations": {
@@ -954,6 +1294,40 @@
         }
       }
     },
+    "Select": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
+          }
+        }
+      }
+    },
+    "Selection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswahl"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selection"
+          }
+        }
+      }
+    },
     "Somnio Editor": {
       "extractionState": "manual",
       "localizations": {
@@ -967,23 +1341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Somnio Editor"
-          }
-        }
-      }
-    },
-    "Spawn": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Spawn"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Spawn"
           }
         }
       }
@@ -1141,19 +1498,19 @@
         }
       }
     },
-    "Type": {
+    "Unsaved changes": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Typ"
+            "value": "Ungespeicherte Änderungen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Type"
+            "value": "Unsaved changes"
           }
         }
       }

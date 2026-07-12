@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import SomnioCore
 import SwiftUI
+import Synchronization
 import UniformTypeIdentifiers
 
 /// Sendable serialization payload captured on the main actor by `snapshot(contentType:)`
@@ -30,6 +31,13 @@ public struct SectorSnapshot: Sendable, Equatable {
     public private(set) var sectorName: String
     public private(set) var body: SectorBody
 
+    /// Lock-guarded mirror of `(body, sectorName)` for the serialization path: AppKit's
+    /// save machinery calls `snapshot(contentType:)` on a background queue — autosave-in-
+    /// place especially — so it must not assume main-actor isolation (an
+    /// `assumeIsolated` there trapped on the first autosave of an edited document). The
+    /// main-actor mutation entry points refresh the mirror on every change.
+    private let serializationSnapshot: Mutex<SectorSnapshot>
+
     public var isUninitialized: Bool {
         sectorName.isEmpty && body.dimensions == .zero
     }
@@ -38,26 +46,28 @@ public struct SectorSnapshot: Sendable, Equatable {
     public nonisolated static let writableContentTypes: [UTType] = [.somnioSector]
 
     public nonisolated init() {
-        self.sectorName = ""
-        self.body = SectorBody(
+        let body = SectorBody(
             version: EditorDefaults.defaultSectorVersion,
             dimensions: .zero,
             floorMaterialID: EditorDefaults.defaultFloorMaterialID,
             light: LightSetting(indoor: false, brightness: 0)
         )
+        self.sectorName = ""
+        self.body = body
+        self.serializationSnapshot = Mutex(SectorSnapshot(body: body, sectorName: ""))
     }
 
     public nonisolated init(configuration: ReadConfiguration) throws {
         let data = configuration.file.regularFileContents ?? Data()
-        self.body = try MapCodec.read(data)
-        self.sectorName = Self.deriveSectorName(from: configuration.file.filename)
+        let body = try MapCodec.read(data)
+        let sectorName = Self.deriveSectorName(from: configuration.file.filename)
+        self.body = body
+        self.sectorName = sectorName
+        self.serializationSnapshot = Mutex(SectorSnapshot(body: body, sectorName: sectorName))
     }
 
     public nonisolated func snapshot(contentType _: UTType) throws -> SectorSnapshot {
-        // SwiftUI documents this as a main-actor call so the document can capture its
-        // current state. `assumeIsolated` traps deterministically if a future SwiftUI
-        // change moves the call off the main actor.
-        MainActor.assumeIsolated { SectorSnapshot(body: body, sectorName: sectorName) }
+        serializationSnapshot.withLock { $0 }
     }
 
     public nonisolated func fileWrapper(snapshot: SectorSnapshot, configuration _: WriteConfiguration) throws -> FileWrapper {
@@ -102,10 +112,17 @@ public struct SectorSnapshot: Sendable, Equatable {
     func applyMutation(_ change: (inout SectorBody) -> Void) {
         objectWillChange.send()
         change(&body)
+        refreshSerializationSnapshot()
     }
 
     func applySectorName(_ newName: String) {
         objectWillChange.send()
         sectorName = newName
+        refreshSerializationSnapshot()
+    }
+
+    private func refreshSerializationSnapshot() {
+        let snapshot = SectorSnapshot(body: body, sectorName: sectorName)
+        serializationSnapshot.withLock { $0 = snapshot }
     }
 }

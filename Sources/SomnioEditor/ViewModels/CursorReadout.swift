@@ -14,10 +14,15 @@ import SomnioCore
     public init() {}
 
     /// Pulls the selected record's bounds out of the sector body. Called whenever the
-    /// selection changes; clears W/H when nothing is selected so the HUD doesn't stay
-    /// pinned to a deleted record's old dimensions.
-    public func applyBounds(for selection: EditorSelection?, in body: SectorBody) {
-        let size = selection?.bounds(in: body)?.size ?? .zero
+    /// selection changes; W/H track a single selection only (a multi-selection has no one
+    /// record size) and clear when nothing is selected so the readout doesn't stay pinned
+    /// to a deleted record's old dimensions.
+    public func applyBounds(for selection: Set<EditorSelection>, in body: SectorBody) {
+        guard selection.count == 1, let size = selection.first?.bounds(in: body)?.size else {
+            width = 0
+            height = 0
+            return
+        }
         width = size.width
         height = size.height
     }

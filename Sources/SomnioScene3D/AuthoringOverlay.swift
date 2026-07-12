@@ -4,6 +4,36 @@ import RealityKit
 import simd
 import SomnioCore
 
+/// Resize-handle geometry, in legacy pixels. The editor's drag layer computes the handle
+/// centers (corners + edge midpoints of the selection bounds) so drawing here and the
+/// hit-testing there share one source; `extentPx` keeps the drawn squares screen-constant
+/// across zoom levels.
+public struct AuthoringHandleSet: Sendable, Equatable {
+    public var centerPixels: [SIMD2<Float>]
+    public var extentPx: Float
+
+    public init(centerPixels: [SIMD2<Float>], extentPx: Float) {
+        self.centerPixels = centerPixels
+        self.extentPx = extentPx
+    }
+}
+
+/// Geometry of the single-NPC facing handle, in legacy pixels. The editor's drag layer
+/// computes both endpoints (spawn-box center and handle position) so drawing here and the
+/// hit-test there share one formula; `extentPx` matches the resize handles' screen-constant
+/// sizing.
+public struct AuthoringFacingHandle: Sendable, Equatable {
+    public var centerPixel: SIMD2<Float>
+    public var handlePixel: SIMD2<Float>
+    public var extentPx: Float
+
+    public init(centerPixel: SIMD2<Float>, handlePixel: SIMD2<Float>, extentPx: Float) {
+        self.centerPixel = centerPixel
+        self.handlePixel = handlePixel
+        self.extentPx = extentPx
+    }
+}
+
 /// Editor-only authoring overlay: flat unlit rects laid on the floor for the authored record
 /// geometry (collision masks, portals, NPC and monster spawns), a border highlight for the
 /// active selection, and an optional grid. Rebuilt from scratch on every update because the
@@ -22,6 +52,7 @@ extension WorldScene3D {
         static let spawns: Float = 0.006
         static let grid: Float = 0.008
         static let selection: Float = 0.010
+        static let handles: Float = 0.012
     }
 
     private static let selectionBorderThicknessPx: Float = 2
@@ -37,12 +68,15 @@ extension WorldScene3D {
     private static let maxGridLines = 512
 
     /// Replaces the authoring overlay with the given body's record geometry. Parameters are
-    /// SomnioCore-only: the editor resolves its selection to `(GridPoint, GridSize)` bounds
-    /// before the call, since its selection type lives above this module. No-op until a
+    /// SomnioCore-only or precomputed pixel geometry: the editor resolves its selection to
+    /// `(GridPoint, GridSize)` bounds and its handle affordances to pixel positions before
+    /// the call, since its selection and drag types live above this module. No-op until a
     /// sector is loaded.
     public func updateAuthoringOverlay(
         body: SectorBody,
-        selectionBounds: (origin: GridPoint, size: GridSize)?,
+        selectionBounds: [(origin: GridPoint, size: GridSize)],
+        resizeHandles: AuthoringHandleSet? = nil,
+        facingHandle: AuthoringFacingHandle? = nil,
         showGridOverlay: Bool,
         gridStepPx: Int16
     ) {
@@ -83,8 +117,16 @@ extension WorldScene3D {
             overlay.addChild(grid)
         }
 
-        if let selectionBounds {
-            overlay.addChild(Self.selectionBorder(origin: selectionBounds.origin, size: selectionBounds.size))
+        for bounds in selectionBounds {
+            overlay.addChild(Self.selectionBorder(origin: bounds.origin, size: bounds.size))
+        }
+
+        if let resizeHandles {
+            overlay.addChild(Self.resizeHandles(resizeHandles))
+        }
+
+        if let facingHandle {
+            overlay.addChild(Self.facingHandle(facingHandle))
         }
     }
 
@@ -129,6 +171,43 @@ extension WorldScene3D {
             ))
         }
         return border
+    }
+
+    /// Small filled squares at the handle centers the editor's drag layer computed — the
+    /// visible affordance for the drag-resize interaction, drawn at the exact positions the
+    /// hit-test rects are projected from so the two can never drift.
+    private static func resizeHandles(_ handles: AuthoringHandleSet) -> Entity {
+        let node = Entity()
+        for center in handles.centerPixels {
+            node.addChild(floorPlane(
+                centerPixel: center, sizePx: SIMD2<Float>(repeating: handles.extentPx),
+                color: .yellow, opacity: 1, elevation: OverlayElevation.handles
+            ))
+        }
+        return node
+    }
+
+    /// The NPC facing affordance: a tether strip from the spawn-box center to the handle
+    /// position plus a filled square at the handle. Both points arrive precomputed from the
+    /// editor's drag layer so the drawn handle and its hit-test rect can never drift apart.
+    private static func facingHandle(_ handle: AuthoringFacingHandle) -> Entity {
+        let node = Entity()
+        let delta = handle.handlePixel - handle.centerPixel
+        let length = simd_length(delta)
+        if length > 0 {
+            let strip = floorPlane(
+                centerPixel: (handle.centerPixel + handle.handlePixel) / 2,
+                sizePx: SIMD2<Float>(selectionBorderThicknessPx, length),
+                color: .cyan, opacity: 1, elevation: OverlayElevation.handles
+            )
+            strip.orientation = simd_quatf(angle: atan2(delta.x, delta.y), axis: [0, 1, 0])
+            node.addChild(strip)
+        }
+        node.addChild(floorPlane(
+            centerPixel: handle.handlePixel, sizePx: SIMD2<Float>(repeating: handle.extentPx),
+            color: .cyan, opacity: 1, elevation: OverlayElevation.handles
+        ))
+        return node
     }
 
     /// `nil` (⇒ no grid child at all) for degenerate inputs or when the line count would

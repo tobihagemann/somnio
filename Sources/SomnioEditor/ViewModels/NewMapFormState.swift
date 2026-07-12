@@ -1,7 +1,7 @@
 import Foundation
 
-/// In-flight New-map dialog state. `width` / `height` are sector dimensions in tiles
-/// (legacy `SektorMacher` semantics); the OK handler multiplies them out into the
+/// In-flight New-map overlay state. `width` / `height` are sector dimensions in tiles
+/// (legacy `SektorMacher` semantics); the overlay's OK handler commits them into the
 /// `SectorBody.dimensions` field which is also tiles.
 @Observable public final class NewMapFormState {
     public var sectorName: String = ""

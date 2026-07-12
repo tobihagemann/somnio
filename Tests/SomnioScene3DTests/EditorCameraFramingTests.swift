@@ -80,10 +80,15 @@ struct EditorCameraFramingTests {
         }
     }
 
-    @Test func `the whole-sector fit is not clamped to the gameplay zoom bounds`() throws {
-        // A 12×12-tile fixture spans 1536 px ≈ 30.7 m — its fit must exceed the play-zoom
-        // `maxScale` (24) instead of cropping to it.
-        let body = try MapCodec.read(MapFixtures.data(.edariaMitte))
+    @Test func `the whole-sector fit is not clamped to the gameplay zoom bounds`() {
+        // A 24×24-tile sector spans 3072 px ≈ 61 m — its fit half-height must exceed the
+        // play-zoom `maxScale` (24) instead of cropping to it.
+        let body = SectorBody(
+            version: 1,
+            dimensions: GridSize(width: 24, height: 24),
+            floorMaterialID: "grass-meadow",
+            light: LightSetting(indoor: false, brightness: 100)
+        )
         let framing = OrthographicCameraRig.editorFraming(fitting: body, viewportSize: Self.viewport)
         #expect(framing.scale > OrthographicCameraRig.maxScale)
     }

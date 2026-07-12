@@ -146,6 +146,7 @@ let package = Package(
             dependencies: [
                 "SomnioCore",
                 "SomnioScene3D",
+                "SomnioTheme",
                 .product(name: "Logging", package: "swift-log")
             ],
             resources: [.process("Resources/Localizable.xcstrings")]
