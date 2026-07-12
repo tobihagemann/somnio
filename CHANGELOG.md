@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Refresh the About dialog: the copyright now reads 2026 Tobias Hagemann, and a short note about Somnio's 2003-2006 origins and this revival replaces the old thanks list, with the text centered
+- Improve VoiceOver support for in-game dialogs: login, options, and the other overlays are announced as modal and can be dismissed with the VoiceOver escape gesture
 
 ### Fixed
 

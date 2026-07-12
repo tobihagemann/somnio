@@ -1,5 +1,5 @@
 import SomnioCore
-import SomnioUI
+import SomnioTheme
 import SwiftUI
 
 /// In-game Options overlay: the only pref the codebase reads today (`advancedLogLevel`)

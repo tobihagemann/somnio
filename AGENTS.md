@@ -22,14 +22,17 @@ SomnioData       # Postgres persistence (schema, migrations, repositories) +
                  # server bootstrap helpers (config resolution, readiness wait) +
                  # Argon2id password hashing (lives next to the accounts table).
                  # depends on SomnioCore
+SomnioTheme      # Kenney "Fantasy UI Borders" chrome (FantasyPanel, FantasyButtonStyle,
+                 # FantasyPanelTextures) — SwiftUI/AppKit only, loads UI/<stem>.png from
+                 # Bundle.main. imports no Somnio module; consumed by SomnioUI
 SomnioUI         # SwiftUI views (chat, HUD, main window composition, SpeechBubbleText)
-                 # depends on SomnioCore (NOT on SomnioData)
+                 # depends on SomnioCore + SomnioTheme (NOT on SomnioData)
 SomnioScene3D    # RealityKit 3D render surface for the player world and the editor
                  # (WorldScene3D, WorldScene3DView, OrthographicCameraRig, EditorFraming,
                  # the editor's authoring overlay)
                  # depends on SomnioCore (NOT on SomnioProtocol/SomnioData/SomnioServerCore/SomnioUI)
 SomnioApp        # macOS executable: player client + UI + Sparkle
-                 # depends on SomnioCore + SomnioUI + SomnioScene3D + SomnioProtocol
+                 # depends on SomnioCore + SomnioUI + SomnioTheme + SomnioScene3D + SomnioProtocol
 SomnioEditor     # macOS executable: document-based map editor (no Sparkle; built locally)
                  # depends on SomnioCore + SomnioScene3D (NOT on SomnioProtocol or SomnioData)
 SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
@@ -73,6 +76,7 @@ These boundaries are strict:
 
 - SomnioProtocol must never import another Somnio module.
 - SomnioCore must never import SomnioData or SomnioUI.
+- SomnioTheme must never import another Somnio module (a neutral chrome library, mirroring how `WorldRenderSurface` lives in SomnioCore to break the UI↔Scene3D cycle).
 - SomnioUI must never import SomnioData, and must never import SomnioScene3D (the render-surface protocol and the `WorldEntity` DTO live in SomnioCore so both renderers conform without a cycle).
 - SomnioScene3D must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioUI (a SomnioCore-only renderer shared by the player client and the offline editor).
 - SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).

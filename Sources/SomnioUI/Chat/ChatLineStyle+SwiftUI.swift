@@ -1,3 +1,4 @@
+import SomnioTheme
 import SwiftUI
 
 public extension ChatColor {

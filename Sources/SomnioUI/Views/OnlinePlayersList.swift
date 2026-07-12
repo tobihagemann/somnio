@@ -1,3 +1,4 @@
+import SomnioTheme
 import SwiftUI
 
 /// Online-players list with a "Players: N" footer, sized by its host panel. The footer

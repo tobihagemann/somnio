@@ -1,6 +1,7 @@
 import AppKit
 import SomnioCore
 import SomnioScene3D
+import SomnioTheme
 import SomnioUI
 import SwiftUI
 
@@ -87,13 +88,11 @@ import SwiftUI
         )
     }
 
-    /// The in-game modal stack: a dimmed backdrop swallowing clicks to the world, with
-    /// the presented overlay centered on it.
+    /// The in-game modal stack: `FantasyModalHost` supplies the dimmed click-swallowing
+    /// backdrop and the modal accessibility contract; this switch supplies the overlay.
     @ViewBuilder private var overlayHost: some View {
         if let overlay = viewModel.presentedOverlay {
-            ZStack {
-                Color.black.opacity(0.5)
-                    .contentShape(Rectangle())
+            FantasyModalHost {
                 switch overlay {
                 case .login:
                     LoginOverlayView(viewModel: viewModel)
@@ -108,6 +107,8 @@ import SwiftUI
                 case .gameMenu:
                     GameMenuOverlayView(viewModel: viewModel)
                 }
+            } onEscape: {
+                viewModel.handleEscape()
             }
         }
     }

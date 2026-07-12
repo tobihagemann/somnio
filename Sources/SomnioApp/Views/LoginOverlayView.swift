@@ -1,5 +1,5 @@
 import SomnioProtocol
-import SomnioUI
+import SomnioTheme
 import SwiftUI
 
 /// Login overlay — control inventory matches the legacy `LoginFenster`, restyled onto a

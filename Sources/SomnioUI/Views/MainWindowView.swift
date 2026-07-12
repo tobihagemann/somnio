@@ -1,4 +1,5 @@
 import SomnioCore
+import SomnioTheme
 import SwiftUI
 
 /// Full-bleed game layout: the play-field viewport fills the whole window and the HUD

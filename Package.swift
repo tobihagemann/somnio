@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "SomnioProtocol", targets: ["SomnioProtocol"]),
         .library(name: "SomnioCore", targets: ["SomnioCore"]),
         .library(name: "SomnioData", targets: ["SomnioData"]),
+        .library(name: "SomnioTheme", targets: ["SomnioTheme"]),
         .library(name: "SomnioUI", targets: ["SomnioUI"]),
         .library(name: "SomnioScene3D", targets: ["SomnioScene3D"]),
         .library(name: "SomnioServerCore", targets: ["SomnioServerCore"]),
@@ -78,9 +79,17 @@ let package = Package(
         .testTarget(name: "SomnioDataTests", dependencies: ["SomnioData"]),
 
         .target(
+            name: "SomnioTheme",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log")
+            ]
+        ),
+
+        .target(
             name: "SomnioUI",
             dependencies: [
                 "SomnioCore",
+                "SomnioTheme",
                 .product(name: "Logging", package: "swift-log")
             ],
             resources: [.process("Resources/Localizable.xcstrings")]
@@ -115,6 +124,7 @@ let package = Package(
             dependencies: [
                 "SomnioCore",
                 "SomnioUI",
+                "SomnioTheme",
                 "SomnioScene3D",
                 "SomnioProtocol",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),

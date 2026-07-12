@@ -1,6 +1,6 @@
 import SomnioCore
 import SomnioProtocol
-import SomnioUI
+import SomnioTheme
 import SwiftUI
 
 /// Registration overlay — control inventory matches the legacy `RegistrationFenster`,

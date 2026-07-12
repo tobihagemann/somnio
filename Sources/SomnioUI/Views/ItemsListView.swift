@@ -1,4 +1,5 @@
 import SomnioCore
+import SomnioTheme
 import SwiftUI
 
 /// Inventory list with a name column, a display-only equip marker, and an "Items: N" footer.

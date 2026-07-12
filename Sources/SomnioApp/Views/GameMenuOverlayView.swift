@@ -1,4 +1,4 @@
-import SomnioUI
+import SomnioTheme
 import SwiftUI
 
 /// The Esc game menu layered over live play: Resume / Options / Leave Game / About.

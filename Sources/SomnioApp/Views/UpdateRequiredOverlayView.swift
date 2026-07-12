@@ -1,4 +1,4 @@
-import SomnioUI
+import SomnioTheme
 import SwiftUI
 
 /// Blocking overlay shown when the server's advertised protocol version disagrees with the
