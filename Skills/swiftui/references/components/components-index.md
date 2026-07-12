@@ -11,7 +11,7 @@ Use this file to find component-specific guidance. Each entry lists when to use 
 - Form and Settings: `form.md` — Use for settings, grouped inputs, and structured data entry.
 - macOS Settings: `macos-settings.md` — Use when building a macOS Settings window with SwiftUI's Settings scene.
 - macOS window management: `macos-windows.md` — Use for window sizing/resizability, frame persistence, fullscreen, `.hiddenTitleBar` custom chrome, and `Window`/`WindowGroup`/`UtilityWindow` scene choice.
-- macOS AppKit interop: `macos-views.md` — Use when wrapping AppKit in `NSViewRepresentable` (layout ownership, Coordinator) or handling security-scoped `fileImporter` URLs.
+- macOS AppKit interop: `macos-views.md` — Use when wrapping AppKit in `NSViewRepresentable` (layout ownership, Coordinator) or handling security-scoped `fileImporter` URLs, plus custom-UTI clipboard (`onCopyCommand`/`NSPasteboard`) and `DragGesture` cancellation.
 - Split views and columns: `split-views.md` — Use for iPad/macOS multi-column layouts or custom secondary columns.
 - List and Section: `list.md` — Use for feed-style content and settings rows.
 - ScrollView and Lazy stacks: `scrollview.md` — Use for custom layouts, horizontal scrollers, or grids.

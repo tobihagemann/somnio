@@ -380,7 +380,7 @@ End of example.
 - [references/components/lightweight-clients.md](references/components/lightweight-clients.md) — lightweight networking clients.
 - [references/components/macos-settings.md](references/components/macos-settings.md) — macOS Settings scene patterns.
 - [references/components/macos-windows.md](references/components/macos-windows.md) — macOS window sizing, frame persistence, fullscreen, `.hiddenTitleBar` chrome, `Window`/`WindowGroup`/`UtilityWindow` scenes.
-- [references/components/macos-views.md](references/components/macos-views.md) — AppKit interop: `NSViewRepresentable` layout ownership + Coordinator, and security-scoped file URLs from `fileImporter`.
+- [references/components/macos-views.md](references/components/macos-views.md) — AppKit interop: `NSViewRepresentable` layout ownership + Coordinator, security-scoped file URLs from `fileImporter`, custom-UTI clipboard, and `DragGesture` cancellation.
 - [references/components/matched-transitions.md](references/components/matched-transitions.md) — matched geometry transitions.
 - [references/components/media.md](references/components/media.md) — media playback components.
 - [references/components/menu-bar.md](references/components/menu-bar.md) — macOS menu bar components.
