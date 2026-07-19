@@ -1,0 +1,311 @@
+{
+  "collisionMasks" : [
+    {
+      "height" : 24,
+      "width" : 256,
+      "x" : 0,
+      "y" : 0
+    },
+    {
+      "height" : 24,
+      "width" : 40,
+      "x" : 8,
+      "y" : 28
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 52,
+      "y" : 4
+    },
+    {
+      "height" : 44,
+      "width" : 28,
+      "x" : 96,
+      "y" : 64
+    },
+    {
+      "height" : 44,
+      "width" : 28,
+      "x" : 96,
+      "y" : 108
+    },
+    {
+      "height" : 44,
+      "width" : 78,
+      "x" : 8,
+      "y" : 180
+    },
+    {
+      "height" : 32,
+      "width" : 38,
+      "x" : 88,
+      "y" : 32
+    },
+    {
+      "height" : 66,
+      "width" : 44,
+      "x" : 128,
+      "y" : 28
+    },
+    {
+      "height" : 66,
+      "width" : 44,
+      "x" : 180,
+      "y" : 28
+    },
+    {
+      "height" : 18,
+      "width" : 18,
+      "x" : 76,
+      "y" : 144
+    },
+    {
+      "height" : 42,
+      "width" : 44,
+      "x" : 96,
+      "y" : 168
+    },
+    {
+      "height" : 18,
+      "width" : 18,
+      "x" : 148,
+      "y" : 180
+    },
+    {
+      "height" : 18,
+      "width" : 18,
+      "x" : 106,
+      "y" : 220
+    },
+    {
+      "height" : 18,
+      "width" : 40,
+      "x" : 170,
+      "y" : 238
+    },
+    {
+      "height" : 44,
+      "width" : 42,
+      "x" : 212,
+      "y" : 190
+    },
+    {
+      "height" : 6,
+      "width" : 30,
+      "x" : 226,
+      "y" : 74
+    },
+    {
+      "height" : 6,
+      "width" : 30,
+      "x" : 226,
+      "y" : 176
+    }
+  ],
+  "dimensions" : {
+    "height" : 2,
+    "width" : 2
+  },
+  "floorMaterialID" : "wood-warm",
+  "light" : {
+    "brightness" : 100,
+    "indoor" : true
+  },
+  "monsterSpawns" : [
+
+  ],
+  "npcs" : [
+    {
+      "behaviorTag" : 0,
+      "dialogScript" : "Ah, $name! Setz dich ans Feuer.---Ein Bett ist frei, wenn die Träume dich müde machen.---Wer hier ruht, wacht auch hier wieder auf. So war es schon immer.",
+      "direction" : 90,
+      "figure" : 17,
+      "maskSize" : {
+        "height" : 48,
+        "width" : 32
+      },
+      "name" : "Quieta",
+      "spawnBoxSize" : {
+        "height" : 48,
+        "width" : 32
+      },
+      "spawnOrigin" : {
+        "x" : 60,
+        "y" : 88
+      }
+    }
+  ],
+  "objects" : [
+    {
+      "modelID" : "barrel-stack",
+      "priority" : 0,
+      "sourceHeight" : 24,
+      "sourceWidth" : 40,
+      "x" : 8,
+      "y" : 28
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 52,
+      "y" : 4
+    },
+    {
+      "modelID" : "counter",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 44,
+      "sourceWidth" : 28,
+      "x" : 96,
+      "y" : 64
+    },
+    {
+      "modelID" : "counter",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 44,
+      "sourceWidth" : 28,
+      "x" : 96,
+      "y" : 108
+    },
+    {
+      "modelID" : "keg",
+      "priority" : 0,
+      "sourceHeight" : 44,
+      "sourceWidth" : 78,
+      "x" : 8,
+      "y" : 180
+    },
+    {
+      "modelID" : "candle",
+      "priority" : 0,
+      "sourceHeight" : 10,
+      "sourceWidth" : 12,
+      "x" : 100,
+      "y" : 158
+    },
+    {
+      "modelID" : "chest",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 38,
+      "x" : 88,
+      "y" : 32
+    },
+    {
+      "modelID" : "bed",
+      "priority" : 0,
+      "rotation" : 270,
+      "sourceHeight" : 66,
+      "sourceWidth" : 44,
+      "x" : 128,
+      "y" : 28
+    },
+    {
+      "modelID" : "bed",
+      "priority" : 0,
+      "rotation" : 270,
+      "sourceHeight" : 66,
+      "sourceWidth" : 44,
+      "x" : 180,
+      "y" : 28
+    },
+    {
+      "modelID" : "rug",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 66,
+      "sourceWidth" : 44,
+      "x" : 170,
+      "y" : 100
+    },
+    {
+      "modelID" : "stool",
+      "priority" : 0,
+      "sourceHeight" : 18,
+      "sourceWidth" : 18,
+      "x" : 76,
+      "y" : 144
+    },
+    {
+      "modelID" : "round-table",
+      "priority" : 0,
+      "sourceHeight" : 42,
+      "sourceWidth" : 44,
+      "x" : 96,
+      "y" : 168
+    },
+    {
+      "modelID" : "stool",
+      "priority" : 0,
+      "sourceHeight" : 18,
+      "sourceWidth" : 18,
+      "x" : 148,
+      "y" : 180
+    },
+    {
+      "modelID" : "stool",
+      "priority" : 0,
+      "sourceHeight" : 18,
+      "sourceWidth" : 18,
+      "x" : 106,
+      "y" : 220
+    },
+    {
+      "modelID" : "bench",
+      "priority" : 0,
+      "sourceHeight" : 18,
+      "sourceWidth" : 40,
+      "x" : 170,
+      "y" : 238
+    },
+    {
+      "modelID" : "barrel",
+      "priority" : 0,
+      "rotation" : 270,
+      "sourceHeight" : 44,
+      "sourceWidth" : 42,
+      "x" : 212,
+      "y" : 190
+    },
+    {
+      "modelID" : "candle",
+      "priority" : 0,
+      "sourceHeight" : 10,
+      "sourceWidth" : 12,
+      "x" : 190,
+      "y" : 236
+    },
+    {
+      "modelID" : "door",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 96,
+      "sourceWidth" : 32,
+      "x" : 224,
+      "y" : 80
+    }
+  ],
+  "portals" : [
+    {
+      "direction" : 0,
+      "height" : 84,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 18,
+      "x" : 238,
+      "y" : 86
+    },
+    {
+      "direction" : 1,
+      "height" : 80,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 72,
+      "x" : 144,
+      "y" : 96
+    }
+  ],
+  "version" : 1
+}

@@ -13,17 +13,17 @@ import Testing
 /// so the SwiftPM `.copy` is owned by the shared test-support target and the integration
 /// package walks up to the repo root to read them as plain files.
 public enum IntegrationTestFixtures {
-    /// The three sectors every integration suite loads. Centralized so adding a fourth
-    /// fixture, renaming one, or reordering the dictionary literal happens in one place.
+    /// Every shipped sector fixture, keyed by name — the world every integration suite
+    /// loads. Centralized so adding a fixture, renaming one, or reordering the name list
+    /// happens in one place.
     public static func defaultSectors(callerFile: StaticString = #filePath) throws -> [String: Sector] {
-        let bibliothek = try mapFixture(named: "EdariaBibliothek", callerFile: callerFile)
-        let arena = try mapFixture(named: "EdariaArena", callerFile: callerFile)
-        let mitte = try mapFixture(named: "EdariaMitte", callerFile: callerFile)
-        return [
-            "EdariaBibliothek": bibliothek,
-            "EdariaArena": arena,
-            "EdariaMitte": mitte
+        let names = [
+            "EdariaArena", "EdariaBibliothek", "EdariaInn", "EdariaMitte",
+            "EdariaShop", "Nordwald", "Nordwiese"
         ]
+        return try Dictionary(uniqueKeysWithValues: names.map { name in
+            try (name, mapFixture(named: name, callerFile: callerFile))
+        })
     }
 
     public static func mapFixture(named name: String, callerFile: StaticString = #filePath) throws -> Sector {

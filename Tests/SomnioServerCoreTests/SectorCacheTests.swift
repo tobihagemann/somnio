@@ -14,7 +14,7 @@ struct SectorCacheTests {
         let cache = SectorCache()
         try await cache.load(from: Self.mapFixturesDirectory)
         let names = await cache.names()
-        #expect(names == ["EdariaArena", "EdariaBibliothek", "EdariaMitte"])
+        #expect(names == ["EdariaArena", "EdariaBibliothek", "EdariaInn", "EdariaMitte", "EdariaShop", "Nordwald", "Nordwiese"])
         let bibliothek = await cache.sector(named: "EdariaBibliothek")
         let resolved = try #require(bibliothek)
         #expect(resolved.name == "EdariaBibliothek")
@@ -25,7 +25,7 @@ struct SectorCacheTests {
         let cache = SectorCache()
         try await cache.load(from: Self.mapFixturesDirectory)
         let snapshot = await cache.snapshotByName()
-        #expect(snapshot.count == 3)
+        #expect(snapshot.count == 7)
         #expect(snapshot["EdariaArena"]?.monsterSpawns.count == 1)
     }
 

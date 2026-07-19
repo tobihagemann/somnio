@@ -1,0 +1,370 @@
+{
+  "collisionMasks" : [
+    {
+      "height" : 24,
+      "width" : 256,
+      "x" : 0,
+      "y" : 0
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 8,
+      "y" : 4
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 56,
+      "y" : 4
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 104,
+      "y" : 4
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 152,
+      "y" : 4
+    },
+    {
+      "height" : 20,
+      "width" : 48,
+      "x" : 200,
+      "y" : 4
+    },
+    {
+      "height" : 48,
+      "width" : 20,
+      "x" : 4,
+      "y" : 40
+    },
+    {
+      "height" : 48,
+      "width" : 20,
+      "x" : 4,
+      "y" : 100
+    },
+    {
+      "height" : 36,
+      "width" : 36,
+      "x" : 8,
+      "y" : 156
+    },
+    {
+      "height" : 44,
+      "width" : 42,
+      "x" : 8,
+      "y" : 200
+    },
+    {
+      "height" : 28,
+      "width" : 44,
+      "x" : 60,
+      "y" : 112
+    },
+    {
+      "height" : 28,
+      "width" : 44,
+      "x" : 104,
+      "y" : 112
+    },
+    {
+      "height" : 28,
+      "width" : 44,
+      "x" : 148,
+      "y" : 112
+    },
+    {
+      "height" : 46,
+      "width" : 50,
+      "x" : 202,
+      "y" : 32
+    },
+    {
+      "height" : 24,
+      "width" : 40,
+      "x" : 212,
+      "y" : 86
+    },
+    {
+      "height" : 28,
+      "width" : 28,
+      "x" : 224,
+      "y" : 118
+    },
+    {
+      "height" : 38,
+      "width" : 32,
+      "x" : 218,
+      "y" : 150
+    },
+    {
+      "height" : 12,
+      "width" : 16,
+      "x" : 236,
+      "y" : 192
+    },
+    {
+      "height" : 20,
+      "width" : 20,
+      "x" : 232,
+      "y" : 214
+    },
+    {
+      "height" : 18,
+      "width" : 24,
+      "x" : 188,
+      "y" : 214
+    },
+    {
+      "height" : 30,
+      "width" : 6,
+      "x" : 74,
+      "y" : 226
+    },
+    {
+      "height" : 30,
+      "width" : 6,
+      "x" : 176,
+      "y" : 226
+    }
+  ],
+  "dimensions" : {
+    "height" : 2,
+    "width" : 2
+  },
+  "floorMaterialID" : "wood-warm",
+  "light" : {
+    "brightness" : 100,
+    "indoor" : true
+  },
+  "monsterSpawns" : [
+
+  ],
+  "npcs" : [
+    {
+      "behaviorTag" : 0,
+      "dialogScript" : "Willkommen, $name!---Sieh dich ruhig um - viel ist es noch nicht.---Die nächste Lieferung kommt mit dem Händler aus dem Herbstwald. Bis dahin: nur das Nötigste.",
+      "direction" : 0,
+      "figure" : 17,
+      "maskSize" : {
+        "height" : 48,
+        "width" : 32
+      },
+      "name" : "Mercus",
+      "spawnBoxSize" : {
+        "height" : 48,
+        "width" : 32
+      },
+      "spawnOrigin" : {
+        "x" : 112,
+        "y" : 60
+      }
+    }
+  ],
+  "objects" : [
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 8,
+      "y" : 4
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 56,
+      "y" : 4
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 104,
+      "y" : 4
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 152,
+      "y" : 4
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 48,
+      "x" : 200,
+      "y" : 4
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 48,
+      "sourceWidth" : 20,
+      "x" : 4,
+      "y" : 40
+    },
+    {
+      "modelID" : "goods-shelf",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 48,
+      "sourceWidth" : 20,
+      "x" : 4,
+      "y" : 100
+    },
+    {
+      "modelID" : "cloth-bolts",
+      "priority" : 0,
+      "sourceHeight" : 36,
+      "sourceWidth" : 36,
+      "x" : 8,
+      "y" : 156
+    },
+    {
+      "modelID" : "barrel",
+      "priority" : 0,
+      "rotation" : 90,
+      "sourceHeight" : 44,
+      "sourceWidth" : 42,
+      "x" : 8,
+      "y" : 200
+    },
+    {
+      "modelID" : "counter",
+      "priority" : 0,
+      "sourceHeight" : 28,
+      "sourceWidth" : 44,
+      "x" : 60,
+      "y" : 112
+    },
+    {
+      "modelID" : "counter",
+      "priority" : 0,
+      "sourceHeight" : 28,
+      "sourceWidth" : 44,
+      "x" : 104,
+      "y" : 112
+    },
+    {
+      "modelID" : "counter",
+      "priority" : 0,
+      "sourceHeight" : 28,
+      "sourceWidth" : 44,
+      "x" : 148,
+      "y" : 112
+    },
+    {
+      "modelID" : "candle",
+      "priority" : 0,
+      "sourceHeight" : 10,
+      "sourceWidth" : 12,
+      "x" : 196,
+      "y" : 116
+    },
+    {
+      "modelID" : "crate-stack",
+      "priority" : 0,
+      "sourceHeight" : 46,
+      "sourceWidth" : 50,
+      "x" : 202,
+      "y" : 32
+    },
+    {
+      "modelID" : "barrel-stack",
+      "priority" : 0,
+      "sourceHeight" : 24,
+      "sourceWidth" : 40,
+      "x" : 212,
+      "y" : 86
+    },
+    {
+      "modelID" : "fish-barrel",
+      "priority" : 0,
+      "sourceHeight" : 28,
+      "sourceWidth" : 28,
+      "x" : 224,
+      "y" : 118
+    },
+    {
+      "modelID" : "chest",
+      "priority" : 0,
+      "rotation" : 270,
+      "sourceHeight" : 38,
+      "sourceWidth" : 32,
+      "x" : 218,
+      "y" : 150
+    },
+    {
+      "modelID" : "flour-sacks",
+      "priority" : 0,
+      "sourceHeight" : 12,
+      "sourceWidth" : 16,
+      "x" : 236,
+      "y" : 192
+    },
+    {
+      "modelID" : "berry-basket",
+      "priority" : 0,
+      "sourceHeight" : 20,
+      "sourceWidth" : 20,
+      "x" : 232,
+      "y" : 214
+    },
+    {
+      "modelID" : "apple-crate",
+      "priority" : 0,
+      "sourceHeight" : 18,
+      "sourceWidth" : 24,
+      "x" : 188,
+      "y" : 214
+    },
+    {
+      "modelID" : "rug",
+      "priority" : 0,
+      "sourceHeight" : 44,
+      "sourceWidth" : 66,
+      "x" : 95,
+      "y" : 160
+    },
+    {
+      "modelID" : "door",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 96,
+      "x" : 80,
+      "y" : 224
+    }
+  ],
+  "portals" : [
+    {
+      "direction" : 0,
+      "height" : 18,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 84,
+      "x" : 86,
+      "y" : 238
+    },
+    {
+      "direction" : 1,
+      "height" : 72,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 112,
+      "x" : 72,
+      "y" : 148
+    }
+  ],
+  "version" : 1
+}

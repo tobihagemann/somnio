@@ -1,0 +1,261 @@
+{
+  "collisionMasks" : [
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 0,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 128,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 256,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 384,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 1024,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 1152,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 1280,
+      "y" : 1504
+    },
+    {
+      "height" : 32,
+      "width" : 128,
+      "x" : 1408,
+      "y" : 1504
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 136,
+      "y" : 316
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 1352,
+      "y" : 380
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 232,
+      "y" : 1276
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 1256,
+      "y" : 1212
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 360,
+      "y" : 732
+    },
+    {
+      "height" : 36,
+      "width" : 48,
+      "x" : 1160,
+      "y" : 604
+    }
+  ],
+  "dimensions" : {
+    "height" : 12,
+    "width" : 12
+  },
+  "floorMaterialID" : "grass-meadow",
+  "floorPatches" : [
+    {
+      "floorMaterialID" : "cobble-town",
+      "height" : 128,
+      "width" : 512,
+      "x" : 512,
+      "y" : 1408
+    }
+  ],
+  "light" : {
+    "brightness" : 100,
+    "indoor" : false
+  },
+  "monsterSpawns" : [
+
+  ],
+  "npcs" : [
+
+  ],
+  "objects" : [
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 0,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 128,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 256,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 384,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 1024,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 1152,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 1280,
+      "y" : 1504
+    },
+    {
+      "modelID" : "stone-wall",
+      "priority" : 0,
+      "sourceHeight" : 32,
+      "sourceWidth" : 128,
+      "x" : 1408,
+      "y" : 1504
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 96,
+      "y" : 160
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 1312,
+      "y" : 224
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 192,
+      "y" : 1120
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 1216,
+      "y" : 1056
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 320,
+      "y" : 576
+    },
+    {
+      "modelID" : "pine-tree",
+      "priority" : 0,
+      "sourceHeight" : 192,
+      "sourceWidth" : 128,
+      "x" : 1120,
+      "y" : 448
+    }
+  ],
+  "portals" : [
+    {
+      "direction" : 0,
+      "height" : 16,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 512,
+      "x" : 512,
+      "y" : 1520
+    },
+    {
+      "direction" : 1,
+      "height" : 96,
+      "targetSectorName" : "EdariaMitte",
+      "width" : 160,
+      "x" : 688,
+      "y" : 1360
+    },
+    {
+      "direction" : 0,
+      "height" : 16,
+      "targetSectorName" : "Nordwald",
+      "width" : 256,
+      "x" : 640,
+      "y" : 0
+    },
+    {
+      "direction" : 1,
+      "height" : 96,
+      "targetSectorName" : "Nordwald",
+      "width" : 160,
+      "x" : 688,
+      "y" : 80
+    }
+  ],
+  "version" : 1
+}

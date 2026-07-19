@@ -1,7 +1,8 @@
 import Foundation
 
 /// Shared accessor for the `.somnio-sector` JSON sector fixtures (`EdariaArena`,
-/// `EdariaBibliothek`, `EdariaMitte`). The `Name` rawValue is the bare sector id (no extension),
+/// `EdariaBibliothek`, `EdariaInn`, `EdariaMitte`, `EdariaShop`, `Nordwald`, `Nordwiese`).
+/// The `Name` rawValue is the bare sector id (no extension),
 /// matching the filename-as-sector-id convention; `data(_:)` resolves the `.somnio-sector` file.
 /// Lives in a stand-alone resource target so unit tests in `SomnioCoreTests`,
 /// `SomnioServerCoreTests`, and `SomnioEditorTests` can load the same bytes without each
@@ -12,7 +13,11 @@ public enum MapFixtures {
     public enum Name: String, CaseIterable, Sendable {
         case edariaArena = "EdariaArena"
         case edariaBibliothek = "EdariaBibliothek"
+        case edariaInn = "EdariaInn"
         case edariaMitte = "EdariaMitte"
+        case edariaShop = "EdariaShop"
+        case nordwald = "Nordwald"
+        case nordwiese = "Nordwiese"
     }
 
     public enum FixtureError: Error, Equatable, Sendable {
