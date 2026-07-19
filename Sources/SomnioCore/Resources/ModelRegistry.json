@@ -12,7 +12,7 @@
           "expectedClips": [
             "Flying_Idle"
           ],
-          "stem": "Ghost"
+          "stem": "Gespenst"
         }
       }
     ],
@@ -30,7 +30,39 @@
             "Walking_A",
             "Running_A"
           ],
-          "stem": "Lorekeeper"
+          "stem": "Libus"
+        }
+      },
+      {
+        "figureRanges": [
+          {
+            "lower": 17,
+            "upper": 17
+          }
+        ],
+        "model": {
+          "expectedClips": [
+            "Idle",
+            "Walking_A",
+            "Running_A"
+          ],
+          "stem": "Kraemer"
+        }
+      },
+      {
+        "figureRanges": [
+          {
+            "lower": 18,
+            "upper": 18
+          }
+        ],
+        "model": {
+          "expectedClips": [
+            "Idle",
+            "Walking_A",
+            "Running_A"
+          ],
+          "stem": "KaempferMeister"
         }
       }
     ],
@@ -39,46 +71,6 @@
         "figureRanges": [
           {
             "lower": 0,
-            "upper": 11
-          }
-        ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A",
-            "Sneaking",
-            "Walking_Backwards",
-            "Running_Strafe_Left",
-            "Running_Strafe_Right"
-          ],
-          "stem": "Knight"
-        }
-      },
-      {
-        "figureRanges": [
-          {
-            "lower": 12,
-            "upper": 13
-          }
-        ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A",
-            "Sneaking",
-            "Walking_Backwards",
-            "Running_Strafe_Left",
-            "Running_Strafe_Right"
-          ],
-          "stem": "Rogue_Hooded"
-        }
-      },
-      {
-        "figureRanges": [
-          {
-            "lower": 14,
             "upper": 15
           }
         ],
@@ -92,7 +84,7 @@
             "Running_Strafe_Left",
             "Running_Strafe_Right"
           ],
-          "stem": "Mage"
+          "stem": "WachenKaempfer"
         }
       }
     ]
@@ -109,6 +101,14 @@
     {
       "id": "wood-warm",
       "stem": "WoodWarm"
+    },
+    {
+      "id": "forest-floor",
+      "stem": "ForestFloor"
+    },
+    {
+      "id": "cobble-town",
+      "stem": "CobbleTown"
     }
   ],
   "objectModels": [
@@ -194,6 +194,216 @@
       "model": {
         "expectedClips": [],
         "stem": "Tent"
+      }
+    },
+    {
+      "id": "pine-tree",
+      "model": {
+        "expectedClips": [],
+        "stem": "PineTree"
+      }
+    },
+    {
+      "id": "well",
+      "model": {
+        "expectedClips": [],
+        "stem": "Brunnen"
+      }
+    },
+    {
+      "id": "building-townhall",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingTownhall"
+      }
+    },
+    {
+      "id": "building-tavern",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingTavern"
+      }
+    },
+    {
+      "id": "building-barracks",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingBarracks"
+      }
+    },
+    {
+      "id": "building-tower",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingTower"
+      }
+    },
+    {
+      "id": "building-keep",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingKeep"
+      }
+    },
+    {
+      "id": "building-chapel",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingChapel"
+      }
+    },
+    {
+      "id": "building-house",
+      "model": {
+        "expectedClips": [],
+        "stem": "BuildingHouse"
+      }
+    },
+    {
+      "id": "stone-wall",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneWall"
+      }
+    },
+    {
+      "id": "stone-wall-corner",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneWallCorner"
+      }
+    },
+    {
+      "id": "counter",
+      "model": {
+        "expectedClips": [],
+        "stem": "Counter"
+      }
+    },
+    {
+      "id": "goods-shelf",
+      "model": {
+        "expectedClips": [],
+        "stem": "GoodsShelf"
+      }
+    },
+    {
+      "id": "crate-stack",
+      "model": {
+        "expectedClips": [],
+        "stem": "CrateStack"
+      }
+    },
+    {
+      "id": "barrel",
+      "model": {
+        "expectedClips": [],
+        "stem": "Barrel"
+      }
+    },
+    {
+      "id": "barrel-stack",
+      "model": {
+        "expectedClips": [],
+        "stem": "BarrelStack"
+      }
+    },
+    {
+      "id": "chest",
+      "model": {
+        "expectedClips": [],
+        "stem": "Chest"
+      }
+    },
+    {
+      "id": "keg",
+      "model": {
+        "expectedClips": [],
+        "stem": "Keg"
+      }
+    },
+    {
+      "id": "bench",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bench"
+      }
+    },
+    {
+      "id": "round-table",
+      "model": {
+        "expectedClips": [],
+        "stem": "RoundTable"
+      }
+    },
+    {
+      "id": "long-table",
+      "model": {
+        "expectedClips": [],
+        "stem": "LongTable"
+      }
+    },
+    {
+      "id": "stool",
+      "model": {
+        "expectedClips": [],
+        "stem": "Stool"
+      }
+    },
+    {
+      "id": "bed",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bed"
+      }
+    },
+    {
+      "id": "candle",
+      "model": {
+        "expectedClips": [],
+        "stem": "Candle"
+      }
+    },
+    {
+      "id": "rug",
+      "model": {
+        "expectedClips": [],
+        "stem": "Rug"
+      }
+    },
+    {
+      "id": "apple-crate",
+      "model": {
+        "expectedClips": [],
+        "stem": "AppleCrate"
+      }
+    },
+    {
+      "id": "fish-barrel",
+      "model": {
+        "expectedClips": [],
+        "stem": "FishBarrel"
+      }
+    },
+    {
+      "id": "flour-sacks",
+      "model": {
+        "expectedClips": [],
+        "stem": "FlourSacks"
+      }
+    },
+    {
+      "id": "cloth-bolts",
+      "model": {
+        "expectedClips": [],
+        "stem": "ClothBolts"
+      }
+    },
+    {
+      "id": "berry-basket",
+      "model": {
+        "expectedClips": [],
+        "stem": "BerryBasket"
       }
     }
   ]

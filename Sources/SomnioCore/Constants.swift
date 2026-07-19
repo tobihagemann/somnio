@@ -32,6 +32,7 @@ public enum SomnioConstants {
     public static let maxSectorPortals = 4096
     public static let maxSectorNPCs = 4096
     public static let maxSectorMonsterSpawns = 4096
+    public static let maxSectorFloorPatches = 4096
     /// Cap on the objects × collisionMasks product: the renderer's bottom-edge anchor scan is
     /// O(objects × collisionMasks), so the per-array caps alone would still admit ~16.7M
     /// pairings from a hostile sector with both arrays at their limits. 2^20 pairings bounds
@@ -43,6 +44,7 @@ public enum SomnioConstants {
     /// preflight a multi-gigabyte hostile file stalls the opener inside the parser. A sector
     /// at every content cap pretty-prints to a few megabytes, so 16 MiB is generous headroom.
     public static let maxSectorFileBytes = 16 * 1_048_576
+    // swiftlint:disable function_parameter_count
     /// The one content-count bound both untrusted sector seams gate on — the wire boundary
     /// (`Sector(_ wire:)`) and the disk codec (`MapCodec` via
     /// `SectorBody.hasContentCountsWithinBounds`) — mirroring how they share
@@ -52,13 +54,17 @@ public enum SomnioConstants {
         collisionMaskCount: Int,
         portalCount: Int,
         npcCount: Int,
-        monsterSpawnCount: Int
+        monsterSpawnCount: Int,
+        floorPatchCount: Int
     ) -> Bool {
         objectCount <= maxSectorObjects && collisionMaskCount <= maxSectorCollisionMasks
             && objectCount * collisionMaskCount <= maxSectorAnchorScanPairings
             && portalCount <= maxSectorPortals && npcCount <= maxSectorNPCs
             && monsterSpawnCount <= maxSectorMonsterSpawns
+            && floorPatchCount <= maxSectorFloorPatches
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// Byte cap on a wire-supplied entity display name the renderer rasterizes into a name
     /// plaque, derived from the protocol's identifier cap that honest servers already

@@ -42,6 +42,8 @@ public struct WireObject: Codable, Sendable, Equatable, Hashable {
     public var sourceWidth: Int16
     public var sourceHeight: Int16
     public var priority: Int16
+    /// Yaw in degrees counter-clockwise seen from above; 0 = as authored.
+    public var rotation: Int16
 
     public init(
         x: Int16,
@@ -49,7 +51,8 @@ public struct WireObject: Codable, Sendable, Equatable, Hashable {
         modelID: String,
         sourceWidth: Int16,
         sourceHeight: Int16,
-        priority: Int16
+        priority: Int16,
+        rotation: Int16 = 0
     ) {
         self.x = x
         self.y = y
@@ -57,6 +60,7 @@ public struct WireObject: Codable, Sendable, Equatable, Hashable {
         self.sourceWidth = sourceWidth
         self.sourceHeight = sourceHeight
         self.priority = priority
+        self.rotation = rotation
     }
 }
 
@@ -187,6 +191,22 @@ public struct WireMonsterSpawn: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+public struct WireFloorPatch: Codable, Sendable, Equatable, Hashable {
+    public var floorMaterialID: String
+    public var x: Int16
+    public var y: Int16
+    public var width: Int16
+    public var height: Int16
+
+    public init(floorMaterialID: String, x: Int16, y: Int16, width: Int16, height: Int16) {
+        self.floorMaterialID = floorMaterialID
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
 public struct WireSector: Codable, Sendable, Equatable, Hashable {
     public var name: String
     public var version: Int16
@@ -198,6 +218,7 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
     public var portals: [WireSectorPortal]
     public var npcs: [WireNPC]
     public var monsterSpawns: [WireMonsterSpawn]
+    public var floorPatches: [WireFloorPatch]
 
     public init(
         name: String,
@@ -209,7 +230,8 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
         collisionMasks: [WireCollisionMask],
         portals: [WireSectorPortal],
         npcs: [WireNPC],
-        monsterSpawns: [WireMonsterSpawn]
+        monsterSpawns: [WireMonsterSpawn],
+        floorPatches: [WireFloorPatch] = []
     ) {
         self.name = name
         self.version = version
@@ -221,6 +243,7 @@ public struct WireSector: Codable, Sendable, Equatable, Hashable {
         self.portals = portals
         self.npcs = npcs
         self.monsterSpawns = monsterSpawns
+        self.floorPatches = floorPatches
     }
 }
 

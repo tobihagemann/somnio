@@ -16,17 +16,22 @@ import Testing
 @MainActor
 struct WorldScene3DLifecycleTests {
     private static let persistentChildren = 4 // camera + void backdrop + sun + ambient
+    /// The up-axis rotation a converted USDZ root carries — the stub's resolved object
+    /// models ship with it (see `StubModelAssets.object(forID:)`).
+    fileprivate static let intrinsicModelOrientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
 
     /// Stub asset source whose lookups resolve only after `prewarm()` — the warm-gap double
-    /// for re-resolution tests. The pack-absent case is `resolves: false` forever.
+    /// for re-resolution tests. The pack-absent case is `resolves: false` forever; the
+    /// eager-cache case (`resolvesImmediately`) resolves from the first lookup.
     private final class StubModelAssets: ModelAssets {
         private let resolvesAfterPrewarm: Bool
         private let floorTexture: TextureResource?
-        private var warmed = false
+        private var warmed: Bool
 
-        init(resolvesAfterPrewarm: Bool = true, floorTexture: TextureResource? = nil) {
+        init(resolvesAfterPrewarm: Bool = true, resolvesImmediately: Bool = false, floorTexture: TextureResource? = nil) {
             self.resolvesAfterPrewarm = resolvesAfterPrewarm
             self.floorTexture = floorTexture
+            self.warmed = resolvesImmediately
         }
 
         func prewarm() async {
@@ -38,7 +43,13 @@ struct WorldScene3DLifecycleTests {
         }
 
         func object(forID _: String) -> Entity? {
-            warmed ? Entity() : nil
+            guard warmed else { return nil }
+            // A converted USDZ root carries its up-axis rotation on the model child, so
+            // resolved models ship pre-rotated — the rotation-guard tests then catch a yaw
+            // that overwrites (instead of composing onto) the model's own orientation.
+            let entity = Entity()
+            entity.orientation = intrinsicModelOrientation
+            return entity
         }
 
         func floorMaterialTexture(forID _: String) -> TextureResource? {
@@ -50,7 +61,7 @@ struct WorldScene3DLifecycleTests {
         }
     }
 
-    private func tinySector(objectCount: Int = 0) -> Sector {
+    private func tinySector(objectCount: Int = 0, objectRotation: Int16 = 0, floorPatchCount: Int = 0) -> Sector {
         let objects = (0 ..< objectCount).map { index in
             Object(
                 x: Int16(index * 64),
@@ -58,8 +69,12 @@ struct WorldScene3DLifecycleTests {
                 modelID: "bookshelf-ornate",
                 sourceWidth: 64,
                 sourceHeight: 96,
-                priority: 0
+                priority: 0,
+                rotation: objectRotation
             )
+        }
+        let floorPatches = (0 ..< floorPatchCount).map { index in
+            FloorPatch(floorMaterialID: "cobble-town", x: Int16(index * 64), y: 0, width: 64, height: 64)
         }
         return Sector(
             name: "Test",
@@ -67,7 +82,8 @@ struct WorldScene3DLifecycleTests {
             dimensions: GridSize(width: 4, height: 4),
             floorMaterialID: "grass-meadow",
             light: LightSetting(indoor: true, brightness: 100),
-            objects: objects
+            objects: objects,
+            floorPatches: floorPatches
         )
     }
 
@@ -120,6 +136,42 @@ struct WorldScene3DLifecycleTests {
         scene.load(sector: tinySector(objectCount: 2), awaitingPlayerPlacement: false)
         #expect(scene.rootEntity.children.count == Self.persistentChildren + 1)
         #expect(scene._sectorRootChildCount() == 3) // floor + 2 objects
+    }
+
+    @Test func `loading a sector adds one overlay quad per floor patch`() {
+        let scene = scene()
+        scene.load(sector: tinySector(floorPatchCount: 2), awaitingPlayerPlacement: false)
+        #expect(scene._sectorRootChildCount() == 3) // floor + 2 patches
+        #expect(scene._floorPatchFallbackFlags() == [true, true])
+    }
+
+    @Test func `a second load clears stale floor-patch render states`() {
+        let scene = scene()
+        scene.load(sector: tinySector(floorPatchCount: 2), awaitingPlayerPlacement: false)
+        scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
+        #expect(scene._floorPatchFallbackFlags().isEmpty)
+        #expect(scene._sectorRootChildCount() == 1) // fresh floor only; old patches gone
+    }
+
+    @Test func `abutting same-material floor patches continue one seamless UV grid`() {
+        // Sector-space UVs are the whole point of the custom patch mesh: a neighbor's UV
+        // origin must equal this patch's origin + span or the texture phase resets at the seam.
+        let left = FloorPatch(floorMaterialID: "cobble-town", x: 0, y: 128, width: 64, height: 64)
+        let right = FloorPatch(floorMaterialID: "cobble-town", x: 64, y: 128, width: 128, height: 64)
+        let leftRect = WorldScene3D.floorPatchUVRect(for: left, textureAspect: 1)
+        let rightRect = WorldScene3D.floorPatchUVRect(for: right, textureAspect: 1)
+        #expect(abs(leftRect.origin.x + leftRect.span.x - rightRect.origin.x) < 0.0001)
+        #expect(leftRect.origin.y == rightRect.origin.y)
+    }
+
+    @Test func `a non-square floor texture shrinks the patch V repeat by its aspect`() {
+        let patch = FloorPatch(floorMaterialID: "cobble-town", x: 0, y: 64, width: 64, height: 64)
+        let square = WorldScene3D.floorPatchUVRect(for: patch, textureAspect: 1)
+        let tall = WorldScene3D.floorPatchUVRect(for: patch, textureAspect: 2)
+        #expect(abs(tall.span.y - square.span.y / 2) < 0.0001)
+        #expect(abs(tall.origin.y - square.origin.y / 2) < 0.0001)
+        #expect(tall.span.x == square.span.x)
+        #expect(tall.origin.x == square.origin.x)
     }
 
     @Test func `loading a second sector replaces the sector root rather than stacking`() {
@@ -215,11 +267,60 @@ struct WorldScene3DLifecycleTests {
         #expect(anchor == 96)
     }
 
-    private func object(x: Int16, y: Int16, width: Int16, height: Int16) -> Object {
+    private func object(x: Int16, y: Int16, width: Int16, height: Int16, rotation: Int16 = 0) -> Object {
         Object(
             x: x, y: y, modelID: "bookshelf",
-            sourceWidth: width, sourceHeight: height, priority: 0
+            sourceWidth: width, sourceHeight: height, priority: 0, rotation: rotation
         )
+    }
+
+    @Test func `objectOrientation maps authored degrees to a counter-clockwise yaw from above`() {
+        // Models are normalized with their door/long axis on +X (east); rotation is
+        // counter-clockwise seen from above, so 90° faces the +X face north (−Z) and 270°
+        // south (+Z) — a sign flip would swing every rotated door the wrong way.
+        let unrotated = WorldScene3D.objectOrientation(for: object(x: 0, y: 0, width: 96, height: 32))
+        let east = unrotated.act(SIMD3<Float>(1, 0, 0))
+        #expect(length(east - SIMD3<Float>(1, 0, 0)) < 0.0001)
+        let north = WorldScene3D.objectOrientation(for: object(x: 0, y: 0, width: 32, height: 96, rotation: 90))
+            .act(SIMD3<Float>(1, 0, 0))
+        #expect(length(north - SIMD3<Float>(0, 0, -1)) < 0.0001)
+        let south = WorldScene3D.objectOrientation(for: object(x: 0, y: 0, width: 32, height: 96, rotation: 270))
+            .act(SIMD3<Float>(1, 0, 0))
+        #expect(length(south - SIMD3<Float>(0, 0, 1)) < 0.0001)
+    }
+
+    @Test func `a rotated object's placeholder stays unrotated until the real model heals in`() async throws {
+        // The placeholder box is built from the already-rotated footprint extents, so the
+        // authored yaw must reach only the resolved model — rotating the placeholder too
+        // would swap its axes for 90°/270° placements and break the south-edge anchor.
+        let scene = scene()
+        scene.load(sector: tinySector(objectCount: 1, objectRotation: 90), awaitingPlayerPlacement: false)
+        let placeholder = try #require(scene._placedObjectProbes().first)
+        #expect(placeholder.isPlaceholder)
+        #expect(placeholder.modelOrientation.angle == 0)
+        await scene.prewarmModels()
+        let healed = try #require(scene._placedObjectProbes().first)
+        #expect(!healed.isPlaceholder)
+        // The yaw must compose ONTO the model's intrinsic up-axis rotation (an overwrite
+        // would break every converted USDZ), so the expected orientation is the product.
+        #expect(Self.isSameRotation(healed.modelOrientation, Self.expectedComposedYaw))
+    }
+
+    @Test func `an eagerly resolved rotated object carries the authored yaw`() throws {
+        let scene = scene(assets: StubModelAssets(resolvesImmediately: true))
+        scene.load(sector: tinySector(objectCount: 1, objectRotation: 90), awaitingPlayerPlacement: false)
+        let probe = try #require(scene._placedObjectProbes().first)
+        #expect(!probe.isPlaceholder)
+        #expect(Self.isSameRotation(probe.modelOrientation, Self.expectedComposedYaw))
+    }
+
+    /// The 90° authored yaw composed onto the stub model's intrinsic up-axis rotation.
+    private static let expectedComposedYaw =
+        simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 1, 0)) * intrinsicModelOrientation
+
+    /// Quaternion equality up to sign (q and −q encode the same rotation).
+    private static func isSameRotation(_ lhs: simd_quatf, _ rhs: simd_quatf) -> Bool {
+        abs(dot(lhs.vector, rhs.vector)) > 0.9999
     }
 
     @Test func `movementPose maps player tempo to sneak-walk-run and never makes NPCs skulk`() {
@@ -700,6 +801,28 @@ struct WorldScene3DLifecycleTests {
         scene.load(sector: tinySector(), awaitingPlayerPlacement: false)
         await scene.prewarmModels()
         #expect(scene._floorIsFallback() == true)
+    }
+
+    @Test func `prewarm completion heals fallback floor patches with their now-cached texture`() async throws {
+        let assets = try StubModelAssets(floorTexture: tinyFloorTexture())
+        let scene = scene(assets: assets)
+        // Loading before the texture cache warms renders every patch as the gray fallback.
+        scene.load(sector: tinySector(floorPatchCount: 2), awaitingPlayerPlacement: false)
+        #expect(scene._floorPatchFallbackFlags() == [true, true])
+        #expect(scene._floorPatchMaterialsAreTextured() == [false, false])
+        await scene.prewarmModels()
+        // Both the flags and the live materials flip — asserting the materials catches a heal
+        // that clears the flags without rebuilding the patch model components.
+        #expect(scene._floorPatchFallbackFlags() == [false, false])
+        #expect(scene._floorPatchMaterialsAreTextured() == [true, true])
+    }
+
+    @Test func `an absent pack leaves floor patches in fallback after prewarm without trapping`() async {
+        let assets = StubModelAssets(resolvesAfterPrewarm: false)
+        let scene = scene(assets: assets)
+        scene.load(sector: tinySector(floorPatchCount: 1), awaitingPlayerPlacement: false)
+        await scene.prewarmModels()
+        #expect(scene._floorPatchFallbackFlags() == [true])
     }
 
     @Test func `re-placing an id with a changed kind re-resolves its model`() throws {

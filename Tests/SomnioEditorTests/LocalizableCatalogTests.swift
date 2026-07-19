@@ -44,6 +44,7 @@ struct LocalizableCatalogTests {
         "Model",
         "Floor material",
         "Priority",
+        "Rotation",
         "Target sector",
         "Figure",
         "Facing",

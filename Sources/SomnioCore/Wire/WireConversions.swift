@@ -50,7 +50,8 @@ public extension Object {
             x: wire.x, y: wire.y,
             modelID: wire.modelID,
             sourceWidth: wire.sourceWidth, sourceHeight: wire.sourceHeight,
-            priority: wire.priority
+            priority: wire.priority,
+            rotation: wire.rotation
         )
     }
 
@@ -59,7 +60,8 @@ public extension Object {
             x: x, y: y,
             modelID: modelID,
             sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-            priority: priority
+            priority: priority,
+            rotation: rotation
         )
     }
 }
@@ -73,6 +75,18 @@ public extension CollisionMask {
 
     var asWire: WireCollisionMask {
         WireCollisionMask(x: x, y: y, width: width, height: height)
+    }
+}
+
+// MARK: - FloorPatch
+
+public extension FloorPatch {
+    init(_ wire: WireFloorPatch) {
+        self.init(floorMaterialID: wire.floorMaterialID, x: wire.x, y: wire.y, width: wire.width, height: wire.height)
+    }
+
+    var asWire: WireFloorPatch {
+        WireFloorPatch(floorMaterialID: floorMaterialID, x: x, y: y, width: width, height: height)
     }
 }
 
@@ -106,7 +120,7 @@ public extension SectorPortal {
 public enum WireConversionError: Error, Equatable, Sendable {
     case unknownPortalDirection(Int)
     case sectorDimensionsOutOfRange(width: Int16, height: Int16)
-    case sectorContentCountsOutOfRange(objects: Int, collisionMasks: Int, portals: Int, npcs: Int, monsterSpawns: Int)
+    case sectorContentCountsOutOfRange(objects: Int, collisionMasks: Int, portals: Int, npcs: Int, monsterSpawns: Int, floorPatches: Int)
 }
 
 // MARK: - NPC
@@ -187,11 +201,13 @@ public extension Sector {
             collisionMaskCount: wire.collisionMasks.count,
             portalCount: wire.portals.count,
             npcCount: wire.npcs.count,
-            monsterSpawnCount: wire.monsterSpawns.count
+            monsterSpawnCount: wire.monsterSpawns.count,
+            floorPatchCount: wire.floorPatches.count
         ) else {
             throw WireConversionError.sectorContentCountsOutOfRange(
                 objects: wire.objects.count, collisionMasks: wire.collisionMasks.count,
-                portals: wire.portals.count, npcs: wire.npcs.count, monsterSpawns: wire.monsterSpawns.count
+                portals: wire.portals.count, npcs: wire.npcs.count, monsterSpawns: wire.monsterSpawns.count,
+                floorPatches: wire.floorPatches.count
             )
         }
         try self.init(
@@ -204,7 +220,8 @@ public extension Sector {
             collisionMasks: wire.collisionMasks.map(CollisionMask.init),
             portals: wire.portals.map(SectorPortal.init),
             npcs: wire.npcs.map(NPC.init),
-            monsterSpawns: wire.monsterSpawns.map(MonsterSpawn.init)
+            monsterSpawns: wire.monsterSpawns.map(MonsterSpawn.init),
+            floorPatches: wire.floorPatches.map(FloorPatch.init)
         )
     }
 
@@ -219,7 +236,8 @@ public extension Sector {
             collisionMasks: collisionMasks.map(\.asWire),
             portals: portals.map(\.asWire),
             npcs: npcs.map(\.asWire),
-            monsterSpawns: monsterSpawns.map(\.asWire)
+            monsterSpawns: monsterSpawns.map(\.asWire),
+            floorPatches: floorPatches.map(\.asWire)
         )
     }
 }

@@ -209,28 +209,34 @@ struct MapCodecFailureTests {
         #expect(atCap.hasContentCountsWithinBounds)
     }
 
-    @Test func `at-cap portal, npc, and monster-spawn counts decode`() throws {
+    @Test func `at-cap portal, npc, monster-spawn, and floor-patch counts decode`() throws {
         // The exact caps still decode, guarding each new `<=` against an off-by-one.
         let atCap = try MapCodec.read(Self.contentCountJSON(
             portalCount: SomnioConstants.maxSectorPortals,
             npcCount: SomnioConstants.maxSectorNPCs,
-            monsterSpawnCount: SomnioConstants.maxSectorMonsterSpawns
+            monsterSpawnCount: SomnioConstants.maxSectorMonsterSpawns,
+            floorPatchCount: SomnioConstants.maxSectorFloorPatches
         ))
         #expect(atCap.hasContentCountsWithinBounds)
     }
 
     @Test(arguments: [
-        (SomnioConstants.maxSectorPortals + 1, 0, 0),
-        (0, SomnioConstants.maxSectorNPCs + 1, 0),
-        (0, 0, SomnioConstants.maxSectorMonsterSpawns + 1)
+        (SomnioConstants.maxSectorPortals + 1, 0, 0, 0),
+        (0, SomnioConstants.maxSectorNPCs + 1, 0, 0),
+        (0, 0, SomnioConstants.maxSectorMonsterSpawns + 1, 0),
+        (0, 0, 0, SomnioConstants.maxSectorFloorPatches + 1)
     ])
-    func `over-cap portal, npc, and monster-spawn counts throw on read`(portalCount: Int, npcCount: Int, monsterSpawnCount: Int) {
-        // Portals, NPCs, and monster spawns each drive per-record work on load (overlay
-        // rects, spawn/dialog runtimes), so a hostile file can't smuggle unbounded arrays
-        // through the two seams the codec shares with the wire boundary.
+    func `over-cap portal, npc, monster-spawn, and floor-patch counts throw on read`(
+        portalCount: Int, npcCount: Int, monsterSpawnCount: Int, floorPatchCount: Int
+    ) {
+        // Portals, NPCs, monster spawns, and floor patches each drive per-record work on
+        // load (overlay rects, spawn/dialog runtimes, patch meshes), so a hostile file
+        // can't smuggle unbounded arrays through the two seams the codec shares with the
+        // wire boundary.
         #expect(throws: DecodingError.self) {
             try MapCodec.read(Self.contentCountJSON(
-                portalCount: portalCount, npcCount: npcCount, monsterSpawnCount: monsterSpawnCount
+                portalCount: portalCount, npcCount: npcCount,
+                monsterSpawnCount: monsterSpawnCount, floorPatchCount: floorPatchCount
             ))
         }
     }
@@ -251,6 +257,20 @@ struct MapCodecFailureTests {
         #expect(throws: EncodingError.self) { try MapCodec.write(body) }
     }
 
+    @Test func `over-cap floor-patch counts throw on write`() {
+        let body = SectorBody(
+            version: 1,
+            dimensions: GridSize(width: 4, height: 4),
+            floorMaterialID: "grass-meadow",
+            light: LightSetting(indoor: false, brightness: 0),
+            floorPatches: Array(
+                repeating: FloorPatch(floorMaterialID: "cobble-town", x: 0, y: 0, width: 1, height: 1),
+                count: SomnioConstants.maxSectorFloorPatches + 1
+            )
+        )
+        #expect(throws: EncodingError.self) { try MapCodec.write(body) }
+    }
+
     /// A minimal sector JSON carrying repeated copies of one record per array, assembled
     /// textually so the over-cap cases can't be blocked by the writer.
     private static func contentCountJSON(
@@ -258,7 +278,8 @@ struct MapCodecFailureTests {
         maskCount: Int = 0,
         portalCount: Int = 0,
         npcCount: Int = 0,
-        monsterSpawnCount: Int = 0
+        monsterSpawnCount: Int = 0,
+        floorPatchCount: Int = 0
     ) -> Data {
         let object = """
         {"x": 0, "y": 0, "modelID": "door", "sourceWidth": 1, "sourceHeight": 1, "priority": 0}
@@ -279,6 +300,9 @@ struct MapCodecFailureTests {
         "spawnedMonsterSize": {"width": 1, "height": 1}, "name": "Gespenst", "figure": 0, \
         "bounded": false, "spawnHP": 100, "spawnBalance": 100, "spawnMana": 100, "aiScriptIndex": 0}
         """
+        let floorPatch = """
+        {"floorMaterialID": "cobble-town", "x": 0, "y": 0, "width": 1, "height": 1}
+        """
         let json = """
         {
           "version": 1,
@@ -289,7 +313,8 @@ struct MapCodecFailureTests {
           "collisionMasks": [\(Array(repeating: mask, count: maskCount).joined(separator: ","))],
           "portals": [\(Array(repeating: portal, count: portalCount).joined(separator: ","))],
           "npcs": [\(Array(repeating: npc, count: npcCount).joined(separator: ","))],
-          "monsterSpawns": [\(Array(repeating: monsterSpawn, count: monsterSpawnCount).joined(separator: ","))]
+          "monsterSpawns": [\(Array(repeating: monsterSpawn, count: monsterSpawnCount).joined(separator: ","))],
+          "floorPatches": [\(Array(repeating: floorPatch, count: floorPatchCount).joined(separator: ","))]
         }
         """
         return Data(json.utf8)

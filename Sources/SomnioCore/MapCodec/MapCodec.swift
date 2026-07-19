@@ -35,7 +35,7 @@ public enum MapCodec {
         guard body.hasContentCountsWithinBounds else {
             throw DecodingError.dataCorrupted(DecodingError.Context(
                 codingPath: [],
-                debugDescription: "sector content counts out of range: \(body.objects.count) objects, \(body.collisionMasks.count) collision masks, \(body.portals.count) portals, \(body.npcs.count) npcs, \(body.monsterSpawns.count) monster spawns"
+                debugDescription: "sector content counts out of range: \(body.objects.count) objects, \(body.collisionMasks.count) collision masks, \(body.portals.count) portals, \(body.npcs.count) npcs, \(body.monsterSpawns.count) monster spawns, \(body.floorPatches.count) floor patches"
             ))
         }
         return body
@@ -51,7 +51,7 @@ public enum MapCodec {
         guard sector.hasContentCountsWithinBounds else {
             throw EncodingError.invalidValue(sector, EncodingError.Context(
                 codingPath: [],
-                debugDescription: "sector content counts out of range: \(sector.objects.count) objects, \(sector.collisionMasks.count) collision masks, \(sector.portals.count) portals, \(sector.npcs.count) npcs, \(sector.monsterSpawns.count) monster spawns"
+                debugDescription: "sector content counts out of range: \(sector.objects.count) objects, \(sector.collisionMasks.count) collision masks, \(sector.portals.count) portals, \(sector.npcs.count) npcs, \(sector.monsterSpawns.count) monster spawns, \(sector.floorPatches.count) floor patches"
             ))
         }
         let encoder = JSONEncoder()

@@ -35,6 +35,11 @@ struct WireConversionsTests {
         #expect(CollisionMask(m.asWire) == m)
     }
 
+    @Test func `floor patch round trip`() {
+        let p = FloorPatch(floorMaterialID: "cobble-town", x: 1, y: 2, width: 3, height: 4)
+        #expect(FloorPatch(p.asWire) == p)
+    }
+
     @Test func `sector portal round trip preserves direction`() throws {
         for direction in PortalDirection.allCases {
             let p = SectorPortal(x: 0, y: 0, width: 1, height: 1,
@@ -167,7 +172,7 @@ struct WireConversionsTests {
         let maskCount = SomnioConstants.maxSectorAnchorScanPairings / SomnioConstants.maxSectorObjects + 1
         let wire = Self.wireSector(objectCount: objectCount, maskCount: maskCount)
         #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
-            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0
+            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0, floorPatches: 0
         )) {
             try Sector(wire)
         }
@@ -182,7 +187,7 @@ struct WireConversionsTests {
         // server could otherwise freeze the client with a single frame-sized sector.
         let wire = Self.wireSector(objectCount: objectCount, maskCount: maskCount)
         #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
-            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0
+            objects: objectCount, collisionMasks: maskCount, portals: 0, npcs: 0, monsterSpawns: 0, floorPatches: 0
         )) {
             try Sector(wire)
         }
@@ -198,7 +203,7 @@ struct WireConversionsTests {
         // spawn/dialog runtimes), so they share the same content-count gate.
         let wire = Self.wireSector(portalCount: portalCount, npcCount: npcCount, monsterSpawnCount: monsterSpawnCount)
         #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
-            objects: 0, collisionMasks: 0, portals: portalCount, npcs: npcCount, monsterSpawns: monsterSpawnCount
+            objects: 0, collisionMasks: 0, portals: portalCount, npcs: npcCount, monsterSpawns: monsterSpawnCount, floorPatches: 0
         )) {
             try Sector(wire)
         }
@@ -214,12 +219,25 @@ struct WireConversionsTests {
         ).asWire
     }
 
+    @Test func `sector init throws on floor patch counts over the cap`() {
+        // Floor patches drive per-record mesh + material work on load, so they share the
+        // same content-count gate as every other sector record array.
+        let floorPatchCount = SomnioConstants.maxSectorFloorPatches + 1
+        let wire = Self.wireSector(floorPatchCount: floorPatchCount)
+        #expect(throws: WireConversionError.sectorContentCountsOutOfRange(
+            objects: 0, collisionMasks: 0, portals: 0, npcs: 0, monsterSpawns: 0, floorPatches: floorPatchCount
+        )) {
+            try Sector(wire)
+        }
+    }
+
     private static func wireSector(
         objectCount: Int = 0,
         maskCount: Int = 0,
         portalCount: Int = 0,
         npcCount: Int = 0,
-        monsterSpawnCount: Int = 0
+        monsterSpawnCount: Int = 0,
+        floorPatchCount: Int = 0
     ) -> WireSector {
         Sector(
             name: "EdariaArena",
@@ -253,6 +271,10 @@ struct WireConversionsTests {
                                         name: "Gespenst", figure: 0, bounded: false,
                                         spawnHP: 100, spawnBalance: 100, spawnMana: 100, aiScriptIndex: 0),
                 count: monsterSpawnCount
+            ),
+            floorPatches: Array(
+                repeating: FloorPatch(floorMaterialID: "stone-arena", x: 0, y: 0, width: 1, height: 1),
+                count: floorPatchCount
             )
         ).asWire
     }

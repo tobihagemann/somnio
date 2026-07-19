@@ -152,6 +152,14 @@ import SomnioCore
         var isFallback: Bool
     }
 
+    /// Per-patch analog of `FloorRenderState`. Healing rebuilds mesh and material together
+    /// because the patch mesh's sector-space UVs depend on the texture's aspect ratio.
+    private struct FloorPatchRenderState {
+        let entity: ModelEntity
+        let patch: FloorPatch
+        var isFallback: Bool
+    }
+
     /// Idle threshold: an entity counts as moving for this long after its last position change.
     private static let motionGraceWindow: TimeInterval = 0.15
     /// Upper bound on one tick's dt so a stall cannot teleport tweens or the walk clock.
@@ -220,6 +228,7 @@ import SomnioCore
     private var placedObjects: [PlacedObject] = []
     /// `nil` before the first load and after `showSplash`.
     private var floorRenderState: FloorRenderState?
+    private var floorPatchRenderStates: [FloorPatchRenderState] = []
     /// Editor-only authoring gizmos (record rects, selection highlight, grid), parented under
     /// `sectorRoot` so a sector swap tears them down with everything else sector-scoped.
     /// Internal (not private) so the overlay extension in `AuthoringOverlay.swift` can own the
@@ -466,6 +475,7 @@ import SomnioCore
         speechBubbles.removeAll()
         placedObjects.removeAll()
         floorRenderState = nil
+        floorPatchRenderStates.removeAll()
         authoringOverlayRoot = nil
         cameraFollowID = nil
         focusCamera(on: .zero)
@@ -542,6 +552,12 @@ import SomnioCore
             depthMeters: depthMeters,
             isFallback: texture == nil
         )
+        floorPatchRenderStates = sector.floorPatches.map { patch in
+            let patchTexture = modelAssets.floorMaterialTexture(forID: patch.floorMaterialID)
+            let entity = Self.floorPatchEntity(for: patch, texture: patchTexture)
+            root.addChild(entity)
+            return FloorPatchRenderState(entity: entity, patch: patch, isFallback: patchTexture == nil)
+        }
         return center
     }
 
@@ -549,35 +565,134 @@ import SomnioCore
     /// tint when the texture is not (yet) cached. Shared by `makeFloor` and the post-prewarm
     /// re-tint so a healed floor is byte-for-byte the eager-load result.
     private static func floorMaterial(texture: TextureResource?, widthMeters: Float, depthMeters: Float) -> PhysicallyBasedMaterial {
+        var material = matteFloorMaterial(texture: texture)
+        guard let texture else { return material }
+        // Non-square source textures (plank strips) keep their authored aspect: the v
+        // repeat shrinks with the texture's height/width ratio.
+        material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
+            widthMeters / Self.floorMaterialTileMeters,
+            depthMeters / (Self.floorMaterialTileMeters * textureAspect(texture))
+        ))
+        return material
+    }
+
+    /// Matte PBR base shared by the floor plane and every floor patch: the texture over full
+    /// roughness with the repeat sampler, or the solid gray tint while the texture is not
+    /// (yet) cached — one place, so the base floor and its patches can't silently diverge.
+    private static func matteFloorMaterial(texture: TextureResource?) -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
         material.roughness = .init(floatLiteral: 1)
         material.metallic = .init(floatLiteral: 0)
-        guard let texture else {
+        if let texture {
+            material.baseColor = .init(tint: .white, texture: .init(texture, sampler: floorTextureSampler))
+        } else {
             material.baseColor = .init(tint: NSColor(white: 0.5, alpha: 1))
-            return material
         }
-        // Metal sampler defaults are nearest filtering with mipmaps ignored — the generated
-        // mip chain only suppresses minification shimmer if the sampler actually filters
-        // through it, and the tilted camera needs anisotropy on top or the tiling still
-        // sparkles at grazing angles.
-        let sampler: MaterialParameters.Texture.Sampler = {
-            let descriptor = MTLSamplerDescriptor()
-            descriptor.sAddressMode = .repeat
-            descriptor.tAddressMode = .repeat
-            descriptor.minFilter = .linear
-            descriptor.magFilter = .linear
-            descriptor.mipFilter = .linear
-            descriptor.maxAnisotropy = 8
-            return .init(descriptor)
-        }()
-        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: sampler))
-        // Non-square source textures (plank strips) keep their authored aspect: the v
-        // repeat shrinks with the texture's height/width ratio.
-        let aspect = Float(texture.height) / Float(texture.width)
-        material.textureCoordinateTransform = .init(scale: SIMD2<Float>(
-            widthMeters / Self.floorMaterialTileMeters,
-            depthMeters / (Self.floorMaterialTileMeters * aspect)
+        return material
+    }
+
+    /// Height-over-width ratio driving the floor UV scale — the one aspect convention every
+    /// floor consumer shares; 1 while the texture is not (yet) cached.
+    private static func textureAspect(_ texture: TextureResource?) -> Float {
+        texture.map { Float($0.height) / Float($0.width) } ?? 1
+    }
+
+    /// Metal sampler defaults are nearest filtering with mipmaps ignored — the generated
+    /// mip chain only suppresses minification shimmer if the sampler actually filters
+    /// through it, and the tilted camera needs anisotropy on top or the tiling still
+    /// sparkles at grazing angles. Shared by the base floor and every floor patch.
+    private static let floorTextureSampler: MaterialParameters.Texture.Sampler = {
+        let descriptor = MTLSamplerDescriptor()
+        descriptor.sAddressMode = .repeat
+        descriptor.tAddressMode = .repeat
+        descriptor.minFilter = .linear
+        descriptor.magFilter = .linear
+        descriptor.mipFilter = .linear
+        descriptor.maxAnisotropy = 8
+        return .init(descriptor)
+    }()
+
+    /// Height lifting patch quads off the base floor plane — invisible on screen, far above
+    /// depth-buffer resolution, so patches never z-fight the floor they cover.
+    private static let floorPatchLift: Float = 0.002
+
+    /// A floor-patch overlay quad at the patch rect, carrying sector-space UVs.
+    private static func floorPatchEntity(for patch: FloorPatch, texture: TextureResource?) -> ModelEntity {
+        let entity = ModelEntity()
+        entity.model = floorPatchModelComponent(for: patch, texture: texture)
+        var position = OrthographicCameraRig.worldPosition(forLegacyPoint: SIMD2<Float>(
+            Float(patch.x) + Float(patch.width) / 2,
+            Float(patch.y) + Float(patch.height) / 2
         ))
+        position.y = floorPatchLift
+        entity.position = position
+        return entity
+    }
+
+    /// Patch quad mesh with UVs in sector space (world position over the shared repeat size)
+    /// rather than 0..1 per quad, so patches of the same material continue one seamless
+    /// texture grid wherever their rects abut — a per-quad 0..1 mapping would reset the
+    /// texture phase at every seam.
+    private static func floorPatchMesh(for patch: FloorPatch, textureAspect: Float) -> MeshResource {
+        let unit = OrthographicCameraRig.worldUnitsPerPixel
+        let width = Float(patch.width) * unit
+        let depth = Float(patch.height) * unit
+        let (origin, span) = floorPatchUVRect(for: patch, textureAspect: textureAspect)
+        var descriptor = MeshDescriptor(name: "floorPatch")
+        descriptor.positions = MeshBuffers.Positions([
+            SIMD3<Float>(-width / 2, 0, -depth / 2),
+            SIMD3<Float>(width / 2, 0, -depth / 2),
+            SIMD3<Float>(width / 2, 0, depth / 2),
+            SIMD3<Float>(-width / 2, 0, depth / 2)
+        ])
+        descriptor.normals = MeshBuffers.Normals(Array(repeating: SIMD3<Float>(0, 1, 0), count: 4))
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates([
+            SIMD2<Float>(origin.x, origin.y),
+            SIMD2<Float>(origin.x + span.x, origin.y),
+            SIMD2<Float>(origin.x + span.x, origin.y + span.y),
+            SIMD2<Float>(origin.x, origin.y + span.y)
+        ])
+        descriptor.primitives = .triangles([0, 3, 2, 0, 2, 1])
+        // generate(from:) only throws on malformed buffers; the plain-plane fallback keeps a
+        // patch visible (own-corner UVs) rather than dropping it from the scene.
+        return (try? MeshResource.generate(from: [descriptor]))
+            ?? MeshResource.generatePlane(width: width, depth: depth)
+    }
+
+    /// The patch quad's UV rect in sector space: origin from the patch position, span from its
+    /// extent, both over the shared repeat size (V additionally over the texture aspect). This
+    /// is the continuity contract — abutting same-material patches share their edge UVs, so
+    /// one patch's `origin + span` must equal its neighbor's `origin`.
+    static func floorPatchUVRect(
+        for patch: FloorPatch, textureAspect: Float
+    ) -> (origin: SIMD2<Float>, span: SIMD2<Float>) {
+        let unit = OrthographicCameraRig.worldUnitsPerPixel
+        let origin = SIMD2<Float>(
+            Float(patch.x) * unit / floorMaterialTileMeters,
+            Float(patch.y) * unit / (floorMaterialTileMeters * textureAspect)
+        )
+        let span = SIMD2<Float>(
+            Float(patch.width) * unit / floorMaterialTileMeters,
+            Float(patch.height) * unit / (floorMaterialTileMeters * textureAspect)
+        )
+        return (origin, span)
+    }
+
+    /// One definition of a patch's rendered mesh + material pairing, shared by the initial
+    /// build and the prewarm heal so the two can't diverge.
+    private static func floorPatchModelComponent(for patch: FloorPatch, texture: TextureResource?) -> ModelComponent {
+        ModelComponent(
+            mesh: floorPatchMesh(for: patch, textureAspect: textureAspect(texture)),
+            materials: [floorPatchMaterial(texture: texture)]
+        )
+    }
+
+    /// Patch variant of `floorMaterial`: same matte surface and repeat sampler, but no
+    /// coordinate transform — the patch mesh carries sector-space UVs directly. Culling is
+    /// off so the quad renders regardless of triangle winding.
+    private static func floorPatchMaterial(texture: TextureResource?) -> PhysicallyBasedMaterial {
+        var material = matteFloorMaterial(texture: texture)
+        material.faceCulling = .none
         return material
     }
 
@@ -585,7 +700,14 @@ import SomnioCore
         for object in sector.objects.sorted(by: { $0.priority < $1.priority }) {
             let node = Entity()
             let resolved = modelAssets.object(forID: object.modelID)
-            node.addChild(resolved ?? Self.objectPlaceholder(for: object))
+            // Only a resolved USDZ takes the authored yaw: the placeholder box is built
+            // from `sourceWidth`/`sourceHeight`, which already carry the rotated footprint
+            // extents, so rotating it again would swap its axes for 90°/270° placements.
+            if let resolved {
+                resolved.orientation = Self.objectOrientation(for: object) * resolved.orientation
+            }
+            let model = resolved ?? Self.objectPlaceholder(for: object)
+            node.addChild(model)
             let anchorBottomY = Self.objectAnchorBottomY(for: object, masks: sector.collisionMasks)
             Self.alignObjectNode(node, for: object, anchorBottomY: anchorBottomY)
             root.addChild(node)
@@ -593,6 +715,14 @@ import SomnioCore
                 object: object, node: node, anchorBottomY: anchorBottomY, isPlaceholder: resolved == nil
             ))
         }
+    }
+
+    /// The authored yaw as a RealityKit rotation about +Y. Composed onto the model child's
+    /// own orientation (a converted USDZ root carries its up-axis rotation there) rather
+    /// than the holder node, so `alignObjectNode`'s bounds measurement sees the rotated
+    /// footprint.
+    static func objectOrientation(for object: Object) -> simd_quatf {
+        simd_quatf(angle: Float(object.rotation) * .pi / 180, axis: SIMD3<Float>(0, 1, 0))
     }
 
     /// The legacy pixel row a prop's physical base stands on. Defaults to the decal rect's
@@ -704,6 +834,7 @@ import SomnioCore
             for child in Array(placed.node.children) {
                 child.removeFromParent()
             }
+            clone.orientation = Self.objectOrientation(for: placed.object) * clone.orientation
             placed.node.addChild(clone)
             // The real prop's footprint depth differs from the placeholder's, so the
             // bottom-edge anchor must be recomputed for the new bounds.
@@ -722,6 +853,12 @@ import SomnioCore
                 texture: texture, widthMeters: floor.widthMeters, depthMeters: floor.depthMeters
             )]
             floorRenderState?.isFallback = false
+        }
+        for index in floorPatchRenderStates.indices where floorPatchRenderStates[index].isFallback {
+            let patch = floorPatchRenderStates[index].patch
+            guard let texture = modelAssets.floorMaterialTexture(forID: patch.floorMaterialID) else { continue }
+            floorPatchRenderStates[index].entity.model = Self.floorPatchModelComponent(for: patch, texture: texture)
+            floorPatchRenderStates[index].isFallback = false
         }
     }
 
@@ -1113,5 +1250,40 @@ import SomnioCore
     func _floorMaterialIsTextured() -> Bool? {
         guard let material = floorRenderState?.entity.model?.materials.first as? PhysicallyBasedMaterial else { return nil }
         return material.baseColor.texture != nil
+    }
+
+    /// Placed-object test seam: placeholder status and the model child's orientation, in
+    /// placement order (objects are placed priority-sorted, not in authored order) — pins
+    /// the resolved-only rotation guard (a placeholder is built from the already-rotated
+    /// footprint extents and must stay unrotated, while a resolved or healed model must
+    /// carry the authored yaw).
+    struct PlacedObjectProbe {
+        var isPlaceholder: Bool
+        var modelOrientation: simd_quatf
+    }
+
+    func _placedObjectProbes() -> [PlacedObjectProbe] {
+        placedObjects.map { placed in
+            PlacedObjectProbe(
+                isPlaceholder: placed.isPlaceholder,
+                modelOrientation: placed.node.children.first?.orientation
+                    ?? simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
+            )
+        }
+    }
+
+    /// Floor-patch re-resolution test seam: per-patch fallback flags in authored order —
+    /// empty for a patch-free sector or before the first load.
+    func _floorPatchFallbackFlags() -> [Bool] {
+        floorPatchRenderStates.map(\.isFallback)
+    }
+
+    /// Floor-patch render-effect test seam (mirrors `_floorMaterialIsTextured`): whether each
+    /// patch entity's live material carries a texture, so a heal that clears the flag without
+    /// rebuilding the model component is caught.
+    func _floorPatchMaterialsAreTextured() -> [Bool] {
+        floorPatchRenderStates.map { state in
+            (state.entity.model?.materials.first as? PhysicallyBasedMaterial)?.baseColor.texture != nil
+        }
     }
 }

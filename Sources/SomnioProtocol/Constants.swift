@@ -1,7 +1,10 @@
 import Foundation
 
 public enum SomnioProtocolConstants {
-    public static let helloVersion: UInt16 = 2
+    /// Bumped whenever the wire format gains required keys (3: `WireObject.rotation` +
+    /// `WireSector.floorPatches`) so version skew is rejected at the hello gate instead of
+    /// surfacing as an `enterSector` decode failure mid-login.
+    public static let helloVersion: UInt16 = 3
     public static let maxFrameLength: UInt32 = 1 << 20
 
     /// UTF-8 byte cap for the `nickname` and `email` fields in `LoginMessage` /

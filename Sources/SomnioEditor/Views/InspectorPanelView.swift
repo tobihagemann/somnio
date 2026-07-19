@@ -126,6 +126,7 @@ import SwiftUI
         InspectorDraftField(L.resource("Width"), value: object.sourceWidth, onCommit: edit(\.objects, index, "Edit object") { $0.sourceWidth = $1 })
         InspectorDraftField(L.resource("Height"), value: object.sourceHeight, onCommit: edit(\.objects, index, "Edit object") { $0.sourceHeight = $1 })
         InspectorDraftField(L.resource("Priority"), value: object.priority, onCommit: edit(\.objects, index, "Edit object") { $0.priority = $1 })
+        InspectorDraftField(L.resource("Rotation"), value: object.rotation, onCommit: edit(\.objects, index, "Edit object") { $0.rotation = $1 })
     }
 
     @ViewBuilder private func maskFields(_ index: Int, _ mask: CollisionMask) -> some View {

@@ -1039,6 +1039,23 @@
         }
       }
     },
+    "Rotation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drehung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rotation"
+          }
+        }
+      }
+    },
     "Rename sector": {
       "extractionState": "manual",
       "localizations": {

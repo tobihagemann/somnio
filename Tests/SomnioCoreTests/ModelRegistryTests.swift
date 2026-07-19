@@ -6,23 +6,20 @@ import Testing
 // mode and pure resolution helper it relies on has a regression guard here.
 
 struct ModelRegistryTests {
-    @Test func `bundledRegistry decodes the committed registry and resolves the MVP cast`() throws {
+    @Test func `bundledRegistry decodes the committed registry and resolves the canon cast`() throws {
         let registry = try ModelRegistryCodec.bundledRegistry()
-        #expect(registry.model(forKind: .player, figure: 0)?.stem == "Knight")
-        #expect(registry.model(forKind: .peer, figure: 11)?.stem == "Knight")
-        // Both split points pinned from both sides so an over-reaching band can't hide: 12/13
-        // are the cleric figures, 14/15 the mage figures (figure = class.rawValue * 2 + gender).
-        #expect(registry.model(forKind: .player, figure: 12)?.stem == "Rogue_Hooded")
-        #expect(registry.model(forKind: .player, figure: 13)?.stem == "Rogue_Hooded")
-        #expect(registry.model(forKind: .player, figure: 14)?.stem == "Mage")
-        #expect(registry.model(forKind: .player, figure: 15)?.stem == "Mage")
-        #expect(registry.model(forKind: .npc, figure: 16)?.stem == "Lorekeeper")
-        #expect(registry.model(forKind: .monster, figure: 0)?.stem == "Ghost")
+        // The whole player band resolves to the die Wachen hero from both edges — gender/class
+        // figure variants are deferred, so an accidental sub-band split can't hide.
+        #expect(registry.model(forKind: .player, figure: 0)?.stem == "WachenKaempfer")
+        #expect(registry.model(forKind: .peer, figure: 15)?.stem == "WachenKaempfer")
+        #expect(registry.model(forKind: .npc, figure: 16)?.stem == "Libus")
+        #expect(registry.model(forKind: .npc, figure: 17)?.stem == "Kraemer")
+        #expect(registry.model(forKind: .npc, figure: 18)?.stem == "KaempferMeister")
+        #expect(registry.model(forKind: .monster, figure: 0)?.stem == "Gespenst")
     }
 
-    /// One entry per distinct object id across the three shipped Edaria fixtures — the
-    /// committed table must resolve every one so no shipped sector renders an
-    /// unmapped-placeholder object.
+    /// One entry per distinct object id across the shipped fixtures — the committed table
+    /// must resolve every one so no shipped sector renders an unmapped-placeholder object.
     private static let shippedSectorObjectIDs: [(id: String, stem: String)] = [
         ("bookshelf-ornate", "BookshelfOrnate"),
         ("bookshelf", "Bookshelf"),
@@ -35,7 +32,34 @@ struct ModelRegistryTests {
         ("floor-lamp", "FloorLamp"),
         ("side-table", "SideTable"),
         ("chair", "Chair"),
-        ("tent", "Tent")
+        ("tent", "Tent"),
+        ("pine-tree", "PineTree"),
+        ("well", "Brunnen"),
+        ("stone-wall", "StoneWall"),
+        ("stone-wall-corner", "StoneWallCorner"),
+        ("building-townhall", "BuildingTownhall"),
+        ("building-tavern", "BuildingTavern"),
+        ("building-house", "BuildingHouse"),
+        ("building-barracks", "BuildingBarracks"),
+        ("counter", "Counter"),
+        ("goods-shelf", "GoodsShelf"),
+        ("crate-stack", "CrateStack"),
+        ("barrel", "Barrel"),
+        ("barrel-stack", "BarrelStack"),
+        ("chest", "Chest"),
+        ("keg", "Keg"),
+        ("bench", "Bench"),
+        ("round-table", "RoundTable"),
+        ("long-table", "LongTable"),
+        ("stool", "Stool"),
+        ("bed", "Bed"),
+        ("candle", "Candle"),
+        ("rug", "Rug"),
+        ("apple-crate", "AppleCrate"),
+        ("fish-barrel", "FishBarrel"),
+        ("flour-sacks", "FlourSacks"),
+        ("cloth-bolts", "ClothBolts"),
+        ("berry-basket", "BerryBasket")
     ]
 
     @Test(arguments: shippedSectorObjectIDs.indices)
@@ -47,14 +71,14 @@ struct ModelRegistryTests {
         #expect(model.expectedClips.isEmpty)
     }
 
-    /// The directional locomotion clips must stay in the committed registry for all three
-    /// player models: they are the conversion gate's `expectedClips` contract, so dropping one
+    /// The directional locomotion clips must stay in the committed registry for every
+    /// player model: they are the conversion gate's `expectedClips` contract, so dropping one
     /// would let a pack ship without the backpedal/strafe clip and silently fall back to
     /// forward-walk.
     @Test func `bundledRegistry gives every player model the directional locomotion clips`() throws {
         let registry = try ModelRegistryCodec.bundledRegistry()
         let directional = ["Walking_Backwards", "Running_Strafe_Left", "Running_Strafe_Right"]
-        for stem in ["Knight", "Rogue_Hooded", "Mage"] {
+        for stem in ["WachenKaempfer"] {
             let clips = try #require(registry.expectedClips(forStem: stem))
             for clip in directional {
                 #expect(clips.contains(clip), "\(stem) is missing \(clip)")
@@ -69,6 +93,8 @@ struct ModelRegistryTests {
         #expect(registry.floorMaterialStem(forID: "grass-meadow") == "GrassMeadow")
         #expect(registry.floorMaterialStem(forID: "stone-arena") == "StoneArena")
         #expect(registry.floorMaterialStem(forID: "wood-warm") == "WoodWarm")
+        #expect(registry.floorMaterialStem(forID: "forest-floor") == "ForestFloor")
+        #expect(registry.floorMaterialStem(forID: "cobble-town") == "CobbleTown")
     }
 
     @Test func `a valid registry round-trips through write and read`() throws {

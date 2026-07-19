@@ -13,6 +13,7 @@ public struct SectorBody: Sendable, Equatable, Codable {
     public var portals: [SectorPortal]
     public var npcs: [NPC]
     public var monsterSpawns: [MonsterSpawn]
+    public var floorPatches: [FloorPatch]
 
     public init(
         version: Int16,
@@ -23,7 +24,8 @@ public struct SectorBody: Sendable, Equatable, Codable {
         collisionMasks: [CollisionMask] = [],
         portals: [SectorPortal] = [],
         npcs: [NPC] = [],
-        monsterSpawns: [MonsterSpawn] = []
+        monsterSpawns: [MonsterSpawn] = [],
+        floorPatches: [FloorPatch] = []
     ) {
         self.version = version
         self.dimensions = dimensions
@@ -34,6 +36,46 @@ public struct SectorBody: Sendable, Equatable, Codable {
         self.portals = portals
         self.npcs = npcs
         self.monsterSpawns = monsterSpawns
+        self.floorPatches = floorPatches
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, dimensions, floorMaterialID, light, objects, collisionMasks, portals, npcs, monsterSpawns, floorPatches
+    }
+
+    /// A missing `floorPatches` decodes as empty and an empty array is omitted on encode
+    /// (mirroring `Object.rotation`), so pre-patch sector files decode unchanged and
+    /// patch-free sectors add no key noise.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            version: container.decode(Int16.self, forKey: .version),
+            dimensions: container.decode(GridSize.self, forKey: .dimensions),
+            floorMaterialID: container.decode(String.self, forKey: .floorMaterialID),
+            light: container.decode(LightSetting.self, forKey: .light),
+            objects: container.decode([Object].self, forKey: .objects),
+            collisionMasks: container.decode([CollisionMask].self, forKey: .collisionMasks),
+            portals: container.decode([SectorPortal].self, forKey: .portals),
+            npcs: container.decode([NPC].self, forKey: .npcs),
+            monsterSpawns: container.decode([MonsterSpawn].self, forKey: .monsterSpawns),
+            floorPatches: container.decodeIfPresent([FloorPatch].self, forKey: .floorPatches) ?? []
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(dimensions, forKey: .dimensions)
+        try container.encode(floorMaterialID, forKey: .floorMaterialID)
+        try container.encode(light, forKey: .light)
+        try container.encode(objects, forKey: .objects)
+        try container.encode(collisionMasks, forKey: .collisionMasks)
+        try container.encode(portals, forKey: .portals)
+        try container.encode(npcs, forKey: .npcs)
+        try container.encode(monsterSpawns, forKey: .monsterSpawns)
+        if !floorPatches.isEmpty {
+            try container.encode(floorPatches, forKey: .floorPatches)
+        }
     }
 
     /// Pixel extent of the sector (tiles × `tileSize`), widened to `Int32` so a large sector
@@ -57,7 +99,8 @@ public struct SectorBody: Sendable, Equatable, Codable {
             collisionMaskCount: collisionMasks.count,
             portalCount: portals.count,
             npcCount: npcs.count,
-            monsterSpawnCount: monsterSpawns.count
+            monsterSpawnCount: monsterSpawns.count,
+            floorPatchCount: floorPatches.count
         )
     }
 }
@@ -73,6 +116,7 @@ public struct Sector: Sendable, Equatable {
     public var portals: [SectorPortal]
     public var npcs: [NPC]
     public var monsterSpawns: [MonsterSpawn]
+    public var floorPatches: [FloorPatch]
 
     public init(
         name: String,
@@ -84,7 +128,8 @@ public struct Sector: Sendable, Equatable {
         collisionMasks: [CollisionMask] = [],
         portals: [SectorPortal] = [],
         npcs: [NPC] = [],
-        monsterSpawns: [MonsterSpawn] = []
+        monsterSpawns: [MonsterSpawn] = [],
+        floorPatches: [FloorPatch] = []
     ) {
         self.name = name
         self.version = version
@@ -96,6 +141,7 @@ public struct Sector: Sendable, Equatable {
         self.portals = portals
         self.npcs = npcs
         self.monsterSpawns = monsterSpawns
+        self.floorPatches = floorPatches
     }
 
     public init(body: SectorBody, name: String) {
@@ -109,7 +155,8 @@ public struct Sector: Sendable, Equatable {
             collisionMasks: body.collisionMasks,
             portals: body.portals,
             npcs: body.npcs,
-            monsterSpawns: body.monsterSpawns
+            monsterSpawns: body.monsterSpawns,
+            floorPatches: body.floorPatches
         )
     }
 
@@ -195,7 +242,8 @@ public struct Sector: Sendable, Equatable {
             collisionMasks: collisionMasks,
             portals: portals,
             npcs: npcs,
-            monsterSpawns: monsterSpawns
+            monsterSpawns: monsterSpawns,
+            floorPatches: floorPatches
         )
     }
 }
