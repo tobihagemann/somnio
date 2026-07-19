@@ -6,9 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Explore new lands north of Edaria: the Nordwiese meadow and the monster-haunted Nordwald forest, reached through the town's north gate, with Edaria's town wall and gate visible from the meadow side
+- Enter Edaria's shop and inn: both open into furnished interiors — shelves, counters, goods, beds, and kegs — with their keepers behind the counter, and the arena is entered through its east-side door
+- Show distinct street paving: sector floors can carry material patches, giving Edaria cobbled streets crossing its grassy square and a paved path through the north gate
+
 ### Changed
 
 - Refresh the About dialog: the copyright now reads 2026 Tobias Hagemann, and a short note about Somnio's 2003-2006 origins and this revival replaces the old thanks list, with the text centered
+- Rebuild Edaria Mitte as a walled town square: the perimeter wall sits flush on the sector edge with four gated exits, buildings tuck into their yard corners, and rotated props and buildings face their streets and rooms
+- Match wall collision exactly to the visible walls, so ground that looks walkable is walkable — no more invisible barriers beside thin walls
 - Improve VoiceOver support for in-game dialogs: login, options, and the other overlays are announced as modal and can be dismissed with the VoiceOver escape gesture
 
 ### Fixed

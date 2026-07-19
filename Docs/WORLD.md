@@ -67,6 +67,43 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 - **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Heiler** or an ally revives them in the field — or they return to Edaria at a cost. No permadeath; falling pulls the community together.
 - **Economy** runs through Edaria's shops and trainers. A new dreamer starts with little more than a purse of coins and a humble cudgel. The **Mondstein** is the Heiler's tool.
 
+## Progression — Lucidity (in detail)
+
+Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no levels**. A dreamer never outgrows the world numerically; they broaden — more ranks, more capabilities, deeper mastery of the few things their class does. And the world is **open by design**: difficulty is **monster-gated, never zone-gated**. There are no level requirements, no rank checks on a portal, no "you may not pass" — any dreamer can walk from the Library straight into the Nordwald on day one. What stops them is what lives there. *(Hard rule: no sector, portal, or region may ever gain a rank or access gate. The nightmares are the barrier.)*
+
+### The trainable triad
+
+Three trained pools, carried from the game's legacy heritage (health / balance / spirit), wearing their dream-names:
+
+- **Gestalt** (health) — how firmly the dream-self holds together. When Gestalt gives out, the dreamer falls (see *Death* below).
+- **Gleichgewicht** (balance) — the combat resource: footing, timing, poise. Swinging and being struck both spend it; recovering it is what the pause in a fight *is*. The Kämpfer's primary pool.
+- **Geist** (spirit) — the support resource: the reach of a Heiler's Mondstein and the depth of a Mystiker's senses. Support acts drain Geist; an empty Geist is why neither can go it alone.
+
+### Training
+
+Ranks are earned at **Trainer NPCs** — the lucidity-mentors in Edaria's three halls (and, later, far-trainers like Griswal) — **slowly, for coins plus prerequisites** (earlier ranks, sometimes an errand or an item). No experience bar: you pay, you study, you own the rank. Depth over rush.
+
+A rank's mechanical effect is a **combat or support capability** — hit harder, recover Gleichgewicht faster, heal deeper, sense further. Ranks arrive with the combat system: none is granted or checked at runtime yet, and the trainers speak of their craft rather than teach it.
+
+### Starter teachings (the first list on each hall's wall)
+
+- **Kämpfer-Meister** — bump-attack ranks (strike, follow-through, guard), plus Gleichgewicht recovery and Gestalt toughening.
+- **Heiler-Meisterin** — Mondstein contact-heal ranks (touch, depth, drawing a fallen dreamer back), plus Geist deepening.
+- **The Mystiker** — locating the fallen, buffs and wards for a group walking into the fray, plus Geist deepening. Taught obliquely; half the lesson is finding the hall open.
+
+### Death as a social event (never permanent)
+
+Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world, unable to act. Two ways back:
+
+- **Revived in the field** by a Heiler (the Mondstein's deepest use) or an ally — falling pulls the community together; a Mystiker locating the fallen is how a rescue party finds them.
+- **Return to Edaria at a cost** — the dreamer gives up the venture and wakes at the inn.
+
+No permadeath, ever. The inn's beds are the **wake-point**: rest there and that is where you return when you fall. *(Wake-point and revive mechanics require the death and economy systems.)*
+
+### The class-model decision
+
+The trinity — **Kämpfer / Heiler / Mystiker** — is canonical. The codebase still carries the legacy eight-class enum (`CharacterClass`) from the original import; it reconciles with (or retires into) the trinity when class techniques land alongside combat.
+
 ## Edaria — the lucid heart
 
 Edaria is Somnio's central town: where every stranger arrives, the calmest place, the one spot the dream never frays. It is a **walled square with four gates** — north, south, east, west — each opening onto a different ring of the lands. Within its walls:
@@ -79,7 +116,9 @@ Edaria is Somnio's central town: where every stranger arrives, the calmest place
 
 ## The lands of Somnio — a gazetteer
 
-The world radiates from Edaria in rings. The further out, the more the dream has frayed, the stranger the ground, and the stronger the nightmares — until the encircling **sea**, which is not a border but the place where the dreamed land simply *gives out*. The four town gates open onto the four nearest meadows; everything else lies beyond.
+The world radiates from Edaria in rings. The further out, the more the dream has frayed, the stranger the ground, and the stronger the nightmares — until the encircling **sea**, which is not a border but the place where the dreamed land simply *gives out*. Three of the four town gates open onto a near meadow; the **east gate opens straight into the Herbstwald** — there is no east meadow, the great wood grows right up to the wall. Everything else lies beyond.
+
+**How the lands connect.** Each land is a sector (a `.somnio-sector` file; the filename stem is the sector's name), and every border crossing is a pair of portal records — an `outboundTrigger` the dreamer walks into and an `arrivalPlacement` in the destination keyed back to where they came from, with `targetSectorName` naming the neighbor's filename stem. The rings chain outward by compass geography from Edaria's four gates: **north → Nordwiese → Nordwald**, **west → Westwiese → Sumpfgebiet/Friedhof**, **south → Südwiese → Ödland → Strand**, **east → Herbstwald** (and on toward Trolldorf). No portal carries a rank or access check — a dreamer may walk anywhere the ground goes; the nightmares are the barrier.
 
 **The near meadows** (the gentle ring, hugging Edaria — *Tier 1*)
 - **Nordwiese / Westwiese / Südwiese / Südwestwiese** — open grassland, the first ground a dreamer walks. Faint, almost harmless nightmares drift here.
@@ -107,12 +146,12 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 ## People of Edaria
 
-- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers.
-- **The Kämpfer-Meister** — master of the fighters' hall; blunt, scarred, teaches by sparring.
+- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
+- **Pugnax, the Kämpfer-Meister** — master of the fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
 - **The Heiler-Meisterin** — mistress of the healers' hall; keeper of the Mondstein lore, gentle and exacting.
 - **The Mystiker** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
-- **The shopkeeper** (*der Krämer*) — outfits dreamers with what little a newcomer can afford.
-- **The innkeeper** (*die Wirtin*) — keeps the wake-point; knows every regular by their falling.
+- **Mercus, the shopkeeper** (*der Krämer*; *merx*, wares) — outfits dreamers with what little a newcomer can afford.
+- **Quieta, the innkeeper** (*die Wirtin*; *quies*, rest) — keeps the wake-point; knows every regular by their falling.
 - **The priest at the Kirche** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
 - **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper and far-trainer for those who venture past the gentle rings.
 
