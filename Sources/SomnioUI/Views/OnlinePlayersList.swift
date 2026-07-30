@@ -19,6 +19,10 @@ public struct OnlinePlayersList: View {
                 Text(verbatim: name)
                     .foregroundStyle(.white)
                     .listRowSeparator(.hidden)
+                    // Zeroed horizontally so names align with the "Players: N" footer, which sits
+                    // outside the list against the panel's leading edge. `List`'s default insets
+                    // indent the rows past it, which nothing in the design asked for.
+                    .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)

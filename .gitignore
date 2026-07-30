@@ -19,6 +19,20 @@
 # Asset staging directory used by Scripts/package_app.sh + Scripts/bundle-assets.sh at build time.
 Resources/Assets/
 
+# Sector staging directory the docker-compose example mounts, seeded from the bundled fixtures by
+# the docker-smoke and wire-conformance jobs (and by hand for a local conformance run).
+sectors/
+
+# Asset-pack checkout the web image's build context expects (CI clones somnio-assets here; a
+# local build creates it empty). Never carries art in this repo.
+assets/
+
 # Python bytecode (from skill scripts)
 __pycache__/
 *.pyc
+
+# Browser client build artifacts. `Web/package-lock.json` IS committed — CI installs with
+# `npm ci`, which requires it.
+Web/node_modules/
+Web/dist/
+Web/.vite/

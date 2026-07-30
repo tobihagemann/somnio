@@ -141,6 +141,66 @@ struct MigrationRunnerTests {
         }
     }
 
+    @Test func `migration v8 creates the sessions table with its lookup indexes`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.migrations.sessions")
+            let rows = try await client.query(
+                """
+                SELECT
+                    to_regclass('public.sessions') IS NOT NULL,
+                    to_regclass('public.sessions_expires_at_idx') IS NOT NULL,
+                    to_regclass('public.sessions_account_id_idx') IS NOT NULL,
+                    EXISTS (SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'sessions' AND column_name = 'token_digest'),
+                    EXISTS (SELECT 1 FROM information_schema.table_constraints
+                            WHERE table_name = 'sessions' AND constraint_type = 'PRIMARY KEY')
+                """,
+                logger: logger
+            )
+            for try await (table, expiryIndex, accountIndex, digestColumn, primaryKey)
+                in rows.decode((Bool, Bool, Bool, Bool, Bool).self) {
+                #expect(table)
+                #expect(expiryIndex)
+                #expect(accountIndex)
+                #expect(digestColumn)
+                // The digest is the primary key, which is what makes redemption a single indexed
+                // lookup rather than a scan-and-verify over every row.
+                #expect(primaryKey)
+            }
+        }
+    }
+
+    /// A deleted account must not leave redeemable sessions behind.
+    @Test func `sessions cascade when their account is deleted`() async throws {
+        try await TestHarness.withDatabase { client in
+            let logger = Logger(label: "test.migrations.sessions-cascade")
+            let accountId = UUID()
+            try await client.query(
+                """
+                INSERT INTO accounts (id, name, password_hash, email)
+                VALUES (\(accountId), 'cascade-user', 'h', 'c@example.com')
+                """,
+                logger: logger
+            )
+            try await client.query(
+                """
+                INSERT INTO sessions (token_digest, account_id, expires_at)
+                VALUES ('deadbeef', \(accountId), NOW() + INTERVAL '30 days')
+                """,
+                logger: logger
+            )
+            try await client.query("DELETE FROM accounts WHERE id = \(accountId)", logger: logger)
+
+            let rows = try await client.query(
+                "SELECT COUNT(*) FROM sessions WHERE account_id = \(accountId)",
+                logger: logger
+            )
+            for try await count in rows.decode(Int.self) {
+                #expect(count == 0)
+            }
+        }
+    }
+
     @Test func `applyPending applies only newly added migrations on a partially migrated database`() async throws {
         try await TestHarness.withDatabase { client in
             let logger = Logger(label: "test.migrations.partial")

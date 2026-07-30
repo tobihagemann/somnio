@@ -54,6 +54,9 @@ public enum IntegrationTestFixtures {
         let registrations = PostgresRegistrationRepository(client: client, logger: logger)
         let npcDialogStates = PostgresNPCDialogStateRepository(client: client, logger: logger)
         let worldClocks = PostgresWorldClockRepository(client: client, logger: logger)
+        // The real repository, not a stub: this fixture backs the end-to-end suites, so session
+        // issuance and redemption go through the same Postgres path production uses.
+        let sessions = PostgresSessionRepository(client: client, logger: logger)
         let worldRouter = try await WorldRouter(
             sectors: sectors,
             characters: characters,
@@ -73,6 +76,7 @@ public enum IntegrationTestFixtures {
             characters: characters,
             inventories: inventories,
             registrations: registrations,
+            sessions: sessions,
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: worldRouter,
             worldClock: worldClockService,

@@ -30,8 +30,12 @@ struct WireFrameLimitsTests {
         #expect(SomnioMessageTag.inventory.rawValue == "inventory")
         #expect(SomnioMessageTag.leave.rawValue == "leave")
         #expect(SomnioMessageTag.adminSay.rawValue == "adminSay")
+        #expect(SomnioMessageTag.redeemSession.rawValue == "redeemSession")
+        #expect(SomnioMessageTag.revokeSession.rawValue == "revokeSession")
+        #expect(SomnioMessageTag.sessionToken.rawValue == "sessionToken")
+        #expect(SomnioMessageTag.sessionRevoked.rawValue == "sessionRevoked")
         // Guards against a new case landing without a stability pin above.
-        #expect(SomnioMessageTag.allCases.count == 20)
+        #expect(SomnioMessageTag.allCases.count == 24)
     }
 
     @Test func `encoder rejects a message larger than maxFrameLength`() throws {

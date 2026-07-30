@@ -59,10 +59,12 @@ import SwiftUI
                     }
                     .buttonStyle(FantasyButtonStyle())
                     Spacer()
+                    // Named for what it does rather than "OK": an auth form's submit label is what
+                    // a password manager reads to decide whether to offer to save the credential.
                     Button {
                         viewModel.submitRegistration()
                     } label: {
-                        Text(L.resource("OK"))
+                        Text(L.resource("Sign Up"))
                     }
                     .buttonStyle(FantasyButtonStyle())
                     .keyboardShortcut(.defaultAction)

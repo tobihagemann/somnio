@@ -129,15 +129,22 @@ private struct ChatInputTextView: NSViewRepresentable {
     }
 }
 
-/// Submits on Return instead of inserting a newline. Escape is deliberately NOT handled
-/// here: the app-level Escape monitor owns that key (chat blur, game menu) and consumes it
-/// before the responder chain would deliver `cancelOperation` — a second owner here would
-/// be dead code. `mouseDown` marks the user's intent to focus before the click is
-/// processed, so only a deliberate click registers as focus — an auto/programmatic
-/// first-responder gain on launch does not.
-private final class ReturnSubmittingTextView: NSTextView {
+/// Submits on Return and swallows Shift-Return — see `keyDown` for why a line break has nowhere
+/// to go. Escape is deliberately NOT handled here: the app-level Escape monitor owns that key
+/// (chat blur, game menu) and consumes it before the responder chain would deliver
+/// `cancelOperation` — a second owner here would be dead code. `mouseDown` marks the user's
+/// intent to focus before the click is processed, so only a deliberate click registers as
+/// focus — an auto/programmatic first-responder gain on launch does not.
+///
+/// Internal rather than private so the key handling is reachable from a test; nothing else
+/// in the module refers to it.
+final class ReturnSubmittingTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onFocusChange: ((Bool) -> Void)?
+
+    /// The three characters AppKit's `StandardKeyBinding.dict` maps to `insertNewline:`:
+    /// carriage return, keypad enter, and line feed.
+    private static let newlineKeys: [NSEvent.SpecialKey] = [.carriageReturn, .enter, .newline]
 
     override func mouseDown(with event: NSEvent) {
         onFocusChange?(true)
@@ -150,13 +157,38 @@ private final class ReturnSubmittingTextView: NSTextView {
         return resigned
     }
 
+    /// Shift-Return is swallowed: it neither submits nor inserts.
+    ///
+    /// A line break has nowhere to go. `SpeechBubbleText.wrap` tokenizes on spaces only, so a
+    /// newline rides along inside one unbreakable "word" and both the measurement and the
+    /// `lines.count`-derived bubble height are wrong; the server passes the text through on the
+    /// byte cap alone; and the browser's canvas `fillText` drops `\n` entirely where SwiftUI `Text`
+    /// honours it, so the two clients would disagree about the same message. Accepting the
+    /// keystroke would promise a second line the game cannot draw.
+    ///
+    /// It has to be caught here rather than in `doCommand(by:)`: AppKit's standard bindings map
+    /// Return, keypad Enter, and Shift-Return alike to `insertNewline:` — only Option-Return gets
+    /// its own `insertNewlineIgnoringFieldEditor:` entry — so the selector cannot tell them apart.
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.shift), isNewlineKey(event) { return }
+        super.keyDown(with: event)
+    }
+
     override func doCommand(by selector: Selector) {
         switch selector {
         case #selector(insertNewline(_:)):
             onSubmit?()
+            // Hand the keyboard back to the play field, which cannot take first responder
+            // itself. Unconditional, so Return on an empty field also releases the gameplay
+            // keys rather than leaving the character unable to walk.
             window?.makeFirstResponder(nil)
         default:
             super.doCommand(by: selector)
         }
+    }
+
+    private func isNewlineKey(_ event: NSEvent) -> Bool {
+        guard let special = event.specialKey else { return false }
+        return Self.newlineKeys.contains(special)
     }
 }

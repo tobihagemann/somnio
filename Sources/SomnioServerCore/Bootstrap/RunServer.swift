@@ -84,6 +84,9 @@ public func runServer(
         let registrations = PostgresRegistrationRepository(client: client, logger: postgresLogger)
         let npcDialogStates = PostgresNPCDialogStateRepository(client: client, logger: postgresLogger)
         let worldClocks = PostgresWorldClockRepository(client: client, logger: postgresLogger)
+        // `postgresLogger` like every sibling repository, so session persistence events appear
+        // alongside the rest of the repository traffic when a Postgres incident is being read back.
+        let sessions = PostgresSessionRepository(client: client, logger: postgresLogger)
         let passwordHasher = PasswordHasher(logger: postgresLogger)
         let worldRouterLogger = Logger(label: "de.tobiha.somnio.server.gameplay.world")
         // Prune orphan dialog cursors before the router seeds from the table, so it never loads a
@@ -112,6 +115,7 @@ public func runServer(
             characters: characters,
             inventories: inventories,
             registrations: registrations,
+            sessions: sessions,
             passwordHasher: passwordHasher,
             worldRouter: worldRouter,
             worldClock: worldClockService,
@@ -142,6 +146,9 @@ public func runServer(
     )
     let checkpointService = CheckpointService(
         worldRouter: worldRouter,
+        // Reached through the dependency bag: the local `sessions` is scoped to the readiness
+        // `do` block above, and this is the same instance either way.
+        sessions: dependencies.sessions,
         interval: serverConfiguration.checkpointInterval,
         logger: Logger(label: "de.tobiha.somnio.server.gameplay.checkpoint")
     )

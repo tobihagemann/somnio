@@ -77,5 +77,19 @@ private let dispatchCloseCases: [Case] = [
     // attached + server-only tag.
     Case(message: .serverPosition(samplePosition), attachFirst: true, label: "post-attach serverPosition"),
     Case(message: .entity(sampleEntity), attachFirst: true, label: "post-attach entity"),
-    Case(message: .leave(sampleLeave), attachFirst: true, label: "post-attach leave")
+    Case(message: .leave(sampleLeave), attachFirst: true, label: "post-attach leave"),
+    // Session tags in the wrong state. These are the mirror image of
+    // `ConnectionActorSessionPlacementTests`: the compiler forces both switches to name every
+    // new tag, but only these assertions pin *which* switch accepts it.
+    Case(message: .revokeSession(sampleRevoke), attachFirst: false, label: "pre-login revokeSession"),
+    Case(message: .redeemSession(sampleRedeem), attachFirst: true, label: "post-attach redeemSession"),
+    // Both session responses are server-only in either state.
+    Case(message: .sessionToken(sampleSessionToken), attachFirst: false, label: "pre-login sessionToken"),
+    Case(message: .sessionToken(sampleSessionToken), attachFirst: true, label: "post-attach sessionToken"),
+    Case(message: .sessionRevoked(SessionRevokedMessage(revoked: true)), attachFirst: false, label: "pre-login sessionRevoked"),
+    Case(message: .sessionRevoked(SessionRevokedMessage(revoked: true)), attachFirst: true, label: "post-attach sessionRevoked")
 ]
+
+private let sampleRedeem = RedeemSessionMessage(token: "tok")
+private let sampleRevoke = RevokeSessionMessage(token: "tok")
+private let sampleSessionToken = SessionTokenMessage(token: "tok", expiresInSeconds: 2_592_000)

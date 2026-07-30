@@ -12,6 +12,8 @@ public enum SomnioMessage: Sendable, Equatable {
     case equipToggle(EquipToggleMessage)
     case bumpNPC(BumpNPCMessage)
     case enterPortal(EnterPortalMessage)
+    case redeemSession(RedeemSessionMessage)
+    case revokeSession(RevokeSessionMessage)
 
     // MARK: - S→C
 
@@ -28,6 +30,8 @@ public enum SomnioMessage: Sendable, Equatable {
     case inventory(InventoryMessage)
     case leave(LeaveMessage)
     case adminSay(AdminSayMessage)
+    case sessionToken(SessionTokenMessage)
+    case sessionRevoked(SessionRevokedMessage)
 
     public var tag: SomnioMessageTag {
         switch self {
@@ -38,6 +42,8 @@ public enum SomnioMessage: Sendable, Equatable {
         case .equipToggle: return .equipToggle
         case .bumpNPC: return .bumpNPC
         case .enterPortal: return .enterPortal
+        case .redeemSession: return .redeemSession
+        case .revokeSession: return .revokeSession
         case .hello: return .hello
         case .loginResult: return .loginResult
         case .registerResult: return .registerResult
@@ -51,6 +57,8 @@ public enum SomnioMessage: Sendable, Equatable {
         case .inventory: return .inventory
         case .leave: return .leave
         case .adminSay: return .adminSay
+        case .sessionToken: return .sessionToken
+        case .sessionRevoked: return .sessionRevoked
         }
     }
 }

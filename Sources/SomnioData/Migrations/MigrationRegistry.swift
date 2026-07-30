@@ -165,6 +165,39 @@ public enum MigrationRegistry {
                 USING (CASE facing WHEN 0 THEN 180 WHEN 1 THEN 90 WHEN 2 THEN 0 WHEN 3 THEN 270 ELSE 0 END)
                 """
             ]
+        ),
+        // Resumable browser sessions. The stored value is a SHA-256 digest of the raw token,
+        // never the token itself, so a database read cannot be replayed as a credential.
+        //
+        // An unsalted digest as the primary key is the deliberate choice over Argon2id here.
+        // Password-style salted hashing is not *searchable* — redemption would have to scan every
+        // row and verify each one — and the slow-KDF property it buys is worthless against a
+        // 256-bit CSPRNG token, which has no guessable structure to protect. Making the digest the
+        // primary key rather than a separate UNIQUE index gives the lookup path and the uniqueness
+        // guarantee one index instead of two.
+        Migration(
+            version: 8,
+            name: "create_sessions",
+            statements: [
+                """
+                CREATE TABLE sessions (
+                    token_digest TEXT PRIMARY KEY,
+                    account_id UUID NOT NULL REFERENCES accounts ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ NOT NULL
+                )
+                """,
+                // Redemption filters on expiry and cleanup deletes by it, so both paths want the
+                // index; the account index serves the ON DELETE CASCADE and per-account cleanup.
+                "CREATE INDEX sessions_expires_at_idx ON sessions (expires_at)",
+                "CREATE INDEX sessions_account_id_idx ON sessions (account_id)",
+                """
+                COMMENT ON COLUMN sessions.token_digest IS \
+                'Unsalted SHA-256 of the raw bearer token, hex-encoded. The raw token is returned \
+                to the client exactly once and never stored. Unsalted so the column is directly \
+                searchable -- safe here because the token is 256 bits of CSPRNG output.'
+                """
+            ]
         )
     ]
 }

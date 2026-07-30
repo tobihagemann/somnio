@@ -30,6 +30,13 @@ public enum SomnioProtocolConstants {
     /// cannot fan out a large payload to every peer in a sector.
     public static let maxSayUTF8Bytes = 256
 
+    /// UTF-8 byte cap for the `token` field in `RedeemSessionMessage` / `RevokeSessionMessage`.
+    /// A base64url-encoded 256-bit token is 43 characters, so this is generous headroom while
+    /// still bounding what an unauthenticated frame can drive through SHA-256 and an indexed
+    /// lookup. Lives here with the other four caps rather than in the server, so the browser can
+    /// refuse a tampered or oversized stored token before spending a round trip on it.
+    public static let maxSessionTokenUTF8Bytes = 256
+
     /// Slack the WebSocket-layer `maxFrameSize` keeps above the encoder's `maxFrameLength`
     /// guard. Holding `maxWireFrameSize` strictly larger than `maxFrameLength` means an
     /// oversized message throws `SomnioProtocolError.oversizedFrame` cleanly at encode time

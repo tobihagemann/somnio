@@ -26,6 +26,18 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
         .package(url: "https://github.com/apple/swift-nio", from: "2.0.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl", from: "2.0.0"),
+        // Already in the graph transitively via postgres-nio; declared explicitly because
+        // SomnioData names `Crypto` directly for the session-token digest. Shims to CryptoKit on
+        // Apple platforms and carries its own implementation on Linux, so the server builds on both.
+        //
+        // The range matches postgres-nio's and swift-certificates' own `"3.x" ..< "5.0.0"` rather
+        // than using `from:`. `from: "3.0.0"` means `..< "4.0.0"`, which would make this the
+        // narrowest constraint in the graph and silently roll every consumer — nio-ssl,
+        // swift-certificates, async-http-client — back from 4.x to 3.x, including the vendored
+        // BoringSSL. Only `SymmetricKey`/`SHA256` are used here, and both are stable across the
+        // two majors, so a declaration meant to be resolution-neutral must not carry an upper cap
+        // tighter than the graph's.
+        .package(url: "https://github.com/apple/swift-crypto", "3.0.0" ..< "5.0.0"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle", from: "2.0.0"),
         .package(url: "https://github.com/vapor/postgres-nio", from: "1.21.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird", from: "2.0.0"),
@@ -33,7 +45,14 @@ let package = Package(
     ],
     targets: [
         .target(name: "SomnioProtocol"),
-        .testTarget(name: "SomnioProtocolTests", dependencies: ["SomnioProtocol"]),
+        .testTarget(
+            name: "SomnioProtocolTests",
+            dependencies: ["SomnioProtocol"],
+            // Cross-language wire fixtures. Owned here rather than under `Web/` because a SwiftPM
+            // test cannot declare a resource outside its own package, while the browser client
+            // already has a sanctioned route for reading the Swift tree.
+            resources: [.copy("GoldenFrames")]
+        ),
 
         .target(
             name: "SomnioCore",
@@ -73,10 +92,11 @@ let package = Package(
                 "SomnioCore",
                 "CArgon2",
                 .product(name: "PostgresNIO", package: "postgres-nio"),
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Logging", package: "swift-log")
             ]
         ),
-        .testTarget(name: "SomnioDataTests", dependencies: ["SomnioData"]),
+        .testTarget(name: "SomnioDataTests", dependencies: ["SomnioData", "SomnioTestSupport"]),
 
         .target(
             name: "SomnioTheme",

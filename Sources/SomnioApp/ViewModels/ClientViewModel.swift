@@ -49,7 +49,7 @@ import SomnioUI
 
     // MARK: - Internals
 
-    private let transport: GameplayTransport
+    private let transport: any GameplayTransporting
     private let tickerMode: GameplayTickerMode
     /// Monotonic time source for the gameplay tick, sampled once per tick. Monotonic (not
     /// `Date`) because the tick only measures elapsed gameplay time: NTP or manual clock
@@ -57,6 +57,10 @@ import SomnioUI
     /// keeps counting across system sleep so the first post-wake tick still clamps normally.
     private let now: @MainActor @Sendable () -> ContinuousClock.Instant
     private var connectionTask: Task<Void, Never>?
+
+    /// In-flight "replace the current attempt" hop, held so a burst of submissions cannot start
+    /// several teardowns racing to reopen the same connection.
+    private var replacementTask: Task<Void, Never>?
     private var tickerTask: Task<Void, Never>?
     private var lastEmittedPosition: GridPoint?
     private var lastEmittedFacing: Heading?
@@ -75,7 +79,7 @@ import SomnioUI
 
     public init(
         worldScene: any WorldRenderSurface,
-        transport: GameplayTransport = GameplayTransport(),
+        transport: any GameplayTransporting = GameplayTransport(),
         keyboard: KeyboardSampler = KeyboardSampler(),
         tickerMode: GameplayTickerMode = .live,
         now: @escaping @MainActor @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
@@ -99,11 +103,48 @@ import SomnioUI
     // MARK: - Connection lifecycle
 
     public func openConnection() {
-        // Short-circuit if a connection is already in flight. Clear `pendingRegistration`
-        // so a stale Register message that was queued by `submitRegistration` while the
-        // socket was open cannot ride out the next Hello and silently re-issue.
+        // An explicit login or registration is authoritative over an attempt already in flight:
+        // it replaces that attempt rather than being dropped. `beginAuthSocketTeardown` returns
+        // the form to the user the moment a result arrives, but leaves `connectionTask` alive
+        // until the detached `transport.run` unwinds — so a resubmission lands here with the
+        // socket still open. Dropping it discarded the submission with no feedback, and on a
+        // socket that had not yet seen `Hello` the `.login` fallback sent the credentials
+        // `submitRegistration` had just written into `loginForm`: a login for an account that
+        // was never created. Mirrors `ConnectionController.connect`, where only a `resume`
+        // intent may no-op on a live connection.
         guard connectionTask == nil else {
-            pendingRegistration = nil
+            // One replacement at a time. A submission arriving while this runs writes `authIntent`
+            // and then lands here, so it is dropped rather than starting a second teardown — but
+            // its intent survives, because the restore below defers to it by generation.
+            guard replacementTask == nil else { return }
+            let intent = authIntent
+            let generation = authGeneration
+            replacementTask = Task { [weak self] in
+                // The intent has to be captured before the teardown and reinstated after, because
+                // `discardInFlightConnection` leaves `authIntent` alone but the socket it abandons
+                // does not: cancelling it makes `transport.run` deliver `.connectFailed` (or
+                // `.peerEOF`/`.decodeFailed`/`.unexpectedBinaryFrame`) to `handle`, which reaches
+                // `beginAuthSocketTeardown` -> `resetSession` -> `authIntent = .login`. That
+                // delivery happens inside `run`, before it returns, so it always lands before the
+                // `await` below resolves.
+                await self?.discardInFlightConnection()
+                guard let self else { return }
+                replacementTask = nil
+                // Cleared before this check so a cancellation cannot strand the field non-nil
+                // and wedge every later connect. `performLeave` cancels to stop the reopen, and
+                // neither `await` above is a cancellation point, so the check must be explicit.
+                guard !Task.isCancelled else { return }
+                // Only reinstate the capture if no newer submission landed during the teardown.
+                // A restore that ignored the generation would overwrite that submission's intent
+                // with this one's, so a registration typed while a login unwound would reach the
+                // wire as a login — the defect this replacement exists to prevent, one submission
+                // deeper. The browser mirror avoids the window entirely by tearing down and
+                // assigning the intent in one synchronous block.
+                if authGeneration == generation {
+                    authIntent = intent
+                }
+                openConnection()
+            }
             return
         }
         // Set state before launching the transport so the first inbound `Hello` cannot
@@ -273,7 +314,14 @@ import SomnioUI
             handleLeave(payload)
         case let .adminSay(payload):
             chatLines.append(.adminBroadcast(message: payload.text))
-        case .login, .register, .clientPosition, .clientSay, .equipToggle, .bumpNPC, .enterPortal:
+        case .sessionToken, .sessionRevoked:
+            // Session resumption is browser-only: the Keychain already solves persistence
+            // natively, so this client never sets `requestSessionToken` and these are
+            // request-gated on the server. Arriving anyway means a server bug, not a hostile
+            // peer — ignore rather than tear down a working session over a harmless frame.
+            logger.debug("ignoring browser-only session frame", metadata: ["tag": "\(message.tag)"])
+        case .login, .register, .clientPosition, .clientSay, .equipToggle, .bumpNPC, .enterPortal,
+             .redeemSession, .revokeSession:
             chatLines.append(.errorCode(code: "client_only_tag"))
             beginAuthSocketTeardown()
         }
@@ -294,10 +342,11 @@ import SomnioUI
             return
         }
         connectionState = .awaitingLoginResult
-        if let pendingRegistration {
-            sendRegister(pendingRegistration)
-        } else {
+        switch authIntent {
+        case .login:
             sendLogin()
+        case let .register(payload):
+            sendRegister(payload)
         }
     }
 
@@ -345,7 +394,7 @@ import SomnioUI
             registrationForm.lastError = .failure
             beginAuthSocketTeardown()
         }
-        pendingRegistration = nil
+        authIntent = .login
     }
 
     private func handleEnterSector(_ payload: EnterSectorMessage) {
@@ -503,11 +552,32 @@ import SomnioUI
 
     // MARK: - Authentication outbound
 
-    private var pendingRegistration: RegisterMessage?
+    /// How the next connection intends to authenticate.
+    ///
+    /// Mirrors the browser client's `AuthIntent`, minus its `resume` case — session tokens are
+    /// browser-only, so there is nothing here to resume from. One tagged value rather than an
+    /// optional payload beside the login form: every state it can express is one the wire can
+    /// carry, so a queued registration cannot be silently inherited by a plain login.
+    private enum AuthIntent {
+        case login
+        case register(RegisterMessage)
+    }
+
+    private var authIntent: AuthIntent = .login
+
+    /// Which submission `authIntent` currently belongs to.
+    ///
+    /// `openConnection`'s replacement task captures the intent across an `await`, and a submission
+    /// landing inside that window writes `authIntent` and is then dropped by the one-replacement
+    /// guard. Without this counter the task's restore overwrites that newer intent with its own
+    /// stale capture, so the reopened socket authenticates as the submission the user superseded.
+    /// Mirrors `ConnectionController.authGeneration`, which retires a scheduled resume the same way.
+    private var authGeneration = 0
 
     public func submitLogin() {
         registrationForm.lastError = nil
-        pendingRegistration = nil
+        authIntent = .login
+        authGeneration += 1
         openConnection()
     }
 
@@ -520,7 +590,8 @@ import SomnioUI
             gender: registrationForm.gender.rawValue,
             email: registrationForm.email
         )
-        pendingRegistration = payload
+        authIntent = .register(payload)
+        authGeneration += 1
         loginForm.nickname = registrationForm.nickname
         loginForm.password = registrationForm.password
         openConnection()
@@ -563,6 +634,30 @@ import SomnioUI
         tickerTask != nil
     }
 
+    /// Test seam: awaits the in-flight replacement hop, so a test can observe the reopened
+    /// connection without sleeping. The hop spans an actor hop plus a full socket unwind, and
+    /// Swift Testing runs suites in parallel, so a fixed delay is a flake waiting to happen.
+    func _awaitReplacement() async {
+        await replacementTask?.value
+    }
+
+    /// Abandons a connection attempt that is still unwinding, so the caller can open a fresh one.
+    ///
+    /// Deliberately narrower than `resetSession`: it touches only the socket and the task that
+    /// owns it, and never assigns `authIntent` itself. That is not enough to preserve the intent,
+    /// because cancelling the socket makes it deliver a terminal transport event on the way out,
+    /// and `handle` routes that through `beginAuthSocketTeardown` to `resetSession`, which does
+    /// clear `authIntent`. Callers that need the submitted intent to survive must capture it
+    /// before this call and restore it after — `openConnection`'s replacement task does exactly
+    /// that, and is the only caller for which the intent matters.
+    private func discardInFlightConnection() async {
+        await transport.disconnect()
+        connectionTask?.cancel()
+        await connectionTask?.value
+        connectionTask = nil
+        connectionState = .disconnected
+    }
+
     private func beginAuthSocketTeardown() {
         // Detach the disconnect so it cannot self-await a `connectionTask` running the
         // current handler. The parent task's completion clears `connectionTask` and
@@ -575,10 +670,14 @@ import SomnioUI
     }
 
     private func performLeave() async {
-        await transport.disconnect()
-        connectionTask?.cancel()
-        await connectionTask?.value
-        connectionTask = nil
+        // Retire any pending replacement first: it would otherwise reopen the connection the
+        // player just asked to leave. The task honours the cancellation explicitly, since
+        // neither of the awaits it suspends on is a cancellation point.
+        replacementTask?.cancel()
+        replacementTask = nil
+        // Same unwind the replacement path uses; `resetSession` below supersedes the
+        // `connectionState = .disconnected` it also performs.
+        await discardInFlightConnection()
         resetSession()
         worldScene.showSplash()
         presentedOverlay = .login
@@ -586,7 +685,7 @@ import SomnioUI
 
     /// Common state reset shared by the authentication-time teardown and the
     /// menu-driven Leave Game path. Clears every transient slot the next session
-    /// must start clean from — including `pendingRegistration`, which would
+    /// must start clean from — including `authIntent`, which would
     /// otherwise survive a Hello-mismatch teardown and silently re-issue a
     /// registration on the next reconnect.
     private func resetSession() {
@@ -605,7 +704,7 @@ import SomnioUI
         lastBumpedPortalIndex = nil
         movementRemainder = (0, 0)
         latestMouseFacing = nil
-        pendingRegistration = nil
+        authIntent = .login
     }
 
     // MARK: - Gameplay ticker

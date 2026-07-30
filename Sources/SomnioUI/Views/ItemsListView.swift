@@ -38,6 +38,11 @@ public struct ItemsListView: View {
                 // A double-click (not a single tap) is also required because the macOS `List`
                 // swallows single taps on row content via its table-view row handling.
                 .onTapGesture(count: 2) { onItemActivate?(row) }
+                // `List`'s default row insets pad the row horizontally, which leaves the names
+                // indented relative to the "Items: N" footer below — the footer sits outside the
+                // list and aligns to the panel's leading edge. Nothing chose that offset, so the
+                // insets are zeroed horizontally and kept to 1pt vertically.
+                .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)

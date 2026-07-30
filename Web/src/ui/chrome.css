@@ -1,0 +1,544 @@
+/*
+ * Reproduces `SomnioTheme`'s Kenney "Fantasy UI Borders" chrome in CSS.
+ *
+ * The one metric worth stating plainly, because getting it wrong looks *almost* right:
+ * `border-image-slice` is unitless **image pixels**, while `border-width` is CSS pixels.
+ * `FantasyChrome.capInset` is 18 *points* measured against an image `FantasyPanelTextures` has
+ * already halved (the pack ships the 2x "Double" variants). CSS loads the unhalved PNG, so the
+ * slice is 36 and the width is 18. A literal 18 for both slices at half the intended depth and
+ * cuts straight through the corner ornaments.
+ */
+
+:root {
+  --somnio-cap-inset: 18px;
+  --somnio-content-padding: 20px;
+  --somnio-plate-inset: 3px;
+  --somnio-plate: rgb(0 0 0 / 0.6);
+  --somnio-plate-solid: rgb(12 10 16 / 0.94);
+  --somnio-edge-padding: 12px;
+  --somnio-ink: #f2ead9;
+  --somnio-ink-dim: #b9ae98;
+  /* `FantasyPalette.secondaryText` — de-emphasized captions and list footers. */
+  --somnio-secondary-text: rgb(255 255 255 / 0.7);
+  /* `ChatColor`: purple own-message, `FantasyPalette.errorRed`, blue join/greeting. */
+  --somnio-chat-purple: rgb(216 140 232);
+  --somnio-chat-red: rgb(255 110 110);
+  --somnio-chat-blue: rgb(130 180 255);
+  --somnio-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #05060a;
+  color: var(--somnio-ink);
+  font-family: var(--somnio-font);
+  font-size: 13px;
+  /* The world is driven by WASD and the mouse; a text selection drag across the canvas would
+     otherwise paint a selection over the play field on every facing change. */
+  user-select: none;
+}
+
+#somnio-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#somnio-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* MARK: - Panel chrome */
+
+/*
+ * `border-width: 0` with a non-zero `border-image-width` is load-bearing, not a quirk.
+ *
+ * SwiftUI draws the 9-slice as a `.background`, which consumes no layout: `FantasyPanel`'s
+ * `.padding(20)` is the *whole* inset from the panel edge to its content. A CSS border reserves
+ * `border-width` on top of `padding`, so the obvious `border: 18px` + `padding: 20px` insets
+ * content by 38 and every panel reads as enormously padded. Zeroing the border width while
+ * keeping `border-image-width` paints the same art over the padding instead of beside it.
+ */
+/*
+ * The 9-slice geometry and the plate placement, shared by both chrome surfaces. Declared once so
+ * the `--somnio-plate-inset` position/size pair cannot be edited on one and missed on the other,
+ * which would draw panels and buttons at different insets and read as a rendering glitch.
+ *
+ * The dark plate reaches *under* the border line (drawn a few points inside the texture edge)
+ * without spilling past the ornaments — `FantasyChrome.plateInset`. A `background-clip:
+ * padding-box` would inset it by the full cap instead, leaving a transparent ring.
+ */
+.fantasy-panel,
+.fantasy-button {
+  border: 0 solid transparent;
+  border-image-slice: 36;
+  border-image-width: var(--somnio-cap-inset);
+  border-image-repeat: stretch;
+  background-origin: border-box;
+  background-clip: border-box;
+  background-repeat: no-repeat;
+  background-position: var(--somnio-plate-inset) var(--somnio-plate-inset);
+  background-size: calc(100% - 2 * var(--somnio-plate-inset)) calc(100% - 2 * var(--somnio-plate-inset));
+}
+
+.fantasy-panel {
+  border-image-source: url('/assets/UI/panel-primary.png');
+  padding: var(--somnio-content-padding);
+  background-image: linear-gradient(var(--somnio-plate), var(--somnio-plate));
+}
+
+.fantasy-panel--opaque {
+  --somnio-plate: var(--somnio-plate-solid);
+}
+
+/* The plate `FantasyButtonStyle` fills at 0.8. */
+.fantasy-button {
+  border-image-source: url('/assets/UI/panel-button.png');
+  padding: 8px 18px;
+  min-width: 96px;
+  background-image: linear-gradient(rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.8));
+  color: var(--somnio-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fantasy-button:hover:enabled,
+.fantasy-button:focus-visible {
+  border-image-source: url('/assets/UI/panel-button-hover.png');
+}
+
+.fantasy-button:active:enabled {
+  background-image: linear-gradient(rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.55));
+}
+
+.fantasy-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Drops the command-button minimum width for the small square panel toggles. */
+.fantasy-button--compact {
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+/*
+ * Grid rather than inline flow: an inline `svg` sits on the text baseline and leaves descender
+ * space under it, which reads as the glyph riding high inside the chrome.
+ */
+.fantasy-button:has(> .fantasy-icon) {
+  display: grid;
+  place-items: center;
+}
+
+.fantasy-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/*
+ * `FantasyDivider`: two full-width white rules in a `VStack(spacing: 3)`, drawn rather than
+ * sliced. The pack's `divider.png` carries an end ornament and is reserved for the title flanks,
+ * so a standalone rule that borrowed it would hang a half-cut ornament off one end.
+ */
+.fantasy-divider {
+  height: 6px;
+  border: 0;
+  margin: 6px 0;
+  background-image: linear-gradient(#fff, #fff), linear-gradient(#fff, #fff);
+  background-repeat: no-repeat;
+  background-position:
+    0 0,
+    0 100%;
+  background-size: 100% 1.5px;
+}
+
+/* `fantasyFieldChrome()`: padding 6, black 0.5 plate, 1px white-0.35 stroke, white text. */
+.fantasy-field {
+  border: 1px solid rgb(255 255 255 / 0.35);
+  padding: 6px;
+  width: 100%;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  font: inherit;
+  resize: none;
+}
+
+.fantasy-field:focus {
+  border-color: rgb(255 255 255 / 0.7);
+  outline: none;
+}
+
+/* MARK: - Floating panels */
+
+/* `align-items` shrink-wraps every column: the panel toggles are small square controls in all
+   four corners natively, not bars as wide as the panel they sit under. */
+.floating {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.floating--top-leading {
+  top: var(--somnio-edge-padding);
+  left: var(--somnio-edge-padding);
+}
+
+.floating--bottom-leading {
+  bottom: var(--somnio-edge-padding);
+  left: var(--somnio-edge-padding);
+}
+
+.floating--top-trailing {
+  top: var(--somnio-edge-padding);
+  right: var(--somnio-edge-padding);
+  align-items: flex-end;
+}
+
+.floating--bottom-trailing {
+  bottom: var(--somnio-edge-padding);
+  right: var(--somnio-edge-padding);
+  align-items: flex-end;
+}
+
+/* `VStack(alignment: .leading, spacing: 6)` of the three energy bars. */
+.hud-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 150 x 10 dark track with a 1px white line and a 148px foreground span, matching HUDBarPair.
+   The name is carried by `title`/`aria-label` rather than rendered, as the native `.help` is. */
+.hud-bar__track {
+  position: relative;
+  width: 150px;
+  height: 10px;
+  border: 1px solid rgb(255 255 255 / 0.7);
+  background: rgb(0 0 0 / 0.55);
+}
+
+/*
+ * Fills the 148 x 8 interior, which is where `HUDBarPair` puts it too (`height: 8`, `offset(x: 1)`
+ * in a 150 x 10 track). Sampled against a native capture the two agree row for row: one line, eight
+ * rows of colour, one line. The native bar renders a row taller only because `Rectangle().stroke`
+ * centres on the boundary rather than inside it, and that half pixel antialiases into the
+ * neighbouring row — which reads as the colour having a darker rim. Reproducing it would mean
+ * splitting the line half outside the element, which is not worth what it buys.
+ */
+.hud-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+}
+
+/* `chatPanel`'s inner `VStack(spacing: 8)` at `MainWindowMetrics.chatPanelWidth`. */
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 380px;
+}
+
+/*
+ * `.frame(height: 52)` on the chat input, set here rather than left to the textarea's `rows`
+ * default — which lands on 46 at this font and reads as a cramped field beside the native one.
+ */
+.chat-panel .fantasy-field {
+  /*
+   * Sized from the native text area, not from its `.frame(height: 52)`: that frame is the scroll
+   * view, and `fantasyFieldChrome()` adds 6px of padding around it while `textContainerInset` takes
+   * another 4 off the inside — leaving 44px for text inside a 64px box. Matching only the 52 left
+   * the browser with 38px, which is why it fit a line less.
+   */
+  height: 64px;
+  /* 6 (chrome padding) + 4 (textContainerInset), less the 1px the border already contributes. */
+  padding: 9px;
+  /* `NSAttributedString` measures 16.0 for System-13, so 44px is exactly 2.75 rows as natively. */
+  line-height: 16px;
+}
+
+.chat-scrollback {
+  height: 180px;
+  overflow-y: auto;
+  /* Player- and server-authored text: wrapping rather than clipping keeps a long word from
+     pushing the panel wider than its chrome. */
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.chat-line {
+  margin: 0 0 3px;
+  line-height: 1.35;
+}
+
+/*
+ * `ChatLineStyle.style(for:)` resolved through `ChatColor.color`. Four hues, not eight: peer, NPC,
+ * and item lines all share plain white, and only the join/leave and greeting rows are italic.
+ */
+.chat-line--ownMessage {
+  color: var(--somnio-chat-purple);
+}
+
+.chat-line--peerMessage,
+.chat-line--npcMessage,
+.chat-line--itemInfo {
+  color: #fff;
+}
+
+.chat-line--adminBroadcast,
+.chat-line--error {
+  color: var(--somnio-chat-red);
+}
+
+.chat-line--joinLeave,
+.chat-line--startupGreeting {
+  color: var(--somnio-chat-blue);
+  font-style: italic;
+}
+
+/* `VStack(spacing: 4)` of the scrolling list over its "Players: N" / "Items: N" footer. */
+.trailing-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 180px;
+}
+
+.trailing-list {
+  overflow-y: auto;
+}
+
+.trailing-list--players {
+  height: 260px;
+}
+
+.trailing-list--items {
+  height: 150px;
+}
+
+.list-footer {
+  color: var(--somnio-secondary-text);
+}
+
+.list-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 0;
+  color: #fff;
+  cursor: default;
+}
+
+.list-row--activatable {
+  cursor: pointer;
+}
+
+.list-row__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `[L]` / `[R]` in a fixed trailing column, as `ItemsListView` lays them out. */
+.list-row__marker {
+  width: 24px;
+  text-align: right;
+}
+
+/* MARK: - Overlays */
+
+.overlay-scrim {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.overlay-card {
+  width: min(440px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.overlay-card--wide {
+  width: min(560px, calc(100vw - 48px));
+}
+
+/* `FantasyPanel`'s 280pt game menu. */
+.overlay-card--menu {
+  width: min(280px, calc(100vw - 48px));
+}
+
+/*
+ * `FantasyFlankedLabel`: the title centred between two divider strips whose end ornaments face
+ * the text. The strips stretch; the ornaments do not, which is why each half is its own element
+ * with a mirrored copy of the same texture rather than one rule behind the heading.
+ */
+.overlay-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* `.largeTitle` at the 13pt body scale — the credits panel's own heading. */
+.overlay-title--large {
+  font-size: 26px;
+}
+
+.overlay-title::before,
+.overlay-title::after {
+  content: '';
+  flex: 1;
+  /* 44 image px at the pack's 2x "Double" scale, matching `FantasyPanelTextures`' halving. */
+  height: 22px;
+  border: 0 solid transparent;
+  border-image-source: url('/assets/UI/divider.png');
+  /*
+   * A three-part horizontal slice, mirroring `.resizable(capInsets:)`. Only the middle band may
+   * stretch: `background-size: 100% 100%` would scale the whole 192x44 sheet to the flank's box,
+   * squashing the ornament and the line weight along with it.
+   */
+  border-image-slice: 0 48 0 24 fill;
+  border-image-width: 0 24px 0 12px;
+}
+
+/*
+ * The sheet authors its ornament on the trailing end, so the left flank is used as drawn and the
+ * right one is mirrored — `FantasyFlankedLabel`'s `.trailing` then `.leading` pair. Mirroring the
+ * left flank instead turns both ornaments away from the title, which reads as the rules running
+ * out of the panel edge rather than framing the heading.
+ */
+.overlay-title::after {
+  transform: scaleX(-1);
+}
+
+/* `VStack(spacing: 10)` of buttons that each fill the panel width. */
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-actions .fantasy-button {
+  width: 100%;
+}
+
+/*
+ * `AboutOverlayView`'s `VStack(alignment: .center, spacing: 12)`. The heading and the rule stretch
+ * to the panel edges while everything else centres, and the credits keep their own tighter
+ * `spacing: 2`, so the gap cannot just be inherited by every descendant.
+ */
+.about-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.about-panel p {
+  margin: 0;
+}
+
+.about-panel .overlay-title,
+.about-panel .fantasy-divider,
+.about-panel .about-credits {
+  align-self: stretch;
+  margin: 0;
+}
+
+/* `.caption` at the 13pt body scale. */
+.about-caption,
+.about-credits {
+  font-size: 10px;
+}
+
+/* `.frame(maxWidth: 360)`, so the blurb wraps instead of running the panel's full width. */
+.about-blurb {
+  max-width: 360px;
+}
+
+.about-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--somnio-secondary-text);
+}
+
+/* The gap already spaces the button; native centres it rather than trailing-aligning it. */
+.about-panel .form-actions {
+  margin-top: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.form-row--checkbox {
+  grid-template-columns: auto 1fr;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* `FantasyPalette.errorRed`, which the palette shares between chat and inline form errors. */
+.form-error {
+  margin: 4px 0 0;
+  color: var(--somnio-chat-red);
+}
+
+.form-note {
+  margin: 6px 0 0;
+  color: var(--somnio-ink-dim);
+}
+
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #b7d9ff;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.blocking-notice {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  background: #05060a;
+}
+
+.hidden {
+  display: none !important;
+}

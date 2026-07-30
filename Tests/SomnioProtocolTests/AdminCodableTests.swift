@@ -72,6 +72,25 @@ struct AdminCodableTests {
         }
     }
 
+    /// Pins the *payload* key, which nothing else does.
+    ///
+    /// `AdminCodingKeys.payload` is hand-written, so renaming it is a wire change — and one this
+    /// suite would otherwise sail straight through, because every round-trip case encodes and decodes
+    /// through the same renamed key. The gameplay union is protected from exactly this by the
+    /// cross-language golden frames; the admin union has no fixture, and `SomnioCLI` ships separately
+    /// from the server, so a rename would break every already-installed CLI with a green suite.
+    @Test func `admin payload key is stable`() throws {
+        let request = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(AdminRequest.say(text: "hello"))
+        ) as? [String: Any]
+        #expect(request?["payload"] != nil)
+
+        let response = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(AdminResponse.logContents(text: "hello"))
+        ) as? [String: Any]
+        #expect(response?["payload"] != nil)
+    }
+
     @Test func `admin request tag strings are stable`() throws {
         // Pin the wire discriminator strings — renaming one would be a silent admin-channel break.
         #expect(try tag(of: AdminRequest.log) == "log")

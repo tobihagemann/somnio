@@ -222,6 +222,7 @@ struct PortalDateTickTests {
             characters: StubCharacterRepository(),
             inventories: StubInventoryRepository(),
             registrations: StubRegistrationRepository(),
+            sessions: StubSessionRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: worldRouter,
             worldClock: worldClockService,
@@ -267,13 +268,5 @@ struct PortalDateTickTests {
             ),
             lastSeen: Date()
         )
-    }
-
-    private func collect(outbox: ConnectionOutbox) async -> [Data] {
-        var frames: [Data] = []
-        for await frame in outbox.stream {
-            frames.append(frame)
-        }
-        return frames
     }
 }

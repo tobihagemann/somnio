@@ -28,8 +28,13 @@ jobs:
       - name: Install build prerequisites
         run: brew install argon2
 
+      # `--swift` so this job runs only what needs macOS: SwiftFormat, SwiftLint (both packages),
+      # and Periphery. The browser client's checks belong to the `web` job below, which runs them on
+      # the platform the web image is actually built for. Running the bare script here instead would
+      # execute all four browser checks a second time and report one failure under two job names.
+      # This job therefore needs no Node at all.
       - name: Lint & Format Check
-        run: ./Scripts/lint.sh
+        run: ./Scripts/lint.sh --swift
 
   build-and-test:
     name: Build & Test
@@ -46,6 +51,75 @@ jobs:
       - name: Test
         run: swift test --no-parallel
         timeout-minutes: 5
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # Node-only by design: the headless suite covers the ported protocol, core geometry, and
+      # DOM layer without a browser or a Swift server. The wire-conformance suite that needs a
+      # live server is a separate config so this job stays fast and dependency-light.
+      #
+      # This is also deliberately the *only* place the browser checks run in CI, and deliberately on
+      # Linux — the platform `Web/Dockerfile` builds the shipped image on. The macOS lint job runs
+      # `./Scripts/lint.sh --swift` so the two halves do not overlap.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: Web/.nvmrc
+          cache: npm
+          cache-dependency-path: Web/package-lock.json
+      # Through the same script the pre-commit hook and a local run use, rather than four inlined
+      # `npm run` steps: `Scripts/lint.sh` is then the single definition of what "the web checks"
+      # means, and a check added there cannot reach developers without also reaching CI. It runs
+      # `npm ci` itself when node_modules is absent.
+      - name: Lint & Format Check
+        run: ./Scripts/lint.sh --web
+
+  wire-conformance:
+    name: Wire Conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: Web/.nvmrc
+          cache: npm
+          cache-dependency-path: Web/package-lock.json
+      # Node-plus-Docker rather than the `integration-tests` shape: that one would need an Ubuntu
+      # runner with a pinned swiftly toolchain and Postgres inside the Node job. Reusing the
+      # docker-smoke approach keeps this job's only Swift dependency a built container image, and
+      # leaves the `web` job Node-only.
+      - name: Populate sectors
+        run: |
+          mkdir -p sectors
+          cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+      - name: Build server image
+        # MARKETING_VERSION has no default and the build fails without it, so this is a separate
+        # step from `up --wait` (which would otherwise reuse a stale image). Named service, so this
+        # job does not also build the browser client it has no use for.
+        run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=conformance-test server
+      - name: Bring the server up
+        # `--no-build` so `up` cannot re-trigger a build: a rebuild here would run without the
+        # MARKETING_VERSION arg above and fail the Dockerfile's required-arg guard. `server` pulls
+        # `db` in through depends_on; the web and proxy services stay down.
+        run: docker compose -f docker-compose.example.yml up --no-build --wait --wait-timeout 180 server
+      - name: Install
+        working-directory: Web
+        run: npm ci --no-audit --no-fund
+      - name: Run wire conformance suite
+        working-directory: Web
+        env:
+          SOMNIO_CONFORMANCE_URL: ws://127.0.0.1:8080/ws
+        run: npm run conformance
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.example.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.example.yml down -v
 
   integration-tests:
     name: Integration Tests
@@ -74,7 +148,7 @@ jobs:
   docker-smoke:
     name: Docker Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - name: Populate sectors
@@ -84,16 +158,37 @@ jobs:
         run: |
           mkdir -p sectors
           cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
-      - name: Build image
-        # The Dockerfile requires MARKETING_VERSION (no default) and fails the build
-        # without it. `docker compose build --build-arg` forwards the value to the
-        # `server` service because its Dockerfile declares `ARG MARKETING_VERSION`.
+      - name: Create an empty asset pack
+        # `Web/Dockerfile` COPYs `assets/` from the build context. This job deliberately does *not*
+        # check out the private pack: it verifies the topology, and an empty pack still yields a
+        # loadable page (placeholder models, unstyled panels). The `web-image` workflow is where the
+        # real pack is required.
+        run: mkdir -p assets
+      - name: Build images
+        # Both Dockerfiles require MARKETING_VERSION (no default) and fail the build without it.
+        # `docker compose build --build-arg` reaches every service whose Dockerfile declares that
+        # ARG, which is the server and the browser client.
         run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=ci-test
       - name: Bring stack up and wait for healthy
-        # Gates on the server healthcheck (curl /health -> SELECT 1), not just the db, so a
-        # boot regression fails the job. Runs the shipped example file as-is — its
+        # Gates on every healthcheck — server (/health -> SELECT 1), web, and proxy — so a boot
+        # regression in any of them fails the job. Runs the shipped example file as-is; its
         # placeholder secrets are internally consistent.
-        run: docker compose -f docker-compose.example.yml up --wait --wait-timeout 120
+        run: docker compose -f docker-compose.example.yml up --wait --wait-timeout 180
+      - name: Verify the full topology through the proxy
+        # The split routing is the part that can silently break: a rule change that shadows `/ws`
+        # takes the game server offline while the site keeps serving perfectly. Assert both legs
+        # reach their own upstream through the one published port.
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:8000/ | grep -q 'id="somnio-root"'
+          curl -fsS http://127.0.0.1:8000/health
+          # The client's own endpoint resolution is origin-relative, so this is the URL it will
+          # dial. A 101 means the upgrade reached the gameplay server.
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' \
+            http://127.0.0.1:8000/ws)
+          test "$status" = "101" || (echo "expected 101 from /ws, got $status" >&2; exit 1)
       - name: Dump logs on failure
         if: failure()
         run: |

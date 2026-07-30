@@ -1,6 +1,6 @@
 # Somnio
 
-A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + macOS map editor + admin CLI, all in one SwiftPM workspace.
+A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + macOS map editor + admin CLI in one SwiftPM workspace, plus a Three.js browser client under `Web/`.
 
 ## Tech Stack
 
@@ -8,6 +8,7 @@ A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + m
 - SwiftUI for the player client and editor UIs; RealityKit for the 3D world rendering (player client and editor authoring viewport); Sparkle for player auto-updates only
 - Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
+- swift-crypto for the session-token digest (shims to CryptoKit on Apple, carries its own implementation on Linux)
 - swift-argument-parser for the admin CLI
 - swift-service-lifecycle for graceful server shutdown
 - All types use Swift strict concurrency (`Sendable`, actors, structured concurrency); value types preferred
@@ -20,7 +21,10 @@ SomnioCore       # game models (Sector, Character, NPC, Monster, Inventory, Worl
                  # depends on SomnioProtocol
 SomnioData       # Postgres persistence (schema, migrations, repositories) +
                  # server bootstrap helpers (config resolution, readiness wait) +
-                 # Argon2id password hashing (lives next to the accounts table).
+                 # Argon2id password hashing (lives next to the accounts table) +
+                 # SHA-256 session-token digests (next to the sessions table, unsalted so
+                 # the digest column is directly searchable — safe because the token is a
+                 # 256-bit CSPRNG value, not a low-entropy password).
                  # depends on SomnioCore
 SomnioTheme      # Kenney "Fantasy UI Borders" chrome (FantasyPanel, FantasyButtonStyle,
                  # FantasyPanelTextures) — SwiftUI/AppKit only, loads UI/<stem>.png from
@@ -73,6 +77,8 @@ SomnioCatalogTestSupport # Foundation-only helper that reads SwiftPM `.xcstrings
                  # depends on Foundation only
 ```
 
+`Web/` is outside the SwiftPM graph entirely: a separate npm workspace that imports no Swift code and is imported by none. It reads four committed data files out of `Sources/` (the model registry and the three catalogs) and mirrors the wire protocol by hand; the golden-frame and conformance suites are what hold the mirror to the original.
+
 These boundaries are strict:
 
 - SomnioProtocol must never import another Somnio module.
@@ -86,6 +92,73 @@ These boundaries are strict:
 - SomnioCLI is a thin executable shim and must depend only on SomnioCLICore.
 
 Enforce by reading `Package.swift` dependency lists and grepping for forbidden imports per module.
+
+## Browser client (`Web/`)
+
+A Three.js client that speaks the same wire protocol as the native player. Its own npm workspace — no SwiftPM involvement — pinned by `Web/.nvmrc` and `Web/package.json`.
+
+```
+cd Web
+npm ci
+npm run dev          # Vite on :5173, proxying /ws to the local server on :8090
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint
+npm test             # headless suite (happy-dom); no browser, no Swift server
+npm run conformance  # wire conformance against a LIVE server (SOMNIO_CONFORMANCE_URL)
+npm run build        # production bundle into Web/dist
+```
+
+`./Scripts/lint.sh` fans out to the Prettier/ESLint/tsc/Vitest checks, so the repo-level lint covers the browser client too.
+
+### What it shares with the Swift tree, and how
+
+Four things are read **directly out of the repo tree** through Vite aliases rather than copied, so a change on one side cannot silently diverge from the other:
+
+| Alias | Resolves to |
+|---|---|
+| `@registry` | `Sources/SomnioCore/Resources/ModelRegistry.json` |
+| `@catalog/core`, `@catalog/ui`, `@catalog/app` | the three `Localizable.xcstrings` catalogs |
+| `@fixtures` | `Tests/SomnioProtocolTests/GoldenFrames` (tests only) |
+| `@scripts` | `Scripts/` (tests only) — lets the Vitest suite reach `glb-buffer-uris.mjs`, whose only consumer cannot detect it failing |
+
+`.xcstrings` needs a Vite plugin (`xcstringsJSON` in `vite.config.ts`) because `resolveJsonModule` only covers `.json`; without it the catalogs resolve as opaque assets and every lookup silently falls back to its English key. `server.fs.allow` has to reach above `Web/` for the same reason.
+
+The wire protocol, core geometry, and renderer math are **hand-mirrored** ports, not shared code. Two invariants keep the mirror honest:
+
+- **Golden frames** (`Tests/SomnioProtocolTests/GoldenFrames/golden-frames.json`) are compared as canonicalized JSON by both `GoldenFrameTests` in Swift and `golden-frames.test.ts` in TypeScript. This is the only check in the repo that catches a payload **property rename** — the round-trip suites encode and decode with the same renamed property and stay green. Re-record deliberately with `SOMNIO_RECORD_GOLDEN_FRAMES=1 swift test --filter GoldenFrameTests`.
+- **Wire conformance** (`Web/test/conformance/`) drives the real TypeScript encoder and transport into a real Swift server. Its outbound case is what proves application frames ship as **text**; everything else in that file passes while the transport sends binary.
+
+`Math.fround` narrowing where Swift computes in `Float` lives in `Web/src/core/float.ts`, including `FLOAT_PI` — Swift's `Float.pi` rounds toward zero, so it is **not** `Math.fround(Math.PI)`.
+
+### Browser-only decisions
+
+- **Session tokens.** The native client keeps credentials in the Keychain; a browser page needs a refresh to survive. Server-side support is migration v8 plus `redeemSession`/`revokeSession`, and issuance is **request-gated** on an Optional `Login.requestSessionToken`, which is what keeps `helloVersion` at 3 rather than forcing a bump that would lock out every existing player.
+- **DOM UI over WebGL.** Panels and overlays are real elements, so password managers work and `agent-browser snapshot` sees them. `Web/src/ui/chrome.css` reproduces `FantasyChrome` with `border-image-slice: 36` against an 18px border — the slice is unitless *image pixels* and the Swift `capInset` of 18 is points against an already-halved image.
+- **`OrthographicCameraComponent.scale` is a vertical HALF-height** (`EditorCameraFraming.swift`), so the Three.js mapping is `top/bottom = ±scale`, `left/right = ±scale × aspect`. The usual `frustumSize / 2` idiom halves it again and renders the whole world at 2x.
+- **Resize holds the vertical world extent constant.** A gameplay contract, not a rendering detail: a bigger window magnifies rather than reveals.
+- **`window.somnio`** is a read-only debug surface (dev always, production via `?debug=1`). The `/somnio-web` skill covers driving the client with `agent-browser`.
+
+### Web asset pack
+
+The browser reads glTF, not USDZ, so it needs its own geometry subtree. `somnio-assets` carries `Web/Models/*.glb`, published by the same `convert-glb-to-usdz.sh` loop that writes `Models/*.usdz` — one loop so the two cannot come from different normalization passes. Textures are **not** duplicated: `Scripts/bundle-web-assets.sh` composes the served root from `Web/Models/` plus the **root** `FloorMaterials/` and `UI/`.
+
+```
+SOMNIO_ASSET_SOURCE=/path/to/somnio-assets \
+SOMNIO_WEB_ASSET_DEST=Web/dist/assets \
+  Scripts/bundle-web-assets.sh
+```
+
+The destination differs by consumer and getting it wrong fails silently: `Web/dist/assets` is for the image build (nginx serves `dist/`), but the **dev server needs `Web/public/assets`** — Vite serves `Web/public` and `Web/`, never `dist/`, so a pack written to `dist` leaves every model and texture 404ing with a placeholder world and no error. `Web/public/assets` is gitignored and excluded from the Docker context, so a populated dev pack never leaks into an image.
+
+Same hard/soft split as `bundle-assets.sh`: `UI/` is required (the chrome has no fallback), models and floors warn. It additionally verifies **external resource sidecars** — both `buffers[]` and `images[]`, which is the whole surface glTF 2.0 declares external files on: today's pack is entirely self-contained binary GLB so the check finds nothing, but a JSON glTF can point at a sibling `.bin` or `.png` and three.js resolves either URI relative to the model URL, so a pipeline change that started emitting one would serve a 404 for the model's geometry or its texture.
+
+The served layout is `/assets/...` for the pack and `/bundle/...` for hashed build output (`build.assetsDir: 'bundle'`). They must not share a directory — the client references the pack by absolute URL.
+
+### Hosting
+
+`Web/Dockerfile` builds `ghcr.io/tobihagemann/somnio-web` from a **repository-root** context (the Vite aliases reach into `Sources/`, and the asset pack is at `assets/`). It requires `--build-arg MARKETING_VERSION` like the server image, and greps the bundle for the marked stamp `somnio-web <version>` to prove the version was injected — see `Web/src/buildInfo.ts` for why the stamp interpolates the define directly rather than reusing the exported constant.
+
+Release tags stay component-prefixed: `web-X.Y.Z` triggers `web-image.yml`. The static image does **not** proxy `/ws`; whatever fronts it performs the split — the `proxy` service in `docker-compose.example.yml` locally, Traefik in production. That split is what makes the client's origin-relative `wss://<host>/ws` resolve with no dev-only branch.
 
 ## Build & Test
 
@@ -130,7 +203,9 @@ Scripts/release.sh [player|editor ...]                   # build, sign, notarize
 
 `Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
 
-Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` triggers `release.yml` (player `.app`/DMG + Sparkle appcast + GitHub Release) and `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image). Each workflow strips its own prefix to get the bare `X.Y.Z` marketing version; in `release.yml` the full tag (`RELEASE_TAG`) names the GitHub Release and the Sparkle `--download-url-prefix`, so the two stay aligned. The **editor is not released by CI** — build it locally with `Scripts/release.sh editor` (CI calls `Scripts/release.sh player`). Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob (which would collide with all components at once).
+The browser client is not packaged by these scripts — it ships as a container image. See the "Browser client" section for `Scripts/bundle-web-assets.sh` and `Web/Dockerfile`.
+
+Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` triggers `release.yml` (player `.app`/DMG + Sparkle appcast + GitHub Release), `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image), and `web-X.Y.Z` triggers `web-image.yml` (ghcr browser-client image). Each workflow strips its own prefix to get the bare `X.Y.Z` marketing version; in `release.yml` the full tag (`RELEASE_TAG`) names the GitHub Release and the Sparkle `--download-url-prefix`, so the two stay aligned. The **editor is not released by CI** — build it locally with `Scripts/release.sh editor` (CI calls `Scripts/release.sh player`). Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob (which would collide with all components at once).
 
 ### Asset bundling
 
@@ -202,17 +277,27 @@ Server runtime configuration is resolved from environment variables (resolution 
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
 
+`docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:8080` alongside the proxy — loopback-bound, and load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy.
+
 A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v15)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
 
 ## Lint & Format
 
-SwiftFormat, SwiftLint, and Periphery are installed via Homebrew:
+SwiftFormat, SwiftLint, and Periphery are installed via Homebrew. Both scripts fan out to the browser client too, so an unscoped run of either needs **`npm` as well as the Swift tools** — each fails loudly rather than skipping the web checks (see `Web/.nvmrc` for the pinned Node version). Scope the run to require only one half's tools.
 
 ```
-./Scripts/format.sh            # auto-format + autocorrect
-./Scripts/lint.sh              # check format + lint + unused code (read-only)
+./Scripts/format.sh            # auto-format + autocorrect (Swift + Prettier/ESLint)
+./Scripts/format.sh --swift    # Swift only: SwiftFormat, SwiftLint --fix
+./Scripts/format.sh --web      # browser only: Prettier, ESLint --fix
+./Scripts/lint.sh              # check format + lint + unused code + the browser suite (read-only)
+./Scripts/lint.sh --swift      # Swift only: SwiftFormat, SwiftLint (both packages), Periphery
+./Scripts/lint.sh --web        # browser only: Prettier, ESLint, tsc, Vitest
 ./Scripts/install-hooks.sh     # install pre-commit hook (runs lint.sh before commit)
 ```
+
+The scopes exist for CI, which runs each half on the platform it belongs to: the `lint` job is macOS because the Swift toolchain needs it and calls `--swift`, while the `web` job is Ubuntu — the platform `Web/Dockerfile` builds the shipped image on — and calls `--web`. A bare `./Scripts/lint.sh` still runs everything, which is what a local check and the pre-commit hook want, and only the selected scope's tools are required, so `--web` works on a machine with no SwiftFormat. **Both scripts take the same scopes**, because `lint.sh --web` answers a Prettier failure by telling the reader to run `format.sh` — a remedy an unscoped `format.sh` could not deliver on a machine without SwiftFormat. Both CI jobs invoke `lint.sh` rather than inlining their own steps, so a check added here cannot reach developers without also reaching CI.
+
+Anything these scripts run on Linux must not assume macOS-only environment: GitHub's Ubuntu runners leave `TMPDIR` unset, so a bare `$TMPDIR` under `set -u` aborts the script before any check runs. Use `${TMPDIR:-/tmp}`.
 
 CI on GitHub Actions mirrors the same checks (`.github/workflows/ci.yml`).
 
@@ -236,6 +321,8 @@ For custom views that accept a "localized title" parameter, prefer `LocalizedStr
 ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
 
 Each target's bilingual catalog is guarded by a per-target catalog test (the `LocalizableCatalogTests` suites for SomnioApp/SomnioEditor/SomnioUI; the CLI's lives in `AdminOutputTests` and SomnioCore's in `CatalogAssertionsTests`) whose `expectedKeys` allowlist is the only thing checked for en/de presence, placeholder parity, and the no-Unicode-ellipsis rule. A catalog key absent from that allowlist ships unguarded, so every new user-facing string must be added both to the `.xcstrings` catalog and to its target's `expectedKeys` list.
+
+The browser client adds a **fourth** catalog, in a different format. It reads the three shipped Swift `.xcstrings` files directly through the `@catalog/*` Vite aliases — so a German string fixed for the native client is fixed there in the same commit — and merges a hand-written TypeScript en/de table on top: `Web/src/i18n/browserCatalog.ts`. That table holds only the strings **no Swift target ever needed**, because the native client bundles its assets, owns its window, and cannot be opened on a phone: the loading notice, "Fullscreen", the WebGL and mobile notices, and the two session-resume lines. A string the native client also shows belongs in its Swift catalog and is read from there, never copied — the merge reports collisions and a test pins that set to empty, so a duplicated key fails rather than letting import order pick the winner. The browser's allowlist is `RENDERED_KEYS` in `Web/src/i18n/index.ts`, and it covers **every** key the browser renders regardless of which of the four catalogs defines it; a key missing from it ships with no en/de, placeholder-parity, or ellipsis guard. `Web/test/i18n.test.ts` strengthens the Swift `expectedKeys` discipline in one way: it scans every `.ts` file under `src` for `t(...)` / `lookup(...)` literals and fails on any that is absent from `RENDERED_KEYS`, and on any allowlisted key nothing renders.
 
 `swift build` never compiles `.xcstrings` (the resource bundles carry the raw JSON, so non-English resolution is dead under `swift run`/`swift test` — keys are the English source strings, so this reads as English). The packaged apps get real localization from `Scripts/package_app.sh`: after copying the SwiftPM bundles it compiles each bundle's catalog via `xcstringstool` into `<lang>.lproj/Localizable.strings`, deletes the raw `.xcstrings`, validates a per-target required-bundle set (player: Core/UI/App; editor: Core/Editor), and advertises the locales in the app's `Info.plist` (`CFBundleLocalizations`, `CFBundleAllowMixedLocalizations` — required for Foundation to resolve subordinate-bundle localizations). Adding a new locale therefore means updating both the catalogs and `CFBundleLocalizations` in `package_app.sh`. `Tests/SomnioCoreTests/CatalogRuntimeResolutionTests.swift` pins the compile→resolve contract; the Linux-reachable catalogs (SomnioCore, SomnioCLICore) are additionally guarded by `assertKeysAreEnglishFallback` so their `return key` fallback always reads as English.
 
@@ -263,14 +350,17 @@ The 3D pack's layout is data, not hardcoded Swift: the committed `Sources/Somnio
 
 Skill kit at `Skills/`, symlinked from `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex CLI). Both tools share the same set:
 
+Upstream-derived from MIT-licensed agent-skill repos (provenance and copyright notices in `Skills/ATTRIBUTION.md`):
+
 - `swift-architecture`, `swift-concurrency`, `swift-language`, `swift-security`, `swift-testing` — Swift 6.2 patterns and APIs
-- `swiftui`, `swiftui-performance-audit` — SwiftUI guidance
+- `swiftui`, `swiftui-performance-audit`, `accessibility`, `writing-for-interfaces` — UI guidance
 - `macos-spm-app-packaging` — SPM-built `.app` bundle workflows (generic; not Somnio's two-bundle player+editor pipeline)
 
-All upstream-derived from MIT-licensed agent-skill repos; provenance and copyright notices in `Skills/ATTRIBUTION.md`.
+Project-specific:
+
+- `somnio-server`, `somnio-player`, `somnio-editor`, `somnio-cli`, `somnio-web` — build and run each component locally against the dev server
+- `release-player`, `release-server` — the signed/notarized player release and the ghcr server image
 
 `AGENTS.md` is the shared instructions file; `.claude/CLAUDE.md` is symlinked to it so Claude Code picks up the same content.
 
 `.mcp.json` configures `sosumi` (`https://sosumi.ai/mcp`) for live Apple developer documentation lookups.
-
-Project-specific skills for Somnio's two-bundle packaging (`Scripts/package_app.sh [debug|release] [player|editor]`, `Scripts/create_dmg.sh [player|editor]`, `Scripts/release.sh [player|editor ...]`) are not shipped here yet. Author them under `Skills/` when the workflow stabilizes.

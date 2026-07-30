@@ -188,13 +188,20 @@ public actor ConnectionActor {
             case let .register(payload):
                 await RegisterHandler.handle(payload, on: self, dependencies: dependencies)
                 return .keepOpen
-            case .clientPosition, .clientSay, .equipToggle, .bumpNPC, .enterPortal,
+            // Redemption belongs here and only here: it is an alternative to a password login,
+            // so it has to be accepted *before* login. Placing it in the attached switch instead
+            // would make resumption impossible, since the connection never reaches attached
+            // without authenticating first.
+            case let .redeemSession(payload):
+                await SessionHandler.handleRedeem(payload, on: self, dependencies: dependencies)
+                return .keepOpen
+            case .clientPosition, .clientSay, .equipToggle, .bumpNPC, .enterPortal, .revokeSession,
                  .hello, .loginResult, .registerResult, .enterSector, .mainCharacter,
                  .entity, .serverPosition, .serverSay, .energy, .dateTick, .inventory,
-                 .leave, .adminSay:
+                 .leave, .adminSay, .sessionToken, .sessionRevoked:
                 return protocolErrorClose("unexpected tag before login", frameSize: frameSize)
             }
-        case let .attached(entityIndex, sectorName, _):
+        case let .attached(entityIndex, sectorName, accountId):
             switch message {
             case let .clientPosition(payload):
                 await GameplayHandlers.handlePosition(
@@ -241,11 +248,25 @@ public actor ConnectionActor {
                     setAttached(entityIndex: outcome.entityIndex, sectorName: outcome.sectorName)
                 }
                 return .keepOpen
-            case .login, .register:
+            // Revocation belongs here and only here. Dropping it into the pre-login switch above
+            // would make logout close the connection with a protocol error, leaving exactly the
+            // working credential in browser storage that revocation exists to remove — the
+            // compiler forces a decision in both switches but cannot force the right one.
+            case let .revokeSession(payload):
+                // The connection's own account scopes the delete, so a player cannot revoke a
+                // session belonging to anyone else.
+                await SessionHandler.handleRevoke(
+                    payload,
+                    accountId: accountId,
+                    on: self,
+                    dependencies: dependencies
+                )
+                return .keepOpen
+            case .login, .register, .redeemSession:
                 return protocolErrorClose("login/register after attach", frameSize: frameSize)
             case .hello, .loginResult, .registerResult, .enterSector, .mainCharacter,
                  .entity, .serverPosition, .serverSay, .energy, .dateTick, .inventory,
-                 .leave, .adminSay:
+                 .leave, .adminSay, .sessionToken, .sessionRevoked:
                 return protocolErrorClose("server-only tag from client", frameSize: frameSize)
             }
         }

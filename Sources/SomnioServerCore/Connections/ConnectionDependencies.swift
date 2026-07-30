@@ -12,6 +12,12 @@ public struct ConnectionDependencies: Sendable {
     public let characters: any CharacterRepository
     public let inventories: any InventoryRepository
     public let registrations: any RegistrationRepository
+    /// Browser session resumption. Required rather than defaulted: a default would let a caller
+    /// silently get `DisabledSessionRepository`, whose `issue` always throws and whose `redeem`
+    /// always returns nil — which is what kept every unit test from ever reaching the success path
+    /// of either session handler. Bootstrap passes the Postgres repository; tests pass
+    /// `StubSessionRepository`, and anything genuinely wanting sessions off says so explicitly.
+    public let sessions: any SessionRepository
     public let passwordHasher: PasswordHasher
     public let worldRouter: WorldRouter
     public let worldClock: WorldClockService
@@ -23,6 +29,7 @@ public struct ConnectionDependencies: Sendable {
         characters: any CharacterRepository,
         inventories: any InventoryRepository,
         registrations: any RegistrationRepository,
+        sessions: any SessionRepository,
         passwordHasher: PasswordHasher,
         worldRouter: WorldRouter,
         worldClock: WorldClockService,
@@ -33,6 +40,7 @@ public struct ConnectionDependencies: Sendable {
         self.characters = characters
         self.inventories = inventories
         self.registrations = registrations
+        self.sessions = sessions
         self.passwordHasher = passwordHasher
         self.worldRouter = worldRouter
         self.worldClock = worldClock

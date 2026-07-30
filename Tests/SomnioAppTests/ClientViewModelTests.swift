@@ -1471,3 +1471,209 @@ private final class NullModelAssets: ModelAssets {
         nil
     }
 }
+
+/// A transport that never opens a socket, so a test can hold a connection attempt "in flight"
+/// and submit again while it unwinds.
+///
+/// `run` parks on a continuation until `releaseRun()` and then delivers `.connectFailed`, which is
+/// what the real transport does when its socket is cancelled before `Hello` — the delivery happens
+/// *inside* `run`, before it returns, so a caller awaiting the run task always observes it first.
+/// Reproducing that ordering is the whole point: it is what made the defect below invisible.
+private actor StubGameplayTransport: GameplayTransporting {
+    private var release: CheckedContinuation<Void, Never>?
+    private(set) var runCount = 0
+
+    func run(url _: String, delegate: any GameplayTransportDelegate) async {
+        runCount += 1
+        await withCheckedContinuation { continuation in
+            release = continuation
+        }
+        await MainActor.run { delegate.handle(.connectFailed(URLError(.cannotConnectToHost))) }
+    }
+
+    func enqueue(_: SomnioMessage) async {}
+
+    /// Releases a parked `run` and nothing else. Deliberately does *not* arm a future one: the
+    /// replacement opens a second socket, and that one must stay live so the test can drive its
+    /// `Hello` — a stub that pre-failed it would tear the intent down a second time and hide the
+    /// very thing under test.
+    func disconnect() async {
+        guard let continuation = release else { return }
+        release = nil
+        continuation.resume()
+    }
+}
+
+@MainActor
+struct ClientViewModelReplacementTests {
+    /// The defect this pins: a registration submitted while a prior attempt is still unwinding
+    /// used to reach the wire as a `login`, carrying the credentials `submitRegistration` copies
+    /// into `loginForm` — a login for an account that was never created.
+    ///
+    /// `discardInFlightConnection` leaves `authIntent` alone, but the socket it abandons does not:
+    /// its `.connectFailed` runs `beginAuthSocketTeardown` -> `resetSession`, which resets the
+    /// intent to `.login` before the replacement reopens. Only capturing and restoring the intent
+    /// across that window keeps the submission the user actually made.
+    @Test func `a registration submitted while a socket unwinds still registers`() async {
+        let transport = StubGameplayTransport()
+        let viewModel = ClientViewModel(
+            worldScene: RenderSurfaceSpy(),
+            transport: transport,
+            tickerMode: .manual
+        )
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+
+        viewModel.loginForm.nickname = "Someone"
+        viewModel.loginForm.password = "old-password"
+        viewModel.openConnection()
+
+        viewModel.registrationForm.nickname = "Newcomer"
+        viewModel.registrationForm.password = "brand-new-pw"
+        viewModel.registrationForm.passwordRepeat = "brand-new-pw"
+        viewModel.registrationForm.email = "newcomer@example.com"
+        viewModel.submitRegistration()
+
+        // Awaited rather than slept on: the hop spans an actor hop plus a full socket unwind, and
+        // Swift Testing runs suites in parallel, so a fixed delay would flake under load and
+        // report the very defect this test exists to prove absent.
+        await viewModel._awaitReplacement()
+
+        // The replacement must actually have reopened. Without this the test could fabricate
+        // `awaitingHello` below and pass even if the reopen were deleted outright.
+        #expect(await transport.runCount == 2, "the replacement must open a second socket")
+
+        // The reopened socket answers `Hello` with whatever `authIntent` now holds.
+        viewModel.connectionState = .awaitingHello
+        viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion))))
+
+        let sentRegister = outbound.contains { if case .register = $0 { return true } else { return false } }
+        let sentLogin = outbound.contains { if case .login = $0 { return true } else { return false } }
+        #expect(sentRegister, "the submitted registration must survive the replacement teardown")
+        #expect(!sentLogin, "a login for an account that was never created must not reach the wire")
+    }
+
+    /// The window the generation counter closes: a submission landing *while* the replacement is
+    /// suspended writes `authIntent` and is then dropped by the one-replacement guard. A restore
+    /// that ignored the generation would overwrite it with its own stale capture, so the login
+    /// typed second would reach the wire as the registration typed first.
+    @Test func `a login submitted during the replacement window supersedes the captured intent`() async {
+        let transport = StubGameplayTransport()
+        let viewModel = ClientViewModel(
+            worldScene: RenderSurfaceSpy(),
+            transport: transport,
+            tickerMode: .manual
+        )
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+
+        viewModel.registrationForm.nickname = "Newcomer"
+        viewModel.registrationForm.password = "brand-new-pw"
+        viewModel.registrationForm.passwordRepeat = "brand-new-pw"
+        viewModel.registrationForm.email = "newcomer@example.com"
+        viewModel.openConnection()
+
+        // Starts the replacement, which suspends on the unwind.
+        viewModel.submitRegistration()
+        // Lands inside that window: `openConnection` drops it, but the intent must survive.
+        viewModel.loginForm.nickname = "Existing"
+        viewModel.loginForm.password = "their-password"
+        viewModel.submitLogin()
+
+        await viewModel._awaitReplacement()
+
+        viewModel.connectionState = .awaitingHello
+        viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion))))
+
+        let sentRegister = outbound.contains { if case .register = $0 { return true } else { return false } }
+        let sentLogin = outbound.contains { if case .login = $0 { return true } else { return false } }
+        #expect(sentLogin, "the newer login must win over the intent captured before it")
+        #expect(!sentRegister, "an account the user stopped asking for must not be created")
+        // Exactly one replacement, however many submissions land in the window. Without the
+        // one-replacement guard each would start its own teardown and they would race to reopen.
+        #expect(await transport.runCount == 2, "a dropped submission must not start a second teardown")
+    }
+
+    /// The restore's own correctness, which the supersede case cannot show: with a single
+    /// submission in the window the generation still matches, so the capture *is* reinstated —
+    /// and it has to be the intent that submission set. `resetSession` has meanwhile forced
+    /// `.login`, so a capture taken from a stale `authIntent` would be silently reinstated over it.
+    @Test func `the reinstated intent is the one the submission set`() async {
+        let transport = StubGameplayTransport()
+        let viewModel = ClientViewModel(
+            worldScene: RenderSurfaceSpy(),
+            transport: transport,
+            tickerMode: .manual
+        )
+        var outbound: [SomnioMessage] = []
+        viewModel._outboundProbe = { outbound.append($0) }
+
+        viewModel.registrationForm.nickname = "Newcomer"
+        viewModel.registrationForm.password = "brand-new-pw"
+        viewModel.registrationForm.passwordRepeat = "brand-new-pw"
+        viewModel.registrationForm.email = "newcomer@example.com"
+        viewModel.submitRegistration()
+
+        // The player backs out of sign-up without a result and logs in instead. One submission
+        // inside the window, so the replacement reinstates its capture rather than deferring.
+        viewModel.loginForm.nickname = "Existing"
+        viewModel.loginForm.password = "their-password"
+        viewModel.submitLogin()
+
+        await viewModel._awaitReplacement()
+
+        viewModel.connectionState = .awaitingHello
+        viewModel.handle(.message(.hello(HelloMessage(protocolVersion: SomnioProtocolConstants.helloVersion))))
+
+        let sentRegister = outbound.contains { if case .register = $0 { return true } else { return false } }
+        let sentLogin = outbound.contains { if case .login = $0 { return true } else { return false } }
+        #expect(sentLogin, "the login the player submitted must reach the wire")
+        #expect(!sentRegister, "the abandoned sign-up form must not be re-issued")
+    }
+
+    /// The field has to be cleared, not merely set: it gates every future replacement, so a task
+    /// that leaves it standing silently discards every later submission for the process lifetime.
+    @Test func `a later submission still replaces after an earlier replacement finished`() async {
+        let transport = StubGameplayTransport()
+        let viewModel = ClientViewModel(
+            worldScene: RenderSurfaceSpy(),
+            transport: transport,
+            tickerMode: .manual
+        )
+
+        viewModel.loginForm.nickname = "Someone"
+        viewModel.loginForm.password = "their-password"
+        viewModel.openConnection()
+        viewModel.submitLogin()
+        await viewModel._awaitReplacement()
+        #expect(await transport.runCount == 2)
+
+        // The reopened socket is live again, so this submission takes the replacement path too.
+        viewModel.submitLogin()
+        await viewModel._awaitReplacement()
+        #expect(await transport.runCount == 3, "the replacement slot must be released for the next submission")
+    }
+
+    /// `performLeave` cancels the pending replacement, and the task honours it. Without either the
+    /// task resumes after the unwind and reopens the socket the player just left.
+    @Test func `leaving during a replacement does not reopen the connection`() async {
+        let transport = StubGameplayTransport()
+        let viewModel = ClientViewModel(
+            worldScene: RenderSurfaceSpy(),
+            transport: transport,
+            tickerMode: .manual
+        )
+
+        viewModel.loginForm.nickname = "Someone"
+        viewModel.loginForm.password = "their-password"
+        viewModel.openConnection()
+        viewModel.submitLogin()
+
+        viewModel.leaveGame()
+        await viewModel._awaitReplacement()
+        // Let the detached `leaveGame` task finish its own unwind before observing.
+        await Task.yield()
+
+        #expect(await transport.runCount == 1, "the cancelled replacement must not open a second socket")
+    }
+}

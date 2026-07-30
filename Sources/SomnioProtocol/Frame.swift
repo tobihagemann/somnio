@@ -13,6 +13,11 @@ public enum SomnioMessageTag: String, CaseIterable, Sendable, Equatable {
     case equipToggle
     case bumpNPC
     case enterPortal
+    /// Session resumption. `redeemSession` is accepted pre-login; `revokeSession` post-attach.
+    /// Both are strictly request-gated — the server never volunteers their responses — which is
+    /// what keeps them additive against the strict-equality `helloVersion` gate.
+    case redeemSession
+    case revokeSession
 
     // S→C
     case hello
@@ -28,4 +33,6 @@ public enum SomnioMessageTag: String, CaseIterable, Sendable, Equatable {
     case inventory
     case leave
     case adminSay
+    case sessionToken
+    case sessionRevoked
 }

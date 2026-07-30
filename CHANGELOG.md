@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Play Somnio in a web browser: the same world, chat, movement, portals, and day/night lighting as the macOS app, with no download — sign in at the same server and meet the same players
+- Stay signed in when the browser page reloads: ticking "Remember password" keeps you in the world instead of returning you to the login form, and leaving the game or signing in as someone else clears it
 - Explore new lands north of Edaria: the Nordwiese meadow and the monster-haunted Nordwald forest, reached through the town's north gate, with Edaria's town wall and gate visible from the meadow side
 - Enter Edaria's shop and inn: both open into furnished interiors — shelves, counters, goods, beds, and kegs — with their keepers behind the counter, and the arena is entered through its east-side door
 - Show distinct street paving: sector floors can carry material patches, giving Edaria cobbled streets crossing its grassy square and a paved path through the north gate
@@ -23,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Show the game in German for German-language users: menus, dialogs, HUD labels, and chat messages now appear translated instead of always falling back to English
 - Keep movement speed and position reporting steady when the system clock changes (NTP sync or a manual adjustment): a backward clock jump could previously stall your position updates to the server until wall time caught back up
+- Show the ghost's idle and flying animations correctly: they carried part of its death pose, leaving it visibly twisted while hovering
 
 ## [0.2.0] - 2026-07-09
 

@@ -37,7 +37,7 @@ import SwiftUI
                     Button {
                         viewModel.submitLogin()
                     } label: {
-                        Text(L.resource("OK"))
+                        Text(L.resource("Log In"))
                     }
                     .buttonStyle(FantasyButtonStyle())
                     .keyboardShortcut(.defaultAction)

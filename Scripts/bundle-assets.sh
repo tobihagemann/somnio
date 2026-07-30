@@ -68,7 +68,10 @@ for subtree in "${SUBTREES[@]}"; do
     continue
   fi
   mkdir -p "$dest"
-  rsync -a "${src}/" "${dest}/"
+  # Replace rather than merge: without `--delete`, a stem renamed or dropped in the pack keeps being
+  # shipped out of a previous build's bundle, so the .app carries a model the pack no longer has.
+  # `Scripts/bundle-web-assets.sh` makes the same guarantee for the served root.
+  rsync -a --delete "${src}/" "${dest}/"
 done
 
 summary=()

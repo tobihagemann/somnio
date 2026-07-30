@@ -1,0 +1,142 @@
+name: Web Image
+
+on:
+  push:
+    # Browser-client releases only. Each component owns its own tag prefix — never a bare-numeric
+    # glob, which would fire every component's workflow at once.
+    tags: ["web-[0-9]*.[0-9]*.[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "x.y.z to stamp into the image; blank => 0.0.0-<short-sha>"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # A distinct image from the server's `ghcr.io/tobihagemann/somnio`, so the two components version
+  # and roll back independently.
+  IMAGE_NAME: ${{ github.repository }}-web
+
+jobs:
+  publish:
+    name: Build & Publish Web Image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the main-ancestry guard below can resolve origin/main.
+          fetch-depth: 0
+          # The guard's fetch is an unauthenticated read on a public repo and nothing pushes, so the
+          # persisted packages:write token isn't needed — keep it off the runner.
+          persist-credentials: false
+
+      - name: Verify ref is reachable from main
+        run: |
+          # Mirrors release.yml and docker-image.yml: only publish images for commits already on
+          # main, so a tag on an unreviewed side branch cannot produce a trusted-looking ghcr tag.
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Commit ${GITHUB_SHA} is not an ancestor of origin/main." >&2
+            exit 1
+          fi
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/web-}"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            # Strip a web- prefix the operator may type by habit, symmetric with the push path.
+            VERSION="${INPUT_VERSION#web-}"
+          else
+            VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          # The version reaches a shell inside the Dockerfile's RUN and a grep pattern there, and is
+          # written to $GITHUB_OUTPUT, so reject anything outside this set before the build runs.
+          if [[ ! "${VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "ERROR: version '${VERSION}' contains unsafe characters" >&2
+            exit 1
+          fi
+          echo "marketing=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out asset pack
+        uses: actions/checkout@v6
+        with:
+          # The runtime pack is licensed art that can be served from the shipped site but not
+          # redistributed as source, so it lives in a separate private repo. The default
+          # GITHUB_TOKEN only reaches this repo; ASSETS_DEPLOY_KEY is a read-only SSH deploy key
+          # scoped to somnio-assets. Same mechanism release.yml uses for the player bundle.
+          repository: tobihagemann/somnio-assets
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          # `Web/Dockerfile` reads the pack from `assets/` in the build context.
+          path: assets
+          persist-credentials: false
+
+      - name: Verify the asset pack has what the client needs
+        run: |
+          # Fail here rather than shipping a site with unstyled panels. `bundle-web-assets.sh` also
+          # hard-fails on a missing UI/ subtree, but that runs inside the image build where the
+          # error is buried in build output; this names the problem up front.
+          for subtree in Web/Models FloorMaterials UI; do
+            if [[ ! -d "assets/${subtree}" ]]; then
+              echo "ERROR: asset pack is missing ${subtree}/" >&2
+              exit 1
+            fi
+          done
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.marketing }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=sha,prefix=sha-
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          # Repository root, not Web/: the client resolves the model registry and the three
+          # .xcstrings catalogs out of Sources/ through Vite aliases, and the asset pack sits at
+          # assets/. A Web/-rooted context cannot see any of them.
+          context: .
+          file: ./Web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MARKETING_VERSION=${{ steps.version.outputs.marketing }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          # `mode=min`, unlike the server image's `mode=max`, because this build's context carries
+          # the private somnio-assets checkout: `mode=max` exports *every* stage's layers into the
+          # Actions cache, including the build stage that `COPY assets/ /src/assets/` populates.
+          # GitHub grants a pull request access to caches created on the base branch — including
+          # PRs from forks — so that would make the private pack readable from the public repo,
+          # which is the exact exposure the deploy-key indirection exists to prevent. The pushed
+          # image is unaffected either way (only the nginx stage ships), so this costs only the
+          # intermediate-layer reuse, not the npm-install or Vite-build layers.
+          cache-to: type=gha,mode=min

@@ -1,0 +1,293 @@
+{
+  "adminSay" : {
+    "payload" : {
+      "text" : "Server restart in 5 minutes"
+    },
+    "tag" : "adminSay"
+  },
+  "bumpNPC" : {
+    "payload" : {
+      "npcIndex" : 4
+    },
+    "tag" : "bumpNPC"
+  },
+  "clientPosition" : {
+    "payload" : {
+      "entityIndex" : 0,
+      "facing" : 137.5,
+      "tempo" : 2,
+      "x" : 10,
+      "y" : 20
+    },
+    "tag" : "clientPosition"
+  },
+  "clientSay" : {
+    "payload" : {
+      "entityIndex" : 0,
+      "text" : "Hallo Welt"
+    },
+    "tag" : "clientSay"
+  },
+  "dateTick" : {
+    "payload" : {
+      "hour" : 7,
+      "minute" : 33
+    },
+    "tag" : "dateTick"
+  },
+  "energy" : {
+    "payload" : {
+      "balanceCurrent" : 50,
+      "balanceMax" : 100,
+      "hpCurrent" : 100,
+      "hpMax" : 100,
+      "manaCurrent" : 25,
+      "manaMax" : 50
+    },
+    "tag" : "energy"
+  },
+  "enterPortal" : {
+    "payload" : {
+      "portalIndex" : 2
+    },
+    "tag" : "enterPortal"
+  },
+  "enterSector" : {
+    "payload" : {
+      "sector" : {
+        "collisionMasks" : [
+          {
+            "height" : 32,
+            "width" : 64,
+            "x" : 128,
+            "y" : 256
+          }
+        ],
+        "dimensions" : {
+          "height" : 12,
+          "width" : 16
+        },
+        "floorMaterialID" : "grass-meadow",
+        "floorPatches" : [
+          {
+            "floorMaterialID" : "cobble-town",
+            "height" : 128,
+            "width" : 512,
+            "x" : 0,
+            "y" : 0
+          }
+        ],
+        "light" : {
+          "brightness" : 100,
+          "indoor" : false
+        },
+        "monsterSpawns" : [
+          {
+            "aiScriptIndex" : 3,
+            "bounded" : true,
+            "figure" : 0,
+            "monsterHeight" : 48,
+            "monsterWidth" : 32,
+            "name" : "Gespenst",
+            "spawnBalance" : 100,
+            "spawnBoxHeight" : 128,
+            "spawnBoxWidth" : 128,
+            "spawnHP" : 100,
+            "spawnMana" : 100,
+            "spawnX" : 640,
+            "spawnY" : 384
+          }
+        ],
+        "name" : "EdariaMitte",
+        "npcs" : [
+          {
+            "behaviorTag" : 0,
+            "dialogScript" : "Hallo $name, willkommen!",
+            "direction" : 270,
+            "figure" : 16,
+            "maskHeight" : 48,
+            "maskWidth" : 32,
+            "name" : "Libus",
+            "spawnBoxHeight" : 64,
+            "spawnBoxWidth" : 64,
+            "spawnX" : 320,
+            "spawnY" : 192
+          }
+        ],
+        "objects" : [
+          {
+            "modelID" : "door",
+            "priority" : 3,
+            "rotation" : 270,
+            "sourceHeight" : 32,
+            "sourceWidth" : 64,
+            "x" : 128,
+            "y" : 256
+          }
+        ],
+        "portals" : [
+          {
+            "direction" : 1,
+            "height" : 32,
+            "targetSectorName" : "Nordwiese",
+            "width" : 32,
+            "x" : 0,
+            "y" : 0
+          }
+        ],
+        "version" : 1
+      }
+    },
+    "tag" : "enterSector"
+  },
+  "entity" : {
+    "payload" : {
+      "entityIndex" : 9,
+      "facing" : 359.96875,
+      "figure" : 0,
+      "gender" : 1,
+      "maskHeight" : 48,
+      "maskWidth" : 32,
+      "name" : "Libus",
+      "tempo" : 2,
+      "type" : 0,
+      "x" : 10,
+      "y" : 12
+    },
+    "tag" : "entity"
+  },
+  "equipToggle" : {
+    "payload" : {
+      "hand" : 2,
+      "slot" : 1
+    },
+    "tag" : "equipToggle"
+  },
+  "hello" : {
+    "payload" : {
+      "protocolVersion" : 3
+    },
+    "tag" : "hello"
+  },
+  "inventory" : {
+    "payload" : {
+      "rows" : [
+        {
+          "category" : 0,
+          "equippedHand" : 0,
+          "extras" : [
+            {
+              "key" : "gold",
+              "value" : 100
+            }
+          ],
+          "itemId" : 0,
+          "slot" : 0
+        },
+        {
+          "category" : 1,
+          "equippedHand" : 2,
+          "extras" : [
+
+          ],
+          "itemId" : 0,
+          "slot" : 1
+        }
+      ]
+    },
+    "tag" : "inventory"
+  },
+  "leave" : {
+    "payload" : {
+      "entityIndex" : 4,
+      "leftGame" : true
+    },
+    "tag" : "leave"
+  },
+  "login" : {
+    "payload" : {
+      "nickname" : "Saibot",
+      "password" : "hunter2"
+    },
+    "tag" : "login"
+  },
+  "login-with-session-request" : {
+    "payload" : {
+      "nickname" : "Saibot",
+      "password" : "hunter2",
+      "requestSessionToken" : true
+    },
+    "tag" : "login"
+  },
+  "loginResult" : {
+    "payload" : {
+      "result" : 0
+    },
+    "tag" : "loginResult"
+  },
+  "mainCharacter" : {
+    "payload" : {
+      "entityIndex" : 5
+    },
+    "tag" : "mainCharacter"
+  },
+  "redeemSession" : {
+    "payload" : {
+      "token" : "tok-abc"
+    },
+    "tag" : "redeemSession"
+  },
+  "register" : {
+    "payload" : {
+      "characterClass" : 0,
+      "email" : "info@example.com",
+      "gender" : 1,
+      "nickname" : "Saibot",
+      "password" : "passw0rd",
+      "passwordRepeat" : "passw0rd"
+    },
+    "tag" : "register"
+  },
+  "registerResult" : {
+    "payload" : {
+      "result" : 3
+    },
+    "tag" : "registerResult"
+  },
+  "revokeSession" : {
+    "payload" : {
+      "token" : "tok-abc"
+    },
+    "tag" : "revokeSession"
+  },
+  "serverPosition" : {
+    "payload" : {
+      "entityIndex" : 7,
+      "facing" : 0,
+      "tempo" : 4,
+      "x" : 10,
+      "y" : 20
+    },
+    "tag" : "serverPosition"
+  },
+  "serverSay" : {
+    "payload" : {
+      "entityIndex" : 3,
+      "text" : "Wer bist du?"
+    },
+    "tag" : "serverSay"
+  },
+  "sessionRevoked" : {
+    "payload" : {
+      "revoked" : true
+    },
+    "tag" : "sessionRevoked"
+  },
+  "sessionToken" : {
+    "payload" : {
+      "expiresInSeconds" : 2592000,
+      "token" : "tok-abc"
+    },
+    "tag" : "sessionToken"
+  }
+}

@@ -169,6 +169,59 @@ struct RoundTripTests {
         #expect(try roundTrip(m) == m)
     }
 
+    // MARK: - Session resumption
+
+    @Test func `redeem session`() throws {
+        let m = SomnioMessage.redeemSession(RedeemSessionMessage(token: "0123456789abcdef"))
+        #expect(try roundTrip(m) == m)
+    }
+
+    @Test func `revoke session`() throws {
+        let m = SomnioMessage.revokeSession(RevokeSessionMessage(token: "0123456789abcdef"))
+        #expect(try roundTrip(m) == m)
+    }
+
+    @Test func `session token`() throws {
+        // 30 days in seconds overflows `Int16`, which is why the field is `Int32`.
+        let m = SomnioMessage.sessionToken(SessionTokenMessage(token: "tok", expiresInSeconds: 2_592_000))
+        #expect(try roundTrip(m) == m)
+    }
+
+    @Test func `session revoked`() throws {
+        let m = SomnioMessage.sessionRevoked(SessionRevokedMessage(revoked: true))
+        #expect(try roundTrip(m) == m)
+    }
+
+    /// `requestSessionToken` must stay Optional, and a `nil` must not reach the wire: an older
+    /// client omitting it has to keep decoding, and a server must not see a key that changes its
+    /// behavior for a client that never opted in. Both halves are what keep `helloVersion` at 3.
+    @Test func `login omits the session-token request when nil`() throws {
+        let m = SomnioMessage.login(LoginMessage(nickname: "Saibot", password: "hunter2"))
+        let json = try #require(try String(data: SomnioMessageEncoder.encode(m), encoding: .utf8))
+        #expect(!json.contains("requestSessionToken"))
+        #expect(try roundTrip(m) == m)
+    }
+
+    @Test func `login round-trips an explicit session-token request`() throws {
+        let m = SomnioMessage.login(
+            LoginMessage(nickname: "Saibot", password: "hunter2", requestSessionToken: true)
+        )
+        #expect(try roundTrip(m) == m)
+    }
+
+    /// A pre-token client's `Login` frame — no `requestSessionToken` key at all — must still
+    /// decode on a token-aware server. This is the skew case the Optional exists for.
+    @Test func `a pre-token login frame still decodes`() throws {
+        let legacy = Data(#"{"tag":"login","payload":{"nickname":"Saibot","password":"hunter2"}}"#.utf8)
+        let decoded = try SomnioMessageDecoder.decode(legacy)
+        guard case let .login(payload) = decoded else {
+            Issue.record("expected .login")
+            return
+        }
+        #expect(payload.nickname == "Saibot")
+        #expect(payload.requestSessionToken == nil)
+    }
+
     // MARK: - Nested-Codable conformance
 
     //

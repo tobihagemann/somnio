@@ -10,9 +10,10 @@ struct LocalizableCatalogTests {
         "Password",
         "Remember password",
         "If you don't have an account, click here!",
-        "OK",
-        "Cancel",
+        "Log In",
         // Registration overlay
+        "Cancel",
+        "Sign Up",
         "Nickname:",
         "Password:",
         "Password (*):",
@@ -29,6 +30,7 @@ struct LocalizableCatalogTests {
         "Ghost model by Quaternius.",
         "Floor textures by ambientCG.",
         "UI borders by Kenney.",
+        "OK",
         // Options overlay
         "Options",
         "Close",

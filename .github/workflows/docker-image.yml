@@ -58,7 +58,11 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" ]]; then
             VERSION="${GITHUB_REF#refs/tags/server-}"
           elif [[ -n "${INPUT_VERSION}" ]]; then
-            VERSION="${INPUT_VERSION}"
+            # Strip a `server-` prefix the operator may type by habit, symmetric with the push path
+            # above and with release.yml/web-image.yml. Without it `server-1.4.0` passes the charset
+            # guard below and is baked into SomnioServerVersion.swift and the ghcr tag verbatim, so
+            # `somnio version` reports it to every operator.
+            VERSION="${INPUT_VERSION#server-}"
           else
             VERSION="0.0.0-${GITHUB_SHA::7}"
           fi

@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "node"],
+    "resolveJsonModule": true,
+    "allowJs": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@registry": ["../Sources/SomnioCore/Resources/ModelRegistry.json"],
+      "@catalog/*": ["../Sources/*/Resources/Localizable.xcstrings"],
+      "@fixtures/*": ["../Tests/SomnioProtocolTests/GoldenFrames/*"],
+      "@scripts/*": ["../Scripts/*"]
+    }
+  },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts", "vitest.conformance.config.ts"]
+}

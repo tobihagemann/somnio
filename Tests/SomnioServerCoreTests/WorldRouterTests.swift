@@ -426,6 +426,7 @@ struct WorldRouterTests {
             characters: StubCharacterRepository(),
             inventories: StubInventoryRepository(),
             registrations: StubRegistrationRepository(),
+            sessions: StubSessionRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: router,
             worldClock: worldClockService,
@@ -437,14 +438,6 @@ struct WorldRouterTests {
             ),
             logger: logger
         )
-    }
-
-    private func collect(outbox: ConnectionOutbox) async -> [Data] {
-        var frames: [Data] = []
-        for await frame in outbox.stream {
-            frames.append(frame)
-        }
-        return frames
     }
 }
 

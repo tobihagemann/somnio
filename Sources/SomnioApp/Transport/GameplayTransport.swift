@@ -7,11 +7,27 @@ import NIOSSL
 import SomnioCore
 import SomnioProtocol
 
+/// The three transport operations `ClientViewModel` drives, behind a protocol so a test can
+/// supply one that never opens a socket.
+///
+/// `GameplayTransport` is an actor, and actors cannot be subclassed, so there is no way to
+/// override `run` on the concrete type — which left the whole authentication lifecycle
+/// (`openConnection`, `submitLogin`, `submitRegistration`, and the replacement hop between them)
+/// unreachable from a unit test. That gap is not academic: a defect in exactly that path survived
+/// two polish rounds behind a fully green suite, because no test could hold a connection open long
+/// enough to submit a second time. Mirrors the `WorldRenderSurface`/`RenderSurfaceSpy` seam the
+/// renderer already uses for the same reason.
+public protocol GameplayTransporting: Sendable {
+    func run(url: String, delegate: any GameplayTransportDelegate) async
+    func enqueue(_ message: SomnioMessage) async
+    func disconnect() async
+}
+
 /// Long-lived gameplay-WebSocket transport. Mirrors `AdminTransport`'s framing decisions
 /// (`maxFrameSize = SomnioProtocolConstants.maxWireFrameSize`), with no `Authorization`
 /// header — the gameplay `/ws` route is unauthenticated until `Login`. The actor refuses
 /// re-entrancy: callers wanting to switch sockets must `await disconnect()` first.
-public actor GameplayTransport {
+public actor GameplayTransport: GameplayTransporting {
     private let logger: Logger
     private var current: ActiveConnection?
 

@@ -21,6 +21,8 @@ extension SomnioMessage: Codable {
         case .equipToggle: self = try .equipToggle(container.decode(EquipToggleMessage.self, forKey: .payload))
         case .bumpNPC: self = try .bumpNPC(container.decode(BumpNPCMessage.self, forKey: .payload))
         case .enterPortal: self = try .enterPortal(container.decode(EnterPortalMessage.self, forKey: .payload))
+        case .redeemSession: self = try .redeemSession(container.decode(RedeemSessionMessage.self, forKey: .payload))
+        case .revokeSession: self = try .revokeSession(container.decode(RevokeSessionMessage.self, forKey: .payload))
         case .hello: self = try .hello(container.decode(HelloMessage.self, forKey: .payload))
         case .loginResult: self = try .loginResult(container.decode(LoginResultMessage.self, forKey: .payload))
         case .registerResult: self = try .registerResult(container.decode(RegisterResultMessage.self, forKey: .payload))
@@ -34,6 +36,8 @@ extension SomnioMessage: Codable {
         case .inventory: self = try .inventory(container.decode(InventoryMessage.self, forKey: .payload))
         case .leave: self = try .leave(container.decode(LeaveMessage.self, forKey: .payload))
         case .adminSay: self = try .adminSay(container.decode(AdminSayMessage.self, forKey: .payload))
+        case .sessionToken: self = try .sessionToken(container.decode(SessionTokenMessage.self, forKey: .payload))
+        case .sessionRevoked: self = try .sessionRevoked(container.decode(SessionRevokedMessage.self, forKey: .payload))
         }
     }
 
@@ -49,6 +53,8 @@ extension SomnioMessage: Codable {
         case let .equipToggle(m): try container.encode(m, forKey: .payload)
         case let .bumpNPC(m): try container.encode(m, forKey: .payload)
         case let .enterPortal(m): try container.encode(m, forKey: .payload)
+        case let .redeemSession(m): try container.encode(m, forKey: .payload)
+        case let .revokeSession(m): try container.encode(m, forKey: .payload)
         case let .hello(m): try container.encode(m, forKey: .payload)
         case let .loginResult(m): try container.encode(m, forKey: .payload)
         case let .registerResult(m): try container.encode(m, forKey: .payload)
@@ -62,6 +68,8 @@ extension SomnioMessage: Codable {
         case let .inventory(m): try container.encode(m, forKey: .payload)
         case let .leave(m): try container.encode(m, forKey: .payload)
         case let .adminSay(m): try container.encode(m, forKey: .payload)
+        case let .sessionToken(m): try container.encode(m, forKey: .payload)
+        case let .sessionRevoked(m): try container.encode(m, forKey: .payload)
         }
     }
 }

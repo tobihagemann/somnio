@@ -122,6 +122,7 @@ struct HealthEndpointTests {
             characters: IntegrationStubCharacterRepository(),
             inventories: IntegrationStubInventoryRepository(),
             registrations: IntegrationStubRegistrationRepository(),
+            sessions: StubSessionRepository(),
             passwordHasher: PasswordHasher(logger: logger),
             worldRouter: worldRouter,
             worldClock: worldClock,

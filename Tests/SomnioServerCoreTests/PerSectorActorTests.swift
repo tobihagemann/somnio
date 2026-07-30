@@ -2,6 +2,7 @@ import Foundation
 import Logging
 import SomnioCore
 import SomnioProtocol
+import SomnioTestSupport
 import Testing
 @testable import SomnioServerCore
 
@@ -323,13 +324,5 @@ struct PerSectorActorTests {
 
     private var testLogger: Logger {
         Logger(label: "test.per-sector-actor")
-    }
-
-    private func collect(outbox: ConnectionOutbox) async -> [Data] {
-        var frames: [Data] = []
-        for await frame in outbox.stream {
-            frames.append(frame)
-        }
-        return frames
     }
 }

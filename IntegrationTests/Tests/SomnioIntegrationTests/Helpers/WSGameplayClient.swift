@@ -309,6 +309,7 @@ enum WSGameplayClient {
     ) -> [any Service] {
         let checkpointService = CheckpointService(
             worldRouter: rig.dependencies.worldRouter,
+            sessions: rig.dependencies.sessions,
             interval: .seconds(60),
             logger: logger
         )

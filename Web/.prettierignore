@@ -1,0 +1,4 @@
+# Build output. Vite's minified bundles are not source and reformatting them is meaningless.
+dist/
+node_modules/
+.vite/
