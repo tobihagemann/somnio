@@ -359,7 +359,8 @@ Upstream-derived from MIT-licensed agent-skill repos (provenance and copyright n
 Project-specific:
 
 - `somnio-server`, `somnio-player`, `somnio-editor`, `somnio-cli`, `somnio-web` — build and run each component locally against the dev server
-- `release-player`, `release-server` — the signed/notarized player release and the ghcr server image
+- `release` — decides which components a change requires releasing, owns the cross-language `helloVersion` bump, and sequences the three below
+- `release-player`, `release-server`, `release-web` — the signed/notarized player release and the two ghcr images (server, browser client)
 
 `AGENTS.md` is the shared instructions file; `.claude/CLAUDE.md` is symlinked to it so Claude Code picks up the same content.
 
