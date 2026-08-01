@@ -5,7 +5,7 @@ description: "Cut a server release by pushing a server-X.Y.Z tag, which triggers
 
 # Release Server
 
-The server ships as a container image: pushing a `server-X.Y.Z` git tag triggers `.github/workflows/docker-image.yml`, which builds the Linux server image and pushes it to `ghcr.io/tobihagemann/somnio` tagged `X.Y.Z` (plus `latest` and `sha-<sha>`). The bare `X.Y.Z` is stamped into the binary as the marketing version; the `server-` prefix is the component selector. The server is a Package (ghcr), not a GitHub Release.
+The server ships as a container image: pushing a `server-X.Y.Z` git tag triggers `.github/workflows/docker-image.yml`, which builds the Linux server image and pushes it to `ghcr.io/tobihagemann/somnio-server` tagged `X.Y.Z` (plus `latest` and `sha-<sha>`). The bare `X.Y.Z` is stamped into the binary as the marketing version; the `server-` prefix is the component selector. The server is a Package (ghcr), not a GitHub Release.
 
 ## Step 1: Pick the version and confirm the commit is on main
 
@@ -30,14 +30,14 @@ Dispatch is not equivalent to tagging: it publishes `:X.Y.Z` and `:sha-<sha>` bu
 
 ## Step 3: Monitor
 
-Watch the run to completion — `gh run watch <id> --exit-status`. The reliable confirmation is that workflow's **Build and publish image** step succeeds; that step is what pushes the tags. Querying ghcr directly (`gh api .../packages/container/somnio/versions`) needs a `read:packages`-scoped token and otherwise returns HTTP 403, so don't rely on it.
+Watch the run to completion — `gh run watch <id> --exit-status`. The reliable confirmation is that workflow's **Build and publish image** step succeeds; that step is what pushes the tags. Querying ghcr directly (`gh api .../packages/container/somnio-server/versions`) needs a `read:packages`-scoped token and otherwise returns HTTP 403, so don't rely on it.
 
 ## Step 4: Deploy
 
 On the deployment host, pull the new tag and restart the server (TLS terminates at the reverse proxy; the server speaks plain HTTP/WS):
 
 ```bash
-docker pull ghcr.io/tobihagemann/somnio:X.Y.Z
+docker pull ghcr.io/tobihagemann/somnio-server:X.Y.Z
 # point compose/runtime at :X.Y.Z, then:
 docker compose up -d
 ```
@@ -54,3 +54,4 @@ curl -fsS http://<host>:<port>/health   # expect 200
 - **The browser client is a third component on the same gate.** It does not share `SomnioProtocol` — it mirrors the wire shapes by hand and carries its own `helloVersion` (`Web/src/protocol/constants.ts`), so a Swift-side bump must be repeated there in the same commit or every browser player is locked out. Release it via the `/release-web` skill.
 - Deploy the server **before or together with** a player or web release whose wire protocol changed — with no version negotiation beyond the Hello gate, an old client hitting the new server (or vice versa) only fails gracefully if `helloVersion` was bumped. The `/release` skill owns the full cross-component sequencing and its outage window.
 - ghcr image tags are mutable — re-pushing `server-X.Y.Z` overwrites `:X.Y.Z`. A running container keeps its current image until the next pull + recreate.
+- **Versions through 0.2.0 live under the old bare `ghcr.io/tobihagemann/somnio` package.** The image was renamed to `somnio-server` at 0.3.0 for symmetry with `somnio-web`, and ghcr cannot rename a package in place, so the history is split: rolling back to 0.2.0 or earlier means pulling the old name.

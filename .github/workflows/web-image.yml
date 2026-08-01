@@ -23,7 +23,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # A distinct image from the server's `ghcr.io/tobihagemann/somnio`, so the two components version
+  # A distinct image from the server's `ghcr.io/tobihagemann/somnio-server`, so the two components version
   # and roll back independently.
   IMAGE_NAME: ${{ github.repository }}-web
 

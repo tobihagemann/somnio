@@ -22,7 +22,10 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Component-suffixed, matching `somnio-web`. Versions up to 0.2.0 were published under the bare
+  # `ghcr.io/tobihagemann/somnio` name; ghcr cannot rename a package in place, so that package keeps
+  # its history and this one starts at 0.3.0. Rolling back past 0.3.0 means pulling the old name.
+  IMAGE_NAME: ${{ github.repository }}-server
 
 jobs:
   publish:
