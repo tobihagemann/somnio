@@ -18,7 +18,7 @@ git tag -l 'web-*' --sort=-v:refname | head -1
 git diff --name-only <that-component-tag>..HEAD
 ```
 
-A component with no tag yet has changed by definition — release it if anything in its column moved. (`web-*` currently returns nothing; the browser client has never been tagged.)
+A component whose glob returns nothing has no tag to diff against, so treat every path in the table below as changed for it and diff from the root commit instead: `git diff --name-only $(git rev-list --max-parents=0 HEAD)..HEAD`.
 
 Map the changed paths. The `Sources/` rows are the ones that surprise people: the browser client is not confined to `Web/`, because `Web/Dockerfile` copies four files out of `Sources/` and Vite resolves them through aliases.
 
@@ -72,6 +72,14 @@ Read the two constants and confirm they match before tagging. CI's `wire-conform
 Note that the player is already live at this point: pushing its tag publishes the GitHub Release and the appcast, so Sparkle offers the update immediately. Anyone who takes it sits behind the "update required" overlay until Phase 2 completes, which is why Phase 2 follows promptly rather than the next day. Publishing it first is still correct — once the server flips, the remedy has to already exist.
 
 **Phase 2 — deploy.** Run the `/release-server` skill's Step 4, then the `/release-web` skill's Step 5 immediately after. Browser players self-heal on their next reload (the entry document is `no-store`); the gap between the two is their outage window, so keep it to minutes.
+
+Phase 1 proves the tags you built. It says nothing about one the deployment repo already pins — a placeholder from an earlier session pins a version just as convincingly as a real release. For any pin you did not build just now, confirm the image exists:
+
+```bash
+gh run list --workflow=<file> --branch <component-tag>   # zero runs = never built
+```
+
+Scope it to the tag. Unscoped, the command counts every run of that workflow and stays non-zero while the version you are about to deploy is missing entirely.
 
 Server before web, not the reverse: a web image deployed ahead of the server hands every browser player a bundle that cannot connect, and it stays broken until the operator finishes. Server-first leaves only a state a reload repairs.
 
