@@ -6,19 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-01
+
 ### Added
 
-- Play Somnio in a web browser: the same world, chat, movement, portals, and day/night lighting as the macOS app, with no download — sign in at the same server and meet the same players
-- Stay signed in when the browser page reloads: ticking "Remember password" keeps you in the world instead of returning you to the login form, and leaving the game or signing in as someone else clears it
+- Play Somnio in a web browser: the same world, chat, movement, portals, and day/night lighting as the macOS app, with no download — sign in at the same server and meet the same players, and stay signed in when the page reloads
 - Explore new lands north of Edaria: the Nordwiese meadow and the monster-haunted Nordwald forest, reached through the town's north gate, with Edaria's town wall and gate visible from the meadow side
 - Enter Edaria's shop and inn: both open into furnished interiors — shelves, counters, goods, beds, and kegs — with their keepers behind the counter, and the arena is entered through its east-side door
-- Show distinct street paving: sector floors can carry material patches, giving Edaria cobbled streets crossing its grassy square and a paved path through the north gate
 
 ### Changed
 
-- Refresh the About dialog: the copyright now reads 2026 Tobias Hagemann, and a short note about Somnio's 2003-2006 origins and this revival replaces the old thanks list, with the text centered
-- Rebuild Edaria Mitte as a walled town square: the perimeter wall sits flush on the sector edge with four gated exits, buildings tuck into their yard corners, and rotated props and buildings face their streets and rooms
-- Match wall collision exactly to the visible walls, so ground that looks walkable is walkable — no more invisible barriers beside thin walls
+- Rebuild Edaria Mitte as a walled town square: a perimeter wall with four gated exits, cobbled streets crossing the grassy square, a paved path through the north gate, and buildings turned to face their streets
+- Refresh the About dialog: the copyright now reads 2026 Tobias Hagemann, and a short note about Somnio's 2003-2006 origins and this revival replaces the old thanks list
 - Improve VoiceOver support for in-game dialogs: login, options, and the other overlays are announced as modal and can be dismissed with the VoiceOver escape gesture
 
 ### Fixed
@@ -82,7 +81,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Initial release.
 
-[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.2.0...HEAD
+[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.3.0...HEAD
+[0.3.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.3.0
 [0.2.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.2.0
 [0.1.2]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.2
 [0.1.1]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.1
