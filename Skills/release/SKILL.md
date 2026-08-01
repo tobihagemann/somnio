@@ -75,6 +75,14 @@ Note that the player is already live at this point: pushing its tag publishes th
 
 Server before web, not the reverse: a web image deployed ahead of the server hands every browser player a bundle that cannot connect, and it stays broken until the operator finishes. Server-first leaves only a state a reload repairs.
 
+**Confirm the window is closed.** `/health` and a 200 at `/` prove the containers booted, not that the protocol matches — read the handshake the clients actually gate on:
+
+```bash
+node -e 'const W=require("ws"),s=new W("wss://<host>/ws");s.on("message",d=>{console.log(d.toString());process.exit(0)})'
+```
+
+Expect `{"tag":"hello","payload":{"protocolVersion":N}}` with `N` equal to the `helloVersion` in the commit you tagged. Anything else means a client is still locked out. (`ws` is already in `Web/node_modules`.)
+
 ## Notes
 
 - Only `CHANGELOG.md` gates the player release; the server and web images have no changelog step. The `/release-player` skill covers its scoping rules.
