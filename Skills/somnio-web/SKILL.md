@@ -63,6 +63,8 @@ That first predicate does two jobs, and both are load-bearing. The model prewarm
 
 Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials.
 
+`agent-browser type` **appends** to a pre-filled field. The overlays keep field values for the page lifetime, and Step 3's sign-up handoff deliberately pre-fills the login form — so registering and then running the login block verbatim produces doubled text and a "Falsche Zugangsdaten." / "Bad credentials." chat line. Clear the fields first (`agent-browser eval 'document.querySelectorAll("input").forEach(i => { i.value = "" })'`) or open a fresh page before typing.
+
 ## Debug API
 
 `window.somnio` is read-only and exposes what the canvas cannot show. It is present in dev builds and requires `?debug=1` in production, because `entities()` reports every peer's name and position in the sector.
@@ -121,6 +123,17 @@ agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind ==
 ```
 
 Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that leaving a sector removes them. The client's own position is not authoritative: the server volunteers `serverPosition` for self only as a `snapBack` after a rejected move.
+
+**Relocate the character to another sector.** The server holds the gameplay session for a few seconds after the page goes away (the Vite proxy keeps the upstream WebSocket alive), and both the disconnect checkpoint and the periodic 30 s checkpoint write the character row — so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate (the Notes' no-sleep rule is suspended here only because no page exists to poll between close and login):
+
+```bash
+agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
+docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET current_sector='Nordwald', position_x=1024, position_y=768 WHERE name='<nickname>';"
+agent-browser open 'http://localhost:5173/'
+# log in, then: agent-browser eval 'window.somnio.sectorName()'  — the old sector here means the
+# checkpoint won the race; close and repeat. An unwalkable position self-heals to a spawn point,
+# so pick coordinates on open floor or the character lands at spawn with no error.
+```
 
 **Verify the asset pack resolved.** `agent-browser eval 'window.somnio.placeholderObjectCount()'` — non-zero means models are missing or a registry id has no matching stem. Read it only once Step 4's gate has passed: with no scene it returns `0`, which is indistinguishable from success.
 
