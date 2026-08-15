@@ -256,7 +256,8 @@ import SomnioCore
 
         // The void outside the sector floor: a huge unlit black plane just below ground level,
         // scene-persistent so every sector (and the gap during a swap) sits on black instead
-        // of the view's default white environment.
+        // of the view's default white environment. Tone mapping stays on here: black is a fixed
+        // point of the operator.
         let backdrop = ModelEntity(
             mesh: .generatePlane(width: 400, depth: 400),
             materials: [UnlitMaterial(color: .black)]
@@ -977,7 +978,7 @@ import SomnioCore
     private static let overlayOrientation = OrthographicCameraRig.cameraOrientation(focusing: .zero)
 
     /// Overlay world scale: legacy-pixel artwork mapped straight through `worldUnitsPerPixel`
-    /// reads oversized under the zoomed-in 3D framing (the 3D viewport spans ~150 legacy px
+    /// reads oversized under the zoomed-in 3D framing (the 3D viewport spans ~300 legacy px
     /// against the 2D game's 480), so plaques and bubbles shrink by this factor while keeping
     /// their legacy proportions. Preview-tuned: 1.0 dwarfed the characters, 0.6 read too
     /// tiny to stay legible.
@@ -990,13 +991,17 @@ import SomnioCore
 
     /// Unlit textured material for the plaque/bubble quads: unlit so the artwork stays legible
     /// under the night sun, with the optional grayscale silhouette cutting the quad to shape.
+    /// Post-process tone mapping is off because it is a scene-luminance operator and this is
+    /// authored UI artwork, not lit geometry: under it the balloon's paper white landed at
+    /// ~RGB 213 against SwiftUI chrome's 255. The flag does not read back off the material
+    /// (`program.descriptor` hands out a defaulted copy), so verify it against pixels.
     /// The overlay textures are tiny, so the (main-actor-blocking) synchronous upload is fine
     /// here — unlike the whole-sector floor textures the loader creates asynchronously. The
     /// nil-fallback (a failed upload) keeps the plain tint: a readable blank plate.
     /// Keep the default mip-chain sampling — mip-free linear sampling reads worse in the
     /// running game.
     private static func overlayMaterial(color: CGImage, opacityMask: CGImage?) -> UnlitMaterial {
-        var material = UnlitMaterial(color: .white)
+        var material = UnlitMaterial(color: .white, applyPostProcessToneMap: false)
         if let texture = try? TextureResource(image: color, options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)) {
             material.color = .init(tint: .white, texture: .init(texture))
         }

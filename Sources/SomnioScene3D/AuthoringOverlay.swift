@@ -247,7 +247,9 @@ extension WorldScene3D {
         elevation: Float
     ) -> Entity {
         guard sizePx.x > 0, sizePx.y > 0 else { return Entity() }
-        var material = UnlitMaterial(color: color)
+        // Tone mapping off as on `overlayMaterial`: selection yellow against facing cyan is a
+        // meaning-carrying distinction, not scene luminance.
+        var material = UnlitMaterial(color: color, applyPostProcessToneMap: false)
         material.blending = .transparent(opacity: .init(floatLiteral: opacity))
         let plane = ModelEntity(
             mesh: .generatePlane(

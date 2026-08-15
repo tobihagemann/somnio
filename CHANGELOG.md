@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Show chat bubbles and name plaques in their intended colors: the speech balloon now reads paper-white to match the rest of the interface instead of a dimmed gray
+
 ## [0.3.0] - 2026-08-01
 
 ### Added
