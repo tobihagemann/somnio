@@ -45,10 +45,9 @@ export interface Vec3 {
  * Orthographic frustum bounds for a viewport.
  *
  * **`scale` is the vertical HALF-height**, not the full extent: the render spans `2 x scale`
- * metres vertically. This is settled in-repo — `EditorCameraFraming` records that treating it as
- * full height "made every unprojection overshoot the drawn geometry by exactly 2x from the view
- * centre — measured against the live render", and the editor's picking math depends on it. The
- * doc comment on the Swift rig claiming "full vertical extent" is stale.
+ * metres vertically. This is settled in-repo — `EditorCameraFraming.swift` records that treating
+ * it as full height "made every unprojection overshoot the drawn geometry by exactly 2x from the
+ * view centre — measured against the live render", and the editor's picking math depends on it.
  *
  * Consequently this is **not** Three.js's usual `frustumSize / 2` idiom. Applying that idiom to a
  * value that is already a half-height halves it again, and the whole world renders at 2x

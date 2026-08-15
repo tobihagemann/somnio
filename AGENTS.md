@@ -127,6 +127,7 @@ The wire protocol, core geometry, and renderer math are **hand-mirrored** ports,
 
 - **Golden frames** (`Tests/SomnioProtocolTests/GoldenFrames/golden-frames.json`) are compared as canonicalized JSON by both `GoldenFrameTests` in Swift and `golden-frames.test.ts` in TypeScript. This is the only check in the repo that catches a payload **property rename** — the round-trip suites encode and decode with the same renamed property and stay green. Re-record deliberately with `SOMNIO_RECORD_GOLDEN_FRAMES=1 swift test --filter GoldenFrameTests`.
 - **Wire conformance** (`Web/test/conformance/`) drives the real TypeScript encoder and transport into a real Swift server. Its outbound case is what proves application frames ship as **text**; everything else in that file passes while the transport sends binary.
+- **Mirrored constants** are read out of the Swift source rather than compared to copies: `Web/test/helpers/swiftEnum.ts` for `case name = raw` tables, `Web/test/helpers/swiftConstant.ts` for `static let name = <number>`. A hand-copied number drifts invisibly, because each side keeps computing with its own value — `scene-rig.test.ts` pins the camera rig this way, and the suites that read `ORTHO_RIG` on both sides of an assertion cannot.
 
 `Math.fround` narrowing where Swift computes in `Float` lives in `Web/src/core/float.ts`, including `FLOAT_PI` — Swift's `Float.pi` rounds toward zero, so it is **not** `Math.fround(Math.PI)`.
 

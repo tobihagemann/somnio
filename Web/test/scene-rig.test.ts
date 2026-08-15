@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { f32 } from '@/core/float'
+import { swiftStaticLet } from './helpers/swiftConstant'
 import {
   MIN_SCALE,
   ORTHO_RIG,
+  PLAYER_ZOOM,
   applyScrollZoom,
   cameraPosition,
   clampedScale,
@@ -304,5 +307,42 @@ describe('scroll zoom', () => {
     const fromLow = applyScrollZoom(0.6, 10) / 0.6
     const fromHigh = applyScrollZoom(1.2, 10) / 1.2
     expect(fromLow).toBeCloseTo(fromHigh, 10)
+  })
+})
+
+describe('swift rig constants', () => {
+  /**
+   * `ORTHO_RIG` and `PLAYER_ZOOM` hand-mirror Swift numerics, and the rest of this file pins the
+   * math *around* them. `frustumBounds` and `cameraPosition` read the mirrored values on both
+   * sides of their assertions, so a re-tuned Swift constant leaves every one of them green while
+   * the browser frames the world differently from the native client.
+   */
+  const RIG = 'Sources/SomnioScene3D/OrthographicCameraRig.swift'
+  const ZOOM = 'Sources/SomnioScene3D/PlayerZoom.swift'
+
+  it.each([
+    ['pitchDegrees', ORTHO_RIG.pitchDegrees],
+    ['yawDegrees', ORTHO_RIG.yawDegrees],
+    ['cameraDistance', ORTHO_RIG.cameraDistance],
+    ['defaultScale', ORTHO_RIG.defaultScale],
+    ['maxScale', ORTHO_RIG.maxScale],
+    ['nearClip', ORTHO_RIG.nearClip],
+    ['farClip', ORTHO_RIG.farClip],
+  ])('matches Swift %s', (name, mirrored) => {
+    expect(mirrored).toBe(swiftStaticLet(RIG, name))
+  })
+
+  // Narrowed on the TS side because Swift declares it `Float`, so the comparison narrows too —
+  // see the `worldUnitsPerPixel` note in `cameraRig.ts`.
+  it('matches Swift worldUnitsPerPixel under Float narrowing', () => {
+    expect(ORTHO_RIG.worldUnitsPerPixel).toBe(f32(swiftStaticLet(RIG, 'worldUnitsPerPixel')))
+  })
+
+  it.each([
+    ['minFactor', PLAYER_ZOOM.minFactor],
+    ['maxFactor', PLAYER_ZOOM.maxFactor],
+    ['scrollGain', PLAYER_ZOOM.scrollGain],
+  ])('matches Swift PlayerZoom %s', (name, mirrored) => {
+    expect(mirrored).toBe(swiftStaticLet(ZOOM, name))
   })
 })

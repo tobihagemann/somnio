@@ -78,6 +78,27 @@ struct EditorCameraFramingTests {
             #expect(projected.x >= -tolerance && projected.x <= viewport.x + tolerance)
             #expect(projected.y >= -tolerance && projected.y <= viewport.y + tolerance)
         }
+        // Containment alone is one-sided: it passes for any fit that is too zoomed OUT, so
+        // dropping the `/ 2` that makes `scale` a half-height would slip through it. The fit is
+        // derived from the corners of `fitPixelBounds`, so those — not the authored extremes,
+        // which need not include them — are what must land ON an edge.
+        let bounds = OrthographicCameraRig.fitPixelBounds(of: body)
+        let boundsCorners = [
+            bounds.min,
+            SIMD2<Float>(bounds.max.x, bounds.min.y),
+            SIMD2<Float>(bounds.min.x, bounds.max.y),
+            bounds.max
+        ]
+        #expect(
+            boundsCorners.contains { pixel in
+                let projected = OrthographicCameraRig.viewportPoint(
+                    forLegacyPoint: pixel, viewportSize: viewport, framing: framing
+                )
+                return abs(projected.x) <= tolerance || abs(projected.x - viewport.x) <= tolerance
+                    || abs(projected.y) <= tolerance || abs(projected.y - viewport.y) <= tolerance
+            },
+            "the fit should touch a viewport edge, not merely stay inside it"
+        )
     }
 
     @Test func `the whole-sector fit is not clamped to the gameplay zoom bounds`() {
