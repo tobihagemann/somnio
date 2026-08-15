@@ -224,9 +224,9 @@ No asset pack is committed to the repo. Without an operator-supplied `SOMNIO_ASS
 
 ### CI release configuration
 
-CI-driven releases (`release.yml`) inject three externalized inputs at build time, so the public repo never carries licensed art or the production endpoint:
+CI-driven releases (`release.yml`) inject three externalized inputs at build time, so the public repo carries neither the runtime art pack nor the production endpoint:
 
-- **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the runtime subtrees (`Models/`, `FloorMaterials/`, `UI/`) at its root (the repo also carries unused 2D subtrees the build ignores). `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
+- **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the runtime subtrees (`Models/`, `FloorMaterials/`, `UI/`) at its root (the repo also carries unused 2D subtrees the build ignores; the shipped subtrees are CC0, and the repo is private for unrelated reasons). `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
 - **Production gameplay endpoint** — the `SOMNIO_GAMEPLAY_PRODUCTION_URL` repo *variable* (e.g. `wss://somnio.tobiha.de/ws`; not a secret — every player sees it). `Scripts/inject-release-transport.sh` rewrites `GameplayServerURL.swift`, replacing the `#error` placeholder with the literal. Required for **player + release** only; the editor and debug builds never reach the guard.
 - **Pinned TLS trust root** — `Scripts/release-trust-roots.pem` (committed) holds the Let's Encrypt ISRG Root X1 + X2 roots (publicly verifiable by fingerprint). The same inject script embeds them into `gameplayProductionTrustRootPEM` in `GameplayServerPin.swift`. Pinning the long-lived roots (not the 90-day leaf) means certificate renewals never break the shipped player; both roots cover an RSA→ECDSA key-type switch.
 

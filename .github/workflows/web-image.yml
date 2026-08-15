@@ -74,10 +74,9 @@ jobs:
       - name: Check out asset pack
         uses: actions/checkout@v6
         with:
-          # The runtime pack is licensed art that can be served from the shipped site but not
-          # redistributed as source, so it lives in a separate private repo. The default
-          # GITHUB_TOKEN only reaches this repo; ASSETS_DEPLOY_KEY is a read-only SSH deploy key
-          # scoped to somnio-assets. Same mechanism release.yml uses for the player bundle.
+          # The runtime pack lives in a separate private repo. The default GITHUB_TOKEN only
+          # reaches this repo; ASSETS_DEPLOY_KEY is a read-only SSH deploy key scoped to
+          # somnio-assets. Same mechanism release.yml uses for the player bundle.
           repository: tobihagemann/somnio-assets
           ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
           # `Web/Dockerfile` reads the pack from `assets/` in the build context.
