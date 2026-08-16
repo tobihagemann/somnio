@@ -23,9 +23,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["./src/*"],
       "@registry": ["../Sources/SomnioCore/Resources/ModelRegistry.json"],
       "@catalog/*": ["../Sources/*/Resources/Localizable.xcstrings"],
       "@fixtures/*": ["../Tests/SomnioProtocolTests/GoldenFrames/*"],
