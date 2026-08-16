@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import type { Plugin } from 'vite'
+import { editorSectorFs } from './vite.editorFs'
 
 const webRoot = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -60,7 +61,9 @@ export const buildDefines = {
 
 export default defineConfig({
   define: buildDefines,
-  plugins: [xcstringsJSON()],
+  // `editorSectorFs` is dev-only twice over: a `configureServer` hook that no build or preview
+  // server runs, gated on `SOMNIO_EDITOR_SECTORS_DIR` (set by the `editor` npm script).
+  plugins: [xcstringsJSON(), editorSectorFs()],
   resolve: { alias: swiftTreeAliases },
   server: {
     fs: { allow: [repoRoot] },
@@ -77,6 +80,10 @@ export default defineConfig({
     },
   },
   build: {
+    // Deliberately no `rollupOptions.input`: the default single-input build (`index.html`
+    // alone) is what keeps `editor.html` out of `dist/` and therefore out of the shipped
+    // image — the editor is served only by `vite dev`. `lint.sh --web` builds and asserts
+    // this, so the omission is machine-enforced, not remembered.
     outDir: 'dist',
     // Vite's hashed bundles go in `bundle/`, not the default `assets/`, because the operator-supplied
     // asset pack owns `dist/assets/` (`Models/`, `FloorMaterials/`, `UI/`, referenced by absolute

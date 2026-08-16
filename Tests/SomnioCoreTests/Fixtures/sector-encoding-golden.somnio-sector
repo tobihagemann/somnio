@@ -1,0 +1,81 @@
+{
+  "collisionMasks" : [
+    {
+      "height" : 96,
+      "width" : 32,
+      "x" : 0,
+      "y" : 0
+    }
+  ],
+  "dimensions" : {
+    "height" : 4,
+    "width" : 4
+  },
+  "floorMaterialID" : "grass-meadow",
+  "light" : {
+    "brightness" : 60,
+    "indoor" : true
+  },
+  "monsterSpawns" : [
+
+  ],
+  "npcs" : [
+    {
+      "behaviorTag" : 0,
+      "dialogScript" : "Erste Zeile\n---\nZweite / dritte Zeile, $name",
+      "direction" : 23.198593,
+      "figure" : 17,
+      "maskSize" : {
+        "height" : 48,
+        "width" : 32
+      },
+      "name" : "Frau \"Müller\" \\ Träumerin",
+      "spawnBoxSize" : {
+        "height" : 32,
+        "width" : 32
+      },
+      "spawnOrigin" : {
+        "x" : 96,
+        "y" : 96
+      }
+    }
+  ],
+  "objects" : [
+    {
+      "modelID" : "door",
+      "priority" : 0,
+      "sourceHeight" : 96,
+      "sourceWidth" : 32,
+      "x" : 0,
+      "y" : 0
+    },
+    {
+      "modelID" : "well",
+      "priority" : 1,
+      "rotation" : 90,
+      "sourceHeight" : 64,
+      "sourceWidth" : 64,
+      "x" : 128,
+      "y" : 64
+    }
+  ],
+  "portals" : [
+    {
+      "direction" : 0,
+      "height" : 16,
+      "targetSectorName" : "Nordwiese Süd",
+      "width" : 32,
+      "x" : 64,
+      "y" : 0
+    },
+    {
+      "direction" : 1,
+      "height" : 96,
+      "targetSectorName" : "sector-encoding-golden",
+      "width" : 160,
+      "x" : 64,
+      "y" : 32
+    }
+  ],
+  "version" : 3
+}

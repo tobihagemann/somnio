@@ -39,14 +39,14 @@ record or analyze Instruments traces.** Everything downstream
 there is NO Xcode project or scheme involved (Somnio is SwiftPM-only).
 That means you can profile any of:
 
-- A packaged bundle from `Scripts/package_app.sh [debug|release] player`
-  (or `editor`) -- `--launch <path to Somnio.app>`.
-- A bare `swift run SomnioApp` (or `SomnioEditor`) -- `--attach Somnio`
+- A packaged bundle from `Scripts/package_app.sh [debug|release]`
+  -- `--launch <path to Somnio.app>`.
+- A bare `swift run SomnioApp` -- `--attach Somnio`
   by process name, or `--attach <pid>`.
 
 **Build configuration:** meaningful absolute numbers (symbol costs,
 hitch severity) want a Release-ish build, so prefer a
-`Scripts/package_app.sh release player` bundle when you care about real
+`Scripts/package_app.sh release` bundle when you care about real
 magnitudes. A debug `.app`, or attaching to `swift run SomnioApp`, is
 perfectly fine for **relative before/after** comparisons of a change --
 just keep the build configuration identical across the two captures.

@@ -24,8 +24,8 @@ public struct SunState: Equatable, Sendable {
 
 /// Pure mapping from the world clock and a sector's authored light setting to the 3D sun
 /// state — the RealityKit counterpart of the SpriteKit tint's `DayNightTint.ambientLight`,
-/// driven by the same shared `DayNightAmbient` staircase (the retained 2D helper keeps
-/// serving the editor preview). Kept free of RealityKit like `OrthographicCameraRig` so the
+/// driven by the same shared `DayNightAmbient` staircase. Kept free of RealityKit like
+/// `OrthographicCameraRig` so the
 /// curve is unit-testable without a live renderer; the intensity constants are
 /// prototype-time tunables, not fixed contracts.
 public enum DayNightSun {

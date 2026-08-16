@@ -16,12 +16,12 @@ The player needs a running backend. Stand up the local server on port 8090 first
 Run with the sandbox disabled (SwiftPM packaging):
 
 ```bash
-SOMNIO_ASSET_SOURCE="<asset-pack-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug player
+SOMNIO_ASSET_SOURCE="<asset-pack-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug
 ```
 
 Produces `Somnio.app` at the repo root with textures and models bundled. The asset-pack root is the `somnio-assets` working tree (sibling repo), which carries the runtime subtrees `Models/` (USDZ characters + props), `FloorMaterials/`, and `UI/` (panel chrome). `SOMNIO_ASSET_SOURCE` is **required** for the player bundle — packaging hard-fails without it (the `UI/` subtree styles every panel). Repackage after any change to code **or** to the asset pack — the running bundle holds stale copies of both.
 
-Use `Scripts/package_app.sh debug player` here, not `Scripts/compile_and_run.sh`: that script launches via `open` with no `SOMNIO_SERVER_URL` override, so the debug client falls back to `:8080` and misses the `:8090` dev server. (Its `--release-*` variants additionally build release, which hits the unset production-URL `#error`.)
+Use `Scripts/package_app.sh debug` here, not `Scripts/compile_and_run.sh`: that script launches via `open` with no `SOMNIO_SERVER_URL` override, so the debug client falls back to `:8080` and misses the `:8090` dev server. (Its `--release-*` variants additionally build release, which hits the unset production-URL `#error`.)
 
 ## Step 3: Launch against the dev server
 

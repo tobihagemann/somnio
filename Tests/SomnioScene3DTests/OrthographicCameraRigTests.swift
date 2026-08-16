@@ -59,7 +59,7 @@ struct OrthographicCameraRigTests {
         let zoomedIn = OrthographicCameraRig.defaultScale / Float(PlayerZoom.maxFactor)
         #expect(OrthographicCameraRig.clampedScale(zoomedIn) == zoomedIn)
         #expect(zoomedIn == OrthographicCameraRig.minScale)
-        // Zoomed fully out: scale 6 sits well under the editor-facing ceiling.
+        // Zoomed fully out: scale 6 sits well under the rig's maxScale ceiling.
         let zoomedOut = OrthographicCameraRig.defaultScale / Float(PlayerZoom.minFactor)
         #expect(OrthographicCameraRig.clampedScale(zoomedOut) == zoomedOut)
         #expect(zoomedOut <= OrthographicCameraRig.maxScale)

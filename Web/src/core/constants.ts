@@ -21,6 +21,13 @@ export const SOMNIO_CONSTANTS = {
    * pairings, and the bottom-edge anchor scan walks every pairing.
    */
   maxSectorAnchorScanPairings: 1_048_576,
+  /**
+   * Byte cap on a `.somnio-sector` file, checked before parsing — the count caps only fire
+   * after the whole input is parsed. Swift declares it as the expression `16 * 1_048_576`
+   * (`Constants.swift`), which `swiftStaticLet`'s bare-literal capture cannot read, so the
+   * test pins this value against a hand-written 16 MiB expectation instead.
+   */
+  maxSectorFileBytes: 16 * 1024 * 1024,
 
   /** Player sprite cell size; the feet collision box derives from it. */
   playerSpriteSize: { width: 32, height: 48 } as const,

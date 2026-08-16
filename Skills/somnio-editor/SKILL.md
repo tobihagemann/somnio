@@ -1,60 +1,89 @@
 ---
 name: somnio-editor
-description: "Build and launch the Somnio map editor locally for hands-on testing. Use when the user asks to run, open, launch, or try the editor, to test a change in the editor app, or to drive/smoke-test it with synthetic events. The editor is offline (no server, database, or login needed)."
+description: "Serve the localhost web map editor and drive it with agent-browser for hands-on testing. Use when the user asks to run, open, launch, or try the editor, to test a change in the editor, or to author/edit .somnio-sector files. The editor is offline (no server, database, or login needed) and dev-only — it is served by vite dev alone and never ships."
 ---
 
 # Run Editor (Local Dev)
 
-The editor is a document-based macOS app for `.somnio-sector` map files. It is fully offline — no server, Postgres, login, or production endpoint involved — so launching it is just build + package + open. Run it as a packaged debug `.app` (not bare `swift run`): the `DocumentGroup` document types, icon, and Open/Save dialogs come from the bundle's `Info.plist`.
+The editor is a second Vite entry point in `Web/` (`editor.html` + `src/editor/**`) for
+`.somnio-sector` map files. Fully offline — no gameplay server, Postgres, or login — and
+dev-only by construction: `editor.html` is never in `build.rollupOptions.input`, so it cannot
+reach `dist/` or the shipped image (`lint.sh --web` machine-enforces this).
 
-## Step 1: Build and package the debug bundle
+## Step 1: Serve the editor
 
-From the repo root (run with the sandbox disabled — SwiftPM packaging needs it):
-
-```bash
-SIGNING_MODE=adhoc Scripts/package_app.sh debug editor
-```
-
-This builds `SomnioEditor` and assembles `SomnioEditor.app` at the repo root with adhoc signing. A `SOMNIO_ASSET_SOURCE not set; skipping` message is expected and fine.
-
-For textured map rendering, point at an asset pack root (containing `Models/` and `FloorMaterials/`; the local pack lives at `../somnio-assets`):
+Node 24.17.0+ (`Web/.nvmrc`). For real models and floors, build the served asset root from the
+`somnio-assets` working tree first (placeholders otherwise — fine for most editor testing):
 
 ```bash
-SOMNIO_ASSET_SOURCE="<asset-root>" SIGNING_MODE=adhoc Scripts/package_app.sh debug editor
+SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=Web/public/assets Scripts/bundle-web-assets.sh
+mkdir -p sectors && cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+cd Web && npm ci && npm run editor
 ```
 
-Without it the editor opens with the nil-fallback rendering (placeholder gray models, untextured floor), which is fine for most editor testing.
-
-## Step 2: Launch
+`npm run editor` opens `http://localhost:5173/editor.html` and — this is the load-bearing
+part — sets `SOMNIO_EDITOR_SECTORS_DIR` (default `../sectors`), which is both the gate and the
+root of the file API: a bare `npm run dev`
+never mounts it, and an editor served that way can render but cannot list, open, create, or
+save anything. Point the variable elsewhere to author a different directory:
 
 ```bash
-open SomnioEditor.app
+SOMNIO_EDITOR_SECTORS_DIR=/path/to/sectors npm run editor
 ```
 
-Or open a sector file directly (the fixtures under `Tests/SomnioMapFixturesTestSupport/MapFixtures/` make good test documents):
+The API is loopback-only (`/__editor/sectors`; GET list, GET/PUT per stem, no DELETE) and
+saves atomically, so a running dev server can read the files while you author them. Save As
+writes the new name and leaves the original file in place.
+
+## Step 2: Drive it with agent-browser
+
+`window.somnioEditor` is the read-only debug surface (always installed — the page is dev-only).
+Gate every wait on a predicate over it, not a sleep:
 
 ```bash
-open -a "$PWD/SomnioEditor.app" Tests/SomnioMapFixturesTestSupport/MapFixtures/EdariaBibliothek.somnio-sector
+agent-browser open 'http://localhost:5173/editor.html'
+agent-browser wait --fn 'window.somnioEditor !== undefined && window.somnioEditor.overlay() === "sectorPicker"'
+agent-browser snapshot -i        # tool palette, inspector, picker rows are real DOM with refs
+agent-browser eval 'const b=[...document.querySelectorAll("button")]; b.find(x=>x.textContent==="EdariaMitte").click(); "ok"'
+agent-browser wait --fn 'window.somnioEditor.sectorName() === "EdariaMitte"'
+agent-browser eval 'window.somnioEditor.placeholderObjectCount()'   # 0 = real models resolved
 ```
 
-Never launch with `open -a SomnioEditor` (by name) — that resolves a stale copy in /Applications, not the freshly built app. Always use the repo-root app by path.
+| Call | Returns |
+|---|---|
+| `sectorName()` | loaded sector id, `''` before the first open |
+| `body()` | record counts per array (`objects`, `collisionMasks`, `portals`, `npcs`, `monsterSpawns`, `floorPatches`) |
+| `selection()` | `[{ kind, index }]` |
+| `tool()` | `'select' \| 'object' \| 'mask' \| 'portal' \| 'npc' \| 'monster' \| 'floorPatch'` |
+| `overlay()` | `'gameMenu' \| 'newMap' \| 'sectorSettings' \| 'about' \| 'preferences' \| 'sectorPicker' \| 'saveAs' \| undefined` |
+| `isDirty()` | unsaved changes against the last save/load checkpoint |
+| `undoDepth()` | committed undo steps |
+| `placeholderObjectCount()` | placed objects still rendering placeholders |
+| `cameraScale()` | orthographic vertical half-height |
+
+**Canvas input.** The WebGL canvas has no AX elements; drive it with synthetic events on
+`#somnio-editor-canvas` — `PointerEvent` down/move/up for select/place/drag/marquee (Shift for
+additive), `KeyboardEvent` on `window` for commands. Commands bind on `metaKey || ctrlKey`:
+S save, Shift+S save-as, Z/Shift+Z undo/redo, D duplicate, G grid, C/V copy/paste, A select
+all; Delete removes; arrows nudge (Shift = grid step). All are suppressed while a text field
+has focus — `document.activeElement?.blur?.()` first. Esc walks the overlay state machine.
+
+**Verify via file (decisive).** After a save, read the sector JSON out of the sectors
+directory — screenshots can lie, the saved file cannot. An unedited open+save is byte-identical
+to the input (`cmp` against the fixture), so any diff is exactly your edit.
 
 ## Notes
 
-- Rebuild and repackage after any code change — a running instance keeps the old code in memory.
-- To screenshot or drive the editor programmatically, see "Driving the editor (synthetic events)" below (window-id discovery, clicks, ⌘-keys, verification). System python has no PyObjC/Quartz — drive input through `peekaboo`, and use swift snippets when a raw CGEvent or CGWindowList call is genuinely needed.
-- To produce a signed, notarized editor DMG for distribution (not local testing), use `Scripts/release.sh editor`.
-
-## Driving the editor (synthetic events)
-
-Validated recipe for hands-off smoke-driving the running editor:
-
-- **Work on a copy**: `cp Tests/.../Fixture.somnio-sector /tmp/...` and open that — any edit dirties the document and macOS autosaves in place, so never drive edits against a committed fixture.
-- **Window + coordinates**: `peekaboo window list --app SomnioEditor --json` gives the document window's `bounds` in points; re-resolve before each capture, since window ids churn. A default `peekaboo see --window-id <id> --no-elements --path <file>` capture is **half** the window's point size, so multiply capture coordinates by 2 for window points and add the window origin for the global point. When `see` fails with `CAPTURE_FAILED` from a stale ScreenCaptureKit bridge host, fall back to `screencapture -x -l <id>` (2x Display-P3 pixels — convert the ICC profile to sRGB before trusting RGB values).
-- **Clicks**: the canvas exposes no AX-pressable elements, so background clicks are refused. `peekaboo app focus SomnioEditor`, then `peekaboo click --at <globalX>,<globalY> --global --foreground --input-strategy synthOnly`. Keys are `peekaboo press <key> --foreground` and `peekaboo type "<text>" --foreground`; both report `success: false` with `effect: "unverifiable"` while still delivering, so confirm by observing the app.
-- **Picking a prop**: `CanvasController.candidateSelections` orders collision masks before objects, so a click overlapping a mask selects the mask. Aim inside the object's authored rect but outside every mask. There is no pick-vs-render offset — the authored rect is where the click lands.
-- **⌘-shortcuts**: the app must be frontmost (`osascript -e 'tell application "SomnioEditor" to activate'` — safe despite the launch-by-name warning above: `activate` targets the already-running repo-root instance) and the ⌘ flag goes on BOTH events: `event.flags = .maskCommand` on keyDown and keyUp. Key codes: Esc=53, C=8, V=9, S=1.
-- **Verify via UI**: crop the bottom-left `X/Y/W/H` readout and the top-right inspector panel out of window captures. The `W:`/`H:` half tracks the selection reliably; the `X:`/`Y:` hover half updates on only about half of synthetic clicks, so calibrate picking off the floor quad's projected corners rather than treating the readout as an oracle.
-- **Verify via file (decisive)**: post ⌘S, then read the saved JSON (record counts, field values) — screenshots can lie, the saved sector cannot.
-- **Quitting an edited doc** raises the native save sheet: dismiss without saving via System Events (`click button "Delete"` — or "Don't Save"/"Löschen" — `of sheet 1 of window 1`).
-- **Locked screen = dead end**: CGEvents don't route and Metal/RealityKit freezes (black canvas in captures) while SwiftUI chrome still renders. Check `CGSessionCopyCurrentDictionary()["CGSSessionScreenIsLocked"]` and wait for unlock instead of debugging phantom failures.
+- Placement tools place on tap; only the Select tool picks. Picking prefers NPCs > monsters >
+  portals > masks > objects > floor patches, back-to-front within a kind — a click overlapping
+  a mask selects the mask, so aim inside the prop's rect but outside every mask.
+- Inspector fields commit on Return or blur only; an unparseable draft reverts, an equal value
+  commits nothing. Each commit is one undo step.
+- Floor patches preview as gizmo rects during drags (their meshes bake sector-space UVs) and
+  may never overlap: a commit that would introduce an overlap is refused with a message.
+- Grid snap lives in Preferences (game menu), persisted under `somnio.editor.gridSnap`; an
+  absent key means 32, not free.
+- Vite hot-reloads editor code changes, resetting the page to the sector picker. After an
+  asset-pack change, re-run `bundle-web-assets.sh` and restart Vite (the served root is a
+  copy, enumerated at startup).
+- On teardown, `agent-browser close` and stop Vite. The sectors directory keeps your edits.

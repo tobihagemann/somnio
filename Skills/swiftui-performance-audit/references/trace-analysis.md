@@ -257,7 +257,7 @@ didn't, the trace itself tells you which views and symbols to look up.
 1. **From `swiftui.top_offenders` and `high_severity_events`**, use the
    `view` string as your search key. Grep the Somnio sources (SwiftUI
    lives in `Sources/SomnioUI/`, the player app in `Sources/SomnioApp/`,
-   the editor in `Sources/SomnioEditor/`). A partial match (prefix /
+   the UI module in `Sources/SomnioUI/`). A partial match (prefix /
    generic stripping) means it's probably a subview.
 2. **From `correlations[].time_profiler_main_thread.hot_symbols`**, treat
    symbols starting with a Somnio module name (`Somnio*`) as candidates.

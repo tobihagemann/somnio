@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The in-scene modal shell shared by the player's and the editor's overlay hosts: a
+/// The in-scene modal shell backing the player's overlay host: a
 /// dimmed backdrop that swallows clicks to the surface below, the presented overlay
 /// centered on it, and the modal accessibility contract — VoiceOver navigation stays
 /// inside the overlay (`.isModal`) and Esc is exposed as the standard accessibility

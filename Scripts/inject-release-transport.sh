@@ -9,7 +9,7 @@ set -euo pipefail
 #   Sources/SomnioApp/Transport/GameplayServerPin.swift   -> gameplayProductionTrustRootPEM
 #
 # Both files guard their literals behind `#if !DEBUG`, so this only matters for
-# release packaging of the player; debug builds and the editor never reach here. The
+# release packaging of the player; debug builds never reach here. The
 # pinned roots are the committed, publicly-verifiable ISRG roots in
 # Scripts/release-trust-roots.pem (Let's Encrypt) -- see that file's header.
 #

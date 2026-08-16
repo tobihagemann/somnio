@@ -88,6 +88,12 @@ interface EntityRenderState {
 interface PlacedObject {
   node: THREE.Object3D
   object: Sector['objects'][number]
+  /**
+   * Index into the **source** `sector.objects` array. Child order under the sector root is
+   * priority order (`buildObjects` sorts before adding), so without this tag the editor's
+   * live-drag path could not map a selected record back to its mesh.
+   */
+  sourceIndex: number
   anchorBottomY: number
   isPlaceholder: boolean
 }
@@ -714,7 +720,10 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   private buildObjects(sector: Sector, root: THREE.Object3D): void {
-    for (const object of [...sector.objects].sort((a, b) => a.priority - b.priority)) {
+    const bySourceIndex = sector.objects.map((object, sourceIndex) => ({ object, sourceIndex }))
+    for (const { object, sourceIndex } of bySourceIndex.sort(
+      (a, b) => a.object.priority - b.object.priority
+    )) {
       const node = new THREE.Object3D()
       const resolved = this.assets.object(object.modelID)
       if (resolved !== undefined) {
@@ -726,7 +735,13 @@ export class WorldScene implements WorldRenderSurface {
       const anchorBottomY = objectAnchorBottomY(object, sector.collisionMasks)
       this.alignObject(node, object, anchorBottomY)
       root.add(node)
-      this.placedObjects.push({ node, object, anchorBottomY, isPlaceholder: resolved === undefined })
+      this.placedObjects.push({
+        node,
+        object,
+        sourceIndex,
+        anchorBottomY,
+        isPlaceholder: resolved === undefined,
+      })
     }
   }
 
@@ -847,6 +862,18 @@ export class WorldScene implements WorldRenderSurface {
     this.camera.position.set(position.x, position.y, position.z)
     this.camera.lookAt(focus)
     this.repositionSun()
+  }
+
+  /**
+   * Editor seam: the placed node for a **source-array** index, so a live move drag can
+   * translate the real mesh. Covers objects only — floor patches bake sector-space UVs into
+   * their geometry, so translating one would slide the texture out of phase; they stay
+   * gizmo-only by design.
+   */
+  objectNodeForIndex(sourceIndex: number): THREE.Object3D | undefined {
+    // Resolved once per drag (the shell then caches the node in its live-move snapshot), so a
+    // linear scan is fine — no parallel index structure to keep in sync with `placedObjects`.
+    return this.placedObjects.find((placed) => placed.sourceIndex === sourceIndex)?.node
   }
 
   /** Test seam: the scale the camera is currently framed at. */

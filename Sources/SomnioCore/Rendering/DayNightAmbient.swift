@@ -2,8 +2,8 @@ import Foundation
 
 /// The legacy outdoor day/night ambient curve on the 0–100 brightness scale: the per-hour
 /// brightening/dimming staircases, the five-bucket minute step, and the final smoothing pass.
-/// Owned here once and consumed by both render paths — the SpriteKit tint (`DayNightTint`,
-/// still serving the editor preview) and the RealityKit sun (`DayNightSun`) — so the curve
+/// Owned here once and consumed by both render paths — the SpriteKit tint (`DayNightTint`)
+/// and the RealityKit sun (`DayNightSun`) — so the curve
 /// cannot drift between them. Generic over the consumer's floating-point type so each
 /// renderer keeps its native precision (`CGFloat` vs `Float`) bit-for-bit and SomnioCore
 /// stays free of CoreGraphics.

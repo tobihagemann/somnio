@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "editor": "SOMNIO_EDITOR_SECTORS_DIR=${SOMNIO_EDITOR_SECTORS_DIR:-$PWD/../sectors} vite --open /editor.html",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

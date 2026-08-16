@@ -34,17 +34,15 @@ public enum CatalogValidationError: Error, CustomStringConvertible, Sendable, Eq
 
 /// Validates a target's bilingual `Localizable.xcstrings`: every `expectedKey` ships a
 /// non-empty English and German value, the two locales carry the same placeholder
-/// signature, and no key or value uses the Unicode ellipsis. Shared by every per-target
-/// catalog test so a new catalog ships a one-line check. `allowedUnicodeEllipsisKeys`
-/// carries the documented carve-outs (the editor's `Loading…` window title is the
-/// codebase's only one).
+/// signature, and no key or value uses the Unicode ellipsis (ASCII `...` throughout,
+/// with no exceptions). Shared by every per-target catalog test so a new catalog ships
+/// a one-line check.
 public func assertCatalog(
     in bundle: Bundle,
-    expectedKeys: [String],
-    allowedUnicodeEllipsisKeys: Set<String> = []
+    expectedKeys: [String]
 ) throws {
     let catalog = try CatalogParser.parse(from: bundle)
-    try assertCatalog(catalog, expectedKeys: expectedKeys, allowedUnicodeEllipsisKeys: allowedUnicodeEllipsisKeys)
+    try assertCatalog(catalog, expectedKeys: expectedKeys)
 }
 
 /// Validation core over an already-parsed `[key: [locale: value]]` catalog. Exposed so the
@@ -52,8 +50,7 @@ public func assertCatalog(
 /// the bundle overload is the production entry point.
 public func assertCatalog(
     _ catalog: [String: [String: String]],
-    expectedKeys: [String],
-    allowedUnicodeEllipsisKeys: Set<String> = []
+    expectedKeys: [String]
 ) throws {
     for key in expectedKeys {
         guard let entry = catalog[key] else { throw CatalogValidationError.missingKey(key) }
@@ -67,7 +64,7 @@ public func assertCatalog(
             throw CatalogValidationError.placeholderMismatch(key: key, english: english, german: german)
         }
     }
-    for (key, entry) in catalog where !allowedUnicodeEllipsisKeys.contains(key) {
+    for (key, entry) in catalog {
         if key.contains("\u{2026}") {
             throw CatalogValidationError.unicodeEllipsisInKey(key)
         }

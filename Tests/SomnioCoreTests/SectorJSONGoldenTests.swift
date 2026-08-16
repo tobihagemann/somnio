@@ -15,6 +15,17 @@ struct SectorJSONGoldenTests {
     }
 
     @Test(arguments: MapFixtures.Name.allCases)
+    func `fixture bytes are exactly what the writer emits`(_ name: MapFixtures.Name) throws {
+        // The committed fixtures double as the byte-level reference for every other
+        // `.somnio-sector` writer (the browser editor's TypeScript codec pins itself against
+        // these same files), so they must be exactly `MapCodec.write` output — a hand-edit
+        // that drifts a byte would otherwise read as a bug in the *other* writer.
+        let data = try MapFixtures.data(name)
+        let rewritten = try MapCodec.write(MapCodec.read(data))
+        #expect(rewritten == data)
+    }
+
+    @Test(arguments: MapFixtures.Name.allCases)
     func `defaulted rotation and floorPatches keys stay omitted on encode`(_ name: MapFixtures.Name) throws {
         // The hand-written encoders' whole purpose is byte stability: a semantic round-trip
         // still passes if they regress to emitting `"rotation" : 0` or `"floorPatches" : []`,
@@ -255,5 +266,64 @@ struct SectorJSONGoldenTests {
         #expect(sector.collisionMasks[0] == CollisionMask(x: 0, y: 0, width: 256, height: 22))
         #expect(sector.objects[0] == Object(x: 0, y: -48, modelID: "bookshelf-ornate",
                                             sourceWidth: 64, sourceHeight: 96, priority: 0))
+    }
+
+    // MARK: - Synthetic encoding golden
+
+    /// The seven fixtures never exercise a fractional heading and no fixture string forces JSON
+    /// escaping, so this hand-built body covers the writer paths most likely to diverge in a
+    /// mirror: the shortest-Float32 `"direction"`, escaped `"` `\` and newline plus non-ASCII,
+    /// an omitted zero `rotation`, an omitted empty `floorPatches`, and an empty record array.
+    /// Regenerate deliberately with `SOMNIO_RECORD_SECTOR_ENCODING_GOLDEN=1 swift test --filter
+    /// SectorJSONGoldenTests` and read the diff before committing.
+    private static let encodingGoldenName = "sector-encoding-golden.somnio-sector"
+
+    private static let encodingGoldenBody = SectorBody(
+        version: 3,
+        dimensions: GridSize(width: 4, height: 4),
+        floorMaterialID: "grass-meadow",
+        light: LightSetting(indoor: true, brightness: 60),
+        objects: [
+            Object(x: 0, y: 0, modelID: "door", sourceWidth: 32, sourceHeight: 96, priority: 0),
+            Object(x: 128, y: 64, modelID: "well", sourceWidth: 64, sourceHeight: 64, priority: 1, rotation: 90)
+        ],
+        collisionMasks: [CollisionMask(x: 0, y: 0, width: 32, height: 96)],
+        portals: [
+            SectorPortal(x: 64, y: 0, width: 32, height: 16, targetSectorName: "Nordwiese Süd", direction: .outboundTrigger),
+            SectorPortal(x: 64, y: 32, width: 160, height: 96, targetSectorName: "sector-encoding-golden", direction: .arrivalPlacement)
+        ],
+        npcs: [NPC(
+            spawnOrigin: GridPoint(x: 96, y: 96),
+            spawnBoxSize: GridSize(width: 32, height: 32),
+            maskSize: GridSize(width: 32, height: 48),
+            name: "Frau \"Müller\" \\ Träumerin",
+            figure: 17,
+            facing: Heading(degrees: 23.198593),
+            behaviorTag: 0,
+            dialogScript: "Erste Zeile\n---\nZweite / dritte Zeile, $name"
+        )],
+        monsterSpawns: []
+    )
+
+    @Test func `the synthetic encoding golden matches the writer byte for byte`() throws {
+        let written = try MapCodec.write(Self.encodingGoldenBody)
+        if ProcessInfo.processInfo.environment["SOMNIO_RECORD_SECTOR_ENCODING_GOLDEN"] == "1" {
+            // Writes back to the source tree, not the copied bundle resource, mirroring
+            // `GoldenFrameTests.writeFixtures`.
+            let directory = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .appendingPathComponent("Fixtures", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try written.write(to: directory.appendingPathComponent(Self.encodingGoldenName))
+            Issue.record("sector encoding golden re-recorded; review the diff and commit \(Self.encodingGoldenName)")
+            return
+        }
+        let url = try #require(
+            Bundle.module.url(forResource: "sector-encoding-golden", withExtension: "somnio-sector", subdirectory: "Fixtures"),
+            "\(Self.encodingGoldenName) is not bundled; check the test target's resources"
+        )
+        let committed = try Data(contentsOf: url)
+        #expect(written == committed)
+        #expect(try MapCodec.read(committed) == Self.encodingGoldenBody)
     }
 }

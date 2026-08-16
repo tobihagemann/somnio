@@ -2,39 +2,35 @@
 set -euo pipefail
 
 CONF=${1:-release}
-TARGET=${2:-player}
+# The player is the only .app this script assembles (the map editor moved to the browser
+# and is served by `vite dev`, never packaged). A stray second argument almost certainly
+# means a caller still passing the retired target parameter — fail loudly rather than
+# silently building the player under an editor invocation.
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: package_app.sh takes only [debug|release]; the target parameter was retired with the Swift editor" >&2
+  exit 1
+fi
+if [[ "$CONF" != "debug" && "$CONF" != "release" ]]; then
+  echo "ERROR: package_app.sh configuration must be 'debug' or 'release', got '$CONF'" >&2
+  exit 1
+fi
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
 source "$ROOT/version.env"
 
-# Derive version from this target's latest component tag (player-*/editor-*) and build number
-# from commit count. Matching the target's own prefix avoids picking another component's newer
-# tag; the strip then yields the bare X.Y.Z for CFBundleShortVersionString.
-MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "${TARGET}-*" 2>/dev/null || echo "0.0.0")}
-MARKETING_VERSION=$(sed -E 's/^(player|server|editor)-//' <<<"$MARKETING_VERSION")
+# Derive version from the latest player-* component tag (avoiding another component's newer
+# tag) and build number from commit count; the strip yields the bare X.Y.Z for
+# CFBundleShortVersionString.
+MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "player-*" 2>/dev/null || echo "0.0.0")}
+MARKETING_VERSION=$(sed -E 's/^player-//' <<<"$MARKETING_VERSION")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 
-case "$TARGET" in
-  player)
-    APP_BUNDLE_NAME="${APP_NAME}"
-    APP_EXEC_NAME=${EXEC_NAME:-Somnio}
-    APP_TARGET_NAME="SomnioApp"
-    APP_ICON_SRC="Resources/Icons/Somnio.icns"
-    APP_CATEGORY="public.app-category.role-playing-games"
-    ;;
-  editor)
-    APP_BUNDLE_NAME="${APP_NAME}Editor"
-    APP_EXEC_NAME=${EDITOR_EXEC_NAME:-SomnioEditor}
-    APP_TARGET_NAME="SomnioEditor"
-    APP_ICON_SRC="Resources/Icons/SomnioEditor.icns"
-    APP_CATEGORY="public.app-category.developer-tools"
-    ;;
-  *)
-    echo "ERROR: unknown target '$TARGET' (expected 'player' or 'editor')" >&2
-    exit 1
-    ;;
-esac
+APP_BUNDLE_NAME="${APP_NAME}"
+APP_EXEC_NAME=${EXEC_NAME:-Somnio}
+APP_TARGET_NAME="SomnioApp"
+APP_ICON_SRC="Resources/Icons/Somnio.icns"
+APP_CATEGORY="public.app-category.role-playing-games"
 
 MACOS_MIN_VERSION=${MACOS_MIN_VERSION:-15.0}
 SIGNING_MODE=${SIGNING_MODE:-}
@@ -46,44 +42,40 @@ if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
   ARCH_LIST=("$HOST_ARCH")
 fi
 
-# Sparkle auto-update is player-only; the editor ships without an updater and never injects
-# Sparkle keys. For the player the feed URL and public key are all-or-none: both must be set
-# together. The release-mode hard-fail runs *before* `swift build` so a missing secret
-# short-circuits without consuming build time. Debug builds skip injection silently when
-# both are unset and warn (but continue) when only one is set so a local typo is visible.
-# The actual Info.plist splice happens after the build via `${SPARKLE_KEYS}`.
+# Sparkle feed URL and public key are all-or-none: both must be set together. The
+# release-mode hard-fail runs *before* `swift build` so a missing secret short-circuits
+# without consuming build time. Debug builds skip injection silently when both are unset
+# and warn (but continue) when only one is set so a local typo is visible. The actual
+# Info.plist splice happens after the build via `${SPARKLE_KEYS}`.
 SPARKLE_KEYS=""
-if [[ "$TARGET" == "player" ]]; then
-  SPARKLE_FEED_URL=${SPARKLE_FEED_URL_PLAYER:-}
-  SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_ED_KEY:-}
-  if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_KEY" ]]; then
-    SPARKLE_KEYS=$(cat <<SPARKLE
+SPARKLE_FEED_URL=${SPARKLE_FEED_URL_PLAYER:-}
+SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_ED_KEY:-}
+if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_KEY" ]]; then
+  SPARKLE_KEYS=$(cat <<SPARKLE
     <key>SUFeedURL</key><string>${SPARKLE_FEED_URL}</string>
     <key>SUPublicEDKey</key><string>${SPARKLE_PUBLIC_KEY}</string>
 SPARKLE
 )
-  elif [[ -z "$SPARKLE_FEED_URL" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
-    if [[ "$CONF" == "release" ]]; then
-      echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY both required for release builds" >&2
-      exit 1
-    fi
-  else
-    if [[ "$CONF" == "release" ]]; then
-      echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY must both be set for release builds (only one was provided)" >&2
-      exit 1
-    fi
-    echo "WARNING: only one of SPARKLE_FEED_URL_PLAYER / SPARKLE_PUBLIC_ED_KEY is set; skipping Sparkle injection" >&2
+elif [[ -z "$SPARKLE_FEED_URL" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
+  if [[ "$CONF" == "release" ]]; then
+    echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY both required for release builds" >&2
+    exit 1
   fi
+else
+  if [[ "$CONF" == "release" ]]; then
+    echo "ERROR: SPARKLE_FEED_URL_PLAYER and SPARKLE_PUBLIC_ED_KEY must both be set for release builds (only one was provided)" >&2
+    exit 1
+  fi
+  echo "WARNING: only one of SPARKLE_FEED_URL_PLAYER / SPARKLE_PUBLIC_ED_KEY is set; skipping Sparkle injection" >&2
 fi
 
-# Player release builds bake in the production gameplay endpoint and its pinned trust
-# root by rewriting GameplayServerURL.swift / GameplayServerPin.swift before the build;
-# their `#error` placeholders make a release compile fail otherwise. Scoped to player +
-# release: the editor never imports these files, and debug builds (including the
-# compile_and_run.sh dev loop) compile the `#if DEBUG` branch. The injector validates its
-# input before consuming build time and owns backup/restore; the EXIT trap restores
-# pristine sources so a local release leaves no injected endpoint behind.
-if [[ "$TARGET" == "player" && "$CONF" == "release" ]]; then
+# Release builds bake in the production gameplay endpoint and its pinned trust root by
+# rewriting GameplayServerURL.swift / GameplayServerPin.swift before the build; their
+# `#error` placeholders make a release compile fail otherwise. Debug builds (including the
+# compile_and_run.sh dev loop) compile the `#if DEBUG` branch and never inject. The
+# injector validates its input before consuming build time and owns backup/restore; the
+# EXIT trap restores pristine sources so a local release leaves no injected endpoint behind.
+if [[ "$CONF" == "release" ]]; then
   trap '"$ROOT/Scripts/inject-release-transport.sh" --restore' EXIT
   "$ROOT/Scripts/inject-release-transport.sh"
 fi
@@ -102,45 +94,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Framewor
 BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-if [[ "$TARGET" == "editor" ]]; then
-  EDITOR_DOCUMENT_KEYS=$(cat <<'EDITOR_KEYS'
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key><string>Somnio Sector</string>
-            <key>CFBundleTypeRole</key><string>Editor</string>
-            <key>CFBundleTypeIconFile</key><string>SomnioSector</string>
-            <key>LSHandlerRank</key><string>Owner</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>de.tobiha.somnio.sector</string>
-            </array>
-        </dict>
-    </array>
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key><string>de.tobiha.somnio.sector</string>
-            <key>UTTypeDescription</key><string>Somnio Sector</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.json</string>
-            </array>
-            <key>UTTypeTagSpecification</key>
-            <dict>
-                <key>public.filename-extension</key>
-                <array>
-                    <string>somnio-sector</string>
-                </array>
-            </dict>
-        </dict>
-    </array>
-EDITOR_KEYS
-)
-else
-  EDITOR_DOCUMENT_KEYS=""
-fi
-
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -148,7 +101,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleName</key><string>${APP_BUNDLE_NAME}</string>
     <key>CFBundleDisplayName</key><string>${APP_BUNDLE_NAME}</string>
-    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.${TARGET}</string>
+    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.player</string>
     <key>CFBundleExecutable</key><string>${APP_EXEC_NAME}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
@@ -169,7 +122,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
     <key>SomnioBuildConfiguration</key><string>${CONF}</string>
 ${SPARKLE_KEYS}
-${EDITOR_DOCUMENT_KEYS}
 </dict>
 </plist>
 PLIST
@@ -178,10 +130,6 @@ PLIST
 # SwiftPM build never produces) resolves Resources/AppIcon.icns. Classic 128px art;
 # macOS upscales it at larger sizes.
 cp "$ROOT/$APP_ICON_SRC" "$APP/Contents/Resources/AppIcon.icns"
-# Editor-only .somnio-sector document icon (CFBundleTypeIconFile).
-if [[ "$TARGET" == "editor" ]]; then
-  cp "$ROOT/Resources/Icons/SomnioSector.icns" "$APP/Contents/Resources/SomnioSector.icns"
-fi
 
 build_product_path() {
   local name="$1"
@@ -269,13 +217,10 @@ for bundle in "$APP/Contents/Resources/"*.bundle; do
 done
 shopt -u nullglob
 
-# Validate a per-target required bundle set rather than counting compiles: the shared
-# build dir accumulates bundles from other targets across builds, so a stale catalog
-# could otherwise mask a required bundle that is missing or uncompiled.
-case "$TARGET" in
-  player) REQUIRED_CATALOG_BUNDLES=("Somnio_SomnioCore.bundle" "Somnio_SomnioUI.bundle" "Somnio_SomnioApp.bundle") ;;
-  editor) REQUIRED_CATALOG_BUNDLES=("Somnio_SomnioCore.bundle" "Somnio_SomnioEditor.bundle") ;;
-esac
+# Validate the required bundle set rather than counting compiles: the shared build dir
+# accumulates bundles from other targets across builds, so a stale catalog could
+# otherwise mask a required bundle that is missing or uncompiled.
+REQUIRED_CATALOG_BUNDLES=("Somnio_SomnioCore.bundle" "Somnio_SomnioUI.bundle" "Somnio_SomnioApp.bundle")
 for name in "${REQUIRED_CATALOG_BUNDLES[@]}"; do
   bundle="$APP/Contents/Resources/$name"
   if [[ ! -d "$bundle" ]]; then
@@ -294,28 +239,22 @@ for name in "${REQUIRED_CATALOG_BUNDLES[@]}"; do
   fi
 done
 
-# Bundle assets (3D models, floor materials, UI chrome). SOMNIO_BUNDLE_TARGET tells the
-# script which pack contract to enforce: the player hard-requires the UI/ subtree, the
-# editor keeps warn/skip behavior throughout.
+# Bundle assets (3D models, floor materials, UI chrome). The UI/ subtree is a hard
+# requirement — SomnioUI renders unstyled panels without it.
 SOMNIO_ASSET_DEST="$APP/Contents/Resources" \
-SOMNIO_BUNDLE_TARGET="$TARGET" \
   "${ROOT}/Scripts/bundle-assets.sh"
 
-# Embed frameworks if any exist in the build folder. Player-only: Sparkle is the project's
-# sole framework dependency and ships only with the player. SwiftPM leaves Sparkle.framework
-# in the shared build dir across builds, so an unguarded glob would embed it into the editor
-# bundle (the editor doesn't link it).
-if [[ "$TARGET" == "player" ]]; then
-  FRAMEWORK_DIRS=(".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
-  for dir in "${FRAMEWORK_DIRS[@]}"; do
-    if compgen -G "${dir}/"*.framework >/dev/null; then
-      cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
-      chmod -R a+rX "$APP/Contents/Frameworks"
-      install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_EXEC_NAME"
-      break
-    fi
-  done
-fi
+# Embed frameworks if any exist in the build folder (Sparkle is the project's sole
+# framework dependency).
+FRAMEWORK_DIRS=(".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
+for dir in "${FRAMEWORK_DIRS[@]}"; do
+  if compgen -G "${dir}/"*.framework >/dev/null; then
+    cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
+    chmod -R a+rX "$APP/Contents/Frameworks"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_EXEC_NAME"
+    break
+  fi
+done
 
 # Ensure contents are writable before stripping attributes and signing.
 chmod -R u+w "$APP"

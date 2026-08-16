@@ -4,8 +4,8 @@ import Foundation
 /// (+Z, toward the 3/4 camera) and increasing degrees rotate toward east (+X) — the same
 /// convention as `YawSlew`'s radians, so the RealityKit seam is a pure `degrees → radians`
 /// conversion. `Heading` is the facing type at the runtime seams (wire, DB, sector-file
-/// NPC, render DTO); `Direction` is the editor's discrete N/E/S/W facing-picker vocabulary
-/// (spawn/portal facing), bridged to and from this continuous heading via
+/// NPC, render DTO); `Direction` is the discrete N/E/S/W facing-picker vocabulary the browser
+/// editor mirrors (spawn/portal facing), bridged to and from this continuous heading via
 /// `init(cardinal:)` / `nearestCardinal`.
 public struct Heading: Sendable, Equatable, Hashable {
     public var degrees: Float

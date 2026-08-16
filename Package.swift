@@ -6,7 +6,6 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "SomnioApp", targets: ["SomnioApp"]),
-        .executable(name: "SomnioEditor", targets: ["SomnioEditor"]),
         .executable(name: "SomnioServer", targets: ["SomnioServer"]),
         .executable(name: "SomnioCLI", targets: ["SomnioCLI"]),
         .executable(name: "SomnioAssetValidator", targets: ["SomnioAssetValidator"]),
@@ -67,7 +66,8 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioCoreTests",
-            dependencies: ["SomnioCore", "SomnioCatalogTestSupport", "SomnioMapFixturesTestSupport"]
+            dependencies: ["SomnioCore", "SomnioCatalogTestSupport", "SomnioMapFixturesTestSupport"],
+            resources: [.copy("Fixtures")]
         ),
 
         .target(name: "SomnioCatalogTestSupport"),
@@ -128,7 +128,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SomnioScene3DTests",
-            dependencies: ["SomnioScene3D", "SomnioMapFixturesTestSupport"]
+            dependencies: ["SomnioScene3D"]
         ),
 
         .executableTarget(
@@ -159,21 +159,6 @@ let package = Package(
         .testTarget(
             name: "SomnioAppTests",
             dependencies: ["SomnioApp", "SomnioCatalogTestSupport", "SomnioProtocol"]
-        ),
-
-        .executableTarget(
-            name: "SomnioEditor",
-            dependencies: [
-                "SomnioCore",
-                "SomnioScene3D",
-                "SomnioTheme",
-                .product(name: "Logging", package: "swift-log")
-            ],
-            resources: [.process("Resources/Localizable.xcstrings")]
-        ),
-        .testTarget(
-            name: "SomnioEditorTests",
-            dependencies: ["SomnioEditor", "SomnioCatalogTestSupport", "SomnioMapFixturesTestSupport"]
         ),
 
         .target(

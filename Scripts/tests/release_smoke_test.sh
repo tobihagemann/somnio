@@ -17,17 +17,14 @@ STUBS="$(cd "$(dirname "$0")/stubs" && pwd)"
 # once here and referenced by both its case and TRACKED_VERSIONS, so the cleanup/guard set
 # and the cases can never drift apart.
 VER_DEFAULT=9.9.9
-VER_PLAYER_ONLY=9.9.8
 VER_OVERRIDE=9.9.7
 VER_SCRATCH=9.9.6
 VER_FAIL=9.9.5
 VER_GIT_DESCRIBE=1.2.3
-VER_PER_TARGET_PLAYER=2.0.0
-VER_PER_TARGET_EDITOR=3.0.0
 VER_NO_TAG=0.0.0
 TRACKED_VERSIONS=(
-  "$VER_DEFAULT" "$VER_PLAYER_ONLY" "$VER_OVERRIDE" "$VER_SCRATCH" "$VER_FAIL"
-  "$VER_GIT_DESCRIBE" "$VER_PER_TARGET_PLAYER" "$VER_PER_TARGET_EDITOR" "$VER_NO_TAG"
+  "$VER_DEFAULT" "$VER_OVERRIDE" "$VER_SCRATCH" "$VER_FAIL"
+  "$VER_GIT_DESCRIBE" "$VER_NO_TAG"
 )
 
 # ---------------------------------------------------------------------------------------
@@ -42,11 +39,10 @@ cleanup() {
   # Artifact removal is gated on the pre-existence guard having passed, so a guard-triggered
   # abort never deletes an operator's real dev-build bundle/archive at these same paths.
   if [[ "$GUARD_PASSED" -eq 1 ]]; then
-    rm -rf "$ROOT/${APP_NAME}.app" "$ROOT/${APP_NAME}Editor.app"
+    rm -rf "$ROOT/${APP_NAME}.app"
     local ver
     for ver in "${TRACKED_VERSIONS[@]}"; do
-      rm -f "$ROOT/${APP_NAME}-${ver}.zip" "$ROOT/${APP_NAME}-${ver}.dmg" \
-        "$ROOT/${APP_NAME}Editor-${ver}.zip" "$ROOT/${APP_NAME}Editor-${ver}.dmg"
+      rm -f "$ROOT/${APP_NAME}-${ver}.zip" "$ROOT/${APP_NAME}-${ver}.dmg"
     done
   fi
 }
@@ -55,10 +51,8 @@ trap cleanup EXIT
 preexistence_guard() {
   local conflicts=() ver f
   if [[ -e "$ROOT/${APP_NAME}.app" ]]; then conflicts+=("$ROOT/${APP_NAME}.app"); fi
-  if [[ -e "$ROOT/${APP_NAME}Editor.app" ]]; then conflicts+=("$ROOT/${APP_NAME}Editor.app"); fi
   for ver in "${TRACKED_VERSIONS[@]}"; do
-    for f in "$ROOT/${APP_NAME}-${ver}.zip" "$ROOT/${APP_NAME}-${ver}.dmg" \
-      "$ROOT/${APP_NAME}Editor-${ver}.zip" "$ROOT/${APP_NAME}Editor-${ver}.dmg"; do
+    for f in "$ROOT/${APP_NAME}-${ver}.zip" "$ROOT/${APP_NAME}-${ver}.dmg"; do
       if [[ -e "$f" ]]; then conflicts+=("$f"); fi
     done
   done
@@ -172,7 +166,7 @@ reset_env() {
   export APP_STORE_CONNECT_KEY_ID="SMOKEKEYID"
   export APP_STORE_CONNECT_ISSUER_ID="00000000-0000-0000-0000-000000000000"
   unset MARKETING_VERSION
-  unset SMOKE_GIT_DESCRIBE SMOKE_GIT_DESCRIBE_PLAYER SMOKE_GIT_DESCRIBE_EDITOR
+  unset SMOKE_GIT_DESCRIBE SMOKE_GIT_DESCRIBE_PLAYER
   unset SMOKE_PACKAGE_APP_EXIT
 }
 
@@ -205,61 +199,41 @@ run_release() {
 # Test cases
 # ---------------------------------------------------------------------------------------
 
-case_default_both_bundles() {
-  echo "== default both-bundles path =="
+case_default_player() {
+  echo "== default player path =="
   reset_env
   export MARKETING_VERSION="$VER_DEFAULT"
   run_release
   assert_status 0 "$LAST_RC"
 
-  # Both bundles built, player before editor; both zips and dmgs land in the repo root.
-  assert_logged "package_app release player"
-  assert_logged "package_app release editor"
+  assert_logged "package_app release"
   assert_exists "$ROOT/${APP_NAME}-${VER_DEFAULT}.zip"
-  assert_exists "$ROOT/${APP_NAME}Editor-${VER_DEFAULT}.zip"
   assert_exists "$ROOT/${APP_NAME}-${VER_DEFAULT}.dmg"
-  assert_exists "$ROOT/${APP_NAME}Editor-${VER_DEFAULT}.dmg"
 
   # Phase order across the whole log.
   assert_subsequence "phase order" "$(cat "$RELEASE_SMOKE_LOG")" \
-    "--- build:player ---" "--- build:editor ---" "--- dmg:player ---" "--- dmg:editor ---"
+    "--- build:player ---" "--- dmg:player ---"
 
   # Command order within each phase window. The distributable-zip name (e.g. Somnio-9.9.9.zip)
   # anchors the post-staple `ditto "$ROOT/$ZIP_NAME"`; the notarize zip is named
-  # Somnio-<target>-Notarize.zip, so this token matches only the distributable ditto and proves
+  # Somnio-player-Notarize.zip, so this token matches only the distributable ditto and proves
   # the shipped archive is built *after* stapling (a reorder shipping an unstapled app would fail).
-  assert_subsequence "build:player order" "$(slice_log '--- build:player ---' '--- build:editor ---')" \
+  assert_subsequence "build:player order" "$(slice_log '--- build:player ---' '--- dmg:player ---')" \
     "notarytool submit" "stapler staple" "${APP_NAME}-${VER_DEFAULT}.zip" "spctl" "stapler validate"
-  assert_subsequence "build:editor order" "$(slice_log '--- build:editor ---' '--- dmg:player ---')" \
-    "notarytool submit" "stapler staple" "${APP_NAME}Editor-${VER_DEFAULT}.zip" "spctl" "stapler validate"
-  assert_subsequence "dmg:player order" "$(slice_log '--- dmg:player ---' '--- dmg:editor ---')" \
-    "codesign" "notarytool submit" "stapler staple"
-  # Terminal window: dmg:editor has no trailing marker, so slice to EOF.
-  assert_subsequence "dmg:editor order" "$(slice_log '--- dmg:editor ---')" \
+  # Terminal window: dmg:player has no trailing marker, so slice to EOF.
+  assert_subsequence "dmg:player order" "$(slice_log '--- dmg:player ---')" \
     "codesign" "notarytool submit" "stapler staple"
 }
 
-case_player_only() {
-  echo "== player-only path (CI invocation) =="
+case_rejects_target_argument() {
+  echo "== retired target argument is rejected =="
   reset_env
-  export MARKETING_VERSION="$VER_PLAYER_ONLY"
+  # The player/editor target parameter was retired with the Swift editor; a caller still
+  # passing one must fail before any build rather than silently building the player.
   run_release player
-  assert_status 0 "$LAST_RC"
-
-  assert_exists "$ROOT/${APP_NAME}-${VER_PLAYER_ONLY}.zip"
-  assert_exists "$ROOT/${APP_NAME}-${VER_PLAYER_ONLY}.dmg"
-  assert_not_logged "package_app release editor"
-  # Editor-absence check scoped to THIS case's version, never a broad SomnioEditor-* glob:
-  # an earlier no-arg case leaves SomnioEditor-<other-ver>.* on disk until the final EXIT trap.
-  assert_absent "$ROOT/${APP_NAME}Editor-${VER_PLAYER_ONLY}.zip"
-  assert_absent "$ROOT/${APP_NAME}Editor-${VER_PLAYER_ONLY}.dmg"
-
-  # Its sole build/dmg windows are both terminal-style here (one target). The distributable-zip
-  # token anchors the post-staple ditto (see the default-case note).
-  assert_subsequence "build:player order" "$(slice_log '--- build:player ---' '--- dmg:player ---')" \
-    "notarytool submit" "stapler staple" "${APP_NAME}-${VER_PLAYER_ONLY}.zip" "spctl" "stapler validate"
-  assert_subsequence "dmg:player order" "$(slice_log '--- dmg:player ---')" \
-    "codesign" "notarytool submit" "stapler staple"
+  assert_status 1 "$LAST_RC"
+  assert_stderr "takes no arguments"
+  assert_not_logged "package_app"
 }
 
 case_missing_app_identity() {
@@ -282,32 +256,12 @@ case_missing_asc_var() {
   assert_not_logged "package_app"
 }
 
-case_unknown_target() {
-  echo "== unknown target =="
-  reset_env
-  run_release playr
-  assert_status 1 "$LAST_RC"
-  assert_stderr "unknown release target"
-  assert_not_logged "package_app"
-}
-
-case_mixed_valid_invalid_target() {
-  echo "== mixed valid + invalid target (up-front validation) =="
-  reset_env
-  # release.sh validates every target up front, before any build, so an invalid target
-  # alongside a valid one must fail before the valid one is ever packaged.
-  run_release player playr
-  assert_status 1 "$LAST_RC"
-  assert_stderr "unknown release target"
-  assert_not_logged "package_app"
-}
-
 case_version_override_wins() {
   echo "== version resolution: override wins =="
   reset_env
   export MARKETING_VERSION="$VER_OVERRIDE"
   export SMOKE_GIT_DESCRIBE="player-${VER_GIT_DESCRIBE}"
-  run_release player
+  run_release
   assert_status 0 "$LAST_RC"
   # With MARKETING_VERSION set, resolve_marketing_version short-circuits and never calls
   # git describe; this is a black-box name check that the override value reached the name
@@ -322,38 +276,19 @@ case_version_git_describe() {
   reset_env
   export SMOKE_GIT_DESCRIBE="player-${VER_GIT_DESCRIBE}"
   # MARKETING_VERSION stays unset (reset_env) so resolution reaches the git describe branch.
-  run_release player
+  run_release
   assert_status 0 "$LAST_RC"
   # Proves resolve_marketing_version's git path + the player- prefix strip.
   assert_exists "$ROOT/${APP_NAME}-${VER_GIT_DESCRIBE}.zip"
   assert_exists "$ROOT/${APP_NAME}-${VER_GIT_DESCRIBE}.dmg"
 }
 
-case_version_per_target() {
-  echo "== version resolution: per-target git tag =="
-  reset_env
-  # Each target's version comes from its own component tag (release.sh's `--match
-  # "<target>-*"`); the target-aware git stub returns distinct tags per target. A both-bundles
-  # run must stamp each bundle with its own version and never bleed the other target's.
-  export SMOKE_GIT_DESCRIBE_PLAYER="player-${VER_PER_TARGET_PLAYER}"
-  export SMOKE_GIT_DESCRIBE_EDITOR="editor-${VER_PER_TARGET_EDITOR}"
-  run_release
-  assert_status 0 "$LAST_RC"
-  assert_exists "$ROOT/${APP_NAME}-${VER_PER_TARGET_PLAYER}.zip"
-  assert_exists "$ROOT/${APP_NAME}Editor-${VER_PER_TARGET_EDITOR}.zip"
-  assert_exists "$ROOT/${APP_NAME}-${VER_PER_TARGET_PLAYER}.dmg"
-  assert_exists "$ROOT/${APP_NAME}Editor-${VER_PER_TARGET_EDITOR}.dmg"
-  # No cross-target version bleed (would catch a regression that resolved one tag for all).
-  assert_absent "$ROOT/${APP_NAME}-${VER_PER_TARGET_EDITOR}.zip"
-  assert_absent "$ROOT/${APP_NAME}Editor-${VER_PER_TARGET_PLAYER}.zip"
-}
-
 case_version_no_tag_fallback() {
   echo "== version resolution: no-tag 0.0.0 fallback =="
   reset_env
-  # MARKETING_VERSION and every SMOKE_GIT_DESCRIBE* are unset, so the git stub exits non-zero
+  # MARKETING_VERSION and SMOKE_GIT_DESCRIBE* are unset, so the git stub exits non-zero
   # and release.sh falls through to its `|| echo "0.0.0"` default (the fresh-checkout path).
-  run_release player
+  run_release
   assert_status 0 "$LAST_RC"
   assert_exists "$ROOT/${APP_NAME}-${VER_NO_TAG}.zip"
   assert_exists "$ROOT/${APP_NAME}-${VER_NO_TAG}.dmg"
@@ -373,7 +308,7 @@ case_scratch_dir_cleanup_on_failure() {
   reset_env
   export MARKETING_VERSION="$VER_FAIL"
   # Force package_app to fail; the scratch dir (which holds the decrypted .p8 signing key)
-  # is created before the build loop, so the EXIT-trap rm -rf must still fire on abort.
+  # is created before the build, so the EXIT-trap rm -rf must still fire on abort.
   export SMOKE_PACKAGE_APP_EXIT=1
   run_release
   assert_status 1 "$LAST_RC"
@@ -387,15 +322,12 @@ case_scratch_dir_cleanup_on_failure() {
 preexistence_guard
 GUARD_PASSED=1
 
-case_default_both_bundles
-case_player_only
+case_default_player
+case_rejects_target_argument
 case_missing_app_identity
 case_missing_asc_var
-case_unknown_target
-case_mixed_valid_invalid_target
 case_version_override_wins
 case_version_git_describe
-case_version_per_target
 case_version_no_tag_fallback
 case_scratch_dir_cleanup
 case_scratch_dir_cleanup_on_failure

@@ -1,7 +1,7 @@
 import Foundation
 import Logging
 
-/// Bootstraps the swift-log system for the player client, editor, and CLI.
+/// Bootstraps the swift-log system for the player client and CLI.
 ///
 /// On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`.
 /// On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.

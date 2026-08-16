@@ -5,7 +5,7 @@ import { HAND, chatLineCategory } from '@/client'
 import type { ChatLine, InventoryRow } from '@/client'
 import { renderChatLine, t } from '@/i18n'
 import type { CatalogLocale, CatalogTables } from '@/i18n'
-import { element, iconButton, replaceChildren, setHidden } from './dom'
+import { element, floating, iconButton, replaceChildren, setHidden } from './dom'
 import type { IconName } from './dom'
 
 /**
@@ -291,7 +291,7 @@ export class GamePanels {
    * through that reorder, exactly as the native `hoveredPanels` set does.
    */
   private floating(position: string, id: string, children: readonly Node[]): HTMLElement {
-    const node = element('div', { className: `floating floating--${position}`, children })
+    const node = floating(position, children)
     node.addEventListener('pointerenter', () => this.setHovered(id, true))
     node.addEventListener('pointerleave', () => this.setHovered(id, false))
     return node

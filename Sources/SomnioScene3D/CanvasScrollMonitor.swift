@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Scroll-wheel bridge for the 3D viewport, shared by the editor canvas and the player's
-/// zoom. SwiftUI exposes no scroll-wheel events on macOS and the `RealityView` swallows
+/// Scroll-wheel bridge for the 3D viewport, driving the player's zoom. SwiftUI exposes no
+/// scroll-wheel events on macOS and the `RealityView` swallows
 /// none, so a local `NSEvent` monitor watches the window's scroll stream and forwards
 /// events whose cursor sits over this view — without joining the hit-test path, so taps
 /// and hover tracking on sibling overlays stay untouched.

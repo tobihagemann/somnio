@@ -1,0 +1,105 @@
+/*
+ * Editor-only chrome, layered over the shared `chrome.css` vocabulary (the fantasy panel,
+ * button, field, floating-corner, and overlay classes are reused as-is).
+ */
+
+#somnio-editor-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#somnio-editor-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* One icon button per tool in a vertical stack, the active one outlined in selection yellow. */
+.editor-tool-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-tool--active {
+  outline: 2px solid rgb(255 255 0);
+}
+
+/* The Swift inspector's fixed 300px column. */
+.editor-inspector {
+  width: 300px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+.editor-inspector .form-row {
+  grid-template-columns: 96px 1fr;
+}
+
+.editor-summary-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.editor-summary-label {
+  width: 96px;
+  flex: none;
+}
+
+.editor-summary-value {
+  color: var(--somnio-secondary-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-caption {
+  margin: 4px 0;
+  font-size: 10px;
+  color: var(--somnio-secondary-text);
+}
+
+.editor-script-field {
+  height: 96px;
+  font-family: ui-monospace, monospace;
+}
+
+/* The bottom-leading X/Y/W/H strip, monospaced like the native readout. */
+.editor-readout {
+  font-family: ui-monospace, monospace;
+  white-space: pre;
+}
+
+/* The live marquee rubber band the interaction layer draws. */
+.editor-marquee {
+  position: absolute;
+  border: 1px solid rgb(255 255 0);
+  background: rgb(255 255 0 / 0.15);
+  pointer-events: none;
+}
+
+.editor-sector-list {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Error toast: a live-region banner for canvas-context failures (a refused patch overlap, a
+   failed save), shown as a real element rather than a native alert so agent-browser and screen
+   readers can see it. Auto-hidden by the overlay host after a few seconds. */
+.editor-error-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: 80vw;
+  padding: 8px 16px;
+  border: 1px solid var(--somnio-chat-red);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.85);
+  color: var(--somnio-chat-red);
+  font-weight: 600;
+  pointer-events: none;
+}

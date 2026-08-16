@@ -1,11 +1,11 @@
 # Somnio
 
-A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + macOS map editor + admin CLI in one SwiftPM workspace, plus a Three.js browser client under `Web/`.
+A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + admin CLI in one SwiftPM workspace, plus a Three.js browser client and a localhost-only web map editor under `Web/`.
 
 ## Tech Stack
 
 - Swift 6.2, macOS 15+, SwiftPM (no Xcode project)
-- SwiftUI for the player client and editor UIs; RealityKit for the 3D world rendering (player client and editor authoring viewport); Sparkle for player auto-updates only
+- SwiftUI for the player client UI; RealityKit for the 3D world rendering; Sparkle for player auto-updates only
 - Hummingbird + WebSockets + PostgresNIO for the server
 - swift-log facade with OSLog (Apple) / JSON-stdout (Linux) backends and a rotating-file fallback
 - swift-crypto for the session-token digest (shims to CryptoKit on Apple, carries its own implementation on Linux)
@@ -28,18 +28,14 @@ SomnioData       # Postgres persistence (schema, migrations, repositories) +
                  # depends on SomnioCore
 SomnioTheme      # Kenney "Fantasy UI Borders" chrome (FantasyPanel, FantasyButtonStyle,
                  # FantasyPanelTextures) — SwiftUI/AppKit only, loads UI/<stem>.png from
-                 # Bundle.main. imports no Somnio module; shared by SomnioUI and SomnioEditor
+                 # Bundle.main. imports no Somnio module; consumed by SomnioUI and SomnioApp
 SomnioUI         # SwiftUI views (chat, HUD, main window composition, SpeechBubbleText)
                  # depends on SomnioCore + SomnioTheme (NOT on SomnioData)
-SomnioScene3D    # RealityKit 3D render surface for the player world and the editor
-                 # (WorldScene3D, WorldScene3DView, OrthographicCameraRig, EditorFraming,
-                 # the editor's authoring overlay)
+SomnioScene3D    # RealityKit 3D render surface for the player world
+                 # (WorldScene3D, WorldScene3DView, OrthographicCameraRig)
                  # depends on SomnioCore (NOT on SomnioProtocol/SomnioData/SomnioServerCore/SomnioUI)
 SomnioApp        # macOS executable: player client + UI + Sparkle
                  # depends on SomnioCore + SomnioUI + SomnioTheme + SomnioScene3D + SomnioProtocol
-SomnioEditor     # macOS executable: document-based map editor (no Sparkle; built locally)
-                 # depends on SomnioCore + SomnioScene3D + SomnioTheme
-                 # (NOT on SomnioProtocol or SomnioData)
 SomnioServerCore # gameplay/admin handlers, per-connection + per-sector actors,
                  # Hummingbird app, sector cache, registration repo, checkpoint service
                  # depends on SomnioCore + SomnioData + SomnioProtocol +
@@ -85,9 +81,8 @@ These boundaries are strict:
 - SomnioCore must never import SomnioData or SomnioUI.
 - SomnioTheme must never import another Somnio module (a neutral chrome library, mirroring how `WorldRenderSurface` lives in SomnioCore to break the UI↔Scene3D cycle).
 - SomnioUI must never import SomnioData, and must never import SomnioScene3D (the render-surface protocol and the `WorldEntity` DTO live in SomnioCore so both renderers conform without a cycle).
-- SomnioScene3D must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioUI (a SomnioCore-only renderer shared by the player client and the offline editor).
+- SomnioScene3D must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioUI (a SomnioCore-only renderer).
 - SomnioApp must never import SomnioData or SomnioServerCore (the client never opens a Postgres connection; all server data flows in over the wire protocol).
-- SomnioEditor must never import SomnioProtocol, SomnioData, SomnioServerCore, or SomnioServer (the editor is offline). It may import SomnioTheme — the chrome ban covers SomnioUI, not the shared theme library.
 - SomnioCLICore must never import SomnioUI, Sparkle, or SomnioServerCore.
 - SomnioCLI is a thin executable shim and must depend only on SomnioCLICore.
 
@@ -101,6 +96,7 @@ A Three.js client that speaks the same wire protocol as the native player. Its o
 cd Web
 npm ci
 npm run dev          # Vite on :5173, proxying /ws to the local server on :8090
+npm run editor       # Vite with the editor entry + sector file API (see "Web map editor")
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint
 npm test             # headless suite (happy-dom); no browser, no Swift server
@@ -108,7 +104,7 @@ npm run conformance  # wire conformance against a LIVE server (SOMNIO_CONFORMANC
 npm run build        # production bundle into Web/dist
 ```
 
-`./Scripts/lint.sh` fans out to the Prettier/ESLint/tsc/Vitest checks, so the repo-level lint covers the browser client too.
+`./Scripts/lint.sh` fans out to the Prettier/ESLint/tsc/Vitest checks plus a production build with an editor-exclusion assertion, so the repo-level lint covers the browser client too.
 
 ### What it shares with the Swift tree, and how
 
@@ -135,9 +131,19 @@ The wire protocol, core geometry, and renderer math are **hand-mirrored** ports,
 
 - **Session tokens.** The native client keeps credentials in the Keychain; a browser page needs a refresh to survive. Server-side support is migration v8 plus `redeemSession`/`revokeSession`, and issuance is **request-gated** on an Optional `Login.requestSessionToken`, which is what keeps `helloVersion` at 3 rather than forcing a bump that would lock out every existing player.
 - **DOM UI over WebGL.** Panels and overlays are real elements, so password managers work and `agent-browser snapshot` sees them. `Web/src/ui/chrome.css` reproduces `FantasyChrome` with `border-image-slice: 36` against an 18px border — the slice is unitless *image pixels* and the Swift `capInset` of 18 is points against an already-halved image.
-- **`OrthographicCameraComponent.scale` is a vertical HALF-height** (`EditorCameraFraming.swift`), so the Three.js mapping is `top/bottom = ±scale`, `left/right = ±scale × aspect`. The usual `frustumSize / 2` idiom halves it again and renders the whole world at 2x.
+- **`OrthographicCameraComponent.scale` is a vertical HALF-height** (`OrthographicCameraRig.swift`), so the Three.js mapping is `top/bottom = ±scale`, `left/right = ±scale × aspect`. The usual `frustumSize / 2` idiom halves it again and renders the whole world at 2x.
 - **Resize holds the vertical world extent constant.** A gameplay contract, not a rendering detail: a bigger window magnifies rather than reveals.
 - **`window.somnio`** is a read-only debug surface (dev always, production via `?debug=1`). The `/somnio-web` skill covers driving the client with `agent-browser`.
+
+### Web map editor
+
+The map editor is a second Vite entry point (`Web/editor.html` + `Web/src/editor/**`) that authors `.somnio-sector` files — a development tool, not a shipped surface:
+
+- **Dev-only by construction.** `editor.html` is deliberately never added to `build.rollupOptions.input`, so `vite build`'s default single input (`index.html`) keeps it out of `dist/` and therefore out of the image. `lint.sh --web` machine-enforces this: it runs `npm run build` and asserts `dist/editor.html` is absent and no editor marker (`__editor/sectors`, `somnioEditor`, `somnio-editor-root`) reaches `dist/bundle` or `dist/*.html`.
+- **File I/O is a dev-server middleware** (`Web/vite.editorFs.ts`): a `configureServer`-only plugin serving `/__editor/sectors` (GET list, GET/PUT per percent-encoded stem, no DELETE), inert unless `SOMNIO_EDITOR_SECTORS_DIR` is set (the `editor` npm script sets it, defaulting to the repo-root `sectors/` staging directory, which the local server serves only under the compose topology), loopback-only and same-origin-gated regardless of `--host`, path-contained against the realpath'd root, and atomic on write.
+- **The TypeScript sector codec** (`Web/src/core/sectorFile.ts`) is byte-compatible with `MapCodec.write` — pinned by round-tripping the committed fixtures and the Swift-emitted `Tests/SomnioCoreTests/Fixtures/sector-encoding-golden.somnio-sector` in `Web/test/core-sector-file.test.ts`, so an authored save never rewrites unrelated bytes of a sector the server loads.
+- **English-only.** The editor renders literal English and never imports `@/i18n`, keeping `RENDERED_KEYS` and the catalog tests untouched.
+- The `/somnio-editor` skill covers serving and driving the editor with `agent-browser` (`window.somnioEditor` is its debug surface).
 
 ### Web asset pack
 
@@ -189,32 +195,31 @@ swift test --package-path IntegrationTests
 
 ## Packaging
 
-`version.env` is the single source of truth for app metadata (`APP_NAME`, `BUNDLE_ID`, `EXEC_NAME`, `CLI_NAME`, `EDITOR_EXEC_NAME`, `SERVER_EXEC_NAME`). All scripts source it.
+`version.env` is the single source of truth for app metadata (`APP_NAME`, `BUNDLE_ID`, `EXEC_NAME`, `CLI_NAME`, `SERVER_EXEC_NAME`). All scripts source it.
 
 ```
-Scripts/package_app.sh [debug|release] [player|editor]   # build + assemble .app bundle
-Scripts/compile_and_run.sh                               # package + launch player (dev loop)
-Scripts/create_dmg.sh [player|editor]                    # wrap .app in DMG
-Scripts/release.sh [player|editor ...]                   # build, sign, notarize, DMG, zip (default: both bundles)
+Scripts/package_app.sh [debug|release]   # build + assemble the player .app bundle
+Scripts/compile_and_run.sh               # package + launch player (dev loop)
+Scripts/create_dmg.sh                    # wrap the player .app in a DMG
+Scripts/release.sh                       # build, sign, notarize, DMG, zip the player
 ```
 
 `Resources/Entitlements.plist` holds app entitlements (`network.client`, `files.user-selected.read-write`).
 
-`Scripts/create_dmg.sh` (and `release.sh`, which calls it) require `create-dmg` (`brew install create-dmg`). It lays out the retro install window from `Resources/DMG/` (the `background.png` cloud art, `VolumeIcon.icns`, the app icon over the left drop-zone, no `/Applications` symlink). The per-target app/document icons live in `Resources/Icons/` and are copied into the bundle by `package_app.sh`, referenced from `Info.plist` via `CFBundleIconFile`/`CFBundleTypeIconFile`.
+`Scripts/create_dmg.sh` (and `release.sh`, which calls it) require `create-dmg` (`brew install create-dmg`). It lays out the retro install window from `Resources/DMG/` (the `background.png` cloud art, `VolumeIcon.icns`, the app icon over the left drop-zone, no `/Applications` symlink). The player app icon lives in `Resources/Icons/` and is copied into the bundle by `package_app.sh`, referenced from `Info.plist` via `CFBundleIconFile`.
 
 `Scripts/package_app.sh` injects `<key>SomnioBuildConfiguration</key><string>${CONF}</string>` (`debug` or `release`) into the bundle's `Info.plist`.
 
 The browser client is not packaged by these scripts — it ships as a container image. See the "Browser client" section for `Scripts/bundle-web-assets.sh` and `Web/Dockerfile`.
 
-Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` triggers `release.yml` (player `.app`/DMG + Sparkle appcast + GitHub Release), `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image), and `web-X.Y.Z` triggers `web-image.yml` (ghcr browser-client image). Each workflow strips its own prefix to get the bare `X.Y.Z` marketing version; in `release.yml` the full tag (`RELEASE_TAG`) names the GitHub Release and the Sparkle `--download-url-prefix`, so the two stay aligned. The **editor is not released by CI** — build it locally with `Scripts/release.sh editor` (CI calls `Scripts/release.sh player`). Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob (which would collide with all components at once).
+Release tags are **component-prefixed**, not `v`-prefixed: `player-X.Y.Z` triggers `release.yml` (player `.app`/DMG + Sparkle appcast + GitHub Release), `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image), and `web-X.Y.Z` triggers `web-image.yml` (ghcr browser-client image). Each workflow strips its own prefix to get the bare `X.Y.Z` marketing version; in `release.yml` the full tag (`RELEASE_TAG`) names the GitHub Release and the Sparkle `--download-url-prefix`, so the two stay aligned. Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob (which would collide with all components at once).
 
 ### Asset bundling
 
-3D models, floor materials, and UI chrome textures are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads three env vars:
+3D models, floor materials, and UI chrome textures are not committed to this repo. They are copied into the `.app/Contents/Resources/` at packaging time by `Scripts/bundle-assets.sh`, which reads two env vars:
 
-- `SOMNIO_ASSET_SOURCE` — absolute path on the build machine to the asset root. Must contain the `Models/`, `FloorMaterials/`, and `UI/` subtrees. **Required for the player target** (packaging fails without it); the editor skips silently when unset.
+- `SOMNIO_ASSET_SOURCE` — required. Absolute path on the build machine to the asset root. Must contain the `Models/`, `FloorMaterials/`, and `UI/` subtrees.
 - `SOMNIO_ASSET_DEST` — set automatically by `package_app.sh` to the bundle's `Resources/` path.
-- `SOMNIO_BUNDLE_TARGET` — `player` or `editor`, set automatically by `package_app.sh` (unset fails closed as `player`). Selects which pack contract to enforce.
 
 `bundle-assets.sh` rsyncs the subtrees into the destination. `Models/`/`FloorMaterials/` warn (without failing) when missing, so an in-progress operator-supplied pack still yields a runnable bundle; `UI/` is a **hard failure** for the player bundle — SomnioUI's panel chrome has no designed fallback (each missing stem logs one error, then renders unstyled). The model loader (`BundleMainModelAssets` in SomnioScene3D) loads `Models/<stem>.usdz` and `FloorMaterials/<stem>.png` from `Bundle.main`, resolving the sector format's semantic ids (`floorMaterialID`, `Object.modelID`) through the committed model registry (`Sources/SomnioCore/Resources/ModelRegistry.json`, read via `ModelRegistryCodec`); the UI texture loader (`FantasyPanelTextures` in SomnioUI) loads `UI/<stem>.png` from `Bundle.main` the same way. There is no env var or Preferences UI for asset paths.
 
@@ -227,16 +232,16 @@ No asset pack is committed to the repo. Without an operator-supplied `SOMNIO_ASS
 CI-driven releases (`release.yml`) inject three externalized inputs at build time, so the public repo carries neither the runtime art pack nor the production endpoint:
 
 - **Asset pack** — a separate private repo (`tobihagemann/somnio-assets`) holds the runtime subtrees (`Models/`, `FloorMaterials/`, `UI/`) at its root (the repo also carries unused 2D subtrees the build ignores; the shipped subtrees are CC0, and the repo is private for unrelated reasons). `release.yml` checks it out into `assets/` with the `ASSETS_DEPLOY_KEY` secret (a read-only SSH deploy key scoped to that repo; the default `GITHUB_TOKEN` can't reach a second repo) and points `SOMNIO_ASSET_SOURCE` at it.
-- **Production gameplay endpoint** — the `SOMNIO_GAMEPLAY_PRODUCTION_URL` repo *variable* (e.g. `wss://somnio.tobiha.de/ws`; not a secret — every player sees it). `Scripts/inject-release-transport.sh` rewrites `GameplayServerURL.swift`, replacing the `#error` placeholder with the literal. Required for **player + release** only; the editor and debug builds never reach the guard.
+- **Production gameplay endpoint** — the `SOMNIO_GAMEPLAY_PRODUCTION_URL` repo *variable* (e.g. `wss://somnio.tobiha.de/ws`; not a secret — every player sees it). `Scripts/inject-release-transport.sh` rewrites `GameplayServerURL.swift`, replacing the `#error` placeholder with the literal. Required for **release** only; debug builds never reach the guard.
 - **Pinned TLS trust root** — `Scripts/release-trust-roots.pem` (committed) holds the Let's Encrypt ISRG Root X1 + X2 roots (publicly verifiable by fingerprint). The same inject script embeds them into `gameplayProductionTrustRootPEM` in `GameplayServerPin.swift`. Pinning the long-lived roots (not the 90-day leaf) means certificate renewals never break the shipped player; both roots cover an RSA→ECDSA key-type switch.
 
-`package_app.sh` runs the injection immediately before the player release build, backing up and restoring the sources on exit so a local release leaves the tree clean; it is gated on `player + release` (signing mode is irrelevant — what matters is that release config compiles the `#if !DEBUG` branch). The default `compile_and_run.sh` dev loop builds debug and never injects, but `compile_and_run.sh --release-*` is an adhoc release build that does inject and so needs `SOMNIO_GAMEPLAY_PRODUCTION_URL` like any release. A player release is connectable only once the current server is deployed (see Deployment) and `SOMNIO_GAMEPLAY_PRODUCTION_URL` is set; the editor release is self-contained and needs neither.
+`package_app.sh` runs the injection immediately before the player release build, backing up and restoring the sources on exit so a local release leaves the tree clean; it is gated on release config (signing mode is irrelevant — what matters is that release config compiles the `#if !DEBUG` branch). The default `compile_and_run.sh` dev loop builds debug and never injects, but `compile_and_run.sh --release-*` is an adhoc release build that does inject and so needs `SOMNIO_GAMEPLAY_PRODUCTION_URL` like any release. A player release is connectable only once the current server is deployed (see Deployment) and `SOMNIO_GAMEPLAY_PRODUCTION_URL` is set.
 
 ## Logging
 
 Uses `swift-log` as a facade. Two bootstrap surfaces:
 
-- `LoggingConfiguration.bootstrap()` (in `SomnioCore`) — used by the player client, editor, and CLI. On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`. On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.
+- `LoggingConfiguration.bootstrap()` (in `SomnioCore`) — used by the player client and CLI. On Apple platforms: `MultiplexLogHandler([OSLogHandler, FileLogHandler(somnio.log)])`. On Linux: `MultiplexLogHandler([JSONLogHandler, FileLogHandler(somnio.log)])`.
 - `ServerLoggingConfiguration.bootstrap()` (in `SomnioServerCore`) — composes a JSON stdout backend (container-friendly) with two label-filtered file backends: `gameplay-log.log` for `de.tobiha.somnio.server.gameplay.*` and `admin-log.log` for `de.tobiha.somnio.server.admin.*`. Records that don't match either prefix go only to stdout.
 
 Logger labels use dot notation: `Logger(label: "de.tobiha.somnio.app.lifecycle")` — last component is the category (flat lowercase), rest is the OSLog subsystem.
@@ -290,9 +295,9 @@ SwiftFormat, SwiftLint, and Periphery are installed via Homebrew. Both scripts f
 ./Scripts/format.sh            # auto-format + autocorrect (Swift + Prettier/ESLint)
 ./Scripts/format.sh --swift    # Swift only: SwiftFormat, SwiftLint --fix
 ./Scripts/format.sh --web      # browser only: Prettier, ESLint --fix
-./Scripts/lint.sh              # check format + lint + unused code + the browser suite (read-only)
+./Scripts/lint.sh              # check format + lint + unused code + the browser suite + the editor-exclusion build check
 ./Scripts/lint.sh --swift      # Swift only: SwiftFormat, SwiftLint (both packages), Periphery
-./Scripts/lint.sh --web        # browser only: Prettier, ESLint, tsc, Vitest
+./Scripts/lint.sh --web        # browser only: Prettier, ESLint, tsc, Vitest, production build + editor-exclusion check
 ./Scripts/install-hooks.sh     # install pre-commit hook (runs lint.sh before commit)
 ```
 
@@ -313,19 +318,19 @@ CI on GitHub Actions mirrors the same checks (`.github/workflows/ci.yml`).
 
 ### Localization
 
-Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` resources live in `Bundle.module`, not `Bundle.main`, so the bare `NSLocalizedString("key")` and `Text("key")` overloads silently miss the catalog. Use `String(localized: key, bundle: .module)` from Foundation paths and `Text(_, bundle: .module)` from SwiftUI views. When the player client and editor add user-facing views, define a per-target `L` enum (matching `Sources/SomnioCLICore/Localization.swift`) that wraps these calls so the bundle pinning stays in one place.
+Every user-facing string is loaded with an explicit bundle. SwiftPM `.process` resources live in `Bundle.module`, not `Bundle.main`, so the bare `NSLocalizedString("key")` and `Text("key")` overloads silently miss the catalog. Use `String(localized: key, bundle: .module)` from Foundation paths and `Text(_, bundle: .module)` from SwiftUI views. When the player client adds user-facing views, define a per-target `L` enum (matching `Sources/SomnioCLICore/Localization.swift`) that wraps these calls so the bundle pinning stays in one place.
 
 For custom views that accept a "localized title" parameter, prefer `LocalizedStringResource` — it defers locale resolution to the consumer's bundle.
 
-`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set and the `ItemCatalog` inventory labels). The admin CLI and the UI module each ship their own bilingual catalogs (`Sources/SomnioCLICore/Resources/Localizable.xcstrings`, `Sources/SomnioUI/Resources/Localizable.xcstrings`) and per-target `enum L` shims (`Sources/SomnioCLICore/Localization.swift`, `Sources/SomnioUI/Localization.swift`). The UI shim adds `L.resource(_:)` returning a `LocalizedStringResource` pinned to `Bundle.module` for SwiftUI surfaces that need that type (`.help`, custom view title parameters). The player client and editor each have their own empty catalogs scoped to their `Bundle.module`, ready to be populated as views land.
+`SomnioCore` ships its own catalog (`Sources/SomnioCore/Resources/Localizable.xcstrings`) for library-internal localized strings (currently the `CharacterClass.displayName` set and the `ItemCatalog` inventory labels). The admin CLI and the UI module each ship their own bilingual catalogs (`Sources/SomnioCLICore/Resources/Localizable.xcstrings`, `Sources/SomnioUI/Resources/Localizable.xcstrings`) and per-target `enum L` shims (`Sources/SomnioCLICore/Localization.swift`, `Sources/SomnioUI/Localization.swift`). The UI shim adds `L.resource(_:)` returning a `LocalizedStringResource` pinned to `Bundle.module` for SwiftUI surfaces that need that type (`.help`, custom view title parameters). The player client has its own empty catalog scoped to its `Bundle.module`, ready to be populated as views land.
 
-ASCII `...` ellipsis throughout, with one historical exception: the editor's "Ladevorgang läuft…" window title uses Unicode `…`. Every other user-visible string uses ASCII.
+ASCII `...` ellipsis throughout; no user-visible string uses the Unicode `…`.
 
-Each target's bilingual catalog is guarded by a per-target catalog test (the `LocalizableCatalogTests` suites for SomnioApp/SomnioEditor/SomnioUI; the CLI's lives in `AdminOutputTests` and SomnioCore's in `CatalogAssertionsTests`) whose `expectedKeys` allowlist is the only thing checked for en/de presence, placeholder parity, and the no-Unicode-ellipsis rule. A catalog key absent from that allowlist ships unguarded, so every new user-facing string must be added both to the `.xcstrings` catalog and to its target's `expectedKeys` list.
+Each target's bilingual catalog is guarded by a per-target catalog test (the `LocalizableCatalogTests` suites for SomnioApp/SomnioUI; the CLI's lives in `AdminOutputTests` and SomnioCore's in `CatalogAssertionsTests`) whose `expectedKeys` allowlist is the only thing checked for en/de presence, placeholder parity, and the no-Unicode-ellipsis rule. A catalog key absent from that allowlist ships unguarded, so every new user-facing string must be added both to the `.xcstrings` catalog and to its target's `expectedKeys` list.
 
 The browser client adds a **fourth** catalog, in a different format. It reads the three shipped Swift `.xcstrings` files directly through the `@catalog/*` Vite aliases — so a German string fixed for the native client is fixed there in the same commit — and merges a hand-written TypeScript en/de table on top: `Web/src/i18n/browserCatalog.ts`. That table holds only the strings **no Swift target ever needed**, because the native client bundles its assets, owns its window, and cannot be opened on a phone: the loading notice, "Fullscreen", the WebGL and mobile notices, and the two session-resume lines. A string the native client also shows belongs in its Swift catalog and is read from there, never copied — the merge reports collisions and a test pins that set to empty, so a duplicated key fails rather than letting import order pick the winner. The browser's allowlist is `RENDERED_KEYS` in `Web/src/i18n/index.ts`, and it covers **every** key the browser renders regardless of which of the four catalogs defines it; a key missing from it ships with no en/de, placeholder-parity, or ellipsis guard. `Web/test/i18n.test.ts` strengthens the Swift `expectedKeys` discipline in one way: it scans every `.ts` file under `src` for `t(...)` / `lookup(...)` literals and fails on any that is absent from `RENDERED_KEYS`, and on any allowlisted key nothing renders.
 
-`swift build` never compiles `.xcstrings` (the resource bundles carry the raw JSON, so non-English resolution is dead under `swift run`/`swift test` — keys are the English source strings, so this reads as English). The packaged apps get real localization from `Scripts/package_app.sh`: after copying the SwiftPM bundles it compiles each bundle's catalog via `xcstringstool` into `<lang>.lproj/Localizable.strings`, deletes the raw `.xcstrings`, validates a per-target required-bundle set (player: Core/UI/App; editor: Core/Editor), and advertises the locales in the app's `Info.plist` (`CFBundleLocalizations`, `CFBundleAllowMixedLocalizations` — required for Foundation to resolve subordinate-bundle localizations). Adding a new locale therefore means updating both the catalogs and `CFBundleLocalizations` in `package_app.sh`. `Tests/SomnioCoreTests/CatalogRuntimeResolutionTests.swift` pins the compile→resolve contract; the Linux-reachable catalogs (SomnioCore, SomnioCLICore) are additionally guarded by `assertKeysAreEnglishFallback` so their `return key` fallback always reads as English.
+`swift build` never compiles `.xcstrings` (the resource bundles carry the raw JSON, so non-English resolution is dead under `swift run`/`swift test` — keys are the English source strings, so this reads as English). The packaged apps get real localization from `Scripts/package_app.sh`: after copying the SwiftPM bundles it compiles each bundle's catalog via `xcstringstool` into `<lang>.lproj/Localizable.strings`, deletes the raw `.xcstrings`, validates the required-bundle set (Core/UI/App), and advertises the locales in the app's `Info.plist` (`CFBundleLocalizations`, `CFBundleAllowMixedLocalizations` — required for Foundation to resolve subordinate-bundle localizations). Adding a new locale therefore means updating both the catalogs and `CFBundleLocalizations` in `package_app.sh`. `Tests/SomnioCoreTests/CatalogRuntimeResolutionTests.swift` pins the compile→resolve contract; the Linux-reachable catalogs (SomnioCore, SomnioCLICore) are additionally guarded by `assertKeysAreEnglishFallback` so their `return key` fallback always reads as English.
 
 ### Wire protocol
 
@@ -337,15 +342,15 @@ Payload structs use synthesized `Codable`, so JSON keys are the property names �
 
 ### Sector format
 
-Sectors are JSON, stored in `.somnio-sector` files. `MapCodec` (in `SomnioCore`) is a thin facade over `JSONDecoder`/`JSONEncoder` (per-call instances): `read(_ data: Data) throws -> SectorBody` decodes, `write(_ sector: SectorBody) throws -> Data` encodes with `[.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]` so committed fixtures stay human-diffable. Decode failures surface as `Swift.DecodingError`. `read` also bounds the decoded `dimensions` against `SomnioConstants.maxSectorDimension`/`maxSectorArea` (mirroring the wire boundary in `Sector(_ wire:)`) so a hostile `.somnio-sector` can't drive an unbounded tile-map allocation when opened in the editor or loaded from `SOMNIO_SECTORS_DIR`.
+Sectors are JSON, stored in `.somnio-sector` files. `MapCodec` (in `SomnioCore`) is a thin facade over `JSONDecoder`/`JSONEncoder` (per-call instances): `read(_ data: Data) throws -> SectorBody` decodes, `write(_ sector: SectorBody) throws -> Data` encodes with `[.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]` so committed fixtures stay human-diffable. Decode failures surface as `Swift.DecodingError`. `read` also bounds the decoded `dimensions` against `SomnioConstants.maxSectorDimension`/`maxSectorArea` (mirroring the wire boundary in `Sector(_ wire:)`) so a hostile `.somnio-sector` can't drive an unbounded tile-map allocation when loaded from `SOMNIO_SECTORS_DIR` (the browser editor's TypeScript codec mirrors the same guards). `MapCodec.write` is retained as the format's byte-level reference even though the browser owns authoring. The TypeScript writer pins itself against its output through the committed fixtures and the synthetic encoding golden in `SectorJSONGoldenTests`.
 
 `SectorBody` and its sub-models (`GridSize`, `LightSetting`, `Object`, `CollisionMask`, `FloorPatch`, `SectorPortal`/`PortalDirection`, `MonsterSpawn`, `NPC`) are `Codable` with synthesized property-name keys — modern English, so the JSON is self-documenting. Visual identity is carried as semantic registry references: the sector's `floorMaterialID` and each `Object.modelID` resolve through the committed model registry (`Sources/SomnioCore/Resources/ModelRegistry.json`); an unmapped id renders a placeholder rather than rejecting the file, while a file carrying legacy tileset source-rects fails decode loudly rather than being upgraded. The one exception to synthesized keys is `NPC`: its `facing: Heading` (continuous degrees, 0° = south / 90° = east) serializes under the stable on-disk key `"direction"` via `CodingKeys`, written as a bare degree number (`"direction" : 270`) through `Heading`'s single-value `Codable`, which normalizes out-of-range persisted values on decode rather than throwing. The reader stays placement-agnostic — it carries the authored `spawnOrigin` verbatim; NPC centering lives in `NPCPlacement.runtimePosition(for:)`. `Object.rotation` is a yaw in degrees counter-clockwise seen from above (0 = as authored; models are normalized with their door/long axis on +X, so 270 faces a door south); a missing key decodes as 0 and 0 is omitted on encode, so pre-rotation files stay byte-stable, and a rotated placement's `sourceWidth`/`sourceHeight` must carry the rotated footprint extents. `floorPatches` (optional array of `{floorMaterialID, x, y, width, height}`) paints rectangular floor-material overlays over the base floor (cobbled streets across a grass square); a missing key decodes as empty and an empty array is omitted on encode, so patch-free files stay byte-stable. Patches are purely visual — rendered as thin overlay quads carrying sector-space UVs (abutting same-material rects continue one seamless texture grid) — and authored patches must not overlap each other: coplanar overlapping quads z-fight. Collision masks are authored **mesh-flush**: a solid prop's mask equals its decal rect, a straight wall's mask is its exact footprint, and a corner piece contributes its two 32px arm rects as an L — collision wider than the visible mesh reads as an invisible wall on ground that looks walkable.
 
-The canonical `.somnio-sector` extension is used everywhere: the editor's exported UTType (conforming to `public.json`), the three shipped fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`), and the server's `SOMNIO_SECTORS_DIR`. `SectorCache` loads only `.somnio-sector` files and keys each by its extension-stripped filename (the filename-as-sector-id convention); a directory with no `.somnio-sector` files fails server startup with `ServerStartupError.noSectorsLoaded` rather than booting an empty world.
+The canonical `.somnio-sector` extension is used everywhere: the shipped fixtures (`Tests/SomnioMapFixturesTestSupport/MapFixtures`), the server's `SOMNIO_SECTORS_DIR`, and the web editor's file API. `SectorCache` loads only `.somnio-sector` files and keys each by its extension-stripped filename (the filename-as-sector-id convention); a directory with no `.somnio-sector` files fails server startup with `ServerStartupError.noSectorsLoaded` rather than booting an empty world.
 
 ### Model registry
 
-The 3D pack's layout is data, not hardcoded Swift: the committed `Sources/SomnioCore/Resources/ModelRegistry.json` maps figure bands to character model stems (with each model's `expectedClips` clip-presence contract), semantic object ids (`objectModels`) to prop stems, and semantic floor ids (`floorMaterials`) to floor-texture stems. The registry references only filename stems, so it never drifts from the uncommitted, operator-supplied model pack. `ModelRegistryCodec` mirrors `MapCodec` (stateless `enum`, per-call coders, sorted-keys pretty-print); `read` throws `DecodingError` and `write` throws `EncodingError` on the structural invariants the synthesized `Codable` can't express (non-inverted figure ranges, non-empty stems/ids, no duplicate object or floor ids, characters expecting at least one clip). `BundleMainModelAssets(bundle:registry:)` resolves the committed registry in its initializer, degrading to `ModelRegistry.placeholderFallback` with a logged error if the bundled JSON is missing or corrupt. The editor's model/floor pickers are populated from the same registry ids, so the authoring surface can only reference resolvable models.
+The 3D pack's layout is data, not hardcoded Swift: the committed `Sources/SomnioCore/Resources/ModelRegistry.json` maps figure bands to character model stems (with each model's `expectedClips` clip-presence contract), semantic object ids (`objectModels`) to prop stems, and semantic floor ids (`floorMaterials`) to floor-texture stems. The registry references only filename stems, so it never drifts from the uncommitted, operator-supplied model pack. `ModelRegistryCodec` mirrors `MapCodec` (stateless `enum`, per-call coders, sorted-keys pretty-print); `read` throws `DecodingError` and `write` throws `EncodingError` on the structural invariants the synthesized `Codable` can't express (non-inverted figure ranges, non-empty stems/ids, no duplicate object or floor ids, characters expecting at least one clip). `BundleMainModelAssets(bundle:registry:)` resolves the committed registry in its initializer, degrading to `ModelRegistry.placeholderFallback` with a logged error if the bundled JSON is missing or corrupt. The web editor's model/floor pickers are populated from the same registry ids (read through the `@registry` Vite alias), so the authoring surface can only reference resolvable models.
 
 ## Agentic Setup
 
@@ -355,11 +360,12 @@ Upstream-derived from MIT-licensed agent-skill repos (provenance and copyright n
 
 - `swift-architecture`, `swift-concurrency`, `swift-language`, `swift-security`, `swift-testing` — Swift 6.2 patterns and APIs
 - `swiftui`, `swiftui-performance-audit`, `accessibility`, `writing-for-interfaces` — UI guidance
-- `macos-spm-app-packaging` — SPM-built `.app` bundle workflows (generic; not Somnio's two-bundle player+editor pipeline)
+- `macos-spm-app-packaging` — SPM-built `.app` bundle workflows (generic; not Somnio's player packaging pipeline)
 
 Project-specific:
 
-- `somnio-server`, `somnio-player`, `somnio-editor`, `somnio-cli`, `somnio-web` — build and run each component locally against the dev server
+- `somnio-server`, `somnio-player`, `somnio-cli`, `somnio-web` — build and run each component locally against the dev server
+- `somnio-editor` — serve the localhost web map editor and drive it with `agent-browser`
 - `release` — decides which components a change requires releasing, owns the cross-language `helloVersion` bump, and sequences the three below
 - `release-player`, `release-server`, `release-web` — the signed/notarized player release and the two ghcr images (server, browser client)
 

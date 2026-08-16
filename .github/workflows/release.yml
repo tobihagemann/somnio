@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    # Player releases only (editor builds locally; server publishes from docker-image.yml).
+    # Player releases only (server publishes from docker-image.yml, the browser client from web-image.yml).
     tags: ["player-[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
     inputs:
@@ -124,7 +124,7 @@ jobs:
           # pinned trust root is the committed Scripts/release-trust-roots.pem.
           SOMNIO_ASSET_SOURCE: ${{ github.workspace }}/assets
           SOMNIO_GAMEPLAY_PRODUCTION_URL: ${{ vars.SOMNIO_GAMEPLAY_PRODUCTION_URL }}
-        run: ./Scripts/release.sh player
+        run: ./Scripts/release.sh
 
       - name: Compute checksums
         run: |

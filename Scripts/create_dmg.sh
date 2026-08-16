@@ -6,29 +6,23 @@ set -euo pipefail
 # window -- the background-picture AppleScript it relies on is unreliable to hand-roll on
 # current macOS.
 
-TARGET=${1:-player}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/version.env"
 
-case "$TARGET" in
-  player)
-    APP_BUNDLE_NAME="${APP_NAME}"
-    DMG_BASENAME="${APP_NAME}"
-    ;;
-  editor)
-    APP_BUNDLE_NAME="${APP_NAME}Editor"
-    DMG_BASENAME="${APP_NAME}Editor"
-    ;;
-  *)
-    echo "ERROR: unknown target '$TARGET' (expected 'player' or 'editor')" >&2
-    exit 1
-    ;;
-esac
+# The player is the only DMG this script builds (the map editor moved to the browser and
+# is never packaged); a stray argument means a caller still passing the retired target.
+if [[ $# -gt 0 ]]; then
+  echo "ERROR: create_dmg.sh takes no arguments; the target parameter was retired with the Swift editor" >&2
+  exit 1
+fi
 
-# Derive from this target's latest component tag (player-*/editor-*) so the DMG filename
-# isn't stamped with another component's newer version; the strip yields the bare X.Y.Z.
-MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "${TARGET}-*" 2>/dev/null || echo "0.0.0")}
-MARKETING_VERSION=$(sed -E 's/^(player|server|editor)-//' <<<"$MARKETING_VERSION")
+APP_BUNDLE_NAME="${APP_NAME}"
+DMG_BASENAME="${APP_NAME}"
+
+# Derive from the latest player-* component tag so the DMG filename isn't stamped with
+# another component's newer version; the strip yields the bare X.Y.Z.
+MARKETING_VERSION=${MARKETING_VERSION:-$(git describe --tags --abbrev=0 --match "player-*" 2>/dev/null || echo "0.0.0")}
+MARKETING_VERSION=$(sed -E 's/^player-//' <<<"$MARKETING_VERSION")
 APP_BUNDLE="$ROOT/${APP_BUNDLE_NAME}.app"
 DMG_NAME="${DMG_BASENAME}-${MARKETING_VERSION}.dmg"
 

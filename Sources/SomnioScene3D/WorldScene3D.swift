@@ -5,11 +5,11 @@ import RealityKit
 import simd
 import SomnioCore
 
-/// RealityKit render surface for the player client and the map editor. Owns the `Entity`
-/// graph hosted by `WorldScene3DView`: `rootEntity` carries only the scene-persistent pieces —
-/// the orthographic 3/4 camera, the retained sun + ambient fill lights — and the per-sector
+/// RealityKit render surface for the player client. Owns the `Entity` graph hosted by
+/// `WorldScene3DView`: `rootEntity` carries only the scene-persistent pieces — the
+/// orthographic 3/4 camera, the retained sun + ambient fill lights — and the per-sector
 /// roots. Everything sector-scoped (floor, placed objects, entities, name plaques, speech
-/// bubbles, the editor's authoring overlay) lives under a per-sector root so a sector swap is a single
+/// bubbles) lives under a per-sector root so a sector swap is a single
 /// subtree replace (the `sectorRoot`/`previousRoot` held-swap state machine).
 ///
 /// Real 3D depth: objects and entities sit on the floor (Y = 0) at their world XZ, and the
@@ -229,11 +229,6 @@ import SomnioCore
     /// `nil` before the first load and after `showSplash`.
     private var floorRenderState: FloorRenderState?
     private var floorPatchRenderStates: [FloorPatchRenderState] = []
-    /// Editor-only authoring gizmos (record rects, selection highlight, grid), parented under
-    /// `sectorRoot` so a sector swap tears them down with everything else sector-scoped.
-    /// Internal (not private) so the overlay extension in `AuthoringOverlay.swift` can own the
-    /// rebuild; `nil` until the editor's first `updateAuthoringOverlay` after a load.
-    var authoringOverlayRoot: Entity?
     private var speechBubbles: [Int16: SpeechBubble] = [:]
     private var sceneClock: TimeInterval = 0
     /// Entity index of the local player — the camera-follow target. Set when an entity of
@@ -301,7 +296,6 @@ import SomnioCore
         entityRenderStates.removeAll()
         speechBubbles.removeAll()
         placedObjects.removeAll()
-        authoringOverlayRoot = nil
         cameraFollowID = nil
 
         let root = Entity()
@@ -477,7 +471,6 @@ import SomnioCore
         placedObjects.removeAll()
         floorRenderState = nil
         floorPatchRenderStates.removeAll()
-        authoringOverlayRoot = nil
         cameraFollowID = nil
         focusCamera(on: .zero)
     }
@@ -1096,39 +1089,16 @@ import SomnioCore
     // MARK: - Camera
 
     /// Player camera path: the interactive scroll zoom over the height-independent default
-    /// framing. `defaultScale` is deliberately NOT scaled by viewport height (unlike the
-    /// editor's `playerZoomScale`): every window size shows the same vertical world extent —
-    /// a bigger window magnifies rather than reveals (MMO fairness), with width following
-    /// the aspect ratio. Routed through `clampedScale` so the rig bound and the
-    /// `PlayerZoom` clamp agree by construction. Camera focus is untouched — it keeps
-    /// following the player.
+    /// framing. `defaultScale` is deliberately NOT scaled by viewport height: every window
+    /// size shows the same vertical world extent — a bigger window magnifies rather than
+    /// reveals (MMO fairness), with width following the aspect ratio. Routed through
+    /// `clampedScale` so the rig bound and the `PlayerZoom` clamp agree by construction.
+    /// Camera focus is untouched — it keeps following the player.
     public func applyPlayerFraming(zoomFactor: Double) {
         if var camera = cameraEntity.components[OrthographicCameraComponent.self] {
             camera.scale = OrthographicCameraRig.clampedScale(OrthographicCameraRig.defaultScale / Float(zoomFactor))
             cameraEntity.components.set(camera)
         }
-    }
-
-    /// Editor camera path: applies a whole-sector fit (focus + orthographic scale) computed by
-    /// `OrthographicCameraRig.editorFraming`. Deliberately not clamped to the gameplay zoom
-    /// bounds — the fit for a large sector exceeds `maxScale`, and clamping would crop it.
-    public func applyEditorFraming(_ framing: EditorFraming) {
-        if var camera = cameraEntity.components[OrthographicCameraComponent.self] {
-            camera.scale = framing.scale
-            cameraEntity.components.set(camera)
-        }
-        focusCamera(on: framing.focus)
-    }
-
-    /// Reads the sector graph's current authoring-overlay container, creating and parenting it
-    /// under `sectorRoot` on first use after a load. `nil` when no sector is loaded.
-    func resolvedAuthoringOverlayRoot() -> Entity? {
-        guard let sectorRoot else { return nil }
-        if let existing = authoringOverlayRoot { return existing }
-        let overlay = Entity()
-        sectorRoot.addChild(overlay)
-        authoringOverlayRoot = overlay
-        return overlay
     }
 
     private func focusCamera(on focus: SIMD3<Float>) {

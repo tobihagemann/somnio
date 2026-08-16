@@ -81,6 +81,21 @@ export const ICON_PATHS = {
     'M15 20.5v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1.5M12.5 7.5a2.75 2.75 0 1 1-5.5 0 2.75 2.75 0 0 1 5.5 0M16.5 15.2a4 4 0 0 1 4.5 3.8v1.5M15.2 4.6a2.75 2.75 0 0 1 0 5.8',
   /** `bag` — body plus the handle arc. */
   items: 'M4.5 8h15l-1.1 11.6a1.6 1.6 0 0 1-1.6 1.4H7.2a1.6 1.6 0 0 1-1.6-1.4zM8.5 8V6.6a3.5 3.5 0 0 1 7 0V8',
+  /** `cursorarrow` — the editor's Select tool. */
+  select: 'M6.5 3.5v14l4-3.6 2.6 6 2.7-1.2-2.6-5.8h5.3z',
+  /** `cube` — the Object tool. */
+  object: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12v9M12 12L4 7.5M12 12l8-4.5',
+  /** `square.dashed` — the Mask tool. */
+  mask: 'M4 4h4M10 4h4M16 4h4M4 4v4M4 10v4M4 16v4M20 4v4M20 10v4M20 16v4M4 20h4M10 20h4M16 20h4',
+  /** `door.left.hand.open` — the Sector portal tool. */
+  portal: 'M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M4 21h16M14 11.5h1.5',
+  /** `person` — the NPC tool. */
+  npc: 'M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 21v-1a7 7 0 0 1 14 0v1',
+  /** `pawprint` — the Monster tool. */
+  monster:
+    'M12 13c-3 0-5.5 2-5.5 4.5 0 1.5 1 2.5 2.5 2.5 1 0 2-.5 3-.5s2 .5 3 .5c1.5 0 2.5-1 2.5-2.5C17.5 15 15 13 12 13zM6.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM10.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM13.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
+  /** Tiled square — the Floor patch tool. */
+  floorPatch: 'M4 4h16v16H4zM4 12h16M12 4v16',
 } as const
 
 export type IconName = keyof typeof ICON_PATHS
@@ -129,6 +144,9 @@ export interface FieldOptions {
   maxUTF8Bytes?: number
   autocomplete?: string
   value?: string
+  min?: number
+  max?: number
+  step?: number
 }
 
 /**
@@ -149,6 +167,9 @@ export function field(
       autocomplete: options.autocomplete,
       maxlength: options.maxUTF8Bytes,
       value: options.value,
+      min: options.min,
+      max: options.max,
+      step: options.step,
     },
   })
   const label = element('label', { text: labelText })
@@ -156,6 +177,20 @@ export function field(
   input.id = identifier
   label.setAttribute('for', identifier)
   return { row: element('div', { className: 'form-row', children: [label, input] }), input }
+}
+
+/** Bounded numeric row — the `Stepper(in:)` equivalent for the editor's sector forms. */
+export function numberField(
+  labelText: string,
+  options: { min: number; max: number; value: number; step?: number }
+): { row: HTMLElement; input: HTMLInputElement } {
+  return field(labelText, {
+    type: 'number',
+    min: options.min,
+    max: options.max,
+    step: options.step ?? 1,
+    value: String(options.value),
+  })
 }
 
 export function checkbox(labelText: string, checked: boolean): { row: HTMLElement; input: HTMLInputElement } {
@@ -183,6 +218,54 @@ export function select(
   input.id = identifier
   label.setAttribute('for', identifier)
   return { row: element('div', { className: 'form-row', children: [label, input] }), input }
+}
+
+/**
+ * Selects `value`, preserving it even when no option matches. A stored registry id the model pack
+ * no longer maps is a supported state (it renders a placeholder rather than being rejected), but
+ * assigning it to a `<select>` with no matching option leaves the control blank and reads back `''`
+ * — so a later commit would silently wipe the authored id. Appending a marked option keeps the id
+ * displayed and round-tripped verbatim.
+ */
+export function setSelectValue(input: HTMLSelectElement, value: string): void {
+  input.value = value
+  if (input.value === value) return
+  input.append(element('option', { text: `${value} (unmapped)`, attributes: { value } }))
+  input.value = value
+}
+
+/**
+ * Overlay dialog card. Takes the localized title; `width` picks the panel's frame (the game
+ * menu is a narrow column, forms are wide). `heading` covers panels that author their own
+ * oversized title in the body — the title still reaches `aria-label`, so the dialog keeps an
+ * accessible name either way.
+ */
+export function card(
+  title: string,
+  body: readonly Node[],
+  width: 'default' | 'wide' | 'menu' = 'default',
+  heading: 'shown' | 'accessibleOnly' = 'shown'
+): HTMLElement {
+  const modifier = width === 'default' ? '' : ` overlay-card--${width}`
+  const titleNodes = heading === 'shown' ? [element('h1', { className: 'overlay-title', text: title })] : []
+  return element('div', {
+    className: `fantasy-panel fantasy-panel--opaque overlay-card${modifier}`,
+    attributes: { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    children: [...titleNodes, ...body],
+  })
+}
+
+export function scrim(cardNode: HTMLElement): HTMLElement {
+  return element('div', { className: 'overlay-scrim hidden', children: [cardNode] })
+}
+
+/**
+ * Floating corner column. Construction only — the player's hover wiring (which suppresses
+ * world input over chrome) stays in `GamePanels`, which attaches its own listeners; the
+ * editor's panels need none.
+ */
+export function floating(position: string, children: readonly Node[]): HTMLElement {
+  return element('div', { className: `floating floating--${position}`, children })
 }
 
 export function setHidden(node: HTMLElement, hidden: boolean): void {

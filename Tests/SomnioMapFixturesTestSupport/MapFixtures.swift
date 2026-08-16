@@ -4,8 +4,8 @@ import Foundation
 /// `EdariaBibliothek`, `EdariaInn`, `EdariaMitte`, `EdariaShop`, `Nordwald`, `Nordwiese`).
 /// The `Name` rawValue is the bare sector id (no extension),
 /// matching the filename-as-sector-id convention; `data(_:)` resolves the `.somnio-sector` file.
-/// Lives in a stand-alone resource target so unit tests in `SomnioCoreTests`,
-/// `SomnioServerCoreTests`, and `SomnioEditorTests` can load the same bytes without each
+/// Lives in a stand-alone resource target so unit tests in `SomnioCoreTests`
+/// and `SomnioServerCoreTests` can load the same bytes without each
 /// target shipping its own `.copy` of the fixture directory. Integration tests in the sibling
 /// SwiftPM package reach the same files via a relative filesystem path; this helper only
 /// exposes the in-target `Bundle.module` view.

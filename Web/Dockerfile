@@ -7,7 +7,9 @@
 # client reads four files straight out of the Swift tree through Vite aliases — the model
 # registry and the three `.xcstrings` catalogs — so a context rooted at `Web/` cannot resolve
 # them and the build fails at transform time. The `COPY` lines below mirror those alias paths
-# exactly; adding a new alias above `Web/` means adding a `COPY` here.
+# exactly; adding a new alias above `Web/` means adding a `COPY` here. Test-only fixture reads
+# (the map fixtures and the sector encoding golden) go through `readFileSync` rather than an
+# alias, so they need no COPY — tests never run in this image.
 #
 # The context must also contain an `assets/` directory (the operator-supplied pack; empty is
 # fine). CI checks the private somnio-assets repo out to that path; a local build without a

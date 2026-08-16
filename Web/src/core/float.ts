@@ -78,3 +78,64 @@ export function ieeeRemainderF32(value: number, divisor: number): number {
 export function copysignF32(magnitude: number, sign: number): number {
   return f32(sign < 0 || Object.is(sign, -0) ? -Math.abs(magnitude) : Math.abs(magnitude))
 }
+
+/**
+ * Foundation's shortest-round-trip decimal for a `Float`, as `JSONEncoder` writes it
+ * (`270 -> "270"`, `123.456 -> "123.456"`, `1/3 -> "0.33333334"`, `1e-06 -> "1e-06"`).
+ *
+ * `NPC.facing` (via `Heading.degrees`) is the **only** `Float` anywhere in the on-disk sector
+ * model — every other field is `Int16`/`String`/`Bool` — so this exists solely for the
+ * `"direction"` key. A heading is in `[0, 360)`, so the one place Swift and JS pick different
+ * spellings is a magnitude below `1e-4` (reachable by typing a tiny value into the Facing field):
+ * Foundation switches to scientific notation there, which `foundationFloatString` reproduces.
+ *
+ * The candidates are compared against the **narrowed** target, not the raw binary64 input: the
+ * double `123.456` is not equal to its Float32 representation, so comparing against the input
+ * finds no match at all for any value that is not exactly representable in binary32.
+ */
+export function formatSwiftFloat32(value: number): string {
+  const target = f32(value)
+  if (target === 0) return foundationFloatString(target)
+  for (let precision = 1; precision <= 9; precision += 1) {
+    if (f32(Number(target.toPrecision(precision))) !== target) continue
+    // `precision` is the shortest round-tripping length. `toPrecision` rounds ties away from zero,
+    // but Swift's shortest-format rounds ties to even (`334.515625` -> `334.51562`, not `...63`).
+    // Bracket the target with the two decimals of this length and pick the one Foundation would:
+    // nearest to the exact Float32 value, ties broken to the even last digit.
+    const exponent = Math.floor(Math.log10(Math.abs(target)))
+    const unit = Math.pow(10, exponent - (precision - 1))
+    const scaled = target / unit
+    const down = Number((Math.floor(scaled) * unit).toPrecision(precision))
+    const up = Number((Math.ceil(scaled) * unit).toPrecision(precision))
+    const roundTrips = [down, up].filter((candidate) => f32(candidate) === target)
+    let chosen: number
+    if (roundTrips.length === 1) {
+      chosen = roundTrips[0]!
+    } else {
+      const distanceDown = Math.abs(target - down)
+      const distanceUp = Math.abs(up - target)
+      if (distanceDown < distanceUp) chosen = down
+      else if (distanceUp < distanceDown) chosen = up
+      else chosen = Math.abs(Math.round(down / unit)) % 2 === 0 ? down : up
+    }
+    return foundationFloatString(chosen)
+  }
+  return foundationFloatString(target)
+}
+
+/**
+ * Spells `n` the way Foundation's `Float` encoder does. `String(n)` already agrees for the fixed
+ * range, but Foundation uses scientific notation for a magnitude below `1e-4` — `1e-06`, not
+ * `0.000001` — with the exponent as a sign and **at least two** digits (`e-06`, not JS's `e-6`).
+ * `n` already carries only the digits that round-trip the Float32, so `toExponential()` with no
+ * argument yields the shortest mantissa.
+ */
+function foundationFloatString(n: number): string {
+  if (n !== 0 && Math.abs(n) < 1e-4) {
+    const [mantissa, exponent] = n.toExponential().split('e')
+    const sign = exponent!.startsWith('-') ? '-' : '+'
+    const digits = exponent!.replace(/[+-]/, '').padStart(2, '0')
+    return `${mantissa}e${sign}${digits}`
+  }
+  return String(n)
+}

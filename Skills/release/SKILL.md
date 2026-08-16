@@ -32,7 +32,7 @@ Map the changed paths. The `Sources/` rows are the ones that surprise people: th
 | `Web/`, `Scripts/bundle-web-assets.sh`, `Scripts/glb-buffer-uris.mjs` | web |
 | `Scripts/package_app.sh`, `bundle-assets.sh`, `inject-release-transport.sh`, `release.sh`, `version.env`, `Resources/` | player |
 | root `Dockerfile` | server |
-| `Sources/SomnioEditor/` | nothing via CI — the editor ships from `Scripts/release.sh editor`, built locally |
+| `Web/src/editor/`, `Web/editor.html`, `Web/vite.editorFs.ts` | nothing — the web editor is dev-only, served by `vite dev` and excluded from the image by construction |
 | `Sources/SomnioCLICore/`, `Sources/SomnioCLI/` | nothing — the admin CLI has no release channel; operators run it from a local build |
 | `.somnio-sector` files | no image release, but **not** a no-op: production bind-mounts the world from the deployment repo (copies of `Tests/SomnioMapFixturesTestSupport/MapFixtures/`). Copy the current fixtures there in the same commit as the version pin, or the new server serves the old world |
 | anything else | trace it through `Package.swift`: whichever executables link the changed target need releasing |

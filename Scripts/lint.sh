@@ -1,11 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Somnio lint & check script (read-only, exits non-zero on violations)
+# Somnio lint & check script (exits non-zero on violations; touches no sources, but the web
+# scope writes Web/dist as a build-output check)
 # Usage:
 #   ./Scripts/lint.sh          # everything: Swift + browser client (local default, pre-commit hook)
 #   ./Scripts/lint.sh --swift  # Swift only  (SwiftFormat, SwiftLint x2, Periphery)
-#   ./Scripts/lint.sh --web    # browser only (Prettier, ESLint, tsc, Vitest)
+#   ./Scripts/lint.sh --web    # browser only (Prettier, ESLint, tsc, Vitest, production build + editor-exclusion check)
 #
 # The scopes let CI run each half on the platform that half belongs to — the macOS job needs macOS
 # for the Swift toolchain, and the browser suite belongs on Linux because that is what the web image
@@ -96,6 +97,27 @@ if [ $RUN_WEB -eq 1 ]; then
   npm run lint || exit 1
   npm run typecheck || exit 1
   npm test || exit 1
+  # Deployment bound: the editor entry is dev-only, kept out of the image by never being added
+  # to `build.rollupOptions.input`. A text scan of the config cannot catch an entry added via a
+  # plugin hook or an editor module pulled into `dist/` by an `src/` import, so this builds for
+  # real (adds ~10s) and asserts over the output. Scoped to `dist/bundle` and `dist/*.html`,
+  # never `dist/` recursively — Vite copies `Web/public` (which may carry the multi-MB dev
+  # asset pack) into the output, and the pre-commit hook must not walk it on every commit.
+  npm run build || exit 1
+  if [ -e dist/editor.html ]; then
+    echo "error: dist/editor.html is present — the editor entry leaked into the production build" >&2
+    exit 1
+  fi
+  # Fail closed: if the build layout changed and these paths are gone, `grep` would exit 2 and the
+  # `if` would read as "no markers found", passing a check that examined nothing.
+  if [ ! -d dist/bundle ] || [ ! -f dist/index.html ]; then
+    echo "error: expected build output missing (dist/bundle or dist/index.html) — cannot verify the editor exclusion" >&2
+    exit 1
+  fi
+  if grep -rlE '__editor/sectors|somnioEditor|somnio-editor-root' dist/bundle dist/index.html; then
+    echo "error: editor markers found in the production bundle (an src/ import pulled editor code into dist/)" >&2
+    exit 1
+  fi
 ) >"$LINT_TMP/web.out" 2>&1 &
 PID_WEB=$!
 fi
@@ -107,7 +129,7 @@ if [ $RUN_SWIFT -eq 1 ]; then
     wait $PID_PERIPHERY || { echo "--- Periphery ---"; cat "$LINT_TMP/periphery.out"; FAIL=1; }
 fi
 if [ $RUN_WEB -eq 1 ]; then
-    wait $PID_WEB || { echo "--- Web (Prettier / ESLint / tsc / Vitest) ---"; cat "$LINT_TMP/web.out"; echo "error: Run './Scripts/format.sh' to auto-fix formatting."; FAIL=1; }
+    wait $PID_WEB || { echo "--- Web (Prettier / ESLint / tsc / Vitest / build check) ---"; cat "$LINT_TMP/web.out"; echo "error: Run './Scripts/format.sh' to auto-fix formatting."; FAIL=1; }
 fi
 
 set -e

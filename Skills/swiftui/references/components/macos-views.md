@@ -41,7 +41,7 @@ URLs returned by `.fileImporter` (and `.fileMover`) are **security-scoped**: you
 
 ```swift
 .fileImporter(isPresented: $showImporter,
-              allowedContentTypes: [.somnioSector],
+              allowedContentTypes: [.json],
               allowsMultipleSelection: false) { result in
     guard case .success(let urls) = result, let url = urls.first else { return }
     guard url.startAccessingSecurityScopedResource() else { return }

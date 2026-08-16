@@ -14,7 +14,7 @@ public enum OrthographicCameraRig {
     /// keep the floor inside `[nearClip, farClip]`.
     public static let cameraDistance: Float = 50
     /// Orthographic `scale` is the vertical world HALF-extent, so the viewport spans `2 × scale`
-    /// meters (see `legacyPoint(forViewport:)`); smaller is more zoomed in. The default close-up
+    /// meters; smaller is more zoomed in. The default close-up
     /// framing (6 world units, ~300 legacy pixels, per viewport height) is tuned by eye rather
     /// than for legacy parity; `clampedScale` bounds the interactive play zoom.
     /// `minScale` derives from `PlayerZoom.maxFactor` so the rig bound and the zoom clamp

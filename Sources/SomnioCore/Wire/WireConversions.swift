@@ -94,7 +94,7 @@ public extension FloorPatch {
 
 public extension SectorPortal {
     /// Throws `WireConversionError.unknownPortalDirection` for unknown raw values so client-side
-    /// wire decoding fails just as loudly as editor/server-side file decoding, where `MapCodec`'s
+    /// wire decoding fails just as loudly as server-side file decoding, where `MapCodec`'s
     /// synthesized `PortalDirection` `Codable` rejects the same out-of-range value as a
     /// `DecodingError`.
     init(_ wire: WireSectorPortal) throws {

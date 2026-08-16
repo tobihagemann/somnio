@@ -26,7 +26,7 @@ public enum SomnioConstants {
     /// objects × collisionMasks anchor scan (the richest fixture carries 21 masks).
     public static let maxSectorCollisionMasks = 4096
     /// Caps for the remaining record arrays. Each drives per-record work on load — authoring
-    /// overlay rects in the editor, spawn/dialog runtimes on the server — so a hostile file or
+    /// overlay rects in the browser editor, spawn/dialog runtimes on the server — so a hostile file or
     /// frame with an unbounded array could freeze its consumer. Generous headroom over any
     /// real sector (the richest fixture carries 3 portals and 1 NPC).
     public static let maxSectorPortals = 4096

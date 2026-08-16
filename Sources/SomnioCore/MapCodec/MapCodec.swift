@@ -11,8 +11,8 @@ import Foundation
 /// dimensions) surfaces as `Swift.EncodingError`. Both directions bound `dimensions`
 /// against `GridSize.isWithinSectorBounds` and the object/collision-mask counts against
 /// `SectorBody.hasContentCountsWithinBounds` (both shared with the wire boundary
-/// `Sector(_ wire:)`) so a hostile `.somnio-sector` — opened in the editor or loaded from
-/// `SOMNIO_SECTORS_DIR` — can't drive an unbounded ground-tile-map allocation or a quadratic
+/// `Sector(_ wire:)`) so a hostile `.somnio-sector` loaded from
+/// `SOMNIO_SECTORS_DIR` can't drive an unbounded ground-tile-map allocation or a quadratic
 /// render-anchor scan, and the writer can't persist a file its own reader would refuse. The reader stays placement-agnostic — it reads the authored `spawnOrigin`
 /// verbatim; NPC centering lives in `NPCPlacement.runtimePosition(for:)`.
 public enum MapCodec {
@@ -41,6 +41,13 @@ public enum MapCodec {
         return body
     }
 
+    /// The format's **reference writer**. Its production consumer was retired with the Swift
+    /// editor (authoring moved to the browser editor's TypeScript codec, which pins itself
+    /// byte-for-byte against this function's output through the committed fixtures and the
+    /// synthetic encoding golden in `SectorJSONGoldenTests`) — do not delete it as dead, and
+    /// do not drop the hand-written `encode(to:)` overrides it relies on: the types stay
+    /// `Codable`, so Swift would silently synthesize an encode that emits zero `rotation`
+    /// and empty `floorPatches`, breaking byte stability outright.
     public static func write(_ sector: SectorBody) throws -> Data {
         guard sector.dimensions.isWithinSectorBounds else {
             throw EncodingError.invalidValue(sector.dimensions, EncodingError.Context(

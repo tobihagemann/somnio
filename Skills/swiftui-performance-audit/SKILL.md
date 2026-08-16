@@ -59,7 +59,7 @@ Runtime evidence comes from an Instruments trace. Prefer capturing it yourself w
 
 ### 3a. Capture and analyze the trace yourself (preferred when you can run the app)
 
-Somnio profiles on the **host Mac** -- no Xcode project or scheme is involved. `xctrace` targets a PID, a process name, or a `.app` bundle path, so you can profile a packaged bundle (`Scripts/package_app.sh [debug|release] player`) or a bare `swift run SomnioApp`.
+Somnio profiles on the **host Mac** -- no Xcode project or scheme is involved. `xctrace` targets a PID, a process name, or a `.app` bundle path, so you can profile a packaged bundle (`Scripts/package_app.sh [debug|release]`) or a bare `swift run SomnioApp`.
 
 **Preflight (required):** the bundled scripts need `xctrace`, which ships with the full **Xcode** install, NOT the standalone Command Line Tools. Check first:
 

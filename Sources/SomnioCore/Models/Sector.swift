@@ -1,8 +1,8 @@
 import Foundation
 
 /// Parsed sector contents *without* a name. `MapCodec.read` returns this — naming a sector
-/// requires context the codec doesn't have (the file path, an asset key, the editor document
-/// title), so the type system forces the caller to provide it via `Sector(body:, name:)`.
+/// requires context the codec doesn't have (the file path, an asset key), so the type system
+/// forces the caller to provide it via `Sector(body:, name:)`.
 public struct SectorBody: Sendable, Equatable, Codable {
     public var version: Int16
     public var dimensions: GridSize
@@ -80,7 +80,7 @@ public struct SectorBody: Sendable, Equatable, Codable {
 
     /// Pixel extent of the sector (tiles × `tileSize`), widened to `Int32` so a large sector
     /// cannot trap the multiply. Mirrors `Sector.pixelWidth`/`pixelHeight` for callers holding a
-    /// `SectorBody` (the editor canvas) rather than a named `Sector`.
+    /// `SectorBody` rather than a named `Sector`.
     public var pixelWidth: Int32 {
         Int32(dimensions.width) * Int32(SomnioConstants.tileSize)
     }

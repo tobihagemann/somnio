@@ -44,7 +44,7 @@ export const PORTAL_DIRECTIONS = {
 } as const
 export type PortalDirection = keyof typeof PORTAL_DIRECTIONS
 
-const PORTAL_DIRECTION_BY_RAW: Record<number, PortalDirection> = {
+export const PORTAL_DIRECTION_BY_RAW: Record<number, PortalDirection> = {
   0: 'outboundTrigger',
   1: 'arrivalPlacement',
 }

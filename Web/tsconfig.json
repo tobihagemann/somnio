@@ -32,5 +32,12 @@
       "@scripts/*": ["../Scripts/*"]
     }
   },
-  "include": ["src", "test", "vite.config.ts", "vitest.config.ts", "vitest.conformance.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "vite.config.ts",
+    "vite.editorFs.ts",
+    "vitest.config.ts",
+    "vitest.conformance.config.ts"
+  ]
 }

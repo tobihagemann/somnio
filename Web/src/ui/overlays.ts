@@ -2,7 +2,7 @@ import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@/protocol'
 import type { LoginCredentials, OverlayKind, RegistrationForm, VersionSkew } from '@/client'
 import { CHARACTER_CLASS, GENDER } from '@/core'
 import { t } from '@/i18n'
-import { button, checkbox, element, field, select, setHidden } from './dom'
+import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom'
 
 /**
  * The six `OverlayKind` cases, minus `updateRequired`'s Sparkle path — a browser client updates by
@@ -51,35 +51,6 @@ function genderOptions(): { value: string; label: string }[] {
     { value: String(GENDER.male), label: t('Male') },
     { value: String(GENDER.female), label: t('Female') },
   ]
-}
-
-/**
- * Takes the localized title, for the same call-site-scannability reason as `hudBar`. `width` picks
- * the panel's frame: the game menu is a narrow 280pt column, the registration form is wide,
- * everything else takes the default.
- *
- * `heading` covers the two panels `FantasyPanel` builds without a `title:` — registration, which
- * carries none at all, and the credits, which author their own oversized one in the body. The title
- * still reaches the `aria-label`, so the dialog keeps an accessible name that the native panel gets
- * from its window rather than from a heading.
- */
-function card(
-  title: string,
-  body: readonly Node[],
-  width: 'default' | 'wide' | 'menu' = 'default',
-  heading: 'shown' | 'accessibleOnly' = 'shown'
-): HTMLElement {
-  const modifier = width === 'default' ? '' : ` overlay-card--${width}`
-  const titleNodes = heading === 'shown' ? [element('h1', { className: 'overlay-title', text: title })] : []
-  return element('div', {
-    className: `fantasy-panel fantasy-panel--opaque overlay-card${modifier}`,
-    attributes: { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-    children: [...titleNodes, ...body],
-  })
-}
-
-function scrim(card: HTMLElement): HTMLElement {
-  return element('div', { className: 'overlay-scrim hidden', children: [card] })
 }
 
 export class Overlays {

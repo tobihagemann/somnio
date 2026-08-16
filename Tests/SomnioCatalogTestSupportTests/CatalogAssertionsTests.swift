@@ -55,14 +55,6 @@ struct CatalogAssertionsTests {
         }
     }
 
-    @Test func `an allowed key may carry a Unicode ellipsis`() throws {
-        try assertCatalog(
-            ["Loading\u{2026}": ["en": "Loading\u{2026}", "de": "Ladevorgang\u{2026}"]],
-            expectedKeys: ["Loading\u{2026}"],
-            allowedUnicodeEllipsisKeys: ["Loading\u{2026}"]
-        )
-    }
-
     @Test func `keys equal to their English values pass the English fallback guard`() throws {
         try assertKeysAreEnglishFallback(["OK": ["en": "OK", "de": "OK"], "Hi %@": ["en": "Hi %@", "de": "Hallo %@"]])
     }
