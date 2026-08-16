@@ -95,7 +95,7 @@ A Three.js client that speaks the same wire protocol as the native player. Its o
 ```
 cd Web
 npm ci
-npm run dev          # Vite on :5173, proxying /ws to the local server on :8090
+npm run dev          # Vite on :17669, proxying /ws to the local server on :17662
 npm run editor       # Vite with the editor entry + sector file API (see "Web map editor")
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint
@@ -269,21 +269,21 @@ Set `SOMNIO_PROFILE=<name>` to run multiple isolated instances side by side:
 
 ## Deployment
 
-The gameplay server speaks **plain HTTP/WebSocket** — TLS is terminated by a reverse proxy at the deployment boundary. The `HTTP1WebSocketUpgrade` `Application` listens on `SOMNIO_HTTP_HOST:SOMNIO_HTTP_PORT` (default `0.0.0.0:8080`) without certificates. Do not push TLS into the app process; the docker-compose example pins the proxy contract.
+The gameplay server speaks **plain HTTP/WebSocket** — TLS is terminated by a reverse proxy at the deployment boundary. The `HTTP1WebSocketUpgrade` `Application` listens on `SOMNIO_HTTP_HOST:SOMNIO_HTTP_PORT` (default `0.0.0.0:17662`) without certificates. Do not push TLS into the app process; the docker-compose example pins the proxy contract.
 
 Server runtime configuration is resolved from environment variables (resolution lives in `SomnioServerCore.ServerConfiguration`):
 
 | Variable | Default (debug) | Required in release |
 |----------|-----------------|---------------------|
 | `SOMNIO_HTTP_HOST` | `0.0.0.0` | no |
-| `SOMNIO_HTTP_PORT` | `8080` | no |
+| `SOMNIO_HTTP_PORT` | `17662` | no |
 | `SOMNIO_ADMIN_TOKEN` | `dev-admin` | yes |
 | `SOMNIO_SECTORS_DIR` | `Tests/SomnioMapFixturesTestSupport/MapFixtures` | yes |
 | `SOMNIO_DATABASE_URL` | localhost fallback | yes |
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
 
-`docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:8080` alongside the proxy — loopback-bound, and load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy.
+`docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:17662` alongside the proxy — loopback-bound, and load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy.
 
 A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v15)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
 

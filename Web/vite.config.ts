@@ -66,14 +66,15 @@ export default defineConfig({
   plugins: [xcstringsJSON(), editorSectorFs()],
   resolve: { alias: swiftTreeAliases },
   server: {
+    port: 17669,
     fs: { allow: [repoRoot] },
     proxy: {
       // Development does not share an origin with the gameplay server the way production
-      // does: Vite serves the page and the Swift server listens on :8090 (the local dev
+      // does: Vite serves the page and the Swift server listens on :17662 (the local dev
       // port). Proxying `/ws` here means `wss://<origin>/ws` resolves in both environments,
       // so the endpoint resolver needs no dev-only branch.
       '/ws': {
-        target: process.env.SOMNIO_DEV_GAMEPLAY_ORIGIN ?? 'http://127.0.0.1:8090',
+        target: process.env.SOMNIO_DEV_GAMEPLAY_ORIGIN ?? 'http://127.0.0.1:17662',
         ws: true,
         changeOrigin: true,
       },

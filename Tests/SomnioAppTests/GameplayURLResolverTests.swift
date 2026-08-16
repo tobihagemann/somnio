@@ -6,7 +6,7 @@ import Testing
 struct GameplayURLResolverTests {
     @Test func `debug build with no env var returns the loopback default`() throws {
         let url = try GameplayURLResolver.resolve(environment: [:])
-        #expect(url == "ws://127.0.0.1:8080/ws")
+        #expect(url == "ws://127.0.0.1:17662/ws")
     }
 
     @Test func `loopback override is accepted via env var`() throws {

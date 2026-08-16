@@ -21,7 +21,7 @@ mkdir -p sectors && cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-s
 cd Web && npm ci && npm run editor
 ```
 
-`npm run editor` opens `http://localhost:5173/editor.html` and — this is the load-bearing
+`npm run editor` opens `http://localhost:17669/editor.html` and — this is the load-bearing
 part — sets `SOMNIO_EDITOR_SECTORS_DIR` (default `../sectors`), which is both the gate and the
 root of the file API: a bare `npm run dev`
 never mounts it, and an editor served that way can render but cannot list, open, create, or
@@ -41,7 +41,7 @@ writes the new name and leaves the original file in place.
 Gate every wait on a predicate over it, not a sleep:
 
 ```bash
-agent-browser open 'http://localhost:5173/editor.html'
+agent-browser open 'http://localhost:17669/editor.html'
 agent-browser wait --fn 'window.somnioEditor !== undefined && window.somnioEditor.overlay() === "sectorPicker"'
 agent-browser snapshot -i        # tool palette, inspector, picker rows are real DOM with refs
 agent-browser eval 'const b=[...document.querySelectorAll("button")]; b.find(x=>x.textContent==="EdariaMitte").click(); "ok"'

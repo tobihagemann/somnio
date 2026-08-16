@@ -9,7 +9,7 @@ Builds a debug player bundle and launches it against the local dev server.
 
 ## Step 1: Start the dev server
 
-The player needs a running backend. Stand up the local server on port 8090 first — run the `/somnio-server` skill.
+The player needs a running backend. Stand up the local server on port 17662 first — run the `/somnio-server` skill.
 
 ## Step 2: Build and package the debug player
 
@@ -21,24 +21,24 @@ SOMNIO_ASSET_SOURCE="<asset-pack-root>" SIGNING_MODE=adhoc Scripts/package_app.s
 
 Produces `Somnio.app` at the repo root with textures and models bundled. The asset-pack root is the `somnio-assets` working tree (sibling repo), which carries the runtime subtrees `Models/` (USDZ characters + props), `FloorMaterials/`, and `UI/` (panel chrome). `SOMNIO_ASSET_SOURCE` is **required** for the player bundle — packaging hard-fails without it (the `UI/` subtree styles every panel). Repackage after any change to code **or** to the asset pack — the running bundle holds stale copies of both.
 
-Use `Scripts/package_app.sh debug` here, not `Scripts/compile_and_run.sh`: that script launches via `open` with no `SOMNIO_SERVER_URL` override, so the debug client falls back to `:8080` and misses the `:8090` dev server. (Its `--release-*` variants additionally build release, which hits the unset production-URL `#error`.)
+Use `Scripts/package_app.sh debug` here, not `Scripts/compile_and_run.sh`: that script's `--release-*` variants build release, which hits the unset production-URL `#error`.
 
 ## Step 3: Launch against the dev server
 
 Launch the inner binary directly, as its own tracked background process, so it inherits the endpoint override and uses the bundle's assets:
 
 ```bash
-SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Contents/MacOS/Somnio
+SOMNIO_SERVER_URL='ws://127.0.0.1:17662/ws' Somnio.app/Contents/MacOS/Somnio
 ```
 
-Launch the binary directly rather than via Finder or `open`: environment variables don't propagate through `open`, and the debug client otherwise falls back to `ws://127.0.0.1:8080/ws`, missing the dev server on 8090.
+Launch the binary directly rather than via Finder or `open`: environment variables don't propagate through `open`, so `SOMNIO_PROFILE` and any endpoint override below would be silently dropped.
 
 ## Testing multiplayer behaviors
 
 To verify behavior that is only visible to *other* players (peer walk animation, "joined"/"left the game" chat lines, peer speech bubbles), launch a second instance with an isolated profile so two characters can be logged in at once:
 
 ```bash
-SOMNIO_PROFILE=alice SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Contents/MacOS/Somnio
+SOMNIO_PROFILE=alice SOMNIO_SERVER_URL='ws://127.0.0.1:17662/ws' Somnio.app/Contents/MacOS/Somnio
 ```
 
 `SOMNIO_PROFILE` gives each instance its own Application Support storage + UserDefaults (see CLAUDE.md "Dev/Prod Isolation"), so register/log in a different character in each. Fresh characters spawn in the `EdariaBibliothek` starter sector, so both land in the same sector and can see each other.
@@ -50,7 +50,7 @@ SOMNIO_PROFILE=alice SOMNIO_SERVER_URL='ws://127.0.0.1:8090/ws' Somnio.app/Conte
 - No SwiftUI text field in the player accepts synthetic keyboard/AX text — not the chat input and not the login/registration overlay fields (keystrokes land in a stray macOS IME pill instead; key events still move the character once the world view has focus — see the input-automation bullets below). Menu-bar and Esc/menu flows automate via peekaboo AX clicks; verify chat/speech-bubble behavior manually or over the wire protocol.
 - The login overlay's **Log In** button (the registration sheet's is **Sign Up**) exposes no AX-pressable element, so a background coordinate click is refused ("No pressable accessibility element ... at"). Press it with a focused synthetic click at **global screen** coordinates: `peekaboo app focus Somnio`, then `peekaboo click --at <x>,<y> --global --foreground --input-strategy synthOnly`. Focus first — otherwise the click goes to whatever app is frontmost, in another app's window. Seed `credential.json` first so the fields are pre-filled, since no text field accepts synthetic input.
 - Converting capture pixels to click coordinates: a default `peekaboo see --no-elements --path <file>` capture is **half** the window's point size, so multiply capture coordinates by 2 to get window points, then add the window origin for the global point. Read the origin and size from `peekaboo window list --app Somnio --json` (`bounds` is in points) and re-resolve before each capture, since window ids churn. `--retina` captures at 4x the default instead.
-- Automated account setup still works over the wire: open a WebSocket to `ws://127.0.0.1:8090/ws`, receive the hello frame, send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","characterClass":0,"gender":0,"email":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":0}}`) — then seed the debug file-backed credential store by writing `{"nickname":"...","password":"..."}` to `~/Library/Application Support/Somnio-Dev[-<profile>]/credential.json` so the login dialog is pre-filled before the coordinate click above.
+- Automated account setup still works over the wire: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","characterClass":0,"gender":0,"email":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":0}}`) — then seed the debug file-backed credential store by writing `{"nickname":"...","password":"..."}` to `~/Library/Application Support/Somnio-Dev[-<profile>]/credential.json` so the login dialog is pre-filled before the coordinate click above.
 - A failed login attempt (typically racing a dev-server restart) clears the seeded `credential.json` and unchecks "Remember password" — re-seed it before relaunching or the dialog comes up empty.
 - The login overlay pre-fills only when a credential is stored (the "Remember password" path or a seeded `credential.json`); otherwise it appears empty. Humans register via "If you don't have an account, click here!" — fresh characters spawn in the `EdariaBibliothek` starter sector.
 - Fast visual-inspection loop (no movement automation needed): with the app closed, teleport the character in the database — `docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET current_sector='EdariaMitte', position_x=1024, position_y=1000 WHERE name='...';"` — then relaunch; login resumes at the stored position (each relaunch still needs the human login click — re-seed `credential.json` first if a failed attempt cleared it). Repeat per area to screenshot different sectors (`peekaboo see --app Somnio --no-elements --path ...` captures just the game window without disturbing the user's desktop; when it fails with `CAPTURE_FAILED` from a stale ScreenCaptureKit bridge host, fall back to `screencapture -x -l <windowid>`, which writes a 2x Display-P3 PNG that needs an ICC conversion before its RGB values mean sRGB).

@@ -22,14 +22,14 @@ The CLI needs an admin WebSocket URL and a bearer token:
 - **URL** — `--server-url ws://<host>:<port>/admin` (or env `SOMNIO_ADMIN_URL`).
 - **Token** — env `SOMNIO_ADMIN_TOKEN`. Pass it via the environment, not the URL — the CLI rejects a `user:password@host` URL.
 
-For the local dev server (run on port 8090 with `SOMNIO_ADMIN_TOKEN=dev-admin`), use `ws://127.0.0.1:8090/admin` and token `dev-admin`. When the URL/token are unset, a debug build falls back to a built-in default — but that default points at port **8080** (`ws://127.0.0.1:8080/admin`), not 8090, so pass `--server-url ws://127.0.0.1:8090/admin` explicitly to reach the dev server.
+For the local dev server (run on port 17662 with `SOMNIO_ADMIN_TOKEN=dev-admin`), use `ws://127.0.0.1:17662/admin` and token `dev-admin`. That is also what a debug build falls back to when the URL and token are unset, so `--server-url` is optional against the dev server.
 
 ## Step 3: Run a command
 
 Run with the sandbox disabled — the command sandbox's network allowlist blocks the localhost WebSocket connection (a sandboxed run hangs on connect, not an auth error). Example, list connected players:
 
 ```bash
-SOMNIO_ADMIN_TOKEN=dev-admin .build/debug/SomnioCLI players --server-url ws://127.0.0.1:8090/admin
+SOMNIO_ADMIN_TOKEN=dev-admin .build/debug/SomnioCLI players --server-url ws://127.0.0.1:17662/admin
 ```
 
 Every subcommand takes the same `--server-url` and reads `SOMNIO_ADMIN_TOKEN`.

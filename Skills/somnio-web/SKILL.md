@@ -9,7 +9,7 @@ Serves the browser client against the local dev server and drives it with `agent
 
 ## Step 1: Start the dev server
 
-The client needs a running backend. Stand up the local server on port 8090 first — run the `/somnio-server` skill.
+The client needs a running backend. Stand up the local server on port 17662 first — run the `/somnio-server` skill.
 
 ## Step 2: Serve the client
 
@@ -22,7 +22,7 @@ SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=Web/public/assets 
 cd Web && npm ci && npm run dev
 ```
 
-Vite serves on `http://localhost:5173` and proxies `/ws` to `127.0.0.1:8090`. The proxy is what matters: the client derives its gameplay endpoint from the page origin, so `/` and `/ws` have to share one. Point the proxy elsewhere with `SOMNIO_DEV_GAMEPLAY_ORIGIN`.
+Vite serves on `http://localhost:17669` and proxies `/ws` to `127.0.0.1:17662`. The proxy is what matters: the client derives its gameplay endpoint from the page origin, so `/` and `/ws` have to share one. Point the proxy elsewhere with `SOMNIO_DEV_GAMEPLAY_ORIGIN`.
 
 The destination is `Web/public/assets` for the dev server only. Vite serves `Web/public` and `Web/` and never `dist/`, so writing the pack to `Web/dist/assets` leaves every model and texture 404ing with no error but a placeholder world. The image build uses `dist` because nginx serves that directory.
 
@@ -32,7 +32,7 @@ To exercise production's routing instead of the Vite proxy, run the container to
 mkdir -p assets sectors
 cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
 docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=0.0.0-local
-docker compose -f docker-compose.example.yml up --wait   # http://127.0.0.1:8000/?debug=1
+docker compose -f docker-compose.example.yml up --wait   # http://127.0.0.1:17669/?debug=1
 ```
 
 That topology serves a production build, so `?debug=1` is required — without it `window.somnio` is undefined and every recipe below fails.
@@ -43,12 +43,12 @@ Register through the UI: click "If you don't have an account, click here!", fill
 
 Re-snapshot after every overlay change — the refs are per-snapshot, and typing against stale refs from the previous overlay silently fills the wrong fields.
 
-To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:8090/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","characterClass":0,"gender":0,"email":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":0}}`).
+To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","characterClass":0,"gender":0,"email":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":0}}`).
 
 ## Step 4: Open the client and log in
 
 ```bash
-agent-browser open 'http://localhost:5173/'
+agent-browser open 'http://localhost:17669/'
 agent-browser wait --fn 'document.querySelector(".blocking-notice:not(.hidden)") === null && window.somnio?.overlay() === "login"'
 agent-browser snapshot -i          # nickname, password, Remember password, and Log In refs
 agent-browser type <nickname-ref> '<nickname>'
@@ -116,8 +116,8 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 **Two players in one sector.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token — the browser analogue of `SOMNIO_PROFILE`.
 
 ```bash
-agent-browser --session a open 'http://localhost:5173/'
-agent-browser --session b open 'http://localhost:5173/'
+agent-browser --session a open 'http://localhost:17669/'
+agent-browser --session b open 'http://localhost:17669/'
 # log each in as a different account, then from a:
 agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind === "peer")'
 ```
@@ -129,7 +129,7 @@ Use this for anything needing an independent observer — that a peer's position
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
 docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET current_sector='Nordwald', position_x=1024, position_y=768 WHERE name='<nickname>';"
-agent-browser open 'http://localhost:5173/'
+agent-browser open 'http://localhost:17669/'
 # log in, then: agent-browser eval 'window.somnio.sectorName()'  — the old sector here means the
 # checkpoint won the race; close and repeat. An unwalkable position self-heals to a spawn point,
 # so pick coordinates on open floor or the character lands at spawn with no error.

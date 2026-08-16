@@ -112,7 +112,7 @@ jobs:
       - name: Run wire conformance suite
         working-directory: Web
         env:
-          SOMNIO_CONFORMANCE_URL: ws://127.0.0.1:8080/ws
+          SOMNIO_CONFORMANCE_URL: ws://127.0.0.1:17662/ws
         run: npm run conformance
       - name: Dump logs on failure
         if: failure()
@@ -180,14 +180,14 @@ jobs:
         # reach their own upstream through the one published port.
         run: |
           set -euo pipefail
-          curl -fsS http://127.0.0.1:8000/ | grep -q 'id="somnio-root"'
-          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:17669/ | grep -q 'id="somnio-root"'
+          curl -fsS http://127.0.0.1:17669/health
           # The client's own endpoint resolution is origin-relative, so this is the URL it will
           # dial. A 101 means the upgrade reached the gameplay server.
           status=$(curl -s -o /dev/null -w '%{http_code}' \
             -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
             -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' \
-            http://127.0.0.1:8000/ws)
+            http://127.0.0.1:17669/ws)
           test "$status" = "101" || (echo "expected 101 from /ws, got $status" >&2; exit 1)
       - name: Dump logs on failure
         if: failure()

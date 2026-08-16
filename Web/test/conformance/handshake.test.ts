@@ -25,11 +25,11 @@ import type { GameplaySocket, GameplaySocketFactory } from '@/transport'
  *   passes while the transport ships application messages as binary frames, which the server
  *   closes on.
  *
- * Requires a server at `SOMNIO_CONFORMANCE_URL` (default `ws://127.0.0.1:8080/ws`). CI stands one
+ * Requires a server at `SOMNIO_CONFORMANCE_URL` (default `ws://127.0.0.1:17662/ws`). CI stands one
  * up with `docker compose -f docker-compose.example.yml up --wait`.
  */
 
-const GATEWAY = process.env.SOMNIO_CONFORMANCE_URL ?? 'ws://127.0.0.1:8080/ws'
+const GATEWAY = process.env.SOMNIO_CONFORMANCE_URL ?? 'ws://127.0.0.1:17662/ws'
 
 /** WebSocket close codes the server uses. 1002 is protocolError, 1009 messageTooLarge. */
 const CLOSE = { protocolError: 1002, messageTooLarge: 1009 } as const

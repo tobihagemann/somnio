@@ -20,15 +20,15 @@ describe('endpoint resolution', () => {
     expect(resolveGameplayURL({ protocol: 'https:', host: 'somnio.tobiha.de' })).toBe(
       'wss://somnio.tobiha.de/ws'
     )
-    expect(resolveGameplayURL({ protocol: 'http:', host: 'localhost:5173' })).toBe('ws://localhost:5173/ws')
+    expect(resolveGameplayURL({ protocol: 'http:', host: 'localhost:17669' })).toBe('ws://localhost:17669/ws')
   })
 
   /**
    * Origin-relative in both environments: production shares an origin by the hosting decision,
-   * and development goes through the Vite `/ws` proxy rather than dialing :8090 directly.
+   * and development goes through the Vite `/ws` proxy rather than dialing :17662 directly.
    */
   it('stays origin-relative rather than hardcoding a host', () => {
-    expect(resolveGameplayURL({ protocol: 'http:', host: '127.0.0.1:5173' })).toContain('127.0.0.1:5173')
+    expect(resolveGameplayURL({ protocol: 'http:', host: '127.0.0.1:17669' })).toContain('127.0.0.1:17669')
   })
 })
 

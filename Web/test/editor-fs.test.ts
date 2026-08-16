@@ -168,7 +168,7 @@ describe('same-origin enforcement', () => {
     const result = await invoke({
       url: '/__editor/sectors',
       remoteAddress: '127.0.0.1',
-      headers: { origin: 'http://evil.example', host: 'localhost:5173' },
+      headers: { origin: 'http://evil.example', host: 'localhost:17669' },
     })
     expect(result.status).toBe(403)
   })

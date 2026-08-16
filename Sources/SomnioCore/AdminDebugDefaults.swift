@@ -11,7 +11,7 @@ import Foundation
 /// these.
 public enum AdminDebugDefaults {
     /// TCP port the gameplay server listens on in dev mode and the CLI connects to.
-    public static let port: Int = 8080
+    public static let port: Int = 17662
 
     /// Bearer token the gameplay server accepts in dev mode and the CLI sends.
     public static let bearerToken: String = "dev-admin"

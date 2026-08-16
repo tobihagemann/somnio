@@ -24,7 +24,7 @@ The Three.js browser client and the localhost web map editor live in `Web/` (the
 ```
 cd Web
 npm ci
-npm run dev                # browser client (Vite on :5173, proxies /ws to the local server)
+npm run dev                # browser client (Vite on :17669, proxies /ws to the local server)
 npm run editor             # web map editor (authors .somnio-sector files)
 ```
 
