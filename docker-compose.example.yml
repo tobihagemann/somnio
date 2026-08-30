@@ -51,7 +51,9 @@ services:
       SOMNIO_DATABASE_TLS: disable
       # Generate with: openssl rand -hex 32 — distinct from POSTGRES_PASSWORD above.
       SOMNIO_ADMIN_TOKEN: CHANGE_ME_ADMIN_TOKEN
-      SOMNIO_HTTP_PORT: "8080"
+      # SOMNIO_HTTP_PORT stays unset so the image ENV is the only source of the 8080 that the
+      # `ports` mapping, the healthcheck, and proxy.example.conf assume. Pinning it here would
+      # keep CI green if the image lost that ENV and fell back to the code default of 17662.
       SOMNIO_SECTORS_DIR: /opt/somnio/sectors
     # Populate `./sectors` from your asset pack before starting the stack. For a local
     # smoke test against the bundled fixtures, rebuild the image with

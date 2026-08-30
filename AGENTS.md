@@ -273,17 +273,17 @@ The gameplay server speaks **plain HTTP/WebSocket** — TLS is terminated by a r
 
 Server runtime configuration is resolved from environment variables (resolution lives in `SomnioServerCore.ServerConfiguration`):
 
-| Variable | Default (debug) | Required in release |
-|----------|-----------------|---------------------|
+| Variable | Default | Required in release |
+|----------|---------|---------------------|
 | `SOMNIO_HTTP_HOST` | `0.0.0.0` | no |
 | `SOMNIO_HTTP_PORT` | `17662` | no |
-| `SOMNIO_ADMIN_TOKEN` | `dev-admin` | yes |
-| `SOMNIO_SECTORS_DIR` | `Tests/SomnioMapFixturesTestSupport/MapFixtures` | yes |
-| `SOMNIO_DATABASE_URL` | localhost fallback | yes |
+| `SOMNIO_ADMIN_TOKEN` | `dev-admin` (debug only) | yes |
+| `SOMNIO_SECTORS_DIR` | `Tests/SomnioMapFixturesTestSupport/MapFixtures` (debug only) | yes |
+| `SOMNIO_DATABASE_URL` | localhost fallback (debug only) | yes |
 
 The server exposes `GET /health` (unauthenticated, returns 200 / 503 based on a `SELECT 1`), `WS /ws` (gameplay), and `WS /admin` (operator CLI; pre-upgrade `Authorization: Bearer $SOMNIO_ADMIN_TOKEN` gate). The `/admin` route is wired end-to-end through `AdminConnectionActor` → `AdminCommandDispatcher`; dispatch events log under `de.tobiha.somnio.server.admin.dispatch`.
 
-`docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:17662` alongside the proxy — loopback-bound, and load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy.
+`docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:17662` alongside the proxy — loopback-bound, and load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy. The server, `web`, and `proxy` all listen on `8080` inside the network, so the server's published mapping is `127.0.0.1:17662:8080`. That inner `8080` comes from the image's own `ENV SOMNIO_HTTP_PORT`, which the compose file deliberately leaves unset so a dropped `ENV` fails the health check instead of being masked.
 
 A committed multi-stage `Dockerfile` + `docker-compose.example.yml` build and run the server image. `SomnioServer` builds on Linux straight from the single root `Package.swift` despite its `platforms: [.macOS(.v15)]` pin: Sparkle is product-conditional (`.when(platforms: [.macOS])`), so `swift build --product SomnioServer` pulls no macOS-only target — the CI `integration-tests` job already exercises this on `ubuntu-latest`. The `Dockerfile` takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), injected via `sed` into `SomnioServerVersion.swift` — anything feeding that arg from CI must reject `sed`-unsafe characters.
 
