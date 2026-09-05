@@ -1,13 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { isUniqueViolation } from '../src/repositories/errors.ts'
+import { describe, expect, it } from 'vitest';
+import { isUniqueViolation } from '../src/repositories/errors.ts';
 
-const constraints: ReadonlySet<string> = new Set(['accounts_name_key'])
+const constraints: ReadonlySet<string> = new Set(['accounts_name_key']);
 
 /** The one gate between "the name is taken" and every other database failure a registration can hit. */
 describe('isUniqueViolation', () => {
   it('matches a 23505 on a listed constraint', () => {
-    expect(isUniqueViolation({ code: '23505', constraint: 'accounts_name_key' }, constraints)).toBe(true)
-  })
+    expect(isUniqueViolation({ code: '23505', constraint: 'accounts_name_key' }, constraints)).toBe(true);
+  });
 
   it.each([
     ['a 23505 on an unlisted constraint', { code: '23505', constraint: 'sessions_pkey' }],
@@ -18,6 +18,6 @@ describe('isUniqueViolation', () => {
     ['null', null],
     ['undefined', undefined],
   ])('rejects %s', (_label, error) => {
-    expect(isUniqueViolation(error, constraints)).toBe(false)
-  })
-})
+    expect(isUniqueViolation(error, constraints)).toBe(false);
+  });
+});

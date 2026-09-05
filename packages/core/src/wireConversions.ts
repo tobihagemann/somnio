@@ -1,4 +1,4 @@
-import { WIRE_HAND, assertNever } from '@somnio/protocol'
+import { WIRE_HAND, assertNever } from '@somnio/protocol';
 import type {
   WireCollisionMask,
   WireFloorPatch,
@@ -12,21 +12,12 @@ import type {
   WireObject,
   WireSector,
   WireSectorPortal,
-} from '@somnio/protocol'
-import type { Hand, InventoryExtra, InventoryRow } from './domain/inventoryRow.ts'
-import { HAND } from './domain/inventoryRow.ts'
-import type { GridSize } from './geometry.ts'
-import type {
-  CollisionMask,
-  FloorPatch,
-  LightSetting,
-  MonsterSpawn,
-  Sector,
-  SectorNPC,
-  SectorObject,
-  SectorPortal,
-} from './sector.ts'
-import { PORTAL_DIRECTIONS, requireSectorWithinBounds } from './sector.ts'
+} from '@somnio/protocol';
+import type { Hand, InventoryExtra, InventoryRow } from './domain/inventoryRow.ts';
+import { HAND } from './domain/inventoryRow.ts';
+import type { GridSize } from './geometry.ts';
+import type { CollisionMask, FloorPatch, LightSetting, MonsterSpawn, Sector, SectorNPC, SectorObject, SectorPortal } from './sector.ts';
+import { PORTAL_DIRECTIONS, requireSectorWithinBounds } from './sector.ts';
 
 /**
  * Model → wire conversions, the outbound half of the sector and inventory seams. The inbound half
@@ -38,11 +29,11 @@ import { PORTAL_DIRECTIONS, requireSectorWithinBounds } from './sector.ts'
  */
 
 export function gridSizeToWire(size: GridSize): WireGridSize {
-  return { width: size.width, height: size.height }
+  return { width: size.width, height: size.height };
 }
 
 export function lightSettingToWire(light: LightSetting): WireLightSetting {
-  return { indoor: light.indoor, brightness: light.brightness }
+  return { indoor: light.indoor, brightness: light.brightness };
 }
 
 export function objectToWire(object: SectorObject): WireObject {
@@ -54,11 +45,11 @@ export function objectToWire(object: SectorObject): WireObject {
     sourceHeight: object.sourceHeight,
     priority: object.priority,
     rotation: object.rotation,
-  }
+  };
 }
 
 export function collisionMaskToWire(mask: CollisionMask): WireCollisionMask {
-  return { x: mask.x, y: mask.y, width: mask.width, height: mask.height }
+  return { x: mask.x, y: mask.y, width: mask.width, height: mask.height };
 }
 
 export function floorPatchToWire(patch: FloorPatch): WireFloorPatch {
@@ -68,7 +59,7 @@ export function floorPatchToWire(patch: FloorPatch): WireFloorPatch {
     y: patch.y,
     width: patch.width,
     height: patch.height,
-  }
+  };
 }
 
 export function portalToWire(portal: SectorPortal): WireSectorPortal {
@@ -79,7 +70,7 @@ export function portalToWire(portal: SectorPortal): WireSectorPortal {
     height: portal.height,
     targetSectorName: portal.targetSectorName,
     direction: PORTAL_DIRECTIONS[portal.direction],
-  }
+  };
 }
 
 export function npcToWire(npc: SectorNPC): WireNPC {
@@ -95,7 +86,7 @@ export function npcToWire(npc: SectorNPC): WireNPC {
     direction: npc.facing,
     behaviorTag: npc.behaviorTag,
     dialogScript: npc.dialogScript,
-  }
+  };
 }
 
 export function monsterSpawnToWire(spawn: MonsterSpawn): WireMonsterSpawn {
@@ -113,7 +104,7 @@ export function monsterSpawnToWire(spawn: MonsterSpawn): WireMonsterSpawn {
     spawnBalance: spawn.spawnBalance,
     spawnMana: spawn.spawnMana,
     aiScriptIndex: spawn.aiScriptIndex,
-  }
+  };
 }
 
 /**
@@ -121,7 +112,7 @@ export function monsterSpawnToWire(spawn: MonsterSpawn): WireMonsterSpawn {
  * receiver would refuse is never put on the wire in the first place.
  */
 export function sectorToWire(sector: Sector): WireSector {
-  requireSectorWithinBounds(sector)
+  requireSectorWithinBounds(sector);
   return {
     name: sector.name,
     version: sector.version,
@@ -134,11 +125,11 @@ export function sectorToWire(sector: Sector): WireSector {
     npcs: sector.npcs.map(npcToWire),
     monsterSpawns: sector.monsterSpawns.map(monsterSpawnToWire),
     floorPatches: sector.floorPatches.map(floorPatchToWire),
-  }
+  };
 }
 
 export function inventoryExtraToWire(extra: InventoryExtra): WireInventoryExtra {
-  return { key: extra.key, value: extra.value }
+  return { key: extra.key, value: extra.value };
 }
 
 export function inventoryRowToWire(row: InventoryRow): WireInventoryRow {
@@ -148,7 +139,7 @@ export function inventoryRowToWire(row: InventoryRow): WireInventoryRow {
     itemId: row.itemId,
     extras: row.extras.map(inventoryExtraToWire),
     equippedHand: handToWire(row.equippedHand),
-  }
+  };
 }
 
 export function inventoryRowFromWire(row: WireInventoryRow): InventoryRow {
@@ -158,7 +149,7 @@ export function inventoryRowFromWire(row: WireInventoryRow): InventoryRow {
     itemId: row.itemId,
     extras: row.extras.map((extra) => ({ key: extra.key, value: extra.value })),
     equippedHand: handFromWire(row.equippedHand),
-  }
+  };
 }
 
 /**
@@ -171,25 +162,25 @@ export function inventoryRowFromWire(row: WireInventoryRow): InventoryRow {
 export function handFromWire(wire: WireHand): Hand | undefined {
   switch (wire) {
     case WIRE_HAND.none:
-      return undefined
+      return undefined;
     case WIRE_HAND.left:
-      return HAND.left
+      return HAND.left;
     case WIRE_HAND.right:
-      return HAND.right
+      return HAND.right;
     default:
-      return assertNever(wire, 'wire hand')
+      return assertNever(wire, 'wire hand');
   }
 }
 
 export function handToWire(hand: Hand | undefined): WireHand {
   switch (hand) {
     case undefined:
-      return WIRE_HAND.none
+      return WIRE_HAND.none;
     case HAND.left:
-      return WIRE_HAND.left
+      return WIRE_HAND.left;
     case HAND.right:
-      return WIRE_HAND.right
+      return WIRE_HAND.right;
     default:
-      return assertNever(hand, 'hand')
+      return assertNever(hand, 'hand');
   }
 }

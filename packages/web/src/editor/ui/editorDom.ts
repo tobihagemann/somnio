@@ -1,6 +1,6 @@
-import { element, field } from '@/ui/dom'
-import type { IconPath } from '@/ui/dom'
-import type { EditorTool } from '../canvasController'
+import { element, field } from '@/ui/dom';
+import type { IconPath } from '@/ui/dom';
+import type { EditorTool } from '../canvasController';
 
 /**
  * The editor's own DOM helpers, kept out of `@/ui/dom` so the shipped client bundle carries none
@@ -17,12 +17,12 @@ export const EDITOR_ICON_PATHS = {
   monster:
     'M12 13c-3 0-5.5 2-5.5 4.5 0 1.5 1 2.5 2.5 2.5 1 0 2-.5 3-.5s2 .5 3 .5c1.5 0 2.5-1 2.5-2.5C17.5 15 15 13 12 13zM6.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM10.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM13.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
   floorPatch: 'M4 4h16v16H4zM4 12h16M12 4v16',
-} as const satisfies Record<EditorTool, IconPath>
+} as const satisfies Record<EditorTool, IconPath>;
 
 /** Bounded numeric row for the sector forms. */
 export function numberField(
   labelText: string,
-  options: { min: number; max: number; value: number; step?: number }
+  options: { min: number; max: number; value: number; step?: number },
 ): { row: HTMLElement; input: HTMLInputElement } {
   return field(labelText, {
     type: 'number',
@@ -30,7 +30,7 @@ export function numberField(
     max: options.max,
     step: options.step ?? 1,
     value: String(options.value),
-  })
+  });
 }
 
 /**
@@ -41,8 +41,8 @@ export function numberField(
  * displayed and round-tripped verbatim.
  */
 export function setSelectValue(input: HTMLSelectElement, value: string): void {
-  input.value = value
-  if (input.value === value) return
-  input.append(element('option', { text: `${value} (unmapped)`, attributes: { value } }))
-  input.value = value
+  input.value = value;
+  if (input.value === value) return;
+  input.append(element('option', { text: `${value} (unmapped)`, attributes: { value } }));
+  input.value = value;
 }

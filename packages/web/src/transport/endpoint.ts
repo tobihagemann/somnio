@@ -11,6 +11,6 @@
  * dialing :17662 directly keeps this resolver origin-relative in both environments.
  */
 export function resolveGameplayURL(location: { protocol: string; host: string } = window.location): string {
-  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${scheme}//${location.host}/ws`
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${location.host}/ws`;
 }

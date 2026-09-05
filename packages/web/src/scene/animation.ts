@@ -1,9 +1,8 @@
-import type { RelativeDirection, Tempo } from '@somnio/core'
-import type { WorldEntityKind } from '@somnio/core'
+import type { RelativeDirection, Tempo } from '@somnio/core';
+import type { WorldEntityKind } from '@somnio/core';
 
 /** Pose selection and clip preference lists. */
-export type AnimationPose =
-  'idle' | 'sneaking' | 'walking' | 'running' | 'backpedal' | 'strafeLeft' | 'strafeRight'
+export type AnimationPose = 'idle' | 'sneaking' | 'walking' | 'running' | 'backpedal' | 'strafeLeft' | 'strafeRight';
 
 /**
  * Movement clip per tempo and travel direction.
@@ -14,21 +13,17 @@ export type AnimationPose =
  * the plain walk clip — the librarian must not skulk through its own room — and monsters drift
  * on their single clip, so `direction` is ignored for both.
  */
-export function movementPose(
-  kind: WorldEntityKind,
-  tempo: Tempo,
-  direction: RelativeDirection
-): AnimationPose {
-  if (kind === 'npc' || kind === 'monster') return 'walking'
+export function movementPose(kind: WorldEntityKind, tempo: Tempo, direction: RelativeDirection): AnimationPose {
+  if (kind === 'npc' || kind === 'monster') return 'walking';
   switch (direction) {
     case 'forward':
-      return tempo === 1 ? 'sneaking' : tempo === 4 ? 'running' : 'walking'
+      return tempo === 1 ? 'sneaking' : tempo === 4 ? 'running' : 'walking';
     case 'backward':
-      return 'backpedal'
+      return 'backpedal';
     case 'strafeLeft':
-      return 'strafeLeft'
+      return 'strafeLeft';
     case 'strafeRight':
-      return 'strafeRight'
+      return 'strafeRight';
   }
 }
 
@@ -50,17 +45,17 @@ export const CLIP_PREFERENCES: Record<AnimationPose, readonly string[]> = {
   backpedal: ['Walking_Backwards', 'Walking_A', 'Flying_Idle'],
   strafeLeft: ['Running_Strafe_Left', 'Walking_A', 'Flying_Idle'],
   strafeRight: ['Running_Strafe_Right', 'Walking_A', 'Flying_Idle'],
-}
+};
 
 /** First available clip for a pose, walking the preference chain. */
 export function resolveClipName(pose: AnimationPose, available: readonly string[]): string | undefined {
-  return CLIP_PREFERENCES[pose].find((name) => available.includes(name))
+  return CLIP_PREFERENCES[pose].find((name) => available.includes(name));
 }
 
 /** An entity counts as moving for this long after its last position change. */
-export const MOTION_GRACE_WINDOW = 0.15
+export const MOTION_GRACE_WINDOW = 0.15;
 
 /** Upper bound on one frame's dt so a stall cannot teleport tweens or the walk clock. */
-export const MAX_TICK_DELTA = 0.1
+export const MAX_TICK_DELTA = 0.1;
 
-export const CLIP_TRANSITION_DURATION = 0.2
+export const CLIP_TRANSITION_DURATION = 0.2;

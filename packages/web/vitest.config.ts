@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config'
-import { buildDefines, repoAliases } from './vite.config'
+import { defineConfig } from 'vitest/config';
+import { buildDefines, repoAliases } from './vite.config';
 
 /**
  * Headless logic suite: the transport, the predictor, the scene math, and the DOM layer against
@@ -17,4 +17,4 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     exclude: ['test/integration/**', 'test/conformance/**'],
   },
-})
+});

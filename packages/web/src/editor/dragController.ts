@@ -1,17 +1,17 @@
-import type * as THREE from 'three'
-import { clampToInt16 } from '@somnio/core'
-import type { GridPoint, GridSize } from '@somnio/core'
-import { angularDistance, headingFromVector, headingRadians } from '@somnio/core'
-import type { Heading } from '@somnio/core'
-import type { Sector } from '@somnio/core'
-import { ORTHO_RIG } from '@/scene/cameraRig'
-import { floorPixelAtScreen, screenAtFloorPixel } from './picking'
-import type { ScreenPoint, ViewportSize } from './picking'
-import { quantize } from './preferences'
-import { candidateSelections, gridPoint, selectRecord } from './canvasController'
-import type { EditorTool } from './canvasController'
-import { containsSelection, selectionBounds, toggleSelection } from './selection'
-import type { EditorSelection } from './selection'
+import type * as THREE from 'three';
+import { clampToInt16 } from '@somnio/core';
+import type { GridPoint, GridSize } from '@somnio/core';
+import { angularDistance, headingFromVector, headingRadians } from '@somnio/core';
+import type { Heading } from '@somnio/core';
+import type { Sector } from '@somnio/core';
+import { ORTHO_RIG } from '@/scene/cameraRig';
+import { floorPixelAtScreen, screenAtFloorPixel } from './picking';
+import type { ScreenPoint, ViewportSize } from './picking';
+import { quantize } from './preferences';
+import { candidateSelections, gridPoint, selectRecord } from './canvasController';
+import type { EditorTool } from './canvasController';
+import { containsSelection, selectionBounds, toggleSelection } from './selection';
+import type { EditorSelection } from './selection';
 
 /**
  * The stateless drag interaction layer: session classification in fixed precedence (NPC facing handle → resize
@@ -21,41 +21,31 @@ import type { EditorSelection } from './selection'
  */
 
 /** Drawn extent of the resize/facing handles, in viewport points. */
-export const HANDLE_DRAW_EXTENT_PT = 8
+export const HANDLE_DRAW_EXTENT_PT = 8;
 /** Hit-test extent around each handle center — larger than the drawn square. */
-const HANDLE_HIT_EXTENT_PT = 14
+const HANDLE_HIT_EXTENT_PT = 14;
 /** Screen clearance between the NPC spawn box and its facing handle. */
-export const FACING_CLEARANCE_PT = 24
+export const FACING_CLEARANCE_PT = 24;
 /** A gesture travelling less than this is a tap: placement drops the default footprint. */
-const TAP_TRANSLATION_THRESHOLD_PT = 4
+const TAP_TRANSLATION_THRESHOLD_PT = 4;
 
-export const DEFAULT_FOOTPRINT: GridSize = { width: 128, height: 128 }
+export const DEFAULT_FOOTPRINT: GridSize = { width: 128, height: 128 };
 
-export type ResizeHandle =
-  'topLeft' | 'top' | 'topRight' | 'left' | 'right' | 'bottomLeft' | 'bottom' | 'bottomRight'
+export type ResizeHandle = 'topLeft' | 'top' | 'topRight' | 'left' | 'right' | 'bottomLeft' | 'bottom' | 'bottomRight';
 
-const RESIZE_HANDLES: readonly ResizeHandle[] = [
-  'topLeft',
-  'top',
-  'topRight',
-  'left',
-  'right',
-  'bottomLeft',
-  'bottom',
-  'bottomRight',
-]
+const RESIZE_HANDLES: readonly ResizeHandle[] = ['topLeft', 'top', 'topRight', 'left', 'right', 'bottomLeft', 'bottom', 'bottomRight'];
 
 function movesLeftEdge(handle: ResizeHandle): boolean {
-  return handle === 'topLeft' || handle === 'left' || handle === 'bottomLeft'
+  return handle === 'topLeft' || handle === 'left' || handle === 'bottomLeft';
 }
 function movesRightEdge(handle: ResizeHandle): boolean {
-  return handle === 'topRight' || handle === 'right' || handle === 'bottomRight'
+  return handle === 'topRight' || handle === 'right' || handle === 'bottomRight';
 }
 function movesTopEdge(handle: ResizeHandle): boolean {
-  return handle === 'topLeft' || handle === 'top' || handle === 'topRight'
+  return handle === 'topLeft' || handle === 'top' || handle === 'topRight';
 }
 function movesBottomEdge(handle: ResizeHandle): boolean {
-  return handle === 'bottomLeft' || handle === 'bottom' || handle === 'bottomRight'
+  return handle === 'bottomLeft' || handle === 'bottom' || handle === 'bottomRight';
 }
 
 /**
@@ -68,19 +58,19 @@ export type DragSession =
   | { kind: 'move'; originals: { selection: EditorSelection; origin: GridPoint }[] }
   | { kind: 'resize'; selection: EditorSelection; handle: ResizeHandle; origin: GridPoint; size: GridSize }
   | { kind: 'rotate'; npcIndex: number }
-  | { kind: 'marquee' }
+  | { kind: 'marquee' };
 
 /** The projection context every screen-space step needs. */
 export interface DragContext {
-  camera: THREE.OrthographicCamera
-  viewport: ViewportSize
-  gridStep: number
+  camera: THREE.OrthographicCamera;
+  viewport: ViewportSize;
+  gridStep: number;
 }
 
 /** Per-kind seeds for direct placement; ids come from the committed registry. */
 export interface PlacementDefaults {
-  objectModelID: string
-  floorMaterialID: string
+  objectModelID: string;
+  floorMaterialID: string;
 }
 
 /**
@@ -93,32 +83,32 @@ export function beginSession(
   additive: boolean,
   sector: Sector,
   selection: readonly EditorSelection[],
-  context: DragContext
+  context: DragContext,
 ): { session: DragSession | undefined; selection: EditorSelection[] } {
   if (tool !== 'select') {
-    const grid = gridPoint(context.camera, context.viewport, location)
+    const grid = gridPoint(context.camera, context.viewport, location);
     const anchor = {
       x: quantize(grid.x, context.gridStep),
       y: quantize(grid.y, context.gridStep),
-    }
-    return { session: { kind: 'placement', tool, anchor }, selection: [...selection] }
+    };
+    return { session: { kind: 'placement', tool, anchor }, selection: [...selection] };
   }
 
   if (selection.length === 1) {
-    const selected = selection[0]!
+    const selected = selection[0]!;
     if (selected.kind === 'npc') {
-      const npc = sector.npcs[selected.index]
+      const npc = sector.npcs[selected.index];
       if (npc !== undefined) {
-        const clearancePx = FACING_CLEARANCE_PT * legacyPixelsPerViewportPoint(context)
-        const handlePixel = facingHandlePixel(npc.spawnOrigin, npc.spawnBoxSize, npc.facing, clearancePx)
+        const clearancePx = FACING_CLEARANCE_PT * legacyPixelsPerViewportPoint(context);
+        const handlePixel = facingHandlePixel(npc.spawnOrigin, npc.spawnBoxSize, npc.facing, clearancePx);
         if (handleHitRect(handlePixel, context).contains(location)) {
-          return { session: { kind: 'rotate', npcIndex: selected.index }, selection: [...selection] }
+          return { session: { kind: 'rotate', npcIndex: selected.index }, selection: [...selection] };
         }
       }
     }
-    const bounds = selectionBounds(selected, sector)
+    const bounds = selectionBounds(selected, sector);
     if (bounds !== undefined) {
-      const handle = hitHandle(location, bounds.origin, bounds.size, context)
+      const handle = hitHandle(location, bounds.origin, bounds.size, context);
       if (handle !== undefined) {
         return {
           session: {
@@ -129,25 +119,25 @@ export function beginSession(
             size: bounds.size,
           },
           selection: [...selection],
-        }
+        };
       }
     }
   }
 
-  const point = gridPoint(context.camera, context.viewport, location)
+  const point = gridPoint(context.camera, context.viewport, location);
   if (additive) {
-    const picked = selectRecord(point, sector, 'select')
-    if (picked === undefined) return { session: { kind: 'marquee' }, selection: [...selection] }
-    return { session: undefined, selection: toggleSelection(selection, picked) }
+    const picked = selectRecord(point, sector, 'select');
+    if (picked === undefined) return { session: { kind: 'marquee' }, selection: [...selection] };
+    return { session: undefined, selection: toggleSelection(selection, picked) };
   }
   // Resolve the topmost record at the point first: pressing a record that overlaps the
   // current selection must manipulate what is visibly under the cursor.
-  const picked = selectRecord(point, sector, 'select')
-  if (picked === undefined) return { session: { kind: 'marquee' }, selection: [] }
+  const picked = selectRecord(point, sector, 'select');
+  if (picked === undefined) return { session: { kind: 'marquee' }, selection: [] };
   if (containsSelection(selection, picked)) {
-    return { session: { kind: 'move', originals: origins(selection, sector) }, selection: [...selection] }
+    return { session: { kind: 'move', originals: origins(selection, sector) }, selection: [...selection] };
   }
-  return { session: { kind: 'move', originals: origins([picked], sector) }, selection: [picked] }
+  return { session: { kind: 'move', originals: origins([picked], sector) }, selection: [picked] };
 }
 
 /**
@@ -160,49 +150,42 @@ export function preview(
   current: ScreenPoint,
   sector: Sector,
   context: DragContext,
-  defaults: PlacementDefaults
+  defaults: PlacementDefaults,
 ): Sector | undefined {
   switch (session.kind) {
     case 'placement': {
-      const transient = structuredClone(sector)
-      const bounds = placementBounds(session.tool, session.anchor, start, current, context)
-      placeRecord(session.tool, bounds.origin, bounds.size, transient, defaults)
-      return transient
+      const transient = structuredClone(sector);
+      const bounds = placementBounds(session.tool, session.anchor, start, current, context);
+      placeRecord(session.tool, bounds.origin, bounds.size, transient, defaults);
+      return transient;
     }
     case 'move': {
-      const delta = gridDelta(start, current, context)
-      const transient = structuredClone(sector)
-      applyMove(session.originals, delta.dx, delta.dy, transient)
-      return transient
+      const delta = gridDelta(start, current, context);
+      const transient = structuredClone(sector);
+      applyMove(session.originals, delta.dx, delta.dy, transient);
+      return transient;
     }
     case 'resize': {
-      const delta = gridDelta(start, current, context)
-      const bounds = resizedBounds(
-        session.origin,
-        session.size,
-        session.handle,
-        delta.dx,
-        delta.dy,
-        Math.max(1, context.gridStep)
-      )
-      const transient = structuredClone(sector)
-      applyBounds(session.selection, bounds.origin, bounds.size, transient)
-      return transient
+      const delta = gridDelta(start, current, context);
+      const bounds = resizedBounds(session.origin, session.size, session.handle, delta.dx, delta.dy, Math.max(1, context.gridStep));
+      const transient = structuredClone(sector);
+      applyBounds(session.selection, bounds.origin, bounds.size, transient);
+      return transient;
     }
     case 'rotate': {
-      const npc = sector.npcs[session.npcIndex]
-      if (npc === undefined) return undefined
-      const transient = structuredClone(sector)
-      transient.npcs[session.npcIndex]!.facing = headingFromDrag(current, npc, context)
-      return transient
+      const npc = sector.npcs[session.npcIndex];
+      if (npc === undefined) return undefined;
+      const transient = structuredClone(sector);
+      transient.npcs[session.npcIndex]!.facing = headingFromDrag(current, npc, context);
+      return transient;
     }
     case 'marquee':
-      return undefined
+      return undefined;
   }
 }
 
 export interface DragCommitTarget {
-  mutate(actionName: string, change: (sector: Sector) => void): void
+  mutate(actionName: string, change: (sector: Sector) => void): void;
 }
 
 /**
@@ -219,65 +202,58 @@ export function endSession(
   sector: Sector,
   selection: readonly EditorSelection[],
   context: DragContext,
-  defaults: PlacementDefaults
+  defaults: PlacementDefaults,
 ): EditorSelection[] {
   switch (session.kind) {
     case 'placement': {
-      const bounds = placementBounds(session.tool, session.anchor, start, end, context)
-      let placed: EditorSelection | undefined
+      const bounds = placementBounds(session.tool, session.anchor, start, end, context);
+      let placed: EditorSelection | undefined;
       document.mutate(placementDescription(session.tool), (draft) => {
-        placed = placeRecord(session.tool, bounds.origin, bounds.size, draft, defaults)
-      })
-      return placed === undefined ? [...selection] : [placed]
+        placed = placeRecord(session.tool, bounds.origin, bounds.size, draft, defaults);
+      });
+      return placed === undefined ? [...selection] : [placed];
     }
     case 'move': {
-      const delta = gridDelta(start, end, context)
-      if (delta.dx === 0 && delta.dy === 0) return [...selection]
+      const delta = gridDelta(start, end, context);
+      if (delta.dx === 0 && delta.dy === 0) return [...selection];
       document.mutate('Move selection', (draft) => {
-        applyMove(session.originals, delta.dx, delta.dy, draft)
-      })
-      return [...selection]
+        applyMove(session.originals, delta.dx, delta.dy, draft);
+      });
+      return [...selection];
     }
     case 'resize': {
-      const delta = gridDelta(start, end, context)
-      if (delta.dx === 0 && delta.dy === 0) return [...selection]
-      const bounds = resizedBounds(
-        session.origin,
-        session.size,
-        session.handle,
-        delta.dx,
-        delta.dy,
-        Math.max(1, context.gridStep)
-      )
+      const delta = gridDelta(start, end, context);
+      if (delta.dx === 0 && delta.dy === 0) return [...selection];
+      const bounds = resizedBounds(session.origin, session.size, session.handle, delta.dx, delta.dy, Math.max(1, context.gridStep));
       document.mutate('Resize selection', (draft) => {
-        applyBounds(session.selection, bounds.origin, bounds.size, draft)
-      })
-      return [...selection]
+        applyBounds(session.selection, bounds.origin, bounds.size, draft);
+      });
+      return [...selection];
     }
     case 'rotate': {
-      commitRotation(session.npcIndex, end, document, sector, context)
-      return [...selection]
+      commitRotation(session.npcIndex, end, document, sector, context);
+      return [...selection];
     }
     case 'marquee': {
       // A tap-sized marquee is just a click on empty ground: the deselection already happened
       // in `beginSession`, and a zero-size rect must not intersect-select whatever record's
       // projection happens to pass under the point.
       if (Math.hypot(end.x - start.x, end.y - start.y) < TAP_TRANSLATION_THRESHOLD_PT) {
-        return [...selection]
+        return [...selection];
       }
       const rect = {
         x: Math.min(start.x, end.x),
         y: Math.min(start.y, end.y),
         width: Math.abs(end.x - start.x),
         height: Math.abs(end.y - start.y),
-      }
-      const hits = marqueeSelections(sector, rect, context)
-      if (!additive) return hits
-      const merged = [...selection]
+      };
+      const hits = marqueeSelections(sector, rect, context);
+      if (!additive) return hits;
+      const merged = [...selection];
       for (const hit of hits) {
-        if (!containsSelection(merged, hit)) merged.push(hit)
+        if (!containsSelection(merged, hit)) merged.push(hit);
       }
-      return merged
+      return merged;
     }
   }
 }
@@ -286,21 +262,15 @@ export function endSession(
  * A grab that comes back to (essentially) the current heading is a no-op — committing it
  * would register a do-nothing undo entry for every handle click.
  */
-function commitRotation(
-  index: number,
-  end: ScreenPoint,
-  document: DragCommitTarget,
-  sector: Sector,
-  context: DragContext
-): void {
-  const npc = sector.npcs[index]
-  if (npc === undefined) return
-  const facing = headingFromDrag(end, npc, context)
-  if (Math.abs(angularDistance(facing, npc.facing)) <= 0.01) return
+function commitRotation(index: number, end: ScreenPoint, document: DragCommitTarget, sector: Sector, context: DragContext): void {
+  const npc = sector.npcs[index];
+  if (npc === undefined) return;
+  const facing = headingFromDrag(end, npc, context);
+  if (Math.abs(angularDistance(facing, npc.facing)) <= 0.01) return;
   document.mutate('Rotate NPC', (draft) => {
-    const target = draft.npcs[index]
-    if (target !== undefined) target.facing = facing
-  })
+    const target = draft.npcs[index];
+    if (target !== undefined) target.facing = facing;
+  });
 }
 
 /**
@@ -309,29 +279,25 @@ function commitRotation(
  * Derived from the live camera so drawing and hit-testing cannot disagree.
  */
 export function legacyPixelsPerViewportPoint(context: DragContext): number {
-  if (context.viewport.height <= 0) return 1
-  const scale = context.camera.top
-  return (scale * 2) / context.viewport.height / ORTHO_RIG.worldUnitsPerPixel
+  if (context.viewport.height <= 0) return 1;
+  const scale = context.camera.top;
+  return (scale * 2) / context.viewport.height / ORTHO_RIG.worldUnitsPerPixel;
 }
 
 /**
  * Quantized grid delta between two viewport points. Quantizing the delta (not the endpoints)
  * keeps a group move's relative offsets intact.
  */
-export function gridDelta(
-  start: ScreenPoint,
-  end: ScreenPoint,
-  context: DragContext
-): { dx: number; dy: number } {
-  const from = floorPixelAtScreen(context.camera, context.viewport, start)
-  const to = floorPixelAtScreen(context.camera, context.viewport, end)
-  const rawX = Math.round(to.x - from.x)
-  const rawY = Math.round(to.y - from.y)
-  if (context.gridStep <= 0) return { dx: rawX, dy: rawY }
+export function gridDelta(start: ScreenPoint, end: ScreenPoint, context: DragContext): { dx: number; dy: number } {
+  const from = floorPixelAtScreen(context.camera, context.viewport, start);
+  const to = floorPixelAtScreen(context.camera, context.viewport, end);
+  const rawX = Math.round(to.x - from.x);
+  const rawY = Math.round(to.y - from.y);
+  if (context.gridStep <= 0) return { dx: rawX, dy: rawY };
   return {
     dx: Math.trunc(rawX / context.gridStep) * context.gridStep,
     dy: Math.trunc(rawY / context.gridStep) * context.gridStep,
-  }
+  };
 }
 
 /**
@@ -344,45 +310,41 @@ export function placementBounds(
   anchor: GridPoint,
   start: ScreenPoint,
   end: ScreenPoint,
-  context: DragContext
+  context: DragContext,
 ): { origin: GridPoint; size: GridSize } {
-  const translation = Math.hypot(end.x - start.x, end.y - start.y)
+  const translation = Math.hypot(end.x - start.x, end.y - start.y);
   switch (tool) {
     case 'select':
     case 'npc':
     case 'monster':
-      return { origin: anchor, size: { ...DEFAULT_FOOTPRINT } }
+      return { origin: anchor, size: { ...DEFAULT_FOOTPRINT } };
     case 'object':
     case 'mask':
     case 'portal':
     case 'floorPatch': {
       if (translation < TAP_TRANSLATION_THRESHOLD_PT) {
-        return { origin: anchor, size: { ...DEFAULT_FOOTPRINT } }
+        return { origin: anchor, size: { ...DEFAULT_FOOTPRINT } };
       }
-      const grid = gridPoint(context.camera, context.viewport, end)
+      const grid = gridPoint(context.camera, context.viewport, end);
       const far = {
         x: quantize(grid.x, context.gridStep),
         y: quantize(grid.y, context.gridStep),
-      }
-      return rubberBandBounds(anchor, far, Math.max(1, context.gridStep))
+      };
+      return rubberBandBounds(anchor, far, Math.max(1, context.gridStep));
     }
   }
 }
 
 /** Normalized rect between two quantized grid points, at least `minExtent` per axis. */
-export function rubberBandBounds(
-  anchor: GridPoint,
-  point: GridPoint,
-  minExtent: number
-): { origin: GridPoint; size: GridSize } {
-  const minX = Math.min(anchor.x, point.x)
-  const minY = Math.min(anchor.y, point.y)
-  const width = Math.max(Math.abs(point.x - anchor.x), minExtent)
-  const height = Math.max(Math.abs(point.y - anchor.y), minExtent)
+export function rubberBandBounds(anchor: GridPoint, point: GridPoint, minExtent: number): { origin: GridPoint; size: GridSize } {
+  const minX = Math.min(anchor.x, point.x);
+  const minY = Math.min(anchor.y, point.y);
+  const width = Math.max(Math.abs(point.x - anchor.x), minExtent);
+  const height = Math.max(Math.abs(point.y - anchor.y), minExtent);
   return {
     origin: { x: clampToInt16(minX), y: clampToInt16(minY) },
     size: { width: clampToInt16(width), height: clampToInt16(height) },
-  }
+  };
 }
 
 /**
@@ -398,50 +360,47 @@ export function resizedBounds(
   handle: ResizeHandle,
   dx: number,
   dy: number,
-  minExtent: number
+  minExtent: number,
 ): { origin: GridPoint; size: GridSize } {
-  const INT16_MIN = -32_768
-  const INT16_MAX = 32_767
-  let minX = origin.x
-  let minY = origin.y
-  let maxX = minX + size.width
-  let maxY = minY + size.height
+  const INT16_MIN = -32_768;
+  const INT16_MAX = 32_767;
+  let minX = origin.x;
+  let minY = origin.y;
+  let maxX = minX + size.width;
+  let maxY = minY + size.height;
   if (movesLeftEdge(handle)) {
-    minX = Math.min(minX + dx, maxX - minExtent)
-    minX = Math.min(Math.max(minX, INT16_MIN, maxX - INT16_MAX), maxX - minExtent)
+    minX = Math.min(minX + dx, maxX - minExtent);
+    minX = Math.min(Math.max(minX, INT16_MIN, maxX - INT16_MAX), maxX - minExtent);
   }
   if (movesRightEdge(handle)) {
-    maxX = Math.max(maxX + dx, minX + minExtent)
-    maxX = Math.max(Math.min(maxX, INT16_MAX, minX + INT16_MAX), minX + minExtent)
+    maxX = Math.max(maxX + dx, minX + minExtent);
+    maxX = Math.max(Math.min(maxX, INT16_MAX, minX + INT16_MAX), minX + minExtent);
   }
   if (movesTopEdge(handle)) {
-    minY = Math.min(minY + dy, maxY - minExtent)
-    minY = Math.min(Math.max(minY, INT16_MIN, maxY - INT16_MAX), maxY - minExtent)
+    minY = Math.min(minY + dy, maxY - minExtent);
+    minY = Math.min(Math.max(minY, INT16_MIN, maxY - INT16_MAX), maxY - minExtent);
   }
   if (movesBottomEdge(handle)) {
-    maxY = Math.max(maxY + dy, minY + minExtent)
-    maxY = Math.max(Math.min(maxY, INT16_MAX, minY + INT16_MAX), minY + minExtent)
+    maxY = Math.max(maxY + dy, minY + minExtent);
+    maxY = Math.max(Math.min(maxY, INT16_MAX, minY + INT16_MAX), minY + minExtent);
   }
   return {
     origin: { x: clampToInt16(minX), y: clampToInt16(minY) },
     size: { width: clampToInt16(maxX - minX), height: clampToInt16(maxY - minY) },
-  }
+  };
 }
 
 /**
  * The 8 handle centers on a record's bounds, in legacy pixels. Hit-testing projects these,
  * and the overlay draws the same centers, so the visible and grabbable handles cannot drift.
  */
-export function handleCenters(
-  origin: GridPoint,
-  size: GridSize
-): { handle: ResizeHandle; pixel: { x: number; y: number } }[] {
-  const minX = origin.x
-  const minY = origin.y
-  const maxX = minX + size.width
-  const maxY = minY + size.height
-  const midX = (minX + maxX) / 2
-  const midY = (minY + maxY) / 2
+export function handleCenters(origin: GridPoint, size: GridSize): { handle: ResizeHandle; pixel: { x: number; y: number } }[] {
+  const minX = origin.x;
+  const minY = origin.y;
+  const maxX = minX + size.width;
+  const maxY = minY + size.height;
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
   const centers: Record<ResizeHandle, { x: number; y: number }> = {
     topLeft: { x: minX, y: minY },
     top: { x: midX, y: minY },
@@ -451,38 +410,29 @@ export function handleCenters(
     bottomLeft: { x: minX, y: maxY },
     bottom: { x: midX, y: maxY },
     bottomRight: { x: maxX, y: maxY },
-  }
-  return RESIZE_HANDLES.map((handle) => ({ handle, pixel: centers[handle] }))
+  };
+  return RESIZE_HANDLES.map((handle) => ({ handle, pixel: centers[handle] }));
 }
 
 /** The handle under a viewport point, if any. */
-export function hitHandle(
-  location: ScreenPoint,
-  origin: GridPoint,
-  size: GridSize,
-  context: DragContext
-): ResizeHandle | undefined {
+export function hitHandle(location: ScreenPoint, origin: GridPoint, size: GridSize, context: DragContext): ResizeHandle | undefined {
   for (const { handle, pixel } of handleCenters(origin, size)) {
-    if (handleHitRect(pixel, context).contains(location)) return handle
+    if (handleHitRect(pixel, context).contains(location)) return handle;
   }
-  return undefined
+  return undefined;
 }
 
 interface HitRect {
-  contains(point: ScreenPoint): boolean
+  contains(point: ScreenPoint): boolean;
 }
 
 /** Constant-screen-size hit rect centered on a legacy pixel's viewport projection. */
 function handleHitRect(pixel: { x: number; y: number }, context: DragContext): HitRect {
-  const projected = screenAtFloorPixel(context.camera, context.viewport, pixel)
-  const half = HANDLE_HIT_EXTENT_PT / 2
+  const projected = screenAtFloorPixel(context.camera, context.viewport, pixel);
+  const half = HANDLE_HIT_EXTENT_PT / 2;
   return {
-    contains: (point) =>
-      point.x >= projected.x - half &&
-      point.x <= projected.x + half &&
-      point.y >= projected.y - half &&
-      point.y <= projected.y + half,
-  }
+    contains: (point) => point.x >= projected.x - half && point.x <= projected.x + half && point.y >= projected.y - half && point.y <= projected.y + half,
+  };
 }
 
 /**
@@ -490,16 +440,16 @@ function handleHitRect(pixel: { x: number; y: number }, context: DragContext): H
  * the floor rect to a rotated convex quad on screen.
  */
 export function projectedCorners(origin: GridPoint, size: GridSize, context: DragContext): ScreenPoint[] {
-  const minX = origin.x
-  const minY = origin.y
-  const maxX = minX + size.width
-  const maxY = minY + size.height
+  const minX = origin.x;
+  const minY = origin.y;
+  const maxX = minX + size.width;
+  const maxY = minY + size.height;
   return [
     { x: minX, y: minY },
     { x: maxX, y: minY },
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
-  ].map((pixel) => screenAtFloorPixel(context.camera, context.viewport, pixel))
+  ].map((pixel) => screenAtFloorPixel(context.camera, context.viewport, pixel));
 }
 
 /**
@@ -507,19 +457,15 @@ export function projectedCorners(origin: GridPoint, size: GridSize, context: Dra
  * (separating axes), not its bounding box — a rotated floor rect's bounding box covers far
  * more screen than the record and would marquee-select across empty ground.
  */
-export function marqueeSelections(
-  sector: Sector,
-  rect: { x: number; y: number; width: number; height: number },
-  context: DragContext
-): EditorSelection[] {
-  const hits: EditorSelection[] = []
+export function marqueeSelections(sector: Sector, rect: { x: number; y: number; width: number; height: number }, context: DragContext): EditorSelection[] {
+  const hits: EditorSelection[] = [];
   for (const candidate of candidateSelections(sector, 'select')) {
-    const bounds = selectionBounds(candidate, sector)
-    if (bounds === undefined) continue
-    const quad = projectedCorners(bounds.origin, bounds.size, context)
-    if (rectIntersectsConvexQuad(rect, quad)) hits.push(candidate)
+    const bounds = selectionBounds(candidate, sector);
+    if (bounds === undefined) continue;
+    const quad = projectedCorners(bounds.origin, bounds.size, context);
+    if (rectIntersectsConvexQuad(rect, quad)) hits.push(candidate);
   }
-  return hits
+  return hits;
 }
 
 /**
@@ -527,35 +473,32 @@ export function marqueeSelections(
  * order: the shapes overlap unless some axis — the rect's two, or a quad edge normal —
  * separates their projections.
  */
-export function rectIntersectsConvexQuad(
-  rect: { x: number; y: number; width: number; height: number },
-  quad: readonly ScreenPoint[]
-): boolean {
+export function rectIntersectsConvexQuad(rect: { x: number; y: number; width: number; height: number }, quad: readonly ScreenPoint[]): boolean {
   const rectCorners: ScreenPoint[] = [
     { x: rect.x, y: rect.y },
     { x: rect.x + rect.width, y: rect.y },
     { x: rect.x + rect.width, y: rect.y + rect.height },
     { x: rect.x, y: rect.y + rect.height },
-  ]
+  ];
   const axes: ScreenPoint[] = [
     { x: 1, y: 0 },
     { x: 0, y: 1 },
-  ]
+  ];
   for (let index = 0; index < quad.length; index += 1) {
-    const current = quad[index]!
-    const next = quad[(index + 1) % quad.length]!
-    axes.push({ x: current.y - next.y, y: next.x - current.x })
+    const current = quad[index]!;
+    const next = quad[(index + 1) % quad.length]!;
+    axes.push({ x: current.y - next.y, y: next.x - current.x });
   }
   for (const axis of axes) {
     const span = (points: readonly ScreenPoint[]): { min: number; max: number } => {
-      const projections = points.map((point) => point.x * axis.x + point.y * axis.y)
-      return { min: Math.min(...projections), max: Math.max(...projections) }
-    }
-    const rectSpan = span(rectCorners)
-    const quadSpan = span(quad)
-    if (rectSpan.max < quadSpan.min || quadSpan.max < rectSpan.min) return false
+      const projections = points.map((point) => point.x * axis.x + point.y * axis.y);
+      return { min: Math.min(...projections), max: Math.max(...projections) };
+    };
+    const rectSpan = span(rectCorners);
+    const quadSpan = span(quad);
+    if (rectSpan.max < quadSpan.min || quadSpan.max < rectSpan.min) return false;
   }
-  return true
+  return true;
 }
 
 /**
@@ -566,103 +509,90 @@ export function rectIntersectsConvexQuad(
 export function headingFromDrag(
   location: ScreenPoint,
   npc: { spawnOrigin: GridPoint; spawnBoxSize: GridSize; facing: Heading },
-  context: DragContext
+  context: DragContext,
 ): Heading {
-  const point = floorPixelAtScreen(context.camera, context.viewport, location)
-  const center = spawnBoxCenter(npc.spawnOrigin, npc.spawnBoxSize)
-  const dx = point.x - center.x
-  const dy = point.y - center.y
-  if (dx === 0 && dy === 0) return npc.facing
-  return headingFromVector(dx, dy)
+  const point = floorPixelAtScreen(context.camera, context.viewport, location);
+  const center = spawnBoxCenter(npc.spawnOrigin, npc.spawnBoxSize);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  if (dx === 0 && dy === 0) return npc.facing;
+  return headingFromVector(dx, dy);
 }
 
 export function spawnBoxCenter(origin: GridPoint, size: GridSize): { x: number; y: number } {
-  return { x: origin.x + size.width / 2, y: origin.y + size.height / 2 }
+  return { x: origin.x + size.width / 2, y: origin.y + size.height / 2 };
 }
 
 /**
  * The facing handle's legacy-pixel position: offset from the spawn-box center along the
  * heading, cleared past the box's half extent so it never sits inside the rect.
  */
-export function facingHandlePixel(
-  origin: GridPoint,
-  size: GridSize,
-  facing: Heading,
-  clearancePx: number
-): { x: number; y: number } {
-  const center = spawnBoxCenter(origin, size)
-  const halfExtent = Math.max(size.width, size.height) / 2
-  const radians = headingRadians(facing)
+export function facingHandlePixel(origin: GridPoint, size: GridSize, facing: Heading, clearancePx: number): { x: number; y: number } {
+  const center = spawnBoxCenter(origin, size);
+  const halfExtent = Math.max(size.width, size.height) / 2;
+  const radians = headingRadians(facing);
   return {
     x: center.x + Math.sin(radians) * (halfExtent + clearancePx),
     y: center.y + Math.cos(radians) * (halfExtent + clearancePx),
-  }
+  };
 }
 
 /** Origin snapshot of every selected record, taken at press time. */
-export function origins(
-  selections: readonly EditorSelection[],
-  sector: Sector
-): { selection: EditorSelection; origin: GridPoint }[] {
-  const snapshots: { selection: EditorSelection; origin: GridPoint }[] = []
+export function origins(selections: readonly EditorSelection[], sector: Sector): { selection: EditorSelection; origin: GridPoint }[] {
+  const snapshots: { selection: EditorSelection; origin: GridPoint }[] = [];
   for (const selection of selections) {
-    const bounds = selectionBounds(selection, sector)
-    if (bounds !== undefined) snapshots.push({ selection, origin: bounds.origin })
+    const bounds = selectionBounds(selection, sector);
+    if (bounds !== undefined) snapshots.push({ selection, origin: bounds.origin });
   }
-  return snapshots
+  return snapshots;
 }
 
 /** Shifts every snapshotted origin by the quantized delta, clamped back into the Int16 grid. */
-export function applyMove(
-  originals: readonly { selection: EditorSelection; origin: GridPoint }[],
-  dx: number,
-  dy: number,
-  sector: Sector
-): void {
+export function applyMove(originals: readonly { selection: EditorSelection; origin: GridPoint }[], dx: number, dy: number, sector: Sector): void {
   for (const { selection, origin } of originals) {
-    const moved = { x: clampToInt16(origin.x + dx), y: clampToInt16(origin.y + dy) }
+    const moved = { x: clampToInt16(origin.x + dx), y: clampToInt16(origin.y + dy) };
     switch (selection.kind) {
       case 'object': {
-        const object = sector.objects[selection.index]
+        const object = sector.objects[selection.index];
         if (object !== undefined) {
-          object.x = moved.x
-          object.y = moved.y
+          object.x = moved.x;
+          object.y = moved.y;
         }
-        break
+        break;
       }
       case 'mask': {
-        const mask = sector.collisionMasks[selection.index]
+        const mask = sector.collisionMasks[selection.index];
         if (mask !== undefined) {
-          mask.x = moved.x
-          mask.y = moved.y
+          mask.x = moved.x;
+          mask.y = moved.y;
         }
-        break
+        break;
       }
       case 'portal': {
-        const portal = sector.portals[selection.index]
+        const portal = sector.portals[selection.index];
         if (portal !== undefined) {
-          portal.x = moved.x
-          portal.y = moved.y
+          portal.x = moved.x;
+          portal.y = moved.y;
         }
-        break
+        break;
       }
       case 'npc': {
-        const npc = sector.npcs[selection.index]
-        if (npc !== undefined) npc.spawnOrigin = moved
-        break
+        const npc = sector.npcs[selection.index];
+        if (npc !== undefined) npc.spawnOrigin = moved;
+        break;
       }
       case 'monsterSpawn': {
-        const spawn = sector.monsterSpawns[selection.index]
-        if (spawn !== undefined) spawn.spawnOrigin = moved
-        break
+        const spawn = sector.monsterSpawns[selection.index];
+        if (spawn !== undefined) spawn.spawnOrigin = moved;
+        break;
       }
       case 'floorPatch': {
-        const patch = sector.floorPatches[selection.index]
+        const patch = sector.floorPatches[selection.index];
         if (patch !== undefined) {
-          patch.x = moved.x
-          patch.y = moved.y
+          patch.x = moved.x;
+          patch.y = moved.y;
         }
-        break
+        break;
       }
     }
   }
@@ -672,68 +602,63 @@ export function applyMove(
  * Writes resized bounds back to the selected record (an NPC/monster selection resizes its
  * spawn box; the inspector refines the other size fields).
  */
-export function applyBounds(
-  selection: EditorSelection,
-  origin: GridPoint,
-  size: GridSize,
-  sector: Sector
-): void {
+export function applyBounds(selection: EditorSelection, origin: GridPoint, size: GridSize, sector: Sector): void {
   switch (selection.kind) {
     case 'object': {
-      const object = sector.objects[selection.index]
+      const object = sector.objects[selection.index];
       if (object !== undefined) {
-        object.x = origin.x
-        object.y = origin.y
-        object.sourceWidth = size.width
-        object.sourceHeight = size.height
+        object.x = origin.x;
+        object.y = origin.y;
+        object.sourceWidth = size.width;
+        object.sourceHeight = size.height;
       }
-      break
+      break;
     }
     case 'mask': {
-      const mask = sector.collisionMasks[selection.index]
+      const mask = sector.collisionMasks[selection.index];
       if (mask !== undefined) {
-        mask.x = origin.x
-        mask.y = origin.y
-        mask.width = size.width
-        mask.height = size.height
+        mask.x = origin.x;
+        mask.y = origin.y;
+        mask.width = size.width;
+        mask.height = size.height;
       }
-      break
+      break;
     }
     case 'portal': {
-      const portal = sector.portals[selection.index]
+      const portal = sector.portals[selection.index];
       if (portal !== undefined) {
-        portal.x = origin.x
-        portal.y = origin.y
-        portal.width = size.width
-        portal.height = size.height
+        portal.x = origin.x;
+        portal.y = origin.y;
+        portal.width = size.width;
+        portal.height = size.height;
       }
-      break
+      break;
     }
     case 'npc': {
-      const npc = sector.npcs[selection.index]
+      const npc = sector.npcs[selection.index];
       if (npc !== undefined) {
-        npc.spawnOrigin = origin
-        npc.spawnBoxSize = size
+        npc.spawnOrigin = origin;
+        npc.spawnBoxSize = size;
       }
-      break
+      break;
     }
     case 'monsterSpawn': {
-      const spawn = sector.monsterSpawns[selection.index]
+      const spawn = sector.monsterSpawns[selection.index];
       if (spawn !== undefined) {
-        spawn.spawnOrigin = origin
-        spawn.spawnBoxSize = size
+        spawn.spawnOrigin = origin;
+        spawn.spawnBoxSize = size;
       }
-      break
+      break;
     }
     case 'floorPatch': {
-      const patch = sector.floorPatches[selection.index]
+      const patch = sector.floorPatches[selection.index];
       if (patch !== undefined) {
-        patch.x = origin.x
-        patch.y = origin.y
-        patch.width = size.width
-        patch.height = size.height
+        patch.x = origin.x;
+        patch.y = origin.y;
+        patch.width = size.width;
+        patch.height = size.height;
       }
-      break
+      break;
     }
   }
 }
@@ -742,16 +667,10 @@ export function applyBounds(
  * Appends a freshly placed record with the default field values, returning its selection
  * (the inspector then refines the fields in place).
  */
-export function placeRecord(
-  tool: EditorTool,
-  origin: GridPoint,
-  size: GridSize,
-  sector: Sector,
-  defaults: PlacementDefaults
-): EditorSelection | undefined {
+export function placeRecord(tool: EditorTool, origin: GridPoint, size: GridSize, sector: Sector, defaults: PlacementDefaults): EditorSelection | undefined {
   switch (tool) {
     case 'select':
-      return undefined
+      return undefined;
     case 'object':
       sector.objects.push({
         x: origin.x,
@@ -761,11 +680,11 @@ export function placeRecord(
         sourceHeight: size.height,
         priority: 0,
         rotation: 0,
-      })
-      return { kind: 'object', index: sector.objects.length - 1 }
+      });
+      return { kind: 'object', index: sector.objects.length - 1 };
     case 'mask':
-      sector.collisionMasks.push({ x: origin.x, y: origin.y, width: size.width, height: size.height })
-      return { kind: 'mask', index: sector.collisionMasks.length - 1 }
+      sector.collisionMasks.push({ x: origin.x, y: origin.y, width: size.width, height: size.height });
+      return { kind: 'mask', index: sector.collisionMasks.length - 1 };
     case 'portal':
       sector.portals.push({
         x: origin.x,
@@ -774,8 +693,8 @@ export function placeRecord(
         height: size.height,
         targetSectorName: '',
         direction: 'outboundTrigger',
-      })
-      return { kind: 'portal', index: sector.portals.length - 1 }
+      });
+      return { kind: 'portal', index: sector.portals.length - 1 };
     case 'npc':
       sector.npcs.push({
         spawnOrigin: origin,
@@ -786,8 +705,8 @@ export function placeRecord(
         facing: 0,
         behaviorTag: 0,
         dialogScript: '',
-      })
-      return { kind: 'npc', index: sector.npcs.length - 1 }
+      });
+      return { kind: 'npc', index: sector.npcs.length - 1 };
     case 'monster':
       sector.monsterSpawns.push({
         spawnOrigin: origin,
@@ -800,8 +719,8 @@ export function placeRecord(
         spawnBalance: 100,
         spawnMana: 100,
         aiScriptIndex: 0,
-      })
-      return { kind: 'monsterSpawn', index: sector.monsterSpawns.length - 1 }
+      });
+      return { kind: 'monsterSpawn', index: sector.monsterSpawns.length - 1 };
     case 'floorPatch':
       sector.floorPatches.push({
         floorMaterialID: defaults.floorMaterialID,
@@ -809,8 +728,8 @@ export function placeRecord(
         y: origin.y,
         width: size.width,
         height: size.height,
-      })
-      return { kind: 'floorPatch', index: sector.floorPatches.length - 1 }
+      });
+      return { kind: 'floorPatch', index: sector.floorPatches.length - 1 };
   }
 }
 
@@ -818,16 +737,16 @@ function placementDescription(tool: EditorTool): string {
   switch (tool) {
     case 'select':
     case 'object':
-      return 'Place object'
+      return 'Place object';
     case 'mask':
-      return 'Place collision mask'
+      return 'Place collision mask';
     case 'portal':
-      return 'Place sector portal'
+      return 'Place sector portal';
     case 'npc':
-      return 'Place NPC'
+      return 'Place NPC';
     case 'monster':
-      return 'Place monster spawn'
+      return 'Place monster spawn';
     case 'floorPatch':
-      return 'Place floor patch'
+      return 'Place floor patch';
   }
 }

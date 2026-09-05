@@ -1,5 +1,5 @@
-import { FLOAT_PI, f32 } from '@somnio/core'
-import { clamp } from '@somnio/core'
+import { FLOAT_PI, f32 } from '@somnio/core';
+import { clamp } from '@somnio/core';
 
 /**
  * The orthographic camera rig — pure placement math for the
@@ -23,21 +23,21 @@ export const ORTHO_RIG = {
    * a few ULPs off `f32(pixel) * f32(0.02)` even after narrowing the result.
    */
   worldUnitsPerPixel: f32(0.02),
-} as const
+} as const;
 
-export const PLAYER_ZOOM = { minFactor: 0.5, maxFactor: 2.0, scrollGain: 0.015 } as const
+export const PLAYER_ZOOM = { minFactor: 0.5, maxFactor: 2.0, scrollGain: 0.015 } as const;
 
 /** Derived so the rig bound and the zoom clamp agree by construction. */
-export const MIN_SCALE = ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor
+export const MIN_SCALE = ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor;
 
 export function clampedScale(scale: number): number {
-  return clamp(scale, MIN_SCALE, ORTHO_RIG.maxScale)
+  return clamp(scale, MIN_SCALE, ORTHO_RIG.maxScale);
 }
 
 export interface Vec3 {
-  x: number
-  y: number
-  z: number
+  x: number;
+  y: number;
+  z: number;
 }
 
 /**
@@ -52,11 +52,8 @@ export interface Vec3 {
  * value that is already a half-height halves it again, and the whole world renders at 2x
  * magnification — which looks plausible until it is compared with the reference framing.
  */
-export function frustumBounds(
-  scale: number,
-  aspect: number
-): { left: number; right: number; top: number; bottom: number } {
-  return { left: -scale * aspect, right: scale * aspect, top: scale, bottom: -scale }
+export function frustumBounds(scale: number, aspect: number): { left: number; right: number; top: number; bottom: number } {
+  return { left: -scale * aspect, right: scale * aspect, top: scale, bottom: -scale };
 }
 
 /**
@@ -68,7 +65,7 @@ export function worldPosition(pixelX: number, pixelY: number): Vec3 {
     x: f32(f32(pixelX) * ORTHO_RIG.worldUnitsPerPixel),
     y: 0,
     z: f32(f32(pixelY) * ORTHO_RIG.worldUnitsPerPixel),
-  }
+  };
 }
 
 /** Inverse of `worldPosition`, keeping the pixel-to-world axis mapping inside the rig. */
@@ -76,7 +73,7 @@ export function legacyPoint(position: Vec3): { x: number; y: number } {
   return {
     x: f32(position.x / ORTHO_RIG.worldUnitsPerPixel),
     y: f32(position.z / ORTHO_RIG.worldUnitsPerPixel),
-  }
+  };
 }
 
 /**
@@ -88,31 +85,31 @@ export function legacyPoint(position: Vec3): { x: number; y: number } {
  * functions with no narrowing.
  */
 export function worldMovement(screenDX: number, screenDY: number): { dx: number; dy: number } {
-  const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180
+  const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
   return {
     dx: screenDX * Math.cos(yaw) + screenDY * Math.sin(yaw),
     dy: -screenDX * Math.sin(yaw) + screenDY * Math.cos(yaw),
-  }
+  };
 }
 
 /** Unit direction from the focus point toward the camera, from the fixed pitch and yaw. */
 export function offsetDirection(): Vec3 {
-  const pitch = f32(f32(ORTHO_RIG.pitchDegrees * FLOAT_PI) / 180)
-  const yaw = f32(f32(ORTHO_RIG.yawDegrees * FLOAT_PI) / 180)
+  const pitch = f32(f32(ORTHO_RIG.pitchDegrees * FLOAT_PI) / 180);
+  const yaw = f32(f32(ORTHO_RIG.yawDegrees * FLOAT_PI) / 180);
   return {
     x: f32(f32(Math.cos(pitch)) * f32(Math.sin(yaw))),
     y: f32(Math.sin(pitch)),
     z: f32(f32(Math.cos(pitch)) * f32(Math.cos(yaw))),
-  }
+  };
 }
 
 export function cameraPosition(focus: Vec3): Vec3 {
-  const direction = offsetDirection()
+  const direction = offsetDirection();
   return {
     x: f32(focus.x + f32(direction.x * ORTHO_RIG.cameraDistance)),
     y: f32(focus.y + f32(direction.y * ORTHO_RIG.cameraDistance)),
     z: f32(focus.z + f32(direction.z * ORTHO_RIG.cameraDistance)),
-  }
+  };
 }
 
 /**
@@ -139,12 +136,11 @@ export const WHEEL_NOTCH = {
    * across the range.
    */
   nativeDelta: 3.85,
-} as const
+} as const;
 
 export function wheelDeltaToNativeScale(deltaY: number, deltaMode: number): number {
-  const perNotch =
-    deltaMode === 1 ? WHEEL_NOTCH.lines : deltaMode === 2 ? WHEEL_NOTCH.pages : WHEEL_NOTCH.pixels
-  return (deltaY / perNotch) * WHEEL_NOTCH.nativeDelta
+  const perNotch = deltaMode === 1 ? WHEEL_NOTCH.lines : deltaMode === 2 ? WHEEL_NOTCH.pages : WHEEL_NOTCH.pixels;
+  return (deltaY / perNotch) * WHEEL_NOTCH.nativeDelta;
 }
 
 /**
@@ -152,14 +148,10 @@ export function wheelDeltaToNativeScale(deltaY: number, deltaMode: number): numb
  * tick moves the same *fraction* at either clamp end.
  */
 export function applyScrollZoom(factor: number, deltaY: number): number {
-  return clamp(
-    factor * Math.exp(deltaY * PLAYER_ZOOM.scrollGain),
-    PLAYER_ZOOM.minFactor,
-    PLAYER_ZOOM.maxFactor
-  )
+  return clamp(factor * Math.exp(deltaY * PLAYER_ZOOM.scrollGain), PLAYER_ZOOM.minFactor, PLAYER_ZOOM.maxFactor);
 }
 
 /** The camera scale for a zoom factor: larger factor means more magnified, so smaller scale. */
 export function scaleForZoomFactor(zoomFactor: number): number {
-  return clampedScale(ORTHO_RIG.defaultScale / zoomFactor)
+  return clampedScale(ORTHO_RIG.defaultScale / zoomFactor);
 }

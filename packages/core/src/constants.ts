@@ -40,16 +40,16 @@ export const SOMNIO_CONSTANTS = {
 
   speechBubbleWidthPixels: 150,
   speechBubbleFontSize: 10,
-} as const
+} as const;
 
 /** The one content-count bound both untrusted sector seams (disk and wire) gate on. */
 export function isWithinSectorContentBounds(counts: {
-  objectCount: number
-  collisionMaskCount: number
-  portalCount: number
-  npcCount: number
-  monsterSpawnCount: number
-  floorPatchCount: number
+  objectCount: number;
+  collisionMaskCount: number;
+  portalCount: number;
+  npcCount: number;
+  monsterSpawnCount: number;
+  floorPatchCount: number;
 }): boolean {
   return (
     counts.objectCount <= SOMNIO_CONSTANTS.maxSectorObjects &&
@@ -59,7 +59,7 @@ export function isWithinSectorContentBounds(counts: {
     counts.npcCount <= SOMNIO_CONSTANTS.maxSectorNPCs &&
     counts.monsterSpawnCount <= SOMNIO_CONSTANTS.maxSectorMonsterSpawns &&
     counts.floorPatchCount <= SOMNIO_CONSTANTS.maxSectorFloorPatches
-  )
+  );
 }
 
 /** Positive, within the per-axis cap, and within the area cap. */
@@ -70,5 +70,5 @@ export function isWithinSectorBounds(dimensions: { width: number; height: number
     dimensions.width <= SOMNIO_CONSTANTS.maxSectorDimension &&
     dimensions.height <= SOMNIO_CONSTANTS.maxSectorDimension &&
     dimensions.width * dimensions.height <= SOMNIO_CONSTANTS.maxSectorArea
-  )
+  );
 }

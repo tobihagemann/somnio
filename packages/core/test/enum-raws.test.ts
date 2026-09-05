@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { CHARACTER_CLASS, GENDER } from '../src/characterClass.ts'
-import { TEMPO } from '../src/tempo.ts'
+import { describe, expect, it } from 'vitest';
+import { CHARACTER_CLASS, GENDER } from '../src/characterClass.ts';
+import { TEMPO } from '../src/tempo.ts';
 
 /**
  * Raw-value pins for the enums this package owns. `characterClass` and `gender` travel as opaque
@@ -19,14 +19,14 @@ describe('enum raw values', () => {
       gangster: 5,
       cleric: 6,
       mage: 7,
-    })
-  })
+    });
+  });
 
   it('pins Gender', () => {
-    expect(GENDER).toEqual({ male: 0, female: 1 })
-  })
+    expect(GENDER).toEqual({ male: 0, female: 1 });
+  });
 
   it('pins Tempo', () => {
-    expect(TEMPO).toEqual({ walk: 1, default: 2, run: 4 })
-  })
-})
+    expect(TEMPO).toEqual({ walk: 1, default: 2, run: 4 });
+  });
+});

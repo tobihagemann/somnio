@@ -1,13 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import {
-  angularDistance,
-  heading,
-  headingFromCardinal,
-  headingFromVector,
-  headingRadians,
-  nearestCardinal,
-} from '../src/heading.ts'
-import { FLOAT_PI, f32, ieeeRemainderF32 } from '../src/float.ts'
+import { describe, expect, it } from 'vitest';
+import { angularDistance, heading, headingFromCardinal, headingFromVector, headingRadians, nearestCardinal } from '../src/heading.ts';
+import { FLOAT_PI, f32, ieeeRemainderF32 } from '../src/float.ts';
 
 /**
  * Value pins for the heading model.
@@ -29,15 +22,15 @@ describe('FLOAT_PI is rounded toward zero, not fround', () => {
    * than an isolated rounding difference.
    */
   it('is the round-toward-zero value', () => {
-    expect(FLOAT_PI).toBe(3.141592502593994)
-    expect(FLOAT_PI).not.toBe(Math.fround(Math.PI))
-    expect(FLOAT_PI).toBeLessThan(Math.PI)
-  })
+    expect(FLOAT_PI).toBe(3.141592502593994);
+    expect(FLOAT_PI).not.toBe(Math.fround(Math.PI));
+    expect(FLOAT_PI).toBeLessThan(Math.PI);
+  });
 
   it('is exactly representable in binary32', () => {
-    expect(Math.fround(FLOAT_PI)).toBe(FLOAT_PI)
-  })
-})
+    expect(Math.fround(FLOAT_PI)).toBe(FLOAT_PI);
+  });
+});
 
 describe('headingFromVector preserves the atan2(dx, dy) argument order', () => {
   it.each([
@@ -53,8 +46,8 @@ describe('headingFromVector preserves the atan2(dx, dy) argument order', () => {
     [0, -1, 180],
     [-1, 0, 270],
   ])('vector (%s, %s) is heading %s', (dx, dy, expected) => {
-    expect(headingFromVector(dx, dy)).toBe(expected)
-  })
+    expect(headingFromVector(dx, dy)).toBe(expected);
+  });
 
   /**
    * The antipodal case is the one place `atan2f` and a narrowed binary64 `Math.atan2` diverge:
@@ -63,8 +56,8 @@ describe('headingFromVector preserves the atan2(dx, dy) argument order', () => {
    * regression here means that clamp was removed.
    */
   it('lands exactly on 180 for the antipodal vector', () => {
-    expect(headingFromVector(0, -1)).toBe(180)
-  })
+    expect(headingFromVector(0, -1)).toBe(180);
+  });
 
   /**
    * Guards the argument order specifically. Conventional `atan2(y, x)` would put 0 degrees on
@@ -72,10 +65,10 @@ describe('headingFromVector preserves the atan2(dx, dy) argument order', () => {
    * about the 45-degree diagonal, which still produces plausible-looking values.
    */
   it('puts zero degrees on the +dy (south) axis, not +dx', () => {
-    expect(headingFromVector(0, 1)).toBe(0)
-    expect(headingFromVector(1, 0)).toBeCloseTo(90, 4)
-  })
-})
+    expect(headingFromVector(0, 1)).toBe(0);
+    expect(headingFromVector(1, 0)).toBeCloseTo(90, 4);
+  });
+});
 
 describe('heading wraps into [0, 360) at single precision', () => {
   it.each([
@@ -91,8 +84,8 @@ describe('heading wraps into [0, 360) at single precision', () => {
     [1234.5678, 154.5677490234375],
     [-1234.5678, 205.4322509765625],
   ])('heading(%s) is %s', (input, expected) => {
-    expect(heading(input)).toBe(expected)
-  })
+    expect(heading(input)).toBe(expected);
+  });
 
   /**
    * The documented edge case: a tiny negative rounds `wrapped + 360` back up to exactly 360
@@ -100,15 +93,15 @@ describe('heading wraps into [0, 360) at single precision', () => {
    * input lands on 359.99999999, so this case only exists once the narrowing is in place.
    */
   it('collapses a tiny negative to 0 rather than leaving it at 360', () => {
-    expect(heading(-1e-8)).toBe(0)
-  })
+    expect(heading(-1e-8)).toBe(0);
+  });
 
   it('collapses a non-finite input to 0 instead of propagating NaN', () => {
-    expect(heading(Number.NaN)).toBe(0)
-    expect(heading(Number.POSITIVE_INFINITY)).toBe(0)
-    expect(heading(Number.NEGATIVE_INFINITY)).toBe(0)
-  })
-})
+    expect(heading(Number.NaN)).toBe(0);
+    expect(heading(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(heading(Number.NEGATIVE_INFINITY)).toBe(0);
+  });
+});
 
 describe('angularDistance folds across the seam at single precision', () => {
   it.each([
@@ -121,13 +114,13 @@ describe('angularDistance folds across the seam at single precision', () => {
     [270, 90, -180],
     [33.3, 66.6, 33.29998779296875],
   ])('from %s to %s is %s', (from, to, expected) => {
-    expect(angularDistance(from, to)).toBe(expected)
-  })
+    expect(angularDistance(from, to)).toBe(expected);
+  });
 
   it('measures the real turn across the 0/360 seam, not the naive difference', () => {
-    expect(Math.abs(angularDistance(359, 1))).toBeLessThan(180)
-  })
-})
+    expect(Math.abs(angularDistance(359, 1))).toBeLessThan(180);
+  });
+});
 
 describe('headingRadians', () => {
   it.each([
@@ -138,13 +131,13 @@ describe('headingRadians', () => {
     [359.96875, 6.282639503479004],
     [45.7, 0.7976154685020447],
   ])('heading %s is %s radians', (degrees, expected) => {
-    expect(headingRadians(degrees)).toBe(expected)
-  })
+    expect(headingRadians(degrees)).toBe(expected);
+  });
 
   it('differs from the binary64 result, which is what the narrowing exists to prevent', () => {
-    expect(headingRadians(90)).not.toBe(Math.PI / 2)
-  })
-})
+    expect(headingRadians(90)).not.toBe(Math.PI / 2);
+  });
+});
 
 describe('nearestCardinal owns every boundary by the higher bucket', () => {
   it.each([
@@ -159,15 +152,15 @@ describe('nearestCardinal owns every boundary by the higher bucket', () => {
     [315, 'south'],
     [359.9, 'south'],
   ])('heading %s quantizes to %s', (degrees, expected) => {
-    expect(nearestCardinal(degrees)).toBe(expected)
-  })
+    expect(nearestCardinal(degrees)).toBe(expected);
+  });
 
   it('round-trips every cardinal', () => {
     for (const cardinal of ['south', 'east', 'north', 'west'] as const) {
-      expect(nearestCardinal(headingFromCardinal(cardinal))).toBe(cardinal)
+      expect(nearestCardinal(headingFromCardinal(cardinal))).toBe(cardinal);
     }
-  })
-})
+  });
+});
 
 /**
  * The round-half-to-even tie correction in `ieeeRemainderF32`.
@@ -182,16 +175,16 @@ describe('nearestCardinal owns every boundary by the higher bucket', () => {
  */
 describe('ieeeRemainderF32 handles the exact-half tie', () => {
   it('resolves an exact half-turn toward positive pi', () => {
-    const target = headingRadians(180)
-    expect(target).toBe(FLOAT_PI)
+    const target = headingRadians(180);
+    expect(target).toBe(FLOAT_PI);
 
-    const delta = ieeeRemainderF32(f32(target - 0), f32(2 * FLOAT_PI))
+    const delta = ieeeRemainderF32(f32(target - 0), f32(2 * FLOAT_PI));
 
     // The IEEE remainder rounds the quotient half-to-even: 0.5 rounds to 0, not 1,
     // so the remainder stays +pi rather than flipping to -pi.
-    expect(delta).toBe(FLOAT_PI)
-    expect(Object.is(delta, -FLOAT_PI)).toBe(false)
-  })
+    expect(delta).toBe(FLOAT_PI);
+    expect(Object.is(delta, -FLOAT_PI)).toBe(false);
+  });
 
   /**
    * The negative half of the same tie, which the positive case alone cannot see.
@@ -207,6 +200,6 @@ describe('ieeeRemainderF32 handles the exact-half tie', () => {
     [-5, 2, -1],
     [5, 2, 1],
   ])('resolves ieeeRemainderF32(%i, %i) to %i', (value, divisor, expected) => {
-    expect(ieeeRemainderF32(value, divisor)).toBe(expected)
-  })
-})
+    expect(ieeeRemainderF32(value, divisor)).toBe(expected);
+  });
+});

@@ -1,4 +1,4 @@
-import argon2 from 'argon2'
+import argon2 from 'argon2';
 
 /**
  * Argon2id at the OWASP middle tier (m=19456 KiB, t=2, p=1), producing a self-describing PHC
@@ -11,15 +11,15 @@ const ARGON2_PARAMETERS = {
   timeCost: 2,
   parallelism: 1,
   hashLength: 32,
-} as const
+} as const;
 
 export function hashPassword(rawPassword: string): Promise<string> {
-  return argon2.hash(rawPassword, ARGON2_PARAMETERS)
+  return argon2.hash(rawPassword, ARGON2_PARAMETERS);
 }
 
 /** Throws on a malformed PHC string; resolves `false` on a mismatch. */
 export function verifyPassword(rawPassword: string, encodedHash: string): Promise<boolean> {
-  return argon2.verify(encodedHash, rawPassword)
+  return argon2.verify(encodedHash, rawPassword);
 }
 
 /**
@@ -27,11 +27,8 @@ export function verifyPassword(rawPassword: string, encodedHash: string): Promis
  * cannot distinguish "unknown account" from "wrong password" by response timing. Resolves `false`
  * whenever there is no hash.
  */
-export async function verifyAccountPassword(
-  rawPassword: string,
-  encodedHash: string | undefined
-): Promise<boolean> {
-  if (encodedHash !== undefined) return verifyPassword(rawPassword, encodedHash)
-  await hashPassword(rawPassword)
-  return false
+export async function verifyAccountPassword(rawPassword: string, encodedHash: string | undefined): Promise<boolean> {
+  if (encodedHash !== undefined) return verifyPassword(rawPassword, encodedHash);
+  await hashPassword(rawPassword);
+  return false;
 }

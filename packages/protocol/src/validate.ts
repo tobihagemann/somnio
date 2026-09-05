@@ -1,5 +1,5 @@
-import { WireDecodingError } from './errors.ts'
-import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts'
+import { WireDecodingError } from './errors.ts';
+import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts';
 
 /**
  * Decode-time enforcement primitives: a missing key, a mismatched JSON type, an integer outside
@@ -11,35 +11,35 @@ import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts'
 
 // Re-stated locally on purpose: `@somnio/core` must not become a dependency of the protocol layer,
 // and these are the wire's own bounds. `packages/core/src/geometry.ts` exports the same pair.
-const INT16_MIN = -32_768
-const INT16_MAX = 32_767
+const INT16_MIN = -32_768;
+const INT16_MAX = 32_767;
 /** The largest finite Float32; the wire's continuous fields are Float32 values. */
-const FLOAT32_MAX = 3.4028234663852886e38
-const INT32_MIN = -2_147_483_648
-const INT32_MAX = 2_147_483_647
-const UINT16_MAX = 65_535
+const FLOAT32_MAX = 3.4028234663852886e38;
+const INT32_MIN = -2_147_483_648;
+const INT32_MAX = 2_147_483_647;
+const UINT16_MAX = 65_535;
 
 export function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new WireDecodingError(path, `expected an object, got ${describe(value)}`)
+    throw new WireDecodingError(path, `expected an object, got ${describe(value)}`);
   }
-  return value as Record<string, unknown>
+  return value as Record<string, unknown>;
 }
 
 export function requireString(container: Record<string, unknown>, key: string, path: string): string {
-  const value = container[key]
+  const value = container[key];
   if (typeof value !== 'string') {
-    throw new WireDecodingError(`${path}.${key}`, `expected a string, got ${describe(value)}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected a string, got ${describe(value)}`);
   }
-  return value
+  return value;
 }
 
 export function requireBool(container: Record<string, unknown>, key: string, path: string): boolean {
-  const value = container[key]
+  const value = container[key];
   if (typeof value !== 'boolean') {
-    throw new WireDecodingError(`${path}.${key}`, `expected a bool, got ${describe(value)}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected a bool, got ${describe(value)}`);
   }
-  return value
+  return value;
 }
 
 /**
@@ -47,11 +47,11 @@ export function requireBool(container: Record<string, unknown>, key: string, pat
  * signed range are rejected. JSON has one number type, so both checks live here.
  */
 export function requireInt16(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, INT16_MIN, INT16_MAX, 'Int16')
+  return requireInteger(container, key, path, INT16_MIN, INT16_MAX, 'Int16');
 }
 
 export function requireUInt16(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, 0, UINT16_MAX, 'UInt16')
+  return requireInteger(container, key, path, 0, UINT16_MAX, 'UInt16');
 }
 
 /**
@@ -59,28 +59,21 @@ export function requireUInt16(container: Record<string, unknown>, key: string, p
  * seconds against an `Int16` ceiling of 32,767.
  */
 export function requireInt32(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, INT32_MIN, INT32_MAX, 'Int32')
+  return requireInteger(container, key, path, INT32_MIN, INT32_MAX, 'Int32');
 }
 
-function requireInteger(
-  container: Record<string, unknown>,
-  key: string,
-  path: string,
-  min: number,
-  max: number,
-  typeName: string
-): number {
-  const value = container[key]
+function requireInteger(container: Record<string, unknown>, key: string, path: string, min: number, max: number, typeName: string): number {
+  const value = container[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got ${describe(value)}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got ${describe(value)}`);
   }
   if (!Number.isInteger(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got fractional ${value}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got fractional ${value}`);
   }
   if (value < min || value > max) {
-    throw new WireDecodingError(`${path}.${key}`, `${typeName} out of range: ${value}`)
+    throw new WireDecodingError(`${path}.${key}`, `${typeName} out of range: ${value}`);
   }
-  return value
+  return value;
 }
 
 /**
@@ -89,64 +82,52 @@ function requireInteger(
  * rather than propagating NaN into the transform math.
  */
 export function requireFloat(container: Record<string, unknown>, key: string, path: string): number {
-  const value = container[key]
+  const value = container[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected a finite number, got ${describe(value)}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected a finite number, got ${describe(value)}`);
   }
   // Binary64-finite is not enough: the field is Float32, so anything past `FLOAT32_MAX` is
   // rejected, down to 3.5e38 and not just absurd magnitudes. Accepting such a value here means
   // `Math.fround` turns it into Infinity and the heading math then produces NaN, so the entity's
   // transform goes invalid and it vanishes rather than being rejected at the boundary.
   if (Math.abs(value) > FLOAT32_MAX) {
-    throw new WireDecodingError(`${path}.${key}`, `exceeds Float range (got ${value})`)
+    throw new WireDecodingError(`${path}.${key}`, `exceeds Float range (got ${value})`);
   }
-  return value
+  return value;
 }
 
 export function requireArray(container: Record<string, unknown>, key: string, path: string): unknown[] {
-  const value = container[key]
+  const value = container[key];
   if (!Array.isArray(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected an array, got ${describe(value)}`)
+    throw new WireDecodingError(`${path}.${key}`, `expected an array, got ${describe(value)}`);
   }
-  return value
+  return value;
 }
 
-export function requireNested(
-  container: Record<string, unknown>,
-  key: string,
-  path: string
-): Record<string, unknown> {
-  return requireObject(container[key], `${path}.${key}`)
+export function requireNested(container: Record<string, unknown>, key: string, path: string): Record<string, unknown> {
+  return requireObject(container[key], `${path}.${key}`);
 }
 
 export function mapArray<T>(
   container: Record<string, unknown>,
   key: string,
   path: string,
-  decodeElement: (element: Record<string, unknown>, elementPath: string) => T
+  decodeElement: (element: Record<string, unknown>, elementPath: string) => T,
 ): T[] {
   return requireArray(container, key, path).map((element, index) =>
-    decodeElement(requireObject(element, `${path}.${key}[${index}]`), `${path}.${key}[${index}]`)
-  )
+    decodeElement(requireObject(element, `${path}.${key}[${index}]`), `${path}.${key}[${index}]`),
+  );
 }
 
 /**
  * An `Int16` raw-value enum: a value outside the case set is rejected.
  */
-export function requireRawEnum<const T extends readonly number[]>(
-  container: Record<string, unknown>,
-  key: string,
-  path: string,
-  allowed: T
-): T[number] {
-  const value = requireInt16(container, key, path)
+export function requireRawEnum<const T extends readonly number[]>(container: Record<string, unknown>, key: string, path: string, allowed: T): T[number] {
+  const value = requireInt16(container, key, path);
   if (!allowed.includes(value)) {
-    throw new WireDecodingError(
-      `${path}.${key}`,
-      `unknown raw value ${value} (expected one of ${allowed.join(', ')})`
-    )
+    throw new WireDecodingError(`${path}.${key}`, `unknown raw value ${value} (expected one of ${allowed.join(', ')})`);
   }
-  return value
+  return value;
 }
 
 /**
@@ -162,11 +143,11 @@ export function requireRawEnum<const T extends readonly number[]>(
  * that every cap check in the browser routes through that one helper.
  */
 export function requireWithinByteCap(value: string, maxBytes: number, path: string): string {
-  const byteLength = utf8ByteLength(value)
+  const byteLength = utf8ByteLength(value);
   if (byteLength > maxBytes) {
-    throw new WireDecodingError(path, `exceeds ${maxBytes} UTF-8 bytes (got ${byteLength})`)
+    throw new WireDecodingError(path, `exceeds ${maxBytes} UTF-8 bytes (got ${byteLength})`);
   }
-  return value
+  return value;
 }
 
 export const PROTOCOL_BYTE_CAPS = {
@@ -176,11 +157,11 @@ export const PROTOCOL_BYTE_CAPS = {
   password: SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes,
   say: SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes,
   sessionToken: SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes,
-} as const
+} as const;
 
 function describe(value: unknown): string {
-  if (value === undefined) return 'nothing'
-  if (value === null) return 'null'
-  if (Array.isArray(value)) return 'an array'
-  return typeof value
+  if (value === undefined) return 'nothing';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value;
 }

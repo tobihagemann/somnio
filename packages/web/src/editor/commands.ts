@@ -10,88 +10,88 @@
  */
 
 export interface EditorCommandTarget {
-  isOverlayPresented(): boolean
-  handleEscape(): void
-  save(): void
-  presentSaveAs(): void
-  undo(): void
-  redo(): void
-  duplicateSelection(): void
-  toggleGrid(): void
-  copySelection(): void
-  paste(): void
-  selectAll(): void
-  deleteSelection(): void
-  nudgeSelection(key: string, shiftHeld: boolean): boolean
+  isOverlayPresented(): boolean;
+  handleEscape(): void;
+  save(): void;
+  presentSaveAs(): void;
+  undo(): void;
+  redo(): void;
+  duplicateSelection(): void;
+  toggleGrid(): void;
+  copySelection(): void;
+  paste(): void;
+  selectAll(): void;
+  deleteSelection(): void;
+  nudgeSelection(key: string, shiftHeld: boolean): boolean;
 }
 
 export function handleEditorKeydown(target: EditorCommandTarget, event: KeyboardEvent): void {
   if (event.key === 'Escape') {
-    event.preventDefault()
-    target.handleEscape()
-    return
+    event.preventDefault();
+    target.handleEscape();
+    return;
   }
-  if (isTextEntryFocused()) return
+  if (isTextEntryFocused()) return;
 
-  const command = event.metaKey || event.ctrlKey
+  const command = event.metaKey || event.ctrlKey;
   if (command) {
     switch (event.key.toLowerCase()) {
       case 's':
-        event.preventDefault()
-        if (target.isOverlayPresented()) return
-        if (event.shiftKey) target.presentSaveAs()
-        else target.save()
-        return
+        event.preventDefault();
+        if (target.isOverlayPresented()) return;
+        if (event.shiftKey) target.presentSaveAs();
+        else target.save();
+        return;
       case 'z':
-        event.preventDefault()
-        if (target.isOverlayPresented()) return
-        if (event.shiftKey) target.redo()
-        else target.undo()
-        return
+        event.preventDefault();
+        if (target.isOverlayPresented()) return;
+        if (event.shiftKey) target.redo();
+        else target.undo();
+        return;
       case 'd':
-        event.preventDefault()
-        if (target.isOverlayPresented()) return
-        target.duplicateSelection()
-        return
+        event.preventDefault();
+        if (target.isOverlayPresented()) return;
+        target.duplicateSelection();
+        return;
       case 'g':
-        event.preventDefault()
-        if (target.isOverlayPresented()) return
-        target.toggleGrid()
-        return
+        event.preventDefault();
+        if (target.isOverlayPresented()) return;
+        target.toggleGrid();
+        return;
       case 'c':
-        if (target.isOverlayPresented()) return
-        event.preventDefault()
-        target.copySelection()
-        return
+        if (target.isOverlayPresented()) return;
+        event.preventDefault();
+        target.copySelection();
+        return;
       case 'v':
-        if (target.isOverlayPresented()) return
-        event.preventDefault()
-        target.paste()
-        return
+        if (target.isOverlayPresented()) return;
+        event.preventDefault();
+        target.paste();
+        return;
       case 'a':
-        if (target.isOverlayPresented()) return
-        event.preventDefault()
-        target.selectAll()
-        return
+        if (target.isOverlayPresented()) return;
+        event.preventDefault();
+        target.selectAll();
+        return;
       default:
-        return
+        return;
     }
   }
 
-  if (target.isOverlayPresented()) return
+  if (target.isOverlayPresented()) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    event.preventDefault()
-    target.deleteSelection()
-    return
+    event.preventDefault();
+    target.deleteSelection();
+    return;
   }
   if (target.nudgeSelection(event.key, event.shiftKey)) {
-    event.preventDefault()
+    event.preventDefault();
   }
 }
 
 function isTextEntryFocused(): boolean {
-  const active = document.activeElement
-  if (active === null) return false
-  const tag = active.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  const active = document.activeElement;
+  if (active === null) return false;
+  const tag = active.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }

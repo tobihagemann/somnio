@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto';
 
 /**
  * Session policy that belongs to the feature rather than to any one storage backend, so a second
@@ -9,11 +9,11 @@ export const SESSION_POLICY = {
   defaultLifetimeSeconds: 30 * 24 * 60 * 60,
   /** Live sessions retained per account before the oldest is evicted. */
   maxPerAccount: 10,
-} as const
+} as const;
 
 /** 256 bits of CSPRNG output as URL-safe base64 without padding: 43 characters. */
 export function makeSessionToken(): string {
-  return randomBytes(32).toString('base64url')
+  return randomBytes(32).toString('base64url');
 }
 
 /**
@@ -21,5 +21,5 @@ export function makeSessionToken(): string {
  * because the token has no low-entropy structure to grind against.
  */
 export function sessionTokenDigest(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex')
+  return createHash('sha256').update(token, 'utf8').digest('hex');
 }

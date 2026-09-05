@@ -4,7 +4,7 @@
  * resolves to `undefined` so a missing wire entry surfaces rather than rendering a wrong label.
  */
 export function itemCatalogKey(category: number, itemId: number): string | undefined {
-  if (category === 0 && itemId === 0) return 'Purse'
-  if (category === 1 && itemId === 0) return 'Cudgel'
-  return undefined
+  if (category === 0 && itemId === 0) return 'Purse';
+  if (category === 1 && itemId === 0) return 'Cudgel';
+  return undefined;
 }

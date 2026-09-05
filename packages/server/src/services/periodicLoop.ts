@@ -2,19 +2,19 @@
 export function sleep(ms: number, signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     if (signal.aborted) {
-      resolve(false)
-      return
+      resolve(false);
+      return;
     }
     const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve(true)
-    }, ms)
+      signal.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
     const onAbort = () => {
-      clearTimeout(timer)
-      resolve(false)
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**
@@ -22,12 +22,8 @@ export function sleep(ms: number, signal: AbortSignal): Promise<boolean> {
  * passes and runs `body` each wake; an abort during the sleep ends the loop cleanly. Work that
  * must follow the last pass (a final save) goes after the returned promise.
  */
-export async function runPeriodically(
-  intervalMs: number,
-  signal: AbortSignal,
-  body: () => Promise<void>
-): Promise<void> {
+export async function runPeriodically(intervalMs: number, signal: AbortSignal, body: () => Promise<void>): Promise<void> {
   while (await sleep(intervalMs, signal)) {
-    await body()
+    await body();
   }
 }

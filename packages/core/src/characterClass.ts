@@ -13,8 +13,8 @@ export const CHARACTER_CLASS = {
   gangster: 5,
   cleric: 6,
   mage: 7,
-} as const
-export type CharacterClass = (typeof CHARACTER_CLASS)[keyof typeof CHARACTER_CLASS]
+} as const;
+export type CharacterClass = (typeof CHARACTER_CLASS)[keyof typeof CHARACTER_CLASS];
 
-export const GENDER = { male: 0, female: 1 } as const
-export type Gender = (typeof GENDER)[keyof typeof GENDER]
+export const GENDER = { male: 0, female: 1 } as const;
+export type Gender = (typeof GENDER)[keyof typeof GENDER];

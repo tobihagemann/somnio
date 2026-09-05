@@ -1,12 +1,4 @@
-import {
-  mapArray,
-  requireBool,
-  requireFloat,
-  requireInt16,
-  requireNested,
-  requireRawEnum,
-  requireString,
-} from './validate.ts'
+import { mapArray, requireBool, requireFloat, requireInt16, requireNested, requireRawEnum, requireString } from './validate.ts';
 
 /**
  * The wire DTOs of the protocol package. Property names are the JSON keys verbatim, so
@@ -15,98 +7,98 @@ import {
  */
 
 export interface WireGridSize {
-  width: number
-  height: number
+  width: number;
+  height: number;
 }
 
 export interface WireLightSetting {
-  indoor: boolean
-  brightness: number
+  indoor: boolean;
+  brightness: number;
 }
 
 export interface WireObject {
-  x: number
-  y: number
-  modelID: string
-  sourceWidth: number
-  sourceHeight: number
-  priority: number
+  x: number;
+  y: number;
+  modelID: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  priority: number;
   /** Yaw in degrees counter-clockwise seen from above; 0 = as authored. */
-  rotation: number
+  rotation: number;
 }
 
 export interface WireCollisionMask {
-  x: number
-  y: number
-  width: number
-  height: number
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface WireSectorPortal {
-  x: number
-  y: number
-  width: number
-  height: number
-  targetSectorName: string
-  direction: number
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  targetSectorName: string;
+  direction: number;
 }
 
 export interface WireNPC {
-  spawnX: number
-  spawnY: number
-  spawnBoxWidth: number
-  spawnBoxHeight: number
-  maskWidth: number
-  maskHeight: number
-  name: string
-  figure: number
+  spawnX: number;
+  spawnY: number;
+  spawnBoxWidth: number;
+  spawnBoxHeight: number;
+  maskWidth: number;
+  maskHeight: number;
+  name: string;
+  figure: number;
   /** Continuous heading in degrees, unlike `WireSectorPortal.direction`. */
-  direction: number
-  behaviorTag: number
-  dialogScript: string
+  direction: number;
+  behaviorTag: number;
+  dialogScript: string;
 }
 
 export interface WireMonsterSpawn {
-  spawnX: number
-  spawnY: number
-  spawnBoxWidth: number
-  spawnBoxHeight: number
-  monsterWidth: number
-  monsterHeight: number
-  name: string
-  figure: number
-  bounded: boolean
-  spawnHP: number
-  spawnBalance: number
-  spawnMana: number
-  aiScriptIndex: number
+  spawnX: number;
+  spawnY: number;
+  spawnBoxWidth: number;
+  spawnBoxHeight: number;
+  monsterWidth: number;
+  monsterHeight: number;
+  name: string;
+  figure: number;
+  bounded: boolean;
+  spawnHP: number;
+  spawnBalance: number;
+  spawnMana: number;
+  aiScriptIndex: number;
 }
 
 export interface WireFloorPatch {
-  floorMaterialID: string
-  x: number
-  y: number
-  width: number
-  height: number
+  floorMaterialID: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface WireSector {
-  name: string
-  version: number
-  dimensions: WireGridSize
-  floorMaterialID: string
-  light: WireLightSetting
-  objects: WireObject[]
-  collisionMasks: WireCollisionMask[]
-  portals: WireSectorPortal[]
-  npcs: WireNPC[]
-  monsterSpawns: WireMonsterSpawn[]
-  floorPatches: WireFloorPatch[]
+  name: string;
+  version: number;
+  dimensions: WireGridSize;
+  floorMaterialID: string;
+  light: WireLightSetting;
+  objects: WireObject[];
+  collisionMasks: WireCollisionMask[];
+  portals: WireSectorPortal[];
+  npcs: WireNPC[];
+  monsterSpawns: WireMonsterSpawn[];
+  floorPatches: WireFloorPatch[];
 }
 
 export interface WireInventoryExtra {
-  key: string
-  value: number
+  key: string;
+  value: number;
 }
 
 /**
@@ -115,30 +107,30 @@ export interface WireInventoryExtra {
  * Two numerically different vocabularies for one concept is exactly why both are named rather than
  * spelled as bare literals at the call sites that convert between them.
  */
-export const WIRE_HAND = { none: 0, left: 1, right: 2 } as const
-export const WIRE_HAND_VALUES = Object.values(WIRE_HAND)
-export type WireHand = (typeof WIRE_HAND)[keyof typeof WIRE_HAND]
+export const WIRE_HAND = { none: 0, left: 1, right: 2 } as const;
+export const WIRE_HAND_VALUES = Object.values(WIRE_HAND);
+export type WireHand = (typeof WIRE_HAND)[keyof typeof WIRE_HAND];
 
 export interface WireInventoryRow {
-  slot: number
-  category: number
-  itemId: number
-  extras: WireInventoryExtra[]
-  equippedHand: WireHand
+  slot: number;
+  category: number;
+  itemId: number;
+  extras: WireInventoryExtra[];
+  equippedHand: WireHand;
 }
 
 function decodeWireGridSize(container: Record<string, unknown>, path: string): WireGridSize {
   return {
     width: requireInt16(container, 'width', path),
     height: requireInt16(container, 'height', path),
-  }
+  };
 }
 
 function decodeWireLightSetting(container: Record<string, unknown>, path: string): WireLightSetting {
   return {
     indoor: requireBool(container, 'indoor', path),
     brightness: requireInt16(container, 'brightness', path),
-  }
+  };
 }
 
 function decodeWireObject(container: Record<string, unknown>, path: string): WireObject {
@@ -150,7 +142,7 @@ function decodeWireObject(container: Record<string, unknown>, path: string): Wir
     sourceHeight: requireInt16(container, 'sourceHeight', path),
     priority: requireInt16(container, 'priority', path),
     rotation: requireInt16(container, 'rotation', path),
-  }
+  };
 }
 
 function decodeWireCollisionMask(container: Record<string, unknown>, path: string): WireCollisionMask {
@@ -159,7 +151,7 @@ function decodeWireCollisionMask(container: Record<string, unknown>, path: strin
     y: requireInt16(container, 'y', path),
     width: requireInt16(container, 'width', path),
     height: requireInt16(container, 'height', path),
-  }
+  };
 }
 
 function decodeWireSectorPortal(container: Record<string, unknown>, path: string): WireSectorPortal {
@@ -170,7 +162,7 @@ function decodeWireSectorPortal(container: Record<string, unknown>, path: string
     height: requireInt16(container, 'height', path),
     targetSectorName: requireString(container, 'targetSectorName', path),
     direction: requireInt16(container, 'direction', path),
-  }
+  };
 }
 
 function decodeWireNPC(container: Record<string, unknown>, path: string): WireNPC {
@@ -186,7 +178,7 @@ function decodeWireNPC(container: Record<string, unknown>, path: string): WireNP
     direction: requireFloat(container, 'direction', path),
     behaviorTag: requireInt16(container, 'behaviorTag', path),
     dialogScript: requireString(container, 'dialogScript', path),
-  }
+  };
 }
 
 function decodeWireMonsterSpawn(container: Record<string, unknown>, path: string): WireMonsterSpawn {
@@ -204,7 +196,7 @@ function decodeWireMonsterSpawn(container: Record<string, unknown>, path: string
     spawnBalance: requireInt16(container, 'spawnBalance', path),
     spawnMana: requireInt16(container, 'spawnMana', path),
     aiScriptIndex: requireInt16(container, 'aiScriptIndex', path),
-  }
+  };
 }
 
 function decodeWireFloorPatch(container: Record<string, unknown>, path: string): WireFloorPatch {
@@ -214,7 +206,7 @@ function decodeWireFloorPatch(container: Record<string, unknown>, path: string):
     y: requireInt16(container, 'y', path),
     width: requireInt16(container, 'width', path),
     height: requireInt16(container, 'height', path),
-  }
+  };
 }
 
 /**
@@ -237,14 +229,14 @@ export function decodeWireSector(container: Record<string, unknown>, path: strin
     npcs: mapArray(container, 'npcs', path, decodeWireNPC),
     monsterSpawns: mapArray(container, 'monsterSpawns', path, decodeWireMonsterSpawn),
     floorPatches: mapArray(container, 'floorPatches', path, decodeWireFloorPatch),
-  }
+  };
 }
 
 function decodeWireInventoryExtra(container: Record<string, unknown>, path: string): WireInventoryExtra {
   return {
     key: requireString(container, 'key', path),
     value: requireInt16(container, 'value', path),
-  }
+  };
 }
 
 export function decodeWireInventoryRow(container: Record<string, unknown>, path: string): WireInventoryRow {
@@ -254,5 +246,5 @@ export function decodeWireInventoryRow(container: Record<string, unknown>, path:
     itemId: requireInt16(container, 'itemId', path),
     extras: mapArray(container, 'extras', path, decodeWireInventoryExtra),
     equippedHand: requireRawEnum(container, 'equippedHand', path, WIRE_HAND_VALUES),
-  }
+  };
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest';
 import {
   PORTAL_DIRECTIONS,
   SectorConversionError,
@@ -9,9 +9,9 @@ import {
   sectorPixelCenter,
   sectorPixelHeight,
   sectorPixelWidth,
-} from '../src/sector.ts'
-import { SOMNIO_CONSTANTS } from '../src/constants.ts'
-import type { WireSector } from '@somnio/protocol'
+} from '../src/sector.ts';
+import { SOMNIO_CONSTANTS } from '../src/constants.ts';
+import type { WireSector } from '@somnio/protocol';
 
 /**
  * The hostile-input boundary of `sectorFromWire`. These bounds are what keep a
@@ -33,17 +33,17 @@ function makeWireSector(overrides: Partial<WireSector> = {}): WireSector {
     monsterSpawns: [],
     floorPatches: [],
     ...overrides,
-  }
+  };
 }
 
 function repeated<T>(count: number, make: (index: number) => T): T[] {
-  return Array.from({ length: count }, (_unused, index) => make(index))
+  return Array.from({ length: count }, (_unused, index) => make(index));
 }
 
 describe('sector dimension bounds', () => {
   it('accepts a normal sector', () => {
-    expect(sectorFromWire(makeWireSector()).dimensions).toEqual({ width: 4, height: 4 })
-  })
+    expect(sectorFromWire(makeWireSector()).dimensions).toEqual({ width: 4, height: 4 });
+  });
 
   it.each([
     [0, 4],
@@ -52,22 +52,18 @@ describe('sector dimension bounds', () => {
     [SOMNIO_CONSTANTS.maxSectorDimension + 1, 1],
     [1, SOMNIO_CONSTANTS.maxSectorDimension + 1],
   ])('rejects dimensions %ix%i', (width, height) => {
-    expect(() => sectorFromWire(makeWireSector({ dimensions: { width, height } }))).toThrow(
-      SectorConversionError
-    )
-  })
+    expect(() => sectorFromWire(makeWireSector({ dimensions: { width, height } }))).toThrow(SectorConversionError);
+  });
 
   /**
    * The per-axis cap alone still admits 1024x1024, whose tile map is ~16.7M cells. The area cap
    * is what actually bounds the allocation.
    */
   it('rejects an in-axis sector whose area exceeds the cap', () => {
-    expect(() => sectorFromWire(makeWireSector({ dimensions: { width: 1024, height: 1024 } }))).toThrow(
-      /out of range/
-    )
-    expect(() => sectorFromWire(makeWireSector({ dimensions: { width: 256, height: 256 } }))).not.toThrow()
-  })
-})
+    expect(() => sectorFromWire(makeWireSector({ dimensions: { width: 1024, height: 1024 } }))).toThrow(/out of range/);
+    expect(() => sectorFromWire(makeWireSector({ dimensions: { width: 256, height: 256 } }))).not.toThrow();
+  });
+});
 
 describe('sector content-count bounds', () => {
   it('rejects an object array past its cap', () => {
@@ -79,9 +75,9 @@ describe('sector content-count bounds', () => {
       sourceHeight: 32,
       priority: 0,
       rotation: 0,
-    }))
-    expect(() => sectorFromWire(makeWireSector({ objects }))).toThrow(/content counts out of range/)
-  })
+    }));
+    expect(() => sectorFromWire(makeWireSector({ objects }))).toThrow(/content counts out of range/);
+  });
 
   /**
    * Both arrays can sit under their own caps while their product still drives ~16.7M anchor-scan
@@ -96,24 +92,20 @@ describe('sector content-count bounds', () => {
       sourceHeight: 32,
       priority: 0,
       rotation: 0,
-    }))
-    const collisionMasks = repeated(2048, () => ({ x: 0, y: 0, width: 1, height: 1 }))
-    expect(objects.length).toBeLessThanOrEqual(SOMNIO_CONSTANTS.maxSectorObjects)
-    expect(collisionMasks.length).toBeLessThanOrEqual(SOMNIO_CONSTANTS.maxSectorCollisionMasks)
-    expect(objects.length * collisionMasks.length).toBeGreaterThan(
-      SOMNIO_CONSTANTS.maxSectorAnchorScanPairings
-    )
-    expect(() => sectorFromWire(makeWireSector({ objects, collisionMasks }))).toThrow(
-      /content counts out of range/
-    )
-  })
-})
+    }));
+    const collisionMasks = repeated(2048, () => ({ x: 0, y: 0, width: 1, height: 1 }));
+    expect(objects.length).toBeLessThanOrEqual(SOMNIO_CONSTANTS.maxSectorObjects);
+    expect(collisionMasks.length).toBeLessThanOrEqual(SOMNIO_CONSTANTS.maxSectorCollisionMasks);
+    expect(objects.length * collisionMasks.length).toBeGreaterThan(SOMNIO_CONSTANTS.maxSectorAnchorScanPairings);
+    expect(() => sectorFromWire(makeWireSector({ objects, collisionMasks }))).toThrow(/content counts out of range/);
+  });
+});
 
 describe('portal direction', () => {
   it('rejects an unknown raw direction rather than defaulting it', () => {
-    const portals = [{ x: 0, y: 0, width: 8, height: 8, targetSectorName: 'X', direction: 7 }]
-    expect(() => sectorFromWire(makeWireSector({ portals }))).toThrow(/unknownPortalDirection\(7\)/)
-  })
+    const portals = [{ x: 0, y: 0, width: 8, height: 8, targetSectorName: 'X', direction: 7 }];
+    expect(() => sectorFromWire(makeWireSector({ portals }))).toThrow(/unknownPortalDirection\(7\)/);
+  });
 
   it('maps the known raw directions', () => {
     const sector = sectorFromWire(
@@ -122,10 +114,10 @@ describe('portal direction', () => {
           { x: 0, y: 0, width: 8, height: 8, targetSectorName: 'A', direction: 0 },
           { x: 8, y: 0, width: 8, height: 8, targetSectorName: 'B', direction: 1 },
         ],
-      })
-    )
-    expect(sector.portals.map((portal) => portal.direction)).toEqual(['outboundTrigger', 'arrivalPlacement'])
-  })
+      }),
+    );
+    expect(sector.portals.map((portal) => portal.direction)).toEqual(['outboundTrigger', 'arrivalPlacement']);
+  });
 
   /**
    * Pins the raw values, because nothing else in the suite can: every consumer encodes and decodes
@@ -135,13 +127,13 @@ describe('portal direction', () => {
    * step the player takes inside it.
    */
   it('pins the PortalDirection raw values', () => {
-    expect(PORTAL_DIRECTIONS).toEqual({ outboundTrigger: 0, arrivalPlacement: 1 })
-  })
-})
+    expect(PORTAL_DIRECTIONS).toEqual({ outboundTrigger: 0, arrivalPlacement: 1 });
+  });
+});
 
 /** Spelled symbolically so these fixtures survive any future change to the raw encoding. */
-const TRIGGER = PORTAL_DIRECTIONS.outboundTrigger
-const ARRIVAL = PORTAL_DIRECTIONS.arrivalPlacement
+const TRIGGER = PORTAL_DIRECTIONS.outboundTrigger;
+const ARRIVAL = PORTAL_DIRECTIONS.arrivalPlacement;
 
 describe('portalTriggerRects keeps the full-array offset', () => {
   /**
@@ -158,36 +150,34 @@ describe('portalTriggerRects keeps the full-array offset', () => {
           { x: 32, y: 0, width: 8, height: 8, targetSectorName: 'self', direction: ARRIVAL },
           { x: 48, y: 0, width: 8, height: 8, targetSectorName: 'B', direction: TRIGGER },
         ],
-      })
-    )
-    expect(portalTriggerRects(sector).map((trigger) => trigger.index)).toEqual([1, 3])
-  })
-})
+      }),
+    );
+    expect(portalTriggerRects(sector).map((trigger) => trigger.index)).toEqual([1, 3]);
+  });
+});
 
 describe('sector geometry', () => {
   it('computes pixel extents from tiles', () => {
-    const sector = sectorFromWire(makeWireSector({ dimensions: { width: 4, height: 3 } }))
-    expect(sectorPixelWidth(sector)).toBe(512)
-    expect(sectorPixelHeight(sector)).toBe(384)
-    expect(sectorPixelCenter(sector)).toEqual({ x: 256, y: 192 })
-  })
+    const sector = sectorFromWire(makeWireSector({ dimensions: { width: 4, height: 3 } }));
+    expect(sectorPixelWidth(sector)).toBe(512);
+    expect(sectorPixelHeight(sector)).toBe(384);
+    expect(sectorPixelCenter(sector)).toEqual({ x: 256, y: 192 });
+  });
 
   it('treats a masked pixel as unwalkable and an in-bounds clear pixel as walkable', () => {
-    const sector = sectorFromWire(
-      makeWireSector({ collisionMasks: [{ x: 100, y: 100, width: 32, height: 32 }] })
-    )
-    expect(isWalkable(sector, { x: 10, y: 10 })).toBe(true)
-    expect(isWalkable(sector, { x: 100, y: 100 })).toBe(false)
-    expect(isWalkable(sector, { x: 132, y: 100 })).toBe(true)
-    expect(isWalkable(sector, { x: -1, y: 10 })).toBe(false)
-    expect(isWalkable(sector, { x: 512, y: 10 })).toBe(false)
-  })
-})
+    const sector = sectorFromWire(makeWireSector({ collisionMasks: [{ x: 100, y: 100, width: 32, height: 32 }] }));
+    expect(isWalkable(sector, { x: 10, y: 10 })).toBe(true);
+    expect(isWalkable(sector, { x: 100, y: 100 })).toBe(false);
+    expect(isWalkable(sector, { x: 132, y: 100 })).toBe(true);
+    expect(isWalkable(sector, { x: -1, y: 10 })).toBe(false);
+    expect(isWalkable(sector, { x: 512, y: 10 })).toBe(false);
+  });
+});
 
 describe('arrivalSpawn', () => {
   it('is undefined without a self-pointing arrival portal', () => {
-    expect(arrivalSpawn(sectorFromWire(makeWireSector()))).toBeUndefined()
-  })
+    expect(arrivalSpawn(sectorFromWire(makeWireSector()))).toBeUndefined();
+  });
 
   it('prefers the portal centre when it is walkable', () => {
     const sector = sectorFromWire(
@@ -202,10 +192,10 @@ describe('arrivalSpawn', () => {
             direction: ARRIVAL,
           },
         ],
-      })
-    )
-    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 132 })
-  })
+      }),
+    );
+    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 132 });
+  });
 
   /**
    * The centre halves an integer, which truncates. Every portal in today's fixtures is an even width, so
@@ -216,14 +206,12 @@ describe('arrivalSpawn', () => {
   it('truncates an odd portal extent when halving it, as Int32 division does', () => {
     const sector = sectorFromWire(
       makeWireSector({
-        portals: [
-          { x: 100, y: 100, width: 65, height: 65, targetSectorName: 'EdariaMitte', direction: ARRIVAL },
-        ],
-      })
-    )
+        portals: [{ x: 100, y: 100, width: 65, height: 65, targetSectorName: 'EdariaMitte', direction: ARRIVAL }],
+      }),
+    );
     // 100 + trunc(32.5) = 132. Rounding would give 133.
-    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 132 })
-  })
+    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 132 });
+  });
 
   /**
    * The portal rect can span collision masks (a bookshelf row crossing it), so a blocked centre
@@ -232,19 +220,17 @@ describe('arrivalSpawn', () => {
   it('scans for the nearest walkable cell when the centre is blocked', () => {
     const sector = sectorFromWire(
       makeWireSector({
-        portals: [
-          { x: 100, y: 100, width: 64, height: 64, targetSectorName: 'EdariaMitte', direction: ARRIVAL },
-        ],
+        portals: [{ x: 100, y: 100, width: 64, height: 64, targetSectorName: 'EdariaMitte', direction: ARRIVAL }],
         collisionMasks: [{ x: 128, y: 128, width: 16, height: 16 }],
-      })
-    )
+      }),
+    );
     // The exact cell, not merely a walkable one: the rect holds dozens of walkable cells, so
     // `toBeDefined` + `isWalkable` also hold for a scan that returns the first one it meets
     // (100,100) instead of the nearest. That drops an arriving player at the far corner of the
     // portal, which for an inbound-facing rect is straight back onto an outbound trigger.
-    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 124 })
-    expect(isWalkable(sector, arrivalSpawn(sector)!)).toBe(true)
-  })
+    expect(arrivalSpawn(sector)).toEqual({ x: 132, y: 124 });
+    expect(isWalkable(sector, arrivalSpawn(sector)!)).toBe(true);
+  });
 
   /**
    * The scan granularity itself, which the fixture above cannot see: at (100,100,64,64) with a
@@ -255,17 +241,15 @@ describe('arrivalSpawn', () => {
   it('scans on the 8 px lattice', () => {
     const sector = sectorFromWire(
       makeWireSector({
-        portals: [
-          { x: 100, y: 100, width: 32, height: 32, targetSectorName: 'EdariaMitte', direction: ARRIVAL },
-        ],
+        portals: [{ x: 100, y: 100, width: 32, height: 32, targetSectorName: 'EdariaMitte', direction: ARRIVAL }],
         // Blocks the centre only, so the scan runs and every lattice cell around it is walkable.
         collisionMasks: [{ x: 116, y: 116, width: 1, height: 1 }],
-      })
-    )
+      }),
+    );
     // Centre is (116,116); the nearest cell the 8 px lattice reaches is 8 px away. A 4 px scan
     // would find (116,112) at half that distance and return it instead.
-    expect(arrivalSpawn(sector)).toEqual({ x: 116, y: 108 })
-  })
+    expect(arrivalSpawn(sector)).toEqual({ x: 116, y: 108 });
+  });
 
   /**
    * A portal whose centre is *off* the scan lattice, which the even-width portal fixtures miss: the scan
@@ -281,34 +265,30 @@ describe('arrivalSpawn', () => {
       makeWireSector({
         // EdariaInn's shipped inbound rect, so the arithmetic is content-realistic and not chosen
         // to make a tie appear.
-        portals: [
-          { x: 144, y: 96, width: 72, height: 80, targetSectorName: 'EdariaMitte', direction: ARRIVAL },
-        ],
+        portals: [{ x: 144, y: 96, width: 72, height: 80, targetSectorName: 'EdariaMitte', direction: ARRIVAL }],
         // Blocks the centre alone, so the scan runs over an otherwise walkable rect.
         collisionMasks: [{ x: 180, y: 136, width: 1, height: 1 }],
-      })
-    )
+      }),
+    );
 
     // Centre is (180,136). y is on the lattice, x is not: 176 and 184 tie at 4 px, and the scan
     // reaches 176 first.
-    expect(arrivalSpawn(sector)).toEqual({ x: 176, y: 136 })
+    expect(arrivalSpawn(sector)).toEqual({ x: 176, y: 136 });
     // The tie is real rather than incidental to this fixture.
-    expect(Math.abs(176 - 180)).toBe(Math.abs(184 - 180))
-    expect(isWalkable(sector, { x: 184, y: 136 })).toBe(true)
-  })
+    expect(Math.abs(176 - 180)).toBe(Math.abs(184 - 180));
+    expect(isWalkable(sector, { x: 184, y: 136 })).toBe(true);
+  });
 
   it('is undefined when the whole portal rect is blocked', () => {
     const sector = sectorFromWire(
       makeWireSector({
-        portals: [
-          { x: 100, y: 100, width: 64, height: 64, targetSectorName: 'EdariaMitte', direction: ARRIVAL },
-        ],
+        portals: [{ x: 100, y: 100, width: 64, height: 64, targetSectorName: 'EdariaMitte', direction: ARRIVAL }],
         collisionMasks: [{ x: 100, y: 100, width: 64, height: 64 }],
-      })
-    )
-    expect(arrivalSpawn(sector)).toBeUndefined()
-  })
-})
+      }),
+    );
+    expect(arrivalSpawn(sector)).toBeUndefined();
+  });
+});
 
 describe('NPC facing normalises through Heading', () => {
   it('folds an out-of-range persisted direction rather than carrying it raw', () => {
@@ -329,8 +309,8 @@ describe('NPC facing normalises through Heading', () => {
             dialogScript: '',
           },
         ],
-      })
-    )
-    expect(sector.npcs[0]!.facing).toBe(90)
-  })
-})
+      }),
+    );
+    expect(sector.npcs[0]!.facing).toBe(90);
+  });
+});

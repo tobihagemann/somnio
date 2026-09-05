@@ -1,5 +1,5 @@
-import type { GridPoint, GridSize } from '@somnio/core'
-import type { Sector } from '@somnio/core'
+import type { GridPoint, GridSize } from '@somnio/core';
+import type { Sector } from '@somnio/core';
 
 /**
  * Selection state over the six record kinds. Floor patches are a first-class record (the
@@ -11,35 +11,30 @@ import type { Sector } from '@somnio/core'
  * so the set operations live in the list helpers below, keyed by `selectionKey`.
  */
 
-type SelectionKind = 'object' | 'mask' | 'portal' | 'npc' | 'monsterSpawn' | 'floorPatch'
+type SelectionKind = 'object' | 'mask' | 'portal' | 'npc' | 'monsterSpawn' | 'floorPatch';
 
 export interface EditorSelection {
-  kind: SelectionKind
-  index: number
+  kind: SelectionKind;
+  index: number;
 }
 
 export function selectionKey(selection: EditorSelection): string {
-  return `${selection.kind}:${selection.index}`
+  return `${selection.kind}:${selection.index}`;
 }
 
 export function selectionsEqual(a: readonly EditorSelection[], b: readonly EditorSelection[]): boolean {
-  if (a.length !== b.length) return false
-  const keys = new Set(a.map(selectionKey))
-  return b.every((selection) => keys.has(selectionKey(selection)))
+  if (a.length !== b.length) return false;
+  const keys = new Set(a.map(selectionKey));
+  return b.every((selection) => keys.has(selectionKey(selection)));
 }
 
 export function containsSelection(list: readonly EditorSelection[], selection: EditorSelection): boolean {
-  return list.some((candidate) => selectionKey(candidate) === selectionKey(selection))
+  return list.some((candidate) => selectionKey(candidate) === selectionKey(selection));
 }
 
 /** Shift-click membership toggle. */
-export function toggleSelection(
-  list: readonly EditorSelection[],
-  selection: EditorSelection
-): EditorSelection[] {
-  return containsSelection(list, selection)
-    ? list.filter((candidate) => selectionKey(candidate) !== selectionKey(selection))
-    : [...list, selection]
+export function toggleSelection(list: readonly EditorSelection[], selection: EditorSelection): EditorSelection[] {
+  return containsSelection(list, selection) ? list.filter((candidate) => selectionKey(candidate) !== selectionKey(selection)) : [...list, selection];
 }
 
 /**
@@ -47,49 +42,46 @@ export function toggleSelection(
  * by the canvas hit-tester, the overlay highlight, and the readout, so record kinds extend
  * this single switch.
  */
-export function selectionBounds(
-  selection: EditorSelection,
-  sector: Sector
-): { origin: GridPoint; size: GridSize } | undefined {
+export function selectionBounds(selection: EditorSelection, sector: Sector): { origin: GridPoint; size: GridSize } | undefined {
   switch (selection.kind) {
     case 'object': {
-      const object = sector.objects[selection.index]
-      if (object === undefined) return undefined
+      const object = sector.objects[selection.index];
+      if (object === undefined) return undefined;
       return {
         origin: { x: object.x, y: object.y },
         size: { width: object.sourceWidth, height: object.sourceHeight },
-      }
+      };
     }
     case 'mask': {
-      const mask = sector.collisionMasks[selection.index]
-      if (mask === undefined) return undefined
-      return { origin: { x: mask.x, y: mask.y }, size: { width: mask.width, height: mask.height } }
+      const mask = sector.collisionMasks[selection.index];
+      if (mask === undefined) return undefined;
+      return { origin: { x: mask.x, y: mask.y }, size: { width: mask.width, height: mask.height } };
     }
     case 'portal': {
-      const portal = sector.portals[selection.index]
-      if (portal === undefined) return undefined
-      return { origin: { x: portal.x, y: portal.y }, size: { width: portal.width, height: portal.height } }
+      const portal = sector.portals[selection.index];
+      if (portal === undefined) return undefined;
+      return { origin: { x: portal.x, y: portal.y }, size: { width: portal.width, height: portal.height } };
     }
     case 'npc': {
-      const npc = sector.npcs[selection.index]
-      if (npc === undefined) return undefined
-      return { origin: { ...npc.spawnOrigin }, size: { ...npc.spawnBoxSize } }
+      const npc = sector.npcs[selection.index];
+      if (npc === undefined) return undefined;
+      return { origin: { ...npc.spawnOrigin }, size: { ...npc.spawnBoxSize } };
     }
     case 'monsterSpawn': {
-      const spawn = sector.monsterSpawns[selection.index]
-      if (spawn === undefined) return undefined
-      return { origin: { ...spawn.spawnOrigin }, size: { ...spawn.spawnBoxSize } }
+      const spawn = sector.monsterSpawns[selection.index];
+      if (spawn === undefined) return undefined;
+      return { origin: { ...spawn.spawnOrigin }, size: { ...spawn.spawnBoxSize } };
     }
     case 'floorPatch': {
-      const patch = sector.floorPatches[selection.index]
-      if (patch === undefined) return undefined
-      return { origin: { x: patch.x, y: patch.y }, size: { width: patch.width, height: patch.height } }
+      const patch = sector.floorPatches[selection.index];
+      if (patch === undefined) return undefined;
+      return { origin: { x: patch.x, y: patch.y }, size: { width: patch.width, height: patch.height } };
     }
   }
 }
 
 export function isValidSelection(selection: EditorSelection, sector: Sector): boolean {
-  return selectionBounds(selection, sector) !== undefined
+  return selectionBounds(selection, sector) !== undefined;
 }
 
 /**
@@ -98,21 +90,21 @@ export function isValidSelection(selection: EditorSelection, sector: Sector): bo
  * it, so ascending removal would delete the wrong records.
  */
 export function removeAllSelections(selections: readonly EditorSelection[], sector: Sector): void {
-  const byKind = new Map<SelectionKind, number[]>()
+  const byKind = new Map<SelectionKind, number[]>();
   for (const selection of selections) {
-    byKind.set(selection.kind, [...(byKind.get(selection.kind) ?? []), selection.index])
+    byKind.set(selection.kind, [...(byKind.get(selection.kind) ?? []), selection.index]);
   }
-  removeDescending(byKind.get('object'), sector.objects)
-  removeDescending(byKind.get('mask'), sector.collisionMasks)
-  removeDescending(byKind.get('portal'), sector.portals)
-  removeDescending(byKind.get('npc'), sector.npcs)
-  removeDescending(byKind.get('monsterSpawn'), sector.monsterSpawns)
-  removeDescending(byKind.get('floorPatch'), sector.floorPatches)
+  removeDescending(byKind.get('object'), sector.objects);
+  removeDescending(byKind.get('mask'), sector.collisionMasks);
+  removeDescending(byKind.get('portal'), sector.portals);
+  removeDescending(byKind.get('npc'), sector.npcs);
+  removeDescending(byKind.get('monsterSpawn'), sector.monsterSpawns);
+  removeDescending(byKind.get('floorPatch'), sector.floorPatches);
 }
 
 function removeDescending(indices: number[] | undefined, records: unknown[]): void {
-  if (indices === undefined) return
+  if (indices === undefined) return;
   for (const index of [...indices].sort((a, b) => b - a)) {
-    if (index >= 0 && index < records.length) records.splice(index, 1)
+    if (index >= 0 && index < records.length) records.splice(index, 1);
   }
 }

@@ -1,28 +1,28 @@
 export interface PostgresConfiguration {
-  host: string
-  port: number
-  user: string
-  password: string | undefined
-  database: string
+  host: string;
+  port: number;
+  user: string;
+  password: string | undefined;
+  database: string;
   /** `false` disables TLS; otherwise the connection verifies the server certificate. */
-  ssl: false | { rejectUnauthorized: true }
+  ssl: false | { rejectUnauthorized: true };
 }
 
-export type PostgresConfigurationErrorKind = 'invalidDatabaseURL' | 'missingDatabaseURL'
+export type PostgresConfigurationErrorKind = 'invalidDatabaseURL' | 'missingDatabaseURL';
 
 export class PostgresConfigurationError extends Error {
-  readonly kind: PostgresConfigurationErrorKind
+  readonly kind: PostgresConfigurationErrorKind;
 
   constructor(kind: PostgresConfigurationErrorKind, message: string) {
-    super(message)
-    this.name = 'PostgresConfigurationError'
-    this.kind = kind
+    super(message);
+    this.name = 'PostgresConfigurationError';
+    this.kind = kind;
   }
 }
 
-const DEFAULT_PORT = 5432
-const DEFAULT_USER = 'postgres'
-const DEFAULT_DATABASE = 'somnio'
+const DEFAULT_PORT = 5432;
+const DEFAULT_USER = 'postgres';
+const DEFAULT_DATABASE = 'somnio';
 /** The `somnio-pg` dev container: `postgres://postgres:postgres@localhost:17663/somnio`, TLS off. */
 const DEV_CONTAINER: PostgresConfiguration = {
   host: 'localhost',
@@ -31,7 +31,7 @@ const DEV_CONTAINER: PostgresConfiguration = {
   password: 'postgres',
   database: DEFAULT_DATABASE,
   ssl: false,
-}
+};
 
 /**
  * Postgres connection settings resolved from the environment.
@@ -44,28 +44,19 @@ const DEV_CONTAINER: PostgresConfiguration = {
  * (`postgres://postgres:postgres@localhost:17663/somnio`); without the opt-in the server refuses
  * to boot rather than silently connecting to whatever Postgres the operator happens to run.
  */
-export function resolvePostgresConfiguration(
-  env: Record<string, string | undefined>,
-  devDefaults: boolean
-): PostgresConfiguration {
-  const raw = env['SOMNIO_DATABASE_URL']
+export function resolvePostgresConfiguration(env: Record<string, string | undefined>, devDefaults: boolean): PostgresConfiguration {
+  const raw = env['SOMNIO_DATABASE_URL'];
   if (raw !== undefined) {
-    let url: URL
+    let url: URL;
     try {
-      url = new URL(raw)
+      url = new URL(raw);
     } catch {
-      throw new PostgresConfigurationError(
-        'invalidDatabaseURL',
-        `SOMNIO_DATABASE_URL is malformed: ${redact(raw)}`
-      )
+      throw new PostgresConfigurationError('invalidDatabaseURL', `SOMNIO_DATABASE_URL is malformed: ${redact(raw)}`);
     }
     if ((url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') || url.hostname.length === 0) {
-      throw new PostgresConfigurationError(
-        'invalidDatabaseURL',
-        `SOMNIO_DATABASE_URL is malformed: ${redact(raw)}`
-      )
+      throw new PostgresConfigurationError('invalidDatabaseURL', `SOMNIO_DATABASE_URL is malformed: ${redact(raw)}`);
     }
-    const pathDatabase = url.pathname.replace(/^\/+|\/+$/g, '')
+    const pathDatabase = url.pathname.replace(/^\/+|\/+$/g, '');
     return {
       host: url.hostname,
       port: url.port.length === 0 ? DEFAULT_PORT : Number(url.port),
@@ -73,15 +64,15 @@ export function resolvePostgresConfiguration(
       password: url.password.length === 0 ? undefined : decodeURIComponent(url.password),
       database: pathDatabase.length === 0 ? DEFAULT_DATABASE : pathDatabase,
       ssl: env['SOMNIO_DATABASE_TLS'] === 'disable' ? false : { rejectUnauthorized: true },
-    }
+    };
   }
   if (!devDefaults) {
     throw new PostgresConfigurationError(
       'missingDatabaseURL',
-      'SOMNIO_DATABASE_URL must be set (or opt into SOMNIO_DEV_DEFAULTS=1 for the localhost fallback)'
-    )
+      'SOMNIO_DATABASE_URL must be set (or opt into SOMNIO_DEV_DEFAULTS=1 for the localhost fallback)',
+    );
   }
-  return DEV_CONTAINER
+  return DEV_CONTAINER;
 }
 
 /**
@@ -90,11 +81,11 @@ export function resolvePostgresConfiguration(
  */
 export function redact(raw: string): string {
   try {
-    const url = new URL(raw)
-    if (url.hostname.length === 0) return '<unparseable>'
-    const scheme = url.protocol.replace(/:$/, '')
-    return url.port.length === 0 ? `${scheme}://${url.hostname}` : `${scheme}://${url.hostname}:${url.port}`
+    const url = new URL(raw);
+    if (url.hostname.length === 0) return '<unparseable>';
+    const scheme = url.protocol.replace(/:$/, '');
+    return url.port.length === 0 ? `${scheme}://${url.hostname}` : `${scheme}://${url.hostname}:${url.port}`;
   } catch {
-    return '<unparseable>'
+    return '<unparseable>';
   }
 }

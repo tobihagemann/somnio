@@ -30,11 +30,10 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * message throws at encode time rather than the receiver hard-closing.
    */
   frameSizeSlack: 64,
-} as const
+} as const;
 
 /** The WebSocket-layer frame ceiling (`ws`'s `maxPayload`): the encoder guard plus the slack. */
-export const MAX_WIRE_FRAME_SIZE =
-  SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack
+export const MAX_WIRE_FRAME_SIZE = SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack;
 
 /**
  * UTF-8 byte length. `String.prototype.length` counts UTF-16 code units, so it disagrees
@@ -43,7 +42,7 @@ export const MAX_WIRE_FRAME_SIZE =
  * cap check must route through here.
  */
 export function utf8ByteLength(value: string): number {
-  return new TextEncoder().encode(value).length
+  return new TextEncoder().encode(value).length;
 }
 
 /**
@@ -52,10 +51,10 @@ export function utf8ByteLength(value: string): number {
  * sequence, so the cut is walked back to a code-point boundary instead.
  */
 export function truncateToUTF8Bytes(value: string, maxBytes: number): string {
-  const encoded = new TextEncoder().encode(value)
-  if (encoded.length <= maxBytes) return value
-  let end = maxBytes
+  const encoded = new TextEncoder().encode(value);
+  if (encoded.length <= maxBytes) return value;
+  let end = maxBytes;
   // 0b10xxxxxx marks a UTF-8 continuation byte; walk back off one to land on a lead byte.
-  while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end -= 1
-  return new TextDecoder().decode(encoded.subarray(0, end))
+  while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end -= 1;
+  return new TextDecoder().decode(encoded.subarray(0, end));
 }

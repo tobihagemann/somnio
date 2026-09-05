@@ -1,7 +1,7 @@
-import type { Sector } from '@somnio/core'
-import { readSectorFile, writeSectorFile } from '@somnio/core'
-import { DEFAULT_SECTOR_VERSION } from './preferences'
-import { SECTOR_API_PREFIX } from './sectorName'
+import type { Sector } from '@somnio/core';
+import { readSectorFile, writeSectorFile } from '@somnio/core';
+import { DEFAULT_SECTOR_VERSION } from './preferences';
+import { SECTOR_API_PREFIX } from './sectorName';
 
 /**
  * The document model: one `Sector` and a single `mutate` funnel that snapshots the whole body
@@ -21,8 +21,8 @@ import { SECTOR_API_PREFIX } from './sectorName'
  */
 
 interface UndoEntry {
-  actionName: string
-  sector: Sector
+  actionName: string;
+  sector: Sector;
 }
 
 function uninitializedSector(): Sector {
@@ -38,83 +38,81 @@ function uninitializedSector(): Sector {
     npcs: [],
     monsterSpawns: [],
     floorPatches: [],
-  }
+  };
 }
 
 export async function listSectors(): Promise<string[]> {
-  const response = await fetch(SECTOR_API_PREFIX)
-  if (!response.ok) throw new Error(`listing sectors failed: ${response.status}`)
-  return (await response.json()) as string[]
+  const response = await fetch(SECTOR_API_PREFIX);
+  if (!response.ok) throw new Error(`listing sectors failed: ${response.status}`);
+  return (await response.json()) as string[];
 }
 
 export class EditorDocument {
-  sector: Sector = uninitializedSector()
+  sector: Sector = uninitializedSector();
 
-  private undoStack: UndoEntry[] = []
-  private redoStack: UndoEntry[] = []
-  private savedSnapshot: Sector | undefined
+  private undoStack: UndoEntry[] = [];
+  private redoStack: UndoEntry[] = [];
+  private savedSnapshot: Sector | undefined;
   /** Notifies the shell after every document change — mutate, undo, redo, load, save. */
-  onChanged: (() => void) | undefined
+  onChanged: (() => void) | undefined;
 
   /** The fresh-document sentinel: true until a sector is created or loaded, gating auto-present. */
   get isUninitialized(): boolean {
-    return (
-      this.sector.name === '' && this.sector.dimensions.width === 0 && this.sector.dimensions.height === 0
-    )
+    return this.sector.name === '' && this.sector.dimensions.width === 0 && this.sector.dimensions.height === 0;
   }
 
   get isDirty(): boolean {
-    if (this.isUninitialized) return false
-    if (this.savedSnapshot === undefined) return true
-    return !deepEqual(this.sector, this.savedSnapshot)
+    if (this.isUninitialized) return false;
+    if (this.savedSnapshot === undefined) return true;
+    return !deepEqual(this.sector, this.savedSnapshot);
   }
 
   get undoDepth(): number {
-    return this.undoStack.length
+    return this.undoStack.length;
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0
+    return this.undoStack.length > 0;
   }
 
   get canRedo(): boolean {
-    return this.redoStack.length > 0
+    return this.redoStack.length > 0;
   }
 
   /** The single mutation API. Every new edit clears the redo stack. */
   mutate(actionName: string, change: (sector: Sector) => void): void {
-    const before = structuredClone(this.sector)
-    change(this.sector)
-    this.undoStack.push({ actionName, sector: before })
-    this.redoStack = []
-    this.onChanged?.()
+    const before = structuredClone(this.sector);
+    change(this.sector);
+    this.undoStack.push({ actionName, sector: before });
+    this.redoStack = [];
+    this.onChanged?.();
   }
 
   undo(): void {
-    const entry = this.undoStack.pop()
-    if (entry === undefined) return
-    this.redoStack.push({ actionName: entry.actionName, sector: structuredClone(this.sector) })
-    this.sector = entry.sector
-    this.onChanged?.()
+    const entry = this.undoStack.pop();
+    if (entry === undefined) return;
+    this.redoStack.push({ actionName: entry.actionName, sector: structuredClone(this.sector) });
+    this.sector = entry.sector;
+    this.onChanged?.();
   }
 
   redo(): void {
-    const entry = this.redoStack.pop()
-    if (entry === undefined) return
-    this.undoStack.push({ actionName: entry.actionName, sector: structuredClone(this.sector) })
-    this.sector = entry.sector
-    this.onChanged?.()
+    const entry = this.redoStack.pop();
+    if (entry === undefined) return;
+    this.undoStack.push({ actionName: entry.actionName, sector: structuredClone(this.sector) });
+    this.sector = entry.sector;
+    this.onChanged?.();
   }
 
   /** Replaces the document with a freshly loaded sector; `load` preserves the file's version. */
   async load(name: string): Promise<void> {
-    const response = await fetch(`${SECTOR_API_PREFIX}/${encodeURIComponent(name)}`)
-    if (!response.ok) throw new Error(`loading "${name}" failed: ${response.status}`)
-    this.sector = readSectorFile(await response.text(), name)
-    this.undoStack = []
-    this.redoStack = []
-    this.savedSnapshot = structuredClone(this.sector)
-    this.onChanged?.()
+    const response = await fetch(`${SECTOR_API_PREFIX}/${encodeURIComponent(name)}`);
+    if (!response.ok) throw new Error(`loading "${name}" failed: ${response.status}`);
+    this.sector = readSectorFile(await response.text(), name);
+    this.undoStack = [];
+    this.redoStack = [];
+    this.savedSnapshot = structuredClone(this.sector);
+    this.onChanged?.();
   }
 
   /** `⌘S`. The checkpoint updates only after a successful write. */
@@ -122,15 +120,15 @@ export class EditorDocument {
     // Snapshot before the await and checkpoint that exact snapshot on success: editing stays
     // enabled during the PUT, so checkpointing `this.sector` afterward would mark a mid-flight
     // edit clean even though only the older body reached disk.
-    const snapshot = structuredClone(this.sector)
-    const text = writeSectorFile(snapshot)
+    const snapshot = structuredClone(this.sector);
+    const text = writeSectorFile(snapshot);
     const response = await fetch(`${SECTOR_API_PREFIX}/${encodeURIComponent(snapshot.name)}`, {
       method: 'PUT',
       body: text,
-    })
-    if (!response.ok) throw new Error(`saving "${snapshot.name}" failed: ${response.status}`)
-    this.savedSnapshot = snapshot
-    this.onChanged?.()
+    });
+    if (!response.ok) throw new Error(`saving "${snapshot.name}" failed: ${response.status}`);
+    this.savedSnapshot = snapshot;
+    this.onChanged?.();
   }
 
   /**
@@ -138,54 +136,47 @@ export class EditorDocument {
    * put the rename on the undo stack either) and writes the new file, leaving the original.
    */
   async saveAs(name: string): Promise<void> {
-    const previous = this.sector.name
-    this.sector.name = name
+    const previous = this.sector.name;
+    this.sector.name = name;
     try {
-      await this.save()
+      await this.save();
     } catch (error) {
       // A failed write must leave the document untouched — the rename bypasses `mutate`, so
       // there is no undo entry to walk back; restore the name by hand before rethrowing.
-      this.sector.name = previous
-      throw error
+      this.sector.name = previous;
+      throw error;
     }
   }
 
   /** New Map: replaces the document in place as one undoable step, stamping version 1. */
-  create(form: {
-    name: string
-    width: number
-    height: number
-    indoor: boolean
-    brightness: number
-    floorMaterialID: string
-  }): void {
+  create(form: { name: string; width: number; height: number; indoor: boolean; brightness: number; floorMaterialID: string }): void {
     this.mutate('Create new map', (sector) => {
-      sector.name = form.name
-      sector.version = DEFAULT_SECTOR_VERSION
-      sector.dimensions = { width: form.width, height: form.height }
-      sector.floorMaterialID = form.floorMaterialID
-      sector.light = { indoor: form.indoor, brightness: form.brightness }
-      sector.objects = []
-      sector.collisionMasks = []
-      sector.portals = []
-      sector.npcs = []
-      sector.monsterSpawns = []
-      sector.floorPatches = []
-    })
+      sector.name = form.name;
+      sector.version = DEFAULT_SECTOR_VERSION;
+      sector.dimensions = { width: form.width, height: form.height };
+      sector.floorMaterialID = form.floorMaterialID;
+      sector.light = { indoor: form.indoor, brightness: form.brightness };
+      sector.objects = [];
+      sector.collisionMasks = [];
+      sector.portals = [];
+      sector.npcs = [];
+      sector.monsterSpawns = [];
+      sector.floorPatches = [];
+    });
   }
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
+  if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]))
+    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]));
   }
   if (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null) {
-    const aRecord = a as Record<string, unknown>
-    const bRecord = b as Record<string, unknown>
-    const aKeys = Object.keys(aRecord)
-    const bKeys = Object.keys(bRecord)
-    return aKeys.length === bKeys.length && aKeys.every((key) => deepEqual(aRecord[key], bRecord[key]))
+    const aRecord = a as Record<string, unknown>;
+    const bRecord = b as Record<string, unknown>;
+    const aKeys = Object.keys(aRecord);
+    const bKeys = Object.keys(bRecord);
+    return aKeys.length === bKeys.length && aKeys.every((key) => deepEqual(aRecord[key], bRecord[key]));
   }
-  return false
+  return false;
 }

@@ -14,13 +14,13 @@ import {
   speedMultiplier,
   TEMPO,
   tempoPixelsPerSecond,
-} from '@somnio/core'
-import type { GridPoint, Heading, PixelRect, Sector, Tempo, WorldEntity } from '@somnio/core'
-import { worldMovement } from '@/scene/cameraRig'
-import type { ConnectionState, OverlayKind } from './connectionController'
-import type { SomnioMessage } from '@somnio/protocol'
-import type { WorldRenderSurface } from './renderSurface'
-import type { HeldKeys, KeyCaptureSink } from './input'
+} from '@somnio/core';
+import type { GridPoint, Heading, PixelRect, Sector, Tempo, WorldEntity } from '@somnio/core';
+import { worldMovement } from '@/scene/cameraRig';
+import type { ConnectionState, OverlayKind } from './connectionController';
+import type { SomnioMessage } from '@somnio/protocol';
+import type { WorldRenderSurface } from './renderSurface';
+import type { HeldKeys, KeyCaptureSink } from './input';
 
 /**
  * One client-predicted gameplay tick.
@@ -37,47 +37,47 @@ import type { HeldKeys, KeyCaptureSink } from './input'
  */
 
 /** Upper bound on one tick's elapsed time, so a stall (or the first tick) cannot teleport. */
-export const MAX_TICK_ELAPSED_MS = 100
+export const MAX_TICK_ELAPSED_MS = 100;
 /** Position-broadcast heartbeat (legacy `UpdateTimer`, 2 Hz). */
-export const POSITION_HEARTBEAT_INTERVAL_MS = 500
+export const POSITION_HEARTBEAT_INTERVAL_MS = 500;
 /**
  * A facing change below this shortest-arc threshold does not by itself trigger an emit — a
  * cursor jittering by fractions of a degree (including across the 0/360 seam) would otherwise
  * report on every heartbeat.
  */
-export const FACING_EMIT_THRESHOLD_DEGREES = 1
+export const FACING_EMIT_THRESHOLD_DEGREES = 1;
 /** Peer interpolation matches the heartbeat so remote players tween rather than step. */
-export const PEER_INTERPOLATION_SECONDS = 0.5
+export const PEER_INTERPOLATION_SECONDS = 0.5;
 /** NPCs and monsters stay on the 50 ms server AI-tick cadence so they don't lag the server. */
-export const AI_TICK_INTERPOLATION_SECONDS = 0.05
+export const AI_TICK_INTERPOLATION_SECONDS = 0.05;
 
 export interface Velocity {
-  dx: number
-  dy: number
+  dx: number;
+  dy: number;
 }
 
 /** Normalized eight-way direction from the held bitset; zero when nothing is held. */
 export function velocityFromHeld(held: HeldKeys): Velocity {
-  let dx = 0
-  let dy = 0
-  if (held.d) dx += 1
-  if (held.a) dx -= 1
-  if (held.w) dy -= 1
-  if (held.s) dy += 1
-  if (dx === 0 && dy === 0) return { dx: 0, dy: 0 }
-  const length = Math.sqrt(dx * dx + dy * dy)
-  return { dx: dx / length, dy: dy / length }
+  let dx = 0;
+  let dy = 0;
+  if (held.d) dx += 1;
+  if (held.a) dx -= 1;
+  if (held.w) dy -= 1;
+  if (held.s) dy += 1;
+  if (dx === 0 && dy === 0) return { dx: 0, dy: 0 };
+  const length = Math.sqrt(dx * dx + dy * dy);
+  return { dx: dx / length, dy: dy / length };
 }
 
 export function tempoFromHeld(held: HeldKeys): Tempo {
-  if (held.leftShift) return TEMPO.run
-  if (held.leftOption) return TEMPO.walk
-  return TEMPO.default
+  if (held.leftShift) return TEMPO.run;
+  if (held.leftOption) return TEMPO.walk;
+  return TEMPO.default;
 }
 
 export interface CollisionTriggers {
-  bumpedNPC: number | undefined
-  portal: number | undefined
+  bumpedNPC: number | undefined;
+  portal: number | undefined;
 }
 
 /**
@@ -86,7 +86,7 @@ export interface CollisionTriggers {
  * package has. `entityBlockers` stays exported because `predictor.test.ts` drives it directly.
  */
 function isBlocked(triggers: CollisionTriggers): boolean {
-  return triggers.bumpedNPC !== undefined || triggers.portal !== undefined
+  return triggers.bumpedNPC !== undefined || triggers.portal !== undefined;
 }
 
 /**
@@ -97,23 +97,23 @@ function isBlocked(triggers: CollisionTriggers): boolean {
 function collisionTriggers(
   playerFeetRect: PixelRect,
   npcFeetRects: readonly { index: number; rect: PixelRect }[],
-  triggerRects: readonly { index: number; rect: PixelRect }[]
+  triggerRects: readonly { index: number; rect: PixelRect }[],
 ): CollisionTriggers {
-  let bumpedNPC: number | undefined
+  let bumpedNPC: number | undefined;
   for (const npc of npcFeetRects) {
     if (overlaps(playerFeetRect, npc.rect)) {
-      bumpedNPC = npc.index
-      break
+      bumpedNPC = npc.index;
+      break;
     }
   }
-  let portal: number | undefined
+  let portal: number | undefined;
   for (const trigger of triggerRects) {
     if (overlaps(playerFeetRect, trigger.rect)) {
-      portal = trigger.index
-      break
+      portal = trigger.index;
+      break;
     }
   }
-  return { bumpedNPC, portal }
+  return { bumpedNPC, portal };
 }
 
 /**
@@ -125,19 +125,15 @@ function collisionTriggers(
  * NPCs are excluded entirely so the slide reaches an NPC's feet box and `collisionTriggers`
  * fires the bump, instead of the move gate stopping one pixel short and never triggering.
  */
-export function entityBlockers(
-  entities: Iterable<WorldEntity>,
-  selfIndex: number,
-  playerFeet: PixelRect
-): PixelRect[] {
-  const blockers: PixelRect[] = []
+export function entityBlockers(entities: Iterable<WorldEntity>, selfIndex: number, playerFeet: PixelRect): PixelRect[] {
+  const blockers: PixelRect[] = [];
   for (const entity of entities) {
-    if (entity.id === selfIndex || entity.kind === 'npc') continue
-    const rect = feetRect(entity.position, entity.maskSize)
-    if (entity.kind === 'monster' && overlaps(playerFeet, rect)) continue
-    blockers.push(rect)
+    if (entity.id === selfIndex || entity.kind === 'npc') continue;
+    const rect = feetRect(entity.position, entity.maskSize);
+    if (entity.kind === 'monster' && overlaps(playerFeet, rect)) continue;
+    blockers.push(rect);
   }
-  return blockers
+  return blockers;
 }
 
 /**
@@ -146,21 +142,16 @@ export function entityBlockers(
  * Resolving X first and then testing Y *from the resolved X* is what produces the slide; testing
  * both axes against `from` would let a diagonal step cut a corner.
  */
-export function resolvedMove(
-  from: GridPoint,
-  to: GridPoint,
-  sector: Sector,
-  blockers: readonly PixelRect[]
-): GridPoint {
-  const spriteSize = SOMNIO_CONSTANTS.playerSpriteSize
-  const resolved = { x: from.x, y: from.y }
+export function resolvedMove(from: GridPoint, to: GridPoint, sector: Sector, blockers: readonly PixelRect[]): GridPoint {
+  const spriteSize = SOMNIO_CONSTANTS.playerSpriteSize;
+  const resolved = { x: from.x, y: from.y };
   if (isFeetClear({ x: to.x, y: from.y }, spriteSize, sector, blockers)) {
-    resolved.x = to.x
+    resolved.x = to.x;
   }
   if (isFeetClear({ x: resolved.x, y: to.y }, spriteSize, sector, blockers)) {
-    resolved.y = to.y
+    resolved.y = to.y;
   }
-  return resolved
+  return resolved;
 }
 
 /** The live gameplay state the tick reads. Supplied by the connection controller. */
@@ -170,44 +161,44 @@ export interface PredictorSession {
    * a typo or a renamed state would compile clean against a widened type, leaving the gate silently
    * shut and the character unable to move with nothing objecting.
    */
-  readonly connectionState: ConnectionState
-  readonly presentedOverlay: OverlayKind | undefined
-  readonly isChatInputFocused: boolean
-  readonly entities: Map<number, WorldEntity>
-  readonly selfEntityIndex: number | undefined
-  readonly currentSector: Sector | undefined
+  readonly connectionState: ConnectionState;
+  readonly presentedOverlay: OverlayKind | undefined;
+  readonly isChatInputFocused: boolean;
+  readonly entities: Map<number, WorldEntity>;
+  readonly selfEntityIndex: number | undefined;
+  readonly currentSector: Sector | undefined;
 }
 
 export interface PredictorOptions {
-  session: PredictorSession
-  input: KeyCaptureSink
-  renderSurface: WorldRenderSurface
-  send: (message: SomnioMessage) => void
+  session: PredictorSession;
+  input: KeyCaptureSink;
+  renderSurface: WorldRenderSurface;
+  send: (message: SomnioMessage) => void;
   /** Latest cursor-derived facing, or `undefined` before the pointer has been seen. */
-  mouseFacing: () => Heading | undefined
+  mouseFacing: () => Heading | undefined;
 }
 
 export class GameplayPredictor {
-  private readonly session: PredictorSession
-  private readonly input: KeyCaptureSink
-  private readonly renderSurface: WorldRenderSurface
-  private readonly send: (message: SomnioMessage) => void
-  private readonly mouseFacing: () => Heading | undefined
+  private readonly session: PredictorSession;
+  private readonly input: KeyCaptureSink;
+  private readonly renderSurface: WorldRenderSurface;
+  private readonly send: (message: SomnioMessage) => void;
+  private readonly mouseFacing: () => Heading | undefined;
 
-  private lastTickMs: number | undefined
-  private movementRemainder = { dx: 0, dy: 0 }
-  private lastEmittedPosition: GridPoint | undefined
-  private lastEmittedFacing: Heading | undefined
-  private lastEmittedTempo: Tempo | undefined
-  private lastEmitMs: number | undefined
-  private lastBumpedPortalIndex: number | undefined
+  private lastTickMs: number | undefined;
+  private movementRemainder = { dx: 0, dy: 0 };
+  private lastEmittedPosition: GridPoint | undefined;
+  private lastEmittedFacing: Heading | undefined;
+  private lastEmittedTempo: Tempo | undefined;
+  private lastEmitMs: number | undefined;
+  private lastBumpedPortalIndex: number | undefined;
 
   constructor(options: PredictorOptions) {
-    this.session = options.session
-    this.input = options.input
-    this.renderSurface = options.renderSurface
-    this.send = options.send
-    this.mouseFacing = options.mouseFacing
+    this.session = options.session;
+    this.input = options.input;
+    this.renderSurface = options.renderSurface;
+    this.send = options.send;
+    this.mouseFacing = options.mouseFacing;
   }
 
   /**
@@ -216,13 +207,13 @@ export class GameplayPredictor {
    * sector, and a stale `lastBumpedPortalIndex` would latch the arrival portal shut.
    */
   reset(): void {
-    this.lastTickMs = undefined
-    this.movementRemainder = { dx: 0, dy: 0 }
-    this.lastEmittedPosition = undefined
-    this.lastEmittedFacing = undefined
-    this.lastEmittedTempo = undefined
-    this.lastEmitMs = undefined
-    this.lastBumpedPortalIndex = undefined
+    this.lastTickMs = undefined;
+    this.movementRemainder = { dx: 0, dy: 0 };
+    this.lastEmittedPosition = undefined;
+    this.lastEmittedFacing = undefined;
+    this.lastEmittedTempo = undefined;
+    this.lastEmitMs = undefined;
+    this.lastBumpedPortalIndex = undefined;
   }
 
   /**
@@ -230,12 +221,12 @@ export class GameplayPredictor {
    * the rejected path must not bias the next tick.
    */
   clearMovementRemainder(): void {
-    this.movementRemainder = { dx: 0, dy: 0 }
+    this.movementRemainder = { dx: 0, dy: 0 };
   }
 
   /** Test seam: the sub-pixel fraction the renderer is drawing at. */
   get _movementRemainder(): { dx: number; dy: number } {
-    return { ...this.movementRemainder }
+    return { ...this.movementRemainder };
   }
 
   /**
@@ -247,87 +238,82 @@ export class GameplayPredictor {
    * gap, not the gate.
    */
   private gateIsOpen(): boolean {
-    const state = this.session.connectionState
-    return (
-      (state === 'attached' || state === 'awaitingEnterSector') &&
-      this.session.presentedOverlay === undefined &&
-      !this.session.isChatInputFocused
-    )
+    const state = this.session.connectionState;
+    return (state === 'attached' || state === 'awaitingEnterSector') && this.session.presentedOverlay === undefined && !this.session.isChatInputFocused;
   }
 
   runTick(nowMs: number): void {
     // Assigning the gate is what clears held keys when it closes: the sink drops its bitset on
     // deactivation, so an overlay opening mid-hold cannot leave the character walking.
-    this.input.setGameplayActive(this.gateIsOpen())
-    if (this.session.isChatInputFocused) return
-    const selfIndex = this.session.selfEntityIndex
-    const sector = this.session.currentSector
-    if (selfIndex === undefined || sector === undefined) return
-    const existing = this.session.entities.get(selfIndex)
-    if (existing === undefined) return
+    this.input.setGameplayActive(this.gateIsOpen());
+    if (this.session.isChatInputFocused) return;
+    const selfIndex = this.session.selfEntityIndex;
+    const sector = this.session.currentSector;
+    if (selfIndex === undefined || sector === undefined) return;
+    const existing = this.session.entities.get(selfIndex);
+    if (existing === undefined) return;
 
-    const selfEntity: WorldEntity = { ...existing }
-    const held = this.input.snapshot()
-    const tempo = tempoFromHeld(held)
+    const selfEntity: WorldEntity = { ...existing };
+    const held = this.input.snapshot();
+    const tempo = tempoFromHeld(held);
 
     // Refresh facing every tick regardless of velocity so a stationary player still tracks the
     // cursor — the legacy quadrant rule is independent of movement.
-    const facing = this.mouseFacing()
-    if (facing !== undefined) selfEntity.facing = facing
+    const facing = this.mouseFacing();
+    if (facing !== undefined) selfEntity.facing = facing;
 
     // The lower bound guards a misbehaving injected timestamp; `performance.now()` is monotonic.
-    const elapsedMs =
-      this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS)
-    this.lastTickMs = nowMs
+    const elapsedMs = this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS);
+    this.lastTickMs = nowMs;
 
-    const velocity = velocityFromHeld(held)
-    let enteredPortal = false
+    const velocity = velocityFromHeld(held);
+    let enteredPortal = false;
     // Declared out here so it reaches the unconditional render update below; `undefined` on a
     // stationary tick preserves the renderer's held travel direction.
-    let travel: Heading | undefined
+    let travel: Heading | undefined;
     if (velocity.dx !== 0 || velocity.dy !== 0) {
-      const world = worldMovement(velocity.dx, velocity.dy)
+      const world = worldMovement(velocity.dx, velocity.dy);
       // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step, so
       // a wall-slide keeps clip and speed mutually consistent.
-      travel = headingFromVector(world.dx, world.dy)
-      const direction = relativeDirection(travel, selfEntity.facing)
-      const pixels = tempoPixelsPerSecond(tempo) * (elapsedMs / 1000) * speedMultiplier(direction)
-      const exactDX = world.dx * pixels + this.movementRemainder.dx
-      const exactDY = world.dy * pixels + this.movementRemainder.dy
-      const dxPx = roundHalfAwayFromZero(exactDX)
-      const dyPx = roundHalfAwayFromZero(exactDY)
+      travel = headingFromVector(world.dx, world.dy);
+      const direction = relativeDirection(travel, selfEntity.facing);
+      const pixels = tempoPixelsPerSecond(tempo) * (elapsedMs / 1000) * speedMultiplier(direction);
+      const exactDX = world.dx * pixels + this.movementRemainder.dx;
+      const exactDY = world.dy * pixels + this.movementRemainder.dy;
+      const dxPx = roundHalfAwayFromZero(exactDX);
+      const dyPx = roundHalfAwayFromZero(exactDY);
       // Sub-pixel carry: dropping this truncates every tick's fraction and produces a
       // systematic speed deficit that no manual walk reveals.
-      this.movementRemainder = { dx: exactDX - dxPx, dy: exactDY - dyPx }
+      this.movementRemainder = { dx: exactDX - dxPx, dy: exactDY - dyPx };
       const intended: GridPoint = {
         x: clampToInt16(selfEntity.position.x + dxPx),
         y: clampToInt16(selfEntity.position.y + dyPx),
-      }
+      };
       // Clamp to the sector's feet-box bounds so a move toward an edge lands flush against it
       // rather than stopping up to one tick short.
-      const target = clampToSector(intended, SOMNIO_CONSTANTS.playerSpriteSize, sector)
-      const selfFeet = feetRect(selfEntity.position, SOMNIO_CONSTANTS.playerSpriteSize)
-      const blockers = entityBlockers(this.session.entities.values(), selfIndex, selfFeet)
-      const candidate = resolvedMove(selfEntity.position, target, sector, blockers)
+      const target = clampToSector(intended, SOMNIO_CONSTANTS.playerSpriteSize, sector);
+      const selfFeet = feetRect(selfEntity.position, SOMNIO_CONSTANTS.playerSpriteSize);
+      const blockers = entityBlockers(this.session.entities.values(), selfIndex, selfFeet);
+      const candidate = resolvedMove(selfEntity.position, target, sector, blockers);
       // Testing the post-resolution candidate rather than the raw step is what stops a trigger
       // firing through a wall the player cannot actually cross.
-      const candidateFeet = feetRect(candidate, SOMNIO_CONSTANTS.playerSpriteSize)
-      const triggers = collisionTriggers(candidateFeet, this.npcFeetRects(), portalTriggerRects(sector))
+      const candidateFeet = feetRect(candidate, SOMNIO_CONSTANTS.playerSpriteSize);
+      const triggers = collisionTriggers(candidateFeet, this.npcFeetRects(), portalTriggerRects(sector));
       if (isBlocked(triggers)) {
-        this.movementRemainder = { dx: 0, dy: 0 }
+        this.movementRemainder = { dx: 0, dy: 0 };
       } else {
         // Drop the carried fraction on any axis the clamp or collision cut, so the sub-pixel
         // render position never drifts off the authoritative grid position.
-        if (candidate.x !== intended.x) this.movementRemainder.dx = 0
-        if (candidate.y !== intended.y) this.movementRemainder.dy = 0
-        selfEntity.position = candidate
+        if (candidate.x !== intended.x) this.movementRemainder.dx = 0;
+        if (candidate.y !== intended.y) this.movementRemainder.dy = 0;
+        selfEntity.position = candidate;
       }
-      enteredPortal = this.dispatchTriggers(triggers)
+      enteredPortal = this.dispatchTriggers(triggers);
     }
 
-    selfEntity.tempo = velocity.dx === 0 && velocity.dy === 0 ? TEMPO.default : tempo
-    this.session.entities.set(selfIndex, selfEntity)
-    this.renderSurface.updateTempo(selfIndex, selfEntity.tempo)
+    selfEntity.tempo = velocity.dx === 0 && velocity.dy === 0 ? TEMPO.default : tempo;
+    this.session.entities.set(selfIndex, selfEntity);
+    this.renderSurface.updateTempo(selfIndex, selfEntity.tempo);
     // Render at the exact sub-pixel position: the integer step of a screen-straight walk
     // alternates between neighbouring world directions tick to tick, which reads as left/right
     // jitter if the renderer only ever sees the rounded grid position.
@@ -338,14 +324,14 @@ export class GameplayPredictor {
         y: selfEntity.position.y + this.movementRemainder.dy,
       },
       selfEntity.facing,
-      travel
-    )
+      travel,
+    );
 
     // A portal-blocked tick must not also report its now-stale old-sector position: the server
     // processes `enterPortal` first and switches sector, so a trailing `clientPosition` would
     // apply the old coordinates in the new sector and snap the player off the arrival placement.
     if (!enteredPortal) {
-      this.emitIfChanged(selfEntity, selfEntity.tempo, nowMs)
+      this.emitIfChanged(selfEntity, selfEntity.tempo, nowMs);
     }
   }
 
@@ -356,17 +342,17 @@ export class GameplayPredictor {
    */
   private dispatchTriggers(triggers: CollisionTriggers): boolean {
     if (triggers.bumpedNPC !== undefined) {
-      this.send({ tag: 'bumpNPC', payload: { npcIndex: triggers.bumpedNPC } })
+      this.send({ tag: 'bumpNPC', payload: { npcIndex: triggers.bumpedNPC } });
     }
     if (triggers.portal === undefined) {
-      this.lastBumpedPortalIndex = undefined
-      return false
+      this.lastBumpedPortalIndex = undefined;
+      return false;
     }
     if (triggers.portal !== this.lastBumpedPortalIndex) {
-      this.lastBumpedPortalIndex = triggers.portal
-      this.send({ tag: 'enterPortal', payload: { portalIndex: triggers.portal } })
+      this.lastBumpedPortalIndex = triggers.portal;
+      this.send({ tag: 'enterPortal', payload: { portalIndex: triggers.portal } });
     }
-    return true
+    return true;
   }
 
   /**
@@ -374,12 +360,12 @@ export class GameplayPredictor {
    * set so the slide reaches their feet box; this re-introduces them as bump targets.
    */
   private npcFeetRects(): { index: number; rect: PixelRect }[] {
-    const rects: { index: number; rect: PixelRect }[] = []
+    const rects: { index: number; rect: PixelRect }[] = [];
     for (const entity of this.session.entities.values()) {
-      if (entity.kind !== 'npc') continue
-      rects.push({ index: entity.id, rect: feetRect(entity.position, entity.maskSize) })
+      if (entity.kind !== 'npc') continue;
+      rects.push({ index: entity.id, rect: feetRect(entity.position, entity.maskSize) });
     }
-    return rects
+    return rects;
   }
 
   /**
@@ -388,8 +374,7 @@ export class GameplayPredictor {
    */
   private emitIfChanged(entity: WorldEntity, tempo: Tempo, nowMs: number): void {
     const facingUnchanged =
-      this.lastEmittedFacing !== undefined &&
-      Math.abs(angularDistance(this.lastEmittedFacing, entity.facing)) <= FACING_EMIT_THRESHOLD_DEGREES
+      this.lastEmittedFacing !== undefined && Math.abs(angularDistance(this.lastEmittedFacing, entity.facing)) <= FACING_EMIT_THRESHOLD_DEGREES;
     if (
       this.lastEmittedPosition !== undefined &&
       this.lastEmittedPosition.x === entity.position.x &&
@@ -397,18 +382,18 @@ export class GameplayPredictor {
       facingUnchanged &&
       this.lastEmittedTempo === tempo
     ) {
-      return
+      return;
     }
     // Heartbeat gate. The last-emitted snapshot is deliberately left unchanged when throttled, so
     // the next tick past the interval still sees the move as pending and reports the final
     // position rather than dropping it.
     if (this.lastEmitMs !== undefined && nowMs - this.lastEmitMs < POSITION_HEARTBEAT_INTERVAL_MS) {
-      return
+      return;
     }
-    this.lastEmitMs = nowMs
-    this.lastEmittedPosition = { ...entity.position }
-    this.lastEmittedFacing = entity.facing
-    this.lastEmittedTempo = tempo
+    this.lastEmitMs = nowMs;
+    this.lastEmittedPosition = { ...entity.position };
+    this.lastEmittedFacing = entity.facing;
+    this.lastEmittedTempo = tempo;
     this.send({
       tag: 'clientPosition',
       payload: {
@@ -418,6 +403,6 @@ export class GameplayPredictor {
         facing: entity.facing,
         tempo,
       },
-    })
+    });
   }
 }

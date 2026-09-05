@@ -1,5 +1,5 @@
-import { sql } from 'kysely'
-import type { Kysely } from 'kysely'
+import { sql } from 'kysely';
+import type { Kysely } from 'kysely';
 
 /**
  * The whole schema in one migration.
@@ -18,7 +18,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       column
         .notNull()
         .generatedAlwaysAs(sql`LOWER(NORMALIZE(name, NFKC))`)
-        .stored()
+        .stored(),
     )
     .addColumn('password_hash', 'text', (column) => column.notNull())
     .addColumn('email', 'text', (column) => column.notNull())
@@ -26,20 +26,18 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('name_skeleton', 'text', (column) => column.notNull())
     .addUniqueConstraint('accounts_name_normalized_key', ['name_normalized'])
     .addUniqueConstraint('accounts_name_skeleton_key', ['name_skeleton'])
-    .execute()
+    .execute();
 
   await db.schema
     .createTable('characters')
     .addColumn('id', 'uuid', (column) => column.primaryKey())
-    .addColumn('account_id', 'uuid', (column) =>
-      column.notNull().references('accounts.id').onDelete('cascade')
-    )
+    .addColumn('account_id', 'uuid', (column) => column.notNull().references('accounts.id').onDelete('cascade'))
     .addColumn('name', 'text', (column) => column.notNull())
     .addColumn('name_normalized', 'text', (column) =>
       column
         .notNull()
         .generatedAlwaysAs(sql`LOWER(NORMALIZE(name, NFKC))`)
-        .stored()
+        .stored(),
     )
     .addColumn('figure', 'int2', (column) => column.notNull())
     .addColumn('gender', 'int2', (column) => column.notNull())
@@ -61,24 +59,19 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addCheckConstraint('characters_mana_check', sql`mana_current <= mana_max`)
     .addUniqueConstraint('characters_name_normalized_key', ['name_normalized'])
     .addUniqueConstraint('characters_name_skeleton_key', ['name_skeleton'])
-    .execute()
+    .execute();
 
   await db.schema
     .createTable('inventory_rows')
-    .addColumn('character_id', 'uuid', (column) =>
-      column.notNull().references('characters.id').onDelete('cascade')
-    )
+    .addColumn('character_id', 'uuid', (column) => column.notNull().references('characters.id').onDelete('cascade'))
     .addColumn('slot', 'int2', (column) => column.notNull())
     .addColumn('category', 'int2', (column) => column.notNull())
     .addColumn('item_id', 'int2', (column) => column.notNull())
     .addColumn('extras', 'jsonb', (column) => column.notNull().defaultTo(sql`'[]'::jsonb`))
     .addColumn('equipped_hand', 'int2')
     .addPrimaryKeyConstraint('inventory_rows_pkey', ['character_id', 'slot'])
-    .addCheckConstraint(
-      'inventory_rows_equipped_hand_check',
-      sql`equipped_hand IS NULL OR equipped_hand IN (0, 1)`
-    )
-    .execute()
+    .addCheckConstraint('inventory_rows_equipped_hand_check', sql`equipped_hand IS NULL OR equipped_hand IN (0, 1)`)
+    .execute();
 
   await db.schema
     .createTable('world_clock')
@@ -90,7 +83,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('month', 'int2', (column) => column.notNull())
     .addColumn('year', 'int2', (column) => column.notNull())
     .addCheckConstraint('world_clock_single_row', sql`id = TRUE`)
-    .execute()
+    .execute();
 
   await db.schema
     .createTable('npc_dialog_states')
@@ -98,7 +91,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('npc_index', 'int2', (column) => column.notNull())
     .addColumn('script_step', 'int2', (column) => column.notNull())
     .addPrimaryKeyConstraint('npc_dialog_states_pkey', ['sector_name', 'npc_index'])
-    .execute()
+    .execute();
 
   // The stored value is an unsalted SHA-256 digest of the raw token, never the token itself, so
   // a database read cannot be replayed as a credential; unsalted so the column is directly
@@ -107,23 +100,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   await db.schema
     .createTable('sessions')
     .addColumn('token_digest', 'text', (column) => column.primaryKey())
-    .addColumn('account_id', 'uuid', (column) =>
-      column.notNull().references('accounts.id').onDelete('cascade')
-    )
+    .addColumn('account_id', 'uuid', (column) => column.notNull().references('accounts.id').onDelete('cascade'))
     .addColumn('created_at', 'timestamptz', (column) => column.notNull().defaultTo(sql`NOW()`))
     .addColumn('expires_at', 'timestamptz', (column) => column.notNull())
-    .execute()
+    .execute();
   // Redemption filters on expiry and cleanup deletes by it, so both paths want the index; the
   // account index serves the ON DELETE CASCADE and the per-account cap eviction.
-  await db.schema.createIndex('sessions_expires_at_idx').on('sessions').column('expires_at').execute()
-  await db.schema.createIndex('sessions_account_id_idx').on('sessions').column('account_id').execute()
+  await db.schema.createIndex('sessions_expires_at_idx').on('sessions').column('expires_at').execute();
+  await db.schema.createIndex('sessions_account_id_idx').on('sessions').column('account_id').execute();
 }
 
 export async function down(db: Kysely<unknown>): Promise<void> {
-  await db.schema.dropTable('sessions').execute()
-  await db.schema.dropTable('npc_dialog_states').execute()
-  await db.schema.dropTable('world_clock').execute()
-  await db.schema.dropTable('inventory_rows').execute()
-  await db.schema.dropTable('characters').execute()
-  await db.schema.dropTable('accounts').execute()
+  await db.schema.dropTable('sessions').execute();
+  await db.schema.dropTable('npc_dialog_states').execute();
+  await db.schema.dropTable('world_clock').execute();
+  await db.schema.dropTable('inventory_rows').execute();
+  await db.schema.dropTable('characters').execute();
+  await db.schema.dropTable('accounts').execute();
 }

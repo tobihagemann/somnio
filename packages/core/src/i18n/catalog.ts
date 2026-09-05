@@ -5,24 +5,24 @@
  * as a raw identifier.
  */
 
-export type CatalogLocale = 'en' | 'de'
-export const CATALOG_LOCALES: readonly CatalogLocale[] = ['en', 'de']
+export type CatalogLocale = 'en' | 'de';
+export const CATALOG_LOCALES: readonly CatalogLocale[] = ['en', 'de'];
 
 /** One locale's `key -> value` table. */
-export type LocaleTable = Record<string, string>
+export type LocaleTable = Record<string, string>;
 
-export type CatalogTables = Record<CatalogLocale, LocaleTable>
+export type CatalogTables = Record<CatalogLocale, LocaleTable>;
 
 /** The committed catalog shape: one `{en, de}` pair per English key. */
-export type CatalogJSON = Record<string, { en: string; de: string }>
+export type CatalogJSON = Record<string, { en: string; de: string }>;
 
 export function readCatalog(json: CatalogJSON): CatalogTables {
-  const tables: CatalogTables = { en: {}, de: {} }
+  const tables: CatalogTables = { en: {}, de: {} };
   for (const [key, entry] of Object.entries(json)) {
-    tables.en[key] = entry.en
-    tables.de[key] = entry.de
+    tables.en[key] = entry.en;
+    tables.de[key] = entry.de;
   }
-  return tables
+  return tables;
 }
 
 /**
@@ -34,22 +34,22 @@ export function readCatalog(json: CatalogJSON): CatalogTables {
  * come last.
  */
 export function mergeCatalogs(catalogs: readonly CatalogTables[]): {
-  tables: CatalogTables
-  collisions: string[]
+  tables: CatalogTables;
+  collisions: string[];
 } {
-  const tables: CatalogTables = { en: {}, de: {} }
-  const seen = new Set<string>()
-  const collisions = new Set<string>()
+  const tables: CatalogTables = { en: {}, de: {} };
+  const seen = new Set<string>();
+  const collisions = new Set<string>();
   for (const catalog of catalogs) {
     for (const key of Object.keys(catalog.en)) {
-      if (seen.has(key)) collisions.add(key)
-      seen.add(key)
+      if (seen.has(key)) collisions.add(key);
+      seen.add(key);
     }
     for (const locale of CATALOG_LOCALES) {
-      Object.assign(tables[locale], catalog[locale])
+      Object.assign(tables[locale], catalog[locale]);
     }
   }
-  return { tables, collisions: [...collisions].sort() }
+  return { tables, collisions: [...collisions].sort() };
 }
 
 /**
@@ -61,14 +61,14 @@ export function mergeCatalogs(catalogs: readonly CatalogTables[]): {
  * formatting-string injection when the argument is a player-supplied name.
  */
 export function formatTemplate(template: string, args: readonly string[]): string {
-  let nextIndex = 0
+  let nextIndex = 0;
   return template.replace(/%%|%(\d+)\$@|%@/g, (match, position?: string) => {
-    if (match === '%%') return '%'
-    if (position !== undefined) return args[Number(position) - 1] ?? match
-    const argument = args[nextIndex]
-    nextIndex += 1
-    return argument ?? match
-  })
+    if (match === '%%') return '%';
+    if (position !== undefined) return args[Number(position) - 1] ?? match;
+    const argument = args[nextIndex];
+    nextIndex += 1;
+    return argument ?? match;
+  });
 }
 
 /**
@@ -79,21 +79,16 @@ export function formatTemplate(template: string, args: readonly string[]): strin
  * it. The fallback chain is a single rule, so a change (a new locale, a different miss
  * behaviour) cannot land in one caller and not another.
  */
-export function lookupIn(
-  tables: CatalogTables,
-  locale: CatalogLocale,
-  key: string,
-  args: readonly string[]
-): string {
-  const template = tables[locale][key] ?? tables.en[key] ?? key
-  return args.length === 0 ? template : formatTemplate(template, [...args])
+export function lookupIn(tables: CatalogTables, locale: CatalogLocale, key: string, args: readonly string[]): string {
+  const template = tables[locale][key] ?? tables.en[key] ?? key;
+  return args.length === 0 ? template : formatTemplate(template, [...args]);
 }
 
 /** One catalog rule violation, as `catalogViolations` reports it. */
 export interface CatalogViolation {
-  key: string
-  rule: 'missingLocale' | 'emptyValue' | 'placeholderMismatch' | 'unicodeEllipsis'
-  detail: string
+  key: string;
+  rule: 'missingLocale' | 'emptyValue' | 'placeholderMismatch' | 'unicodeEllipsis';
+  detail: string;
 }
 
 /**
@@ -101,9 +96,7 @@ export interface CatalogViolation {
  * Bare `%@` and positional `%1$@` stay distinct.
  */
 function placeholders(template: string): string[] {
-  return [...template.matchAll(/%(\d+)\$@|%@/g)]
-    .map((match) => (match[1] === undefined ? '@' : `${match[1]}$@`))
-    .sort()
+  return [...template.matchAll(/%(\d+)\$@|%@/g)].map((match) => (match[1] === undefined ? '@' : `${match[1]}$@`)).sort();
 }
 
 /**
@@ -112,35 +105,32 @@ function placeholders(template: string): string[] {
  * is the allowlist of keys the consumer renders; a key absent from it ships unguarded, which is
  * why each consumer also scans its sources for rendered keys.
  */
-export function catalogViolations(
-  tables: CatalogTables,
-  expectedKeys: readonly string[]
-): CatalogViolation[] {
-  const violations: CatalogViolation[] = []
+export function catalogViolations(tables: CatalogTables, expectedKeys: readonly string[]): CatalogViolation[] {
+  const violations: CatalogViolation[] = [];
   for (const key of expectedKeys) {
     for (const locale of CATALOG_LOCALES) {
-      const value = tables[locale][key]
+      const value = tables[locale][key];
       if (value === undefined) {
-        violations.push({ key, rule: 'missingLocale', detail: `no ${locale} value` })
+        violations.push({ key, rule: 'missingLocale', detail: `no ${locale} value` });
       } else if (value.length === 0) {
-        violations.push({ key, rule: 'emptyValue', detail: `empty ${locale} value` })
+        violations.push({ key, rule: 'emptyValue', detail: `empty ${locale} value` });
       } else if (value.includes('\u2026')) {
-        violations.push({ key, rule: 'unicodeEllipsis', detail: `${locale} value uses U+2026` })
+        violations.push({ key, rule: 'unicodeEllipsis', detail: `${locale} value uses U+2026` });
       }
     }
-    const english = tables.en[key]
-    const german = tables.de[key]
+    const english = tables.en[key];
+    const german = tables.de[key];
     if (english !== undefined && german !== undefined) {
-      const englishPlaceholders = placeholders(english)
-      const germanPlaceholders = placeholders(german)
+      const englishPlaceholders = placeholders(english);
+      const germanPlaceholders = placeholders(german);
       if (englishPlaceholders.join(',') !== germanPlaceholders.join(',')) {
         violations.push({
           key,
           rule: 'placeholderMismatch',
           detail: `en has [${englishPlaceholders.join(', ')}], de has [${germanPlaceholders.join(', ')}]`,
-        })
+        });
       }
     }
   }
-  return violations
+  return violations;
 }

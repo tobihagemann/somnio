@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 /**
  * One Vitest invocation for the whole workspace. Every package's unit suite is a project that
@@ -13,16 +13,12 @@ const unitProjects = [
   'packages/server/vitest.config.ts',
   'packages/cli/vitest.config.ts',
   'packages/web/vitest.config.ts',
-]
+];
 
-const integrationProjects = [
-  'packages/data/vitest.integration.config.ts',
-  'packages/server/vitest.integration.config.ts',
-]
+const integrationProjects = ['packages/data/vitest.integration.config.ts', 'packages/server/vitest.integration.config.ts'];
 
 export default defineConfig({
   test: {
-    projects:
-      process.env.SOMNIO_INTEGRATION === '1' ? [...unitProjects, ...integrationProjects] : unitProjects,
+    projects: process.env.SOMNIO_INTEGRATION === '1' ? [...unitProjects, ...integrationProjects] : unitProjects,
   },
-})
+});

@@ -1,6 +1,6 @@
-import type { WireInventoryRow, WireSector, WireHand } from './wire.ts'
-import { WIRE_HAND_VALUES, decodeWireInventoryRow, decodeWireSector } from './wire.ts'
-import { truncateToUTF8Bytes } from './constants.ts'
+import type { WireInventoryRow, WireSector, WireHand } from './wire.ts';
+import { WIRE_HAND_VALUES, decodeWireInventoryRow, decodeWireSector } from './wire.ts';
+import { truncateToUTF8Bytes } from './constants.ts';
 import {
   PROTOCOL_BYTE_CAPS,
   mapArray,
@@ -13,7 +13,7 @@ import {
   requireString,
   requireUInt16,
   requireWithinByteCap,
-} from './validate.ts'
+} from './validate.ts';
 
 /**
  * The message payloads of the protocol package. One interface per payload, property
@@ -22,64 +22,64 @@ import {
  */
 
 export interface LoginMessage {
-  nickname: string
-  password: string
+  nickname: string;
+  password: string;
   /**
    * Request a resumable session token alongside a successful login. Optional so a client
    * built before this field still decodes on a token-aware server — which is what keeps
    * `helloVersion` at 3. Omitting it must yield no `sessionToken` frame at all.
    */
-  requestSessionToken?: boolean
+  requestSessionToken?: boolean;
 }
 
 export interface RegisterMessage {
-  nickname: string
-  password: string
-  passwordRepeat: string
-  characterClass: number
-  gender: number
-  email: string
+  nickname: string;
+  password: string;
+  passwordRepeat: string;
+  characterClass: number;
+  gender: number;
+  email: string;
 }
 
 export interface PositionMessage {
-  entityIndex: number
-  x: number
-  y: number
+  entityIndex: number;
+  x: number;
+  y: number;
   /** Continuous heading in degrees `[0, 360)` (0 = south, 90 = east). */
-  facing: number
-  tempo: number
+  facing: number;
+  tempo: number;
 }
 
 export interface SayMessage {
-  entityIndex: number
-  text: string
+  entityIndex: number;
+  text: string;
 }
 
 export interface EquipToggleMessage {
-  slot: number
-  hand: WireHand
+  slot: number;
+  hand: WireHand;
 }
 
 export interface BumpNPCMessage {
-  npcIndex: number
+  npcIndex: number;
 }
 
 export interface EnterPortalMessage {
-  portalIndex: number
+  portalIndex: number;
 }
 
 /** Redeem a stored session token in place of a password login. Accepted pre-login only. */
 export interface RedeemSessionMessage {
-  token: string
+  token: string;
 }
 
 /** Revoke the token presented on this connection. Accepted post-attach only. */
 export interface RevokeSessionMessage {
-  token: string
+  token: string;
 }
 
 export interface HelloMessage {
-  protocolVersion: number
+  protocolVersion: number;
 }
 
 /**
@@ -88,12 +88,12 @@ export interface HelloMessage {
  * Stating the set twice is how a new case gets added to the map and forgotten in the list, at which
  * point the decoder rejects the value the server just started sending and reports a decode failure.
  */
-export const LOGIN_RESULT = { ok: 0, badCredentials: 1, alreadyLoggedIn: 2 } as const
-const LOGIN_RESULT_CODES = Object.values(LOGIN_RESULT)
-export type LoginResultCode = (typeof LOGIN_RESULT)[keyof typeof LOGIN_RESULT]
+export const LOGIN_RESULT = { ok: 0, badCredentials: 1, alreadyLoggedIn: 2 } as const;
+const LOGIN_RESULT_CODES = Object.values(LOGIN_RESULT);
+export type LoginResultCode = (typeof LOGIN_RESULT)[keyof typeof LOGIN_RESULT];
 
 export interface LoginResultMessage {
-  result: LoginResultCode
+  result: LoginResultCode;
 }
 
 export const REGISTER_RESULT = {
@@ -101,65 +101,65 @@ export const REGISTER_RESULT = {
   nicknameExists: 1,
   failure: 2,
   nameNotAllowed: 3,
-} as const
-const REGISTER_RESULT_CODES = Object.values(REGISTER_RESULT)
-export type RegisterResultCode = (typeof REGISTER_RESULT)[keyof typeof REGISTER_RESULT]
+} as const;
+const REGISTER_RESULT_CODES = Object.values(REGISTER_RESULT);
+export type RegisterResultCode = (typeof REGISTER_RESULT)[keyof typeof REGISTER_RESULT];
 
 export interface RegisterResultMessage {
-  result: RegisterResultCode
+  result: RegisterResultCode;
 }
 
 export interface EnterSectorMessage {
-  sector: WireSector
+  sector: WireSector;
 }
 
 export interface MainCharacterMessage {
-  entityIndex: number
+  entityIndex: number;
 }
 
-export const WIRE_ENTITY_TYPE = { player: 0, npc: 1, monster: 2 } as const
-const WIRE_ENTITY_TYPES = Object.values(WIRE_ENTITY_TYPE)
-export type WireEntityType = (typeof WIRE_ENTITY_TYPE)[keyof typeof WIRE_ENTITY_TYPE]
+export const WIRE_ENTITY_TYPE = { player: 0, npc: 1, monster: 2 } as const;
+const WIRE_ENTITY_TYPES = Object.values(WIRE_ENTITY_TYPE);
+export type WireEntityType = (typeof WIRE_ENTITY_TYPE)[keyof typeof WIRE_ENTITY_TYPE];
 
 export interface EntityMessage {
-  entityIndex: number
-  figure: number
-  gender: number
-  maskWidth: number
-  maskHeight: number
-  type: WireEntityType
-  name: string
-  x: number
-  y: number
-  facing: number
-  tempo: number
+  entityIndex: number;
+  figure: number;
+  gender: number;
+  maskWidth: number;
+  maskHeight: number;
+  type: WireEntityType;
+  name: string;
+  x: number;
+  y: number;
+  facing: number;
+  tempo: number;
 }
 
 export interface Energy {
-  hpCurrent: number
-  hpMax: number
-  balanceCurrent: number
-  balanceMax: number
-  manaCurrent: number
-  manaMax: number
+  hpCurrent: number;
+  hpMax: number;
+  balanceCurrent: number;
+  balanceMax: number;
+  manaCurrent: number;
+  manaMax: number;
 }
 
 export interface DateTickMessage {
-  hour: number
-  minute: number
+  hour: number;
+  minute: number;
 }
 
 export interface InventoryMessage {
-  rows: WireInventoryRow[]
+  rows: WireInventoryRow[];
 }
 
 export interface LeaveMessage {
-  entityIndex: number
-  leftGame: boolean
+  entityIndex: number;
+  leftGame: boolean;
 }
 
 export interface AdminSayMessage {
-  text: string
+  text: string;
 }
 
 /**
@@ -169,31 +169,30 @@ export interface AdminSayMessage {
  * The raw token is returned exactly once — the server stores only a digest.
  */
 export interface SessionTokenMessage {
-  token: string
+  token: string;
   /**
    * Seconds until expiry, so the client never has to trust its own clock offset. `Int32` on
    * the wire: the 30-day lifetime is 2,592,000 seconds, well past an `Int16` ceiling.
    */
-  expiresInSeconds: number
+  expiresInSeconds: number;
 }
 
 /** Acknowledgement that the presented token's row is gone. */
 export interface SessionRevokedMessage {
-  revoked: boolean
+  revoked: boolean;
 }
 
 export function decodeLoginMessage(container: Record<string, unknown>, path: string): LoginMessage {
   // `requestSessionToken` is the one Optional on this payload — the additive field that keeps
   // `helloVersion` at 3 — so absent and explicit `null` both decode as "not requested", while a
   // present value is still type-checked.
-  const raw = container['requestSessionToken']
-  const requestSessionToken =
-    raw === undefined || raw === null ? undefined : requireBool(container, 'requestSessionToken', path)
+  const raw = container['requestSessionToken'];
+  const requestSessionToken = raw === undefined || raw === null ? undefined : requireBool(container, 'requestSessionToken', path);
   return {
     nickname: requireString(container, 'nickname', path),
     password: requireString(container, 'password', path),
     ...(requestSessionToken === undefined ? {} : { requestSessionToken }),
-  }
+  };
 }
 
 export function decodeRegisterMessage(container: Record<string, unknown>, path: string): RegisterMessage {
@@ -204,7 +203,7 @@ export function decodeRegisterMessage(container: Record<string, unknown>, path: 
     characterClass: requireInt16(container, 'characterClass', path),
     gender: requireInt16(container, 'gender', path),
     email: requireString(container, 'email', path),
-  }
+  };
 }
 
 export function decodePositionMessage(container: Record<string, unknown>, path: string): PositionMessage {
@@ -214,7 +213,7 @@ export function decodePositionMessage(container: Record<string, unknown>, path: 
     y: requireInt16(container, 'y', path),
     facing: requireFloat(container, 'facing', path),
     tempo: requireInt16(container, 'tempo', path),
-  }
+  };
 }
 
 /**
@@ -225,7 +224,7 @@ export function decodeClientSay(container: Record<string, unknown>, path: string
   return {
     entityIndex: requireInt16(container, 'entityIndex', path),
     text: requireString(container, 'text', path),
-  }
+  };
 }
 
 /**
@@ -235,84 +234,56 @@ export function decodeClientSay(container: Record<string, unknown>, path: string
 export function decodeServerSay(container: Record<string, unknown>, path: string): SayMessage {
   return {
     entityIndex: requireInt16(container, 'entityIndex', path),
-    text: requireWithinByteCap(
-      requireString(container, 'text', path),
-      PROTOCOL_BYTE_CAPS.say,
-      `${path}.text`
-    ),
-  }
+    text: requireWithinByteCap(requireString(container, 'text', path), PROTOCOL_BYTE_CAPS.say, `${path}.text`),
+  };
 }
 
-export function decodeEquipToggleMessage(
-  container: Record<string, unknown>,
-  path: string
-): EquipToggleMessage {
+export function decodeEquipToggleMessage(container: Record<string, unknown>, path: string): EquipToggleMessage {
   return {
     slot: requireInt16(container, 'slot', path),
     hand: requireRawEnum(container, 'hand', path, WIRE_HAND_VALUES),
-  }
+  };
 }
 
 export function decodeBumpNPCMessage(container: Record<string, unknown>, path: string): BumpNPCMessage {
-  return { npcIndex: requireInt16(container, 'npcIndex', path) }
+  return { npcIndex: requireInt16(container, 'npcIndex', path) };
 }
 
-export function decodeEnterPortalMessage(
-  container: Record<string, unknown>,
-  path: string
-): EnterPortalMessage {
-  return { portalIndex: requireInt16(container, 'portalIndex', path) }
+export function decodeEnterPortalMessage(container: Record<string, unknown>, path: string): EnterPortalMessage {
+  return { portalIndex: requireInt16(container, 'portalIndex', path) };
 }
 
 /**
  * Uncapped on decode, like `decodeClientSay`: the server's session handler answers an over-cap
  * token with `loginResult(badCredentials)` and keeps the socket open, so the cap is its concern.
  */
-export function decodeRedeemSessionMessage(
-  container: Record<string, unknown>,
-  path: string
-): RedeemSessionMessage {
-  return { token: requireString(container, 'token', path) }
+export function decodeRedeemSessionMessage(container: Record<string, unknown>, path: string): RedeemSessionMessage {
+  return { token: requireString(container, 'token', path) };
 }
 
 /** Uncapped like its redeem twin; the server answers an over-cap token with `sessionRevoked(false)`. */
-export function decodeRevokeSessionMessage(
-  container: Record<string, unknown>,
-  path: string
-): RevokeSessionMessage {
-  return { token: requireString(container, 'token', path) }
+export function decodeRevokeSessionMessage(container: Record<string, unknown>, path: string): RevokeSessionMessage {
+  return { token: requireString(container, 'token', path) };
 }
 
 export function decodeHelloMessage(container: Record<string, unknown>, path: string): HelloMessage {
-  return { protocolVersion: requireUInt16(container, 'protocolVersion', path) }
+  return { protocolVersion: requireUInt16(container, 'protocolVersion', path) };
 }
 
-export function decodeLoginResultMessage(
-  container: Record<string, unknown>,
-  path: string
-): LoginResultMessage {
-  return { result: requireRawEnum(container, 'result', path, LOGIN_RESULT_CODES) }
+export function decodeLoginResultMessage(container: Record<string, unknown>, path: string): LoginResultMessage {
+  return { result: requireRawEnum(container, 'result', path, LOGIN_RESULT_CODES) };
 }
 
-export function decodeRegisterResultMessage(
-  container: Record<string, unknown>,
-  path: string
-): RegisterResultMessage {
-  return { result: requireRawEnum(container, 'result', path, REGISTER_RESULT_CODES) }
+export function decodeRegisterResultMessage(container: Record<string, unknown>, path: string): RegisterResultMessage {
+  return { result: requireRawEnum(container, 'result', path, REGISTER_RESULT_CODES) };
 }
 
-export function decodeEnterSectorMessage(
-  container: Record<string, unknown>,
-  path: string
-): EnterSectorMessage {
-  return { sector: decodeWireSector(requireNested(container, 'sector', path), `${path}.sector`) }
+export function decodeEnterSectorMessage(container: Record<string, unknown>, path: string): EnterSectorMessage {
+  return { sector: decodeWireSector(requireNested(container, 'sector', path), `${path}.sector`) };
 }
 
-export function decodeMainCharacterMessage(
-  container: Record<string, unknown>,
-  path: string
-): MainCharacterMessage {
-  return { entityIndex: requireInt16(container, 'entityIndex', path) }
+export function decodeMainCharacterMessage(container: Record<string, unknown>, path: string): MainCharacterMessage {
+  return { entityIndex: requireInt16(container, 'entityIndex', path) };
 }
 
 /**
@@ -340,7 +311,7 @@ export function decodeEntityMessage(container: Record<string, unknown>, path: st
     y: requireInt16(container, 'y', path),
     facing: requireFloat(container, 'facing', path),
     tempo: requireInt16(container, 'tempo', path),
-  }
+  };
 }
 
 export function decodeEnergy(container: Record<string, unknown>, path: string): Energy {
@@ -351,58 +322,44 @@ export function decodeEnergy(container: Record<string, unknown>, path: string): 
     balanceMax: requireInt16(container, 'balanceMax', path),
     manaCurrent: requireInt16(container, 'manaCurrent', path),
     manaMax: requireInt16(container, 'manaMax', path),
-  }
+  };
 }
 
 export function decodeDateTickMessage(container: Record<string, unknown>, path: string): DateTickMessage {
   return {
     hour: requireInt16(container, 'hour', path),
     minute: requireInt16(container, 'minute', path),
-  }
+  };
 }
 
 export function decodeInventoryMessage(container: Record<string, unknown>, path: string): InventoryMessage {
-  return { rows: mapArray(container, 'rows', path, decodeWireInventoryRow) }
+  return { rows: mapArray(container, 'rows', path, decodeWireInventoryRow) };
 }
 
 export function decodeLeaveMessage(container: Record<string, unknown>, path: string): LeaveMessage {
   return {
     entityIndex: requireInt16(container, 'entityIndex', path),
     leftGame: requireBool(container, 'leftGame', path),
-  }
+  };
 }
 
 export function decodeAdminSayMessage(container: Record<string, unknown>, path: string): AdminSayMessage {
   return {
-    text: requireWithinByteCap(
-      requireString(container, 'text', path),
-      PROTOCOL_BYTE_CAPS.say,
-      `${path}.text`
-    ),
-  }
+    text: requireWithinByteCap(requireString(container, 'text', path), PROTOCOL_BYTE_CAPS.say, `${path}.text`),
+  };
 }
 
-export function decodeSessionTokenMessage(
-  container: Record<string, unknown>,
-  path: string
-): SessionTokenMessage {
+export function decodeSessionTokenMessage(container: Record<string, unknown>, path: string): SessionTokenMessage {
   return {
     // Capped on the way in like `say` and `adminSay`, for the same reason those are: the server
     // bounds what it *accepts*, nothing bounds what it sends. An oversized token would otherwise be
     // written to `localStorage` and cost a full connect-and-redeem round trip on every later load
     // before the server's own cap rejected it.
-    token: requireWithinByteCap(
-      requireString(container, 'token', path),
-      PROTOCOL_BYTE_CAPS.sessionToken,
-      `${path}.token`
-    ),
+    token: requireWithinByteCap(requireString(container, 'token', path), PROTOCOL_BYTE_CAPS.sessionToken, `${path}.token`),
     expiresInSeconds: requireInt32(container, 'expiresInSeconds', path),
-  }
+  };
 }
 
-export function decodeSessionRevokedMessage(
-  container: Record<string, unknown>,
-  path: string
-): SessionRevokedMessage {
-  return { revoked: requireBool(container, 'revoked', path) }
+export function decodeSessionRevokedMessage(container: Record<string, unknown>, path: string): SessionRevokedMessage {
+  return { revoked: requireBool(container, 'revoked', path) };
 }

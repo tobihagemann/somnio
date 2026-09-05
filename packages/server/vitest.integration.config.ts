@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 /** Testcontainers Postgres per file; joins the root run only under `SOMNIO_INTEGRATION=1`. */
 export default defineConfig({
@@ -9,4 +9,4 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 120_000,
   },
-})
+});

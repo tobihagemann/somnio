@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { CHARACTER_CLASS, GENDER } from '../src/characterClass.ts'
-import { figureIndex } from '../src/spriteFigure.ts'
+import { describe, expect, it } from 'vitest';
+import { CHARACTER_CLASS, GENDER } from '../src/characterClass.ts';
+import { figureIndex } from '../src/spriteFigure.ts';
 
 describe('figure index', () => {
   it.each([
@@ -21,6 +21,6 @@ describe('figure index', () => {
     [CHARACTER_CLASS.mage, GENDER.male, 14],
     [CHARACTER_CLASS.mage, GENDER.female, 15],
   ])('class %i gender %i -> %i', (characterClass, gender, expected) => {
-    expect(figureIndex(characterClass, gender)).toBe(expected)
-  })
-})
+    expect(figureIndex(characterClass, gender)).toBe(expected);
+  });
+});

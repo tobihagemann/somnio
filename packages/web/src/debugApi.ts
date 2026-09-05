@@ -1,6 +1,6 @@
-import { renderChatLine } from '@/i18n'
-import { catalogTables, currentLocale } from '@/i18n'
-import type { AppShell } from '@/ui/appShell'
+import { renderChatLine } from '@/i18n';
+import { catalogTables, currentLocale } from '@/i18n';
+import type { AppShell } from '@/ui/appShell';
 
 /**
  * Read-only introspection surface for automated verification.
@@ -17,35 +17,35 @@ import type { AppShell } from '@/ui/appShell'
  */
 
 export interface SomnioDebugAPI {
-  connectionState(): string
+  connectionState(): string;
   /** `undefined` until `mainCharacter` arrives and the entity stream places the player. */
-  player(): { x: number; y: number; facing: number; tempo: number; name: string } | undefined
-  sectorName(): string | undefined
-  entities(): { id: number; kind: string; name: string; x: number; y: number }[]
+  player(): { x: number; y: number; facing: number; tempo: number; name: string } | undefined;
+  sectorName(): string | undefined;
+  entities(): { id: number; kind: string; name: string; x: number; y: number }[];
   /** How many placed objects are still rendering a placeholder rather than a resolved model. */
-  placeholderObjectCount(): number
+  placeholderObjectCount(): number;
   /** Localized scrollback, matching exactly what the chat panel shows. */
-  chatHistory(): string[]
-  cameraScale(): number | undefined
-  overlay(): string | undefined
-  zoomFactor(): number
+  chatHistory(): string[];
+  cameraScale(): number | undefined;
+  overlay(): string | undefined;
+  zoomFactor(): number;
 }
 
 export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
   return {
     connectionState: () => shell.controller.connectionState,
     player: () => {
-      const index = shell.controller.selfEntityIndex
-      if (index === undefined) return undefined
-      const entity = shell.controller.entities.get(index)
-      if (entity === undefined) return undefined
+      const index = shell.controller.selfEntityIndex;
+      if (index === undefined) return undefined;
+      const entity = shell.controller.entities.get(index);
+      if (entity === undefined) return undefined;
       return {
         x: entity.position.x,
         y: entity.position.y,
         facing: entity.facing,
         tempo: entity.tempo,
         name: entity.name,
-      }
+      };
     },
     sectorName: () => shell.controller.currentSector?.name,
     entities: () =>
@@ -57,12 +57,11 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         y: entity.position.y,
       })),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,
-    chatHistory: () =>
-      shell.controller.chatHistory.map((line) => renderChatLine(line, catalogTables, currentLocale())),
+    chatHistory: () => shell.controller.chatHistory.map((line) => renderChatLine(line, catalogTables, currentLocale())),
     cameraScale: () => shell.scene?._cameraScale(),
     overlay: () => shell.controller.presentedOverlay?.kind,
     zoomFactor: () => shell.session.zoom.factor,
-  }
+  };
 }
 
 /**
@@ -73,13 +72,10 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
  * information leak — `entities()` reports every peer's name and position in the sector, which is
  * more than the rendered view gives away.
  */
-export function installDebugAPI(
-  shell: AppShell,
-  options: { isDevelopment: boolean; search?: string } = { isDevelopment: false }
-): boolean {
-  const search = options.search ?? window.location.search
-  const requested = new URLSearchParams(search).get('debug') === '1'
-  if (!options.isDevelopment && !requested) return false
-  ;(window as unknown as { somnio: SomnioDebugAPI }).somnio = makeDebugAPI(shell)
-  return true
+export function installDebugAPI(shell: AppShell, options: { isDevelopment: boolean; search?: string } = { isDevelopment: false }): boolean {
+  const search = options.search ?? window.location.search;
+  const requested = new URLSearchParams(search).get('debug') === '1';
+  if (!options.isDevelopment && !requested) return false;
+  (window as unknown as { somnio: SomnioDebugAPI }).somnio = makeDebugAPI(shell);
+  return true;
 }

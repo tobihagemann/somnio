@@ -1,5 +1,5 @@
-import { SOMNIO_PROTOCOL_CONSTANTS } from '../../src/index.ts'
-import type { SomnioMessage, WireSector } from '../../src/index.ts'
+import { SOMNIO_PROTOCOL_CONSTANTS } from '../../src/index.ts';
+import type { SomnioMessage, WireSector } from '../../src/index.ts';
 
 /**
  * The canonical golden-frame set: one named frame per message tag, plus fully populated nested
@@ -9,8 +9,8 @@ import type { SomnioMessage, WireSector } from '../../src/index.ts'
  * what pinning them against a committed file catches that the round trips cannot.
  */
 export interface GoldenFrameEntry {
-  name: string
-  message: SomnioMessage
+  name: string;
+  message: SomnioMessage;
 }
 
 /**
@@ -23,9 +23,7 @@ const populatedSector: WireSector = {
   dimensions: { width: 16, height: 12 },
   floorMaterialID: 'grass-meadow',
   light: { indoor: false, brightness: 100 },
-  objects: [
-    { x: 128, y: 256, modelID: 'door', sourceWidth: 64, sourceHeight: 32, priority: 3, rotation: 270 },
-  ],
+  objects: [{ x: 128, y: 256, modelID: 'door', sourceWidth: 64, sourceHeight: 32, priority: 3, rotation: 270 }],
   collisionMasks: [{ x: 128, y: 256, width: 64, height: 32 }],
   portals: [{ x: 0, y: 0, width: 32, height: 32, targetSectorName: 'Nordwiese', direction: 1 }],
   npcs: [
@@ -61,7 +59,7 @@ const populatedSector: WireSector = {
     },
   ],
   floorPatches: [{ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 512, height: 128 }],
-}
+};
 
 /** Every tag must appear, so a new message cannot ship without a fixture. */
 export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
@@ -163,4 +161,4 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: { tag: 'sessionToken', payload: { token: 'tok-abc', expiresInSeconds: 2_592_000 } },
   },
   { name: 'sessionRevoked', message: { tag: 'sessionRevoked', payload: { revoked: true } } },
-]
+];

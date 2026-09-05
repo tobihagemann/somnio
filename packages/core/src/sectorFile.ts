@@ -1,18 +1,10 @@
-import { utf8ByteLength } from '@somnio/protocol'
-import { SOMNIO_CONSTANTS, isWithinSectorBounds, isWithinSectorContentBounds } from './constants.ts'
-import { formatSwiftFloat32 } from './float.ts'
-import { INT16_MAX, INT16_MIN } from './geometry.ts'
-import { heading } from './heading.ts'
-import { PORTAL_DIRECTIONS, PORTAL_DIRECTION_BY_RAW } from './sector.ts'
-import type {
-  CollisionMask,
-  FloorPatch,
-  MonsterSpawn,
-  Sector,
-  SectorNPC,
-  SectorObject,
-  SectorPortal,
-} from './sector.ts'
+import { utf8ByteLength } from '@somnio/protocol';
+import { SOMNIO_CONSTANTS, isWithinSectorBounds, isWithinSectorContentBounds } from './constants.ts';
+import { formatSwiftFloat32 } from './float.ts';
+import { INT16_MAX, INT16_MIN } from './geometry.ts';
+import { heading } from './heading.ts';
+import { PORTAL_DIRECTIONS, PORTAL_DIRECTION_BY_RAW } from './sector.ts';
+import type { CollisionMask, FloorPatch, MonsterSpawn, Sector, SectorNPC, SectorObject, SectorPortal } from './sector.ts';
 
 /**
  * The `.somnio-sector` disk codec.
@@ -29,12 +21,12 @@ import type {
 
 /** One error type for both directions of the codec. */
 export class SectorFileError extends Error {
-  readonly reason: string
+  readonly reason: string;
 
   constructor(reason: string) {
-    super(reason)
-    this.name = 'SectorFileError'
-    this.reason = reason
+    super(reason);
+    this.name = 'SectorFileError';
+    this.reason = reason;
   }
 }
 
@@ -43,17 +35,17 @@ export class SectorFileError extends Error {
 export function readSectorFile(text: string, name: string): Sector {
   // Size preflight in UTF-8 bytes (not UTF-16 code units), before parsing: the count caps in
   // `requireContentCountsWithinBounds` only fire after the whole input is parsed.
-  const byteCount = utf8ByteLength(text)
+  const byteCount = utf8ByteLength(text);
   if (byteCount > SOMNIO_CONSTANTS.maxSectorFileBytes) {
-    throw new SectorFileError(`sector file size out of range: ${byteCount} bytes`)
+    throw new SectorFileError(`sector file size out of range: ${byteCount} bytes`);
   }
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(text)
+    parsed = JSON.parse(text);
   } catch (error) {
-    throw new SectorFileError(`sector file is not valid JSON: ${String(error)}`)
+    throw new SectorFileError(`sector file is not valid JSON: ${String(error)}`);
   }
-  const root = requireObject(parsed, 'sector')
+  const root = requireObject(parsed, 'sector');
 
   const sector: Sector = {
     name,
@@ -67,47 +59,42 @@ export function readSectorFile(text: string, name: string): Sector {
     npcs: requireArray(root['npcs'], 'npcs').map(parseNPC),
     monsterSpawns: requireArray(root['monsterSpawns'], 'monsterSpawns').map(parseMonsterSpawn),
     // A missing `floorPatches` decodes as empty, mirroring `SectorBody.init(from:)`.
-    floorPatches:
-      root['floorPatches'] === undefined
-        ? []
-        : requireArray(root['floorPatches'], 'floorPatches').map(parseFloorPatch),
-  }
+    floorPatches: root['floorPatches'] === undefined ? [] : requireArray(root['floorPatches'], 'floorPatches').map(parseFloorPatch),
+  };
 
   if (!isWithinSectorBounds(sector.dimensions)) {
-    throw new SectorFileError(
-      `sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`
-    )
+    throw new SectorFileError(`sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`);
   }
-  requireContentCountsWithinBounds(sector)
-  return sector
+  requireContentCountsWithinBounds(sector);
+  return sector;
 }
 
 function parseGridSize(value: unknown, label: string): { width: number; height: number } {
-  const object = requireObject(value, label)
+  const object = requireObject(value, label);
   return {
     width: requireInt16(object['width'], `${label}.width`),
     height: requireInt16(object['height'], `${label}.height`),
-  }
+  };
 }
 
 function parseGridPoint(value: unknown, label: string): { x: number; y: number } {
-  const object = requireObject(value, label)
+  const object = requireObject(value, label);
   return {
     x: requireInt16(object['x'], `${label}.x`),
     y: requireInt16(object['y'], `${label}.y`),
-  }
+  };
 }
 
 function parseLight(value: unknown): { indoor: boolean; brightness: number } {
-  const object = requireObject(value, 'light')
+  const object = requireObject(value, 'light');
   return {
     indoor: requireBoolean(object['indoor'], 'light.indoor'),
     brightness: requireInt16(object['brightness'], 'light.brightness'),
-  }
+  };
 }
 
 function parseObjectRecord(value: unknown): SectorObject {
-  const object = requireObject(value, 'object')
+  const object = requireObject(value, 'object');
   return {
     x: requireInt16(object['x'], 'object.x'),
     y: requireInt16(object['y'], 'object.y'),
@@ -117,25 +104,25 @@ function parseObjectRecord(value: unknown): SectorObject {
     priority: requireInt16(object['priority'], 'object.priority'),
     // A missing `rotation` decodes as 0, mirroring `Object.init(from:)`.
     rotation: object['rotation'] === undefined ? 0 : requireInt16(object['rotation'], 'object.rotation'),
-  }
+  };
 }
 
 function parseCollisionMask(value: unknown): CollisionMask {
-  const object = requireObject(value, 'collisionMask')
+  const object = requireObject(value, 'collisionMask');
   return {
     x: requireInt16(object['x'], 'collisionMask.x'),
     y: requireInt16(object['y'], 'collisionMask.y'),
     width: requireInt16(object['width'], 'collisionMask.width'),
     height: requireInt16(object['height'], 'collisionMask.height'),
-  }
+  };
 }
 
 function parsePortal(value: unknown): SectorPortal {
-  const object = requireObject(value, 'portal')
-  const raw = requireInt16(object['direction'], 'portal.direction')
-  const direction = PORTAL_DIRECTION_BY_RAW[raw]
+  const object = requireObject(value, 'portal');
+  const raw = requireInt16(object['direction'], 'portal.direction');
+  const direction = PORTAL_DIRECTION_BY_RAW[raw];
   if (direction === undefined) {
-    throw new SectorFileError(`unknown portal direction: ${raw}`)
+    throw new SectorFileError(`unknown portal direction: ${raw}`);
   }
   return {
     x: requireInt16(object['x'], 'portal.x'),
@@ -144,11 +131,11 @@ function parsePortal(value: unknown): SectorPortal {
     height: requireInt16(object['height'], 'portal.height'),
     targetSectorName: requireString(object['targetSectorName'], 'portal.targetSectorName'),
     direction,
-  }
+  };
 }
 
 function parseNPC(value: unknown): SectorNPC {
-  const object = requireObject(value, 'npc')
+  const object = requireObject(value, 'npc');
   return {
     spawnOrigin: parseGridPoint(object['spawnOrigin'], 'npc.spawnOrigin'),
     spawnBoxSize: parseGridSize(object['spawnBoxSize'], 'npc.spawnBoxSize'),
@@ -160,11 +147,11 @@ function parseNPC(value: unknown): SectorNPC {
     facing: heading(requireNumber(object['direction'], 'npc.direction')),
     behaviorTag: requireInt16(object['behaviorTag'], 'npc.behaviorTag'),
     dialogScript: requireString(object['dialogScript'], 'npc.dialogScript'),
-  }
+  };
 }
 
 function parseMonsterSpawn(value: unknown): MonsterSpawn {
-  const object = requireObject(value, 'monsterSpawn')
+  const object = requireObject(value, 'monsterSpawn');
   return {
     spawnOrigin: parseGridPoint(object['spawnOrigin'], 'monsterSpawn.spawnOrigin'),
     spawnBoxSize: parseGridSize(object['spawnBoxSize'], 'monsterSpawn.spawnBoxSize'),
@@ -176,45 +163,45 @@ function parseMonsterSpawn(value: unknown): MonsterSpawn {
     spawnBalance: requireInt16(object['spawnBalance'], 'monsterSpawn.spawnBalance'),
     spawnMana: requireInt16(object['spawnMana'], 'monsterSpawn.spawnMana'),
     aiScriptIndex: requireInt16(object['aiScriptIndex'], 'monsterSpawn.aiScriptIndex'),
-  }
+  };
 }
 
 function parseFloorPatch(value: unknown): FloorPatch {
-  const object = requireObject(value, 'floorPatch')
+  const object = requireObject(value, 'floorPatch');
   return {
     floorMaterialID: requireString(object['floorMaterialID'], 'floorPatch.floorMaterialID'),
     x: requireInt16(object['x'], 'floorPatch.x'),
     y: requireInt16(object['y'], 'floorPatch.y'),
     width: requireInt16(object['width'], 'floorPatch.width'),
     height: requireInt16(object['height'], 'floorPatch.height'),
-  }
+  };
 }
 
 function requireObject(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new SectorFileError(`${label} is not an object`)
+    throw new SectorFileError(`${label} is not an object`);
   }
-  return value as Record<string, unknown>
+  return value as Record<string, unknown>;
 }
 
 function requireArray(value: unknown, label: string): unknown[] {
-  if (!Array.isArray(value)) throw new SectorFileError(`${label} is not an array`)
-  return value
+  if (!Array.isArray(value)) throw new SectorFileError(`${label} is not an array`);
+  return value;
 }
 
 function requireString(value: unknown, label: string): string {
-  if (typeof value !== 'string') throw new SectorFileError(`${label} is not a string`)
-  return value
+  if (typeof value !== 'string') throw new SectorFileError(`${label} is not a string`);
+  return value;
 }
 
 function requireBoolean(value: unknown, label: string): boolean {
-  if (typeof value !== 'boolean') throw new SectorFileError(`${label} is not a boolean`)
-  return value
+  if (typeof value !== 'boolean') throw new SectorFileError(`${label} is not a boolean`);
+  return value;
 }
 
 function requireNumber(value: unknown, label: string): number {
-  if (typeof value !== 'number') throw new SectorFileError(`${label} is not a number`)
-  return value
+  if (typeof value !== 'number') throw new SectorFileError(`${label} is not a number`);
+  return value;
 }
 
 /**
@@ -224,11 +211,11 @@ function requireNumber(value: unknown, label: string): number {
  * at save.
  */
 function requireInt16(value: unknown, label: string): number {
-  const number = requireNumber(value, label)
+  const number = requireNumber(value, label);
   if (!Number.isInteger(number) || number < INT16_MIN || number > INT16_MAX) {
-    throw new SectorFileError(`${label} is not an Int16: ${number}`)
+    throw new SectorFileError(`${label} is not an Int16: ${number}`);
   }
-  return number
+  return number;
 }
 
 // Writer
@@ -239,17 +226,15 @@ function requireInt16(value: unknown, label: string): number {
  */
 export function writeSectorFile(sector: Sector): string {
   if (!isWithinSectorBounds(sector.dimensions)) {
-    throw new SectorFileError(
-      `sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`
-    )
+    throw new SectorFileError(`sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`);
   }
-  requireContentCountsWithinBounds(sector)
-  const text = serialize(diskBody(sector), '')
-  const byteCount = utf8ByteLength(text)
+  requireContentCountsWithinBounds(sector);
+  const text = serialize(diskBody(sector), '');
+  const byteCount = utf8ByteLength(text);
   if (byteCount > SOMNIO_CONSTANTS.maxSectorFileBytes) {
-    throw new SectorFileError(`sector file size out of range: ${byteCount} bytes`)
+    throw new SectorFileError(`sector file size out of range: ${byteCount} bytes`);
   }
-  return text
+  return text;
 }
 
 function requireContentCountsWithinBounds(sector: Sector): void {
@@ -260,20 +245,20 @@ function requireContentCountsWithinBounds(sector: Sector): void {
     npcCount: sector.npcs.length,
     monsterSpawnCount: sector.monsterSpawns.length,
     floorPatchCount: sector.floorPatches.length,
-  }
+  };
   if (!isWithinSectorContentBounds(counts)) {
     throw new SectorFileError(
       `sector content counts out of range: ${counts.objectCount} objects, ` +
         `${counts.collisionMaskCount} collision masks, ${counts.portalCount} portals, ` +
         `${counts.npcCount} npcs, ${counts.monsterSpawnCount} monster spawns, ` +
-        `${counts.floorPatchCount} floor patches`
-    )
+        `${counts.floorPatchCount} floor patches`,
+    );
   }
 }
 
-type DiskValue = number | boolean | string | DiskValue[] | DiskObject
+type DiskValue = number | boolean | string | DiskValue[] | DiskObject;
 interface DiskObject {
-  [key: string]: DiskValue
+  [key: string]: DiskValue;
 }
 
 /** The on-disk shape: nameless, with `NPC.facing` under `"direction"` and portals as raw `0|1`. */
@@ -294,10 +279,10 @@ function diskBody(sector: Sector): DiskObject {
         sourceWidth: int16(object.sourceWidth, 'object.sourceWidth'),
         sourceHeight: int16(object.sourceHeight, 'object.sourceHeight'),
         priority: int16(object.priority, 'object.priority'),
-      }
+      };
       // A zero rotation is omitted, mirroring `Object.encode(to:)`.
-      if (int16(object.rotation, 'object.rotation') !== 0) record['rotation'] = object.rotation
-      return record
+      if (int16(object.rotation, 'object.rotation') !== 0) record['rotation'] = object.rotation;
+      return record;
     }),
     collisionMasks: sector.collisionMasks.map((mask) => ({
       x: int16(mask.x, 'collisionMask.x'),
@@ -335,7 +320,7 @@ function diskBody(sector: Sector): DiskObject {
       spawnMana: int16(spawn.spawnMana, 'monsterSpawn.spawnMana'),
       aiScriptIndex: int16(spawn.aiScriptIndex, 'monsterSpawn.aiScriptIndex'),
     })),
-  }
+  };
   // An empty `floorPatches` is omitted, mirroring `SectorBody.encode(to:)`.
   if (sector.floorPatches.length > 0) {
     root['floorPatches'] = sector.floorPatches.map((patch) => ({
@@ -344,21 +329,21 @@ function diskBody(sector: Sector): DiskObject {
       y: int16(patch.y, 'floorPatch.y'),
       width: int16(patch.width, 'floorPatch.width'),
       height: int16(patch.height, 'floorPatch.height'),
-    }))
+    }));
   }
-  return root
+  return root;
 }
 
 function diskGridSize(size: { width: number; height: number }, label: string): DiskObject {
-  return { width: int16(size.width, `${label}.width`), height: int16(size.height, `${label}.height`) }
+  return { width: int16(size.width, `${label}.width`), height: int16(size.height, `${label}.height`) };
 }
 
 function diskGridPoint(point: { x: number; y: number }, label: string): DiskObject {
-  return { x: int16(point.x, `${label}.x`), y: int16(point.y, `${label}.y`) }
+  return { x: int16(point.x, `${label}.x`), y: int16(point.y, `${label}.y`) };
 }
 
 function int16(value: number, label: string): number {
-  return requireInt16(value, label)
+  return requireInt16(value, label);
 }
 
 /**
@@ -376,19 +361,19 @@ function serialize(value: DiskValue, indent: string): string {
     // The format writes negative zero as `-0` (a `-0.0` heading survives normalization), but
     // `String(-0)` is `"0"` — special-case it so a `-0` direction
     // round-trips byte-identically instead of being rewritten to `0`.
-    if (Object.is(value, -0)) return '-0'
-    return Number.isInteger(value) ? String(value) : formatSwiftFloat32(value)
+    if (Object.is(value, -0)) return '-0';
+    return Number.isInteger(value) ? String(value) : formatSwiftFloat32(value);
   }
-  if (typeof value === 'boolean') return value ? 'true' : 'false'
-  if (typeof value === 'string') return JSON.stringify(value)
-  const inner = `${indent}  `
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'string') return JSON.stringify(value);
+  const inner = `${indent}  `;
   if (Array.isArray(value)) {
-    if (value.length === 0) return `[\n\n${indent}]`
-    const items = value.map((item) => `${inner}${serialize(item, inner)}`)
-    return `[\n${items.join(',\n')}\n${indent}]`
+    if (value.length === 0) return `[\n\n${indent}]`;
+    const items = value.map((item) => `${inner}${serialize(item, inner)}`);
+    return `[\n${items.join(',\n')}\n${indent}]`;
   }
   const entries = Object.keys(value)
     .sort()
-    .map((key) => `${inner}${JSON.stringify(key)} : ${serialize(value[key]!, inner)}`)
-  return `{\n${entries.join(',\n')}\n${indent}}`
+    .map((key) => `${inner}${JSON.stringify(key)} : ${serialize(value[key]!, inner)}`);
+  return `{\n${entries.join(',\n')}\n${indent}}`;
 }

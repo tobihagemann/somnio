@@ -1,31 +1,24 @@
-import {
-  LOGIN_RESULT,
-  REGISTER_RESULT,
-  SOMNIO_PROTOCOL_CONSTANTS,
-  WIRE_ENTITY_TYPE,
-  assertNever,
-  isClientOnlyMessage,
-} from '@somnio/protocol'
-import type { LoginResultCode, RegisterResultCode, SomnioMessage, WireEntityType } from '@somnio/protocol'
-import { heading, sectorFromWire, tempoFromRaw } from '@somnio/core'
-import type { Sector, WorldEntity, WorldEntityKind } from '@somnio/core'
-import type { GameplayTransport, GameplayTransportEvent } from '@/transport'
-import { SessionStore } from './sessionStore'
-import type { ChatLine } from './chatLine'
-import { noopRenderSurface } from './renderSurface'
-import type { WorldRenderSurface } from './renderSurface'
+import { LOGIN_RESULT, REGISTER_RESULT, SOMNIO_PROTOCOL_CONSTANTS, WIRE_ENTITY_TYPE, assertNever, isClientOnlyMessage } from '@somnio/protocol';
+import type { LoginResultCode, RegisterResultCode, SomnioMessage, WireEntityType } from '@somnio/protocol';
+import { heading, sectorFromWire, tempoFromRaw } from '@somnio/core';
+import type { Sector, WorldEntity, WorldEntityKind } from '@somnio/core';
+import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
+import { SessionStore } from './sessionStore';
+import type { ChatLine } from './chatLine';
+import { noopRenderSurface } from './renderSurface';
+import type { WorldRenderSurface } from './renderSurface';
 
 /**
  * Chat lines kept in memory. Well past a panel's worth of scrollback, and far short of where the
  * per-append rebuild cost starts to bite.
  */
-const MAX_RETAINED_CHAT_LINES = 500
+const MAX_RETAINED_CHAT_LINES = 500;
 
 /**
  * Names retained in the online roster. Far above any real sector's occupancy, and low enough that
  * the per-append collating sort stays cheap.
  */
-const MAX_ROSTER_NAMES = 500
+const MAX_ROSTER_NAMES = 500;
 
 /**
  * The tags the controller hands to the gameplay half.
@@ -34,40 +27,31 @@ const MAX_ROSTER_NAMES = 500
  * comment-enforced: the gameplay dispatcher's switch is exhaustive over exactly these five, so
  * routing a sixth tag here without handling it fails to build.
  */
-export type GameplayMessage = Extract<
-  SomnioMessage,
-  { tag: 'serverPosition' | 'serverSay' | 'energy' | 'inventory' | 'adminSay' }
->
+export type GameplayMessage = Extract<SomnioMessage, { tag: 'serverPosition' | 'serverSay' | 'energy' | 'inventory' | 'adminSay' }>;
 
-export type ConnectionState =
-  'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSector' | 'attached'
+export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSector' | 'attached';
 
 /** Strict equality at the gate means either direction is a rejection. */
-export type VersionSkew = 'clientOutdated' | 'serverOutdated'
+export type VersionSkew = 'clientOutdated' | 'serverOutdated';
 
 export type OverlayKind =
-  | { kind: 'login' }
-  | { kind: 'registration' }
-  | { kind: 'about' }
-  | { kind: 'updateRequired'; skew: VersionSkew }
-  | { kind: 'options' }
-  | { kind: 'gameMenu' }
+  { kind: 'login' } | { kind: 'registration' } | { kind: 'about' } | { kind: 'updateRequired'; skew: VersionSkew } | { kind: 'options' } | { kind: 'gameMenu' };
 
 export interface LoginCredentials {
-  nickname: string
-  password: string
+  nickname: string;
+  password: string;
   /** The login form's "Remember password" box; gates session-token issuance. */
-  rememberMe: boolean
+  rememberMe: boolean;
 }
 
 /** The registration form's fields, in `RegisterMessage` shape. */
 export interface RegistrationForm {
-  nickname: string
-  password: string
-  passwordRepeat: string
-  characterClass: number
-  gender: number
-  email: string
+  nickname: string;
+  password: string;
+  passwordRepeat: string;
+  characterClass: number;
+  gender: number;
+  email: string;
 }
 
 /**
@@ -77,21 +61,18 @@ export interface RegistrationForm {
  * express is one the wire can carry, so a form cannot be queued without the credentials that
  * authenticate it, and a plain login cannot silently inherit a registration it never asked for.
  */
-export type AuthIntent =
-  | { kind: 'resume' }
-  | { kind: 'login'; credentials: LoginCredentials }
-  | { kind: 'register'; form: RegistrationForm }
+export type AuthIntent = { kind: 'resume' } | { kind: 'login'; credentials: LoginCredentials } | { kind: 'register'; form: RegistrationForm };
 
 /** Which message the registration overlay shows, mirroring `RegistrationError`. */
-export type RegistrationOutcome = 'ok' | 'nicknameExists' | 'nameNotAllowed' | 'failure'
+export type RegistrationOutcome = 'ok' | 'nicknameExists' | 'nameNotAllowed' | 'failure';
 
 export interface ConnectionControllerOptions {
-  transport: GameplayTransport
-  renderSurface?: WorldRenderSurface
-  sessionStore?: SessionStore
+  transport: GameplayTransport;
+  renderSurface?: WorldRenderSurface;
+  sessionStore?: SessionStore;
   /** Bounded retry budget for the `alreadyLoggedIn` refresh race. */
-  maxResumeRetries?: number
-  resolveURL?: () => string
+  maxResumeRetries?: number;
+  resolveURL?: () => string;
 }
 
 /**
@@ -103,10 +84,10 @@ export interface ConnectionControllerOptions {
  * explicit methods on the controller rather than the controller reaching into the DOM.
  */
 export class ConnectionController {
-  connectionState: ConnectionState = 'disconnected'
-  isChatInputFocused = false
+  connectionState: ConnectionState = 'disconnected';
+  isChatInputFocused = false;
 
-  private overlay: OverlayKind | undefined = { kind: 'login' }
+  private overlay: OverlayKind | undefined = { kind: 'login' };
 
   /**
    * An accessor rather than a plain field, because the controller presents overlays the DOM layer
@@ -117,49 +98,49 @@ export class ConnectionController {
    * overlay and forget to repaint.
    */
   get presentedOverlay(): OverlayKind | undefined {
-    return this.overlay
+    return this.overlay;
   }
 
   set presentedOverlay(overlay: OverlayKind | undefined) {
-    this.overlay = overlay
-    this.onOverlayChanged?.(overlay)
+    this.overlay = overlay;
+    this.onOverlayChanged?.(overlay);
   }
 
-  onOverlayChanged: ((overlay: OverlayKind | undefined) => void) | undefined
+  onOverlayChanged: ((overlay: OverlayKind | undefined) => void) | undefined;
 
-  entities = new Map<number, WorldEntity>()
-  players: string[] = []
-  selfEntityIndex: number | undefined
-  selfDisplayName = ''
-  currentSector: Sector | undefined
-  currentDateTick = { hour: 12, minute: 0 }
+  entities = new Map<number, WorldEntity>();
+  players: string[] = [];
+  selfEntityIndex: number | undefined;
+  selfDisplayName = '';
+  currentSector: Sector | undefined;
+  currentDateTick = { hour: 12, minute: 0 };
 
-  readonly sessionStore: SessionStore
-  readonly renderSurface: WorldRenderSurface
+  readonly sessionStore: SessionStore;
+  readonly renderSurface: WorldRenderSurface;
 
-  private readonly transport: GameplayTransport
-  private readonly resolveURL: () => string
-  private readonly maxResumeRetries: number
-  private credentials: LoginCredentials | undefined
+  private readonly transport: GameplayTransport;
+  private readonly resolveURL: () => string;
+  private readonly maxResumeRetries: number;
+  private credentials: LoginCredentials | undefined;
   /** Set between `register` being submitted and its `registerResult` arriving. */
-  private pendingRegistration: RegistrationForm | undefined
+  private pendingRegistration: RegistrationForm | undefined;
   /** Set while a `redeemSession` is in flight, so `alreadyLoggedIn` can be retried. */
-  private resumingWithToken: string | undefined
-  private resumeAttempts = 0
+  private resumingWithToken: string | undefined;
+  private resumeAttempts = 0;
   /** Bumped by every explicit authentication, so a resume scheduled before it cannot still fire. */
-  private authGeneration = 0
-  private chatLines: ChatLine[] = []
+  private authGeneration = 0;
+  private chatLines: ChatLine[] = [];
 
   constructor(options: ConnectionControllerOptions) {
-    this.transport = options.transport
-    this.renderSurface = options.renderSurface ?? noopRenderSurface
-    this.sessionStore = options.sessionStore ?? new SessionStore()
-    this.resolveURL = options.resolveURL ?? (() => '/ws')
-    this.maxResumeRetries = options.maxResumeRetries ?? 3
+    this.transport = options.transport;
+    this.renderSurface = options.renderSurface ?? noopRenderSurface;
+    this.sessionStore = options.sessionStore ?? new SessionStore();
+    this.resolveURL = options.resolveURL ?? (() => '/ws');
+    this.maxResumeRetries = options.maxResumeRetries ?? 3;
   }
 
   get chatHistory(): readonly ChatLine[] {
-    return this.chatLines
+    return this.chatLines;
   }
 
   /**
@@ -171,14 +152,14 @@ export class ConnectionController {
    * scripted client sending in a loop would otherwise lock up every other player's tab.
    */
   appendChat(line: ChatLine): void {
-    this.chatLines.push(line)
+    this.chatLines.push(line);
     if (this.chatLines.length > MAX_RETAINED_CHAT_LINES) {
-      this.chatLines.splice(0, this.chatLines.length - MAX_RETAINED_CHAT_LINES)
+      this.chatLines.splice(0, this.chatLines.length - MAX_RETAINED_CHAT_LINES);
     }
-    this.onChatLinesChanged?.()
+    this.onChatLinesChanged?.();
   }
 
-  onChatLinesChanged: (() => void) | undefined
+  onChatLinesChanged: (() => void) | undefined;
 
   /**
    * Opens a connection. Explicitly supplied credentials always win; a stored session token is
@@ -219,32 +200,30 @@ export class ConnectionController {
       if (this.connectionState !== 'disconnected') {
         // A registration queued while a socket was already open must not ride out the next hello
         // and silently re-issue, so the pending form is dropped rather than held.
-        this.pendingRegistration = undefined
-        return
+        this.pendingRegistration = undefined;
+        return;
       }
-      this.resumingWithToken = this.sessionStore.load()?.token
+      this.resumingWithToken = this.sessionStore.load()?.token;
     } else {
-      if (this.connectionState !== 'disconnected') this.teardown()
+      if (this.connectionState !== 'disconnected') this.teardown();
       // Derived here rather than by the caller, so a registration cannot reach the wire without the
       // credentials it authenticates with — the two travel as one intent or not at all.
       this.credentials =
-        intent.kind === 'register'
-          ? { nickname: intent.form.nickname, password: intent.form.password, rememberMe: false }
-          : intent.credentials
-      this.pendingRegistration = intent.kind === 'register' ? intent.form : undefined
-      this.sessionStore.clear()
-      this.resumingWithToken = undefined
+        intent.kind === 'register' ? { nickname: intent.form.nickname, password: intent.form.password, rememberMe: false } : intent.credentials;
+      this.pendingRegistration = intent.kind === 'register' ? intent.form : undefined;
+      this.sessionStore.clear();
+      this.resumingWithToken = undefined;
       // Retires any resume still scheduled. A pending retry fires credential-free, which drops the
       // queued registration — so without this an explicit login or sign-up landing inside the
       // retry window has its own authentication input erased by an attempt it superseded.
-      this.authGeneration += 1
+      this.authGeneration += 1;
     }
     // Not reset here: `scheduleResume` re-enters through this method, so zeroing the counter on
     // every attempt would make the `alreadyLoggedIn` retry budget unreachable and the client would
     // reconnect forever. `beginSession` is the one entry point that zeroes it; `register` goes
     // straight to `connect` and deliberately does not.
-    this.connectionState = 'awaitingHello'
-    this.transport.connect(this.resolveURL(), (event) => this.handleTransportEvent(event))
+    this.connectionState = 'awaitingHello';
+    this.transport.connect(this.resolveURL(), (event) => this.handleTransportEvent(event));
   }
 
   /**
@@ -254,15 +233,15 @@ export class ConnectionController {
    * `connect` is a reset on every retry, which is the same as no bound at all.
    */
   beginSession(intent: AuthIntent = { kind: 'resume' }): void {
-    this.resumeAttempts = 0
-    this.connect(intent)
+    this.resumeAttempts = 0;
+    this.connect(intent);
   }
 
   /** Resumes from a stored token with no typed credentials, e.g. on page load after a refresh. */
   resumeStoredSession(): boolean {
-    if (this.sessionStore.load() === undefined) return false
-    this.beginSession({ kind: 'resume' })
-    return true
+    if (this.sessionStore.load() === undefined) return false;
+    this.beginSession({ kind: 'resume' });
+    return true;
   }
 
   /**
@@ -271,7 +250,7 @@ export class ConnectionController {
    * is already populated, exactly as `submitRegistration` does natively.
    */
   register(form: RegistrationForm): void {
-    this.connect({ kind: 'register', form })
+    this.connect({ kind: 'register', form });
   }
 
   /**
@@ -293,28 +272,28 @@ export class ConnectionController {
    * the player needs to still be there.
    */
   private endSessionIdentity(): void {
-    this.sessionStore.clear()
-    this.credentials = undefined
-    this.pendingRegistration = undefined
-    this.resumingWithToken = undefined
-    this.chatLines = []
-    this.selfDisplayName = ''
-    this.onChatLinesChanged?.()
-    this.onSessionIdentityEnded?.()
+    this.sessionStore.clear();
+    this.credentials = undefined;
+    this.pendingRegistration = undefined;
+    this.resumingWithToken = undefined;
+    this.chatLines = [];
+    this.selfDisplayName = '';
+    this.onChatLinesChanged?.();
+    this.onSessionIdentityEnded?.();
   }
 
   /** Explicit logout: revoke the token server-side, then drop every credential and tear down. */
   leaveGame(): void {
-    const stored = this.sessionStore.load()
+    const stored = this.sessionStore.load();
     // Both post-login states, not `attached` alone. The server accepts `revokeSession` from the
     // moment the connection is registered, and the player can reach Leave Game in either: the game
     // menu opens whenever no overlay is presented, and `handleEnterSector` clears the overlay while
     // dropping back to `awaitingEnterSector` on every sector load and portal hop. Gating on
     // `attached` alone therefore skipped the revoke on a hop while still clearing the store below —
     // leaving a token that stays redeemable for its full lifetime with nothing left to revoke it.
-    const canRevoke = this.connectionState === 'attached' || this.connectionState === 'awaitingEnterSector'
+    const canRevoke = this.connectionState === 'attached' || this.connectionState === 'awaitingEnterSector';
     if (stored !== undefined && canRevoke) {
-      this.transport.send({ tag: 'revokeSession', payload: { token: stored.token } })
+      this.transport.send({ tag: 'revokeSession', payload: { token: stored.token } });
     }
     // Cleared regardless of whether the revoke was sent or landed. A UI that still claimed a
     // session after a failed revoke would be lying about state it cannot observe.
@@ -325,15 +304,15 @@ export class ConnectionController {
     // not log the player out, which is a worse failure than an unreferenced row. The dropped copy
     // was the only one in existence, so nothing can redeem it — the cost is a stale row that
     // `CheckpointService`'s expiry sweep collects, not a live credential.
-    this.endSessionIdentity()
-    this.teardown()
-    this.renderSurface.showSplash()
-    this.presentedOverlay = { kind: 'login' }
+    this.endSessionIdentity();
+    this.teardown();
+    this.renderSurface.showSplash();
+    this.presentedOverlay = { kind: 'login' };
   }
 
   setChatInputFocused(focused: boolean): void {
-    this.isChatInputFocused = focused
-    if (focused) this.onGateClosed?.()
+    this.isChatInputFocused = focused;
+    if (focused) this.onGateClosed?.();
   }
 
   /**
@@ -341,31 +320,31 @@ export class ConnectionController {
    * focus through this method rather than letting the DOM own a local flag is what keeps focus
    * gain clearing held keys on the production path.
    */
-  onGateClosed: (() => void) | undefined
+  onGateClosed: (() => void) | undefined;
 
   private handleTransportEvent(event: GameplayTransportEvent): void {
     switch (event.kind) {
       case 'message':
-        this.dispatch(event.message)
-        return
+        this.dispatch(event.message);
+        return;
       case 'connectFailed':
-        this.appendChat({ kind: 'serverUnreachable' })
-        this.endSessionWithRecovery()
-        return
+        this.appendChat({ kind: 'serverUnreachable' });
+        this.endSessionWithRecovery();
+        return;
       case 'decodeFailed':
-        this.appendChat({ kind: 'errorCode', code: String(event.error) })
-        this.endSessionWithRecovery()
-        return
+        this.appendChat({ kind: 'errorCode', code: String(event.error) });
+        this.endSessionWithRecovery();
+        return;
       case 'unexpectedBinaryFrame':
-        this.appendChat({ kind: 'errorCode', code: 'unexpected_binary_frame' })
-        this.endSessionWithRecovery()
-        return
+        this.appendChat({ kind: 'errorCode', code: 'unexpected_binary_frame' });
+        this.endSessionWithRecovery();
+        return;
       case 'peerEOF':
-        this.appendChat({ kind: 'connectionLost' })
-        this.endSessionWithRecovery()
-        return
+        this.appendChat({ kind: 'connectionLost' });
+        this.endSessionWithRecovery();
+        return;
       default:
-        assertNever(event, 'transport event')
+        assertNever(event, 'transport event');
     }
   }
 
@@ -374,26 +353,26 @@ export class ConnectionController {
    * `onGameplayMessage`. Splitting ownership explicitly is what keeps a tag from ending up
    * owned by neither half.
    */
-  onGameplayMessage: ((message: GameplayMessage) => void) | undefined
+  onGameplayMessage: ((message: GameplayMessage) => void) | undefined;
 
   dispatch(message: SomnioMessage): void {
     // A client-only tag arriving inbound is a hard error.
     if (isClientOnlyMessage(message)) {
-      this.appendChat({ kind: 'errorCode', code: 'client_only_tag' })
-      this.endSessionWithRecovery()
-      return
+      this.appendChat({ kind: 'errorCode', code: 'client_only_tag' });
+      this.endSessionWithRecovery();
+      return;
     }
 
     switch (message.tag) {
       case 'hello':
-        this.handleHello(message.payload.protocolVersion)
-        return
+        this.handleHello(message.payload.protocolVersion);
+        return;
       case 'loginResult':
-        this.handleLoginResult(message.payload.result)
-        return
+        this.handleLoginResult(message.payload.result);
+        return;
       case 'registerResult':
-        this.handleRegisterResult(message.payload.result)
-        return
+        this.handleRegisterResult(message.payload.result);
+        return;
       case 'sessionToken':
         // Only stored when this client asked for one. Saving whatever arrives would let a future
         // issuance change — or a compromised server — plant a 30-day credential on a machine whose
@@ -404,73 +383,68 @@ export class ConnectionController {
           // login form. The line is a *report*, not a failure — the session itself is fine, which
           // is why nothing here tears down.
           if (!this.sessionStore.save(message.payload.token, message.payload.expiresInSeconds)) {
-            this.appendChat({ kind: 'credentialSaveFailed' })
+            this.appendChat({ kind: 'credentialSaveFailed' });
           }
         }
-        return
+        return;
       case 'sessionRevoked':
         // The server has retired this token, so the identity it authenticated is over here too —
         // the same surfaces `leaveGame` drops, for the same reason.
-        this.endSessionIdentity()
-        return
+        this.endSessionIdentity();
+        return;
       case 'enterSector':
         // `sectorFromWire` is a hostile-input boundary and throws on a sector that violates the
         // shared bounds. Report and tear down, rather than
         // letting the throw escape `dispatch` and leave the controller in a half-loaded sector.
         try {
-          this.handleEnterSector(sectorFromWire(message.payload.sector))
+          this.handleEnterSector(sectorFromWire(message.payload.sector));
         } catch (error) {
-          this.appendChat({ kind: 'errorCode', code: String(error) })
-          this.endSessionWithRecovery()
+          this.appendChat({ kind: 'errorCode', code: String(error) });
+          this.endSessionWithRecovery();
         }
-        return
+        return;
       case 'mainCharacter':
-        this.handleMainCharacter(message.payload.entityIndex)
-        return
+        this.handleMainCharacter(message.payload.entityIndex);
+        return;
       case 'entity':
-        this.handleEntity(message)
-        return
+        this.handleEntity(message);
+        return;
       case 'leave':
-        this.handleLeave(message.payload.entityIndex, message.payload.leftGame)
-        return
+        this.handleLeave(message.payload.entityIndex, message.payload.leftGame);
+        return;
       case 'dateTick':
-        this.currentDateTick = { hour: message.payload.hour, minute: message.payload.minute }
-        this.renderSurface.updateDayNightTint(
-          message.payload.hour,
-          message.payload.minute,
-          this.currentSector?.light ?? { indoor: false, brightness: 100 }
-        )
-        return
+        this.currentDateTick = { hour: message.payload.hour, minute: message.payload.minute };
+        this.renderSurface.updateDayNightTint(message.payload.hour, message.payload.minute, this.currentSector?.light ?? { indoor: false, brightness: 100 });
+        return;
       case 'serverPosition':
       case 'serverSay':
       case 'energy':
       case 'inventory':
       case 'adminSay':
-        this.onGameplayMessage?.(message)
-        return
+        this.onGameplayMessage?.(message);
+        return;
       default:
         // Exhaustiveness guard: a TypeScript switch silently ignores an unhandled tag without this.
-        assertNever(message, 'inbound dispatch')
+        assertNever(message, 'inbound dispatch');
     }
   }
 
   private handleHello(protocolVersion: number): void {
     if (this.connectionState !== 'awaitingHello') {
-      this.appendChat({ kind: 'errorCode', code: 'unexpected_hello' })
-      this.endSessionWithRecovery()
-      return
+      this.appendChat({ kind: 'errorCode', code: 'unexpected_hello' });
+      this.endSessionWithRecovery();
+      return;
     }
     // Strict equality: a bump rejects clients rather than degrading
     // them, so a newer *or* older server is a rejection.
     if (protocolVersion !== SOMNIO_PROTOCOL_CONSTANTS.helloVersion) {
-      const skew: VersionSkew =
-        protocolVersion > SOMNIO_PROTOCOL_CONSTANTS.helloVersion ? 'clientOutdated' : 'serverOutdated'
-      this.teardown()
-      this.presentedOverlay = { kind: 'updateRequired', skew }
-      return
+      const skew: VersionSkew = protocolVersion > SOMNIO_PROTOCOL_CONSTANTS.helloVersion ? 'clientOutdated' : 'serverOutdated';
+      this.teardown();
+      this.presentedOverlay = { kind: 'updateRequired', skew };
+      return;
     }
-    this.connectionState = 'awaitingLoginResult'
-    this.sendAuth()
+    this.connectionState = 'awaitingLoginResult';
+    this.sendAuth();
   }
 
   private sendAuth(): void {
@@ -478,23 +452,23 @@ export class ConnectionController {
     // authenticates an account that by definition does not exist yet, so redeeming one here would
     // answer `badCredentials` and the account would never be created. This ordering is the only
     // thing that decides it.
-    const registration = this.pendingRegistration
+    const registration = this.pendingRegistration;
     if (registration !== undefined) {
-      this.transport.send({ tag: 'register', payload: registration })
-      return
+      this.transport.send({ tag: 'register', payload: registration });
+      return;
     }
     // Safe above the credentials branch only because `connect` clears `resumingWithToken` whenever
     // it was handed explicit credentials — the token is set solely on the credential-free resume
     // path. Setting it unconditionally here would make a typed login redeem a stored token instead.
     if (this.resumingWithToken !== undefined) {
-      this.transport.send({ tag: 'redeemSession', payload: { token: this.resumingWithToken } })
-      return
+      this.transport.send({ tag: 'redeemSession', payload: { token: this.resumingWithToken } });
+      return;
     }
-    const credentials = this.credentials
+    const credentials = this.credentials;
     if (credentials === undefined) {
-      this.teardown()
-      this.presentedOverlay = { kind: 'login' }
-      return
+      this.teardown();
+      this.presentedOverlay = { kind: 'login' };
+      return;
     }
     this.transport.send({
       tag: 'login',
@@ -505,38 +479,38 @@ export class ConnectionController {
         // server from volunteering a new tag to a client that never asked for one.
         ...(credentials.rememberMe ? { requestSessionToken: true } : {}),
       },
-    })
+    });
   }
 
   private handleLoginResult(result: LoginResultCode): void {
     switch (result) {
       case LOGIN_RESULT.ok:
-        this.selfDisplayName = this.credentials?.nickname ?? this.selfDisplayName
-        this.connectionState = 'awaitingEnterSector'
-        return
+        this.selfDisplayName = this.credentials?.nickname ?? this.selfDisplayName;
+        this.connectionState = 'awaitingEnterSector';
+        return;
       case LOGIN_RESULT.alreadyLoggedIn:
-        this.handleAlreadyLoggedIn()
-        return
+        this.handleAlreadyLoggedIn();
+        return;
       case LOGIN_RESULT.badCredentials: {
         // Expired, unknown, and revoked tokens are all reported as bad credentials, so a
         // probing client learns nothing about which. Drop the stored token and fall back to
         // the password form.
-        const wasResuming = this.resumingWithToken !== undefined
+        const wasResuming = this.resumingWithToken !== undefined;
         if (wasResuming) {
-          this.sessionStore.clear()
-          this.resumingWithToken = undefined
+          this.sessionStore.clear();
+          this.resumingWithToken = undefined;
         }
         // The *client* does know which case this was, even though the server deliberately does not
         // say: a rejection during a resume is a dead token, not a wrong password. Reporting
         // "Bad credentials." there would tell a returning player their password is wrong when they
         // never typed one.
-        this.appendChat(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' })
-        this.teardown()
-        this.presentedOverlay = { kind: 'login' }
-        return
+        this.appendChat(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
+        this.teardown();
+        this.presentedOverlay = { kind: 'login' };
+        return;
       }
       default:
-        assertNever(result, 'login result')
+        assertNever(result, 'login result');
     }
   }
 
@@ -546,24 +520,24 @@ export class ConnectionController {
    * failures leave the registration overlay up so the form can be corrected in place.
    */
   private handleRegisterResult(result: RegisterResultCode): void {
-    this.pendingRegistration = undefined
-    this.teardown()
+    this.pendingRegistration = undefined;
+    this.teardown();
     switch (result) {
       case REGISTER_RESULT.ok:
-        this.presentedOverlay = { kind: 'login' }
-        this.onRegistrationOutcome?.('ok')
-        return
+        this.presentedOverlay = { kind: 'login' };
+        this.onRegistrationOutcome?.('ok');
+        return;
       case REGISTER_RESULT.nicknameExists:
-        this.onRegistrationOutcome?.('nicknameExists')
-        return
+        this.onRegistrationOutcome?.('nicknameExists');
+        return;
       case REGISTER_RESULT.nameNotAllowed:
-        this.onRegistrationOutcome?.('nameNotAllowed')
-        return
+        this.onRegistrationOutcome?.('nameNotAllowed');
+        return;
       case REGISTER_RESULT.failure:
-        this.onRegistrationOutcome?.('failure')
-        return
+        this.onRegistrationOutcome?.('failure');
+        return;
       default:
-        assertNever(result, 'register result')
+        assertNever(result, 'register result');
     }
   }
 
@@ -572,7 +546,7 @@ export class ConnectionController {
    * chat line because none of the outcomes has one natively, and the overlay is where the player
    * is looking.
    */
-  onRegistrationOutcome: ((outcome: RegistrationOutcome) => void) | undefined
+  onRegistrationOutcome: ((outcome: RegistrationOutcome) => void) | undefined;
 
   /**
    * A refresh can open the resumed connection before the previous socket's cleanup has
@@ -582,57 +556,53 @@ export class ConnectionController {
    */
   private handleAlreadyLoggedIn(): void {
     if (this.resumingWithToken !== undefined && this.resumeAttempts < this.maxResumeRetries) {
-      this.resumeAttempts += 1
-      this.transport.disconnect()
-      this.connectionState = 'disconnected'
+      this.resumeAttempts += 1;
+      this.transport.disconnect();
+      this.connectionState = 'disconnected';
       // Announced rather than silent: the retry usually resolves in milliseconds, but when the
       // previous socket is slow to unwind the player is left looking at a dead screen with no idea
       // anything is happening.
-      this.appendChat({ kind: 'reconnecting' })
-      this.scheduleResume()
-      return
+      this.appendChat({ kind: 'reconnecting' });
+      this.scheduleResume();
+      return;
     }
-    this.appendChat({ kind: 'alreadyLoggedIn' })
-    this.teardown()
-    this.presentedOverlay = { kind: 'login' }
+    this.appendChat({ kind: 'alreadyLoggedIn' });
+    this.teardown();
+    this.presentedOverlay = { kind: 'login' };
   }
 
   /** Overridable so tests drive the retry without real timers. */
   scheduleResume: () => void = () => {
-    const generation = this.authGeneration
+    const generation = this.authGeneration;
     setTimeout(() => {
-      if (generation !== this.authGeneration) return
-      this.connect({ kind: 'resume' })
-    }, 250)
-  }
+      if (generation !== this.authGeneration) return;
+      this.connect({ kind: 'resume' });
+    }, 250);
+  };
 
   private handleEnterSector(sector: Sector): void {
     // Clear sector-local state before loading so a portal hop cannot leave the previous
     // sector's entities and peers alive alongside the new sector.
-    this.entities.clear()
-    this.players = []
-    this.selfEntityIndex = undefined
-    this.currentSector = sector
-    this.renderSurface.load(sector, true)
-    this.renderSurface.updateDayNightTint(
-      this.currentDateTick.hour,
-      this.currentDateTick.minute,
-      sector.light
-    )
+    this.entities.clear();
+    this.players = [];
+    this.selfEntityIndex = undefined;
+    this.currentSector = sector;
+    this.renderSurface.load(sector, true);
+    this.renderSurface.updateDayNightTint(this.currentDateTick.hour, this.currentDateTick.minute, sector.light);
     // Back to `awaitingEnterSector` until the next `mainCharacter`, so chat and movement that
     // depend on `selfEntityIndex` cannot fire in the gap during a portal hop.
-    this.connectionState = 'awaitingEnterSector'
-    this.presentedOverlay = undefined
-    this.onSectorChanged?.()
+    this.connectionState = 'awaitingEnterSector';
+    this.presentedOverlay = undefined;
+    this.onSectorChanged?.();
   }
 
-  onSectorChanged: (() => void) | undefined
+  onSectorChanged: (() => void) | undefined;
 
   /**
    * Fires on every teardown path so the owner can drop per-session state the controller does not
    * hold — the predictor's sub-pixel carry and heartbeat clocks, and the input sampler's held bits.
    */
-  onTeardown: (() => void) | undefined
+  onTeardown: (() => void) | undefined;
 
   /**
    * Fires when a session identity ends, so the owner can drop the credential-bearing surfaces the
@@ -640,7 +610,7 @@ export class ConnectionController {
    * Separate from `onTeardown`, which fires on every transport drop and must leave a retry able to
    * re-authenticate.
    */
-  onSessionIdentityEnded: (() => void) | undefined
+  onSessionIdentityEnded: (() => void) | undefined;
 
   /**
    * `mainCharacter` is what promotes the connection to `attached`, which is the gate the frame
@@ -648,17 +618,17 @@ export class ConnectionController {
    * sentinel and arrives last for unrelated reasons.
    */
   private handleMainCharacter(entityIndex: number): void {
-    this.selfEntityIndex = entityIndex
-    this.connectionState = 'attached'
+    this.selfEntityIndex = entityIndex;
+    this.connectionState = 'attached';
   }
 
   private handleEntity(message: Extract<SomnioMessage, { tag: 'entity' }>): void {
-    const payload = message.payload
-    const kind = entityKind(payload.type, payload.entityIndex === this.selfEntityIndex)
+    const payload = message.payload;
+    const kind = entityKind(payload.type, payload.entityIndex === this.selfEntityIndex);
     // A token resume has no typed credentials, so `handleLoginResult` had no name to record. The
     // self entity carries the authoritative one — without this, a resumed player's own chat lines
     // render with an empty sender.
-    if (kind === 'player' && this.selfDisplayName === '') this.selfDisplayName = payload.name
+    if (kind === 'player' && this.selfDisplayName === '') this.selfDisplayName = payload.name;
     const entity: WorldEntity = {
       id: payload.entityIndex,
       kind,
@@ -669,9 +639,9 @@ export class ConnectionController {
       tempo: tempoFromRaw(payload.tempo),
       maskSize: { width: payload.maskWidth, height: payload.maskHeight },
       name: payload.name,
-    }
-    this.entities.set(payload.entityIndex, entity)
-    this.renderSurface.placeEntity(entity)
+    };
+    this.entities.set(payload.entityIndex, entity);
+    this.renderSurface.placeEntity(entity);
     if (
       (kind === 'peer' || kind === 'player') &&
       !this.players.includes(entity.name) &&
@@ -681,12 +651,12 @@ export class ConnectionController {
       // a full panel rebuild. Sector occupancy has no legitimate reason to approach the cap.
       this.players.length < MAX_ROSTER_NAMES
     ) {
-      this.players.push(entity.name)
+      this.players.push(entity.name);
       // `numeric` + `sensitivity: 'base'` is the Finder-style collation the roster uses. A bare
       // `localeCompare` is locale-aware but neither numeric nor base-sensitive, so `Held10` would
       // sort before `Held2`.
-      this.players.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-      this.onPlayersChanged?.()
+      this.players.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      this.onPlayersChanged?.();
     }
   }
 
@@ -697,7 +667,7 @@ export class ConnectionController {
    * line, an energy frame — so a peer who joins quietly is missing from the list, and its count
    * footer disagrees with the characters visibly standing in the sector.
    */
-  onPlayersChanged: (() => void) | undefined
+  onPlayersChanged: (() => void) | undefined;
 
   /**
    * Dropping `leave` leaves departed peers rendered forever, which is why it is called out as
@@ -708,19 +678,19 @@ export class ConnectionController {
       // The server ended *our* session, so the world on screen is dead. Recovering rather than
       // tearing down bare: this arrives while attached, so a bare teardown would leave the last
       // rendered frame up with Esc inert and only a reload as the way out.
-      this.endSessionWithRecovery()
-      return
+      this.endSessionWithRecovery();
+      return;
     }
-    const leaving = this.entities.get(entityIndex)
-    if (leaving === undefined) return
-    this.entities.delete(entityIndex)
-    this.renderSurface.removeEntity(entityIndex)
+    const leaving = this.entities.get(entityIndex);
+    if (leaving === undefined) return;
+    this.entities.delete(entityIndex);
+    this.renderSurface.removeEntity(entityIndex);
     if (leaving.kind === 'peer') {
-      this.players = this.players.filter((name) => name !== leaving.name)
-      this.onPlayersChanged?.()
+      this.players = this.players.filter((name) => name !== leaving.name);
+      this.onPlayersChanged?.();
       // A peer changing sectors detaches with `leftGame: false`; only a real disconnect is a
       // "left the game" event.
-      if (leftGame) this.appendChat({ kind: 'left', playerName: leaving.name })
+      if (leftGame) this.appendChat({ kind: 'left', playerName: leaving.name });
     }
   }
 
@@ -738,26 +708,26 @@ export class ConnectionController {
    * readable behind the overlay.
    */
   private endSessionWithRecovery(): void {
-    this.teardown()
+    this.teardown();
     // The forms have to be emptied too, not just the in-memory credentials. This path returns the
     // player to the login card without any action on their part — a server restart is enough — and
     // `clearCredentialForms` is what keeps the departing player's password from sitting in a
     // `type="password"` input for whoever opens that card next on a shared browser. `leaveGame` and
     // `sessionRevoked` reach it through `endSessionIdentity`; the failure paths did not.
-    this.onSessionIdentityEnded?.()
-    this.renderSurface.showSplash()
-    this.presentedOverlay = { kind: 'login' }
+    this.onSessionIdentityEnded?.();
+    this.renderSurface.showSplash();
+    this.presentedOverlay = { kind: 'login' };
   }
 
   private teardown(): void {
-    this.transport.disconnect()
-    this.onTeardown?.()
-    this.connectionState = 'disconnected'
-    this.entities.clear()
-    this.players = []
-    this.selfEntityIndex = undefined
-    this.currentSector = undefined
-    this.resumingWithToken = undefined
+    this.transport.disconnect();
+    this.onTeardown?.();
+    this.connectionState = 'disconnected';
+    this.entities.clear();
+    this.players = [];
+    this.selfEntityIndex = undefined;
+    this.currentSector = undefined;
+    this.resumingWithToken = undefined;
     // Cleared here, not only on `connect`'s early-return branch — that branch runs only when a
     // socket was already open, i.e. never after a teardown. Left set, a registration submitted
     // against an unreachable server survives to the next login and re-issues `register` instead,
@@ -773,8 +743,8 @@ export class ConnectionController {
     // card's only control is "Try Again", which is exactly that resume — on a shared machine the
     // next person clicks one button and lands in the previous player's account. Clearing
     // unconditionally makes both cases fall to the credential-free branch and the login card.
-    this.credentials = undefined
-    this.pendingRegistration = undefined
+    this.credentials = undefined;
+    this.pendingRegistration = undefined;
   }
 }
 
@@ -788,15 +758,15 @@ export class ConnectionController {
 function entityKind(type: WireEntityType, isSelf: boolean): WorldEntityKind {
   switch (type) {
     case WIRE_ENTITY_TYPE.player:
-      return isSelf ? 'player' : 'peer'
+      return isSelf ? 'player' : 'peer';
     case WIRE_ENTITY_TYPE.npc:
-      return 'npc'
+      return 'npc';
     case WIRE_ENTITY_TYPE.monster:
-      return 'monster'
+      return 'monster';
     default:
       // Exhaustive rather than falling through to `monster`: an added wire type reaching an
       // unguarded fallback here would silently render as a monster — no name plaque, monster
       // collision, monster speech routing — with every suite green.
-      return assertNever(type, 'wire entity type')
+      return assertNever(type, 'wire entity type');
   }
 }

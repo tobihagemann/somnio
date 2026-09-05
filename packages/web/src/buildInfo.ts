@@ -12,7 +12,7 @@
  * version strings inside dependencies. String literals are the one thing minification never
  * renames.
  */
-export const SOMNIO_WEB_VERSION: string = __SOMNIO_WEB_VERSION__
+export const SOMNIO_WEB_VERSION: string = __SOMNIO_WEB_VERSION__;
 
 /** The literal the image build greps for. Also surfaced on `<html data-somnio-build>`. */
-export const SOMNIO_BUILD_STAMP = `somnio-web ${__SOMNIO_WEB_VERSION__}`
+export const SOMNIO_BUILD_STAMP = `somnio-web ${__SOMNIO_WEB_VERSION__}`;

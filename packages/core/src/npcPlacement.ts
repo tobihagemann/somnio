@@ -1,5 +1,5 @@
-import type { GridPoint } from './geometry.ts'
-import type { SectorNPC } from './sector.ts'
+import type { GridPoint } from './geometry.ts';
+import type { SectorNPC } from './sector.ts';
 
 /**
  * NPC runtime placement. The centring is held **outside**
@@ -10,5 +10,5 @@ export function npcRuntimePosition(npc: SectorNPC): GridPoint {
   return {
     x: npc.spawnOrigin.x + Math.trunc((npc.spawnBoxSize.width - npc.maskSize.width) / 2),
     y: npc.spawnOrigin.y + Math.trunc((npc.spawnBoxSize.height - npc.maskSize.height) / 2),
-  }
+  };
 }

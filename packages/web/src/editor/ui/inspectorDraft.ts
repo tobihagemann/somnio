@@ -10,6 +10,6 @@
  * non-integer field must compare renderings, not raw text).
  */
 export function reseeded(draft: string, isFocused: boolean, from: string, to: string): string | undefined {
-  if (isFocused && draft !== from) return undefined
-  return to
+  if (isFocused && draft !== from) return undefined;
+  return to;
 }

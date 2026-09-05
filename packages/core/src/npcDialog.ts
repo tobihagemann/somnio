@@ -5,11 +5,11 @@
  * yields `[]`.
  */
 export function dialogSteps(dialogScript: string): string[] {
-  if (dialogScript.length === 0) return []
+  if (dialogScript.length === 0) return [];
   return dialogScript.split('---').map((step) => {
-    let trimmed = step
-    if (trimmed.startsWith('\n')) trimmed = trimmed.slice(1)
-    if (trimmed.endsWith('\n')) trimmed = trimmed.slice(0, -1)
-    return trimmed
-  })
+    let trimmed = step;
+    if (trimmed.startsWith('\n')) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith('\n')) trimmed = trimmed.slice(0, -1);
+    return trimmed;
+  });
 }

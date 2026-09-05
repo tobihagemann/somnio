@@ -1,5 +1,5 @@
-import { FLOAT_PI, f32 } from '@somnio/core'
-import type { LightSetting } from '@somnio/core'
+import { FLOAT_PI, f32 } from '@somnio/core';
+import type { LightSetting } from '@somnio/core';
 
 /**
  * The day/night ambient staircase and the sun.
@@ -28,7 +28,7 @@ const DAY_NIGHT = {
   southwardLean: f32(0.35),
   indoorAmbientScale: f32(0.65),
   indoorSunScale: f32(0.8),
-} as const
+} as const;
 
 /**
  * Uniform fill standing in for a default environment light.
@@ -44,7 +44,7 @@ const DAY_NIGHT = {
  * tracks the reference capture of the same sector to within a few levels at every decile; without
  * it the unlit tenth percentile is less than half the reference's.
  */
-export const ENVIRONMENT_FILL_INTENSITY = 2
+export const ENVIRONMENT_FILL_INTENSITY = 2;
 
 /**
  * The sun's shadow volume.
@@ -71,7 +71,7 @@ export const SUN_SHADOW = {
    * near-grazing surfaces (every wall under a near-overhead sun) do not self-shadow into stripes.
    */
   normalBias: 0.02,
-} as const
+} as const;
 
 /**
  * The three `SIMD3<Float>` tints. Narrowed because `simd_mix` interpolates between them in `Float`
@@ -82,14 +82,14 @@ const SUN_COLORS = {
   daylight: { r: 1, g: 1, b: 1 },
   horizon: { r: 1, g: f32(0.72), b: 0.5 },
   night: { r: f32(0.7), g: f32(0.8), b: 1 },
-} as const
+} as const;
 
 export interface SunState {
   /** Unit direction from the scene toward the light. */
-  direction: { x: number; y: number; z: number }
-  sunIntensity: number
-  sunColor: { r: number; g: number; b: number }
-  ambientIntensity: number
+  direction: { x: number; y: number; z: number };
+  sunIntensity: number;
+  sunColor: { r: number; g: number; b: number };
+  ambientIntensity: number;
 }
 
 /**
@@ -99,86 +99,86 @@ export interface SunState {
  * than a continuous ramp. A float divide would smooth the step and drift from the reference tint.
  */
 export function outdoorAmbient(hour: number, minute: number, brightness: number): number {
-  const perMinuteStep = f32(Math.trunc(minute / 12) * f32(brightness / 20))
-  if (hour >= 22 || hour <= 5) return 1
-  if (hour <= 9) return f32(brighteningAmbient(hour, brightness) + perMinuteStep)
-  if (hour <= 17) return f32(brightness)
-  return f32(dimmingAmbient(hour, brightness) - perMinuteStep)
+  const perMinuteStep = f32(Math.trunc(minute / 12) * f32(brightness / 20));
+  if (hour >= 22 || hour <= 5) return 1;
+  if (hour <= 9) return f32(brighteningAmbient(hour, brightness) + perMinuteStep);
+  if (hour <= 17) return f32(brightness);
+  return f32(dimmingAmbient(hour, brightness) - perMinuteStep);
 }
 
 /** The raw staircase pulled a quarter of the way toward full, so night floors dim not black. */
 export function smoothedOutdoorAmbient(hour: number, minute: number, brightness: number): number {
-  return f32(100 - f32(f32(100 - outdoorAmbient(hour, minute, brightness)) * 0.75))
+  return f32(100 - f32(f32(100 - outdoorAmbient(hour, minute, brightness)) * 0.75));
 }
 
 function brighteningAmbient(hour: number, brightness: number): number {
   switch (hour) {
     case 6:
-      return 1
+      return 1;
     case 7:
-      return f32(brightness / 4)
+      return f32(brightness / 4);
     case 8:
-      return f32(brightness / 2)
+      return f32(brightness / 2);
     case 9:
-      return f32(brightness * 0.75)
+      return f32(brightness * 0.75);
     default:
-      return 1
+      return 1;
   }
 }
 
 function dimmingAmbient(hour: number, brightness: number): number {
   switch (hour) {
     case 18:
-      return f32(brightness)
+      return f32(brightness);
     case 19:
-      return f32(brightness * 0.75)
+      return f32(brightness * 0.75);
     case 20:
-      return f32(brightness / 2)
+      return f32(brightness / 2);
     case 21:
-      return f32(brightness / 4)
+      return f32(brightness / 4);
     default:
-      return 1
+      return 1;
   }
 }
 
 /** Fixed key direction for indoor sectors: steeper than any sun, so ceiling lights read right. */
-const INDOOR_DIRECTION = normalize({ x: f32(-0.4), y: 1, z: f32(0.28) })
+const INDOOR_DIRECTION = normalize({ x: f32(-0.4), y: 1, z: f32(0.28) });
 /** The dim outdoor "moon". */
-const NIGHT_DIRECTION = normalize({ x: f32(-0.2), y: 1, z: f32(0.3) })
+const NIGHT_DIRECTION = normalize({ x: f32(-0.2), y: 1, z: f32(0.3) });
 
 export function sunState(hour: number, minute: number, sectorLight: LightSetting): SunState {
   if (sectorLight.indoor) {
-    const level = f32(sectorLight.brightness / 100)
+    const level = f32(sectorLight.brightness / 100);
     return {
       direction: INDOOR_DIRECTION,
       // `level * scale * full` associates left to right, so the intermediate narrows.
       sunIntensity: f32(f32(level * DAY_NIGHT.indoorSunScale) * DAY_NIGHT.fullSunIntensity),
       sunColor: SUN_COLORS.daylight,
       ambientIntensity: f32(f32(level * DAY_NIGHT.indoorAmbientScale) * DAY_NIGHT.fullAmbientIntensity),
-    }
+    };
   }
 
-  const level = f32(smoothedOutdoorAmbient(hour, minute, sectorLight.brightness) / 100)
-  const time = f32(hour + f32(minute / 60))
+  const level = f32(smoothedOutdoorAmbient(hour, minute, sectorLight.brightness) / 100);
+  const time = f32(hour + f32(minute / 60));
   if (time < DAY_NIGHT.dayStartHour || time >= DAY_NIGHT.dayEndHour) {
     return {
       direction: NIGHT_DIRECTION,
       sunIntensity: f32(level * DAY_NIGHT.fullSunIntensity),
       sunColor: SUN_COLORS.night,
       ambientIntensity: f32(level * DAY_NIGHT.fullAmbientIntensity),
-    }
+    };
   }
 
-  const progress = f32(f32(time - DAY_NIGHT.dayStartHour) / (DAY_NIGHT.dayEndHour - DAY_NIGHT.dayStartHour))
-  const arcAngle = f32(progress * FLOAT_PI)
+  const progress = f32(f32(time - DAY_NIGHT.dayStartHour) / (DAY_NIGHT.dayEndHour - DAY_NIGHT.dayStartHour));
+  const arcAngle = f32(progress * FLOAT_PI);
   // The reference chain uses single-precision `sinf`/`cosf`; JavaScript has only the binary64
   // pair, so the result is narrowed — the same accommodation `atan2F32` documents. Parity is
   // exact for the algebraic chain around these calls, not for libm's own last bit.
-  const elevation = f32(DAY_NIGHT.maximumElevationRadians * f32(Math.sin(arcAngle)))
+  const elevation = f32(DAY_NIGHT.maximumElevationRadians * f32(Math.sin(arcAngle)));
   // The sun rises east (+X), arcs through the leaning south, and sets west (-X).
-  const horizontal = normalize({ x: f32(Math.cos(arcAngle)), y: 0, z: DAY_NIGHT.southwardLean })
-  const elevationCosine = f32(Math.cos(elevation))
-  const warmth = f32(elevation / DAY_NIGHT.maximumElevationRadians)
+  const horizontal = normalize({ x: f32(Math.cos(arcAngle)), y: 0, z: DAY_NIGHT.southwardLean });
+  const elevationCosine = f32(Math.cos(elevation));
+  const warmth = f32(elevation / DAY_NIGHT.maximumElevationRadians);
   return {
     direction: {
       x: f32(horizontal.x * elevationCosine),
@@ -188,7 +188,7 @@ export function sunState(hour: number, minute: number, sectorLight: LightSetting
     sunIntensity: f32(level * DAY_NIGHT.fullSunIntensity),
     sunColor: mixColor(SUN_COLORS.horizon, SUN_COLORS.daylight, warmth),
     ambientIntensity: f32(level * DAY_NIGHT.fullAmbientIntensity),
-  }
+  };
 }
 
 /**
@@ -202,20 +202,16 @@ export function sunState(hour: number, minute: number, sectorLight: LightSetting
  * step: the extra mantissa bits are in the divisor.
  */
 function normalize(vector: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
-  const dot = f32(f32(f32(vector.x * vector.x) + f32(vector.y * vector.y)) + f32(vector.z * vector.z))
-  const length = f32(Math.sqrt(dot))
-  return { x: f32(vector.x / length), y: f32(vector.y / length), z: f32(vector.z / length) }
+  const dot = f32(f32(f32(vector.x * vector.x) + f32(vector.y * vector.y)) + f32(vector.z * vector.z));
+  const length = f32(Math.sqrt(dot));
+  return { x: f32(vector.x / length), y: f32(vector.y / length), z: f32(vector.z / length) };
 }
 
 /** `simd_mix(from, to, t)` — `from + (to - from) * t` per component, in `Float`. */
-function mixColor(
-  from: { r: number; g: number; b: number },
-  to: { r: number; g: number; b: number },
-  amount: number
-): { r: number; g: number; b: number } {
+function mixColor(from: { r: number; g: number; b: number }, to: { r: number; g: number; b: number }, amount: number): { r: number; g: number; b: number } {
   return {
     r: f32(from.r + f32(f32(to.r - from.r) * amount)),
     g: f32(from.g + f32(f32(to.g - from.g) * amount)),
     b: f32(from.b + f32(f32(to.b - from.b) * amount)),
-  }
+  };
 }

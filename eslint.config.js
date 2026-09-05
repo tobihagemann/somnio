@@ -1,12 +1,12 @@
-import js from '@eslint/js'
-import tseslint from 'typescript-eslint'
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
 /**
  * The workspace's package graph, enforced on `packages/<name>/src/**` only, so a test file may
  * take a `devDependency` outside it. Each entry lists what the package may import; the rule bans
  * the complement.
  */
-const PACKAGES = ['protocol', 'core', 'data', 'server', 'cli', 'web']
+const PACKAGES = ['protocol', 'core', 'data', 'server', 'cli', 'web'];
 /** @type {Record<string, string[]>} */
 const ALLOWED_IMPORTS = {
   protocol: [],
@@ -15,7 +15,7 @@ const ALLOWED_IMPORTS = {
   server: ['protocol', 'core', 'data'],
   cli: ['protocol', 'core'],
   web: ['protocol', 'core'],
-}
+};
 
 const boundaryRules = PACKAGES.map((name) => ({
   files: [`packages/${name}/src/**/*.ts`],
@@ -23,32 +23,20 @@ const boundaryRules = PACKAGES.map((name) => ({
     'no-restricted-imports': [
       'error',
       {
-        patterns: PACKAGES.filter((other) => other !== name && !ALLOWED_IMPORTS[name]?.includes(other)).map(
-          (other) => ({
-            group: [`@somnio/${other}`, `@somnio/${other}/*`],
-            message: `@somnio/${name} must not import @somnio/${other}`,
-          })
-        ),
+        patterns: PACKAGES.filter((other) => other !== name && !ALLOWED_IMPORTS[name]?.includes(other)).map((other) => ({
+          group: [`@somnio/${other}`, `@somnio/${other}/*`],
+          message: `@somnio/${name} must not import @somnio/${other}`,
+        })),
       },
     ],
   },
-}))
+}));
 
 export default tseslint.config(
   // Only the npm workspace is linted. The standalone `.mjs` scripts sit outside every tsconfig,
   // so the type-checked preset cannot resolve them; skills and docs carry no source.
   {
-    ignores: [
-      '**/dist',
-      '**/node_modules',
-      'coverage',
-      'packages/web/public',
-      'packages/*/scripts',
-      'Scripts',
-      '.husky',
-      'Skills',
-      'Docs',
-    ],
+    ignores: ['**/dist', '**/node_modules', 'coverage', 'packages/web/public', 'packages/*/scripts', 'Scripts', '.husky', 'Skills', 'Docs'],
   },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
@@ -78,5 +66,5 @@ export default tseslint.config(
     files: ['packages/*/test/**/*.ts'],
     rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
   },
-  ...boundaryRules
-)
+  ...boundaryRules,
+);

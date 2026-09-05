@@ -1,6 +1,6 @@
-import type { GridPoint, PixelRect } from './geometry.ts'
-import { maxX, maxY } from './geometry.ts'
-import type { CollisionMask } from './sector.ts'
+import type { GridPoint, PixelRect } from './geometry.ts';
+import { maxX, maxY } from './geometry.ts';
+import type { CollisionMask } from './sector.ts';
 
 /**
  * Collision-mask overlap tests. The client predictor and
@@ -14,13 +14,13 @@ import type { CollisionMask } from './sector.ts'
  */
 export function contains(position: GridPoint, masks: readonly CollisionMask[]): boolean {
   for (const mask of masks) {
-    const right = mask.x + mask.width
-    const bottom = mask.y + mask.height
+    const right = mask.x + mask.width;
+    const bottom = mask.y + mask.height;
     if (position.x >= mask.x && position.x < right && position.y >= mask.y && position.y < bottom) {
-      return true
+      return true;
     }
   }
-  return false
+  return false;
 }
 
 /**
@@ -29,14 +29,14 @@ export function contains(position: GridPoint, masks: readonly CollisionMask[]): 
  * an inclusive comparison makes every wall one pixel thicker than the server thinks it is.
  */
 export function overlaps(a: PixelRect, b: PixelRect): boolean {
-  return a.x < maxX(b) && maxX(a) > b.x && a.y < maxY(b) && maxY(a) > b.y
+  return a.x < maxX(b) && maxX(a) > b.x && a.y < maxY(b) && maxY(a) > b.y;
 }
 
 export function intersects(rect: PixelRect, masks: readonly CollisionMask[]): boolean {
   for (const mask of masks) {
     if (overlaps(rect, { x: mask.x, y: mask.y, width: mask.width, height: mask.height })) {
-      return true
+      return true;
     }
   }
-  return false
+  return false;
 }

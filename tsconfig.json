@@ -8,12 +8,5 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2023"]
   },
-  "include": [
-    "vitest.config.ts",
-    "packages/protocol",
-    "packages/core",
-    "packages/data",
-    "packages/server",
-    "packages/cli"
-  ]
+  "include": ["vitest.config.ts", "packages/protocol", "packages/core", "packages/data", "packages/server", "packages/cli"]
 }

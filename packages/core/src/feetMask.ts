@@ -1,8 +1,8 @@
-import { clampToInt16, maxX, maxY, rectCenter } from './geometry.ts'
-import type { GridPoint, GridSize, PixelRect } from './geometry.ts'
-import { intersects, overlaps } from './collisionMaskOverlap.ts'
-import type { Sector } from './sector.ts'
-import { sectorPixelHeight, sectorPixelWidth } from './sector.ts'
+import { clampToInt16, maxX, maxY, rectCenter } from './geometry.ts';
+import type { GridPoint, GridSize, PixelRect } from './geometry.ts';
+import { intersects, overlaps } from './collisionMaskOverlap.ts';
+import type { Sector } from './sector.ts';
+import { sectorPixelHeight, sectorPixelWidth } from './sector.ts';
 
 /**
  * The feet-box collision model. Collision uses a bottom-aligned,
@@ -14,17 +14,17 @@ import { sectorPixelHeight, sectorPixelWidth } from './sector.ts'
 
 /** Feet-box height: `spriteHeight / 4 + 4`, with integer division. */
 export function feetHeight(spriteSize: GridSize): number {
-  return Math.trunc(spriteSize.height / 4) + 4
+  return Math.trunc(spriteSize.height / 4) + 4;
 }
 
 export function feetRect(position: GridPoint, spriteSize: GridSize): PixelRect {
-  const height = feetHeight(spriteSize)
+  const height = feetHeight(spriteSize);
   return {
     x: position.x,
     y: position.y + spriteSize.height - height,
     width: spriteSize.width,
     height,
-  }
+  };
 }
 
 /**
@@ -32,7 +32,7 @@ export function feetRect(position: GridPoint, spriteSize: GridSize): PixelRect {
  * triggers) — the feet, not the sprite's top-left.
  */
 export function feetCenter(position: GridPoint, spriteSize: GridSize): { x: number; y: number } {
-  return rectCenter(feetRect(position, spriteSize))
+  return rectCenter(feetRect(position, spriteSize));
 }
 
 /**
@@ -40,20 +40,15 @@ export function feetCenter(position: GridPoint, spriteSize: GridSize): { x: numb
  * static collision mask nor any blocker's feet box. This is the single gate both the predictor
  * and the server call.
  */
-export function isFeetClear(
-  position: GridPoint,
-  spriteSize: GridSize,
-  sector: Sector,
-  blockers: readonly PixelRect[]
-): boolean {
-  const feet = feetRect(position, spriteSize)
-  if (feet.x < 0 || feet.y < 0) return false
-  if (maxX(feet) > sectorPixelWidth(sector) || maxY(feet) > sectorPixelHeight(sector)) return false
-  if (intersects(feet, sector.collisionMasks)) return false
+export function isFeetClear(position: GridPoint, spriteSize: GridSize, sector: Sector, blockers: readonly PixelRect[]): boolean {
+  const feet = feetRect(position, spriteSize);
+  if (feet.x < 0 || feet.y < 0) return false;
+  if (maxX(feet) > sectorPixelWidth(sector) || maxY(feet) > sectorPixelHeight(sector)) return false;
+  if (intersects(feet, sector.collisionMasks)) return false;
   for (const blocker of blockers) {
-    if (overlaps(feet, blocker)) return false
+    if (overlaps(feet, blocker)) return false;
   }
-  return true
+  return true;
 }
 
 /**
@@ -63,12 +58,12 @@ export function isFeetClear(
  * clamp range.
  */
 export function clampToSector(position: GridPoint, spriteSize: GridSize, sector: Sector): GridPoint {
-  const height = feetHeight(spriteSize)
-  const limitX = sectorPixelWidth(sector) - spriteSize.width
-  const minY = height - spriteSize.height
-  const limitY = sectorPixelHeight(sector) - spriteSize.height
+  const height = feetHeight(spriteSize);
+  const limitX = sectorPixelWidth(sector) - spriteSize.width;
+  const minY = height - spriteSize.height;
+  const limitY = sectorPixelHeight(sector) - spriteSize.height;
   return {
     x: clampToInt16(Math.min(Math.max(position.x, 0), Math.max(0, limitX))),
     y: clampToInt16(Math.min(Math.max(position.y, minY), Math.max(minY, limitY))),
-  }
+  };
 }

@@ -1,6 +1,6 @@
-import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts'
-import { OversizedFrameError, UnrecognizedTagError, WireDecodingError } from './errors.ts'
-import type { SomnioMessage } from './message.ts'
+import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts';
+import { OversizedFrameError, UnrecognizedTagError, WireDecodingError } from './errors.ts';
+import type { SomnioMessage } from './message.ts';
 import {
   decodeAdminSayMessage,
   decodeBumpNPCMessage,
@@ -25,9 +25,9 @@ import {
   decodeServerSay,
   decodeSessionRevokedMessage,
   decodeSessionTokenMessage,
-} from './payloads.ts'
-import { isSomnioMessageTag, type SomnioMessageTag } from './tags.ts'
-import { requireObject } from './validate.ts'
+} from './payloads.ts';
+import { isSomnioMessageTag, type SomnioMessageTag } from './tags.ts';
+import { requireObject } from './validate.ts';
 
 /**
  * The gameplay frame codec. Frames are JSON over WebSocket **text** frames; the boundary
@@ -35,7 +35,7 @@ import { requireObject } from './validate.ts'
  * any binary frame.
  */
 
-type PayloadDecoder = (container: Record<string, unknown>, path: string) => unknown
+type PayloadDecoder = (container: Record<string, unknown>, path: string) => unknown;
 
 /**
  * Tag-to-decoder table. Exhaustive over `SomnioMessageTag` by the `Record` type, so adding a
@@ -66,19 +66,19 @@ const PAYLOAD_DECODERS: Record<SomnioMessageTag, PayloadDecoder> = {
   adminSay: decodeAdminSayMessage,
   sessionToken: decodeSessionTokenMessage,
   sessionRevoked: decodeSessionRevokedMessage,
-}
+};
 
 /**
  * Encodes a message to the JSON text a WebSocket `send` takes. Guards `maxFrameLength` so an
  * abusive frame throws here rather than tripping the receiver's hard close.
  */
 export function encodeSomnioMessage(message: SomnioMessage): string {
-  const text = JSON.stringify({ tag: message.tag, payload: message.payload })
-  const byteCount = utf8ByteLength(text)
+  const text = JSON.stringify({ tag: message.tag, payload: message.payload });
+  const byteCount = utf8ByteLength(text);
   if (byteCount > SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength) {
-    throw new OversizedFrameError(byteCount)
+    throw new OversizedFrameError(byteCount);
   }
-  return text
+  return text;
 }
 
 /**
@@ -89,28 +89,28 @@ export function encodeSomnioMessage(message: SomnioMessage): string {
  * `maxFrameSize` knob, so the decoder is the one place both peers can enforce it.
  */
 export function decodeSomnioMessage(frame: string): SomnioMessage {
-  const byteCount = utf8ByteLength(frame)
+  const byteCount = utf8ByteLength(frame);
   if (byteCount > SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength) {
-    throw new OversizedFrameError(byteCount)
+    throw new OversizedFrameError(byteCount);
   }
 
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(frame)
+    parsed = JSON.parse(frame);
   } catch (cause) {
-    throw new WireDecodingError('<frame>', `malformed JSON (${(cause as Error).message})`)
+    throw new WireDecodingError('<frame>', `malformed JSON (${(cause as Error).message})`);
   }
 
-  const container = requireObject(parsed, '<frame>')
-  const rawTag = container['tag']
+  const container = requireObject(parsed, '<frame>');
+  const rawTag = container['tag'];
   if (typeof rawTag !== 'string') {
-    throw new WireDecodingError('<frame>.tag', 'expected a string discriminator')
+    throw new WireDecodingError('<frame>.tag', 'expected a string discriminator');
   }
   if (!isSomnioMessageTag(rawTag)) {
-    throw new UnrecognizedTagError(rawTag)
+    throw new UnrecognizedTagError(rawTag);
   }
 
-  const payloadContainer = requireObject(container['payload'], `<frame>.payload(${rawTag})`)
-  const payload = PAYLOAD_DECODERS[rawTag](payloadContainer, rawTag)
-  return { tag: rawTag, payload } as SomnioMessage
+  const payloadContainer = requireObject(container['payload'], `<frame>.payload(${rawTag})`);
+  const payload = PAYLOAD_DECODERS[rawTag](payloadContainer, rawTag);
+  return { tag: rawTag, payload } as SomnioMessage;
 }

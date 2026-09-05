@@ -4,13 +4,13 @@
  */
 
 export interface GridPoint {
-  x: number
-  y: number
+  x: number;
+  y: number;
 }
 
 export interface GridSize {
-  width: number
-  height: number
+  width: number;
+  height: number;
 }
 
 /**
@@ -18,18 +18,18 @@ export interface GridSize {
  * matching `CollisionMaskOverlap`'s polarity: two rects flush along a far edge do not overlap.
  */
 export interface PixelRect {
-  x: number
-  y: number
-  width: number
-  height: number
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export function maxX(rect: PixelRect): number {
-  return rect.x + rect.width
+  return rect.x + rect.width;
 }
 
 export function maxY(rect: PixelRect): number {
-  return rect.y + rect.height
+  return rect.y + rect.height;
 }
 
 /**
@@ -41,19 +41,19 @@ export function rectCenter(rect: PixelRect): { x: number; y: number } {
   return {
     x: rect.x + Math.trunc(rect.width / 2),
     y: rect.y + Math.trunc(rect.height / 2),
-  }
+  };
 }
 
 /** Confines `value` to `[lower, upper]`. */
 export function clamp(value: number, lower: number, upper: number): number {
-  return Math.min(Math.max(value, lower), upper)
+  return Math.min(Math.max(value, lower), upper);
 }
 
-export const INT16_MIN = -32_768
-export const INT16_MAX = 32_767
+export const INT16_MIN = -32_768;
+export const INT16_MAX = 32_767;
 
 /** Clamps to the Int16 range; NaN clamps to 0. */
 export function clampToInt16(value: number): number {
-  if (Number.isNaN(value)) return 0
-  return clamp(Math.trunc(value), INT16_MIN, INT16_MAX)
+  if (Number.isNaN(value)) return 0;
+  return clamp(Math.trunc(value), INT16_MIN, INT16_MAX);
 }

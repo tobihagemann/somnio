@@ -1,7 +1,7 @@
-import { chatVerb } from '@/client/chatLine'
-import type { ChatLine } from '@/client/chatLine'
-import { lookupIn } from '@somnio/core/catalog'
-import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog'
+import { chatVerb } from '@/client/chatLine';
+import type { ChatLine } from '@/client/chatLine';
+import { lookupIn } from '@somnio/core/catalog';
+import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 
 /**
  * Renders a chat line to its localized text. Exhaustive over every `ChatLine`
@@ -12,53 +12,49 @@ import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog'
  * state between assertions.
  */
 export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: CatalogLocale): string {
-  const lookup = (key: string, ...args: string[]): string => lookupIn(tables, locale, key, args)
+  const lookup = (key: string, ...args: string[]): string => lookupIn(tables, locale, key, args);
 
   switch (line.kind) {
     case 'spokenByOwn':
     case 'spokenByPeer':
     case 'spokenByNPC':
-      return renderSpoken(line.senderName, line.message, lookup)
+      return renderSpoken(line.senderName, line.message, lookup);
     case 'adminBroadcast':
-      return lookup('Broadcast message: %@', line.message)
+      return lookup('Broadcast message: %@', line.message);
     case 'connectionLost':
-      return lookup('The connection was lost.')
+      return lookup('The connection was lost.');
     case 'serverUnreachable':
-      return lookup('The server is currently not reachable. Try again later.')
+      return lookup('The server is currently not reachable. Try again later.');
     case 'badCredentials':
-      return lookup('Bad credentials.')
+      return lookup('Bad credentials.');
     case 'alreadyLoggedIn':
-      return lookup('Already logged in.')
+      return lookup('Already logged in.');
     case 'errorCode':
-      return lookup('Error %@ occurred.', line.code)
+      return lookup('Error %@ occurred.', line.code);
     case 'joined':
-      return lookup('%@ entered the game.', line.playerName)
+      return lookup('%@ entered the game.', line.playerName);
     case 'left':
-      return lookup('%@ left the game.', line.playerName)
+      return lookup('%@ left the game.', line.playerName);
     case 'startupGreeting':
-      return lookup('Welcome to Somnio!')
+      return lookup('Welcome to Somnio!');
     case 'purseBalance':
-      return lookup('You own %@c.', String(line.coins))
+      return lookup('You own %@c.', String(line.coins));
     case 'credentialSaveFailed':
-      return lookup('Your password could not be saved.')
+      return lookup('Your password could not be saved.');
     case 'sessionExpired':
-      return lookup('Your session expired. Please log in again.')
+      return lookup('Your session expired. Please log in again.');
     case 'reconnecting':
-      return lookup('Reconnecting...')
+      return lookup('Reconnecting...');
   }
 }
 
-function renderSpoken(
-  senderName: string,
-  message: string,
-  lookup: (key: string, ...args: string[]) => string
-): string {
+function renderSpoken(senderName: string, message: string, lookup: (key: string, ...args: string[]) => string): string {
   switch (chatVerb(message)) {
     case 'question':
-      return lookup('%1$@ asks, "%2$@"', senderName, message)
+      return lookup('%1$@ asks, "%2$@"', senderName, message);
     case 'exclamation':
-      return lookup('%1$@ exclaims, "%2$@"', senderName, message)
+      return lookup('%1$@ exclaims, "%2$@"', senderName, message);
     case 'statement':
-      return lookup('%1$@ says, "%2$@"', senderName, message)
+      return lookup('%1$@ says, "%2$@"', senderName, message);
   }
 }

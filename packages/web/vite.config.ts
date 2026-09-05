@@ -1,9 +1,9 @@
-import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
-import { editorSectorFs } from './vite.editorFs'
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vite';
+import { editorSectorFs } from './vite.editorFs';
 
-const webRoot = fileURLToPath(new URL('.', import.meta.url))
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
+const webRoot = fileURLToPath(new URL('.', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
  * Vite's root is `packages/web/`, and the workspace packages this one imports read committed data
@@ -18,7 +18,7 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 export const repoAliases = {
   '@': `${webRoot}src`,
   '@scripts': `${repoRoot}Scripts`,
-}
+};
 
 /**
  * Build-time constants. `SOMNIO_WEB_VERSION` comes from the environment (the image build passes its
@@ -30,7 +30,7 @@ export const repoAliases = {
  */
 export const buildDefines = {
   __SOMNIO_WEB_VERSION__: JSON.stringify(process.env.SOMNIO_WEB_VERSION ?? '0.0.0'),
-}
+};
 
 export default defineConfig({
   define: buildDefines,
@@ -66,4 +66,4 @@ export default defineConfig({
     sourcemap: true,
     target: 'es2023',
   },
-})
+});

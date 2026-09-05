@@ -21,9 +21,9 @@ import type {
   SayMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
-} from './payloads.ts'
-import { isClientOnlyTag } from './tags.ts'
-import type { ClientToServerTag } from './tags.ts'
+} from './payloads.ts';
+import { isClientOnlyTag } from './tags.ts';
+import type { ClientToServerTag } from './tags.ts';
 
 /**
  * `tag` is the discriminator and `payload` carries the struct, matching the
@@ -53,17 +53,15 @@ export type SomnioMessage =
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
-  | { tag: 'sessionRevoked'; payload: SessionRevokedMessage }
+  | { tag: 'sessionRevoked'; payload: SessionRevokedMessage };
 
 /**
  * Direction check that narrows the **message**, not just its tag. A predicate over
  * `message.tag` alone leaves `message` un-narrowed, so the dispatcher's `never` exhaustiveness
  * guard would still see the client-only variants and fail to compile.
  */
-export function isClientOnlyMessage(
-  message: SomnioMessage
-): message is Extract<SomnioMessage, { tag: ClientToServerTag }> {
-  return isClientOnlyTag(message.tag)
+export function isClientOnlyMessage(message: SomnioMessage): message is Extract<SomnioMessage, { tag: ClientToServerTag }> {
+  return isClientOnlyTag(message.tag);
 }
 
 /**
@@ -72,5 +70,5 @@ export function isClientOnlyMessage(
  * default here.
  */
 export function assertNever(value: never, context: string): never {
-  throw new Error(`${context}: unhandled case ${JSON.stringify(value)}`)
+  throw new Error(`${context}: unhandled case ${JSON.stringify(value)}`);
 }

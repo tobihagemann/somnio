@@ -1,10 +1,10 @@
-import { SOMNIO_CONSTANTS, isWithinSectorBounds, isWithinSectorContentBounds } from './constants.ts'
-import type { GridPoint, GridSize } from './geometry.ts'
-import { clampToInt16 } from './geometry.ts'
-import { contains } from './collisionMaskOverlap.ts'
-import { heading } from './heading.ts'
-import type { Heading } from './heading.ts'
-import type { WireSector } from '@somnio/protocol'
+import { SOMNIO_CONSTANTS, isWithinSectorBounds, isWithinSectorContentBounds } from './constants.ts';
+import type { GridPoint, GridSize } from './geometry.ts';
+import { clampToInt16 } from './geometry.ts';
+import { contains } from './collisionMaskOverlap.ts';
+import { heading } from './heading.ts';
+import type { Heading } from './heading.ts';
+import type { WireSector } from '@somnio/protocol';
 
 /**
  * The sector model plus the hostile-input boundary from the wire. The runtime model is
@@ -13,108 +13,107 @@ import type { WireSector } from '@somnio/protocol'
  */
 
 export interface SectorObject {
-  x: number
-  y: number
-  modelID: string
-  sourceWidth: number
-  sourceHeight: number
-  priority: number
-  rotation: number
+  x: number;
+  y: number;
+  modelID: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  priority: number;
+  rotation: number;
 }
 
 export interface CollisionMask {
-  x: number
-  y: number
-  width: number
-  height: number
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface FloorPatch {
-  floorMaterialID: string
-  x: number
-  y: number
-  width: number
-  height: number
+  floorMaterialID: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** Portal kinds and their raw wire values. */
 export const PORTAL_DIRECTIONS = {
   outboundTrigger: 0,
   arrivalPlacement: 1,
-} as const
-export type PortalDirection = keyof typeof PORTAL_DIRECTIONS
+} as const;
+export type PortalDirection = keyof typeof PORTAL_DIRECTIONS;
 
 /** Raw wire value to portal kind; `portalFromWire` rejects an unknown raw value rather than defaulting it. */
 export const PORTAL_DIRECTION_BY_RAW: Record<number, PortalDirection> = {
   0: 'outboundTrigger',
   1: 'arrivalPlacement',
-}
+};
 
 export interface SectorPortal {
-  x: number
-  y: number
-  width: number
-  height: number
-  targetSectorName: string
-  direction: PortalDirection
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  targetSectorName: string;
+  direction: PortalDirection;
 }
 
 export interface LightSetting {
-  indoor: boolean
-  brightness: number
+  indoor: boolean;
+  brightness: number;
 }
 
 export interface SectorNPC {
-  spawnOrigin: GridPoint
-  spawnBoxSize: GridSize
-  maskSize: GridSize
-  name: string
-  figure: number
-  facing: Heading
-  behaviorTag: number
-  dialogScript: string
+  spawnOrigin: GridPoint;
+  spawnBoxSize: GridSize;
+  maskSize: GridSize;
+  name: string;
+  figure: number;
+  facing: Heading;
+  behaviorTag: number;
+  dialogScript: string;
 }
 
 export interface MonsterSpawn {
-  spawnOrigin: GridPoint
-  spawnBoxSize: GridSize
-  spawnedMonsterSize: GridSize
-  name: string
-  figure: number
-  bounded: boolean
-  spawnHP: number
-  spawnBalance: number
-  spawnMana: number
-  aiScriptIndex: number
+  spawnOrigin: GridPoint;
+  spawnBoxSize: GridSize;
+  spawnedMonsterSize: GridSize;
+  name: string;
+  figure: number;
+  bounded: boolean;
+  spawnHP: number;
+  spawnBalance: number;
+  spawnMana: number;
+  aiScriptIndex: number;
 }
 
 export interface Sector {
-  name: string
-  version: number
-  dimensions: GridSize
-  floorMaterialID: string
-  light: LightSetting
-  objects: SectorObject[]
-  collisionMasks: CollisionMask[]
-  portals: SectorPortal[]
-  npcs: SectorNPC[]
-  monsterSpawns: MonsterSpawn[]
-  floorPatches: FloorPatch[]
+  name: string;
+  version: number;
+  dimensions: GridSize;
+  floorMaterialID: string;
+  light: LightSetting;
+  objects: SectorObject[];
+  collisionMasks: CollisionMask[];
+  portals: SectorPortal[];
+  npcs: SectorNPC[];
+  monsterSpawns: MonsterSpawn[];
+  floorPatches: FloorPatch[];
 }
 
-export type SectorConversionErrorKind =
-  'unknownPortalDirection' | 'sectorDimensionsOutOfRange' | 'sectorContentCountsOutOfRange'
+export type SectorConversionErrorKind = 'unknownPortalDirection' | 'sectorDimensionsOutOfRange' | 'sectorContentCountsOutOfRange';
 
 /** Thrown by both directions of the sector↔wire conversion when a guard refuses the input. */
 export class SectorConversionError extends Error {
-  readonly kind: SectorConversionErrorKind
-  readonly reason: string
+  readonly kind: SectorConversionErrorKind;
+  readonly reason: string;
 
   constructor(kind: SectorConversionErrorKind, reason: string) {
-    super(reason)
-    this.name = 'SectorConversionError'
-    this.kind = kind
-    this.reason = reason
+    super(reason);
+    this.name = 'SectorConversionError';
+    this.kind = kind;
+    this.reason = reason;
   }
 }
 
@@ -123,14 +122,9 @@ export class SectorConversionError extends Error {
  * count. Without these a peer could drive the receiver into an enormous tile-map allocation, or
  * a quadratic anchor scan that locks the main thread for seconds.
  */
-export function requireSectorWithinBounds(
-  sector: Pick<WireSector, 'dimensions'> & SectorContentArrays
-): void {
+export function requireSectorWithinBounds(sector: Pick<WireSector, 'dimensions'> & SectorContentArrays): void {
   if (!isWithinSectorBounds(sector.dimensions)) {
-    throw new SectorConversionError(
-      'sectorDimensionsOutOfRange',
-      `sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`
-    )
+    throw new SectorConversionError('sectorDimensionsOutOfRange', `sector dimensions out of range: ${sector.dimensions.width}x${sector.dimensions.height}`);
   }
   if (
     !isWithinSectorContentBounds({
@@ -147,26 +141,26 @@ export function requireSectorWithinBounds(
       `sector content counts out of range: ${sector.objects.length} objects, ` +
         `${sector.collisionMasks.length} collision masks, ${sector.portals.length} portals, ` +
         `${sector.npcs.length} npcs, ${sector.monsterSpawns.length} monster spawns, ` +
-        `${sector.floorPatches.length} floor patches`
-    )
+        `${sector.floorPatches.length} floor patches`,
+    );
   }
 }
 
 type SectorContentArrays = {
-  objects: readonly unknown[]
-  collisionMasks: readonly unknown[]
-  portals: readonly unknown[]
-  npcs: readonly unknown[]
-  monsterSpawns: readonly unknown[]
-  floorPatches: readonly unknown[]
-}
+  objects: readonly unknown[];
+  collisionMasks: readonly unknown[];
+  portals: readonly unknown[];
+  npcs: readonly unknown[];
+  monsterSpawns: readonly unknown[];
+  floorPatches: readonly unknown[];
+};
 
 /**
  * The hostile-input boundary. Bounds the tile dimensions and every record-array count, and
  * rejects an unknown portal direction.
  */
 export function sectorFromWire(wire: WireSector): Sector {
-  requireSectorWithinBounds(wire)
+  requireSectorWithinBounds(wire);
 
   return {
     name: wire.name,
@@ -200,20 +194,13 @@ export function sectorFromWire(wire: WireSector): Sector {
       aiScriptIndex: spawn.aiScriptIndex,
     })),
     floorPatches: wire.floorPatches.map((patch) => ({ ...patch })),
-  }
+  };
 }
 
-function portalFromWire(wire: {
-  x: number
-  y: number
-  width: number
-  height: number
-  targetSectorName: string
-  direction: number
-}): SectorPortal {
-  const direction = PORTAL_DIRECTION_BY_RAW[wire.direction]
+function portalFromWire(wire: { x: number; y: number; width: number; height: number; targetSectorName: string; direction: number }): SectorPortal {
+  const direction = PORTAL_DIRECTION_BY_RAW[wire.direction];
   if (direction === undefined) {
-    throw new SectorConversionError('unknownPortalDirection', `unknownPortalDirection(${wire.direction})`)
+    throw new SectorConversionError('unknownPortalDirection', `unknownPortalDirection(${wire.direction})`);
   }
   return {
     x: wire.x,
@@ -222,15 +209,15 @@ function portalFromWire(wire: {
     height: wire.height,
     targetSectorName: wire.targetSectorName,
     direction,
-  }
+  };
 }
 
 export function sectorPixelWidth(sector: Sector): number {
-  return sector.dimensions.width * SOMNIO_CONSTANTS.tileSize
+  return sector.dimensions.width * SOMNIO_CONSTANTS.tileSize;
 }
 
 export function sectorPixelHeight(sector: Sector): number {
-  return sector.dimensions.height * SOMNIO_CONSTANTS.tileSize
+  return sector.dimensions.height * SOMNIO_CONSTANTS.tileSize;
 }
 
 /** Sector centre in pixel space — the spawn fallback when a sector has no arrival portal. */
@@ -238,7 +225,7 @@ export function sectorPixelCenter(sector: Sector): GridPoint {
   return {
     x: clampToInt16(Math.trunc(sectorPixelWidth(sector) / 2)),
     y: clampToInt16(Math.trunc(sectorPixelHeight(sector) / 2)),
-  }
+  };
 }
 
 /** Anchor-point test, not the feet box: use `isFeetClear` for movement. */
@@ -249,7 +236,7 @@ export function isWalkable(sector: Sector, position: GridPoint): boolean {
     position.x < sectorPixelWidth(sector) &&
     position.y < sectorPixelHeight(sector) &&
     !contains(position, sector.collisionMasks)
-  )
+  );
 }
 
 /**
@@ -260,35 +247,33 @@ export function isWalkable(sector: Sector, position: GridPoint): boolean {
  * both cases, because returning an unwalkable centre would land the player inside geometry.
  */
 export function arrivalSpawn(sector: Sector): GridPoint | undefined {
-  const portal = sector.portals.find(
-    (candidate) => candidate.direction === 'arrivalPlacement' && candidate.targetSectorName === sector.name
-  )
-  if (portal === undefined) return undefined
+  const portal = sector.portals.find((candidate) => candidate.direction === 'arrivalPlacement' && candidate.targetSectorName === sector.name);
+  if (portal === undefined) return undefined;
 
-  const centerX = portal.x + Math.trunc(portal.width / 2)
-  const centerY = portal.y + Math.trunc(portal.height / 2)
-  const center = { x: clampToInt16(centerX), y: clampToInt16(centerY) }
-  if (isWalkable(sector, center)) return center
+  const centerX = portal.x + Math.trunc(portal.width / 2);
+  const centerY = portal.y + Math.trunc(portal.height / 2);
+  const center = { x: clampToInt16(centerX), y: clampToInt16(centerY) };
+  if (isWalkable(sector, center)) return center;
 
-  const step = 8
-  const limitX = portal.x + portal.width
-  const limitY = portal.y + portal.height
-  let best: GridPoint | undefined
-  let bestDistance = Number.POSITIVE_INFINITY
+  const step = 8;
+  const limitX = portal.x + portal.width;
+  const limitY = portal.y + portal.height;
+  let best: GridPoint | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
   for (let y = portal.y; y < limitY; y += step) {
     for (let x = portal.x; x < limitX; x += step) {
-      const candidate = { x: clampToInt16(x), y: clampToInt16(y) }
-      if (!isWalkable(sector, candidate)) continue
-      const dx = x - centerX
-      const dy = y - centerY
-      const distance = dx * dx + dy * dy
+      const candidate = { x: clampToInt16(x), y: clampToInt16(y) };
+      if (!isWalkable(sector, candidate)) continue;
+      const dx = x - centerX;
+      const dy = y - centerY;
+      const distance = dx * dx + dy * dy;
       if (distance < bestDistance) {
-        bestDistance = distance
-        best = candidate
+        bestDistance = distance;
+        best = candidate;
       }
     }
   }
-  return best
+  return best;
 }
 
 /**
@@ -298,15 +283,15 @@ export function arrivalSpawn(sector: Sector): GridPoint | undefined {
  * teleports the player through the wrong portal.
  */
 export function portalTriggerRects(sector: Sector): { index: number; rect: PortalRect }[] {
-  const triggers: { index: number; rect: PortalRect }[] = []
+  const triggers: { index: number; rect: PortalRect }[] = [];
   sector.portals.forEach((portal, index) => {
-    if (portal.direction !== 'outboundTrigger') return
+    if (portal.direction !== 'outboundTrigger') return;
     triggers.push({
       index,
       rect: { x: portal.x, y: portal.y, width: portal.width, height: portal.height },
-    })
-  })
-  return triggers
+    });
+  });
+  return triggers;
 }
 
-type PortalRect = { x: number; y: number; width: number; height: number }
+type PortalRect = { x: number; y: number; width: number; height: number };

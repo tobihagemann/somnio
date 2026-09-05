@@ -7,7 +7,7 @@
  * representable in binary32. Every step of Float32 arithmetic gets an `f32` here.
  */
 export function f32(value: number): number {
-  return Math.fround(value)
+  return Math.fround(value);
 }
 
 /**
@@ -25,7 +25,7 @@ export function f32(value: number): number {
  * conversion in the port. Do not "simplify" this back to `Math.fround(Math.PI)`; a test pins
  * the distinction.
  */
-export const FLOAT_PI = 3.141592502593994
+export const FLOAT_PI = 3.141592502593994;
 
 /**
  * `atan2` narrowed to single precision, with its result held inside `atan2f`'s range.
@@ -39,10 +39,10 @@ export const FLOAT_PI = 3.141592502593994
  * itself.
  */
 export function atan2F32(y: number, x: number): number {
-  const narrowed = f32(Math.atan2(f32(y), f32(x)))
-  if (narrowed > FLOAT_PI) return FLOAT_PI
-  if (narrowed < -FLOAT_PI) return -FLOAT_PI
-  return narrowed
+  const narrowed = f32(Math.atan2(f32(y), f32(x)));
+  if (narrowed > FLOAT_PI) return FLOAT_PI;
+  if (narrowed < -FLOAT_PI) return -FLOAT_PI;
+  return narrowed;
 }
 
 /**
@@ -50,7 +50,7 @@ export function atan2F32(y: number, x: number): number {
  * needed sign convention; the narrowing is what makes it single-precision.
  */
 export function truncatingRemainderF32(value: number, divisor: number): number {
-  return f32(f32(value) % f32(divisor))
+  return f32(f32(value) % f32(divisor));
 }
 
 /**
@@ -60,22 +60,22 @@ export function truncatingRemainderF32(value: number, divisor: number): number {
  * different operation from `truncatingRemainder` and JavaScript has no operator for it.
  */
 export function ieeeRemainderF32(value: number, divisor: number): number {
-  const narrowedValue = f32(value)
-  const narrowedDivisor = f32(divisor)
-  const rawQuotient = narrowedValue / narrowedDivisor
-  const quotient = Math.round(rawQuotient)
+  const narrowedValue = f32(value);
+  const narrowedDivisor = f32(divisor);
+  const rawQuotient = narrowedValue / narrowedDivisor;
+  const quotient = Math.round(rawQuotient);
   // Math.round breaks .5 ties upward while IEEE 754 breaks them to even; correct the tie.
   // Always `- 1`, never `- sign`: `Math.round` breaks *every* tie toward +Infinity, so the
   // round-half-to-even neighbour is the value below for both signs. Subtracting the sign moves a
   // negative tie the wrong way — `Math.round(-1.5)` is `-1`, and `-1 - (-1)` is `0` rather than the
   // `-2` IEEE picks, leaving a remainder outside the range this function promises.
-  const tieAdjusted = Math.abs(rawQuotient % 1) === 0.5 && quotient % 2 !== 0 ? quotient - 1 : quotient
-  return f32(narrowedValue - tieAdjusted * narrowedDivisor)
+  const tieAdjusted = Math.abs(rawQuotient % 1) === 0.5 && quotient % 2 !== 0 ? quotient - 1 : quotient;
+  return f32(narrowedValue - tieAdjusted * narrowedDivisor);
 }
 
 /** `copysign` at single precision; a `-0` sign counts as negative, which `<` alone would miss. */
 export function copysignF32(magnitude: number, sign: number): number {
-  return f32(sign < 0 || Object.is(sign, -0) ? -Math.abs(magnitude) : Math.abs(magnitude))
+  return f32(sign < 0 || Object.is(sign, -0) ? -Math.abs(magnitude) : Math.abs(magnitude));
 }
 
 /**
@@ -93,33 +93,33 @@ export function copysignF32(magnitude: number, sign: number): number {
  * finds no match at all for any value that is not exactly representable in binary32.
  */
 export function formatSwiftFloat32(value: number): string {
-  const target = f32(value)
-  if (target === 0) return foundationFloatString(target)
+  const target = f32(value);
+  if (target === 0) return foundationFloatString(target);
   for (let precision = 1; precision <= 9; precision += 1) {
-    if (f32(Number(target.toPrecision(precision))) !== target) continue
+    if (f32(Number(target.toPrecision(precision))) !== target) continue;
     // `precision` is the shortest round-tripping length. `toPrecision` rounds ties away from zero,
     // but Foundation's shortest format rounds ties to even (`334.515625` -> `334.51562`, not `...63`).
     // Bracket the target with the two decimals of this length and pick the one Foundation would:
     // nearest to the exact Float32 value, ties broken to the even last digit.
-    const exponent = Math.floor(Math.log10(Math.abs(target)))
-    const unit = Math.pow(10, exponent - (precision - 1))
-    const scaled = target / unit
-    const down = Number((Math.floor(scaled) * unit).toPrecision(precision))
-    const up = Number((Math.ceil(scaled) * unit).toPrecision(precision))
-    const roundTrips = [down, up].filter((candidate) => f32(candidate) === target)
-    let chosen: number
+    const exponent = Math.floor(Math.log10(Math.abs(target)));
+    const unit = Math.pow(10, exponent - (precision - 1));
+    const scaled = target / unit;
+    const down = Number((Math.floor(scaled) * unit).toPrecision(precision));
+    const up = Number((Math.ceil(scaled) * unit).toPrecision(precision));
+    const roundTrips = [down, up].filter((candidate) => f32(candidate) === target);
+    let chosen: number;
     if (roundTrips.length === 1) {
-      chosen = roundTrips[0]!
+      chosen = roundTrips[0]!;
     } else {
-      const distanceDown = Math.abs(target - down)
-      const distanceUp = Math.abs(up - target)
-      if (distanceDown < distanceUp) chosen = down
-      else if (distanceUp < distanceDown) chosen = up
-      else chosen = Math.abs(Math.round(down / unit)) % 2 === 0 ? down : up
+      const distanceDown = Math.abs(target - down);
+      const distanceUp = Math.abs(up - target);
+      if (distanceDown < distanceUp) chosen = down;
+      else if (distanceUp < distanceDown) chosen = up;
+      else chosen = Math.abs(Math.round(down / unit)) % 2 === 0 ? down : up;
     }
-    return foundationFloatString(chosen)
+    return foundationFloatString(chosen);
   }
-  return foundationFloatString(target)
+  return foundationFloatString(target);
 }
 
 /**
@@ -131,10 +131,10 @@ export function formatSwiftFloat32(value: number): string {
  */
 function foundationFloatString(n: number): string {
   if (n !== 0 && Math.abs(n) < 1e-4) {
-    const [mantissa, exponent] = n.toExponential().split('e')
-    const sign = exponent!.startsWith('-') ? '-' : '+'
-    const digits = exponent!.replace(/[+-]/, '').padStart(2, '0')
-    return `${mantissa}e${sign}${digits}`
+    const [mantissa, exponent] = n.toExponential().split('e');
+    const sign = exponent!.startsWith('-') ? '-' : '+';
+    const digits = exponent!.replace(/[+-]/, '').padStart(2, '0');
+    return `${mantissa}e${sign}${digits}`;
   }
-  return String(n)
+  return String(n);
 }

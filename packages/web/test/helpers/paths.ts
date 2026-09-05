@@ -1,5 +1,5 @@
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Filesystem anchors for tests that read files, resolved from this module's own location
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
  * `fileURLToPath` on the string `import.meta.url` rather than on a `URL` built from it —
  * `happy-dom` installs its own `URL` global, which Node's `fileURLToPath` refuses.
  */
-const helpersDirectory = dirname(fileURLToPath(import.meta.url))
+const helpersDirectory = dirname(fileURLToPath(import.meta.url));
 
 /** `packages/web/`. */
-export const WEB_ROOT = resolve(helpersDirectory, '..', '..')
+export const WEB_ROOT = resolve(helpersDirectory, '..', '..');

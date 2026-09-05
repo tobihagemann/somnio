@@ -1,21 +1,21 @@
-import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog'
-import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog'
-import webCatalogJSON from './catalog.json' with { type: 'json' }
+import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
+import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
+import webCatalogJSON from './catalog.json' with { type: 'json' };
 
-export * from '@somnio/core/catalog'
-export * from './chatLineText'
+export * from '@somnio/core/catalog';
+export * from './chatLineText';
 
 /**
  * The browser client's localization surface: the core catalog (class and gender names, item
  * labels) merged with the browser's own catalog. The collision set is exported so a test can pin
  * it rather than letting the last import silently win.
  */
-export const webCatalog: CatalogTables = readCatalog(webCatalogJSON)
+export const webCatalog: CatalogTables = readCatalog(webCatalogJSON);
 
-const merged = mergeCatalogs([coreCatalog, webCatalog])
+const merged = mergeCatalogs([coreCatalog, webCatalog]);
 
-export const catalogTables: CatalogTables = merged.tables
-export const catalogCollisions: readonly string[] = merged.collisions
+export const catalogTables: CatalogTables = merged.tables;
+export const catalogCollisions: readonly string[] = merged.collisions;
 
 /**
  * Resolves the display locale from the browser's ordered preference list.
@@ -30,21 +30,21 @@ export function resolveLocale(languageTags: readonly string[] = navigator.langua
     // The primary subtag compared whole, not as a prefix: `startsWith('de')` also matches every
     // other language whose code begins with those letters — IANA registers `den` as Slavey — and
     // would hand that reader German. Splitting on `-` still accepts `de-AT` and `en-GB`.
-    const primary = tag.toLowerCase().split('-')[0]
-    if (primary === 'de') return 'de'
-    if (primary === 'en') return 'en'
+    const primary = tag.toLowerCase().split('-')[0];
+    if (primary === 'de') return 'de';
+    if (primary === 'en') return 'en';
   }
-  return 'en'
+  return 'en';
 }
 
-let activeLocale: CatalogLocale = 'en'
+let activeLocale: CatalogLocale = 'en';
 
 export function setLocale(locale: CatalogLocale): void {
-  activeLocale = locale
+  activeLocale = locale;
 }
 
 export function currentLocale(): CatalogLocale {
-  return activeLocale
+  return activeLocale;
 }
 
 /**
@@ -55,12 +55,12 @@ export function currentLocale(): CatalogLocale {
  * developer identifier leaking into the UI.
  */
 export function t(key: string, ...args: string[]): string {
-  return lookupIn(catalogTables, activeLocale, key, args)
+  return lookupIn(catalogTables, activeLocale, key, args);
 }
 
 /** Same lookup against an explicit locale, for tests and for side-by-side rendering. */
 export function translate(locale: CatalogLocale, key: string, ...args: string[]): string {
-  return lookupIn(catalogTables, locale, key, args)
+  return lookupIn(catalogTables, locale, key, args);
 }
 
 /**
@@ -160,4 +160,4 @@ export const RENDERED_KEYS: readonly string[] = [
   'The game is played with a keyboard and a mouse. Come back from a laptop or desktop.',
   'Loading the world...',
   'Fullscreen',
-]
+];

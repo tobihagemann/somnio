@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { ConnectionController, GameplaySession, noHeldKeys } from '@/client'
-import { goldBalance, inventoryRowFromWire } from '@somnio/core'
-import type { InventoryRow } from '@somnio/core'
-import { GameplayTransport } from '@/transport'
-import { AI_TICK_INTERPOLATION_SECONDS, PEER_INTERPOLATION_SECONDS } from '@/client'
-import { fakeSocketFactory } from './helpers/fakeSocket'
-import type { SomnioMessage } from '@somnio/protocol'
-import type { WorldEntity } from '@somnio/core'
+import { describe, expect, it } from 'vitest';
+import { ConnectionController, GameplaySession, noHeldKeys } from '@/client';
+import { goldBalance, inventoryRowFromWire } from '@somnio/core';
+import type { InventoryRow } from '@somnio/core';
+import { GameplayTransport } from '@/transport';
+import { AI_TICK_INTERPOLATION_SECONDS, PEER_INTERPOLATION_SECONDS } from '@/client';
+import { fakeSocketFactory } from './helpers/fakeSocket';
+import type { SomnioMessage } from '@somnio/protocol';
+import type { WorldEntity } from '@somnio/core';
 
 /**
  * The gameplay half of the client.
@@ -17,22 +17,22 @@ import type { WorldEntity } from '@somnio/core'
  */
 
 interface Rig {
-  session: GameplaySession
-  controller: ConnectionController
-  sent: SomnioMessage[]
+  session: GameplaySession;
+  controller: ConnectionController;
+  sent: SomnioMessage[];
   /** Every `animateEntity` call, so a tween's duration is observable. */
-  tweens: { id: number; duration: number }[]
+  tweens: { id: number; duration: number }[];
   /** Every direct `updatePosition` call — the self path, which must never tween. */
-  directWrites: { id: number; x: number; y: number }[]
-  clearedRemainders: number
+  directWrites: { id: number; x: number; y: number }[];
+  clearedRemainders: number;
 }
 
 function makeRig(): Rig {
-  const { factory } = fakeSocketFactory()
-  const sent: SomnioMessage[] = []
-  const tweens: Rig['tweens'] = []
-  const directWrites: Rig['directWrites'] = []
-  let clearedRemainders = 0
+  const { factory } = fakeSocketFactory();
+  const sent: SomnioMessage[] = [];
+  const tweens: Rig['tweens'] = [];
+  const directWrites: Rig['directWrites'] = [];
+  let clearedRemainders = 0;
 
   const controller = new ConnectionController({
     transport: new GameplayTransport(factory),
@@ -49,19 +49,19 @@ function makeRig(): Rig {
       updateDayNightTint: () => {},
       showSpeechBubble: () => {},
     },
-  })
+  });
 
   const session = new GameplaySession({
     controller,
     send: (message) => sent.push(message),
     input: { snapshot: () => noHeldKeys(), setGameplayActive: () => {}, clearHeldKeys: () => {} },
     measureText: (line) => line.length * 6,
-  })
-  const originalClear = session.predictor.clearMovementRemainder.bind(session.predictor)
+  });
+  const originalClear = session.predictor.clearMovementRemainder.bind(session.predictor);
   session.predictor.clearMovementRemainder = (): void => {
-    clearedRemainders += 1
-    originalClear()
-  }
+    clearedRemainders += 1;
+    originalClear();
+  };
 
   return {
     session,
@@ -70,9 +70,9 @@ function makeRig(): Rig {
     tweens,
     directWrites,
     get clearedRemainders() {
-      return clearedRemainders
+      return clearedRemainders;
     },
-  }
+  };
 }
 
 function entity(overrides: Partial<WorldEntity> = {}): WorldEntity {
@@ -87,7 +87,7 @@ function entity(overrides: Partial<WorldEntity> = {}): WorldEntity {
     maskSize: { width: 32, height: 48 },
     name: 'Tester',
     ...overrides,
-  }
+  };
 }
 
 describe('the wire-to-domain inventory conversion', () => {
@@ -101,9 +101,9 @@ describe('the wire-to-domain inventory conversion', () => {
     [1, 0],
     [2, 1],
   ] as const)('maps wire hand %s onto %s', (wire, expected) => {
-    const row = inventoryRowFromWire({ slot: 3, category: 1, itemId: 0, extras: [], equippedHand: wire })
-    expect(row.equippedHand).toBe(expected)
-  })
+    const row = inventoryRowFromWire({ slot: 3, category: 1, itemId: 0, extras: [], equippedHand: wire });
+    expect(row.equippedHand).toBe(expected);
+  });
 
   it('reads the purse balance from the gold extra and defaults to zero without it', () => {
     const purse: InventoryRow = {
@@ -112,17 +112,17 @@ describe('the wire-to-domain inventory conversion', () => {
       itemId: 0,
       extras: [{ key: 'gold', value: 42 }],
       equippedHand: undefined,
-    }
-    expect(goldBalance(purse)).toBe(42)
-    expect(goldBalance({ ...purse, extras: [{ key: 'silver', value: 9 }] })).toBe(0)
-  })
-})
+    };
+    expect(goldBalance(purse)).toBe(42);
+    expect(goldBalance({ ...purse, extras: [{ key: 'silver', value: 9 }] })).toBe(0);
+  });
+});
 
 describe('serverPosition discrimination', () => {
   function attach(rig: Rig, entities: readonly WorldEntity[]): void {
-    for (const each of entities) rig.controller.entities.set(each.id, each)
-    rig.controller.selfEntityIndex = 1
-    rig.controller.connectionState = 'attached'
+    for (const each of entities) rig.controller.entities.set(each.id, each);
+    rig.controller.selfEntityIndex = 1;
+    rig.controller.connectionState = 'attached';
   }
 
   /**
@@ -131,18 +131,18 @@ describe('serverPosition discrimination', () => {
    * de-centring the comment in `handleServerPosition` warns about.
    */
   it('applies a self snapBack directly and clears the movement remainder', () => {
-    const rig = makeRig()
-    attach(rig, [entity()])
+    const rig = makeRig();
+    attach(rig, [entity()]);
 
     rig.controller.dispatch({
       tag: 'serverPosition',
       payload: { entityIndex: 1, x: 200, y: 210, facing: 90, tempo: 2 },
-    })
+    });
 
-    expect(rig.directWrites).toEqual([{ id: 1, x: 200, y: 210 }])
-    expect(rig.tweens).toEqual([])
-    expect(rig.clearedRemainders).toBe(1)
-  })
+    expect(rig.directWrites).toEqual([{ id: 1, x: 200, y: 210 }]);
+    expect(rig.tweens).toEqual([]);
+    expect(rig.clearedRemainders).toBe(1);
+  });
 
   /**
    * Peers arrive on the 2 Hz heartbeat and NPCs/monsters on the 50 ms AI tick, so each tweens across
@@ -154,92 +154,92 @@ describe('serverPosition discrimination', () => {
     ['npc', AI_TICK_INTERPOLATION_SECONDS],
     ['monster', AI_TICK_INTERPOLATION_SECONDS],
   ] as const)('tweens a %s across its own cadence', (kind, duration) => {
-    const rig = makeRig()
-    attach(rig, [entity(), entity({ id: 2, kind })])
+    const rig = makeRig();
+    attach(rig, [entity(), entity({ id: 2, kind })]);
 
     rig.controller.dispatch({
       tag: 'serverPosition',
       payload: { entityIndex: 2, x: 300, y: 300, facing: 0, tempo: 2 },
-    })
+    });
 
-    expect(rig.tweens).toEqual([{ id: 2, duration }])
-    expect(rig.directWrites).toEqual([])
-  })
+    expect(rig.tweens).toEqual([{ id: 2, duration }]);
+    expect(rig.directWrites).toEqual([]);
+  });
 
   /**
    * An unknown tempo keeps the entity's current one. Falling back to the default here — which is
    * right for entity *creation* — would desynchronise the clip from the movement mid-stride.
    */
   it('keeps the current tempo when the raw value is unknown', () => {
-    const rig = makeRig()
-    attach(rig, [entity(), entity({ id: 2, kind: 'peer', tempo: 4 })])
+    const rig = makeRig();
+    attach(rig, [entity(), entity({ id: 2, kind: 'peer', tempo: 4 })]);
 
     rig.controller.dispatch({
       tag: 'serverPosition',
       payload: { entityIndex: 2, x: 300, y: 300, facing: 0, tempo: 99 },
-    })
+    });
 
-    expect(rig.controller.entities.get(2)?.tempo).toBe(4)
-  })
+    expect(rig.controller.entities.get(2)?.tempo).toBe(4);
+  });
 
   it('ignores a position for an entity it does not know', () => {
-    const rig = makeRig()
-    attach(rig, [entity()])
+    const rig = makeRig();
+    attach(rig, [entity()]);
 
     rig.controller.dispatch({
       tag: 'serverPosition',
       payload: { entityIndex: 99, x: 1, y: 1, facing: 0, tempo: 2 },
-    })
+    });
 
-    expect(rig.tweens).toEqual([])
-    expect(rig.directWrites).toEqual([])
-  })
-})
+    expect(rig.tweens).toEqual([]);
+    expect(rig.directWrites).toEqual([]);
+  });
+});
 
 describe('outbound chat', () => {
   it('does not send while unattached, and sends once attached', () => {
-    const rig = makeRig()
-    rig.controller.selfEntityIndex = 1
-    rig.controller.entities.set(1, entity())
+    const rig = makeRig();
+    rig.controller.selfEntityIndex = 1;
+    rig.controller.entities.set(1, entity());
 
-    rig.session.submitChat('hello')
-    expect(rig.sent).toEqual([])
+    rig.session.submitChat('hello');
+    expect(rig.sent).toEqual([]);
 
-    rig.controller.connectionState = 'attached'
-    rig.session.submitChat('hello')
-    expect(rig.sent.map((message) => message.tag)).toEqual(['clientSay'])
-  })
+    rig.controller.connectionState = 'attached';
+    rig.session.submitChat('hello');
+    expect(rig.sent.map((message) => message.tag)).toEqual(['clientSay']);
+  });
 
   it('drops a blank line rather than sending an empty frame', () => {
-    const rig = makeRig()
-    rig.controller.selfEntityIndex = 1
-    rig.controller.entities.set(1, entity())
-    rig.controller.connectionState = 'attached'
+    const rig = makeRig();
+    rig.controller.selfEntityIndex = 1;
+    rig.controller.entities.set(1, entity());
+    rig.controller.connectionState = 'attached';
 
-    rig.session.submitChat('   ')
+    rig.session.submitChat('   ');
 
-    expect(rig.sent).toEqual([])
-  })
+    expect(rig.sent).toEqual([]);
+  });
 
   /** The cap is in UTF-8 bytes, so a string of multi-byte characters truncates well before 256 of them. */
   it('truncates outbound text on byte length, not code-unit length', () => {
-    const rig = makeRig()
-    rig.controller.selfEntityIndex = 1
-    rig.controller.entities.set(1, entity())
-    rig.controller.connectionState = 'attached'
+    const rig = makeRig();
+    rig.controller.selfEntityIndex = 1;
+    rig.controller.entities.set(1, entity());
+    rig.controller.connectionState = 'attached';
 
-    rig.session.submitChat('ä'.repeat(200))
+    rig.session.submitChat('ä'.repeat(200));
 
-    const frame = rig.sent[0]
-    if (frame?.tag !== 'clientSay') throw new Error('expected a clientSay frame')
-    expect(new TextEncoder().encode(frame.payload.text).length).toBeLessThanOrEqual(256)
-  })
-})
+    const frame = rig.sent[0];
+    if (frame?.tag !== 'clientSay') throw new Error('expected a clientSay frame');
+    expect(new TextEncoder().encode(frame.payload.text).length).toBeLessThanOrEqual(256);
+  });
+});
 
 describe('inventory activation', () => {
   it('reports the purse balance to chat instead of equipping it', () => {
-    const rig = makeRig()
-    rig.controller.connectionState = 'attached'
+    const rig = makeRig();
+    rig.controller.connectionState = 'attached';
 
     rig.session.activateInventoryRow({
       slot: 0,
@@ -247,27 +247,27 @@ describe('inventory activation', () => {
       itemId: 0,
       extras: [{ key: 'gold', value: 7 }],
       equippedHand: undefined,
-    })
+    });
 
-    expect(rig.sent).toEqual([])
-    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'purseBalance', coins: 7 })
-  })
+    expect(rig.sent).toEqual([]);
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'purseBalance', coins: 7 });
+  });
 
   /** Unequipped sends the right hand; already-equipped sends "no hand" to clear it. */
   it.each([
     [undefined, 2],
     [1, 0],
   ] as const)('toggles the cudgel from hand %s with wire hand %s', (equippedHand, expected) => {
-    const rig = makeRig()
-    rig.controller.connectionState = 'attached'
+    const rig = makeRig();
+    rig.controller.connectionState = 'attached';
 
-    rig.session.activateInventoryRow({ slot: 4, category: 1, itemId: 0, extras: [], equippedHand })
+    rig.session.activateInventoryRow({ slot: 4, category: 1, itemId: 0, extras: [], equippedHand });
 
-    const frame = rig.sent[0]
-    if (frame?.tag !== 'equipToggle') throw new Error('expected an equipToggle frame')
-    expect(frame.payload).toEqual({ slot: 4, hand: expected })
-  })
-})
+    const frame = rig.sent[0];
+    if (frame?.tag !== 'equipToggle') throw new Error('expected an equipToggle frame');
+    expect(frame.payload).toEqual({ slot: 4, hand: expected });
+  });
+});
 
 describe('inbound gameplay dispatch', () => {
   /**
@@ -281,25 +281,25 @@ describe('inbound gameplay dispatch', () => {
     ['monster', 'spokenByNPC'],
     ['peer', 'spokenByPeer'],
   ] as const)('routes serverSay from a %s to the %s chat style', (kind, expected) => {
-    const rig = makeRig()
-    rig.controller.entities.set(7, entity({ id: 7, kind, name: 'Wirt' }))
+    const rig = makeRig();
+    rig.controller.entities.set(7, entity({ id: 7, kind, name: 'Wirt' }));
 
-    rig.controller.dispatch({ tag: 'serverSay', payload: { entityIndex: 7, text: 'Willkommen!' } })
+    rig.controller.dispatch({ tag: 'serverSay', payload: { entityIndex: 7, text: 'Willkommen!' } });
 
     expect(rig.controller.chatHistory.at(-1)).toEqual({
       kind: expected,
       senderName: 'Wirt',
       message: 'Willkommen!',
-    })
-  })
+    });
+  });
 
   it('ignores serverSay for an entity it does not know', () => {
-    const rig = makeRig()
+    const rig = makeRig();
 
-    rig.controller.dispatch({ tag: 'serverSay', payload: { entityIndex: 99, text: 'ghost' } })
+    rig.controller.dispatch({ tag: 'serverSay', payload: { entityIndex: 99, text: 'ghost' } });
 
-    expect(rig.controller.chatHistory).toEqual([])
-  })
+    expect(rig.controller.chatHistory).toEqual([]);
+  });
 
   /**
    * `onStateChanged` is the *only* repaint hook `AppShell` wires for session state, so dropping the
@@ -308,47 +308,45 @@ describe('inbound gameplay dispatch', () => {
    * exactly why a broken notification is invisible there.
    */
   it('stores energy and asks for a repaint', () => {
-    const rig = makeRig()
-    let repaints = 0
+    const rig = makeRig();
+    let repaints = 0;
     rig.session.onStateChanged = () => {
-      repaints += 1
-    }
-    const energy = { hpCurrent: 40, hpMax: 80, balanceCurrent: 5, balanceMax: 10, manaCurrent: 1, manaMax: 4 }
+      repaints += 1;
+    };
+    const energy = { hpCurrent: 40, hpMax: 80, balanceCurrent: 5, balanceMax: 10, manaCurrent: 1, manaMax: 4 };
 
-    rig.controller.dispatch({ tag: 'energy', payload: energy })
+    rig.controller.dispatch({ tag: 'energy', payload: energy });
 
-    expect(rig.session.energy).toEqual(energy)
-    expect(repaints).toBe(1)
-  })
+    expect(rig.session.energy).toEqual(energy);
+    expect(repaints).toBe(1);
+  });
 
   it('converts the inventory rows and asks for a repaint', () => {
-    const rig = makeRig()
-    let repaints = 0
+    const rig = makeRig();
+    let repaints = 0;
     rig.session.onStateChanged = () => {
-      repaints += 1
-    }
+      repaints += 1;
+    };
 
     rig.controller.dispatch({
       tag: 'inventory',
       payload: {
         rows: [{ slot: 2, category: 1, itemId: 0, extras: [{ key: 'gold', value: 9 }], equippedHand: 2 }],
       },
-    })
+    });
 
-    expect(rig.session.inventory).toEqual([
-      { slot: 2, category: 1, itemId: 0, extras: [{ key: 'gold', value: 9 }], equippedHand: 1 },
-    ])
-    expect(repaints).toBe(1)
-  })
+    expect(rig.session.inventory).toEqual([{ slot: 2, category: 1, itemId: 0, extras: [{ key: 'gold', value: 9 }], equippedHand: 1 }]);
+    expect(repaints).toBe(1);
+  });
 
   it('renders an admin broadcast into the scrollback', () => {
-    const rig = makeRig()
+    const rig = makeRig();
 
-    rig.controller.dispatch({ tag: 'adminSay', payload: { text: 'Server restarting.' } })
+    rig.controller.dispatch({ tag: 'adminSay', payload: { text: 'Server restarting.' } });
 
     expect(rig.controller.chatHistory.at(-1)).toEqual({
       kind: 'adminBroadcast',
       message: 'Server restarting.',
-    })
-  })
-})
+    });
+  });
+});

@@ -1,24 +1,14 @@
-import { GENDER, TEMPO, headingFromCardinal } from '@somnio/core'
-import type {
-  Character,
-  CollisionMask,
-  GridPoint,
-  GridSize,
-  MonsterSpawn,
-  Sector,
-  SectorNPC,
-  SectorObject,
-  SectorPortal,
-} from '@somnio/core'
+import { GENDER, TEMPO, headingFromCardinal } from '@somnio/core';
+import type { Character, CollisionMask, GridPoint, GridSize, MonsterSpawn, Sector, SectorNPC, SectorObject, SectorPortal } from '@somnio/core';
 
 export interface SectorOptions {
-  dimensions?: GridSize
-  objects?: SectorObject[]
-  collisionMasks?: CollisionMask[]
-  portals?: SectorPortal[]
-  npcs?: SectorNPC[]
-  monsterSpawns?: MonsterSpawn[]
-  indoor?: boolean
+  dimensions?: GridSize;
+  objects?: SectorObject[];
+  collisionMasks?: CollisionMask[];
+  portals?: SectorPortal[];
+  npcs?: SectorNPC[];
+  monsterSpawns?: MonsterSpawn[];
+  indoor?: boolean;
 }
 
 /** An 8 x 8 tile (1024 px) outdoor sector unless overridden. */
@@ -35,7 +25,7 @@ export function makeSector(name = 'TestSector', options: SectorOptions = {}): Se
     npcs: options.npcs ?? [],
     monsterSpawns: options.monsterSpawns ?? [],
     floorPatches: [],
-  }
+  };
 }
 
 /**
@@ -53,7 +43,7 @@ export function makeNPC(origin: GridPoint, dialogScript: string): SectorNPC {
     facing: headingFromCardinal('south'),
     behaviorTag: 0,
     dialogScript,
-  }
+  };
 }
 
 /**
@@ -73,7 +63,7 @@ export function makeMonsterSpawn(origin: GridPoint, aiScriptIndex = 0, boxWidth 
     spawnBalance: 100,
     spawnMana: 100,
     aiScriptIndex,
-  }
+  };
 }
 
 export function makeCharacter(position: GridPoint, name = 'tester', sector = 'TestSector'): Character {
@@ -95,13 +85,13 @@ export function makeCharacter(position: GridPoint, name = 'tester', sector = 'Te
       manaMax: 100,
     },
     lastSeen: new Date(),
-  }
+  };
 }
 
 export function makePortal(
   rect: { x: number; y: number; width: number; height: number },
   targetSectorName: string,
-  direction: SectorPortal['direction']
+  direction: SectorPortal['direction'],
 ): SectorPortal {
-  return { ...rect, targetSectorName, direction }
+  return { ...rect, targetSectorName, direction };
 }

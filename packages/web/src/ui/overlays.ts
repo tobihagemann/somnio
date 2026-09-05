@@ -1,8 +1,8 @@
-import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol'
-import type { LoginCredentials, OverlayKind, RegistrationForm, VersionSkew } from '@/client'
-import { CHARACTER_CLASS, GENDER } from '@somnio/core'
-import { t } from '@/i18n'
-import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom'
+import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol';
+import type { LoginCredentials, OverlayKind, RegistrationForm, VersionSkew } from '@/client';
+import { CHARACTER_CLASS, GENDER } from '@somnio/core';
+import { t } from '@/i18n';
+import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom';
 
 /**
  * The six `OverlayKind` cases. A browser client updates by reloading, so the version-skew overlay
@@ -13,18 +13,18 @@ import { button, card, checkbox, element, field, scrim, select, setHidden } from
  */
 
 export interface OverlayCallbacks {
-  onLogin: (credentials: LoginCredentials) => void
-  onRegister: (form: RegistrationForm) => void
-  onShowOverlay: (overlay: OverlayKind | undefined) => void
-  onResume: () => void
+  onLogin: (credentials: LoginCredentials) => void;
+  onRegister: (form: RegistrationForm) => void;
+  onShowOverlay: (overlay: OverlayKind | undefined) => void;
+  onResume: () => void;
   /** `dismissPresentedOverlay`: back out to the game menu while attached, else to login. */
-  onDismissOverlay: () => void
+  onDismissOverlay: () => void;
   /** Back out of the registration form to login, dropping its inline error. Bound to Esc and Cancel alike. */
-  onCancelRegistration: () => void
-  onLeaveGame: () => void
-  onRetryConnection: () => void
-  onToggleFullscreen: () => void
-  appVersion: string
+  onCancelRegistration: () => void;
+  onLeaveGame: () => void;
+  onRetryConnection: () => void;
+  onToggleFullscreen: () => void;
+  appVersion: string;
 }
 
 /**
@@ -42,62 +42,62 @@ function characterClassOptions(): { value: string; label: string }[] {
     { value: String(CHARACTER_CLASS.gangster), label: t('Gangster') },
     { value: String(CHARACTER_CLASS.cleric), label: t('Cleric') },
     { value: String(CHARACTER_CLASS.mage), label: t('Mage') },
-  ]
+  ];
 }
 
 function genderOptions(): { value: string; label: string }[] {
   return [
     { value: String(GENDER.male), label: t('Male') },
     { value: String(GENDER.female), label: t('Female') },
-  ]
+  ];
 }
 
 export class Overlays {
-  readonly root: HTMLElement
-  readonly loginNickname: HTMLInputElement
+  readonly root: HTMLElement;
+  readonly loginNickname: HTMLInputElement;
 
-  private readonly callbacks: OverlayCallbacks
+  private readonly callbacks: OverlayCallbacks;
   /**
    * Keyed by the union rather than by `string`, so adding an `OverlayKind` case fails to build here
    * the way it already does in `AppShell.handleEscape` and the controller's dispatch. Under
    * `Record<string, …>` a missing view compiled fine and `present` simply hid all the others,
    * rendering the new overlay as a blank screen with a green suite.
    */
-  private readonly views: Record<OverlayKind['kind'], HTMLElement>
-  private readonly loginPassword: HTMLInputElement
-  private readonly loginRemember: HTMLInputElement
-  private readonly loginError: HTMLElement
+  private readonly views: Record<OverlayKind['kind'], HTMLElement>;
+  private readonly loginPassword: HTMLInputElement;
+  private readonly loginRemember: HTMLInputElement;
+  private readonly loginError: HTMLElement;
   private readonly registration: {
-    nickname: HTMLInputElement
-    password: HTMLInputElement
-    passwordRepeat: HTMLInputElement
-    characterClass: HTMLSelectElement
-    gender: HTMLSelectElement
-    email: HTMLInputElement
-    error: HTMLElement
-  }
-  private readonly skewMessage: HTMLElement
-  private presentedKind: OverlayKind['kind'] | undefined
+    nickname: HTMLInputElement;
+    password: HTMLInputElement;
+    passwordRepeat: HTMLInputElement;
+    characterClass: HTMLSelectElement;
+    gender: HTMLSelectElement;
+    email: HTMLInputElement;
+    error: HTMLElement;
+  };
+  private readonly skewMessage: HTMLElement;
+  private presentedKind: OverlayKind['kind'] | undefined;
 
   constructor(callbacks: OverlayCallbacks) {
-    this.callbacks = callbacks
+    this.callbacks = callbacks;
 
     // Login. Real `type="password"` and standard autocomplete tokens, so a password manager
     // recognizes the form — the whole reason the overlay is DOM rather than something drawn in WebGL.
     const nickname = field(t('Nickname'), {
       autocomplete: 'username',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
-    })
+    });
     const password = field(t('Password'), {
       type: 'password',
       autocomplete: 'current-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
-    })
-    const remember = checkbox(t('Remember password'), false)
-    this.loginNickname = nickname.input
-    this.loginPassword = password.input
-    this.loginRemember = remember.input
-    this.loginError = element('p', { className: 'form-error hidden' })
+    });
+    const remember = checkbox(t('Remember password'), false);
+    this.loginNickname = nickname.input;
+    this.loginPassword = password.input;
+    this.loginRemember = remember.input;
+    this.loginError = element('p', { className: 'form-error hidden' });
     const loginForm = element('form', {
       children: [
         nickname.row,
@@ -117,42 +117,38 @@ export class Overlays {
         element('p', {
           className: 'form-note',
           children: [
-            button(
-              t("If you don't have an account, click here!"),
-              () => this.callbacks.onShowOverlay({ kind: 'registration' }),
-              { className: 'link-button' }
-            ),
+            button(t("If you don't have an account, click here!"), () => this.callbacks.onShowOverlay({ kind: 'registration' }), { className: 'link-button' }),
           ],
         }),
       ],
-    })
+    });
     loginForm.addEventListener('submit', (event) => {
-      event.preventDefault()
-      this.submitLogin()
-    })
+      event.preventDefault();
+      this.submitLogin();
+    });
 
     const regNickname = field(t('Nickname:'), {
       autocomplete: 'username',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
-    })
+    });
     const regPassword = field(t('Password:'), {
       type: 'password',
       autocomplete: 'new-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
-    })
+    });
     const regRepeat = field(t('Password (*):'), {
       type: 'password',
       autocomplete: 'new-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
-    })
-    const regClass = select(t('Character:'), characterClassOptions())
-    const regGender = select(t('Gender:'), genderOptions())
+    });
+    const regClass = select(t('Character:'), characterClassOptions());
+    const regGender = select(t('Gender:'), genderOptions());
     const regEmail = field(t('Email:'), {
       type: 'email',
       autocomplete: 'email',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
-    })
-    const regError = element('p', { className: 'form-error hidden' })
+    });
+    const regError = element('p', { className: 'form-error hidden' });
     this.registration = {
       nickname: regNickname.input,
       password: regPassword.input,
@@ -161,7 +157,7 @@ export class Overlays {
       gender: regGender.input,
       email: regEmail.input,
       error: regError,
-    }
+    };
     const registrationForm = element('form', {
       children: [
         regNickname.row,
@@ -187,11 +183,11 @@ export class Overlays {
           ],
         }),
       ],
-    })
+    });
     registrationForm.addEventListener('submit', (event) => {
-      event.preventDefault()
-      this.submitRegistration()
-    })
+      event.preventDefault();
+      this.submitRegistration();
+    });
 
     // Game menu, options, about, version skew
     // A vertical stack of full-width buttons in `GameMenuOverlayView`'s order, not a row of
@@ -205,7 +201,7 @@ export class Overlays {
         button(t('Leave Game'), () => this.callbacks.onLeaveGame()),
         button(t('About Somnio'), () => this.callbacks.onShowOverlay({ kind: 'about' })),
       ],
-    })
+    });
 
     const options = element('div', {
       children: [
@@ -213,13 +209,10 @@ export class Overlays {
         // would otherwise steal the key the game menu owns.
         element('div', {
           className: 'menu-actions',
-          children: [
-            button(t('Fullscreen'), () => this.callbacks.onToggleFullscreen()),
-            button(t('Close'), () => this.callbacks.onDismissOverlay()),
-          ],
+          children: [button(t('Fullscreen'), () => this.callbacks.onToggleFullscreen()), button(t('Close'), () => this.callbacks.onDismissOverlay())],
         }),
       ],
-    })
+    });
 
     // `AboutOverlayView`'s centred column: its own flanked `largeTitle` heading, the version and
     // copyright, the revival blurb, then the pack credits under a plain rule. The packs are named
@@ -246,9 +239,9 @@ export class Overlays {
           children: [button(t('OK'), () => this.callbacks.onDismissOverlay())],
         }),
       ],
-    })
+    });
 
-    this.skewMessage = element('p')
+    this.skewMessage = element('p');
     const updateRequired = element('div', {
       children: [
         this.skewMessage,
@@ -257,7 +250,7 @@ export class Overlays {
           children: [button(t('Try Again'), () => this.callbacks.onRetryConnection())],
         }),
       ],
-    })
+    });
 
     this.views = {
       login: scrim(card(t('Somnio'), [loginForm])),
@@ -266,24 +259,24 @@ export class Overlays {
       options: scrim(card(t('Options'), [options], 'menu')),
       about: scrim(card(t('About Somnio'), [about], 'default', 'accessibleOnly')),
       updateRequired: scrim(card(t('Update required'), [updateRequired])),
-    }
-    this.root = element('div', { children: Object.values(this.views) })
+    };
+    this.root = element('div', { children: Object.values(this.views) });
   }
 
   present(overlay: OverlayKind | undefined): void {
     for (const [kind, view] of Object.entries(this.views)) {
-      setHidden(view, overlay?.kind !== kind)
+      setHidden(view, overlay?.kind !== kind);
     }
-    if (overlay?.kind === 'updateRequired') this.renderSkew(overlay.skew)
+    if (overlay?.kind === 'updateRequired') this.renderSkew(overlay.skew);
     // Focus only on the transition into a credential form, never on a repaint of one already
     // showing. `AppShell.render` re-presents on every chat line, so focusing unconditionally moves
     // the caret to field one mid-keystroke: the rest of a password being typed lands in the
     // plaintext nickname box and Return submits it as the nickname.
-    const entered = overlay?.kind !== this.presentedKind
-    this.presentedKind = overlay?.kind
-    if (!entered) return
-    if (overlay?.kind === 'login') this.loginNickname.focus()
-    if (overlay?.kind === 'registration') this.registration.nickname.focus()
+    const entered = overlay?.kind !== this.presentedKind;
+    this.presentedKind = overlay?.kind;
+    if (!entered) return;
+    if (overlay?.kind === 'login') this.loginNickname.focus();
+    if (overlay?.kind === 'registration') this.registration.nickname.focus();
   }
 
   /**
@@ -296,25 +289,25 @@ export class Overlays {
    * password in the DOM that no later login touches, and it is reachable from the same card.
    */
   clearCredentialForms(): void {
-    this.loginNickname.value = ''
-    this.loginPassword.value = ''
-    this.loginRemember.checked = false
-    this.showLoginError(undefined)
-    this.registration.nickname.value = ''
-    this.registration.password.value = ''
-    this.registration.passwordRepeat.value = ''
-    this.registration.email.value = ''
-    this.showRegistrationError(undefined)
+    this.loginNickname.value = '';
+    this.loginPassword.value = '';
+    this.loginRemember.checked = false;
+    this.showLoginError(undefined);
+    this.registration.nickname.value = '';
+    this.registration.password.value = '';
+    this.registration.passwordRepeat.value = '';
+    this.registration.email.value = '';
+    this.showRegistrationError(undefined);
   }
 
   showLoginError(message: string | undefined): void {
-    this.loginError.textContent = message ?? ''
-    setHidden(this.loginError, message === undefined)
+    this.loginError.textContent = message ?? '';
+    setHidden(this.loginError, message === undefined);
   }
 
   showRegistrationError(message: string | undefined): void {
-    this.registration.error.textContent = message ?? ''
-    setHidden(this.registration.error, message === undefined)
+    this.registration.error.textContent = message ?? '';
+    setHidden(this.registration.error, message === undefined);
   }
 
   /**
@@ -326,7 +319,7 @@ export class Overlays {
     this.skewMessage.textContent =
       skew === 'clientOutdated'
         ? t('A newer version is available. Please update your client to keep playing.')
-        : t('The server is being updated. Please try again in a few moments.')
+        : t('The server is being updated. Please try again in a few moments.');
   }
 
   /**
@@ -335,11 +328,11 @@ export class Overlays {
    * before a round trip.
    */
   private submitLogin(): void {
-    const nickname = this.loginNickname.value.trim()
-    const password = this.loginPassword.value
+    const nickname = this.loginNickname.value.trim();
+    const password = this.loginPassword.value;
     if (utf8ByteLength(nickname) === 0 || utf8ByteLength(nickname) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showLoginError(t('That name uses characters Somnio does not allow.'))
-      return
+      this.showLoginError(t('That name uses characters Somnio does not allow.'));
+      return;
     }
     // Empty as well as over-cap: a blank password would ship a `login` frame on a round trip that
     // cannot succeed, so the guard answers immediately with the message the server would send
@@ -347,41 +340,37 @@ export class Overlays {
     // button with no explanation reads as a broken page in a browser, where the player cannot
     // tell a validation gate from a stalled script.
     if (utf8ByteLength(password) === 0 || utf8ByteLength(password) > PROTOCOL_BYTE_CAPS.password) {
-      this.showLoginError(t('Bad credentials.'))
-      return
+      this.showLoginError(t('Bad credentials.'));
+      return;
     }
-    this.showLoginError(undefined)
-    this.callbacks.onLogin({ nickname, password, rememberMe: this.loginRemember.checked })
+    this.showLoginError(undefined);
+    this.callbacks.onLogin({ nickname, password, rememberMe: this.loginRemember.checked });
   }
 
   private submitRegistration(): void {
-    const nickname = this.registration.nickname.value.trim()
-    const password = this.registration.password.value
-    const passwordRepeat = this.registration.passwordRepeat.value
+    const nickname = this.registration.nickname.value.trim();
+    const password = this.registration.password.value;
+    const passwordRepeat = this.registration.passwordRepeat.value;
     if (utf8ByteLength(nickname) === 0 || utf8ByteLength(nickname) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showRegistrationError(t('That name uses characters Somnio does not allow.'))
-      return
+      this.showRegistrationError(t('That name uses characters Somnio does not allow.'));
+      return;
     }
-    if (
-      utf8ByteLength(password) < PROTOCOL_BYTE_CAPS.minPassword ||
-      utf8ByteLength(password) > PROTOCOL_BYTE_CAPS.password ||
-      password !== passwordRepeat
-    ) {
-      this.showRegistrationError(t('Registration failed.'))
-      return
+    if (utf8ByteLength(password) < PROTOCOL_BYTE_CAPS.minPassword || utf8ByteLength(password) > PROTOCOL_BYTE_CAPS.password || password !== passwordRepeat) {
+      this.showRegistrationError(t('Registration failed.'));
+      return;
     }
     // `RegisterHandler` requires a non-empty, length-bounded email and answers `.failure` without
     // it, which reads as an unexplained rejection. `isValid(form:)` gates on the same two bounds.
-    const email = this.registration.email.value.trim()
+    const email = this.registration.email.value.trim();
     if (utf8ByteLength(email) === 0 || utf8ByteLength(email) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showRegistrationError(t('Registration failed.'))
-      return
+      this.showRegistrationError(t('Registration failed.'));
+      return;
     }
-    this.showRegistrationError(undefined)
+    this.showRegistrationError(undefined);
     // Pre-fill login from the same values before the request goes out, so the overlay a successful
     // registration returns to is already filled in — the ordering `submitRegistration` uses.
-    this.loginNickname.value = nickname
-    this.loginPassword.value = password
+    this.loginNickname.value = nickname;
+    this.loginPassword.value = password;
     this.callbacks.onRegister({
       nickname,
       password,
@@ -389,7 +378,7 @@ export class Overlays {
       characterClass: Number(this.registration.characterClass.value),
       gender: Number(this.registration.gender.value),
       email,
-    })
+    });
   }
 }
 
@@ -398,11 +387,11 @@ export class Overlays {
  * viewport, and the first-load asset progress.
  */
 export class BlockingNotices {
-  readonly root: HTMLElement
+  readonly root: HTMLElement;
 
-  private readonly webglView: HTMLElement
-  private readonly mobileView: HTMLElement
-  private readonly loadingView: HTMLElement
+  private readonly webglView: HTMLElement;
+  private readonly mobileView: HTMLElement;
+  private readonly loadingView: HTMLElement;
 
   constructor() {
     this.webglView = element('div', {
@@ -410,13 +399,11 @@ export class BlockingNotices {
       children: [
         card(t('This browser cannot render 3D graphics.'), [
           element('p', {
-            text: t(
-              'Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.'
-            ),
+            text: t('Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.'),
           }),
         ]),
       ],
-    })
+    });
     this.mobileView = element('div', {
       className: 'blocking-notice hidden',
       children: [
@@ -426,22 +413,22 @@ export class BlockingNotices {
           }),
         ]),
       ],
-    })
+    });
     this.loadingView = element('div', {
       className: 'blocking-notice hidden',
       children: [card(t('Loading the world...'), [])],
-    })
+    });
     this.root = element('div', {
       children: [this.loadingView, this.mobileView, this.webglView],
-    })
+    });
   }
 
   showWebGLUnavailable(): void {
-    setHidden(this.webglView, false)
+    setHidden(this.webglView, false);
   }
 
   showMobileNotice(): void {
-    setHidden(this.mobileView, false)
+    setHidden(this.mobileView, false);
   }
 
   /**
@@ -451,6 +438,6 @@ export class BlockingNotices {
    * threading a per-model completion count out of `prewarm` first.
    */
   setLoading(visible: boolean): void {
-    setHidden(this.loadingView, !visible)
+    setHidden(this.loadingView, !visible);
   }
 }

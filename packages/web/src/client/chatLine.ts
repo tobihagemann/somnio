@@ -23,7 +23,7 @@ export type ChatLine =
   | { kind: 'purseBalance'; coins: number }
   | { kind: 'credentialSaveFailed' }
   | { kind: 'sessionExpired' }
-  | { kind: 'reconnecting' }
+  | { kind: 'reconnecting' };
 
 /**
  * The visual-treatment bucket that selects a line's colour and weight.
@@ -34,26 +34,18 @@ export type ChatLine =
  * the read and rejects the write. `sessionExpired` and `reconnecting` exist because the browser
  * resumes from a token.
  */
-export type ChatLineCategory =
-  | 'ownMessage'
-  | 'peerMessage'
-  | 'npcMessage'
-  | 'adminBroadcast'
-  | 'error'
-  | 'joinLeave'
-  | 'startupGreeting'
-  | 'itemInfo'
+export type ChatLineCategory = 'ownMessage' | 'peerMessage' | 'npcMessage' | 'adminBroadcast' | 'error' | 'joinLeave' | 'startupGreeting' | 'itemInfo';
 
 export function chatLineCategory(line: ChatLine): ChatLineCategory {
   switch (line.kind) {
     case 'spokenByOwn':
-      return 'ownMessage'
+      return 'ownMessage';
     case 'spokenByPeer':
-      return 'peerMessage'
+      return 'peerMessage';
     case 'spokenByNPC':
-      return 'npcMessage'
+      return 'npcMessage';
     case 'adminBroadcast':
-      return 'adminBroadcast'
+      return 'adminBroadcast';
     case 'connectionLost':
     case 'serverUnreachable':
     case 'badCredentials':
@@ -62,23 +54,23 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'credentialSaveFailed':
     case 'sessionExpired':
     case 'reconnecting':
-      return 'error'
+      return 'error';
     case 'joined':
     case 'left':
-      return 'joinLeave'
+      return 'joinLeave';
     case 'startupGreeting':
-      return 'startupGreeting'
+      return 'startupGreeting';
     case 'purseBalance':
-      return 'itemInfo'
+      return 'itemInfo';
   }
 }
 
-export type ChatVerb = 'question' | 'exclamation' | 'statement'
+export type ChatVerb = 'question' | 'exclamation' | 'statement';
 
 /** Trailing punctuation picks the framing verb; the empty string is a statement. */
 export function chatVerb(text: string): ChatVerb {
-  const last = [...text].at(-1)
-  if (last === '?') return 'question'
-  if (last === '!') return 'exclamation'
-  return 'statement'
+  const last = [...text].at(-1);
+  if (last === '?') return 'question';
+  if (last === '!') return 'exclamation';
+  return 'statement';
 }

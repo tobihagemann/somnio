@@ -1,4 +1,4 @@
-import type { EditorShell } from './editorShell'
+import type { EditorShell } from './editorShell';
 
 /**
  * Read-only introspection surface for automated verification, following
@@ -9,16 +9,16 @@ import type { EditorShell } from './editorShell'
  */
 
 interface SomnioEditorDebugAPI {
-  sectorName(): string
+  sectorName(): string;
   /** Record counts per array — enough to assert a placement landed without dumping bodies. */
-  body(): Record<string, number>
-  selection(): { kind: string; index: number }[]
-  tool(): string
-  overlay(): string | undefined
-  isDirty(): boolean
-  undoDepth(): number
-  placeholderObjectCount(): number
-  cameraScale(): number
+  body(): Record<string, number>;
+  selection(): { kind: string; index: number }[];
+  tool(): string;
+  overlay(): string | undefined;
+  isDirty(): boolean;
+  undoDepth(): number;
+  placeholderObjectCount(): number;
+  cameraScale(): number;
 }
 
 function makeEditorDebugAPI(shell: EditorShell): SomnioEditorDebugAPI {
@@ -32,9 +32,9 @@ function makeEditorDebugAPI(shell: EditorShell): SomnioEditorDebugAPI {
     undoDepth: () => shell.document.undoDepth,
     placeholderObjectCount: () => shell.scene._placeholderObjectCount(),
     cameraScale: () => shell.camera.framing.scale,
-  }
+  };
 }
 
 export function installEditorDebugAPI(shell: EditorShell): void {
-  ;(window as unknown as { somnioEditor: SomnioEditorDebugAPI }).somnioEditor = makeEditorDebugAPI(shell)
+  (window as unknown as { somnioEditor: SomnioEditorDebugAPI }).somnioEditor = makeEditorDebugAPI(shell);
 }

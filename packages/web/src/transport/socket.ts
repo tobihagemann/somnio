@@ -8,20 +8,20 @@
  * frames inbound without standing up a server.
  */
 export interface GameplaySocket {
-  send(text: string): void
-  close(code?: number, reason?: string): void
+  send(text: string): void;
+  close(code?: number, reason?: string): void;
 }
 
 export interface GameplaySocketHandlers {
-  onOpen: () => void
+  onOpen: () => void;
   /** Text payloads only. A binary payload arrives through `onBinary`, never here. */
-  onText: (text: string) => void
-  onBinary: () => void
-  onClose: () => void
-  onError: (error: unknown) => void
+  onText: (text: string) => void;
+  onBinary: () => void;
+  onClose: () => void;
+  onError: (error: unknown) => void;
 }
 
-export type GameplaySocketFactory = (url: string, handlers: GameplaySocketHandlers) => GameplaySocket
+export type GameplaySocketFactory = (url: string, handlers: GameplaySocketHandlers) => GameplaySocket;
 
 /**
  * Close codes the transport uses.
@@ -36,24 +36,24 @@ export const CLOSE_CODE = {
   normal: 1000,
   /** Stands in for the 1002 protocol-error close, which browsers forbid a client to send. */
   protocolError: 4002,
-} as const
+} as const;
 
 /** Production factory. Binary frames are surfaced, not decoded — the protocol is text-only. */
 export const browserSocketFactory: GameplaySocketFactory = (url, handlers) => {
-  const socket = new WebSocket(url)
-  socket.binaryType = 'arraybuffer'
-  socket.onopen = () => handlers.onOpen()
+  const socket = new WebSocket(url);
+  socket.binaryType = 'arraybuffer';
+  socket.onopen = () => handlers.onOpen();
   socket.onmessage = (event: MessageEvent) => {
     if (typeof event.data === 'string') {
-      handlers.onText(event.data)
-      return
+      handlers.onText(event.data);
+      return;
     }
-    handlers.onBinary()
-  }
-  socket.onclose = () => handlers.onClose()
-  socket.onerror = (event) => handlers.onError(event)
+    handlers.onBinary();
+  };
+  socket.onclose = () => handlers.onClose();
+  socket.onerror = (event) => handlers.onError(event);
   return {
     send: (text) => socket.send(text),
     close: (code, reason) => socket.close(code, reason),
-  }
-}
+  };
+};

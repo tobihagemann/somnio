@@ -1,11 +1,11 @@
-import { SOMNIO_CONSTANTS } from '@somnio/core'
-import { FLOAT_PI, f32 } from '@somnio/core'
-import { feetCenter } from '@somnio/core'
-import type { GridSize } from '@somnio/core'
-import type { CollisionMask, FloorPatch, SectorObject } from '@somnio/core'
-import type { SubpixelPoint } from '@somnio/core'
-import { ORTHO_RIG, worldPosition } from './cameraRig'
-import type { Vec3 } from './cameraRig'
+import { SOMNIO_CONSTANTS } from '@somnio/core';
+import { FLOAT_PI, f32 } from '@somnio/core';
+import { feetCenter } from '@somnio/core';
+import type { GridSize } from '@somnio/core';
+import type { CollisionMask, FloorPatch, SectorObject } from '@somnio/core';
+import type { SubpixelPoint } from '@somnio/core';
+import { ORTHO_RIG, worldPosition } from './cameraRig';
+import type { Vec3 } from './cameraRig';
 
 /**
  * Placement math kept apart from the scene so the anchoring, scaling, and UV rules are testable
@@ -14,16 +14,16 @@ import type { Vec3 } from './cameraRig'
  */
 
 /** Physical repeat size of a floor texture, shared by the base floor and every patch. */
-export const FLOOR_MATERIAL_TILE_METERS = 1.6
+export const FLOOR_MATERIAL_TILE_METERS = 1.6;
 
 /** Lift keeping patch quads off the base plane. Far above depth-buffer resolution, invisible. */
-export const FLOOR_PATCH_LIFT = 0.002
+export const FLOOR_PATCH_LIFT = 0.002;
 
 /**
  * Vertical fraction of the legacy cell a figure fills: the reference charsets stand ~37 px tall
  * in a 48 px cell.
  */
-const CHARACTER_CELL_FILL = f32(37.0 / 48.0)
+const CHARACTER_CELL_FILL = f32(37.0 / 48.0);
 
 /**
  * Bind-pose height every character model is staged at by the asset pipeline.
@@ -31,7 +31,7 @@ const CHARACTER_CELL_FILL = f32(37.0 / 48.0)
  * Module-private: nothing outside `characterScale` reads it, and leaving it exported suppresses
  * `tsc`'s unused-symbol reporting, the only dead-code check the browser package has.
  */
-const CANONICAL_FIGURE_HEIGHT = 1.0
+const CANONICAL_FIGURE_HEIGHT = 1.0;
 
 /**
  * Uniform scale normalising a character to its legacy figure height.
@@ -43,10 +43,7 @@ const CANONICAL_FIGURE_HEIGHT = 1.0
  * furniture its mask legitimately walks past.
  */
 export function characterScale(maskSize: GridSize): number {
-  return f32(
-    f32(f32(f32(maskSize.height) * ORTHO_RIG.worldUnitsPerPixel) * CHARACTER_CELL_FILL) /
-      CANONICAL_FIGURE_HEIGHT
-  )
+  return f32(f32(f32(f32(maskSize.height) * ORTHO_RIG.worldUnitsPerPixel) * CHARACTER_CELL_FILL) / CANONICAL_FIGURE_HEIGHT);
 }
 
 /**
@@ -61,23 +58,23 @@ export function characterScale(maskSize: GridSize): number {
  * and masks further than a cell above the edge are unrelated geometry.
  */
 export function objectAnchorBottomY(object: SectorObject, masks: readonly CollisionMask[]): number {
-  const rectBottom = object.y + object.sourceHeight
-  const window = rectBottom - SOMNIO_CONSTANTS.groundCellSize
-  let anchor: number | undefined
+  const rectBottom = object.y + object.sourceHeight;
+  const window = rectBottom - SOMNIO_CONSTANTS.groundCellSize;
+  let anchor: number | undefined;
   for (const mask of masks) {
-    const maskBottom = mask.y + mask.height
+    const maskBottom = mask.y + mask.height;
     const overlapsDecal =
       maskBottom >= window &&
       maskBottom <= rectBottom &&
       mask.x < object.x + object.sourceWidth &&
       mask.x + mask.width > object.x &&
       mask.y < rectBottom &&
-      maskBottom > object.y
+      maskBottom > object.y;
     if (overlapsDecal && (anchor === undefined || maskBottom > anchor)) {
-      anchor = maskBottom
+      anchor = maskBottom;
     }
   }
-  return anchor ?? rectBottom
+  return anchor ?? rectBottom;
 }
 
 /**
@@ -85,13 +82,9 @@ export function objectAnchorBottomY(object: SectorObject, masks: readonly Collis
  * footprint depth so the model's **south edge** lands on the anchor. Centring on the whole rect
  * instead would put props half a decal north of where the sprite stood.
  */
-export function objectNodePosition(
-  object: SectorObject,
-  anchorBottomY: number,
-  footprintDepth: number
-): Vec3 {
-  const position = worldPosition(object.x + object.sourceWidth / 2, anchorBottomY)
-  return { x: position.x, y: position.y, z: position.z - footprintDepth / 2 }
+export function objectNodePosition(object: SectorObject, anchorBottomY: number, footprintDepth: number): Vec3 {
+  const position = worldPosition(object.x + object.sourceWidth / 2, anchorBottomY);
+  return { x: position.x, y: position.y, z: position.z - footprintDepth / 2 };
 }
 
 /**
@@ -103,7 +96,7 @@ export function objectNodePosition(
  * plain expression puts a one-ulp error into every rotated prop's orientation.
  */
 export function objectYawRadians(object: SectorObject): number {
-  return f32(f32(object.rotation * FLOAT_PI) / 180)
+  return f32(f32(object.rotation * FLOAT_PI) / 180);
 }
 
 /**
@@ -111,8 +104,8 @@ export function objectYawRadians(object: SectorObject): number {
  * with the legacy sprite-top-left position converted through it.
  */
 export function entityWorldPosition(position: SubpixelPoint, maskSize: GridSize): Vec3 {
-  const offset = feetCenter({ x: 0, y: 0 }, maskSize)
-  return worldPosition(offset.x + position.x, offset.y + position.y)
+  const offset = feetCenter({ x: 0, y: 0 }, maskSize);
+  return worldPosition(offset.x + position.x, offset.y + position.y);
 }
 
 /**
@@ -123,12 +116,9 @@ export function entityWorldPosition(position: SubpixelPoint, maskSize: GridSize)
  * would reset the texture phase at every seam, and a cobbled street would visibly tile-break at
  * each rect boundary.
  */
-export function floorPatchUVRect(
-  patch: FloorPatch,
-  textureAspect: number
-): { origin: { x: number; y: number }; span: { x: number; y: number } } {
-  const unit = ORTHO_RIG.worldUnitsPerPixel
-  const vDivisor = f32(FLOOR_MATERIAL_TILE_METERS * textureAspect)
+export function floorPatchUVRect(patch: FloorPatch, textureAspect: number): { origin: { x: number; y: number }; span: { x: number; y: number } } {
+  const unit = ORTHO_RIG.worldUnitsPerPixel;
+  const vDivisor = f32(FLOOR_MATERIAL_TILE_METERS * textureAspect);
   return {
     origin: {
       x: f32(f32(f32(patch.x) * unit) / FLOOR_MATERIAL_TILE_METERS),
@@ -138,10 +128,10 @@ export function floorPatchUVRect(
       x: f32(f32(f32(patch.width) * unit) / FLOOR_MATERIAL_TILE_METERS),
       y: f32(f32(f32(patch.height) * unit) / vDivisor),
     },
-  }
+  };
 }
 
 /** Height-over-width ratio driving the floor UV scale; 1 while a texture is not yet cached. */
 export function textureAspect(size: { width: number; height: number } | undefined): number {
-  return size === undefined ? 1 : f32(size.height / size.width)
+  return size === undefined ? 1 : f32(size.height / size.width);
 }

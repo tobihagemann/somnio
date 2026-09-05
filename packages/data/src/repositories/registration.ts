@@ -1,32 +1,32 @@
-import type { Account, Character, Gender, InventoryRow } from '@somnio/core'
-import type { SomnioDatabase } from '../db.ts'
-import { confusableSkeleton } from '../namePolicy/namePolicy.ts'
-import { insertCharacter, newCharacter } from './characters.ts'
-import { isUniqueViolation } from './errors.ts'
-import { insertInventoryRows } from './inventoryRows.ts'
+import type { Account, Character, Gender, InventoryRow } from '@somnio/core';
+import type { SomnioDatabase } from '../db.ts';
+import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
+import { insertCharacter, newCharacter } from './characters.ts';
+import { isUniqueViolation } from './errors.ts';
+import { insertInventoryRows } from './inventoryRows.ts';
 
 export interface RegistrationRequest {
-  name: string
-  passwordHash: string
-  email: string
-  gender: Gender
-  figure: number
-  starterInventory: readonly InventoryRow[]
+  name: string;
+  passwordHash: string;
+  email: string;
+  gender: Gender;
+  figure: number;
+  starterInventory: readonly InventoryRow[];
 }
 
 /** Surfaced from the unique-name constraint race so the handler maps it to a result code without parsing SQLSTATEs. */
 export class RegistrationError extends Error {
-  readonly kind = 'nicknameTaken'
+  readonly kind = 'nicknameTaken';
 
   constructor() {
-    super('nickname taken')
-    this.name = 'RegistrationError'
+    super('nickname taken');
+    this.name = 'RegistrationError';
   }
 }
 
 export interface RegistrationRepository {
   /** Provisions `(account, character, starter rows)` in one transaction so a partial registration never lands. */
-  register(request: RegistrationRequest): Promise<{ account: Account; character: Character }>
+  register(request: RegistrationRequest): Promise<{ account: Account; character: Character }>;
 }
 
 /**
@@ -38,31 +38,25 @@ const NAME_UNIQUE_CONSTRAINTS: ReadonlySet<string> = new Set([
   'accounts_name_skeleton_key',
   'characters_name_normalized_key',
   'characters_name_skeleton_key',
-])
+]);
 
 export class PostgresRegistrationRepository implements RegistrationRepository {
-  private readonly db: SomnioDatabase
+  private readonly db: SomnioDatabase;
 
   constructor(db: SomnioDatabase) {
-    this.db = db
+    this.db = db;
   }
 
   async register(request: RegistrationRequest): Promise<{ account: Account; character: Character }> {
-    const createdAt = new Date()
+    const createdAt = new Date();
     const account: Account = {
       id: crypto.randomUUID(),
       name: request.name,
       passwordHash: request.passwordHash,
       email: request.email,
       createdAt,
-    }
-    const character = newCharacter(
-      crypto.randomUUID(),
-      request.name,
-      request.figure,
-      request.gender,
-      createdAt
-    )
+    };
+    const character = newCharacter(crypto.randomUUID(), request.name, request.figure, request.gender, createdAt);
     try {
       await this.db.transaction().execute(async (transaction) => {
         await transaction
@@ -75,14 +69,14 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
             created_at: createdAt,
             name_skeleton: confusableSkeleton(account.name),
           })
-          .execute()
-        await insertCharacter(transaction, account.id, character)
-        await insertInventoryRows(transaction, character.id, request.starterInventory)
-      })
+          .execute();
+        await insertCharacter(transaction, account.id, character);
+        await insertInventoryRows(transaction, character.id, request.starterInventory);
+      });
     } catch (error) {
-      if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINTS)) throw new RegistrationError()
-      throw error
+      if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINTS)) throw new RegistrationError();
+      throw error;
     }
-    return { account, character }
+    return { account, character };
   }
 }

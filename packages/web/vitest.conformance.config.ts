@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config'
-import { repoAliases } from './vite.config'
+import { defineConfig } from 'vitest/config';
+import { repoAliases } from './vite.config';
 
 /**
  * Wire-conformance suite. Separate from the default config because these specs dial a live
@@ -15,4 +15,4 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
   },
-})
+});

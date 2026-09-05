@@ -11,37 +11,37 @@
  * storage. That rule is enforced at the rendering surface, not here.
  */
 
-import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol'
-const STORAGE_KEY = 'somnio.sessionToken'
+import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol';
+const STORAGE_KEY = 'somnio.sessionToken';
 
 export interface StoredSession {
-  token: string
+  token: string;
   /** Epoch milliseconds. Advisory only — the server is authoritative on expiry. */
-  expiresAt: number
+  expiresAt: number;
 }
 
 export interface SessionStorageLike {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 export class SessionStore {
-  private readonly storage: SessionStorageLike | undefined
+  private readonly storage: SessionStorageLike | undefined;
 
   constructor(storage: SessionStorageLike | undefined = safeLocalStorage()) {
-    this.storage = storage
+    this.storage = storage;
   }
 
   load(): StoredSession | undefined {
-    const raw = this.read()
-    if (raw === null) return undefined
+    const raw = this.read();
+    if (raw === null) return undefined;
     try {
-      const parsed: unknown = JSON.parse(raw)
-      if (typeof parsed !== 'object' || parsed === null) return undefined
-      const token = (parsed as Record<string, unknown>)['token']
-      const expiresAt = (parsed as Record<string, unknown>)['expiresAt']
-      if (typeof token !== 'string' || typeof expiresAt !== 'number') return undefined
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return undefined;
+      const token = (parsed as Record<string, unknown>)['token'];
+      const expiresAt = (parsed as Record<string, unknown>)['expiresAt'];
+      if (typeof token !== 'string' || typeof expiresAt !== 'number') return undefined;
       // The cap is enforced here, on the way *out* of storage, which is what both sides' constants
       // say it is for: "the browser can refuse a tampered or oversized stored token before spending
       // a round trip on it". Without it an over-cap value reaches `encodeSomnioMessage`, throws
@@ -49,20 +49,20 @@ export class SessionStore {
       // `awaitingLoginResult` with no overlay and no login form. Treated exactly like corrupt JSON,
       // so the store self-heals to the password path.
       if (utf8ByteLength(token) > PROTOCOL_BYTE_CAPS.sessionToken) {
-        this.clear()
-        return undefined
+        this.clear();
+        return undefined;
       }
       // A locally expired token is dropped rather than presented: the round trip would fail
       // anyway and the user would watch a pointless reconnect before the login form appeared.
       if (expiresAt <= Date.now()) {
-        this.clear()
-        return undefined
+        this.clear();
+        return undefined;
       }
-      return { token, expiresAt }
+      return { token, expiresAt };
     } catch {
       // Corrupt storage is indistinguishable from no session; clearing keeps it self-healing.
-      this.clear()
-      return undefined
+      this.clear();
+      return undefined;
     }
   }
 
@@ -76,14 +76,14 @@ export class SessionStore {
    * `undefined`, and "remembered nothing" is the same outcome to the player either way.
    */
   save(token: string, expiresInSeconds: number): boolean {
-    const session: StoredSession = { token, expiresAt: Date.now() + expiresInSeconds * 1000 }
-    const storage = this.storage
-    if (storage === undefined) return false
+    const session: StoredSession = { token, expiresAt: Date.now() + expiresInSeconds * 1000 };
+    const storage = this.storage;
+    if (storage === undefined) return false;
     try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(session))
-      return true
+      storage.setItem(STORAGE_KEY, JSON.stringify(session));
+      return true;
     } catch {
-      return false
+      return false;
     }
   }
 
@@ -96,7 +96,7 @@ export class SessionStore {
     // would also turn corrupt storage into a thrown error out of `resumeStoredSession`, which runs
     // at module top level through `AppShell` and renders a blank page.
     try {
-      this.storage?.removeItem(STORAGE_KEY)
+      this.storage?.removeItem(STORAGE_KEY);
     } catch {
       // Nothing actionable: the token stays until it expires, and the caller has already dropped
       // its in-memory copy.
@@ -112,9 +112,9 @@ export class SessionStore {
    */
   private read(): string | null {
     try {
-      return this.storage?.getItem(STORAGE_KEY) ?? null
+      return this.storage?.getItem(STORAGE_KEY) ?? null;
     } catch {
-      return null
+      return null;
     }
   }
 }
@@ -129,8 +129,8 @@ export class SessionStore {
  */
 function safeLocalStorage(): SessionStorageLike | undefined {
   try {
-    return globalThis.localStorage
+    return globalThis.localStorage;
   } catch {
-    return undefined
+    return undefined;
   }
 }

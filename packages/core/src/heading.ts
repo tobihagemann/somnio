@@ -1,4 +1,4 @@
-import { FLOAT_PI, atan2F32, f32, truncatingRemainderF32 } from './float.ts'
+import { FLOAT_PI, atan2F32, f32, truncatingRemainderF32 } from './float.ts';
 
 /**
  * The heading model. Continuous facing in degrees
@@ -9,11 +9,11 @@ import { FLOAT_PI, atan2F32, f32, truncatingRemainderF32 } from './float.ts'
  * 60 Hz predictor path; the invariant is maintained by constructing only through
  * `heading(...)` / `headingFromVector(...)`.
  */
-export type Heading = number
+export type Heading = number;
 
 /** The four cardinal facings in degrees. */
-export const CARDINAL = { south: 0, east: 90, north: 180, west: 270 } as const
-export type Cardinal = keyof typeof CARDINAL
+export const CARDINAL = { south: 0, east: 90, north: 180, west: 270 } as const;
+export type Cardinal = keyof typeof CARDINAL;
 
 /**
  * Wraps any degree value into `[0, 360)`. There is no invalid raw value to reject, so
@@ -21,17 +21,17 @@ export type Cardinal = keyof typeof CARDINAL
  * non-finite input collapses to 0 rather than propagating NaN into the transform math.
  */
 export function heading(degrees: number): Heading {
-  if (!Number.isFinite(degrees)) return 0
-  let wrapped = truncatingRemainderF32(degrees, 360)
-  if (wrapped < 0) wrapped = f32(wrapped + 360)
+  if (!Number.isFinite(degrees)) return 0;
+  let wrapped = truncatingRemainderF32(degrees, 360);
+  if (wrapped < 0) wrapped = f32(wrapped + 360);
   // A tiny negative can round `wrapped + 360` back up to exactly 360; keep the half-open
   // upper bound.
-  if (wrapped === 360) wrapped = 0
-  return wrapped
+  if (wrapped === 360) wrapped = 0;
+  return wrapped;
 }
 
 export function headingFromCardinal(cardinal: Cardinal): Heading {
-  return CARDINAL[cardinal]
+  return CARDINAL[cardinal];
 }
 
 /**
@@ -43,9 +43,9 @@ export function headingFromCardinal(cardinal: Cardinal): Heading {
  * diagonal, which reads as a plausible-but-wrong facing rather than an obvious break.
  */
 export function headingFromVector(dx: number, dy: number): Heading {
-  const radians = atan2F32(dx, dy)
-  const scaled = f32(radians * 180)
-  return heading(f32(scaled / FLOAT_PI))
+  const radians = atan2F32(dx, dy);
+  const scaled = f32(radians * 180);
+  return heading(f32(scaled / FLOAT_PI));
 }
 
 /**
@@ -57,7 +57,7 @@ export function headingFromVector(dx: number, dy: number): Heading {
  * mantissa bits into the first product and land one ulp off.
  */
 export function headingRadians(value: Heading): number {
-  return f32(f32(f32(value) * FLOAT_PI) / 180)
+  return f32(f32(f32(value) * FLOAT_PI) / 180);
 }
 
 /**
@@ -66,10 +66,10 @@ export function headingRadians(value: Heading): number {
  * 135 -> north, 225 -> west, 315 -> south) so exact diagonals never straddle.
  */
 export function nearestCardinal(value: Heading): Cardinal {
-  if (value >= 45 && value < 135) return 'east'
-  if (value >= 135 && value < 225) return 'north'
-  if (value >= 225 && value < 315) return 'west'
-  return 'south'
+  if (value >= 45 && value < 135) return 'east';
+  if (value >= 135 && value < 225) return 'north';
+  if (value >= 225 && value < 315) return 'west';
+  return 'south';
 }
 
 /**
@@ -77,7 +77,7 @@ export function nearestCardinal(value: Heading): Cardinal {
  * across the 0/360 seam (359 vs 1) measures the real 2-degree turn rather than a naive 358.
  */
 export function angularDistance(from: Heading, to: Heading): number {
-  const raw = f32(f32(to) - f32(from))
-  const shifted = f32(raw + 540)
-  return f32(truncatingRemainderF32(shifted, 360) - 180)
+  const raw = f32(f32(to) - f32(from));
+  const shifted = f32(raw + 540);
+  return f32(truncatingRemainderF32(shifted, 360) - 180);
 }

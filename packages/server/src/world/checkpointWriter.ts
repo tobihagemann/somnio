@@ -1,6 +1,6 @@
-import type { CharacterRepository } from '@somnio/data'
-import type { Logger } from '../logging.ts'
-import type { PlayerCheckpoint } from './perSectorActor.ts'
+import type { CharacterRepository } from '@somnio/data';
+import type { Logger } from '../logging.ts';
+import type { PlayerCheckpoint } from './perSectorActor.ts';
 
 /**
  * Writes a checkpoint through `persistCheckpoint`'s single transaction, so a periodic pass racing
@@ -11,14 +11,11 @@ export async function persistPlayerCheckpoint(
   snapshot: PlayerCheckpoint,
   characters: CharacterRepository,
   logger: Logger,
-  context: Record<string, string> = {}
+  context: Record<string, string> = {},
 ): Promise<void> {
   try {
-    await characters.persistCheckpoint(snapshot.character, snapshot.inventory)
+    await characters.persistCheckpoint(snapshot.character, snapshot.inventory);
   } catch (error) {
-    logger.error(
-      { error: String(error), character_id: snapshot.character.id, ...context },
-      'failed to persist player snapshot'
-    )
+    logger.error({ error: String(error), character_id: snapshot.character.id, ...context }, 'failed to persist player snapshot');
   }
 }

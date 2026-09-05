@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { element } from '@/ui/dom'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { element } from '@/ui/dom';
 
 /**
  * The entry module's two document-level side effects.
@@ -21,24 +21,24 @@ import { element } from '@/ui/dom'
  * suite that had already imported it would assert against a locale resolved before the stub below.
  */
 describe('main', () => {
-  const originalLanguages = navigator.languages
+  const originalLanguages = navigator.languages;
 
   beforeAll(() => {
     // German-first, so the assertion distinguishes "read from the resolved locale" from a hardcoded
     // `'en'` or from happy-dom's own default.
-    Object.defineProperty(navigator, 'languages', { value: ['de-AT', 'en'], configurable: true })
-    document.body.append(element('div', { attributes: { id: 'somnio-root' } }))
-  })
+    Object.defineProperty(navigator, 'languages', { value: ['de-AT', 'en'], configurable: true });
+    document.body.append(element('div', { attributes: { id: 'somnio-root' } }));
+  });
 
   afterAll(() => {
-    Object.defineProperty(navigator, 'languages', { value: originalLanguages, configurable: true })
-  })
+    Object.defineProperty(navigator, 'languages', { value: originalLanguages, configurable: true });
+  });
 
   it('advertises the resolved locale on the document element', async () => {
-    expect(document.documentElement.lang).not.toBe('de')
+    expect(document.documentElement.lang).not.toBe('de');
 
-    await import('@/main')
+    await import('@/main');
 
-    expect(document.documentElement.lang).toBe('de')
-  })
-})
+    expect(document.documentElement.lang).toBe('de');
+  });
+});

@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { WIRE_ENTITY_TYPE, WIRE_HAND } from '@somnio/protocol'
-import type { SomnioMessage } from '@somnio/protocol'
-import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts'
-import { makeStubConnectionDependencies } from './support/stubDependencies.ts'
+import { describe, expect, it } from 'vitest';
+import { WIRE_ENTITY_TYPE, WIRE_HAND } from '@somnio/protocol';
+import type { SomnioMessage } from '@somnio/protocol';
+import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
+import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 
-const position = { entityIndex: 7, x: 10, y: 20, facing: 1, tempo: 2 }
-const say = { entityIndex: 0, text: 'Hallo Welt' }
-const leave = { entityIndex: 4, leftGame: true }
+const position = { entityIndex: 7, x: 10, y: 20, facing: 1, tempo: 2 };
+const say = { entityIndex: 0, text: 'Hallo Welt' };
+const leave = { entityIndex: 4, leftGame: true };
 const entity = {
   entityIndex: 9,
   figure: 0,
@@ -19,7 +19,7 @@ const entity = {
   y: 12,
   facing: 0,
   tempo: 2,
-}
+};
 const register = {
   nickname: 'Saibot',
   password: 'p',
@@ -27,8 +27,8 @@ const register = {
   characterClass: 0,
   gender: 1,
   email: 'info@example.com',
-}
-const sessionToken = { token: 'tok', expiresInSeconds: 2_592_000 }
+};
+const sessionToken = { token: 'tok', expiresInSeconds: 2_592_000 };
 
 const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] = [
   {
@@ -103,7 +103,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
     message: { tag: 'sessionRevoked', payload: { revoked: true } },
     attachFirst: true,
   },
-]
+];
 
 /**
  * Close-enforcement sentinel for `ConnectionActor.dispatch`: every state-illegal tag must close
@@ -111,9 +111,9 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
  */
 describe('ConnectionActor.dispatch', () => {
   it.each(cases)('closes with protocolError for $label', async ({ message, attachFirst }) => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies())
-    if (attachFirst) connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID())
-    const decision = await connection.dispatch(message)
-    expect(decision).toEqual({ kind: 'close', code: CLOSE_PROTOCOL_ERROR, reason: 'frame validation failed' })
-  })
-})
+    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    if (attachFirst) connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID());
+    const decision = await connection.dispatch(message);
+    expect(decision).toEqual({ kind: 'close', code: CLOSE_PROTOCOL_ERROR, reason: 'frame validation failed' });
+  });
+});

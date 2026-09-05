@@ -15,7 +15,7 @@ const CLIENT_TO_SERVER_TAGS = [
   // only post-attach. Both are request-gated: the server never volunteers either response.
   'redeemSession',
   'revokeSession',
-] as const
+] as const;
 
 const SERVER_TO_CLIENT_TAGS = [
   'hello',
@@ -33,18 +33,18 @@ const SERVER_TO_CLIENT_TAGS = [
   'adminSay',
   'sessionToken',
   'sessionRevoked',
-] as const
+] as const;
 
-export const SOMNIO_MESSAGE_TAGS = [...CLIENT_TO_SERVER_TAGS, ...SERVER_TO_CLIENT_TAGS] as const
+export const SOMNIO_MESSAGE_TAGS = [...CLIENT_TO_SERVER_TAGS, ...SERVER_TO_CLIENT_TAGS] as const;
 
-export type ClientToServerTag = (typeof CLIENT_TO_SERVER_TAGS)[number]
-export type SomnioMessageTag = (typeof SOMNIO_MESSAGE_TAGS)[number]
+export type ClientToServerTag = (typeof CLIENT_TO_SERVER_TAGS)[number];
+export type SomnioMessageTag = (typeof SOMNIO_MESSAGE_TAGS)[number];
 
-const CLIENT_TAG_SET: ReadonlySet<string> = new Set(CLIENT_TO_SERVER_TAGS)
-const ALL_TAG_SET: ReadonlySet<string> = new Set(SOMNIO_MESSAGE_TAGS)
+const CLIENT_TAG_SET: ReadonlySet<string> = new Set(CLIENT_TO_SERVER_TAGS);
+const ALL_TAG_SET: ReadonlySet<string> = new Set(SOMNIO_MESSAGE_TAGS);
 
 export function isSomnioMessageTag(value: string): value is SomnioMessageTag {
-  return ALL_TAG_SET.has(value)
+  return ALL_TAG_SET.has(value);
 }
 
 /**
@@ -53,5 +53,5 @@ export function isSomnioMessageTag(value: string): value is SomnioMessageTag {
  * man-in-the-middle) echoing the client's own vocabulary back.
  */
 export function isClientOnlyTag(tag: SomnioMessageTag): tag is ClientToServerTag {
-  return CLIENT_TAG_SET.has(tag)
+  return CLIENT_TAG_SET.has(tag);
 }

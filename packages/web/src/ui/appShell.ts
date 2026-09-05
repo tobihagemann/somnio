@@ -1,17 +1,17 @@
-import { bundledModelRegistry, clamp } from '@somnio/core'
-import { ConnectionController, GameplaySession, KeyboardSampler } from '@/client'
-import type { OverlayKind, RegistrationOutcome } from '@/client'
-import { assertNever } from '@somnio/protocol'
-import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/transport'
-import type { GameplaySocketFactory } from '@/transport'
-import * as THREE from 'three'
-import { MAX_TICK_DELTA } from '@/scene/animation'
-import { WorldScene } from '@/scene/worldScene'
-import { HttpModelAssets } from '@/scene/modelAssets'
-import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n'
-import { GamePanels } from './panels'
-import { BlockingNotices, Overlays } from './overlays'
-import { element } from './dom'
+import { bundledModelRegistry, clamp } from '@somnio/core';
+import { ConnectionController, GameplaySession, KeyboardSampler } from '@/client';
+import type { OverlayKind, RegistrationOutcome } from '@/client';
+import { assertNever } from '@somnio/protocol';
+import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/transport';
+import type { GameplaySocketFactory } from '@/transport';
+import * as THREE from 'three';
+import { MAX_TICK_DELTA } from '@/scene/animation';
+import { WorldScene } from '@/scene/worldScene';
+import { HttpModelAssets } from '@/scene/modelAssets';
+import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
+import { GamePanels } from './panels';
+import { BlockingNotices, Overlays } from './overlays';
+import { element } from './dom';
 
 /**
  * Composition root: canvas, DOM overlays, controller, session, and every browser-host concern.
@@ -22,22 +22,22 @@ import { element } from './dom'
  */
 
 export interface AppShellOptions {
-  container: HTMLElement
-  appVersion?: string
+  container: HTMLElement;
+  appVersion?: string;
   /** Overridable so a test can force the no-WebGL and mobile paths. */
-  capabilities?: { hasWebGL: boolean; isDesktop: boolean }
+  capabilities?: { hasWebGL: boolean; isDesktop: boolean };
   /**
    * Skips creating the `WebGLRenderer` and starting the frame loop, while still installing the host
    * handlers. That split is what lets the browser-specific behaviour — Esc routing, visibility loss,
    * the resize invariant — be driven headlessly, where no WebGL context can be created at all.
    */
-  startRendering?: boolean
+  startRendering?: boolean;
   /**
    * Overridable so a test can drive real wire frames all the way into the DOM. The socket is the
    * right seam for that rather than the controller: an overlay the controller presents correctly but
    * never repaints is only observable in the DOM, so the DOM has to be downstream of the fake.
    */
-  socketFactory?: GameplaySocketFactory
+  socketFactory?: GameplaySocketFactory;
 }
 
 /**
@@ -54,9 +54,9 @@ export interface AppShellOptions {
  */
 function detectWebGL(): boolean {
   try {
-    return document.createElement('canvas').getContext('webgl2') !== null
+    return document.createElement('canvas').getContext('webgl2') !== null;
   } catch {
-    return false
+    return false;
   }
 }
 
@@ -66,9 +66,9 @@ function detectWebGL(): boolean {
  * notice shows only when both say handheld.
  */
 export function detectDesktop(): boolean {
-  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
-  const smallViewport = window.innerWidth < 900
-  return !(coarsePointer && smallViewport)
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const smallViewport = window.innerWidth < 900;
+  return !(coarsePointer && smallViewport);
 }
 
 /**
@@ -80,76 +80,73 @@ const REGISTRATION_ERROR_TEXT: Record<Exclude<RegistrationOutcome, 'ok'>, () => 
   nicknameExists: () => t('Nickname already exists.'),
   nameNotAllowed: () => t('That name uses characters Somnio does not allow.'),
   failure: () => t('Registration failed.'),
-}
+};
 
 export class AppShell {
-  readonly controller: ConnectionController
-  readonly session: GameplaySession
-  readonly scene: WorldScene | undefined
-  readonly panels: GamePanels
-  readonly overlays: Overlays
-  readonly notices: BlockingNotices
+  readonly controller: ConnectionController;
+  readonly session: GameplaySession;
+  readonly scene: WorldScene | undefined;
+  readonly panels: GamePanels;
+  readonly overlays: Overlays;
+  readonly notices: BlockingNotices;
 
-  private readonly container: HTMLElement
-  private readonly canvas: HTMLCanvasElement
-  private readonly transport: GameplayTransport
-  private readonly keyboard: KeyboardSampler
-  private renderer: THREE.WebGLRenderer | undefined
-  private hoveringPanel = false
-  private lastFrameMs: number | undefined
+  private readonly container: HTMLElement;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly transport: GameplayTransport;
+  private readonly keyboard: KeyboardSampler;
+  private renderer: THREE.WebGLRenderer | undefined;
+  private hoveringPanel = false;
+  private lastFrameMs: number | undefined;
 
   constructor(options: AppShellOptions) {
-    setLocale(resolveLocale())
-    this.container = options.container
+    setLocale(resolveLocale());
+    this.container = options.container;
     const capabilities = options.capabilities ?? {
       hasWebGL: detectWebGL(),
       isDesktop: detectDesktop(),
-    }
+    };
 
-    this.canvas = element('canvas', { attributes: { id: 'somnio-canvas' } })
-    this.transport = new GameplayTransport(options.socketFactory ?? browserSocketFactory)
-    this.keyboard = new KeyboardSampler()
+    this.canvas = element('canvas', { attributes: { id: 'somnio-canvas' } });
+    this.transport = new GameplayTransport(options.socketFactory ?? browserSocketFactory);
+    this.keyboard = new KeyboardSampler();
 
     // The scene is built before the controller so it can be passed in as the render surface rather
     // than assigned afterwards. It is skipped entirely when the host cannot render it, and the
     // controller falls back to the no-op surface — so the blocking notice below is the only thing
     // the player sees, instead of a WebGL error thrown from a constructor.
-    this.scene =
-      capabilities.hasWebGL && capabilities.isDesktop
-        ? new WorldScene(new HttpModelAssets(bundledModelRegistry()), this.aspect())
-        : undefined
+    this.scene = capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(bundledModelRegistry()), this.aspect()) : undefined;
 
     this.controller = new ConnectionController({
       transport: this.transport,
       ...(this.scene === undefined ? {} : { renderSurface: this.scene }),
       resolveURL: () => resolveGameplayURL(window.location),
-    })
+    });
 
     this.session = new GameplaySession({
       controller: this.controller,
       send: (message) => this.transport.send(message),
       input: this.keyboard,
-    })
+    });
 
     this.panels = new GamePanels(
       {
         onSubmitChat: (text) => {
-          this.session.submitChat(text)
-          this.panels.clearChatInput()
-          this.render()
+          this.session.submitChat(text);
+          this.panels.clearChatInput();
+          this.render();
         },
         onChatFocusChange: (focused) => this.controller.setChatInputFocused(focused),
         onActivateItem: (row) => {
-          this.session.activateInventoryRow(row)
-          this.render()
+          this.session.activateInventoryRow(row);
+          this.render();
         },
         onFloatingHoverChange: (hovering) => {
-          this.hoveringPanel = hovering
+          this.hoveringPanel = hovering;
         },
       },
       catalogTables,
-      currentLocale()
-    )
+      currentLocale(),
+    );
 
     this.overlays = new Overlays({
       // The overlay stays up until the world actually arrives, as natively: `submitLogin` does not
@@ -157,8 +154,8 @@ export class AppShell {
       // instead leaves nothing on screen for a rejected password to return to.
       onLogin: (credentials) => this.controller.beginSession({ kind: 'login', credentials }),
       onRegister: (form) => {
-        this.overlays.showRegistrationError(undefined)
-        this.controller.register(form)
+        this.overlays.showRegistrationError(undefined);
+        this.controller.register(form);
       },
       onShowOverlay: (overlay) => this.present(overlay),
       onResume: () => this.present(undefined),
@@ -169,46 +166,46 @@ export class AppShell {
       // `onOverlayChanged` twice for one click, running `clearHeldKeys` and a full `render()` twice.
       onLeaveGame: () => this.controller.leaveGame(),
       onRetryConnection: () => {
-        this.present(undefined)
-        this.controller.beginSession()
+        this.present(undefined);
+        this.controller.beginSession();
       },
       onToggleFullscreen: () => this.toggleFullscreen(),
       appVersion: options.appVersion ?? '0.0.0',
-    })
+    });
 
-    this.notices = new BlockingNotices()
+    this.notices = new BlockingNotices();
 
-    this.container.append(this.canvas, this.panels.root, this.overlays.root, this.notices.root)
-    this.controller.onChatLinesChanged = () => this.render()
-    this.controller.onPlayersChanged = () => this.render()
+    this.container.append(this.canvas, this.panels.root, this.overlays.root, this.notices.root);
+    this.controller.onChatLinesChanged = () => this.render();
+    this.controller.onPlayersChanged = () => this.render();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
-    this.controller.onSessionIdentityEnded = () => this.overlays.clearCredentialForms()
+    this.controller.onSessionIdentityEnded = () => this.overlays.clearCredentialForms();
     this.controller.onOverlayChanged = (overlay) => {
       // The gate reads `presentedOverlay`, so held keys have to drop the moment an overlay appears —
       // otherwise a movement key held when the menu opens resumes walking when it closes.
-      if (overlay !== undefined) this.session.input.clearHeldKeys()
-      this.render()
-    }
-    this.session.onStateChanged = () => this.render()
+      if (overlay !== undefined) this.session.input.clearHeldKeys();
+      this.render();
+    };
+    this.session.onStateChanged = () => this.render();
     // On success the controller has already switched the presented overlay back to login, which
     // `submitRegistration` pre-filled with the credentials just created. The three failures leave
     // the registration overlay up carrying the reason.
     this.controller.onRegistrationOutcome = (outcome) => {
-      this.overlays.showRegistrationError(outcome === 'ok' ? undefined : REGISTRATION_ERROR_TEXT[outcome]())
-      this.render()
-    }
+      this.overlays.showRegistrationError(outcome === 'ok' ? undefined : REGISTRATION_ERROR_TEXT[outcome]());
+      this.render();
+    };
 
     if (!capabilities.isDesktop) {
-      this.notices.showMobileNotice()
-      return
+      this.notices.showMobileNotice();
+      return;
     }
     if (!capabilities.hasWebGL) {
-      this.notices.showWebGLUnavailable()
-      return
+      this.notices.showWebGLUnavailable();
+      return;
     }
 
-    this.installHostHandlers()
-    if (options.startRendering ?? true) this.startRenderer()
+    this.installHostHandlers();
+    if (options.startRendering ?? true) this.startRenderer();
     // A stored token resumes silently — that is the whole point of the feature, and it is what makes
     // a refresh mid-session survive. Only when there is nothing to resume from does the login form
     // appear. `resumeStoredSession` returns false when the store is empty or the token has locally
@@ -220,68 +217,65 @@ export class AppShell {
     // appends a chat line, which is exactly such a repaint. The player would see a focused login
     // card flash over a session that is resuming fine.
     if (this.controller.resumeStoredSession()) {
-      this.present(undefined)
+      this.present(undefined);
     } else {
-      this.present({ kind: 'login' })
+      this.present({ kind: 'login' });
     }
   }
 
   private aspect(): number {
-    const width = this.container.clientWidth || window.innerWidth || 1
-    const height = this.container.clientHeight || window.innerHeight || 1
-    return width / height
+    const width = this.container.clientWidth || window.innerWidth || 1;
+    const height = this.container.clientHeight || window.innerHeight || 1;
+    return width / height;
   }
 
   private installHostHandlers(): void {
     // Without this the sampler holds no listeners and every key is silently dropped, so the gate
     // works perfectly and the character never moves.
-    this.keyboard.start()
-    window.addEventListener('resize', () => this.handleResize())
+    this.keyboard.start();
+    window.addEventListener('resize', () => this.handleResize());
 
     // Esc is bound to the game menu, as it is natively. Fullscreen is never entered automatically,
     // because the browser gives Esc to "exit fullscreen" first and the key would stop reaching the
     // menu at all — an explicit toggle in Options is the honest trade.
     window.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      this.handleEscape()
-    })
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      this.handleEscape();
+    });
 
     // `requestAnimationFrame` does not fire in a hidden tab, and the tick already clamps its
     // elapsed time, so the integrated delta is not the hazard. Stale input is: a `keyup` delivered
     // while hidden leaves the held set populated and the character walks on return.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.session.handleVisibilityLoss()
-      else this.lastFrameMs = undefined
-    })
-    window.addEventListener('blur', () => this.session.handleVisibilityLoss())
+      if (document.visibilityState === 'hidden') this.session.handleVisibilityLoss();
+      else this.lastFrameMs = undefined;
+    });
+    window.addEventListener('blur', () => this.session.handleVisibilityLoss());
 
     this.canvas.addEventListener('pointermove', (event) => {
-      const rect = this.canvas.getBoundingClientRect()
-      this.session.updateMouseFacing(
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
-        { x: rect.width / 2, y: rect.height / 2 }
-      )
-    })
+      const rect = this.canvas.getBoundingClientRect();
+      this.session.updateMouseFacing({ x: event.clientX - rect.left, y: event.clientY - rect.top }, { x: rect.width / 2, y: rect.height / 2 });
+    });
 
     // A wheel event over a panel scrolls the panel; only the bare play field zooms.
     this.canvas.addEventListener(
       'wheel',
       (event) => {
-        if (this.hoveringPanel) return
-        event.preventDefault()
+        if (this.hoveringPanel) return;
+        event.preventDefault();
         if (this.session.applyScrollZoom(event.deltaY, event.deltaMode)) {
-          this.scene?.applyZoomFactor(this.session.zoom.factor)
+          this.scene?.applyZoomFactor(this.session.zoom.factor);
         }
       },
-      { passive: false }
-    )
+      { passive: false },
+    );
 
     // Clicking the play field blurs the chat input — otherwise
     // WASD keeps going into the text box after the player looks back at the world.
     this.canvas.addEventListener('pointerdown', () => {
-      this.panels.chatInput.blur()
-    })
+      this.panels.chatInput.blur();
+    });
   }
 
   /**
@@ -293,42 +287,42 @@ export class AppShell {
     // Chat comes first and returns immediately, as natively: with the field focused, Esc hands the
     // keyboard back to the world rather than opening the game menu on top of it.
     if (this.controller.isChatInputFocused) {
-      this.panels.chatInput.blur()
-      return
+      this.panels.chatInput.blur();
+      return;
     }
-    const overlay = this.controller.presentedOverlay
+    const overlay = this.controller.presentedOverlay;
     if (overlay === undefined) {
       // Nothing to resume to without a session, so Esc is inert rather than opening a menu whose
       // Resume would drop the player onto the splash.
-      if (this.controller.connectionState === 'disconnected') return
-      this.present({ kind: 'gameMenu' })
-      return
+      if (this.controller.connectionState === 'disconnected') return;
+      this.present({ kind: 'gameMenu' });
+      return;
     }
     switch (overlay.kind) {
       case 'login':
-        return
+        return;
       case 'registration':
-        this.cancelRegistration()
-        return
+        this.cancelRegistration();
+        return;
       case 'updateRequired':
-        this.present({ kind: 'login' })
-        return
+        this.present({ kind: 'login' });
+        return;
       case 'about':
       case 'options':
-        this.dismissOverlay()
-        return
+        this.dismissOverlay();
+        return;
       case 'gameMenu':
-        this.present(undefined)
-        return
+        this.present(undefined);
+        return;
       default:
-        assertNever(overlay, 'overlay kind')
+        assertNever(overlay, 'overlay kind');
     }
   }
 
   /** `cancelRegistration`: back out to login, dropping the inline error so a reopened form is clean. */
   private cancelRegistration(): void {
-    this.overlays.showRegistrationError(undefined)
-    this.present({ kind: 'login' })
+    this.overlays.showRegistrationError(undefined);
+    this.present({ kind: 'login' });
   }
 
   /**
@@ -338,7 +332,7 @@ export class AppShell {
    * opened from instead of dropping the player into the world.
    */
   private dismissOverlay(): void {
-    this.present(this.controller.connectionState === 'attached' ? { kind: 'gameMenu' } : { kind: 'login' })
+    this.present(this.controller.connectionState === 'attached' ? { kind: 'gameMenu' } : { kind: 'login' });
   }
 
   /**
@@ -348,39 +342,38 @@ export class AppShell {
    * simply did nothing. A denied toggle is not an error worth reporting, so it is swallowed here.
    */
   private toggleFullscreen(): void {
-    const request =
-      document.fullscreenElement === null ? this.container.requestFullscreen?.() : document.exitFullscreen?.()
-    request?.catch(() => {})
+    const request = document.fullscreenElement === null ? this.container.requestFullscreen?.() : document.exitFullscreen?.();
+    request?.catch(() => {});
   }
 
   private handleResize(): void {
-    const width = this.container.clientWidth || window.innerWidth
-    const height = this.container.clientHeight || window.innerHeight
-    this.renderer?.setSize(width, height, false)
+    const width = this.container.clientWidth || window.innerWidth;
+    const height = this.container.clientHeight || window.innerHeight;
+    this.renderer?.setSize(width, height, false);
     // Holds the vertical world extent constant and lets aspect drive width, so a bigger window
     // magnifies rather than reveals. This is the MMO-fairness contract, not a rendering detail.
-    this.scene?.setViewportAspect(this.aspect())
+    this.scene?.setViewportAspect(this.aspect());
   }
 
   private startRenderer(): void {
-    const scene = this.scene
-    if (scene === undefined) return
-    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
+    const scene = this.scene;
+    if (scene === undefined) return;
+    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
     // three.js does not shadow at all unless asked. Without this every prop and character sits on
     // the floor with nothing under it and reads as floating. PCF-soft gives a soft edge; the hard
     // default reads as a cut-out.
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    this.renderer = renderer
-    this.handleResize()
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer = renderer;
+    this.handleResize();
     // First load has no bundled assets to fall back on, so the loading state is the difference
     // between "loading" and "apparently broken".
-    this.notices.setLoading(true)
+    this.notices.setLoading(true);
     void scene
       .prewarm()
       .finally(() => this.notices.setLoading(false))
-      .then(() => this.pumpFrames())
+      .then(() => this.pumpFrames());
   }
 
   /**
@@ -393,19 +386,19 @@ export class AppShell {
    */
   private pumpFrames(): void {
     const step = (timestamp: number): void => {
-      this.onFrame(timestamp)
-      requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
+      this.onFrame(timestamp);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   private onFrame(timestamp: number): void {
-    if (this.controller.connectionState !== 'disconnected') this.session.runTick(timestamp)
-    const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000
-    this.lastFrameMs = timestamp
-    this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA))
+    if (this.controller.connectionState !== 'disconnected') this.session.runTick(timestamp);
+    const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
+    this.lastFrameMs = timestamp;
+    this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
     if (this.scene !== undefined && this.renderer !== undefined) {
-      this.renderer.render(this.scene.scene, this.scene.camera)
+      this.renderer.render(this.scene.scene, this.scene.camera);
     }
     // Deliberately not re-rendering the DOM here. The panels rebuild their subtrees wholesale, and
     // doing that 60 times a second would drop a text selection in the scrollback on every frame —
@@ -418,18 +411,18 @@ export class AppShell {
    * DOM-initiated one does.
    */
   private present(overlay: OverlayKind | undefined): void {
-    this.controller.presentedOverlay = overlay
+    this.controller.presentedOverlay = overlay;
   }
 
   /** Pushes controller and session state into the DOM. Cheap enough to run per frame. */
   render(): void {
-    this.overlays.present(this.controller.presentedOverlay)
+    this.overlays.present(this.controller.presentedOverlay);
     // The panels are not gated on the connection: `MainWindowView` composes all four
     // unconditionally and lets the modal host sit over them, which is what makes the chat
     // scrollback readable behind the login overlay — where a rejected password reports itself.
-    this.panels.renderEnergy(this.session.energy)
-    this.panels.renderChat(this.controller.chatHistory)
-    this.panels.renderPlayers(this.controller.players)
-    this.panels.renderItems(this.session.inventory)
+    this.panels.renderEnergy(this.session.energy);
+    this.panels.renderChat(this.controller.chatHistory);
+    this.panels.renderPlayers(this.controller.players);
+    this.panels.renderItems(this.session.inventory);
   }
 }

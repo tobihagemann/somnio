@@ -1,17 +1,9 @@
-import { clampToInt16 } from '@somnio/core'
-import type { GridPoint } from '@somnio/core'
-import type {
-  CollisionMask,
-  FloorPatch,
-  MonsterSpawn,
-  Sector,
-  SectorNPC,
-  SectorObject,
-  SectorPortal,
-} from '@somnio/core'
-import { writeSectorFile } from '@somnio/core'
-import type { EditorSelection } from './selection'
-import { isValidSelection } from './selection'
+import { clampToInt16 } from '@somnio/core';
+import type { GridPoint } from '@somnio/core';
+import type { CollisionMask, FloorPatch, MonsterSpawn, Sector, SectorNPC, SectorObject, SectorPortal } from '@somnio/core';
+import { writeSectorFile } from '@somnio/core';
+import type { EditorSelection } from './selection';
+import { isValidSelection } from './selection';
 
 /**
  * An in-page record buffer over the six record kinds, rather than the system clipboard:
@@ -19,16 +11,16 @@ import { isValidSelection } from './selection'
  */
 
 export interface EditorClipboard {
-  objects: SectorObject[]
-  collisionMasks: CollisionMask[]
-  portals: SectorPortal[]
-  npcs: SectorNPC[]
-  monsterSpawns: MonsterSpawn[]
-  floorPatches: FloorPatch[]
+  objects: SectorObject[];
+  collisionMasks: CollisionMask[];
+  portals: SectorPortal[];
+  npcs: SectorNPC[];
+  monsterSpawns: MonsterSpawn[];
+  floorPatches: FloorPatch[];
 }
 
 export function emptyClipboard(): EditorClipboard {
-  return { objects: [], collisionMasks: [], portals: [], npcs: [], monsterSpawns: [], floorPatches: [] }
+  return { objects: [], collisionMasks: [], portals: [], npcs: [], monsterSpawns: [], floorPatches: [] };
 }
 
 export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
@@ -39,7 +31,7 @@ export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
     clipboard.npcs.length === 0 &&
     clipboard.monsterSpawns.length === 0 &&
     clipboard.floorPatches.length === 0
-  )
+  );
 }
 
 /**
@@ -48,32 +40,32 @@ export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
  * so a set-ordered capture would shuffle overlapping records' stacking on paste.
  */
 export function captureClipboard(selections: readonly EditorSelection[], sector: Sector): EditorClipboard {
-  const clipboard = emptyClipboard()
-  const ordered = [...selections].sort((a, b) => a.index - b.index)
+  const clipboard = emptyClipboard();
+  const ordered = [...selections].sort((a, b) => a.index - b.index);
   for (const selection of ordered) {
-    if (!isValidSelection(selection, sector)) continue
+    if (!isValidSelection(selection, sector)) continue;
     switch (selection.kind) {
       case 'object':
-        clipboard.objects.push(structuredClone(sector.objects[selection.index]!))
-        break
+        clipboard.objects.push(structuredClone(sector.objects[selection.index]!));
+        break;
       case 'mask':
-        clipboard.collisionMasks.push(structuredClone(sector.collisionMasks[selection.index]!))
-        break
+        clipboard.collisionMasks.push(structuredClone(sector.collisionMasks[selection.index]!));
+        break;
       case 'portal':
-        clipboard.portals.push(structuredClone(sector.portals[selection.index]!))
-        break
+        clipboard.portals.push(structuredClone(sector.portals[selection.index]!));
+        break;
       case 'npc':
-        clipboard.npcs.push(structuredClone(sector.npcs[selection.index]!))
-        break
+        clipboard.npcs.push(structuredClone(sector.npcs[selection.index]!));
+        break;
       case 'monsterSpawn':
-        clipboard.monsterSpawns.push(structuredClone(sector.monsterSpawns[selection.index]!))
-        break
+        clipboard.monsterSpawns.push(structuredClone(sector.monsterSpawns[selection.index]!));
+        break;
       case 'floorPatch':
-        clipboard.floorPatches.push(structuredClone(sector.floorPatches[selection.index]!))
-        break
+        clipboard.floorPatches.push(structuredClone(sector.floorPatches[selection.index]!));
+        break;
     }
   }
-  return clipboard
+  return clipboard;
 }
 
 /**
@@ -81,60 +73,53 @@ export function captureClipboard(selections: readonly EditorSelection[], sector:
  * top-left bounding corner lands there (paste-at-cursor); without one every origin shifts by
  * `fallbackOffset` on both axes (duplicate). Returns the clones' selections.
  */
-export function insertClipboard(
-  clipboard: EditorClipboard,
-  sector: Sector,
-  anchor: GridPoint | undefined,
-  fallbackOffset: number
-): EditorSelection[] {
-  if (isClipboardEmpty(clipboard)) return []
-  const minOrigin = boundingOrigin(clipboard)
+export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anchor: GridPoint | undefined, fallbackOffset: number): EditorSelection[] {
+  if (isClipboardEmpty(clipboard)) return [];
+  const minOrigin = boundingOrigin(clipboard);
   const shift =
-    anchor !== undefined && minOrigin !== undefined
-      ? { dx: anchor.x - minOrigin.x, dy: anchor.y - minOrigin.y }
-      : { dx: fallbackOffset, dy: fallbackOffset }
-  const inserted: EditorSelection[] = []
+    anchor !== undefined && minOrigin !== undefined ? { dx: anchor.x - minOrigin.x, dy: anchor.y - minOrigin.y } : { dx: fallbackOffset, dy: fallbackOffset };
+  const inserted: EditorSelection[] = [];
   for (const object of clipboard.objects) {
-    const clone = structuredClone(object)
-    clone.x = clampToInt16(clone.x + shift.dx)
-    clone.y = clampToInt16(clone.y + shift.dy)
-    sector.objects.push(clone)
-    inserted.push({ kind: 'object', index: sector.objects.length - 1 })
+    const clone = structuredClone(object);
+    clone.x = clampToInt16(clone.x + shift.dx);
+    clone.y = clampToInt16(clone.y + shift.dy);
+    sector.objects.push(clone);
+    inserted.push({ kind: 'object', index: sector.objects.length - 1 });
   }
   for (const mask of clipboard.collisionMasks) {
-    const clone = structuredClone(mask)
-    clone.x = clampToInt16(clone.x + shift.dx)
-    clone.y = clampToInt16(clone.y + shift.dy)
-    sector.collisionMasks.push(clone)
-    inserted.push({ kind: 'mask', index: sector.collisionMasks.length - 1 })
+    const clone = structuredClone(mask);
+    clone.x = clampToInt16(clone.x + shift.dx);
+    clone.y = clampToInt16(clone.y + shift.dy);
+    sector.collisionMasks.push(clone);
+    inserted.push({ kind: 'mask', index: sector.collisionMasks.length - 1 });
   }
   for (const portal of clipboard.portals) {
-    const clone = structuredClone(portal)
-    clone.x = clampToInt16(clone.x + shift.dx)
-    clone.y = clampToInt16(clone.y + shift.dy)
-    sector.portals.push(clone)
-    inserted.push({ kind: 'portal', index: sector.portals.length - 1 })
+    const clone = structuredClone(portal);
+    clone.x = clampToInt16(clone.x + shift.dx);
+    clone.y = clampToInt16(clone.y + shift.dy);
+    sector.portals.push(clone);
+    inserted.push({ kind: 'portal', index: sector.portals.length - 1 });
   }
   for (const npc of clipboard.npcs) {
-    const clone = structuredClone(npc)
-    clone.spawnOrigin = shifted(clone.spawnOrigin, shift)
-    sector.npcs.push(clone)
-    inserted.push({ kind: 'npc', index: sector.npcs.length - 1 })
+    const clone = structuredClone(npc);
+    clone.spawnOrigin = shifted(clone.spawnOrigin, shift);
+    sector.npcs.push(clone);
+    inserted.push({ kind: 'npc', index: sector.npcs.length - 1 });
   }
   for (const spawn of clipboard.monsterSpawns) {
-    const clone = structuredClone(spawn)
-    clone.spawnOrigin = shifted(clone.spawnOrigin, shift)
-    sector.monsterSpawns.push(clone)
-    inserted.push({ kind: 'monsterSpawn', index: sector.monsterSpawns.length - 1 })
+    const clone = structuredClone(spawn);
+    clone.spawnOrigin = shifted(clone.spawnOrigin, shift);
+    sector.monsterSpawns.push(clone);
+    inserted.push({ kind: 'monsterSpawn', index: sector.monsterSpawns.length - 1 });
   }
   for (const patch of clipboard.floorPatches) {
-    const clone = structuredClone(patch)
-    clone.x = clampToInt16(clone.x + shift.dx)
-    clone.y = clampToInt16(clone.y + shift.dy)
-    sector.floorPatches.push(clone)
-    inserted.push({ kind: 'floorPatch', index: sector.floorPatches.length - 1 })
+    const clone = structuredClone(patch);
+    clone.x = clampToInt16(clone.x + shift.dx);
+    clone.y = clampToInt16(clone.y + shift.dy);
+    sector.floorPatches.push(clone);
+    inserted.push({ kind: 'floorPatch', index: sector.floorPatches.length - 1 });
   }
-  return inserted
+  return inserted;
 }
 
 /**
@@ -146,37 +131,37 @@ export function validatedPaste(
   clipboard: EditorClipboard,
   sector: Sector,
   anchor: GridPoint | undefined,
-  fallbackOffset: number
+  fallbackOffset: number,
 ): { sector: Sector; selection: EditorSelection[] } | undefined {
-  if (isClipboardEmpty(clipboard)) return undefined
-  const candidate = structuredClone(sector)
-  const inserted = insertClipboard(clipboard, candidate, anchor, fallbackOffset)
+  if (isClipboardEmpty(clipboard)) return undefined;
+  const candidate = structuredClone(sector);
+  const inserted = insertClipboard(clipboard, candidate, anchor, fallbackOffset);
   try {
-    writeSectorFile(candidate)
+    writeSectorFile(candidate);
   } catch {
-    return undefined
+    return undefined;
   }
-  return { sector: candidate, selection: inserted }
+  return { sector: candidate, selection: inserted };
 }
 
 /** Top-left corner of the payload's bounding box, or `undefined` for an empty payload. */
 function boundingOrigin(clipboard: EditorClipboard): { x: number; y: number } | undefined {
-  let minX: number | undefined
-  let minY: number | undefined
+  let minX: number | undefined;
+  let minY: number | undefined;
   const fold = (x: number, y: number): void => {
-    minX = minX === undefined ? x : Math.min(minX, x)
-    minY = minY === undefined ? y : Math.min(minY, y)
-  }
-  for (const object of clipboard.objects) fold(object.x, object.y)
-  for (const mask of clipboard.collisionMasks) fold(mask.x, mask.y)
-  for (const portal of clipboard.portals) fold(portal.x, portal.y)
-  for (const npc of clipboard.npcs) fold(npc.spawnOrigin.x, npc.spawnOrigin.y)
-  for (const spawn of clipboard.monsterSpawns) fold(spawn.spawnOrigin.x, spawn.spawnOrigin.y)
-  for (const patch of clipboard.floorPatches) fold(patch.x, patch.y)
-  if (minX === undefined || minY === undefined) return undefined
-  return { x: minX, y: minY }
+    minX = minX === undefined ? x : Math.min(minX, x);
+    minY = minY === undefined ? y : Math.min(minY, y);
+  };
+  for (const object of clipboard.objects) fold(object.x, object.y);
+  for (const mask of clipboard.collisionMasks) fold(mask.x, mask.y);
+  for (const portal of clipboard.portals) fold(portal.x, portal.y);
+  for (const npc of clipboard.npcs) fold(npc.spawnOrigin.x, npc.spawnOrigin.y);
+  for (const spawn of clipboard.monsterSpawns) fold(spawn.spawnOrigin.x, spawn.spawnOrigin.y);
+  for (const patch of clipboard.floorPatches) fold(patch.x, patch.y);
+  if (minX === undefined || minY === undefined) return undefined;
+  return { x: minX, y: minY };
 }
 
 function shifted(point: GridPoint, shift: { dx: number; dy: number }): GridPoint {
-  return { x: clampToInt16(point.x + shift.dx), y: clampToInt16(point.y + shift.dy) }
+  return { x: clampToInt16(point.x + shift.dx), y: clampToInt16(point.y + shift.dy) };
 }
