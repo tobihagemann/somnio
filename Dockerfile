@@ -21,6 +21,9 @@ COPY packages/data/package.json packages/data/
 COPY packages/server/package.json packages/server/
 COPY packages/cli/package.json packages/cli/
 COPY packages/web/package.json packages/web/
+# The root `prepare` script runs on `npm ci`; the hook installer it names exits at once here,
+# but it has to exist.
+COPY .husky/install.mjs .husky/
 # argon2 resolves a musl prebuild, so this stage needs no build toolchain.
 RUN npm ci --omit=dev --no-audit --no-fund --workspace packages/server
 

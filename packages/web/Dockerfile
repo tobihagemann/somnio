@@ -36,6 +36,9 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/core/package.json packages/core/
 COPY packages/web/package.json packages/web/
+# The root `prepare` script runs on `npm ci`; the hook installer it names exits at once here,
+# but it has to exist.
+COPY .husky/install.mjs .husky/
 RUN npm ci --no-audit --no-fund --workspace packages/web
 
 # One `COPY` per package: a multi-source `COPY` merges directory contents. The core package

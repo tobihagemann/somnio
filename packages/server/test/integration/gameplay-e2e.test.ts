@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { LOGIN_RESULT, REGISTER_RESULT } from '@somnio/protocol';
 import { SOMNIO_CONSTANTS, TEMPO, feetCenter, feetRect, headingFromCardinal, npcRuntimePosition } from '@somnio/core';
 import { PostgresCharacterRepository, PostgresWorldClockRepository } from '@somnio/data';
@@ -12,6 +12,7 @@ import {
   joinFreshPlayer,
   loginOverWire,
   nearestClearOrigin,
+  pollUntil,
   registerFrame,
   selfPosition,
   startDatabase,
@@ -36,6 +37,12 @@ beforeAll(async () => {
     year: 500,
   });
   server = await bootTestServer(harness.url, { worldClockIntervalMs: 20 });
+});
+// A closed socket's server-side unregister and `leave` broadcast finish after the client's own
+// close event, so without this a test's first joiner can receive the previous test's stale
+// `leave` ahead of the one it waits for.
+afterEach(async () => {
+  await pollUntil(() => Promise.resolve(server.server.worldRouter.loggedInPlayerCount() === 0 ? true : undefined));
 });
 afterAll(async () => {
   await server.stop();
