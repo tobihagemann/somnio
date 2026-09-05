@@ -163,7 +163,7 @@ CI on GitHub Actions (`.github/workflows/ci.yml`): `checks`, `integration-tests`
 
 - **Exhaustive switches**: `@typescript-eslint/switch-exhaustiveness-check` is on, and the message and state switches list every case so a new tag is a type error, never a silent fallthrough.
 - **Identifiers in English**: types, properties, message names, Postgres column names, file names; only user-facing strings stay localizable.
-- **Testing**: Vitest, one project per package; integration suites under `test/integration/` start their own Postgres.
+- **Testing**: Vitest, one project per package; integration suites under `test/integration/` start their own Postgres. A live-server suite polls the router down to zero players in `afterEach`: a closed socket's server-side unregister and `leave` broadcast outlive the client's close event, so without it the next test's joiner can receive the previous test's stale `leave`.
 - **No `.turbo/` references** in code or comments.
 
 ### Localization
