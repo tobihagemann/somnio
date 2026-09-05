@@ -206,6 +206,11 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}-server:sha-${{ steps.version.outputs.short }}
             ghcr.io/${{ github.repository }}-server:latest
+          # The revision label is what a deployment reads off a pulled `:latest` image to learn which
+          # commit it is about to run (`docker inspect`), before any container exists to ask.
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build and publish the web image
@@ -223,6 +228,9 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}-web:sha-${{ steps.version.outputs.short }}
             ghcr.io/${{ github.repository }}-web:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           # `mode=min`, unlike the server image's `mode=max`, because this build's context carries
           # the private somnio-assets checkout: `mode=max` exports *every* stage's layers into the
