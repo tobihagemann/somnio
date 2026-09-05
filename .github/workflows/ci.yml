@@ -67,10 +67,6 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: package-lock.json
-      - name: Populate sectors
-        run: |
-          mkdir -p sectors
-          cp packages/core/fixtures/sectors/*.somnio-sector sectors/
       - name: Build server image
         # BUILD_VERSION has no default and the build fails without it, so this is a separate
         # step from `up --wait` (which would otherwise reuse a stale image). Named service, so this
@@ -100,13 +96,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Populate sectors
-        # The server fails startup with `noSectorsLoaded` if its SOMNIO_SECTORS_DIR is empty. The
-        # compose `server` service mounts ./sectors:/opt/somnio/sectors:ro, so seed it from the
-        # bundled fixtures.
-        run: |
-          mkdir -p sectors
-          cp packages/core/fixtures/sectors/*.somnio-sector sectors/
       - name: Create an empty asset pack
         # `packages/web/Dockerfile` COPYs `assets/` from the build context. This job deliberately does *not*
         # check out the private pack: it verifies the topology, and an empty pack still yields a

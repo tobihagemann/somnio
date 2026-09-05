@@ -27,23 +27,22 @@ COPY .husky/install.mjs .husky/
 # argon2 resolves a musl prebuild, so this stage needs no build toolchain.
 RUN npm ci --omit=dev --no-audit --no-fund --workspace packages/server
 
-# Sector staging for local smoke builds, in its own stage so the build context never lands in a
-# runtime layer: a `COPY` into the final stage is retained in the image even after a later `rm`.
-# Optional path-from-repo-root, e.g. `--build-arg SOMNIO_SECTORS_SOURCE=packages/core/fixtures/sectors`.
-# The repo-root `sectors/` staging directory cannot be named here: `.dockerignore` keeps it out
-# of the build context (it is the compose volume, mounted at deploy time, not baked in).
-# Production builds leave this empty and mount sectors at deploy time.
+# The world ships inside the image: the committed fixtures are the live sectors, so the server
+# and the world it serves are always from one commit and no deployment has to carry sector files
+# alongside the image tag. The build-arg is a path from the repo root, overridable for a build
+# that should carry a different world; the repo-root `sectors/` staging directory cannot be
+# named here, since `.dockerignore` keeps it out of the build context. A separate stage so the
+# guard's failure names the arg rather than surfacing as an empty runtime directory.
 FROM node:24-alpine AS sectors
-ARG SOMNIO_SECTORS_SOURCE=
-COPY . /context
-# `if`/`fi` rather than an `||` chain because more commands follow in this `RUN`: an `exit`
-# inside a `(...)` fallback leaves only the subshell, and the layer would go on.
-RUN mkdir -p /staged; \
-    if [ -n "$SOMNIO_SECTORS_SOURCE" ] && [ ! -d "/context/${SOMNIO_SECTORS_SOURCE}" ]; then \
-      echo "ERROR: SOMNIO_SECTORS_SOURCE=${SOMNIO_SECTORS_SOURCE} is not in the build context (see .dockerignore)" >&2; \
-      exit 1; \
-    fi; \
-    if [ -n "$SOMNIO_SECTORS_SOURCE" ]; then cp -R "/context/${SOMNIO_SECTORS_SOURCE}/." /staged/; fi
+ARG SOMNIO_SECTORS_SOURCE=packages/core/fixtures/sectors
+# Guarded before the COPY: an empty value would make its source `/`, the whole build context.
+RUN test -n "${SOMNIO_SECTORS_SOURCE}" \
+        || (echo "ERROR: SOMNIO_SECTORS_SOURCE must name a directory of .somnio-sector files" >&2; exit 1)
+COPY ${SOMNIO_SECTORS_SOURCE}/ /staged/
+# The server refuses to boot on an empty sector directory (`noSectorsLoaded`); fail the build
+# instead of the first start.
+RUN ls /staged/*.somnio-sector > /dev/null 2>&1 \
+        || (echo "ERROR: SOMNIO_SECTORS_SOURCE=${SOMNIO_SECTORS_SOURCE} holds no .somnio-sector files" >&2; exit 1)
 
 FROM node:24-alpine
 
@@ -67,14 +66,14 @@ COPY packages/core/ packages/core/
 COPY packages/data/ packages/data/
 COPY packages/server/ packages/server/
 
-# Sectors at a fixed path so the runtime layout is unconditional: empty unless the build staged
-# some; operators provide the real sector content via a volume mount in production.
+# The baked world; `SOMNIO_SECTORS_DIR` below points at it, and an operator who wants a
+# different world overrides that variable and mounts theirs.
 COPY --from=sectors /staged/ /opt/somnio/sectors/
 RUN mkdir -p /opt/somnio/logs
 
 # Run as a dedicated non-root user. The server speaks plain HTTP/WS to a reverse proxy,
-# never binds privileged ports, and reads sectors from a world-readable mount; `logs/` is the
-# one directory it writes.
+# never binds privileged ports, and only reads its baked sectors; `logs/` is the one directory it
+# writes.
 RUN addgroup -S -g 1001 somnio && adduser -S -u 1001 -G somnio -H somnio \
     && chown -R somnio:somnio /opt/somnio
 USER somnio

@@ -8,8 +8,8 @@
 # Test credentials
 .env.test
 
-# Sector staging directory the docker-compose example mounts, seeded from the bundled fixtures by
-# the docker-smoke and wire-conformance jobs (and by hand for a local conformance run).
+# The web editor's staging directory (its `SOMNIO_EDITOR_SECTORS_DIR` default), a scratch copy of
+# the committed fixtures so an experiment never rewrites the world the image ships.
 # Anchored: an unanchored `sectors/` also matches `packages/server/src/sectors/` and the
 # committed fixtures under `packages/core/fixtures/sectors/`.
 /sectors/

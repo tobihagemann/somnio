@@ -1,7 +1,6 @@
-# Example only. Operators copy + fill in real credentials, populate the sectors volume
-# from their asset pack, set `SOMNIO_DATABASE_TLS` to match their Postgres deployment,
-# and front this with a TLS-terminating reverse proxy (the server speaks plain HTTP/WS
-# inside the container network).
+# Example only. Operators copy + fill in real credentials, set `SOMNIO_DATABASE_TLS` to match
+# their Postgres deployment, and front this with a TLS-terminating reverse proxy (the server
+# speaks plain HTTP/WS inside the container network). The world ships inside the server image.
 #
 # Topology: `proxy` is the only public surface; `server` also publishes 17662 on loopback for the
 # wire-conformance CI job. The proxy serves the browser client at `/` and routes
@@ -55,12 +54,6 @@ services:
       # Generate with: openssl rand -hex 32 — distinct from POSTGRES_PASSWORD above.
       SOMNIO_ADMIN_TOKEN: CHANGE_ME_ADMIN_TOKEN
       SOMNIO_SECTORS_DIR: /opt/somnio/sectors
-    # Populate `./sectors` from your asset pack before starting the stack. For a local
-    # smoke test against the bundled fixtures, rebuild the image with
-    # `docker compose build --build-arg SOMNIO_SECTORS_SOURCE=packages/core/fixtures/sectors`
-    # and drop this mount.
-    volumes:
-      - ./sectors:/opt/somnio/sectors:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 5s

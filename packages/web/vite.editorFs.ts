@@ -13,11 +13,11 @@ import { SECTOR_API_PREFIX, isValidSectorName } from './src/editor/sectorName';
  * inert unless the environment variable is set, so an ordinary `npm run dev` never mounts a
  * filesystem write API at all (the `editor` npm script is what sets it).
  *
- * The default directory is the repo-root `sectors/` — deliberately the same staging directory
- * `docker-compose.example.yml` mounts and the `/somnio-web` skill seeds, because authoring the
- * sectors the local server serves is the point. A running server may therefore be reading these
- * files while the editor writes them; writes are atomic (temp file + rename) so a reader can
- * never observe a truncated sector.
+ * The default directory is the repo-root `sectors/`, a staging copy rather than the committed
+ * fixtures, so an experiment never rewrites the world the image ships; a dev server with
+ * `SOMNIO_SECTORS_DIR` pointed there plays what is being authored. That server may be reading
+ * these files while the editor writes them; writes are atomic (temp file + rename) so a reader
+ * can never observe a truncated sector.
  *
  * There is deliberately no DELETE route: the editor has no in-app delete, and rename uses
  * Save As semantics (write the new name, leave the original), so a destructive filesystem verb

@@ -29,8 +29,7 @@ The destination is `packages/web/public/assets` for the dev server only. Vite se
 To exercise production's routing instead of the Vite proxy, run the container topology — `proxy` serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the server:
 
 ```bash
-mkdir -p assets sectors
-cp packages/core/fixtures/sectors/*.somnio-sector sectors/
+mkdir -p assets
 docker compose -f docker-compose.example.yml build --build-arg BUILD_VERSION=local
 docker compose -f docker-compose.example.yml up --wait   # http://127.0.0.1:17669/?debug=1
 ```
