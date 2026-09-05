@@ -1,6 +1,6 @@
 ---
 name: somnio-web
-description: "Serve the Three.js browser client locally against the dev server and drive it with agent-browser — log in, walk, screenshot, and read world state headlessly for automated verification. Use when the user asks to run, open, test, or screenshot the web/browser client, or to verify a gameplay or UI change in the browser. For the native macOS client, use the somnio-player skill instead."
+description: "Serve the Three.js browser client locally against the dev server and drive it with agent-browser — log in, walk, screenshot, and read world state headlessly for automated verification. Use when the user asks to run, open, test, or screenshot the web/browser client, or to verify a gameplay or UI change in the browser."
 ---
 
 # Run Browser Client (Local Dev)
@@ -13,24 +13,24 @@ The client needs a running backend. Stand up the local server on port 17662 firs
 
 ## Step 2: Serve the client
 
-Node 24.17.0 or newer (`Web/package.json` pins `engines`, `Web/.nvmrc` carries the version).
+Node 24.17.0 or newer (the root `package.json` pins `engines`, `.nvmrc` carries the version).
 
-Without an asset pack the page loads and plays with placeholder models, an untextured floor, and unstyled panels. To render the real world, build the served asset root from the `somnio-assets` working tree **before** starting Vite — the dev server enumerates `Web/public` at startup, so a pack added afterwards is not served until restart:
+Without an asset pack the page loads and plays with placeholder models, an untextured floor, and unstyled panels. To render the real world, build the served asset root from the `somnio-assets` working tree **before** starting Vite; a pack added afterwards is not served until restart:
 
 ```bash
-SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=Web/public/assets Scripts/bundle-web-assets.sh
-cd Web && npm ci && npm run dev
+SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=packages/web/public/assets Scripts/bundle-web-assets.sh
+npm ci && npm run dev --workspace packages/web
 ```
 
 Vite serves on `http://localhost:17669` and proxies `/ws` to `127.0.0.1:17662`. The proxy is what matters: the client derives its gameplay endpoint from the page origin, so `/` and `/ws` have to share one. Point the proxy elsewhere with `SOMNIO_DEV_GAMEPLAY_ORIGIN`.
 
-The destination is `Web/public/assets` for the dev server only. Vite serves `Web/public` and `Web/` and never `dist/`, so writing the pack to `Web/dist/assets` leaves every model and texture 404ing with no error but a placeholder world. The image build uses `dist` because nginx serves that directory.
+The destination is `packages/web/public/assets` for the dev server only. Vite serves `packages/web/public` and `packages/web/` and never `dist/`, so writing the pack to `packages/web/dist/assets` leaves every model and texture 404ing with no error but a placeholder world. The image build uses `dist` because nginx serves that directory.
 
 To exercise production's routing instead of the Vite proxy, run the container topology — `proxy` serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the server:
 
 ```bash
 mkdir -p assets sectors
-cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+cp packages/core/fixtures/sectors/*.somnio-sector sectors/
 docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=0.0.0-local
 docker compose -f docker-compose.example.yml up --wait   # http://127.0.0.1:17669/?debug=1
 ```
@@ -113,7 +113,7 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image.
 
-**Two players in one sector.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token — the browser analogue of `SOMNIO_PROFILE`.
+**Two players in one sector.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token.
 
 ```bash
 agent-browser --session a open 'http://localhost:17669/'
@@ -124,7 +124,7 @@ agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind ==
 
 Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that leaving a sector removes them. The client's own position is not authoritative: the server volunteers `serverPosition` for self only as a `snapBack` after a rejected move.
 
-**Relocate the character to another sector.** The server holds the gameplay session for a few seconds after the page goes away (the Vite proxy keeps the upstream WebSocket alive), and both the disconnect checkpoint and the periodic 30 s checkpoint write the character row — so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate (the Notes' no-sleep rule is suspended here only because no page exists to poll between close and login):
+**Relocate the character to another sector.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)

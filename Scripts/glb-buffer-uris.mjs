@@ -24,7 +24,7 @@
 // strings the consumer still escapes with).
 //
 // Node rather than Python because the only places this runs — a developer's web build and the
-// `Web/Dockerfile` build stage — are guaranteed to have Node and are not guaranteed to have
+// `packages/web/Dockerfile` build stage — are guaranteed to have Node and are not guaranteed to have
 // Python. The asset repo keeps its own Python copy for the producing side; this repo is public and
 // cannot import from that one.
 
@@ -80,12 +80,8 @@ export function externalResourcePaths(document) {
 }
 
 /**
- * Guarded so the module can be imported by the test suite without running the CLI.
- *
- * `process.argv[1]` is the script Node was handed; comparing it to this file's own path is what
- * distinguishes `node glb-buffer-uris.mjs model.glb` from an `import` of the same file, where
- * `argv[1]` is the test runner and the CLI must stay silent (it would otherwise read `argv[2]` —
- * a Vitest argument — and `process.exit(2)` out of the suite).
+ * Guarded so the test suite can import this module: unguarded, the CLI would read a Vitest
+ * argument as its input path and `process.exit(2)` out of the suite.
  */
 const invokedAsCLI =
   process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)

@@ -1,0 +1,31 @@
+{
+  "name": "@somnio/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser client for Somnio: Three.js world renderer over the shared JSON WebSocket protocol.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "editor": "SOMNIO_EDITOR_SECTORS_DIR=${SOMNIO_EDITOR_SECTORS_DIR:-$PWD/../../sectors} vite --open /editor.html",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "conformance": "vitest run --config vitest.conformance.config.ts"
+  },
+  "dependencies": {
+    "@somnio/core": "0.0.0",
+    "@somnio/protocol": "0.0.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.4",
+    "@types/ws": "8.18.1",
+    "happy-dom": "20.11.2",
+    "vite": "8.2.1",
+    "ws": "8.21.3"
+  }
+}

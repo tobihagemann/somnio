@@ -11,73 +11,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install tools
-        # The runner image preinstalls some of these and `brew install` won't upgrade an
-        # outdated preinstall; .swiftformat's rule set needs the pinned minversion.
-        run: |
-          brew update
-          brew install swiftlint swiftformat periphery
-          brew upgrade swiftlint swiftformat periphery || true
-
-      - name: Install build prerequisites
-        run: brew install argon2
-
-      # `--swift` so this job runs only what needs macOS: SwiftFormat, SwiftLint (both packages),
-      # and Periphery. The browser client's checks belong to the `web` job below, which runs them on
-      # the platform the web image is actually built for. Running the bare script here instead would
-      # execute all four browser checks a second time and report one failure under two job names.
-      # This job therefore needs no Node at all.
-      - name: Lint & Format Check
-        run: ./Scripts/lint.sh --swift
-
-  build-and-test:
-    name: Build & Test
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install build prerequisites
-        run: brew install argon2
-
-      - name: Build
-        run: swift build
-
-      - name: Test
-        run: swift test --no-parallel
-        timeout-minutes: 5
-
-  web:
-    name: Web
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      # Node-only by design: the headless suite covers the ported protocol, core geometry, and
-      # DOM layer without a browser or a Swift server. The wire-conformance suite that needs a
-      # live server is a separate config so this job stays fast and dependency-light.
-      #
-      # This is also deliberately the *only* place the browser checks run in CI, and deliberately on
-      # Linux — the platform `Web/Dockerfile` builds the shipped image on. The macOS lint job runs
-      # `./Scripts/lint.sh --swift` so the two halves do not overlap.
       - uses: actions/setup-node@v4
         with:
-          node-version-file: Web/.nvmrc
+          node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: Web/package-lock.json
-      # Through the same script the pre-commit hook and a local run use, rather than four inlined
-      # `npm run` steps: `Scripts/lint.sh` is then the single definition of what "the web checks"
+          cache-dependency-path: package-lock.json
+      # Through the same script the pre-commit hook and a local run use, rather than inlined
+      # `npm run` steps: `Scripts/lint.sh` is then the single definition of what "the checks"
       # means, and a check added there cannot reach developers without also reaching CI. It runs
-      # `npm ci` itself when node_modules is absent.
-      - name: Lint & Format Check
-        run: ./Scripts/lint.sh --web
+      # `npm ci` itself when node_modules is absent. The unit projects never start a container;
+      # the integration projects are the `integration-tests` job.
+      - name: Lint, typecheck, test, and build
+        run: ./Scripts/lint.sh
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify Docker is reachable
+        # Fails the job loudly rather than letting testcontainers time out suite by suite.
+        run: docker info -f '{{.ServerVersion}}'
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Run integration tests
+        run: npm run test:integration
 
   wire-conformance:
+    # Drives the browser client's real encoder and transport into the server image the compose
+    # file builds, so the conformance target is the artifact that ships rather than an in-process
+    # server.
     name: Wire Conformance
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -85,17 +60,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
-          node-version-file: Web/.nvmrc
+          node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: Web/package-lock.json
-      # Node-plus-Docker rather than the `integration-tests` shape: that one would need an Ubuntu
-      # runner with a pinned swiftly toolchain and Postgres inside the Node job. Reusing the
-      # docker-smoke approach keeps this job's only Swift dependency a built container image, and
-      # leaves the `web` job Node-only.
+          cache-dependency-path: package-lock.json
       - name: Populate sectors
         run: |
           mkdir -p sectors
-          cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+          cp packages/core/fixtures/sectors/*.somnio-sector sectors/
       - name: Build server image
         # MARKETING_VERSION has no default and the build fails without it, so this is a separate
         # step from `up --wait` (which would otherwise reuse a stale image). Named service, so this
@@ -107,10 +78,8 @@ jobs:
         # `db` in through depends_on; the web and proxy services stay down.
         run: docker compose -f docker-compose.example.yml up --no-build --wait --wait-timeout 180 server
       - name: Install
-        working-directory: Web
         run: npm ci --no-audit --no-fund
       - name: Run wire conformance suite
-        working-directory: Web
         env:
           SOMNIO_CONFORMANCE_URL: ws://127.0.0.1:17662/ws
         run: npm run conformance
@@ -121,30 +90,6 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.example.yml down -v
 
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      # swiftly instead of swift-actions/setup-swift@v2: that action's hardcoded version
-      # list caps at 6.2.1, which rejects swift-websocket 1.6.1's Span-across-await code
-      # ("lifetime-dependent variable 'span' escapes its scope"). 6.2.4 compiles it —
-      # the same patch level as the Dockerfile's swift:6.2 tag, which is why Docker
-      # Smoke builds the identical file successfully.
-      - uses: vapor/swiftly-action@v0.2.1
-        with:
-          toolchain: "6.2.4"
-      - name: Install libargon2-dev
-        run: sudo apt-get update && sudo apt-get install -y libargon2-dev
-      - name: Verify Docker is reachable
-        # Fails the job loudly rather than letting every suite skip silently via the
-        # `.requiresContainerRuntime` trait. If this passes, ContainerRuntime.detected
-        # will return .docker on the runner.
-        run: docker info -f '{{.ServerVersion}}'
-      - name: Run integration tests
-        run: swift test --package-path IntegrationTests --no-parallel
-        timeout-minutes: 25
-
   docker-smoke:
     name: Docker Smoke
     runs-on: ubuntu-latest
@@ -152,14 +97,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Populate sectors
-        # The server fails startup with ServerStartupError.noSectorsLoaded if its
-        # SOMNIO_SECTORS_DIR is empty. The compose `server` service mounts
-        # ./sectors:/opt/somnio/sectors:ro, so seed it from the bundled fixtures.
+        # The server fails startup with `noSectorsLoaded` if its SOMNIO_SECTORS_DIR is empty. The
+        # compose `server` service mounts ./sectors:/opt/somnio/sectors:ro, so seed it from the
+        # bundled fixtures.
         run: |
           mkdir -p sectors
-          cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
+          cp packages/core/fixtures/sectors/*.somnio-sector sectors/
       - name: Create an empty asset pack
-        # `Web/Dockerfile` COPYs `assets/` from the build context. This job deliberately does *not*
+        # `packages/web/Dockerfile` COPYs `assets/` from the build context. This job deliberately does *not*
         # check out the private pack: it verifies the topology, and an empty pack still yields a
         # loadable page (placeholder models, unstyled panels). The `web-image` workflow is where the
         # real pack is required.
@@ -170,24 +115,29 @@ jobs:
         # ARG, which is the server and the browser client.
         run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=ci-test
       - name: Bring stack up and wait for healthy
-        # Gates on every healthcheck — server (/health -> SELECT 1), web, and proxy — so a boot
+        # Gates on every healthcheck (db, server's /health -> SELECT 1, web, proxy), so a boot
         # regression in any of them fails the job. Runs the shipped example file as-is; its
         # placeholder secrets are internally consistent.
         run: docker compose -f docker-compose.example.yml up --wait --wait-timeout 180
       - name: Verify the full topology through the proxy
         # The split routing is the part that can silently break: a rule change that shadows `/ws`
         # takes the game server offline while the site keeps serving perfectly. Assert both legs
-        # reach their own upstream through the one published port.
+        # reach their own upstream through the one published port, and that the bearer gate on
+        # `/admin` answers 401 rather than upgrading or 404ing.
         run: |
           set -euo pipefail
           curl -fsS http://127.0.0.1:17669/ | grep -q 'id="somnio-root"'
           curl -fsS http://127.0.0.1:17669/health
+          admin=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:17669/admin)
+          test "$admin" = "401" || (echo "expected 401 from /admin, got $admin" >&2; exit 1)
           # The client's own endpoint resolution is origin-relative, so this is the URL it will
-          # dial. A 101 means the upgrade reached the gameplay server.
-          status=$(curl -s -o /dev/null -w '%{http_code}' \
+          # dial. A 101 means the upgrade reached the gameplay server, which then holds the
+          # socket open for the hello frame — hence the time cap, which curl reports as a
+          # non-zero exit after printing the status.
+          status=$(curl -s -m 5 -o /dev/null -w '%{http_code}' \
             -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
             -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' \
-            http://127.0.0.1:17669/ws)
+            http://127.0.0.1:17669/ws || true)
           test "$status" = "101" || (echo "expected 101 from /ws, got $status" >&2; exit 1)
       - name: Dump logs on failure
         if: failure()
@@ -197,15 +147,3 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.example.yml down -v
-
-  release-smoke:
-    name: Release Smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - name: Run release script smoke test
-        # Pure bash: PATH-shims the macOS-only signing/notarize tools and injects stub
-        # sibling-scripts, then runs the real Scripts/release.sh and asserts its control
-        # flow. No swift/brew/Docker setup needed; the stubs supply the absent tools.
-        run: ./Scripts/tests/release_smoke_test.sh

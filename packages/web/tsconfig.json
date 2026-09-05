@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@scripts/*": ["../../Scripts/*"]
+    }
+  },
+  "include": [
+    "src",
+    "test",
+    "vite.config.ts",
+    "vite.editorFs.ts",
+    "vitest.config.ts",
+    "vitest.conformance.config.ts"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@somnio/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio game core: sector model and disk codec, geometry, collision, headings, the model registry, domain models, world clock, and the wire conversions.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts",
+    "./data/ModelRegistry.json": "./data/ModelRegistry.json"
+  },
+  "dependencies": {
+    "@somnio/protocol": "0.0.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

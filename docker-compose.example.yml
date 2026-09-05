@@ -3,7 +3,8 @@
 # and front this with a TLS-terminating reverse proxy (the server speaks plain HTTP/WS
 # inside the container network).
 #
-# Topology: `proxy` is the only published port. It serves the browser client at `/` and routes
+# Topology: `proxy` is the only public surface; `server` also publishes 17662 on loopback for the
+# wire-conformance CI job. The proxy serves the browser client at `/` and routes
 # `/ws`, `/admin`, and `/health` to the gameplay server, which is what makes the client's
 # same-origin `wss://<host>/ws` endpoint resolve without any dev-only branch. Production replaces
 # this service with Traefik doing the same split.
@@ -28,10 +29,9 @@ services:
     # Builds the image locally. To run a published build instead, replace this with
     # `image: ghcr.io/tobihagemann/somnio-server:<version>` (see .github/workflows/docker-image.yml).
     #
-    # The build-arg default mirrors `web`'s. Both Dockerfiles require MARKETING_VERSION with no
-    # default of their own, so without this the documented one-step `docker compose up --wait` fails
-    # the server's required-arg guard on a clean checkout while `web` builds fine — an asymmetry with
-    # no reason behind it. A release still passes the real version explicitly.
+    # The build-arg default mirrors `web`'s: both Dockerfiles require MARKETING_VERSION with no
+    # default of their own, so without it the documented one-step `docker compose up --wait` would
+    # fail the required-arg guard on a clean checkout. A release still passes the real version.
     build:
       context: .
       args:
@@ -44,6 +44,9 @@ services:
     # documented TLS-at-proxy invariant.
     ports:
       - "127.0.0.1:17662:8080"
+    # SOMNIO_HTTP_PORT stays unset so the image ENV is the only source of the 8080 that the
+    # `ports` mapping, the healthcheck, and proxy.example.conf assume. Pinning it here would
+    # keep CI green if the image lost that ENV and fell back to the code default of 17662.
     environment:
       SOMNIO_DATABASE_URL: postgres://somnio:CHANGE_ME_DB_PASSWORD@db:5432/somnio
       # Local Postgres doesn't terminate TLS; production deployments should leave this
@@ -51,13 +54,10 @@ services:
       SOMNIO_DATABASE_TLS: disable
       # Generate with: openssl rand -hex 32 — distinct from POSTGRES_PASSWORD above.
       SOMNIO_ADMIN_TOKEN: CHANGE_ME_ADMIN_TOKEN
-      # SOMNIO_HTTP_PORT stays unset so the image ENV is the only source of the 8080 that the
-      # `ports` mapping, the healthcheck, and proxy.example.conf assume. Pinning it here would
-      # keep CI green if the image lost that ENV and fell back to the code default of 17662.
       SOMNIO_SECTORS_DIR: /opt/somnio/sectors
     # Populate `./sectors` from your asset pack before starting the stack. For a local
     # smoke test against the bundled fixtures, rebuild the image with
-    # `docker compose build --build-arg SOMNIO_SECTORS_SOURCE=Tests/SomnioMapFixturesTestSupport/MapFixtures`
+    # `docker compose build --build-arg SOMNIO_SECTORS_SOURCE=packages/core/fixtures/sectors`
     # and drop this mount.
     volumes:
       - ./sectors:/opt/somnio/sectors:ro
@@ -71,13 +71,13 @@ services:
     # Builds the browser client locally. To run a published build instead, replace this with
     # `image: ghcr.io/tobihagemann/somnio-web:<version>` (see .github/workflows/web-image.yml).
     #
-    # The context is the repository root and the Dockerfile lives under Web/ — the client resolves
-    # the model registry and the .xcstrings catalogs out of Sources/ through Vite aliases. Create an
-    # `assets/` directory before building (empty is fine; it yields placeholder models and unstyled
-    # panels), or point it at a somnio-assets checkout for the real pack.
+    # The context is the repository root and the Dockerfile lives under packages/web/ — the client
+    # imports its sibling workspace packages. Create an `assets/` directory before building (empty
+    # is fine; it yields placeholder models and unstyled panels), or point it at a somnio-assets
+    # checkout for the real pack.
     build:
       context: .
-      dockerfile: Web/Dockerfile
+      dockerfile: packages/web/Dockerfile
       args:
         MARKETING_VERSION: 0.0.0-local
     # Not published: the proxy is the only public surface, mirroring production.
@@ -101,7 +101,9 @@ services:
     ports:
       - "127.0.0.1:17669:8080"
     volumes:
-      - ./Web/proxy.example.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./packages/web/proxy.example.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./packages/web/proxy-forward-headers.conf:/etc/nginx/somnio-proxy-forward-headers.conf:ro
+      - ./packages/web/proxy-websocket-upgrade.conf:/etc/nginx/somnio-proxy-websocket-upgrade.conf:ro
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
       interval: 5s
@@ -109,4 +111,6 @@ services:
       retries: 12
 
 volumes:
+  # The migration refuses a database carrying the retired Swift-era schema (`LegacyDatabaseError`);
+  # a stack whose volume still holds one needs `docker compose down -v` before `up`.
   db-data:

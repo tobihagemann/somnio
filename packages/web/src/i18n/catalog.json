@@ -1,0 +1,286 @@
+{
+  "%1$@ asks, \"%2$@\"": {
+    "en": "%1$@ asks, \"%2$@\"",
+    "de": "%1$@ fragt, \"%2$@\""
+  },
+  "%1$@ exclaims, \"%2$@\"": {
+    "en": "%1$@ exclaims, \"%2$@\"",
+    "de": "%1$@ ruft, \"%2$@\""
+  },
+  "%1$@ says, \"%2$@\"": {
+    "en": "%1$@ says, \"%2$@\"",
+    "de": "%1$@ sagt, \"%2$@\""
+  },
+  "%@ entered the game.": {
+    "en": "%@ entered the game.",
+    "de": "%@ hat das Spiel betreten."
+  },
+  "%@ left the game.": {
+    "en": "%@ left the game.",
+    "de": "%@ hat das Spiel verlassen."
+  },
+  "*: repeat": {
+    "en": "*: repeat",
+    "de": "*: wiederholen"
+  },
+  "3D characters and props by KayKit.": {
+    "en": "3D characters and props by KayKit.",
+    "de": "3D-Charaktere und -Objekte von KayKit."
+  },
+  "A newer version is available. Please update your client to keep playing.": {
+    "en": "A newer version is available. Please update your client to keep playing.",
+    "de": "Eine neuere Version ist verfügbar. Bitte aktualisiere deinen Client, um weiterzuspielen."
+  },
+  "About Somnio": {
+    "en": "About Somnio",
+    "de": "Über Somnio"
+  },
+  "Already logged in.": {
+    "en": "Already logged in.",
+    "de": "Du bist bereits angemeldet."
+  },
+  "Bad credentials.": {
+    "en": "Bad credentials.",
+    "de": "Falsche Zugangsdaten."
+  },
+  "Balance": {
+    "en": "Balance",
+    "de": "Balance"
+  },
+  "Broadcast message: %@": {
+    "en": "Broadcast message: %@",
+    "de": "Broadcast Nachricht: %@"
+  },
+  "Cancel": {
+    "en": "Cancel",
+    "de": "Abbrechen"
+  },
+  "Character:": {
+    "en": "Character:",
+    "de": "Charakter:"
+  },
+  "Chat": {
+    "en": "Chat",
+    "de": "Chat"
+  },
+  "Check for Updates...": {
+    "en": "Check for Updates...",
+    "de": "Auf Updates prüfen..."
+  },
+  "Close": {
+    "en": "Close",
+    "de": "Schließen"
+  },
+  "Copyright": {
+    "en": "© Copyright 2026 Tobias Hagemann",
+    "de": "© Copyright 2026 Tobias Hagemann"
+  },
+  "Debug": {
+    "en": "Debug",
+    "de": "Debug"
+  },
+  "Default": {
+    "en": "Default",
+    "de": "Standard"
+  },
+  "Email:": {
+    "en": "Email:",
+    "de": "E-Mail:"
+  },
+  "Error %@ occurred.": {
+    "en": "Error %@ occurred.",
+    "de": "Der Fehler %@ ist aufgetreten!"
+  },
+  "Floor textures by ambientCG.": {
+    "en": "Floor textures by ambientCG.",
+    "de": "Bodentexturen von ambientCG."
+  },
+  "Fullscreen": {
+    "en": "Fullscreen",
+    "de": "Vollbild"
+  },
+  "Gender:": {
+    "en": "Gender:",
+    "de": "Geschlecht:"
+  },
+  "Ghost model by Quaternius.": {
+    "en": "Ghost model by Quaternius.",
+    "de": "Geist-Modell von Quaternius."
+  },
+  "HP": {
+    "en": "HP",
+    "de": "HP"
+  },
+  "If you don't have an account, click here!": {
+    "en": "If you don't have an account, click here!",
+    "de": "Wenn du keinen Account hast, klick hier!"
+  },
+  "Items": {
+    "en": "Items",
+    "de": "Gegenstände"
+  },
+  "Items: %@": {
+    "en": "Items: %@",
+    "de": "Items: %@"
+  },
+  "Leave Game": {
+    "en": "Leave Game",
+    "de": "Spiel verlassen"
+  },
+  "Loading the world...": {
+    "en": "Loading the world...",
+    "de": "Welt wird geladen..."
+  },
+  "Log In": {
+    "en": "Log In",
+    "de": "Anmelden"
+  },
+  "Log level": {
+    "en": "Log level",
+    "de": "Log-Level"
+  },
+  "Mana": {
+    "en": "Mana",
+    "de": "Mana"
+  },
+  "Nickname": {
+    "en": "Nickname",
+    "de": "Nickname"
+  },
+  "Nickname already exists.": {
+    "en": "Nickname already exists.",
+    "de": "Der Nickname ist bereits vergeben."
+  },
+  "Nickname:": {
+    "en": "Nickname:",
+    "de": "Nickname:"
+  },
+  "OK": {
+    "en": "OK",
+    "de": "OK"
+  },
+  "Options": {
+    "en": "Options",
+    "de": "Optionen"
+  },
+  "Password": {
+    "en": "Password",
+    "de": "Passwort"
+  },
+  "Password (*):": {
+    "en": "Password (*):",
+    "de": "Passwort (*):"
+  },
+  "Password:": {
+    "en": "Password:",
+    "de": "Passwort:"
+  },
+  "Players": {
+    "en": "Players",
+    "de": "Spieler"
+  },
+  "Players: %@": {
+    "en": "Players: %@",
+    "de": "Spieler: %@"
+  },
+  "Reconnecting...": {
+    "en": "Reconnecting...",
+    "de": "Verbindung wird wiederhergestellt..."
+  },
+  "Registration failed.": {
+    "en": "Registration failed.",
+    "de": "Registrierung fehlgeschlagen."
+  },
+  "Remember password": {
+    "en": "Remember password",
+    "de": "Passwort merken"
+  },
+  "Resume": {
+    "en": "Resume",
+    "de": "Fortsetzen"
+  },
+  "Server URL": {
+    "en": "Server URL",
+    "de": "Server-URL"
+  },
+  "Sign Up": {
+    "en": "Sign Up",
+    "de": "Registrieren"
+  },
+  "Somnio": {
+    "en": "Somnio",
+    "de": "Somnio"
+  },
+  "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.": {
+    "en": "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.",
+    "de": "Somnio benötigt WebGL. Probiere eine aktuelle Version von Safari, Chrome oder Firefox auf einem Desktop-Rechner."
+  },
+  "Somnio needs a desktop computer.": {
+    "en": "Somnio needs a desktop computer.",
+    "de": "Somnio benötigt einen Desktop-Rechner."
+  },
+  "Thanks paragraph": {
+    "en": "Somnio was my first passion project, developed from 2003 to 2006. This is its revival.",
+    "de": "Somnio war mein erstes Herzensprojekt, entwickelt von 2003 bis 2006. Dies ist seine Neuauflage."
+  },
+  "That name uses characters Somnio does not allow.": {
+    "en": "That name uses characters Somnio does not allow.",
+    "de": "Dieser Name verwendet Zeichen, die Somnio nicht erlaubt."
+  },
+  "The connection was lost.": {
+    "en": "The connection was lost.",
+    "de": "Die Verbindung wurde unterbrochen!"
+  },
+  "The game is played with a keyboard and a mouse. Come back from a laptop or desktop.": {
+    "en": "The game is played with a keyboard and a mouse. Come back from a laptop or desktop.",
+    "de": "Das Spiel wird mit Tastatur und Maus gespielt. Komm von einem Laptop oder Desktop-Rechner zurück."
+  },
+  "The server is being updated. Please try again in a few moments.": {
+    "en": "The server is being updated. Please try again in a few moments.",
+    "de": "Der Server wird gerade aktualisiert. Bitte versuche es in wenigen Augenblicken erneut."
+  },
+  "The server is currently not reachable. Try again later.": {
+    "en": "The server is currently not reachable. Try again later.",
+    "de": "Der Server ist zurzeit nicht erreichbar! Versuch es ein anderes Mal!"
+  },
+  "This browser cannot render 3D graphics.": {
+    "en": "This browser cannot render 3D graphics.",
+    "de": "Dieser Browser kann keine 3D-Grafik darstellen."
+  },
+  "Try Again": {
+    "en": "Try Again",
+    "de": "Erneut versuchen"
+  },
+  "UI borders by Kenney.": {
+    "en": "UI borders by Kenney.",
+    "de": "UI-Rahmen von Kenney."
+  },
+  "Update required": {
+    "en": "Update required",
+    "de": "Update erforderlich"
+  },
+  "Verbose": {
+    "en": "Verbose",
+    "de": "Ausführlich"
+  },
+  "Version: %@": {
+    "en": "Version: %@",
+    "de": "Version: %@"
+  },
+  "Welcome to Somnio!": {
+    "en": "Welcome to Somnio!",
+    "de": "Willkommen zu Somnio!"
+  },
+  "You own %@c.": {
+    "en": "You own %@c.",
+    "de": "Du besitzt %@c."
+  },
+  "Your password could not be saved.": {
+    "en": "Your password could not be saved.",
+    "de": "Dein Passwort konnte nicht gespeichert werden."
+  },
+  "Your session expired. Please log in again.": {
+    "en": "Your session expired. Please log in again.",
+    "de": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
+  }
+}

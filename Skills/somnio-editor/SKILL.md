@@ -5,30 +5,30 @@ description: "Serve the localhost web map editor and drive it with agent-browser
 
 # Run Editor (Local Dev)
 
-The editor is a second Vite entry point in `Web/` (`editor.html` + `src/editor/**`) for
+The editor is a second Vite entry point in `packages/web/` (`editor.html` + `src/editor/**`) for
 `.somnio-sector` map files. Fully offline — no gameplay server, Postgres, or login — and
 dev-only by construction: `editor.html` is never in `build.rollupOptions.input`, so it cannot
-reach `dist/` or the shipped image (`lint.sh --web` machine-enforces this).
+reach `dist/` or the shipped image (`Scripts/lint.sh` machine-enforces this).
 
 ## Step 1: Serve the editor
 
-Node 24.17.0+ (`Web/.nvmrc`). For real models and floors, build the served asset root from the
+Node 24.17.0+ (`.nvmrc`). For real models and floors, build the served asset root from the
 `somnio-assets` working tree first (placeholders otherwise — fine for most editor testing):
 
 ```bash
-SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=Web/public/assets Scripts/bundle-web-assets.sh
-mkdir -p sectors && cp Tests/SomnioMapFixturesTestSupport/MapFixtures/*.somnio-sector sectors/
-cd Web && npm ci && npm run editor
+SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=packages/web/public/assets Scripts/bundle-web-assets.sh
+mkdir -p sectors && cp packages/core/fixtures/sectors/*.somnio-sector sectors/
+npm ci && npm run editor --workspace packages/web
 ```
 
-`npm run editor` opens `http://localhost:17669/editor.html` and — this is the load-bearing
-part — sets `SOMNIO_EDITOR_SECTORS_DIR` (default `../sectors`), which is both the gate and the
-root of the file API: a bare `npm run dev`
-never mounts it, and an editor served that way can render but cannot list, open, create, or
-save anything. Point the variable elsewhere to author a different directory:
+`npm run editor` opens `http://localhost:17669/editor.html` and sets `SOMNIO_EDITOR_SECTORS_DIR`
+(default: the repo-root `sectors/`). That variable is the load-bearing part, since it is both the
+gate and the root of the file API. A bare `npm run dev --workspace packages/web` never mounts it,
+and an editor served that way can render but cannot list, open, create, or save anything. Point
+the variable elsewhere to author a different directory:
 
 ```bash
-SOMNIO_EDITOR_SECTORS_DIR=/path/to/sectors npm run editor
+SOMNIO_EDITOR_SECTORS_DIR=/path/to/sectors npm run editor --workspace packages/web
 ```
 
 The API is loopback-only (`/__editor/sectors`; GET list, GET/PUT per stem, no DELETE) and

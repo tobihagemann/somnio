@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- Show chat bubbles and name plaques in their intended colors: the speech balloon now reads paper-white to match the rest of the interface instead of a dimmed gray
+- Start every player over: accounts and characters from the previous server are not carried over, so everyone registers again
+
+### Removed
+
+- Retire the macOS app: the browser client is now the only way to play
 
 ## [0.3.0] - 2026-08-01
 
@@ -85,9 +89,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Initial release.
 
-[Unreleased]: https://github.com/tobihagemann/somnio/compare/player-0.3.0...HEAD
-[0.3.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.3.0
-[0.2.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.2.0
+[Unreleased]: https://github.com/tobihagemann/somnio/compare/server-0.3.0...HEAD
+[0.3.0]: https://github.com/tobihagemann/somnio/releases/tag/server-0.3.0
+[0.2.0]: https://github.com/tobihagemann/somnio/releases/tag/server-0.2.0
 [0.1.2]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.2
-[0.1.1]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.1
-[0.1.0]: https://github.com/tobihagemann/somnio/releases/tag/player-0.1.0
+[0.1.1]: https://github.com/tobihagemann/somnio/releases/tag/server-0.1.1
+[0.1.0]: https://github.com/tobihagemann/somnio/releases/tag/server-0.1.0

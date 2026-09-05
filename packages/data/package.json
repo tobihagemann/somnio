@@ -1,0 +1,25 @@
+{
+  "name": "@somnio/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio persistence: the Postgres schema and migration, repositories, Argon2id password hashing, session-token digests, and the name policy that guards registration.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@somnio/core": "0.0.0",
+    "argon2": "0.45.1",
+    "kysely": "0.29.5",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@somnio/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio admin CLI: one authenticated request/response round trip per verb against the gameplay server's /admin WebSocket.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "bin": {
+    "somniocli": "./src/main.ts"
+  },
+  "dependencies": {
+    "@somnio/core": "0.0.0",
+    "@somnio/protocol": "0.0.0",
+    "commander": "15.0.0",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@somnio/server": "0.0.0",
+    "@types/ws": "8.18.1"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run"
+  }
+}

@@ -1,40 +1,35 @@
 # Somnio
 
-A 2D tile-based mini-MMORPG. Native macOS player client + Linux Swift server + admin CLI in one SwiftPM workspace, plus a Three.js browser client and a localhost web map editor.
+A 2D tile-based mini-MMORPG. A TypeScript gameplay server, an admin CLI, and a Three.js browser client in one npm workspace, plus a localhost web map editor.
 
-This is a from-scratch Swift port of an old REALbasic project; the macOS player ships as a code-signed `.app` bundle with Sparkle auto-updates, and the server ships as a Docker image alongside Postgres.
+This is a from-scratch port of an old REALbasic project. The server and the browser client each ship as a Docker image; the server runs alongside Postgres.
 
 ## Build & Run
 
-```
-swift build
-swift test
-```
-
-Run individual targets:
+Node 24.17.0 or newer (`.nvmrc`). Nothing is compiled — Node runs the TypeScript sources directly.
 
 ```
-swift run SomnioApp        # player client (macOS)
-swift run SomnioServer     # gameplay server (cross-platform)
-swift run SomnioCLI        # admin CLI (cross-platform)
-```
-
-The Three.js browser client and the localhost web map editor live in `Web/` (their own npm workspace):
-
-```
-cd Web
 npm ci
-npm run dev                # browser client (Vite on :17669, proxies /ws to the local server)
-npm run editor             # web map editor (authors .somnio-sector files)
+npm test                                  # every package's unit suite; no container
+npm run lint && npm run typecheck
 ```
 
-The integration test suite is a sibling SwiftPM package and skips automatically when no live database is configured:
+Run the components against a local Postgres (see `Skills/somnio-server/SKILL.md` for the dev container):
 
 ```
-swift test --package-path IntegrationTests
+SOMNIO_DEV_DEFAULTS=1 node packages/server/src/main.ts   # gameplay server against the somnio-pg dev container
+node packages/cli/src/main.ts players     # admin CLI against the dev server
+npm run dev --workspace packages/web      # browser client (Vite on :17669, proxies /ws to the local server)
+npm run editor --workspace packages/web   # web map editor (authors .somnio-sector files)
 ```
 
-See [AGENTS.md](AGENTS.md) for the deeper guide — module boundaries, dev/prod isolation, logging, packaging, lint/format, and code conventions.
+The integration suites start a throwaway Postgres per file through testcontainers and need Docker or Podman:
+
+```
+npm run test:integration
+```
+
+See [AGENTS.md](AGENTS.md) for the deeper guide — package boundaries, wire protocol, sector format, deployment, lint/format, and code conventions.
 
 ## License
 

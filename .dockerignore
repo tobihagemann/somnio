@@ -1,7 +1,3 @@
-.build/
-IntegrationTests/.build/
-*.app/
-*.dmg
 *.zip
 .git/
 .env
@@ -12,22 +8,22 @@ IntegrationTests/.build/
 *.p8
 *credentials*
 *secrets*
-appcast*.xml
 sectors/
+logs/
 
-# Host-installed node_modules and build output. Copying a macOS node_modules into the Linux web
-# image would layer darwin-only native bindings over the freshly installed Linux ones, and `dist/`
-# is regenerated inside the image anyway.
-Web/node_modules/
-Web/dist/
-Web/.vite/
+# Host-installed node_modules and build output. Copying a macOS node_modules into a Linux image
+# would layer darwin-only native bindings over the freshly installed Linux ones, and `dist/` is
+# regenerated inside the image anyway. Workspaces hoist to the root, hence the recursive glob.
+**/node_modules/
+packages/web/dist/
+packages/web/.vite/
 
-# The dev server's asset-pack destination (`/somnio-web`'s `SOMNIO_WEB_ASSET_DEST=Web/public/assets`).
+# The dev server's asset-pack destination (`/somnio-web`'s `SOMNIO_WEB_ASSET_DEST=packages/web/public/assets`).
 # Vite copies `publicDir` verbatim into `dist/`, so without this line a developer who has run the
 # dev loop bakes that pack into the image — while the Dockerfile's own pack step reads the build
 # context's `assets/`, finds it empty, and logs "serving placeholders". The image then ships real
 # art and reports the opposite, and the same commit yields different images depending on untracked
 # local state. The pack reaches the image only through `assets/` + `bundle-web-assets.sh`, which is
 # what enforces the UI-required/models-warn split. Scoped to `assets/` rather than all of
-# `Web/public/` so a genuinely committed public file would still ship.
-Web/public/assets/
+# `public/` so a genuinely committed public file would still ship.
+packages/web/public/assets/

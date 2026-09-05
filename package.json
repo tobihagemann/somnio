@@ -1,0 +1,36 @@
+{
+  "name": "somnio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio: a 2D tile-based mini-MMORPG. TypeScript server, admin CLI, and Three.js browser client in one npm workspace.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit -p packages/web/tsconfig.json && tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "SOMNIO_INTEGRATION=1 vitest run --project data-integration --project server-integration",
+    "conformance": "npm run conformance --workspace packages/web",
+    "build": "npm run build --workspace packages/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@testcontainers/postgresql": "^12.1.0",
+    "@types/node": "26.2.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "10.8.1",
+    "prettier": "3.9.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10"
+  }
+}

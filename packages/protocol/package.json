@@ -1,0 +1,16 @@
+{
+  "name": "@somnio/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio wire protocol: the message catalog, JSON text-frame codec, and admin request/response codec.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

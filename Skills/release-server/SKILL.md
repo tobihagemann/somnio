@@ -5,7 +5,7 @@ description: "Cut a server release by pushing a server-X.Y.Z tag, which triggers
 
 # Release Server
 
-The server ships as a container image: pushing a `server-X.Y.Z` git tag triggers `.github/workflows/docker-image.yml`, which builds the Linux server image and pushes it to `ghcr.io/tobihagemann/somnio-server` tagged `X.Y.Z` (plus `latest` and `sha-<sha>`). The bare `X.Y.Z` is stamped into the binary as the marketing version; the `server-` prefix is the component selector. The server is a Package (ghcr), not a GitHub Release.
+The server ships as a container image: pushing a `server-X.Y.Z` git tag triggers `.github/workflows/docker-image.yml`, which builds the Linux server image and pushes it to `ghcr.io/tobihagemann/somnio-server` tagged `X.Y.Z` (plus `latest` and `sha-<sha>`). The bare `X.Y.Z` is baked into the image as `SOMNIO_SERVER_VERSION`, which the admin `version` verb reports; the `server-` prefix is the component selector. The server is a Package (ghcr), not a GitHub Release.
 
 ## Step 1: Pick the version and confirm the commit is on main
 
@@ -26,7 +26,7 @@ Alternative — manual dispatch (a blank version produces a `0.0.0-<sha>` dev im
 gh workflow run docker-image.yml -f version=X.Y.Z
 ```
 
-Dispatch is not equivalent to tagging: it publishes `:X.Y.Z` and `:sha-<sha>` but does **not** move `:latest` (that is tag-push only), and it builds the dispatched ref's current HEAD rather than a chosen commit.
+Dispatch is not equivalent to tagging: it publishes `:X.Y.Z` and `:sha-<sha>` but does **not** move `:latest` (that is tag-push only), and it builds the dispatched ref's current HEAD rather than a chosen commit. The main-ancestry guard is unconditional, so dispatching from a side branch fails there rather than producing a dev image.
 
 ## Step 3: Monitor
 
@@ -42,7 +42,7 @@ docker pull ghcr.io/tobihagemann/somnio-server:X.Y.Z
 docker compose up -d
 ```
 
-The server auto-applies pending migrations on boot. Verify readiness:
+The server auto-applies the migration on boot. Verify readiness:
 
 ```bash
 curl -fsS http://<host>:<port>/health   # expect 200
@@ -50,8 +50,8 @@ curl -fsS http://<host>:<port>/health   # expect 200
 
 ## Notes
 
-- **Check for a breaking wire change before releasing:** `git diff <last-server-tag> HEAD -- Sources/SomnioProtocol/`. If any wire shape, JSON key, or field type changed, bump `SomnioProtocolConstants.helloVersion` first (a fresh commit on `main`, tagged by this release, the player release, and the web release). The player and server share `SomnioProtocol`; the only guard is the Hello handshake, where the server sends `helloVersion` (`ConnectionActor`) and the native client compares it (`ClientViewModel`). Bumping it makes a skewed pair show the clean "update required" overlay; a stale `helloVersion` lets the pair pass the handshake and then fail with an opaque decode/close.
-- **The browser client is a third component on the same gate.** It does not share `SomnioProtocol` — it mirrors the wire shapes by hand and carries its own `helloVersion` (`Web/src/protocol/constants.ts`), so a Swift-side bump must be repeated there in the same commit or every browser player is locked out. Release it via the `/release-web` skill.
-- Deploy the server **before or together with** a player or web release whose wire protocol changed — with no version negotiation beyond the Hello gate, an old client hitting the new server (or vice versa) only fails gracefully if `helloVersion` was bumped. The `/release` skill owns the full cross-component sequencing and its outage window.
+- **Check for a breaking wire change before releasing:** `git diff <last-server-tag> HEAD -- packages/protocol/`. If any wire shape, JSON key, or field type changed, bump `helloVersion` in `packages/protocol/src/constants.ts` first (a fresh commit on `main`, tagged by this release and the web release). The server and the browser client share that one package; the only guard is the Hello handshake, where the server sends `helloVersion` and the client compares it with strict equality. Bumping it makes a skewed pair show the clean "update required" overlay; a stale `helloVersion` lets the pair pass the handshake and then fail with an opaque decode/close.
+- Deploy the server **before** a web release whose wire protocol changed — with no version negotiation beyond the Hello gate, an old client hitting the new server (or vice versa) only fails gracefully if `helloVersion` was bumped. The `/release` skill owns the cross-component sequencing and its outage window.
+- **The target database must be free of the Swift-era schema:** the migration refuses one (`LegacyDatabaseError`), so it has to be dropped and recreated. The deployment repo records the steps.
 - ghcr image tags are mutable — re-pushing `server-X.Y.Z` overwrites `:X.Y.Z`. A running container keeps its current image until the next pull + recreate.
-- **Versions through 0.2.0 live under the old bare `ghcr.io/tobihagemann/somnio` package.** The image was renamed to `somnio-server` at 0.3.0 for symmetry with `somnio-web`, and ghcr cannot rename a package in place, so the history is split: rolling back to 0.2.0 or earlier means pulling the old name.
+- **Rolling back to 0.2.0 or earlier means pulling `ghcr.io/tobihagemann/somnio`.** ghcr cannot rename a package in place, so the pre-0.3.0 history stays under the bare name.

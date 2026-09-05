@@ -2,7 +2,7 @@ name: Docker Image
 
 on:
   push:
-    # Server releases only. The player publishes from release.yml on `player-*` tags.
+    # Server releases only; the browser client publishes from web-image.yml on `web-*` tags.
     tags: ["server-[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
     inputs:
@@ -22,9 +22,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # Component-suffixed, matching `somnio-web`. Versions up to 0.2.0 were published under the bare
-  # `ghcr.io/tobihagemann/somnio` name; ghcr cannot rename a package in place, so that package keeps
-  # its history and this one starts at 0.3.0. Rolling back past 0.3.0 means pulling the old name.
+  # Component-suffixed, matching `somnio-web`. This package starts at 0.3.0; rolling back below
+  # that means pulling the pre-rename `ghcr.io/tobihagemann/somnio`, since ghcr cannot rename a
+  # package in place.
   IMAGE_NAME: ${{ github.repository }}-server
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
 
       - name: Verify ref is reachable from main
         run: |
-          # Only publish images for commits already on main, mirroring release.yml.
+          # Only publish images for commits already on main.
           # Applies to both tag pushes and `workflow_dispatch` so a tag or manual run on
           # an unreviewed side branch cannot publish a trusted-looking ghcr tag (e.g.
           # `latest` or `<version>`).
@@ -61,19 +61,19 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" ]]; then
             VERSION="${GITHUB_REF#refs/tags/server-}"
           elif [[ -n "${INPUT_VERSION}" ]]; then
-            # Strip a `server-` prefix the operator may type by habit, symmetric with the push path
-            # above and with release.yml/web-image.yml. Without it `server-1.4.0` passes the charset
-            # guard below and is baked into SomnioServerVersion.swift and the ghcr tag verbatim, so
-            # `somnio version` reports it to every operator.
+            # Strip a `server-` prefix the operator may type by habit, symmetric with the push path.
+            # Without it `server-1.4.0` passes the charset guard below
+            # and is baked into the image's version and the ghcr tag verbatim, so `somniocli
+            # version` reports it to every operator.
             VERSION="${INPUT_VERSION#server-}"
           else
             VERSION="0.0.0-${GITHUB_SHA::7}"
           fi
-          # The Dockerfile interpolates MARKETING_VERSION into a `sed` replacement of
-          # SomnioServerVersion.swift, so reject any value containing sed-/Swift-breaking
-          # characters (/, &, quotes, whitespace) before the build can run.
+          # The Dockerfile bakes MARKETING_VERSION into the image's `ENV SOMNIO_SERVER_VERSION`,
+          # which the admin `version` verb reports verbatim, so reject anything outside a plain
+          # version charset (quotes, whitespace, shell metacharacters) before the build can run.
           if [[ ! "${VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]]; then
-            echo "ERROR: version '${VERSION}' contains characters unsafe for the Dockerfile sed" >&2
+            echo "ERROR: version '${VERSION}' contains characters outside the version charset" >&2
             exit 1
           fi
           echo "marketing=${VERSION}" >> "$GITHUB_OUTPUT"

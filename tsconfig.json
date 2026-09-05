@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  // Node runs these packages directly, so resolve the way Node does: a relative import without
+  // its `.ts` extension is a type error here, not a boot failure later. The web package keeps the
+  // base's bundler resolution and DOM lib in its own tsconfig.
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"]
+  },
+  "include": [
+    "vitest.config.ts",
+    "packages/protocol",
+    "packages/core",
+    "packages/data",
+    "packages/server",
+    "packages/cli"
+  ]
+}

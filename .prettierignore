@@ -1,0 +1,20 @@
+# Only the npm workspace is Prettier-formatted: everything at the root except the packages and
+# the workspace's own config files stays out, and build output (Vite's minified bundles are not
+# source) and the dev asset pack are skipped inside it.
+/*
+!/packages
+!/package.json
+!/tsconfig.base.json
+!/tsconfig.json
+!/vitest.config.ts
+!/eslint.config.js
+!/.prettierrc.json
+packages/*/dist/
+packages/web/public/
+**/node_modules/
+**/.vite/
+
+# Data fixtures with their own formatting contracts: the golden frames are re-recorded by the
+# protocol suite, and the registry is authored by hand.
+packages/protocol/fixtures/
+packages/core/data/ModelRegistry.json

@@ -1,0 +1,32 @@
+{
+  "name": "@somnio/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnio gameplay server: the WebSocket gameplay and admin routes, per-sector simulation, world clock, and checkpointing over Postgres.",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "somnio-server": "./src/main.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.1",
+    "@somnio/core": "0.0.0",
+    "@somnio/data": "0.0.0",
+    "@somnio/protocol": "0.0.0",
+    "hono": "4.13.7",
+    "pino": "10.3.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run"
+  }
+}
