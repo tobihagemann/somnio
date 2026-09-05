@@ -21,8 +21,8 @@ export const repoAliases = {
 }
 
 /**
- * Build-time constants. `SOMNIO_WEB_VERSION` comes from the environment (the image build passes the
- * release version); an unset value is a local build and reports 0.0.0.
+ * Build-time constants. `SOMNIO_WEB_VERSION` comes from the environment (the image build passes its
+ * `BUILD_VERSION`, the commit's short sha); an unset value is a local build and reports 0.0.0.
  *
  * An explicit `define` rather than Vite's `VITE_`-prefixed `import.meta.env` pickup, so the
  * injection depends on this file rather than on which variables Vite chooses to expose. The image

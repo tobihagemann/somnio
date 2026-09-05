@@ -107,9 +107,9 @@ Prop models (the registry's `objectModels` stems, empty `expectedClips`) are **p
 
 ### Hosting
 
-`packages/web/Dockerfile` builds `ghcr.io/tobihagemann/somnio-web` from a **repository-root** context (the workspace symlinks resolve through the root `node_modules`, and the asset pack is at `assets/`). It requires `--build-arg MARKETING_VERSION` like the server image, and greps the bundle for the marked stamp `somnio-web <version>` to prove the version was injected — see `packages/web/src/buildInfo.ts` for why the stamp interpolates the define directly rather than reusing the exported constant.
+`packages/web/Dockerfile` builds `ghcr.io/tobihagemann/somnio-web` from a **repository-root** context (the workspace symlinks resolve through the root `node_modules`, and the asset pack is at `assets/`). It requires `--build-arg BUILD_VERSION` like the server image, and greps the bundle for the marked stamp `somnio-web <version>` to prove the version was injected — see `packages/web/src/buildInfo.ts` for why the stamp interpolates the define directly rather than reusing the exported constant.
 
-Release tags are component-prefixed, never `v`-prefixed: `server-X.Y.Z` triggers `docker-image.yml` (ghcr server image) and `web-X.Y.Z` triggers `web-image.yml` (ghcr browser-client image). Each workflow strips its own prefix to get the bare `X.Y.Z`. Any new release-triggered workflow must use its own `<component>-` prefix and never the bare-numeric glob.
+There are no releases, version numbers, tags, or changelog. The `publish` job in `ci.yml` builds both images from every commit on `main` that passes the other four jobs and pushes them as `ghcr.io/tobihagemann/somnio-server` and `somnio-web`, each tagged `sha-<short>` and `latest`. `BUILD_VERSION` is that short sha, so the admin `version` verb and the `somnio-web <version>` stamp name the exact commit a container runs. Deploying means pinning one sha for both images in the deployment repo; the `/deploy` skill owns that procedure and the `helloVersion` check that precedes it.
 
 The static image does **not** proxy `/ws`; whatever fronts it performs the split (the `proxy` service in `docker-compose.example.yml` locally, Traefik in production), which is what lets the client's origin-relative `wss://<host>/ws` resolve with no dev-only branch.
 
@@ -141,7 +141,7 @@ The migration is a single fresh schema (`packages/data/src/migrations/0001_initi
 
 `docker-compose.example.yml` runs the full topology — `db`, `server`, `web`, and a `proxy` that is the public surface. The proxy serves the client at `/` and routes `/ws`, `/admin`, and `/health` to the gameplay server; production replaces it with Traefik doing the same split by router priority. The client's endpoint is origin-relative, so `/` and `/ws` **must** share an origin. `web` is `expose`-only, but `server` also publishes `127.0.0.1:17662` alongside the proxy, loopback-bound. That mapping is load-bearing for the `wire-conformance` CI job, which dials the server directly rather than through the proxy. Production publishes only the proxy. The server, `web`, and `proxy` all listen on `8080` inside the network, so the server's published mapping is `127.0.0.1:17662:8080`. That inner `8080` comes from the image's own `ENV SOMNIO_HTTP_PORT`, which the compose file deliberately leaves unset so a dropped `ENV` fails the health check instead of being masked.
 
-The root `Dockerfile` is a `node:24-alpine` multi-stage build: a `deps` stage runs `npm ci --omit=dev --workspace packages/server` over the workspace manifests, and the runtime stage copies that install tree whole (so the `node_modules/@somnio/*` symlinks keep resolving into `packages/*`) plus the four server-side packages' sources. It takes a **required** `MARKETING_VERSION` build-arg (no default; the build fails without it), exposed as `ENV SOMNIO_SERVER_VERSION`, which the admin `version` verb reports.
+The root `Dockerfile` is a `node:24-alpine` multi-stage build: a `deps` stage runs `npm ci --omit=dev --workspace packages/server` over the workspace manifests, and the runtime stage copies that install tree whole (so the `node_modules/@somnio/*` symlinks keep resolving into `packages/*`) plus the four server-side packages' sources. It takes a **required** `BUILD_VERSION` build-arg (no default; the build fails without it), exposed as `ENV SOMNIO_SERVER_VERSION`, which the admin `version` verb reports.
 
 ## Lint & Format
 
@@ -155,7 +155,7 @@ Both scripts go through the root `package.json` scripts, so that file is the sin
 
 Anything these scripts run on Linux must not assume a macOS environment: GitHub's Ubuntu runners leave `TMPDIR` unset, so a bare `$TMPDIR` under `set -u` aborts the script before any check runs. Use `${TMPDIR:-/tmp}`.
 
-CI on GitHub Actions (`.github/workflows/ci.yml`): `checks`, `integration-tests`, `wire-conformance` (compose-built server image), and `docker-smoke` (the full topology through the proxy, including the 401 on `/admin`).
+CI on GitHub Actions (`.github/workflows/ci.yml`): `checks`, `integration-tests`, `wire-conformance` (compose-built server image), `docker-smoke` (the full topology through the proxy, including the 401 on `/admin`), and `publish`, which runs only on `main` after the other four pass.
 
 ## Code Conventions
 
@@ -205,7 +205,6 @@ Skill kit at `Skills/`, symlinked from `.claude/skills/` (Claude Code) and `.age
 - `writing-for-interfaces` — upstream-derived UI-copy guidance (provenance and copyright notice in `Skills/ATTRIBUTION.md`)
 - `somnio-server`, `somnio-cli`, `somnio-web` — run each component locally against the dev server
 - `somnio-editor` — serve the localhost web map editor and drive it with `agent-browser`
-- `release` — decides which components a change requires releasing, owns the `helloVersion` bump, and sequences the two below
-- `release-server`, `release-web` — the two ghcr images
+- `deploy` — pin a published commit for both images in the deployment repo, with the `helloVersion` check and the sector-copy rule
 
 `AGENTS.md` is the shared instructions file; `.claude/CLAUDE.md` is symlinked to it so Claude Code picks up the same content.

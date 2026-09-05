@@ -35,4 +35,4 @@ See [AGENTS.md](AGENTS.md) for the deeper guide — package boundaries, wire pro
 
 Distributed under the GNU Affero General Public License v3.0. See the [LICENSE](LICENSE) file for details.
 
-The license covers the source code in this repository. The game's art assets are separately licensed, are not included here, and are bundled only into official release builds.
+The license covers the source code in this repository. The game's art assets are separately licensed, are not included here, and are bundled only into the published web image.

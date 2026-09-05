@@ -44,12 +44,12 @@ RUN mkdir -p /staged; \
 
 FROM node:24-alpine
 
-# Required: caller must pass `--build-arg MARKETING_VERSION=<x.y.z>`. There's no
-# sensible default — shipping an image that reports a fabricated version through the
-# admin `version` verb is worse than failing the build.
-ARG MARKETING_VERSION
-RUN test -n "${MARKETING_VERSION}" \
-        || (echo "ERROR: --build-arg MARKETING_VERSION=<x.y.z> is required" >&2; exit 1)
+# Required: caller must pass `--build-arg BUILD_VERSION=<id>` (CI passes the commit's short
+# sha). There's no sensible default — shipping an image that reports a fabricated version
+# through the admin `version` verb is worse than failing the build.
+ARG BUILD_VERSION
+RUN test -n "${BUILD_VERSION}" \
+        || (echo "ERROR: --build-arg BUILD_VERSION=<id> is required" >&2; exit 1)
 # curl for the docker-compose HEALTHCHECK.
 RUN apk add --no-cache curl
 
@@ -82,6 +82,6 @@ ENV NODE_ENV=production \
     SOMNIO_HTTP_HOST=0.0.0.0 \
     SOMNIO_HTTP_PORT=8080 \
     SOMNIO_SECTORS_DIR=/opt/somnio/sectors \
-    SOMNIO_SERVER_VERSION=${MARKETING_VERSION}
+    SOMNIO_SERVER_VERSION=${BUILD_VERSION}
 
 CMD ["node", "packages/server/src/main.ts"]

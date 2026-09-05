@@ -68,13 +68,13 @@ jobs:
           mkdir -p sectors
           cp packages/core/fixtures/sectors/*.somnio-sector sectors/
       - name: Build server image
-        # MARKETING_VERSION has no default and the build fails without it, so this is a separate
+        # BUILD_VERSION has no default and the build fails without it, so this is a separate
         # step from `up --wait` (which would otherwise reuse a stale image). Named service, so this
         # job does not also build the browser client it has no use for.
-        run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=conformance-test server
+        run: docker compose -f docker-compose.example.yml build --build-arg BUILD_VERSION=conformance-test server
       - name: Bring the server up
         # `--no-build` so `up` cannot re-trigger a build: a rebuild here would run without the
-        # MARKETING_VERSION arg above and fail the Dockerfile's required-arg guard. `server` pulls
+        # BUILD_VERSION arg above and fail the Dockerfile's required-arg guard. `server` pulls
         # `db` in through depends_on; the web and proxy services stay down.
         run: docker compose -f docker-compose.example.yml up --no-build --wait --wait-timeout 180 server
       - name: Install
@@ -106,14 +106,14 @@ jobs:
       - name: Create an empty asset pack
         # `packages/web/Dockerfile` COPYs `assets/` from the build context. This job deliberately does *not*
         # check out the private pack: it verifies the topology, and an empty pack still yields a
-        # loadable page (placeholder models, unstyled panels). The `web-image` workflow is where the
-        # real pack is required.
+        # loadable page (placeholder models, unstyled panels). The `publish` job is where the real
+        # pack is required.
         run: mkdir -p assets
       - name: Build images
-        # Both Dockerfiles require MARKETING_VERSION (no default) and fail the build without it.
+        # Both Dockerfiles require BUILD_VERSION (no default) and fail the build without it.
         # `docker compose build --build-arg` reaches every service whose Dockerfile declares that
         # ARG, which is the server and the browser client.
-        run: docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=ci-test
+        run: docker compose -f docker-compose.example.yml build --build-arg BUILD_VERSION=ci-test
       - name: Bring stack up and wait for healthy
         # Gates on every healthcheck (db, server's /health -> SELECT 1, web, proxy), so a boot
         # regression in any of them fails the job. Runs the shipped example file as-is; its
@@ -147,3 +147,96 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.example.yml down -v
+
+  publish:
+    # Every commit on main that passes the four jobs above is published; there is no release step,
+    # tag, or version number. Both images carry the same `sha-<short>` tag from one commit (plus
+    # `latest`), and a deployment pins that one sha for both, so the server and the client that
+    # reach production always come from the same tree.
+    name: Publish Images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, integration-tests, wire-conformance, docker-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Nothing here pushes to the repository, so the token stays out of .git/config.
+          persist-credentials: false
+      - name: Check out asset pack
+        uses: actions/checkout@v6
+        with:
+          # The runtime pack lives in a separate private repo. The default GITHUB_TOKEN only
+          # reaches this repo; ASSETS_DEPLOY_KEY is a read-only SSH deploy key scoped to
+          # somnio-assets. `packages/web/Dockerfile` reads the pack from `assets/` in the context.
+          repository: tobihagemann/somnio-assets
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          path: assets
+          persist-credentials: false
+      - name: Verify the asset pack has what the client needs
+        # Fail here rather than shipping a site with unstyled panels. `bundle-web-assets.sh` also
+        # hard-fails on a missing UI/ subtree, but that runs inside the image build where the
+        # error is buried in build output; this names the problem up front.
+        run: |
+          for subtree in Web/Models FloorMaterials UI; do
+            if [[ ! -d "assets/${subtree}" ]]; then
+              echo "ERROR: asset pack is missing ${subtree}/" >&2
+              exit 1
+            fi
+          done
+      - name: Resolve the build version
+        id: version
+        # The short sha is what both Dockerfiles bake in (`SOMNIO_SERVER_VERSION`, the
+        # `somnio-web <version>` stamp) and what the image tag carries, so a running container
+        # names the commit it was built from.
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish the server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            BUILD_VERSION=${{ steps.version.outputs.short }}
+          tags: |
+            ghcr.io/${{ github.repository }}-server:sha-${{ steps.version.outputs.short }}
+            ghcr.io/${{ github.repository }}-server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and publish the web image
+        uses: docker/build-push-action@v6
+        with:
+          # Repository root, not packages/web/: the client imports its sibling workspace packages
+          # through the root `node_modules`, and the asset pack sits at assets/. A package-rooted
+          # context cannot see either.
+          context: .
+          file: ./packages/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            BUILD_VERSION=${{ steps.version.outputs.short }}
+          tags: |
+            ghcr.io/${{ github.repository }}-web:sha-${{ steps.version.outputs.short }}
+            ghcr.io/${{ github.repository }}-web:latest
+          cache-from: type=gha
+          # `mode=min`, unlike the server image's `mode=max`, because this build's context carries
+          # the private somnio-assets checkout: `mode=max` exports *every* stage's layers into the
+          # Actions cache, including the build stage that copies the pack. GitHub grants a pull
+          # request access to caches created on the base branch, including PRs from forks, so
+          # that would make the private pack readable from the public repo, which is the exact
+          # exposure the deploy-key indirection exists to prevent. The pushed image is unaffected
+          # either way (only the nginx stage ships), so this costs only the intermediate-layer
+          # reuse, not the npm-install or Vite-build layers.
+          cache-to: type=gha,mode=min

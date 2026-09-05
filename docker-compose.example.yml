@@ -27,15 +27,15 @@ services:
 
   server:
     # Builds the image locally. To run a published build instead, replace this with
-    # `image: ghcr.io/tobihagemann/somnio-server:<version>` (see .github/workflows/docker-image.yml).
+    # `image: ghcr.io/tobihagemann/somnio-server:sha-<short>` (the `publish` job in ci.yml).
     #
-    # The build-arg default mirrors `web`'s: both Dockerfiles require MARKETING_VERSION with no
+    # The build-arg default mirrors `web`'s: both Dockerfiles require BUILD_VERSION with no
     # default of their own, so without it the documented one-step `docker compose up --wait` would
-    # fail the required-arg guard on a clean checkout. A release still passes the real version.
+    # fail the required-arg guard on a clean checkout. CI passes the commit's short sha.
     build:
       context: .
       args:
-        MARKETING_VERSION: 0.0.0-local
+        BUILD_VERSION: local
     depends_on:
       db:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
 
   web:
     # Builds the browser client locally. To run a published build instead, replace this with
-    # `image: ghcr.io/tobihagemann/somnio-web:<version>` (see .github/workflows/web-image.yml).
+    # `image: ghcr.io/tobihagemann/somnio-web:sha-<short>` (the `publish` job in ci.yml).
     #
     # The context is the repository root and the Dockerfile lives under packages/web/ — the client
     # imports its sibling workspace packages. Create an `assets/` directory before building (empty
@@ -79,7 +79,7 @@ services:
       context: .
       dockerfile: packages/web/Dockerfile
       args:
-        MARKETING_VERSION: 0.0.0-local
+        BUILD_VERSION: local
     # Not published: the proxy is the only public surface, mirroring production.
     expose:
       - "8080"

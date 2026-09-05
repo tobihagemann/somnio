@@ -1,6 +1,6 @@
 ---
 name: somnio-server
-description: "Run the gameplay server locally (Postgres + dev env on port 17662) for local play and testing. Use when the user asks to run, start, or stand up the dev/local server, or needs a server for the browser client or admin CLI to connect to. For production deploys, use the release-server skill instead."
+description: "Run the gameplay server locally (Postgres + dev env on port 17662) for local play and testing. Use when the user asks to run, start, or stand up the dev/local server, or needs a server for the browser client or admin CLI to connect to. For production deploys, use the deploy skill instead."
 ---
 
 # Run Server (Local Dev)

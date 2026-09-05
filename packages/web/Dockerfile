@@ -16,13 +16,14 @@
 #
 # Build with:
 #   mkdir -p assets
-#   docker build -f packages/web/Dockerfile --build-arg MARKETING_VERSION=0.1.0 .
+#   docker build -f packages/web/Dockerfile --build-arg BUILD_VERSION=local .
 
 FROM node:24-bookworm-slim AS build
 
-# Required: caller must pass `--build-arg MARKETING_VERSION=<x.y.z>`. Same reasoning as the
-# server image — an "About" panel reporting a fabricated version is worse than a failed build.
-ARG MARKETING_VERSION
+# Required: caller must pass `--build-arg BUILD_VERSION=<id>` (CI passes the commit's short sha).
+# Same reasoning as the server image — an "About" panel reporting a fabricated version is worse
+# than a failed build.
+ARG BUILD_VERSION
 # Path *inside the build context* to the asset pack root. To build without a pack, point it at an
 # empty directory; an empty value would copy the whole context.
 ARG SOMNIO_ASSET_PACK=assets
@@ -53,12 +54,12 @@ COPY packages/web/ packages/web/
 # Three statements rather than one `||`/`&&` chain. Shell makes the final `||` the fallback for
 # *everything* preceding it, so a compile error out of `npm run build` would print only "version
 # was not injected into the bundle" and send the operator to investigate the wrong thing.
-RUN if [ -z "${MARKETING_VERSION}" ]; then \
-      echo "ERROR: --build-arg MARKETING_VERSION=<x.y.z> is required" >&2; \
+RUN if [ -z "${BUILD_VERSION}" ]; then \
+      echo "ERROR: --build-arg BUILD_VERSION=<id> is required" >&2; \
       exit 1; \
     fi
-RUN SOMNIO_WEB_VERSION="${MARKETING_VERSION}" npm run build --workspace packages/web
-RUN if ! grep -q "somnio-web ${MARKETING_VERSION}" packages/web/dist/bundle/*.js; then \
+RUN SOMNIO_WEB_VERSION="${BUILD_VERSION}" npm run build --workspace packages/web
+RUN if ! grep -q "somnio-web ${BUILD_VERSION}" packages/web/dist/bundle/*.js; then \
       echo "ERROR: version was not injected into the bundle" >&2; \
       exit 1; \
     fi
@@ -85,9 +86,9 @@ COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY packages/web/nginx-security-headers.conf /etc/nginx/somnio-security-headers.conf
 COPY --from=build /src/packages/web/dist /usr/share/nginx/html
 
-# Useful when a deployed tag has to be identified from the running container alone.
-ARG MARKETING_VERSION
-ENV SOMNIO_WEB_VERSION=${MARKETING_VERSION}
+# Useful when a deployed image has to be identified from the running container alone.
+ARG BUILD_VERSION
+ENV SOMNIO_WEB_VERSION=${BUILD_VERSION}
 
 EXPOSE 8080
 

@@ -31,7 +31,7 @@ To exercise production's routing instead of the Vite proxy, run the container to
 ```bash
 mkdir -p assets sectors
 cp packages/core/fixtures/sectors/*.somnio-sector sectors/
-docker compose -f docker-compose.example.yml build --build-arg MARKETING_VERSION=0.0.0-local
+docker compose -f docker-compose.example.yml build --build-arg BUILD_VERSION=local
 docker compose -f docker-compose.example.yml up --wait   # http://127.0.0.1:17669/?debug=1
 ```
 
