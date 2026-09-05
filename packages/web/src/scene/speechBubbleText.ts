@@ -6,10 +6,10 @@ import { SOMNIO_CONSTANTS } from '@somnio/core'
  */
 
 export const BUBBLE_WIDTH = SOMNIO_CONSTANTS.speechBubbleWidthPixels
-export const BUBBLE_FONT_SIZE = SOMNIO_CONSTANTS.speechBubbleFontSize
+const BUBBLE_FONT_SIZE = SOMNIO_CONSTANTS.speechBubbleFontSize
 
 /** ASCII, matching the project-wide rule — never the Unicode ellipsis. */
-export const TRUNCATION_GLYPH = '...'
+const TRUNCATION_GLYPH = '...'
 
 /** Returns at most `maxLines` lines, marking truncation on the last surviving line. */
 export function capLines(lines: string[], maxLines = 4, glyph = TRUNCATION_GLYPH): string[] {

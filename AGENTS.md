@@ -28,7 +28,7 @@ packages/cli        # admin CLI: command tree, transport, output rendering, its 
 packages/web        # browser client + web map editor — depends on protocol + core
 ```
 
-The graph is enforced twice: each package's `package.json` declares exactly its `@somnio/*` dependencies (which is what `npm ci --workspace` links in the images), and the root ESLint config forbids any other `@somnio/*` import under `packages/<name>/src/**`. Test files may reach outside it (the CLI's transport suite drives the server package's live harness).
+The graph is enforced twice: each package's `package.json` declares exactly its `@somnio/*` dependencies (which is what `npm ci --workspace` links in the images), and the root ESLint config forbids any other `@somnio/*` import under `packages/<name>/src/**`. Test files may reach outside it through `devDependencies`.
 
 Module rules for the non-web packages: relative imports carry the `.ts` extension, `import type` for types, no `enum`, no constructor parameter properties (`erasableSyntaxOnly`), `with { type: 'json' }` for JSON imports. The web package keeps its Vite conventions.
 
@@ -43,7 +43,9 @@ npm run test:integration # data + server integration projects over testcontainer
 npm run typecheck        # tsc --noEmit over both tsconfigs (web, and the rest)
 npm run lint             # eslint, including the package-graph rule
 npm run format:check     # prettier
-npm run build            # the browser client's production bundle
+npm run knip             # unused files, exports, and dependencies
+npm run build            # the browser client's production bundle, then the editor-exclusion assertion
+npm run dev              # gameplay server (dev defaults) and the Vite client together; needs the somnio-pg container
 ```
 
 `npm test` runs every project listed in the root `vitest.config.ts`; the integration projects join only under `SOMNIO_INTEGRATION=1`, which `test:integration` sets. Under rootless Podman set `TESTCONTAINERS_RYUK_DISABLED=true`.
@@ -81,7 +83,7 @@ The protocol and core packages are shared code, so the two sides cannot disagree
 
 The map editor is a second Vite entry point (`packages/web/editor.html` + `packages/web/src/editor/**`) that authors `.somnio-sector` files — a development tool, not a shipped surface:
 
-- **Dev-only by construction.** `editor.html` is deliberately never added to `build.rollupOptions.input`, so `vite build`'s default single input (`index.html`) keeps it out of `dist/` and therefore out of the image. `lint.sh` machine-enforces this: it runs `npm run build` and asserts `dist/editor.html` is absent and no editor marker (`__editor/sectors`, `somnioEditor`, `somnio-editor-root`) reaches `dist/bundle` or `dist/*.html`.
+- **Dev-only by construction.** `editor.html` is deliberately never added to `build.rollupOptions.input`, so `vite build`'s default single input (`index.html`) keeps it out of `dist/` and therefore out of the image. `npm run build` machine-enforces this: `packages/web/scripts/assertEditorExcluded.mjs` runs after `vite build`, inside the image build too, and asserts `dist/editor.html` is absent and no editor marker (`__editor/sectors`, `somnioEditor`, `somnio-editor-root`) reaches `dist/bundle` or `dist/index.html`.
 - **File I/O is a dev-server middleware** (`packages/web/vite.editorFs.ts`): a `configureServer`-only plugin serving `/__editor/sectors` (GET list, GET/PUT per percent-encoded stem, no DELETE), inert unless `SOMNIO_EDITOR_SECTORS_DIR` is set (the `editor` npm script sets it, defaulting to the repo-root `sectors/` staging directory, which the local server serves only under the compose topology), loopback-only and same-origin-gated regardless of `--host`, path-contained against the realpath'd root, and atomic on write.
 - **The sector codec** (`packages/core/src/sectorFile.ts`) is pinned byte-for-byte against the committed fixtures and the synthetic encoding golden (`packages/core/fixtures/sector-encoding-golden.somnio-sector`), so an authored save never rewrites unrelated bytes of a sector the server loads.
 - **English-only.** The editor renders literal English and never imports `@/i18n`, keeping `RENDERED_KEYS` and the catalog tests untouched.
@@ -109,7 +111,7 @@ Prop models (the registry's `objectModels` stems, empty `expectedClips`) are **p
 
 `packages/web/Dockerfile` builds `ghcr.io/tobihagemann/somnio-web` from a **repository-root** context (the workspace symlinks resolve through the root `node_modules`, and the asset pack is at `assets/`). It requires `--build-arg BUILD_VERSION` like the server image, and greps the bundle for the marked stamp `somnio-web <version>` to prove the version was injected — see `packages/web/src/buildInfo.ts` for why the stamp interpolates the define directly rather than reusing the exported constant.
 
-There are no releases, version numbers, tags, or changelog. The `publish` job in `ci.yml` builds both images from every commit on `main` that passes the other four jobs and pushes them as `ghcr.io/tobihagemann/somnio-server` and `somnio-web`, each tagged `sha-<short>` and `latest`. `BUILD_VERSION` is that short sha, so the admin `version` verb and the `somnio-web <version>` stamp name the exact commit a container runs. Deploying means pinning one sha for both images in the deployment repo; the `/deploy` skill owns that procedure and the `helloVersion` check that precedes it.
+There are no releases, version numbers, tags, or changelog. The `publish` job in `ci.yml` builds both images from every commit on `main` that passes the other four jobs and pushes them as `ghcr.io/tobihagemann/somnio-server` and `somnio-web`, each tagged `sha-<short>` and `latest`. `BUILD_VERSION` is that short sha, so the admin `version` verb and the `somnio-web <version>` stamp name the exact commit a container runs. Deploying is the deployment repo's procedure: it pins one sha for both images, copies the sector fixtures alongside the pin when they changed, and requires a `helloVersion` bump here first when the wire broke since the deployed commit.
 
 The static image does **not** proxy `/ws`; whatever fronts it performs the split (the `proxy` service in `docker-compose.example.yml` locally, Traefik in production), which is what lets the client's origin-relative `wss://<host>/ws` resolve with no dev-only branch.
 
@@ -146,14 +148,14 @@ The root `Dockerfile` is a `node:24-alpine` multi-stage build: a `deps` stage ru
 ## Lint & Format
 
 ```
-./Scripts/format.sh            # prettier --write, eslint --fix
-./Scripts/lint.sh              # prettier --check, eslint, tsc, npm test (unit projects), production build + editor-exclusion check
-./Scripts/install-hooks.sh     # install pre-commit hook (runs lint.sh before commit)
+npm run format           # prettier --write
+npm run lint:fix         # eslint --fix
+npm run knip             # unused files, exports, and dependencies (config in knip.jsonc)
 ```
 
-Both scripts go through the root `package.json` scripts, so that file is the single definition of what each check runs; CI's `checks` job invokes `lint.sh` rather than inlining its own steps, so a check added there cannot reach developers without also reaching CI. `lint.sh` never starts a container — the integration projects are CI's separate `integration-tests` job.
+The root `package.json` scripts are the single definition of every check. The pre-commit hook (husky, installed by `npm ci` through the `prepare` script; `.husky/install.mjs` skips CI and the image builds) runs lint-staged, which applies `eslint --fix` and `prettier --write` to the staged files only, so a commit takes seconds. The full gate is CI's `checks` job, which runs `format:check`, `lint`, `typecheck`, `knip`, `test`, and `build` as those same scripts; nothing in it starts a container, since the integration projects are the `integration-tests` job.
 
-Anything these scripts run on Linux must not assume a macOS environment: GitHub's Ubuntu runners leave `TMPDIR` unset, so a bare `$TMPDIR` under `set -u` aborts the script before any check runs. Use `${TMPDIR:-/tmp}`.
+`Scripts/bundle-web-assets.sh` runs inside the web image build on Linux and must not assume macOS: GitHub's Ubuntu runners leave `TMPDIR` unset, so a bare `$TMPDIR` under `set -u` aborts the script. Use `${TMPDIR:-/tmp}`.
 
 CI on GitHub Actions (`.github/workflows/ci.yml`): `checks`, `integration-tests`, `wire-conformance` (compose-built server image), `docker-smoke` (the full topology through the proxy, including the 401 on `/admin`), and `publish`, which runs only on `main` after the other four pass.
 

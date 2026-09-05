@@ -120,11 +120,7 @@ export function registerFrame(nickname: string, password = TEST_PASSWORD): strin
 }
 
 /** Registers over the wire on a throwaway socket. */
-export async function registerOverWire(
-  url: string,
-  nickname: string,
-  password = TEST_PASSWORD
-): Promise<void> {
+async function registerOverWire(url: string, nickname: string, password = TEST_PASSWORD): Promise<void> {
   const client = await TestClient.open(url)
   await client.next()
   client.send(registerFrame(nickname, password))

@@ -8,7 +8,7 @@ import type { EditorShell } from './editorShell'
  * production build to gate.
  */
 
-export interface SomnioEditorDebugAPI {
+interface SomnioEditorDebugAPI {
   sectorName(): string
   /** Record counts per array — enough to assert a placement landed without dumping bodies. */
   body(): Record<string, number>
@@ -21,7 +21,7 @@ export interface SomnioEditorDebugAPI {
   cameraScale(): number
 }
 
-export function makeEditorDebugAPI(shell: EditorShell): SomnioEditorDebugAPI {
+function makeEditorDebugAPI(shell: EditorShell): SomnioEditorDebugAPI {
   return {
     sectorName: () => shell.document.sector.name,
     body: () => shell.recordCounts(),

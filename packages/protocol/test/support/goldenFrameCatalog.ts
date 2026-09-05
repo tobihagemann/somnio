@@ -17,7 +17,7 @@ export interface GoldenFrameEntry {
  * Every nested wire shape populated at once, so the fixture exercises `WireObject`'s rotation, the
  * NPC's float heading, the monster spawn's boolean, and a floor patch.
  */
-export const populatedSector: WireSector = {
+const populatedSector: WireSector = {
   name: 'EdariaMitte',
   version: 1,
   dimensions: { width: 16, height: 12 },

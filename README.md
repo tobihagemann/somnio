@@ -21,6 +21,7 @@ SOMNIO_DEV_DEFAULTS=1 node packages/server/src/main.ts   # gameplay server again
 node packages/cli/src/main.ts players     # admin CLI against the dev server
 npm run dev --workspace packages/web      # browser client (Vite on :17669, proxies /ws to the local server)
 npm run editor --workspace packages/web   # web map editor (authors .somnio-sector files)
+npm run dev                               # server and browser client together
 ```
 
 The integration suites start a throwaway Postgres per file through testcontainers and need Docker or Podman:

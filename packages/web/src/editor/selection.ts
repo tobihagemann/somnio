@@ -11,7 +11,7 @@ import type { Sector } from '@somnio/core'
  * so the set operations live in the list helpers below, keyed by `selectionKey`.
  */
 
-export type SelectionKind = 'object' | 'mask' | 'portal' | 'npc' | 'monsterSpawn' | 'floorPatch'
+type SelectionKind = 'object' | 'mask' | 'portal' | 'npc' | 'monsterSpawn' | 'floorPatch'
 
 export interface EditorSelection {
   kind: SelectionKind

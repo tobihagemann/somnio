@@ -7,7 +7,7 @@ import { FLOAT_PI, copysignF32, f32, ieeeRemainderF32 } from '@somnio/core'
  */
 
 /** A quarter turn completes in 0.175 s regardless of how the facing change arrived. */
-export const YAW_TURN_RATE = f32(FLOAT_PI / 2 / 0.175)
+const YAW_TURN_RATE = f32(FLOAT_PI / 2 / 0.175)
 
 /**
  * One integration step toward `target`, clamped so the result never overshoots.

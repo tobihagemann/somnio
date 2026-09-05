@@ -160,7 +160,7 @@ export function validatedPaste(
 }
 
 /** Top-left corner of the payload's bounding box, or `undefined` for an empty payload. */
-export function boundingOrigin(clipboard: EditorClipboard): { x: number; y: number } | undefined {
+function boundingOrigin(clipboard: EditorClipboard): { x: number; y: number } | undefined {
   let minX: number | undefined
   let minY: number | undefined
   const fold = (x: number, y: number): void => {

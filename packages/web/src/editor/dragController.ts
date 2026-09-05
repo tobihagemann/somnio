@@ -23,11 +23,11 @@ import type { EditorSelection } from './selection'
 /** Drawn extent of the resize/facing handles, in viewport points. */
 export const HANDLE_DRAW_EXTENT_PT = 8
 /** Hit-test extent around each handle center — larger than the drawn square. */
-export const HANDLE_HIT_EXTENT_PT = 14
+const HANDLE_HIT_EXTENT_PT = 14
 /** Screen clearance between the NPC spawn box and its facing handle. */
 export const FACING_CLEARANCE_PT = 24
 /** A gesture travelling less than this is a tap: placement drops the default footprint. */
-export const TAP_TRANSLATION_THRESHOLD_PT = 4
+const TAP_TRANSLATION_THRESHOLD_PT = 4
 
 export const DEFAULT_FOOTPRINT: GridSize = { width: 128, height: 128 }
 
@@ -473,7 +473,7 @@ interface HitRect {
 }
 
 /** Constant-screen-size hit rect centered on a legacy pixel's viewport projection. */
-export function handleHitRect(pixel: { x: number; y: number }, context: DragContext): HitRect {
+function handleHitRect(pixel: { x: number; y: number }, context: DragContext): HitRect {
   const projected = screenAtFloorPixel(context.camera, context.viewport, pixel)
   const half = HANDLE_HIT_EXTENT_PT / 2
   return {
@@ -814,7 +814,7 @@ export function placeRecord(
   }
 }
 
-export function placementDescription(tool: EditorTool): string {
+function placementDescription(tool: EditorTool): string {
   switch (tool) {
     case 'select':
     case 'object':

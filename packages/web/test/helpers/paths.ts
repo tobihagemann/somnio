@@ -13,6 +13,3 @@ const helpersDirectory = dirname(fileURLToPath(import.meta.url))
 
 /** `packages/web/`. */
 export const WEB_ROOT = resolve(helpersDirectory, '..', '..')
-
-/** The repository root. */
-export const REPO_ROOT = resolve(WEB_ROOT, '..', '..')

@@ -11,8 +11,8 @@ import { createEditorSectorFsHandler, editorSectorFs } from '../vite.editorFs'
 
 /**
  * The editor's file middleware against a real temp directory. A per-file node environment
- * (not a third vitest config): `npm test` — which `Scripts/lint.sh` and the `checks` CI job run —
- * must execute these security-relevant assertions, and a separate config would leave them
+ * (not a third vitest config): `npm test`, which the `checks` CI job runs, must execute these
+ * security-relevant assertions, and a separate config would leave them
  * permanently unexecuted while reporting green.
  */
 

@@ -48,7 +48,7 @@ export async function withLiveServer<T>(
   }
 }
 
-export function textOf(data: RawData): string {
+function textOf(data: RawData): string {
   return rawDataToBuffer(data).toString('utf8')
 }
 

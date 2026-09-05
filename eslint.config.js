@@ -2,9 +2,9 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
 /**
- * The workspace's package graph, enforced on `packages/<name>/src/**` only: test files may take
- * `devDependencies` outside it (the CLI's live transport suite drives the server package). Each
- * entry lists what the package may import; the rule bans the complement.
+ * The workspace's package graph, enforced on `packages/<name>/src/**` only, so a test file may
+ * take a `devDependency` outside it. Each entry lists what the package may import; the rule bans
+ * the complement.
  */
 const PACKAGES = ['protocol', 'core', 'data', 'server', 'cli', 'web']
 /** @type {Record<string, string[]>} */
@@ -45,6 +45,7 @@ export default tseslint.config(
       'packages/web/public',
       'packages/*/scripts',
       'Scripts',
+      '.husky',
       'Skills',
       'Docs',
     ],

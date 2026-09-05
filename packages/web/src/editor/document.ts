@@ -25,7 +25,7 @@ interface UndoEntry {
   sector: Sector
 }
 
-export function uninitializedSector(): Sector {
+function uninitializedSector(): Sector {
   return {
     name: '',
     version: DEFAULT_SECTOR_VERSION,

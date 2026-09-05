@@ -2,11 +2,11 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { Migrator } from 'kysely/migration'
 import type { Migration, MigrationProvider } from 'kysely/migration'
-import * as initial from './migrations/0001_initial.ts'
+import { down as initialDown, up as initialUp } from './migrations/0001_initial.ts'
 
 /** The migration list, in order. In memory rather than a filesystem walk: nothing compiles the tree. */
 const MIGRATIONS: Record<string, Migration> = {
-  '0001_initial': initial,
+  '0001_initial': { up: initialUp, down: initialDown },
 }
 
 const provider: MigrationProvider = {

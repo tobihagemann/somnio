@@ -13,9 +13,9 @@ import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol'
  */
 
 /** Texture pixels per legacy pixel. */
-export const OVERLAY_RASTER_SCALE = 8
+const OVERLAY_RASTER_SCALE = 8
 
-export const SPEECH_BUBBLE = {
+const SPEECH_BUBBLE = {
   widthPixels: SOMNIO_CONSTANTS.speechBubbleWidthPixels,
   fontSize: SOMNIO_CONSTANTS.speechBubbleFontSize,
   lineHeight: 12,
@@ -209,7 +209,7 @@ function measureTextWidth(text: string, font: string): number {
  * Recorded rather than derived because the reference line-height rounding is not a published
  * formula — the same reason `float.ts` carries `FLOAT_PI` as a literal instead of computing it.
  */
-export const NATIVE_LINE_BOX = { descentBelowBaseline: 3 } as const
+const NATIVE_LINE_BOX = { descentBelowBaseline: 3 } as const
 
 /** Baseline offset below a line box's top edge. */
 function nativeBaselineOffset(fontSize: number): number {

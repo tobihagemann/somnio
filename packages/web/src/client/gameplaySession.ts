@@ -19,7 +19,7 @@ import type { KeyCaptureSink } from './input'
  * and the controller's own `assertNever` guard together make impossible.
  */
 
-export const ZERO_ENERGY: Energy = {
+const ZERO_ENERGY: Energy = {
   hpCurrent: 0,
   hpMax: 1,
   balanceCurrent: 0,

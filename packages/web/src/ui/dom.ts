@@ -88,7 +88,7 @@ export type IconName = keyof typeof ICON_PATHS
 export type IconPath = string
 
 /** Decorative by construction: the accessible name lives on the button, not on the glyph. */
-export function icon(path: IconPath): SVGSVGElement {
+function icon(path: IconPath): SVGSVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
   svg.setAttribute('fill', 'none')

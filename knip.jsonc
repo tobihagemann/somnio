@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "workspaces": {
+    ".": {
+      // The standalone helper is run by hand and by the web test suite, never imported by src.
+      "entry": ["Scripts/glb-buffer-uris.mjs"],
+    },
+    "packages/data": {
+      // Regenerates the committed Unicode tables; run by hand, imported by nothing.
+      "entry": ["scripts/generate-name-policy-data.mjs"],
+      "vitest": { "config": ["vitest.config.ts", "vitest.integration.config.ts"] },
+    },
+    "packages/server": {
+      "vitest": { "config": ["vitest.config.ts", "vitest.integration.config.ts"] },
+    },
+    "packages/web": {
+      // The editor entry is deliberately absent from `build.rollupOptions.input` (it must never
+      // reach the image), so the Vite plugin cannot discover it; it is served by `vite dev` alone.
+      "entry": ["src/editor/main.ts"],
+      "vitest": { "config": ["vitest.config.ts", "vitest.conformance.config.ts"] },
+    },
+  },
+}

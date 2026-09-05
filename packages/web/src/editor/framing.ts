@@ -26,7 +26,7 @@ export interface EditorFraming {
 }
 
 /** Play-field height `defaultScale` is tuned against — the player's fixed 640x480 viewport. */
-export const PLAYER_VIEWPORT_HEIGHT = 480
+const PLAYER_VIEWPORT_HEIGHT = 480
 
 /**
  * The orthographic scale that reproduces the player's default close-up magnification in a

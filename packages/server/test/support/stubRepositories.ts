@@ -184,14 +184,6 @@ export class StubSessionRepository implements SessionRepository {
   }
 }
 
-/** Fails closed: issuance refuses, redemption finds nothing, revocation removes nothing. */
-export const disabledSessionRepository: SessionRepository = {
-  issue: () => Promise.reject(new Error('session issuance is disabled')),
-  redeem: () => Promise.resolve(undefined),
-  revoke: () => Promise.resolve(false),
-  deleteExpired: () => Promise.resolve(0),
-}
-
 /** Distinguishable from a real database error, so a degraded-path test cannot pass on an unrelated throw. */
 export class RepositoryFailure extends Error {
   constructor() {
@@ -203,7 +195,7 @@ export class RepositoryFailure extends Error {
 /**
  * A session repository whose every operation throws — the degraded-database branch, where the
  * `catch` in each handler is the only thing that turns the throw into a frame the client can act
- * on. `disabledSessionRepository` answers rather than throwing, so it reaches none of them.
+ * on.
  */
 export const failingSessionRepository: SessionRepository = {
   issue: () => Promise.reject(new RepositoryFailure()),

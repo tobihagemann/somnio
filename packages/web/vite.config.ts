@@ -56,8 +56,8 @@ export default defineConfig({
   build: {
     // Deliberately no `rollupOptions.input`: the default single-input build (`index.html`
     // alone) is what keeps `editor.html` out of `dist/` and therefore out of the shipped
-    // image — the editor is served only by `vite dev`. `Scripts/lint.sh` builds and asserts
-    // this, so the omission is machine-enforced, not remembered.
+    // image — the editor is served only by `vite dev`. `scripts/assertEditorExcluded.mjs` runs
+    // after every build and asserts this, so the omission is machine-enforced, not remembered.
     outDir: 'dist',
     // Vite's hashed bundles go in `bundle/`, not the default `assets/`, because the operator-supplied
     // asset pack owns `dist/assets/` (`Models/`, `FloorMaterials/`, `UI/`, referenced by absolute

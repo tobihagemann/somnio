@@ -17,7 +17,7 @@ import type { LightSetting } from '@somnio/core'
  * judgement `worldMovement` in `cameraRig.ts` records for its double-precision original.
  */
 
-export const DAY_NIGHT = {
+const DAY_NIGHT = {
   fullSunIntensity: 6000,
   fullAmbientIntensity: 1200,
   dayStartHour: 6,
@@ -78,7 +78,7 @@ export const SUN_SHADOW = {
  * and because they are handed to the light as-is: 0.72, 0.7, and 0.8 are all inexact in binary32, so
  * a double here is a visible-precision difference in the *un-mixed* night colour too.
  */
-export const SUN_COLORS = {
+const SUN_COLORS = {
   daylight: { r: 1, g: 1, b: 1 },
   horizon: { r: 1, g: f32(0.72), b: 0.5 },
   night: { r: f32(0.7), g: f32(0.8), b: 1 },

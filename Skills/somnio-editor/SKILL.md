@@ -8,7 +8,7 @@ description: "Serve the localhost web map editor and drive it with agent-browser
 The editor is a second Vite entry point in `packages/web/` (`editor.html` + `src/editor/**`) for
 `.somnio-sector` map files. Fully offline — no gameplay server, Postgres, or login — and
 dev-only by construction: `editor.html` is never in `build.rollupOptions.input`, so it cannot
-reach `dist/` or the shipped image (`Scripts/lint.sh` machine-enforces this).
+reach `dist/` or the shipped image (`npm run build` asserts this after every bundle).
 
 ## Step 1: Serve the editor
 

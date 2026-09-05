@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
  * The committed `.somnio-sector` fixtures, resolved from this file so no test depends on the cwd.
  * The one place to edit when the fixtures move.
  */
-export const FIXTURES_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures')
+const FIXTURES_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures')
 
 export const SECTOR_FIXTURE_NAMES = [
   'EdariaArena',
