@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Somnio: a 2D tile-based mini-MMORPG. TypeScript server, admin CLI, and Three.js browser client in one npm workspace.",
+  "description": "Somnio: a browser-based mini-MMORPG with a 3D world. TypeScript server, admin CLI, and Three.js browser client in one npm workspace.",
   "engines": {
     "node": ">=24.17.0"
   },

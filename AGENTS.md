@@ -1,6 +1,6 @@
 # Somnio
 
-A 2D tile-based mini-MMORPG. A TypeScript gameplay server, an admin CLI, and a Three.js browser client in one npm workspace, plus a localhost-only web map editor under `packages/web/`.
+A browser-based mini-MMORPG with a 3D world. A TypeScript gameplay server, an admin CLI, and a Three.js browser client in one npm workspace, plus a localhost-only web map editor under `packages/web/`.
 
 ## Tech Stack
 
