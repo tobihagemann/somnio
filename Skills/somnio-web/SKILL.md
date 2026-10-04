@@ -38,11 +38,11 @@ That topology serves a production build, so `?debug=1` is required — without i
 
 ## Step 3: Create an account
 
-Register through the UI: click "If you don't have an account, click here!", fill nickname, both password fields, and **email** (the server rejects an empty one), then submit. A successful sign-up returns to the login overlay with the nickname and password already filled in. Fresh characters spawn in the `EdariaBibliothek` starter sector.
+Register through the UI: click "If you don't have an account, click here!", fill nickname, both password fields, and **email** (the server rejects an empty one), pick a people, then submit. A successful sign-up returns to the login overlay with the nickname and password already filled in. Fresh characters spawn in the `EdariaBibliothek` starter sector.
 
 Re-snapshot after every overlay change — the refs are per-snapshot, and typing against stale refs from the previous overlay silently fills the wrong fields.
 
-To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","characterClass":0,"gender":0,"email":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":0}}`).
+To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","people":"wachen","email":"..."}}` (password ≥ 8 UTF-8 bytes; `people` is one of `wachen`, `soporen`, `umbren`, `lumina`; expect `{"tag":"registerResult","payload":{"result":"ok"}}`).
 
 ## Step 4: Open the client and log in
 
@@ -58,7 +58,7 @@ agent-browser wait --fn 'window.somnio.connectionState() === "attached"'
 
 That first predicate does two jobs, and both are load-bearing. The model prewarm shows a progress notice, so waiting it out is what keeps `snapshot` from running against a half-built page. And `overlay()` alone is not a readiness signal: it initializes to `login` before anything is presented, so on a host with no WebGL or a handheld viewport it answers `login` while the page actually shows a blocking notice and no form exists. Checking for a visible notice covers both.
 
-`attached` is reached on the `mainCharacter` frame, which promotes the session and starts the gameplay tick.
+`attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick.
 
 Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials.
 
@@ -66,15 +66,18 @@ Checking "Remember password" stores a session token in `localStorage`, so a relo
 
 ## Debug API
 
-`window.somnio` is read-only and exposes what the canvas cannot show. It is present in dev builds and requires `?debug=1` in production, because `entities()` reports every peer's name and position in the sector.
+`window.somnio` is read-only and exposes what the canvas cannot show. It is present in dev builds and requires `?debug=1` in production, because `entities()` reports the name and position of every peer in view.
+
+Positions are metres in the coordinates of the current space: `x` runs east, `z` south, and an outdoor position includes its sector's origin (the Nordwald lies at negative `z`). `facing` is a heading in degrees, 0 = south and 90 = east.
 
 | Call | Returns |
 |---|---|
-| `connectionState()` | `'disconnected'` \| `'awaitingHello'` \| `'awaitingLoginResult'` \| `'awaitingEnterSector'` \| `'attached'` |
-| `player()` | `{ x, y, facing, tempo, name }`, or `undefined` before placement |
-| `sectorName()` | loaded sector id, e.g. `'EdariaMitte'` |
-| `entities()` | `[{ id, kind, name, x, y }]` for players, peers, NPCs, monsters |
-| `chatHistory()` | localized strings, exactly what the chat panel shows |
+| `connectionState()` | `'disconnected'` \| `'awaitingHello'` \| `'awaitingLoginResult'` \| `'awaitingEnterSpace'` \| `'attached'` |
+| `player()` | `{ x, z, facing, gait, name }` (`gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
+| `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
+| `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaMitte'` |
+| `entities()` | `[{ id, kind, name, x, z }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, and `id` is a string (a character id, `npc:<sector>/<npcId>`, `monster:<n>`) |
+| `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
 | `overlay()` | `'login'` \| `'registration'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `undefined` |
@@ -84,7 +87,7 @@ Checking "Remember password" stores a session token in `localStorage`, so a relo
 
 ## Recipes
 
-**Walk.** Movement is sampled from held keys by the frame loop, so hold the key across real time rather than tapping it. `agent-browser press` sends a keydown/keyup pair, which advances one frame's worth of pixels — enough to prove input is wired, not enough to travel.
+**Walk.** Movement is sampled from held keys by the frame loop, so hold the key across real time rather than tapping it. `agent-browser press` sends a keydown/keyup pair, which advances one frame's worth of distance (a few centimetres) — enough to prove input is wired, not enough to travel.
 
 ```bash
 agent-browser eval --stdin <<'JS'
@@ -94,14 +97,14 @@ agent-browser eval --stdin <<'JS'
   await new Promise((resolve) => setTimeout(resolve, 1000))
   window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
   const after = window.somnio.player()
-  return { before, after, moved: before.x !== after.x || before.y !== after.y }
+  return { before, after, moved: before.x !== after.x || before.z !== after.z }
 })()
 JS
 ```
 
-Hold `ShiftLeft` to run and `AltLeft` to walk; the tempo rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
+The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft` to walk (1 m/s); the gait rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
 
-**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk into the NPC's feet box; the bump fires on contact and blocks the step.
+**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk into the NPC: it blocks the step, and the blocked contact sends the `bump`.
 
 ```bash
 agent-browser eval 'window.somnio.entities().filter((e) => e.kind === "npc")'
@@ -112,7 +115,7 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image.
 
-**Two players in one sector.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token.
+**Two players in view of each other.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token.
 
 ```bash
 agent-browser --session a open 'http://localhost:17669/'
@@ -121,18 +124,30 @@ agent-browser --session b open 'http://localhost:17669/'
 agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind === "peer")'
 ```
 
-Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that leaving a sector removes them. The client's own position is not authoritative: the server volunteers `serverPosition` for self only as a `snapBack` after a rejected move.
+A client holds the entities in its own sector and the sectors touching it, so two players see each other in the same or in adjacent outdoor sectors and lose each other two sectors apart. Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that a peer walking out of view is removed. A peer's position arrives in a batched `moves` frame about ten times a second and is drawn interpolated, so compare with a tolerance.
 
-**Relocate the character to another sector.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
+The client's own position is predicted, not authoritative. The server sends a `correction` for self only after it rejects a move, which an unmodified client causes only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
+
+**Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
-docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET current_sector='Nordwald', position_x=1024, position_y=768 WHERE name='<nickname>';"
+docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-46 WHERE name='<nickname>';"
 agent-browser open 'http://localhost:17669/'
-# log in, then: agent-browser eval 'window.somnio.sectorName()'  — the old sector here means the
-# checkpoint won the race; close and repeat. An unwalkable position self-heals to a spawn point,
-# so pick coordinates on open floor or the character lands at spawn with no error.
+# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'Nordwald'; the old sector
+# here means the checkpoint won the race; close and repeat. A position inside geometry or outside
+# every sector self-heals to the starter spawn in EdariaBibliothek with no error, so pick open ground.
 ```
+
+`space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -46)` is open ground in the Nordwald, whose origin is `(5.12, -61.44)`. An interior's positions run from its own north-west corner.
+
+**Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
+
+```bash
+docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id, world_seconds) VALUES (TRUE, 14515225200) ON CONFLICT (id) DO UPDATE SET world_seconds = EXCLUDED.world_seconds;"
+```
+
+`14515225200` is 07:00 on the first day of year 500; add 3600 per hour. World time runs at four times wall time, so an hour passes in 15 minutes. Outdoor light follows the clock; an interior is lit by its own `brightness`.
 
 **Verify the asset pack resolved.** `agent-browser eval 'window.somnio.placeholderObjectCount()'` — non-zero means models are missing or a registry id has no matching stem. Read it only once Step 4's gate has passed: with no scene it returns `0`, which is indistinguishable from success.
 
@@ -140,7 +155,7 @@ agent-browser open 'http://localhost:17669/'
 
 - Wrap any `eval --stdin` script that awaits in an async IIFE. `eval` runs a script body, not a module, so top-level `await` and top-level `return` both throw a `SyntaxError`.
 - Gate every wait on a predicate over `window.somnio`, not a sleep. Model prewarm makes first-load timing variable.
-- A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `(attached || awaitingEnterSector) && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes without teleporting.
+- A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes without teleporting.
 - Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
 - Esc opens the game menu during a session and is inert on the login and version-skew overlays — there is nothing behind them to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned.

@@ -14,8 +14,6 @@ export interface ServerConfiguration {
   sectorsDirectory: string;
   checkpointIntervalMs: number;
   outboxHighWatermark: number;
-  /** One-shot operator override: the boot orphan-dialog prune skips its safety guard this boot only. */
-  forceDialogPrune: boolean;
   devDefaults: boolean;
 }
 
@@ -67,7 +65,6 @@ export function resolveServerConfiguration(env: Record<string, string | undefine
     sectorsDirectory,
     checkpointIntervalMs: DEFAULT_CHECKPOINT_INTERVAL_MS,
     outboxHighWatermark: DEFAULT_OUTBOX_HIGH_WATERMARK,
-    forceDialogPrune: isTruthy(env['SOMNIO_DIALOG_PRUNE_FORCE']),
     devDefaults,
   };
 }

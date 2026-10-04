@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LOGIN_RESULT,
-  REGISTER_RESULT,
-  WIRE_ENTITY_TYPE,
-  WIRE_HAND,
+  ENTITY_KINDS,
+  GAITS,
+  HANDS,
+  LOGIN_RESULTS,
+  REGISTER_RESULTS,
+  SECTOR_KINDS,
   OversizedFrameError,
   SOMNIO_PROTOCOL_CONSTANTS,
   UnrecognizedTagError,
@@ -15,6 +17,7 @@ import {
   utf8ByteLength,
 } from '../src/index.ts';
 import type { SomnioMessage } from '../src/index.ts';
+import { GOLDEN_FRAME_ENTRIES } from './support/goldenFrameCatalog.ts';
 
 /**
  * Round trips, frame limits, and the decode-time rejections: TypeScript types are erased, so the
@@ -24,6 +27,10 @@ import type { SomnioMessage } from '../src/index.ts';
 
 function roundTrip(message: SomnioMessage): SomnioMessage {
   return decodeSomnioMessage(encodeSomnioMessage(message));
+}
+
+function frame(tag: string, payload: Record<string, unknown>): string {
+  return JSON.stringify({ tag, payload });
 }
 
 describe('frame limits', () => {
@@ -66,57 +73,88 @@ describe('tag discrimination', () => {
   });
 
   it('throws on a known tag with a malformed payload', () => {
-    expect(() => decodeSomnioMessage('{"tag":"clientPosition","payload":{}}')).toThrow(WireDecodingError);
+    expect(() => decodeSomnioMessage('{"tag":"move","payload":{}}')).toThrow(WireDecodingError);
   });
 });
 
 describe('runtime validation the erased types cannot do', () => {
+  const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 50, balanceMax: 100, spiritCurrent: 25, spiritMax: 50 };
+  const move = { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' };
+  const entity = { id: 'monster:7', kind: 'monster', characterModelId: 'gespenst', name: 'Gespenst', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'jog' };
+  const row = { slot: 0, itemId: 'purse', quantity: 100 };
+
   it('rejects a missing required field', () => {
-    const frame = '{"tag":"dateTick","payload":{"hour":12}}';
-    expect(() => decodeSomnioMessage(frame)).toThrow(/minute: expected Int16, got nothing/);
-  });
-
-  it('rejects an out-of-range integer', () => {
-    const frame = '{"tag":"dateTick","payload":{"hour":40000,"minute":0}}';
-    expect(() => decodeSomnioMessage(frame)).toThrow(/Int16 out of range: 40000/);
-  });
-
-  it('rejects a fractional value in an integer field', () => {
-    const frame = '{"tag":"dateTick","payload":{"hour":12.5,"minute":0}}';
-    expect(() => decodeSomnioMessage(frame)).toThrow(/fractional 12.5/);
-  });
-
-  it('rejects an unknown enum raw value', () => {
-    const frame = '{"tag":"loginResult","payload":{"result":9}}';
-    expect(() => decodeSomnioMessage(frame)).toThrow(/unknown raw value 9/);
+    expect(() => decodeSomnioMessage(frame('energy', { healthCurrent: 100 }))).toThrow(/healthMax: expected Int32, got nothing/);
   });
 
   it('rejects a wrong JSON type', () => {
-    const frame = '{"tag":"adminSay","payload":{"text":42}}';
-    expect(() => decodeSomnioMessage(frame)).toThrow(/expected a string, got number/);
+    expect(() => decodeSomnioMessage(frame('adminSay', { text: 42 }))).toThrow(/expected a string, got number/);
   });
 
   it('rejects a non-object payload', () => {
     expect(() => decodeSomnioMessage('{"tag":"adminSay","payload":"hi"}')).toThrow(WireDecodingError);
   });
+
+  /** `1e999` is valid JSON that parses to Infinity, which `JSON.stringify` cannot write, so the frame is literal. */
+  it('rejects a non-finite number', () => {
+    expect(() => decodeSomnioMessage('{"tag":"move","payload":{"x":0,"z":0,"facing":1e999,"gait":"walk"}}')).toThrow(/facing: expected a finite number/);
+  });
+
+  const overCapEntityId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes + 1);
+  const overCapId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes + 1);
+  const overCapSectorName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes + 1);
+
+  it.each<[string, string, Record<string, unknown>, RegExp]>([
+    ['an out-of-range integer', 'energy', { ...energy, healthCurrent: 3_000_000_000 }, /Int32 out of range: 3000000000/],
+    ['a fractional value in an integer field', 'energy', { ...energy, spiritMax: 12.5 }, /fractional 12.5/],
+    ['an unknown login result', 'loginResult', { result: 'locked' }, /unknown value "locked"/],
+    ['a numeric register result', 'registerResult', { result: 0 }, /result: expected a string, got number/],
+    ['an unknown gait', 'move', { ...move, gait: 'sprint' }, /unknown value "sprint"/],
+    ['a coordinate past the metre cap', 'move', { ...move, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
+    ['a negative coordinate past the metre cap', 'correction', { x: 0, z: -10_000.5 }, /z: exceeds 10000 metres/],
+    ['an unknown hand', 'equipToggle', { slot: 1, hand: 'both' }, /unknown value "both"/],
+    ['an empty entity id', 'bump', { targetId: '' }, /targetId: expected a non-empty string/],
+    ['an over-cap entity id', 'bump', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
+    ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaMitte', doorId: 'Main Door' }, /doorId: expected an id/],
+    ['an empty door id', 'doorRefused', { sector: 'EdariaMitte', doorId: '' }, /doorId: expected an id/],
+    ['an over-cap door id', 'useDoor', { sector: 'EdariaMitte', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
+    ['an over-cap sector name on useDoor', 'useDoor', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
+    ['an empty sector name on useDoor', 'useDoor', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
+    ['an over-cap sector name on doorRefused', 'doorRefused', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
+    ['an empty sector name on doorRefused', 'doorRefused', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
+    ['an over-cap space id', 'enterSpace', { spaceId: overCapSectorName, selfId: 'a', worldSeconds: 0 }, /spaceId: exceeds 251 UTF-8 bytes/],
+    ['an empty space id', 'enterSpace', { spaceId: '', selfId: 'a', worldSeconds: 0 }, /spaceId: expected a non-empty string/],
+    ['a negative world time', 'enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: -1 }, /worldSeconds: expected a non-negative number/],
+    ['an unknown entity kind', 'entity', { ...entity, kind: 'ghost' }, /unknown value "ghost"/],
+    ['a zero entity radius', 'entity', { ...entity, radius: 0 }, /radius: expected a positive length/],
+    ['an over-cap id in a moves batch', 'moves', { moves: [{ ...move, id: overCapEntityId }] }, /moves\[0\]\.id: exceeds 320 UTF-8 bytes/],
+    ['a negative quantity', 'inventory', { rows: [{ ...row, quantity: -1 }] }, /quantity: expected a non-negative quantity/],
+    ['an empty item id', 'inventory', { rows: [{ ...row, itemId: '' }] }, /itemId: expected a non-empty string/],
+    ['an over-cap item id', 'inventory', { rows: [{ ...row, itemId: overCapId }] }, /itemId: exceeds 64 UTF-8 bytes/],
+    ['an unknown equipped hand', 'inventory', { rows: [{ ...row, equippedHand: 'none' }] }, /unknown value "none"/],
+    ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
+  ])('rejects %s', (_case, tag, payload, expected) => {
+    expect(() => decodeSomnioMessage(frame(tag, payload))).toThrow(expected);
+  });
+
+  /** One byte under the rejection, so the cases above pin boundaries rather than "large values fail". */
+  it('accepts values at their caps', () => {
+    const atCapEntityId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes);
+    const atCapId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes);
+    const atCapSectorName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
+    expect(() => decodeSomnioMessage(frame('bump', { targetId: atCapEntityId }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('bump', { targetId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('useDoor', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('doorRefused', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', worldSeconds: 0 }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('move', { ...move, x: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: 0 }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('inventory', { rows: [{ ...row, itemId: atCapId, quantity: 0 }] }))).not.toThrow();
+  });
 });
 
 describe('round trips', () => {
-  const headings = [0.0, 137.5, 359.96875];
-
-  it.each(headings)('client position round-trips heading %s exactly', (heading) => {
-    const message: SomnioMessage = {
-      tag: 'clientPosition',
-      payload: { entityIndex: 0, x: 10, y: 20, facing: heading, tempo: 2 },
-    };
-    expect(roundTrip(message)).toEqual(message);
-  });
-
-  it.each(headings)('server position round-trips heading %s exactly', (heading) => {
-    const message: SomnioMessage = {
-      tag: 'serverPosition',
-      payload: { entityIndex: 7, x: 10, y: 20, facing: heading, tempo: 2 },
-    };
+  it.each(GOLDEN_FRAME_ENTRIES.map((entry) => [entry.name, entry.message] as const))('%s round-trips', (_name, message) => {
     expect(roundTrip(message)).toEqual(message);
   });
 
@@ -130,93 +168,27 @@ describe('round trips', () => {
     expect('requestSessionToken' in decoded.payload).toBe(false);
   });
 
-  it('login round-trips with the optional token request set', () => {
-    const message: SomnioMessage = {
-      tag: 'login',
-      payload: { nickname: 'Saibot', password: 'hunter2', requestSessionToken: true },
-    };
-    expect(roundTrip(message)).toEqual(message);
+  /** An absent hand is the unequip, so it must stay absent rather than decode to a default hand. */
+  it('equipToggle round-trips an unequip without a hand', () => {
+    const message: SomnioMessage = { tag: 'equipToggle', payload: { slot: 1 } };
+    const decoded = roundTrip(message);
+    expect(decoded).toEqual(message);
+    expect('hand' in decoded.payload).toBe(false);
+    expect(decodeSomnioMessage(frame('equipToggle', { slot: 1, hand: null }))).toEqual(message);
   });
 
-  it('enter sector round-trips a fully populated sector', () => {
-    const message: SomnioMessage = {
-      tag: 'enterSector',
-      payload: {
-        sector: {
-          name: 'EdariaArena',
-          version: 1,
-          dimensions: { width: 16, height: 16 },
-          floorMaterialID: 'stone-arena',
-          light: { indoor: true, brightness: 75 },
-          objects: [
-            {
-              x: 1,
-              y: 2,
-              modelID: 'door',
-              sourceWidth: 1,
-              sourceHeight: 1,
-              priority: 0,
-              rotation: 270,
-            },
-          ],
-          collisionMasks: [{ x: 0, y: 0, width: 1, height: 1 }],
-          portals: [{ x: 0, y: 0, width: 1, height: 1, targetSectorName: 'EdariaMitte', direction: 0 }],
-          npcs: [
-            {
-              spawnX: 5,
-              spawnY: 7,
-              spawnBoxWidth: 2,
-              spawnBoxHeight: 2,
-              maskWidth: 1,
-              maskHeight: 1,
-              name: 'Libus',
-              figure: 12,
-              direction: 137.5,
-              behaviorTag: 0,
-              dialogScript: 'Hallo $name, willkommen!',
-            },
-          ],
-          monsterSpawns: [
-            {
-              spawnX: 10,
-              spawnY: 12,
-              spawnBoxWidth: 4,
-              spawnBoxHeight: 4,
-              monsterWidth: 1,
-              monsterHeight: 1,
-              name: 'Gespenst',
-              figure: 99,
-              bounded: true,
-              spawnHP: 100,
-              spawnBalance: 100,
-              spawnMana: 100,
-              aiScriptIndex: 3,
-            },
-          ],
-          floorPatches: [{ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 128, height: 128 }],
-        },
-      },
-    };
-    expect(roundTrip(message)).toEqual(message);
+  it('inventory decodes an unequipped row without an equippedHand key', () => {
+    const decoded = decodeSomnioMessage(frame('inventory', { rows: [{ slot: 0, itemId: 'purse', quantity: 100, equippedHand: null }] }));
+    if (decoded.tag !== 'inventory') throw new Error('expected an inventory frame');
+    expect(decoded.payload.rows).toEqual([{ slot: 0, itemId: 'purse', quantity: 100 }]);
+    expect('equippedHand' in decoded.payload.rows[0]!).toBe(false);
   });
 
-  it('inventory round-trips ordered extras and an equipped hand', () => {
+  /** World time is fractional and far past what an integer or a narrowed float field could carry. */
+  it('enterSpace round-trips a fractional world time near year 500 exactly', () => {
     const message: SomnioMessage = {
-      tag: 'inventory',
-      payload: {
-        rows: [
-          { slot: 0, category: 0, itemId: 0, extras: [{ key: 'gold', value: 100 }], equippedHand: 0 },
-          { slot: 1, category: 1, itemId: 0, extras: [], equippedHand: 2 },
-        ],
-      },
-    };
-    expect(roundTrip(message)).toEqual(message);
-  });
-
-  it('session token round-trips a 30-day lifetime past the Int16 ceiling', () => {
-    const message: SomnioMessage = {
-      tag: 'sessionToken',
-      payload: { token: 'AAAA-BBBB', expiresInSeconds: 2_592_000 },
+      tag: 'enterSpace',
+      payload: { spaceId: 'EdariaBibliothek', selfId: 'a', worldSeconds: 500 * 12 * 28 * 86_400 + 0.125 },
     };
     expect(roundTrip(message)).toEqual(message);
   });
@@ -250,29 +222,36 @@ describe('UTF-8 byte counting', () => {
 });
 
 /**
- * Raw-value pins for the enums this package owns.
+ * Literal pins for the string sets this package owns.
  *
- * Nothing else catches a swapped pair: every consumer encodes and decodes with the same constant,
- * so a renumbering round-trips cleanly through the codec tests and the golden frames — the fixtures
- * record one case per enum, never the mapping — and every other test spells the names symbolically.
- * Swap `npc` and `monster` and no bump ever fires, with a green suite. The tables are literal here,
- * not read from another file: this package is the single implementation.
+ * Nothing else catches a renamed member: every consumer encodes and decodes with the same constant,
+ * so a rename round-trips cleanly through the codec tests, and the golden frames record one member
+ * per set, never the whole set. The tables are literal here, not read from another file: this
+ * package is the single implementation.
  */
-describe('enum raw values', () => {
-  it('pins WireEntityType', () => {
-    expect(WIRE_ENTITY_TYPE).toEqual({ player: 0, npc: 1, monster: 2 });
+describe('string literal sets', () => {
+  it('pins EntityKind', () => {
+    expect(ENTITY_KINDS).toEqual(['player', 'npc', 'monster']);
   });
 
-  it('pins LoginResultCode', () => {
-    expect(LOGIN_RESULT).toEqual({ ok: 0, badCredentials: 1, alreadyLoggedIn: 2 });
+  it('pins Gait', () => {
+    expect(GAITS).toEqual(['walk', 'jog', 'run']);
   });
 
-  it('pins RegisterResultCode', () => {
-    expect(REGISTER_RESULT).toEqual({ ok: 0, nicknameExists: 1, failure: 2, nameNotAllowed: 3 });
+  it('pins Hand', () => {
+    expect(HANDS).toEqual(['left', 'right']);
   });
 
-  it('pins WireHand', () => {
-    expect(WIRE_HAND).toEqual({ none: 0, left: 1, right: 2 });
+  it('pins SectorKind', () => {
+    expect(SECTOR_KINDS).toEqual(['outdoor', 'interior']);
+  });
+
+  it('pins LoginResult', () => {
+    expect(LOGIN_RESULTS).toEqual(['ok', 'badCredentials', 'alreadyLoggedIn']);
+  });
+
+  it('pins RegisterResult', () => {
+    expect(REGISTER_RESULTS).toEqual(['ok', 'nicknameExists', 'failure', 'nameNotAllowed']);
   });
 });
 
@@ -282,7 +261,7 @@ describe('enum raw values', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(3);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(4);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -294,6 +273,17 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.minPasswordUTF8Bytes).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes).toBe(256);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes).toBe(256);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes).toBe(320);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes).toBe(251);
+  });
+
+  it('pins the world caps', () => {
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres).toBe(10_000);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorExtentMetres).toBe(512);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorPlacements).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFloorPatches).toBe(4096);
   });
 });
 
@@ -306,16 +296,12 @@ describe('protocol constants', () => {
  * separately; a 1 MiB `serverSay` sits comfortably inside it.
  */
 describe('inbound field byte caps', () => {
-  function frame(tag: string, payload: Record<string, unknown>): string {
-    return JSON.stringify({ tag, payload });
-  }
-
   it('rejects a serverSay past the say cap', () => {
     const overCap = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityIndex: 1, text: overCap }))).toThrow(WireDecodingError);
+    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: overCap }))).toThrow(WireDecodingError);
     // One byte under is accepted, so the test pins the boundary rather than "long strings fail".
     const atCap = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityIndex: 1, text: atCap }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: atCap }))).not.toThrow();
   });
 
   /** Counted in UTF-8 bytes, not code units: 100 emoji are 400 bytes but a `.length` of 200. */
@@ -323,7 +309,7 @@ describe('inbound field byte caps', () => {
     const emoji = '😀'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes / 4 + 1);
     expect(emoji.length).toBeLessThan(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
     expect(utf8ByteLength(emoji)).toBeGreaterThan(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityIndex: 1, text: emoji }))).toThrow(WireDecodingError);
+    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: emoji }))).toThrow(WireDecodingError);
   });
 
   it('rejects an adminSay past the say cap', () => {
@@ -346,18 +332,7 @@ describe('inbound field byte caps', () => {
    * would refuse a whole sector on nothing worse than a long label.
    */
   it('truncates an over-cap entity name instead of rejecting the frame', () => {
-    const base = {
-      entityIndex: 1,
-      figure: 1,
-      gender: 0,
-      maskWidth: 32,
-      maskHeight: 48,
-      type: 0,
-      x: 0,
-      y: 0,
-      facing: 0,
-      tempo: 2,
-    };
+    const base = { id: 'a', kind: 'npc', characterModelId: 'libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk' };
     const cap = SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes;
     const decoded = decodeSomnioMessage(frame('entity', { ...base, name: 'a'.repeat(cap + 40) }));
     if (decoded.tag !== 'entity') throw new Error('expected an entity frame');
@@ -377,9 +352,9 @@ describe('inbound field byte caps', () => {
    */
   it('decodes an over-cap clientSay, redeemSession, and revokeSession', () => {
     const overCapSay = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 44);
-    expect(decodeSomnioMessage(frame('clientSay', { entityIndex: 0, text: overCapSay }))).toEqual({
+    expect(decodeSomnioMessage(frame('clientSay', { text: overCapSay }))).toEqual({
       tag: 'clientSay',
-      payload: { entityIndex: 0, text: overCapSay },
+      payload: { text: overCapSay },
     });
     const overCapToken = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 44);
     expect(decodeSomnioMessage(frame('redeemSession', { token: overCapToken }))).toEqual({
@@ -390,29 +365,5 @@ describe('inbound field byte caps', () => {
       tag: 'revokeSession',
       payload: { token: overCapToken },
     });
-  });
-});
-
-/**
- * `requireFloat` rejects any number beyond the largest finite Float32: the field is Float32 on
- * the wire, and accepting a larger value would let `Math.fround` turn it into Infinity.
- */
-describe('requireFloat rejects values Float cannot represent', () => {
-  it('rejects a facing past Float.greatestFiniteMagnitude', () => {
-    const payload = {
-      entityIndex: 1,
-      figure: 0,
-      gender: 0,
-      maskWidth: 32,
-      maskHeight: 48,
-      type: 0,
-      name: 'Peer',
-      x: 10,
-      y: 10,
-      facing: 1e39,
-      tempo: 2,
-    };
-    expect(() => decodeSomnioMessage(JSON.stringify({ tag: 'entity', payload }))).toThrow(WireDecodingError);
-    expect(() => decodeSomnioMessage(JSON.stringify({ tag: 'entity', payload: { ...payload, facing: 359.5 } }))).not.toThrow();
   });
 });

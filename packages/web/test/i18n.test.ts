@@ -4,6 +4,7 @@ import { WEB_ROOT } from './helpers/paths';
 import { describe, expect, it } from 'vitest';
 import {
   CATALOG_LOCALES,
+  CORE_LABEL_KEYS,
   RENDERED_KEYS,
   catalogCollisions,
   catalogTables,
@@ -90,6 +91,14 @@ describe('catalog coverage', () => {
   it('falls back to the English key for an unknown lookup', () => {
     // Safe only because catalog keys *are* the English source strings.
     expect(translate('de', 'Not A Catalog Key')).toBe('Not A Catalog Key');
+  });
+});
+
+describe('the names rendered through a core label key', () => {
+  it('are every item and every people, each with its own German', () => {
+    expect([...CORE_LABEL_KEYS].sort()).toEqual(['Cudgel', 'Lumina', 'Purse', 'Soporen', 'Umbren', 'Wachen']);
+    expect(translate('de', 'Purse')).toBe('Geldbeutel');
+    expect(translate('de', 'Cudgel')).toBe('Knüppel');
   });
 });
 
@@ -265,14 +274,15 @@ describe('the rendered-key allowlist', () => {
   });
 
   it('has no allowlisted key that nothing renders', () => {
-    // Chat lines are rendered through the switch in `chatLineText.ts`, class and gender labels
-    // through the registration form's tables, so every entry has a real call site. A leftover key
-    // means the allowlist is guarding something the player can no longer see.
+    // Chat lines are rendered through the switch in `chatLineText.ts`, so every entry has a real
+    // call site. A leftover key means the allowlist is guarding something the player can no longer
+    // see. Item and people names are the exception: they are looked up through a label key from
+    // `@somnio/core`, never a literal, and their own test below pins that they are rendered.
     //
     // One filter suffices: `renderedKeysInSources` covers `chatLineText.ts` along with the rest of
     // `src`, and its regex matches `lookup(...)` as well as `t(...)`, so a separate chat-key pass
     // would be a subset of this one.
-    const rendered = new Set(renderedKeysInSources().keys());
+    const rendered = new Set([...renderedKeysInSources().keys(), ...CORE_LABEL_KEYS]);
     const stale = RENDERED_KEYS.filter((key) => !rendered.has(key));
 
     expect(stale).toEqual([]);

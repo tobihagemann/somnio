@@ -1,81 +1,56 @@
 {
-  "collisionMasks" : [
+  "blockers": [
     {
-      "height" : 6,
-      "width" : 30,
-      "x" : 482,
-      "y" : 154
+      "depth": 0.12,
+      "id": "blocker-1",
+      "width": 0.6,
+      "x": 9.64,
+      "z": 3.08
     },
     {
-      "height" : 6,
-      "width" : 30,
-      "x" : 482,
-      "y" : 346
+      "depth": 0.12,
+      "id": "blocker-2",
+      "width": 0.6,
+      "x": 9.64,
+      "z": 6.92
     }
   ],
-  "dimensions" : {
-    "height" : 4,
-    "width" : 4
-  },
-  "floorMaterialID" : "stone-arena",
-  "light" : {
-    "brightness" : 75,
-    "indoor" : true
-  },
-  "monsterSpawns" : [
+  "brightness": 75,
+  "doors": [
     {
-      "aiScriptIndex" : 0,
-      "bounded" : false,
-      "figure" : 0,
-      "name" : "Gespenst",
-      "spawnBalance" : 100,
-      "spawnBoxSize" : {
-        "height" : 256,
-        "width" : 384
-      },
-      "spawnHP" : 100,
-      "spawnMana" : 100,
-      "spawnOrigin" : {
-        "x" : 64,
-        "y" : 64
-      },
-      "spawnedMonsterSize" : {
-        "height" : 48,
-        "width" : 32
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-edariaarena",
+        "sector": "EdariaMitte"
       }
     }
   ],
-  "npcs" : [
-
-  ],
-  "objects" : [
+  "floorMaterialId": "stone-arena",
+  "kind": "interior",
+  "monsterSpawns": [
     {
-      "modelID" : "door",
-      "priority" : 0,
-      "rotation" : 90,
-      "sourceHeight" : 96,
-      "sourceWidth" : 32,
-      "x" : 480,
-      "y" : 208
+      "depth": 4.8,
+      "id": "spawn-1",
+      "kind": "gespenst",
+      "maxAlive": 3,
+      "width": 7.04,
+      "x": 1.6,
+      "z": 2.08
     }
   ],
-  "portals" : [
+  "placements": [
     {
-      "direction" : 0,
-      "height" : 180,
-      "targetSectorName" : "EdariaMitte",
-      "width" : 18,
-      "x" : 494,
-      "y" : 166
-    },
-    {
-      "direction" : 1,
-      "height" : 160,
-      "targetSectorName" : "EdariaMitte",
-      "width" : 96,
-      "x" : 384,
-      "y" : 176
+      "id": "door-1",
+      "modelId": "door",
+      "x": 10.145,
+      "yaw": 90,
+      "z": 5.12
     }
   ],
-  "version" : 7
+  "size": {
+    "depth": 10.24,
+    "width": 10.24
+  }
 }

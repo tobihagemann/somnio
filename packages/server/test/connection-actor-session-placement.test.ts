@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LOGIN_RESULT, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { collectMessages, collectTags, loginResults } from './support/frames.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -16,7 +16,7 @@ describe('session tag placement', () => {
 
   it('revokeSession is accepted after attach', async () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
     expect(await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } })).toEqual({
       kind: 'keepOpen',
     });
@@ -26,12 +26,12 @@ describe('session tag placement', () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
     const decision = await connection.dispatch({ tag: 'redeemSession', payload: { token: 'nope' } });
     expect(decision).toEqual({ kind: 'keepOpen' });
-    expect(loginResults(await collectMessages(connection.outbox))).toEqual([LOGIN_RESULT.badCredentials]);
+    expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
   });
 
   it('revocation acknowledges even when nothing was removed', async () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } });
     expect(await collectTags(connection.outbox)).toContain('sessionRevoked');
   });
@@ -53,7 +53,7 @@ describe('session tag placement', () => {
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached(1, 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaBibliothek', accountId);
     const oversized = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     const decision = await connection.dispatch({ tag: 'revokeSession', payload: { token: oversized } });
     expect(decision).toEqual({ kind: 'keepOpen' });
@@ -66,7 +66,7 @@ describe('session tag placement', () => {
     const sessions = new StubSessionRepository();
     const victim = await sessions.issue(crypto.randomUUID(), 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: victim.token } });
     const messages = await collectMessages(connection.outbox);
     expect(messages).toContainEqual({ tag: 'sessionRevoked', payload: { revoked: false } });
@@ -78,7 +78,7 @@ describe('session tag placement', () => {
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached(1, 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaBibliothek', accountId);
     await connection.dispatch({ tag: 'revokeSession', payload: { token: issued.token } });
     const messages = await collectMessages(connection.outbox);
     expect(messages).toContainEqual({ tag: 'sessionRevoked', payload: { revoked: true } });
@@ -90,6 +90,6 @@ describe('session tag placement', () => {
     sessions.plant('aged', crypto.randomUUID(), new Date(Date.now() - 60_000));
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
     await connection.dispatch({ tag: 'redeemSession', payload: { token: 'aged' } });
-    expect(loginResults(await collectMessages(connection.outbox))).toEqual([LOGIN_RESULT.badCredentials]);
+    expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
   });
 });

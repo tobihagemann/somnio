@@ -1,4 +1,6 @@
 export * from './renderSurface';
+export * from './clientWorld';
+export * from './remoteInterpolation';
 export * from './sessionStore';
 export * from './chatLine';
 export * from './input';

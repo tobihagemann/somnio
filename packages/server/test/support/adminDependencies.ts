@@ -1,4 +1,3 @@
-import type { WorldClock } from '@somnio/core';
 import type { AdminDependencies } from '../../src/handlers/adminDispatcher.ts';
 import type { AdminWorldRouter } from '../../src/world/worldRouter.ts';
 import { makeStubConnectionDependencies } from './stubDependencies.ts';
@@ -9,14 +8,16 @@ import type { TempLogging } from './tempLogging.ts';
 export interface AdminDependencyOptions {
   worldRouter?: AdminWorldRouter;
   serverVersion?: string;
-  initialClock?: WorldClock;
+  initialWorldSeconds?: number;
   logging?: TempLogging;
 }
 
-/** Admin dependencies over a stub router and temp log files; the world clock service ticks a private empty router. */
+/** Admin dependencies over a stub router and temp log files. */
 export async function makeAdminDependencies(options: AdminDependencyOptions = {}): Promise<AdminDependencies & { logging: TempLogging }> {
   const logging = options.logging ?? tempLogging();
-  const connection = await makeStubConnectionDependencies(options.initialClock === undefined ? {} : { initialClock: options.initialClock });
+  const connection = await makeStubConnectionDependencies(
+    options.initialWorldSeconds === undefined ? {} : { initialWorldSeconds: options.initialWorldSeconds },
+  );
   return {
     worldRouter: options.worldRouter ?? new StubAdminWorldRouter(),
     worldClock: connection.worldClock,

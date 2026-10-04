@@ -1,23 +1,23 @@
-import type { RelativeDirection, Tempo } from '@somnio/core';
-import type { WorldEntityKind } from '@somnio/core';
+import type { RelativeDirection, WorldEntityKind } from '@somnio/core';
+import type { Gait } from '@somnio/protocol';
 
 /** Pose selection and clip preference lists. */
 export type AnimationPose = 'idle' | 'sneaking' | 'walking' | 'running' | 'backpedal' | 'strafeLeft' | 'strafeRight';
 
 /**
- * Movement clip per tempo and travel direction.
+ * Movement clip per gait and travel direction.
  *
- * The Option-slow tempo reads as sneaking and the Shift tempo as running, but only when moving
- * forward and only for player-kind figures. Backpedalling and strafing collapse to their single
- * directional clip regardless of tempo, because no tier-specific variants exist. NPCs amble on
+ * The walk gait reads as sneaking and the run gait as running, but only when moving forward and
+ * only for players. Backpedalling and strafing collapse to their single directional clip
+ * regardless of gait, because no tier-specific variants exist. NPCs amble on
  * the plain walk clip — the librarian must not skulk through its own room — and monsters drift
  * on their single clip, so `direction` is ignored for both.
  */
-export function movementPose(kind: WorldEntityKind, tempo: Tempo, direction: RelativeDirection): AnimationPose {
+export function movementPose(kind: WorldEntityKind, gait: Gait, direction: RelativeDirection): AnimationPose {
   if (kind === 'npc' || kind === 'monster') return 'walking';
   switch (direction) {
     case 'forward':
-      return tempo === 1 ? 'sneaking' : tempo === 4 ? 'running' : 'walking';
+      return gait === 'walk' ? 'sneaking' : gait === 'run' ? 'running' : 'walking';
     case 'backward':
       return 'backpedal';
     case 'strafeLeft':
@@ -55,7 +55,7 @@ export function resolveClipName(pose: AnimationPose, available: readonly string[
 /** An entity counts as moving for this long after its last position change. */
 export const MOTION_GRACE_WINDOW = 0.15;
 
-/** Upper bound on one frame's dt so a stall cannot teleport tweens or the walk clock. */
+/** Upper bound on one frame's dt so a stall cannot jump the walk clock or the height easing. */
 export const MAX_TICK_DELTA = 0.1;
 
 export const CLIP_TRANSITION_DURATION = 0.2;

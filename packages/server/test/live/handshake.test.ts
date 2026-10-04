@@ -23,7 +23,7 @@ describe('gameplay handshake over a live socket', () => {
     ['a binary frame', (client: TestClient) => client.socket.send(Buffer.from([0x00]), { binary: true })],
     ['malformed JSON', (client: TestClient) => client.send('{ not json')],
     ['an unknown tag of 300 bytes', (client: TestClient) => client.send(`{"tag":"${'x'.repeat(300)}","payload":{}}`)],
-    ['a recognized tag with a malformed payload', (client: TestClient) => client.send('{"tag":"clientPosition","payload":{}}')],
+    ['a recognized tag with a malformed payload', (client: TestClient) => client.send('{"tag":"move","payload":{}}')],
     ['a zero-byte text frame', (client: TestClient) => client.send('')],
   ])('closes 1002 with the fixed reason on %s', async (_label, send) => {
     await withLiveServer({}, async (server) => {
@@ -56,7 +56,7 @@ describe('gameplay handshake over a live socket', () => {
     await withLiveServer({}, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       await client.next();
-      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { entityIndex: 0, text: 'conformance' } }));
+      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance' } }));
       expect((await client.closed).code).toBe(CLOSE_PROTOCOL_ERROR);
     });
   });

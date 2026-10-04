@@ -5,167 +5,75 @@
     },
     "tag": "adminSay"
   },
-  "bumpNPC": {
+  "bump": {
     "payload": {
-      "npcIndex": 4
+      "targetId": "npc:EdariaBibliothek/libus"
     },
-    "tag": "bumpNPC"
-  },
-  "clientPosition": {
-    "payload": {
-      "entityIndex": 0,
-      "facing": 137.5,
-      "tempo": 2,
-      "x": 10,
-      "y": 20
-    },
-    "tag": "clientPosition"
+    "tag": "bump"
   },
   "clientSay": {
     "payload": {
-      "entityIndex": 0,
       "text": "Hallo Welt"
     },
     "tag": "clientSay"
   },
-  "dateTick": {
+  "correction": {
     "payload": {
-      "hour": 7,
-      "minute": 33
+      "x": 10.25,
+      "z": 20.5
     },
-    "tag": "dateTick"
+    "tag": "correction"
+  },
+  "doorRefused": {
+    "payload": {
+      "doorId": "to-edariabibliothek",
+      "sector": "EdariaMitte"
+    },
+    "tag": "doorRefused"
   },
   "energy": {
     "payload": {
       "balanceCurrent": 50,
       "balanceMax": 100,
-      "hpCurrent": 100,
-      "hpMax": 100,
-      "manaCurrent": 25,
-      "manaMax": 50
+      "healthCurrent": 100,
+      "healthMax": 100,
+      "spiritCurrent": 25,
+      "spiritMax": 50
     },
     "tag": "energy"
   },
-  "enterPortal": {
+  "enterSpace": {
     "payload": {
-      "portalIndex": 2
+      "selfId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "spaceId": "outdoors",
+      "worldSeconds": 14515243200.5
     },
-    "tag": "enterPortal"
-  },
-  "enterSector": {
-    "payload": {
-      "sector": {
-        "collisionMasks": [
-          {
-            "height": 32,
-            "width": 64,
-            "x": 128,
-            "y": 256
-          }
-        ],
-        "dimensions": {
-          "height": 12,
-          "width": 16
-        },
-        "floorMaterialID": "grass-meadow",
-        "floorPatches": [
-          {
-            "floorMaterialID": "cobble-town",
-            "height": 128,
-            "width": 512,
-            "x": 0,
-            "y": 0
-          }
-        ],
-        "light": {
-          "brightness": 100,
-          "indoor": false
-        },
-        "monsterSpawns": [
-          {
-            "aiScriptIndex": 3,
-            "bounded": true,
-            "figure": 0,
-            "monsterHeight": 48,
-            "monsterWidth": 32,
-            "name": "Gespenst",
-            "spawnBalance": 100,
-            "spawnBoxHeight": 128,
-            "spawnBoxWidth": 128,
-            "spawnHP": 100,
-            "spawnMana": 100,
-            "spawnX": 640,
-            "spawnY": 384
-          }
-        ],
-        "name": "EdariaMitte",
-        "npcs": [
-          {
-            "behaviorTag": 0,
-            "dialogScript": "Hallo $name, willkommen!",
-            "direction": 270,
-            "figure": 16,
-            "maskHeight": 48,
-            "maskWidth": 32,
-            "name": "Libus",
-            "spawnBoxHeight": 64,
-            "spawnBoxWidth": 64,
-            "spawnX": 320,
-            "spawnY": 192
-          }
-        ],
-        "objects": [
-          {
-            "modelID": "door",
-            "priority": 3,
-            "rotation": 270,
-            "sourceHeight": 32,
-            "sourceWidth": 64,
-            "x": 128,
-            "y": 256
-          }
-        ],
-        "portals": [
-          {
-            "direction": 1,
-            "height": 32,
-            "targetSectorName": "Nordwiese",
-            "width": 32,
-            "x": 0,
-            "y": 0
-          }
-        ],
-        "version": 1
-      }
-    },
-    "tag": "enterSector"
+    "tag": "enterSpace"
   },
   "entity": {
     "payload": {
-      "entityIndex": 9,
+      "characterModelId": "libus",
       "facing": 359.96875,
-      "figure": 0,
-      "gender": 1,
-      "maskHeight": 48,
-      "maskWidth": 32,
+      "gait": "walk",
+      "id": "npc:EdariaBibliothek/libus",
+      "kind": "npc",
       "name": "Libus",
-      "tempo": 2,
-      "type": 0,
-      "x": 10,
-      "y": 12
+      "radius": 0.3,
+      "x": 5.12,
+      "z": 3.84
     },
     "tag": "entity"
   },
   "equipToggle": {
     "payload": {
-      "hand": 2,
+      "hand": "right",
       "slot": 1
     },
     "tag": "equipToggle"
   },
   "hello": {
     "payload": {
-      "protocolVersion": 3
+      "protocolVersion": 4
     },
     "tag": "hello"
   },
@@ -173,22 +81,14 @@
     "payload": {
       "rows": [
         {
-          "category": 0,
-          "equippedHand": 0,
-          "extras": [
-            {
-              "key": "gold",
-              "value": 100
-            }
-          ],
-          "itemId": 0,
+          "itemId": "purse",
+          "quantity": 100,
           "slot": 0
         },
         {
-          "category": 1,
-          "equippedHand": 2,
-          "extras": [],
-          "itemId": 0,
+          "equippedHand": "right",
+          "itemId": "cudgel",
+          "quantity": 1,
           "slot": 1
         }
       ]
@@ -197,7 +97,7 @@
   },
   "leave": {
     "payload": {
-      "entityIndex": 4,
+      "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
       "leftGame": true
     },
     "tag": "leave"
@@ -219,15 +119,39 @@
   },
   "loginResult": {
     "payload": {
-      "result": 0
+      "result": "ok"
     },
     "tag": "loginResult"
   },
-  "mainCharacter": {
+  "move": {
     "payload": {
-      "entityIndex": 5
+      "facing": 137.5,
+      "gait": "jog",
+      "x": 10.25,
+      "z": 20.5
     },
-    "tag": "mainCharacter"
+    "tag": "move"
+  },
+  "moves": {
+    "payload": {
+      "moves": [
+        {
+          "facing": 0,
+          "gait": "run",
+          "id": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+          "x": 10.25,
+          "z": 20.5
+        },
+        {
+          "facing": 222.5,
+          "gait": "jog",
+          "id": "monster:7",
+          "x": 12,
+          "z": -3.5
+        }
+      ]
+    },
+    "tag": "moves"
   },
   "redeemSession": {
     "payload": {
@@ -237,18 +161,17 @@
   },
   "register": {
     "payload": {
-      "characterClass": 0,
       "email": "info@example.com",
-      "gender": 1,
       "nickname": "Saibot",
       "password": "passw0rd",
-      "passwordRepeat": "passw0rd"
+      "passwordRepeat": "passw0rd",
+      "people": "wachen"
     },
     "tag": "register"
   },
   "registerResult": {
     "payload": {
-      "result": 3
+      "result": "nameNotAllowed"
     },
     "tag": "registerResult"
   },
@@ -258,19 +181,105 @@
     },
     "tag": "revokeSession"
   },
-  "serverPosition": {
+  "sector": {
     "payload": {
-      "entityIndex": 7,
-      "facing": 0,
-      "tempo": 4,
-      "x": 10,
-      "y": 20
+      "sector": {
+        "blockers": [
+          {
+            "depth": 0.64,
+            "id": "north-cliff",
+            "width": 16,
+            "x": 0,
+            "z": 0
+          }
+        ],
+        "doors": [
+          {
+            "anchor": "main",
+            "id": "to-edariabibliothek",
+            "placement": "townhall",
+            "target": {
+              "door": "exit",
+              "sector": "EdariaBibliothek"
+            }
+          }
+        ],
+        "floorMaterialId": "grass-meadow",
+        "floorPatches": [
+          {
+            "depth": 20,
+            "floorMaterialId": "cobble-town",
+            "id": "patch-1",
+            "width": 8.96,
+            "x": 16,
+            "z": 0
+          }
+        ],
+        "kind": "outdoor",
+        "name": "EdariaMitte",
+        "origin": {
+          "x": 0,
+          "z": 0
+        },
+        "placements": [
+          {
+            "elevation": 0.75,
+            "id": "townhall",
+            "modelId": "building-townhall",
+            "x": 36.8,
+            "yaw": 270,
+            "z": 4.48
+          }
+        ],
+        "size": {
+          "depth": 40.96,
+          "width": 40.96
+        }
+      }
     },
-    "tag": "serverPosition"
+    "tag": "sector"
+  },
+  "sector-interior": {
+    "payload": {
+      "sector": {
+        "blockers": [],
+        "brightness": 75,
+        "doors": [
+          {
+            "anchor": "main",
+            "id": "exit",
+            "placement": "door-1",
+            "target": {
+              "door": "to-edariabibliothek",
+              "sector": "EdariaMitte"
+            }
+          }
+        ],
+        "floorMaterialId": "wood-warm",
+        "floorPatches": [],
+        "kind": "interior",
+        "name": "EdariaBibliothek",
+        "placements": [
+          {
+            "elevation": 0,
+            "id": "door-1",
+            "modelId": "door",
+            "x": 5.12,
+            "yaw": 0,
+            "z": 7.36
+          }
+        ],
+        "size": {
+          "depth": 7.68,
+          "width": 10.24
+        }
+      }
+    },
+    "tag": "sector"
   },
   "serverSay": {
     "payload": {
-      "entityIndex": 3,
+      "entityId": "npc:EdariaBibliothek/libus",
       "text": "Wer bist du?"
     },
     "tag": "serverSay"
@@ -287,5 +296,12 @@
       "token": "tok-abc"
     },
     "tag": "sessionToken"
+  },
+  "useDoor": {
+    "payload": {
+      "doorId": "to-edariabibliothek",
+      "sector": "EdariaMitte"
+    },
+    "tag": "useDoor"
   }
 }

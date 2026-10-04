@@ -7,10 +7,10 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 3,
+  helloVersion: 4,
   maxFrameLength: 1 << 20,
 
-  /** UTF-8 byte cap for `nickname` and `email` on login/registration. */
+  /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
   maxIdentifierUTF8Bytes: 64,
   /** UTF-8 byte cap for `password`. */
   maxPasswordUTF8Bytes: 128,
@@ -24,6 +24,23 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * `localStorage` is refused here instead of costing a round trip.
    */
   maxSessionTokenUTF8Bytes: 256,
+  /** UTF-8 byte cap for a runtime entity id, which for an NPC embeds its sector's name. */
+  maxEntityIdUTF8Bytes: 320,
+  /**
+   * UTF-8 byte cap for a sector's name, which is also an interior's space id. It keeps
+   * `npc:<sector>/<npcId>` inside `maxEntityIdUTF8Bytes` with an npc id at the identifier cap, and
+   * no sector file reaches it: a 255-byte file name leaves 241 for the stem of a `.somnio-sector`.
+   */
+  maxSectorNameUTF8Bytes: 251,
+
+  /** Bound on the absolute value of any coordinate, in metres. */
+  maxCoordinateMetres: 10_000,
+  /** Bound on a sector's width and depth, in metres. */
+  maxSectorExtentMetres: 512,
+  maxSectorPlacements: 4096,
+  maxSectorBlockers: 4096,
+  maxSectorDoors: 4096,
+  maxSectorFloorPatches: 4096,
 
   /**
    * Slack the WebSocket-layer frame ceiling keeps above the encoder guard, so an oversized

@@ -1,50 +1,26 @@
 {
-  "Cleric": {
-    "en": "Cleric",
-    "de": "Geistlicher"
-  },
   "Cudgel": {
     "en": "Cudgel",
     "de": "Knüppel"
   },
-  "Female": {
-    "en": "Female",
-    "de": "Weiblich"
-  },
-  "Fighter": {
-    "en": "Fighter",
-    "de": "Kämpfer"
-  },
-  "Gangster": {
-    "en": "Gangster",
-    "de": "Gangster"
-  },
-  "Hunter": {
-    "en": "Hunter",
-    "de": "Jäger"
-  },
-  "Lancer": {
-    "en": "Lancer",
-    "de": "Lancier"
-  },
-  "Mage": {
-    "en": "Mage",
-    "de": "Magier"
-  },
-  "Male": {
-    "en": "Male",
-    "de": "Männlich"
+  "Lumina": {
+    "en": "Lumina",
+    "de": "Lumina"
   },
   "Purse": {
     "en": "Purse",
     "de": "Geldbeutel"
   },
-  "Thief": {
-    "en": "Thief",
-    "de": "Dieb"
+  "Soporen": {
+    "en": "Soporen",
+    "de": "Soporen"
   },
-  "Warrior": {
-    "en": "Warrior",
-    "de": "Krieger"
+  "Umbren": {
+    "en": "Umbren",
+    "de": "Umbren"
+  },
+  "Wachen": {
+    "en": "Wachen",
+    "de": "Wachen"
   }
 }

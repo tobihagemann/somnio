@@ -1,6 +1,7 @@
 import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol';
 import type { LoginCredentials, OverlayKind, RegistrationForm, VersionSkew } from '@/client';
-import { CHARACTER_CLASS, GENDER } from '@somnio/core';
+import { PEOPLES, peopleLabelKey } from '@somnio/core';
+import type { People } from '@somnio/core';
 import { t } from '@/i18n';
 import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom';
 
@@ -27,29 +28,9 @@ export interface OverlayCallbacks {
   appVersion: string;
 }
 
-/**
- * Options in `CharacterClass` and `Gender` raw-value order. Built as functions rather than module
- * constants so `t` runs after the locale is resolved — and so each key sits in a literal `t('...')`
- * the catalog test's source scan can find.
- */
-function characterClassOptions(): { value: string; label: string }[] {
-  return [
-    { value: String(CHARACTER_CLASS.fighter), label: t('Fighter') },
-    { value: String(CHARACTER_CLASS.lancer), label: t('Lancer') },
-    { value: String(CHARACTER_CLASS.warrior), label: t('Warrior') },
-    { value: String(CHARACTER_CLASS.thief), label: t('Thief') },
-    { value: String(CHARACTER_CLASS.hunter), label: t('Hunter') },
-    { value: String(CHARACTER_CLASS.gangster), label: t('Gangster') },
-    { value: String(CHARACTER_CLASS.cleric), label: t('Cleric') },
-    { value: String(CHARACTER_CLASS.mage), label: t('Mage') },
-  ];
-}
-
-function genderOptions(): { value: string; label: string }[] {
-  return [
-    { value: String(GENDER.male), label: t('Male') },
-    { value: String(GENDER.female), label: t('Female') },
-  ];
+/** Built as a function rather than a module constant so `t` runs after the locale is resolved. */
+function peopleOptions(): { value: string; label: string }[] {
+  return PEOPLES.map((people) => ({ value: people, label: t(peopleLabelKey(people)) }));
 }
 
 export class Overlays {
@@ -71,8 +52,7 @@ export class Overlays {
     nickname: HTMLInputElement;
     password: HTMLInputElement;
     passwordRepeat: HTMLInputElement;
-    characterClass: HTMLSelectElement;
-    gender: HTMLSelectElement;
+    people: HTMLSelectElement;
     email: HTMLInputElement;
     error: HTMLElement;
   };
@@ -141,8 +121,7 @@ export class Overlays {
       autocomplete: 'new-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
     });
-    const regClass = select(t('Character:'), characterClassOptions());
-    const regGender = select(t('Gender:'), genderOptions());
+    const regPeople = select(t('People:'), peopleOptions());
     const regEmail = field(t('Email:'), {
       type: 'email',
       autocomplete: 'email',
@@ -153,8 +132,7 @@ export class Overlays {
       nickname: regNickname.input,
       password: regPassword.input,
       passwordRepeat: regRepeat.input,
-      characterClass: regClass.input,
-      gender: regGender.input,
+      people: regPeople.input,
       email: regEmail.input,
       error: regError,
     };
@@ -163,8 +141,7 @@ export class Overlays {
         regNickname.row,
         regPassword.row,
         regRepeat.row,
-        regClass.row,
-        regGender.row,
+        regPeople.row,
         regEmail.row,
         element('p', { className: 'form-note', text: t('*: repeat') }),
         regError,
@@ -375,8 +352,7 @@ export class Overlays {
       nickname,
       password,
       passwordRepeat,
-      characterClass: Number(this.registration.characterClass.value),
-      gender: Number(this.registration.gender.value),
+      people: this.registration.people.value as People,
       email,
     });
   }

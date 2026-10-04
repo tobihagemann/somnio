@@ -1,5 +1,5 @@
 /*
- * Reproduces `SomnioTheme`'s Kenney "Fantasy UI Borders" chrome in CSS.
+ * The Kenney "Fantasy UI Borders" chrome.
  *
  * The one metric worth stating plainly, because getting it wrong looks *almost* right:
  * `border-image-slice` is unitless **image pixels**, while `border-width` is CSS pixels.
@@ -18,9 +18,9 @@
   --somnio-edge-padding: 12px;
   --somnio-ink: #f2ead9;
   --somnio-ink-dim: #b9ae98;
-  /* `FantasyPalette.secondaryText` — de-emphasized captions and list footers. */
+  /* De-emphasized captions and list footers. */
   --somnio-secondary-text: rgb(255 255 255 / 0.7);
-  /* `ChatColor`: purple own-message, `FantasyPalette.errorRed`, blue join/greeting. */
+  /* Chat lines: purple own-message, red error, blue join/greeting. */
   --somnio-chat-purple: rgb(216 140 232);
   --somnio-chat-red: rgb(255 110 110);
   --somnio-chat-blue: rgb(130 180 255);
@@ -72,8 +72,8 @@ body {
  * which would draw panels and buttons at different insets and read as a rendering glitch.
  *
  * The dark plate reaches *under* the border line (drawn a few points inside the texture edge)
- * without spilling past the ornaments — `FantasyChrome.plateInset`. A `background-clip:
- * padding-box` would inset it by the full cap instead, leaving a transparent ring.
+ * without spilling past the ornaments. A `background-clip: padding-box` would inset it by the full
+ * cap instead, leaving a transparent ring.
  */
 .fantasy-panel,
 .fantasy-button {
@@ -98,7 +98,6 @@ body {
   --somnio-plate: var(--somnio-plate-solid);
 }
 
-/* The plate `FantasyButtonStyle` fills at 0.8. */
 .fantasy-button {
   border-image-source: url('/assets/UI/panel-button.png');
   padding: 8px 18px;
@@ -145,9 +144,9 @@ body {
 }
 
 /*
- * `FantasyDivider`: two full-width white rules in a `VStack(spacing: 3)`, drawn rather than
- * sliced. The pack's `divider.png` carries an end ornament and is reserved for the title flanks,
- * so a standalone rule that borrowed it would hang a half-cut ornament off one end.
+ * Two full-width white rules 3px apart, drawn rather than sliced. The pack's `divider.png` carries
+ * an end ornament and is reserved for the title flanks, so a standalone rule that borrowed it would
+ * hang a half-cut ornament off one end.
  */
 .fantasy-divider {
   height: 6px;
@@ -161,7 +160,6 @@ body {
   background-size: 100% 1.5px;
 }
 
-/* `fantasyFieldChrome()`: padding 6, black 0.5 plate, 1px white-0.35 stroke, white text. */
 .fantasy-field {
   border: 1px solid rgb(255 255 255 / 0.35);
   padding: 6px;
@@ -178,7 +176,7 @@ body {
 }
 
 /* `align-items` shrink-wraps every column: the panel toggles are small square controls in all
-   four corners natively, not bars as wide as the panel they sit under. */
+   four corners, not bars as wide as the panel they sit under. */
 .floating {
   position: absolute;
   display: flex;
@@ -209,7 +207,6 @@ body {
   align-items: flex-end;
 }
 
-/* `VStack(alignment: .leading, spacing: 6)` of the three energy bars. */
 .hud-panel {
   display: flex;
   flex-direction: column;
@@ -239,7 +236,6 @@ body {
   width: 0;
 }
 
-/* `chatPanel`'s inner `VStack(spacing: 8)` at `MainWindowMetrics.chatPanelWidth`. */
 .chat-panel {
   display: flex;
   flex-direction: column;
@@ -279,8 +275,8 @@ body {
 }
 
 /*
- * `ChatLineStyle.style(for:)` resolved through `ChatColor.color`. Four hues, not eight: peer, NPC,
- * and item lines all share plain white, and only the join/leave and greeting rows are italic.
+ * One style per chat line kind. Four hues, not eight: peer, NPC, and item lines all share plain
+ * white, and only the join/leave and greeting rows are italic.
  */
 .chat-line--ownMessage {
   color: var(--somnio-chat-purple);
@@ -303,7 +299,6 @@ body {
   font-style: italic;
 }
 
-/* `VStack(spacing: 4)` of the scrolling list over its "Players: N" / "Items: N" footer. */
 .trailing-column {
   display: flex;
   flex-direction: column;
@@ -347,7 +342,7 @@ body {
   white-space: nowrap;
 }
 
-/* `[L]` / `[R]` in a fixed trailing column, as `ItemsListView` lays them out. */
+/* `[L]` / `[R]` in a fixed trailing column. */
 .list-row__marker {
   width: 24px;
   text-align: right;
@@ -378,9 +373,9 @@ body {
 }
 
 /*
- * `FantasyFlankedLabel`: the title centred between two divider strips whose end ornaments face
- * the text. The strips stretch; the ornaments do not, which is why each half is its own element
- * with a mirrored copy of the same texture rather than one rule behind the heading.
+ * The title centred between two divider strips whose end ornaments face the text. The strips
+ * stretch; the ornaments do not, which is why each half is its own element with a mirrored copy of
+ * the same texture rather than one rule behind the heading.
  */
 .overlay-title {
   display: flex;
@@ -392,7 +387,7 @@ body {
   color: #fff;
 }
 
-/* `.largeTitle` at the 13pt body scale — the credits panel's own heading. */
+/* The credits panel's own heading, twice the 13px body size. */
 .overlay-title--large {
   font-size: 26px;
 }
@@ -406,9 +401,9 @@ body {
   border: 0 solid transparent;
   border-image-source: url('/assets/UI/divider.png');
   /*
-   * A three-part horizontal slice, mirroring `.resizable(capInsets:)`. Only the middle band may
-   * stretch: `background-size: 100% 100%` would scale the whole 192x44 sheet to the flank's box,
-   * squashing the ornament and the line weight along with it.
+   * A three-part horizontal slice. Only the middle band may stretch: `background-size: 100% 100%`
+   * would scale the whole 192x44 sheet to the flank's box, squashing the ornament and the line
+   * weight along with it.
    */
   border-image-slice: 0 48 0 24 fill;
   border-image-width: 0 24px 0 12px;
@@ -416,15 +411,13 @@ body {
 
 /*
  * The sheet authors its ornament on the trailing end, so the left flank is used as drawn and the
- * right one is mirrored — `FantasyFlankedLabel`'s `.trailing` then `.leading` pair. Mirroring the
- * left flank instead turns both ornaments away from the title, which reads as the rules running
- * out of the panel edge rather than framing the heading.
+ * right one is mirrored. Mirroring the left flank instead turns both ornaments away from the
+ * title, which reads as the rules running out of the panel edge rather than framing the heading.
  */
 .overlay-title::after {
   transform: scaleX(-1);
 }
 
-/* `VStack(spacing: 10)` of buttons that each fill the panel width. */
 .menu-actions {
   display: flex;
   flex-direction: column;
@@ -436,9 +429,9 @@ body {
 }
 
 /*
- * `AboutOverlayView`'s `VStack(alignment: .center, spacing: 12)`. The heading and the rule stretch
- * to the panel edges while everything else centres, and the credits keep their own tighter
- * `spacing: 2`, so the gap cannot just be inherited by every descendant.
+ * The About panel's centred column. The heading and the rule stretch to the panel edges while
+ * everything else centres, and the credits keep their own tighter 2px gap, so the gap cannot just
+ * be inherited by every descendant.
  */
 .about-panel {
   display: flex;
@@ -459,13 +452,12 @@ body {
   margin: 0;
 }
 
-/* `.caption` at the 13pt body scale. */
 .about-caption,
 .about-credits {
   font-size: 10px;
 }
 
-/* `.frame(maxWidth: 360)`, so the blurb wraps instead of running the panel's full width. */
+/* Capped, so the blurb wraps instead of running the panel's full width. */
 .about-blurb {
   max-width: 360px;
 }
@@ -477,7 +469,7 @@ body {
   color: var(--somnio-secondary-text);
 }
 
-/* The gap already spaces the button; native centres it rather than trailing-aligning it. */
+/* The gap already spaces the button, which is centred rather than trailing-aligned. */
 .about-panel .form-actions {
   margin-top: 0;
 }
@@ -501,7 +493,7 @@ body {
   margin-top: 14px;
 }
 
-/* `FantasyPalette.errorRed`, which the palette shares between chat and inline form errors. */
+/* The red shared between chat and inline form errors. */
 .form-error {
   margin: 4px 0 0;
   color: var(--somnio-chat-red);

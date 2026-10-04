@@ -107,7 +107,8 @@ describe('players / time', () => {
 
   it('time formats the wire payload as Y;M;D;HH;MM;SS', async () => {
     const deps = await dependencies({
-      initialClock: { second: 7, minute: 5, hour: 0, day: 1, month: 1, year: 1 },
+      // Year 1, the first day of the first month, 00:05:07.
+      initialWorldSeconds: 336 * 24 * 60 * 60 + 5 * 60 + 7,
     });
     expect(dispatchAdminRequest({ tag: 'time' }, deps)).toEqual({
       tag: 'worldClock',

@@ -1,18 +1,16 @@
 import type { Energy } from '@somnio/protocol';
-import type { Gender } from '../characterClass.ts';
-import type { GridPoint } from '../geometry.ts';
+import type { Point } from '../geometry.ts';
 import type { Heading } from '../heading.ts';
-import type { Tempo } from '../tempo.ts';
+import type { People } from '../people.ts';
 
 export interface Character {
   id: string;
   name: string;
-  figure: number;
-  gender: Gender;
-  currentSector: string;
-  position: GridPoint;
+  people: People;
+  /** The id of the space the character stands in; `position` is in that space's coordinates. */
+  space: string;
+  position: Point;
   facing: Heading;
-  tempo: Tempo;
   energy: Energy;
   lastSeen: Date;
 }

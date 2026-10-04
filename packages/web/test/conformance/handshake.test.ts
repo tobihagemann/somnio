@@ -110,7 +110,7 @@ describe('server handshake conformance', () => {
   it.each([
     ['an unrecognized tag', () => '{"tag":"notAVerb","payload":{}}'],
     ['malformed JSON', () => '{ not json'],
-    ['a recognized tag with a malformed payload', () => '{"tag":"clientPosition","payload":{}}'],
+    ['a recognized tag with a malformed payload', () => '{"tag":"move","payload":{}}'],
     ['a zero-byte text frame', () => ''],
   ])('closes with protocolError on %s', async (_label, frame) => {
     const outcome = await closeCodeAfter((socket) => socket.send(frame()));
@@ -182,7 +182,7 @@ describe('production outbound path', () => {
         if (event.kind === 'message') {
           inbound.push(event.message);
           if (event.message.tag === 'hello') {
-            transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'conformance' } });
+            transport.send({ tag: 'clientSay', payload: { text: 'conformance' } });
           }
         }
         if (event.kind === 'peerEOF' || event.kind === 'connectFailed') {
@@ -197,6 +197,6 @@ describe('production outbound path', () => {
     expect(say).toBeDefined();
     expect(say?.wasString).toBe(true);
     // The frame the server received is exactly what the production encoder produced.
-    expect(say?.text).toBe(encodeSomnioMessage({ tag: 'clientSay', payload: { entityIndex: 0, text: 'conformance' } }));
+    expect(say?.text).toBe(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance' } }));
   });
 });

@@ -1,5 +1,5 @@
 import { decodeSomnioMessage } from '@somnio/protocol';
-import type { DateTickMessage, EntityMessage, LoginResultCode, PositionMessage, SomnioMessage, SomnioMessageTag } from '@somnio/protocol';
+import type { EntityMessage, EntityMove, LoginResult, SomnioMessage, SomnioMessageTag } from '@somnio/protocol';
 import { collectOutbox } from '../../src/connection/outbox.ts';
 import type { ConnectionOutbox } from '../../src/connection/outbox.ts';
 
@@ -17,18 +17,15 @@ export function serverSays(messages: readonly SomnioMessage[]): string[] {
   return messages.flatMap((message) => (message.tag === 'serverSay' ? [message.payload.text] : []));
 }
 
-export function serverPositions(messages: readonly SomnioMessage[]): PositionMessage[] {
-  return messages.flatMap((message) => (message.tag === 'serverPosition' ? [message.payload] : []));
+/** Every entity move received, across `moves` frames, in order. */
+export function entityMoves(messages: readonly SomnioMessage[]): EntityMove[] {
+  return messages.flatMap((message) => (message.tag === 'moves' ? message.payload.moves : []));
 }
 
 export function entities(messages: readonly SomnioMessage[]): EntityMessage[] {
   return messages.flatMap((message) => (message.tag === 'entity' ? [message.payload] : []));
 }
 
-export function dateTicks(messages: readonly SomnioMessage[]): DateTickMessage[] {
-  return messages.flatMap((message) => (message.tag === 'dateTick' ? [message.payload] : []));
-}
-
-export function loginResults(messages: readonly SomnioMessage[]): LoginResultCode[] {
+export function loginResults(messages: readonly SomnioMessage[]): LoginResult[] {
   return messages.flatMap((message) => (message.tag === 'loginResult' ? [message.payload.result] : []));
 }

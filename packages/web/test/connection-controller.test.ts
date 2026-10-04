@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectionController, SessionStore } from '@/client';
-import type { SessionStorageLike } from '@/client';
+import { ConnectionController, SessionStore, noopRenderSurface } from '@/client';
+import type { SessionStorageLike, WorldRenderSurface } from '@/client';
 import { GameplayTransport } from '@/transport';
-import { LOGIN_RESULT, REGISTER_RESULT, SOMNIO_PROTOCOL_CONSTANTS, WIRE_ENTITY_TYPE, encodeSomnioMessage } from '@somnio/protocol';
-import type { SomnioMessage, WireSector } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import type { EntityMessage, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
+import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
 
 /** In-memory storage so the session tests never touch a real `localStorage`. */
 class MemoryStorage implements SessionStorageLike {
@@ -41,20 +43,8 @@ class WriteRejectingStorage implements SessionStorageLike {
   }
 }
 
-function wireSector(name = 'EdariaMitte'): WireSector {
-  return {
-    name,
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-  };
+function peer(overrides: Partial<EntityMessage> = {}): SomnioMessage {
+  return entityFrame({ id: 'peer', name: 'Peer', ...overrides });
 }
 
 interface Rig {
@@ -65,7 +55,7 @@ interface Rig {
   deliver: (message: SomnioMessage) => void;
 }
 
-function makeRig(options: { storage?: SessionStorageLike } = {}): Rig {
+function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldRenderSurface } = {}): Rig {
   const { factory, latest } = fakeSocketFactory();
   const transport = new GameplayTransport(factory);
   const storage = options.storage ?? new MemoryStorage();
@@ -73,6 +63,8 @@ function makeRig(options: { storage?: SessionStorageLike } = {}): Rig {
     transport,
     sessionStore: new SessionStore(storage),
     resolveURL: () => 'ws://test/ws',
+    registry: TEST_REGISTRY,
+    ...(options.renderSurface === undefined ? {} : { renderSurface: options.renderSurface }),
   });
   // Retries are driven explicitly in the retry test rather than through real timers.
   controller.scheduleResume = () => {};
@@ -109,79 +101,114 @@ describe('connection state machine', () => {
     rig.deliver(hello());
     expect(rig.controller.connectionState).toBe('awaitingLoginResult');
 
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
 
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
-
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 7 } });
+    rig.deliver(enterSpaceFrame());
     expect(rig.controller.connectionState).toBe('attached');
-    expect(rig.controller.selfEntityIndex).toBe(7);
+    expect(rig.controller.selfId).toBe('self');
+    expect(rig.controller.world?.spaceId).toBe('outdoors');
   });
 
   /**
-   * `mainCharacter` is the attach marker, not `dateTick`. `dateTick` merely arrives last in the
-   * join sequence for unrelated reasons, and keying on it would leave the client unattached
-   * through every portal hop that does not re-send one.
+   * `enterSpace` is the attach marker and the first frame of a join. A frame that arrives ahead
+   * of it has no space to belong to, and must not be what attaches the client.
    */
-  it('attaches on mainCharacter, not on dateTick', () => {
+  it('attaches on enterSpace, not on a sector that precedes it', () => {
     rig.controller.connect({
       kind: 'login',
       credentials: { nickname: 'a', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
-    rig.deliver({ tag: 'dateTick', payload: { hour: 7, minute: 33 } });
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
+    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 })));
+    expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
+    expect(rig.controller.world).toBeUndefined();
 
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver(enterSpaceFrame());
     expect(rig.controller.connectionState).toBe('attached');
   });
 
   /**
-   * A portal hop must clear sector-local state and drop back to `awaitingEnterSector`, or chat
-   * and movement that depend on `selfEntityIndex` fire against the old sector in the gap.
+   * A door transfer must clear everything held about the space being left, or entities and peers
+   * of the old space stay alive alongside the new one.
    */
-  it('clears sector-local state and returns through awaitingEnterSector on a portal hop', () => {
+  it('clears the old space on a door transfer and stays attached', () => {
     rig.controller.connect({
       kind: 'login',
       credentials: { nickname: 'a', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
-    rig.deliver({
-      tag: 'entity',
-      payload: {
-        entityIndex: 2,
-        figure: 0,
-        gender: 0,
-        maskWidth: 32,
-        maskHeight: 48,
-        type: 0,
-        name: 'Peer',
-        x: 10,
-        y: 10,
-        facing: 0,
-        tempo: 2,
-      },
-    });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 })));
+    rig.deliver(peer());
     expect(rig.controller.entities.size).toBe(1);
     expect(rig.controller.players).toEqual(['Peer']);
 
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector('Nordwiese') } });
+    rig.deliver(enterSpaceFrame('EdariaInn'));
 
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
+    expect(rig.controller.connectionState).toBe('attached');
     expect(rig.controller.entities.size).toBe(0);
     expect(rig.controller.players).toEqual([]);
-    expect(rig.controller.selfEntityIndex).toBeUndefined();
-    expect(rig.controller.currentSector?.name).toBe('Nordwiese');
+    expect(rig.controller.world?.spaceId).toBe('EdariaInn');
+    expect(rig.controller.world?.collision.sectors).toEqual([]);
+  });
+});
+
+describe('the render surface during a join', () => {
+  function joined(): { rig: Rig; calls: string[] } {
+    const calls: string[] = [];
+    const rig = makeRig({
+      renderSurface: {
+        ...noopRenderSurface,
+        enterSpace: (world) => calls.push(`enterSpace:${world.spaceId}`),
+        setClock: (worldSeconds) => calls.push(`setClock:${worldSeconds}`),
+        addSector: (sector) => calls.push(`addSector:${sector.name}`),
+        removeSector: (name) => calls.push(`removeSector:${name}`),
+        placeEntity: (placed) => calls.push(`placeEntity:${placed.id}`),
+      },
+    });
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    return { rig, calls };
+  }
+
+  /**
+   * The outgoing space is held on screen until the player is placed, so the sectors have to be
+   * up before the player is: placing first would reveal the new space with no ground in it.
+   */
+  it('holds the sectors until the player is placed, then draws them ahead of the player', () => {
+    const { rig, calls } = joined();
+
+    rig.deliver(enterSpaceFrame('outdoors', 14_515_243_200));
+    rig.deliver(sectorFrame(outdoorSector('South', { x: 0, z: 0 })));
+    rig.deliver(sectorFrame(outdoorSector('North', { x: 0, z: -20 })));
+    expect(calls).toEqual(['enterSpace:outdoors', 'setClock:14515243200']);
+
+    rig.deliver(entityFrame());
+
+    expect(calls.slice(2)).toEqual(['addSector:South', 'addSector:North', 'placeEntity:self']);
+    expect(rig.controller.world?.predictedSector).toBe('South');
+  });
+
+  it('draws a neighbouring sector that arrives after the player, and leaves a distant one held', () => {
+    const { rig, calls } = joined();
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(sectorFrame(outdoorSector('South', { x: 0, z: 0 })));
+    rig.deliver(entityFrame());
+    calls.length = 0;
+
+    rig.deliver(sectorFrame(outdoorSector('Far', { x: 0, z: -40 })));
+    rig.deliver(sectorFrame(outdoorSector('North', { x: 0, z: -20 })));
+
+    expect(calls).toEqual(['addSector:North']);
+    expect(rig.controller.world?.collision.sectors).toHaveLength(3);
   });
 });
 
@@ -218,14 +245,14 @@ describe('version gate is strict equality', () => {
 describe('tick gating lifecycle', () => {
   /**
    * The failure to guard against is a tick that keeps running past
-   * teardown, so both halves are asserted: `mainCharacter` opens the gate, and teardown closes it.
+   * teardown, so both halves are asserted: `enterSpace` opens the gate, and teardown closes it.
    *
    * `connectionState` *is* the gate — `AppShell.onFrame` reads exactly this before calling
    * `runTick`, and the app shell owns the single `requestAnimationFrame` loop that drives the tick
    * and the draw from one timestamp. Asserting a separate flag instead would report a safety
    * property nothing in production consults.
    */
-  it('opens on mainCharacter and closes on teardown', () => {
+  it('opens on enterSpace and closes on teardown', () => {
     const rig = makeRig();
     rig.controller.beginSession({
       kind: 'login',
@@ -233,12 +260,11 @@ describe('tick gating lifecycle', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     // Not yet ticking, and distinguishable from the closed state below: the join is still in flight.
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
+    expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
 
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver(enterSpaceFrame());
     expect(rig.controller.connectionState).toBe('attached');
 
     rig.socket().deliverClose();
@@ -248,7 +274,7 @@ describe('tick gating lifecycle', () => {
 
 describe('session-token request gating', () => {
   /**
-   * The invariant that keeps `helloVersion` at 3: the field is omitted entirely unless the user
+   * The invariant that spares a `helloVersion` bump: the field is omitted entirely unless the user
    * opted in, so a server never volunteers a tag the client did not ask for.
    */
   it('omits requestSessionToken when the user did not opt in', () => {
@@ -284,7 +310,7 @@ describe('session-token request gating', () => {
     });
     first.socket().open();
     first.deliver(hello());
-    first.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    first.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     first.deliver({ tag: 'sessionToken', payload: { token: 'tok-abc', expiresInSeconds: 2_592_000 } });
 
     const resumed = makeRig({ storage });
@@ -312,7 +338,7 @@ describe('token failure and revocation', () => {
     rig.socket().open();
     rig.deliver(hello());
     expect(JSON.parse(rig.socket().sent.at(-1)!).tag).toBe('redeemSession');
-    rig.deliver({ tag: 'loginResult', payload: { result: 1 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
 
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
@@ -340,7 +366,7 @@ describe('token failure and revocation', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 1 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
 
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
     // And the message is the password one, not the session one: this was never a resume.
@@ -362,7 +388,7 @@ describe('token failure and revocation', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
   });
@@ -415,9 +441,8 @@ describe('token failure and revocation', () => {
     rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
     rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 100 } });
 
     rig.controller.leaveGame();
@@ -458,14 +483,14 @@ describe('a storage backend that rejects writes', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
     expect(() => rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 60 } })).not.toThrow();
     // The `credentialSaveFailed` line: "Remember password" was
     // ticked and nothing was remembered, which the player would otherwise learn on their next visit.
     expect(rig.controller.chatHistory.map((line) => line.kind)).toContain('credentialSaveFailed');
     // The session itself is unaffected — a save failure is a report, not a teardown.
-    expect(rig.controller.connectionState).toBe('awaitingEnterSector');
+    expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
   });
 
   it('says nothing when the save was never asked for', () => {
@@ -478,7 +503,7 @@ describe('a storage backend that rejects writes', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 60 } });
 
     expect(rig.controller.chatHistory.map((line) => line.kind)).not.toContain('credentialSaveFailed');
@@ -543,7 +568,7 @@ describe('duplicate-login race on refresh', () => {
     rig.controller.connect({ kind: 'resume' });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 2 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } });
 
     expect(resumes).toBe(1);
     // The race itself must not surface as "Already logged in." — that would be wrong, since the
@@ -575,7 +600,7 @@ describe('duplicate-login race on refresh', () => {
     const alreadyLoggedIn = (): void => {
       latest().open();
       latest().deliverText(encodeSomnioMessage(hello()));
-      latest().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 2 } }));
+      latest().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } }));
     };
     controller.scheduleResume = () => {
       resumes += 1;
@@ -650,8 +675,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Newcomer',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      characterClass: 0,
-      gender: 0,
+      people: 'wachen',
       email: 'new@example.com',
     });
     rig.socket().open();
@@ -675,8 +699,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Abandoned',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      characterClass: 0,
-      gender: 0,
+      people: 'wachen',
       email: 'abandoned@example.com',
     });
     rig.socket().open();
@@ -712,8 +735,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Interrupted',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      characterClass: 0,
-      gender: 0,
+      people: 'wachen',
       email: 'interrupted@example.com',
     });
     rig.socket().open();
@@ -741,7 +763,7 @@ describe('inbound direction check', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    rig.deliver({ tag: 'clientSay', payload: { entityIndex: 0, text: 'echo' } });
+    rig.deliver({ tag: 'clientSay', payload: { text: 'echo' } });
 
     expect(rig.controller.connectionState).toBe('disconnected');
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'errorCode', code: 'client_only_tag' });
@@ -749,8 +771,7 @@ describe('inbound direction check', () => {
 });
 
 describe('leave removes a departed peer', () => {
-  /** Dropping `leave` leaves peers rendered forever — an easy tag to miss. */
-  it('removes the entity and the roster row', () => {
+  function withPeer(): Rig {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
@@ -758,31 +779,46 @@ describe('leave removes a departed peer', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
-    rig.deliver({
-      tag: 'entity',
-      payload: {
-        entityIndex: 2,
-        figure: 0,
-        gender: 0,
-        maskWidth: 32,
-        maskHeight: 48,
-        type: 0,
-        name: 'Peer',
-        x: 10,
-        y: 10,
-        facing: 0,
-        tempo: 2,
-      },
-    });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(peer());
+    return rig;
+  }
+
+  /** Dropping `leave` leaves peers rendered forever — an easy tag to miss. */
+  it('removes the entity and the roster row', () => {
+    const rig = withPeer();
     expect(rig.controller.players).toEqual(['Peer']);
 
-    rig.deliver({ tag: 'leave', payload: { entityIndex: 2, leftGame: true } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'peer', leftGame: true } });
 
-    expect(rig.controller.entities.has(2)).toBe(false);
+    expect(rig.controller.entities.has('peer')).toBe(false);
     expect(rig.controller.players).toEqual([]);
+  });
+
+  /** A peer that walks out of view or through a door is still in the game, so only a disconnect is announced. */
+  it.each([
+    [true, [{ kind: 'left', playerName: 'Peer' }]],
+    [false, []],
+  ] as const)('with leftGame %s adds %j to the scrollback', (leftGame, lines) => {
+    const rig = withPeer();
+    const before = rig.controller.chatHistory.length;
+
+    rig.deliver({ tag: 'leave', payload: { entityId: 'peer', leftGame } });
+
+    expect(rig.controller.entities.has('peer')).toBe(false);
+    expect(rig.controller.chatHistory.slice(before)).toEqual(lines);
+  });
+
+  it.each(['npc', 'monster'] as const)('announces nothing when a %s leaves', (kind) => {
+    const rig = withPeer();
+    rig.deliver(entityFrame({ id: `${kind}:1`, kind, name: 'Libus' }));
+    const before = rig.controller.chatHistory.length;
+
+    rig.deliver({ tag: 'leave', payload: { entityId: `${kind}:1`, leftGame: true } });
+
+    expect(rig.controller.entities.has(`${kind}:1`)).toBe(false);
+    expect(rig.controller.chatHistory.slice(before)).toEqual([]);
   });
 });
 
@@ -798,8 +834,7 @@ describe('registration', () => {
       nickname: 'Wanda',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      characterClass: 0,
-      gender: 1,
+      people: 'wachen',
       email: 'wanda@example.invalid',
     });
     rig.socket().open();
@@ -814,8 +849,7 @@ describe('registration', () => {
       nickname: 'Wanda',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      characterClass: 0,
-      gender: 1,
+      people: 'wachen',
       email: 'wanda@example.invalid',
     });
   });
@@ -837,23 +871,19 @@ describe('registration', () => {
     const outcomes: string[] = [];
     rig.controller.onRegistrationOutcome = (outcome) => outcomes.push(outcome);
     register();
-    rig.deliver({ tag: 'registerResult', payload: { result: REGISTER_RESULT.ok } });
+    rig.deliver({ tag: 'registerResult', payload: { result: 'ok' } });
     expect(outcomes).toEqual(['ok']);
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
     expect(rig.controller.connectionState).toBe('disconnected');
   });
 
-  it.each([
-    [REGISTER_RESULT.nicknameExists, 'nicknameExists'],
-    [REGISTER_RESULT.failure, 'failure'],
-    [REGISTER_RESULT.nameNotAllowed, 'nameNotAllowed'],
-  ])('leaves the registration overlay up on result %i', (result, expected) => {
+  it.each(['nicknameExists', 'failure', 'nameNotAllowed'] as const)('leaves the registration overlay up on result %s', (result) => {
     const outcomes: string[] = [];
     rig.controller.onRegistrationOutcome = (outcome) => outcomes.push(outcome);
     rig.controller.presentedOverlay = { kind: 'registration' };
     register();
     rig.deliver({ tag: 'registerResult', payload: { result } });
-    expect(outcomes).toEqual([expected]);
+    expect(outcomes).toEqual([result]);
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'registration' });
   });
 
@@ -863,7 +893,7 @@ describe('registration', () => {
    */
   it('does not re-issue the registration on a later connect', () => {
     register();
-    rig.deliver({ tag: 'registerResult', payload: { result: REGISTER_RESULT.ok } });
+    rig.deliver({ tag: 'registerResult', payload: { result: 'ok' } });
     rig.controller.connect({
       kind: 'login',
       credentials: { nickname: 'Wanda', password: 'hunter22', rememberMe: false },
@@ -878,7 +908,7 @@ describe('roster changes notify the UI', () => {
   /**
    * The players panel re-renders off this hook alone. Without it the roster is only refreshed when
    * something else forces a render, so a peer who joins without saying anything stays invisible in
-   * the list while standing in plain sight in the sector.
+   * the list while standing in plain sight.
    */
   function attached(rig: Rig): void {
     rig.controller.connect({
@@ -887,28 +917,8 @@ describe('roster changes notify the UI', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
-  }
-
-  function peer(entityIndex: number, name: string): SomnioMessage {
-    return {
-      tag: 'entity',
-      payload: {
-        entityIndex,
-        figure: 0,
-        gender: 0,
-        maskWidth: 32,
-        maskHeight: 48,
-        type: 0,
-        name,
-        x: 10,
-        y: 10,
-        facing: 0,
-        tempo: 2,
-      },
-    };
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
   }
 
   it('reports a peer arriving and leaving', () => {
@@ -917,11 +927,11 @@ describe('roster changes notify the UI', () => {
     let notifications = 0;
     rig.controller.onPlayersChanged = () => (notifications += 1);
 
-    rig.deliver(peer(2, 'Tobi'));
+    rig.deliver(peer({ name: 'Tobi' }));
     expect(notifications).toBe(1);
     expect(rig.controller.players).toEqual(['Tobi']);
 
-    rig.deliver({ tag: 'leave', payload: { entityIndex: 2, leftGame: true } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'peer', leftGame: true } });
     expect(notifications).toBe(2);
     expect(rig.controller.players).toEqual([]);
   });
@@ -930,10 +940,10 @@ describe('roster changes notify the UI', () => {
   it('stays quiet when the same peer is re-announced', () => {
     const rig = makeRig();
     attached(rig);
-    rig.deliver(peer(2, 'Tobi'));
+    rig.deliver(peer({ name: 'Tobi' }));
     let notifications = 0;
     rig.controller.onPlayersChanged = () => (notifications += 1);
-    rig.deliver(peer(2, 'Tobi'));
+    rig.deliver(peer({ name: 'Tobi' }));
     expect(notifications).toBe(0);
   });
 
@@ -943,10 +953,7 @@ describe('roster changes notify the UI', () => {
     attached(rig);
     let notifications = 0;
     rig.controller.onPlayersChanged = () => (notifications += 1);
-    for (const type of [WIRE_ENTITY_TYPE.npc, WIRE_ENTITY_TYPE.monster]) {
-      const frame = peer(10 + type, 'Libus') as Extract<SomnioMessage, { tag: 'entity' }>;
-      rig.deliver({ ...frame, payload: { ...frame.payload, type } });
-    }
+    for (const kind of ['npc', 'monster'] as const) rig.deliver(entityFrame({ id: `${kind}:1`, kind, name: 'Libus' }));
     expect(notifications).toBe(0);
     expect(rig.controller.players).toEqual([]);
   });
@@ -967,9 +974,8 @@ describe('terminal transport failures present a recovery surface', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
   }
 
   it('returns to the login overlay when the connection drops mid-session', () => {
@@ -1003,20 +1009,28 @@ describe('terminal transport failures present a recovery surface', () => {
     const rig = makeRig();
     attach(rig);
 
-    rig.deliver({ tag: 'leave', payload: { entityIndex: 1, leftGame: true } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'self', leftGame: true } });
 
     expect(rig.controller.connectionState).toBe('disconnected');
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
   });
 
-  it('returns to the login overlay when a portal hop delivers an out-of-bounds sector', () => {
+  /** Only a departure ends the session; a `leave` that takes an entity out of view is not one, whoever it names. */
+  it('stays attached when a leave naming this player is not a departure', () => {
     const rig = makeRig();
     attach(rig);
 
-    rig.deliver({
-      tag: 'enterSector',
-      payload: { sector: { ...wireSector(), dimensions: { width: 4096, height: 4096 } } },
-    });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'self', leftGame: false } });
+
+    expect(rig.controller.connectionState).toBe('attached');
+    expect(rig.controller.presentedOverlay).toBeUndefined();
+  });
+
+  it('returns to the login overlay when the server delivers a sector past the extent cap', () => {
+    const rig = makeRig();
+    attach(rig);
+
+    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 }, { size: { width: 4096, depth: 4096 } })));
 
     expect(rig.controller.connectionState).toBe('disconnected');
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
@@ -1075,30 +1089,14 @@ describe('a resumed session recovers its own display name', () => {
     rig.controller.resumeStoredSession();
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     expect(rig.controller.selfDisplayName).toBe('');
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver(enterSpaceFrame());
 
-    rig.deliver({
-      tag: 'entity',
-      payload: {
-        entityIndex: 1,
-        figure: 0,
-        gender: 0,
-        maskWidth: 32,
-        maskHeight: 48,
-        type: 0,
-        name: 'Resumed',
-        x: 10,
-        y: 10,
-        facing: 0,
-        tempo: 2,
-      },
-    });
+    rig.deliver(entityFrame({ name: 'Resumed' }));
 
     expect(rig.controller.selfDisplayName).toBe('Resumed');
-    expect(rig.controller.entities.get(1)?.kind).toBe('player');
+    expect(rig.controller.entities.get('self')?.kind).toBe('player');
   });
 });
 
@@ -1165,7 +1163,7 @@ describe('end of session identity', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'alice-token', expiresInSeconds: 60 } });
 
     // Set from the credentials on a successful login, so it names the departing player.
@@ -1199,7 +1197,7 @@ describe('end of session identity', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'bob-token', expiresInSeconds: 60 } });
 
     rig.deliver({ tag: 'sessionRevoked', payload: { revoked: true } });
@@ -1219,8 +1217,7 @@ describe('end of session identity', () => {
       nickname: 'Carol',
       password: 'carol-secret',
       passwordRepeat: 'carol-secret',
-      characterClass: 1,
-      gender: 1,
+      people: 'wachen',
       email: 'carol@example.invalid',
     });
     rig.socket().open();
@@ -1247,8 +1244,7 @@ describe('end of session identity', () => {
       nickname: 'Dora',
       password: 'dora-secret',
       passwordRepeat: 'dora-secret',
-      characterClass: 1,
-      gender: 1,
+      people: 'wachen',
       email: 'dora@example.invalid',
     });
     rig.socket().open();
@@ -1288,13 +1284,12 @@ describe('end of session identity', () => {
 
   /**
    * Leave Game is reachable in both post-login states, not only `attached`: the game menu opens
-   * whenever no overlay is presented, and `handleEnterSector` clears the overlay while dropping
-   * back to `awaitingEnterSector` on every sector load and portal hop. The server accepts
-   * `revokeSession` from registration onward, so a gate that only fired on `attached` skipped the
-   * revoke on a hop while still clearing the store — leaving a token alive for its full lifetime
-   * with nothing left that could revoke it.
+   * whenever no overlay is presented, which a token resume is from its first frame. The server
+   * accepts `revokeSession` from registration onward, so a gate that only fired on `attached`
+   * would skip the revoke before the first `enterSpace` while still clearing the store — leaving
+   * a token alive for its full lifetime with nothing left that could revoke it.
    */
-  it('revokes the token when leaving before the sector arrives, not only once attached', () => {
+  it('revokes the token when leaving before the space arrives, not only once attached', () => {
     const rig = makeRig();
 
     rig.controller.beginSession({
@@ -1306,8 +1301,8 @@ describe('end of session identity', () => {
     // Issued during the session — `connect` clears the store on an explicit login, so a token
     // seeded beforehand would not survive to be revoked.
     rig.deliver({ tag: 'sessionToken', payload: { token: 'hop-token', expiresInSeconds: 2_592_000 } });
-    // Authenticated but still waiting on the sector — the state a portal hop returns to.
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    // Authenticated but still waiting on the space.
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
     rig.controller.leaveGame();
 
@@ -1351,7 +1346,7 @@ describe('end of session identity', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
     const before = Date.now();
     rig.deliver({ tag: 'sessionToken', payload: { token: 'ivan-token', expiresInSeconds: 2_592_000 } });
@@ -1371,7 +1366,7 @@ describe('end of session identity', () => {
     rig.deliver(hello());
     // A line the controller owns. Peer and NPC speech is forwarded to the session rather than
     // appended here, so a `serverSay` would not reach this scrollback in a controller-only rig.
-    rig.deliver({ tag: 'loginResult', payload: { result: LOGIN_RESULT.badCredentials } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
     expect(rig.controller.chatHistory.length).toBeGreaterThan(0);
 
     rig.controller.leaveGame();
@@ -1423,14 +1418,13 @@ describe('an explicit authentication retires a resume already scheduled', () => 
     rig.socket().open();
     rig.deliver(hello());
     // Schedules the 250 ms resume and returns to `disconnected`, leaving the card usable.
-    rig.deliver({ tag: 'loginResult', payload: { result: LOGIN_RESULT.alreadyLoggedIn } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } });
 
     rig.controller.register({
       nickname: 'Grace',
       password: 'grace-secret',
       passwordRepeat: 'grace-secret',
-      characterClass: 1,
-      gender: 1,
+      people: 'wachen',
       email: 'grace@example.invalid',
     });
     rig.socket().open();
@@ -1459,8 +1453,7 @@ describe('a torn-down registration does not become a login', () => {
       nickname: 'Judy',
       password: 'judy-secret',
       passwordRepeat: 'judy-secret',
-      characterClass: 1,
-      gender: 1,
+      people: 'wachen',
       email: 'judy@example.invalid',
     });
     rig.socket().open();
@@ -1480,8 +1473,8 @@ describe('a torn-down registration does not become a login', () => {
 });
 
 describe('the online roster is bounded', () => {
-  it('stops growing when a peer re-announces one index under fresh names', () => {
-    // The roster dedupes by name and `leave` removes only the name an index currently carries, so
+  it('stops growing when a peer re-announces one entity under fresh names', () => {
+    // The roster dedupes by name and `leave` removes only the name an entity currently carries, so
     // a server re-announcing one entity grows it without limit — each append re-sorting and
     // rebuilding the panel until the tab locks up.
     const rig = makeRig();
@@ -1491,33 +1484,14 @@ describe('the online roster is bounded', () => {
     });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 0 } });
-    rig.deliver({ tag: 'enterSector', payload: { sector: wireSector() } });
-    rig.deliver({ tag: 'mainCharacter', payload: { entityIndex: 1 } });
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
 
     // Literals on both sides, as the sibling `MAX_RETAINED_CHAT_LINES` test does. Driving the
     // constant + 50 and asserting the constant reads the same symbol twice, so the assertion
-    // holds for any value it takes — including one small enough to truncate a busy sector's
+    // holds for any value it takes — including one small enough to truncate a busy
     // roster. (That symmetry is also why the constant needs no export.)
-    for (let index = 0; index < 550; index += 1) {
-      rig.deliver({
-        tag: 'entity',
-        payload: {
-          entityIndex: 7,
-          figure: 0,
-          gender: 0,
-          maskWidth: 32,
-          maskHeight: 48,
-          // Index 7 is not `mainCharacter`'s 1, so this decodes as a peer rather than as self.
-          type: WIRE_ENTITY_TYPE.player,
-          name: `Peer${index}`,
-          x: 10,
-          y: 10,
-          facing: 0,
-          tempo: 2,
-        },
-      });
-    }
+    for (let index = 0; index < 550; index += 1) rig.deliver(peer({ name: `Peer${index}` }));
 
     expect(rig.controller.players.length).toBe(500);
   });

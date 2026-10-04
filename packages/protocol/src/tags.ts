@@ -5,11 +5,11 @@
 const CLIENT_TO_SERVER_TAGS = [
   'login',
   'register',
-  'clientPosition',
+  'move',
   'clientSay',
   'equipToggle',
-  'bumpNPC',
-  'enterPortal',
+  'bump',
+  'useDoor',
   // Session resumption. `redeemSession` is accepted pre-login (it is an alternative to a
   // password login and reuses `loginResult` for its outcome); `revokeSession` is accepted
   // only post-attach. Both are request-gated: the server never volunteers either response.
@@ -21,13 +21,14 @@ const SERVER_TO_CLIENT_TAGS = [
   'hello',
   'loginResult',
   'registerResult',
-  'enterSector',
-  'mainCharacter',
+  'enterSpace',
+  'sector',
   'entity',
-  'serverPosition',
+  'moves',
+  'correction',
+  'doorRefused',
   'serverSay',
   'energy',
-  'dateTick',
   'inventory',
   'leave',
   'adminSay',

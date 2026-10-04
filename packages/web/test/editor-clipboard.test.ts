@@ -1,150 +1,111 @@
 import { describe, expect, it } from 'vitest';
-import { SOMNIO_CONSTANTS } from '@somnio/core';
-import type { Sector } from '@somnio/core';
-import { captureClipboard, insertClipboard, validatedPaste } from '@/editor/clipboard';
+import { captureClipboard, insertClipboard, isClipboardEmpty } from '@/editor/clipboard';
+import { emptySector } from './helpers/editorFixture';
 
 /**
- * The clipboard over the in-page record buffer — anchor placement, duplicate offsets, Int16
- * clamps, stale-index skips, source-order capture, and the writer-round-trip paste gate —
- * with floor patches as a sixth kind.
+ * The clipboard over the in-page record buffer — anchor placement, duplicate offsets, fresh ids,
+ * doors following their placement, and source-order capture.
  */
 
-function sector(overrides: Partial<Sector> = {}): Sector {
-  return {
-    name: 'Test',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
-}
+const house = { id: 'house-1', modelId: 'house', x: 6, z: 6, yaw: 90, elevation: 0 };
+const door = { id: 'to-shop', placement: 'house-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } };
 
 describe('paste placement', () => {
   it('anchors the payload bounding corner at the cursor, preserving offsets', () => {
-    const source = sector({
-      objects: [{ x: 64, y: 64, modelID: 'door', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-      collisionMasks: [{ x: 96, y: 128, width: 32, height: 32 }],
-    });
+    const source = emptySector({ placements: [house], blockers: [{ id: 'blocker-1', x: 7, z: 9, width: 1, depth: 1 }] });
     const clipboard = captureClipboard(
       [
-        { kind: 'object', index: 0 },
-        { kind: 'mask', index: 0 },
+        { kind: 'placement', id: 'house-1' },
+        { kind: 'blocker', id: 'blocker-1' },
       ],
       source,
     );
-    const target = sector();
-    const inserted = insertClipboard(clipboard, target, { x: 200, y: 200 }, 32);
-    expect(inserted.length).toBe(2);
-    expect(target.objects[0]).toMatchObject({ x: 200, y: 200 });
-    expect(target.collisionMasks[0]).toMatchObject({ x: 232, y: 264 });
+    const target = emptySector();
+    const inserted = insertClipboard(clipboard, target, { x: 12, z: 12 }, 0.5);
+    expect(inserted).toEqual([
+      { kind: 'placement', id: 'house-1' },
+      { kind: 'blocker', id: 'blocker-1' },
+    ]);
+    expect(target.placements).toEqual([{ ...house, x: 12, z: 12 }]);
+    expect(target.blockers[0]).toMatchObject({ x: 13, z: 15 });
   });
 
-  it('offsets every clone by the fallback step on duplicate', () => {
-    const body = sector({
-      npcs: [
-        {
-          spawnOrigin: { x: 100, y: 100 },
-          spawnBoxSize: { width: 32, height: 32 },
-          maskSize: { width: 32, height: 48 },
-          name: 'Libus',
-          figure: 16,
-          facing: 0,
-          behaviorTag: 0,
-          dialogScript: '',
-        },
+  it('offsets every clone by the fallback step on duplicate and gives it the next free id', () => {
+    const body = emptySector({
+      npcs: [{ id: 'npc-1', name: 'Libus', characterModelId: 'libus', x: 5.12, z: 5.12, facing: 90, dialogScript: 'Hallo' }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }],
+      floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 10, width: 2, depth: 2 }],
+    });
+    const selection = [
+      { kind: 'npc', id: 'npc-1' },
+      { kind: 'monsterSpawn', id: 'spawn-1' },
+      { kind: 'floorPatch', id: 'patch-1' },
+    ] as const;
+    expect(insertClipboard(captureClipboard(selection, body), body, undefined, 0.1)).toEqual([
+      { kind: 'npc', id: 'npc-2' },
+      { kind: 'monsterSpawn', id: 'spawn-2' },
+      { kind: 'floorPatch', id: 'patch-2' },
+    ]);
+    expect(body.npcs[1]).toEqual({ ...body.npcs[0], id: 'npc-2', x: 5.22, z: 5.22 });
+    expect(body.monsterSpawns[1]).toEqual({ ...body.monsterSpawns[0], id: 'spawn-2', x: 1.1, z: 1.1 });
+    expect(body.floorPatches[1]).toEqual({ ...body.floorPatches[0], id: 'patch-2', x: 0.1, z: 10.1 });
+  });
+
+  it('attaches a pasted door to the pasted placement', () => {
+    const body = emptySector({ placements: [house], doors: [door] });
+    const clipboard = captureClipboard(
+      [
+        { kind: 'door', id: 'to-shop' },
+        { kind: 'placement', id: 'house-1' },
       ],
-    });
-    const clipboard = captureClipboard([{ kind: 'npc', index: 0 }], body);
-    const inserted = insertClipboard(clipboard, body, undefined, 32);
-    expect(inserted).toEqual([{ kind: 'npc', index: 1 }]);
-    expect(body.npcs[1]?.spawnOrigin).toEqual({ x: 132, y: 132 });
-    expect(body.npcs[1]?.name).toBe(body.npcs[0]?.name);
-  });
-
-  it('clamps a paste at the Int16 limits instead of overflowing', () => {
-    const source = sector({ collisionMasks: [{ x: 32_759, y: 32_759, width: 32, height: 32 }] });
-    const clipboard = captureClipboard([{ kind: 'mask', index: 0 }], source);
-    const target = sector();
-    insertClipboard(clipboard, target, undefined, 32_767);
-    expect(target.collisionMasks[0]).toMatchObject({ x: 32_767, y: 32_767 });
-  });
-
-  it('carries floor patches through capture and paste', () => {
-    const source = sector({
-      floorPatches: [{ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 64, height: 64 }],
-    });
-    const clipboard = captureClipboard([{ kind: 'floorPatch', index: 0 }], source);
-    const target = sector();
-    const inserted = insertClipboard(clipboard, target, { x: 128, y: 128 }, 32);
-    expect(inserted).toEqual([{ kind: 'floorPatch', index: 0 }]);
-    expect(target.floorPatches[0]).toMatchObject({ x: 128, y: 128, floorMaterialID: 'cobble-town' });
+      body,
+    );
+    const inserted = insertClipboard(clipboard, body, undefined, 1);
+    expect(inserted).toEqual([
+      { kind: 'placement', id: 'house-2' },
+      { kind: 'door', id: 'to-shop-1' },
+    ]);
+    expect(body.doors).toEqual([door, { ...door, id: 'to-shop-1', placement: 'house-2' }]);
+    // The original keeps its own placement and target.
+    expect(body.placements.map((placement) => placement.id)).toEqual(['house-1', 'house-2']);
   });
 });
 
 describe('capture', () => {
-  it('skips stale selection indices instead of throwing', () => {
-    const source = sector({ collisionMasks: [{ x: 0, y: 0, width: 32, height: 32 }] });
+  it('leaves out a door copied without its placement', () => {
+    const body = emptySector({ placements: [house], doors: [door] });
+    expect(isClipboardEmpty(captureClipboard([{ kind: 'door', id: 'to-shop' }], body))).toBe(true);
+    expect(captureClipboard([{ kind: 'placement', id: 'house-1' }], body).doors).toEqual([]);
+  });
+
+  it('skips selections of records that are gone, and the one spawn point', () => {
+    const blockers = [{ id: 'blocker-1', x: 0, z: 0, width: 1, depth: 1 }];
+    const source = emptySector({ blockers, spawn: { x: 1, z: 1, facing: 0 } });
     const clipboard = captureClipboard(
       [
-        { kind: 'mask', index: 0 },
-        { kind: 'mask', index: 7 },
-        { kind: 'npc', index: 3 },
+        { kind: 'blocker', id: 'blocker-1' },
+        { kind: 'blocker', id: 'gone' },
+        { kind: 'npc', id: 'gone' },
+        { kind: 'spawn', id: 'spawn' },
       ],
       source,
     );
-    expect(clipboard.collisionMasks).toEqual([{ x: 0, y: 0, width: 32, height: 32 }]);
-    expect(clipboard.npcs).toEqual([]);
+    expect(clipboard).toEqual({ placements: [], blockers, doors: [], npcs: [], monsterSpawns: [], floorPatches: [] });
   });
 
-  it('preserves source-array order so pasted stacking cannot shuffle', () => {
-    const masks = [
-      { x: 0, y: 0, width: 64, height: 64 },
-      { x: 8, y: 8, width: 64, height: 64 },
-      { x: 16, y: 16, width: 64, height: 64 },
-    ];
-    const source = sector({ collisionMasks: masks });
+  it('preserves source-array order so pasted stacking cannot shuffle, and copies rather than aliases', () => {
+    const blockers = ['a', 'b', 'c'].map((id, index) => ({ id, x: index, z: index, width: 4, depth: 4 }));
+    const source = emptySector({ blockers });
     const clipboard = captureClipboard(
       [
-        { kind: 'mask', index: 2 },
-        { kind: 'mask', index: 0 },
-        { kind: 'mask', index: 1 },
+        { kind: 'blocker', id: 'c' },
+        { kind: 'blocker', id: 'a' },
+        { kind: 'blocker', id: 'b' },
       ],
       source,
     );
-    expect(clipboard.collisionMasks).toEqual(masks);
-  });
-});
-
-describe('validatedPaste', () => {
-  it('rejects a cap-busting payload through the writer round-trip gate', () => {
-    const target = sector({
-      collisionMasks: Array.from({ length: SOMNIO_CONSTANTS.maxSectorCollisionMasks }, () => ({
-        x: 0,
-        y: 0,
-        width: 32,
-        height: 32,
-      })),
-    });
-    const clipboard = captureClipboard([{ kind: 'mask', index: 0 }], target);
-    expect(validatedPaste(clipboard, target, { x: 64, y: 64 }, 32)).toBeUndefined();
-  });
-
-  it('rejects an empty clipboard and lands the happy path at the anchor', () => {
-    const target = sector();
-    expect(validatedPaste(captureClipboard([], target), target, { x: 64, y: 64 }, 32)).toBeUndefined();
-    const source = sector({ collisionMasks: [{ x: 0, y: 0, width: 32, height: 32 }] });
-    const clipboard = captureClipboard([{ kind: 'mask', index: 0 }], source);
-    const pasted = validatedPaste(clipboard, target, { x: 64, y: 64 }, 32);
-    expect(pasted?.sector.collisionMasks).toEqual([{ x: 64, y: 64, width: 32, height: 32 }]);
-    expect(pasted?.selection).toEqual([{ kind: 'mask', index: 0 }]);
-    // The gate works on a clone; the target itself is untouched.
-    expect(target.collisionMasks).toEqual([]);
+    expect(clipboard.blockers).toEqual(blockers);
+    source.blockers[0]!.x = 99;
+    expect(clipboard.blockers[0]?.x).toBe(0);
   });
 });

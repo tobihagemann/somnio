@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { headingFromCardinal } from '@somnio/core';
-import { PostgresCharacterRepository, PostgresInventoryRepository, PostgresRegistrationRepository, hashPassword } from '@somnio/data';
+import { PostgresCharacterRepository, PostgresInventoryRepository, PostgresRegistrationRepository, STARTER_SECTOR, hashPassword } from '@somnio/data';
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
 import { STARTER_INVENTORY } from '../../src/handlers/starterInventory.ts';
 import { TEST_PASSWORD, makeDatabaseDependencies, startDatabase, uniqueNickname } from './support/harness.ts';
@@ -22,25 +22,24 @@ it("checkpointAll persists every logged-in player's full character and inventory
     name,
     passwordHash: await hashPassword(TEST_PASSWORD),
     email: `${name}@example.invalid`,
-    gender: 0,
-    figure: 0,
+    people: 'wachen',
     starterInventory: STARTER_INVENTORY,
   });
-  const sector = dependencies.worldRouter.sector('EdariaBibliothek')!;
+  const space = dependencies.worldRouter.space(STARTER_SECTOR)!;
   const staged = {
     ...character,
-    position: { x: 7, y: 11 },
+    position: { x: 7.25, z: 5.5 },
     facing: headingFromCardinal('north'),
-    energy: { ...character.energy, hpCurrent: 42 },
+    energy: { ...character.energy, healthCurrent: 42 },
   };
-  sector.attach(staged, [...STARTER_INVENTORY], new ConnectionOutbox(1024));
+  space.attach(staged, [...STARTER_INVENTORY], new ConnectionOutbox(1024), 0);
 
   await dependencies.worldRouter.checkpointAll();
 
   const reloaded = (await new PostgresCharacterRepository(harness.db).findByName(name))!;
-  expect(reloaded.position).toEqual({ x: 7, y: 11 });
+  expect(reloaded.position).toEqual({ x: 7.25, z: 5.5 });
   expect(reloaded.facing).toBe(headingFromCardinal('north'));
-  expect(reloaded.energy.hpCurrent).toBe(42);
+  expect(reloaded.energy.healthCurrent).toBe(42);
   const inventory = await new PostgresInventoryRepository(harness.db).loadAll(character.id);
   expect(inventory.length).toBe(STARTER_INVENTORY.length);
 });

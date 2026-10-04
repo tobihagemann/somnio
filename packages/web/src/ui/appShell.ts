@@ -114,11 +114,13 @@ export class AppShell {
     // than assigned afterwards. It is skipped entirely when the host cannot render it, and the
     // controller falls back to the no-op surface — so the blocking notice below is the only thing
     // the player sees, instead of a WebGL error thrown from a constructor.
-    this.scene = capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(bundledModelRegistry()), this.aspect()) : undefined;
+    const registry = bundledModelRegistry();
+    this.scene = capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect()) : undefined;
 
     this.controller = new ConnectionController({
       transport: this.transport,
       ...(this.scene === undefined ? {} : { renderSurface: this.scene }),
+      registry,
       resolveURL: () => resolveGameplayURL(window.location),
     });
 
@@ -149,9 +151,9 @@ export class AppShell {
     );
 
     this.overlays = new Overlays({
-      // The overlay stays up until the world actually arrives, as natively: `submitLogin` does not
-      // touch `presentedOverlay` and `handleEnterSector` is what clears it. Dismissing on submit
-      // instead leaves nothing on screen for a rejected password to return to.
+      // The overlay stays up until the world actually arrives: `submitLogin` does not touch
+      // `presentedOverlay` and `handleEnterSpace` is what clears it. Dismissing on submit instead
+      // leaves nothing on screen for a rejected password to return to.
       onLogin: (credentials) => this.controller.beginSession({ kind: 'login', credentials }),
       onRegister: (form) => {
         this.overlays.showRegistrationError(undefined);
@@ -235,7 +237,7 @@ export class AppShell {
     this.keyboard.start();
     window.addEventListener('resize', () => this.handleResize());
 
-    // Esc is bound to the game menu, as it is natively. Fullscreen is never entered automatically,
+    // Esc is bound to the game menu. Fullscreen is never entered automatically,
     // because the browser gives Esc to "exit fullscreen" first and the key would stop reaching the
     // menu at all — an explicit toggle in Options is the honest trade.
     window.addEventListener('keydown', (event) => {
@@ -284,7 +286,7 @@ export class AppShell {
    * the login form, and About and Options have to land on whatever they were opened from.
    */
   private handleEscape(): void {
-    // Chat comes first and returns immediately, as natively: with the field focused, Esc hands the
+    // Chat comes first and returns immediately: with the field focused, Esc hands the
     // keyboard back to the world rather than opening the game menu on top of it.
     if (this.controller.isChatInputFocused) {
       this.panels.chatInput.blur();

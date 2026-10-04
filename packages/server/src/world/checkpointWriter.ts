@@ -1,6 +1,6 @@
 import type { CharacterRepository } from '@somnio/data';
 import type { Logger } from '../logging.ts';
-import type { PlayerCheckpoint } from './perSectorActor.ts';
+import type { PlayerCheckpoint } from './spaceActor.ts';
 
 /**
  * Writes a checkpoint through `persistCheckpoint`'s single transaction, so a periodic pass racing

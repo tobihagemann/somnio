@@ -1,37 +1,26 @@
 /**
  * The Three.js world scene.
- *
- * The largest deliberate divergence from the reference renderer is the floor-patch UV sign,
- * which three.js requires because its `PlaneGeometry` lays out V the other way.
  */
 import * as THREE from 'three';
+import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
 import type { WorldRenderSurface } from '@/client/renderSurface';
-import { SOMNIO_CONSTANTS } from '@somnio/core';
-import { FLOAT_PI, f32 } from '@somnio/core';
-import { relativeDirection } from '@somnio/core';
-import type { Tempo } from '@somnio/core';
-import { headingFromVector, headingRadians } from '@somnio/core';
-import type { Heading } from '@somnio/core';
-import type { GridPoint, GridSize } from '@somnio/core';
-import { sectorPixelHeight, sectorPixelWidth } from '@somnio/core';
-import type { LightSetting, Sector } from '@somnio/core';
-import { gridRounded } from '@somnio/core';
-import type { SubpixelPoint, WorldEntity } from '@somnio/core';
+import { WORLD_TIME_RATE, groundHeightAt, headingRadians, hourOfDay, objectModel, relativeDirection, sectorOrigin, sectorRect } from '@somnio/core';
+import type { Heading, ModelRegistry, Point, Rect, Size, SpaceCollision } from '@somnio/core';
+import type { Gait, Placement, SectorView } from '@somnio/protocol';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName } from './animation';
 import type { AnimationPose } from './animation';
-import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor, worldPosition } from './cameraRig';
+import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
 import { namePlaqueBackground, renderNamePlaque, renderSpeechBubble } from './overlayArt';
 import type { RasterArt } from './overlayArt';
 import {
-  FLOOR_MATERIAL_TILE_METERS,
+  CHARACTER_SCALE,
   FLOOR_PATCH_LIFT,
-  characterScale,
-  entityWorldPosition,
-  floorPatchUVRect,
-  objectAnchorBottomY,
-  objectNodePosition,
-  objectYawRadians,
+  PLACEHOLDER_HEIGHT,
+  easedHeight,
+  floorUVRect,
+  placeholderFootprint,
+  placementElevation,
   textureAspect,
 } from './placement';
 import type { ModelAssets } from './modelAssets';
@@ -40,8 +29,8 @@ import { yawStep } from './yawSlew';
 /**
  * Per-entity render state the scene mutates each frame.
  *
- * `WorldEntity` is a value rebuilt from every inbound frame, so the walk clocks and the slewed
- * yaw cannot live there — they live here, keyed by sector-local entity index.
+ * The entity record is a value rebuilt from every inbound frame, so the walk clock and the slewed
+ * yaw cannot live there — they live here, keyed by entity id.
  */
 interface EntityRenderState {
   /** Translation only. Overlays hang off this, so it must never carry the facing yaw. */
@@ -50,37 +39,45 @@ interface EntityRenderState {
   modelHolder: THREE.Object3D;
   mixer: THREE.AnimationMixer | undefined;
   action: THREE.AnimationAction | undefined;
-  kind: WorldEntity['kind'];
-  figure: number;
+  kind: ClientEntity['kind'];
+  characterModelId: string;
   name: string;
-  maskSize: GridSize;
+  radius: number;
   facing: Heading;
-  tempo: Tempo;
-  lastPosition: GridPoint;
+  gait: Gait;
+  /** Where the entity stands on the ground plane; the node's height eases after it. */
+  position: Point;
   travelHeading: Heading | undefined;
   currentYaw: number;
   lastMotionTime: number;
   pendingMotion: boolean;
-  /** Seconds of motion still owed to an in-flight tween, so the walk clip runs the whole glide. */
-  remainingTweenMotion: number;
-  tween: { start: THREE.Vector3; target: THREE.Vector3; total: number; remaining: number } | undefined;
   isPlaceholder: boolean;
   /** Label under the feet; created once on first placement and rebuilt on a kind or name change. */
   namePlaque: THREE.Object3D | undefined;
   pose: AnimationPose | undefined;
 }
 
-interface PlacedObject {
+/** The base floor of a sector or one of its patches. */
+interface FloorQuad {
+  mesh: THREE.Mesh;
+  /** The ground it covers in space coordinates, which is what fixes its texture phase. */
+  rect: Rect;
+  materialId: string;
+  lift: number;
+  isFallback: boolean;
+}
+
+interface PlacedModel {
   node: THREE.Object3D;
-  object: Sector['objects'][number];
-  /**
-   * Index into the **source** `sector.objects` array. Child order under the sector root is
-   * priority order (`buildObjects` sorts before adding), so without this tag the editor's
-   * live-drag path could not map a selected record back to its mesh.
-   */
-  sourceIndex: number;
-  anchorBottomY: number;
+  placement: Placement;
   isPlaceholder: boolean;
+}
+
+interface DrawnSector {
+  /** Stands at the sector's origin, so its records keep their sector-relative positions. */
+  group: THREE.Object3D;
+  floors: FloorQuad[];
+  placements: PlacedModel[];
 }
 
 const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1 });
@@ -106,36 +103,41 @@ function enableShadows(root: THREE.Object3D): void {
 /**
  * Three.js implementation of the ten-method render surface.
  *
- * Real 3D depth: objects and entities sit on the floor at their world XZ and the depth buffer
+ * Real 3D depth: placements and entities sit on the floor at their world XZ and the depth buffer
  * gives draw order for free — no painter's algorithm and no Y-flip.
+ *
+ * The scene draws whatever sectors it is given. The client hands them over through `enterSpace`
+ * and its draw set; a consumer with no connection calls `addSector` and `removeSector` itself.
  */
 export class WorldScene implements WorldRenderSurface {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.OrthographicCamera;
 
   private readonly assets: ModelAssets;
+  private readonly registry: ModelRegistry;
+  private readonly now: () => number;
   private readonly sun = new THREE.DirectionalLight(0xffffff, 1);
   private readonly ambient = new THREE.DirectionalLight(0xffffff, 1);
   private readonly environmentFill = new THREE.AmbientLight(0xffffff, ENVIRONMENT_FILL_INTENSITY);
   /** Retained so `repositionSun` can re-anchor the light without recomputing the day/night state. */
   private readonly sunDirection = new THREE.Vector3(0, 1, 0);
-  private sectorRoot: THREE.Object3D | undefined;
-  /** The outgoing sector, parked on screen during a held swap. */
+  /** Holds every sector group and entity of the space on screen. */
+  private spaceRoot = new THREE.Object3D();
+  /** The outgoing space, parked on screen during a held swap. */
   private previousRoot: THREE.Object3D | undefined;
   private pendingPlayerReveal = false;
-  /** Day/night state that arrived while a sector was held, applied at the reveal. */
-  private pendingSunState: { hour: number; minute: number; light: LightSetting } | undefined;
-  private readonly entityStates = new Map<number, EntityRenderState>();
-  private readonly placedObjects: PlacedObject[] = [];
-  private readonly floorPatchStates: {
-    mesh: THREE.Mesh;
-    patch: Sector['floorPatches'][number];
-    isFallback: boolean;
-  }[] = [];
-  private readonly bubbles = new Map<number, { node: THREE.Object3D; remaining: number }>();
-  private floorState: { mesh: THREE.Mesh; materialID: string; isFallback: boolean; widthMeters: number; depthMeters: number } | undefined;
+  private readonly sectors = new Map<string, DrawnSector>();
+  private readonly entityStates = new Map<string, EntityRenderState>();
+  private readonly bubbles = new Map<string, { node: THREE.Object3D; remaining: number }>();
+  private ground: (() => SpaceCollision) | undefined;
+  /** The world clock as last told, and when; `undefined` holds the light at noon. */
+  private clock: { worldSeconds: number; atMs: number } | undefined;
+  /** The interior light level of the space being built; `undefined` outdoors. */
+  private spaceBrightness: number | undefined;
+  /** The level lighting what is on screen, which during a held swap is still the outgoing space's. */
+  private litBrightness: number | undefined;
   private sceneClock = 0;
-  private cameraFollowID: number | undefined;
+  private cameraFollowId: string | undefined;
   private focus = new THREE.Vector3();
   /** Scratch for `repositionSun`, which runs once a frame behind the camera follow. */
   private readonly shadowAnchor = new THREE.Vector3();
@@ -145,22 +147,26 @@ export class WorldScene implements WorldRenderSurface {
   private zoomFactor = 1;
   private aspect = 1;
 
-  constructor(assets: ModelAssets, aspect = 1) {
+  constructor(assets: ModelAssets, registry: ModelRegistry, aspect = 1, now: () => number = () => performance.now()) {
     this.assets = assets;
+    this.registry = registry;
+    this.now = now;
     this.aspect = aspect;
     const bounds = frustumBounds(ORTHO_RIG.defaultScale, aspect);
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
     this.configureSunShadow();
+    // A fixed low fill standing in for sky ambience, so the shadow side never drops to black.
+    this.ambient.position.set(-0.3, 1, -0.4).multiplyScalar(30);
     // The target's world matrix is what gives a directional light its direction, and an object
     // outside the graph never gets one updated.
-    this.scene.add(this.sun, this.sun.target, this.ambient, this.environmentFill);
-    // The void outside the sector floor, so every sector sits on black rather than the default
-    // clear colour — including during a sector swap.
+    this.scene.add(this.sun, this.sun.target, this.ambient, this.environmentFill, this.spaceRoot);
+    // The void outside the floor, so every space sits on black rather than the default clear
+    // colour — including during a swap.
     const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: 0x000000 }));
     backdrop.rotation.x = -Math.PI / 2;
     backdrop.position.y = -0.005;
     this.scene.add(backdrop);
-    this.applySun(12, 0, { indoor: false, brightness: 100 });
+    this.relight();
     this.focusCamera(new THREE.Vector3());
   }
 
@@ -198,77 +204,107 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * With `awaitingPlayerPlacement`, the outgoing sector is **held on screen** and the incoming
-   * one is added hidden, until `placeEntity` places the local player and swaps atomically.
-   * Without the hold, a portal hop shows a frame of the new sector framed on its origin with no
-   * character in it — brief, but exactly the kind of flash that reads as a glitch.
+   * The outgoing space is **held on screen** and the incoming one is built hidden, until
+   * `placeEntity` places the local player and swaps atomically. Without the hold, a door shows a
+   * frame of the new space with no character in it — brief, but exactly the kind of flash that
+   * reads as a glitch.
    */
-  load(sector: Sector, awaitingPlayerPlacement: boolean): void {
-    if (awaitingPlayerPlacement) {
-      disposeSubtree(this.previousRoot);
-      this.previousRoot = this.sectorRoot;
-    } else {
-      disposeSubtree(this.previousRoot);
-      disposeSubtree(this.sectorRoot);
-      this.previousRoot = undefined;
-    }
-    this.resetSectorState();
-
-    const root = new THREE.Object3D();
-    const floorCenter = this.buildFloor(sector, root);
-    this.buildObjects(sector, root);
-    root.visible = !awaitingPlayerPlacement;
-    this.scene.add(root);
-    this.sectorRoot = root;
-    this.pendingPlayerReveal = awaitingPlayerPlacement;
-    if (!awaitingPlayerPlacement) {
-      // Frames a sector for a consumer with no player arriving; a surface that previewed one
-      // without joining it would otherwise open framed on the world origin with nothing in view.
-      this.focusCamera(floorCenter);
-    }
+  enterSpace(world: ClientWorld): void {
+    this.startSpace(true);
+    this.ground = () => world.collision;
   }
 
-  /** Atomic swap once the local player lands: drop the held sector and show the new one. */
-  private revealHeldSectorIfPending(): void {
+  private startSpace(hold: boolean): void {
+    disposeSubtree(this.previousRoot);
+    if (hold) {
+      this.previousRoot = this.spaceRoot;
+    } else {
+      disposeSubtree(this.spaceRoot);
+      this.previousRoot = undefined;
+      this.litBrightness = undefined;
+    }
+    this.sectors.clear();
+    this.entityStates.clear();
+    this.bubbles.clear();
+    this.cameraFollowId = undefined;
+    this.spaceBrightness = undefined;
+    this.spaceRoot = new THREE.Object3D();
+    this.spaceRoot.visible = !hold;
+    this.scene.add(this.spaceRoot);
+    this.pendingPlayerReveal = hold;
+  }
+
+  /** Atomic swap once the local player lands: drop the held space and show the new one. */
+  private revealHeldSpaceIfPending(): void {
     if (!this.pendingPlayerReveal) return;
     disposeSubtree(this.previousRoot);
     this.previousRoot = undefined;
-    if (this.sectorRoot !== undefined) this.sectorRoot.visible = true;
+    this.spaceRoot.visible = true;
     this.pendingPlayerReveal = false;
-    // Applied in the same frame the new sector becomes visible, so the light change and the geometry
+    // Applied in the same frame the new space becomes visible, so the light change and the geometry
     // change land together rather than one flashing ahead of the other.
-    const pending = this.pendingSunState;
-    if (pending !== undefined) {
-      this.pendingSunState = undefined;
-      this.applySun(pending.hour, pending.minute, pending.light);
+    this.litBrightness = this.spaceBrightness;
+    this.relight();
+  }
+
+  /** Draws a sector at its origin, replacing one already drawn under the same name. */
+  addSector(sector: SectorView): void {
+    this.removeSector(sector.name);
+    const origin = sectorOrigin(sector);
+    const group = new THREE.Object3D();
+    group.position.set(origin.x, 0, origin.z);
+    const floors = [
+      this.buildFloorQuad(sectorRect(sector), sector.floorMaterialId, 0, origin),
+      ...sector.floorPatches.map((patch) =>
+        this.buildFloorQuad(
+          { x: origin.x + patch.x, z: origin.z + patch.z, width: patch.width, depth: patch.depth },
+          patch.floorMaterialId,
+          FLOOR_PATCH_LIFT,
+          origin,
+        ),
+      ),
+    ];
+    const placements = sector.placements.map((placement) => this.buildPlacement(placement));
+    group.add(...floors.map((floor) => floor.mesh), ...placements.map((placed) => placed.node));
+    this.spaceRoot.add(group);
+    this.sectors.set(sector.name, { group, floors, placements });
+    this.spaceBrightness = sector.brightness;
+    // Held back while a space is parked on screen: lighting by the incoming interior now would
+    // relight the still-visible outgoing space, which is the flash the hold exists to prevent.
+    if (!this.pendingPlayerReveal) {
+      this.litBrightness = sector.brightness;
+      this.relight();
     }
   }
 
-  placeEntity(entity: WorldEntity): void {
+  removeSector(name: string): void {
+    disposeSubtree(this.sectors.get(name)?.group);
+    this.sectors.delete(name);
+  }
+
+  placeEntity(entity: ClientEntity): void {
     let state = this.entityStates.get(entity.id);
     if (state === undefined) {
       const node = new THREE.Object3D();
       const modelHolder = new THREE.Object3D();
       node.add(modelHolder);
-      this.sectorRoot?.add(node);
+      this.spaceRoot.add(node);
       state = {
         node,
         modelHolder,
         mixer: undefined,
         action: undefined,
         kind: entity.kind,
-        figure: entity.figure,
+        characterModelId: entity.characterModelId,
         name: entity.name,
-        maskSize: entity.maskSize,
+        radius: entity.radius,
         facing: entity.facing,
-        tempo: entity.tempo,
-        lastPosition: entity.position,
+        gait: entity.gait,
+        position: entity.position,
         travelHeading: undefined,
         currentYaw: headingRadians(entity.facing),
         lastMotionTime: Number.NEGATIVE_INFINITY,
         pendingMotion: false,
-        remainingTweenMotion: 0,
-        tween: undefined,
         isPlaceholder: true,
         namePlaque: undefined,
         pose: undefined,
@@ -280,10 +316,10 @@ export class WorldScene implements WorldRenderSurface {
     // kind to know it changed; reading `state.kind` after the assignment can only ever compare a
     // value to itself.
     const kindChanged = state.kind !== entity.kind;
-    if (kindChanged || state.figure !== entity.figure) {
+    if (kindChanged || state.characterModelId !== entity.characterModelId) {
       state.kind = entity.kind;
-      state.figure = entity.figure;
-      state.maskSize = entity.maskSize;
+      state.characterModelId = entity.characterModelId;
+      state.radius = entity.radius;
       this.resolveEntityModel(state);
     }
     // Rebuilt on a kind or name change, because both pick the plaque's fill and its width.
@@ -293,170 +329,100 @@ export class WorldScene implements WorldRenderSurface {
     }
 
     state.facing = entity.facing;
-    state.maskSize = entity.maskSize;
-    if (entity.position.x !== state.lastPosition.x || entity.position.y !== state.lastPosition.y) {
+    state.gait = entity.gait;
+    if (entity.position.x !== state.position.x || entity.position.z !== state.position.z) {
       state.pendingMotion = true;
-      state.lastPosition = entity.position;
+      state.position = entity.position;
     }
-    state.tween = undefined;
-    const world = entityWorldPosition(entity.position, entity.maskSize);
-    state.node.position.set(world.x, world.y, world.z);
+    // A placement stands at its ground height at once; only later steps are eased.
+    state.node.position.set(entity.position.x, this.groundHeight(entity.position), entity.position.z);
     state.modelHolder.rotation.y = state.currentYaw;
 
     if (entity.kind === 'player') {
-      this.cameraFollowID = entity.id;
+      this.cameraFollowId = entity.id;
       this.focusCamera(state.node.position);
-      this.revealHeldSectorIfPending();
+      this.revealHeldSpaceIfPending();
     }
   }
 
-  updatePosition(entityID: number, position: GridPoint, facing: Heading): void {
-    const state = this.entityStates.get(entityID);
+  updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void {
+    const state = this.entityStates.get(entityId);
     if (state === undefined) return;
-    // An authoritative snap is a position discontinuity: any carried travel direction is the
-    // meaningless rejected-move direction, so it is cleared before forwarding.
-    state.travelHeading = undefined;
-    this.updateSubpixelPosition(entityID, { x: position.x, y: position.y }, facing, undefined);
-  }
-
-  updateSubpixelPosition(entityID: number, position: SubpixelPoint, facing: Heading, travel: Heading | undefined): void {
-    const state = this.entityStates.get(entityID);
-    if (state === undefined) return;
-    // `gridRounded`, not `Math.round`: the grid rounds half away from zero, so at y = -2.5 the two
-    // disagree and `pendingMotion` would not flip — the walk cycle simply would not start on that
-    // step.
-    const grid = gridRounded(position);
-    if (grid.x !== state.lastPosition.x || grid.y !== state.lastPosition.y) {
+    if (position.x !== state.position.x || position.z !== state.position.z) {
       state.pendingMotion = true;
-      state.lastPosition = grid;
+      state.position = position;
     }
     state.facing = facing;
     // Only overwrite on a real travel step: a stationary tick passes `undefined` so the last
     // direction persists across the grace window and the clip does not drop mid-glide.
     if (travel !== undefined) state.travelHeading = travel;
-    state.tween = undefined;
-    const world = entityWorldPosition(position, state.maskSize);
-    state.node.position.set(world.x, world.y, world.z);
-    if (entityID === this.cameraFollowID) this.focusCamera(state.node.position);
+    state.node.position.x = position.x;
+    state.node.position.z = position.z;
+    if (entityId === this.cameraFollowId) this.focusCamera(state.node.position);
   }
 
-  animateEntity(entityID: number, position: GridPoint, facing: Heading, durationSeconds: number): void {
-    const state = this.entityStates.get(entityID);
-    if (state === undefined) return;
-    if (position.x !== state.lastPosition.x || position.y !== state.lastPosition.y) {
-      state.pendingMotion = true;
-      state.remainingTweenMotion = durationSeconds;
-      // Peers carry no continuous vector, so their travel heading comes from the grid delta.
-      const dx = position.x - state.lastPosition.x;
-      const dy = position.y - state.lastPosition.y;
-      state.travelHeading = headingFromVector(dx, dy);
-      state.lastPosition = position;
-    }
-    state.facing = facing;
-    const world = entityWorldPosition(position, state.maskSize);
-    state.tween = {
-      start: state.node.position.clone(),
-      target: new THREE.Vector3(world.x, world.y, world.z),
-      total: durationSeconds,
-      remaining: durationSeconds,
-    };
+  updateGait(entityId: string, gait: Gait): void {
+    const state = this.entityStates.get(entityId);
+    if (state !== undefined) state.gait = gait;
   }
 
-  updateTempo(entityID: number, tempo: Tempo): void {
-    const state = this.entityStates.get(entityID);
-    if (state !== undefined) state.tempo = tempo;
+  setClock(worldSeconds: number): void {
+    this.clock = { worldSeconds, atMs: this.now() };
+    this.relight();
   }
 
-  updateDayNightTint(hour: number, minute: number, sectorLight: LightSetting): void {
-    // Held back while a sector is parked on screen. `handleEnterSector` loads the destination and
-    // then immediately applies *its* light, so applying it here would relight the still-visible
-    // outgoing sector — the town square darkening to the inn's indoor key for the frames before the
-    // swap, which is the exact flash the hold exists to prevent. The state is stashed and applied at
-    // the atomic reveal instead.
-    if (this.pendingPlayerReveal) {
-      this.pendingSunState = { hour, minute, light: sectorLight };
-      return;
-    }
-    this.applySun(hour, minute, sectorLight);
-  }
-
-  showSpeechBubble(entityID: number, lines: string[], lifetimeMs: number): void {
-    const state = this.entityStates.get(entityID);
+  showSpeechBubble(entityId: string, lines: string[], lifetimeMs: number): void {
+    const state = this.entityStates.get(entityId);
     if (state === undefined || lines.length === 0) return;
     // Disposed, not just detached: speaking twice inside one lifetime window would otherwise leak
-    // a supersampled canvas texture per message, which is unbounded within a single sector.
-    disposeSubtree(this.bubbles.get(entityID)?.node);
+    // a supersampled canvas texture per message, which is unbounded within a single space.
+    disposeSubtree(this.bubbles.get(entityId)?.node);
     const node = speechBubbleQuad(lines);
     // Measure the model only — the persistent name plaque hanging off the node would otherwise
-    // stretch the bounds and push the bubble up.
-    const headHeight = new THREE.Box3().setFromObject(state.modelHolder).max.y;
+    // stretch the bounds and push the bubble up. The bounds are in world space, so the node's
+    // own height comes back off: the bubble hangs from the node, which may stand on raised ground.
+    state.node.updateWorldMatrix(true, true);
+    const headHeight = new THREE.Box3().setFromObject(state.modelHolder).max.y - state.node.position.y;
     node.position.set(0, Math.max(headHeight, 0) + BUBBLE_HEAD_GAP, 0);
     state.node.add(node);
-    this.bubbles.set(entityID, { node, remaining: lifetimeMs / 1000 });
+    this.bubbles.set(entityId, { node, remaining: lifetimeMs / 1000 });
   }
 
-  removeEntity(entityID: number): void {
-    const state = this.entityStates.get(entityID);
+  removeEntity(entityId: string): void {
+    const state = this.entityStates.get(entityId);
     disposeSubtree(state?.node);
-    this.entityStates.delete(entityID);
-    this.bubbles.delete(entityID);
+    this.entityStates.delete(entityId);
+    this.bubbles.delete(entityId);
   }
 
   showSplash(): void {
-    disposeSubtree(this.sectorRoot);
-    this.sectorRoot = undefined;
-    // Drop any sector parked for a switch the splash interrupts (a Leave Game mid-hop).
-    disposeSubtree(this.previousRoot);
-    this.previousRoot = undefined;
-    this.pendingPlayerReveal = false;
-    this.resetSectorState();
-    this.floorState = undefined;
+    // Also drops any space parked for a swap the splash interrupts (a Leave Game mid-door).
+    this.startSpace(false);
+    this.ground = undefined;
+    this.relight();
     this.focusCamera(new THREE.Vector3());
   }
 
-  /**
-   * Clears every collection keyed to the sector being left.
-   *
-   * One method rather than a copy per caller, because a field missed on one path is invisible until
-   * it leaks: an entry left in `floorPatchStates` is one `refreshResolvedModels` still walks, so a
-   * mid-prewarm exit rebuilds that patch into the detached root where it is never drawn and never
-   * disposed. Anything sector-scoped belongs here, so `load` and `showSplash` cannot disagree.
-   */
-  private resetSectorState(): void {
-    this.entityStates.clear();
-    this.bubbles.clear();
-    this.placedObjects.length = 0;
-    this.floorPatchStates.length = 0;
-    this.cameraFollowID = undefined;
-    // Day/night state is sector-scoped too: a tint stashed for a destination that is being abandoned
-    // would otherwise be applied at the *next* reveal, lighting one sector by another's setting.
-    this.pendingSunState = undefined;
+  private groundHeight(position: Point): number {
+    return this.ground === undefined ? 0 : groundHeightAt(this.ground(), position);
   }
 
   /** Pure accumulation over per-entity state, so yaw and pose behaviour is testable directly. */
   tick(deltaTimeSeconds: number): void {
     const dt = Math.min(deltaTimeSeconds, MAX_TICK_DELTA);
     this.sceneClock += dt;
+    this.relight();
 
-    for (const state of this.entityStates.values()) {
-      if (state.tween !== undefined) {
-        const tween = state.tween;
-        tween.remaining = Math.max(0, tween.remaining - dt);
-        // Narrowed once around the whole expression: both operands are binary64 durations, so the
-        // subtraction and division happen in double and only the fraction is Float32.
-        const fraction = tween.total > 0 ? f32(1 - tween.remaining / tween.total) : 1;
-        state.node.position.lerpVectors(tween.start, tween.target, fraction);
-        if (tween.remaining <= 0) state.tween = undefined;
+    for (const [id, state] of this.entityStates) {
+      // The simulation's height is discrete, a tread at a time; the rendered one eases after it.
+      const ground = this.groundHeight(state.position);
+      if (state.node.position.y !== ground) {
+        state.node.position.y = easedHeight(state.node.position.y, ground, dt);
+        if (id === this.cameraFollowId) this.focusCamera(state.node.position);
       }
       if (state.pendingMotion) {
         state.lastMotionTime = this.sceneClock;
         state.pendingMotion = false;
-      }
-      // Drain owed tween motion so a gliding entity counts as moving for the whole glide, not
-      // just the grace window after its single position delta.
-      if (state.remainingTweenMotion > 0) {
-        state.remainingTweenMotion -= dt;
-        state.lastMotionTime = this.sceneClock;
       }
       const isMoving = this.sceneClock - state.lastMotionTime < MOTION_GRACE_WINDOW;
 
@@ -467,7 +433,7 @@ export class WorldScene implements WorldRenderSurface {
       }
 
       const direction = state.travelHeading === undefined ? 'forward' : relativeDirection(state.travelHeading, state.facing);
-      this.applyPose(isMoving ? movementPose(state.kind, state.tempo, direction) : 'idle', state);
+      this.applyPose(isMoving ? movementPose(state.kind, state.gait, direction) : 'idle', state);
       state.mixer?.update(dt);
     }
 
@@ -519,14 +485,14 @@ export class WorldScene implements WorldRenderSurface {
 
   private resolveEntityModel(state: EntityRenderState): void {
     // Disposed rather than merely detached: a placeholder owns its `BoxGeometry`, and a clone owns
-    // its skeleton, so dropping either here would put it past the reach of any later sector cleanup.
+    // its skeleton, so dropping either here would put it past the reach of any later cleanup.
     for (const child of [...state.modelHolder.children]) disposeSubtree(child);
     state.pose = undefined;
     state.action = undefined;
-    const model = this.assets.entity(state.kind, state.figure);
+    const model = this.assets.character(state.characterModelId);
     if (model === undefined) {
       state.modelHolder.scale.setScalar(1);
-      const placeholder = entityPlaceholder(state.maskSize);
+      const placeholder = entityPlaceholder(state.radius);
       enableShadows(placeholder);
       state.modelHolder.add(placeholder);
       state.isPlaceholder = true;
@@ -535,106 +501,24 @@ export class WorldScene implements WorldRenderSurface {
     }
     enableShadows(model);
     state.modelHolder.add(model);
-    state.modelHolder.scale.setScalar(characterScale(state.maskSize));
+    state.modelHolder.scale.setScalar(CHARACTER_SCALE);
     state.mixer = new THREE.AnimationMixer(model);
     state.isPlaceholder = false;
   }
 
-  /** Returns the floor's centre, which `load` frames the camera on when no player will arrive. */
-  private buildFloor(sector: Sector, root: THREE.Object3D): THREE.Vector3 {
-    // Through the accessors: the tile-to-pixel rule has one home, so the floor mesh cannot drift
-    // from the collision bounds.
-    const widthMeters = f32(f32(sectorPixelWidth(sector)) * ORTHO_RIG.worldUnitsPerPixel);
-    const depthMeters = f32(f32(sectorPixelHeight(sector)) * ORTHO_RIG.worldUnitsPerPixel);
-    const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
-    const texture = this.applyFloorTexture(material, sector.floorMaterialID, widthMeters, depthMeters);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(widthMeters, depthMeters), material);
-    markOwned(floor, { geometry: true, material: true });
-    // Receives but does not cast: a ground plane casting into its own depth comparison is the
-    // classic source of shadow acne, and there is nothing below it to catch a shadow anyway.
-    floor.receiveShadow = true;
-    floor.rotation.x = -Math.PI / 2;
-    // The plane is centred at its origin; offset by half so the sector's top-left pixel maps to a
-    // floor corner, matching `worldPosition`.
-    floor.position.set(widthMeters / 2, 0, depthMeters / 2);
-    root.add(floor);
-    // The metres are retained, not just the material id: the post-prewarm heal has to recompute the
-    // UV repeat from the same bounds, and there is nothing else to derive them from at that point.
-    this.floorState = {
-      mesh: floor,
-      materialID: sector.floorMaterialID,
-      isFallback: texture === undefined,
-      widthMeters,
-      depthMeters,
-    };
-
-    for (const patch of sector.floorPatches) {
-      const mesh = this.buildFloorPatch(patch);
-      root.add(mesh);
-      // Recorded like the placed objects, so a patch that loaded before the texture cache warmed
-      // heals with the rest instead of staying a flat grey rectangle where an authored street is.
-      // Rebuilt rather than re-textured in place: the sector-space UVs depend on the texture's
-      // aspect, so the attribute has to be recomputed alongside the map.
-      this.floorPatchStates.push({
-        mesh,
-        patch,
-        isFallback: this.assets.floorTexture(patch.floorMaterialID) === undefined,
-      });
-    }
-
-    return floor.position.clone();
-  }
-
   /**
-   * Points `material` at the floor texture for `materialID`, tiled to the sector's bounds. Returns
-   * the resolved texture, or `undefined` when the cache has not warmed and the grey fallback applies.
-   *
-   * Shared by `buildFloor` and the post-prewarm heal. Assigning the cached texture
-   * directly instead would leave `repeat` at its `(1, 1)` default, stretching a single tile across the
-   * whole sector: a healed floor that looks worse than the placeholder it replaced.
+   * One textured quad on the ground: a sector's base floor, or a patch lifted just above it.
+   * `origin` is the sector group's position, which the mesh is placed relative to.
    */
-  private applyFloorTexture(material: THREE.MeshStandardMaterial, materialID: string, widthMeters: number, depthMeters: number): THREE.Texture | undefined {
-    const texture = this.assets.floorTexture(materialID);
-    if (texture === undefined) {
-      material.color = new THREE.Color(0x808080);
-      material.map = null;
-      return undefined;
-    }
-    // Cloned so the per-sector repeat never mutates the shared cache entry.
-    const repeat = texture.clone();
-    repeat.needsUpdate = true;
-    // A non-square source keeps its authored aspect: the V repeat shrinks with height/width.
-    // Narrowed like `floorPatchUVRect`, which computes this same ratio for patch quads: the ratio
-    // is Float32 arithmetic, and a patch and the floor it sits on must reach the identical repeat
-    // or their texture grids drift apart at the seam.
-    repeat.repeat.set(
-      f32(widthMeters / FLOOR_MATERIAL_TILE_METERS),
-      f32(depthMeters / f32(FLOOR_MATERIAL_TILE_METERS * textureAspect(texture.image as { width: number; height: number }))),
-    );
-    material.color = new THREE.Color(0xffffff);
-    material.map = repeat;
-    material.needsUpdate = true;
-    return texture;
-  }
-
-  private buildFloorPatch(patch: Sector['floorPatches'][number]): THREE.Mesh {
-    const texture = this.assets.floorTexture(patch.floorMaterialID);
-    const unit = ORTHO_RIG.worldUnitsPerPixel;
-    const width = f32(f32(patch.width) * unit);
-    const depth = f32(f32(patch.height) * unit);
-    const geometry = new THREE.PlaneGeometry(width, depth);
-    const uv = floorPatchUVRect(patch, textureAspect(texture?.image as { width: number; height: number } | undefined));
-    // Sector-space UVs, so abutting same-material rects continue one seamless grid rather than
-    // resetting the texture phase at every seam.
-    //
-    // V is **negated**, not swapped. `PlaneGeometry` emits indices 0/1 as the local +Y row, which
-    // `rotation.x = -pi/2` maps to world -Z — the *smaller* sector y. So V has to decrease as sector
-    // y grows, matching the base floor, which uses the default plane UVs (+Y carries v=1). Assigning
-    // `origin.y` to the -Z row instead — the arrangement a descriptor whose vertex order runs the
-    // other way would use — would flip every patch against the floor
-    // beneath it. Negating keeps that orientation while making V a function of sector y alone:
-    // without it the intercept depends on the patch's own position and height, so each quad mirrors
-    // about its own centre and vertically abutting rects meet at two different phases.
+  private buildFloorQuad(rect: Rect, materialId: string, lift: number, origin: Point): FloorQuad {
+    const texture = this.assets.floorTexture(materialId);
+    const geometry = new THREE.PlaneGeometry(rect.width, rect.depth);
+    const uv = floorUVRect(rect, textureAspect(texture?.image as { width: number; height: number } | undefined));
+    // V is **negated**. `PlaneGeometry` emits indices 0/1 as the local +Y row, which
+    // `rotation.x = -pi/2` maps to world -Z — the smaller z. So V has to decrease as z grows, and
+    // negating makes it a function of z alone: with an intercept that depended on the quad's own
+    // position and depth, each quad would mirror about its own centre and abutting rects would
+    // meet at two different phases.
     const attribute = geometry.getAttribute('uv') as THREE.BufferAttribute;
     const corners = [
       [uv.origin.x, -uv.origin.y],
@@ -645,56 +529,36 @@ export class WorldScene implements WorldRenderSurface {
     corners.forEach(([u, v], index) => attribute.setXY(index, u!, v!));
     attribute.needsUpdate = true;
 
-    // Cloned for the same reason the base floor clones, even though a patch needs no `repeat`: the
-    // mesh owns its material, and disposal takes the material's map with it. Handing over the cache
-    // entry itself would leave the next sector that paints this material re-uploading the texture and
-    // regenerating its mipmaps on the first drawn frame.
-    const patchTexture = texture?.clone();
-    if (patchTexture !== undefined) patchTexture.needsUpdate = true;
+    // Cloned because the mesh owns its material, and disposal takes the material's map with it.
+    // Handing over the cache entry itself would leave the next quad that paints this material
+    // re-uploading the texture and regenerating its mipmaps on the first drawn frame.
+    const map = texture?.clone();
+    if (map !== undefined) map.needsUpdate = true;
     const material = new THREE.MeshStandardMaterial({
       roughness: 1,
       metalness: 0,
-      // Culling off so the quad renders regardless of triangle winding.
-      side: THREE.DoubleSide,
-      ...(patchTexture === undefined ? { color: new THREE.Color(0x808080) } : { map: patchTexture }),
+      ...(map === undefined ? { color: new THREE.Color(0x808080) } : { map }),
     });
     const mesh = new THREE.Mesh(geometry, material);
     markOwned(mesh, { geometry: true, material: true });
+    // Receives but does not cast: a ground plane casting into its own depth comparison is the
+    // classic source of shadow acne, and there is nothing below it to catch a shadow anyway.
     mesh.receiveShadow = true;
     mesh.rotation.x = -Math.PI / 2;
-    const centre = worldPosition(patch.x + patch.width / 2, patch.y + patch.height / 2);
-    mesh.position.set(centre.x, FLOOR_PATCH_LIFT, centre.z);
-    return mesh;
+    mesh.position.set(rect.x - origin.x + rect.width / 2, lift, rect.z - origin.z + rect.depth / 2);
+    return { mesh, rect, materialId, lift, isFallback: texture === undefined };
   }
 
-  private buildObjects(sector: Sector, root: THREE.Object3D): void {
-    const bySourceIndex = sector.objects.map((object, sourceIndex) => ({ object, sourceIndex }));
-    for (const { object, sourceIndex } of bySourceIndex.sort((a, b) => a.object.priority - b.object.priority)) {
-      const node = new THREE.Object3D();
-      const resolved = this.assets.object(object.modelID);
-      if (resolved !== undefined) {
-        attachResolvedObject(node, resolved, object);
-      } else {
-        node.add(objectPlaceholder(object));
-      }
-      enableShadows(node);
-      const anchorBottomY = objectAnchorBottomY(object, sector.collisionMasks);
-      this.alignObject(node, object, anchorBottomY);
-      root.add(node);
-      this.placedObjects.push({
-        node,
-        object,
-        sourceIndex,
-        anchorBottomY,
-        isPlaceholder: resolved === undefined,
-      });
-    }
-  }
-
-  private alignObject(node: THREE.Object3D, object: Sector['objects'][number], anchorBottomY: number): void {
-    const depth = new THREE.Box3().setFromObject(node).getSize(new THREE.Vector3()).z;
-    const position = objectNodePosition(object, anchorBottomY, depth);
-    node.position.set(position.x, position.y, position.z);
+  /** A placement stands at its record's position and yaw; the model's own origin is its ground-footprint centre. */
+  private buildPlacement(placement: Placement): PlacedModel {
+    const rule = objectModel(this.registry, placement.modelId);
+    const model = this.assets.object(placement.modelId);
+    const node = new THREE.Object3D();
+    node.add(model ?? placementPlaceholder(placeholderFootprint(rule)));
+    enableShadows(node);
+    node.position.set(placement.x, placementElevation(placement, rule), placement.z);
+    node.rotation.y = THREE.MathUtils.degToRad(placement.yaw);
+    return { node, placement, isPlaceholder: model === undefined };
   }
 
   /**
@@ -702,39 +566,30 @@ export class WorldScene implements WorldRenderSurface {
    * that wins the race against prewarm self-heals instead of leaving permanent grey boxes.
    */
   private refreshResolvedModels(): void {
-    for (const placed of this.placedObjects) {
-      if (!placed.isPlaceholder) continue;
-      const model = this.assets.object(placed.object.modelID);
-      if (model === undefined) continue;
-      // The placeholder owns its `BoxGeometry`, so it is disposed rather than just unparented.
-      for (const child of [...placed.node.children]) disposeSubtree(child);
-      attachResolvedObject(placed.node, model, placed.object);
-      enableShadows(model);
-      // The real prop's footprint depth differs from the placeholder's, so the anchor has to be
-      // reapplied against the new bounds.
-      this.alignObject(placed.node, placed.object, placed.anchorBottomY);
-      placed.isPlaceholder = false;
+    for (const sector of this.sectors.values()) {
+      for (const placed of sector.placements) {
+        if (!placed.isPlaceholder) continue;
+        const model = this.assets.object(placed.placement.modelId);
+        if (model === undefined) continue;
+        // The placeholder owns its `BoxGeometry`, so it is disposed rather than just unparented.
+        for (const child of [...placed.node.children]) disposeSubtree(child);
+        placed.node.add(model);
+        enableShadows(model);
+        placed.isPlaceholder = false;
+      }
+      // Floors heal like every placed model rather than staying grey. Rebuilt rather than
+      // re-textured in place: the UVs depend on the texture's aspect, so the attribute has to be
+      // recomputed alongside the map.
+      sector.floors = sector.floors.map((floor) => {
+        if (!floor.isFallback || this.assets.floorTexture(floor.materialId) === undefined) return floor;
+        const rebuilt = this.buildFloorQuad(floor.rect, floor.materialId, floor.lift, { x: sector.group.position.x, z: sector.group.position.z });
+        sector.group.add(rebuilt.mesh);
+        disposeSubtree(floor.mesh);
+        return rebuilt;
+      });
     }
     for (const state of this.entityStates.values()) {
       if (state.isPlaceholder) this.resolveEntityModel(state);
-    }
-    // The floor heals like every placed model rather than staying grey: a sector that loaded
-    // before the texture cache warmed would otherwise keep its fallback tint for the session.
-    const floor = this.floorState;
-    if (floor?.isFallback === true) {
-      const material = floor.mesh.material as THREE.MeshStandardMaterial;
-      const resolved = this.applyFloorTexture(material, floor.materialID, floor.widthMeters, floor.depthMeters);
-      floor.isFallback = resolved === undefined;
-    }
-    for (const state of this.floorPatchStates) {
-      if (!state.isFallback) continue;
-      if (this.assets.floorTexture(state.patch.floorMaterialID) === undefined) continue;
-      const parent = state.mesh.parent;
-      const rebuilt = this.buildFloorPatch(state.patch);
-      parent?.add(rebuilt);
-      disposeSubtree(state.mesh);
-      state.mesh = rebuilt;
-      state.isFallback = false;
     }
   }
 
@@ -753,12 +608,12 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Carries the sun's shadow volume with the camera focus, mirroring `repositionSun`.
+   * Carries the sun's shadow volume with the camera focus.
    *
    * Both ends move together, which is the point: three.js derives a directional light's direction
    * from `position - target.position`, so anchoring the light at the world origin while the target
    * follows the player would swing the light angle further off the authored direction the further
-   * the player walked from the sector's corner.
+   * the player walked from the space's origin.
    */
   private repositionSun(): void {
     // The shadow map's texel grid lives in the light's own view plane, so that is where the anchor
@@ -786,14 +641,15 @@ export class WorldScene implements WorldRenderSurface {
     this.sun.position.copy(anchor).addScaledVector(this.sunDirection, SUN_SHADOW.distance);
   }
 
-  private applySun(hour: number, minute: number, light: LightSetting): void {
-    const state = sunState(hour, minute, light);
+  /** Lights the scene for the world clock as it stands now. */
+  private relight(): void {
+    const clock = this.clock;
+    const hour = clock === undefined ? 12 : hourOfDay(clock.worldSeconds + ((this.now() - clock.atMs) / 1000) * WORLD_TIME_RATE);
+    const state = sunState(hour, this.litBrightness);
     this.sunDirection.set(state.direction.x, state.direction.y, state.direction.z);
     this.repositionSun();
     this.sun.intensity = state.sunIntensity / 1000;
     this.sun.color.setRGB(state.sunColor.r, state.sunColor.g, state.sunColor.b);
-    // A fixed low fill standing in for sky ambience, so the shadow side never drops to black.
-    this.ambient.position.set(-0.3, 1, -0.4).multiplyScalar(30);
     this.ambient.intensity = state.ambientIntensity / 1000;
   }
 
@@ -806,15 +662,20 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Editor seam: the placed node for a **source-array** index, so a live move drag can
-   * translate the real mesh. Covers objects only — floor patches bake sector-space UVs into
-   * their geometry, so translating one would slide the texture out of phase; they stay
-   * gizmo-only by design.
+   * Re-anchors the sun's shadow volume on a ground point and leaves the camera alone, for a
+   * consumer that frames the camera itself and places no player for the scene to follow.
    */
-  objectNodeForIndex(sourceIndex: number): THREE.Object3D | undefined {
-    // Resolved once per drag (the shell then caches the node in its live-move snapshot), so a
-    // linear scan is fine — no parallel index structure to keep in sync with `placedObjects`.
-    return this.placedObjects.find((placed) => placed.sourceIndex === sourceIndex)?.node;
+  anchorSunShadow(point: Point): void {
+    this.focus.set(point.x, 0, point.z);
+    this.repositionSun();
+  }
+
+  /**
+   * The drawn node of a placement, so a live drag can move and turn the real mesh. Floor
+   * patches have no counterpart: their texture phase is baked into their geometry.
+   */
+  placementNode(sectorName: string, placementId: string): THREE.Object3D | undefined {
+    return this.sectors.get(sectorName)?.placements.find((placed) => placed.placement.id === placementId)?.node;
   }
 
   /** Test seam: the scale the camera is currently framed at. */
@@ -822,31 +683,28 @@ export class WorldScene implements WorldRenderSurface {
     return clampedScale(this.camera.top);
   }
 
-  /** Test seam: how many placed objects still render placeholders. */
+  /** Test seam: how many placements still render placeholders. */
   _placeholderObjectCount(): number {
-    return this.placedObjects.filter((placed) => placed.isPlaceholder).length;
+    let count = 0;
+    for (const sector of this.sectors.values()) count += sector.placements.filter((placed) => placed.isPlaceholder).length;
+    return count;
   }
 
   /** Test seam: the pose last selected for an entity. */
-  _poseFor(entityID: number): AnimationPose | undefined {
-    return this.entityStates.get(entityID)?.pose;
+  _poseFor(entityId: string): AnimationPose | undefined {
+    return this.entityStates.get(entityId)?.pose;
   }
 
-  /**
-   * Test seam: an entity node's world position, so a tween's progress is observable.
-   *
-   * Needed because the tick clamp is only assertable against *how far* an entity moved — the node
-   * existing says nothing about whether a stalled frame was bounded.
-   */
-  _positionFor(entityID: number): { x: number; y: number; z: number } | undefined {
-    const node = this.entityStates.get(entityID)?.node;
+  /** Test seam: an entity node's world position, so the eased height is observable. */
+  _positionFor(entityId: string): { x: number; y: number; z: number } | undefined {
+    const node = this.entityStates.get(entityId)?.node;
     if (node === undefined) return undefined;
     return { x: node.position.x, y: node.position.y, z: node.position.z };
   }
 
   /** Test seam: the model holder's slewed yaw, which the overlays must never inherit. */
-  _yawFor(entityID: number): number | undefined {
-    return this.entityStates.get(entityID)?.modelHolder.rotation.y;
+  _yawFor(entityId: string): number | undefined {
+    return this.entityStates.get(entityId)?.modelHolder.rotation.y;
   }
 
   /**
@@ -856,8 +714,8 @@ export class WorldScene implements WorldRenderSurface {
    * bubble hang off this node, so a facing yaw reaching it tilts them with the character. Reading
    * the holder cannot see that: both would turn together and the holder's value would look right.
    */
-  _nodeYawFor(entityID: number): number | undefined {
-    return this.entityStates.get(entityID)?.node.rotation.y;
+  _nodeYawFor(entityId: string): number | undefined {
+    return this.entityStates.get(entityId)?.node.rotation.y;
   }
 
   /**
@@ -868,55 +726,31 @@ export class WorldScene implements WorldRenderSurface {
    * by name is what lets a test spy on the texture it is about to lose; searching the graph for it
    * cannot distinguish a bubble from the name plaque hanging off the same node.
    */
-  _bubbleNodeFor(entityID: number): THREE.Object3D | undefined {
-    return this.bubbles.get(entityID)?.node;
+  _bubbleNodeFor(entityId: string): THREE.Object3D | undefined {
+    return this.bubbles.get(entityId)?.node;
   }
 }
 
-function entityPlaceholder(maskSize: GridSize): THREE.Object3D {
-  const width = f32(f32(maskSize.width) * ORTHO_RIG.worldUnitsPerPixel);
-  const height = f32(f32(maskSize.height) * ORTHO_RIG.worldUnitsPerPixel);
-  const box = new THREE.Mesh(new THREE.BoxGeometry(width, height, width / 2), PLACEHOLDER_MATERIAL);
+function entityPlaceholder(radius: number): THREE.Object3D {
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2 * radius, CHARACTER_SCALE, radius), PLACEHOLDER_MATERIAL);
   // Own geometry, shared material — disposing `PLACEHOLDER_MATERIAL` would blank every other one.
   markOwned(box, { geometry: true, material: false });
-  box.position.y = height / 2;
+  box.position.y = CHARACTER_SCALE / 2;
   return box;
 }
 
-/**
- * Parents a resolved prop model under its placed node, applying the authored yaw.
- *
- * Shared by the cold load and the prewarm heal, because only a *resolved* model may take that yaw:
- * a placeholder is built from `sourceWidth`/`sourceHeight`, which already carry the rotated
- * footprint extents, so rotating one again would swap its axes for 90/270-degree placements. The
- * two paths produce the same prop, and a yaw-convention change applied to one and missed on the
- * other renders correctly on a cold load and wrong after a heal.
- */
-function attachResolvedObject(node: THREE.Object3D, model: THREE.Object3D, object: Sector['objects'][number]): void {
-  model.rotation.y += objectYawRadians(object);
-  node.add(model);
-}
-
-function objectPlaceholder(object: Sector['objects'][number]): THREE.Object3D {
-  const width = f32(f32(object.sourceWidth) * ORTHO_RIG.worldUnitsPerPixel);
-  const depth = f32(f32(object.sourceHeight) * ORTHO_RIG.worldUnitsPerPixel);
-  // Keep the `f32` even though no test can distinguish it: `groundCellSize` is 32, so this
-  // multiply only shifts the exponent and is exact either way. It states the contract the other
-  // two narrowings here carry, and it starts mattering the moment the cell size is not a power of
-  // two.
-  const height = f32(f32(SOMNIO_CONSTANTS.groundCellSize) * ORTHO_RIG.worldUnitsPerPixel);
-  const box = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), PLACEHOLDER_MATERIAL);
+function placementPlaceholder(footprint: Size): THREE.Object3D {
+  const box = new THREE.Mesh(new THREE.BoxGeometry(footprint.width, PLACEHOLDER_HEIGHT, footprint.depth), PLACEHOLDER_MATERIAL);
   markOwned(box, { geometry: true, material: false });
-  box.position.y = height / 2;
+  box.position.y = PLACEHOLDER_HEIGHT / 2;
   return box;
 }
 
-/** `overlayScale` — overlay artwork is drawn a little under 1:1 with legacy pixels. */
-const OVERLAY_SCALE = f32(0.8);
+/** World metres per pixel of overlay artwork. */
+const OVERLAY_METRES_PER_PIXEL = 0.016;
 
 /**
- * Fixed screen-aligned orientation for overlay quads: the camera's **own** orientation, which is
- * what `overlayOrientation` uses natively.
+ * Fixed screen-aligned orientation for overlay quads: the camera's **own** orientation.
  *
  * Constant because the rig is locked — only the camera's position follows the player. Rebuilding it
  * from `pitchDegrees`/`yawDegrees` as Euler angles instead looks right and is not: those describe
@@ -932,17 +766,11 @@ const OVERLAY_ORIENTATION = (() => {
   return new THREE.Quaternion().setFromRotationMatrix(matrix);
 })();
 /** Gap between the speaker's head and the balloon's tail tip. */
-const BUBBLE_HEAD_GAP = f32(0.2);
-/**
- * Gap between the feet anchor and the top of the name plaque.
- *
- * The narrowing is currently indistinguishable from a plain `0.15` in the plaque's vertical offset,
- * because the plaque height is a fixed 18 px there and the double rounding happens to agree. Change
- * `NAME_PLAQUE.fontSize` and it starts mattering, with nothing to announce that it has.
- */
-const PLAQUE_FEET_GAP = f32(0.15);
+const BUBBLE_HEAD_GAP = 0.2;
+/** Gap between the feet anchor and the top of the name plaque. */
+const PLAQUE_FEET_GAP = 0.15;
 /** Advance past the point where the below-the-feet quad clears the floor plane. */
-const PLAQUE_FLOOR_CLEARANCE = f32(0.15);
+const PLAQUE_FLOOR_CLEARANCE = 0.15;
 
 /**
  * `userData` keys marking which GPU resources a mesh allocated itself, and may therefore dispose.
@@ -964,7 +792,7 @@ function markOwned(mesh: THREE.Mesh, options: { geometry: boolean; material: boo
  * Releases the GPU resources a detached subtree owned, then detaches it.
  *
  * `removeFromParent()` alone drops the reference but leaves the geometry, material, and texture in
- * `WebGLRenderer`'s internal maps, so every sector hop and every chat bubble would accumulate VRAM
+ * `WebGLRenderer`'s internal maps, so every door and every chat bubble would accumulate VRAM
  * until the context is lost — the world going black with nothing the player can act on. Three.js
  * documents disposal as the caller's job for exactly this reason.
  *
@@ -978,7 +806,7 @@ function markOwned(mesh: THREE.Mesh, options: { geometry: boolean; material: boo
  * therefore owns exactly one GPU resource while carrying neither flag.
  *
  * This is the single detach-and-dispose entry point on purpose. A bare `removeFromParent()` on a
- * flagged mesh puts it beyond the reach of any later sector cleanup, so the flags stop meaning
+ * flagged mesh puts it beyond the reach of any later cleanup, so the flags stop meaning
  * anything; every site that drops a node routes through here instead.
  */
 function disposeSubtree(root: THREE.Object3D | undefined): void {
@@ -993,7 +821,7 @@ function disposeSubtree(root: THREE.Object3D | undefined): void {
       // Safe to take the map with the material because every owned material holds a texture this
       // file minted: the floor and its patches clone their cached entry, and each overlay rasterizes
       // a fresh `CanvasTexture`. Disposing a cache entry directly would corrupt nothing, but
-      // `WebGLTextures` clears its `__version` unconditionally, so the next sector using that
+      // `WebGLTextures` clears its `__version` unconditionally, so the next quad using that
       // material would pay a full re-upload and mipmap regeneration on its first drawn frame.
       (material as THREE.MeshBasicMaterial).map?.dispose();
       material.dispose();
@@ -1018,10 +846,7 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.
   const texture = new THREE.CanvasTexture(art.canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-  const size = new THREE.Vector2(
-    f32(f32(f32(art.widthPixels) * ORTHO_RIG.worldUnitsPerPixel) * OVERLAY_SCALE),
-    f32(f32(f32(art.heightPixels) * ORTHO_RIG.worldUnitsPerPixel) * OVERLAY_SCALE),
-  );
+  const size = new THREE.Vector2(art.widthPixels * OVERLAY_METRES_PER_PIXEL, art.heightPixels * OVERLAY_METRES_PER_PIXEL);
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), material);
   // Every overlay quad allocates its own canvas texture, material, and geometry.
   markOwned(plate, { geometry: true, material: true });
@@ -1046,10 +871,8 @@ function speechBubbleQuad(lines: readonly string[]): THREE.Object3D {
  */
 function namePlaqueQuad(name: string, background: string, bold: boolean): THREE.Object3D {
   const { container, plate, size } = overlayQuad(renderNamePlaque(name, background, bold));
-  // The reference chain is Float32 throughout (`tan(pitch)` included), so every step narrows. The halving stays unnarrowed on purpose: division by 2 is exact in binary,
-  // so `f32` around it would be noise rather than parity.
-  const drop = f32(size.y + PLAQUE_FEET_GAP);
-  const pitch = f32(f32(ORTHO_RIG.pitchDegrees * FLOAT_PI) / 180);
-  plate.position.set(0, -f32(size.y / 2 + PLAQUE_FEET_GAP), f32(f32(drop / f32(Math.tan(pitch))) + PLAQUE_FLOOR_CLEARANCE));
+  const drop = size.y + PLAQUE_FEET_GAP;
+  const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
+  plate.position.set(0, -(size.y / 2 + PLAQUE_FEET_GAP), drop / Math.tan(pitch) + PLAQUE_FLOOR_CLEARANCE);
   return container;
 }

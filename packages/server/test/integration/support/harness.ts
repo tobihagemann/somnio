@@ -1,7 +1,8 @@
-import { LOGIN_RESULT, REGISTER_RESULT, encodeSomnioMessage } from '@somnio/protocol';
+import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
+import { encodeSomnioMessage } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
-import { SOMNIO_CONSTANTS, feetRect, isFeetClear } from '@somnio/core';
-import type { GridPoint, PixelRect, Sector } from '@somnio/core';
+import { SOMNIO_CONSTANTS } from '@somnio/core';
+import type { Character, Point } from '@somnio/core';
 import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
@@ -18,8 +19,10 @@ import { bootServer } from '../../../src/bootstrap/runServer.ts';
 import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer.ts';
 import { DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
-import { loadSectorCache } from '../../../src/sectors/sectorCache.ts';
+import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
+import type { LoadedWorld } from '../../../src/sectors/sectorCache.ts';
 import { WorldClockService } from '../../../src/services/worldClockService.ts';
+import type { SpaceActor } from '../../../src/world/spaceActor.ts';
 import { WorldRouter } from '../../../src/world/worldRouter.ts';
 import { TestClient } from '../../support/liveServer.ts';
 import { testLogger } from '../../support/logger.ts';
@@ -72,13 +75,13 @@ export async function bootTestServer(
   };
 }
 
-/** Real repositories over `db` plus a router over the fixture sectors, for handler-level suites. */
+/** Real repositories over `db` plus a router over the fixture world, for handler-level suites. */
 export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<ConnectionDependencies> {
   const logger = testLogger();
   const characters = new PostgresCharacterRepository(db);
   const npcDialogStates = new PostgresNPCDialogStateRepository(db);
   const worldClocks = new PostgresWorldClockRepository(db);
-  const worldRouter = await WorldRouter.create(fixtureSectors(), characters, npcDialogStates, logger);
+  const worldRouter = await WorldRouter.create(fixtureWorld(), characters, npcDialogStates, logger);
   return {
     accounts: new PostgresAccountRepository(db),
     characters,
@@ -87,14 +90,15 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     npcDialogStates,
     sessions: new PostgresSessionRepository(db),
     worldRouter,
-    worldClock: new WorldClockService(worldRouter, worldClocks, await worldClocks.load(), logger),
+    worldClock: new WorldClockService(worldClocks, await worldClocks.load(), logger),
     outboxHighWatermark: 1024,
     logger,
   };
 }
 
-export function fixtureSectors(): Map<string, Sector> {
-  return loadSectorCache(DEV_SECTORS_DIRECTORY);
+/** The committed sectors over the committed registry: the world the server ships. */
+export function fixtureWorld(): LoadedWorld {
+  return loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
 }
 
 export function uniqueNickname(prefix: string): string {
@@ -112,8 +116,7 @@ export function registerFrame(nickname: string, password = TEST_PASSWORD): strin
       nickname,
       password,
       passwordRepeat: password,
-      characterClass: 0,
-      gender: 0,
+      people: 'wachen',
       email: `${nickname}@example.invalid`,
     },
   });
@@ -125,7 +128,7 @@ async function registerOverWire(url: string, nickname: string, password = TEST_P
   await client.next();
   client.send(registerFrame(nickname, password));
   const { target } = await client.until('registerResult');
-  if (target.tag !== 'registerResult' || target.payload.result !== REGISTER_RESULT.ok) {
+  if (target.tag !== 'registerResult' || target.payload.result !== 'ok') {
     throw new Error(`registration of ${nickname} failed: ${JSON.stringify(target)}`);
   }
   await client.close();
@@ -133,12 +136,16 @@ async function registerOverWire(url: string, nickname: string, password = TEST_P
 
 export interface JoinedClient {
   client: TestClient;
-  /** `loginResult` through the closing `dateTick`, in order. */
+  /** `loginResult` and every frame of the join after it, in order. */
   join: SomnioMessage[];
-  entityIndex: number;
+  entityId: string;
+  spaceId: string;
 }
 
-/** Logs in over the wire and drains the join sequence. */
+/**
+ * Logs in over the wire and drains the join sequence. The join has no closing frame, so a
+ * `revokeSession` for a token nobody holds is sent behind the login: its answer marks the end.
+ */
 export async function loginOverWire(url: string, nickname: string, options: { password?: string; requestSessionToken?: boolean } = {}): Promise<JoinedClient> {
   const client = await TestClient.open(url);
   await client.next();
@@ -156,56 +163,68 @@ export async function loginOverWire(url: string, nickname: string, options: { pa
     }),
   );
   const login = await client.until('loginResult');
-  if (login.target.tag !== 'loginResult' || login.target.payload.result !== LOGIN_RESULT.ok) {
+  if (login.target.tag !== 'loginResult' || login.target.payload.result !== 'ok') {
     throw new Error(`login of ${nickname} failed: ${JSON.stringify(login.target)}`);
   }
-  const { target, before } = await client.until('dateTick');
-  const join = [login.target, ...before, target];
-  const main = join.find((message) => message.tag === 'mainCharacter');
-  if (main?.tag !== 'mainCharacter') throw new Error('join carried no mainCharacter');
-  return { client, join, entityIndex: main.payload.entityIndex };
+  const join = [login.target, ...(await drainFrames(client))];
+  const enter = join[1];
+  if (enter?.tag !== 'enterSpace') throw new Error('the join did not start with enterSpace');
+  return { client, join, entityId: enter.payload.selfId, spaceId: enter.payload.spaceId };
+}
+
+/** Everything the server has sent the attached client so far. */
+export async function drainFrames(client: TestClient): Promise<SomnioMessage[]> {
+  client.send(frame({ tag: 'revokeSession', payload: { token: 'no-such-token' } }));
+  return (await client.until('sessionRevoked')).before;
+}
+
+async function registerFreshPlayer(url: string, prefix: string): Promise<string> {
+  const nickname = uniqueNickname(prefix);
+  await registerOverWire(url, nickname);
+  return nickname;
 }
 
 /** Registers and logs in a fresh player. */
 export async function joinFreshPlayer(url: string, prefix: string): Promise<JoinedClient & { nickname: string }> {
-  const nickname = uniqueNickname(prefix);
-  await registerOverWire(url, nickname);
+  const nickname = await registerFreshPlayer(url, prefix);
   return { nickname, ...(await loginOverWire(url, nickname)) };
 }
 
-/** The player's own spawn from its join sequence. */
-export function selfPosition(joined: JoinedClient): GridPoint {
-  const self = joined.join.find((message) => message.tag === 'entity' && message.payload.entityIndex === joined.entityIndex);
+/** Registers a fresh player, saves them at `place`, and logs them in there. */
+export async function joinFreshPlayerAt(
+  server: TestServer,
+  prefix: string,
+  place: Pick<Character, 'space' | 'position'>,
+): Promise<JoinedClient & { nickname: string }> {
+  const nickname = await registerFreshPlayer(server.url, prefix);
+  await server.server.db
+    .updateTable('characters')
+    .set({ space: place.space, position_x: place.position.x, position_z: place.position.z })
+    .where('name', '=', nickname)
+    .execute();
+  return { nickname, ...(await loginOverWire(server.url, nickname)) };
+}
+
+/** The player's own position from its join sequence. */
+export function selfPosition(joined: JoinedClient): Point {
+  const self = joined.join.find((message) => message.tag === 'entity' && message.payload.id === joined.entityId);
   if (self?.tag !== 'entity') throw new Error('join carried no self entity');
-  return { x: self.payload.x, y: self.payload.y };
+  return { x: self.payload.x, z: self.payload.z };
 }
 
 /**
- * The clear player origin on the 4 px grid nearest `center` (within `radius` of the feet
- * center when given), validated with the server's own feet-box gate against `blockers`.
+ * A point a player can stand on between touching `center` and `reach` away from it, found on
+ * rings around it, so a suite does not pin where the committed sectors keep their furniture.
  */
-export function nearestClearOrigin(
-  sector: Sector,
-  center: { x: number; y: number },
-  blockers: readonly PixelRect[],
-  radius = Number.POSITIVE_INFINITY,
-): GridPoint | undefined {
-  const sprite = SOMNIO_CONSTANTS.playerSpriteSize;
-  let best: GridPoint | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let y = 0; y < sector.dimensions.height * SOMNIO_CONSTANTS.tileSize; y += 4) {
-    for (let x = 0; x < sector.dimensions.width * SOMNIO_CONSTANTS.tileSize; x += 4) {
-      const candidate = { x, y };
-      const feet = feetRect(candidate, sprite);
-      const feetCenter = { x: feet.x + feet.width / 2, y: feet.y + feet.height / 2 };
-      const distance = Math.hypot(feetCenter.x - center.x, feetCenter.y - center.y);
-      if (distance > radius || distance >= bestDistance) continue;
-      if (!isFeetClear(candidate, sprite, sector, blockers)) continue;
-      best = candidate;
-      bestDistance = distance;
+export function standableNear(space: SpaceActor, center: Point, reach: number): Point {
+  for (let radius = reach; radius > 2 * SOMNIO_CONSTANTS.playerRadius; radius -= 0.1) {
+    for (let step = 0; step < 16; step += 1) {
+      const angle = (step * Math.PI) / 8;
+      const candidate = { x: center.x + radius * Math.sin(angle), z: center.z + radius * Math.cos(angle) };
+      if (space.canStand(candidate)) return candidate;
     }
   }
-  return best;
+  throw new Error(`nowhere to stand within ${reach} m of (${center.x}, ${center.z})`);
 }
 
 export function sleep(ms: number): Promise<void> {

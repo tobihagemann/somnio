@@ -1,33 +1,48 @@
 import * as THREE from 'three';
-import { bundledModelRegistry } from '@somnio/core';
-import type { GridPoint } from '@somnio/core';
-import type { Sector } from '@somnio/core';
-import { objectAnchorBottomY, objectNodePosition } from '@/scene/placement';
-import { wheelDeltaToNativeScale } from '@/scene/cameraRig';
+import { MONSTER_KIND_IDS, bundledModelRegistry, sectorOrigin } from '@somnio/core';
+import type { ModelRegistry, Point, Sector } from '@somnio/core';
+import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { WorldScene } from '@/scene/worldScene';
 import { element, floating } from '@/ui/dom';
-import { AuthoringOverlay } from './authoringOverlay';
+import { AuthoringOverlay, overlayLabels } from './authoringOverlay';
 import type { AuthoringFacingHandle, AuthoringHandleSet } from './authoringOverlay';
-import { gridPoint, nudgeDelta } from './canvasController';
+import { candidateSelections, gridPoint, nudgeDelta, screenPoint } from './canvasController';
 import type { EditorTool } from './canvasController';
-import { captureClipboard, emptyClipboard, isClipboardEmpty, validatedPaste } from './clipboard';
+import { captureClipboard, emptyClipboard, insertClipboard, isClipboardEmpty } from './clipboard';
 import type { EditorClipboard } from './clipboard';
 import { handleEditorKeydown } from './commands';
 import type { EditorCommandTarget } from './commands';
-import { EditorDocument, listSectors } from './document';
-import * as drag from './dragController';
-import type { DragSession } from './dragController';
+import { EditorDocument, applySectorSettings, listSectors, loadSector, sectorSettings } from './document';
+import type { CommitResult, SectorSettings } from './document';
+import { FACING_CLEARANCE_PT, HANDLE_DRAW_EXTENT_PT, facingHandlePoint, handleCenters, metresPerViewportPoint } from './drag/geometry';
+import type { DragContext } from './drag/geometry';
+import { applyMove, origins, turnable } from './drag/mutations';
+import type { PlacementDefaults } from './drag/mutations';
+import { beginSession, endSession, preview } from './drag/session';
+import type { DragSession } from './drag/session';
 import { EditorCamera, scrollIntent } from './framing';
-import { currentGridSnapPx, persistGridSnapPx } from './preferences';
+import { currentGridSnap, persistGridSnap, stepOrFine } from './preferences';
 import { isValidSectorName } from './sectorName';
-import { isValidSelection, removeAllSelections, selectionBounds, selectionsEqual } from './selection';
+import {
+  byId,
+  isValidSelection,
+  nextDoorId,
+  rectRecord,
+  removeAllSelections,
+  renameRecord,
+  selectionFootprint,
+  selectionKey,
+  selectionsEqual,
+} from './selection';
 import type { EditorSelection } from './selection';
+import { documentIssues, neighbours } from './surroundings';
+import type { DocumentIssues } from './surroundings';
 import { CursorReadout } from './ui/cursorReadout';
 import { InspectorPanel } from './ui/inspector';
 import { EditorOverlays } from './ui/overlays';
 import type { EditorOverlayKind } from './ui/overlays';
-import type { SectorFormValues } from './ui/sectorForm';
+import { RecordLabels } from './ui/recordLabels';
 import { ToolPalette } from './ui/toolPalette';
 
 /**
@@ -38,10 +53,9 @@ import { ToolPalette } from './ui/toolPalette';
  * session, and gameplay panels.
  *
  * Also the workspace state: tool, selection, hover anchor, presented overlay, drag
- * state, and the reconcile/refresh split — a document mutation reloads the whole scene and
- * re-applies the editor framing (`WorldScene.load` unconditionally snaps the camera to the
- * sector centre, so the re-apply is what preserves the user's pan/zoom), while live drags
- * update only the gizmos plus, for a move, the mapped meshes.
+ * state, and the reconcile/refresh split — a document change redraws the document's sector and
+ * recomputes what the world would report about it, while live drags update only the gizmos
+ * plus, for a move or a turn, the placement's own node.
  */
 
 export interface EditorShellOptions {
@@ -59,50 +73,55 @@ export class EditorShell implements EditorCommandTarget {
   readonly inspector: InspectorPanel;
   readonly palette: ToolPalette;
   readonly readout: CursorReadout;
+  readonly labels = new RecordLabels();
 
   tool: EditorTool = 'select';
   selection: EditorSelection[] = [];
   presentedOverlay: EditorOverlayKind | undefined;
   showGridOverlay = false;
   /**
-   * Last grid point the cursor hovered — the paste anchor. Unlike the readout (which resets
+   * Last ground point the cursor hovered — the paste anchor. Unlike the readout (which resets
    * for display when the hover ends), this survives the pointer leaving the canvas so ⌘V
    * after mousing to a panel still lands where the user last pointed.
    */
-  lastHoveredGrid: GridPoint | undefined;
+  lastHoveredGrid: Point | undefined;
+  /** What the world would report about the document, as of the last document change. */
+  issues: DocumentIssues = { error: undefined, records: [] };
 
   private readonly container: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly marqueeNode: HTMLElement;
-  private readonly objectModelIDs: readonly string[];
-  private readonly floorMaterialIDs: readonly string[];
+  private readonly registry: ModelRegistry;
   private renderer: THREE.WebGLRenderer | undefined;
   private lastFrameMs: number | undefined;
+
+  /** Every other sector the file API holds: the neighbours to draw and the sectors a door can lead to. */
+  private others: Sector[] = [];
+  /** The names the scene currently draws: the document's sector and its read-only neighbours. */
+  private drawnDocument: string | undefined;
+  private readonly drawnNeighbours = new Set<string>();
+  /** The model the placement tool stamps: that of the placement selected last. */
+  private placementModelId: string;
 
   private clipboard: EditorClipboard = emptyClipboard();
   private dragSession: DragSession | undefined;
   private dragStart: { x: number; y: number } | undefined;
   private dragAdditive = false;
   private dragPreview: Sector | undefined;
-  /** Authored node positions of live-moved meshes, restored when a drag commits nothing. */
-  private liveMovedNodes: {
-    index: number;
-    node: THREE.Object3D;
-    position: THREE.Vector3;
-    depth: number;
-  }[] = [];
+  /** Where the live-dragged placements' nodes stood, restored when a drag commits nothing. */
+  private liveNodes: { id: string; node: THREE.Object3D; position: THREE.Vector3; yaw: number }[] = [];
 
   constructor(options: EditorShellOptions) {
     this.container = options.container;
-    const registry = bundledModelRegistry();
-    this.objectModelIDs = registry.objectModels.map((entry) => entry.id);
-    this.floorMaterialIDs = registry.floorMaterials.map((entry) => entry.id);
+    this.registry = bundledModelRegistry();
+    this.placementModelId = this.registry.objectModels[0]?.id ?? '';
+    const floorMaterialIds = this.registry.floorMaterials.map((entry) => entry.id);
 
     this.canvas = element('canvas', { attributes: { id: 'somnio-editor-canvas' } });
     this.marqueeNode = element('div', { className: 'editor-marquee hidden' });
-    this.scene = new WorldScene(new HttpModelAssets(registry), this.aspect());
+    this.scene = new WorldScene(new HttpModelAssets(this.registry), this.registry, this.aspect());
     this.scene.scene.add(this.authoringOverlay.root);
-    this.camera = new EditorCamera(this.scene.camera);
+    this.camera = new EditorCamera(this.scene.camera, (focus) => this.scene.anchorSunShadow(focus));
 
     this.palette = new ToolPalette((tool) => {
       this.tool = tool;
@@ -110,17 +129,23 @@ export class EditorShell implements EditorCommandTarget {
     });
     this.inspector = new InspectorPanel(
       {
-        mutate: (actionName, change) => this.mutateGuarded(actionName, change),
+        mutate: (actionName, change) => this.mutate(actionName, change),
+        rename: (selection, id) => this.renameSelection(selection, id),
+        onSelect: (selection) => this.select([selection]),
+        onAddDoor: (placementId, anchor) => this.addDoor(placementId, anchor),
         onDeleteSelection: () => this.deleteSelection(),
         onOpenSectorSettings: () => this.present('sectorSettings'),
+        otherSectors: () => this.others,
+        issues: () => this.issues,
       },
-      { objectModelIDs: this.objectModelIDs, floorMaterialIDs: this.floorMaterialIDs },
+      this.registry,
     );
     this.readout = new CursorReadout();
-    this.overlays = new EditorOverlays(this.overlayCallbacks(), this.floorMaterialIDs);
+    this.overlays = new EditorOverlays(this.overlayCallbacks(), floorMaterialIds);
 
     this.container.append(
       this.canvas,
+      this.labels.root,
       this.marqueeNode,
       floating('top-leading', [this.palette.root]),
       floating('top-trailing', [this.inspector.root]),
@@ -136,6 +161,7 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   private overlayCallbacks(): ConstructorParameters<typeof EditorOverlays>[0] {
+    const showError = (error: unknown): void => this.overlays.showError(String(error));
     return {
       onResume: () => this.present(undefined),
       onShowOverlay: (kind) => this.present(kind),
@@ -150,21 +176,29 @@ export class EditorShell implements EditorCommandTarget {
         }
         void this.document
           .saveAs(name)
-          .then(() => this.present(undefined))
-          .catch((error: unknown) => this.overlays.showError(String(error)));
+          .then(() => {
+            this.present(undefined);
+            return this.loadOthers();
+          })
+          .catch(showError);
       },
       onCommitNewMap: (values) => {
         if (!this.confirmDiscardIfDirty()) return;
-        this.document.create(values);
+        const result = this.document.create(values);
+        if (!result.accepted) {
+          this.overlays.showError(result.message);
+          return;
+        }
         this.selection = [];
         this.present(undefined);
+        void this.loadOthers().catch(showError);
       },
       onCancelNewMap: () => {
         this.present(this.document.isUninitialized ? 'sectorPicker' : 'gameMenu');
       },
       onApplySectorSettings: (values) => this.applySectorSettings(values),
       onSetGridSnap: (snap) => {
-        persistGridSnapPx(snap);
+        persistGridSnap(snap);
         this.refreshOverlay();
       },
       onPickSector: (name) => {
@@ -174,23 +208,17 @@ export class EditorShell implements EditorCommandTarget {
           .then(() => {
             this.selection = [];
             this.present(undefined);
+            return this.loadOthers();
           })
-          .catch((error: unknown) => this.overlays.showError(String(error)));
+          .catch(showError);
       },
       documentState: () => ({
         isUninitialized: this.document.isUninitialized,
         isDirty: this.document.isDirty,
         sectorName: this.document.sector.name,
       }),
-      sectorSettingsValues: (): SectorFormValues => ({
-        name: this.document.sector.name,
-        width: this.document.sector.dimensions.width,
-        height: this.document.sector.dimensions.height,
-        indoor: this.document.sector.light.indoor,
-        brightness: this.document.sector.light.brightness,
-        floorMaterialID: this.document.sector.floorMaterialID,
-      }),
-      currentGridSnap: () => currentGridSnapPx(),
+      sectorSettingsValues: () => sectorSettings(this.document.sector),
+      currentGridSnap: () => currentGridSnap(),
     };
   }
 
@@ -227,8 +255,7 @@ export class EditorShell implements EditorCommandTarget {
         break;
       case undefined:
         if (this.selection.length > 0) {
-          this.selection = [];
-          this.selectionChanged();
+          this.select([]);
         } else {
           this.present('gameMenu');
         }
@@ -260,19 +287,7 @@ export class EditorShell implements EditorCommandTarget {
 
   /** `⌘D`: copy + paste-offset in one undo step, no clipboard round-trip. */
   duplicateSelection(): void {
-    const clipboard = captureClipboard(this.selection, this.document.sector);
-    if (isClipboardEmpty(clipboard)) return;
-    const pasted = validatedPaste(clipboard, this.document.sector, undefined, Math.max(1, currentGridSnapPx()));
-    if (pasted === undefined) return;
-    if (this.wouldIntroducePatchOverlap(pasted.sector)) {
-      this.overlays.showError('Floor patches must not overlap.');
-      return;
-    }
-    this.document.mutate('Duplicate Selection', (sector) => {
-      Object.assign(sector, pasted.sector);
-    });
-    this.selection = pasted.selection;
-    this.selectionChanged();
+    this.insert('Duplicate Selection', captureClipboard(this.selection, this.document.sector), undefined);
   }
 
   toggleGrid(): void {
@@ -286,109 +301,81 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   /**
-   * `⌘V`: appends the clones anchored at the last hovered grid point (surviving the pointer
-   * leaving the canvas), falling back to a one-grid-step offset, and selects them. The paste
-   * gate accepts only a body the writer round-trips.
+   * `⌘V`: appends the clones anchored at the last hovered ground point (surviving the pointer
+   * leaving the canvas), falling back to a one-grid-step offset, and selects them.
    */
   paste(): void {
-    const pasted = validatedPaste(this.clipboard, this.document.sector, this.lastHoveredGrid, Math.max(1, currentGridSnapPx()));
-    if (pasted === undefined) return;
-    if (this.wouldIntroducePatchOverlap(pasted.sector)) {
-      this.overlays.showError('Floor patches must not overlap.');
-      return;
-    }
-    this.document.mutate('Paste', (sector) => {
-      Object.assign(sector, pasted.sector);
+    this.insert('Paste', this.clipboard, this.lastHoveredGrid);
+  }
+
+  /** The one way carried records enter the document, shared by duplicate and paste. */
+  private insert(actionName: string, clipboard: EditorClipboard, anchor: Point | undefined): void {
+    if (isClipboardEmpty(clipboard)) return;
+    let inserted: EditorSelection[] = [];
+    const { accepted } = this.mutate(actionName, (sector) => {
+      inserted = insertClipboard(clipboard, sector, anchor, stepOrFine(currentGridSnap()));
     });
-    this.selection = pasted.selection;
-    this.selectionChanged();
+    if (accepted) this.select(inserted);
   }
 
   /** `⌘A` Select All. */
   selectAll(): void {
-    const sector = this.document.sector;
-    const all: EditorSelection[] = [
-      ...sector.npcs.map((_, index): EditorSelection => ({ kind: 'npc', index })),
-      ...sector.monsterSpawns.map((_, index): EditorSelection => ({ kind: 'monsterSpawn', index })),
-      ...sector.portals.map((_, index): EditorSelection => ({ kind: 'portal', index })),
-      ...sector.collisionMasks.map((_, index): EditorSelection => ({ kind: 'mask', index })),
-      ...sector.objects.map((_, index): EditorSelection => ({ kind: 'object', index })),
-      ...sector.floorPatches.map((_, index): EditorSelection => ({ kind: 'floorPatch', index })),
-    ];
-    this.selection = all;
-    this.selectionChanged();
+    this.select(candidateSelections(this.document.sector));
   }
 
   deleteSelection(): void {
     if (this.presentedOverlay !== undefined || this.selection.length === 0) return;
     const selections = this.selection;
-    this.document.mutate('Delete selection', (sector) => {
+    this.mutate('Delete selection', (sector) => {
       removeAllSelections(selections, sector);
     });
-    this.selection = [];
-    this.selectionChanged();
   }
 
-  /** Arrow-key nudge: 1 px, or one grid step with Shift, as one undo step per press. */
+  /** Arrow-key nudge: one centimetre, or one grid step with Shift, as one undo step per press. */
   nudgeSelection(key: string, shiftHeld: boolean): boolean {
-    if (this.selection.length === 0) return false;
-    const delta = nudgeDelta(key, shiftHeld, currentGridSnapPx());
-    if (delta === undefined) return false;
-    const originals = drag.origins(this.selection, this.document.sector);
-    this.mutateGuarded('Move selection', (sector) => {
-      drag.applyMove(originals, delta.dx, delta.dy, sector);
+    const delta = nudgeDelta(key, shiftHeld, currentGridSnap());
+    const originals = origins(this.selection, this.document.sector);
+    if (delta === undefined || originals.length === 0) return false;
+    this.mutate('Move selection', (sector) => {
+      applyMove(originals, delta.dx, delta.dz, sector);
     });
     return true;
   }
 
+  /** Changes the document as one undo step, surfacing a refusal in the error banner. */
+  private mutate(actionName: string, change: (sector: Sector) => void): CommitResult {
+    const result = this.document.mutate(actionName, change);
+    if (!result.accepted) this.overlays.showError(result.message);
+    return result;
+  }
+
   /**
-   * The floor-patch overlap gate, applied at commit only — never at save and never at load.
-   * Authored patches may not overlap (coplanar quads z-fight), but a legacy file that already
-   * carries an overlap still opens, edits elsewhere, and saves; only a commit that
-   * *introduces* an overlap is refused, with one validation message.
+   * A rename changes the identity the selection is keyed by, so the selection follows it in the
+   * same step: set before the commit reconciles, and put back when the document refuses.
    */
-  private mutateGuarded(actionName: string, change: (sector: Sector) => void): void {
-    const candidate = structuredClone(this.document.sector);
-    change(candidate);
-    if (this.wouldIntroducePatchOverlap(candidate)) {
-      this.overlays.showError('Floor patches must not overlap.');
-      return;
-    }
-    this.document.mutate(actionName, change);
+  private renameSelection(selection: EditorSelection, id: string): boolean {
+    const previous = this.selection;
+    this.selection = previous.map((entry) => (selectionKey(entry) === selectionKey(selection) ? { kind: selection.kind, id } : entry));
+    const { accepted } = this.mutate('Rename record', (sector) => renameRecord(selection, id, sector));
+    if (!accepted) this.selection = previous;
+    return accepted;
   }
 
-  private wouldIntroducePatchOverlap(candidate: Sector): boolean {
-    // Refuse a commit that introduces a *new* overlapping pair, so a file already carrying an
-    // overlap still edits elsewhere. A subset check, not a count: an edit that trades one overlap
-    // for a different one keeps the count constant but is still a new overlap and must be refused.
-    const before = overlappingPatchPairs(this.document.sector);
-    for (const pair of overlappingPatchPairs(candidate)) {
-      if (!before.has(pair)) return true;
-    }
-    return false;
+  /** Puts a door at one of a placement's model's anchors. It leads nowhere until its target is picked. */
+  private addDoor(placementId: string, anchor: string): void {
+    const id = nextDoorId('', this.document.sector.doors);
+    const { accepted } = this.mutate('Add door', (sector) => {
+      sector.doors.push({ id, placement: placementId, anchor, target: { sector: '', door: 'exit' } });
+    });
+    if (accepted) this.select([{ kind: 'door', id }]);
   }
 
-  private applySectorSettings(values: SectorFormValues): void {
-    const sector = this.document.sector;
-    // Two undo steps, as natively: the rename and the field edit are distinct actions.
-    if (values.name !== sector.name) {
-      this.document.mutate('Rename sector', (draft) => {
-        draft.name = values.name;
-      });
-    }
-    const changed =
-      values.width !== sector.dimensions.width ||
-      values.height !== sector.dimensions.height ||
-      values.indoor !== sector.light.indoor ||
-      values.brightness !== sector.light.brightness ||
-      values.floorMaterialID !== sector.floorMaterialID;
-    if (changed) {
-      this.document.mutate('Edit sector settings', (draft) => {
-        draft.dimensions = { width: values.width, height: values.height };
-        draft.light = { indoor: values.indoor, brightness: values.brightness };
-        draft.floorMaterialID = values.floorMaterialID;
-      });
-    }
+  private applySectorSettings(values: SectorSettings): void {
+    // Two undo steps: the rename and the field edit are distinct actions.
+    this.mutate('Rename sector', (draft) => {
+      draft.name = values.name;
+    });
+    if (!this.mutate('Edit sector settings', (draft) => applySectorSettings(draft, values)).accepted) return;
     this.present(undefined);
   }
 
@@ -398,68 +385,116 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   /**
-   * Full reload after a document mutation: swap the rendered sector graph, re-apply the
-   * editor framing (`load` snaps the camera to the sector centre otherwise), clamp the
-   * selection, refresh the gizmos. A reconcile during a live drag means an external mutation
-   * invalidated the session's snapshotted indices — the session is dropped so a resumed
-   * gesture can never mutate re-indexed records.
+   * Fetches every other sector the file API holds. The result belongs to the document it was
+   * fetched for: one opened meanwhile runs its own fetch.
    */
-  private reconcile(): void {
-    this.resetDragState();
-    if (!this.document.isUninitialized) {
-      this.scene.load(this.document.sector, false);
-      this.camera.refreshFraming(this.document.sector);
-    }
-    this.selection = this.selection.filter((selection) => isValidSelection(selection, this.document.sector));
-    this.readout.applyBounds(this.selection, this.document.sector);
-    this.refreshOverlay();
-    this.renderUI();
+  private async loadOthers(): Promise<void> {
+    const name = this.document.sector.name;
+    const names = (await listSectors()).filter((other) => other !== name);
+    const loaded = await Promise.all(
+      names.map((other) =>
+        loadSector(other).catch((error: unknown) => {
+          this.overlays.showError(String(error));
+          return undefined;
+        }),
+      ),
+    );
+    if (this.document.sector.name !== name) return;
+    this.others = loaded.filter((sector) => sector !== undefined);
+    for (const neighbour of this.drawnNeighbours) this.scene.removeSector(neighbour);
+    this.drawnNeighbours.clear();
+    this.reconcile();
   }
 
   /**
-   * Overlay-only refresh — no sector-graph rebuild. While a drag is live the preview body
-   * wins, so move/resize/rotate render without a mutation. Also re-run on every camera
-   * change: the handle extents are screen-constant points, so their world geometry depends
-   * on the live pixels-per-point factor.
+   * After a document change: redraw the document's sector and the neighbours it now has, clamp
+   * the selection, recompute the issues, refresh the gizmos. A reconcile during a live drag
+   * means an external change invalidated the session's snapshots — the session is dropped so a
+   * resumed gesture can never write into records that are gone.
+   */
+  private reconcile(): void {
+    this.resetDragState();
+    const sector = this.document.sector;
+    this.selection = this.selection.filter((selection) => isValidSelection(selection, sector));
+    this.issues = this.document.isUninitialized ? { error: undefined, records: [] } : documentIssues(sector, this.others, this.registry);
+    this.drawSectors();
+    if (!this.document.isUninitialized) this.camera.refreshFraming(sector);
+    this.selectionChanged();
+  }
+
+  /** Neighbours are static, so one already drawn stays; the document's sector is rebuilt on every change. */
+  private drawSectors(): void {
+    const sector = this.document.sector;
+    if (this.drawnDocument !== undefined && this.drawnDocument !== sector.name) this.scene.removeSector(this.drawnDocument);
+    this.drawnDocument = undefined;
+    const adjoining = this.document.isUninitialized ? [] : neighbours(sector, this.others);
+    for (const name of [...this.drawnNeighbours]) {
+      if (adjoining.some((neighbour) => neighbour.name === name)) continue;
+      this.scene.removeSector(name);
+      this.drawnNeighbours.delete(name);
+    }
+    for (const neighbour of adjoining) {
+      if (this.drawnNeighbours.has(neighbour.name)) continue;
+      this.scene.addSector(neighbour);
+      this.drawnNeighbours.add(neighbour.name);
+    }
+    if (this.document.isUninitialized) return;
+    this.scene.addSector(sector);
+    this.drawnDocument = sector.name;
+  }
+
+  /**
+   * Overlay-only refresh — the scene's sectors are left alone. While a drag is live the preview
+   * body wins, so move/resize/rotate render without a commit. Also re-run on every camera
+   * change: the handle extents are screen-constant points, so their size on the ground depends
+   * on the live metres-per-point factor.
    */
   private refreshOverlay(): void {
     if (this.document.isUninitialized) return;
     const shown = this.dragPreview ?? this.document.sector;
-    const pxPerPt = this.camera.legacyPixelsPerViewportPoint();
+    const context = this.dragContext();
+    const metresPerPoint = metresPerViewportPoint(context);
     let resizeHandles: AuthoringHandleSet | undefined;
     let facingHandle: AuthoringFacingHandle | undefined;
     if (this.selection.length === 1) {
       const selected = this.selection[0]!;
-      const bounds = selectionBounds(selected, shown);
-      if (bounds !== undefined) {
-        resizeHandles = {
-          centerPixels: drag.handleCenters(bounds.origin, bounds.size).map((entry) => entry.pixel),
-          extentPx: drag.HANDLE_DRAW_EXTENT_PT * pxPerPt,
-        };
+      const rect = rectRecord(selected, shown);
+      if (rect !== undefined) {
+        resizeHandles = { centers: handleCenters(rect).map((entry) => entry.point), extent: HANDLE_DRAW_EXTENT_PT * metresPerPoint };
       }
-      if (selected.kind === 'npc') {
-        const npc = shown.npcs[selected.index];
-        if (npc !== undefined) {
-          facingHandle = {
-            centerPixel: drag.spawnBoxCenter(npc.spawnOrigin, npc.spawnBoxSize),
-            handlePixel: drag.facingHandlePixel(npc.spawnOrigin, npc.spawnBoxSize, npc.facing, drag.FACING_CLEARANCE_PT * pxPerPt),
-            extentPx: drag.HANDLE_DRAW_EXTENT_PT * pxPerPt,
-          };
-        }
+      const turned = turnable(selected, shown, context);
+      if (turned !== undefined) {
+        facingHandle = {
+          center: turned.center,
+          handle: facingHandlePoint(turned.center, turned.reach, turned.facing, FACING_CLEARANCE_PT * metresPerPoint),
+          extent: HANDLE_DRAW_EXTENT_PT * metresPerPoint,
+        };
       }
     }
     this.authoringOverlay.update({
       sector: shown,
-      selectionBounds: this.selection.map((selection) => selectionBounds(selection, shown)).filter((bounds) => bounds !== undefined),
+      registry: this.registry,
+      issues: this.issues.records,
+      selection: this.selection.map((selection) => selectionFootprint(selection, shown, this.registry)).filter((footprint) => footprint !== undefined),
       resizeHandles,
       facingHandle,
       showGrid: this.showGridOverlay,
-      gridStepPx: currentGridSnapPx(),
+      gridStep: currentGridSnap(),
     });
+    this.labels.render(overlayLabels(shown, this.registry, this.issues.records), (point) => screenPoint(context, point));
+  }
+
+  private select(selection: EditorSelection[]): void {
+    this.inspector.flushDraft();
+    this.selection = selection;
+    this.selectionChanged();
   }
 
   private selectionChanged(): void {
-    this.readout.applyBounds(this.selection, this.document.sector);
+    const sector = this.document.sector;
+    const placement = this.selection.length === 1 && this.selection[0]!.kind === 'placement' ? byId(sector.placements, this.selection[0]!.id) : undefined;
+    if (placement !== undefined) this.placementModelId = placement.modelId;
+    this.readout.applyBounds(this.selection, sector, this.registry);
     this.refreshOverlay();
     this.renderUI();
   }
@@ -491,7 +526,7 @@ export class EditorShell implements EditorCommandTarget {
     this.canvas.addEventListener('lostpointercapture', () => this.cancelDragState());
     this.canvas.addEventListener('pointerleave', () => {
       this.readout.x = 0;
-      this.readout.y = 0;
+      this.readout.z = 0;
       this.readout.render(this.document.sector.name);
     });
     this.canvas.addEventListener(
@@ -520,25 +555,29 @@ export class EditorShell implements EditorCommandTarget {
       shiftHeld: event.shiftKey,
     });
     if (intent.kind === 'zoom') {
-      this.camera.zoom(wheelDeltaToNativeScale(intent.deltaY, event.deltaMode), this.document.sector);
+      this.camera.zoom(wheelDeltaToZoomDelta(intent.deltaY, event.deltaMode), this.document.sector);
     } else {
       this.camera.pan(intent.delta, this.document.sector);
     }
     this.refreshOverlay();
   }
 
-  private dragContext(): drag.DragContext {
+  private dragContext(): DragContext {
     return {
       camera: this.scene.camera,
       viewport: this.camera.viewportSize,
-      gridStep: currentGridSnapPx(),
+      origin: sectorOrigin(this.document.sector),
+      gridStep: currentGridSnap(),
+      registry: this.registry,
     };
   }
 
-  private placementDefaults(): drag.PlacementDefaults {
+  private placementDefaults(): PlacementDefaults {
     return {
-      objectModelID: this.objectModelIDs[0] ?? '',
-      floorMaterialID: this.floorMaterialIDs[0] ?? '',
+      modelId: this.placementModelId,
+      floorMaterialId: this.registry.floorMaterials[0]?.id ?? '',
+      characterModelId: this.registry.characterModels[0]?.id ?? '',
+      monsterKind: MONSTER_KIND_IDS[0]!,
     };
   }
 
@@ -553,24 +592,24 @@ export class EditorShell implements EditorCommandTarget {
     } catch {
       // The drag still works; it just loses the off-canvas grace.
     }
+    // Before the press reads anything: the commit redraws the document and drops whatever drag
+    // is in flight, and the browser would blur the field on this press anyway.
+    this.inspector.flushDraft();
     this.resetDragState();
     const location = this.canvasPoint(event);
     this.dragAdditive = event.shiftKey;
-    const begun = drag.beginSession(location, this.tool, this.dragAdditive, this.document.sector, this.selection, this.dragContext());
+    const begun = beginSession(location, this.tool, this.dragAdditive, this.document.sector, this.selection, this.dragContext());
     this.dragSession = begun.session;
     this.dragStart = location;
-    if (!selectionsEqual(begun.selection, this.selection)) {
-      this.selection = begun.selection;
-      this.selectionChanged();
-    }
+    if (!selectionsEqual(begun.selection, this.selection)) this.select(begun.selection);
   }
 
   private handlePointerMove(event: PointerEvent): void {
     const location = this.canvasPoint(event);
     if (this.presentedOverlay === undefined && !this.document.isUninitialized) {
-      const grid = gridPoint(this.scene.camera, this.camera.viewportSize, location);
+      const grid = gridPoint(this.dragContext(), location);
       this.readout.x = grid.x;
-      this.readout.y = grid.y;
+      this.readout.z = grid.z;
       this.lastHoveredGrid = grid;
       this.readout.render(this.document.sector.name);
     }
@@ -581,10 +620,8 @@ export class EditorShell implements EditorCommandTarget {
       this.renderMarquee(start, location);
       return;
     }
-    this.dragPreview = drag.preview(session, start, location, this.document.sector, this.dragContext(), this.placementDefaults());
-    if (session.kind === 'move' && this.dragPreview !== undefined) {
-      this.applyLiveMove(session, this.dragPreview);
-    }
+    this.dragPreview = preview(session, start, location, this.document.sector, this.dragContext(), this.placementDefaults());
+    if (this.dragPreview !== undefined && (session.kind === 'move' || session.kind === 'rotate')) this.applyLivePreview(this.dragPreview);
     this.refreshOverlay();
   }
 
@@ -592,65 +629,55 @@ export class EditorShell implements EditorCommandTarget {
     const session = this.dragSession;
     const start = this.dragStart;
     const additive = this.dragAdditive;
-    const restore = this.liveMovedNodes;
+    const restore = this.liveNodes;
     this.resetDragState();
     if (session === undefined || start === undefined) {
       this.refreshOverlay();
       return;
     }
     const before = this.document.undoDepth;
-    const committed = drag.endSession(
+    const committed = endSession(
       session,
       start,
       this.canvasPoint(event),
       additive,
-      { mutate: (actionName, change) => this.mutateGuarded(actionName, change) },
+      { mutate: (actionName, change) => this.mutate(actionName, change) },
       this.document.sector,
       this.selection,
       this.dragContext(),
       this.placementDefaults(),
     );
-    // Filtered against the live document: a placement the patch-overlap gate refused has
-    // probed its selection into the commit closure without the record ever landing.
-    const nextSelection = committed.filter((selection) => isValidSelection(selection, this.document.sector));
-    // A commit reconciles the scene wholesale; a no-op commit (zero-delta move, refused
-    // patch overlap) must put any live-moved meshes back where the document says they are.
-    if (this.document.undoDepth === before) {
-      for (const { node, position } of restore) node.position.copy(position);
-    }
-    if (!selectionsEqual(nextSelection, this.selection)) {
-      this.selection = nextSelection;
-      this.selectionChanged();
+    // A commit redraws the sector wholesale; a drag that committed nothing (it came back to its
+    // start, or the document refused it) must put the live-dragged nodes back where the document
+    // says they are.
+    if (this.document.undoDepth === before) restoreNodes(restore);
+    if (!selectionsEqual(committed, this.selection)) {
+      this.select(committed);
     } else {
       this.refreshOverlay();
     }
   }
 
   /**
-   * The live-mesh half of a move drag: translate each selected object's real node with the
-   * placement math the renderer uses. Objects only — floor patches bake sector-space UVs
-   * into their geometry, so their gizmo rect previews while the mesh rebuilds on commit.
+   * The live-mesh half of a move or a turn: each selected placement's own node follows the
+   * preview. Placements only — floor patches bake their texture coordinates into their
+   * geometry, so their gizmo rect previews while the mesh rebuilds on commit.
    */
-  private applyLiveMove(session: Extract<DragSession, { kind: 'move' }>, previewSector: Sector): void {
-    // Snapshot the node identity, its rest position, and its mesh depth once: none of the three
-    // changes for the duration of the drag, so resolving the node and rebuilding its bounding box
-    // on every pointer move would scan and re-measure every selected object each frame.
-    if (this.liveMovedNodes.length === 0) {
-      for (const { selection } of session.originals) {
-        if (selection.kind !== 'object') continue;
-        const node = this.scene.objectNodeForIndex(selection.index);
-        if (node !== undefined) {
-          const depth = new THREE.Box3().setFromObject(node).getSize(new THREE.Vector3()).z;
-          this.liveMovedNodes.push({ index: selection.index, node, position: node.position.clone(), depth });
-        }
+  private applyLivePreview(previewSector: Sector): void {
+    // Snapshot the nodes and where they stood once: neither changes for the duration of the
+    // drag, so resolving them on every pointer move would scan the sector's placements each frame.
+    if (this.liveNodes.length === 0) {
+      for (const selection of this.selection) {
+        const node = selection.kind === 'placement' ? this.scene.placementNode(previewSector.name, selection.id) : undefined;
+        if (node !== undefined) this.liveNodes.push({ id: selection.id, node, position: node.position.clone(), yaw: node.rotation.y });
       }
     }
-    for (const { index, node, depth } of this.liveMovedNodes) {
-      const object = previewSector.objects[index];
-      if (object === undefined) continue;
-      const anchor = objectAnchorBottomY(object, previewSector.collisionMasks);
-      const position = objectNodePosition(object, anchor, depth);
-      node.position.set(position.x, position.y, position.z);
+    for (const { id, node } of this.liveNodes) {
+      const placement = byId(previewSector.placements, id);
+      if (placement === undefined) continue;
+      node.position.x = placement.x;
+      node.position.z = placement.z;
+      node.rotation.y = THREE.MathUtils.degToRad(placement.yaw);
     }
   }
 
@@ -669,19 +696,19 @@ export class EditorShell implements EditorCommandTarget {
     this.dragStart = undefined;
     this.dragAdditive = false;
     this.dragPreview = undefined;
-    this.liveMovedNodes = [];
+    this.liveNodes = [];
     this.marqueeNode.classList.add('hidden');
   }
 
   /**
    * Abandons an in-flight drag without committing it — for `pointercancel`/`lostpointercapture`,
-   * which fire in place of `pointerup`. Any live-moved meshes go back to their rest positions
+   * which fire in place of `pointerup`. Any live-dragged nodes go back to where they stood
    * first, then the session clears. Inert when no drag is active (a normal pointerup already
    * reset, and `lostpointercapture` also fires at the clean end of every drag).
    */
   private cancelDragState(): void {
     if (this.dragSession === undefined) return;
-    for (const { node, position } of this.liveMovedNodes) node.position.copy(position);
+    restoreNodes(this.liveNodes);
     this.resetDragState();
   }
 
@@ -703,7 +730,7 @@ export class EditorShell implements EditorCommandTarget {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = renderer;
     this.handleResize();
-    void this.scene.prewarm().then(() => this.reconcile());
+    void this.scene.prewarm();
     const step = (timestamp: number): void => {
       const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
       this.lastFrameMs = timestamp;
@@ -725,9 +752,9 @@ export class EditorShell implements EditorCommandTarget {
   recordCounts(): Record<string, number> {
     const sector = this.document.sector;
     return {
-      objects: sector.objects.length,
-      collisionMasks: sector.collisionMasks.length,
-      portals: sector.portals.length,
+      placements: sector.placements.length,
+      blockers: sector.blockers.length,
+      doors: sector.doors.length,
       npcs: sector.npcs.length,
       monsterSpawns: sector.monsterSpawns.length,
       floorPatches: sector.floorPatches.length,
@@ -735,25 +762,9 @@ export class EditorShell implements EditorCommandTarget {
   }
 }
 
-/**
- * The set of overlapping floor-patch index pairs (`"a,b"`, a < b). Exclusive edges, matching
- * `CollisionMaskOverlap`'s polarity: flush rects do not overlap. The commit gate compares this
- * set before and after an edit so it refuses a *newly introduced* pair while tolerating one a
- * legacy file already carried. Index-based keys are stable across the edits that can introduce an
- * overlap — move/resize/nudge keep indices, paste/duplicate append them; delete only removes
- * pairs — so a pair present after but absent before is genuinely new.
- */
-function overlappingPatchPairs(sector: Sector): Set<string> {
-  const patches = sector.floorPatches;
-  const pairs = new Set<string>();
-  for (let a = 0; a < patches.length; a += 1) {
-    for (let b = a + 1; b < patches.length; b += 1) {
-      const first = patches[a]!;
-      const second = patches[b]!;
-      if (first.x < second.x + second.width && first.x + first.width > second.x && first.y < second.y + second.height && first.y + first.height > second.y) {
-        pairs.add(`${a},${b}`);
-      }
-    }
+function restoreNodes(nodes: readonly { node: THREE.Object3D; position: THREE.Vector3; yaw: number }[]): void {
+  for (const { node, position, yaw } of nodes) {
+    node.position.copy(position);
+    node.rotation.y = yaw;
   }
-  return pairs;
 }

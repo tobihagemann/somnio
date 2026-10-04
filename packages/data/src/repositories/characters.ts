@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { GENDER, TEMPO, headingFromCardinal } from '@somnio/core';
-import type { Character, Gender, InventoryRow } from '@somnio/core';
+import { PEOPLES, headingFromCardinal } from '@somnio/core';
+import type { Character, InventoryRow, People } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import type { Database } from '../schema.ts';
@@ -9,7 +9,7 @@ import { RepositoryDecodingError } from './errors.ts';
 import { insertInventoryRows } from './inventoryRows.ts';
 
 export interface CharacterRepository {
-  create(accountId: string, name: string, figure: number, gender: Gender): Promise<Character>;
+  create(accountId: string, name: string, people: People): Promise<Character>;
   findByAccount(accountId: string): Promise<Character[]>;
   findByName(name: string): Promise<Character | undefined>;
   /**
@@ -25,92 +25,82 @@ export interface CharacterRepository {
   persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean>;
 }
 
-const STARTER_SECTOR = 'EdariaBibliothek';
+export const STARTER_SECTOR = 'EdariaBibliothek';
 
 const CHARACTER_COLUMNS = [
   'id',
   'name',
-  'figure',
-  'gender',
-  'current_sector',
+  'people',
+  'space',
   'position_x',
-  'position_y',
+  'position_z',
   'facing',
-  'tempo',
-  'hp_current',
-  'hp_max',
+  'health_current',
+  'health_max',
   'balance_current',
   'balance_max',
-  'mana_current',
-  'mana_max',
+  'spirit_current',
+  'spirit_max',
   'last_seen',
 ] as const;
 
 type CharacterRow = {
   id: string;
   name: string;
-  figure: number;
-  gender: number;
-  current_sector: string;
+  people: string;
+  space: string;
   position_x: number;
-  position_y: number;
+  position_z: number;
   facing: number;
-  tempo: number;
-  hp_current: number;
-  hp_max: number;
+  health_current: number;
+  health_max: number;
   balance_current: number;
   balance_max: number;
-  mana_current: number;
-  mana_max: number;
+  spirit_current: number;
+  spirit_max: number;
   last_seen: Date;
 };
 
-/** Spawn defaults: the starter sector, default tempo, full energy, and the `(0, 0)` sentinel the runtime re-resolves. */
-export function newCharacter(id: string, name: string, figure: number, gender: Gender, lastSeen: Date): Character {
+/** Spawn defaults: the starter sector's space, full energy, and the `(0, 0)` sentinel the runtime re-resolves. */
+export function newCharacter(id: string, name: string, people: People, lastSeen: Date): Character {
   return {
     id,
     name,
-    figure,
-    gender,
-    currentSector: STARTER_SECTOR,
-    position: { x: 0, y: 0 },
+    people,
+    space: STARTER_SECTOR,
+    position: { x: 0, z: 0 },
     facing: headingFromCardinal('south'),
-    tempo: TEMPO.default,
     energy: {
-      hpCurrent: 100,
-      hpMax: 100,
+      healthCurrent: 100,
+      healthMax: 100,
       balanceCurrent: 100,
       balanceMax: 100,
-      manaCurrent: 100,
-      manaMax: 100,
+      spiritCurrent: 100,
+      spiritMax: 100,
     },
     lastSeen,
   };
 }
 
 function decodeCharacter(row: CharacterRow): Character {
-  if (row.gender !== GENDER.male && row.gender !== GENDER.female) {
-    throw new RepositoryDecodingError('gender', row.gender);
-  }
-  if (row.tempo !== TEMPO.walk && row.tempo !== TEMPO.default && row.tempo !== TEMPO.run) {
-    throw new RepositoryDecodingError('tempo', row.tempo);
+  const people = PEOPLES.find((candidate) => candidate === row.people);
+  if (people === undefined) {
+    throw new RepositoryDecodingError('people', row.people);
   }
   return {
     id: row.id,
     name: row.name,
-    figure: row.figure,
-    gender: row.gender,
-    currentSector: row.current_sector,
-    position: { x: row.position_x, y: row.position_y },
+    people,
+    space: row.space,
+    position: { x: row.position_x, z: row.position_z },
     facing: row.facing,
-    tempo: row.tempo,
     energy: {
-      hpCurrent: row.hp_current,
-      hpMax: row.hp_max,
+      healthCurrent: row.health_current,
+      healthMax: row.health_max,
       balanceCurrent: row.balance_current,
       balanceMax: row.balance_max,
-      manaCurrent: row.mana_current,
-      manaMax: row.mana_max,
+      spiritCurrent: row.spirit_current,
+      spiritMax: row.spirit_max,
     },
     lastSeen: row.last_seen,
   };
@@ -118,19 +108,17 @@ function decodeCharacter(row: CharacterRow): Character {
 
 function characterColumns(character: Character) {
   return {
-    figure: character.figure,
-    gender: character.gender,
-    current_sector: character.currentSector,
+    people: character.people,
+    space: character.space,
     position_x: character.position.x,
-    position_y: character.position.y,
+    position_z: character.position.z,
     facing: character.facing,
-    tempo: character.tempo,
-    hp_current: character.energy.hpCurrent,
-    hp_max: character.energy.hpMax,
+    health_current: character.energy.healthCurrent,
+    health_max: character.energy.healthMax,
     balance_current: character.energy.balanceCurrent,
     balance_max: character.energy.balanceMax,
-    mana_current: character.energy.manaCurrent,
-    mana_max: character.energy.manaMax,
+    spirit_current: character.energy.spiritCurrent,
+    spirit_max: character.energy.spiritMax,
     last_seen: character.lastSeen,
   };
 }
@@ -170,8 +158,8 @@ export class PostgresCharacterRepository implements CharacterRepository {
     this.db = db;
   }
 
-  async create(accountId: string, name: string, figure: number, gender: Gender): Promise<Character> {
-    const character = newCharacter(crypto.randomUUID(), name, figure, gender, new Date());
+  async create(accountId: string, name: string, people: People): Promise<Character> {
+    const character = newCharacter(crypto.randomUUID(), name, people, new Date());
     await insertCharacter(this.db, accountId, character);
     return character;
   }

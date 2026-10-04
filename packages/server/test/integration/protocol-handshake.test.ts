@@ -30,7 +30,7 @@ describe('protocol handshake against the booted server', () => {
   it.each([
     ['an unrecognized tag', '{"tag":"notAVerb","payload":{}}'],
     ['malformed JSON', '{ not json'],
-    ['a recognized tag with a malformed payload', '{"tag":"clientPosition","payload":{}}'],
+    ['a recognized tag with a malformed payload', '{"tag":"move","payload":{}}'],
     ['a zero-byte text frame', ''],
   ])('closes the connection on %s', async (_label, text) => {
     const client = await TestClient.open(server.url);

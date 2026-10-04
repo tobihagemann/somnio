@@ -1,31 +1,33 @@
-import { PROTOCOL_BYTE_CAPS, WIRE_HAND, assertNever, truncateToUTF8Bytes } from '@somnio/protocol';
-import type { Energy, SomnioMessage } from '@somnio/protocol';
-import { goldBalance, heading, inventoryRowFromWire, tempoFromRawOrKeep } from '@somnio/core';
-import type { Heading, InventoryRow } from '@somnio/core';
+import { PROTOCOL_BYTE_CAPS, assertNever, truncateToUTF8Bytes } from '@somnio/protocol';
+import type { Energy, EntityMove, InventoryRowMessage, SomnioMessage } from '@somnio/protocol';
+import { heading } from '@somnio/core';
+import type { Heading, ItemId } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
-import { wheelDeltaToNativeScale } from '@/scene/cameraRig';
+import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import type { ConnectionController, GameplayMessage } from './connectionController';
-import { AI_TICK_INTERPOLATION_SECONDS, GameplayPredictor, PEER_INTERPOLATION_SECONDS } from './predictor';
+import { GameplayPredictor } from './predictor';
+import { RemoteInterpolation } from './remoteInterpolation';
 import { KeyboardSampler, PlayerZoom, mouseFacingHeading } from './input';
 import type { KeyCaptureSink } from './input';
 
 /**
- * The gameplay half of the client: it owns the predictor, the input samplers,
- * and every inbound frame that is not authentication or session management.
+ * The gameplay half of the client: it owns the predictor, the input samplers, and every inbound
+ * frame the controller forwards as a `GameplayMessage`.
  *
  * The split is explicit rather than implied. `ConnectionController` handles `hello`, the login and
- * register results, and the two session-token frames; everything else lands here. Leaving that
- * boundary implicit is how a tag ends up owned by neither half — which the exhaustive switch below
- * and the controller's own `assertNever` guard together make impossible.
+ * register results, the two session-token frames, and the frames that build the space (`enterSpace`,
+ * `sector`, `entity`, `leave`); everything else lands here. Leaving that boundary implicit is how a
+ * tag ends up owned by neither half — which the exhaustive switch below and the controller's own
+ * `assertNever` guard together make impossible.
  */
 
 const ZERO_ENERGY: Energy = {
-  hpCurrent: 0,
-  hpMax: 1,
+  healthCurrent: 0,
+  healthMax: 1,
   balanceCurrent: 0,
   balanceMax: 1,
-  manaCurrent: 0,
-  manaMax: 1,
+  spiritCurrent: 0,
+  spiritMax: 1,
 };
 
 export interface GameplaySessionOptions {
@@ -38,6 +40,8 @@ export interface GameplaySessionOptions {
    * must agree with or lines overflow the balloon; injectable so a headless test needs no canvas.
    */
   measureText?: (line: string) => number;
+  /** The clock remote reports are stamped with; the same timeline `runTick` is driven on. */
+  now?: () => number;
 }
 
 export class GameplaySession {
@@ -46,11 +50,13 @@ export class GameplaySession {
   readonly input: KeyCaptureSink & { clearHeldKeys(): void };
 
   energy: Energy = ZERO_ENERGY;
-  inventory: InventoryRow[] = [];
+  inventory: InventoryRowMessage[] = [];
 
   private readonly controller: ConnectionController;
   private readonly send: (message: SomnioMessage) => void;
   private readonly measureText: (line: string) => number;
+  private readonly now: () => number;
+  private readonly interpolation = new RemoteInterpolation();
   private latestMouseFacing: Heading | undefined;
 
   constructor(options: GameplaySessionOptions) {
@@ -58,10 +64,12 @@ export class GameplaySession {
     this.send = options.send;
     this.input = options.input ?? new KeyboardSampler();
     this.measureText = options.measureText ?? canvasWidthMeasurer();
+    this.now = options.now ?? (() => performance.now());
     this.predictor = new GameplayPredictor({
       session: this.controller,
       input: this.input,
       renderSurface: this.controller.renderSurface,
+      interpolation: this.interpolation,
       send: this.send,
       mouseFacing: () => this.latestMouseFacing,
     });
@@ -71,16 +79,24 @@ export class GameplaySession {
     // closing. Clearing held keys there rather than in each DOM handler is what keeps a stale
     // held bit from resuming movement when focus returns.
     this.controller.onGateClosed = () => this.input.clearHeldKeys();
-    this.controller.onSectorChanged = () => {
-      this.predictor.reset();
+    this.controller.onSpaceEntered = () => {
+      this.resetSpaceState();
       this.latestMouseFacing = undefined;
     };
+    this.controller.onEntityReset = (entityId) => this.interpolation.delete(entityId);
     this.controller.onTeardown = () => {
-      this.predictor.reset();
+      this.resetSpaceState();
       this.input.clearHeldKeys();
       this.energy = ZERO_ENERGY;
       this.inventory = [];
     };
+  }
+
+  /** Everything that belongs to the space being left, a pending door included. */
+  private resetSpaceState(): void {
+    this.predictor.reset();
+    this.predictor.releaseDoor(true);
+    this.interpolation.clear();
   }
 
   /** The per-frame body. Injected timestamp, so a test drives it directly. */
@@ -92,7 +108,8 @@ export class GameplaySession {
    * Clears input state that a `keyup` delivered while the page was hidden would have left
    * populated, and drops the tick clock so the first tick back measures zero elapsed rather than
    * the whole hidden interval. The clamp already bounds that interval, but resetting is what makes
-   * the resumed tick behave identically to the first tick of a session.
+   * the resumed tick behave identically to the first tick of a session. A pending door stays
+   * pending: the server is still answering it.
    */
   handleVisibilityLoss(): void {
     this.input.clearHeldKeys();
@@ -112,7 +129,7 @@ export class GameplaySession {
    * matters too — Firefox reports lines where Chrome reports pixels.
    */
   applyScrollZoom(deltaY: number, deltaMode = 0): boolean {
-    return this.zoom.applyScroll(-wheelDeltaToNativeScale(deltaY, deltaMode));
+    return this.zoom.applyScroll(-wheelDeltaToZoomDelta(deltaY, deltaMode));
   }
 
   /**
@@ -121,51 +138,57 @@ export class GameplaySession {
    */
   submitChat(rawText: string): void {
     const text = truncateToUTF8Bytes(rawText.trim(), PROTOCOL_BYTE_CAPS.say);
-    const selfIndex = this.controller.selfEntityIndex;
-    if (text.length === 0 || this.controller.connectionState !== 'attached' || selfIndex === undefined) {
+    const selfId = this.controller.selfId;
+    if (text.length === 0 || this.controller.connectionState !== 'attached' || selfId === undefined) {
       return;
     }
-    this.send({ tag: 'clientSay', payload: { entityIndex: 0, text } });
+    this.send({ tag: 'clientSay', payload: { text } });
     this.controller.appendChat({
       kind: 'spokenByOwn',
       senderName: this.controller.selfDisplayName,
       message: text,
     });
     const lines = wrapSpeech(text, this.measureText);
-    this.controller.renderSurface.showSpeechBubble(selfIndex, lines, bubbleLifetimeMs(lines.length));
+    this.controller.renderSurface.showSpeechBubble(selfId, lines, bubbleLifetimeMs(lines.length));
   }
 
   /**
    * Double-click activation. The cudgel toggles equip in its fixed hand — the player never picks
    * one — and the purse reports its balance to the chat log rather than equipping.
    */
-  activateInventoryRow(row: InventoryRow): void {
+  activateInventoryRow(row: InventoryRowMessage): void {
     if (this.controller.connectionState !== 'attached') return;
-    if (row.category === 0 && row.itemId === 0) {
-      this.controller.appendChat({ kind: 'purseBalance', coins: goldBalance(row) });
-      return;
-    }
-    if (row.category === 1 && row.itemId === 0) {
-      // Re-toggling sends the "no hand" value to unequip; the server clears whatever else held it.
-      const hand = row.equippedHand === undefined ? WIRE_HAND.right : WIRE_HAND.none;
-      this.send({ tag: 'equipToggle', payload: { slot: row.slot, hand } });
+    switch (row.itemId) {
+      case 'purse' satisfies ItemId:
+        this.controller.appendChat({ kind: 'purseBalance', coins: row.quantity });
+        return;
+      case 'cudgel' satisfies ItemId:
+        // Re-toggling leaves the hand out to unequip; the server clears whatever else held it.
+        this.send({ tag: 'equipToggle', payload: { slot: row.slot, ...(row.equippedHand === undefined ? { hand: 'right' } : {}) } });
+        return;
     }
   }
 
   private dispatch(message: GameplayMessage): void {
     switch (message.tag) {
-      case 'serverPosition':
-        this.handleServerPosition(message.payload);
+      case 'moves':
+        for (const move of message.payload.moves) this.handleMove(move);
+        return;
+      case 'correction':
+        this.predictor.correct(message.payload);
+        return;
+      case 'doorRefused':
+        this.predictor.releaseDoor(false);
         return;
       case 'serverSay':
-        this.handleServerSay(message.payload.entityIndex, message.payload.text);
+        this.handleServerSay(message.payload.entityId, message.payload.text);
         return;
       case 'energy':
         this.energy = message.payload;
         this.onStateChanged?.();
         return;
       case 'inventory':
-        this.inventory = message.payload.rows.map(inventoryRowFromWire);
+        this.inventory = message.payload.rows;
         this.onStateChanged?.();
         return;
       case 'adminSay':
@@ -181,42 +204,25 @@ export class GameplaySession {
   onStateChanged: (() => void) | undefined;
 
   /**
-   * A server position for **self** is a `snapBack` — an authoritative correction after a rejected
-   * move — and is the only self-position the protocol ever volunteers. It replaces the prediction
-   * outright, which is why the sub-pixel carry has to be dropped: keeping it would re-bias the
-   * next tick toward the path the server just refused.
+   * One remote entity's report. The entity keeps the position it is drawn at; the report becomes
+   * the target it glides to, which the predictor samples every tick. The local player never
+   * appears here: its position is predicted, and the server's only word on it is `correction`.
    */
-  private handleServerPosition(payload: { entityIndex: number; x: number; y: number; facing: number; tempo: number }): void {
-    const entity = this.controller.entities.get(payload.entityIndex);
-    if (entity === undefined) return;
-    const position = { x: payload.x, y: payload.y };
-    const facing = heading(payload.facing);
-    // An unrecognized raw value keeps the entity's *current* tempo, not the default: the default
-    // fallback belongs to entity creation, and resetting mid-stride would desynchronise the clip
-    // from the movement.
-    const tempo = tempoFromRawOrKeep(payload.tempo, entity.tempo);
-    this.controller.entities.set(payload.entityIndex, { ...entity, position, facing, tempo });
-    this.controller.renderSurface.updateTempo(payload.entityIndex, tempo);
-    if (entity.kind === 'player') {
-      this.predictor.clearMovementRemainder();
-      // A direct set, not a tween: the predictor writes this node every frame and also drives the
-      // camera, so an interpolation would fight it and de-centre the view.
-      this.controller.renderSurface.updatePosition(payload.entityIndex, position, facing);
-      return;
-    }
-    // Peers arrive on the ~500 ms heartbeat and NPCs/monsters on the 50 ms AI tick, so each tweens
-    // across its own gap rather than stepping or lagging.
-    const duration = entity.kind === 'peer' ? PEER_INTERPOLATION_SECONDS : AI_TICK_INTERPOLATION_SECONDS;
-    this.controller.renderSurface.animateEntity(payload.entityIndex, position, facing, duration);
+  private handleMove(move: EntityMove): void {
+    const entity = this.controller.entities.get(move.id);
+    if (entity === undefined || entity.id === this.controller.selfId) return;
+    this.controller.entities.set(move.id, { ...entity, facing: heading(move.facing), gait: move.gait });
+    this.controller.renderSurface.updateGait(move.id, move.gait);
+    this.interpolation.retarget(move.id, entity.position, { x: move.x, z: move.z }, this.now());
   }
 
   /** NPC dialog arrives here, not on a dedicated tag — there is no NPC-dialog verb. */
-  private handleServerSay(entityIndex: number, text: string): void {
-    const entity = this.controller.entities.get(entityIndex);
+  private handleServerSay(entityId: string, text: string): void {
+    const entity = this.controller.entities.get(entityId);
     if (entity === undefined) return;
     const kind = entity.kind === 'npc' || entity.kind === 'monster' ? 'spokenByNPC' : 'spokenByPeer';
     this.controller.appendChat({ kind, senderName: entity.name, message: text });
     const lines = wrapSpeech(text, this.measureText);
-    this.controller.renderSurface.showSpeechBubble(entityIndex, lines, bubbleLifetimeMs(lines.length));
+    this.controller.renderSurface.showSpeechBubble(entityId, lines, bubbleLifetimeMs(lines.length));
   }
 }

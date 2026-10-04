@@ -3,10 +3,10 @@ import type { Logger } from '../logging.ts';
 import { encodeOrWarn } from './encodeFrame.ts';
 
 /**
- * Enqueue-only mailbox the per-sector actor pushes broadcasts into. `send` never blocks; once the
+ * Enqueue-only mailbox the space actor pushes broadcasts into. `send` never blocks; once the
  * in-flight count exceeds the high watermark the outbox marks itself overflowed and finishes, so
  * the writer drains what is queued and closes the socket with `outbox overflow` rather than
- * back-pressuring the sector's broadcast loop on one slow client.
+ * back-pressuring the space's broadcast loop on one slow client.
  */
 export class ConnectionOutbox {
   private readonly highWatermark: number;

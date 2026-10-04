@@ -1,244 +1,245 @@
-import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { headingFromCardinal, angularDistance } from '@somnio/core';
-import type { Sector, SectorNPC } from '@somnio/core';
-import * as drag from '@/editor/dragController';
+import { SOMNIO_CONSTANTS, angularDistance, headingFromCardinal } from '@somnio/core';
+import type { Point, Sector, SectorNPC } from '@somnio/core';
+import { screenPoint } from '@/editor/canvasController';
 import { EditorDocument } from '@/editor/document';
-import { applyFramingToCamera, editorFramingFittingPixelBounds } from '@/editor/framing';
-import { screenAtFloorPixel } from '@/editor/picking';
-import type { ScreenPoint, ViewportSize } from '@/editor/picking';
-import { removeAllSelections } from '@/editor/selection';
+import {
+  FACING_CLEARANCE_PT,
+  TAP_SIZE,
+  facingHandlePoint,
+  gridDelta,
+  headingFromDrag,
+  hitHandle,
+  metresPerViewportPoint,
+  placementBounds,
+  projectedCorners,
+  rectIntersectsConvexQuad,
+  resizedBounds,
+  rubberBandBounds,
+} from '@/editor/drag/geometry';
+import type { DragContext } from '@/editor/drag/geometry';
+import { applyBounds, applyFacing, applyMove, marqueeSelections, origins, placeRecord, turnable } from '@/editor/drag/mutations';
+import type { PlacementDefaults } from '@/editor/drag/mutations';
+import { beginSession, endSession, preview } from '@/editor/drag/session';
+import type { DragSession } from '@/editor/drag/session';
+import type { ScreenPoint } from '@/editor/picking';
+import { footprintCorners, selectionFootprint } from '@/editor/selection';
 import type { EditorSelection } from '@/editor/selection';
+import { dragContext, emptySector } from './helpers/editorFixture';
 
 /**
- * The drag controller — session classification, delta quantization, resize clamping,
- * placement seeds, handle hit-testing, facing rotation, marquee SAT, and the commit guards
- * that keep no-op gestures off the undo stack.
+ * The drag layer — session classification, delta quantization, resize clamping, placement
+ * seeds, handle hit-testing, facing rotation, marquee SAT, the commit guards that keep no-op
+ * gestures off the undo stack, and the agreement between a live preview and what the same
+ * gesture commits.
  */
 
-const VIEWPORT: ViewportSize = { width: 640, height: 480 };
-const DEFAULTS: drag.PlacementDefaults = { objectModelID: 'door', floorMaterialID: 'grass-meadow' };
+const DEFAULTS: PlacementDefaults = { modelId: 'box', floorMaterialId: 'cobble', characterModelId: 'hero', monsterKind: 'gespenst' };
 
-function context(gridStep = 32): drag.DragContext {
-  const framing = editorFramingFittingPixelBounds({ x: 0, y: 0 }, { x: 512, y: 512 }, VIEWPORT);
-  const camera = new THREE.OrthographicCamera();
-  applyFramingToCamera(camera, framing, VIEWPORT);
-  return { camera, viewport: VIEWPORT, gridStep };
+/** The press/drag location a user aiming at a sector-relative ground point would produce. */
+function viewportPoint(point: Point, ctx: DragContext): ScreenPoint {
+  return screenPoint(ctx, point);
 }
 
-/** The press/drag location a user aiming at a legacy pixel would produce. */
-function viewportPoint(pixel: { x: number; y: number }, dragContext: drag.DragContext): ScreenPoint {
-  return screenAtFloorPixel(dragContext.camera, dragContext.viewport, pixel);
+function npc(at: Point, facing = headingFromCardinal('south')): SectorNPC {
+  return { id: 'libus', name: 'Libus', characterModelId: 'hero', ...at, facing, dialogScript: '' };
 }
 
-function sector(overrides: Partial<Sector> = {}): Sector {
-  return {
-    name: 'Test',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
+function blocker(id: string, x: number, z: number, width = 1, depth = 1) {
+  return { id, x, z, width, depth };
 }
 
-function npc(origin: { x: number; y: number }, facing = headingFromCardinal('south')): SectorNPC {
-  return {
-    spawnOrigin: origin,
-    spawnBoxSize: { width: 32, height: 32 },
-    maskSize: { width: 32, height: 48 },
-    name: 'Libus',
-    figure: 16,
-    facing,
-    behaviorTag: 0,
-    dialogScript: '',
-  };
+function box(id: string, x: number, z: number, yaw = 0) {
+  return { id, modelId: 'box', x, z, yaw, elevation: 0 };
 }
 
 /** Document seeded with a body, for the `endSession` orchestration tests. */
 function documentWith(body: Sector): EditorDocument {
   const document = new EditorDocument();
-  document.mutate('Create new map', (draft) => {
-    Object.assign(draft, structuredClone(body));
-  });
+  expect(document.commit('Seed', structuredClone(body))).toEqual({ accepted: true });
   return document;
 }
 
 describe('move', () => {
   it('quantizes a drag delta to the grid step, preserving relative offsets', () => {
-    const ctx = context(32);
-    const delta = drag.gridDelta(viewportPoint({ x: 100, y: 100 }, ctx), viewportPoint({ x: 140, y: 30 }, ctx), ctx);
-    expect(delta).toEqual({ dx: 32, dy: -64 });
+    const ctx = dragContext(0.5);
+    expect(gridDelta(viewportPoint({ x: 5, z: 5 }, ctx), viewportPoint({ x: 6.3, z: 3.2 }, ctx), ctx)).toEqual({ dx: 1.5, dz: -2 });
   });
 
-  it('keeps a free-snap drag delta pixel-exact', () => {
-    const ctx = context(0);
-    const delta = drag.gridDelta(viewportPoint({ x: 100, y: 100 }, ctx), viewportPoint({ x: 103, y: 95 }, ctx), ctx);
-    expect(delta).toEqual({ dx: 3, dy: -5 });
+  it('keeps a free-snap drag delta to the millimetre', () => {
+    const ctx = dragContext(0);
+    expect(gridDelta(viewportPoint({ x: 5, z: 5 }, ctx), viewportPoint({ x: 5.123, z: 4.877 }, ctx), ctx)).toEqual({ dx: 0.123, dz: -0.123 });
   });
 
-  it('shifts every snapshotted origin by the same delta in a group move', () => {
-    const body = sector({
-      objects: [{ x: 0, y: 0, modelID: 'door', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-      npcs: [npc({ x: 100, y: 100 })],
+  it('shifts every snapshotted position by the same delta in a group move, leaving a door where its placement is', () => {
+    const body = emptySector({
+      placements: [{ id: 'door-1', modelId: 'door', x: 2, z: 2, yaw: 0, elevation: 0 }],
+      doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Other', door: 'in' } }],
+      npcs: [npc({ x: 10, z: 10 })],
+      spawn: { x: 4, z: 4, facing: 0 },
     });
-    const originals = drag.origins(
+    const originals = origins(
       [
-        { kind: 'object', index: 0 },
-        { kind: 'npc', index: 0 },
+        { kind: 'placement', id: 'door-1' },
+        { kind: 'door', id: 'exit' },
+        { kind: 'npc', id: 'libus' },
+        { kind: 'spawn', id: 'spawn' },
       ],
       body,
     );
-    drag.applyMove(originals, 64, -32, body);
-    expect(body.objects[0]).toMatchObject({ x: 64, y: -32 });
-    expect(body.npcs[0]?.spawnOrigin).toEqual({ x: 164, y: 68 });
+    expect(originals.map((entry) => entry.selection.kind)).toEqual(['placement', 'npc', 'spawn']);
+    applyMove(originals, 1.5, -0.5, body);
+    expect(body.placements[0]).toMatchObject({ x: 3.5, z: 1.5 });
+    expect(body.npcs[0]).toMatchObject({ x: 11.5, z: 9.5 });
+    expect(body.spawn).toEqual({ x: 5.5, z: 3.5, facing: 0 });
   });
 
-  it('clamps a move at the Int16 limits instead of overflowing', () => {
-    const body = sector({ collisionMasks: [{ x: 32_766, y: -32_767, width: 32, height: 32 }] });
-    const originals = drag.origins([{ kind: 'mask', index: 0 }], body);
-    drag.applyMove(originals, 10_000, -10_000, body);
-    expect(body.collisionMasks[0]).toMatchObject({ x: 32_767, y: -32_768 });
+  it('writes a moved position as a short decimal', () => {
+    const body = emptySector({ blockers: [blocker('wall', 5.12, 30.72)] });
+    applyMove(origins([{ kind: 'blocker', id: 'wall' }], body), 0.1, 0.2, body);
+    expect(body.blockers[0]).toMatchObject({ x: 5.22, z: 30.92 });
   });
 });
 
 describe('resize', () => {
-  it('grows the record in place from the bottom-right handle', () => {
-    const bounds = drag.resizedBounds({ x: 64, y: 64 }, { width: 32, height: 32 }, 'bottomRight', 32, 64, 32);
-    expect(bounds).toEqual({ origin: { x: 64, y: 64 }, size: { width: 64, height: 96 } });
+  const rect = { x: 2, z: 2, width: 3, depth: 3 };
+
+  it.each([
+    ['grows in place from the bottom-right handle', 'bottomRight', 1, 2, { x: 2, z: 2, width: 4, depth: 5 }],
+    ['shifts the origin and shrinks from the top-left handle', 'topLeft', 1, 1, { x: 3, z: 3, width: 2, depth: 2 }],
+    ['moves only the north edge from the top handle', 'top', 1, 1, { x: 2, z: 3, width: 3, depth: 2 }],
+    ['moves only the south edge from the bottom handle', 'bottom', 1, -1, { x: 2, z: 2, width: 3, depth: 2 }],
+    ['moves only the west edge from the left handle', 'left', 1, 1, { x: 3, z: 2, width: 2, depth: 3 }],
+    ['moves only the east edge from the right handle', 'right', 1, 1, { x: 2, z: 2, width: 4, depth: 3 }],
+    ['grows north and east from the top-right handle', 'topRight', 1, -1, { x: 2, z: 1, width: 4, depth: 4 }],
+    ['grows west and south from the bottom-left handle', 'bottomLeft', -1, 2, { x: 1, z: 2, width: 4, depth: 5 }],
+    ['stops one minimum extent short of the opposite edge', 'right', -50, 0, { x: 2, z: 2, width: 0.5, depth: 3 }],
+    ['keeps the opposite edge fixed when the moved one is pushed past it', 'left', 50, 0, { x: 4.5, z: 2, width: 0.5, depth: 3 }],
+    ['stops the south edge one minimum extent short of the north one', 'bottom', 0, -50, { x: 2, z: 2, width: 3, depth: 0.5 }],
+    ['keeps the south edge fixed when the north one is pushed past it', 'top', 0, 50, { x: 2, z: 4.5, width: 3, depth: 0.5 }],
+  ] as const)('%s', (_name, handle, dx, dz, expected) => {
+    expect(resizedBounds(rect, handle, dx, dz, 0.5)).toEqual(expected);
   });
 
-  it('shifts the origin and shrinks the extent from the top-left handle', () => {
-    const bounds = drag.resizedBounds({ x: 64, y: 64 }, { width: 96, height: 96 }, 'topLeft', 32, 32, 32);
-    expect(bounds).toEqual({ origin: { x: 96, y: 96 }, size: { width: 64, height: 64 } });
-  });
-
-  it('clamps at the minimum extent past the opposite edge', () => {
-    const bounds = drag.resizedBounds({ x: 64, y: 64 }, { width: 96, height: 96 }, 'right', -500, 0, 32);
-    expect(bounds).toEqual({ origin: { x: 64, y: 64 }, size: { width: 32, height: 96 } });
-  });
-
-  it('clamps a resize at the Int16 limits instead of overflowing', () => {
-    const bounds = drag.resizedBounds({ x: 32_767 - 32, y: 0 }, { width: 32, height: 32 }, 'bottomRight', 40_000, 40_000, 1);
-    expect(bounds.origin).toEqual({ x: 32_767 - 32, y: 0 });
-    expect(bounds.size.width).toBe(32);
-    expect(bounds.origin.y + bounds.size.height).toBe(32_767);
-  });
-
-  it('keeps the minimum extent when the fixed edge sits at the domain limit', () => {
-    const bounds = drag.resizedBounds({ x: 32_767, y: 0 }, { width: 8, height: 8 }, 'right', 100, 0, 32);
-    expect(bounds.size.width).toBeGreaterThanOrEqual(32);
-  });
-
-  it('keeps the opposite edge fixed through an over-limit resize', () => {
-    const original = { origin: { x: -32_768 + 8, y: 0 }, size: { width: 32, height: 32 } };
-    const bounds = drag.resizedBounds(original.origin, original.size, 'left', -40_000, 0, 1);
-    expect(bounds.origin.x + bounds.size.width).toBe(original.origin.x + original.size.width);
-    expect(bounds.origin.x).toBe(-32_768);
-  });
-
-  it('writes an NPC handle resize to the spawn box', () => {
-    const body = sector({ npcs: [npc({ x: 100, y: 100 })] });
-    drag.applyBounds({ kind: 'npc', index: 0 }, { x: 90, y: 90 }, { width: 64, height: 48 }, body);
-    expect(body.npcs[0]?.spawnOrigin).toEqual({ x: 90, y: 90 });
-    expect(body.npcs[0]?.spawnBoxSize).toEqual({ width: 64, height: 48 });
+  it('writes a handle resize to the monster spawn area', () => {
+    const body = emptySector({ monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }] });
+    applyBounds({ kind: 'monsterSpawn', id: 'spawn-1' }, { x: 0.5, z: 0.5, width: 4, depth: 3 }, body);
+    expect(body.monsterSpawns[0]).toEqual({ id: 'spawn-1', kind: 'gespenst', x: 0.5, z: 0.5, width: 4, depth: 3, maxAlive: 3 });
   });
 });
 
 describe('placement', () => {
-  it('drops the default one-tile footprint on a tap', () => {
-    const ctx = context(32);
-    const press = viewportPoint({ x: 130, y: 98 }, ctx);
-    const bounds = drag.placementBounds('mask', { x: 128, y: 96 }, press, press, ctx);
-    expect(bounds).toEqual({ origin: { x: 128, y: 96 }, size: drag.DEFAULT_FOOTPRINT });
+  it('drops the tap size on a tap', () => {
+    const ctx = dragContext(0.5);
+    const press = viewportPoint({ x: 4.1, z: 3.1 }, ctx);
+    expect(placementBounds('blocker', { x: 4, z: 3 }, press, press, ctx)).toEqual({ x: 4, z: 3, ...TAP_SIZE });
   });
 
-  it('rubber-bands the quantized footprint on a drag', () => {
-    const ctx = context(32);
-    const bounds = drag.placementBounds('mask', { x: 128, y: 96 }, viewportPoint({ x: 128, y: 96 }, ctx), viewportPoint({ x: 230, y: 170 }, ctx), ctx);
-    expect(bounds).toEqual({ origin: { x: 128, y: 96 }, size: { width: 96, height: 64 } });
+  it('rubber-bands the quantized rect on a drag', () => {
+    const ctx = dragContext(0.5);
+    const bounds = placementBounds('blocker', { x: 4, z: 3 }, viewportPoint({ x: 4, z: 3 }, ctx), viewportPoint({ x: 7.1, z: 5.4 }, ctx), ctx);
+    expect(bounds).toEqual({ x: 4, z: 3, width: 3, depth: 2.5 });
+  });
+
+  it('places a point record at the anchor however far the gesture travels', () => {
+    const ctx = dragContext(0.5);
+    const bounds = placementBounds('placement', { x: 4, z: 3 }, viewportPoint({ x: 4, z: 3 }, ctx), viewportPoint({ x: 9, z: 9 }, ctx), ctx);
+    expect(bounds).toMatchObject({ x: 4, z: 3 });
   });
 
   it('normalizes a backwards rubber band with one snap step minimum', () => {
-    const bounds = drag.rubberBandBounds({ x: 128, y: 96 }, { x: 96, y: 96 }, 32);
-    expect(bounds).toEqual({ origin: { x: 96, y: 96 }, size: { width: 32, height: 32 } });
+    expect(rubberBandBounds({ x: 4, z: 3 }, { x: 3, z: 3 }, 0.5)).toEqual({ x: 3, z: 3, width: 1, depth: 0.5 });
   });
 
-  it.each(['object', 'mask', 'portal', 'npc', 'monster', 'floorPatch'] as const)('direct %s placement appends the default record and selects it', (tool) => {
-    const body = sector();
-    const placed = drag.placeRecord(tool, { x: 64, y: 64 }, { ...drag.DEFAULT_FOOTPRINT }, body, DEFAULTS);
-    expect(placed).toBeDefined();
-    switch (placed!.kind) {
-      case 'object':
-        expect(body.objects[placed!.index]?.modelID).toBe(DEFAULTS.objectModelID);
-        expect(body.objects[placed!.index]?.priority).toBe(0);
-        break;
-      case 'portal':
-        expect(body.portals[placed!.index]?.targetSectorName).toBe('');
-        expect(body.portals[placed!.index]?.direction).toBe('outboundTrigger');
-        break;
-      case 'npc':
-        expect(body.npcs[placed!.index]?.facing).toBe(headingFromCardinal('south'));
-        break;
-      case 'monsterSpawn':
-        expect(body.monsterSpawns[placed!.index]?.spawnHP).toBe(100);
-        expect(body.monsterSpawns[placed!.index]?.bounded).toBe(true);
-        break;
-      case 'floorPatch':
-        expect(body.floorPatches[placed!.index]?.floorMaterialID).toBe(DEFAULTS.floorMaterialID);
-        break;
-      case 'mask':
-        break;
-    }
+  it.each([
+    ['placement', { kind: 'placement', id: 'box-2' }],
+    ['blocker', { kind: 'blocker', id: 'blocker-1' }],
+    ['npc', { kind: 'npc', id: 'npc-1' }],
+    ['monsterSpawn', { kind: 'monsterSpawn', id: 'spawn-1' }],
+    ['floorPatch', { kind: 'floorPatch', id: 'patch-1' }],
+    ['spawn', { kind: 'spawn', id: 'spawn' }],
+  ] as const)('direct %s placement appends the default record under the next free id and selects it', (tool, expected) => {
+    const body = emptySector({ placements: [box('box-1', 15, 15)] });
+    expect(placeRecord(tool, { x: 3, z: 4, ...TAP_SIZE }, body, DEFAULTS)).toEqual(expected);
+    // The placed body is one the sector codec accepts as it stands.
+    expect(new EditorDocument().commit('Place', body)).toEqual({ accepted: true });
+  });
+
+  it('seeds each record from the defaults', () => {
+    const body = emptySector();
+    for (const tool of ['placement', 'blocker', 'npc', 'monsterSpawn', 'floorPatch'] as const) placeRecord(tool, { x: 3, z: 4, ...TAP_SIZE }, body, DEFAULTS);
+    expect(body.placements).toEqual([{ id: 'box-1', modelId: 'box', x: 3, z: 4, yaw: 0, elevation: 0 }]);
+    expect(body.blockers).toEqual([{ id: 'blocker-1', x: 3, z: 4, width: 1, depth: 1 }]);
+    expect(body.npcs).toEqual([{ id: 'npc-1', name: '', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialogScript: '' }]);
+    expect(body.monsterSpawns).toEqual([{ id: 'spawn-1', kind: 'gespenst', x: 3, z: 4, width: 1, depth: 1, maxAlive: 1 }]);
+    expect(body.floorPatches).toEqual([{ id: 'patch-1', floorMaterialId: 'cobble', x: 3, z: 4, width: 1, depth: 1 }]);
+  });
+
+  it('moves the one spawn point instead of adding a second, keeping its facing', () => {
+    const body = emptySector({ spawn: { x: 1, z: 1, facing: 90 } });
+    placeRecord('spawn', { x: 6, z: 7, ...TAP_SIZE }, body, DEFAULTS);
+    expect(body.spawn).toEqual({ x: 6, z: 7, facing: 90 });
   });
 });
 
 describe('handles', () => {
   it('resolves the pressed handle by its projected screen rect', () => {
-    const ctx = context();
-    const origin = { x: 64, y: 64 };
-    const size = { width: 128, height: 128 };
-    expect(drag.hitHandle(viewportPoint({ x: 192, y: 192 }, ctx), origin, size, ctx)).toBe('bottomRight');
-    expect(drag.hitHandle(viewportPoint({ x: 400, y: 400 }, ctx), origin, size, ctx)).toBeUndefined();
+    const ctx = dragContext();
+    const rect = { x: 2, z: 2, width: 4, depth: 4 };
+    expect(hitHandle(viewportPoint({ x: 6, z: 6 }, ctx), rect, ctx)).toBe('bottomRight');
+    expect(hitHandle(viewportPoint({ x: 4, z: 2 }, ctx), rect, ctx)).toBe('top');
+    expect(hitHandle(viewportPoint({ x: 12, z: 12 }, ctx), rect, ctx)).toBeUndefined();
   });
 
-  it('places the facing handle past the spawn box along the heading', () => {
-    const handle = drag.facingHandlePixel({ x: 100, y: 100 }, { width: 32, height: 32 }, headingFromCardinal('east'), 24);
-    // Center (116, 116) + east direction x (half extent 16 + clearance 24).
-    expect(handle.x).toBeCloseTo(156, 3);
-    expect(handle.y).toBeCloseTo(116, 3);
+  it('places the facing handle past the record along the heading', () => {
+    const handle = facingHandlePoint({ x: 5, z: 5 }, 0.3, headingFromCardinal('east'), 0.5);
+    expect(handle.x).toBeCloseTo(5.8, 6);
+    expect(handle.z).toBeCloseTo(5, 6);
   });
 });
 
 describe('rotate', () => {
   it.each(['south', 'east', 'north', 'west'] as const)('a facing drag toward %s lands on its exact degrees', (direction) => {
-    const ctx = context();
-    const subject = npc({ x: 100, y: 100 });
-    const center = drag.spawnBoxCenter(subject.spawnOrigin, subject.spawnBoxSize);
-    const offset = {
-      south: { x: 0, y: 100 },
-      east: { x: 100, y: 0 },
-      north: { x: 0, y: -100 },
-      west: { x: -100, y: 0 },
-    }[direction];
-    const heading = drag.headingFromDrag(viewportPoint({ x: center.x + offset.x, y: center.y + offset.y }, ctx), subject, ctx);
-    expect(Math.abs(angularDistance(heading, headingFromCardinal(direction)))).toBeLessThan(0.5);
+    const ctx = dragContext();
+    const center = { x: 8, z: 8 };
+    const offset = { south: { x: 0, z: 3 }, east: { x: 3, z: 0 }, north: { x: 0, z: -3 }, west: { x: -3, z: 0 } }[direction];
+    expect(headingFromDrag(viewportPoint({ x: center.x + offset.x, z: center.z + offset.z }, ctx), center, 45, ctx)).toBe(headingFromCardinal(direction));
   });
 
-  it('normalizes a drag across the north-south seam into the half-open range', () => {
-    const ctx = context();
-    const subject = npc({ x: 100, y: 100 });
-    const center = drag.spawnBoxCenter(subject.spawnOrigin, subject.spawnBoxSize);
-    const heading = drag.headingFromDrag(viewportPoint({ x: center.x - 1, y: center.y + 200 }, ctx), subject, ctx);
-    expect(heading).toBeGreaterThanOrEqual(0);
-    expect(heading).toBeLessThan(360);
-    expect(Math.abs(angularDistance(heading, 0))).toBeLessThan(2);
+  it('lands on whole degrees inside the half-open range across the north-south seam', () => {
+    const ctx = dragContext();
+    const center = { x: 8, z: 8 };
+    const turned = headingFromDrag(viewportPoint({ x: center.x - 0.01, z: center.z + 5 }, ctx), center, 45, ctx);
+    expect(turned).toBe(0);
+  });
+
+  it('keeps the current heading for a drag onto the center itself', () => {
+    const ctx = dragContext();
+    expect(headingFromDrag(viewportPoint({ x: 8, z: 8 }, ctx), { x: 8, z: 8 }, 45, ctx)).toBe(45);
+  });
+
+  it.each([
+    [0, 90],
+    [90, 180],
+    [270, 0],
+  ])('shows a placement at yaw %s where its +X axis points, heading %s, and turns it back from there', (yaw, facing) => {
+    const ctx = dragContext();
+    const body = emptySector({ placements: [box('box-1', 5, 5, yaw)] });
+    const selection: EditorSelection = { kind: 'placement', id: 'box-1' };
+    expect(turnable(selection, body, ctx)).toEqual({ center: body.placements[0], reach: 1, facing });
+    body.placements[0]!.yaw = 45;
+    applyFacing(selection, facing, body);
+    expect(body.placements[0]?.yaw).toBe(yaw);
+  });
+
+  it('turns an NPC and the spawn point by their facing', () => {
+    const ctx = dragContext();
+    const body = emptySector({ npcs: [npc({ x: 8, z: 8 }, 90)], spawn: { x: 2, z: 2, facing: 180 } });
+    expect(turnable({ kind: 'npc', id: 'libus' }, body, ctx)).toMatchObject({ reach: SOMNIO_CONSTANTS.npcRadius, facing: 90 });
+    expect(turnable({ kind: 'spawn', id: 'spawn' }, body, ctx)).toMatchObject({ reach: SOMNIO_CONSTANTS.playerRadius, facing: 180 });
+    expect(turnable({ kind: 'blocker', id: 'none' }, body, ctx)).toBeUndefined();
+    applyFacing({ kind: 'spawn', id: 'spawn' }, 270, body);
+    expect(body.spawn?.facing).toBe(270);
   });
 });
 
@@ -254,203 +255,167 @@ describe('marquee', () => {
     };
   }
 
-  it('selects records whose projected quads intersect it', () => {
-    const ctx = context();
-    const body = sector({
-      objects: [{ x: 0, y: 0, modelID: 'door', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-      collisionMasks: [{ x: 400, y: 400, width: 32, height: 32 }],
-    });
-    const corners = drag.projectedCorners({ x: 0, y: 0 }, { width: 32, height: 32 }, ctx);
-    const box = boundingBox(corners);
-    const hits = drag.marqueeSelections(body, { x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8 }, ctx);
-    expect(hits).toEqual([{ kind: 'object', index: 0 }]);
-    const empty = drag.marqueeSelections(body, { x: -50, y: -50, width: 10, height: 10 }, ctx);
-    expect(empty).toEqual([]);
+  function quad(selection: EditorSelection, body: Sector, ctx: DragContext): ScreenPoint[] {
+    return projectedCorners(footprintCorners(selectionFootprint(selection, body, ctx.registry)!), ctx);
+  }
+
+  it('selects records whose projected footprints intersect it', () => {
+    const ctx = dragContext();
+    const body = emptySector({ placements: [box('box-1', 2, 2)], blockers: [blocker('far', 16, 16)] });
+    const hit = boundingBox(quad({ kind: 'placement', id: 'box-1' }, body, ctx));
+    expect(marqueeSelections(body, { x: hit.x - 4, y: hit.y - 4, width: hit.width + 8, height: hit.height + 8 }, ctx)).toEqual([
+      { kind: 'placement', id: 'box-1' },
+    ]);
+    expect(marqueeSelections(body, { x: -50, y: -50, width: 10, height: 10 }, ctx)).toEqual([]);
   });
 
   it('selects nothing inside the projected bounding box but outside the quad', () => {
     // The tilted camera projects a floor rect to a rotated quad; a marquee in the dead
     // corner of its bounding box must not select the record.
-    const ctx = context();
-    const portal = {
-      x: 0,
-      y: 32,
-      width: 256,
-      height: 288,
-      targetSectorName: 'EdariaBibliothek',
-      direction: 'arrivalPlacement' as const,
-    };
-    const body = sector({ portals: [portal] });
-    const corners = drag.projectedCorners({ x: 0, y: 32 }, { width: 256, height: 288 }, ctx);
-    const box = boundingBox(corners);
-    const deadCorner = { x: box.x + 1, y: box.y + 1, width: 2, height: 2 };
-    expect(drag.rectIntersectsConvexQuad(deadCorner, corners)).toBe(false);
-    expect(drag.marqueeSelections(body, deadCorner, ctx)).toEqual([]);
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('wide', 0, 1, 10, 11)] });
+    const corners = quad({ kind: 'blocker', id: 'wide' }, body, ctx);
+    const bounds = boundingBox(corners);
+    const deadCorner = { x: bounds.x + 1, y: bounds.y + 1, width: 2, height: 2 };
+    expect(rectIntersectsConvexQuad(deadCorner, corners)).toBe(false);
+    expect(marqueeSelections(body, deadCorner, ctx)).toEqual([]);
   });
 });
 
 describe('session classification', () => {
-  it('begins a resize session on a selected record handle', () => {
-    const ctx = context();
-    const body = sector({ collisionMasks: [{ x: 64, y: 64, width: 128, height: 128 }] });
-    const begun = drag.beginSession(viewportPoint({ x: 192, y: 192 }, ctx), 'select', false, body, [{ kind: 'mask', index: 0 }], ctx);
+  it('begins a resize session on a selected rect record handle', () => {
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('wall', 2, 2, 4, 4)] });
+    const begun = beginSession(viewportPoint({ x: 6, z: 6 }, ctx), 'select', false, body, [{ kind: 'blocker', id: 'wall' }], ctx);
     expect(begun.session).toEqual({
       kind: 'resize',
-      selection: { kind: 'mask', index: 0 },
+      selection: { kind: 'blocker', id: 'wall' },
       handle: 'bottomRight',
-      origin: { x: 64, y: 64 },
-      size: { width: 128, height: 128 },
+      rect: { x: 2, z: 2, width: 4, depth: 4 },
     });
-    expect(begun.selection).toEqual([{ kind: 'mask', index: 0 }]);
+    expect(begun.selection).toEqual([{ kind: 'blocker', id: 'wall' }]);
+  });
+
+  it('gives a placement a facing handle and no resize handles', () => {
+    const ctx = dragContext();
+    const body = emptySector({ placements: [box('box-1', 8, 8)] });
+    const selection: EditorSelection[] = [{ kind: 'placement', id: 'box-1' }];
+    const handle = facingHandlePoint({ x: 8, z: 8 }, 1, 90, FACING_CLEARANCE_PT * metresPerViewportPoint(ctx));
+    expect(beginSession(viewportPoint(handle, ctx), 'select', false, body, selection, ctx).session).toEqual({ kind: 'rotate', selection: selection[0] });
+    // The footprint's corner is where a rect record would carry a resize handle.
+    expect(beginSession(viewportPoint({ x: 9, z: 8.5 }, ctx), 'select', false, body, selection, ctx).session?.kind).toBe('move');
   });
 
   it('begins a rotate session on a selected NPC facing handle', () => {
-    const ctx = context();
-    const subject = npc({ x: 200, y: 200 });
-    const body = sector({ npcs: [subject] });
-    const pxPerPt = drag.legacyPixelsPerViewportPoint(ctx);
-    const handlePixel = drag.facingHandlePixel(subject.spawnOrigin, subject.spawnBoxSize, subject.facing, drag.FACING_CLEARANCE_PT * pxPerPt);
-    const begun = drag.beginSession(viewportPoint(handlePixel, ctx), 'select', false, body, [{ kind: 'npc', index: 0 }], ctx);
-    expect(begun.session).toEqual({ kind: 'rotate', npcIndex: 0 });
+    const ctx = dragContext();
+    const subject = npc({ x: 8, z: 8 });
+    const body = emptySector({ npcs: [subject] });
+    const handle = facingHandlePoint(subject, SOMNIO_CONSTANTS.npcRadius, subject.facing, FACING_CLEARANCE_PT * metresPerViewportPoint(ctx));
+    const begun = beginSession(viewportPoint(handle, ctx), 'select', false, body, [{ kind: 'npc', id: 'libus' }], ctx);
+    expect(begun.session).toEqual({ kind: 'rotate', selection: { kind: 'npc', id: 'libus' } });
   });
 
   it('toggles membership on shift-click and starts no session', () => {
-    const ctx = context();
-    const body = sector({
-      collisionMasks: [
-        { x: 0, y: 0, width: 64, height: 64 },
-        { x: 200, y: 200, width: 64, height: 64 },
-      ],
-    });
-    const press = viewportPoint({ x: 230, y: 230 }, ctx);
-    const added = drag.beginSession(press, 'select', true, body, [{ kind: 'mask', index: 0 }], ctx);
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('a', 0, 0, 2, 2), blocker('b', 8, 8, 2, 2)] });
+    const press = viewportPoint({ x: 9, z: 9 }, ctx);
+    const added = beginSession(press, 'select', true, body, [{ kind: 'blocker', id: 'a' }], ctx);
     expect(added.session).toBeUndefined();
     expect(added.selection).toEqual([
-      { kind: 'mask', index: 0 },
-      { kind: 'mask', index: 1 },
+      { kind: 'blocker', id: 'a' },
+      { kind: 'blocker', id: 'b' },
     ]);
-    const removed = drag.beginSession(press, 'select', true, body, added.selection, ctx);
+    const removed = beginSession(press, 'select', true, body, added.selection, ctx);
     expect(removed.session).toBeUndefined();
-    expect(removed.selection).toEqual([{ kind: 'mask', index: 0 }]);
+    expect(removed.selection).toEqual([{ kind: 'blocker', id: 'a' }]);
   });
 
   it('moves the whole selection when pressing a selected record', () => {
-    const ctx = context();
-    const body = sector({
-      collisionMasks: [
-        { x: 0, y: 0, width: 64, height: 64 },
-        { x: 200, y: 200, width: 64, height: 64 },
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('a', 0, 0, 2, 2), blocker('b', 8, 8, 2, 2)] });
+    const selection: EditorSelection[] = [
+      { kind: 'blocker', id: 'a' },
+      { kind: 'blocker', id: 'b' },
+    ];
+    const begun = beginSession(viewportPoint({ x: 1, z: 1 }, ctx), 'select', false, body, selection, ctx);
+    expect(begun.session).toEqual({
+      kind: 'move',
+      originals: [
+        { selection: selection[0], origin: { x: 0, z: 0 } },
+        { selection: selection[1], origin: { x: 8, z: 8 } },
       ],
     });
-    const selection: EditorSelection[] = [
-      { kind: 'mask', index: 0 },
-      { kind: 'mask', index: 1 },
-    ];
-    const begun = drag.beginSession(viewportPoint({ x: 30, y: 30 }, ctx), 'select', false, body, selection, ctx);
-    expect(begun.session?.kind).toBe('move');
-    if (begun.session?.kind === 'move') {
-      expect(begun.session.originals.map((entry) => entry.selection)).toEqual(selection);
-    }
     expect(begun.selection).toEqual(selection);
   });
 
   it('retargets the selection before moving when pressing an unselected record', () => {
-    const ctx = context();
-    const body = sector({
-      collisionMasks: [
-        { x: 0, y: 0, width: 64, height: 64 },
-        { x: 200, y: 200, width: 64, height: 64 },
-      ],
-    });
-    const begun = drag.beginSession(viewportPoint({ x: 230, y: 230 }, ctx), 'select', false, body, [{ kind: 'mask', index: 0 }], ctx);
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('a', 0, 0, 2, 2), blocker('b', 8, 8, 2, 2)] });
+    const begun = beginSession(viewportPoint({ x: 9, z: 9 }, ctx), 'select', false, body, [{ kind: 'blocker', id: 'a' }], ctx);
     expect(begun.session?.kind).toBe('move');
-    expect(begun.selection).toEqual([{ kind: 'mask', index: 1 }]);
+    expect(begun.selection).toEqual([{ kind: 'blocker', id: 'b' }]);
   });
 
-  it('lets the topmost record under the press win over the selection beneath it', () => {
-    const ctx = context();
-    const body = sector({
-      collisionMasks: [{ x: 0, y: 0, width: 256, height: 256 }],
-      npcs: [npc({ x: 100, y: 100 })],
-    });
-    const begun = drag.beginSession(viewportPoint({ x: 110, y: 110 }, ctx), 'select', false, body, [{ kind: 'mask', index: 0 }], ctx);
+  it('selects the prop on the first press, over the blocker and the selection beneath it', () => {
+    const ctx = dragContext();
+    const body = emptySector({ placements: [box('box-1', 5, 5)], blockers: [blocker('under', 0, 0, 10, 10)] });
+    const begun = beginSession(viewportPoint({ x: 5.2, z: 5.2 }, ctx), 'select', false, body, [{ kind: 'blocker', id: 'under' }], ctx);
     expect(begun.session?.kind).toBe('move');
-    expect(begun.selection).toEqual([{ kind: 'npc', index: 0 }]);
+    expect(begun.selection).toEqual([{ kind: 'placement', id: 'box-1' }]);
   });
 
   it('clears the selection and starts a marquee on empty ground', () => {
-    const ctx = context();
-    const body = sector({
-      portals: [
-        {
-          x: 0,
-          y: 32,
-          width: 256,
-          height: 288,
-          targetSectorName: 'EdariaBibliothek',
-          direction: 'arrivalPlacement',
-        },
-      ],
-    });
-    // Legacy (319, 235) sits outside the portal rect but inside its projected bounding box.
-    const begun = drag.beginSession(viewportPoint({ x: 319, y: 235 }, ctx), 'select', false, body, [{ kind: 'portal', index: 0 }], ctx);
+    const ctx = dragContext();
+    const body = emptySector({ blockers: [blocker('a', 0, 1, 10, 11)] });
+    const begun = beginSession(viewportPoint({ x: 12.5, z: 9 }, ctx), 'select', false, body, [{ kind: 'blocker', id: 'a' }], ctx);
     expect(begun.session).toEqual({ kind: 'marquee' });
     expect(begun.selection).toEqual([]);
   });
-});
 
-describe('group delete', () => {
-  it('removes exactly the selected records regardless of set order', () => {
-    const body = sector({
-      collisionMasks: [
-        { x: 0, y: 0, width: 32, height: 32 },
-        { x: 100, y: 0, width: 32, height: 32 },
-        { x: 200, y: 0, width: 32, height: 32 },
-      ],
-      npcs: [npc({ x: 0, y: 0 }), npc({ x: 100, y: 100 })],
-    });
-    removeAllSelections(
-      [
-        { kind: 'mask', index: 0 },
-        { kind: 'mask', index: 2 },
-        { kind: 'npc', index: 1 },
-      ],
-      body,
-    );
-    expect(body.collisionMasks).toEqual([{ x: 100, y: 0, width: 32, height: 32 }]);
-    expect(body.npcs.length).toBe(1);
-    expect(body.npcs[0]?.spawnOrigin).toEqual({ x: 0, y: 0 });
+  it('anchors a placement at the quantized press point of a sector that stands away from the origin', () => {
+    const ctx = dragContext(0.5, { x: 5.12, z: -30.72 });
+    const begun = beginSession(viewportPoint({ x: 3.2, z: 4.8 }, ctx), 'npc', false, emptySector(), [], ctx);
+    expect(begun.session).toEqual({ kind: 'placement', tool: 'npc', anchor: { x: 3, z: 5 } });
   });
 });
 
 describe('commit guards', () => {
   it('commits no mutation and registers no undo step on a zero-travel move', () => {
-    const ctx = context();
-    const document = documentWith(sector({ collisionMasks: [{ x: 64, y: 64, width: 64, height: 64 }] }));
+    const ctx = dragContext();
+    const document = documentWith(emptySector({ blockers: [blocker('a', 2, 2, 2, 2)] }));
     const before = document.undoDepth;
-    const press = viewportPoint({ x: 80, y: 80 }, ctx);
-    drag.endSession(
-      { kind: 'move', originals: [{ selection: { kind: 'mask', index: 0 }, origin: { x: 64, y: 64 } }] },
-      press,
-      press,
-      false,
-      document,
-      document.sector,
-      [{ kind: 'mask', index: 0 }],
-      ctx,
-      DEFAULTS,
+    const press = viewportPoint({ x: 2.5, z: 2.5 }, ctx);
+    const selection: EditorSelection[] = [{ kind: 'blocker', id: 'a' }];
+    endSession({ kind: 'move', originals: origins(selection, document.sector) }, press, press, false, document, document.sector, selection, ctx, DEFAULTS);
+    expect(document.sector.blockers[0]).toEqual(blocker('a', 2, 2, 2, 2));
+    expect(document.undoDepth).toBe(before);
+  });
+
+  it('registers no undo step on a drag of a door on its own, which has no position to move', () => {
+    const ctx = dragContext();
+    const document = documentWith(
+      emptySector({
+        placements: [{ id: 'door-1', modelId: 'door', x: 10, z: 19, yaw: 0, elevation: 0 }],
+        doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Other', door: 'in' } }],
+      }),
     );
-    expect(document.sector.collisionMasks[0]).toEqual({ x: 64, y: 64, width: 64, height: 64 });
+    const before = document.undoDepth;
+    const press = viewportPoint({ x: 10, z: 18.7 }, ctx);
+    const release = viewportPoint({ x: 13, z: 15 }, ctx);
+    const begun = beginSession(press, 'select', false, document.sector, [], ctx);
+    expect(begun).toEqual({ session: { kind: 'move', originals: [] }, selection: [{ kind: 'door', id: 'exit' }] });
+    expect(gridDelta(press, release, ctx)).toEqual({ dx: 3, dz: -3.5 });
+    expect(endSession(begun.session!, press, release, false, document, document.sector, begun.selection, ctx, DEFAULTS)).toEqual(begun.selection);
     expect(document.undoDepth).toBe(before);
   });
 
   it('appends, selects, and registers one undo step on a placement commit', () => {
-    const ctx = context();
-    const document = documentWith(sector());
+    const ctx = dragContext();
+    const document = documentWith(emptySector());
     const before = document.undoDepth;
-    const press = viewportPoint({ x: 70, y: 70 }, ctx);
-    const selection = drag.endSession(
-      { kind: 'placement', tool: 'mask', anchor: { x: 64, y: 64 } },
+    const press = viewportPoint({ x: 2.1, z: 2.1 }, ctx);
+    const selection = endSession(
+      { kind: 'placement', tool: 'blocker', anchor: { x: 2, z: 2 } },
       press,
       press,
       false,
@@ -460,89 +425,130 @@ describe('commit guards', () => {
       ctx,
       DEFAULTS,
     );
-    expect(document.sector.collisionMasks).toEqual([{ x: 64, y: 64, width: 128, height: 128 }]);
-    expect(selection).toEqual([{ kind: 'mask', index: 0 }]);
+    expect(document.sector.blockers).toEqual([{ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 }]);
+    expect(selection).toEqual([{ kind: 'blocker', id: 'blocker-1' }]);
     expect(document.undoDepth).toBe(before + 1);
   });
 
-  it('commits no mutation on a zero-travel resize', () => {
-    const ctx = context();
-    const mask = { x: 64, y: 64, width: 64, height: 64 };
-    const document = documentWith(sector({ collisionMasks: [mask] }));
+  it('keeps the selection when the document refuses the placement', () => {
+    const ctx = dragContext();
+    const patch = { id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 2, width: 2, depth: 2 };
+    const document = documentWith(emptySector({ floorPatches: [patch] }));
     const before = document.undoDepth;
-    const press = viewportPoint({ x: 128, y: 128 }, ctx);
-    drag.endSession(
-      {
-        kind: 'resize',
-        selection: { kind: 'mask', index: 0 },
-        handle: 'bottomRight',
-        origin: { x: 64, y: 64 },
-        size: { width: 64, height: 64 },
-      },
+    const press = viewportPoint({ x: 3, z: 3 }, ctx);
+    const kept: EditorSelection[] = [{ kind: 'floorPatch', id: 'patch-1' }];
+    const selection = endSession(
+      { kind: 'placement', tool: 'floorPatch', anchor: { x: 3, z: 3 } },
       press,
       press,
       false,
       document,
       document.sector,
-      [],
+      kept,
       ctx,
       DEFAULTS,
     );
-    expect(document.sector.collisionMasks[0]).toEqual(mask);
+    expect(selection).toEqual(kept);
+    expect(document.sector.floorPatches).toEqual([patch]);
+    expect(document.undoDepth).toBe(before);
+  });
+
+  it('commits no mutation on a zero-travel resize', () => {
+    const ctx = dragContext();
+    const document = documentWith(emptySector({ blockers: [blocker('a', 2, 2, 2, 2)] }));
+    const before = document.undoDepth;
+    const press = viewportPoint({ x: 4, z: 4 }, ctx);
+    const session: DragSession = { kind: 'resize', selection: { kind: 'blocker', id: 'a' }, handle: 'bottomRight', rect: { x: 2, z: 2, width: 2, depth: 2 } };
+    endSession(session, press, press, false, document, document.sector, [], ctx, DEFAULTS);
+    expect(document.sector.blockers[0]).toEqual(blocker('a', 2, 2, 2, 2));
     expect(document.undoDepth).toBe(before);
   });
 
   it('commits no undo step on a rotate back to the current heading', () => {
-    const ctx = context();
-    const subject = npc({ x: 100, y: 100 });
-    const document = documentWith(sector({ npcs: [subject] }));
+    const ctx = dragContext();
+    const subject = npc({ x: 8, z: 8 });
+    const document = documentWith(emptySector({ npcs: [subject] }));
     const before = document.undoDepth;
-    const center = drag.spawnBoxCenter(subject.spawnOrigin, subject.spawnBoxSize);
-    const handle = viewportPoint({ x: center.x, y: center.y + 60 }, ctx);
-    drag.endSession({ kind: 'rotate', npcIndex: 0 }, handle, handle, false, document, document.sector, [], ctx, DEFAULTS);
+    const handle = viewportPoint({ x: 8, z: 10 }, ctx);
+    endSession({ kind: 'rotate', selection: { kind: 'npc', id: 'libus' } }, handle, handle, false, document, document.sector, [], ctx, DEFAULTS);
     expect(document.sector.npcs[0]?.facing).toBe(subject.facing);
     expect(document.undoDepth).toBe(before);
   });
 
-  it('neither throws nor mutates on a rotate against a stale NPC index', () => {
-    const ctx = context();
-    const document = documentWith(sector());
+  it('neither throws nor mutates on a rotate against a record that is gone', () => {
+    const ctx = dragContext();
+    const document = documentWith(emptySector());
     const before = structuredClone(document.sector);
     const depth = document.undoDepth;
-    drag.endSession(
-      { kind: 'rotate', npcIndex: 5 },
-      viewportPoint({ x: 100, y: 100 }, ctx),
-      viewportPoint({ x: 200, y: 200 }, ctx),
-      false,
-      document,
-      document.sector,
-      [],
-      ctx,
-      DEFAULTS,
-    );
+    const session: DragSession = { kind: 'rotate', selection: { kind: 'npc', id: 'gone' } };
+    endSession(session, viewportPoint({ x: 5, z: 5 }, ctx), viewportPoint({ x: 9, z: 9 }, ctx), false, document, document.sector, [], ctx, DEFAULTS);
     expect(document.sector).toEqual(before);
     expect(document.undoDepth).toBe(depth);
   });
 
   it('unions an additive marquee with the existing selection', () => {
-    const ctx = context();
-    const document = documentWith(
-      sector({
-        collisionMasks: [
-          { x: 0, y: 0, width: 32, height: 32 },
-          { x: 400, y: 400, width: 32, height: 32 },
-        ],
-      }),
-    );
-    const corners = drag.projectedCorners({ x: 400, y: 400 }, { width: 32, height: 32 }, ctx);
+    const ctx = dragContext();
+    const document = documentWith(emptySector({ blockers: [blocker('a', 0, 0), blocker('b', 16, 16)] }));
+    const corners = projectedCorners(footprintCorners(selectionFootprint({ kind: 'blocker', id: 'b' }, document.sector, ctx.registry)!), ctx);
     const xs = corners.map((corner) => corner.x);
     const ys = corners.map((corner) => corner.y);
     const start = { x: Math.min(...xs) - 4, y: Math.min(...ys) - 4 };
     const end = { x: Math.max(...xs) + 4, y: Math.max(...ys) + 4 };
-    const selection = drag.endSession({ kind: 'marquee' }, start, end, true, document, document.sector, [{ kind: 'mask', index: 0 }], ctx, DEFAULTS);
+    const selection = endSession({ kind: 'marquee' }, start, end, true, document, document.sector, [{ kind: 'blocker', id: 'a' }], ctx, DEFAULTS);
     expect(selection).toEqual([
-      { kind: 'mask', index: 0 },
-      { kind: 'mask', index: 1 },
+      { kind: 'blocker', id: 'a' },
+      { kind: 'blocker', id: 'b' },
     ]);
+  });
+});
+
+describe('preview against the commit', () => {
+  const body = emptySector({
+    placements: [box('box-1', 5, 5)],
+    blockers: [blocker('wall', 10, 2, 2, 2)],
+    npcs: [npc({ x: 8, z: 12 })],
+  });
+
+  const cases: [string, DragSession, Point, Point][] = [
+    ['a move', { kind: 'move', originals: origins([{ kind: 'placement', id: 'box-1' }], body) }, { x: 5, z: 5 }, { x: 7.3, z: 3.9 }],
+    [
+      'a resize',
+      { kind: 'resize', selection: { kind: 'blocker', id: 'wall' }, handle: 'bottomRight', rect: { x: 10, z: 2, width: 2, depth: 2 } },
+      { x: 12, z: 4 },
+      { x: 13.4, z: 6.2 },
+    ],
+    ['a placement turn', { kind: 'rotate', selection: { kind: 'placement', id: 'box-1' } }, { x: 6.5, z: 5 }, { x: 4, z: 2 }],
+    ['an NPC turn', { kind: 'rotate', selection: { kind: 'npc', id: 'libus' } }, { x: 8, z: 13 }, { x: 11, z: 10 }],
+    ['a rubber-banded rect', { kind: 'placement', tool: 'monsterSpawn', anchor: { x: 14, z: 14 } }, { x: 14, z: 14 }, { x: 17.2, z: 18.6 }],
+    ['a placed model', { kind: 'placement', tool: 'placement', anchor: { x: 15, z: 3 } }, { x: 15, z: 3 }, { x: 15, z: 3 }],
+  ];
+
+  it.each(cases)('draws %s where releasing at the same point commits it', (_name, session, from, to) => {
+    const ctx = dragContext();
+    const document = documentWith(body);
+    const start = viewportPoint(from, ctx);
+    const end = viewportPoint(to, ctx);
+    const shown = preview(session, start, end, document.sector, ctx, DEFAULTS);
+    endSession(session, start, end, false, document, document.sector, [], ctx, DEFAULTS);
+    expect(shown).toBeDefined();
+    expect(document.sector).not.toEqual(body);
+    expect(document.sector).toEqual(shown);
+  });
+
+  it('turns to the heading the pointer is at, in whole degrees', () => {
+    const ctx = dragContext();
+    const document = documentWith(body);
+    const session: DragSession = { kind: 'rotate', selection: { kind: 'npc', id: 'libus' } };
+    const end = viewportPoint({ x: 11, z: 10 }, ctx);
+    endSession(session, end, end, false, document, document.sector, [], ctx, DEFAULTS);
+    const turned = document.sector.npcs[0]!.facing;
+    expect(Number.isInteger(turned)).toBe(true);
+    expect(Math.abs(angularDistance(turned, 124))).toBeLessThan(1);
+  });
+
+  it('has no floor-space preview for a marquee', () => {
+    const ctx = dragContext();
+    const point = viewportPoint({ x: 1, z: 1 }, ctx);
+    expect(preview({ kind: 'marquee' }, point, point, body, ctx, DEFAULTS)).toBeUndefined();
   });
 });

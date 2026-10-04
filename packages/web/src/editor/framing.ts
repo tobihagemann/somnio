@@ -1,10 +1,9 @@
 import type * as THREE from 'three';
-import { ORTHO_RIG, applyScrollZoom, cameraPosition, legacyPoint, offsetDirection, worldPosition } from '@/scene/cameraRig';
+import { ORTHO_RIG, applyScrollZoom, cameraPosition, offsetDirection } from '@/scene/cameraRig';
 import type { Vec3 } from '@/scene/cameraRig';
-import { clamp } from '@somnio/core';
-import { sectorPixelHeight, sectorPixelWidth } from '@somnio/core';
-import type { Sector } from '@somnio/core';
-import { floorPixelAtScreen } from './picking';
+import { clamp, sectorPointInSpace, sectorRect } from '@somnio/core';
+import type { Point, Sector } from '@somnio/core';
+import { floorPointAtScreen } from './picking';
 import type { ScreenPoint, ViewportSize } from './picking';
 
 /**
@@ -18,14 +17,14 @@ export interface EditorFraming {
   scale: number;
 }
 
-/** Play-field height `defaultScale` is tuned against — the player's fixed 640x480 viewport. */
+/** The viewport height at which the editor's opening scale is the game's `defaultScale`. */
 const PLAYER_VIEWPORT_HEIGHT = 480;
 
 /**
- * The orthographic scale that reproduces the player's default close-up magnification in a
- * viewport of the given height, so the editor opens a sector looking exactly as zoomed as the
- * game renders it. Viewport-height dependent — this is why the opening scale is not the
- * whole-sector fit.
+ * The orthographic scale the editor opens a sector at: the game's default close-up at
+ * `PLAYER_VIEWPORT_HEIGHT`, growing with the viewport so a metre keeps its size on screen and a
+ * taller canvas shows more ground. Viewport-height dependent — this is why the opening scale is
+ * not the whole-sector fit.
  */
 export function playerZoomScale(viewportHeight: number): number {
   if (viewportHeight <= 0) return ORTHO_RIG.defaultScale;
@@ -33,22 +32,21 @@ export function playerZoomScale(viewportHeight: number): number {
 }
 
 /**
- * Legacy-pixel bounding rect of the sector floor plus every authored object footprint, so
- * props at negative/overflow coordinates stay framed and selectable.
+ * Bounding rect, in space coordinates, of the sector floor plus every placement's position, so
+ * props standing past the sector's edge stay framed and selectable.
  */
-export function fitPixelBounds(sector: Sector): {
-  min: { x: number; y: number };
-  max: { x: number; y: number };
-} {
+export function fitBounds(sector: Sector): { min: Point; max: Point } {
+  const rect = sectorRect(sector);
   const bounds = {
-    min: { x: 0, y: 0 },
-    max: { x: sectorPixelWidth(sector), y: sectorPixelHeight(sector) },
+    min: { x: rect.x, z: rect.z },
+    max: { x: rect.x + rect.width, z: rect.z + rect.depth },
   };
-  for (const object of sector.objects) {
-    bounds.min.x = Math.min(bounds.min.x, object.x);
-    bounds.min.y = Math.min(bounds.min.y, object.y);
-    bounds.max.x = Math.max(bounds.max.x, object.x + object.sourceWidth);
-    bounds.max.y = Math.max(bounds.max.y, object.y + object.sourceHeight);
+  for (const placement of sector.placements) {
+    const position = sectorPointInSpace(sector, placement);
+    bounds.min.x = Math.min(bounds.min.x, position.x);
+    bounds.min.z = Math.min(bounds.min.z, position.z);
+    bounds.max.x = Math.max(bounds.max.x, position.x);
+    bounds.max.z = Math.max(bounds.max.z, position.z);
   }
   return bounds;
 }
@@ -75,27 +73,27 @@ function dot(a: Vec3, b: Vec3): number {
 }
 
 /**
- * Framing that fits a legacy-pixel bounding rect into the viewport. The rect lies on the
- * floor plane, where the camera-plane projection is linear in pixel coordinates, so the
+ * Framing that fits a bounding rect on the ground into the viewport. The rect lies on the
+ * floor plane, where the camera-plane projection is linear in ground coordinates, so the
  * projected extremes land on the rect corners and the projected center is the rect center.
  *
  * The fit scale is deliberately NOT routed through `clampedScale`/`scaleForZoomFactor`:
- * those bound interactive play zoom, and a whole-sector fit for even a 12x12 sector exceeds
+ * those bound interactive play zoom, and a whole-sector fit for even a 30 m sector exceeds
  * `maxScale` under the tilted camera — clamping would crop it.
  */
-export function editorFramingFittingPixelBounds(minPixel: { x: number; y: number }, maxPixel: { x: number; y: number }, viewport: ViewportSize): EditorFraming {
+export function editorFramingFittingBounds(min: Point, max: Point, viewport: ViewportSize): EditorFraming {
   const basis = cameraBasis();
   const corners = [
-    worldPosition(minPixel.x, minPixel.y),
-    worldPosition(maxPixel.x, minPixel.y),
-    worldPosition(minPixel.x, maxPixel.y),
-    worldPosition(maxPixel.x, maxPixel.y),
+    { x: min.x, y: 0, z: min.z },
+    { x: max.x, y: 0, z: min.z },
+    { x: min.x, y: 0, z: max.z },
+    { x: max.x, y: 0, z: max.z },
   ];
   const horizontal = corners.map((corner) => dot(corner, basis.right));
   const vertical = corners.map((corner) => dot(corner, basis.up));
   const horizontalExtent = Math.max(...horizontal) - Math.min(...horizontal);
   const verticalExtent = Math.max(...vertical) - Math.min(...vertical);
-  const focus = worldPosition((minPixel.x + maxPixel.x) / 2, (minPixel.y + maxPixel.y) / 2);
+  const focus = { x: (min.x + max.x) / 2, y: 0, z: (min.z + max.z) / 2 };
   if (viewport.width <= 0 || viewport.height <= 0) {
     return { focus, scale: ORTHO_RIG.defaultScale };
   }
@@ -105,10 +103,10 @@ export function editorFramingFittingPixelBounds(minPixel: { x: number; y: number
   return { focus, scale: fit > 0 ? fit : ORTHO_RIG.defaultScale };
 }
 
-/** Framing that fits the whole sector — floor rect plus authored footprints — into the viewport. */
+/** Framing that fits the whole sector — floor rect plus placement positions — into the viewport. */
 export function editorFramingFitting(sector: Sector, viewport: ViewportSize): EditorFraming {
-  const bounds = fitPixelBounds(sector);
-  return editorFramingFittingPixelBounds(bounds.min, bounds.max, viewport);
+  const bounds = fitBounds(sector);
+  return editorFramingFittingBounds(bounds.min, bounds.max, viewport);
 }
 
 /** Navigation action a canvas scroll event resolves to; deltas are positive for scroll-up. */
@@ -145,12 +143,15 @@ export class EditorCamera {
   viewportSize: ViewportSize = { width: 640, height: 480 };
 
   private readonly camera: THREE.OrthographicCamera;
+  private readonly onFocused: (focus: Vec3) => void;
   private hasCustomFraming = false;
   /** The game's interactive zoom factor, reused verbatim (clamped 0.5x-2x, multiplicative). */
   private zoomFactor = 1;
 
-  constructor(camera: THREE.OrthographicCamera) {
+  /** `onFocused` hears every focus the framing lands on, so what follows the view (the sun's shadow volume) can follow it. */
+  constructor(camera: THREE.OrthographicCamera, onFocused: (focus: Vec3) => void = () => {}) {
     this.camera = camera;
+    this.onFocused = onFocused;
     this.apply();
   }
 
@@ -184,9 +185,9 @@ export class EditorCamera {
       x: this.viewportSize.width / 2 - delta.width,
       y: this.viewportSize.height / 2 - delta.height,
     };
-    const pixel = floorPixelAtScreen(this.camera, this.viewportSize, shifted);
+    const point = floorPointAtScreen(this.camera, this.viewportSize, shifted);
     this.hasCustomFraming = true;
-    this.applyCustomFraming({ focus: worldPosition(pixel.x, pixel.y), scale: this.framing.scale }, sector);
+    this.applyCustomFraming({ focus: { x: point.x, y: 0, z: point.z }, scale: this.framing.scale }, sector);
   }
 
   /**
@@ -194,35 +195,27 @@ export class EditorCamera {
    * framing for this canvas height — composed from `applyScrollZoom` over `playerZoomScale`,
    * not from `scaleForZoomFactor`, which divides the fixed default scale instead.
    */
-  zoom(nativeScaleDeltaY: number, sector: Sector): void {
+  zoom(zoomDeltaY: number, sector: Sector): void {
     this.hasCustomFraming = true;
-    this.zoomFactor = applyScrollZoom(this.zoomFactor, nativeScaleDeltaY);
+    this.zoomFactor = applyScrollZoom(this.zoomFactor, zoomDeltaY);
     this.applyCustomFraming({ focus: this.framing.focus, scale: playerZoomScale(this.viewportSize.height) / this.zoomFactor }, sector);
-  }
-
-  /**
-   * Legacy pixels covered by one viewport point at the live framing — sizes the resize and
-   * facing handles so they keep a constant screen extent across zoom levels.
-   */
-  legacyPixelsPerViewportPoint(): number {
-    if (this.viewportSize.height <= 0) return 1;
-    return (this.framing.scale * 2) / this.viewportSize.height / ORTHO_RIG.worldUnitsPerPixel;
   }
 
   /** Clamps the focus onto the sector's fit extent (no panning off into the void) and applies. */
   private applyCustomFraming(proposed: EditorFraming, sector: Sector): void {
-    const bounds = fitPixelBounds(sector);
-    const focusPixel = legacyPoint(proposed.focus);
-    const clamped = {
-      x: clamp(focusPixel.x, bounds.min.x, bounds.max.x),
-      y: clamp(focusPixel.y, bounds.min.y, bounds.max.y),
+    const bounds = fitBounds(sector);
+    const focus = {
+      x: clamp(proposed.focus.x, bounds.min.x, bounds.max.x),
+      y: 0,
+      z: clamp(proposed.focus.z, bounds.min.z, bounds.max.z),
     };
-    this.framing = { focus: worldPosition(clamped.x, clamped.y), scale: proposed.scale };
+    this.framing = { focus, scale: proposed.scale };
     this.apply();
   }
 
   private apply(): void {
     applyFramingToCamera(this.camera, this.framing, this.viewportSize);
+    this.onFocused(this.framing.focus);
   }
 }
 

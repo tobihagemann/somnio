@@ -3,9 +3,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
+import { ModelRegistryError, OUTDOOR_SPACE_ID, WorldError } from '@somnio/core';
+import { STARTER_SECTOR } from '@somnio/data';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
+import { TEST_REGISTRY, interiorSector } from '../../core/test/support/worldFixture.ts';
 import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
-import { SectorCacheError, loadSectorCache, requireSectorsLoaded } from '../src/sectors/sectorCache.ts';
+import { SectorCacheError, loadSectorCache, loadWorld, requireSectorsLoaded } from '../src/sectors/sectorCache.ts';
+import { makeSector, makeWorld } from './support/sectorFactory.ts';
 
 const CORRUPT_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/corrupt');
 
@@ -25,7 +30,7 @@ describe('loadSectorCache', () => {
     expect([...sectors.keys()]).toEqual([...SECTOR_FIXTURE_NAMES]);
     const bibliothek = sectors.get('EdariaBibliothek');
     expect(bibliothek?.name).toBe('EdariaBibliothek');
-    expect(bibliothek?.light.indoor).toBe(true);
+    expect(bibliothek?.kind).toBe('interior');
   });
 
   it('returns one entry per loaded sector', () => {
@@ -63,5 +68,37 @@ describe('loadSectorCache', () => {
   it('requireSectorsLoaded throws on empty and returns on non-empty', () => {
     expect(errorKind(() => requireSectorsLoaded(new Map(), '/x'))?.kind).toBe('noSectorsLoaded');
     expect(() => requireSectorsLoaded(loadSectorCache(DEV_SECTORS_DIRECTORY), '/x')).not.toThrow();
+  });
+});
+
+describe('loadWorld', () => {
+  const starter = interiorSector(STARTER_SECTOR, { spawn: { x: 5, z: 5, facing: 90 } });
+  const sectorsOf = (...sectors: ReturnType<typeof makeSector>[]) => new Map(sectors.map((sector) => [sector.name, sector]));
+
+  it('loads the shipped sectors over the shipped registry with nothing to report', () => {
+    const world = loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
+    expect(world.issues).toEqual([]);
+    expect([...world.spaces.keys()]).toEqual([OUTDOOR_SPACE_ID, 'EdariaArena', 'EdariaBibliothek', 'EdariaInn', 'EdariaShop']);
+    expect(world.starterSpawn).toMatchObject({ space: STARTER_SECTOR });
+  });
+
+  it('carries the starter spawn in the coordinates of its space', () => {
+    expect(loadWorld(sectorsOf(starter), TEST_REGISTRY).starterSpawn).toEqual({ space: STARTER_SECTOR, position: { x: 5, z: 5 }, facing: 90 });
+  });
+
+  /** Falling back to an empty registry would serve a world with no collision and every door inert. */
+  it('fails on a registry that does not parse', () => {
+    expect(() => loadWorld(sectorsOf(starter), { objectModels: 'none' })).toThrow(ModelRegistryError);
+  });
+
+  it.each([
+    ['is missing', []],
+    ['has no spawn', [interiorSector(STARTER_SECTOR)]],
+  ])('fails when the starter sector %s', (_label, sectors) => {
+    expect(() => loadWorld(sectorsOf(makeSector('Field'), ...sectors), TEST_REGISTRY)).toThrow(WorldError);
+  });
+
+  it('fails on a world the core refuses, such as overlapping outdoor sectors', () => {
+    expect(() => makeWorld([makeSector('Field'), makeSector('Meadow')])).toThrow(/overlap/);
   });
 });

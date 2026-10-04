@@ -5,26 +5,27 @@ import type { AppShell } from '@/ui/appShell';
 /**
  * Read-only introspection surface for automated verification.
  *
- * Not a one-to-one port of those: the structural analogue is the seven `_`-prefixed methods on
- * `WorldScene` (`scene/worldScene.ts`), and this surface reads through two of them while adding
- * controller and session state the scene never sees — connection state, the sector name, the chat
- * scrollback, the presented overlay, the zoom factor.
+ * It reads through two of the `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
+ * adds controller and session state the scene never sees — connection state, the space and sector,
+ * the chat scrollback, the presented overlay, the zoom factor.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
- * see the panels and the chat input, but nothing about where the character stands, which sector is
- * loaded, or whether a model resolved. Everything here is a getter over state the client already
+ * see the panels and the chat input, but nothing about where the character stands, which sector
+ * it is in, or whether a model resolved. Everything here is a getter over state the client already
  * holds; nothing mutates the session, so exposing it cannot change gameplay.
  */
 
 export interface SomnioDebugAPI {
   connectionState(): string;
-  /** `undefined` until `mainCharacter` arrives and the entity stream places the player. */
-  player(): { x: number; y: number; facing: number; tempo: number; name: string } | undefined;
+  /** `undefined` until the entity stream places the player. Metres, in the space's coordinates. */
+  player(): { x: number; z: number; facing: number; gait: string; name: string } | undefined;
+  spaceId(): string | undefined;
+  /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
-  entities(): { id: number; kind: string; name: string; x: number; y: number }[];
+  entities(): { id: string; kind: string; name: string; x: number; z: number }[];
   /** How many placed objects are still rendering a placeholder rather than a resolved model. */
   placeholderObjectCount(): number;
-  /** Localized scrollback, matching exactly what the chat panel shows. */
+  /** The retained chat lines, localized as the chat panel renders them. The panel's greeting is not one of them. */
   chatHistory(): string[];
   cameraScale(): number | undefined;
   overlay(): string | undefined;
@@ -35,26 +36,27 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
   return {
     connectionState: () => shell.controller.connectionState,
     player: () => {
-      const index = shell.controller.selfEntityIndex;
-      if (index === undefined) return undefined;
-      const entity = shell.controller.entities.get(index);
+      const selfId = shell.controller.selfId;
+      if (selfId === undefined) return undefined;
+      const entity = shell.controller.entities.get(selfId);
       if (entity === undefined) return undefined;
       return {
         x: entity.position.x,
-        y: entity.position.y,
+        z: entity.position.z,
         facing: entity.facing,
-        tempo: entity.tempo,
+        gait: entity.gait,
         name: entity.name,
       };
     },
-    sectorName: () => shell.controller.currentSector?.name,
+    spaceId: () => shell.controller.world?.spaceId,
+    sectorName: () => shell.controller.world?.predictedSector,
     entities: () =>
       [...shell.controller.entities.values()].map((entity) => ({
         id: entity.id,
         kind: entity.kind,
         name: entity.name,
         x: entity.position.x,
-        y: entity.position.y,
+        z: entity.position.z,
       })),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,
     chatHistory: () => shell.controller.chatHistory.map((line) => renderChatLine(line, catalogTables, currentLocale())),
@@ -69,7 +71,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
  *
  * Gated rather than unconditional: a dev build always exposes it, while a production build requires
  * `?debug=1` on the URL. An always-on introspection surface in production would be a standing
- * information leak — `entities()` reports every peer's name and position in the sector, which is
+ * information leak — `entities()` reports every peer's name and position, which is
  * more than the rendered view gives away.
  */
 export function installDebugAPI(shell: AppShell, options: { isDevelopment: boolean; search?: string } = { isDevelopment: false }): boolean {

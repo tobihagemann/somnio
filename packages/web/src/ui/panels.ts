@@ -1,10 +1,9 @@
 import { utf8ByteLength } from '@somnio/protocol';
-import type { Energy } from '@somnio/protocol';
-import { clamp } from '@somnio/core';
+import type { Energy, InventoryRowMessage } from '@somnio/protocol';
+import { clamp, itemLabelKey } from '@somnio/core';
+import type { ItemId } from '@somnio/core';
 import { chatLineCategory } from '@/client';
 import type { ChatLine } from '@/client';
-import { HAND } from '@somnio/core';
-import type { InventoryRow } from '@somnio/core';
 import { renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { ICON_PATHS, element, floating, iconButton, replaceChildren, setHidden } from './dom';
@@ -20,7 +19,7 @@ import type { IconName } from './dom';
 export interface PanelCallbacks {
   onSubmitChat: (text: string) => void;
   onChatFocusChange: (focused: boolean) => void;
-  onActivateItem: (row: InventoryRow) => void;
+  onActivateItem: (row: InventoryRowMessage) => void;
   /** Reports whether the cursor sits over a panel, so a wheel event can scroll instead of zoom. */
   onFloatingHoverChange: (hovering: boolean) => void;
 }
@@ -32,7 +31,7 @@ interface HUDBar {
 }
 
 /**
- * `HUDBarPair.foregroundWidth`'s usable span: the 150px track less one pixel of dark at each end.
+ * An energy bar's usable span: the 150px track less one pixel of dark at each end.
  *
  * Set in pixels rather than as a percentage — a percentage resolves against the 150px containing
  * block, which would run the full bar one pixel past the track's trailing seam.
@@ -59,13 +58,24 @@ function hudBar(label: string, color: string): HUDBar {
 }
 
 /**
- * Display-only equip marker. `[L]`/`[R]` are hardcoded natively too — they are layout markers, not
- * translatable text — and the player never picks a hand, so this only reflects what the server says.
+ * The trailing cell of an item row: the purse's coin count, else the equip marker. `[L]`/`[R]` are
+ * layout markers, not translatable text, and the player never picks a hand, so this only reflects
+ * what the server says.
  */
-function equipMarker(row: InventoryRow): string {
-  if (row.equippedHand === HAND.left) return '[L]';
-  if (row.equippedHand === HAND.right) return '[R]';
+function rowMarker(row: InventoryRowMessage): string {
+  if (row.itemId === ('purse' satisfies ItemId)) return String(row.quantity);
+  if (row.equippedHand === 'left') return '[L]';
+  if (row.equippedHand === 'right') return '[R]';
   return '';
+}
+
+/**
+ * An item's display name. An id the item table does not know renders raw, so an operator seeing
+ * it in a screenshot can tell which item is missing from the table.
+ */
+function itemLabel(itemId: string): string {
+  const key = itemLabelKey(itemId);
+  return key === undefined ? itemId : t(key);
 }
 
 export class GamePanels {
@@ -91,7 +101,7 @@ export class GamePanels {
     this.tables = tables;
     this.locale = locale;
 
-    this.bars = [hudBar(t('HP'), 'rgb(224 0 0)'), hudBar(t('Balance'), 'rgb(0 0 224)'), hudBar(t('Mana'), 'rgb(0 224 0)')];
+    this.bars = [hudBar(t('Health'), 'rgb(224 0 0)'), hudBar(t('Balance'), 'rgb(0 0 224)'), hudBar(t('Spirit'), 'rgb(0 224 0)')];
     const hudPanel = element('div', {
       className: 'fantasy-panel hud-panel',
       children: this.bars.map((bar) => bar.root),
@@ -157,9 +167,9 @@ export class GamePanels {
 
   renderEnergy(energy: Energy): void {
     const pairs: [number, number][] = [
-      [energy.hpCurrent, energy.hpMax],
+      [energy.healthCurrent, energy.healthMax],
       [energy.balanceCurrent, energy.balanceMax],
-      [energy.manaCurrent, energy.manaMax],
+      [energy.spiritCurrent, energy.spiritMax],
     ];
     pairs.forEach(([current, max], index) => {
       const bar = this.bars[index];
@@ -201,7 +211,7 @@ export class GamePanels {
     this.playersFooter.textContent = t('Players: %@', String(players.length));
   }
 
-  renderItems(rows: readonly InventoryRow[]): void {
+  renderItems(rows: readonly InventoryRowMessage[]): void {
     replaceChildren(
       this.itemsList,
       rows.map((row) => {
@@ -209,8 +219,8 @@ export class GamePanels {
           className: 'list-row list-row--activatable',
           attributes: { role: 'listitem', tabindex: 0 },
           children: [
-            element('span', { className: 'list-row__name', text: this.itemLabel(row) }),
-            element('span', { className: 'list-row__marker', text: equipMarker(row) }),
+            element('span', { className: 'list-row__name', text: itemLabel(row.itemId) }),
+            element('span', { className: 'list-row__marker', text: rowMarker(row) }),
           ],
         });
         // Double-click activates a row; Enter is the keyboard equivalent so the row is reachable
@@ -229,31 +239,20 @@ export class GamePanels {
     this.chatInput.value = '';
   }
 
-  /** Display name for `(category, itemId)`, mirroring `ItemCatalog`'s two-entry MVP table. */
-  private itemLabel(row: InventoryRow): string {
-    if (row.category === 0 && row.itemId === 0) return t('Purse');
-    if (row.category === 1 && row.itemId === 0) return t('Cudgel');
-    // An unmapped pair renders as the empty string natively. Showing the raw pair instead means an
-    // operator seeing a blank row in a screenshot can tell which item is missing from the table.
-    return `${row.category}/${row.itemId}`;
-  }
-
   /**
-   * Return submits and then hands the keyboard back, mirroring `ReturnSubmittingTextView`'s
-   * `onSubmit?()` followed by `makeFirstResponder(nil)`.
+   * Return submits and then hands the keyboard back to the world.
    *
-   * The blur is unconditional, outside the empty-text guard, exactly as natively — and it is not
-   * cosmetic. The gameplay gate closes on `isChatInputFocused`, so a field that keeps focus after
-   * Return leaves WASD dead until the player clicks the world, with nothing on screen saying why.
+   * The blur is unconditional, outside the empty-text guard, and it is not cosmetic. The gameplay
+   * gate closes on `isChatInputFocused`, so a field that keeps focus after Return leaves WASD dead
+   * until the player clicks the world, with nothing on screen saying why.
    */
   private handleChatKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Enter') return;
-    // Always consumed, including with Shift held. `ReturnSubmittingTextView.keyDown` swallows
-    // Shift-Return natively for a reason that applies here more strongly: canvas `fillText` drops
-    // `\n` outright, and `wrapSpeech` tokenizes on spaces only, so a newline rides inside one
-    // unbreakable "word" and both the measured width and the `lines.length`-derived bubble height
-    // come out wrong. Returning before `preventDefault` would let the textarea insert a break the
-    // renderer cannot draw and the server would happily relay.
+    // Always consumed, including with Shift held: canvas `fillText` drops `\n` outright, and
+    // `wrapSpeech` tokenizes on spaces only, so a newline rides inside one unbreakable "word" and
+    // both the measured width and the `lines.length`-derived bubble height come out wrong.
+    // Returning before `preventDefault` would let the textarea insert a break the renderer cannot
+    // draw and the server would happily relay.
     event.preventDefault();
     if (event.shiftKey) return;
     const text = this.chatInput.value;

@@ -1,4 +1,6 @@
 import type { EditorShell } from './editorShell';
+import type { EditorSelection } from './selection';
+import { issueMessages } from './surroundings';
 
 /**
  * Read-only introspection surface for automated verification, following
@@ -12,7 +14,9 @@ interface SomnioEditorDebugAPI {
   sectorName(): string;
   /** Record counts per array — enough to assert a placement landed without dumping bodies. */
   body(): Record<string, number>;
-  selection(): { kind: string; index: number }[];
+  selection(): EditorSelection[];
+  /** What the world would report about the document at server boot, as the overlay marks it. */
+  issues(): string[];
   tool(): string;
   overlay(): string | undefined;
   isDirty(): boolean;
@@ -25,7 +29,8 @@ function makeEditorDebugAPI(shell: EditorShell): SomnioEditorDebugAPI {
   return {
     sectorName: () => shell.document.sector.name,
     body: () => shell.recordCounts(),
-    selection: () => shell.selection.map((entry) => ({ kind: entry.kind, index: entry.index })),
+    selection: () => shell.selection.map((entry) => ({ kind: entry.kind, id: entry.id })),
+    issues: () => issueMessages(shell.issues),
     tool: () => shell.tool,
     overlay: () => shell.presentedOverlay,
     isDirty: () => shell.document.isDirty,

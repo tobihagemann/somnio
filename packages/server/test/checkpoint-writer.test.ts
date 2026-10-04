@@ -16,7 +16,7 @@ class FailingCharacterRepository extends StubCharacterRepository {
 describe('persistPlayerCheckpoint', () => {
   it('logs and swallows a failed write so the periodic pass continues past it', async () => {
     const characters = new FailingCharacterRepository();
-    const snapshot = { character: makeCharacter({ x: 1, y: 1 }), inventory: [] };
+    const snapshot = { character: makeCharacter({ x: 1, z: 1 }), inventory: [] };
     await expect(persistPlayerCheckpoint(snapshot, characters, testLogger())).resolves.toBeUndefined();
     expect(characters.attempts).toBe(1);
   });

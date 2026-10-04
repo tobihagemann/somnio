@@ -1,11 +1,10 @@
-import { BOOT_DEFAULT_WORLD_CLOCK } from '@somnio/core';
-import type { Account, Character, InventoryRow, NPCDialogState, WorldClock } from '@somnio/core';
+import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
+import type { Account, Character, InventoryRow, NPCDialogState } from '@somnio/core';
 import type {
   AccountRepository,
   CharacterRepository,
   InventoryRepository,
   IssuedSession,
-  NPCDialogStateKey,
   NPCDialogStateRepository,
   RegistrationRepository,
   RegistrationRequest,
@@ -89,7 +88,7 @@ export class StubRegistrationRepository implements RegistrationRepository {
 }
 
 export class StubNPCDialogStateRepository implements NPCDialogStateRepository {
-  find(_sectorName: string, _npcIndex: number): Promise<NPCDialogState | undefined> {
+  find(_sectorName: string, _npcId: string): Promise<NPCDialogState | undefined> {
     return Promise.resolve(undefined);
   }
 
@@ -97,26 +96,18 @@ export class StubNPCDialogStateRepository implements NPCDialogStateRepository {
     return Promise.resolve([]);
   }
 
-  allKeys(): Promise<NPCDialogStateKey[]> {
-    return Promise.resolve([]);
-  }
-
   upsert(_state: NPCDialogState): Promise<void> {
     return Promise.resolve();
   }
 
-  reset(_sectorName: string, _npcIndex: number): Promise<void> {
-    return Promise.resolve();
-  }
-
-  deleteOrphans(_keys: readonly NPCDialogStateKey[]): Promise<void> {
+  reset(_sectorName: string, _npcId: string): Promise<void> {
     return Promise.resolve();
   }
 }
 
 export class StubWorldClockRepository implements WorldClockRepository {
-  load(): Promise<WorldClock> {
-    return Promise.resolve({ ...BOOT_DEFAULT_WORLD_CLOCK });
+  load(): Promise<number> {
+    return Promise.resolve(BOOT_DEFAULT_WORLD_SECONDS);
   }
 
   save(): Promise<void> {

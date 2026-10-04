@@ -1,14 +1,14 @@
 import { button, card, element, field, replaceChildren, scrim, select, setHidden } from '@/ui/dom';
-import { GRID_SNAP_PRESETS_PX } from '../preferences';
-import type { GridSnapPx } from '../preferences';
+import type { SectorSettings } from '../document';
+import { GRID_SNAP_PRESETS } from '../preferences';
+import type { GridSnap } from '../preferences';
 import { SectorForm } from './sectorForm';
-import type { SectorFormValues } from './sectorForm';
 
 /**
  * The editor's overlay host, following `ui/overlays.ts`: every view built once into a record
  * keyed exhaustively over `EditorOverlayKind`, `.hidden` toggled in `present()`. `preferences`
  * is the only surface that ever changes the grid-snap preference — without it the editor snaps
- * to 32 forever; `sectorPicker` is the open/create list the file API makes possible; and
+ * to the default forever; `sectorPicker` is the open/create list the file API makes possible; and
  * `saveAs` collects the new name the browser has no native File menu for.
  */
 
@@ -19,22 +19,22 @@ export interface EditorOverlayCallbacks {
   onShowOverlay: (kind: EditorOverlayKind) => void;
   onSave: () => void;
   onSaveAs: (name: string) => void;
-  onCommitNewMap: (values: SectorFormValues) => void;
+  onCommitNewMap: (values: SectorSettings) => void;
   onCancelNewMap: () => void;
-  onApplySectorSettings: (values: SectorFormValues) => void;
-  onSetGridSnap: (snap: GridSnapPx) => void;
+  onApplySectorSettings: (values: SectorSettings) => void;
+  onSetGridSnap: (snap: GridSnap) => void;
   onPickSector: (name: string) => void;
   /** Feeds the game menu's disabled states and its "Unsaved changes" line on present. */
   documentState: () => { isUninitialized: boolean; isDirty: boolean; sectorName: string };
-  sectorSettingsValues: () => SectorFormValues;
-  currentGridSnap: () => GridSnapPx;
+  sectorSettingsValues: () => SectorSettings;
+  currentGridSnap: () => GridSnap;
 }
 
-const GRID_SNAP_LABELS: Record<GridSnapPx, string> = {
-  32: 'Tiled (32x32)',
-  16: 'Tiled (16x16)',
-  8: 'Tiled (8x8)',
-  4: 'Tiled (4x4)',
+const GRID_SNAP_LABELS: Record<GridSnap, string> = {
+  1: '1 m',
+  0.5: '0.5 m',
+  0.25: '0.25 m',
+  0.1: '0.1 m',
   0: 'Free',
 };
 
@@ -56,7 +56,7 @@ export class EditorOverlays {
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
   private presentedKind: EditorOverlayKind | undefined;
 
-  constructor(callbacks: EditorOverlayCallbacks, floorMaterialIDs: readonly string[]) {
+  constructor(callbacks: EditorOverlayCallbacks, floorMaterialIds: readonly string[]) {
     this.callbacks = callbacks;
 
     // Game menu — with the browser's own file affordances.
@@ -80,7 +80,7 @@ export class EditorOverlays {
     });
 
     // New map / sector settings — the shared sector form, two commit semantics.
-    this.newMapForm = new SectorForm(floorMaterialIDs, () => this.newMapForm.renderValidation());
+    this.newMapForm = new SectorForm(floorMaterialIds, () => this.newMapForm.renderValidation());
     const newMapOK = button('OK', () => {
       if (!this.newMapForm.renderValidation()) return;
       callbacks.onCommitNewMap(this.newMapForm.values());
@@ -95,7 +95,7 @@ export class EditorOverlays {
       ],
     });
 
-    this.settingsForm = new SectorForm(floorMaterialIDs, () => this.settingsForm.renderValidation());
+    this.settingsForm = new SectorForm(floorMaterialIds, () => this.settingsForm.renderValidation());
     const settingsApply = button('Apply', () => {
       if (!this.settingsForm.renderValidation()) return;
       callbacks.onApplySectorSettings(this.settingsForm.values());
@@ -113,12 +113,12 @@ export class EditorOverlays {
     // Preferences: the one persisted picker.
     const gridSnap = select(
       'Grid snap',
-      GRID_SNAP_PRESETS_PX.map((preset) => ({ value: String(preset), label: GRID_SNAP_LABELS[preset] })),
+      GRID_SNAP_PRESETS.map((preset) => ({ value: String(preset), label: GRID_SNAP_LABELS[preset] })),
     );
     this.gridSnapPicker = gridSnap.input;
     this.gridSnapPicker.addEventListener('change', () => {
       const parsed = Number(this.gridSnapPicker.value);
-      const preset = GRID_SNAP_PRESETS_PX.find((candidate) => candidate === parsed);
+      const preset = GRID_SNAP_PRESETS.find((candidate) => candidate === parsed);
       if (preset !== undefined) callbacks.onSetGridSnap(preset);
     });
     const preferences = element('div', {

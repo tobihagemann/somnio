@@ -4,5 +4,5 @@ import type { CatalogTables } from './i18n/catalog.ts';
 
 export * from './i18n/catalog.ts';
 
-/** The core catalog: the character class and gender names and the inventory item labels. */
+/** The core catalog: the names of the peoples and the inventory item labels. */
 export const coreCatalog: CatalogTables = readCatalog(catalogJSON);

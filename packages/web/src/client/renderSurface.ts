@@ -1,5 +1,6 @@
-import type { GridPoint, Heading, Sector, SubpixelPoint, Tempo, WorldEntity } from '@somnio/core';
-import type { LightSetting } from '@somnio/core';
+import type { Heading, Point } from '@somnio/core';
+import type { Gait, SectorView } from '@somnio/protocol';
+import type { ClientEntity, ClientWorld } from './clientWorld';
 
 /**
  * The world render surface — the ten-method contract
@@ -8,37 +9,36 @@ import type { LightSetting } from '@somnio/core';
  */
 export interface WorldRenderSurface {
   /**
-   * Swaps the rendered sector. With `awaitingPlayerPlacement` the held visual stays on screen
-   * until the local player is placed, avoiding a frame of the new sector framed on its origin
-   * with no character.
+   * Starts a new space, empty until its sectors are added. The outgoing space stays on screen
+   * until the local player is placed, avoiding a frame of the new space with no character in it.
    */
-  load(sector: Sector, awaitingPlayerPlacement: boolean): void;
-  placeEntity(entity: WorldEntity): void;
-  updatePosition(entityID: number, position: GridPoint, facing: Heading): void;
+  enterSpace(world: ClientWorld): void;
+  addSector(sector: SectorView): void;
+  removeSector(name: string): void;
+  placeEntity(entity: ClientEntity): void;
   /**
-   * Sub-pixel variant for the locally predicted player. `travel` is the heading of this step's
-   * intended movement (`undefined` on a stationary tick), letting the renderer pick
-   * backpedal/strafe clips; it must not be overwritten with `undefined`, or the clip drops
-   * mid-glide.
+   * `travel` is the heading of this step's movement (`undefined` when the entity did not move),
+   * letting the renderer pick backpedal/strafe clips; `undefined` must not overwrite the last
+   * one, or the clip drops mid-glide.
    */
-  updateSubpixelPosition(entityID: number, position: SubpixelPoint, facing: Heading, travel: Heading | undefined): void;
-  animateEntity(entityID: number, position: GridPoint, facing: Heading, durationSeconds: number): void;
-  updateTempo(entityID: number, tempo: Tempo): void;
-  updateDayNightTint(hour: number, minute: number, sectorLight: LightSetting): void;
-  showSpeechBubble(entityID: number, lines: string[], lifetimeMs: number): void;
-  removeEntity(entityID: number): void;
+  updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void;
+  updateGait(entityId: string, gait: Gait): void;
+  /** The world clock at this moment; the renderer runs it forward by itself. */
+  setClock(worldSeconds: number): void;
+  showSpeechBubble(entityId: string, lines: string[], lifetimeMs: number): void;
+  removeEntity(entityId: string): void;
   showSplash(): void;
 }
 
 /** No-op surface for headless tests and for the window between boot and first render. */
 export const noopRenderSurface: WorldRenderSurface = {
-  load: () => {},
+  enterSpace: () => {},
+  addSector: () => {},
+  removeSector: () => {},
   placeEntity: () => {},
   updatePosition: () => {},
-  updateSubpixelPosition: () => {},
-  animateEntity: () => {},
-  updateTempo: () => {},
-  updateDayNightTint: () => {},
+  updateGait: () => {},
+  setClock: () => {},
   showSpeechBubble: () => {},
   removeEntity: () => {},
   showSplash: () => {},

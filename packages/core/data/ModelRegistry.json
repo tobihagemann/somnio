@@ -1,94 +1,63 @@
 {
-  "entityBands": {
-    "monster": [
-      {
-        "figureRanges": [
-          {
-            "lower": 0,
-            "upper": 0
-          }
+  "characterModels": [
+    {
+      "id": "wachen-kaempfer",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Sneaking",
+          "Walking_Backwards",
+          "Running_Strafe_Left",
+          "Running_Strafe_Right"
         ],
-        "model": {
-          "expectedClips": [
-            "Flying_Idle"
-          ],
-          "stem": "Gespenst"
-        }
+        "stem": "WachenKaempfer"
       }
-    ],
-    "npc": [
-      {
-        "figureRanges": [
-          {
-            "lower": 16,
-            "upper": 16
-          }
+    },
+    {
+      "id": "libus",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A"
         ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A"
-          ],
-          "stem": "Libus"
-        }
-      },
-      {
-        "figureRanges": [
-          {
-            "lower": 17,
-            "upper": 17
-          }
-        ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A"
-          ],
-          "stem": "Kraemer"
-        }
-      },
-      {
-        "figureRanges": [
-          {
-            "lower": 18,
-            "upper": 18
-          }
-        ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A"
-          ],
-          "stem": "KaempferMeister"
-        }
+        "stem": "Libus"
       }
-    ],
-    "player": [
-      {
-        "figureRanges": [
-          {
-            "lower": 0,
-            "upper": 15
-          }
+    },
+    {
+      "id": "kraemer",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A"
         ],
-        "model": {
-          "expectedClips": [
-            "Idle",
-            "Walking_A",
-            "Running_A",
-            "Sneaking",
-            "Walking_Backwards",
-            "Running_Strafe_Left",
-            "Running_Strafe_Right"
-          ],
-          "stem": "WachenKaempfer"
-        }
+        "stem": "Kraemer"
       }
-    ]
-  },
+    },
+    {
+      "id": "kaempfer-meister",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A"
+        ],
+        "stem": "KaempferMeister"
+      }
+    },
+    {
+      "id": "gespenst",
+      "model": {
+        "expectedClips": [
+          "Flying_Idle"
+        ],
+        "stem": "Gespenst"
+      }
+    }
+  ],
   "floorMaterials": [
     {
       "id": "grass-meadow",
@@ -113,6 +82,10 @@
   ],
   "objectModels": [
     {
+      "footprint": {
+        "depth": 0.42,
+        "width": 1.28
+      },
       "id": "bookshelf-ornate",
       "model": {
         "expectedClips": [],
@@ -120,6 +93,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.35,
+        "width": 1.28
+      },
       "id": "bookshelf",
       "model": {
         "expectedClips": [],
@@ -127,6 +104,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.36,
+        "width": 0.36
+      },
       "id": "potted-plant",
       "model": {
         "expectedClips": [],
@@ -134,6 +115,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.36,
+        "width": 0.36
+      },
       "id": "study-table",
       "model": {
         "expectedClips": [],
@@ -141,6 +126,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.49,
+        "width": 0.64
+      },
       "id": "bust",
       "model": {
         "expectedClips": [],
@@ -148,6 +137,20 @@
       }
     },
     {
+      "colliders": [],
+      "doors": [
+        {
+          "facing": 180,
+          "id": "main",
+          "width": 1.54,
+          "x": 0,
+          "z": 0
+        }
+      ],
+      "footprint": {
+        "depth": 0.19,
+        "width": 1.92
+      },
       "id": "door",
       "model": {
         "expectedClips": [],
@@ -155,6 +158,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.35,
+        "width": 2.56
+      },
       "id": "grand-bookcase",
       "model": {
         "expectedClips": [],
@@ -162,6 +169,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.3,
+        "width": 0.36
+      },
       "id": "couch",
       "model": {
         "expectedClips": [],
@@ -169,6 +180,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.43,
+        "width": 0.43
+      },
       "id": "floor-lamp",
       "model": {
         "expectedClips": [],
@@ -176,6 +191,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.65,
+        "width": 0.65
+      },
       "id": "side-table",
       "model": {
         "expectedClips": [],
@@ -183,6 +202,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.37,
+        "width": 0.32
+      },
       "id": "chair",
       "model": {
         "expectedClips": [],
@@ -190,6 +213,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 2.84,
+        "width": 3.2
+      },
       "id": "tent",
       "model": {
         "expectedClips": [],
@@ -197,6 +224,18 @@
       }
     },
     {
+      "colliders": [
+        {
+          "depth": 0.54,
+          "width": 0.53,
+          "x": -0.31,
+          "z": -0.06
+        }
+      ],
+      "footprint": {
+        "depth": 2.26,
+        "width": 2.56
+      },
       "id": "pine-tree",
       "model": {
         "expectedClips": [],
@@ -204,6 +243,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 1.67,
+        "width": 1.92
+      },
       "id": "well",
       "model": {
         "expectedClips": [],
@@ -211,20 +254,189 @@
       }
     },
     {
+      "colliders": [
+        {
+          "depth": 7.0,
+          "width": 5.32,
+          "x": -3.9,
+          "z": -3.5
+        },
+        {
+          "depth": 3.23,
+          "width": 1.08,
+          "x": 1.42,
+          "z": -3.5
+        },
+        {
+          "depth": 0.85,
+          "width": 0.85,
+          "x": 2.55,
+          "z": -0.9
+        }
+      ],
+      "doors": [
+        {
+          "facing": 90,
+          "id": "main",
+          "width": 1.52,
+          "x": 1.42,
+          "z": 0.9
+        }
+      ],
+      "footprint": {
+        "depth": 7.05,
+        "width": 7.68
+      },
       "id": "building-townhall",
       "model": {
         "expectedClips": [],
         "stem": "BuildingTownhall"
-      }
+      },
+      "walkSurfaces": [
+        {
+          "depth": 3.62,
+          "height": 1.03,
+          "width": 1.0,
+          "x": 1.42,
+          "z": -0.27
+        },
+        {
+          "depth": 1.72,
+          "height": 1.03,
+          "width": 0.4,
+          "x": 2.42,
+          "z": 0.04
+        },
+        {
+          "depth": 1.72,
+          "height": 0.77,
+          "width": 0.35,
+          "x": 2.82,
+          "z": 0.04
+        },
+        {
+          "depth": 1.72,
+          "height": 0.52,
+          "width": 0.33,
+          "x": 3.17,
+          "z": 0.04
+        },
+        {
+          "depth": 1.72,
+          "height": 0.26,
+          "width": 0.35,
+          "x": 3.5,
+          "z": 0.04
+        }
+      ]
     },
     {
+      "colliders": [
+        {
+          "depth": 5.16,
+          "width": 3.96,
+          "x": -2.27,
+          "z": -2.81
+        },
+        {
+          "depth": 2.69,
+          "width": 0.23,
+          "x": 1.69,
+          "z": -2.73
+        },
+        {
+          "depth": 1.01,
+          "width": 0.17,
+          "x": 1.69,
+          "z": 1.3
+        },
+        {
+          "depth": 2.09,
+          "width": 1.15,
+          "x": 1.92,
+          "z": -2.54
+        },
+        {
+          "depth": 1.88,
+          "width": 0.93,
+          "x": -3.2,
+          "z": -0.27
+        }
+      ],
+      "doors": [
+        {
+          "facing": 90,
+          "id": "main",
+          "width": 1.14,
+          "x": 1.69,
+          "z": 0.63
+        }
+      ],
+      "footprint": {
+        "depth": 5.63,
+        "width": 6.4
+      },
       "id": "building-tavern",
       "model": {
         "expectedClips": [],
         "stem": "BuildingTavern"
-      }
+      },
+      "walkSurfaces": [
+        {
+          "depth": 1.34,
+          "height": 1.01,
+          "width": 0.5,
+          "x": 1.69,
+          "z": -0.04
+        },
+        {
+          "depth": 1.34,
+          "height": 0.76,
+          "width": 0.34,
+          "x": 2.19,
+          "z": -0.04
+        },
+        {
+          "depth": 1.34,
+          "height": 0.5,
+          "width": 0.33,
+          "x": 2.53,
+          "z": -0.04
+        },
+        {
+          "depth": 1.34,
+          "height": 0.25,
+          "width": 0.34,
+          "x": 2.86,
+          "z": -0.04
+        }
+      ]
     },
     {
+      "colliders": [
+        {
+          "depth": 5.87,
+          "width": 5.79,
+          "x": -3.15,
+          "z": -2.93
+        },
+        {
+          "depth": 1.88,
+          "width": 0.41,
+          "x": 2.64,
+          "z": -0.94
+        },
+        {
+          "depth": 0.88,
+          "width": 0.56,
+          "x": 2.64,
+          "z": 0.91
+        }
+      ],
+      "footprint": {
+        "depth": 5.88,
+        "width": 6.4
+      },
       "id": "building-barracks",
       "model": {
         "expectedClips": [],
@@ -232,6 +444,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 3.33,
+        "width": 3.84
+      },
       "id": "building-tower",
       "model": {
         "expectedClips": [],
@@ -239,6 +455,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 4.28,
+        "width": 5.12
+      },
       "id": "building-keep",
       "model": {
         "expectedClips": [],
@@ -246,6 +466,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 4.56,
+        "width": 5.12
+      },
       "id": "building-chapel",
       "model": {
         "expectedClips": [],
@@ -253,13 +477,86 @@
       }
     },
     {
+      "colliders": [
+        {
+          "depth": 4.08,
+          "width": 3.14,
+          "x": -2.05,
+          "z": -2.04
+        },
+        {
+          "depth": 0.65,
+          "width": 0.17,
+          "x": 1.09,
+          "z": -1.96
+        },
+        {
+          "depth": 1.96,
+          "width": 0.21,
+          "x": 1.09,
+          "z": -0.01
+        },
+        {
+          "depth": 1.3,
+          "width": 0.51,
+          "x": -2.56,
+          "z": -1.31
+        }
+      ],
+      "doors": [
+        {
+          "facing": 90,
+          "id": "main",
+          "width": 1.1,
+          "x": 1.09,
+          "z": -0.66
+        }
+      ],
+      "footprint": {
+        "depth": 4.08,
+        "width": 5.12
+      },
       "id": "building-house",
       "model": {
         "expectedClips": [],
         "stem": "BuildingHouse"
-      }
+      },
+      "walkSurfaces": [
+        {
+          "depth": 1.3,
+          "height": 0.98,
+          "width": 0.49,
+          "x": 1.09,
+          "z": -1.31
+        },
+        {
+          "depth": 1.3,
+          "height": 0.73,
+          "width": 0.33,
+          "x": 1.58,
+          "z": -1.31
+        },
+        {
+          "depth": 1.3,
+          "height": 0.49,
+          "width": 0.32,
+          "x": 1.91,
+          "z": -1.31
+        },
+        {
+          "depth": 1.3,
+          "height": 0.24,
+          "width": 0.33,
+          "x": 2.23,
+          "z": -1.31
+        }
+      ]
     },
     {
+      "footprint": {
+        "depth": 0.64,
+        "width": 2.56
+      },
       "id": "stone-wall",
       "model": {
         "expectedClips": [],
@@ -267,6 +564,24 @@
       }
     },
     {
+      "colliders": [
+        {
+          "depth": 0.64,
+          "width": 1.6,
+          "x": -0.8,
+          "z": -0.8
+        },
+        {
+          "depth": 1.6,
+          "width": 0.64,
+          "x": -0.8,
+          "z": -0.8
+        }
+      ],
+      "footprint": {
+        "depth": 1.6,
+        "width": 1.6
+      },
       "id": "stone-wall-corner",
       "model": {
         "expectedClips": [],
@@ -274,6 +589,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.52,
+        "width": 0.86
+      },
       "id": "counter",
       "model": {
         "expectedClips": [],
@@ -281,6 +600,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.33,
+        "width": 0.89
+      },
       "id": "goods-shelf",
       "model": {
         "expectedClips": [],
@@ -288,6 +611,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.9,
+        "width": 0.97
+      },
       "id": "crate-stack",
       "model": {
         "expectedClips": [],
@@ -295,6 +622,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.8,
+        "width": 0.84
+      },
       "id": "barrel",
       "model": {
         "expectedClips": [],
@@ -302,6 +633,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.43,
+        "width": 0.8
+      },
       "id": "barrel-stack",
       "model": {
         "expectedClips": [],
@@ -309,6 +644,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.62,
+        "width": 0.73
+      },
       "id": "chest",
       "model": {
         "expectedClips": [],
@@ -316,6 +655,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.86,
+        "width": 1.52
+      },
       "id": "keg",
       "model": {
         "expectedClips": [],
@@ -323,6 +666,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.32,
+        "width": 0.76
+      },
       "id": "bench",
       "model": {
         "expectedClips": [],
@@ -330,6 +677,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.83,
+        "width": 0.86
+      },
       "id": "round-table",
       "model": {
         "expectedClips": [],
@@ -337,6 +688,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.86,
+        "width": 1.73
+      },
       "id": "long-table",
       "model": {
         "expectedClips": [],
@@ -344,6 +699,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.32,
+        "width": 0.32
+      },
       "id": "stool",
       "model": {
         "expectedClips": [],
@@ -351,6 +710,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.86,
+        "width": 1.3
+      },
       "id": "bed",
       "model": {
         "expectedClips": [],
@@ -358,6 +721,11 @@
       }
     },
     {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.17,
+        "width": 0.22
+      },
       "id": "candle",
       "model": {
         "expectedClips": [],
@@ -365,6 +733,11 @@
       }
     },
     {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.86,
+        "width": 1.3
+      },
       "id": "rug",
       "model": {
         "expectedClips": [],
@@ -372,6 +745,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.33,
+        "width": 0.45
+      },
       "id": "apple-crate",
       "model": {
         "expectedClips": [],
@@ -379,6 +756,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.54,
+        "width": 0.56
+      },
       "id": "fish-barrel",
       "model": {
         "expectedClips": [],
@@ -386,6 +767,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.19,
+        "width": 0.26
+      },
       "id": "flour-sacks",
       "model": {
         "expectedClips": [],
@@ -393,6 +778,10 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.71,
+        "width": 0.72
+      },
       "id": "cloth-bolts",
       "model": {
         "expectedClips": [],
@@ -400,11 +789,16 @@
       }
     },
     {
+      "footprint": {
+        "depth": 0.36,
+        "width": 0.37
+      },
       "id": "berry-basket",
       "model": {
         "expectedClips": [],
         "stem": "BerryBasket"
       }
     }
-  ]
+  ],
+  "playerModel": "wachen-kaempfer"
 }

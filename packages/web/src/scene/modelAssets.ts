@@ -1,9 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { allModelEntries, floorMaterialStem, missingClips, modelForEntity, modelForObjectID } from '@somnio/core';
+import { allModelEntries, floorMaterialStem, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
 import type { ModelRegistry } from '@somnio/core';
-import type { WorldEntityKind } from '@somnio/core';
 
 /**
  * Model-pack accessor.
@@ -16,7 +15,7 @@ import type { WorldEntityKind } from '@somnio/core';
  */
 export interface ModelAssets {
   prewarm(): Promise<void>;
-  entity(kind: WorldEntityKind, figure: number): THREE.Object3D | undefined;
+  character(id: string): THREE.Object3D | undefined;
   object(id: string): THREE.Object3D | undefined;
   floorTexture(id: string): THREE.Texture | undefined;
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[];
@@ -54,13 +53,13 @@ export class HttpModelAssets implements ModelAssets {
     ]);
   }
 
-  entity(kind: WorldEntityKind, figure: number): THREE.Object3D | undefined {
-    const entry = modelForEntity(this.registry, kind, figure);
+  character(id: string): THREE.Object3D | undefined {
+    const entry = modelForCharacter(this.registry, id);
     return entry === undefined ? undefined : this.instantiate(entry.stem);
   }
 
   object(id: string): THREE.Object3D | undefined {
-    const entry = modelForObjectID(this.registry, id);
+    const entry = modelForObjectId(this.registry, id);
     return entry === undefined ? undefined : this.instantiate(entry.stem);
   }
 
@@ -92,15 +91,15 @@ export class HttpModelAssets implements ModelAssets {
     try {
       const gltf = await this.loader.loadAsync(`${this.baseURL}/Models/${stem}.glb`);
       const clips = gltf.animations;
-      // Same clip-presence contract the conversion validator enforces: a naive export collapses
-      // the clip library into one timeline, and the symptom downstream is a character that only
-      // ever plays its first animation.
+      // Same clip-presence contract the asset pipeline's gate (`glb_clip_presence.py`) enforces:
+      // the glTF exporter can drop an action without an error, and the symptom is a character
+      // that loads but never plays the dropped clip.
       const missing = missingClips(
         expectedClips,
         clips.map((clip) => clip.name),
       );
       if (missing.length > 0) {
-        console.error(`model "${stem}" is missing expected animation clips: ${missing.join(', ')} — the export likely collapsed its clip library`);
+        console.error(`model "${stem}" is missing expected animation clips: ${missing.join(', ')} — the export likely dropped them`);
       }
       this.prototypes.set(stem, { scene: gltf.scene, clips });
     } catch {

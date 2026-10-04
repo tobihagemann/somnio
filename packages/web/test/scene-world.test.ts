@@ -3,22 +3,23 @@ import * as THREE from 'three';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { ORTHO_RIG, cameraPosition } from '@/scene/cameraRig';
-import { SUN_SHADOW } from '@/scene/dayNightSun';
+import { SUN_SHADOW, sunState } from '@/scene/dayNightSun';
 import { MAX_TICK_DELTA } from '@/scene/animation';
-import { FLOOR_PATCH_LIFT } from '@/scene/placement';
+import { CHARACTER_SCALE, FLOOR_PATCH_LIFT, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import {
   NAME_PLAQUE,
   baselineBelowBoxTop,
   baselineInCenteredBox,
   namePlaqueBackground,
-  nativeLineBoxHeight,
+  lineBoxHeight,
   renderNamePlaque,
   speechBubbleFrameSize,
 } from '@/scene/overlayArt';
-import { sectorFromWire, sectorPixelHeight, sectorPixelWidth } from '@somnio/core';
-import { FLOAT_PI, SOMNIO_CONSTANTS, f32 } from '@somnio/core';
-import type { WireSector } from '@somnio/protocol';
-import type { WorldEntity } from '@somnio/core';
+import type { SectorView } from '@somnio/protocol';
+import { ClientWorld } from '@/client';
+import type { ClientEntity } from '@/client';
+import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { clientEntity } from './helpers/worldFixture';
 
 /**
  * Graph-level coverage. Pixels are not unit-testable without a GPU, but the placement, framing,
@@ -29,7 +30,7 @@ import type { WorldEntity } from '@somnio/core';
 function emptyAssets(): ModelAssets {
   return {
     prewarm: async () => {},
-    entity: () => undefined,
+    character: () => undefined,
     object: () => undefined,
     floorTexture: () => undefined,
     clipsFor: () => [],
@@ -39,60 +40,103 @@ function emptyAssets(): ModelAssets {
 function resolvingAssets(): ModelAssets {
   return {
     prewarm: async () => {},
-    entity: () => new THREE.Object3D(),
+    character: () => new THREE.Object3D(),
     object: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)),
     floorTexture: () => undefined,
     clipsFor: () => [],
   };
 }
 
-function wireSector(overrides: Partial<WireSector> = {}): WireSector {
-  return {
-    name: 'EdariaMitte',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
+function makeScene(assets: ModelAssets = emptyAssets(), now?: () => number): WorldScene {
+  return new WorldScene(assets, TEST_REGISTRY, 1, now);
+}
+
+function sector(overrides: Partial<SectorView> = {}): SectorView {
+  return outdoorSector('EdariaMitte', { x: 0, z: 0 }, overrides);
+}
+
+function placement(id: string, modelId: string, overrides: Partial<SectorView['placements'][number]> = {}): SectorView['placements'][number] {
+  return { id, modelId, x: 4, z: 6, yaw: 0, elevation: 0, ...overrides };
+}
+
+function player(overrides: Partial<ClientEntity> = {}): ClientEntity {
+  return clientEntity({ name: 'Saibot', ...overrides });
+}
+
+function world(spaceId = 'outdoors'): ClientWorld {
+  return new ClientWorld(spaceId, TEST_REGISTRY);
+}
+
+/** A sector whose dais, a step (0.2 m) up, covers x and z 4..6. */
+const daisSector = sector({ placements: [placement('dais-1', 'dais', { x: 5, z: 5 })] });
+
+/** A scene that entered a world holding `daisSector` and draws it, hidden until a player is placed. */
+function sceneWithGround(): WorldScene {
+  const scene = makeScene();
+  const entered = world();
+  scene.enterSpace(entered);
+  entered.addSector(daisSector);
+  scene.addSector(daisSector);
+  return scene;
+}
+
+/** Every floor quad in the scene, base floors and patches alike, with the sector group it hangs in. */
+function floorQuads(scene: WorldScene): THREE.Mesh[] {
+  const quads: THREE.Mesh[] = [];
+  scene.scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    // The backdrop is a plane too, but it hangs directly off the scene and carries no shadow flag.
+    if (mesh.isMesh && mesh.geometry instanceof THREE.PlaneGeometry && mesh.receiveShadow) quads.push(mesh);
+  });
+  return quads;
+}
+
+function planeSize(mesh: THREE.Mesh): { width: number; height: number } {
+  const { width, height } = (mesh.geometry as THREE.PlaneGeometry).parameters;
+  return { width, height };
+}
+
+function boxes(scene: WorldScene): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  scene.scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry) found.push(mesh);
+  });
+  return found;
 }
 
 /**
- * Sector roots, identified by carrying the floor plane. The scene also holds the lights and the
- * backdrop, so a bare `children.length` cannot tell a parked root from the furniture.
+ * Space roots, identified by holding a sector group with a floor in it. The scene also holds the
+ * lights and the backdrop, so a bare `children.length` cannot tell a parked root from the furniture.
  */
-function sectorRootCount(scene: WorldScene): number {
-  return scene.scene.children.filter((child) =>
-    child.children.some((grandchild) => {
-      const mesh = grandchild as THREE.Mesh;
-      return mesh.isMesh === true && mesh.geometry instanceof THREE.PlaneGeometry;
-    }),
-  ).length;
+function spaceRootCount(scene: WorldScene): number {
+  return scene.scene.children.filter((root) => root.children.some((group) => group.children.some((child) => floorQuads(scene).includes(child as THREE.Mesh))))
+    .length;
 }
 
-function playerEntity(id = 1): WorldEntity {
-  return {
-    id,
-    kind: 'player',
-    figure: 0,
-    gender: 0,
-    position: { x: 100, y: 100 },
-    facing: 0,
-    tempo: 2,
-    maskSize: { width: 32, height: 48 },
-    name: 'Saibot',
-  };
+function sun(scene: WorldScene): THREE.DirectionalLight {
+  return scene.scene.getObjectByProperty('isDirectionalLight', true) as THREE.DirectionalLight;
+}
+
+/** The directional fill, which is the one directional light that casts no shadow. */
+function ambient(scene: WorldScene): THREE.DirectionalLight {
+  return scene.scene.children.find((child) => (child as THREE.DirectionalLight).isDirectionalLight && !child.castShadow) as THREE.DirectionalLight;
+}
+
+/** Direction the light actually shines from, which is what shading reads. */
+function sunDirection(scene: WorldScene): THREE.Vector3 {
+  return sun(scene).position.clone().sub(sun(scene).target.position).normalize();
+}
+
+/** The focus the camera is framed on: the camera sits at its rig offset from it. */
+function cameraFocus(scene: WorldScene): THREE.Vector3 {
+  const offset = cameraPosition({ x: 0, y: 0, z: 0 });
+  return scene.camera.position.clone().sub(new THREE.Vector3(offset.x, offset.y, offset.z));
 }
 
 describe('camera framing', () => {
   it('starts at the default scale as a half-height', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
+    const scene = makeScene();
     expect(scene.camera.top).toBe(ORTHO_RIG.defaultScale);
     expect(scene.camera.bottom).toBe(-ORTHO_RIG.defaultScale);
   });
@@ -102,7 +146,7 @@ describe('camera framing', () => {
    * handler that tied the frustum to pixel height would hand large-window players extra view.
    */
   it('holds the vertical extent constant across resizes and only widens', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
+    const scene = makeScene();
     const verticalBefore = scene.camera.top - scene.camera.bottom;
     const widthBefore = scene.camera.right - scene.camera.left;
 
@@ -113,192 +157,484 @@ describe('camera framing', () => {
   });
 
   it('magnifies on zoom rather than revealing more world', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
+    const scene = makeScene();
     scene.applyZoomFactor(2);
     expect(scene.camera.top).toBe(1.5);
   });
 
   /**
-   * `load(sector, false)` frames the whole sector. The client
-   * only ever passes `true` — `placeEntity` re-centres on the player straight after — so nothing in
-   * the running app depends on this, and that is precisely why it needs a test: a surface that
-   * previewed a sector without joining it would otherwise open framed on the world origin, with the
-   * sector off to one side and no error to explain it.
+   * A consumer with no player positions the camera itself, and the client's camera follows the
+   * player across sector borders: a sector coming into the draw set must not pull the view to it.
    */
-  it('frames the sector centre when no player will arrive', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const sector = sectorFromWire(wireSector({ dimensions: { width: 8, height: 6 } }));
-
-    scene.load(sector, false);
-
-    const centreX = f32(f32(sectorPixelWidth(sector)) * ORTHO_RIG.worldUnitsPerPixel) / 2;
-    const centreZ = f32(f32(sectorPixelHeight(sector)) * ORTHO_RIG.worldUnitsPerPixel) / 2;
-    expect(centreX).not.toBe(centreZ);
-    // The camera sits at its rig offset *from* the focus, so the focus is what the offset removes.
-    const offset = cameraPosition({ x: 0, y: 0, z: 0 });
-    expect(scene.camera.position.x - offset.x).toBeCloseTo(centreX, 6);
-    expect(scene.camera.position.z - offset.z).toBeCloseTo(centreZ, 6);
-  });
-
-  /** The held-swap counterpart: the camera must stay put until the swap re-centres it. */
-  it('leaves the camera alone while a sector is held for a player placement', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
+  it('leaves the camera alone when a sector is added', () => {
+    const scene = makeScene();
     const before = scene.camera.position.clone();
 
-    scene.load(sectorFromWire(wireSector({ name: 'Nordwiese', dimensions: { width: 40, height: 40 } })), true);
+    scene.addSector(outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }));
 
-    expect(scene.camera.position.x).toBe(before.x);
-    expect(scene.camera.position.z).toBe(before.z);
+    expect(scene.camera.position).toEqual(before);
+  });
+
+  it('centres on the local player when it is placed, and follows it', () => {
+    const scene = makeScene();
+    scene.addSector(sector());
+
+    scene.placeEntity(player({ position: { x: 12, z: 7 } }));
+    expect(cameraFocus(scene).x).toBeCloseTo(12, 9);
+    expect(cameraFocus(scene).z).toBeCloseTo(7, 9);
+
+    scene.updatePosition('self', { x: 13, z: 5 }, 0, undefined);
+    expect(cameraFocus(scene).x).toBeCloseTo(13, 9);
+    expect(cameraFocus(scene).z).toBeCloseTo(5, 9);
+  });
+
+  it('does not follow anyone else', () => {
+    const scene = makeScene();
+    scene.addSector(sector());
+    scene.placeEntity(player({ position: { x: 12, z: 7 } }));
+
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 2, z: 2 } }));
+    scene.updatePosition('peer', { x: 3, z: 3 }, 0, undefined);
+
+    expect(cameraFocus(scene).x).toBeCloseTo(12, 9);
   });
 });
 
-describe('sector loading', () => {
-  it('builds a floor and one node per object', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const sector = sectorFromWire(
-      wireSector({
-        objects: [
-          { x: 0, y: 0, modelID: 'barrel', sourceWidth: 32, sourceHeight: 32, priority: 1, rotation: 0 },
-          { x: 64, y: 0, modelID: 'chest', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 90 },
-        ],
-      }),
-    );
+describe('sectors', () => {
+  it('builds a floor and one node per placement', () => {
+    const scene = makeScene();
 
-    scene.load(sector, false);
+    scene.addSector(sector({ placements: [placement('box-1', 'box'), placement('rug-1', 'rug', { x: 8, yaw: 90 })] }));
 
+    expect(floorQuads(scene)).toHaveLength(1);
+    expect(planeSize(floorQuads(scene)[0]!)).toEqual({ width: 20, height: 20 });
     expect(scene._placeholderObjectCount()).toBe(2);
   });
 
-  /**
-   * The continuity contract, on the axis nothing checked: two patches abutting *vertically* must
-   * meet at one V value, so the texture grid runs unbroken across the seam.
-   *
-   * The hazard is that V can be an affine function of the row and still be wrong — if its intercept
-   * depends on the patch's own position and height, each quad mirrors about its own centre and the
-   * grid phase jumps at every horizontal seam. That is invisible in a single-patch render, and every
-   * shipped fixture happens to share `2*y + height` within its sector, so only two patches with
-   * different vertical centres can distinguish the two shapes.
-   */
-  it('gives vertically abutting patches one shared V at their seam', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const sector = sectorFromWire(
-      wireSector({
-        floorPatches: [
-          { floorMaterialID: 'cobble-town', x: 0, y: 0, width: 128, height: 64 },
-          { floorMaterialID: 'cobble-town', x: 0, y: 64, width: 128, height: 448 },
-        ],
-      }),
-    );
+  it('stands a sector at its origin and a placement at its own position, yaw, and elevation within it', () => {
+    const scene = makeScene();
 
-    scene.load(sector, false);
+    scene.addSector(outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { placements: [placement('rug-1', 'rug', { x: 4, z: 6, yaw: 270, elevation: 0.4 })] }));
 
-    // Patch quads carry a rewritten uv attribute; the base floor and the backdrop do not.
-    const patchUVs: Float32Array[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh || !(mesh.geometry instanceof THREE.PlaneGeometry)) return;
-      const uv = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute;
-      // A plane's default uv runs 0..1; a patch's is in sector space and negative on V.
-      if ((uv.array as Float32Array)[1]! <= 0) patchUVs.push(uv.array as Float32Array);
-    });
-    expect(patchUVs).toHaveLength(2);
-
-    // Indices 0/1 are the local +Y row, which `rotation.x = -pi/2` maps to world -Z: the patch's
-    // north edge, at the smaller sector y. Indices 2/3 are its south edge.
-    const [upper, lower] = patchUVs as [Float32Array, Float32Array];
-    const upperSouthV = upper[5];
-    const lowerNorthV = lower[1];
-    expect(upperSouthV).toBeCloseTo(lowerNorthV!, 6);
+    const node = scene.placementNode('Nordwiese', 'rug-1')!;
+    expect(node.position).toEqual(new THREE.Vector3(4, 0.4, 6));
+    // Degrees counter-clockwise seen from above is the sense of a rotation about +Y.
+    expect(node.rotation.y).toBeCloseTo((270 * Math.PI) / 180, 12);
+    const inSpace = node.getWorldPosition(new THREE.Vector3());
+    expect(inSpace.x).toBeCloseTo(9.12, 9);
+    expect(inSpace.y).toBeCloseTo(0.4, 9);
+    expect(inSpace.z).toBeCloseTo(-24.72, 9);
   });
 
-  it('renders floor patches as their own quads', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const sector = sectorFromWire(
-      wireSector({
+  /** Bodies walk on those surfaces at their registry heights, so a lifted mesh would float above its own collision. */
+  it('draws a model with walk surfaces on the ground whatever elevation its record carries', () => {
+    const scene = makeScene();
+
+    scene.addSector(sector({ placements: [placement('dais-1', 'dais', { elevation: 0.4 })] }));
+
+    expect(scene.placementNode('EdariaMitte', 'dais-1')!.position.y).toBe(0);
+  });
+
+  it('finds a placement node by sector and id, and nothing for either unknown', () => {
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
+    scene.addSector(outdoorSector('Nordwiese', { x: 0, z: -20 }, { placements: [placement('box-1', 'box', { x: 1 })] }));
+
+    // The same id in two sectors is two placements.
+    expect(scene.placementNode('EdariaMitte', 'box-1')!.position.x).toBe(4);
+    expect(scene.placementNode('Nordwiese', 'box-1')!.position.x).toBe(1);
+    expect(scene.placementNode('EdariaMitte', 'box-2')).toBeUndefined();
+    expect(scene.placementNode('Nordwald', 'box-1')).toBeUndefined();
+  });
+
+  it('removes one sector and leaves the others drawn', () => {
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
+    scene.addSector(outdoorSector('Nordwiese', { x: 0, z: -20 }, { placements: [placement('box-1', 'box')] }));
+    const removed = floorQuads(scene)[0]!;
+    const geometryDispose = vi.spyOn(removed.geometry, 'dispose');
+
+    scene.removeSector('EdariaMitte');
+
+    expect(floorQuads(scene)).toHaveLength(1);
+    expect(scene.placementNode('EdariaMitte', 'box-1')).toBeUndefined();
+    expect(scene.placementNode('Nordwiese', 'box-1')).toBeDefined();
+    expect(geometryDispose).toHaveBeenCalled();
+  });
+
+  it('replaces a sector added again under the same name', () => {
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
+
+    scene.addSector(sector({ placements: [placement('box-1', 'box', { x: 9 })] }));
+
+    expect(floorQuads(scene)).toHaveLength(1);
+    expect(scene._placeholderObjectCount()).toBe(1);
+    expect(scene.placementNode('EdariaMitte', 'box-1')!.position.x).toBe(9);
+  });
+
+  /**
+   * The continuity contract: two quads abutting *vertically* must meet at one V value, so the
+   * texture grid runs unbroken across the seam.
+   *
+   * The hazard is that V can be an affine function of the row and still be wrong — if its intercept
+   * depends on the quad's own position and depth, each quad mirrors about its own centre and the
+   * grid phase jumps at every horizontal seam. That is invisible in a single-quad render, so only
+   * two quads with different vertical centres can distinguish the two shapes.
+   */
+  it('gives vertically abutting patches one shared V at their seam', () => {
+    const scene = makeScene();
+    scene.addSector(
+      sector({
         floorPatches: [
-          { floorMaterialID: 'cobble-town', x: 0, y: 0, width: 128, height: 128 },
-          { floorMaterialID: 'cobble-town', x: 128, y: 0, width: 128, height: 128 },
+          { id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 2.56, depth: 1.28 },
+          { id: 'patch-2', floorMaterialId: 'cobble', x: 0, z: 1.28, width: 2.56, depth: 8.96 },
         ],
       }),
     );
 
-    scene.load(sector, false);
+    const [, upper, lower] = floorQuads(scene).map((quad) => quad.geometry.getAttribute('uv').array as Float32Array);
+    // Indices 0/1 are the local +Y row, which `rotation.x = -pi/2` maps to world -Z: the quad's
+    // north edge, at the smaller z. Indices 2/3 are its south edge.
+    expect(upper![5]).toBeCloseTo(lower![1]!, 6);
+    expect(upper![5]).not.toBeCloseTo(upper![1]!, 6);
+  });
 
-    // Floor plus two patches.
-    const meshes: THREE.Mesh[] = [];
-    scene.scene.traverse((node) => {
-      if ((node as THREE.Mesh).isMesh === true) meshes.push(node as THREE.Mesh);
-    });
-    // The scene also carries the backdrop plane, so assert at least the floor + two patches.
-    expect(meshes.length).toBeGreaterThanOrEqual(4);
+  /** In space coordinates, so the grid also runs unbroken across the border between two sectors. */
+  it('gives the floors of two adjacent sectors one shared V at their border, and one U along it', () => {
+    const scene = makeScene();
+    scene.addSector(outdoorSector('North', { x: 5.12, z: 3.2 }));
+    scene.addSector(outdoorSector('South', { x: 5.12, z: 23.2 }));
+
+    const [north, south] = floorQuads(scene).map((quad) => quad.geometry.getAttribute('uv').array as Float32Array);
+    expect(north![5]).toBeCloseTo(south![1]!, 6);
+    expect(north![5]).toBeCloseTo(-23.2 / 1.6, 5);
+    expect(north![4]).toBeCloseTo(south![0]!, 6);
+    expect(north![4]).toBeCloseTo(5.12 / 1.6, 5);
+  });
+
+  it('renders floor patches as their own quads, at their place in the sector', () => {
+    const scene = makeScene();
+    scene.addSector(
+      outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
+    );
+
+    const [floor, patch] = floorQuads(scene);
+    expect(planeSize(patch!)).toEqual({ width: 3, height: 5 });
+    expect(patch!.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(5.12 + 3.5, FLOOR_PATCH_LIFT, -30.72 + 6.5));
+    expect(floor!.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(5.12 + 10, 0, -30.72 + 10));
   });
 
   /**
    * Patches are coplanar with the base floor unless something separates them, and two coplanar
    * quads z-fight — the symptom is a street that flickers between cobble and grass as the camera
-   * moves. Nothing referenced the lift, so setting it to 0 passed the whole suite.
+   * moves.
    */
   it('lifts patch quads clear of the base floor plane', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          floorPatches: [{ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 128, height: 128 }],
-        }),
-      ),
-      false,
-    );
+    const scene = makeScene();
+    scene.addSector(sector({ floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 2.56, depth: 2.56 }] }));
 
-    const planeHeights: number[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.PlaneGeometry) {
-        planeHeights.push(mesh.position.y);
-      }
-    });
-    expect(planeHeights).toContain(FLOOR_PATCH_LIFT);
+    const heights = floorQuads(scene).map((quad) => quad.position.y);
+    expect(heights).toEqual([0, FLOOR_PATCH_LIFT]);
     expect(FLOOR_PATCH_LIFT).toBeGreaterThan(0);
-    // And the base floor is the thing it clears, so the two must not share a height.
-    expect(planeHeights).toContain(0);
   });
 });
 
-describe('held sector swap', () => {
-  /**
-   * Without the hold, a portal hop shows one frame of the new sector framed on its origin with
-   * no character in it.
-   */
-  it('keeps the incoming sector hidden until the player is placed', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity());
+describe('placeholders', () => {
+  it('sizes a placement placeholder from the registry footprint', () => {
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
 
-    scene.load(sectorFromWire(wireSector({ name: 'Nordwiese' })), true);
-    const hidden = scene.scene.children.filter((child) => child.visible === false);
-    expect(hidden.length).toBeGreaterThan(0);
-
-    scene.placeEntity(playerEntity());
-    expect(scene.scene.children.filter((child) => child.visible === false)).toHaveLength(0);
-    // And the outgoing root is *gone*, not merely revealed alongside: a parked root is visible, so
-    // a `visible === false` filter alone passes while both sectors render on top of each other.
-    expect(sectorRootCount(scene)).toBe(1);
+    // Width and depth are distinct in the fixture, so a swapped axis cannot pass.
+    expect((boxes(scene)[0]!.geometry as THREE.BoxGeometry).parameters).toMatchObject({ width: 2, height: PLACEHOLDER_HEIGHT, depth: 1 });
   });
 
-  it('drops a parked sector when a splash interrupts the swap', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    // Both sectors carry an object, so the placeholder count can actually fall to zero — with the
-    // empty default it reads 0 before the splash as well, and the assertion measures nothing.
-    const populated = wireSector({
-      objects: [{ x: 0, y: 0, modelID: 'barrel', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
+  it('draws a model the registry does not know as a small box, and keeps counting it', async () => {
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('mystery-1', 'mystery')] }));
+    await scene.prewarm();
+
+    expect((boxes(scene)[0]!.geometry as THREE.BoxGeometry).parameters).toMatchObject({
+      width: PLACEHOLDER_HEIGHT,
+      height: PLACEHOLDER_HEIGHT,
+      depth: PLACEHOLDER_HEIGHT,
     });
-    scene.load(sectorFromWire(populated), false);
-    scene.load(sectorFromWire({ ...populated, name: 'Nordwiese' }), true);
+    expect(scene._placeholderObjectCount()).toBe(1);
+  });
+
+  it('sizes an entity placeholder from its body radius and the character height', () => {
+    const scene = makeScene();
+    scene.placeEntity(player({ radius: 0.4 }));
+
+    const box = boxes(scene)[0]!;
+    expect((box.geometry as THREE.BoxGeometry).parameters).toMatchObject({ width: 0.8, height: CHARACTER_SCALE, depth: 0.4 });
+    expect(box.position.y).toBe(CHARACTER_SCALE / 2);
+  });
+
+  it('scales a resolved character model by the one character scale', () => {
+    const model = new THREE.Object3D();
+    const scene = makeScene({ ...emptyAssets(), character: () => model });
+
+    scene.placeEntity(player());
+
+    expect(model.parent!.scale).toEqual(new THREE.Vector3(CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE));
+  });
+
+  it('asks the assets for the character model the entity names', () => {
+    const asked: string[] = [];
+    const scene = makeScene({
+      ...emptyAssets(),
+      character: (id) => {
+        asked.push(id);
+        return undefined;
+      },
+    });
+
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', characterModelId: 'ghost' }));
+
+    expect(asked).toEqual(['ghost']);
+  });
+});
+
+describe('held space swap', () => {
+  /**
+   * Without the hold, a door shows one frame of the new space with no character in it.
+   */
+  it('keeps the incoming space hidden until the player is placed', () => {
+    const scene = makeScene();
+    scene.addSector(sector());
+    scene.placeEntity(player());
+
+    scene.enterSpace(world('EdariaInn'));
+    scene.addSector(interiorSector('EdariaInn'));
+    const hidden = scene.scene.children.filter((child) => child.visible === false);
+    expect(hidden).toHaveLength(1);
+    expect(spaceRootCount(scene)).toBe(2);
+
+    scene.placeEntity(player());
+    expect(scene.scene.children.filter((child) => child.visible === false)).toHaveLength(0);
+    // And the outgoing root is *gone*, not merely revealed alongside: a parked root is visible, so
+    // a `visible === false` filter alone passes while both spaces render on top of each other.
+    expect(spaceRootCount(scene)).toBe(1);
+  });
+
+  it('drops a parked space when a splash interrupts the swap', () => {
+    const scene = makeScene();
+    // Both spaces carry a placement, so the placeholder count can actually fall to zero — with
+    // empty sectors it reads 0 before the splash as well, and the assertion measures nothing.
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
+    scene.enterSpace(world('EdariaInn'));
+    scene.addSector(interiorSector('EdariaInn', { placements: [placement('box-1', 'box')] }));
     expect(scene._placeholderObjectCount()).toBeGreaterThan(0);
 
     scene.showSplash();
 
     expect(scene._placeholderObjectCount()).toBe(0);
+    expect(spaceRootCount(scene)).toBe(0);
+    expect(boxes(scene)).toEqual([]);
+  });
+
+  /**
+   * The incoming interior's light must not reach the outgoing space still on screen: the town
+   * square dimming to the inn's key for the frames before the swap is the flash the hold prevents.
+   */
+  it('lights the held space by its own light until the reveal', () => {
+    const scene = makeScene();
+    scene.addSector(sector());
+    scene.placeEntity(player());
+    const outdoors = sun(scene).intensity;
+
+    scene.enterSpace(world('EdariaInn'));
+    scene.addSector(interiorSector('EdariaInn', { brightness: 50 }));
+    scene.tick(0.016);
+    expect(sun(scene).intensity).toBe(outdoors);
+
+    scene.placeEntity(player());
+    expect(sun(scene).intensity).toBeCloseTo(sunState(12, 50).sunIntensity / 1000, 12);
+    expect(sun(scene).intensity).not.toBe(outdoors);
+  });
+
+  it('returns to the outdoor light when the next space is outdoors', () => {
+    const scene = makeScene();
+    scene.addSector(interiorSector('EdariaInn', { brightness: 50 }));
+    scene.placeEntity(player());
+
+    scene.enterSpace(world());
+    scene.addSector(sector());
+    scene.placeEntity(player());
+
+    expect(sun(scene).intensity).toBeCloseTo(sunState(12, undefined).sunIntensity / 1000, 12);
+  });
+});
+
+describe('the world clock', () => {
+  /** Seconds since the start of a day for a fractional hour; the day and year do not matter to the light. */
+  const at = (hour: number): number => hour * 3600;
+
+  it('holds the light at noon until it is told the time', () => {
+    let nowMs = 0;
+    const scene = makeScene(emptyAssets(), () => nowMs);
+    scene.addSector(sector());
+
+    nowMs += 3_600_000;
+    scene.tick(0.016);
+
+    expect(sun(scene).intensity).toBeCloseTo(sunState(12, undefined).sunIntensity / 1000, 12);
+  });
+
+  it('lights the scene for the time it is told', () => {
+    const scene = makeScene(emptyAssets(), () => 0);
+    scene.addSector(sector());
+
+    scene.setClock(at(7));
+
+    expect(sun(scene).intensity).toBeCloseTo(sunState(7, undefined).sunIntensity / 1000, 12);
+  });
+
+  /**
+   * From wall time, not from the frames it was ticked: a hidden tab gets no frames, and a clock
+   * that only advanced with them would come back as far behind as the tab was away.
+   */
+  it('runs forward at four world seconds a second of wall time, however few frames it gets', () => {
+    let nowMs = 1000;
+    const scene = makeScene(emptyAssets(), () => nowMs);
+    scene.addSector(sector());
+    scene.setClock(at(7));
+
+    // Fifteen minutes of wall time is one world hour.
+    nowMs += 15 * 60 * 1000;
+    scene.tick(0.016);
+
+    expect(sun(scene).intensity).toBeCloseTo(sunState(8, undefined).sunIntensity / 1000, 9);
+    expect(sun(scene).intensity).not.toBeCloseTo(sunState(7, undefined).sunIntensity / 1000, 3);
+  });
+
+  it('does not let the clock change an interior', () => {
+    let nowMs = 0;
+    const scene = makeScene(emptyAssets(), () => nowMs);
+    scene.addSector(interiorSector('EdariaInn', { brightness: 80 }));
+    scene.setClock(at(23));
+
+    nowMs += 3_600_000;
+    scene.tick(0.016);
+
+    expect(sun(scene).intensity).toBeCloseTo(sunState(12, 80).sunIntensity / 1000, 12);
+  });
+
+  /** The whole state reaches the lights: where the sun stands and its tint, and the fill beside it. */
+  it('points and tints the sun and sets the fill for a night hour, and again for an interior', () => {
+    const scene = makeScene(emptyAssets(), () => 0);
+    scene.addSector(sector());
+
+    scene.setClock(at(23));
+    const night = sunState(23, undefined);
+    expect(sunDirection(scene).distanceTo(new THREE.Vector3(night.direction.x, night.direction.y, night.direction.z))).toBeLessThan(1e-9);
+    expect(sun(scene).color).toEqual(new THREE.Color(0.7, 0.8, 1));
+    expect(ambient(scene).intensity).toBeCloseTo(0.2575 * 1.2, 9);
+
+    scene.addSector(interiorSector('EdariaInn', { brightness: 50 }));
+    const interior = sunState(23, 50);
+    expect(sunDirection(scene).distanceTo(new THREE.Vector3(interior.direction.x, interior.direction.y, interior.direction.z))).toBeLessThan(1e-9);
+    expect(interior.direction).not.toEqual(night.direction);
+    expect(sun(scene).color).toEqual(new THREE.Color(1, 1, 1));
+    expect(ambient(scene).intensity).toBeCloseTo(0.5 * 0.65 * 1.2, 9);
+  });
+});
+
+describe('ground height', () => {
+  const ON_DAIS = { x: 5, z: 5 };
+  const ON_FLOOR = { x: 12, z: 12 };
+
+  it('stands a placed entity on the ground under it at once', () => {
+    const scene = sceneWithGround();
+
+    scene.placeEntity(player({ position: ON_DAIS }));
+
+    expect(scene._positionFor('self')).toEqual({ x: 5, y: 0.2, z: 5 });
+  });
+
+  it('eases a step up over the following frames and lands exactly on it', () => {
+    const scene = sceneWithGround();
+    scene.placeEntity(player({ position: ON_FLOOR }));
+
+    scene.updatePosition('self', ON_DAIS, 0, undefined);
+    // The simulation is already on the step; the rendered height has not moved yet.
+    expect(scene._positionFor('self')).toEqual({ x: 5, y: 0, z: 5 });
+
+    scene.tick(0.016);
+    const first = scene._positionFor('self')!.y;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(0.2);
+
+    for (let frame = 0; frame < 60; frame += 1) scene.tick(0.016);
+    expect(scene._positionFor('self')!.y).toBe(0.2);
+  });
+
+  it('eases a step down the same way', () => {
+    const scene = sceneWithGround();
+    scene.placeEntity(player({ position: ON_DAIS }));
+
+    scene.updatePosition('self', ON_FLOOR, 0, undefined);
+    scene.tick(0.016);
+
+    expect(scene._positionFor('self')!.y).toBeGreaterThan(0);
+    expect(scene._positionFor('self')!.y).toBeLessThan(0.2);
+  });
+
+  it('keeps the camera on the rendered height of the player', () => {
+    const scene = sceneWithGround();
+    scene.placeEntity(player({ position: ON_FLOOR }));
+    scene.updatePosition('self', ON_DAIS, 0, undefined);
+
+    scene.tick(0.016);
+    expect(cameraFocus(scene).y).toBeCloseTo(scene._positionFor('self')!.y, 12);
+    expect(cameraFocus(scene).y).toBeGreaterThan(0);
+
+    for (let frame = 0; frame < 60; frame += 1) scene.tick(0.016);
+    expect(cameraFocus(scene).y).toBeCloseTo(0.2, 12);
+  });
+
+  it('keeps everything on the floor when it has no ground to read', () => {
+    const scene = makeScene();
+    scene.addSector(daisSector);
+
+    scene.placeEntity(player({ position: ON_DAIS }));
+    scene.tick(0.016);
+
+    expect(scene._positionFor('self')!.y).toBe(0);
+  });
+
+  /** The client's collision is rebuilt whenever a sector arrives, so the scene reads it afresh rather than keeping the one it was handed. */
+  it('reads the entered world as its sectors arrive', () => {
+    const scene = makeScene();
+    const entered = world();
+    scene.enterSpace(entered);
+
+    entered.addSector(daisSector);
+    scene.placeEntity(player({ position: ON_DAIS }));
+
+    expect(scene._positionFor('self')!.y).toBe(0.2);
+  });
+
+  /**
+   * One clamped frame and a ten-second frame must ease by exactly the same amount, which is only
+   * true while the clamp is in place; and the entity is genuinely mid-step rather than both having
+   * landed, which would make the equality hold trivially.
+   */
+  it('never advances more than the max delta in one frame', () => {
+    const stalled = sceneWithGround();
+    const clamped = sceneWithGround();
+    for (const scene of [stalled, clamped]) {
+      scene.placeEntity(player({ position: ON_FLOOR }));
+      scene.updatePosition('self', ON_DAIS, 0, undefined);
+    }
+
+    stalled.tick(10);
+    clamped.tick(MAX_TICK_DELTA);
+
+    expect(stalled._positionFor('self')).toEqual(clamped._positionFor('self'));
+    expect(clamped._positionFor('self')!.y).toBeGreaterThan(0);
+    expect(clamped._positionFor('self')!.y).toBeLessThan(0.2);
   });
 });
 
@@ -308,32 +644,20 @@ describe('post-prewarm self-heal', () => {
    */
   it('swaps placeholders for real models once the cache warms', async () => {
     const assets = emptyAssets();
-    const scene = new WorldScene(assets, 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          objects: [{ x: 0, y: 0, modelID: 'barrel', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-        }),
-      ),
-      false,
-    );
+    const scene = makeScene(assets);
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
     expect(scene._placeholderObjectCount()).toBe(1);
 
     // The placeholder owns its `BoxGeometry`, so the swap has to free it rather than merely
-    // unparenting it — once detached it is past the reach of any later sector cleanup, and a
+    // unparenting it — once detached it is past the reach of any later cleanup, and a
     // membership assertion alone cannot tell the two apart.
-    const placeholders: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry) placeholders.push(mesh);
-    });
+    const placeholders = boxes(scene);
     expect(placeholders).toHaveLength(1);
     const placeholderDispose = vi.spyOn(placeholders[0]!.geometry, 'dispose');
 
     const warm = resolvingAssets();
     // Wrapped rather than assigned directly so the methods stay bound to `warm`.
     assets.object = (id) => warm.object(id);
-    assets.entity = (kind, figure) => warm.entity(kind, figure);
     await scene.prewarm();
 
     expect(scene._placeholderObjectCount()).toBe(0);
@@ -341,323 +665,186 @@ describe('post-prewarm self-heal', () => {
   });
 
   /**
-   * The heal path has to apply the authored yaw exactly as the cold load does. It is the reason
-   * `attachResolvedObject` exists — a yaw-convention change applied to one and missed on the other
-   * renders correctly on a cold load and wrong after a heal, so a door faces the wrong way and a
-   * shelf wall runs across the room instead of along it, but only for players whose sector loaded
-   * before its models resolved.
+   * The yaw lives on the placement's node, not on what hangs under it, so a model that resolves
+   * later stands exactly as one that was there from the start: a door faces the same way for a
+   * player whose sector loaded before its models did.
    */
-  it('applies the authored yaw when a model resolves through the heal, not only on a cold load', async () => {
+  it('keeps the placement where it stood and as it was turned when its model resolves', async () => {
     const assets = emptyAssets();
-    const scene = new WorldScene(assets, 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          objects: [{ x: 0, y: 0, modelID: 'door', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 270 }],
-        }),
-      ),
-      false,
-    );
-    expect(scene._placeholderObjectCount()).toBe(1);
+    const scene = makeScene(assets);
+    scene.addSector(sector({ placements: [placement('door-1', 'door', { yaw: 270 })] }));
+    const node = scene.placementNode('EdariaMitte', 'door-1')!;
+    const before = { position: node.position.clone(), yaw: node.rotation.y };
 
     const warm = resolvingAssets();
     assets.object = (id) => warm.object(id);
-    assets.entity = (kind, figure) => warm.entity(kind, figure);
     await scene.prewarm();
 
-    const yaws: number[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry) yaws.push(mesh.rotation.y);
-    });
-    expect(yaws).toHaveLength(1);
-    // 270 degrees counter-clockwise seen from above, the authored convention for a south-facing door.
-    //
-    // Exact rather than approximate, because the whole angle is Float32 arithmetic and `FLOAT_PI`
-    // rounds toward
-    // zero where `Math.PI` does not — so the un-narrowed expression is a different number, and a
-    // `toBeCloseTo` cannot tell them apart.
-    expect(yaws[0]).toBe(f32(f32(270 * FLOAT_PI) / 180));
-    expect(f32(f32(270 * FLOAT_PI) / 180)).not.toBe((270 * Math.PI) / 180);
+    expect(scene.placementNode('EdariaMitte', 'door-1')).toBe(node);
+    expect(node.position).toEqual(before.position);
+    expect(node.rotation.y).toBe(before.yaw);
+    expect(node.children).toHaveLength(1);
+    // The model itself is not turned a second time.
+    expect(node.children[0]!.rotation.y).toBe(0);
+  });
+
+  /** A sector that loaded before the texture cache warmed must not keep its grey floor for the session. */
+  it('textures the floor and its patches once the cache warms', async () => {
+    const cached = new THREE.Texture();
+    cached.image = { width: 64, height: 64 };
+    const assets = emptyAssets();
+    const scene = makeScene(assets);
+    scene.addSector(sector({ floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 2.56, depth: 2.56 }] }));
+    const grey = floorQuads(scene);
+    expect(grey.map((quad) => (quad.material as THREE.MeshStandardMaterial).map)).toEqual([null, null]);
+    const greyDisposes = grey.map((quad) => vi.spyOn(quad.geometry, 'dispose'));
+
+    assets.floorTexture = () => cached;
+    await scene.prewarm();
+
+    const healed = floorQuads(scene);
+    expect(healed).toHaveLength(2);
+    for (const quad of healed) expect((quad.material as THREE.MeshStandardMaterial).map).not.toBeNull();
+    expect(healed.map((quad) => quad.position.y)).toEqual([0, FLOOR_PATCH_LIFT]);
+    for (const spy of greyDisposes) expect(spy).toHaveBeenCalled();
+  });
+
+  it('keeps a healed floor and its patch where the sector stands', async () => {
+    const cached = new THREE.Texture();
+    cached.image = { width: 64, height: 64 };
+    const assets = emptyAssets();
+    const scene = makeScene(assets);
+    scene.addSector(
+      outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
+    );
+
+    assets.floorTexture = () => cached;
+    await scene.prewarm();
+
+    const [floor, patch] = floorQuads(scene);
+    for (const quad of [floor!, patch!]) expect((quad.material as THREE.MeshStandardMaterial).map).not.toBeNull();
+    expect(floor!.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(5.12 + 10, 0, -30.72 + 10));
+    expect(patch!.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(5.12 + 3.5, FLOOR_PATCH_LIFT, -30.72 + 6.5));
   });
 });
 
-/**
- * The renderer computes in Float32, and `packages/core/src/float.ts` exists so the browser and the
- * server cannot drift. These pin the narrowings that carry that contract: each is a
- * genuine numeric difference, not a formality — over the Int16 pixel range `f32(f32(px) * unit)`
- * differs from `px * unit` for 32,738 of 32,768 widths, first at px = 5.
- *
- * Every narrowed axis is asserted, not just the width, and the inputs are deliberately **not
- * square**: with 5 x 5 a mutation that drops the narrowing on one axis, or swaps two of them,
- * produces the value the other axis was going to be checked against and no assertion notices.
- */
-describe('pixel-to-metre conversions narrow through Float32', () => {
-  /** `f32(f32(px) * unit)`, the renderer's own chain, and the un-narrowed value it must not be. */
-  const narrowed = (pixels: number) => f32(f32(pixels) * ORTHO_RIG.worldUnitsPerPixel);
-  const unnarrowed = (pixels: number) => pixels * ORTHO_RIG.worldUnitsPerPixel;
-
-  /** Every `PlaneGeometry` in the scene as `{width, height}`; the backdrop is a plane too. */
-  function planeSizes(scene: WorldScene): { width: number; height: number }[] {
-    const sizes: { width: number; height: number }[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.PlaneGeometry) {
-        sizes.push({
-          width: mesh.geometry.parameters.width,
-          height: mesh.geometry.parameters.height,
-        });
-      }
-    });
-    return sizes;
+describe('an entity placed again', () => {
+  /** Where every entity placeholder reachable from the scene's root stands. */
+  function drawnAt(scene: WorldScene): THREE.Vector3[] {
+    return boxes(scene).map((box) => box.parent!.getWorldPosition(new THREE.Vector3()));
   }
 
-  function firstBox(scene: WorldScene): THREE.BoxGeometry | undefined {
-    let box: THREE.BoxGeometry | undefined;
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry) box = mesh.geometry;
-    });
-    return box;
-  }
+  /** What the scene held about an entity of the space being left belongs to a root that is on its way out. */
+  it('is drawn in the new space after a space change', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
 
-  it('sizes the floor plane with a narrowed product on both axes', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const sector = sectorFromWire(wireSector({ dimensions: { width: 5, height: 7 } }));
-    scene.load(sector, false);
+    scene.enterSpace(world('EdariaInn'));
+    scene.placeEntity(player({ position: { x: 3, z: 4 } }));
 
-    // Through the same accessors the renderer uses, so the tile-to-pixel rule keeps one home.
-    const widthPixels = sectorPixelWidth(sector);
-    const heightPixels = sectorPixelHeight(sector);
-    expect(widthPixels).not.toBe(heightPixels);
-    expect(planeSizes(scene)).toContainEqual({
-      width: narrowed(widthPixels),
-      height: narrowed(heightPixels),
-    });
-    expect(planeSizes(scene)).not.toContainEqual({
-      width: unnarrowed(widthPixels),
-      height: unnarrowed(heightPixels),
-    });
+    expect(drawnAt(scene)).toEqual([new THREE.Vector3(3, 0, 4)]);
   });
 
-  it('sizes an entity placeholder with a narrowed product on every axis', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity({ ...playerEntity(1), maskSize: { width: 5, height: 7 } });
+  it('is drawn again after it was removed', () => {
+    const scene = makeScene();
+    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
+    scene.removeEntity('peer');
+    expect(drawnAt(scene)).toEqual([]);
 
-    const box = firstBox(scene);
-    expect(box).toBeDefined();
-    // Depth is half the *width* rather than its own narrowing, which only an asymmetric mask can
-    // tell apart from the height — see `entityPlaceholder`.
-    expect(box!.parameters.width).toBe(narrowed(5));
-    expect(box!.parameters.height).toBe(narrowed(7));
-    expect(box!.parameters.depth).toBe(narrowed(5) / 2);
-    expect(box!.parameters.width).not.toBe(unnarrowed(5));
-    expect(box!.parameters.height).not.toBe(unnarrowed(7));
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 3, z: 4 } }));
+
+    expect(drawnAt(scene)).toEqual([new THREE.Vector3(3, 0, 4)]);
   });
+});
 
-  it('sizes an object placeholder with a narrowed product on every axis', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          objects: [{ x: 0, y: 0, modelID: 'barrel', sourceWidth: 5, sourceHeight: 7, priority: 0, rotation: 0 }],
-        }),
-      ),
-      false,
-    );
-
-    const box = firstBox(scene);
-    expect(box).toBeDefined();
-    // `sourceHeight` is a *ground* extent, so it lands on depth; the box's own height is one
-    // ground cell. Asserting all three is what distinguishes the three separate narrowings.
-    expect(box!.parameters.width).toBe(narrowed(5));
-    expect(box!.parameters.depth).toBe(narrowed(7));
-    expect(box!.parameters.width).not.toBe(unnarrowed(5));
-    expect(box!.parameters.depth).not.toBe(unnarrowed(7));
-    // The box's own height has no `not.toBe` partner and cannot get one: `groundCellSize` is 32, so
-    // this multiply only shifts the exponent and the product is exact in binary32 either way.
-    // Verified: f32(f32(32) * f32(0.02)) === f32(32) * f32(0.02).
-    expect(box!.parameters.height).toBe(narrowed(SOMNIO_CONSTANTS.groundCellSize));
-    expect(narrowed(SOMNIO_CONSTANTS.groundCellSize)).toBe(unnarrowed(SOMNIO_CONSTANTS.groundCellSize));
-  });
-
-  /** The one overlay quad whose size is measurable without a GPU: its geometry parameters. */
-  function overlayQuadSizes(scene: WorldScene): { width: number; height: number }[] {
-    const sizes: { width: number; height: number }[] = [];
+describe('overlay quads', () => {
+  /** The overlay quads whose size is measurable without a GPU: planes textured from a canvas. */
+  function overlayPlates(scene: WorldScene): THREE.Mesh[] {
+    const plates: THREE.Mesh[] = [];
     scene.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       const material = mesh.material as THREE.MeshBasicMaterial | undefined;
-      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement && mesh.geometry instanceof THREE.PlaneGeometry) {
-        sizes.push({
-          width: mesh.geometry.parameters.width,
-          height: mesh.geometry.parameters.height,
-        });
-      }
+      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement && mesh.geometry instanceof THREE.PlaneGeometry) plates.push(mesh);
     });
-    return sizes;
+    return plates;
   }
 
-  /**
-   * `overlayScale` is a Float32 quantity and 0.8 is not representable in
-   * binary32, so leaving it a double shifts every overlay quad's size. The plaque is the reachable
-   * one: its artwork dimensions come from the rasteriser rather than from a sector the test picks.
-   */
-  it('scales overlay artwork through a narrowed overlayScale', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+  it('scales overlay artwork to 1.6 cm a pixel', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
 
     // The same inputs the scene passes for a player plaque, so the artwork dimensions match.
-    const art = renderNamePlaque(playerEntity(1).name, NAME_PLAQUE.playerBackground, true);
-    const scaled = (pixels: number, scale: number) => f32(f32(f32(pixels) * ORTHO_RIG.worldUnitsPerPixel) * scale);
-    expect(overlayQuadSizes(scene)).toContainEqual({
-      width: scaled(art.widthPixels, f32(0.8)),
-      height: scaled(art.heightPixels, f32(0.8)),
-    });
-    // The un-narrowed constant lands somewhere else entirely, which is what makes this a contract
-    // rather than a restatement.
-    expect(scaled(art.widthPixels, f32(0.8))).not.toBe(scaled(art.widthPixels, 0.8));
+    const art = renderNamePlaque(player().name, NAME_PLAQUE.playerBackground, true);
+    const size = planeSize(overlayPlates(scene)[0]!);
+    expect(size.width).toBeCloseTo(art.widthPixels * 0.016, 12);
+    expect(size.height).toBeCloseTo(art.heightPixels * 0.016, 12);
+  });
+
+  it('hangs the plaque a gap below the feet and advances it toward the camera to clear the floor', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+
+    const plate = overlayPlates(scene)[0]!;
+    const height = planeSize(plate).height;
+    expect(plate.position.y).toBeCloseTo(-(height / 2 + 0.15), 12);
+    // At the rig's 45-degree pitch the advance equals the drop, plus the clearance.
+    expect(plate.position.z).toBeCloseTo(height + 0.15 + 0.15, 9);
   });
 
   /**
-   * The three overlay gaps are Float32 quantities too, and none of 0.2/0.15/0.15 is representable in
-   * binary32. They reach the scene as *positions* rather than sizes, so they need their own pins.
+   * `BUBBLE_HEAD_GAP` sits between the speaker's head and the balloon tail. The head is measured
+   * off the model holder's bounds, relative to the entity's own feet: on raised ground the bounds
+   * are higher in the world, and the balloon hangs off a node that is already up there.
    */
-  it('offsets the plaque with narrowed gap and clearance constants', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+  it.each([
+    ['on the floor', { x: 12, z: 12 }],
+    ['on raised ground', { x: 5, z: 5 }],
+  ])('lifts a speech balloon a gap above the head of a speaker %s', (_name, position) => {
+    const scene = sceneWithGround();
+    scene.placeEntity(player({ position }));
 
-    const size = overlayQuadSizes(scene)[0];
-    if (size === undefined) throw new Error('the player plaque produced no overlay quad');
-    let plate: THREE.Mesh | undefined;
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      const material = mesh.material as THREE.MeshBasicMaterial | undefined;
-      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement) plate = mesh;
-    });
-    expect(plate).toBeDefined();
+    scene.showSpeechBubble('self', ['Hallo'], 3000);
 
-    const feetGap = f32(0.15);
-    const clearance = f32(0.15);
-    const pitch = f32(f32(ORTHO_RIG.pitchDegrees * FLOAT_PI) / 180);
-    const drop = f32(size.height + feetGap);
-    expect(plate!.position.y).toBe(-f32(size.height / 2 + feetGap));
-    expect(plate!.position.z).toBe(f32(f32(drop / f32(Math.tan(pitch))) + clearance));
-    // The clearance term differs from the double answer, so that assertion is a contract and not a
-    // restatement. The feet gap does *not*, at this plaque height, and so has no `not.toBe` partner:
-    // the height is a fixed 18 px (`nativeLineBoxHeight(NAME_PLAQUE.fontSize) + 4`, independent of
-    // the name), and `f32(h/2 + f32(0.15)) === f32(h/2 + 0.15)` there by innocuous double rounding.
-    // It is not universally equivalent — a 14, 21, or 25 px plaque would separate the two.
-    expect(f32(f32(drop / f32(Math.tan(pitch))) + clearance)).not.toBe(f32(drop / f32(Math.tan(pitch))) + 0.15);
-    expect(-f32(size.height / 2 + feetGap)).toBe(-f32(size.height / 2 + 0.15));
-  });
-
-  /**
-   * `bubbleHeadGap` sits between the speaker's head and the balloon tail. Measured off the model
-   * holder's bounds, so an empty-bounds placeholder puts the head at a known height.
-   */
-  it('lifts a speech balloon above the head by a narrowed gap', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity({ ...playerEntity(1), maskSize: { width: 5, height: 7 } });
-    scene.showSpeechBubble(1, ['Hallo'], 3000);
-
-    // The balloon container is the node whose own children carry the canvas material; the plaque
-    // hangs directly off the entity node, so the container is the one with a non-zero y.
-    const lifted: number[] = [];
-    scene.scene.traverse((object) => {
-      if (object.position.y > 0 && object.children.length > 0) lifted.push(object.position.y);
-    });
-    const headHeight = narrowed(7);
-    expect(lifted).toContain(Math.max(headHeight, 0) + f32(0.2));
-    expect(lifted).not.toContain(Math.max(headHeight, 0) + 0.2);
-  });
-
-  it('sizes a floor patch quad with a narrowed product on both axes', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    // 5 px is the first width where the narrowed and unnarrowed products differ, and the patch
-    // is the one quad whose dimensions come from the authored rect rather than the sector size.
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          floorPatches: [{ floorMaterialID: 'cobble-street', x: 0, y: 0, width: 5, height: 7 }],
-        }),
-      ),
-      false,
-    );
-
-    expect(planeSizes(scene)).toContainEqual({ width: narrowed(5), height: narrowed(7) });
-    expect(planeSizes(scene)).not.toContainEqual({ width: unnarrowed(5), height: unnarrowed(7) });
+    // The bounds come from Float32 vertex data, hence the looser match.
+    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
   });
 });
 
 describe('shadow casting survives every path a model can reach the scene by', () => {
   /**
-   * `enableShadows` is called on four paths and only the cold object load was pinned. The heal is
-   * the one that matters most: `refreshResolvedModels` exists precisely for the race where an
-   * entity or object is placed before its glTF finishes prewarming, and a clone that misses the
-   * enrolment renders shadowless — which reads as the prop floating above the floor, the exact
-   * asymmetry `attachResolvedObject`'s doc comment warns about for yaw.
+   * `enableShadows` is called on four paths. The heal is the one that matters most:
+   * `refreshResolvedModels` exists precisely for the race where an entity or placement is drawn
+   * before its glTF finishes prewarming, and a clone that misses the enrolment renders shadowless —
+   * which reads as the prop floating above the floor.
    */
   it('enrols a character model resolved on the cold path', () => {
-    // `resolvingAssets().entity` answers a bare `Object3D` with no mesh under it, which nothing
+    // `resolvingAssets().character` answers a bare `Object3D` with no mesh under it, which nothing
     // can cast a shadow from — so this needs a rig that actually carries geometry.
-    const assets = resolvingAssets();
-    assets.entity = () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
-    const scene = new WorldScene(assets, 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene({ ...resolvingAssets(), character: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)) });
+    scene.placeEntity(player());
 
-    const meshes: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) meshes.push(mesh);
-    });
-    expect(meshes.some((mesh) => mesh.castShadow)).toBe(true);
+    expect(boxes(scene).some((mesh) => mesh.castShadow)).toBe(true);
   });
 
   it('enrols a placeholder standing in for an unresolved model', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene();
+    scene.placeEntity(player());
 
-    let placeholderCasts = false;
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry && mesh.castShadow) {
-        placeholderCasts = true;
-      }
-    });
-    expect(placeholderCasts).toBe(true);
+    expect(boxes(scene).map((mesh) => mesh.castShadow)).toEqual([true]);
   });
 
-  it('enrols an object model that resolves through the heal, not only on a cold load', async () => {
+  it('enrols a placement model that resolves through the heal, not only on a cold load', async () => {
     const assets = emptyAssets();
-    const scene = new WorldScene(assets, 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          objects: [{ x: 0, y: 0, modelID: 'door', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-        }),
-      ),
-      false,
-    );
+    const scene = makeScene(assets);
+    scene.addSector(sector({ placements: [placement('door-1', 'door')] }));
     expect(scene._placeholderObjectCount()).toBe(1);
 
     const warm = resolvingAssets();
     assets.object = (id) => warm.object(id);
-    assets.entity = (kind, figure) => warm.entity(kind, figure);
     await scene.prewarm();
 
-    // The healed clone replaces the placeholder, so anything still casting is the resolved model.
-    const meshes: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) meshes.push(mesh);
-    });
-    expect(meshes.some((mesh) => mesh.castShadow)).toBe(true);
+    // The healed clone replaces the placeholder, so the one box left is the resolved model.
+    expect(boxes(scene).map((mesh) => mesh.castShadow)).toEqual([true]);
   });
 });
 
@@ -667,141 +854,122 @@ describe('entity yaw slews on the model holder only', () => {
    * yaw on the node would tilt the name plaque and speech bubble with the character.
    */
   it('leaves the entity node unrotated while the holder turns', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity());
+    const scene = makeScene();
+    scene.placeEntity(player());
 
-    scene.updatePosition(1, { x: 100, y: 100 }, 90);
+    scene.updatePosition('self', { x: 10, z: 10 }, 90, undefined);
     for (let step = 0; step < 30; step += 1) scene.tick(1 / 60);
 
-    expect(scene._yawFor(1)).toBeGreaterThan(0);
+    expect(scene._yawFor('self')).toBe(Math.PI / 2);
     // The half that carries the contract: reading only the holder passes even if the node turns
     // too, because both would hold the same value and the overlays would tilt unnoticed.
-    expect(scene._nodeYawFor(1)).toBe(0);
+    expect(scene._nodeYawFor('self')).toBe(0);
+  });
+
+  it('stands an entity at the yaw of its facing when it is placed', () => {
+    const scene = makeScene();
+
+    scene.placeEntity(player({ facing: 270 }));
+
+    expect(scene._yawFor('self')).toBe(1.5 * Math.PI);
+    expect(scene._nodeYawFor('self')).toBe(0);
   });
 
   it('holds an idle pose when nothing moved', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity());
+    const scene = makeScene();
+    scene.placeEntity(player());
 
     scene.tick(0.5);
 
     // No model resolved, so no mixer and no pose is selected — but the tick must not throw.
-    expect(scene._poseFor(1)).toBeUndefined();
+    expect(scene._poseFor('self')).toBeUndefined();
   });
 });
 
-describe('tick clamps a stalled frame', () => {
-  /**
-   * Asserted against the tween's actual progress, not against a node existing: a 10-second frame and
-   * a clamped frame must move the entity by exactly the same amount, which is only true while the
-   * clamp is in place. Asserting the node exists would pass whether the clamp is present, removed,
-   * or inverted.
-   */
-  it('never advances more than the max delta', () => {
-    const stalled = new WorldScene(emptyAssets(), 1);
-    stalled.load(sectorFromWire(wireSector()), false);
-    stalled.placeEntity(playerEntity());
-    stalled.animateEntity(1, { x: 200, y: 200 }, 0, 0.5);
-    stalled.tick(10);
+describe('movement poses', () => {
+  /** A model with one clip per pose, so the selected pose is observable through the mixer. */
+  function animatedScene(): WorldScene {
+    const clips = ['Idle', 'Walking_A', 'Running_A', 'Sneaking', 'Walking_Backwards'].map((name) => new THREE.AnimationClip(name, 1, []));
+    return makeScene({ ...emptyAssets(), character: () => new THREE.Object3D(), clipsFor: () => clips });
+  }
 
-    const clamped = new WorldScene(emptyAssets(), 1);
-    clamped.load(sectorFromWire(wireSector()), false);
-    clamped.placeEntity(playerEntity());
-    clamped.animateEntity(1, { x: 200, y: 200 }, 0, 0.5);
-    clamped.tick(MAX_TICK_DELTA);
+  it('walks while the position keeps changing and idles a grace window after it stops', () => {
+    const scene = animatedScene();
+    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
+    scene.tick(0.016);
+    expect(scene._poseFor('peer')).toBe('idle');
 
-    const stalledPosition = stalled._positionFor(1);
-    const clampedPosition = clamped._positionFor(1);
-    expect(stalledPosition).toEqual(clampedPosition);
+    scene.updatePosition('peer', { x: 10.1, z: 10 }, 90, 90);
+    scene.tick(0.016);
+    expect(scene._poseFor('peer')).toBe('walking');
 
-    // And the tween is genuinely mid-flight rather than both having completed, which would make the
-    // equality above hold trivially. Compared against the tween's *endpoint in metres*, read off a
-    // scene driven to completion: the previous `toBeLessThan(200)` compared a world coordinate of
-    // about 4 m against a pixel count, so it held whatever the clamp did.
-    const finished = new WorldScene(emptyAssets(), 1);
-    finished.load(sectorFromWire(wireSector()), false);
-    finished.placeEntity(playerEntity());
-    finished.animateEntity(1, { x: 200, y: 200 }, 0, 0.5);
-    for (let elapsed = 0; elapsed < 0.5; elapsed += MAX_TICK_DELTA) finished.tick(MAX_TICK_DELTA);
-
-    // The untouched starting point, from a scene that placed the entity and never ticked.
-    const unmoved = new WorldScene(emptyAssets(), 1);
-    unmoved.load(sectorFromWire(wireSector()), false);
-    unmoved.placeEntity(playerEntity());
-
-    const origin = unmoved._positionFor(1)!;
-    const partway = clamped._positionFor(1)!;
-    const endpoint = finished._positionFor(1)!;
-    // One clamped frame of a 0.5 s tween is a fifth of the way: strictly past the start, strictly
-    // short of the end. Both bounds are needed — either alone holds if the clamp is removed.
-    expect(partway.x).toBeGreaterThan(origin.x);
-    expect(partway.x).toBeLessThan(endpoint.x);
+    // The same position again is not movement.
+    for (let frame = 0; frame < 12; frame += 1) {
+      scene.updatePosition('peer', { x: 10.1, z: 10 }, 90, undefined);
+      scene.tick(0.016);
+    }
+    expect(scene._poseFor('peer')).toBe('idle');
   });
 
-  /**
-   * The tween fraction is narrowed once around the whole expression (`f32(1 - remaining / total)`)
-   * because `remaining` and `total` are both binary64 durations. Leaving it a double puts every
-   * in-flight peer a fraction of a pixel off the reference answer for the same frame — invisible
-   * per frame, and exactly the drift `@somnio/core`'s `float.ts` exists to prevent.
-   *
-   * One clamped frame into a 0.5 s tween is what makes the difference visible: the fraction is then
-   * `1 - 0.4 / 0.5`, which a double evaluates as 0.19999999999999996 and `f32` rounds to exactly
-   * 0.2. A single tick, because a second one would lerp from the same fixed `start` and the error
-   * would not compound into something easier to see.
-   */
-  it('narrows the tween fraction once around the whole expression', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity());
-    const start = scene._positionFor(1)!;
-    scene.animateEntity(1, { x: 200, y: 200 }, 0, 0.5);
+  it('picks the clip from the gait and from the travel against the facing', () => {
+    const scene = animatedScene();
+    scene.placeEntity(player());
 
-    // The tween's endpoint, read off a scene driven to completion rather than recomputed here, so
-    // the expectation cannot drift from `entityWorldPosition`. Driven in clamped frames — one
-    // `tick(0.5)` would itself be clamped to `MAX_TICK_DELTA` and never arrive.
-    const finished = new WorldScene(emptyAssets(), 1);
-    finished.load(sectorFromWire(wireSector()), false);
-    finished.placeEntity(playerEntity());
-    finished.animateEntity(1, { x: 200, y: 200 }, 0, 0.5);
-    for (let elapsed = 0; elapsed < 0.5; elapsed += MAX_TICK_DELTA) finished.tick(MAX_TICK_DELTA);
-    const target = finished._positionFor(1)!;
-    expect(target.x).not.toBe(start.x);
+    scene.updateGait('self', 'run');
+    scene.updatePosition('self', { x: 10.1, z: 10 }, 90, 90);
+    scene.tick(0.016);
+    expect(scene._poseFor('self')).toBe('running');
 
-    scene.tick(MAX_TICK_DELTA);
+    // Facing east while travelling west is a backpedal, whatever the gait.
+    scene.updatePosition('self', { x: 10, z: 10 }, 90, 270);
+    scene.tick(0.016);
+    expect(scene._poseFor('self')).toBe('backpedal');
 
-    const lerpX = (fraction: number) =>
-      new THREE.Vector3().lerpVectors(new THREE.Vector3(start.x, start.y, start.z), new THREE.Vector3(target.x, target.y, target.z), fraction).x;
-    const remaining = 0.5 - MAX_TICK_DELTA;
-    const asDouble = 1 - remaining / 0.5;
-    expect(f32(asDouble)).not.toBe(asDouble);
-    expect(scene._positionFor(1)!.x).toBe(lerpX(f32(asDouble)));
-    expect(scene._positionFor(1)!.x).not.toBe(lerpX(asDouble));
+    // Facing south while travelling east is a step to the character's own left.
+    scene.updatePosition('self', { x: 10.1, z: 10 }, 0, 90);
+    scene.tick(0.016);
+    expect(scene._poseFor('self')).toBe('strafeLeft');
+  });
+
+  it('walks an NPC whatever its gait and its travel against its facing', () => {
+    const scene = animatedScene();
+    scene.placeEntity(player({ id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus' }));
+
+    scene.updateGait('npc:EdariaMitte/libus', 'run');
+    scene.updatePosition('npc:EdariaMitte/libus', { x: 9.9, z: 10 }, 90, 270);
+    scene.tick(0.016);
+
+    expect(scene._poseFor('npc:EdariaMitte/libus')).toBe('walking');
+  });
+
+  /** A stationary tick passes no travel; overwriting the last one would drop the backpedal clip mid-glide. */
+  it('keeps the last travel direction when a step carries none', () => {
+    const scene = animatedScene();
+    scene.placeEntity(player());
+    scene.updatePosition('self', { x: 9.9, z: 10 }, 90, 270);
+    scene.tick(0.016);
+
+    scene.updatePosition('self', { x: 9.8, z: 10 }, 90, undefined);
+    scene.tick(0.016);
+
+    expect(scene._poseFor('self')).toBe('backpedal');
   });
 });
 
 describe('the sun travels with the camera focus', () => {
-  /** Direction the light actually shines from, which is what shading reads. */
-  function sunDirection(scene: WorldScene): THREE.Vector3 {
-    const sun = scene.scene.getObjectByProperty('isDirectionalLight', true) as THREE.DirectionalLight;
-    return sun.position.clone().sub(sun.target.position).normalize();
-  }
-
   /**
    * three.js derives a directional light's direction from `position - target.position`. Anchoring
    * the light at the world origin while the target follows the player swings that direction
-   * further off the authored one the further the player walks from the sector's corner — the sun
-   * would visibly rotate as you cross a map.
+   * further off the authored one the further the player walks from the origin — the sun
+   * would visibly rotate as you cross the world.
    */
-  it('holds the authored direction as the focus moves across the sector', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
+  it('holds the authored direction as the focus moves across the world', () => {
+    const scene = makeScene();
 
-    scene.placeEntity({ ...playerEntity(1), position: { x: 0, y: 0 } });
+    scene.placeEntity(player({ position: { x: 0, z: 0 } }));
     const nearOrigin = sunDirection(scene);
 
-    scene.placeEntity({ ...playerEntity(1), position: { x: 4000, y: 4000 } });
+    scene.placeEntity(player({ position: { x: 80, z: -80 } }));
     const farAway = sunDirection(scene);
 
     expect(farAway.angleTo(nearOrigin)).toBeLessThan(1e-6);
@@ -820,19 +988,17 @@ describe('the sun travels with the camera focus', () => {
    * for plenty of wrong bases by luck.
    */
   it('quantizes the shadow anchor to whole texels of the light plane as the focus moves', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    const sun = scene.scene.getObjectByProperty('isDirectionalLight', true) as THREE.DirectionalLight;
+    const scene = makeScene();
     const texel = (2 * SUN_SHADOW.orthographicScale) / SUN_SHADOW.mapSize;
 
     const phases: number[] = [];
     for (let step = 0; step < 40; step += 1) {
-      scene.placeEntity({ ...playerEntity(1), position: { x: 500 + step * 7, y: 500 + step * 3 } });
+      scene.placeEntity(player({ position: { x: 10 + step * 0.14, z: 10 + step * 0.06 } }));
       // Derived from the light's own placement, not from the scene's internals, so a wrong basis in
       // `repositionSun` cannot cancel itself out here.
-      const direction = sun.position.clone().sub(sun.target.position).normalize();
-      const intoLight = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(direction, new THREE.Vector3(), sun.up)).invert();
-      const local = sun.target.position.clone().applyQuaternion(intoLight);
+      const direction = sunDirection(scene);
+      const intoLight = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(direction, new THREE.Vector3(), sun(scene).up)).invert();
+      const local = sun(scene).target.position.clone().applyQuaternion(intoLight);
       phases.push(local.x / texel, local.y / texel);
     }
 
@@ -846,67 +1012,65 @@ describe('the sun travels with the camera focus', () => {
    * `sun.position - sun.target.position` cancels the anchor exactly, and an anchor parked at the
    * origin has zero texel phase on every sample. Both stay green with the anchor pinned to (0,0,0),
    * which is the shape that matters — the shadow volume stops following the player, so every prop
-   * more than half a shadow map from the sector origin loses its shadow entirely.
+   * more than half a shadow map from the origin loses its shadow entirely.
    *
    * So this observes the endpoint itself: it must move with the focus, and land within one texel
    * of it rather than anywhere at all.
    */
   it('anchors the shadow volume on the focus, within a texel, as the focus moves', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    const sun = scene.scene.getObjectByProperty('isDirectionalLight', true) as THREE.DirectionalLight;
+    const scene = makeScene();
     const texel = (2 * SUN_SHADOW.orthographicScale) / SUN_SHADOW.mapSize;
 
-    scene.placeEntity({ ...playerEntity(1), position: { x: 300, y: 300 } });
-    const near = sun.target.position.clone();
+    scene.placeEntity(player({ position: { x: 6, z: 6 } }));
+    const near = sun(scene).target.position.clone();
 
-    scene.placeEntity({ ...playerEntity(1), position: { x: 3000, y: 3000 } });
-    const far = sun.target.position.clone();
+    scene.placeEntity(player({ position: { x: 60, z: 60 } }));
+    const far = sun(scene).target.position.clone();
 
-    // 2700 px on each axis at `worldUnitsPerPixel`, so the anchor must travel the same distance the
-    // player did — quantized to whole texels, hence the tolerance. An anchor pinned to the origin
-    // travels 0 and fails the first assertion; one that tracks something other than the focus
-    // fails the second.
-    const expected = Math.hypot(2700 * ORTHO_RIG.worldUnitsPerPixel, 2700 * ORTHO_RIG.worldUnitsPerPixel);
+    // The anchor must travel the same distance the player did — quantized to whole texels, hence
+    // the tolerance. An anchor pinned to the origin travels 0 and fails the first assertion; one
+    // that tracks something other than the focus fails the second.
     expect(near.distanceTo(far)).toBeGreaterThan(1);
-    expect(Math.abs(near.distanceTo(far) - expected)).toBeLessThanOrEqual(2 * texel);
+    expect(Math.abs(near.distanceTo(far) - Math.hypot(54, 54))).toBeLessThanOrEqual(2 * texel);
+  });
+
+  /** The editor frames the camera itself and places no player, so it names the point to anchor on. */
+  it('anchors the shadow volume on a named ground point, within a texel, without moving the camera', () => {
+    const scene = makeScene();
+    const texel = (2 * SUN_SHADOW.orthographicScale) / SUN_SHADOW.mapSize;
+    const camera = scene.camera.position.clone();
+
+    scene.anchorSunShadow({ x: 6, z: 6 });
+    const near = sun(scene).target.position.clone();
+    scene.anchorSunShadow({ x: 60, z: -60 });
+    const far = sun(scene).target.position.clone();
+
+    expect(near.distanceTo(new THREE.Vector3(6, 0, 6))).toBeLessThanOrEqual(2 * texel);
+    expect(far.distanceTo(new THREE.Vector3(60, 0, -60))).toBeLessThanOrEqual(2 * texel);
+    expect(scene.camera.position).toEqual(camera);
+    // A later frame relights from the same anchor rather than falling back to the origin.
+    scene.tick(0.016);
+    expect(sun(scene).target.position.distanceTo(far)).toBe(0);
   });
 
   it('casts shadows from the sun onto the floor', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    const object = {
-      x: 0,
-      y: 0,
-      modelID: 'barrel',
-      sourceWidth: 32,
-      sourceHeight: 32,
-      priority: 1,
-      rotation: 0,
-    };
-    scene.load(sectorFromWire(wireSector({ objects: [object] })), false);
-    const sun = scene.scene.getObjectByProperty('isDirectionalLight', true) as THREE.DirectionalLight;
-    expect(sun.castShadow).toBe(true);
+    const scene = makeScene();
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
+    expect(sun(scene).castShadow).toBe(true);
 
-    const meshes: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      if ((object as THREE.Mesh).isMesh) meshes.push(object as THREE.Mesh);
-    });
     // Per mesh, not `some(...)`: the prop both casts and receives, so a bare "something receives"
-    // held even with the floor's flag removed — and the floor is the only surface a shadow lands on.
-    const floor = meshes.find(
-      (mesh) =>
-        mesh.geometry instanceof THREE.PlaneGeometry &&
-        mesh.geometry.parameters.width === f32(f32(sectorPixelWidth(sectorFromWire(wireSector()))) * ORTHO_RIG.worldUnitsPerPixel),
-    );
+    // would hold even with the floor's flag removed — and the floor is the only surface a shadow
+    // lands on.
+    const floor = scene
+      .placementNode('EdariaMitte', 'box-1')!
+      .parent!.children.find((child) => (child as THREE.Mesh).geometry instanceof THREE.PlaneGeometry) as THREE.Mesh | undefined;
     expect(floor).toBeDefined();
     expect(floor!.receiveShadow).toBe(true);
     // A ground plane casting into its own depth comparison is the classic source of shadow acne,
     // and there is nothing below it to catch a shadow anyway.
     expect(floor!.castShadow).toBe(false);
 
-    const placeholder = meshes.find((mesh) => mesh.geometry instanceof THREE.BoxGeometry);
-    expect(placeholder).toBeDefined();
-    expect(placeholder!.castShadow).toBe(true);
+    expect(boxes(scene).map((mesh) => mesh.castShadow)).toEqual([true]);
   });
 });
 
@@ -942,21 +1106,21 @@ describe('overlay artwork', () => {
   });
 
   /**
-   * Both baselines follow the reference **line box**, whose two numbers are recorded in
-   * `NATIVE_LINE_BOX` from an ink-row measurement of the reference pipeline.
+   * Both baselines follow the **line box**, whose two numbers are recorded in `LINE_BOX` from an
+   * ink-row measurement.
    */
   it('places a bubble line one baseline offset below its box top', () => {
     expect(baselineBelowBoxTop(5, 10)).toBe(15);
     // A second line advances by `lineHeight`, and the baseline follows rigidly, so consecutive
-    // baselines are exactly `lineHeight` apart as they are natively.
+    // baselines are exactly `lineHeight` apart.
     expect(baselineBelowBoxTop(5 + 12, 10)).toBe(27);
   });
 
   it('sizes the line box a pixel deeper than canvas metrics report', () => {
-    // The reference layout measures 13 at size 10 and 14 at size 11; `fontBoundingBoxDescent` reports 2 rather
+    // The line box measures 13 at size 10 and 14 at size 11; `fontBoundingBoxDescent` reports 2 rather
     // than 3, so reading it leaves the plaque box a pixel short and the text riding half a pixel up.
-    expect(nativeLineBoxHeight(10)).toBe(13);
-    expect(nativeLineBoxHeight(11)).toBe(14);
+    expect(lineBoxHeight(10)).toBe(13);
+    expect(lineBoxHeight(11)).toBe(14);
   });
 
   it('centres a plaque line box rather than its em box', () => {
@@ -969,65 +1133,50 @@ describe('overlay artwork', () => {
 });
 
 describe('name plaques hang off the entity node', () => {
-  /** Counts plaque quads: screen-aligned planes textured from a canvas. */
-  function plaqueCount(scene: WorldScene): number {
-    let count = 0;
+  /** Plaque canvases: screen-aligned planes textured from a canvas. */
+  function plaqueCanvases(scene: WorldScene): HTMLCanvasElement[] {
+    const canvases: HTMLCanvasElement[] = [];
     scene.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       const material = mesh.material as THREE.MeshBasicMaterial | undefined;
-      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement) count += 1;
+      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement) canvases.push(material.map.image);
     });
-    return count;
+    return canvases;
   }
 
   it('gives players and NPCs a plaque and monsters none', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
+    const scene = makeScene();
 
-    scene.placeEntity(playerEntity(1));
-    expect(plaqueCount(scene)).toBe(1);
+    scene.placeEntity(player());
+    expect(plaqueCanvases(scene)).toHaveLength(1);
 
-    scene.placeEntity({ ...playerEntity(2), kind: 'npc', name: 'Libus' });
-    expect(plaqueCount(scene)).toBe(2);
+    scene.placeEntity(player({ id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus' }));
+    expect(plaqueCanvases(scene)).toHaveLength(2);
 
-    scene.placeEntity({ ...playerEntity(3), kind: 'monster', name: 'Ghost' });
-    expect(plaqueCount(scene)).toBe(2);
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst' }));
+    expect(plaqueCanvases(scene)).toHaveLength(2);
   });
 
-  /** Re-placing the same entity every frame must not stack a new plaque on each pass. */
+  /** Re-placing the same entity must not stack a new plaque on each pass. */
   it('does not accumulate plaques across repeated placements', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    for (let index = 0; index < 5; index += 1) scene.placeEntity(playerEntity(1));
-    expect(plaqueCount(scene)).toBe(1);
+    const scene = makeScene();
+    for (let index = 0; index < 5; index += 1) scene.placeEntity(player());
+    expect(plaqueCanvases(scene)).toHaveLength(1);
   });
-
-  /** The plaque's own canvas, so a rebuild is observable rather than merely counted. */
-  function plaqueCanvas(scene: WorldScene): HTMLCanvasElement | undefined {
-    let canvas: HTMLCanvasElement | undefined;
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      const material = mesh.material as THREE.MeshBasicMaterial | undefined;
-      if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement) canvas = material.map.image;
-    });
-    return canvas;
-  }
 
   /**
    * Counting proves no plaque was *added*; it cannot see that the old one was kept. Dropping the
-   * name term from the rebuild condition leaves the stale text on screen with the count unchanged
-   * — reachable whenever an index is reused by a different player after a `leave`.
+   * name term from the rebuild condition leaves the stale text on screen with the count unchanged.
    */
   it('rebuilds the plaque when the name changes', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
-    const before = plaqueCanvas(scene);
+    const scene = makeScene();
+    scene.placeEntity(player());
+    const [before] = plaqueCanvases(scene);
 
-    scene.placeEntity({ ...playerEntity(1), name: 'Renamed' });
+    scene.placeEntity(player({ name: 'Renamed' }));
 
-    expect(plaqueCount(scene)).toBe(1);
-    expect(plaqueCanvas(scene)).not.toBe(before);
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+    expect(plaqueCanvases(scene)[0]).not.toBe(before);
   });
 
   /**
@@ -1037,26 +1186,24 @@ describe('name plaques hang off the entity node', () => {
    * it; nothing observed that ordering.
    */
   it('rebuilds the plaque when only the kind changes', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity({ ...playerEntity(1), kind: 'peer', name: 'Same' });
-    const before = plaqueCanvas(scene);
+    const scene = makeScene();
+    scene.placeEntity(player({ kind: 'peer', name: 'Same' }));
+    const [before] = plaqueCanvases(scene);
 
-    scene.placeEntity({ ...playerEntity(1), kind: 'player', name: 'Same' });
+    scene.placeEntity(player({ kind: 'player', name: 'Same' }));
 
-    expect(plaqueCount(scene)).toBe(1);
-    expect(plaqueCanvas(scene)).not.toBe(before);
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+    expect(plaqueCanvases(scene)[0]).not.toBe(before);
   });
 
   /**
    * A rebuilt plaque owns a `PlaneGeometry` and a `CanvasTexture`-backed material that no later
-   * sector cleanup can reach once it is detached, so a bare `removeFromParent()` leaks both on
+   * cleanup can reach once it is detached, so a bare `removeFromParent()` leaks both on
    * every rename or kind change.
    */
   it('disposes the plaque it replaces rather than only detaching it', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene();
+    scene.placeEntity(player());
 
     const disposed: string[] = [];
     scene.scene.traverse((object) => {
@@ -1067,7 +1214,7 @@ describe('name plaques hang off the entity node', () => {
       vi.spyOn(material, 'dispose').mockImplementation(() => disposed.push('material'));
     });
 
-    scene.placeEntity({ ...playerEntity(1), name: 'Renamed' });
+    scene.placeEntity(player({ name: 'Renamed' }));
 
     expect(disposed).toContain('geometry');
     expect(disposed).toContain('material');
@@ -1076,10 +1223,10 @@ describe('name plaques hang off the entity node', () => {
 
 /**
  * GPU-resource lifetime. `removeFromParent()` leaves geometry, materials, and textures in
- * `WebGLRenderer`'s internal maps, so a long session of sector hops and peer churn would accumulate
- * VRAM until the context is lost. Nothing about that is visible in a graph assertion, which is why
- * these spy on `dispose` directly — and why they assert both directions: freeing what this file
- * allocated, and *not* freeing what the asset cache lent it.
+ * `WebGLRenderer`'s internal maps, so a long session of doors, border crossings, and peer churn
+ * would accumulate VRAM until the context is lost. Nothing about that is visible in a graph
+ * assertion, which is why these spy on `dispose` directly — and why they assert both directions:
+ * freeing what this file allocated, and *not* freeing what the asset cache lent it.
  */
 describe('GPU resource disposal', () => {
   /** A skinned model with its own skeleton, matching what `SkeletonUtils.clone` hands back. */
@@ -1094,60 +1241,49 @@ describe('GPU resource disposal', () => {
     return { root, skeleton };
   }
 
-  function patchedSector(): WireSector {
-    return wireSector({
-      floorPatches: [{ floorMaterialID: 'cobble-street', x: 0, y: 0, width: 32, height: 32 }],
-    });
-  }
+  const patched = sector({ floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 0.64, depth: 0.64 }] });
 
-  it('disposes the floor and its patches on a sector swap, sparing the cached texture', () => {
+  it.each([
+    ['its sector leaves the draw set', (scene: WorldScene) => scene.removeSector('EdariaMitte')],
+    [
+      'the next space is revealed',
+      (scene: WorldScene) => {
+        scene.enterSpace(world('EdariaInn'));
+        scene.placeEntity(player());
+      },
+    ],
+    ['the splash takes the space down', (scene: WorldScene) => scene.showSplash()],
+  ])('disposes the floor and its patches when %s, sparing the cached texture', (_name, leave) => {
     const cached = new THREE.Texture();
     cached.image = { width: 64, height: 64 };
-    const assets = { ...emptyAssets(), floorTexture: () => cached };
     const cachedDispose = vi.spyOn(cached, 'dispose');
-    const scene = new WorldScene(assets, 1);
-    scene.load(sectorFromWire(patchedSector()), false);
+    const scene = makeScene({ ...emptyAssets(), floorTexture: () => cached });
+    scene.addSector(patched);
 
-    // The floor and the one patch quad, identified by carrying a map: the splash plane the scene
-    // keeps across sector swaps is untextured, and must not be caught up in this.
-    const textured: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh || !(mesh.geometry instanceof THREE.PlaneGeometry)) return;
-      const map = (mesh.material as THREE.MeshStandardMaterial).map;
-      if (map !== null && map !== undefined) textured.push(mesh);
-    });
+    const textured = floorQuads(scene);
     expect(textured).toHaveLength(2);
     const geometryDisposes = textured.map((mesh) => vi.spyOn(mesh.geometry, 'dispose'));
     const mapDisposes = textured.map((mesh) => vi.spyOn((mesh.material as THREE.MeshStandardMaterial).map!, 'dispose'));
 
-    scene.load(sectorFromWire(wireSector({ name: 'Nordwiese' })), false);
+    leave(scene);
 
     for (const spy of geometryDisposes) expect(spy).toHaveBeenCalled();
     // The floor and each patch clone the cache entry, so their maps are theirs to free...
     for (const spy of mapDisposes) expect(spy).toHaveBeenCalled();
-    // ...while the entry itself must survive for the next sector that paints this material.
+    // ...while the entry itself must survive for the next quad that paints this material.
     expect(cachedDispose).not.toHaveBeenCalled();
   });
 
   it('leaves a cached model geometry and material alone when its holder is dropped', () => {
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshBasicMaterial();
-    const assets = { ...emptyAssets(), object: () => new THREE.Mesh(geometry, material) };
     const geometryDispose = vi.spyOn(geometry, 'dispose');
     const materialDispose = vi.spyOn(material, 'dispose');
-    const scene = new WorldScene(assets, 1);
-    scene.load(
-      sectorFromWire(
-        wireSector({
-          objects: [{ x: 0, y: 0, modelID: 'barrel', sourceWidth: 32, sourceHeight: 32, priority: 0, rotation: 0 }],
-        }),
-      ),
-      false,
-    );
+    const scene = makeScene({ ...emptyAssets(), object: () => new THREE.Mesh(geometry, material) });
+    scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
     expect(scene._placeholderObjectCount()).toBe(0);
 
-    scene.load(sectorFromWire(wireSector({ name: 'Nordwiese' })), false);
+    scene.removeSector('EdariaMitte');
 
     // `SkeletonUtils.clone` shares both with the prototype, so disposing either would blank every
     // other instance built from the same cache entry.
@@ -1160,37 +1296,55 @@ describe('GPU resource disposal', () => {
    * `Skeleton`, and `WebGLRenderer` allocates a per-`Skeleton` bone texture that nothing in three.js
    * reclaims — there is no `FinalizationRegistry`, so GC of the wrapper leaks the GL texture.
    */
-  it('disposes a cloned skeleton when its entity leaves the sector', () => {
+  it('disposes a cloned skeleton when its entity leaves', () => {
     const { root, skeleton } = skinnedModel();
-    const assets = { ...emptyAssets(), entity: () => root };
     const skeletonDispose = vi.spyOn(skeleton, 'dispose');
-    const scene = new WorldScene(assets, 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
 
-    scene.removeEntity(1);
+    scene.removeEntity('self');
 
     expect(skeletonDispose).toHaveBeenCalled();
   });
 
-  it('disposes a cloned skeleton when the whole sector is swapped', () => {
+  it('disposes a cloned skeleton when the splash takes the space down', () => {
     const { root, skeleton } = skinnedModel();
-    const assets = { ...emptyAssets(), entity: () => root };
     const skeletonDispose = vi.spyOn(skeleton, 'dispose');
-    const scene = new WorldScene(assets, 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
 
-    scene.load(sectorFromWire(wireSector({ name: 'Nordwiese' })), false);
+    scene.showSplash();
 
+    expect(skeletonDispose).toHaveBeenCalled();
+  });
+
+  /** An entity of the space being left hangs off the parked root, so the reveal is what frees it. */
+  it('disposes a cloned skeleton of the held space once the new one is revealed', () => {
+    const { root, skeleton } = skinnedModel();
+    const skeletonDispose = vi.spyOn(skeleton, 'dispose');
+    let handedOut = false;
+    const scene = makeScene({
+      ...emptyAssets(),
+      character: () => {
+        if (handedOut) return undefined;
+        handedOut = true;
+        return root;
+      },
+    });
+    scene.placeEntity(player());
+
+    scene.enterSpace(world('EdariaInn'));
+    expect(skeletonDispose).not.toHaveBeenCalled();
+
+    scene.placeEntity(player());
     expect(skeletonDispose).toHaveBeenCalled();
   });
 });
 
 describe('speech bubbles are freed as they are replaced and expire', () => {
   /** Every mesh under an entity's live bubble node, which is where its own texture hangs. */
-  function bubbleMeshes(scene: WorldScene, entityID = 1): THREE.Mesh[] {
-    const node = scene._bubbleNodeFor(entityID);
+  function bubbleMeshes(scene: WorldScene): THREE.Mesh[] {
+    const node = scene._bubbleNodeFor('self');
     if (node === undefined) return [];
     const found: THREE.Mesh[] = [];
     node.traverse((object) => {
@@ -1201,20 +1355,19 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
   }
 
   function sceneWithEntity(): WorldScene {
-    const scene = new WorldScene(emptyAssets(), 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
+    const scene = makeScene();
+    scene.placeEntity(player());
     return scene;
   }
 
   /**
-   * The highest-frequency allocator in the file: one supersampled `CanvasTexture` per chat line,
-   * against one per sector hop for the floor. Nothing else reclaims them inside a sector, so a
-   * bubble replaced without disposal leaks unboundedly for as long as anyone is talking.
+   * The highest-frequency allocator in the file: one supersampled `CanvasTexture` per chat line.
+   * Nothing else reclaims them inside a space, so a bubble replaced without disposal leaks
+   * unboundedly for as long as anyone is talking.
    */
   it('disposes the previous bubble when an entity speaks again', () => {
     const scene = sceneWithEntity();
-    scene.showSpeechBubble(1, ['first'], 5000);
+    scene.showSpeechBubble('self', ['first'], 5000);
     const first = bubbleMeshes(scene);
     expect(first).toHaveLength(1);
     const geometryDispose = vi.spyOn(first[0]!.geometry, 'dispose');
@@ -1222,7 +1375,7 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
     const mapDispose = vi.spyOn(material.map!, 'dispose');
     const materialDispose = vi.spyOn(material, 'dispose');
 
-    scene.showSpeechBubble(1, ['second'], 5000);
+    scene.showSpeechBubble('self', ['second'], 5000);
 
     expect(geometryDispose).toHaveBeenCalled();
     expect(mapDispose).toHaveBeenCalled();
@@ -1233,7 +1386,7 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
 
   it('disposes a bubble when its lifetime runs out', () => {
     const scene = sceneWithEntity();
-    scene.showSpeechBubble(1, ['fleeting'], 1000);
+    scene.showSpeechBubble('self', ['fleeting'], 1000);
     const mesh = bubbleMeshes(scene)[0]!;
     const mapDispose = vi.spyOn((mesh.material as THREE.MeshBasicMaterial).map!, 'dispose');
 
@@ -1247,11 +1400,11 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
 
   it('disposes an outstanding bubble when its entity leaves', () => {
     const scene = sceneWithEntity();
-    scene.showSpeechBubble(1, ['mid-sentence'], 5000);
+    scene.showSpeechBubble('self', ['mid-sentence'], 5000);
     const mesh = bubbleMeshes(scene)[0]!;
     const mapDispose = vi.spyOn((mesh.material as THREE.MeshBasicMaterial).map!, 'dispose');
 
-    scene.removeEntity(1);
+    scene.removeEntity('self');
 
     expect(bubbleMeshes(scene)).toHaveLength(0);
     expect(mapDispose).toHaveBeenCalled();
@@ -1261,29 +1414,23 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
 describe('per-entity resources are freed when they are swapped out', () => {
   /**
    * The entity arm of the self-heal pass. `refreshResolvedModels` reaches placeholders through
-   * `resolveEntityModel`, which the post-prewarm object test never exercises because it places no
+   * `resolveEntityModel`, which the post-prewarm placement test never exercises because it places no
    * entity — so a detach-without-dispose there leaks one placeholder `BoxGeometry` per entity, per
-   * heal, out of reach of any later sector cleanup.
+   * heal, out of reach of any later cleanup.
    */
   it('disposes the placeholder geometry when a model resolves after prewarm', async () => {
     let resolved = false;
-    const assets: ModelAssets = {
+    const scene = makeScene({
       ...emptyAssets(),
-      entity: () => (resolved ? new THREE.Object3D() : undefined),
+      character: () => (resolved ? new THREE.Object3D() : undefined),
       prewarm: () => {
         resolved = true;
         return Promise.resolve();
       },
-    };
-    const scene = new WorldScene(assets, 1);
-    scene.load(sectorFromWire(wireSector()), false);
-    scene.placeEntity(playerEntity(1));
-
-    const placeholders: THREE.Mesh[] = [];
-    scene.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BoxGeometry) placeholders.push(mesh);
     });
+    scene.placeEntity(player());
+
+    const placeholders = boxes(scene);
     expect(placeholders).toHaveLength(1);
     const geometryDispose = vi.spyOn(placeholders[0]!.geometry, 'dispose');
 

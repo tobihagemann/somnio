@@ -1,5 +1,3 @@
-import { FLOAT_PI, atan2F32, f32, truncatingRemainderF32 } from './float.ts';
-
 /**
  * The heading model. Continuous facing in degrees
  * normalized into `[0, 360)`: zero faces south (+Z, toward the 3/4 camera) and increasing
@@ -22,8 +20,8 @@ export type Cardinal = keyof typeof CARDINAL;
  */
 export function heading(degrees: number): Heading {
   if (!Number.isFinite(degrees)) return 0;
-  let wrapped = truncatingRemainderF32(degrees, 360);
-  if (wrapped < 0) wrapped = f32(wrapped + 360);
+  let wrapped = degrees % 360;
+  if (wrapped < 0) wrapped += 360;
   // A tiny negative can round `wrapped + 360` back up to exactly 360; keep the half-open
   // upper bound.
   if (wrapped === 360) wrapped = 0;
@@ -35,29 +33,20 @@ export function headingFromCardinal(cardinal: Cardinal): Heading {
 }
 
 /**
- * The heading of a floor-axis vector (`dx` grows east, `dy` grows south — legacy pixel axes).
+ * The heading of a ground-plane vector (`dx` grows east, `dz` grows south).
  *
- * The argument order is `atan2(dx, dy)`, **not** the conventional `atan2(y, x)`. That is not
- * a transcription slip: it is what makes 0 degrees point south down the +dy axis and rotate
+ * The argument order is `atan2(dx, dz)`, **not** the conventional `atan2(y, x)`. That is not
+ * a transcription slip: it is what makes 0 degrees point south down the +dz axis and rotate
  * toward east. Swapping the arguments produces a heading mirrored about the 45-degree
  * diagonal, which reads as a plausible-but-wrong facing rather than an obvious break.
  */
-export function headingFromVector(dx: number, dy: number): Heading {
-  const radians = atan2F32(dx, dy);
-  const scaled = f32(radians * 180);
-  return heading(f32(scaled / FLOAT_PI));
+export function headingFromVector(dx: number, dz: number): Heading {
+  return heading((Math.atan2(dx, dz) * 180) / Math.PI);
 }
 
-/**
- * The yaw about +Y for this heading, in radians.
- *
- * `value` is narrowed before the multiply, not just after. A `Heading` produced by `heading()`
- * is already a `Float` value so the inner narrowing is a no-op there, but a caller passing a
- * raw double (a literal, or a value straight off an input device) would otherwise carry extra
- * mantissa bits into the first product and land one ulp off.
- */
+/** The yaw about +Y for this heading, in radians. */
 export function headingRadians(value: Heading): number {
-  return f32(f32(f32(value) * FLOAT_PI) / 180);
+  return (value * Math.PI) / 180;
 }
 
 /**
@@ -77,7 +66,5 @@ export function nearestCardinal(value: Heading): Cardinal {
  * across the 0/360 seam (359 vs 1) measures the real 2-degree turn rather than a naive 358.
  */
 export function angularDistance(from: Heading, to: Heading): number {
-  const raw = f32(f32(to) - f32(from));
-  const shifted = f32(raw + 540);
-  return f32(truncatingRemainderF32(shifted, 360) - 180);
+  return ((to - from + 540) % 360) - 180;
 }

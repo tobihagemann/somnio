@@ -7,6 +7,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { writeSectorFile } from '@somnio/core';
+import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { createEditorSectorFsHandler, editorSectorFs } from '../vite.editorFs';
 
 /**
@@ -18,7 +20,7 @@ import { createEditorSectorFsHandler, editorSectorFs } from '../vite.editorFs';
 
 type Handler = ReturnType<typeof createEditorSectorFsHandler>;
 
-const MINIMAL_SECTOR = `{\n  "version" : 1\n}`;
+const MINIMAL_SECTOR = writeSectorFile(interiorSector('Fresh'));
 
 let root: string;
 let handler: Handler;
@@ -113,8 +115,9 @@ describe('list, read, write', () => {
   });
 
   it('overwrites atomically, leaving no temp file behind', async () => {
-    await fetch(`${baseURL}/${encodeURIComponent('Fresh')}`, { method: 'PUT', body: '{\n  "version" : 2\n}' });
-    expect(readFileSync(join(root, 'sectors', 'Fresh.somnio-sector'), 'utf8')).toContain('"version" : 2');
+    const dimmed = writeSectorFile(interiorSector('Fresh', { brightness: 40 }));
+    await fetch(`${baseURL}/${encodeURIComponent('Fresh')}`, { method: 'PUT', body: dimmed });
+    expect(readFileSync(join(root, 'sectors', 'Fresh.somnio-sector'), 'utf8')).toBe(dimmed);
     expect(readdirSync(join(root, 'sectors')).filter((entry) => entry.includes('.tmp-'))).toEqual([]);
   });
 

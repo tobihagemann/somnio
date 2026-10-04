@@ -1,9 +1,9 @@
 /** A row-mapping failure: raw column data that cannot be lifted into a domain enum or value. */
 export class RepositoryDecodingError extends Error {
   readonly field: string;
-  readonly rawValue: number;
+  readonly rawValue: string;
 
-  constructor(field: string, rawValue: number) {
+  constructor(field: string, rawValue: string) {
     super(`invalid ${field} raw value ${rawValue}`);
     this.name = 'RepositoryDecodingError';
     this.field = field;

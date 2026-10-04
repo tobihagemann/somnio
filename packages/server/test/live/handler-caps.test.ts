@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { LOGIN_RESULT, SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
 import { TestClient, gameplayURL, withLiveServer } from '../support/liveServer.ts';
 import { makeOneSectorWorld } from '../support/oneSectorWorld.ts';
 import { StubSessionRepository } from '../support/stubRepositories.ts';
 
 const OVER_CAP_TOKEN = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
 
-/** A world where a planted session token resolves to a character in a loaded sector. */
+/** A world where a planted session token resolves to a character in a loaded space. */
 async function resumableWorld() {
   const sessions = new StubSessionRepository();
   const accountId = crypto.randomUUID();
@@ -19,8 +19,9 @@ async function attach(client: TestClient, token: string): Promise<void> {
   await client.next();
   client.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token } }));
   const { target } = await client.until('loginResult');
-  expect(target).toEqual({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
-  await client.until('dateTick');
+  expect(target).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
+  // `energy` closes the join of a player alone in the world.
+  await client.until('energy');
 }
 
 describe('over-cap handler frames over a live socket', () => {
@@ -32,11 +33,11 @@ describe('over-cap handler frames over a live socket', () => {
       client.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token: OVER_CAP_TOKEN } }));
       expect(await client.next()).toEqual({
         tag: 'loginResult',
-        payload: { result: LOGIN_RESULT.badCredentials },
+        payload: { result: 'badCredentials' },
       });
       expect(world.sessions.redeemCallCount).toBe(0);
       client.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token: world.token } }));
-      expect(await client.next()).toEqual({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
+      expect(await client.next()).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
       await client.close();
     });
   });
@@ -61,7 +62,7 @@ describe('over-cap handler frames over a live socket', () => {
       const client = await TestClient.open(gameplayURL(server));
       await attach(client, world.token);
       const text = 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { entityIndex: 0, text } }));
+      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text } }));
       client.send(encodeSomnioMessage({ tag: 'revokeSession', payload: { token: 'unknown' } }));
       expect(await client.next()).toEqual({ tag: 'sessionRevoked', payload: { revoked: false } });
       await client.close();
@@ -73,7 +74,7 @@ describe('over-cap handler frames over a live socket', () => {
     await withLiveServer({ dependencies: world.dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       await attach(client, world.token);
-      const say = encodeSomnioMessage({ tag: 'clientSay', payload: { entityIndex: 0, text: 'padded' } });
+      const say = encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'padded' } });
       const padded = say + ' '.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength - Buffer.byteLength(say, 'utf8'));
       expect(Buffer.byteLength(padded, 'utf8')).toBe(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength);
       client.send(padded);

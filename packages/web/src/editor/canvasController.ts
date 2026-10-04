@@ -1,45 +1,47 @@
-import type * as THREE from 'three';
-import { clampToInt16 } from '@somnio/core';
-import type { GridPoint } from '@somnio/core';
-import type { Sector } from '@somnio/core';
-import { floorPixelAtScreen } from './picking';
-import type { ScreenPoint, ViewportSize } from './picking';
-import { selectionBounds } from './selection';
+import type { ModelRegistry, Point, Sector } from '@somnio/core';
+import type { DragContext } from './drag/geometry';
+import { floorPointAtScreen, screenAtFloorPoint } from './picking';
+import type { ScreenPoint } from './picking';
+import { FINE_STEP, millimetres, stepOrFine } from './preferences';
+import { SPAWN_ID, footprintContains, selectionFootprint } from './selection';
 import type { EditorSelection } from './selection';
 
 /**
- * Stateless canvas geometry and pick dispatch. Floor patches are a first-class tool and record.
+ * Stateless canvas geometry and pick dispatch.
  */
 
-export type EditorTool = 'select' | 'object' | 'mask' | 'portal' | 'npc' | 'monster' | 'floorPatch';
-
-export const EDITOR_TOOLS: readonly EditorTool[] = ['select', 'object', 'mask', 'portal', 'npc', 'monster', 'floorPatch'];
+export const EDITOR_TOOLS = ['select', 'placement', 'blocker', 'npc', 'monsterSpawn', 'floorPatch', 'spawn'] as const;
+export type EditorTool = (typeof EDITOR_TOOLS)[number];
 
 /**
- * Converts a top-left viewport point to a legacy top-left grid coordinate: unproject onto the
- * floor plane, then floor each axis into Int16 (the same downward rounding the 2D pixel
- * canvas used).
+ * Converts a top-left viewport point to the ground point under it, relative to the document's
+ * sector and to the millimetre.
  */
-export function gridPoint(camera: THREE.OrthographicCamera, viewport: ViewportSize, screen: ScreenPoint): GridPoint {
-  const pixel = floorPixelAtScreen(camera, viewport, screen);
-  return { x: clampToInt16(Math.floor(pixel.x)), y: clampToInt16(Math.floor(pixel.y)) };
+export function gridPoint(context: DragContext, screen: ScreenPoint): Point {
+  const floor = floorPointAtScreen(context.camera, context.viewport, screen);
+  return { x: millimetres(floor.x - context.origin.x), z: millimetres(floor.z - context.origin.z) };
+}
+
+/** The viewport point a sector-relative ground point projects to — the inverse of `gridPoint`. */
+export function screenPoint(context: DragContext, point: Point): ScreenPoint {
+  return screenAtFloorPoint(context.camera, context.viewport, { x: context.origin.x + point.x, z: context.origin.z + point.z });
 }
 
 /**
- * Legacy-axis delta an arrow-key nudge moves the selection by: 1 px, or the grid step
- * (floored to 1) with Shift held. Non-arrow keys resolve to `undefined`.
+ * The delta an arrow-key nudge moves the selection by: one centimetre, or the grid step with
+ * Shift held. Non-arrow keys resolve to `undefined`.
  */
-export function nudgeDelta(key: string, shiftHeld: boolean, gridStep: number): { dx: number; dy: number } | undefined {
-  const step = shiftHeld ? Math.max(1, gridStep) : 1;
+export function nudgeDelta(key: string, shiftHeld: boolean, gridStep: number): { dx: number; dz: number } | undefined {
+  const step = shiftHeld ? stepOrFine(gridStep) : FINE_STEP;
   switch (key) {
     case 'ArrowUp':
-      return { dx: 0, dy: -step };
+      return { dx: 0, dz: -step };
     case 'ArrowDown':
-      return { dx: 0, dy: step };
+      return { dx: 0, dz: step };
     case 'ArrowLeft':
-      return { dx: -step, dy: 0 };
+      return { dx: -step, dz: 0 };
     case 'ArrowRight':
-      return { dx: step, dy: 0 };
+      return { dx: step, dz: 0 };
     default:
       return undefined;
   }
@@ -47,50 +49,27 @@ export function nudgeDelta(key: string, shiftHeld: boolean, gridStep: number): {
 
 /**
  * Pick candidates in preference order, back-to-front within each kind so the most-recently-
- * placed record wins overlaps. NPCs first so small spawn boxes stay reachable under the
- * larger portal/mask/object rects; floor patches last, below masks, matching their overlay
- * layer. This ordering is why a click overlapping a mask selects the mask rather than the
- * prop underneath.
+ * placed record wins overlaps. The body-sized markers and door triggers come first so they stay
+ * reachable on top of the placement they stand on; placements come before every authored rect,
+ * so a click on a prop selects the prop and not the blocker, spawn area, or floor patch under it.
  */
-export function candidateSelections(sector: Sector, tool: EditorTool): EditorSelection[] {
-  const reversed = (kind: EditorSelection['kind'], count: number): EditorSelection[] =>
-    Array.from({ length: count }, (_, offset) => ({ kind, index: count - 1 - offset }));
-  const npcs = reversed('npc', sector.npcs.length);
-  const monsters = reversed('monsterSpawn', sector.monsterSpawns.length);
-  const portals = reversed('portal', sector.portals.length);
-  const masks = reversed('mask', sector.collisionMasks.length);
-  const objects = reversed('object', sector.objects.length);
-  const floorPatches = reversed('floorPatch', sector.floorPatches.length);
-  switch (tool) {
-    case 'select':
-      return [...npcs, ...monsters, ...portals, ...masks, ...objects, ...floorPatches];
-    case 'object':
-      return objects;
-    case 'mask':
-      return masks;
-    case 'portal':
-      return portals;
-    case 'npc':
-      return npcs;
-    case 'monster':
-      return monsters;
-    case 'floorPatch':
-      return floorPatches;
-  }
+export function candidateSelections(sector: Sector): EditorSelection[] {
+  const reversed = (kind: EditorSelection['kind'], records: readonly { id: string }[]): EditorSelection[] =>
+    records.map((record): EditorSelection => ({ kind, id: record.id })).reverse();
+  return [
+    ...reversed('npc', sector.npcs),
+    ...(sector.spawn === undefined ? [] : [{ kind: 'spawn', id: SPAWN_ID } as const]),
+    ...reversed('door', sector.doors),
+    ...reversed('placement', sector.placements),
+    ...reversed('blocker', sector.blockers),
+    ...reversed('monsterSpawn', sector.monsterSpawns),
+    ...reversed('floorPatch', sector.floorPatches),
+  ];
 }
 
-export function selectRecord(point: GridPoint, sector: Sector, tool: EditorTool): EditorSelection | undefined {
-  for (const candidate of candidateSelections(sector, tool)) {
-    const bounds = selectionBounds(candidate, sector);
-    if (bounds === undefined) continue;
-    if (
-      point.x >= bounds.origin.x &&
-      point.x < bounds.origin.x + bounds.size.width &&
-      point.y >= bounds.origin.y &&
-      point.y < bounds.origin.y + bounds.size.height
-    ) {
-      return candidate;
-    }
-  }
-  return undefined;
+export function selectRecord(point: Point, sector: Sector, registry: ModelRegistry): EditorSelection | undefined {
+  return candidateSelections(sector).find((candidate) => {
+    const footprint = selectionFootprint(candidate, sector, registry);
+    return footprint !== undefined && footprintContains(footprint, point);
+  });
 }

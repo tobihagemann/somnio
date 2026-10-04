@@ -1,4 +1,3 @@
-import { FLOAT_PI, f32 } from '@somnio/core';
 import { clamp } from '@somnio/core';
 
 /**
@@ -15,14 +14,6 @@ export const ORTHO_RIG = {
   maxScale: 24,
   nearClip: 0.05,
   farClip: 500,
-  /**
-   * World units per legacy pixel — the pixel grid stays authoritative.
-   *
-   * Narrowed because the rig is Float32 arithmetic throughout (`@somnio/core`'s `float.ts` rule).
-   * A binary64 `0.02` carries extra mantissa bits into the multiply, so `f32(pixel) * 0.02` lands
-   * a few ULPs off `f32(pixel) * f32(0.02)` even after narrowing the result.
-   */
-  worldUnitsPerPixel: f32(0.02),
 } as const;
 
 export const PLAYER_ZOOM = { minFactor: 0.5, maxFactor: 2.0, scrollGain: 0.015 } as const;
@@ -57,58 +48,35 @@ export function frustumBounds(scale: number, aspect: number): { left: number; ri
 }
 
 /**
- * Maps a legacy top-left pixel coordinate onto the floor plane (Y = 0): X runs east, the legacy
- * Y-down axis runs along +Z, into the scene under the 3/4 camera.
- */
-export function worldPosition(pixelX: number, pixelY: number): Vec3 {
-  return {
-    x: f32(f32(pixelX) * ORTHO_RIG.worldUnitsPerPixel),
-    y: 0,
-    z: f32(f32(pixelY) * ORTHO_RIG.worldUnitsPerPixel),
-  };
-}
-
-/** Inverse of `worldPosition`, keeping the pixel-to-world axis mapping inside the rig. */
-export function legacyPoint(position: Vec3): { x: number; y: number } {
-  return {
-    x: f32(position.x / ORTHO_RIG.worldUnitsPerPixel),
-    y: f32(position.z / ORTHO_RIG.worldUnitsPerPixel),
-  };
-}
-
-/**
- * Rotates a screen-space movement vector (x right, y down) into legacy floor axes, so "up" on
- * the yawed camera walks away from the viewer instead of drifting along world north. Pure
+ * Rotates a screen-space movement vector (x right, y down) into floor axes (x east, z south), so
+ * "up" on the yawed camera walks away from the viewer instead of drifting along world north. Pure
  * rotation, so a unit input stays unit length.
- *
- * Computed in double precision: `dx`/`dy` are binary64 quantities, so this is one of the few rig
- * functions with no narrowing.
  */
-export function worldMovement(screenDX: number, screenDY: number): { dx: number; dy: number } {
+export function worldMovement(screenDX: number, screenDY: number): { dx: number; dz: number } {
   const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
   return {
     dx: screenDX * Math.cos(yaw) + screenDY * Math.sin(yaw),
-    dy: -screenDX * Math.sin(yaw) + screenDY * Math.cos(yaw),
+    dz: -screenDX * Math.sin(yaw) + screenDY * Math.cos(yaw),
   };
 }
 
 /** Unit direction from the focus point toward the camera, from the fixed pitch and yaw. */
 export function offsetDirection(): Vec3 {
-  const pitch = f32(f32(ORTHO_RIG.pitchDegrees * FLOAT_PI) / 180);
-  const yaw = f32(f32(ORTHO_RIG.yawDegrees * FLOAT_PI) / 180);
+  const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
+  const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
   return {
-    x: f32(f32(Math.cos(pitch)) * f32(Math.sin(yaw))),
-    y: f32(Math.sin(pitch)),
-    z: f32(f32(Math.cos(pitch)) * f32(Math.cos(yaw))),
+    x: Math.cos(pitch) * Math.sin(yaw),
+    y: Math.sin(pitch),
+    z: Math.cos(pitch) * Math.cos(yaw),
   };
 }
 
 export function cameraPosition(focus: Vec3): Vec3 {
   const direction = offsetDirection();
   return {
-    x: f32(focus.x + f32(direction.x * ORTHO_RIG.cameraDistance)),
-    y: f32(focus.y + f32(direction.y * ORTHO_RIG.cameraDistance)),
-    z: f32(focus.z + f32(direction.z * ORTHO_RIG.cameraDistance)),
+    x: focus.x + direction.x * ORTHO_RIG.cameraDistance,
+    y: focus.y + direction.y * ORTHO_RIG.cameraDistance,
+    z: focus.z + direction.z * ORTHO_RIG.cameraDistance,
   };
 }
 
@@ -132,15 +100,15 @@ export const WHEEL_NOTCH = {
   /** DOM_DELTA_PAGE. */
   pages: 1,
   /**
-   * delta equivalent for one notch. Sized so a notch moves the factor ~5.9%, about 24 notches
-   * across the range.
+   * What one notch is worth to `applyScrollZoom`. Sized so a notch moves the factor ~5.9%, about
+   * 24 notches across the range.
    */
-  nativeDelta: 3.85,
+  zoomDelta: 3.85,
 } as const;
 
-export function wheelDeltaToNativeScale(deltaY: number, deltaMode: number): number {
+export function wheelDeltaToZoomDelta(deltaY: number, deltaMode: number): number {
   const perNotch = deltaMode === 1 ? WHEEL_NOTCH.lines : deltaMode === 2 ? WHEEL_NOTCH.pages : WHEEL_NOTCH.pixels;
-  return (deltaY / perNotch) * WHEEL_NOTCH.nativeDelta;
+  return (deltaY / perNotch) * WHEEL_NOTCH.zoomDelta;
 }
 
 /**

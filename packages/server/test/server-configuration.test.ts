@@ -66,24 +66,4 @@ describe('resolveServerConfiguration', () => {
   it('empty admin token without dev defaults is rejected as missing', () => {
     expect(kindOf(() => resolveServerConfiguration({ SOMNIO_ADMIN_TOKEN: '', SOMNIO_SECTORS_DIR: '/srv/maps' }))).toBe('missingAdminToken');
   });
-
-  it.each(['1', 'true', 'TRUE', 'True'])('truthy SOMNIO_DIALOG_PRUNE_FORCE=%s resolves forceDialogPrune true', (raw) => {
-    const configuration = resolveServerConfiguration({
-      SOMNIO_DEV_DEFAULTS: '1',
-      SOMNIO_DIALOG_PRUNE_FORCE: raw,
-    });
-    expect(configuration.forceDialogPrune).toBe(true);
-  });
-
-  it.each(['', '0', 'false', 'no', 'yes'])('non-truthy SOMNIO_DIALOG_PRUNE_FORCE=%j resolves forceDialogPrune false', (raw) => {
-    const configuration = resolveServerConfiguration({
-      SOMNIO_DEV_DEFAULTS: '1',
-      SOMNIO_DIALOG_PRUNE_FORCE: raw,
-    });
-    expect(configuration.forceDialogPrune).toBe(false);
-  });
-
-  it('absent SOMNIO_DIALOG_PRUNE_FORCE defaults forceDialogPrune false', () => {
-    expect(resolveServerConfiguration({ SOMNIO_DEV_DEFAULTS: '1' }).forceDialogPrune).toBe(false);
-  });
 });

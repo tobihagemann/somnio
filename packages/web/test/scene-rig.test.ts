@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { f32 } from '@somnio/core';
+import { objectModel } from '@somnio/core';
 import {
   MIN_SCALE,
   ORTHO_RIG,
@@ -8,18 +8,13 @@ import {
   cameraPosition,
   clampedScale,
   frustumBounds,
-  legacyPoint,
   offsetDirection,
   scaleForZoomFactor,
   worldMovement,
-  worldPosition,
 } from '@/scene/cameraRig';
 import { yawStep } from '@/scene/yawSlew';
-import { characterScale, entityWorldPosition, floorPatchUVRect, objectAnchorBottomY, objectNodePosition } from '@/scene/placement';
-import { SOMNIO_CONSTANTS } from '@somnio/core';
-import type { SectorObject } from '@somnio/core';
-
-/** Expectations are recorded Float32 results, not re-derived here. */
+import { CHARACTER_SCALE, easedHeight, floorUVRect, placeholderFootprint, placementElevation } from '@/scene/placement';
+import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
 
 describe('orthographic scale is a HALF-height', () => {
   /**
@@ -69,220 +64,164 @@ describe('rig constants and derived bounds', () => {
   });
 });
 
-describe('offsetDirection narrows through the Float32 chain', () => {
+describe('offsetDirection', () => {
   it('is the pitch/yaw unit vector', () => {
     const direction = offsetDirection();
-    expect(direction.x).toBe(0.4055797755718231);
-    expect(direction.y).toBe(0.7071067690849304);
-    expect(direction.z).toBe(0.5792279839515686);
+    expect(direction.x).toBeCloseTo(0.40557978767263897, 12);
+    expect(direction.y).toBeCloseTo(0.7071067811865476, 12);
+    expect(direction.z).toBeCloseTo(0.5792279653395692, 12);
+    expect(Math.hypot(direction.x, direction.y, direction.z)).toBeCloseTo(1, 12);
   });
 
   it('places the camera back along that direction', () => {
-    const position = cameraPosition({ x: 0, y: 0, z: 0 });
-    expect(position.x).toBeCloseTo(0.4055797755718231 * ORTHO_RIG.cameraDistance, 4);
-    expect(position.y).toBeCloseTo(0.7071067690849304 * ORTHO_RIG.cameraDistance, 4);
+    const position = cameraPosition({ x: 2, y: 1, z: -3 });
+    expect(position.x).toBeCloseTo(2 + 0.40557978767263897 * ORTHO_RIG.cameraDistance, 9);
+    expect(position.y).toBeCloseTo(1 + 0.7071067811865476 * ORTHO_RIG.cameraDistance, 9);
+    expect(position.z).toBeCloseTo(-3 + 0.5792279653395692 * ORTHO_RIG.cameraDistance, 9);
   });
 });
 
 describe('worldMovement rotates WASD through the camera yaw', () => {
-  /**
-   * Double precision on purpose: `dx`/`dy` are binary64 quantities, so this is one of the few rig
-   * functions with no narrowing.
-   */
   it.each([
     [1, 0, 0.8191520442889918, -0.573576436351046],
     [0, -1, -0.573576436351046, -0.8191520442889918],
     [0, 1, 0.573576436351046, 0.8191520442889918],
     [-1, 0, -0.8191520442889918, 0.573576436351046],
     [0.6, 0.8, 0.9503523756542319, 0.31117577362056587],
-  ])('screen (%s, %s) becomes world (%s, %s)', (dx, dy, wx, wy) => {
+  ])('screen (%s, %s) becomes world (%s, %s)', (dx, dy, wx, wz) => {
     const moved = worldMovement(dx, dy);
     expect(moved.dx).toBe(wx);
-    expect(moved.dy).toBe(wy);
+    expect(moved.dz).toBe(wz);
   });
 
   it('is a pure rotation, so a unit input stays unit length', () => {
     const moved = worldMovement(0.7071067811865476, -0.7071067811865476);
-    expect(Math.hypot(moved.dx, moved.dy)).toBeCloseTo(1, 12);
+    expect(Math.hypot(moved.dx, moved.dz)).toBeCloseTo(1, 12);
   });
 
   it('walks up-screen away from the viewer rather than along world north', () => {
     const up = worldMovement(0, -1);
     expect(up.dx).toBeLessThan(0);
-    expect(up.dy).toBeLessThan(0);
-  });
-});
-
-describe('pixel/world mapping', () => {
-  it('maps legacy pixels onto the floor plane', () => {
-    expect(worldPosition(100, 200)).toEqual({ x: 2, y: 0, z: 4 });
-  });
-
-  it('round-trips through the inverse', () => {
-    const point = legacyPoint(worldPosition(384, 256));
-    expect(point).toEqual({ x: 384, y: 256 });
+    expect(up.dz).toBeLessThan(0);
   });
 });
 
 describe('yawStep takes the shortest arc', () => {
+  /** One 60 Hz frame of the quarter-turn-in-0.175-s rate. */
+  const STEP = (Math.PI / 2 / 0.175) * 0.0166667;
+
   it.each([
-    [0, 1.5707963705062866, 0.0166667, 0.14959993958473206],
-    [3.0, -3.0, 0.0166667, -3.133584976196289],
-    [0, 0.0010000000474974513, 0.0166667, 0.0010000000474974513],
-    [1.0, 1.0, 0.0166667, 1.0],
-  ])('from %s toward %s over %s s is %s', (current, target, dt, expected) => {
-    expect(yawStep(current, target, dt)).toBe(expected);
+    [0, Math.PI / 2, STEP],
+    // Across the +/-pi seam the short way, not back through zero, wrapping as it crosses.
+    [3.0, -3.0, 3.0 + STEP - 2 * Math.PI],
+    [0, 0.001, 0.001],
+    [1.0, 1.0, 1.0],
+  ])('from %s toward %s is %s', (current, target, expected) => {
+    expect(yawStep(current, target, 0.0166667)).toBeCloseTo(expected, 12);
   });
 
   /**
-   * The exact-180-degree case. The IEEE remainder rounds the quotient to nearest rather than
+   * The exact-180-degree case. The remainder rounds the quotient to nearest rather than
    * truncating, so this resolves to one consistent turn direction; with `%` the entity
    * oscillates instead of turning.
    */
   it('resolves an exact half-turn to one consistent direction', () => {
-    expect(yawStep(0, 3.1415927410125732, 0.0166667)).toBe(-0.14959993958473206);
+    const first = yawStep(0, Math.PI, 0.0166667);
+    const second = yawStep(first, Math.PI, 0.0166667);
+
+    expect(first).toBeCloseTo(-STEP, 12);
+    expect(second).toBeCloseTo(-2 * STEP, 12);
+    expect(yawStep(0, -Math.PI, 0.0166667)).toBe(first);
   });
 
   it('snaps to the target rather than overshooting when the step covers the delta', () => {
-    expect(yawStep(0, 0.001, 1)).toBe(f32Of(0.001));
+    expect(yawStep(0, 0.001, 1)).toBe(0.001);
   });
 
   it('completes a quarter turn in 0.175 s', () => {
-    const quarter = 1.5707963705062866;
-    expect(Math.abs(yawStep(0, quarter, 0.175))).toBeCloseTo(quarter, 4);
+    expect(yawStep(0, Math.PI / 2, 0.175)).toBeCloseTo(Math.PI / 2, 12);
   });
 });
 
-function f32Of(value: number): number {
-  return Math.fround(value);
-}
+describe('character scale', () => {
+  it('is the one constant every character model gets', () => {
+    expect(CHARACTER_SCALE).toBe(0.74);
+  });
+});
 
-describe('characterScale is derived from the mask, never measured', () => {
+describe('placement elevation', () => {
+  const placement = { id: 'p', modelId: 'rug', x: 1, z: 2, yaw: 0, elevation: 0.5 };
+
+  it('lifts a model that has no walk surfaces', () => {
+    expect(placementElevation(placement, objectModel(TEST_REGISTRY, 'rug'))).toBe(0.5);
+  });
+
+  /** Bodies walk on those surfaces and collision never lifts them, so the drawn model must not either. */
+  it('keeps a model with walk surfaces on the ground whatever its record says', () => {
+    expect(placementElevation({ ...placement, modelId: 'dais' }, objectModel(TEST_REGISTRY, 'dais'))).toBe(0);
+  });
+
+  it('lifts a model the registry does not know', () => {
+    expect(placementElevation({ ...placement, modelId: 'unmapped' }, undefined)).toBe(0.5);
+  });
+});
+
+describe('placeholder footprint', () => {
+  it('is the registry footprint for a model whose mesh has not loaded', () => {
+    expect(placeholderFootprint(objectModel(TEST_REGISTRY, 'box'))).toEqual({ width: 2, depth: 1 });
+  });
+
+  it('is a small box for a model the registry does not know', () => {
+    expect(placeholderFootprint(undefined)).toEqual({ width: 0.64, depth: 0.64 });
+  });
+});
+
+describe('eased height', () => {
+  it('closes on the ground with an 80 ms time constant', () => {
+    // After one time constant the gap is down to 1/e of what it was.
+    expect(easedHeight(0, 1, 0.08)).toBeCloseTo(1 - 1 / Math.E, 12);
+    expect(easedHeight(1, 0, 0.08)).toBeCloseTo(1 / Math.E, 12);
+  });
+
+  it('snaps onto the ground once within a millimetre', () => {
+    expect(easedHeight(0.2495, 0.25, 0.001)).toBe(0.25);
+    expect(easedHeight(0.24, 0.25, 0.001)).toBeLessThan(0.25);
+  });
+
+  it('stays put on a frame with no time in it', () => {
+    expect(easedHeight(0.5, 1, 0)).toBe(0.5);
+  });
+});
+
+describe('floor UVs are in space coordinates', () => {
   it.each([
-    [48, 0.7399999499320984],
-    [32, 0.4933333098888397],
-    [64, 0.9866666197776794],
-    [96, 1.4799998998641968],
-  ])('mask height %s scales to %s', (height, expected) => {
-    expect(characterScale({ width: 32, height })).toBe(expected);
-  });
-
-  it('scales the standard player sprite to roughly three quarters of a metre', () => {
-    expect(characterScale(SOMNIO_CONSTANTS.playerSpriteSize)).toBeCloseTo(0.74, 5);
-  });
-});
-
-describe('objectAnchorBottomY', () => {
-  const object: SectorObject = {
-    x: 100,
-    y: 100,
-    modelID: 'barrel',
-    sourceWidth: 64,
-    sourceHeight: 64,
-    priority: 0,
-    rotation: 0,
-  };
-
-  it('defaults to the decal rect bottom with no overlapping mask', () => {
-    expect(objectAnchorBottomY(object, [])).toBe(164);
-  });
-
-  /**
-   * The mask is the authored physical footprint; art below it is deliberate 2D front-face
-   * overhang. Painter's order made that read fine in 2D, but in 3D the player walks inside the
-   * mesh unless the mask's south edge wins.
-   */
-  it('lets an overlapping mask ending within one ground cell above the edge win', () => {
-    const mask = { x: 100, y: 100, width: 64, height: 44 }; // bottom 144, within 32 of 164
-    expect(objectAnchorBottomY(object, [mask])).toBe(144);
-  });
-
-  it('ignores a mask further than one ground cell above the edge', () => {
-    const mask = { x: 100, y: 100, width: 64, height: 20 }; // bottom 120, more than 32 above 164
-    expect(objectAnchorBottomY(object, [mask])).toBe(164);
-  });
-
-  /** A table's mask under a chair standing behind it must not drag the chair south. */
-  it('never lets a mask ending below the rect pull the prop south', () => {
-    const mask = { x: 100, y: 100, width: 64, height: 200 }; // bottom 300, below 164
-    expect(objectAnchorBottomY(object, [mask])).toBe(164);
-  });
-
-  it('ignores a mask that does not overlap the decal horizontally', () => {
-    const mask = { x: 400, y: 100, width: 64, height: 44 };
-    expect(objectAnchorBottomY(object, [mask])).toBe(164);
-  });
-
-  it('takes the southernmost qualifying mask', () => {
-    const masks = [
-      { x: 100, y: 100, width: 64, height: 40 },
-      { x: 100, y: 100, width: 64, height: 50 },
-    ];
-    expect(objectAnchorBottomY(object, masks)).toBe(150);
-  });
-});
-
-describe('objectNodePosition anchors the footprint south edge', () => {
-  it('centres X on the footprint and pushes back by half the depth', () => {
-    const object: SectorObject = {
-      x: 100,
-      y: 100,
-      modelID: 'barrel',
-      sourceWidth: 64,
-      sourceHeight: 64,
-      priority: 0,
-      rotation: 0,
-    };
-    const position = objectNodePosition(object, 164, 1);
-    expect(position.x).toBeCloseTo(132 * 0.02, 6);
-    // 164 px maps to 3.28 m, then back half the 1 m footprint depth.
-    expect(position.z).toBeCloseTo(164 * 0.02 - 0.5, 6);
-  });
-});
-
-describe('entityWorldPosition stands entities at their feet-box centre', () => {
-  it('offsets by the feet centre rather than the sprite origin', () => {
-    const position = entityWorldPosition({ x: 0, y: 0 }, SOMNIO_CONSTANTS.playerSpriteSize);
-    // Feet centre of a 32x48 sprite at the origin is (16, 40).
-    expect(position.x).toBeCloseTo(16 * 0.02, 6);
-    expect(position.z).toBeCloseTo(40 * 0.02, 6);
-  });
-
-  it('carries the sub-pixel fraction through', () => {
-    const whole = entityWorldPosition({ x: 10, y: 10 }, SOMNIO_CONSTANTS.playerSpriteSize);
-    const fractional = entityWorldPosition({ x: 10.5, y: 10 }, SOMNIO_CONSTANTS.playerSpriteSize);
-    expect(fractional.x).toBeGreaterThan(whole.x);
-  });
-});
-
-describe('floor patch UVs are in sector space', () => {
-  it.each([
-    [0, 0, 128, 128, 1, 0, 0, 1.5999999046325684, 1.5999999046325684],
-    [128, 0, 128, 128, 1, 1.5999999046325684, 0, 1.5999999046325684, 1.5999999046325684],
-    [384, 256, 64, 64, 1, 4.799999713897705, 3.1999998092651367, 0.7999999523162842, 0.7999999523162842],
-  ])('patch (%s, %s, %s, %s) at aspect %s', (x, y, width, height, aspect, originX, originY, spanX, spanY) => {
-    const uv = floorPatchUVRect({ floorMaterialID: 'cobble-town', x, y, width, height }, aspect);
-    expect(uv.origin.x).toBe(originX);
-    expect(uv.origin.y).toBe(originY);
-    expect(uv.span.x).toBe(spanX);
-    expect(uv.span.y).toBe(spanY);
+    [0, 0, 1.6, 1.6, 1, 0, 0, 1, 1],
+    [1.6, 0, 3.2, 1.6, 1, 1, 0, 2, 1],
+    [8, -4.8, 1.6, 3.2, 1, 5, -3, 1, 2],
+  ])('rect (%s, %s, %s, %s) at aspect %s', (x, z, width, depth, aspect, originX, originY, spanX, spanY) => {
+    const uv = floorUVRect({ x, z, width, depth }, aspect);
+    expect(uv.origin.x).toBeCloseTo(originX, 12);
+    expect(uv.origin.y).toBeCloseTo(originY, 12);
+    expect(uv.span.x).toBeCloseTo(spanX, 12);
+    expect(uv.span.y).toBeCloseTo(spanY, 12);
   });
 
   /**
    * The continuity contract, asserted directly: abutting same-material rects must share their
-   * edge UVs exactly, or the texture phase resets at every seam and a cobbled street visibly
-   * tile-breaks at each rect boundary.
+   * edge UVs, or the texture phase resets at every seam and a cobbled street visibly tile-breaks
+   * at each rect boundary. It holds across a sector border too, because the rects are in space
+   * coordinates: these two are a sector's east edge and its neighbour's west edge.
    */
-  it('makes one patch end exactly where its neighbour begins', () => {
-    const left = floorPatchUVRect({ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 128, height: 128 }, 1);
-    const right = floorPatchUVRect({ floorMaterialID: 'cobble-town', x: 128, y: 0, width: 128, height: 128 }, 1);
-    expect(left.origin.x + left.span.x).toBe(right.origin.x);
+  it('makes one rect end where its neighbour begins', () => {
+    const left = floorUVRect({ x: 0, z: 0, width: 40.96, depth: 40.96 }, 1);
+    const right = floorUVRect({ x: 40.96, z: 0, width: 30.72, depth: 30.72 }, 1);
+    expect(left.origin.x + left.span.x).toBeCloseTo(right.origin.x, 12);
   });
 
   it('shrinks the V repeat for a non-square texture', () => {
-    const square = floorPatchUVRect({ floorMaterialID: 'plank', x: 0, y: 0, width: 128, height: 128 }, 1);
-    const strip = floorPatchUVRect({ floorMaterialID: 'plank', x: 0, y: 0, width: 128, height: 128 }, 0.5);
-    expect(strip.span.y).toBeCloseTo(square.span.y * 2, 5);
+    const square = floorUVRect({ x: 0, z: 0, width: 2.56, depth: 2.56 }, 1);
+    const strip = floorUVRect({ x: 0, z: 0, width: 2.56, depth: 2.56 }, 0.5);
+    expect(strip.span.y).toBeCloseTo(square.span.y * 2, 12);
     expect(strip.span.x).toBe(square.span.x);
   });
 });
@@ -304,7 +243,7 @@ describe('rig constants', () => {
   /**
    * The rig and zoom constants as literals. `cameraRig.ts` and `input.ts` are the only
    * implementation, so these pins guard against an accidental retune rather than a mirror drift:
-   * changing one moves the framing of every sector the moment it lands.
+   * changing one moves the framing of the whole world the moment it lands.
    */
   it.each([
     ['pitchDegrees', ORTHO_RIG.pitchDegrees, 45],
@@ -316,12 +255,6 @@ describe('rig constants', () => {
     ['farClip', ORTHO_RIG.farClip, 500],
   ])('pins %s', (_name, value, expected) => {
     expect(value).toBe(expected);
-  });
-
-  // Narrowed because the rig computes in single precision — see the `worldUnitsPerPixel` note in
-  // `cameraRig.ts`.
-  it('pins worldUnitsPerPixel under Float narrowing', () => {
-    expect(ORTHO_RIG.worldUnitsPerPixel).toBe(f32(0.02));
   });
 
   it.each([

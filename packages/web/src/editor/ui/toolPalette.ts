@@ -10,12 +10,12 @@ import { EDITOR_ICON_PATHS } from './editorDom';
 
 const TOOL_TITLES: Record<EditorTool, string> = {
   select: 'Select',
-  object: 'Object',
-  mask: 'Mask',
-  portal: 'Sector portal',
+  placement: 'Model',
+  blocker: 'Blocker',
   npc: 'NPC',
-  monster: 'Monster',
+  monsterSpawn: 'Monster spawn',
   floorPatch: 'Floor patch',
+  spawn: 'Spawn point',
 };
 
 export class ToolPalette {

@@ -1,54 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { BOOT_DEFAULT_WORLD_CLOCK, tickWorldClock } from '../src/worldClock.ts';
-import type { WorldClock } from '../src/worldClock.ts';
+import { BOOT_DEFAULT_WORLD_SECONDS, WORLD_TIME_RATE, calendarFromWorldSeconds, hourOfDay } from '../src/worldClock.ts';
 
-function clock(second: number, minute: number, hour: number, day: number, month: number, year: number): WorldClock {
-  return { second, minute, hour, day, month, year };
-}
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const MONTH = 28 * DAY;
+const YEAR = 12 * MONTH;
 
 describe('world clock', () => {
-  it('boot default', () => {
-    expect(BOOT_DEFAULT_WORLD_CLOCK).toEqual(clock(0, 0, 12, 1, 1, 500));
+  it('runs at four world seconds a second', () => {
+    expect(WORLD_TIME_RATE).toBe(4);
   });
 
-  it('increments the second', () => {
-    const c = clock(5, 0, 12, 1, 1, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 12, minute: 0 });
-    expect(c.second).toBe(6);
+  it('boots at noon on the first day of year 500', () => {
+    expect(BOOT_DEFAULT_WORLD_SECONDS).toBe(14_515_243_200);
+    expect(calendarFromWorldSeconds(BOOT_DEFAULT_WORLD_SECONDS)).toEqual({ year: 500, month: 1, day: 1, hour: 12, minute: 0, second: 0 });
   });
 
-  it('rolls the minute over', () => {
-    const c = clock(59, 5, 12, 1, 1, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 12, minute: 6 });
-    expect(c).toEqual(clock(0, 6, 12, 1, 1, 500));
+  it.each([
+    [0, { year: 0, month: 1, day: 1, hour: 0, minute: 0, second: 0 }],
+    [59.9, { year: 0, month: 1, day: 1, hour: 0, minute: 0, second: 59 }],
+    [HOUR - 1, { year: 0, month: 1, day: 1, hour: 0, minute: 59, second: 59 }],
+    [DAY - 1, { year: 0, month: 1, day: 1, hour: 23, minute: 59, second: 59 }],
+    [DAY, { year: 0, month: 1, day: 2, hour: 0, minute: 0, second: 0 }],
+    [MONTH - 1, { year: 0, month: 1, day: 28, hour: 23, minute: 59, second: 59 }],
+    [MONTH, { year: 0, month: 2, day: 1, hour: 0, minute: 0, second: 0 }],
+    [YEAR - 1, { year: 0, month: 12, day: 28, hour: 23, minute: 59, second: 59 }],
+    [YEAR, { year: 1, month: 1, day: 1, hour: 0, minute: 0, second: 0 }],
+  ])('reads world second %s as its calendar date', (worldSeconds, expected) => {
+    expect(calendarFromWorldSeconds(worldSeconds)).toEqual(expected);
   });
 
-  it('emits hour 24 at midnight and rolls to the next day', () => {
-    const c = clock(59, 59, 23, 1, 1, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 24, minute: 0 });
-    expect(c).toEqual(clock(0, 0, 0, 2, 1, 500));
-  });
-
-  it('rolls the day over into the next month', () => {
-    const c = clock(59, 59, 23, 28, 1, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 24, minute: 0 });
-    expect(c).toEqual(clock(0, 0, 0, 1, 2, 500));
-  });
-
-  it('rolls the month over into the next year', () => {
-    const c = clock(59, 59, 23, 28, 12, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 24, minute: 0 });
-    expect(c).toEqual(clock(0, 0, 0, 1, 1, 501));
-  });
-
-  it('does not emit 24 on a non-hour rollover', () => {
-    const c = clock(59, 11, 12, 1, 1, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 12, minute: 12 });
-  });
-
-  it('increments a non-midnight hour without resetting the day', () => {
-    const c = clock(59, 59, 12, 5, 7, 500);
-    expect(tickWorldClock(c)).toEqual({ hour: 13, minute: 0 });
-    expect(c).toEqual(clock(0, 0, 13, 5, 7, 500));
+  it('gives the hour of the day as a fraction, wrapping at midnight', () => {
+    expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS)).toBe(12);
+    expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 90 * MINUTE)).toBe(13.5);
+    expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 12 * HOUR)).toBe(0);
+    expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 12 * HOUR - 1)).toBeCloseTo(24 - 1 / 3600, 9);
   });
 });

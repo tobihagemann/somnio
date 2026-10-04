@@ -1,5 +1,5 @@
 import { SOMNIO_PROTOCOL_CONSTANTS } from '../../src/index.ts';
-import type { SomnioMessage, WireSector } from '../../src/index.ts';
+import type { SectorView, SomnioMessage } from '../../src/index.ts';
 
 /**
  * The canonical golden-frame set: one named frame per message tag, plus fully populated nested
@@ -13,52 +13,32 @@ export interface GoldenFrameEntry {
   message: SomnioMessage;
 }
 
-/**
- * Every nested wire shape populated at once, so the fixture exercises `WireObject`'s rotation, the
- * NPC's float heading, the monster spawn's boolean, and a floor patch.
- */
-const populatedSector: WireSector = {
+const PLAYER_ID = '0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c';
+const NPC_ID = 'npc:EdariaBibliothek/libus';
+
+/** Every record array populated at once, with a placement that carries a non-zero `yaw` and `elevation`. */
+const outdoorSector: SectorView = {
   name: 'EdariaMitte',
-  version: 1,
-  dimensions: { width: 16, height: 12 },
-  floorMaterialID: 'grass-meadow',
-  light: { indoor: false, brightness: 100 },
-  objects: [{ x: 128, y: 256, modelID: 'door', sourceWidth: 64, sourceHeight: 32, priority: 3, rotation: 270 }],
-  collisionMasks: [{ x: 128, y: 256, width: 64, height: 32 }],
-  portals: [{ x: 0, y: 0, width: 32, height: 32, targetSectorName: 'Nordwiese', direction: 1 }],
-  npcs: [
-    {
-      spawnX: 320,
-      spawnY: 192,
-      spawnBoxWidth: 64,
-      spawnBoxHeight: 64,
-      maskWidth: 32,
-      maskHeight: 48,
-      name: 'Libus',
-      figure: 16,
-      direction: 270,
-      behaviorTag: 0,
-      dialogScript: 'Hallo $name, willkommen!',
-    },
-  ],
-  monsterSpawns: [
-    {
-      spawnX: 640,
-      spawnY: 384,
-      spawnBoxWidth: 128,
-      spawnBoxHeight: 128,
-      monsterWidth: 32,
-      monsterHeight: 48,
-      name: 'Gespenst',
-      figure: 0,
-      bounded: true,
-      spawnHP: 100,
-      spawnBalance: 100,
-      spawnMana: 100,
-      aiScriptIndex: 3,
-    },
-  ],
-  floorPatches: [{ floorMaterialID: 'cobble-town', x: 0, y: 0, width: 512, height: 128 }],
+  kind: 'outdoor',
+  origin: { x: 0, z: 0 },
+  size: { width: 40.96, depth: 40.96 },
+  floorMaterialId: 'grass-meadow',
+  floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble-town', x: 16, z: 0, width: 8.96, depth: 20 }],
+  placements: [{ id: 'townhall', modelId: 'building-townhall', x: 36.8, z: 4.48, yaw: 270, elevation: 0.75 }],
+  blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
+  doors: [{ id: 'to-edariabibliothek', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaBibliothek', door: 'exit' } }],
+};
+
+const interiorSector: SectorView = {
+  name: 'EdariaBibliothek',
+  kind: 'interior',
+  brightness: 75,
+  size: { width: 10.24, depth: 7.68 },
+  floorMaterialId: 'wood-warm',
+  floorPatches: [],
+  placements: [{ id: 'door-1', modelId: 'door', x: 5.12, z: 7.36, yaw: 0, elevation: 0 }],
+  blockers: [],
+  doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaMitte', door: 'to-edariabibliothek' } }],
 };
 
 /** Every tag must appear, so a new message cannot ship without a fixture. */
@@ -79,82 +59,89 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         nickname: 'Saibot',
         password: 'passw0rd',
         passwordRepeat: 'passw0rd',
-        characterClass: 0,
-        gender: 1,
+        people: 'wachen',
         email: 'info@example.com',
       },
     },
   },
-  {
-    name: 'clientPosition',
-    message: { tag: 'clientPosition', payload: { entityIndex: 0, x: 10, y: 20, facing: 137.5, tempo: 2 } },
-  },
-  { name: 'clientSay', message: { tag: 'clientSay', payload: { entityIndex: 0, text: 'Hallo Welt' } } },
-  { name: 'equipToggle', message: { tag: 'equipToggle', payload: { slot: 1, hand: 2 } } },
-  { name: 'bumpNPC', message: { tag: 'bumpNPC', payload: { npcIndex: 4 } } },
-  { name: 'enterPortal', message: { tag: 'enterPortal', payload: { portalIndex: 2 } } },
+  { name: 'move', message: { tag: 'move', payload: { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' } } },
+  { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt' } } },
+  { name: 'equipToggle', message: { tag: 'equipToggle', payload: { slot: 1, hand: 'right' } } },
+  { name: 'bump', message: { tag: 'bump', payload: { targetId: NPC_ID } } },
+  { name: 'useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaMitte', doorId: 'to-edariabibliothek' } } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
   { name: 'revokeSession', message: { tag: 'revokeSession', payload: { token: 'tok-abc' } } },
   {
     name: 'hello',
     message: { tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } },
   },
-  { name: 'loginResult', message: { tag: 'loginResult', payload: { result: 0 } } },
-  { name: 'registerResult', message: { tag: 'registerResult', payload: { result: 3 } } },
-  { name: 'enterSector', message: { tag: 'enterSector', payload: { sector: populatedSector } } },
-  { name: 'mainCharacter', message: { tag: 'mainCharacter', payload: { entityIndex: 5 } } },
+  { name: 'loginResult', message: { tag: 'loginResult', payload: { result: 'ok' } } },
+  { name: 'registerResult', message: { tag: 'registerResult', payload: { result: 'nameNotAllowed' } } },
+  {
+    name: 'enterSpace',
+    message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: PLAYER_ID, worldSeconds: 14_515_243_200.5 } },
+  },
+  { name: 'sector', message: { tag: 'sector', payload: { sector: outdoorSector } } },
+  { name: 'sector-interior', message: { tag: 'sector', payload: { sector: interiorSector } } },
   {
     name: 'entity',
     message: {
       tag: 'entity',
       payload: {
-        entityIndex: 9,
-        figure: 0,
-        gender: 1,
-        maskWidth: 32,
-        maskHeight: 48,
-        type: 0,
+        id: NPC_ID,
+        kind: 'npc',
+        characterModelId: 'libus',
         name: 'Libus',
-        x: 10,
-        y: 12,
+        radius: 0.3,
+        x: 5.12,
+        z: 3.84,
         facing: 359.96875,
-        tempo: 2,
+        gait: 'walk',
       },
     },
   },
   {
-    name: 'serverPosition',
-    message: { tag: 'serverPosition', payload: { entityIndex: 7, x: 10, y: 20, facing: 0, tempo: 4 } },
+    name: 'moves',
+    message: {
+      tag: 'moves',
+      payload: {
+        moves: [
+          { id: PLAYER_ID, x: 10.25, z: 20.5, facing: 0, gait: 'run' },
+          { id: 'monster:7', x: 12, z: -3.5, facing: 222.5, gait: 'jog' },
+        ],
+      },
+    },
   },
-  { name: 'serverSay', message: { tag: 'serverSay', payload: { entityIndex: 3, text: 'Wer bist du?' } } },
+  { name: 'correction', message: { tag: 'correction', payload: { x: 10.25, z: 20.5 } } },
+  { name: 'doorRefused', message: { tag: 'doorRefused', payload: { sector: 'EdariaMitte', doorId: 'to-edariabibliothek' } } },
+  { name: 'serverSay', message: { tag: 'serverSay', payload: { entityId: NPC_ID, text: 'Wer bist du?' } } },
   {
     name: 'energy',
     message: {
       tag: 'energy',
       payload: {
-        hpCurrent: 100,
-        hpMax: 100,
+        healthCurrent: 100,
+        healthMax: 100,
         balanceCurrent: 50,
         balanceMax: 100,
-        manaCurrent: 25,
-        manaMax: 50,
+        spiritCurrent: 25,
+        spiritMax: 50,
       },
     },
   },
-  { name: 'dateTick', message: { tag: 'dateTick', payload: { hour: 7, minute: 33 } } },
   {
     name: 'inventory',
     message: {
       tag: 'inventory',
       payload: {
         rows: [
-          { slot: 0, category: 0, itemId: 0, extras: [{ key: 'gold', value: 100 }], equippedHand: 0 },
-          { slot: 1, category: 1, itemId: 0, extras: [], equippedHand: 2 },
+          { slot: 0, itemId: 'purse', quantity: 100 },
+          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
         ],
       },
     },
   },
-  { name: 'leave', message: { tag: 'leave', payload: { entityIndex: 4, leftGame: true } } },
+  { name: 'leave', message: { tag: 'leave', payload: { entityId: PLAYER_ID, leftGame: true } } },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {
     name: 'sessionToken',

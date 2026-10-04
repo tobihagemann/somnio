@@ -19,9 +19,7 @@ const committed = JSON.parse(readFileSync(GOLDEN_FRAMES_PATH, 'utf8')) as Record
 
 /**
  * Sorts object keys recursively so the comparison is over structure, not member order — the
- * encoder's key order is not part of the wire contract. Numbers compare after `Math.fround`,
- * because the Float32 fields (`facing`, NPC `direction`) are equal as Float32 values, not as
- * decimal strings: `0.10000000149011612` and `0.1` are the same `Float`.
+ * encoder's key order is not part of the wire contract. Numbers compare exactly.
  */
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -32,7 +30,6 @@ function canonicalize(value: unknown): unknown {
         .map((key) => [key, canonicalize((value as Record<string, unknown>)[key])]),
     );
   }
-  if (typeof value === 'number') return Math.fround(value);
   return value;
 }
 
@@ -86,11 +83,22 @@ describe('golden frames', () => {
     expect((requesting.payload as { requestSessionToken: boolean }).requestSessionToken).toBe(true);
   });
 
-  /** The nested sector fixture is what gives `WireObject.rotation` and the NPC float heading cover. */
+  /** The nested sector fixture is what gives every record shape, and a non-default `yaw` and `elevation`, cover. */
   it('carries a fully populated nested sector', () => {
-    const sector = (committed['enterSector']!.payload as { sector: Record<string, unknown[]> }).sector;
-    for (const key of ['objects', 'collisionMasks', 'portals', 'npcs', 'monsterSpawns', 'floorPatches']) {
+    const sector = (committed['sector']!.payload as { sector: Record<string, Record<string, unknown>[]> }).sector;
+    for (const key of ['floorPatches', 'placements', 'blockers', 'doors']) {
       expect(sector[key]!.length).toBeGreaterThan(0);
     }
+    expect(sector['placements']![0]!['yaw']).not.toBe(0);
+    expect(sector['placements']![0]!['elevation']).not.toBe(0);
+  });
+
+  /**
+   * World time near year 500 is past 2^33 seconds, where neighbouring single-precision values are 1024
+   * apart: a comparison that narrowed numbers would call a clock minutes off a match.
+   */
+  it('tells two world times one second apart near year 500', () => {
+    const worldSeconds = 500 * 12 * 28 * 86_400;
+    expect(canonicalize({ worldSeconds: worldSeconds + 1 })).not.toEqual(canonicalize({ worldSeconds }));
   });
 });

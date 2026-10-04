@@ -3,21 +3,15 @@ import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from './constants.ts';
 
 /**
  * Decode-time enforcement primitives: a missing key, a mismatched JSON type, an integer outside
- * the declared width, a non-finite float, and an unknown enum raw value are all rejected here.
+ * the declared width, a non-finite float, and an unknown enum value are all rejected here.
  * TypeScript's structural types are erased at compile time and reject none of that, so every
  * inbound payload is narrowed through these helpers before it reaches a handler. Without them a
  * drifted or hostile frame is accepted and fails much later, far from the boundary.
  */
 
-// Re-stated locally on purpose: `@somnio/core` must not become a dependency of the protocol layer,
-// and these are the wire's own bounds. `packages/core/src/geometry.ts` exports the same pair.
-const INT16_MIN = -32_768;
-const INT16_MAX = 32_767;
-/** The largest finite Float32; the wire's continuous fields are Float32 values. */
-const FLOAT32_MAX = 3.4028234663852886e38;
 const INT32_MIN = -2_147_483_648;
 const INT32_MAX = 2_147_483_647;
-const UINT16_MAX = 65_535;
+const ID_PATTERN = /^[a-z0-9-]+$/;
 
 export function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -43,55 +37,48 @@ export function requireBool(container: Record<string, unknown>, key: string, pat
 }
 
 /**
- * These fields are `Int16` on the wire: a fractional value and anything outside the 16-bit
- * signed range are rejected. JSON has one number type, so both checks live here.
- */
-export function requireInt16(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, INT16_MIN, INT16_MAX, 'Int16');
-}
-
-export function requireUInt16(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, 0, UINT16_MAX, 'UInt16');
-}
-
-/**
- * For durations, which overflow `Int16` immediately — a 30-day token lifetime is 2,592,000
- * seconds against an `Int16` ceiling of 32,767.
+ * A fractional value and anything outside the 32-bit signed range are rejected. JSON has one
+ * number type, so both checks live here.
  */
 export function requireInt32(container: Record<string, unknown>, key: string, path: string): number {
-  return requireInteger(container, key, path, INT32_MIN, INT32_MAX, 'Int32');
-}
-
-function requireInteger(container: Record<string, unknown>, key: string, path: string, min: number, max: number, typeName: string): number {
   const value = container[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got ${describe(value)}`);
+    throw new WireDecodingError(`${path}.${key}`, `expected Int32, got ${describe(value)}`);
   }
   if (!Number.isInteger(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected ${typeName}, got fractional ${value}`);
+    throw new WireDecodingError(`${path}.${key}`, `expected Int32, got fractional ${value}`);
   }
-  if (value < min || value > max) {
-    throw new WireDecodingError(`${path}.${key}`, `${typeName} out of range: ${value}`);
+  if (value < INT32_MIN || value > INT32_MAX) {
+    throw new WireDecodingError(`${path}.${key}`, `Int32 out of range: ${value}`);
   }
   return value;
 }
 
 /**
- * Headings and other continuous fields are Float32 on the wire. A non-finite JSON literal
- * cannot occur (JSON has no NaN), but a decoded `null` or string must still be rejected here
- * rather than propagating NaN into the transform math.
+ * JSON has no NaN literal, but `1e999` parses to Infinity, and a decoded `null` or string must be
+ * rejected here rather than propagating NaN into the transform math.
  */
 export function requireFloat(container: Record<string, unknown>, key: string, path: string): number {
   const value = container[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new WireDecodingError(`${path}.${key}`, `expected a finite number, got ${describe(value)}`);
   }
-  // Binary64-finite is not enough: the field is Float32, so anything past `FLOAT32_MAX` is
-  // rejected, down to 3.5e38 and not just absurd magnitudes. Accepting such a value here means
-  // `Math.fround` turns it into Infinity and the heading math then produces NaN, so the entity's
-  // transform goes invalid and it vanishes rather than being rejected at the boundary.
-  if (Math.abs(value) > FLOAT32_MAX) {
-    throw new WireDecodingError(`${path}.${key}`, `exceeds Float range (got ${value})`);
+  return value;
+}
+
+/** A coordinate or length in metres: finite and within `maxCoordinateMetres` of zero. */
+export function requireMetres(container: Record<string, unknown>, key: string, path: string): number {
+  const value = requireFloat(container, key, path);
+  if (Math.abs(value) > SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres) {
+    throw new WireDecodingError(`${path}.${key}`, `exceeds ${SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres} metres (got ${value})`);
+  }
+  return value;
+}
+
+export function requirePositiveMetres(container: Record<string, unknown>, key: string, path: string): number {
+  const value = requireMetres(container, key, path);
+  if (value <= 0) {
+    throw new WireDecodingError(`${path}.${key}`, `expected a positive length, got ${value}`);
   }
   return value;
 }
@@ -120,12 +107,64 @@ export function mapArray<T>(
 }
 
 /**
- * An `Int16` raw-value enum: a value outside the case set is rejected.
+ * The record arrays of a sector: a missing key decodes as empty, the count is capped before any
+ * element is decoded, and every `id` is unique within the array.
  */
-export function requireRawEnum<const T extends readonly number[]>(container: Record<string, unknown>, key: string, path: string, allowed: T): T[number] {
-  const value = requireInt16(container, key, path);
+export function mapRecords<T extends { id: string }>(
+  container: Record<string, unknown>,
+  key: string,
+  path: string,
+  maxCount: number,
+  decodeElement: (element: Record<string, unknown>, elementPath: string) => T,
+): T[] {
+  if (isAbsent(container, key)) return [];
+  const count = requireArray(container, key, path).length;
+  if (count > maxCount) {
+    throw new WireDecodingError(`${path}.${key}`, `exceeds ${maxCount} records (got ${count})`);
+  }
+  const records = mapArray(container, key, path, decodeElement);
+  const seen = new Set<string>();
+  records.forEach((record, index) => {
+    if (seen.has(record.id)) {
+      throw new WireDecodingError(`${path}.${key}[${index}].id`, `duplicate id "${record.id}"`);
+    }
+    seen.add(record.id);
+  });
+  return records;
+}
+
+/** Absent and explicit `null` both mean "not set". */
+export function isAbsent(container: Record<string, unknown>, key: string): boolean {
+  return container[key] === undefined || container[key] === null;
+}
+
+export function requireStringEnum<const T extends readonly string[]>(container: Record<string, unknown>, key: string, path: string, allowed: T): T[number] {
+  const value = requireString(container, key, path);
   if (!allowed.includes(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `unknown raw value ${value} (expected one of ${allowed.join(', ')})`);
+    throw new WireDecodingError(`${path}.${key}`, `unknown value "${value}" (expected one of ${allowed.join(', ')})`);
+  }
+  return value;
+}
+
+/** A record id inside a sector: non-empty, lowercase letters, digits, and hyphens, within the identifier cap. */
+export function requireId(container: Record<string, unknown>, key: string, path: string): string {
+  const value = requireWithinByteCap(requireString(container, key, path), PROTOCOL_BYTE_CAPS.identifier, `${path}.${key}`);
+  if (!ID_PATTERN.test(value)) {
+    throw new WireDecodingError(`${path}.${key}`, `expected an id of lowercase letters, digits, and hyphens, got "${value}"`);
+  }
+  return value;
+}
+
+/** A runtime entity id on the wire: non-empty and within the entity-id cap. */
+export function requireEntityId(container: Record<string, unknown>, key: string, path: string): string {
+  return requireBoundedString(container, key, path, PROTOCOL_BYTE_CAPS.entityId);
+}
+
+/** A non-empty string within a UTF-8 byte cap. */
+export function requireBoundedString(container: Record<string, unknown>, key: string, path: string, maxBytes: number): string {
+  const value = requireWithinByteCap(requireString(container, key, path), maxBytes, `${path}.${key}`);
+  if (value === '') {
+    throw new WireDecodingError(`${path}.${key}`, 'expected a non-empty string');
   }
   return value;
 }
@@ -157,6 +196,8 @@ export const PROTOCOL_BYTE_CAPS = {
   password: SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes,
   say: SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes,
   sessionToken: SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes,
+  entityId: SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes,
+  sectorName: SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes,
 } as const;
 
 function describe(value: unknown): string {

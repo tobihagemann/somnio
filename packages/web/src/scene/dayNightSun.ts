@@ -1,33 +1,24 @@
-import { FLOAT_PI, f32 } from '@somnio/core';
-import type { LightSetting } from '@somnio/core';
-
 /**
- * The day/night ambient staircase and the sun.
- *
- * The lighting is Float32 end to end — the constants, the staircase, the elevation and warmth,
- * the mix, and the normalize — so every step here narrows, per `@somnio/core`'s `float.ts` rule.
- * That is not cosmetic in this file: `southwardLean`, the two indoor scales, and the horizon
- * colour's 0.72 are none of them representable in binary32, so leaving them as doubles shifts
- * the sun's direction, both indoor intensities, and every warm tint away from the reference
- * render.
- *
- * Two steps stay in binary64 deliberately, both because they are exact there: `minute / 12`
- * is *integer* division (see `outdoorAmbient`), and the day-arc divisor `dayEndHour - dayStartHour`
- * is the small integer 16. An `f32` around either would be noise rather than parity, the same
- * judgement `worldMovement` in `cameraRig.ts` records for its double-precision original.
+ * The day/night light: the outdoor ambient ramp and the sun.
  */
+import { worldMovement } from './cameraRig';
 
 const DAY_NIGHT = {
   fullSunIntensity: 6000,
   fullAmbientIntensity: 1200,
   dayStartHour: 6,
   dayEndHour: 22,
-  /** `65 * pi / 180` in Float32 order: `FLOAT_PI`, multiplied, then divided. */
-  maximumElevationRadians: f32(f32(65 * FLOAT_PI) / 180),
-  /** Southward lean so midday shadows fall visibly under the 3/4 camera. */
-  southwardLean: f32(0.35),
-  indoorAmbientScale: f32(0.65),
-  indoorSunScale: f32(0.8),
+  maximumElevationRadians: (65 * Math.PI) / 180,
+  /**
+   * How far the arc leans toward the camera's left, against an east-west swing of 1. The camera
+   * hides the ground behind a caster for as far as the caster is tall, so a high sun on the
+   * camera's own side throws every shadow into exactly that strip: cast, and never seen.
+   */
+  lean: 1,
+  indoorAmbientScale: 0.65,
+  indoorSunScale: 0.8,
+  /** How long, in hours, the sun takes to fade out before a day/night switch and back in after it. */
+  twilightHours: 0.5,
 } as const;
 
 /**
@@ -50,9 +41,8 @@ export const ENVIRONMENT_FILL_INTENSITY = 2;
  * The sun's shadow volume.
  *
  * A directional light has no position, but its *shadow* camera does, and fitting that camera to
- * the view frustum produces no shadow at all under an orthographic gameplay camera — the same
- * failure `.automatic` hit natively. So the volume is a fixed box carried along with the camera
- * focus instead.
+ * the view frustum produces no shadow at all under an orthographic gameplay camera. So the volume
+ * is a fixed box carried along with the camera focus instead.
  *
  * `anchorSnap` is what keeps it from swimming: the focus moves a fraction of a pixel per frame as
  * the player walks, and an unsnapped shadow camera re-rasterizes the map every frame, which reads
@@ -73,15 +63,10 @@ export const SUN_SHADOW = {
   normalBias: 0.02,
 } as const;
 
-/**
- * The three `SIMD3<Float>` tints. Narrowed because `simd_mix` interpolates between them in `Float`
- * and because they are handed to the light as-is: 0.72, 0.7, and 0.8 are all inexact in binary32, so
- * a double here is a visible-precision difference in the *un-mixed* night colour too.
- */
 const SUN_COLORS = {
   daylight: { r: 1, g: 1, b: 1 },
-  horizon: { r: 1, g: f32(0.72), b: 0.5 },
-  night: { r: f32(0.7), g: f32(0.8), b: 1 },
+  horizon: { r: 1, g: 0.72, b: 0.5 },
+  night: { r: 0.7, g: 0.8, b: 1 },
 } as const;
 
 export interface SunState {
@@ -93,125 +78,103 @@ export interface SunState {
 }
 
 /**
- * The raw legacy staircase on the 0-100 scale.
- *
- * `minute / 12` is **integer** division, producing five discrete buckets across the hour rather
- * than a continuous ramp. A float divide would smooth the step and drift from the reference tint.
+ * Outdoor ambient by hour, in percent: dark through the night, rising through the morning, full
+ * across the day, and falling through the evening. The light is interpolated linearly between
+ * these anchors.
  */
-export function outdoorAmbient(hour: number, minute: number, brightness: number): number {
-  const perMinuteStep = f32(Math.trunc(minute / 12) * f32(brightness / 20));
-  if (hour >= 22 || hour <= 5) return 1;
-  if (hour <= 9) return f32(brighteningAmbient(hour, brightness) + perMinuteStep);
-  if (hour <= 17) return f32(brightness);
-  return f32(dimmingAmbient(hour, brightness) - perMinuteStep);
-}
+const OUTDOOR_AMBIENT_ANCHORS: readonly (readonly [hour: number, percent: number])[] = [
+  [0, 1],
+  [6, 1],
+  [7, 25],
+  [8, 50],
+  [9, 75],
+  [10, 100],
+  [18, 100],
+  [19, 75],
+  [20, 50],
+  [21, 25],
+  [22, 1],
+  [24, 1],
+];
 
-/** The raw staircase pulled a quarter of the way toward full, so night floors dim not black. */
-export function smoothedOutdoorAmbient(hour: number, minute: number, brightness: number): number {
-  return f32(100 - f32(f32(100 - outdoorAmbient(hour, minute, brightness)) * 0.75));
-}
-
-function brighteningAmbient(hour: number, brightness: number): number {
-  switch (hour) {
-    case 6:
-      return 1;
-    case 7:
-      return f32(brightness / 4);
-    case 8:
-      return f32(brightness / 2);
-    case 9:
-      return f32(brightness * 0.75);
-    default:
-      return 1;
-  }
-}
-
-function dimmingAmbient(hour: number, brightness: number): number {
-  switch (hour) {
-    case 18:
-      return f32(brightness);
-    case 19:
-      return f32(brightness * 0.75);
-    case 20:
-      return f32(brightness / 2);
-    case 21:
-      return f32(brightness / 4);
-    default:
-      return 1;
-  }
-}
-
-/** Fixed key direction for indoor sectors: steeper than any sun, so ceiling lights read right. */
-const INDOOR_DIRECTION = normalize({ x: f32(-0.4), y: 1, z: f32(0.28) });
-/** The dim outdoor "moon". */
-const NIGHT_DIRECTION = normalize({ x: f32(-0.2), y: 1, z: f32(0.3) });
-
-export function sunState(hour: number, minute: number, sectorLight: LightSetting): SunState {
-  if (sectorLight.indoor) {
-    const level = f32(sectorLight.brightness / 100);
-    return {
-      direction: INDOOR_DIRECTION,
-      // `level * scale * full` associates left to right, so the intermediate narrows.
-      sunIntensity: f32(f32(level * DAY_NIGHT.indoorSunScale) * DAY_NIGHT.fullSunIntensity),
-      sunColor: SUN_COLORS.daylight,
-      ambientIntensity: f32(f32(level * DAY_NIGHT.indoorAmbientScale) * DAY_NIGHT.fullAmbientIntensity),
-    };
-  }
-
-  const level = f32(smoothedOutdoorAmbient(hour, minute, sectorLight.brightness) / 100);
-  const time = f32(hour + f32(minute / 60));
-  if (time < DAY_NIGHT.dayStartHour || time >= DAY_NIGHT.dayEndHour) {
-    return {
-      direction: NIGHT_DIRECTION,
-      sunIntensity: f32(level * DAY_NIGHT.fullSunIntensity),
-      sunColor: SUN_COLORS.night,
-      ambientIntensity: f32(level * DAY_NIGHT.fullAmbientIntensity),
-    };
-  }
-
-  const progress = f32(f32(time - DAY_NIGHT.dayStartHour) / (DAY_NIGHT.dayEndHour - DAY_NIGHT.dayStartHour));
-  const arcAngle = f32(progress * FLOAT_PI);
-  // The reference chain uses single-precision `sinf`/`cosf`; JavaScript has only the binary64
-  // pair, so the result is narrowed — the same accommodation `atan2F32` documents. Parity is
-  // exact for the algebraic chain around these calls, not for libm's own last bit.
-  const elevation = f32(DAY_NIGHT.maximumElevationRadians * f32(Math.sin(arcAngle)));
-  // The sun rises east (+X), arcs through the leaning south, and sets west (-X).
-  const horizontal = normalize({ x: f32(Math.cos(arcAngle)), y: 0, z: DAY_NIGHT.southwardLean });
-  const elevationCosine = f32(Math.cos(elevation));
-  const warmth = f32(elevation / DAY_NIGHT.maximumElevationRadians);
-  return {
-    direction: {
-      x: f32(horizontal.x * elevationCosine),
-      y: f32(Math.sin(elevation)),
-      z: f32(horizontal.z * elevationCosine),
-    },
-    sunIntensity: f32(level * DAY_NIGHT.fullSunIntensity),
-    sunColor: mixColor(SUN_COLORS.horizon, SUN_COLORS.daylight, warmth),
-    ambientIntensity: f32(level * DAY_NIGHT.fullAmbientIntensity),
-  };
+/** The ambient level in `[0, 1]`, pulled a quarter of the way toward full so night floors dim, not black. */
+function outdoorAmbientLevel(hourOfDay: number): number {
+  const next = OUTDOOR_AMBIENT_ANCHORS.findIndex(([hour]) => hour > hourOfDay);
+  const [fromHour, from] = OUTDOOR_AMBIENT_ANCHORS[next - 1]!;
+  const [toHour, to] = OUTDOOR_AMBIENT_ANCHORS[next]!;
+  const percent = from + ((to - from) * (hourOfDay - fromHour)) / (toHour - fromHour);
+  return (100 - (100 - percent) * 0.75) / 100;
 }
 
 /**
- * `simd`'s `normalize` on a `SIMD3<Float>`: each component over `sqrt(dot(v, v))`, computed in
- * `Float`.
- *
- * Spelled out as a narrowed dot product rather than `Math.hypot`. Hypot is not the same function —
- * it is a scaling algorithm chosen to avoid intermediate overflow, so it returns a different last
- * bit than a plain `sqrt` of the sum of squares, and the length divides three components. Sitting a
- * binary64 length under three narrowed divides, which is what this used to do, narrows the wrong
- * step: the extra mantissa bits are in the divisor.
+ * How much of the directional light is on: it falls to nothing over the half hour before each
+ * day/night switch and rises over the half hour after, so the jump in direction and colour at the
+ * switch happens while the light is off. The ambient and fill lights carry the scene across.
  */
-function normalize(vector: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
-  const dot = f32(f32(f32(vector.x * vector.x) + f32(vector.y * vector.y)) + f32(vector.z * vector.z));
-  const length = f32(Math.sqrt(dot));
-  return { x: f32(vector.x / length), y: f32(vector.y / length), z: f32(vector.z / length) };
+function twilightFactor(hourOfDay: number): number {
+  const hoursFromSwitch = Math.min(Math.abs(hourOfDay - DAY_NIGHT.dayStartHour), Math.abs(hourOfDay - DAY_NIGHT.dayEndHour));
+  return Math.min(1, hoursFromSwitch / DAY_NIGHT.twilightHours);
 }
 
-/** `simd_mix(from, to, t)` — `from + (to - from) * t` per component, in `Float`. */
+/** Ground direction toward the camera's left, at right angles to the view: the side the interior key stands on. */
+const LEAN_DIRECTION = worldMovement(-1, 0);
+
+/** Fixed key direction for interior sectors: steeper than any sun, so ceiling lights read right. */
+const INDOOR_DIRECTION = normalize({ x: -0.4, y: 1, z: 0.28 });
+/** The dim outdoor "moon". */
+const NIGHT_DIRECTION = normalize({ x: -0.2, y: 1, z: 0.3 });
+
+/**
+ * The light for a fractional hour of the day in `[0, 24)`. `brightness` is an interior sector's
+ * percentage, which fixes the light whatever the hour; `undefined` is outdoors, lit by the clock.
+ */
+export function sunState(hourOfDay: number, brightness: number | undefined): SunState {
+  if (brightness !== undefined) {
+    const level = brightness / 100;
+    return {
+      direction: INDOOR_DIRECTION,
+      sunIntensity: level * DAY_NIGHT.indoorSunScale * DAY_NIGHT.fullSunIntensity,
+      sunColor: SUN_COLORS.daylight,
+      ambientIntensity: level * DAY_NIGHT.indoorAmbientScale * DAY_NIGHT.fullAmbientIntensity,
+    };
+  }
+
+  const level = outdoorAmbientLevel(hourOfDay);
+  const sunIntensity = level * DAY_NIGHT.fullSunIntensity * twilightFactor(hourOfDay);
+  const ambientIntensity = level * DAY_NIGHT.fullAmbientIntensity;
+  if (hourOfDay < DAY_NIGHT.dayStartHour || hourOfDay >= DAY_NIGHT.dayEndHour) {
+    return { direction: NIGHT_DIRECTION, sunIntensity, sunColor: SUN_COLORS.night, ambientIntensity };
+  }
+
+  const progress = (hourOfDay - DAY_NIGHT.dayStartHour) / (DAY_NIGHT.dayEndHour - DAY_NIGHT.dayStartHour);
+  const arcAngle = progress * Math.PI;
+  const elevation = DAY_NIGHT.maximumElevationRadians * Math.sin(arcAngle);
+  // The sun rises in the south-south-east, stands at the camera's left when highest, and sets in the
+  // west-south-west.
+  const horizontal = normalize({ x: Math.cos(arcAngle) + DAY_NIGHT.lean * LEAN_DIRECTION.dx, y: 0, z: DAY_NIGHT.lean * LEAN_DIRECTION.dz });
+  const elevationCosine = Math.cos(elevation);
+  const warmth = elevation / DAY_NIGHT.maximumElevationRadians;
+  return {
+    direction: {
+      x: horizontal.x * elevationCosine,
+      y: Math.sin(elevation),
+      z: horizontal.z * elevationCosine,
+    },
+    sunIntensity,
+    sunColor: mixColor(SUN_COLORS.horizon, SUN_COLORS.daylight, warmth),
+    ambientIntensity,
+  };
+}
+
+function normalize(vector: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  const length = Math.hypot(vector.x, vector.y, vector.z);
+  return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
+}
+
 function mixColor(from: { r: number; g: number; b: number }, to: { r: number; g: number; b: number }, amount: number): { r: number; g: number; b: number } {
   return {
-    r: f32(from.r + f32(f32(to.r - from.r) * amount)),
-    g: f32(from.g + f32(f32(to.g - from.g) * amount)),
-    b: f32(from.b + f32(f32(to.b - from.b) * amount)),
+    r: from.r + (to.r - from.r) * amount,
+    g: from.g + (to.g - from.g) * amount,
+    b: from.b + (to.b - from.b) * amount,
   };
 }

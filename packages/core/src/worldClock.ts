@@ -1,57 +1,46 @@
 /**
- * The server-owned in-game world clock: 60 sec/min, 60 min/hr, 24 hr/day, 28 days/month, 12
- * months/year, advanced at 4x wall clock by the caller.
- *
- * Rollover is atomic and emits before it applies: one tick at midnight returns wire `hour: 24`
- * while the post-tick state is `hour: 0, day + 1`.
+ * The server-owned in-game world clock. World time is one number, `worldSeconds`, counted from
+ * the start of year 0 and advanced at `WORLD_TIME_RATE` times wall clock by the caller. The
+ * calendar is derived from it: 24 hours a day, 28 days a month, 12 months a year.
  */
-export interface WorldClock {
-  second: number;
-  minute: number;
-  hour: number;
-  day: number;
-  month: number;
+
+/** World seconds per wall-clock second. */
+export const WORLD_TIME_RATE = 4;
+
+const SECONDS_PER_DAY = 24 * 60 * 60;
+const DAYS_PER_MONTH = 28;
+const DAYS_PER_YEAR = DAYS_PER_MONTH * 12;
+
+/** `day` and `month` count from 1. */
+export interface WorldCalendar {
   year: number;
-}
-
-export interface WireTime {
+  month: number;
+  day: number;
   hour: number;
   minute: number;
+  second: number;
 }
 
-export const BOOT_DEFAULT_WORLD_CLOCK: WorldClock = {
-  second: 0,
-  minute: 0,
-  hour: 12,
-  day: 1,
-  month: 1,
-  year: 500,
-};
+/** Year 500, day 1 of month 1, 12:00. */
+export const BOOT_DEFAULT_WORLD_SECONDS = 500 * DAYS_PER_YEAR * SECONDS_PER_DAY + 12 * 60 * 60;
 
-/**
- * Advances `clock` by one in-game second in place and returns the wire time for this tick; at
- * midnight the returned hour is 24 even though `clock.hour` is 0 afterwards.
- */
-export function tickWorldClock(clock: WorldClock): WireTime {
-  clock.second += 1;
-  if (clock.second !== 60) return { hour: clock.hour, minute: clock.minute };
-  clock.second = 0;
-  clock.minute += 1;
-  if (clock.minute !== 60) return { hour: clock.hour, minute: clock.minute };
-  clock.minute = 0;
-  clock.hour += 1;
-  const wire = { hour: clock.hour, minute: clock.minute };
-  if (clock.hour === 24) {
-    clock.hour = 0;
-    clock.day += 1;
-    if (clock.day === 29) {
-      clock.day = 1;
-      clock.month += 1;
-      if (clock.month === 13) {
-        clock.month = 1;
-        clock.year += 1;
-      }
-    }
-  }
-  return wire;
+export function calendarFromWorldSeconds(worldSeconds: number): WorldCalendar {
+  const whole = Math.floor(worldSeconds);
+  const days = Math.floor(whole / SECONDS_PER_DAY);
+  const secondOfDay = whole - days * SECONDS_PER_DAY;
+  const dayOfYear = days % DAYS_PER_YEAR;
+  return {
+    year: Math.floor(days / DAYS_PER_YEAR),
+    month: Math.floor(dayOfYear / DAYS_PER_MONTH) + 1,
+    day: (dayOfYear % DAYS_PER_MONTH) + 1,
+    hour: Math.floor(secondOfDay / 3600),
+    minute: Math.floor(secondOfDay / 60) % 60,
+    second: secondOfDay % 60,
+  };
+}
+
+/** The fractional hour of the day in `[0, 24)`, which the sun follows. */
+export function hourOfDay(worldSeconds: number): number {
+  const secondOfDay = worldSeconds - Math.floor(worldSeconds / SECONDS_PER_DAY) * SECONDS_PER_DAY;
+  return secondOfDay / 3600;
 }

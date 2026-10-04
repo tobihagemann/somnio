@@ -1,33 +1,32 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ORTHO_RIG, PLAYER_ZOOM, legacyPoint, worldPosition } from '@/scene/cameraRig';
+import { ORTHO_RIG, PLAYER_ZOOM } from '@/scene/cameraRig';
 import {
   EditorCamera,
   applyFramingToCamera,
   editorFramingFitting,
-  editorFramingFittingPixelBounds,
-  fitPixelBounds,
+  editorFramingFittingBounds,
+  fitBounds,
   playerZoomScale,
   scrollIntent,
 } from '@/editor/framing';
 import type { EditorFraming } from '@/editor/framing';
-import { gridPoint } from '@/editor/canvasController';
-import { floorPixelAtScreen, screenAtFloorPixel } from '@/editor/picking';
+import { gridPoint, screenPoint } from '@/editor/canvasController';
+import { floorPointAtScreen, screenAtFloorPoint } from '@/editor/picking';
 import type { ViewportSize } from '@/editor/picking';
-import { quantize } from '@/editor/preferences';
 import { readSectorFile } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import { SECTOR_FIXTURE_NAMES, readSectorFixture } from '../../core/test/support/sectorFixture.ts';
+import { outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { VIEWPORT, dragContext } from './helpers/editorFixture';
 
 /**
  * The camera math: the project→unproject round trip, the whole-sector fit, the fit's
  * independence from the gameplay zoom clamp, the player-zoom opening framing, pan/zoom,
  * custom-camera persistence, and the scroll-intent cases. The unprojection here is the live Raycaster
  * against the camera the framing was applied to, so these also pin that the Three.js
- * projection agrees with the ported analytic fit math.
+ * projection agrees with the analytic fit math.
  */
-
-const VIEWPORT: ViewportSize = { width: 640, height: 480 };
 
 function cameraFor(framing: EditorFraming, viewport: ViewportSize = VIEWPORT): THREE.OrthographicCamera {
   const camera = new THREE.OrthographicCamera();
@@ -36,87 +35,53 @@ function cameraFor(framing: EditorFraming, viewport: ViewportSize = VIEWPORT): T
 }
 
 function testSector(overrides: Partial<Sector> = {}): Sector {
-  return {
-    name: 'Test',
-    version: 1,
-    dimensions: { width: 12, height: 12 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
+  return outdoorSector('Test', { x: 0, z: 0 }, { size: { width: 30, depth: 30 }, ...overrides });
 }
 
 describe('gridPoint', () => {
-  const framing = editorFramingFittingPixelBounds({ x: 0, y: 0 }, { x: 512, y: 512 }, VIEWPORT);
-  const camera = cameraFor(framing);
-
-  it('resolves a tap at a pixel projected viewport point to that grid cell', () => {
-    // Mid-pixel targets, as real taps are: the unprojection floors to the containing pixel.
-    const tap = screenAtFloorPixel(camera, VIEWPORT, { x: 128.5, y: 96.5 });
-    expect(gridPoint(camera, VIEWPORT, tap)).toEqual({ x: 128, y: 96 });
+  it.each([
+    [
+      { x: 0, z: 0 },
+      { x: 2.56, z: 1.92 },
+    ],
+    [
+      { x: 5.12, z: -30.72 },
+      { x: 2.56, z: 1.92 },
+    ],
+    // Past the sector's north-west corner the point is negative, not clamped.
+    [
+      { x: 5.12, z: -30.72 },
+      { x: -0.5, z: -1.25 },
+    ],
+  ])('for a sector at %o resolves a tap on %o to that sector-relative point', (origin, point) => {
+    const context = dragContext(0.5, origin);
+    expect(gridPoint(context, screenPoint(context, point))).toEqual(point);
   });
 
-  it('resolves a tap inside an overflow footprint to negative coordinates', () => {
-    const overflowFraming = editorFramingFittingPixelBounds({ x: 0, y: -48 }, { x: 512, y: 512 }, VIEWPORT);
-    const overflowCamera = cameraFor(overflowFraming);
-    const tap = screenAtFloorPixel(overflowCamera, VIEWPORT, { x: 32.5, y: -40.5 });
-    expect(gridPoint(overflowCamera, VIEWPORT, tap)).toEqual({ x: 32, y: -41 });
-  });
-
-  it('floors fractional pixels downward', () => {
-    const tap = screenAtFloorPixel(camera, VIEWPORT, { x: 200.9, y: 300.4 });
-    expect(gridPoint(camera, VIEWPORT, tap)).toEqual({ x: 200, y: 300 });
-  });
-
-  it('resolves a tap outside the sector bounds without throwing', () => {
-    const grid = gridPoint(camera, VIEWPORT, { x: 0, y: 0 });
-    const insideSector = grid.x >= 0 && grid.x < 512 && grid.y >= 0 && grid.y < 512;
-    expect(insideSector).toBe(false);
-  });
-
-  it('quantizes the unprojected pixel with the unchanged grid snap', () => {
-    const tap = screenAtFloorPixel(camera, VIEWPORT, { x: 140.5, y: 70.5 });
-    const grid = gridPoint(camera, VIEWPORT, tap);
-    expect(quantize(grid.x, 32)).toBe(128);
-    expect(quantize(grid.y, 32)).toBe(64);
+  it('rounds to the millimetre', () => {
+    const context = dragContext();
+    expect(gridPoint(context, screenPoint(context, { x: 2.00049, z: 3.99951 }))).toEqual({ x: 2, z: 4 });
   });
 });
 
 describe('project then unproject', () => {
-  const framing = editorFramingFittingPixelBounds({ x: 0, y: 0 }, { x: 512, y: 512 }, VIEWPORT);
+  const framing = editorFramingFittingBounds({ x: 0, z: 0 }, { x: 20, z: 20 }, VIEWPORT);
   const camera = cameraFor(framing);
 
   it.each([
     [0, 0],
-    [128.5, 96.5],
-    [511, 511],
-    [-64, -48],
-    [200.9, 300.4],
-  ])('returns the same legacy pixel for (%s, %s)', (x, y) => {
-    const screen = screenAtFloorPixel(camera, VIEWPORT, { x, y });
-    const restored = floorPixelAtScreen(camera, VIEWPORT, screen);
-    expect(Math.hypot(restored.x - x, restored.y - y)).toBeLessThan(0.1);
+    [2.57, 1.93],
+    [19.99, 19.99],
+    [-1.28, -0.96],
+    [5.12, -30.72],
+  ])('returns the same ground point for (%s, %s)', (x, z) => {
+    const restored = floorPointAtScreen(camera, VIEWPORT, screenAtFloorPoint(camera, VIEWPORT, { x, z }));
+    expect(Math.hypot(restored.x - x, restored.z - z)).toBeLessThan(1e-6);
   });
 
   it('unprojects the viewport center to the framed bounds center', () => {
-    const center = floorPixelAtScreen(camera, VIEWPORT, { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 });
-    expect(Math.hypot(center.x - 256, center.y - 256)).toBeLessThan(0.1);
-  });
-
-  it('lands on the floor plane the renderer places on', () => {
-    const pixel = { x: 300.5, y: 200.5 };
-    const screen = screenAtFloorPixel(camera, VIEWPORT, pixel);
-    const restored = floorPixelAtScreen(camera, VIEWPORT, screen);
-    const world = worldPosition(restored.x, restored.y);
-    const expected = worldPosition(pixel.x, pixel.y);
-    expect(Math.hypot(world.x - expected.x, world.z - expected.z)).toBeLessThan(0.01);
-    expect(world.y).toBe(0);
+    const center = floorPointAtScreen(camera, VIEWPORT, { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 });
+    expect(Math.hypot(center.x - 10, center.z - 10)).toBeLessThan(1e-6);
   });
 });
 
@@ -129,26 +94,17 @@ describe('whole-sector fit', () => {
   ];
 
   it.each(SECTOR_FIXTURE_NAMES.flatMap((name) => viewports.map((viewport) => [name, viewport] as const)))(
-    "%s's floor and footprints project inside a %o viewport",
+    "%s's floor and placements project inside a %o viewport",
     (name, viewport) => {
       const sector = readSectorFile(readSectorFixture(name), name);
-      const framing = editorFramingFitting(sector, viewport);
-      const camera = cameraFor(framing, viewport);
-      const extremes = [
-        { x: 0, y: 0 },
-        { x: sector.dimensions.width * 128, y: 0 },
-        { x: 0, y: sector.dimensions.height * 128 },
-        { x: sector.dimensions.width * 128, y: sector.dimensions.height * 128 },
-        ...sector.objects.flatMap((object) => [
-          { x: object.x, y: object.y },
-          { x: object.x + object.sourceWidth, y: object.y + object.sourceHeight },
-          { x: object.x, y: object.y + object.sourceHeight },
-          { x: object.x + object.sourceWidth, y: object.y },
-        ]),
-      ];
+      const camera = cameraFor(editorFramingFitting(sector, viewport), viewport);
+      const bounds = fitBounds(sector);
+      const origin = sector.origin ?? { x: 0, z: 0 };
+      const corners = [bounds.min, { x: bounds.max.x, z: bounds.min.z }, { x: bounds.min.x, z: bounds.max.z }, bounds.max];
       const tolerance = 0.01;
-      for (const pixel of extremes) {
-        const projected = screenAtFloorPixel(camera, viewport, pixel);
+      const inside = [...corners, ...sector.placements.map((placement) => ({ x: origin.x + placement.x, z: origin.z + placement.z }))];
+      for (const point of inside) {
+        const projected = screenAtFloorPoint(camera, viewport, point);
         expect(projected.x).toBeGreaterThanOrEqual(-tolerance);
         expect(projected.x).toBeLessThanOrEqual(viewport.width + tolerance);
         expect(projected.y).toBeGreaterThanOrEqual(-tolerance);
@@ -156,10 +112,8 @@ describe('whole-sector fit', () => {
       }
       // Containment alone is one-sided (any too-zoomed-out fit passes): a fit-bounds corner
       // must land ON a viewport edge.
-      const bounds = fitPixelBounds(sector);
-      const corners = [bounds.min, { x: bounds.max.x, y: bounds.min.y }, { x: bounds.min.x, y: bounds.max.y }, bounds.max];
-      const touches = corners.some((pixel) => {
-        const projected = screenAtFloorPixel(camera, viewport, pixel);
+      const touches = corners.some((point) => {
+        const projected = screenAtFloorPoint(camera, viewport, point);
         return (
           Math.abs(projected.x) <= tolerance ||
           Math.abs(projected.x - viewport.width) <= tolerance ||
@@ -171,24 +125,32 @@ describe('whole-sector fit', () => {
     },
   );
 
+  it('frames an outdoor sector where it stands in its space', () => {
+    const sector = testSector({ origin: { x: 5.12, z: -30.72 }, size: { width: 30.72, depth: 30.72 } });
+    const bounds = fitBounds(sector);
+    expect(bounds.min).toEqual({ x: 5.12, z: -30.72 });
+    expect(bounds.max.x).toBeCloseTo(35.84, 9);
+    expect(bounds.max.z).toBe(0);
+    const focus = editorFramingFitting(sector, VIEWPORT).focus;
+    expect(focus.x).toBeCloseTo(20.48, 9);
+    expect(focus.z).toBeCloseTo(-15.36, 9);
+  });
+
   it('is not clamped to the gameplay zoom bounds', () => {
-    const sector = testSector({ dimensions: { width: 24, height: 24 } });
+    const sector = testSector({ size: { width: 60, depth: 60 } });
     const framing = editorFramingFitting(sector, VIEWPORT);
     expect(framing.scale).toBeGreaterThan(ORTHO_RIG.maxScale);
   });
 
-  it('widens for object footprints past the sector edge', () => {
-    const bare = editorFramingFittingPixelBounds({ x: 0, y: 0 }, { x: 512, y: 512 }, VIEWPORT);
-    const widened = editorFramingFittingPixelBounds({ x: 0, y: -48 }, { x: 512, y: 512 }, VIEWPORT);
-    expect(widened.scale).toBeGreaterThan(bare.scale);
-    const camera = cameraFor(widened);
-    const shelfCorner = screenAtFloorPixel(camera, VIEWPORT, { x: 0, y: -48 });
-    expect(shelfCorner.x).toBeGreaterThanOrEqual(0);
-    expect(shelfCorner.y).toBeGreaterThanOrEqual(0);
+  it('widens for a placement standing past the sector edge', () => {
+    const bare = testSector();
+    const widened = testSector({ placements: [{ id: 'shelf', modelId: 'box', x: 4, z: -1, yaw: 0, elevation: 0 }] });
+    expect(fitBounds(widened).min).toEqual({ x: 0, z: -1 });
+    expect(editorFramingFitting(widened, VIEWPORT).scale).toBeGreaterThan(editorFramingFitting(bare, VIEWPORT).scale);
   });
 
   it('falls back to the default scale for a degenerate viewport', () => {
-    const framing = editorFramingFittingPixelBounds({ x: 0, y: 0 }, { x: 512, y: 512 }, { width: 0, height: 0 });
+    const framing = editorFramingFittingBounds({ x: 0, z: 0 }, { x: 20, z: 20 }, { width: 0, height: 0 });
     expect(framing.scale).toBe(ORTHO_RIG.defaultScale);
   });
 });
@@ -260,6 +222,18 @@ describe('EditorCamera', () => {
     expect(camera.framing.scale).toBeCloseTo(ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor, 5);
   });
 
+  it('pans the content with the scroll: the ground at the center moves by the delta', () => {
+    const sector = testSector();
+    const lens = new THREE.OrthographicCamera();
+    const camera = new EditorCamera(lens);
+    camera.refreshFraming(sector);
+    const { x, z } = camera.framing.focus;
+    camera.pan({ width: 100, height: -60 }, sector);
+    const moved = screenAtFloorPoint(lens, camera.viewportSize, { x, z });
+    expect(moved.x).toBeCloseTo(VIEWPORT.width / 2 + 100, 6);
+    expect(moved.y).toBeCloseTo(VIEWPORT.height / 2 - 60, 6);
+  });
+
   it('pans the focus to where the shifted center lands and clamps to the fit extent', () => {
     const sector = testSector();
     const camera = makeCamera(sector);
@@ -268,12 +242,9 @@ describe('EditorCamera', () => {
     expect(camera.framing.focus).not.toEqual(opening.focus);
     // A huge pan pins the focus to the fit-extent edge instead of leaving the sector.
     camera.pan({ width: 100_000, height: 100_000 }, sector);
-    const bounds = fitPixelBounds(sector);
-    const focusPixel = legacyPoint(camera.framing.focus);
-    expect(focusPixel.x).toBeGreaterThanOrEqual(bounds.min.x - 0.01);
-    expect(focusPixel.x).toBeLessThanOrEqual(bounds.max.x + 0.01);
-    expect(focusPixel.y).toBeGreaterThanOrEqual(bounds.min.y - 0.01);
-    expect(focusPixel.y).toBeLessThanOrEqual(bounds.max.y + 0.01);
+    const bounds = fitBounds(sector);
+    const focus = camera.framing.focus;
+    expect([focus.x === bounds.min.x || focus.x === bounds.max.x, focus.z === bounds.min.z || focus.z === bounds.max.z]).toEqual([true, true]);
   });
 
   it('keeps the player magnification through a viewport resize', () => {
@@ -326,7 +297,7 @@ describe('EditorCamera', () => {
   });
 
   it('opens a sector smaller than the player view at the player zoom', () => {
-    const tiny = testSector({ dimensions: { width: 1, height: 1 } });
+    const tiny = testSector({ size: { width: 2, depth: 2 } });
     const camera = makeCamera(tiny);
     const fit = editorFramingFitting(tiny, camera.viewportSize);
     expect(fit.scale).toBeLessThan(ORTHO_RIG.defaultScale);

@@ -1,6 +1,5 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GENDER } from '@somnio/core';
 import type { InventoryRow } from '@somnio/core';
 import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
 import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
@@ -10,8 +9,8 @@ import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
 const STARTER_ROWS: InventoryRow[] = [
-  { slot: 0, category: 0, itemId: 0, extras: [{ key: 'gold', value: 100 }], equippedHand: undefined },
-  { slot: 1, category: 1, itemId: 0, extras: [], equippedHand: undefined },
+  { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined },
+  { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: undefined },
 ];
 
 describe('registration repository', () => {
@@ -26,8 +25,7 @@ describe('registration repository', () => {
       name,
       passwordHash,
       email: `${passwordHash}@example.com`,
-      gender: GENDER.male,
-      figure: 0,
+      people: 'umbren',
       starterInventory,
     });
 
@@ -47,12 +45,10 @@ describe('registration repository', () => {
     const { account, character } = await register('fighter-one', 'argon2-hash-stub', STARTER_ROWS);
     expect(account.name).toBe('fighter-one');
     expect(character.name).toBe('fighter-one');
-    expect(character.currentSector).toBe('EdariaBibliothek');
+    expect(character.space).toBe('EdariaBibliothek');
     expect((await accounts.findByName('fighter-one'))?.id).toBe(account.id);
-    expect(await characters.findByAccount(account.id)).toHaveLength(1);
-    const stored = await inventory.loadAll(character.id);
-    expect(stored).toHaveLength(STARTER_ROWS.length);
-    expect(stored[0]?.extras.find((extra) => extra.key === 'gold')?.value).toBe(100);
+    expect((await characters.findByAccount(account.id)).map((stored) => stored.people)).toEqual(['umbren']);
+    expect(await inventory.loadAll(character.id)).toEqual(STARTER_ROWS);
   });
 
   it('surfaces a duplicate nickname as nicknameTaken', async () => {
@@ -79,7 +75,7 @@ describe('registration repository', () => {
 
   it('leaves no partial rows behind the loser of a duplicate race', async () => {
     await register('bob', 'winner');
-    await expect(register('bob', 'loser', [{ slot: 99, category: 99, itemId: 99, extras: [], equippedHand: undefined }])).rejects.toThrow(RegistrationError);
+    await expect(register('bob', 'loser', [{ slot: 99, itemId: 'cudgel', quantity: 1, equippedHand: undefined }])).rejects.toThrow(RegistrationError);
     const stored = await accounts.findByName('bob');
     expect(stored?.passwordHash).toBe('winner');
     expect(await characters.findByAccount(stored!.id)).toHaveLength(1);

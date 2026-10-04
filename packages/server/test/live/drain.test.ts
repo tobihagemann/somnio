@@ -32,7 +32,7 @@ async function withActorServer(preseed: string[], body: (url: string) => Promise
 describe('drain before close', () => {
   it('every queued frame reaches the client before the protocol-error close', async () => {
     const frameCount = 16;
-    const preseed = Array.from({ length: frameCount }, (_, index) => encodeSomnioMessage({ tag: 'dateTick', payload: { hour: index % 24, minute: 0 } }));
+    const preseed = Array.from({ length: frameCount }, (_, index) => encodeSomnioMessage({ tag: 'adminSay', payload: { text: String(index) } }));
     await withActorServer(preseed, async (url) => {
       const client = await TestClient.open(url);
       client.socket.send(Buffer.from('x'), { binary: true });
@@ -40,8 +40,8 @@ describe('drain before close', () => {
       expect((await client.closed).code).toBe(CLOSE_PROTOCOL_ERROR);
       expect(received.length).toBe(frameCount + 1);
       expect(received.filter((message) => message.tag === 'hello').length).toBe(1);
-      const hours = received.flatMap((message) => (message.tag === 'dateTick' ? [message.payload.hour] : []));
-      expect(hours.sort((a, b) => a - b)).toEqual(Array.from({ length: frameCount }, (_, index) => index));
+      const texts = received.flatMap((message) => (message.tag === 'adminSay' ? [message.payload.text] : []));
+      expect(texts).toEqual(Array.from({ length: frameCount }, (_, index) => String(index)));
     });
   });
 

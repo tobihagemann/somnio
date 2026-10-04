@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
 import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
@@ -21,13 +22,13 @@ import { createApp } from '../http/app.ts';
 import { startServer } from '../http/server.ts';
 import { PRODUCTION_LOG_MAX_ARCHIVES, PRODUCTION_LOG_MAX_BYTES, createLogging } from '../logging.ts';
 import type { Logging } from '../logging.ts';
-import { loadSectorCache, requireSectorsLoaded } from '../sectors/sectorCache.ts';
-import { AITickService } from '../services/aiTickService.ts';
+import { loadSectorCache, loadWorld, requireSectorsLoaded } from '../sectors/sectorCache.ts';
+import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { CheckpointService } from '../services/checkpointService.ts';
+import { SimulationService } from '../services/simulationService.ts';
 import { WorldClockService } from '../services/worldClockService.ts';
 import { SERVER_VERSION } from '../version.ts';
 import { WorldRouter } from '../world/worldRouter.ts';
-import { pruneOrphanNPCDialogStates } from './orphanDialogPrune.ts';
 
 /** The log directory is fixed relative to the working directory; the image's `WORKDIR` owns it. */
 const LOGS_DIRECTORY = 'logs';
@@ -40,7 +41,7 @@ export interface BootOptions {
   port?: number;
   serverVersion?: string;
   worldClockIntervalMs?: number;
-  aiTickIntervalMs?: number;
+  simulationIntervalMs?: number;
   checkpointIntervalMs?: number;
 }
 
@@ -55,8 +56,8 @@ export interface BootedServer {
 }
 
 /**
- * The whole boot, in order: config → database → readiness → migrations → sectors → orphan-dialog
- * prune → router → synchronous world-clock preload → listen → services.
+ * The whole boot, in order: config → database → readiness → migrations → sectors → world →
+ * router → synchronous world-clock preload → listen → services.
  */
 export async function bootServer(env: Record<string, string | undefined>, options: BootOptions): Promise<BootedServer> {
   const logging = options.logging;
@@ -77,11 +78,15 @@ export async function bootServer(env: Record<string, string | undefined>, option
   }
 
   const sectorsLogger = logging.gameplayLogger('sectors.loader');
-  let sectors: ReturnType<typeof loadSectorCache>;
+  let world: LoadedWorld;
   try {
-    sectors = loadSectorCache(configuration.sectorsDirectory);
+    const sectors = loadSectorCache(configuration.sectorsDirectory);
     sectorsLogger.info({ count: sectors.size }, 'sector cache populated');
     requireSectorsLoaded(sectors, configuration.sectorsDirectory);
+    world = loadWorld(sectors, registryJSON);
+    for (const issue of world.issues) {
+      sectorsLogger.error({ sector: issue.sector, record: issue.record, id: issue.id, issue: issue.message }, 'world issue');
+    }
   } catch (error) {
     return failStartup(error);
   }
@@ -97,12 +102,9 @@ export async function bootServer(env: Record<string, string | undefined>, option
   let worldRouter: WorldRouter;
   let worldClock: WorldClockService;
   try {
-    // The prune runs before the router seeds from the table, so it never loads a cursor for an
-    // NPC index the loaded sector no longer has.
-    await pruneOrphanNPCDialogStates(npcDialogStates, sectors, configuration.forceDialogPrune, logging.adminLogger('dialogprune'));
-    worldRouter = await WorldRouter.create(sectors, characters, npcDialogStates, logging.gameplayLogger('world'), logging.gameplayLogger('sector'));
+    worldRouter = await WorldRouter.create(world, characters, npcDialogStates, logging.gameplayLogger('world'), logging.gameplayLogger('space'));
     // Pre-loaded synchronously so a login in the first tick sees the persisted clock, not the default.
-    worldClock = new WorldClockService(worldRouter, worldClocks, await worldClocks.load(), logging.gameplayLogger('worldclock'), options.worldClockIntervalMs);
+    worldClock = new WorldClockService(worldClocks, await worldClocks.load(), logging.gameplayLogger('worldclock'), options.worldClockIntervalMs);
   } catch (error) {
     return failStartup(error);
   }
@@ -148,11 +150,11 @@ export async function bootServer(env: Record<string, string | undefined>, option
     options.checkpointIntervalMs ?? configuration.checkpointIntervalMs,
     logging.gameplayLogger('checkpoint'),
   );
-  const aiTick = new AITickService(worldRouter, options.aiTickIntervalMs);
-  const aiTickControl = new AbortController();
+  const simulation = new SimulationService(worldRouter, options.simulationIntervalMs);
+  const simulationControl = new AbortController();
   const worldClockControl = new AbortController();
   const checkpointControl = new AbortController();
-  const aiTickRun = aiTick.run(aiTickControl.signal);
+  const simulationRun = simulation.run(simulationControl.signal);
   const worldClockRun = worldClock.run(worldClockControl.signal);
   const checkpointRun = checkpoint.run(checkpointControl.signal);
   lifecycle.info({ port: server.port, version: SERVER_VERSION }, 'SomnioServer ready');
@@ -163,12 +165,12 @@ export async function bootServer(env: Record<string, string | undefined>, option
     worldRouter,
     worldClock,
     dependencies,
-    // The AI tick stops first so no in-flight tick contends with the drain; the world clock saves;
+    // The simulation stops first so no in-flight pass contends with the drain; the world clock saves;
     // the checkpointer stops; the router drains every connection; then the server and the pool.
     shutdown: async () => {
-      aiTickControl.abort();
-      await aiTickRun;
-      lifecycle.debug('shutdown: ai tick stopped');
+      simulationControl.abort();
+      await simulationRun;
+      lifecycle.debug('shutdown: simulation stopped');
       worldClockControl.abort();
       await worldClockRun;
       lifecycle.debug('shutdown: world clock saved');

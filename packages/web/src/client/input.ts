@@ -6,7 +6,7 @@ import { applyScrollZoom, worldMovement } from '@/scene/cameraRig';
  * Keyboard and mouse-facing sampling for the gameplay tick.
  *
  * `KeyboardEvent.code` names the *physical* key, so `ShiftLeft` and `AltLeft` are directly
- * observable and the legacy left-side tempo convention (LShift runs, LOption walks) is kept.
+ * observable. The gait modifiers are left-side only: LShift runs, LOption walks.
  */
 
 export interface HeldKeys {
@@ -109,7 +109,7 @@ export class KeyboardSampler implements KeyCaptureSink {
   }
 
   /**
-   * Whether an event is swallowed for gameplay. Bare direction keys and the tempo modifiers are
+   * Whether an event is swallowed for gameplay. Bare direction keys and the gait modifiers are
    * consumed while gameplay is active, but Meta/Control combos pass through so browser and menu
    * shortcuts still work.
    */
@@ -120,7 +120,7 @@ export class KeyboardSampler implements KeyCaptureSink {
   }
 
   private handleKey(event: KeyboardEvent, down: boolean): void {
-    // Modifiers track unconditionally: they are never consumed, and a tempo key released while
+    // Modifiers track unconditionally: they are never consumed, and a gait key released while
     // gameplay is inactive must still clear or the character keeps running.
     const modifier = MODIFIER_CODES[event.code];
     if (modifier !== undefined) {
@@ -151,12 +151,12 @@ export class KeyboardSampler implements KeyCaptureSink {
  */
 export function mouseFacingHeading(pointer: { x: number; y: number }, center: { x: number; y: number }): Heading {
   const world = worldMovement(pointer.x - center.x, pointer.y - center.y);
-  return headingFromVector(world.dx, world.dy);
+  return headingFromVector(world.dx, world.dz);
 }
 
 /**
- * Session-only scroll zoom, mirroring `PlayerZoom`. Holds the factor rather than the camera scale
- * so the clamp lives at the same place it does natively.
+ * Session-only scroll zoom. Holds the factor rather than the camera scale, so the clamp lives in
+ * `applyScrollZoom` alone.
  */
 export class PlayerZoom {
   private currentFactor = 1;

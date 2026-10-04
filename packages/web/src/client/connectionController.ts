@@ -1,10 +1,12 @@
-import { LOGIN_RESULT, REGISTER_RESULT, SOMNIO_PROTOCOL_CONSTANTS, WIRE_ENTITY_TYPE, assertNever, isClientOnlyMessage } from '@somnio/protocol';
-import type { LoginResultCode, RegisterResultCode, SomnioMessage, WireEntityType } from '@somnio/protocol';
-import { heading, sectorFromWire, tempoFromRaw } from '@somnio/core';
-import type { Sector, WorldEntity, WorldEntityKind } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS, assertNever, isClientOnlyMessage } from '@somnio/protocol';
+import type { EnterSpaceMessage, EntityKind, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
+import { bundledModelRegistry, heading } from '@somnio/core';
+import type { ModelRegistry, People, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
 import { SessionStore } from './sessionStore';
 import type { ChatLine } from './chatLine';
+import { ClientWorld } from './clientWorld';
+import type { ClientEntity } from './clientWorld';
 import { noopRenderSurface } from './renderSurface';
 import type { WorldRenderSurface } from './renderSurface';
 
@@ -15,7 +17,7 @@ import type { WorldRenderSurface } from './renderSurface';
 const MAX_RETAINED_CHAT_LINES = 500;
 
 /**
- * Names retained in the online roster. Far above any real sector's occupancy, and low enough that
+ * Names retained in the online roster. Far above any real occupancy, and low enough that
  * the per-append collating sort stays cheap.
  */
 const MAX_ROSTER_NAMES = 500;
@@ -24,12 +26,12 @@ const MAX_ROSTER_NAMES = 500;
  * The tags the controller hands to the gameplay half.
  *
  * Naming the subset as a type makes the ownership split compiler-enforced instead of
- * comment-enforced: the gameplay dispatcher's switch is exhaustive over exactly these five, so
- * routing a sixth tag here without handling it fails to build.
+ * comment-enforced: the gameplay dispatcher's switch is exhaustive over exactly these seven, so
+ * routing an eighth tag here without handling it fails to build.
  */
-export type GameplayMessage = Extract<SomnioMessage, { tag: 'serverPosition' | 'serverSay' | 'energy' | 'inventory' | 'adminSay' }>;
+export type GameplayMessage = Extract<SomnioMessage, { tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'adminSay' }>;
 
-export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSector' | 'attached';
+export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSpace' | 'attached';
 
 /** Strict equality at the gate means either direction is a rejection. */
 export type VersionSkew = 'clientOutdated' | 'serverOutdated';
@@ -49,8 +51,7 @@ export interface RegistrationForm {
   nickname: string;
   password: string;
   passwordRepeat: string;
-  characterClass: number;
-  gender: number;
+  people: People;
   email: string;
 }
 
@@ -63,13 +64,15 @@ export interface RegistrationForm {
  */
 export type AuthIntent = { kind: 'resume' } | { kind: 'login'; credentials: LoginCredentials } | { kind: 'register'; form: RegistrationForm };
 
-/** Which message the registration overlay shows, mirroring `RegistrationError`. */
+/** Which message the registration overlay shows. */
 export type RegistrationOutcome = 'ok' | 'nicknameExists' | 'nameNotAllowed' | 'failure';
 
 export interface ConnectionControllerOptions {
   transport: GameplayTransport;
   renderSurface?: WorldRenderSurface;
   sessionStore?: SessionStore;
+  /** What the sectors' placements collide by; the same registry the renderer loads models from. */
+  registry?: ModelRegistry;
   /** Bounded retry budget for the `alreadyLoggedIn` refresh race. */
   maxResumeRetries?: number;
   resolveURL?: () => string;
@@ -108,17 +111,17 @@ export class ConnectionController {
 
   onOverlayChanged: ((overlay: OverlayKind | undefined) => void) | undefined;
 
-  entities = new Map<number, WorldEntity>();
+  entities = new Map<string, ClientEntity>();
   players: string[] = [];
-  selfEntityIndex: number | undefined;
+  selfId: string | undefined;
   selfDisplayName = '';
-  currentSector: Sector | undefined;
-  currentDateTick = { hour: 12, minute: 0 };
+  world: ClientWorld | undefined;
 
   readonly sessionStore: SessionStore;
   readonly renderSurface: WorldRenderSurface;
 
   private readonly transport: GameplayTransport;
+  private readonly registry: ModelRegistry;
   private readonly resolveURL: () => string;
   private readonly maxResumeRetries: number;
   private credentials: LoginCredentials | undefined;
@@ -135,6 +138,7 @@ export class ConnectionController {
     this.transport = options.transport;
     this.renderSurface = options.renderSurface ?? noopRenderSurface;
     this.sessionStore = options.sessionStore ?? new SessionStore();
+    this.registry = options.registry ?? bundledModelRegistry();
     this.resolveURL = options.resolveURL ?? (() => '/ws');
     this.maxResumeRetries = options.maxResumeRetries ?? 3;
   }
@@ -247,7 +251,7 @@ export class ConnectionController {
   /**
    * Opens a connection that authenticates by creating the account rather than logging in. The
    * credentials are pre-filled from the same form so the login overlay the `ok` path returns to
-   * is already populated, exactly as `submitRegistration` does natively.
+   * is already populated.
    */
   register(form: RegistrationForm): void {
     this.connect({ kind: 'register', form });
@@ -287,11 +291,11 @@ export class ConnectionController {
     const stored = this.sessionStore.load();
     // Both post-login states, not `attached` alone. The server accepts `revokeSession` from the
     // moment the connection is registered, and the player can reach Leave Game in either: the game
-    // menu opens whenever no overlay is presented, and `handleEnterSector` clears the overlay while
-    // dropping back to `awaitingEnterSector` on every sector load and portal hop. Gating on
-    // `attached` alone therefore skipped the revoke on a hop while still clearing the store below —
-    // leaving a token that stays redeemable for its full lifetime with nothing left to revoke it.
-    const canRevoke = this.connectionState === 'attached' || this.connectionState === 'awaitingEnterSector';
+    // menu opens whenever no overlay is presented, which a token resume is from its first frame.
+    // Gating on `attached` alone would skip the revoke before the first `enterSpace` while still
+    // clearing the store below — leaving a token that stays redeemable for its full lifetime with
+    // nothing left to revoke it.
+    const canRevoke = this.connectionState === 'attached' || this.connectionState === 'awaitingEnterSpace';
     if (stored !== undefined && canRevoke) {
       this.transport.send({ tag: 'revokeSession', payload: { token: stored.token } });
     }
@@ -392,31 +396,21 @@ export class ConnectionController {
         // the same surfaces `leaveGame` drops, for the same reason.
         this.endSessionIdentity();
         return;
-      case 'enterSector':
-        // `sectorFromWire` is a hostile-input boundary and throws on a sector that violates the
-        // shared bounds. Report and tear down, rather than
-        // letting the throw escape `dispatch` and leave the controller in a half-loaded sector.
-        try {
-          this.handleEnterSector(sectorFromWire(message.payload.sector));
-        } catch (error) {
-          this.appendChat({ kind: 'errorCode', code: String(error) });
-          this.endSessionWithRecovery();
-        }
+      case 'enterSpace':
+        this.handleEnterSpace(message.payload);
         return;
-      case 'mainCharacter':
-        this.handleMainCharacter(message.payload.entityIndex);
+      case 'sector':
+        this.handleSector(message.payload.sector);
         return;
       case 'entity':
         this.handleEntity(message);
         return;
       case 'leave':
-        this.handleLeave(message.payload.entityIndex, message.payload.leftGame);
+        this.handleLeave(message.payload.entityId, message.payload.leftGame);
         return;
-      case 'dateTick':
-        this.currentDateTick = { hour: message.payload.hour, minute: message.payload.minute };
-        this.renderSurface.updateDayNightTint(message.payload.hour, message.payload.minute, this.currentSector?.light ?? { indoor: false, brightness: 100 });
-        return;
-      case 'serverPosition':
+      case 'moves':
+      case 'correction':
+      case 'doorRefused':
       case 'serverSay':
       case 'energy':
       case 'inventory':
@@ -482,16 +476,16 @@ export class ConnectionController {
     });
   }
 
-  private handleLoginResult(result: LoginResultCode): void {
+  private handleLoginResult(result: LoginResult): void {
     switch (result) {
-      case LOGIN_RESULT.ok:
+      case 'ok':
         this.selfDisplayName = this.credentials?.nickname ?? this.selfDisplayName;
-        this.connectionState = 'awaitingEnterSector';
+        this.connectionState = 'awaitingEnterSpace';
         return;
-      case LOGIN_RESULT.alreadyLoggedIn:
+      case 'alreadyLoggedIn':
         this.handleAlreadyLoggedIn();
         return;
-      case LOGIN_RESULT.badCredentials: {
+      case 'badCredentials': {
         // Expired, unknown, and revoked tokens are all reported as bad credentials, so a
         // probing client learns nothing about which. Drop the stored token and fall back to
         // the password form.
@@ -519,21 +513,21 @@ export class ConnectionController {
    * connection has nothing left to authenticate. Only `ok` returns to the login overlay; the three
    * failures leave the registration overlay up so the form can be corrected in place.
    */
-  private handleRegisterResult(result: RegisterResultCode): void {
+  private handleRegisterResult(result: RegisterResult): void {
     this.pendingRegistration = undefined;
     this.teardown();
     switch (result) {
-      case REGISTER_RESULT.ok:
+      case 'ok':
         this.presentedOverlay = { kind: 'login' };
         this.onRegistrationOutcome?.('ok');
         return;
-      case REGISTER_RESULT.nicknameExists:
+      case 'nicknameExists':
         this.onRegistrationOutcome?.('nicknameExists');
         return;
-      case REGISTER_RESULT.nameNotAllowed:
+      case 'nameNotAllowed':
         this.onRegistrationOutcome?.('nameNotAllowed');
         return;
-      case REGISTER_RESULT.failure:
+      case 'failure':
         this.onRegistrationOutcome?.('failure');
         return;
       default:
@@ -543,8 +537,7 @@ export class ConnectionController {
 
   /**
    * Reports the registration verdict to the overlay layer. It is a hook rather than a rendered
-   * chat line because none of the outcomes has one natively, and the overlay is where the player
-   * is looking.
+   * chat line because the overlay is where the player is looking.
    */
   onRegistrationOutcome: ((outcome: RegistrationOutcome) => void) | undefined;
 
@@ -580,27 +573,35 @@ export class ConnectionController {
     }, 250);
   };
 
-  private handleEnterSector(sector: Sector): void {
-    // Clear sector-local state before loading so a portal hop cannot leave the previous
-    // sector's entities and peers alive alongside the new sector.
+  /**
+   * The first frame of every join, a door transfer included. Everything held about the space
+   * being left goes before the new one's sectors and entities start to arrive.
+   */
+  private handleEnterSpace(payload: EnterSpaceMessage): void {
     this.entities.clear();
     this.players = [];
-    this.selfEntityIndex = undefined;
-    this.currentSector = sector;
-    this.renderSurface.load(sector, true);
-    this.renderSurface.updateDayNightTint(this.currentDateTick.hour, this.currentDateTick.minute, sector.light);
-    // Back to `awaitingEnterSector` until the next `mainCharacter`, so chat and movement that
-    // depend on `selfEntityIndex` cannot fire in the gap during a portal hop.
-    this.connectionState = 'awaitingEnterSector';
+    this.selfId = payload.selfId;
+    this.world = new ClientWorld(payload.spaceId, this.registry);
+    this.renderSurface.enterSpace(this.world);
+    this.renderSurface.setClock(payload.worldSeconds);
+    this.connectionState = 'attached';
     this.presentedOverlay = undefined;
-    this.onSectorChanged?.();
+    this.onSpaceEntered?.();
   }
 
-  onSectorChanged: (() => void) | undefined;
+  onSpaceEntered: (() => void) | undefined;
+
+  private handleSector(sector: SectorView): void {
+    const world = this.world;
+    if (world === undefined) return;
+    world.addSector(sector);
+    const self = this.selfId === undefined ? undefined : this.entities.get(this.selfId);
+    if (self !== undefined) world.follow(self.position, this.renderSurface);
+  }
 
   /**
    * Fires on every teardown path so the owner can drop per-session state the controller does not
-   * hold — the predictor's sub-pixel carry and heartbeat clocks, and the input sampler's held bits.
+   * hold — the predictor's clocks and pending door, and the input sampler's held bits.
    */
   onTeardown: (() => void) | undefined;
 
@@ -613,42 +614,41 @@ export class ConnectionController {
   onSessionIdentityEnded: (() => void) | undefined;
 
   /**
-   * `mainCharacter` is what promotes the connection to `attached`, which is the gate the frame
-   * loop reads before running a tick — not `dateTick`, which is only the integration helper's drain
-   * sentinel and arrives last for unrelated reasons.
+   * Fires when an entity is placed or removed, so the owner can drop the glide it was drawing
+   * that entity along.
    */
-  private handleMainCharacter(entityIndex: number): void {
-    this.selfEntityIndex = entityIndex;
-    this.connectionState = 'attached';
-  }
+  onEntityReset: ((entityId: string) => void) | undefined;
 
   private handleEntity(message: Extract<SomnioMessage, { tag: 'entity' }>): void {
     const payload = message.payload;
-    const kind = entityKind(payload.type, payload.entityIndex === this.selfEntityIndex);
+    const kind = entityKind(payload.kind, payload.id === this.selfId);
     // A token resume has no typed credentials, so `handleLoginResult` had no name to record. The
     // self entity carries the authoritative one — without this, a resumed player's own chat lines
     // render with an empty sender.
     if (kind === 'player' && this.selfDisplayName === '') this.selfDisplayName = payload.name;
-    const entity: WorldEntity = {
-      id: payload.entityIndex,
+    const entity: ClientEntity = {
+      id: payload.id,
       kind,
-      figure: payload.figure,
-      gender: payload.gender,
-      position: { x: payload.x, y: payload.y },
-      facing: heading(payload.facing),
-      tempo: tempoFromRaw(payload.tempo),
-      maskSize: { width: payload.maskWidth, height: payload.maskHeight },
+      characterModelId: payload.characterModelId,
       name: payload.name,
+      radius: payload.radius,
+      position: { x: payload.x, z: payload.z },
+      facing: heading(payload.facing),
+      gait: payload.gait,
     };
-    this.entities.set(payload.entityIndex, entity);
+    this.entities.set(entity.id, entity);
+    this.onEntityReset?.(entity.id);
+    // The sectors around the player go up before the player does, so the surface reveals the new
+    // space with its ground already under the character.
+    if (kind === 'player') this.world?.follow(entity.position, this.renderSurface);
     this.renderSurface.placeEntity(entity);
     if (
       (kind === 'peer' || kind === 'player') &&
       !this.players.includes(entity.name) &&
-      // The roster dedupes by name while `leave` removes only the name an index currently carries,
-      // so re-announcing one entity under fresh names appends without ever removing. `entities` is
-      // bounded by the Int16 index space; this is not, and each append re-runs a collating sort and
-      // a full panel rebuild. Sector occupancy has no legitimate reason to approach the cap.
+      // The roster dedupes by name while `leave` removes only the name an entity currently carries,
+      // so re-announcing one entity under fresh names appends without ever removing, and each
+      // append re-runs a collating sort and a full panel rebuild. Occupancy has no legitimate
+      // reason to approach the cap.
       this.players.length < MAX_ROSTER_NAMES
     ) {
       this.players.push(entity.name);
@@ -665,7 +665,7 @@ export class ConnectionController {
    *
    * Without it the players panel only refreshes when something *else* forces a render — a chat
    * line, an energy frame — so a peer who joins quietly is missing from the list, and its count
-   * footer disagrees with the characters visibly standing in the sector.
+   * footer disagrees with the characters visibly standing there.
    */
   onPlayersChanged: (() => void) | undefined;
 
@@ -673,23 +673,24 @@ export class ConnectionController {
    * Dropping `leave` leaves departed peers rendered forever, which is why it is called out as
    * an easy tag to miss.
    */
-  private handleLeave(entityIndex: number, leftGame: boolean): void {
-    if (entityIndex === this.selfEntityIndex && leftGame) {
+  private handleLeave(entityId: string, leftGame: boolean): void {
+    if (entityId === this.selfId && leftGame) {
       // The server ended *our* session, so the world on screen is dead. Recovering rather than
       // tearing down bare: this arrives while attached, so a bare teardown would leave the last
       // rendered frame up with Esc inert and only a reload as the way out.
       this.endSessionWithRecovery();
       return;
     }
-    const leaving = this.entities.get(entityIndex);
+    const leaving = this.entities.get(entityId);
     if (leaving === undefined) return;
-    this.entities.delete(entityIndex);
-    this.renderSurface.removeEntity(entityIndex);
+    this.entities.delete(entityId);
+    this.onEntityReset?.(entityId);
+    this.renderSurface.removeEntity(entityId);
     if (leaving.kind === 'peer') {
       this.players = this.players.filter((name) => name !== leaving.name);
       this.onPlayersChanged?.();
-      // A peer changing sectors detaches with `leftGame: false`; only a real disconnect is a
-      // "left the game" event.
+      // A peer walking out of view or through a door leaves with `leftGame: false`; only a real
+      // disconnect is a "left the game" event.
       if (leftGame) this.appendChat({ kind: 'left', playerName: leaving.name });
     }
   }
@@ -725,14 +726,13 @@ export class ConnectionController {
     this.connectionState = 'disconnected';
     this.entities.clear();
     this.players = [];
-    this.selfEntityIndex = undefined;
-    this.currentSector = undefined;
+    this.selfId = undefined;
+    this.world = undefined;
     this.resumingWithToken = undefined;
     // Cleared here, not only on `connect`'s early-return branch — that branch runs only when a
     // socket was already open, i.e. never after a teardown. Left set, a registration submitted
     // against an unreachable server survives to the next login and re-issues `register` instead,
-    // answering `nicknameExists` for an account the player already has. `resetSession` clears it
-    // natively for this exact reason.
+    // answering `nicknameExists` for an account the player already has.
     //
     // The credentials go with it — for a login as much as a registration. On a `register` intent
     // both are derived from one form by `connect` and only mean anything together, so dropping the
@@ -748,25 +748,19 @@ export class ConnectionController {
   }
 }
 
-/**
- * Wire entity type plus "is this us" to a render kind.
- *
- * A named function over the raw values rather than a nested ternary on bare `0`/`1` literals: the
- * mapping is the kind of thing a reader has to be able to answer at a glance ("which raw type is a
- * monster?"), and `WIRE_ENTITY_TYPE` already names them.
- */
-function entityKind(type: WireEntityType, isSelf: boolean): WorldEntityKind {
-  switch (type) {
-    case WIRE_ENTITY_TYPE.player:
+/** Wire entity kind plus "is this us" to a render kind: another player is a `peer`. */
+function entityKind(kind: EntityKind, isSelf: boolean): WorldEntityKind {
+  switch (kind) {
+    case 'player':
       return isSelf ? 'player' : 'peer';
-    case WIRE_ENTITY_TYPE.npc:
+    case 'npc':
       return 'npc';
-    case WIRE_ENTITY_TYPE.monster:
+    case 'monster':
       return 'monster';
     default:
-      // Exhaustive rather than falling through to `monster`: an added wire type reaching an
+      // Exhaustive rather than falling through to `monster`: an added wire kind reaching an
       // unguarded fallback here would silently render as a monster — no name plaque, monster
       // collision, monster speech routing — with every suite green.
-      return assertNever(type, 'wire entity type');
+      return assertNever(kind, 'entity kind');
   }
 }

@@ -1,4 +1,4 @@
-import { CONFUSABLES, isAllowed, nameShapeCategory, scriptID, scriptSet } from './tables.ts';
+import { CONFUSABLES, isAllowed, nameShapeCategory, scriptId, scriptSet } from './tables.ts';
 
 /**
  * Confusable / script-mixing defense for account and character names. Two layers, applied to the
@@ -127,14 +127,14 @@ const RECOMMENDED_SCRIPT_NAMES = [
 ];
 
 function ids(names: readonly string[]): Set<number> {
-  return new Set(names.map(scriptID).filter((id): id is number => id !== undefined));
+  return new Set(names.map(scriptId).filter((id): id is number => id !== undefined));
 }
 
 const SCRIPT_POLICY = {
   neutral: ids(['Common', 'Inherited']),
-  latin: scriptID('Latin'),
-  cyrillic: scriptID('Cyrillic'),
-  greek: scriptID('Greek'),
+  latin: scriptId('Latin'),
+  cyrillic: scriptId('Cyrillic'),
+  greek: scriptId('Greek'),
   recommended: ids(RECOMMENDED_SCRIPT_NAMES),
   cjkSystems: [ids(['Latin', 'Han', 'Hiragana', 'Katakana']), ids(['Latin', 'Han', 'Bopomofo']), ids(['Latin', 'Han', 'Hangul'])],
 };

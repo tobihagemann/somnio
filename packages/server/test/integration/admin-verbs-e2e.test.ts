@@ -1,25 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodeAdminResponse, encodeAdminRequest } from '@somnio/protocol';
 import type { AdminRequest, AdminResponse } from '@somnio/protocol';
+import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import { PostgresWorldClockRepository } from '@somnio/data';
 import { CLOSE_GOING_AWAY } from '../../src/connection/connectionActor.ts';
 import { TestClient, bearer } from '../support/liveServer.ts';
 import { TEST_ADMIN_TOKEN, TEST_SERVER_VERSION, bootTestServer, joinFreshPlayer, pollUntil, startDatabase, uniqueNickname } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
+/** Year 500, the first day of the first month, 07:11:50: the boot default is noon of that day. */
+const SEED = BOOT_DEFAULT_WORLD_SECONDS - 5 * 3600 + 11 * 60 + 50;
+
 let harness: DatabaseHarness;
 let server: TestServer;
 
 beforeAll(async () => {
   harness = await startDatabase();
-  await new PostgresWorldClockRepository(harness.db).save({
-    second: 50,
-    minute: 11,
-    hour: 7,
-    day: 1,
-    month: 1,
-    year: 500,
-  });
+  await new PostgresWorldClockRepository(harness.db).save(SEED);
   // A one-minute tick keeps the seeded readout stable for the formatting case.
   server = await bootTestServer(harness.url, { worldClockIntervalMs: 60_000 });
 });
@@ -57,14 +54,7 @@ describe('admin verbs end to end', () => {
 
   it('time reflects a ticking world clock under a fast interval', async () => {
     const local = await startDatabase();
-    await new PostgresWorldClockRepository(local.db).save({
-      second: 50,
-      minute: 11,
-      hour: 7,
-      day: 1,
-      month: 1,
-      year: 500,
-    });
+    await new PostgresWorldClockRepository(local.db).save(SEED);
     const fast = await bootTestServer(local.url, { worldClockIntervalMs: 5 });
     try {
       const client = await TestClient.open(fast.adminUrl, bearer(TEST_ADMIN_TOKEN));
@@ -116,7 +106,7 @@ describe('admin verbs end to end', () => {
     });
     expect((await bob.client.until('leave')).target).toEqual({
       tag: 'leave',
-      payload: { entityIndex: alice.entityIndex, leftGame: true },
+      payload: { entityId: alice.entityId, leftGame: true },
     });
     expect((await alice.client.closed).code).toBe(CLOSE_GOING_AWAY);
     const count = await pollUntil(async () => {

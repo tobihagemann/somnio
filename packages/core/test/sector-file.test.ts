@@ -1,117 +1,82 @@
 import { describe, expect, it } from 'vitest';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
-import { formatSwiftFloat32 } from '../src/float.ts';
 import { SectorFileError, readSectorFile, writeSectorFile } from '../src/sectorFile.ts';
-import type { Sector } from '../src/sector.ts';
-import { SECTOR_FIXTURE_NAMES, readSectorEncodingGolden, readSectorFixture } from './support/sectorFixture.ts';
+import type { MonsterSpawn, SectorNPC } from '../src/sector.ts';
+import { SECTOR_FIXTURE_NAMES, readSectorFixture } from './support/sectorFixture.ts';
+import { interiorSector, outdoorSector } from './support/worldFixture.ts';
 
 /**
  * The `.somnio-sector` codec against the committed fixtures — a **raw** comparison, not
- * canonicalized JSON: the format is sorted-key pretty-printed (unlike the wire encoder), so for
- * this format byte identity is exactly right. A failure here means an authored save would
- * rewrite unrelated bytes of every sector the server loads.
+ * canonicalized JSON: for this format byte identity is exactly right. A failure here means an
+ * authored save would rewrite unrelated bytes of every sector the server loads.
  */
 
-function minimalSector(overrides: Partial<Sector> = {}): Sector {
-  return {
-    name: 'Test',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
+function npc(overrides: Partial<SectorNPC> = {}): SectorNPC {
+  return { id: 'libus', name: 'Libus', characterModelId: 'libus', x: 1, z: 1, facing: 0, dialogScript: '', ...overrides };
 }
 
-/** The caps are the disk/wire allocation gate, so their values are pinned, not only their `<=` semantics. */
-describe('sector caps', () => {
-  it('are pinned to their literal values', () => {
-    expect(SOMNIO_CONSTANTS.tileSize).toBe(128);
-    expect(SOMNIO_CONSTANTS.groundCellSize).toBe(32);
-    expect(SOMNIO_CONSTANTS.maxSectorDimension).toBe(1024);
-    expect(SOMNIO_CONSTANTS.maxSectorArea).toBe(65_536);
-    expect(SOMNIO_CONSTANTS.maxSectorObjects).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorCollisionMasks).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorPortals).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorNPCs).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorMonsterSpawns).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorFloorPatches).toBe(4096);
-    expect(SOMNIO_CONSTANTS.maxSectorAnchorScanPairings).toBe(1_048_576);
-    expect(SOMNIO_CONSTANTS.maxSectorFileBytes).toBe(16_777_216);
-  });
-});
+function monsterSpawn(overrides: Partial<MonsterSpawn> = {}): MonsterSpawn {
+  return { id: 'spawn-1', kind: 'gespenst', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, ...overrides };
+}
 
-describe('formatSwiftFloat32', () => {
-  /** All verified against a live Foundation `JSONEncoder` encoding the same `Float`s. */
-  it.each([
-    [270, '270'],
-    [123.456, '123.456'],
-    [0.1, '0.1'],
-    [23.198593, '23.198593'],
-    [1 / 3, '0.33333334'],
-    // The sub-1e-4 band a Facing entry can reach, where Foundation uses scientific notation with
-    // a two-digit exponent while `String()` would not. All verified against a live Foundation
-    // `JSONEncoder` encoding the same `Float`s.
-    [0.0001, '0.0001'],
-    [0.00001, '1e-05'],
-    [0.000001, '1e-06'],
-    [0.0000001, '1e-07'],
-    [0.0000305, '3.05e-05'],
-    [0.000099999, '9.9999e-05'],
-    // Midpoint ties: Foundation rounds to even where `toPrecision` would round half-up.
-    [334.515625, '334.51562'],
-    [331.328125, '331.32812'],
-    [264.265625, '264.26562'],
-    [200.640625, '200.64062'],
-  ])('formats %s as Foundation writes it', (value, expected) => {
-    expect(formatSwiftFloat32(value)).toBe(expected);
-  });
-});
+/** A committed sector file with one piece of its text replaced, for the reader's refusals. */
+function edited(name: (typeof SECTOR_FIXTURE_NAMES)[number], from: string, to: string): string {
+  const text = readSectorFixture(name);
+  expect(text).toContain(from);
+  return text.replace(from, to);
+}
 
 describe('fixture byte stability', () => {
   it.each(SECTOR_FIXTURE_NAMES)('%s round-trips byte-identical', (name) => {
     const text = readSectorFixture(name);
-    const sector = readSectorFile(text, name);
-    expect(sector.name).toBe(name);
-    expect(writeSectorFile(sector)).toBe(text);
+    expect(writeSectorFile(readSectorFile(text, name))).toBe(text);
+  });
+});
+
+describe('the written form', () => {
+  it('is 2-space JSON with sorted keys, a trailing newline, and no name', () => {
+    expect(writeSectorFile(interiorSector('Room'))).toBe(
+      [
+        '{',
+        '  "brightness": 100,',
+        '  "floorMaterialId": "grass",',
+        '  "kind": "interior",',
+        '  "size": {',
+        '    "depth": 10,',
+        '    "width": 10',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
   });
 
-  /**
-   * The committed synthetic golden is what actually covers the empty-array form, the omitted
-   * zero `rotation`, the omitted empty `floorPatches`, JSON escaping, and the non-cardinal
-   * `direction` — asserted against its committed bytes, so the writer is compared to the format
-   * rather than to itself.
-   */
-  it('the synthetic encoding golden round-trips byte-identical', () => {
-    const text = readSectorEncodingGolden();
-    const sector = readSectorFile(text, 'sector-encoding-golden');
-    expect(writeSectorFile(sector)).toBe(text);
-
-    // The cases the seven fixtures never reach, pinned semantically too.
-    expect(text).toContain('"monsterSpawns" : [\n\n  ]');
-    expect(text).not.toContain('"rotation" : 0');
-    expect(text).not.toContain('"floorPatches"');
-    expect(text).toContain('"direction" : 23.198593');
-    expect(text).toContain('\\"Müller\\"');
-    expect(sector.npcs[0]?.facing).toBeCloseTo(23.198593, 5);
-    expect(sector.objects[0]?.rotation).toBe(0);
-    expect(sector.floorPatches).toEqual([]);
+  it('leaves out every default and reads it back', () => {
+    const sector = outdoorSector('Town', { x: 0, z: 0 }, { placements: [{ id: 'box-1', modelId: 'box', x: 1, z: 2, yaw: 0, elevation: 0 }] });
+    const text = writeSectorFile(sector);
+    for (const key of ['yaw', 'elevation', 'floorPatches', 'blockers', 'doors', 'npcs', 'monsterSpawns', 'spawn']) {
+      expect(text).not.toContain(`"${key}"`);
+    }
+    expect(readSectorFile(text, 'Town')).toEqual(sector);
   });
 
-  it('preserves a negative-zero direction as `-0`, matching Foundation', () => {
-    // The format keeps a `-0.0` heading and writes it as `-0`; `String(-0)` is `"0"`,
-    // so without the serializer's special case a `-0` direction would be rewritten to `0`.
-    const golden = readSectorFile(readSectorEncodingGolden(), 'sector-encoding-golden');
-    const npc = golden.npcs[0];
-    expect(npc).toBeDefined();
-    const withNegativeZero: Sector = { ...golden, npcs: [{ ...npc!, facing: -0 }] };
-    expect(writeSectorFile(withNegativeZero)).toContain('"direction" : -0');
+  it('writes what differs from a default', () => {
+    const sector = outdoorSector(
+      'Town',
+      { x: 0, z: 0 },
+      {
+        placements: [{ id: 'candle-1', modelId: 'candle', x: 1, z: 2, yaw: 137.5, elevation: 0.76 }],
+        spawn: { x: 3, z: 4, facing: 90 },
+        npcs: [npc({ dialogScript: 'Grüß dich, "$name".\n---\nBis bald.' })],
+        monsterSpawns: [monsterSpawn()],
+      },
+    );
+    const text = writeSectorFile(sector);
+    expect(text).toContain('"yaw": 137.5');
+    expect(text).toContain('"elevation": 0.76');
+    expect(text).toContain('Grüß dich, \\"$name\\".\\n---\\nBis bald.');
+    expect(readSectorFile(text, 'Town')).toEqual(sector);
   });
 });
 
@@ -120,99 +85,97 @@ describe('reader validation', () => {
     expect(() => readSectorFile('not json', 'X')).toThrow(SectorFileError);
   });
 
-  it('rejects a missing required field', () => {
-    const text = readSectorFixture('EdariaArena').replace('"version" : 7', '"versionX" : 7');
-    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(/version/);
-  });
-
-  it('rejects a non-integer coordinate', () => {
-    const text = readSectorFixture('EdariaArena').replace('"x" : 482', '"x" : 482.5');
-    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(/Int16/);
-  });
-
-  it('rejects a coordinate outside Int16', () => {
-    const text = readSectorFixture('EdariaArena').replace('"x" : 482', '"x" : 40000');
-    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(/Int16/);
-  });
-
-  it('rejects an unknown portal direction', () => {
-    const text = readSectorFixture('EdariaArena').replace('"direction" : 1', '"direction" : 2');
-    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(/portal direction/);
-  });
-
-  it('rejects out-of-range dimensions', () => {
-    const text = readSectorFixture('EdariaArena').replace('"height" : 4,\n    "width" : 4', '"height" : 1024,\n    "width" : 1024');
-    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(/dimensions/);
-  });
-
   it('rejects an oversized file before parsing', () => {
     expect(() => readSectorFile(' '.repeat(SOMNIO_CONSTANTS.maxSectorFileBytes + 1), 'X')).toThrow(/file size/);
   });
 
-  it('defaults a missing rotation to 0 and normalizes an out-of-range direction', () => {
-    const text = readSectorEncodingGolden().replace('"direction" : 23.198593', '"direction" : -90');
-    const sector = readSectorFile(text, 'X');
-    expect(sector.objects[0]?.rotation).toBe(0);
-    expect(sector.npcs[0]?.facing).toBe(270);
+  it.each([
+    ['a missing required field', '"floorMaterialId"', '"floorMaterial"', /sector\.floorMaterialId/],
+    ['a non-numeric coordinate', '"x": 10.145', '"x": "10.145"', /sector\.placements\[0\]\.x/],
+    ['a coordinate out of range', '"x": 10.145', '"x": 1e9', /exceeds 10000 metres/],
+    ['a size beyond the extent cap', '"width": 10.24', '"width": 600', /exceeds 512 metres/],
+    ['an unknown kind', '"kind": "interior"', '"kind": "indoor"', /sector\.kind/],
+    ['an origin on an interior', '"kind": "interior"', '"kind": "interior", "origin": { "x": 0, "z": 0 }', /origin: not allowed on an interior sector/],
+    ['an interior without brightness', '"brightness": 75,', '', /sector\.brightness/],
+    ['a duplicate record id', '"id": "blocker-2"', '"id": "blocker-1"', /duplicate id "blocker-1"/],
+    ['an id outside the id alphabet', '"id": "blocker-1"', '"id": "Blocker 1"', /lowercase letters, digits, and hyphens/],
+    ['a door on a placement the sector lacks', '"placement": "door-1"', '"placement": "door-9"', /no placement "door-9"/],
+    ['an unknown monster kind', '"kind": "gespenst"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
+    ['a spawn that keeps nothing alive', '"maxAlive": 3', '"maxAlive": 0', /maxAlive: expected 1 to 16/],
+    ['a spawn area without extent', '"width": 7.04', '"width": 0', /expected a positive length/],
+  ])('rejects %s', (_name, from, to, message) => {
+    const text = edited('EdariaArena', from, to);
+    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(SectorFileError);
+    expect(() => readSectorFile(text, 'EdariaArena')).toThrow(message);
+  });
+
+  it('takes the sector name from the caller, never from the file', () => {
+    const text = edited('EdariaArena', '"kind": "interior"', '"kind": "interior", "name": "Elsewhere"');
+    expect(readSectorFile(text, 'EdariaArena').name).toBe('EdariaArena');
+  });
+
+  it('normalizes an out-of-range facing rather than rejecting it', () => {
+    const sector = readSectorFile(edited('EdariaBibliothek', '"facing": 270', '"facing": 450'), 'EdariaBibliothek');
+    expect(sector.npcs[0]?.facing).toBe(90);
   });
 });
 
+/** The editor saves through the writer, so everything the server would refuse at boot is refused at save. */
 describe('writer guards', () => {
-  it('rejects out-of-range dimensions', () => {
-    expect(() => writeSectorFile(minimalSector({ dimensions: { width: 0, height: 4 } }))).toThrow(/dimensions/);
-    expect(() => writeSectorFile(minimalSector({ dimensions: { width: 1024, height: 1024 } }))).toThrow(/dimensions/);
+  it('rejects more NPCs or monster spawns than a sector may hold', () => {
+    const npcs = Array.from({ length: SOMNIO_CONSTANTS.maxSectorNPCs + 1 }, (_, index) => npc({ id: `npc-${index}` }));
+    expect(() => writeSectorFile(interiorSector('Room', { npcs }))).toThrow(/npcs: exceeds 4096 records/);
+    const monsterSpawns = Array.from({ length: SOMNIO_CONSTANTS.maxSectorMonsterSpawns + 1 }, (_, index) => monsterSpawn({ id: `spawn-${index}` }));
+    expect(() => writeSectorFile(interiorSector('Room', { monsterSpawns }))).toThrow(/monsterSpawns: exceeds 4096 records/);
   });
 
-  it('rejects over-cap content counts', () => {
-    const masks = Array.from({ length: SOMNIO_CONSTANTS.maxSectorCollisionMasks + 1 }, () => ({
-      x: 0,
-      y: 0,
-      width: 32,
-      height: 32,
-    }));
-    expect(() => writeSectorFile(minimalSector({ collisionMasks: masks }))).toThrow(/content counts/);
+  /** 30 m wide and 20 m deep, away from the space's origin: an NPC's position is relative to its sector, and the two extents differ. */
+  const field = (npcs: SectorNPC[]) => outdoorSector('Field', { x: 40, z: -20 }, { size: { width: 30, depth: 20 }, npcs });
+
+  it.each([
+    ['east', { x: 30.0005, z: 10 }],
+    ['west', { x: -0.0005, z: 10 }],
+    ['south', { x: 15, z: 20.0005 }],
+    ['north', { x: 15, z: -0.0005 }],
+  ])('rejects an NPC standing half a millimetre %s of its sector', (_side, at) => {
+    expect(() => writeSectorFile(field([npc(at)]))).toThrow(/npcs\[0\]: stands outside the sector/);
   });
 
-  it('rejects a non-integer and an out-of-Int16 field', () => {
-    expect(() => writeSectorFile(minimalSector({ collisionMasks: [{ x: 1.5, y: 0, width: 32, height: 32 }] }))).toThrow(/Int16/);
-    expect(() => writeSectorFile(minimalSector({ collisionMasks: [{ x: 40_000, y: 0, width: 32, height: 32 }] }))).toThrow(/Int16/);
+  it('accepts an NPC standing on the edge of its sector', () => {
+    const npcs = [npc({ id: 'north-west', x: 0, z: 0 }), npc({ id: 'south-east', x: 30, z: 20 })];
+    expect(readSectorFile(writeSectorFile(field(npcs)), 'Field').npcs).toEqual(npcs);
+  });
+
+  it('rejects a dialog step that could exceed the say cap once it names the longest nickname', () => {
+    const atCap = `${'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes - SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes)}$name`;
+    const room = (dialogScript: string) => interiorSector('Room', { npcs: [npc({ dialogScript })] });
+    expect(readSectorFile(writeSectorFile(room(`Hello.\n---\n${atCap}`)), 'Room').npcs[0]?.dialogScript).toBe(`Hello.\n---\n${atCap}`);
+    expect(() => writeSectorFile(room(`Hello.\n---\na${atCap}`))).toThrow(/npcs\[0\]\.dialogScript: step 2 can exceed 256 UTF-8 bytes/);
+  });
+
+  it('rejects a spawn keeping more alive than the cap', () => {
+    const monsterSpawns = [monsterSpawn({ maxAlive: SOMNIO_CONSTANTS.maxSpawnAlive + 1 })];
+    expect(() => writeSectorFile(interiorSector('Room', { monsterSpawns }))).toThrow(/maxAlive: expected 1 to 16, got 17/);
+  });
+
+  it('rejects brightness on an outdoor sector', () => {
+    expect(() => writeSectorFile(outdoorSector('Town', { x: 0, z: 0 }, { brightness: 70 }))).toThrow(/brightness: not allowed on an outdoor sector/);
+  });
+
+  it('rejects a coordinate that is not a finite number', () => {
+    const blockers = [{ id: 'wall', x: Number.NaN, z: 0, width: 1, depth: 1 }];
+    expect(() => writeSectorFile(interiorSector('Room', { blockers }))).toThrow(SectorFileError);
   });
 
   it('rejects a serialized file over the byte cap', () => {
-    const sector = minimalSector({
-      npcs: [
-        {
-          spawnOrigin: { x: 0, y: 0 },
-          spawnBoxSize: { width: 32, height: 32 },
-          maskSize: { width: 32, height: 48 },
-          name: 'X',
-          figure: 0,
-          facing: 0,
-          behaviorTag: 0,
-          dialogScript: 'a'.repeat(SOMNIO_CONSTANTS.maxSectorFileBytes),
-        },
-      ],
-    });
-    expect(() => writeSectorFile(sector)).toThrow(/file size/);
+    const npcs = [npc({ dialogScript: 'a'.repeat(SOMNIO_CONSTANTS.maxSectorFileBytes) })];
+    expect(() => writeSectorFile(interiorSector('Room', { npcs }))).toThrow(/file size/);
   });
 
   it('measures the byte cap in UTF-8 bytes, not UTF-16 code units', () => {
     // An umlaut is one code unit but two UTF-8 bytes, so a `.length` check would pass this.
     const halfCap = Math.trunc(SOMNIO_CONSTANTS.maxSectorFileBytes / 2);
-    const sector = minimalSector({
-      npcs: [
-        {
-          spawnOrigin: { x: 0, y: 0 },
-          spawnBoxSize: { width: 32, height: 32 },
-          maskSize: { width: 32, height: 48 },
-          name: 'X',
-          figure: 0,
-          facing: 0,
-          behaviorTag: 0,
-          dialogScript: 'ü'.repeat(halfCap + 512),
-        },
-      ],
-    });
-    expect(() => writeSectorFile(sector)).toThrow(/file size/);
+    const npcs = [npc({ dialogScript: 'ü'.repeat(halfCap + 512) })];
+    expect(() => writeSectorFile(interiorSector('Room', { npcs }))).toThrow(/file size/);
   });
 });

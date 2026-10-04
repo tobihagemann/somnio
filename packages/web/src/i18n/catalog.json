@@ -45,7 +45,7 @@
   },
   "Balance": {
     "en": "Balance",
-    "de": "Balance"
+    "de": "Gleichgewicht"
   },
   "Broadcast message: %@": {
     "en": "Broadcast message: %@",
@@ -55,17 +55,9 @@
     "en": "Cancel",
     "de": "Abbrechen"
   },
-  "Character:": {
-    "en": "Character:",
-    "de": "Charakter:"
-  },
   "Chat": {
     "en": "Chat",
     "de": "Chat"
-  },
-  "Check for Updates...": {
-    "en": "Check for Updates...",
-    "de": "Auf Updates prüfen..."
   },
   "Close": {
     "en": "Close",
@@ -74,14 +66,6 @@
   "Copyright": {
     "en": "© Copyright 2026 Tobias Hagemann",
     "de": "© Copyright 2026 Tobias Hagemann"
-  },
-  "Debug": {
-    "en": "Debug",
-    "de": "Debug"
-  },
-  "Default": {
-    "en": "Default",
-    "de": "Standard"
   },
   "Email:": {
     "en": "Email:",
@@ -99,17 +83,13 @@
     "en": "Fullscreen",
     "de": "Vollbild"
   },
-  "Gender:": {
-    "en": "Gender:",
-    "de": "Geschlecht:"
-  },
   "Ghost model by Quaternius.": {
     "en": "Ghost model by Quaternius.",
     "de": "Geist-Modell von Quaternius."
   },
-  "HP": {
-    "en": "HP",
-    "de": "HP"
+  "Health": {
+    "en": "Health",
+    "de": "Gestalt"
   },
   "If you don't have an account, click here!": {
     "en": "If you don't have an account, click here!",
@@ -134,14 +114,6 @@
   "Log In": {
     "en": "Log In",
     "de": "Anmelden"
-  },
-  "Log level": {
-    "en": "Log level",
-    "de": "Log-Level"
-  },
-  "Mana": {
-    "en": "Mana",
-    "de": "Mana"
   },
   "Nickname": {
     "en": "Nickname",
@@ -175,6 +147,10 @@
     "en": "Password:",
     "de": "Passwort:"
   },
+  "People:": {
+    "en": "People:",
+    "de": "Volk:"
+  },
   "Players": {
     "en": "Players",
     "de": "Spieler"
@@ -199,10 +175,6 @@
     "en": "Resume",
     "de": "Fortsetzen"
   },
-  "Server URL": {
-    "en": "Server URL",
-    "de": "Server-URL"
-  },
   "Sign Up": {
     "en": "Sign Up",
     "de": "Registrieren"
@@ -218,6 +190,10 @@
   "Somnio needs a desktop computer.": {
     "en": "Somnio needs a desktop computer.",
     "de": "Somnio benötigt einen Desktop-Rechner."
+  },
+  "Spirit": {
+    "en": "Spirit",
+    "de": "Geist"
   },
   "Thanks paragraph": {
     "en": "Somnio was my first passion project, developed from 2003 to 2006. This is its revival.",
@@ -258,10 +234,6 @@
   "Update required": {
     "en": "Update required",
     "de": "Update erforderlich"
-  },
-  "Verbose": {
-    "en": "Verbose",
-    "de": "Ausführlich"
   },
   "Version: %@": {
     "en": "Version: %@",

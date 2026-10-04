@@ -3,32 +3,14 @@ import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppShell, GamePanels, Overlays, detectDesktop, element, field } from '@/ui';
-import { catalogTables } from '@/i18n';
-import { CHARACTER_CLASS, GENDER } from '@somnio/core';
+import { catalogTables, setLocale } from '@/i18n';
 import type { RegistrationForm } from '@/client';
-import { LOGIN_RESULT, SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
-import type { WireSector } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import type { InventoryRowMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
+import { enterSpaceFrame } from './helpers/worldFixture';
 import type { ChatLine } from '@/client';
-import type { InventoryRow } from '@somnio/core';
-
-/** Minimal sector, enough for `enterSector` to reach the overlay-dismissing tail of its handler. */
-function loginWireSector(): WireSector {
-  return {
-    name: 'EdariaMitte',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-  };
-}
 
 /**
  * The DOM layer, against `happy-dom`.
@@ -113,12 +95,12 @@ describe('panel chrome metrics', () => {
     expect(css).not.toMatch(/\.overlay-title::before\s*\{[^}]*scaleX\(-1\)/);
   });
 
-  it('lays the chat panel out like its native VStack', () => {
+  it('lays the chat panel out as a fixed-width column with a gap', () => {
     const panel = /\n\.chat-panel\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(panel).toBeDefined();
     expect(panel).toContain('width: 380px');
-    // `chatPanel`'s inner `VStack(spacing: 8)`; without it the scrollback's 3px line margin is the
-    // only thing between the history and the input.
+    // Without the gap the scrollback's 3px line margin is the only thing between the history and
+    // the input.
     expect(panel).toContain('gap: 8px');
 
     const field = /\.chat-panel \.fantasy-field\s*\{([^}]*)\}/.exec(css)?.[1];
@@ -152,24 +134,38 @@ describe('the four floating panels', () => {
     expect(panels.root.querySelectorAll('.hud-bar__track')).toHaveLength(3);
   });
 
-  /** `HUDBarPair` is a bare track with the name in `.help`, so the browser must not draw it either. */
+  /** A bar is a bare track: its name is carried by `title` and `aria-label`, never drawn. */
   it('names the energy bars without rendering text beside them', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
     const tracks = [...panels.root.querySelectorAll('.hud-bar__track')];
-    expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['HP', 'Balance', 'Mana']);
+    expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['Health', 'Balance', 'Spirit']);
     for (const track of tracks) expect(track.textContent).toBe('');
 
     panels.renderEnergy({
-      hpCurrent: 30,
-      hpMax: 60,
+      healthCurrent: 30,
+      healthMax: 60,
       balanceCurrent: 1,
       balanceMax: 2,
-      manaCurrent: 5,
-      manaMax: 5,
+      spiritCurrent: 5,
+      spiritMax: 5,
     });
-    expect(tracks[0]?.getAttribute('aria-label')).toBe('HP 30/60');
-    expect(tracks[0]?.getAttribute('title')).toBe('HP 30/60');
+    expect(tracks[0]?.getAttribute('aria-label')).toBe('Health 30/60');
+    expect(tracks[0]?.getAttribute('title')).toBe('Health 30/60');
+    // Each pool reads its own pair: three distinct readings, so a swapped pair cannot pass.
+    expect(tracks.map((node) => node.getAttribute('title'))).toEqual(['Health 30/60', 'Balance 1/2', 'Spirit 5/5']);
+  });
+
+  /** The canon names of the three pools, which are not translations of the English ones. */
+  it('names the energy bars Gestalt, Gleichgewicht, and Geist in German', () => {
+    setLocale('de');
+    try {
+      const panels = new GamePanels(noopCallbacks(), catalogTables, 'de');
+      const tracks = [...panels.root.querySelectorAll('.hud-bar__track')];
+      expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['Gestalt', 'Gleichgewicht', 'Geist']);
+    } finally {
+      setLocale('en');
+    }
   });
 
   /**
@@ -205,17 +201,17 @@ describe('the four floating panels', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
     panels.renderEnergy({
-      hpCurrent: 50,
-      hpMax: 100,
+      healthCurrent: 50,
+      healthMax: 100,
       balanceCurrent: 3,
       balanceMax: 4,
-      manaCurrent: 0,
-      manaMax: 10,
+      spiritCurrent: 0,
+      spiritMax: 10,
     });
 
     const widths = [...panels.root.querySelectorAll('.hud-bar__fill')].map((node) => (node as HTMLElement).style.width);
-    // Pixels against `HUDBarPair.foregroundWidth`'s 148px span, not a percentage of the 150px
-    // track: a percentage runs the full bar one pixel past the track's trailing seam.
+    // Pixels against the 148px span, not a percentage of the 150px track: a percentage runs the
+    // full bar one pixel past the track's trailing seam.
     expect(widths).toEqual(['74px', '111px', '0px']);
   });
 
@@ -223,12 +219,12 @@ describe('the four floating panels', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
     panels.renderEnergy({
-      hpCurrent: 5,
-      hpMax: 0,
+      healthCurrent: 5,
+      healthMax: 0,
       balanceCurrent: 0,
       balanceMax: 1,
-      manaCurrent: 0,
-      manaMax: 1,
+      spiritCurrent: 0,
+      spiritMax: 1,
     });
 
     const first = panels.root.querySelector('.hud-bar__fill') as HTMLElement;
@@ -278,30 +274,55 @@ describe('the four floating panels', () => {
     expect(row?.textContent).toBe('<b>bold</b>');
   });
 
-  it('labels inventory rows from the item table and marks the equipped one', () => {
+  it('labels inventory rows from the item table, counts the purse, and marks the equipped one', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const rows: InventoryRow[] = [
-      { slot: 0, category: 0, itemId: 0, extras: [{ key: 'gold', value: 7 }], equippedHand: undefined },
-      { slot: 1, category: 1, itemId: 0, extras: [], equippedHand: 1 },
+    const rows: InventoryRowMessage[] = [
+      { slot: 0, itemId: 'purse', quantity: 107 },
+      { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
+      { slot: 2, itemId: 'cudgel', quantity: 1, equippedHand: 'left' },
+      { slot: 3, itemId: 'cudgel', quantity: 1 },
     ];
 
     panels.renderItems(rows);
 
     const rowNodes = [...panels.root.querySelectorAll('.trailing-list--items .list-row')];
-    expect(rowNodes.map((node) => node.querySelector('.list-row__name')?.textContent)).toEqual(['Purse', 'Cudgel']);
-    // `ItemsListView` marks the hand rather than restyling the row; the player never picks one.
-    expect(rowNodes.map((node) => node.querySelector('.list-row__marker')?.textContent)).toEqual(['', '[R]']);
+    expect(rowNodes.map((node) => node.querySelector('.list-row__name')?.textContent)).toEqual(['Purse', 'Cudgel', 'Cudgel', 'Cudgel']);
+    // The purse shows its coins; an equipped row marks the hand rather than restyling the row, and
+    // the player never picks one.
+    expect(rowNodes.map((node) => node.querySelector('.list-row__marker')?.textContent)).toEqual(['107', '[R]', '[L]', '']);
   });
 
-  /** Both trailing lists carry a count footer natively; neither had one in the browser. */
+  /** A blank row tells an operator nothing; the raw id names the item the table is missing. */
+  it('renders the raw id of an item the item table does not know', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+
+    panels.renderItems([{ slot: 0, itemId: 'lantern', quantity: 1 }]);
+
+    expect(panels.root.querySelector('.trailing-list--items .list-row__name')?.textContent).toBe('lantern');
+  });
+
+  it('hands the activated row to the callback on a double click and on Enter', () => {
+    const activated: InventoryRowMessage[] = [];
+    const panels = new GamePanels({ ...noopCallbacks(), onActivateItem: (row) => activated.push(row) }, catalogTables, 'en');
+    const purse = { slot: 0, itemId: 'purse', quantity: 7 };
+    panels.renderItems([purse]);
+    const node = panels.root.querySelector('.trailing-list--items .list-row') as HTMLElement;
+
+    node.dispatchEvent(new Event('dblclick'));
+    node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+    expect(activated).toEqual([purse, purse]);
+  });
+
+  /** Both trailing lists carry a count footer. */
   it('renders the Players and Items count footers', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
     panels.renderPlayers(['Greta', 'Tobi']);
     panels.renderItems([
-      { slot: 0, category: 0, itemId: 0, extras: [], equippedHand: undefined },
-      { slot: 1, category: 1, itemId: 0, extras: [], equippedHand: 0 },
-      { slot: 2, category: 9, itemId: 9, extras: [], equippedHand: undefined },
+      { slot: 0, itemId: 'purse', quantity: 0 },
+      { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'left' },
+      { slot: 2, itemId: 'lantern', quantity: 1 },
     ]);
 
     const footers = [...panels.root.querySelectorAll('.list-footer')].map((node) => node.textContent);
@@ -488,7 +509,7 @@ describe('overlays', () => {
     expect(outdatedServer).not.toContain('update your client');
   });
 
-  it('offers no native auto-update path', () => {
+  it('offers no auto-update path', () => {
     const overlays = new Overlays(overlayCallbacks());
 
     // A browser client updates by reloading; a "Check for Updates..." button would do nothing.
@@ -653,8 +674,8 @@ describe('the login overlay across an authentication attempt', () => {
       }),
     );
 
-    // `submitLogin` natively does not touch the overlay; dismissing on submit leaves a rejected
-    // password with nothing on screen to return to.
+    // `submitLogin` does not touch the overlay; dismissing on submit leaves a rejected password
+    // with nothing on screen to return to.
     expect(shell.controller.connectionState).toBe('awaitingLoginResult');
     expect(dialogVisible()).toBe(true);
   });
@@ -670,11 +691,11 @@ describe('the login overlay across an authentication attempt', () => {
       }),
     );
 
-    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: LOGIN_RESULT.badCredentials } }));
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'badCredentials' } }));
 
     expect(dialogVisible()).toBe(true);
     expect(shell.controller.connectionState).toBe('disconnected');
-    // The reason goes to the chat scrollback rather than inline in the form, as natively — the
+    // The reason goes to the chat scrollback rather than inline in the form — the
     // registration overlay is the only one that carries its error in the panel. So the scrollback
     // has to be *readable* behind the overlay, which is why the panels are not gated on the
     // connection: with the socket torn down, a state-gated panel would hide the explanation.
@@ -714,10 +735,10 @@ describe('the login overlay across an authentication attempt', () => {
         payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion },
       }),
     );
-    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } }));
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'ok' } }));
     expect(dialogVisible()).toBe(true);
 
-    socket().deliverText(encodeSomnioMessage({ tag: 'enterSector', payload: { sector: loginWireSector() } }));
+    socket().deliverText(encodeSomnioMessage(enterSpaceFrame('EdariaBibliothek')));
 
     expect(dialogVisible()).toBe(false);
     expect(shell.controller.presentedOverlay).toBeUndefined();
@@ -781,7 +802,7 @@ describe('the registration form validates before it sends', () => {
 
   interface RegistrationRig {
     fields: Record<'nickname' | 'password' | 'repeat' | 'email', HTMLInputElement>;
-    selects: Record<'characterClass' | 'gender', HTMLSelectElement>;
+    people: HTMLSelectElement;
     lastForm: () => RegistrationForm | undefined;
     submit: () => void;
     forms: number;
@@ -806,9 +827,9 @@ describe('the registration form validates before it sends', () => {
       },
     } as unknown as RegistrationRig;
 
-    // The registration card is the second dialog; its form carries six rows where login has two.
+    // The registration card is the second dialog; its form carries five rows where login has three.
     const forms = [...container.querySelectorAll('form')];
-    const form = forms.find((each) => each.querySelectorAll('input, select').length >= 6);
+    const form = forms.find((each) => each.querySelectorAll('input, select').length >= 5);
     if (form === undefined) throw new Error('registration form not found');
     const inputs = [...form.querySelectorAll('input')];
     const passwords = inputs.filter((each) => each.type === 'password');
@@ -827,15 +848,12 @@ describe('the registration form validates before it sends', () => {
     };
 
     const selectList = form.querySelectorAll('select');
-    const characterClass = selectList[0];
-    const gender = selectList[1];
-    if (characterClass === undefined || gender === undefined) {
-      throw new Error('registration selects not found');
-    }
+    const people = selectList[0];
+    if (people === undefined || selectList.length !== 1) throw new Error('registration select not found');
 
     return Object.assign(rig, {
       fields: { nickname, password, repeat, email },
-      selects: { characterClass, gender },
+      people,
       lastForm: () => lastForm,
       submit: () => form.dispatchEvent(new Event('submit', { cancelable: true })),
       error: () => form.parentElement?.querySelector('.form-error')?.textContent ?? '',
@@ -856,21 +874,30 @@ describe('the registration form validates before it sends', () => {
     expect(rig.forms).toBe(1);
   });
 
+  it('offers the four peoples under the People label', () => {
+    const rig = registrationRig(container);
+
+    expect([...rig.people.options].map((option) => [option.value, option.textContent])).toEqual([
+      ['wachen', 'Wachen'],
+      ['soporen', 'Soporen'],
+      ['umbren', 'Umbren'],
+      ['lumina', 'Lumina'],
+    ]);
+    expect(rig.people.labels[0]?.textContent).toBe('People:');
+  });
+
   /**
-   * The class and gender selects are the one pair a player can never correct afterwards —
-   * `CharacterClass` is fixed at account creation — and they travel as opaque `Int16`s with no
-   * downstream check, so a swap or a hard-coded value reaches the account silently. Asserting the
-   * call happened is not enough: it fires either way.
+   * The people is the one choice a player can never correct afterwards, and it travels as a plain
+   * string the form's own validation does not look at, so a hard-coded value reaches the account
+   * silently. Asserting the call happened is not enough: it fires either way.
    */
-  it('carries the chosen class and gender through to the register call', () => {
+  it('carries the chosen people through to the register call', () => {
     const rig = registrationRig(container);
     fill(rig);
-    rig.selects.characterClass.value = String(CHARACTER_CLASS.mage);
-    rig.selects.gender.value = String(GENDER.female);
+    rig.people.value = 'umbren';
     rig.submit();
 
-    expect(rig.lastForm()?.characterClass).toBe(CHARACTER_CLASS.mage);
-    expect(rig.lastForm()?.gender).toBe(GENDER.female);
+    expect(rig.lastForm()).toEqual({ nickname: 'Tester', password: 'hunter22', passwordRepeat: 'hunter22', people: 'umbren', email: 'tester@example.com' });
   });
 
   /**

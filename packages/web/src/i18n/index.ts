@@ -1,3 +1,4 @@
+import { ITEMS, PEOPLES, peopleLabelKey } from '@somnio/core';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 import webCatalogJSON from './catalog.json' with { type: 'json' };
@@ -6,8 +7,8 @@ export * from '@somnio/core/catalog';
 export * from './chatLineText';
 
 /**
- * The browser client's localization surface: the core catalog (class and gender names, item
- * labels) merged with the browser's own catalog. The collision set is exported so a test can pin
+ * The browser client's localization surface: the core catalog (people names, item labels) merged
+ * with the browser's own catalog. The collision set is exported so a test can pin
  * it rather than letting the last import silently win.
  */
 export const webCatalog: CatalogTables = readCatalog(webCatalogJSON);
@@ -64,6 +65,12 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 }
 
 /**
+ * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
+ * item's name in the items panel and every people's name in the registration form.
+ */
+export const CORE_LABEL_KEYS: readonly string[] = [...Object.values(ITEMS).map((item) => item.labelKey), ...PEOPLES.map(peopleLabelKey)];
+
+/**
  * Every catalog key the browser UI renders.
  *
  * The catalog test checks en/de presence, placeholder parity, and the no-Unicode-ellipsis rule
@@ -72,6 +79,8 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
  * the author forgot to extend the allowlist.
  */
 export const RENDERED_KEYS: readonly string[] = [
+  ...CORE_LABEL_KEYS,
+
   // Chat scrollback
   '%1$@ asks, "%2$@"',
   '%1$@ exclaims, "%2$@"',
@@ -90,12 +99,10 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your session expired. Please log in again.',
   'Reconnecting...',
 
-  // HUD, floating panels, and inventory rows
-  'Purse',
-  'Cudgel',
-  'HP',
+  // HUD and floating panels
+  'Health',
   'Balance',
-  'Mana',
+  'Spirit',
   'Chat',
   'Players',
   'Items',
@@ -115,24 +122,11 @@ export const RENDERED_KEYS: readonly string[] = [
   'Password (*):',
   '*: repeat',
   'Email:',
-  'Character:',
-  'Gender:',
+  'People:',
   'Cancel',
   'That name uses characters Somnio does not allow.',
   'Nickname already exists.',
   'Registration failed.',
-
-  // Character classes and genders offered by the registration form
-  'Cleric',
-  'Fighter',
-  'Gangster',
-  'Hunter',
-  'Lancer',
-  'Mage',
-  'Thief',
-  'Warrior',
-  'Male',
-  'Female',
 
   // Game menu, about, and the version gate
   'Resume',

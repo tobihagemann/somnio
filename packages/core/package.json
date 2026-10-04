@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Somnio game core: sector model and disk codec, geometry, collision, headings, the model registry, domain models, world clock, and the wire conversions.",
+  "description": "Somnio game core: sector model and disk codec, the world of spaces and doors, geometry, collision and ground height, headings, the model registry, domain models, and the world clock.",
   "engines": {
     "node": ">=24.17.0"
   },

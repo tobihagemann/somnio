@@ -10,25 +10,25 @@ import type { EditorTool } from '../canvasController';
 /** One glyph per editor tool, stroked on the same 24-unit grid as `ICON_PATHS`. */
 export const EDITOR_ICON_PATHS = {
   select: 'M6.5 3.5v14l4-3.6 2.6 6 2.7-1.2-2.6-5.8h5.3z',
-  object: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12v9M12 12L4 7.5M12 12l8-4.5',
-  mask: 'M4 4h4M10 4h4M16 4h4M4 4v4M4 10v4M4 16v4M20 4v4M20 10v4M20 16v4M4 20h4M10 20h4M16 20h4',
-  portal: 'M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M4 21h16M14 11.5h1.5',
+  placement: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12v9M12 12L4 7.5M12 12l8-4.5',
+  blocker: 'M4 4h4M10 4h4M16 4h4M4 4v4M4 10v4M4 16v4M20 4v4M20 10v4M20 16v4M4 20h4M10 20h4M16 20h4',
   npc: 'M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 21v-1a7 7 0 0 1 14 0v1',
-  monster:
+  monsterSpawn:
     'M12 13c-3 0-5.5 2-5.5 4.5 0 1.5 1 2.5 2.5 2.5 1 0 2-.5 3-.5s2 .5 3 .5c1.5 0 2.5-1 2.5-2.5C17.5 15 15 13 12 13zM6.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM10.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM13.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
   floorPatch: 'M4 4h16v16H4zM4 12h16M12 4v16',
+  spawn: 'M6 21V4M6 4h11l-2.5 4 2.5 4H6',
 } as const satisfies Record<EditorTool, IconPath>;
 
 /** Bounded numeric row for the sector forms. */
 export function numberField(
   labelText: string,
-  options: { min: number; max: number; value: number; step?: number },
+  options: { min: number; max: number; value: number; step: number },
 ): { row: HTMLElement; input: HTMLInputElement } {
   return field(labelText, {
     type: 'number',
     min: options.min,
     max: options.max,
-    step: options.step ?? 1,
+    step: options.step,
     value: String(options.value),
   });
 }

@@ -31,8 +31,8 @@ export type GameplayTransportDelegate = (event: GameplayTransportEvent) => void;
  *    `pending` holds frames only while the socket is not open, and `flushPending` returns early
  *    in exactly that state, so the queue is empty whenever the flush can run. Disconnecting before
  *    the socket opens therefore drops what was queued rather than sending it. Nothing queues
- *    pre-open today — the predictor waits for `selfEntityIndex` and `currentSector`, and
- *    `sendAuth` runs on `hello`.
+ *    pre-open today — the predictor waits for `selfId` and `world`, and `sendAuth` runs on
+ *    `hello`.
  * 3. **Text frames only.** A binary frame or a decode failure is terminal and closes the
  *    connection.
  */
@@ -52,7 +52,7 @@ export class GameplayTransport {
    * `close()`, so a stale socket's late `close` would otherwise run `handleClose` on
    * the *replacement* — clearing `this.socket` out from under a live connection, emitting a spurious
    * `peerEOF`, and leaving the server holding a registration that makes the next login
-   * `alreadyLoggedIn`. Comparing generations is what restores the original's per-socket scoping.
+   * `alreadyLoggedIn`. Comparing generations is what scopes every callback to its own socket.
    *
    * Bumped by every path that takes ownership of or retires a socket — `connect`, `disconnect`, and
    * `terminate` — so a socket is superseded the moment this transport is done with it, not only once

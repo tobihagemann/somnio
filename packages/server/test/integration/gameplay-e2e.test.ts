@@ -1,42 +1,59 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { LOGIN_RESULT, REGISTER_RESULT } from '@somnio/protocol';
-import { SOMNIO_CONSTANTS, TEMPO, feetCenter, feetRect, headingFromCardinal, npcRuntimePosition } from '@somnio/core';
-import { PostgresCharacterRepository, PostgresWorldClockRepository } from '@somnio/data';
+import { OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, WORLD_TIME_RATE, dialogLine, dialogSteps, distance, headingFromCardinal, resolveDoor } from '@somnio/core';
+import type { Point } from '@somnio/core';
+import { PostgresCharacterRepository, PostgresWorldClockRepository, STARTER_SECTOR } from '@somnio/data';
 import { CLOSE_GOING_AWAY } from '../../src/connection/connectionActor.ts';
 import { TestClient } from '../support/liveServer.ts';
 import {
   bootTestServer,
   closeAndAwaitCleanup,
-  fixtureSectors,
+  drainFrames,
+  fixtureWorld,
   frame,
   joinFreshPlayer,
+  joinFreshPlayerAt,
   loginOverWire,
-  nearestClearOrigin,
   pollUntil,
   registerFrame,
   selfPosition,
+  standableNear,
   startDatabase,
   uniqueNickname,
 } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
+const SEEDED_WORLD_SECONDS = 20_000_000_000.25;
+const LIBUS = `npc:${STARTER_SECTOR}/libus`;
+
 let harness: DatabaseHarness;
 let server: TestServer;
-const bibliothek = fixtureSectors().get('EdariaBibliothek')!;
+const world = fixtureWorld();
+const bibliothek = world.spaces.get(STARTER_SECTOR)!.sectors[0]!;
+const mitte = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'EdariaMitte')!;
+const libraryExit = resolveDoor(
+  bibliothek,
+  bibliothek.doors.find((door) => door.id === 'exit')!,
+  world.registry,
+)!;
+const townhallDoor = resolveDoor(
+  mitte,
+  mitte.doors.find((door) => door.id === 'to-edariabibliothek')!,
+  world.registry,
+)!;
+
+function library() {
+  return server.server.worldRouter.space(STARTER_SECTOR)!;
+}
+
+/** A point a short step from `from` that a player can stand on. */
+function stepFrom(from: Point): Point {
+  return standableNear(library(), from, 2 * SOMNIO_CONSTANTS.playerRadius + 0.2);
+}
 
 beforeAll(async () => {
   harness = await startDatabase();
-  // second 50 / minute 11 with a 20 ms tick: the clock crosses into minute 12 (a broadcast mark)
-  // 200 ms in, leaving the client time to log in and reach the attached state.
-  await new PostgresWorldClockRepository(harness.db).save({
-    second: 50,
-    minute: 11,
-    hour: 12,
-    day: 1,
-    month: 1,
-    year: 500,
-  });
-  server = await bootTestServer(harness.url, { worldClockIntervalMs: 20 });
+  await new PostgresWorldClockRepository(harness.db).save(SEEDED_WORLD_SECONDS);
+  server = await bootTestServer(harness.url);
 });
 // A closed socket's server-side unregister and `leave` broadcast finish after the client's own
 // close event, so without this a test's first joiner can receive the previous test's stale
@@ -55,91 +72,89 @@ describe('gameplay end to end', () => {
     const client = await TestClient.open(server.url);
     await client.next();
     client.send(registerFrame(nickname));
-    expect(await client.next()).toEqual({ tag: 'registerResult', payload: { result: REGISTER_RESULT.ok } });
+    expect(await client.next()).toEqual({ tag: 'registerResult', payload: { result: 'ok' } });
     client.send(frame({ tag: 'login', payload: { nickname, password: 'secret-pass' } }));
-    expect(await client.next()).toEqual({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
+    expect(await client.next()).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
     await client.close();
   });
 
-  it('a position update propagates to a peer in the same sector and never echoes to the mover', async () => {
+  it('a fresh player joins the starter sector at its spawn, with the world clock in enterSpace', async () => {
+    const joined = await joinFreshPlayer(server.url, 'fresh');
+    expect(joined.join.map((message) => message.tag).slice(0, 6)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy']);
+    expect(joined.spaceId).toBe(STARTER_SECTOR);
+    expect(selfPosition(joined)).toEqual({ x: bibliothek.spawn!.x, z: bibliothek.spawn!.z });
+    const enter = joined.join[1]!;
+    const worldSeconds = enter.tag === 'enterSpace' ? enter.payload.worldSeconds : Number.NaN;
+    // The clock was loaded from the database and has only run forward since the boot.
+    expect(worldSeconds).toBeGreaterThanOrEqual(SEEDED_WORLD_SECONDS);
+    expect(worldSeconds).toBeLessThan(SEEDED_WORLD_SECONDS + 600 * WORLD_TIME_RATE);
+    expect(joined.join.filter((message) => message.tag === 'entity').map((message) => message.tag === 'entity' && message.payload.id)).toContain(LIBUS);
+    await joined.client.close();
+  });
+
+  it('a move reaches a peer in the same space in a moves batch and never echoes to the mover', async () => {
     const listener = await joinFreshPlayer(server.url, 'peer-a');
     const mover = await joinFreshPlayer(server.url, 'peer-b');
-    const listenerFeet = feetRect(selfPosition(listener), SOMNIO_CONSTANTS.playerSpriteSize);
-    const libusFeet = feetRect(npcRuntimePosition(bibliothek.npcs[0]!), bibliothek.npcs[0]!.maskSize);
-    const target = nearestClearOrigin(bibliothek, { x: 256, y: 256 }, [listenerFeet, libusFeet])!;
-    mover.client.send(
-      frame({
-        tag: 'clientPosition',
-        payload: {
-          entityIndex: 0,
-          x: target.x,
-          y: target.y,
-          facing: headingFromCardinal('east'),
-          tempo: TEMPO.default,
-        },
-      }),
-    );
-    const { target: observed } = await listener.client.until('serverPosition');
-    expect(observed).toMatchObject({
-      tag: 'serverPosition',
-      payload: { entityIndex: mover.entityIndex, x: target.x, y: target.y },
-    });
-    // Anything the mover received after its join is not its own position echoed back.
-    mover.client.send(frame({ tag: 'revokeSession', payload: { token: 'probe' } }));
-    const { before } = await mover.client.until('sessionRevoked');
-    expect(before.filter((message) => message.tag === 'serverPosition' && message.payload.entityIndex === mover.entityIndex)).toEqual([]);
+    const target = stepFrom(selfPosition(mover));
+    mover.client.send(frame({ tag: 'move', payload: { ...target, facing: headingFromCardinal('east'), gait: 'walk' } }));
+    const { target: observed } = await listener.client.until('moves');
+    expect(observed).toEqual({ tag: 'moves', payload: { moves: [{ id: mover.entityId, ...target, facing: headingFromCardinal('east'), gait: 'walk' }] } });
+    // Nothing the mover received since its join is its own move echoed back, or a correction.
+    const after = await drainFrames(mover.client);
+    expect(after.filter((message) => message.tag === 'moves' || message.tag === 'correction')).toEqual([]);
     await mover.client.close();
     await listener.client.close();
   });
 
-  it('a sector switch via portal moves the player and broadcasts leave', async () => {
-    const triggerIndex = bibliothek.portals.findIndex((portal) => portal.direction === 'outboundTrigger');
+  it('a door transfer moves the player in front of the counterpart door and broadcasts leave', async () => {
     const stayer = await joinFreshPlayer(server.url, 'stay');
-    const hopper = await joinFreshPlayer(server.url, 'hop');
-    hopper.client.send(frame({ tag: 'enterPortal', payload: { portalIndex: triggerIndex } }));
-    const { target } = await hopper.client.until('enterSector');
-    expect(target.tag === 'enterSector' && target.payload.sector.name).toBe(bibliothek.portals[triggerIndex]!.targetSectorName);
+    const walker = await joinFreshPlayerAt(server, 'walk', { space: STARTER_SECTOR, position: libraryExit.arrival });
+    walker.client.send(frame({ tag: 'useDoor', payload: { sector: STARTER_SECTOR, doorId: 'exit' } }));
+    const { target: enter } = await walker.client.until('enterSpace');
+    expect(enter).toMatchObject({ tag: 'enterSpace', payload: { spaceId: OUTDOOR_SPACE_ID, selfId: walker.entityId } });
+    const arrival = await drainFrames(walker.client);
+    expect(arrival.flatMap((message) => (message.tag === 'sector' ? [message.payload.sector.name] : []))).toContain('EdariaMitte');
+    const self = arrival.find((message) => message.tag === 'entity' && message.payload.id === walker.entityId);
+    expect(self).toMatchObject({ payload: { x: townhallDoor.arrival.x, z: townhallDoor.arrival.z, facing: townhallDoor.facing } });
     const { target: leave } = await stayer.client.until('leave');
-    expect(leave).toEqual({ tag: 'leave', payload: { entityIndex: hopper.entityIndex, leftGame: false } });
-    await hopper.client.close();
+    expect(leave).toEqual({ tag: 'leave', payload: { entityId: walker.entityId, leftGame: false } });
+    await walker.client.close();
     await stayer.client.close();
   });
 
-  it('an NPC bump triggers a say frame from the configured dialog cursor', async () => {
-    const libus = bibliothek.npcs[0]!;
-    const runtime = npcRuntimePosition(libus);
-    const target = nearestClearOrigin(
-      bibliothek,
-      feetCenter(runtime, libus.maskSize),
-      [feetRect(runtime, libus.maskSize)],
-      SOMNIO_CONSTANTS.npcInteractionRadius,
-    )!;
-    const bumper = await joinFreshPlayer(server.url, 'bumper');
-    bumper.client.send(
-      frame({
-        tag: 'clientPosition',
-        payload: {
-          entityIndex: 0,
-          x: target.x,
-          y: target.y,
-          facing: headingFromCardinal('north'),
-          tempo: TEMPO.default,
-        },
-      }),
-    );
-    bumper.client.send(frame({ tag: 'bumpNPC', payload: { npcIndex: 1 } }));
-    const { target: say } = await bumper.client.until('serverSay');
-    expect(say.tag === 'serverSay' && say.payload.entityIndex).toBe(1);
-    expect(say.tag === 'serverSay' && say.payload.text.length).toBeGreaterThan(0);
-    await bumper.client.close();
+  it('a move across the room and a door used from afar are both refused', async () => {
+    const cheat = await joinFreshPlayer(server.url, 'cheat');
+    const spawn = selfPosition(cheat);
+    // The far corner is more than the 7.5 m a full movement allowance covers, whatever stands in between.
+    const corner = { x: bibliothek.size.width - SOMNIO_CONSTANTS.playerRadius, z: bibliothek.size.depth - SOMNIO_CONSTANTS.playerRadius };
+    expect(distance(spawn, corner)).toBeGreaterThan(7.5);
+    cheat.client.send(frame({ tag: 'move', payload: { ...corner, facing: 0, gait: 'run' } }));
+    cheat.client.send(frame({ tag: 'useDoor', payload: { sector: STARTER_SECTOR, doorId: 'exit' } }));
+    const answers = await drainFrames(cheat.client);
+    expect(answers).toEqual([
+      { tag: 'correction', payload: spawn },
+      { tag: 'doorRefused', payload: { sector: STARTER_SECTOR, doorId: 'exit' } },
+    ]);
+    expect(library().snapshotForPlayer(cheat.entityId)?.character.position).toEqual(spawn);
+    await cheat.client.close();
   });
 
-  it('world clock ticks broadcast dateTick frames to connected clients', async () => {
-    // At 20 ms per in-game second the next broadcast mark is at most 12 in-game minutes (14.4 s) away.
-    const ticker = await joinFreshPlayer(server.url, 'ticker');
-    const { target } = await ticker.client.until('dateTick', 30_000);
-    expect(target.tag).toBe('dateTick');
-    await ticker.client.close();
+  it('an NPC speaks its first line to the player who bumps it from inside the dialog radius, and none to one who bumps from afar', async () => {
+    const libus = bibliothek.npcs.find((npc) => npc.id === 'libus')!;
+    const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.npcInteractionRadius);
+    const bumper = await joinFreshPlayerAt(server, 'bumper', { space: STARTER_SECTOR, position: beside });
+    const afar = await joinFreshPlayer(server.url, 'afar');
+    expect(distance(selfPosition(afar), libus)).toBeGreaterThan(SOMNIO_CONSTANTS.npcInteractionRadius);
+    afar.client.send(frame({ tag: 'bump', payload: { targetId: LIBUS } }));
+    // The drain is answered behind the bump, so the bump from afar is handled before the one from beside.
+    expect(await drainFrames(afar.client)).toEqual([]);
+    bumper.client.send(frame({ tag: 'bump', payload: { targetId: LIBUS } }));
+    const line = { tag: 'serverSay', payload: { entityId: LIBUS, text: dialogLine(dialogSteps(libus.dialogScript)[0]!, bumper.nickname) } };
+    expect((await bumper.client.until('serverSay')).target).toEqual(line);
+    // A line reaches everyone in the library, so this is all Libus has said since the bump from afar.
+    expect(await drainFrames(afar.client)).toEqual([line]);
+    await bumper.client.close();
+    await afar.client.close();
   });
 
   it('graceful shutdown drains in-flight frames before closing connections', async () => {
@@ -152,7 +167,7 @@ describe('gameplay end to end', () => {
       client.send(registerFrame(nickname));
       await client.until('registerResult');
       client.send(frame({ tag: 'login', payload: { nickname, password: 'secret-pass' } }));
-      await client.until('dateTick');
+      await client.until('energy');
       const characters = new PostgresCharacterRepository(local.db);
       const beforeShutdown = (await characters.findByName(nickname))!.lastSeen;
       const shutdown = own.server.shutdown();
@@ -182,7 +197,7 @@ describe('gameplay end to end', () => {
     const second = await TestClient.open(server.url);
     await second.next();
     if (token?.tag === 'sessionToken') second.send(frame({ tag: 'redeemSession', payload: { token: token.payload.token } }));
-    expect(await second.next()).toEqual({ tag: 'loginResult', payload: { result: LOGIN_RESULT.ok } });
+    expect(await second.next()).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
     await second.close();
   });
 });

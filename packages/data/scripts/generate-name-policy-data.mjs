@@ -175,16 +175,16 @@ for (const line of lines(sources['UnicodeData.txt'])) {
 
 // --- Stable script id assignment ---
 const sortedScriptNames = [...longNames].sort();
-const scriptID = new Map(sortedScriptNames.map((name, index) => [name, index]));
+const scriptId = new Map(sortedScriptNames.map((name, index) => [name, index]));
 
 const confusables = {
   mappingTable: confusableEntries.map(([source, targets]) => `${hex(source)}>${targets.map(hex).join(' ')}`).join(';'),
 };
 const scripts = {
   scriptNames: sortedScriptNames.join(';'),
-  scriptRanges: scriptRanges.map(([start, end, script]) => `${hex(start)} ${hex(end)} ${scriptID.get(script)}`).join(';'),
+  scriptRanges: scriptRanges.map(([start, end, script]) => `${hex(start)} ${hex(end)} ${scriptId.get(script)}`).join(';'),
   scriptExtensionRanges: scriptExtensionRanges
-    .map(([start, end, names]) => `${hex(start)} ${hex(end)} ${names.map((name) => scriptID.get(name)).join(',')}`)
+    .map(([start, end, names]) => `${hex(start)} ${hex(end)} ${names.map((name) => scriptId.get(name)).join(',')}`)
     .join(';'),
 };
 const identifierProfile = {

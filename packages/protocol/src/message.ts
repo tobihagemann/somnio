@@ -1,10 +1,11 @@
 import type {
   AdminSayMessage,
-  BumpNPCMessage,
-  DateTickMessage,
+  BumpMessage,
+  ClientSayMessage,
+  CorrectionMessage,
+  DoorRefusedMessage,
   Energy,
-  EnterPortalMessage,
-  EnterSectorMessage,
+  EnterSpaceMessage,
   EntityMessage,
   EquipToggleMessage,
   HelloMessage,
@@ -12,15 +13,17 @@ import type {
   LeaveMessage,
   LoginMessage,
   LoginResultMessage,
-  MainCharacterMessage,
-  PositionMessage,
+  MoveMessage,
+  MovesMessage,
   RedeemSessionMessage,
   RegisterMessage,
   RegisterResultMessage,
   RevokeSessionMessage,
   SayMessage,
+  SectorMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
+  UseDoorMessage,
 } from './payloads.ts';
 import { isClientOnlyTag } from './tags.ts';
 import type { ClientToServerTag } from './tags.ts';
@@ -32,23 +35,24 @@ import type { ClientToServerTag } from './tags.ts';
 export type SomnioMessage =
   | { tag: 'login'; payload: LoginMessage }
   | { tag: 'register'; payload: RegisterMessage }
-  | { tag: 'clientPosition'; payload: PositionMessage }
-  | { tag: 'clientSay'; payload: SayMessage }
+  | { tag: 'move'; payload: MoveMessage }
+  | { tag: 'clientSay'; payload: ClientSayMessage }
   | { tag: 'equipToggle'; payload: EquipToggleMessage }
-  | { tag: 'bumpNPC'; payload: BumpNPCMessage }
-  | { tag: 'enterPortal'; payload: EnterPortalMessage }
+  | { tag: 'bump'; payload: BumpMessage }
+  | { tag: 'useDoor'; payload: UseDoorMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }
   | { tag: 'revokeSession'; payload: RevokeSessionMessage }
   | { tag: 'hello'; payload: HelloMessage }
   | { tag: 'loginResult'; payload: LoginResultMessage }
   | { tag: 'registerResult'; payload: RegisterResultMessage }
-  | { tag: 'enterSector'; payload: EnterSectorMessage }
-  | { tag: 'mainCharacter'; payload: MainCharacterMessage }
+  | { tag: 'enterSpace'; payload: EnterSpaceMessage }
+  | { tag: 'sector'; payload: SectorMessage }
   | { tag: 'entity'; payload: EntityMessage }
-  | { tag: 'serverPosition'; payload: PositionMessage }
+  | { tag: 'moves'; payload: MovesMessage }
+  | { tag: 'correction'; payload: CorrectionMessage }
+  | { tag: 'doorRefused'; payload: DoorRefusedMessage }
   | { tag: 'serverSay'; payload: SayMessage }
   | { tag: 'energy'; payload: Energy }
-  | { tag: 'dateTick'; payload: DateTickMessage }
   | { tag: 'inventory'; payload: InventoryMessage }
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }

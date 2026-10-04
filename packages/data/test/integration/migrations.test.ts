@@ -96,4 +96,11 @@ describe('migrating a database that is not fresh', () => {
     await sql`DROP TABLE schema_migrations`.execute(harness.db);
     await expect(migrateToLatest(harness.db)).rejects.toThrow(MigrationError);
   });
+
+  it('refuses the previous TypeScript schema by naming the cutover', async () => {
+    // Kysely's own bookkeeping table, carrying the migration this server no longer registers.
+    await sql`CREATE TABLE IF NOT EXISTS kysely_migration (name VARCHAR(255) PRIMARY KEY, timestamp VARCHAR(255) NOT NULL)`.execute(harness.db);
+    await sql`INSERT INTO kysely_migration (name, timestamp) VALUES ('0001_initial', ${new Date().toISOString()})`.execute(harness.db);
+    await expect(migrateToLatest(harness.db)).rejects.toThrow(LegacyDatabaseError);
+  });
 });

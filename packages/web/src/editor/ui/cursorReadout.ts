@@ -1,20 +1,20 @@
 import { element } from '@/ui/dom';
-import type { Sector } from '@somnio/core';
-import { selectionBounds } from '../selection';
+import type { ModelRegistry, Sector } from '@somnio/core';
+import { selectionFootprint } from '../selection';
 import type { EditorSelection } from '../selection';
 
 /**
- * The bottom-leading status strip: X/Y track the hovered sector pixel, W/H mirror the single
- * selection's bounds (a multi-selection has no one record size, so they clear), plus the
- * sector name.
+ * The bottom-leading status strip: X/Z track the hovered ground point in the sector's metres,
+ * W/D mirror the single selection's footprint (a multi-selection has no one record size, so they
+ * clear), plus the sector name.
  */
 export class CursorReadout {
   readonly root: HTMLElement;
 
   x = 0;
-  y = 0;
+  z = 0;
   width = 0;
-  height = 0;
+  depth = 0;
 
   private readonly text = element('span');
 
@@ -26,20 +26,16 @@ export class CursorReadout {
     this.render('');
   }
 
-  /** W/H track a single selection only, and clear when nothing (or several) is selected. */
-  applyBounds(selection: readonly EditorSelection[], sector: Sector): void {
-    if (selection.length !== 1) {
-      this.width = 0;
-      this.height = 0;
-      return;
-    }
-    const bounds = selectionBounds(selection[0]!, sector);
-    this.width = bounds?.size.width ?? 0;
-    this.height = bounds?.size.height ?? 0;
+  /** W/D track a single selection only, and clear when nothing (or several) is selected. */
+  applyBounds(selection: readonly EditorSelection[], sector: Sector, registry: ModelRegistry): void {
+    const rect = selection.length === 1 ? selectionFootprint(selection[0]!, sector, registry)?.rect : undefined;
+    this.width = rect?.width ?? 0;
+    this.depth = rect?.depth ?? 0;
   }
 
   render(sectorName: string): void {
     const name = sectorName === '' ? '' : `  ${sectorName}`;
-    this.text.textContent = `X: ${this.x}  Y: ${this.y}  W: ${this.width}  H: ${this.height}${name}`;
+    const metres = (value: number): string => value.toFixed(2);
+    this.text.textContent = `X: ${metres(this.x)}  Z: ${metres(this.z)}  W: ${metres(this.width)}  D: ${metres(this.depth)}${name}`;
   }
 }

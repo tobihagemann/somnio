@@ -3,16 +3,16 @@ import type { WorldEntityKind } from '@somnio/core';
 import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol';
 
 /**
- * The speech bubble and name plaque, rasterized on a canvas in a top-left-origin legacy-pixel
+ * The speech bubble and name plaque, rasterized on a canvas in a top-left-origin overlay-pixel
  * space supersampled by 8. Every coordinate is authored in that space; the text baseline is the
- * one that needs care: the reference layout positions the top of the **line box** (ascent +
- * descent + leading), while canvas `textBaseline: 'top'` and `'middle'` work from the **em box**.
- * The two differ by the font's internal leading, which would put every bubble line and every
- * plaque a pixel or two off vertically, so both compute an explicit alphabetic baseline from
- * `fontBoundingBox*` metrics.
+ * one that needs care: the bubble and plaque are laid out from the top of the **line box**
+ * (ascent + descent + leading), while canvas `textBaseline: 'top'` and `'middle'` work from the
+ * **em box**. The two differ by the font's internal leading, which would put every bubble line
+ * and every plaque a pixel or two off vertically, so both compute an explicit alphabetic baseline
+ * from the recorded line box.
  */
 
-/** Texture pixels per legacy pixel. */
+/** Texture pixels per overlay pixel. */
 const OVERLAY_RASTER_SCALE = 8;
 
 const SPEECH_BUBBLE = {
@@ -33,7 +33,7 @@ export const NAME_PLAQUE = {
 
 export interface RasterArt {
   canvas: HTMLCanvasElement;
-  /** Footprint in legacy pixels; the scene scales it into world metres. */
+  /** Footprint in overlay pixels; the scene scales it into world metres. */
   widthPixels: number;
   heightPixels: number;
 }
@@ -45,7 +45,7 @@ export function speechBubbleFrameSize(lineCount: number): { width: number; heigh
   };
 }
 
-/** A supersampled canvas whose drawing context works in legacy-pixel units. */
+/** A supersampled canvas whose drawing context works in overlay-pixel units. */
 function rasterCanvas(
   widthPixels: number,
   heightPixels: number,
@@ -98,7 +98,7 @@ function balloonPath(width: number, height: number): Path2D {
   // (the tail base tucks into the body so the union has no seam). Walking the outline directly
   // means the mouth has to be the width of the union at the crossing, not at the declaration —
   // the upper 1.5px of the triangle is inside the body and never drawn. Using the full `half`
-  // here draws a mouth ~0.9px wider per side than the reference bubble.
+  // here draws a mouth ~0.9px wider per side than the union has at the crossing.
   const mouthHalf = half * (1 - TAIL_BODY_TUCK / (SPEECH_BUBBLE.tailHeight + TAIL_BODY_TUCK));
   path.lineTo(centerX + mouthHalf, bottom);
   path.lineTo(centerX, height - 0.5);
@@ -151,12 +151,11 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
   const clamped = truncateToUTF8Bytes(name, PROTOCOL_BYTE_CAPS.identifier);
   const font = `${bold ? 'bold ' : ''}${NAME_PLAQUE.fontSize}px system-ui, sans-serif`;
   const textWidth = measureTextWidth(clamped, font);
-  // The box is sized from the font's line box rather than the glyph extent. Reading
-  // `fontBoundingBoxDescent` here lands 1px short — the reference layout rounds its line height
-  // up past the font's own descent — and the box being a pixel shallower is what leaves the
-  // centred text riding half a pixel high against the reference plaque.
+  // The box is sized from the recorded line box rather than the glyph extent. Reading
+  // `fontBoundingBoxDescent` here lands 1px short, and the box being a pixel shallower leaves
+  // the centred text riding half a pixel high.
   const width = Math.max(Math.ceil(textWidth + 6), 1);
-  const height = Math.max(Math.ceil(nativeLineBoxHeight(NAME_PLAQUE.fontSize) + 4), 1);
+  const height = Math.max(Math.ceil(lineBoxHeight(NAME_PLAQUE.fontSize) + 4), 1);
   const { canvas, context } = rasterCanvas(width, height);
   if (context !== null) {
     context.fillStyle = background;
@@ -191,42 +190,36 @@ function measureTextWidth(text: string, font: string): number {
 }
 
 /**
- * The reference line box for the system font, recorded rather than read from canvas.
+ * The line box for the system font, recorded rather than read from canvas. Both numbers were
+ * measured from rasterized ink rows at sizes 8 through 13, and no formula derives them.
  *
- * Both numbers come from rasterizing through the reference pipeline and reading the ink rows, at
- * sizes 8 through 13:
- *
- * - the baseline sits exactly `fontSize` below the line-box top. Chrome's `fontBoundingBoxAscent`
- *   reports the same value, so the two already agree — stating it here makes Firefox and Safari agree
- *   too, rather than trusting each engine's metric selection.
- * - the line box extends **3px** below that baseline, where `fontBoundingBoxDescent` reports 2. The
- *   extra pixel is the reference layout rounding its default line height up past the font's own descent
- *   (`NSFont.descender` is -2.32 at 11pt), and there is nothing in canvas to derive it from.
- *
- * Recorded rather than derived because the reference line-height rounding is not a published
- * formula — the same reason `float.ts` carries `FLOAT_PI` as a literal instead of computing it.
+ * - The baseline sits exactly `fontSize` below the line-box top. Chrome's `fontBoundingBoxAscent`
+ *   reports the same value. Stating it here makes every engine agree rather than trusting each
+ *   one's metric selection.
+ * - The line box extends **3px** below that baseline, where `fontBoundingBoxDescent` reports 2.
+ *   There is nothing in canvas to derive the extra pixel from.
  */
-const NATIVE_LINE_BOX = { descentBelowBaseline: 3 } as const;
+const LINE_BOX = { descentBelowBaseline: 3 } as const;
 
 /** Baseline offset below a line box's top edge. */
-function nativeBaselineOffset(fontSize: number): number {
+function lineBoxBaselineOffset(fontSize: number): number {
   return fontSize;
 }
 
 /** The line-box height the plaque sizes its box from. */
-export function nativeLineBoxHeight(fontSize: number): number {
-  return fontSize + NATIVE_LINE_BOX.descentBelowBaseline;
+export function lineBoxHeight(fontSize: number): number {
+  return fontSize + LINE_BOX.descentBelowBaseline;
 }
 
 /**
  * Baseline for a line box whose top edge sits at `boxTop`.
  *
- * The reference layout takes the top-left of the **line box**, not of the glyphs. Canvas
+ * A bubble line is positioned by the top of its **line box**, not of its glyphs. Canvas
  * `textBaseline: 'top'` measures from the top of the em box instead — short by the font's
  * internal leading — which would draw every bubble line high.
  */
 export function baselineBelowBoxTop(boxTop: number, fontSize: number): number {
-  return boxTop + nativeBaselineOffset(fontSize);
+  return boxTop + lineBoxBaselineOffset(fontSize);
 }
 
 /**
@@ -237,7 +230,7 @@ export function baselineBelowBoxTop(boxTop: number, fontSize: number): number {
  * by half the difference between the two boxes.
  */
 export function baselineInCenteredBox(height: number, fontSize: number): number {
-  return (height - nativeLineBoxHeight(fontSize)) / 2 + nativeBaselineOffset(fontSize);
+  return (height - lineBoxHeight(fontSize)) / 2 + lineBoxBaselineOffset(fontSize);
 }
 
 /** Background for an entity's plaque, or `undefined` for kinds that get none. */

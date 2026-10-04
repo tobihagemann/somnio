@@ -1,31 +1,51 @@
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
-import type { WorldEntityKind } from './worldEntity.ts';
+import { rectsOverlap } from './geometry.ts';
+import type { Rect, Size } from './geometry.ts';
 
 /**
- * The model registry: figure bands to character model stems (each with its clip-presence
- * contract), semantic object ids to prop stems, and semantic floor ids to floor-texture stems.
- * It references only filename stems, so one file describes the pack for the browser, the editor,
- * and the asset pipeline's clip-presence gate.
+ * The model registry: character model ids to character model stems (each with its clip-presence
+ * contract), semantic object ids to prop stems with their collision geometry, and semantic floor
+ * ids to floor-texture stems. It references only filename stems, so one file describes the pack
+ * for the browser, the editor, the server's collision, and the asset pipeline's gates.
+ *
+ * Object geometry is in model space: metres, the model's origin at its ground-footprint centre,
+ * +X east and +Z south at yaw 0.
  */
-
-export interface BandRange {
-  lower: number;
-  upper: number;
-}
 
 export interface ModelEntry {
   stem: string;
   expectedClips: string[];
 }
 
-export interface FigureModelRule {
-  figureRanges: BandRange[];
+export interface CharacterModelRule {
+  id: string;
   model: ModelEntry;
+}
+
+/** Ground a body can stand on, `height` above the floor. A stair run is one surface per tread. */
+export interface WalkSurface extends Rect {
+  height: number;
+}
+
+/** Where a door sits on a model's wall: the point at the middle of the opening, the heading it opens toward, and the opening's width. */
+export interface DoorAnchor {
+  id: string;
+  x: number;
+  z: number;
+  /** 0, 90, 180, or 270, so the trigger in front of the door is an axis-aligned model-space rect. */
+  facing: number;
+  width: number;
 }
 
 export interface ObjectModelRule {
   id: string;
   model: ModelEntry;
+  /** The measured ground bounds, centred on the model origin. */
+  footprint: Size;
+  /** The rects that block movement. The registry file may leave them out, which reads as the footprint; an empty list never blocks. */
+  colliders: Rect[];
+  walkSurfaces: WalkSurface[];
+  doors: DoorAnchor[];
 }
 
 export interface FloorMaterialRule {
@@ -33,42 +53,66 @@ export interface FloorMaterialRule {
   stem: string;
 }
 
-export type CharacterBand = 'player' | 'npc' | 'monster';
-
 export interface ModelRegistry {
-  entityBands: Record<CharacterBand, FigureModelRule[]>;
+  characterModels: CharacterModelRule[];
+  /** The character model every player uses. */
+  playerModel: string;
   objectModels: ObjectModelRule[];
   floorMaterials: FloorMaterialRule[];
 }
 
 /** Empty registry: every lookup resolves `undefined`, so the loader renders placeholders. */
 export const PLACEHOLDER_REGISTRY: ModelRegistry = {
-  entityBands: { player: [], npc: [], monster: [] },
+  characterModels: [],
+  playerModel: '',
   objectModels: [],
   floorMaterials: [],
 };
 
 /**
- * Validates the structural invariants the JSON shape cannot express: non-inverted figure ranges,
- * non-empty stems and ids, no duplicate object or floor ids, and characters expecting at least
- * one clip.
+ * Validates the structural invariants the JSON shape cannot express: non-empty stems and ids, no
+ * duplicate ids, characters expecting at least one clip, a player model that is a character
+ * model, positive sizes, cardinal door facings, and walk surfaces of one model that do not
+ * overlap.
  */
 export function parseModelRegistry(raw: unknown): ModelRegistry {
   const root = requireRecord(raw, 'registry');
-  const bands = requireRecord(root['entityBands'], 'registry.entityBands');
 
-  const entityBands = {
-    player: parseFigureRules(bands['player'], 'registry.entityBands.player'),
-    npc: parseFigureRules(bands['npc'], 'registry.entityBands.npc'),
-    monster: parseFigureRules(bands['monster'], 'registry.entityBands.monster'),
-  };
+  const characterModels = requireArray(root['characterModels'], 'registry.characterModels').map((element, index) => {
+    const path = `registry.characterModels[${index}]`;
+    const record = requireRecord(element, path);
+    return {
+      id: requireNonEmptyString(record['id'], `${path}.id`),
+      // Characters must expect at least one clip: a rigged model with an empty clip list would
+      // pass the pipeline's clip-presence gate vacuously, which is the failure that gate exists
+      // to catch.
+      model: parseModelEntry(record['model'], `${path}.model`, true),
+    };
+  });
+  requireUniqueIds(
+    characterModels.map((rule) => rule.id),
+    'registry.characterModels',
+  );
+
+  const playerModel = requireNonEmptyString(root['playerModel'], 'registry.playerModel');
+  if (!characterModels.some((rule) => rule.id === playerModel)) {
+    throw new ModelRegistryError(`registry.playerModel: no character model "${playerModel}"`);
+  }
 
   const objectModels = requireArray(root['objectModels'], 'registry.objectModels').map((element, index) => {
     const path = `registry.objectModels[${index}]`;
     const record = requireRecord(element, path);
+    const footprint = parseSize(record['footprint'], `${path}.footprint`);
     return {
       id: requireNonEmptyString(record['id'], `${path}.id`),
       model: parseModelEntry(record['model'], `${path}.model`, false),
+      footprint,
+      colliders:
+        record['colliders'] === undefined
+          ? [{ x: -footprint.width / 2, z: -footprint.depth / 2, width: footprint.width, depth: footprint.depth }]
+          : requireArray(record['colliders'], `${path}.colliders`).map((rect, rectIndex) => parseRect(rect, `${path}.colliders[${rectIndex}]`)),
+      walkSurfaces: parseWalkSurfaces(record['walkSurfaces'], `${path}.walkSurfaces`),
+      doors: parseDoorAnchors(record['doors'], `${path}.doors`),
     };
   });
   requireUniqueIds(
@@ -89,27 +133,28 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.floorMaterials',
   );
 
-  return { entityBands, objectModels, floorMaterials };
+  return { characterModels, playerModel, objectModels, floorMaterials };
 }
 
-/** Players and peers share the player band. */
-export function modelForEntity(registry: ModelRegistry, kind: WorldEntityKind, figure: number): ModelEntry | undefined {
-  const band: CharacterBand = kind === 'player' || kind === 'peer' ? 'player' : kind === 'npc' ? 'npc' : 'monster';
-  return registry.entityBands[band].find((rule) => rule.figureRanges.some((range) => figure >= range.lower && figure <= range.upper))?.model;
+export function modelForCharacter(registry: ModelRegistry, id: string): ModelEntry | undefined {
+  return registry.characterModels.find((rule) => rule.id === id)?.model;
 }
 
-export function modelForObjectID(registry: ModelRegistry, id: string): ModelEntry | undefined {
-  return registry.objectModels.find((rule) => rule.id === id)?.model;
+export function objectModel(registry: ModelRegistry, id: string): ObjectModelRule | undefined {
+  return registry.objectModels.find((rule) => rule.id === id);
+}
+
+export function modelForObjectId(registry: ModelRegistry, id: string): ModelEntry | undefined {
+  return objectModel(registry, id)?.model;
 }
 
 export function floorMaterialStem(registry: ModelRegistry, id: string): string | undefined {
   return registry.floorMaterials.find((rule) => rule.id === id)?.stem;
 }
 
-/** Every entry, entity bands first, dropping duplicate stems — the prewarm work list. */
+/** Every entry, character models first, dropping duplicate stems. */
 export function allModelEntries(registry: ModelRegistry): ModelEntry[] {
-  const bands: CharacterBand[] = ['player', 'npc', 'monster'];
-  const entries = [...bands.flatMap((band) => registry.entityBands[band].map((rule) => rule.model)), ...registry.objectModels.map((rule) => rule.model)];
+  const entries = [...registry.characterModels.map((rule) => rule.model), ...registry.objectModels.map((rule) => rule.model)];
   const seen = new Set<string>();
   const unique: typeof entries = [];
   for (const entry of entries) {
@@ -120,34 +165,71 @@ export function allModelEntries(registry: ModelRegistry): ModelEntry[] {
   return unique;
 }
 
-/** The pure half of the clip-presence gate, shared with the conversion validator. */
+/** The clips `expected` names that `actual` lacks. */
 export function missingClips(expected: readonly string[], actual: readonly string[]): string[] {
   const present = new Set(actual);
   return expected.filter((clip) => !present.has(clip));
 }
 
-function parseFigureRules(raw: unknown, path: string): FigureModelRule[] {
-  return requireArray(raw, path).map((element, index) => {
-    const rulePath = `${path}[${index}]`;
-    const record = requireRecord(element, rulePath);
-    const figureRanges = requireArray(record['figureRanges'], `${rulePath}.figureRanges`).map((rangeRaw, rangeIndex) => {
-      const rangePath = `${rulePath}.figureRanges[${rangeIndex}]`;
-      const range = requireRecord(rangeRaw, rangePath);
-      const lower = requireInteger(range['lower'], `${rangePath}.lower`);
-      const upper = requireInteger(range['upper'], `${rangePath}.upper`);
-      if (upper < lower) {
-        throw new ModelRegistryError(`${rangePath}: inverted range ${lower}...${upper}`);
-      }
-      return { lower, upper };
-    });
+function parseSize(raw: unknown, path: string): Size {
+  const record = requireRecord(raw, path);
+  return {
+    width: requirePositiveNumber(record['width'], `${path}.width`),
+    depth: requirePositiveNumber(record['depth'], `${path}.depth`),
+  };
+}
+
+function parseRect(raw: unknown, path: string): Rect {
+  const record = requireRecord(raw, path);
+  return {
+    x: requireNumber(record['x'], `${path}.x`),
+    z: requireNumber(record['z'], `${path}.z`),
+    ...parseSize(raw, path),
+  };
+}
+
+/**
+ * Overlapping surfaces of one model are rejected: steps cut into a plinth would otherwise resolve
+ * to the plinth's height.
+ */
+function parseWalkSurfaces(raw: unknown, path: string): WalkSurface[] {
+  if (raw === undefined) return [];
+  const surfaces = requireArray(raw, path).map((element, index) => {
+    const surfacePath = `${path}[${index}]`;
     return {
-      figureRanges,
-      // Characters must expect at least one clip: a rigged model with an empty clip list would
-      // pass the pipeline's clip-presence gate vacuously, which is the failure that gate exists
-      // to catch.
-      model: parseModelEntry(record['model'], `${rulePath}.model`, true),
+      ...parseRect(element, surfacePath),
+      height: requirePositiveNumber(requireRecord(element, surfacePath)['height'], `${surfacePath}.height`),
     };
   });
+  surfaces.forEach((surface, index) => {
+    const other = surfaces.findIndex((candidate, candidateIndex) => candidateIndex < index && rectsOverlap(candidate, surface));
+    if (other !== -1) throw new ModelRegistryError(`${path}[${index}]: overlaps ${path}[${other}]`);
+  });
+  return surfaces;
+}
+
+function parseDoorAnchors(raw: unknown, path: string): DoorAnchor[] {
+  if (raw === undefined) return [];
+  const doors = requireArray(raw, path).map((element, index) => {
+    const doorPath = `${path}[${index}]`;
+    const record = requireRecord(element, doorPath);
+    const facing = requireNumber(record['facing'], `${doorPath}.facing`);
+    if (![0, 90, 180, 270].includes(facing)) {
+      throw new ModelRegistryError(`${doorPath}.facing: expected 0, 90, 180, or 270`);
+    }
+    return {
+      id: requireNonEmptyString(record['id'], `${doorPath}.id`),
+      x: requireNumber(record['x'], `${doorPath}.x`),
+      z: requireNumber(record['z'], `${doorPath}.z`),
+      facing,
+      width: requirePositiveNumber(record['width'], `${doorPath}.width`),
+    };
+  });
+  requireUniqueIds(
+    doors.map((door) => door.id),
+    path,
+  );
+  return doors;
 }
 
 function parseModelEntry(raw: unknown, path: string, requireClips: boolean): ModelEntry {
@@ -188,11 +270,17 @@ function requireNonEmptyString(value: unknown, path: string): string {
   return value;
 }
 
-function requireInteger(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw new ModelRegistryError(`${path}: expected an integer`);
+function requireNumber(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ModelRegistryError(`${path}: expected a number`);
   }
   return value;
+}
+
+function requirePositiveNumber(value: unknown, path: string): number {
+  const number = requireNumber(value, path);
+  if (number <= 0) throw new ModelRegistryError(`${path}: expected a positive number`);
+  return number;
 }
 
 function requireUniqueIds(ids: readonly string[], path: string): void {

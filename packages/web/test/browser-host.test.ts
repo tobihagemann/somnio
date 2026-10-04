@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GameplaySession, KeyboardSampler, PlayerZoom, mouseFacingHeading, noHeldKeys } from '@/client';
-import { tempoFromHeld } from '@/client';
-import { TEMPO, tempoPixelsPerSecond } from '@somnio/core';
-import { ORTHO_RIG, PLAYER_ZOOM, WHEEL_NOTCH, frustumBounds, wheelDeltaToNativeScale } from '@/scene/cameraRig';
+import { gaitFromHeld } from '@/client';
+import { PLACEHOLDER_REGISTRY, gaitMetresPerSecond } from '@somnio/core';
+import { ORTHO_RIG, PLAYER_ZOOM, WHEEL_NOTCH, frustumBounds, wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { WorldScene } from '@/scene/worldScene';
 import { AppShell, element } from '@/ui';
 import type { ModelAssets } from '@/scene/modelAssets';
@@ -15,7 +15,7 @@ import type { ModelAssets } from '@/scene/modelAssets';
 function emptyAssets(): ModelAssets {
   return {
     prewarm: async () => {},
-    entity: () => undefined,
+    character: () => undefined,
     object: () => undefined,
     floorTexture: () => undefined,
     clipsFor: () => [],
@@ -83,7 +83,7 @@ describe('the keyboard sampler', () => {
    * The positive direction matters on its own: asserting only that AltRight leaves `leftOption`
    * false would pass with a wrong code in `MODIFIER_CODES`, leaving the slow walk silently dead.
    */
-  it('tracks LeftOption and maps it to the walk tempo at 50 px/s', () => {
+  it('tracks LeftOption and maps it to the walk gait at one metre a second', () => {
     const target = element('div');
     const sampler = new KeyboardSampler(target);
     sampler.start();
@@ -93,13 +93,13 @@ describe('the keyboard sampler', () => {
 
     const held = sampler.snapshot();
     expect(held.leftOption).toBe(true);
-    // The whole chain, not just the bit: key -> tempo -> speed. LShift outranks LOption, matching
-    // `tempoFromHeld`'s order.
-    expect(tempoFromHeld(held)).toBe(TEMPO.walk);
-    expect(tempoPixelsPerSecond(tempoFromHeld(held))).toBe(50);
+    // The whole chain, not just the bit: key -> gait -> speed. LShift outranks LOption, matching
+    // `gaitFromHeld`'s order.
+    expect(gaitFromHeld(held)).toBe('walk');
+    expect(gaitMetresPerSecond(gaitFromHeld(held))).toBe(1);
 
     press(target, 'ShiftLeft', true);
-    expect(tempoFromHeld(sampler.snapshot())).toBe(TEMPO.run);
+    expect(gaitFromHeld(sampler.snapshot())).toBe('run');
   });
 
   /**
@@ -257,7 +257,7 @@ describe('scroll zoom', () => {
 
     const zoomIn = session();
     let notches = 0;
-    while (zoomIn.zoom.applyScroll(-wheelDeltaToNativeScale(-WHEEL_NOTCH.pixels, 0))) notches += 1;
+    while (zoomIn.zoom.applyScroll(-wheelDeltaToZoomDelta(-WHEEL_NOTCH.pixels, 0))) notches += 1;
     expect(zoomIn.zoom.factor).toBe(PLAYER_ZOOM.maxFactor);
     // ~12 notches from the default factor to the stop, so ~24 across the full range. What matters is
     // that a player can stop part-way; one notch reaching a stop is the regression.
@@ -295,7 +295,7 @@ describe('scroll zoom', () => {
 
 describe('the resize invariant', () => {
   it('holds the vertical world extent constant and lets aspect drive width', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
+    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1);
     const tallTop = scene.camera.top;
     const tallHeight = scene.camera.top - scene.camera.bottom;
 
@@ -310,7 +310,7 @@ describe('the resize invariant', () => {
   });
 
   it('keeps the camera scale untouched by a resize', () => {
-    const scene = new WorldScene(emptyAssets(), 1);
+    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1);
     const before = scene._cameraScale();
 
     scene.setViewportAspect(0.4);
@@ -418,7 +418,7 @@ describe('host handlers', () => {
 
     pressEscape();
 
-    // `handleEscape` returns right after the blur natively, so the menu must not appear — and the
+    // `handleEscape` returns right after the blur, so the menu must not appear — and the
     // gate has to reopen, or Esc would leave the player unable to walk *or* reach the menu.
     expect(app.controller.isChatInputFocused).toBe(false);
     expect(currentOverlay(app)).toBeUndefined();

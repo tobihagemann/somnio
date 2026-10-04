@@ -104,6 +104,6 @@ services:
       retries: 12
 
 volumes:
-  # The migration refuses a database carrying the retired Swift-era schema (`LegacyDatabaseError`);
-  # a stack whose volume still holds one needs `docker compose down -v` before `up`.
+  # The migration refuses a database carrying an earlier schema (`LegacyDatabaseError`); a stack
+  # whose volume still holds one needs `docker compose down -v` before `up`.
   db-data:

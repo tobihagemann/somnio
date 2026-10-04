@@ -1,11 +1,10 @@
-import { BOOT_DEFAULT_WORLD_CLOCK } from '@somnio/core';
-import type { WorldClock } from '@somnio/core';
+import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 
 export interface WorldClockRepository {
   /** The boot default when `world_clock` is empty, so a fresh deployment starts from the seed time. */
-  load(): Promise<WorldClock>;
-  save(clock: WorldClock): Promise<void>;
+  load(): Promise<number>;
+  save(worldSeconds: number): Promise<void>;
 }
 
 export class PostgresWorldClockRepository implements WorldClockRepository {
@@ -15,24 +14,16 @@ export class PostgresWorldClockRepository implements WorldClockRepository {
     this.db = db;
   }
 
-  async load(): Promise<WorldClock> {
-    const row = await this.db.selectFrom('world_clock').select(['second', 'minute', 'hour', 'day', 'month', 'year']).where('id', '=', true).executeTakeFirst();
-    return row === undefined ? { ...BOOT_DEFAULT_WORLD_CLOCK } : { ...row };
+  async load(): Promise<number> {
+    const row = await this.db.selectFrom('world_clock').select('world_seconds').where('id', '=', true).executeTakeFirst();
+    return row === undefined ? BOOT_DEFAULT_WORLD_SECONDS : row.world_seconds;
   }
 
-  async save(clock: WorldClock): Promise<void> {
-    const columns = {
-      second: clock.second,
-      minute: clock.minute,
-      hour: clock.hour,
-      day: clock.day,
-      month: clock.month,
-      year: clock.year,
-    };
+  async save(worldSeconds: number): Promise<void> {
     await this.db
       .insertInto('world_clock')
-      .values({ id: true, ...columns })
-      .onConflict((conflict) => conflict.column('id').doUpdateSet(columns))
+      .values({ id: true, world_seconds: worldSeconds })
+      .onConflict((conflict) => conflict.column('id').doUpdateSet({ world_seconds: worldSeconds }))
       .execute();
   }
 }

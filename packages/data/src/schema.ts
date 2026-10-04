@@ -1,9 +1,8 @@
-import type { ColumnType, Generated } from 'kysely';
+import type { Generated } from 'kysely';
 
 // The Postgres schema, as the migration creates it. `Generated<>` marks columns Postgres fills
-// (defaults and the generated `name_normalized`), so inserts may omit them. Enum raws in SMALLINT
-// columns: gender male 0 / female 1; hand left 0 / right 1; tempo walk 1 / default 2 / run 4;
-// facing is REAL degrees, 0 = south, 90 = east.
+// (defaults and the generated `name_normalized`), so inserts may omit them. Positions are metres
+// in the character's space; facing is degrees, 0 = south, 90 = east.
 
 export interface AccountsTable {
   id: string;
@@ -20,19 +19,17 @@ export interface CharactersTable {
   account_id: string;
   name: string;
   name_normalized: Generated<string>;
-  figure: number;
-  gender: number;
-  current_sector: string;
+  people: string;
+  space: string;
   position_x: number;
-  position_y: number;
+  position_z: number;
   facing: number;
-  tempo: number;
-  hp_current: number;
-  hp_max: number;
+  health_current: number;
+  health_max: number;
   balance_current: number;
   balance_max: number;
-  mana_current: number;
-  mana_max: number;
+  spirit_current: number;
+  spirit_max: number;
   last_seen: Date;
   name_skeleton: string;
 }
@@ -40,29 +37,19 @@ export interface CharactersTable {
 export interface InventoryRowsTable {
   character_id: string;
   slot: number;
-  category: number;
-  item_id: number;
-  /**
-   * A bare ordered JSON array of `{key, value}` — the array form preserves extra ordering. Written
-   * as a JSON string: the driver would otherwise serialize a JS array as a Postgres array.
-   */
-  extras: ColumnType<{ key: string; value: number }[], string | undefined, string>;
-  equipped_hand: number | null;
+  item_id: string;
+  quantity: number;
+  equipped_hand: string | null;
 }
 
 export interface WorldClockTable {
   id: Generated<boolean>;
-  second: number;
-  minute: number;
-  hour: number;
-  day: number;
-  month: number;
-  year: number;
+  world_seconds: number;
 }
 
 export interface NPCDialogStatesTable {
   sector_name: string;
-  npc_index: number;
+  npc_id: string;
   script_step: number;
 }
 

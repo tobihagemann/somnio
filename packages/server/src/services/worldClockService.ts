@@ -1,76 +1,66 @@
-import { SOMNIO_CONSTANTS, tickWorldClock } from '@somnio/core';
-import type { WorldClock } from '@somnio/core';
-import type { DateTickMessage } from '@somnio/protocol';
+import { WORLD_TIME_RATE } from '@somnio/core';
 import type { WorldClockRepository } from '@somnio/data';
 import type { Logger } from '../logging.ts';
-import type { WorldRouter } from '../world/worldRouter.ts';
 import { runPeriodically } from './periodicLoop.ts';
 
 export const DEFAULT_WORLD_CLOCK_INTERVAL_MS = 250;
+const SECONDS_PER_MINUTE = 60;
 
 /**
- * The in-game clock at 4x wall clock: each tick advances the clock, broadcasts a `dateTick` on the
- * minute marks and the hour rollover, and persists once per in-game minute. The pre-loaded
- * `initialClock` is required so a forgotten pre-load cannot hand clients the boot default.
+ * The in-game clock, running at `WORLD_TIME_RATE` times wall clock: each tick advances
+ * `worldSeconds` by the wall time since the previous one and persists once per in-game minute.
+ * The pre-loaded `initialWorldSeconds` is required so a forgotten pre-load cannot hand clients the
+ * boot default.
  */
 export class WorldClockService {
-  private readonly worldRouter: WorldRouter;
   private readonly worldClocks: WorldClockRepository;
   private readonly intervalMs: number;
   private readonly logger: Logger;
-  private readonly clock: WorldClock;
+  private readonly now: () => number;
+  private worldSeconds: number;
+  private advancedAt: number;
 
   constructor(
-    worldRouter: WorldRouter,
     worldClocks: WorldClockRepository,
-    initialClock: WorldClock,
+    initialWorldSeconds: number,
     logger: Logger,
     intervalMs: number = DEFAULT_WORLD_CLOCK_INTERVAL_MS,
+    now: () => number = () => performance.now(),
   ) {
-    this.worldRouter = worldRouter;
     this.worldClocks = worldClocks;
-    this.clock = { ...initialClock };
+    this.worldSeconds = initialWorldSeconds;
     this.logger = logger;
     this.intervalMs = intervalMs;
+    this.now = now;
+    this.advancedAt = now();
   }
 
   /** Ticks until aborted, then saves whatever the post-tick state is so the last in-game second is not lost. */
   async run(signal: AbortSignal): Promise<void> {
     await runPeriodically(this.intervalMs, signal, () => this.tickOnce());
     try {
-      await this.worldClocks.save(this.clock);
+      await this.worldClocks.save(this.worldSeconds);
     } catch (error) {
       this.logger.warn({ error: String(error) }, 'world clock final save failed');
     }
   }
 
-  /** The test seam: one tick, with the broadcast and persist gates. */
+  /** The test seam: one tick, with the persist gate. */
   async tickOnce(): Promise<void> {
-    const wire = tickWorldClock(this.clock);
-    // A post-tick second of 0 means a new minute: broadcast on the mid-hour marks and the hour
-    // rollover, persist regardless. The midnight `hour: 24` quirk rides in `wire`.
-    if (this.clock.second !== 0) return;
-    const minutes: readonly number[] = SOMNIO_CONSTANTS.dateTickMinutes;
-    if (minutes.includes(this.clock.minute) || this.clock.minute === 0) {
-      this.worldRouter.broadcastToAllConnections({
-        tag: 'dateTick',
-        payload: { hour: wire.hour, minute: wire.minute },
-      });
-    }
+    const now = this.now();
+    const previous = this.worldSeconds;
+    this.worldSeconds += ((now - this.advancedAt) / 1000) * WORLD_TIME_RATE;
+    this.advancedAt = now;
+    if (Math.floor(this.worldSeconds / SECONDS_PER_MINUTE) === Math.floor(previous / SECONDS_PER_MINUTE)) return;
     try {
-      await this.worldClocks.save(this.clock);
+      await this.worldClocks.save(this.worldSeconds);
     } catch (error) {
       this.logger.warn({ error: String(error) }, 'world clock save failed');
     }
   }
 
-  /** Full clock state for the admin `time` verb. */
-  currentTime(): WorldClock {
-    return { ...this.clock };
-  }
-
-  /** The post-tick `(hour, minute)` for the per-login and per-portal hooks; never the midnight 24. */
-  currentDateTickMessage(): DateTickMessage {
-    return { hour: this.clock.hour, minute: this.clock.minute };
+  /** The clock as of the last tick. */
+  currentWorldSeconds(): number {
+    return this.worldSeconds;
   }
 }

@@ -1,456 +1,252 @@
 {
-  "collisionMasks" : [
+  "blockers": [
     {
-      "height" : 22,
-      "width" : 256,
-      "x" : 0,
-      "y" : 0
+      "depth": 0.6,
+      "id": "blocker-4",
+      "width": 0.12,
+      "x": 0.96,
+      "z": 9.64
     },
     {
-      "height" : 24,
-      "width" : 32,
-      "x" : 256,
-      "y" : 0
-    },
-    {
-      "height" : 32,
-      "width" : 256,
-      "x" : 0,
-      "y" : 160
-    },
-    {
-      "height" : 24,
-      "width" : 20,
-      "x" : 262,
-      "y" : 168
-    },
-    {
-      "height" : 32,
-      "width" : 256,
-      "x" : 0,
-      "y" : 320
-    },
-    {
-      "height" : 16,
-      "width" : 20,
-      "x" : 262,
-      "y" : 336
-    },
-    {
-      "height" : 30,
-      "width" : 6,
-      "x" : 48,
-      "y" : 482
-    },
-    {
-      "height" : 30,
-      "width" : 6,
-      "x" : 234,
-      "y" : 482
-    },
-    {
-      "height" : 22,
-      "width" : 128,
-      "x" : 336,
-      "y" : 0
-    },
-    {
-      "height" : 40,
-      "width" : 32,
-      "x" : 352,
-      "y" : 184
-    },
-    {
-      "height" : 16,
-      "width" : 16,
-      "x" : 392,
-      "y" : 208
-    },
-    {
-      "height" : 40,
-      "width" : 32,
-      "x" : 448,
-      "y" : 184
-    },
-    {
-      "height" : 16,
-      "width" : 16,
-      "x" : 488,
-      "y" : 208
-    },
-    {
-      "height" : 40,
-      "width" : 32,
-      "x" : 352,
-      "y" : 312
-    },
-    {
-      "height" : 16,
-      "width" : 16,
-      "x" : 392,
-      "y" : 336
-    },
-    {
-      "height" : 40,
-      "width" : 32,
-      "x" : 448,
-      "y" : 312
-    },
-    {
-      "height" : 16,
-      "width" : 16,
-      "x" : 488,
-      "y" : 336
-    },
-    {
-      "height" : 20,
-      "width" : 20,
-      "x" : 326,
-      "y" : 60
-    },
-    {
-      "height" : 20,
-      "width" : 20,
-      "x" : 358,
-      "y" : 108
-    },
-    {
-      "height" : 20,
-      "width" : 20,
-      "x" : 422,
-      "y" : 108
-    },
-    {
-      "height" : 20,
-      "width" : 20,
-      "x" : 454,
-      "y" : 60
+      "depth": 0.6,
+      "id": "blocker-5",
+      "width": 0.12,
+      "x": 4.68,
+      "z": 9.64
     }
   ],
-  "dimensions" : {
-    "height" : 4,
-    "width" : 4
-  },
-  "floorMaterialID" : "wood-warm",
-  "light" : {
-    "brightness" : 100,
-    "indoor" : true
-  },
-  "monsterSpawns" : [
-
-  ],
-  "npcs" : [
+  "brightness": 100,
+  "doors": [
     {
-      "behaviorTag" : 0,
-      "dialogScript" : "Sei gegrüßt, $name!---Diese Bibliothek ist immer noch in Arbeit.---Außerdem ist das Rennen hier verboten!",
-      "direction" : 270,
-      "figure" : 16,
-      "maskSize" : {
-        "height" : 48,
-        "width" : 32
-      },
-      "name" : "Libus",
-      "spawnBoxSize" : {
-        "height" : 48,
-        "width" : 32
-      },
-      "spawnOrigin" : {
-        "x" : 352,
-        "y" : 384
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-edariabibliothek",
+        "sector": "EdariaMitte"
       }
     }
   ],
-  "objects" : [
+  "floorMaterialId": "wood-warm",
+  "kind": "interior",
+  "npcs": [
     {
-      "modelID" : "bookshelf-ornate",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 0,
-      "y" : -48
-    },
-    {
-      "modelID" : "bookshelf-ornate",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 64,
-      "y" : -48
-    },
-    {
-      "modelID" : "bookshelf-ornate",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 128,
-      "y" : -48
-    },
-    {
-      "modelID" : "bookshelf-ornate",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 192,
-      "y" : -48
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 0,
-      "y" : 96
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 64,
-      "y" : 96
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 128,
-      "y" : 96
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 192,
-      "y" : 96
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 0,
-      "y" : 256
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 64,
-      "y" : 256
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 128,
-      "y" : 256
-    },
-    {
-      "modelID" : "bookshelf",
-      "priority" : 0,
-      "sourceHeight" : 96,
-      "sourceWidth" : 64,
-      "x" : 192,
-      "y" : 256
-    },
-    {
-      "modelID" : "potted-plant",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 256,
-      "y" : 288
-    },
-    {
-      "modelID" : "study-table",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 256,
-      "y" : 128
-    },
-    {
-      "modelID" : "bust",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 256,
-      "y" : -32
-    },
-    {
-      "modelID" : "door",
-      "priority" : 0,
-      "sourceHeight" : 32,
-      "sourceWidth" : 192,
-      "x" : 48,
-      "y" : 480
-    },
-    {
-      "modelID" : "grand-bookcase",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 96,
-      "x" : 352,
-      "y" : -32
-    },
-    {
-      "modelID" : "couch",
-      "priority" : 0,
-      "sourceHeight" : 32,
-      "sourceWidth" : 32,
-      "x" : 320,
-      "y" : 48
-    },
-    {
-      "modelID" : "couch",
-      "priority" : 0,
-      "sourceHeight" : 32,
-      "sourceWidth" : 32,
-      "x" : 352,
-      "y" : 96
-    },
-    {
-      "modelID" : "couch",
-      "priority" : 0,
-      "sourceHeight" : 32,
-      "sourceWidth" : 32,
-      "x" : 416,
-      "y" : 96
-    },
-    {
-      "modelID" : "couch",
-      "priority" : 0,
-      "sourceHeight" : 32,
-      "sourceWidth" : 32,
-      "x" : 448,
-      "y" : 48
-    },
-    {
-      "modelID" : "floor-lamp",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 480,
-      "y" : 160
-    },
-    {
-      "modelID" : "floor-lamp",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 384,
-      "y" : 160
-    },
-    {
-      "modelID" : "floor-lamp",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 480,
-      "y" : 288
-    },
-    {
-      "modelID" : "floor-lamp",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 384,
-      "y" : 288
-    },
-    {
-      "modelID" : "side-table",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 448,
-      "y" : 176
-    },
-    {
-      "modelID" : "side-table",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 352,
-      "y" : 176
-    },
-    {
-      "modelID" : "side-table",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 448,
-      "y" : 304
-    },
-    {
-      "modelID" : "side-table",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 352,
-      "y" : 304
-    },
-    {
-      "modelID" : "chair",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 448,
-      "y" : 128
-    },
-    {
-      "modelID" : "chair",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 352,
-      "y" : 128
-    },
-    {
-      "modelID" : "chair",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 448,
-      "y" : 256
-    },
-    {
-      "modelID" : "chair",
-      "priority" : 0,
-      "sourceHeight" : 64,
-      "sourceWidth" : 32,
-      "x" : 352,
-      "y" : 256
+      "characterModelId": "libus",
+      "dialogScript": "Sei gegrüßt, $name!---Diese Bibliothek ist immer noch in Arbeit.---Außerdem ist das Rennen hier verboten!",
+      "facing": 270,
+      "id": "libus",
+      "name": "Libus",
+      "x": 7.36,
+      "z": 8.48
     }
   ],
-  "portals" : [
+  "placements": [
     {
-      "direction" : 1,
-      "height" : 288,
-      "targetSectorName" : "EdariaBibliothek",
-      "width" : 256,
-      "x" : 0,
-      "y" : 32
+      "id": "bookshelf-ornate-1",
+      "modelId": "bookshelf-ornate",
+      "x": 0.64,
+      "z": 0.23
     },
     {
-      "direction" : 0,
-      "height" : 18,
-      "targetSectorName" : "EdariaMitte",
-      "width" : 180,
-      "x" : 54,
-      "y" : 494
+      "id": "bookshelf-ornate-2",
+      "modelId": "bookshelf-ornate",
+      "x": 1.92,
+      "z": 0.23
     },
     {
-      "direction" : 1,
-      "height" : 96,
-      "targetSectorName" : "EdariaMitte",
-      "width" : 160,
-      "x" : 64,
-      "y" : 384
+      "id": "bookshelf-ornate-3",
+      "modelId": "bookshelf-ornate",
+      "x": 3.2,
+      "z": 0.23
+    },
+    {
+      "id": "bookshelf-ornate-4",
+      "modelId": "bookshelf-ornate",
+      "x": 4.48,
+      "z": 0.23
+    },
+    {
+      "id": "bookshelf-1",
+      "modelId": "bookshelf",
+      "x": 0.64,
+      "z": 3.665
+    },
+    {
+      "id": "bookshelf-2",
+      "modelId": "bookshelf",
+      "x": 1.92,
+      "z": 3.665
+    },
+    {
+      "id": "bookshelf-3",
+      "modelId": "bookshelf",
+      "x": 3.2,
+      "z": 3.665
+    },
+    {
+      "id": "bookshelf-4",
+      "modelId": "bookshelf",
+      "x": 4.48,
+      "z": 3.665
+    },
+    {
+      "id": "bookshelf-5",
+      "modelId": "bookshelf",
+      "x": 0.64,
+      "z": 6.865
+    },
+    {
+      "id": "bookshelf-6",
+      "modelId": "bookshelf",
+      "x": 1.92,
+      "z": 6.865
+    },
+    {
+      "id": "bookshelf-7",
+      "modelId": "bookshelf",
+      "x": 3.2,
+      "z": 6.865
+    },
+    {
+      "id": "bookshelf-8",
+      "modelId": "bookshelf",
+      "x": 4.48,
+      "z": 6.865
+    },
+    {
+      "id": "potted-plant-1",
+      "modelId": "potted-plant",
+      "x": 5.44,
+      "z": 6.86
+    },
+    {
+      "id": "study-table-1",
+      "modelId": "study-table",
+      "x": 5.44,
+      "z": 3.66
+    },
+    {
+      "id": "bust-1",
+      "modelId": "bust",
+      "x": 5.44,
+      "z": 0.245
+    },
+    {
+      "id": "door-1",
+      "modelId": "door",
+      "x": 2.88,
+      "z": 10.145
+    },
+    {
+      "id": "grand-bookcase-1",
+      "modelId": "grand-bookcase",
+      "x": 8,
+      "z": 0.265
+    },
+    {
+      "id": "couch-1",
+      "modelId": "couch",
+      "x": 6.72,
+      "z": 1.45
+    },
+    {
+      "id": "couch-2",
+      "modelId": "couch",
+      "x": 7.36,
+      "z": 2.41
+    },
+    {
+      "id": "couch-3",
+      "modelId": "couch",
+      "x": 8.64,
+      "z": 2.41
+    },
+    {
+      "id": "couch-4",
+      "modelId": "couch",
+      "x": 9.28,
+      "z": 1.45
+    },
+    {
+      "id": "floor-lamp-1",
+      "modelId": "floor-lamp",
+      "x": 9.92,
+      "z": 4.265
+    },
+    {
+      "id": "floor-lamp-2",
+      "modelId": "floor-lamp",
+      "x": 8,
+      "z": 4.265
+    },
+    {
+      "id": "floor-lamp-3",
+      "modelId": "floor-lamp",
+      "x": 9.92,
+      "z": 6.825
+    },
+    {
+      "id": "floor-lamp-4",
+      "modelId": "floor-lamp",
+      "x": 8,
+      "z": 6.825
+    },
+    {
+      "id": "side-table-1",
+      "modelId": "side-table",
+      "x": 9.28,
+      "z": 4.155
+    },
+    {
+      "id": "side-table-2",
+      "modelId": "side-table",
+      "x": 7.36,
+      "z": 4.155
+    },
+    {
+      "id": "side-table-3",
+      "modelId": "side-table",
+      "x": 9.28,
+      "z": 6.715
+    },
+    {
+      "id": "side-table-4",
+      "modelId": "side-table",
+      "x": 7.36,
+      "z": 6.715
+    },
+    {
+      "id": "chair-1",
+      "modelId": "chair",
+      "x": 9.28,
+      "z": 3.655
+    },
+    {
+      "id": "chair-2",
+      "modelId": "chair",
+      "x": 7.36,
+      "z": 3.655
+    },
+    {
+      "id": "chair-3",
+      "modelId": "chair",
+      "x": 9.28,
+      "z": 6.215
+    },
+    {
+      "id": "chair-4",
+      "modelId": "chair",
+      "x": 7.36,
+      "z": 6.215
     }
   ],
-  "version" : 11
+  "size": {
+    "depth": 10.24,
+    "width": 10.24
+  },
+  "spawn": {
+    "facing": 0,
+    "x": 2.88,
+    "z": 4.32
+  }
 }

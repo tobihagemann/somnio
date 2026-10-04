@@ -1,158 +1,57 @@
 import { describe, expect, it } from 'vitest';
-import { clampToInt16, rectCenter } from '../src/geometry.ts';
-import { contains, intersects, overlaps } from '../src/collisionMaskOverlap.ts';
-import { clampToSector, feetCenter, feetHeight, feetRect, isFeetClear } from '../src/feetMask.ts';
-import { SOMNIO_CONSTANTS } from '../src/constants.ts';
-import { npcRuntimePosition } from '../src/npcPlacement.ts';
-import { relativeDirection, speedMultiplier, tempoFromRaw, tempoPixelsPerSecond } from '../src/tempo.ts';
-import { gridRounded } from '../src/worldEntity.ts';
-import type { Sector } from '../src/sector.ts';
+import { relativeDirection, speedMultiplier } from '../src/gait.ts';
+import { EDGE_TOLERANCE, clamp, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from '../src/geometry.ts';
 
-function makeSector(overrides: Partial<Sector> = {}): Sector {
-  return {
-    name: 'Test',
-    version: 1,
-    dimensions: { width: 4, height: 4 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
-}
+describe('rects', () => {
+  const rect = { x: 2, z: 3, width: 4, depth: 5 };
 
-describe('feet-box arithmetic', () => {
-  const player = SOMNIO_CONSTANTS.playerSpriteSize;
-
-  it('derives the feet height as spriteHeight / 4 + 4', () => {
-    expect(feetHeight(player)).toBe(16);
-    expect(feetHeight({ width: 32, height: 32 })).toBe(12);
-    // Integer division truncates: 50 / 4 is 12, not 12.5.
-    expect(feetHeight({ width: 32, height: 50 })).toBe(16);
+  it('contain their edges, and their slack', () => {
+    expect(rectContains(rect, { x: 2, z: 3 })).toBe(true);
+    expect(rectContains(rect, { x: 6, z: 8 })).toBe(true);
+    expect(rectContains(rect, { x: 6.01, z: 5 })).toBe(false);
+    expect(rectContains(rect, { x: 6.01, z: 5 }, 0.01)).toBe(true);
+    expect(rectContains(rect, { x: 4, z: 2.5 }, 0.4)).toBe(false);
   });
 
-  it('bottom-aligns the feet rect at full sprite width', () => {
-    expect(feetRect({ x: 100, y: 200 }, player)).toEqual({ x: 100, y: 232, width: 32, height: 16 });
-  });
-
-  it('centres on the feet, not the sprite top-left', () => {
-    expect(feetCenter({ x: 100, y: 200 }, player)).toEqual({ x: 116, y: 240 });
+  it('overlap only beyond the edge tolerance, so rects that touch do not', () => {
+    expect(rectsOverlap(rect, { x: 6, z: 3, width: 4, depth: 5 })).toBe(false);
+    expect(rectsOverlap(rect, { x: 6 - EDGE_TOLERANCE / 2, z: 3, width: 4, depth: 5 })).toBe(false);
+    expect(rectsOverlap(rect, { x: 5.9, z: 7.9, width: 4, depth: 5 })).toBe(true);
+    expect(rectsOverlap(rect, { x: 5.9, z: 8, width: 4, depth: 5 })).toBe(false);
   });
 });
 
-describe('collision overlap is right/bottom exclusive', () => {
-  /** Right/bottom exclusivity is what keeps a wall exactly its authored thickness. */
-  it('does not count rects flush along a far edge as overlapping', () => {
-    const left = { x: 0, y: 0, width: 10, height: 10 };
-    const flushRight = { x: 10, y: 0, width: 10, height: 10 };
-    expect(overlaps(left, flushRight)).toBe(false);
-    expect(overlaps(left, { x: 9, y: 0, width: 10, height: 10 })).toBe(true);
+describe('the placement transform', () => {
+  it('turns a model counter-clockwise seen from above: yaw 270 points its +X south', () => {
+    const south = modelToWorld({ x: 10, z: 20, yaw: 270 }, { x: 1, z: 0 });
+    expect(south.x).toBeCloseTo(10, 9);
+    expect(south.z).toBeCloseTo(21, 9);
+    const north = modelToWorld({ x: 10, z: 20, yaw: 90 }, { x: 1, z: 0 });
+    expect(north.x).toBeCloseTo(10, 9);
+    expect(north.z).toBeCloseTo(19, 9);
   });
 
-  it('does not count rects flush along the bottom edge as overlapping', () => {
-    const top = { x: 0, y: 0, width: 10, height: 10 };
-    expect(overlaps(top, { x: 0, y: 10, width: 10, height: 10 })).toBe(false);
-    expect(overlaps(top, { x: 0, y: 9, width: 10, height: 10 })).toBe(true);
-  });
-
-  it('treats a point on the right/bottom mask edge as outside', () => {
-    const masks = [{ x: 0, y: 0, width: 10, height: 10 }];
-    expect(contains({ x: 0, y: 0 }, masks)).toBe(true);
-    expect(contains({ x: 9, y: 9 }, masks)).toBe(true);
-    expect(contains({ x: 10, y: 5 }, masks)).toBe(false);
-    expect(contains({ x: 5, y: 10 }, masks)).toBe(false);
-  });
-
-  it('intersects a rect against a mask list', () => {
-    const masks = [{ x: 50, y: 50, width: 10, height: 10 }];
-    expect(intersects({ x: 40, y: 40, width: 11, height: 11 }, masks)).toBe(true);
-    expect(intersects({ x: 40, y: 40, width: 10, height: 10 }, masks)).toBe(false);
+  it.each([0, 30, 90, 137.5, 270])('inverts at yaw %s', (yaw) => {
+    const transform = { x: 3, z: -7, yaw };
+    const back = worldToModel(transform, modelToWorld(transform, { x: 1.25, z: -0.5 }));
+    expect(back.x).toBeCloseTo(1.25, 9);
+    expect(back.z).toBeCloseTo(-0.5, 9);
   });
 });
 
-describe('isFeetClear gates bounds, masks, and blockers', () => {
-  const player = SOMNIO_CONSTANTS.playerSpriteSize;
-  const sector = makeSector({ collisionMasks: [{ x: 200, y: 200, width: 64, height: 64 }] });
-
-  it('accepts a clear position', () => {
-    expect(isFeetClear({ x: 10, y: 10 }, player, sector, [])).toBe(true);
+describe('scalar helpers', () => {
+  it('measure distance on the ground plane', () => {
+    expect(distance({ x: 1, z: 1 }, { x: 4, z: 5 })).toBe(5);
   });
 
-  it('rejects a negative origin', () => {
-    expect(isFeetClear({ x: -1, y: 10 }, player, sector, [])).toBe(false);
-  });
-
-  it('rejects a feet box past the sector edge', () => {
-    // 4 tiles x 128 = 512 px. A 32-wide sprite at x=480 is exactly flush and allowed.
-    expect(isFeetClear({ x: 480, y: 400 }, player, sector, [])).toBe(true);
-    expect(isFeetClear({ x: 481, y: 400 }, player, sector, [])).toBe(false);
-  });
-
-  it('rejects a feet box overlapping a collision mask', () => {
-    expect(isFeetClear({ x: 200, y: 200 }, player, sector, [])).toBe(false);
-  });
-
-  it('rejects a feet box overlapping a blocker', () => {
-    const blocker = feetRect({ x: 100, y: 100 }, player);
-    expect(isFeetClear({ x: 100, y: 100 }, player, sector, [blocker])).toBe(false);
-    expect(isFeetClear({ x: 300, y: 300 }, player, sector, [blocker])).toBe(true);
+  it('clamp into a range', () => {
+    expect(clamp(5, 0, 3)).toBe(3);
+    expect(clamp(-5, 0, 3)).toBe(0);
+    expect(clamp(2, 0, 3)).toBe(2);
   });
 });
 
-describe('clampToSector lands the feet box flush against an edge', () => {
-  const player = SOMNIO_CONSTANTS.playerSpriteSize;
-  const sector = makeSector();
-
-  it('clamps past the right edge to flush', () => {
-    expect(clampToSector({ x: 9999, y: 100 }, player, sector).x).toBe(512 - 32);
-  });
-
-  it('clamps past the bottom edge to flush', () => {
-    expect(clampToSector({ x: 100, y: 9999 }, player, sector).y).toBe(512 - 48);
-  });
-
-  /**
-   * The lower Y bound is `feetHeight - spriteHeight`, i.e. negative: the sprite's head may hang
-   * above the sector as long as the feet box stays inside.
-   */
-  it('allows the sprite head above the sector while the feet stay inside', () => {
-    expect(clampToSector({ x: 100, y: -9999 }, player, sector).y).toBe(16 - 48);
-  });
-
-  it('clamps past the left edge to flush', () => {
-    expect(clampToSector({ x: -9999, y: 100 }, player, sector).x).toBe(0);
-  });
-
-  /**
-   * A 1x1-tile sector is 128 px square, so a 200x300 sprite has a negative x limit that the
-   * inner `max` pins to 0, while its y range stays ordered: `minY` (79 - 300) below the limit
-   * (128 - 300).
-   */
-  it('does not invert the range for a sector smaller than the sprite', () => {
-    const tiny = makeSector({ dimensions: { width: 1, height: 1 } });
-    const sprite = { width: 200, height: 300 };
-    expect(clampToSector({ x: 9999, y: 9999 }, sprite, tiny)).toEqual({ x: 0, y: 128 - 300 });
-    expect(clampToSector({ x: -9999, y: -9999 }, sprite, tiny)).toEqual({ x: 0, y: feetHeight(sprite) - 300 });
-  });
-});
-
-describe('tempo and relative direction', () => {
-  it('maps tempo to pixels per second', () => {
-    expect(tempoPixelsPerSecond(1)).toBe(50);
-    expect(tempoPixelsPerSecond(2)).toBe(100);
-    expect(tempoPixelsPerSecond(4)).toBe(150);
-  });
-
-  it('falls back to default for an unknown wire tempo', () => {
-    expect(tempoFromRaw(3)).toBe(2);
-    expect(tempoFromRaw(0)).toBe(2);
-    expect(tempoFromRaw(4)).toBe(4);
-  });
-
+describe('gait and relative direction', () => {
   it.each([
     [0, 0, 'forward'],
     [45, 0, 'forward'],
@@ -177,46 +76,5 @@ describe('tempo and relative direction', () => {
     expect(speedMultiplier('backward')).toBe(0.5);
     expect(speedMultiplier('strafeLeft')).toBe(0.7);
     expect(speedMultiplier('strafeRight')).toBe(0.7);
-  });
-});
-
-describe('NPC placement centres inside the spawn box', () => {
-  it('offsets by half the difference between box and mask', () => {
-    expect(
-      npcRuntimePosition({
-        spawnOrigin: { x: 100, y: 200 },
-        spawnBoxSize: { width: 128, height: 128 },
-        maskSize: { width: 32, height: 48 },
-        name: 'Libus',
-        figure: 16,
-        facing: 0,
-        behaviorTag: 0,
-        dialogScript: '',
-      }),
-    ).toEqual({ x: 148, y: 240 });
-  });
-});
-
-describe('grid rounding', () => {
-  it('rounds half away from zero', () => {
-    expect(gridRounded({ x: 2.5, y: -2.5 })).toEqual({ x: 3, y: -3 });
-    expect(gridRounded({ x: 1.4, y: -1.4 })).toEqual({ x: 1, y: -1 });
-  });
-
-  it('clamps into the Int16 pixel domain', () => {
-    expect(gridRounded({ x: 99_999, y: -99_999 })).toEqual({ x: 32_767, y: -32_768 });
-  });
-});
-
-describe('integer helpers', () => {
-  it('truncates rect centres toward zero', () => {
-    expect(rectCenter({ x: 0, y: 0, width: 5, height: 5 })).toEqual({ x: 2, y: 2 });
-    expect(rectCenter({ x: 10, y: 10, width: 4, height: 4 })).toEqual({ x: 12, y: 12 });
-  });
-
-  it('clamps to the Int16 range', () => {
-    expect(clampToInt16(40_000)).toBe(32_767);
-    expect(clampToInt16(-40_000)).toBe(-32_768);
-    expect(clampToInt16(123)).toBe(123);
   });
 });

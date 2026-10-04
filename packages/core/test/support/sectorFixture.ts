@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readSectorFile } from '../../src/sectorFile.ts';
+import type { Sector } from '../../src/sector.ts';
 
 /**
  * The committed `.somnio-sector` fixtures, resolved from this file so no test depends on the cwd.
@@ -16,7 +18,6 @@ export function readSectorFixture(name: SectorFixtureName): string {
   return readFileSync(resolve(FIXTURES_ROOT, 'sectors', `${name}.somnio-sector`), 'utf8');
 }
 
-/** The synthetic encoding golden covering the writer paths the seven fixtures never reach. */
-export function readSectorEncodingGolden(): string {
-  return readFileSync(resolve(FIXTURES_ROOT, 'sector-encoding-golden.somnio-sector'), 'utf8');
+export function loadSectorFixtures(): Sector[] {
+  return SECTOR_FIXTURE_NAMES.map((name) => readSectorFile(readSectorFixture(name), name));
 }

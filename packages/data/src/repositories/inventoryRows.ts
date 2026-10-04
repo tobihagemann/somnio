@@ -1,6 +1,5 @@
 import type { Kysely } from 'kysely';
-import { HAND } from '@somnio/core';
-import type { Hand, InventoryRow } from '@somnio/core';
+import type { InventoryRow } from '@somnio/core';
 import type { Database } from '../schema.ts';
 import { RepositoryDecodingError } from './errors.ts';
 
@@ -8,29 +7,27 @@ import { RepositoryDecodingError } from './errors.ts';
 
 type InventoryRowRecord = {
   slot: number;
-  category: number;
-  item_id: number;
-  extras: { key: string; value: number }[];
-  equipped_hand: number | null;
+  item_id: string;
+  quantity: number;
+  equipped_hand: string | null;
 };
 
 export function decodeInventoryRow(row: InventoryRowRecord): InventoryRow {
   return {
     slot: row.slot,
-    category: row.category,
     itemId: row.item_id,
-    extras: row.extras.map((extra) => ({ key: extra.key, value: extra.value })),
+    quantity: row.quantity,
     equippedHand: decodeHand(row.equipped_hand),
   };
 }
 
-function decodeHand(raw: number | null): Hand | undefined {
+function decodeHand(raw: string | null): InventoryRow['equippedHand'] {
   if (raw === null) return undefined;
-  if (raw === HAND.left || raw === HAND.right) return raw;
+  if (raw === 'left' || raw === 'right') return raw;
   throw new RepositoryDecodingError('equipped_hand', raw);
 }
 
-/** `undefined` ↔ SQL `NULL`; `extras` travels as a JSON array literal so the driver stores it as JSONB. */
+/** An unequipped row's `equippedHand` is stored as SQL `NULL`. */
 export async function insertInventoryRows(db: Kysely<Database>, characterId: string, rows: readonly InventoryRow[]): Promise<void> {
   for (const row of rows) {
     await db
@@ -38,9 +35,8 @@ export async function insertInventoryRows(db: Kysely<Database>, characterId: str
       .values({
         character_id: characterId,
         slot: row.slot,
-        category: row.category,
         item_id: row.itemId,
-        extras: JSON.stringify(row.extras.map((extra) => ({ key: extra.key, value: extra.value }))),
+        quantity: row.quantity,
         equipped_hand: row.equippedHand ?? null,
       })
       .execute();

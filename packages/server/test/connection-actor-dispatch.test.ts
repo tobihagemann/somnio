@@ -1,41 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { WIRE_ENTITY_TYPE, WIRE_HAND } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 
-const position = { entityIndex: 7, x: 10, y: 20, facing: 1, tempo: 2 };
-const say = { entityIndex: 0, text: 'Hallo Welt' };
-const leave = { entityIndex: 4, leftGame: true };
+const move = { x: 10, z: 20, facing: 1, gait: 'run' } as const;
+const moves = { moves: [{ id: 'peer', ...move }] };
+const leave = { entityId: 'peer', leftGame: true };
 const entity = {
-  entityIndex: 9,
-  figure: 0,
-  gender: 1,
-  maskWidth: 32,
-  maskHeight: 48,
-  type: WIRE_ENTITY_TYPE.player,
+  id: 'npc:EdariaBibliothek/libus',
+  kind: 'npc',
+  characterModelId: 'libus',
   name: 'Libus',
+  radius: 0.3,
   x: 10,
-  y: 12,
+  z: 12,
   facing: 0,
-  tempo: 2,
-};
+  gait: 'jog',
+} as const;
 const register = {
   nickname: 'Saibot',
   password: 'p',
   passwordRepeat: 'p',
-  characterClass: 0,
-  gender: 1,
+  people: 'wachen',
   email: 'info@example.com',
 };
 const sessionToken = { token: 'tok', expiresInSeconds: 2_592_000 };
 
 const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] = [
-  {
-    label: 'pre-login serverPosition',
-    message: { tag: 'serverPosition', payload: position },
-    attachFirst: false,
-  },
+  { label: 'pre-login moves', message: { tag: 'moves', payload: moves }, attachFirst: false },
   { label: 'pre-login entity', message: { tag: 'entity', payload: entity }, attachFirst: false },
   {
     label: 'pre-login hello',
@@ -43,21 +35,17 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
     attachFirst: false,
   },
   { label: 'pre-login leave', message: { tag: 'leave', payload: leave }, attachFirst: false },
-  {
-    label: 'pre-login clientPosition',
-    message: { tag: 'clientPosition', payload: position },
-    attachFirst: false,
-  },
-  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: say }, attachFirst: false },
+  { label: 'pre-login move', message: { tag: 'move', payload: move }, attachFirst: false },
+  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt' } }, attachFirst: false },
   {
     label: 'pre-login equipToggle',
-    message: { tag: 'equipToggle', payload: { slot: 1, hand: WIRE_HAND.left } },
+    message: { tag: 'equipToggle', payload: { slot: 1, hand: 'left' } },
     attachFirst: false,
   },
-  { label: 'pre-login bumpNPC', message: { tag: 'bumpNPC', payload: { npcIndex: 4 } }, attachFirst: false },
+  { label: 'pre-login bump', message: { tag: 'bump', payload: { targetId: entity.id } }, attachFirst: false },
   {
-    label: 'pre-login enterPortal',
-    message: { tag: 'enterPortal', payload: { portalIndex: 2 } },
+    label: 'pre-login useDoor',
+    message: { tag: 'useDoor', payload: { sector: 'EdariaBibliothek', doorId: 'exit' } },
     attachFirst: false,
   },
   {
@@ -66,11 +54,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
     attachFirst: true,
   },
   { label: 'post-attach register', message: { tag: 'register', payload: register }, attachFirst: true },
-  {
-    label: 'post-attach serverPosition',
-    message: { tag: 'serverPosition', payload: position },
-    attachFirst: true,
-  },
+  { label: 'post-attach moves', message: { tag: 'moves', payload: moves }, attachFirst: true },
   { label: 'post-attach entity', message: { tag: 'entity', payload: entity }, attachFirst: true },
   { label: 'post-attach leave', message: { tag: 'leave', payload: leave }, attachFirst: true },
   {
@@ -112,7 +96,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
 describe('ConnectionActor.dispatch', () => {
   it.each(cases)('closes with protocolError for $label', async ({ message, attachFirst }) => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    if (attachFirst) connection.markAttached(1, 'EdariaBibliothek', crypto.randomUUID());
+    if (attachFirst) connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
     const decision = await connection.dispatch(message);
     expect(decision).toEqual({ kind: 'close', code: CLOSE_PROTOCOL_ERROR, reason: 'frame validation failed' });
   });

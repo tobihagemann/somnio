@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { encodeSomnioMessage } from '@somnio/protocol';
+import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
+import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import type { ConnectionSocket } from '../src/connection/connectionActor.ts';
 import { makeOneSectorWorld } from './support/oneSectorWorld.ts';
-import { makeCharacter, makeSector } from './support/sectorFactory.ts';
+import { makeCharacter, makeDoor, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
@@ -195,8 +197,8 @@ describe('inbound sequencing', () => {
     await run;
     expect(connection.state.kind).toBe('awaitingLogin');
     expect(world.dependencies.worldRouter.loggedInPlayerCount()).toBe(0);
-    // Detached from the sector and the account slot released, not merely a reset actor state.
-    expect(world.dependencies.worldRouter.sector('A')?.snapshotForCheckpoint()).toEqual([]);
+    // Detached from the space and the account slot released, not merely a reset actor state.
+    expect(world.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)?.snapshotForCheckpoint()).toEqual([]);
     expect(world.dependencies.worldRouter.register(new ConnectionActor(world.dependencies), world.accountId, 'tester')).toBe(true);
   });
 
@@ -216,32 +218,27 @@ describe('inbound sequencing', () => {
 
     await connection.drainForShutdown();
     expect(socket.events.at(-1)).toBe('close:1001');
-    expect(world.dependencies.worldRouter.sector('A')?.snapshotForCheckpoint()).toEqual([]);
+    expect(world.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)?.snapshotForCheckpoint()).toEqual([]);
     await run;
   });
 
   /**
-   * A portal hop arriving while the drain's checkpoint write is pending must not outlive the
-   * cleanup: the drain ends the loop first, so the hop is discarded and one cleanup path detaches
-   * whatever sector the player is in.
+   * A door transfer arriving while the drain's checkpoint write is pending must not outlive the
+   * cleanup: the drain ends the loop first, so the transfer is discarded and one cleanup path
+   * detaches whatever space the player is in.
    */
-  it('a portal hop racing the shutdown snapshot leaves no player in either sector', async () => {
+  it('a door transfer racing the shutdown snapshot leaves no player in either space', async () => {
     const sessions = new GatedSessionRepository();
     const accountId = crypto.randomUUID();
     sessions.resolveTo = accountId;
-    const characters = new GatedCharacterRepository(new Map([[accountId, [makeCharacter({ x: 64, y: 64 }, 'hopper', 'A')]]]));
+    const characters = new GatedCharacterRepository(new Map([[accountId, [makeCharacter({ x: 10, z: 9.7 }, 'hopper')]]]));
     const dependencies = await makeStubConnectionDependencies({
       sessions,
       characters,
-      sectors: new Map([
-        [
-          'A',
-          makeSector('A', {
-            portals: [{ x: 0, y: 0, width: 256, height: 256, targetSectorName: 'B', direction: 'outboundTrigger' }],
-          }),
-        ],
-        ['B', makeSector('B')],
-      ]),
+      sectors: [
+        makeSector('A', makeDoor('inside', { x: 10, z: 10 }, { sector: 'B', door: 'exit' })),
+        interiorSector('B', makeDoor('exit', { x: 5, z: 9 }, { sector: 'A', door: 'inside' })),
+      ],
     });
     const socket = new RecordingSocket();
     const connection = new ConnectionActor(dependencies);
@@ -254,14 +251,14 @@ describe('inbound sequencing', () => {
 
     characters.hold();
     const drain = connection.drainForShutdown();
-    socket.deliver(encodeSomnioMessage({ tag: 'enterPortal', payload: { portalIndex: 0 } }));
+    socket.deliver(encodeSomnioMessage({ tag: 'useDoor', payload: { sector: 'A', doorId: 'inside' } }));
     await settle();
     characters.release();
     await drain;
     await run;
     expect(connection.state.kind).toBe('awaitingLogin');
-    expect(dependencies.worldRouter.sector('A')?.snapshotForCheckpoint()).toEqual([]);
-    expect(dependencies.worldRouter.sector('B')?.snapshotForCheckpoint()).toEqual([]);
+    expect(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)?.snapshotForCheckpoint()).toEqual([]);
+    expect(dependencies.worldRouter.space('B')?.snapshotForCheckpoint()).toEqual([]);
   });
 
   it('a shutdown drain is bounded when the socket never finishes writing', async () => {

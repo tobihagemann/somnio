@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { decodeSomnioMessage, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { RawData, WebSocket } from 'ws';
-import { PORTAL_LOST, handleBumpNPC, handleEnterPortal, handleEquipToggle, handlePosition, handleSay } from '../handlers/gameplay.ts';
+import { DOOR_LOST, handleBump, handleEquipToggle, handleMove, handleSay, handleUseDoor } from '../handlers/gameplay.ts';
 import { handleLogin } from '../handlers/login.ts';
 import { handleRegister } from '../handlers/register.ts';
 import { handleRedeem, handleRevoke } from '../handlers/session.ts';
@@ -11,7 +11,7 @@ import { persistPlayerCheckpoint } from '../world/checkpointWriter.ts';
 import type { ConnectionDependencies } from './dependencies.ts';
 import { ConnectionOutbox } from './outbox.ts';
 
-export type ConnectionState = { kind: 'awaitingLogin' } | { kind: 'attached'; entityIndex: number; sectorName: string; accountId: string };
+export type ConnectionState = { kind: 'awaitingLogin' } | { kind: 'attached'; entityId: string; spaceId: string; accountId: string };
 
 export type CloseDecision = { kind: 'keepOpen' } | { kind: 'close'; code: number; reason: string };
 
@@ -124,14 +124,14 @@ export class ConnectionActor {
     // A peer close resolves the loop while a handler may still be awaiting Postgres; a login that
     // completed after cleanup would attach a phantom player nothing can detach.
     await this.inflight;
-    const attachedAs = this.state.kind === 'attached' ? this.state.sectorName : undefined;
+    const attachedAs = this.state.kind === 'attached' ? this.state.spaceId : undefined;
     await this.snapshotAndCleanup(true);
     this.outbox.finish();
     await writer;
     this.logger.info(
       {
         reason: ended === 'peerClosed' ? 'peer closed' : ended.kind === 'keepOpen' ? 'server closed' : ended.reason,
-        sector: attachedAs,
+        space: attachedAs,
       },
       'connection closed',
     );
@@ -206,7 +206,7 @@ export class ConnectionActor {
    * in-flight handler, broadcasts `leave`, flushes the outbox, and completes the 1001 close
    * handshake — so the server's terminate sweep right after finds nothing left to cut short. A
    * running connection is not snapshotted here: a snapshot taken before the loop ended could be
-   * overtaken by a handler (a portal hop) that attaches the player elsewhere after it. The wait
+   * overtaken by a handler (a door transfer) that attaches the player elsewhere after it. The wait
    * is capped so a socket whose writes have stalled cannot hold shutdown short of the terminate
    * that frees it.
    */
@@ -258,22 +258,23 @@ export class ConnectionActor {
         case 'redeemSession':
           await handleRedeem(message.payload, this, this.dependencies);
           return { kind: 'keepOpen' };
-        case 'clientPosition':
+        case 'move':
         case 'clientSay':
         case 'equipToggle':
-        case 'bumpNPC':
-        case 'enterPortal':
+        case 'bump':
+        case 'useDoor':
         case 'revokeSession':
         case 'hello':
         case 'loginResult':
         case 'registerResult':
-        case 'enterSector':
-        case 'mainCharacter':
+        case 'enterSpace':
+        case 'sector':
         case 'entity':
-        case 'serverPosition':
+        case 'moves':
+        case 'correction':
+        case 'doorRefused':
         case 'serverSay':
         case 'energy':
-        case 'dateTick':
         case 'inventory':
         case 'leave':
         case 'adminSay':
@@ -283,28 +284,28 @@ export class ConnectionActor {
       }
     }
     switch (message.tag) {
-      case 'clientPosition':
-        handlePosition(message.payload, state.entityIndex, state.sectorName, this.dependencies);
+      case 'move':
+        handleMove(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'clientSay':
-        handleSay(message.payload, state.entityIndex, state.sectorName, this.dependencies);
+        handleSay(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'equipToggle':
-        handleEquipToggle(message.payload, state.entityIndex, state.sectorName, this.outbox, this.dependencies);
+        handleEquipToggle(message.payload, state.entityId, state.spaceId, this.outbox, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'bumpNPC':
-        handleBumpNPC(message.payload, state.entityIndex, state.sectorName, this.dependencies);
+      case 'bump':
+        handleBump(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'enterPortal': {
-        const outcome = handleEnterPortal(message.payload, state.entityIndex, state.sectorName, this, this.dependencies);
-        if (outcome === PORTAL_LOST) {
-          // Nothing to snapshot or detach: the player is in no sector, so the exit path must
-          // not run against the released index.
+      case 'useDoor': {
+        const outcome = handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies);
+        if (outcome === DOOR_LOST) {
+          // Nothing to snapshot or detach: the player is in no space, so the exit path must
+          // not run against the space they left.
           this.dependencies.worldRouter.unregister(state.accountId);
           this.state = { kind: 'awaitingLogin' };
           return { kind: 'close', code: CLOSE_GOING_AWAY, reason: 'connection closed' };
         }
-        if (outcome !== undefined) this.setAttached(outcome.entityIndex, outcome.sectorName);
+        if (outcome !== undefined) this.setAttached(outcome.spaceId);
         return { kind: 'keepOpen' };
       }
       // Revocation is accepted only while attached; the connection's own account scopes the delete.
@@ -318,13 +319,14 @@ export class ConnectionActor {
       case 'hello':
       case 'loginResult':
       case 'registerResult':
-      case 'enterSector':
-      case 'mainCharacter':
+      case 'enterSpace':
+      case 'sector':
       case 'entity':
-      case 'serverPosition':
+      case 'moves':
+      case 'correction':
+      case 'doorRefused':
       case 'serverSay':
       case 'energy':
-      case 'dateTick':
       case 'inventory':
       case 'leave':
       case 'adminSay':
@@ -334,14 +336,14 @@ export class ConnectionActor {
     }
   }
 
-  markAttached(entityIndex: number, sectorName: string, accountId: string): void {
-    this.state = { kind: 'attached', entityIndex, sectorName, accountId };
+  markAttached(entityId: string, spaceId: string, accountId: string): void {
+    this.state = { kind: 'attached', entityId, spaceId, accountId };
   }
 
-  /** After a portal hop the sector-local index must replace the source sector's. */
-  setAttached(entityIndex: number, sectorName: string): void {
+  /** After a door transfer the space the player arrived in must replace the one they left. */
+  setAttached(spaceId: string): void {
     if (this.state.kind === 'attached') {
-      this.state = { kind: 'attached', entityIndex, sectorName, accountId: this.state.accountId };
+      this.state = { ...this.state, spaceId };
     }
   }
 
@@ -352,16 +354,16 @@ export class ConnectionActor {
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
     const state = this.state;
     if (state.kind !== 'attached') return;
-    const sector = this.dependencies.worldRouter.sector(state.sectorName);
-    if (sector !== undefined) {
-      const snapshot = sector.snapshotForPlayer(state.entityIndex);
+    const space = this.dependencies.worldRouter.space(state.spaceId);
+    if (space !== undefined) {
+      const snapshot = space.snapshotForPlayer(state.entityId);
       if (snapshot !== undefined) {
         await persistPlayerCheckpoint(snapshot, this.dependencies.characters, this.logger, {
           origin: 'disconnect',
-          sector: state.sectorName,
+          space: state.spaceId,
         });
       }
-      sector.detach(state.entityIndex, leftGame);
+      space.detach(state.entityId, leftGame);
     }
     this.dependencies.worldRouter.unregister(state.accountId);
     this.state = { kind: 'awaitingLogin' };

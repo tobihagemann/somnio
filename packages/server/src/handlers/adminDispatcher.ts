@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { AdminRequest, AdminResponse } from '@somnio/protocol';
+import { calendarFromWorldSeconds } from '@somnio/core';
 import type { Logger, RotatingFile } from '../logging.ts';
 import type { WorldClockService } from '../services/worldClockService.ts';
 import type { AdminWorldRouter } from '../world/worldRouter.ts';
@@ -39,7 +40,7 @@ export function dispatchAdminRequest(request: AdminRequest, dependencies: AdminD
     case 'players':
       return { tag: 'playerCount', payload: String(dependencies.worldRouter.loggedInPlayerCount()) };
     case 'time': {
-      const clock = dependencies.worldClock.currentTime();
+      const clock = calendarFromWorldSeconds(dependencies.worldClock.currentWorldSeconds());
       const pad = (value: number) => String(value).padStart(2, '0');
       return {
         tag: 'worldClock',

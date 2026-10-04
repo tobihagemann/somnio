@@ -1,90 +1,83 @@
 import { describe, expect, it } from 'vitest';
-import { WIRE_ENTITY_TYPE } from '@somnio/protocol';
-import { SOMNIO_CONSTANTS, feetCenter, headingFromVector } from '@somnio/core';
-import type { GridPoint } from '@somnio/core';
-import { ConnectionOutbox } from '../../src/connection/outbox.ts';
-import { PerSectorActor } from '../../src/world/perSectorActor.ts';
-import { collectMessages, entities, serverPositions } from '../support/frames.ts';
-import { testLogger } from '../support/logger.ts';
-import { makeCharacter, makeMonsterSpawn, makeSector } from '../support/sectorFactory.ts';
+import { OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, buildSpaceCollision, distance, headingFromVector, isLegalMove, monsterKind } from '@somnio/core';
+import type { Point } from '@somnio/core';
+import type { ConnectionOutbox } from '../../src/connection/outbox.ts';
+import { seededRandom } from '../../src/world/random.ts';
+import type { SpaceActor } from '../../src/world/spaceActor.ts';
+import { collectMessages, entities, entityMoves } from '../support/frames.ts';
+import { attachPlayer, makeClockedSpace } from '../support/sectorFactory.ts';
+import { fixtureWorld } from './support/harness.ts';
 
-/** Threshold 3 materializes exactly one monster in a 7-tick window: it spawns on tick 4, the next would be tick 8. */
-const SPAWN_THRESHOLD = 3;
-const MONSTER_ORIGIN: GridPoint = { x: 200, y: 200 };
-const MONSTER_SIZE = { width: 32, height: 48 };
+const world = fixtureWorld();
+const collision = buildSpaceCollision(world.spaces.get(OUTDOOR_SPACE_ID)!, world.registry);
+const GESPENST = monsterKind('gespenst');
+/** Far from the Nordwald's spawn area: the middle of EdariaMitte's north gate road. */
+const FAR_AWAY: Point = { x: 20.48, z: 12 };
 
-function aggroActor(): PerSectorActor {
-  return new PerSectorActor(
-    makeSector('Aggro', {
-      dimensions: { width: 8, height: 8 },
-      monsterSpawns: [makeMonsterSpawn(MONSTER_ORIGIN)],
-    }),
-    { logger: testLogger(), monsterSpawnThreshold: SPAWN_THRESHOLD },
-  );
+/** The committed outdoor space with the Nordwald's first Gespenst already spawned, and where it stands. */
+async function nordwald() {
+  const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID, { random: seededRandom(11) });
+  clock.ms = GESPENST.respawnSeconds * 1000;
+  // In the Nordwiese, which sees the Nordwald from well outside any aggro radius.
+  const scout = attachPlayer(space, { x: 20.48, z: -15 }, 'scout');
+  space.step(0);
+  space.detach(scout.entityId, true);
+  const [monster] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
+  if (monster === undefined) throw new Error('no Gespenst spawned in the Nordwald');
+  return { space, monster: { x: monster.x, z: monster.z } };
 }
 
-/** Top-left of a player sprite whose feet center lands at `(x, y)`. */
-function originForFeetCenter(x: number, y: number): GridPoint {
-  return { x: x - 16, y: y - 40 };
+/** A point `away` metres from the monster that a player can stand on with a clear line between the two, searched from compass step `first`. */
+function clearLineFrom(space: SpaceActor, monster: Point, away: number, first = 0): Point {
+  for (let step = first; step < first + 16; step += 1) {
+    const angle = (step * Math.PI) / 8;
+    const candidate = { x: monster.x + away * Math.sin(angle), z: monster.z + away * Math.cos(angle) };
+    if (space.canStand(candidate) && isLegalMove(collision, monster, candidate, GESPENST.radius, [])) return candidate;
+  }
+  throw new Error('the Gespenst is walled in');
 }
 
-const monsterCenter = feetCenter(MONSTER_ORIGIN, MONSTER_SIZE);
+/** Seven 50 ms steps, each flushed, as the simulation service would run them. */
+async function chase(space: SpaceActor, outbox: ConnectionOutbox) {
+  for (let pass = 0; pass < 7; pass += 1) {
+    space.step(0.05);
+    space.flushMoves();
+  }
+  return entityMoves(await collectMessages(outbox));
+}
 
 describe('monster aggro end to end', () => {
   it('idles when no player is within the aggro radius', async () => {
-    const actor = aggroActor();
-    const outbox = new ConnectionOutbox(4096);
-    actor.attach(makeCharacter({ x: 900, y: 900 }, 'far', 'Aggro'), [], outbox);
-    for (let tick = 0; tick < 7; tick += 1) actor.runAITick();
-    const messages = await collectMessages(outbox);
-    expect(entities(messages).some((entity) => entity.type === WIRE_ENTITY_TYPE.monster)).toBe(true);
-    expect(serverPositions(messages)).toEqual([]);
+    const { space } = await nordwald();
+    expect(await chase(space, attachPlayer(space, FAR_AWAY, 'far').outbox)).toEqual([]);
   });
 
   it('chases a player who enters the aggro radius', async () => {
-    const actor = aggroActor();
-    const outbox = new ConnectionOutbox(4096);
-    const player = originForFeetCenter(monsterCenter.x + 150, monsterCenter.y);
-    actor.attach(makeCharacter(player, 'near', 'Aggro'), [], outbox);
-    for (let tick = 0; tick < 7; tick += 1) actor.runAITick();
-    const chase = serverPositions(await collectMessages(outbox));
-    expect(chase.length).toBeGreaterThanOrEqual(4);
-    const target = feetCenter(player, SOMNIO_CONSTANTS.playerSpriteSize);
-    const distances = chase.map((frame) => {
-      const center = feetCenter({ x: frame.x, y: frame.y }, MONSTER_SIZE);
-      return Math.hypot(center.x - target.x, center.y - target.y);
-    });
+    const { space, monster } = await nordwald();
+    const player = clearLineFrom(space, monster, 3);
+    const moves = await chase(space, attachPlayer(space, player, 'near').outbox);
+    expect(moves).toHaveLength(7);
+    const distances = moves.map((move) => distance(move, player));
     for (let index = 1; index < distances.length; index += 1) {
-      expect(distances[index]).toBeLessThanOrEqual(distances[index - 1]!);
+      expect(distances[index]).toBeLessThan(distances[index - 1]!);
     }
-    expect(distances.at(-1)!).toBeLessThan(Math.hypot(monsterCenter.x - target.x, monsterCenter.y - target.y));
+    expect(distances.at(-1)!).toBeCloseTo(3 - 7 * 0.05 * GESPENST.metresPerSecond, 9);
   });
 
   it('targets the nearest of multiple players in the aggro radius', async () => {
-    const actor = aggroActor();
-    const outboxA = new ConnectionOutbox(4096);
-    const outboxB = new ConnectionOutbox(4096);
-    // A is 150 px due east, B 100 px due north: B is closer, so the monster faces exactly north.
-    actor.attach(makeCharacter(originForFeetCenter(monsterCenter.x + 150, monsterCenter.y), 'a', 'Aggro'), [], outboxA);
-    actor.attach(makeCharacter(originForFeetCenter(monsterCenter.x, monsterCenter.y - 100), 'b', 'Aggro'), [], outboxB);
-    for (let tick = 0; tick <= SPAWN_THRESHOLD; tick += 1) actor.runAITick();
-    const frame = serverPositions(await collectMessages(outboxA))[0]!;
-    expect(frame.facing).toBe(headingFromVector(0, -100));
-    expect(frame.y).toBeLessThan(MONSTER_ORIGIN.y);
-    expect(frame.x).toBe(MONSTER_ORIGIN.x);
+    const { space, monster } = await nordwald();
+    const near = clearLineFrom(space, monster, 2);
+    const { outbox } = attachPlayer(space, clearLineFrom(space, monster, 3.5, 8), 'far');
+    attachPlayer(space, near, 'near');
+    const [first] = await chase(space, outbox);
+    expect(first?.facing).toBe(headingFromVector(near.x - monster.x, near.z - monster.z));
   });
 
-  it('stops chasing after the player leaves the aggro radius', async () => {
-    const chasing = aggroActor();
-    const chasingOutbox = new ConnectionOutbox(4096);
-    chasing.attach(makeCharacter(originForFeetCenter(monsterCenter.x + 150, monsterCenter.y), 'near', 'Aggro'), [], chasingOutbox);
-    for (let tick = 0; tick < 7; tick += 1) chasing.runAITick();
-    expect(serverPositions(await collectMessages(chasingOutbox)).length).toBeGreaterThanOrEqual(4);
-
-    const idle = aggroActor();
-    const idleOutbox = new ConnectionOutbox(4096);
-    idle.attach(makeCharacter({ x: 900, y: 900 }, 'far', 'Aggro'), [], idleOutbox);
-    for (let tick = 0; tick < 7; tick += 1) idle.runAITick();
-    expect(serverPositions(await collectMessages(idleOutbox))).toEqual([]);
+  it('stops short of the player it caught', async () => {
+    const { space, monster } = await nordwald();
+    const player = clearLineFrom(space, monster, 0.8);
+    const moves = await chase(space, attachPlayer(space, player, 'caught').outbox);
+    const reach = GESPENST.radius + SOMNIO_CONSTANTS.playerRadius;
+    for (const move of moves) expect(distance(move, player)).toBeGreaterThanOrEqual(reach);
   });
 });

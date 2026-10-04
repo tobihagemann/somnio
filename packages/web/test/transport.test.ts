@@ -44,7 +44,7 @@ describe('outbox is live before the socket opens', () => {
     transport.connect('ws://test/ws', delegate);
 
     transport.send({ tag: 'login', payload: { nickname: 'a', password: 'b' } });
-    transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'hi' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'hi' } });
     expect(latest().sent).toEqual([]);
 
     latest().open();
@@ -65,13 +65,13 @@ describe('outbound frames are text', () => {
     transport.connect('ws://test/ws', () => {});
     latest().open();
 
-    transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'Hallo Welt' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'Hallo Welt' } });
 
     const frame = latest().sent[0];
     expect(typeof frame).toBe('string');
     expect(JSON.parse(frame!)).toEqual({
       tag: 'clientSay',
-      payload: { entityIndex: 0, text: 'Hallo Welt' },
+      payload: { text: 'Hallo Welt' },
     });
   });
 
@@ -112,7 +112,7 @@ describe('inbound handling', () => {
   it.each([
     ['malformed JSON', '{ not json'],
     ['an unknown tag', '{"tag":"notAVerb","payload":{}}'],
-    ['a known tag with a bad payload', '{"tag":"clientPosition","payload":{}}'],
+    ['a known tag with a bad payload', '{"tag":"move","payload":{}}'],
     ['a zero-byte frame', ''],
   ])('closes on %s', (_label, frame) => {
     const { factory, latest } = fakeSocketFactory();
@@ -227,7 +227,7 @@ describe('close handling', () => {
     const socket = latest();
     socket.open();
 
-    transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'bye' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'bye' } });
     transport.disconnect();
 
     // Through the ordered log, not two independent arrays: their lengths are both 1 whichever way
@@ -237,8 +237,8 @@ describe('close handling', () => {
 
   /**
    * Pins what actually happens to a frame enqueued before the socket opened: it is dropped, not
-   * flushed. Nothing queues pre-open today — the predictor waits for `selfEntityIndex` and
-   * `currentSector`, `sendAuth` runs on `hello` — so this documents the boundary rather than
+   * flushed. Nothing queues pre-open today — the predictor waits for `selfId` and `world`,
+   * `sendAuth` runs on `hello` — so this documents the boundary rather than
    * guarding a live path, and it fails loudly if someone later relies on the drain the class doc's
    * ordering invariant might suggest.
    */
@@ -248,7 +248,7 @@ describe('close handling', () => {
     transport.connect('ws://test/ws', () => {});
     const socket = latest();
 
-    transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'never sent' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'never sent' } });
     transport.disconnect();
 
     expect(socket.sent).toEqual([]);
@@ -287,7 +287,7 @@ describe('superseded sockets cannot act on their replacement', () => {
     // No spurious peerEOF, and the replacement is still the transport's live socket: a frame sent
     // now has to reach it rather than being dropped because the slot was cleared.
     expect(events.filter((event) => event.kind === 'peerEOF')).toHaveLength(0);
-    transport.send({ tag: 'clientSay', payload: { entityIndex: 0, text: 'still here' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'still here' } });
     expect(replacement.sent.at(-1)).toContain('clientSay');
   });
 
@@ -304,7 +304,7 @@ describe('superseded sockets cannot act on their replacement', () => {
 
     const stale = sockets.all[0]!;
     const before = events.length;
-    stale.deliverText('{"tag":"dateTick","payload":{"hour":1,"minute":0}}');
+    stale.deliverText('{"tag":"hello","payload":{"protocolVersion":3}}');
     stale.deliverBinary();
     stale.deliverError();
 
@@ -333,7 +333,7 @@ describe('superseded sockets cannot act on their replacement', () => {
     const before = events.length;
     retired.deliverError();
     retired.deliverClose();
-    retired.deliverText('{"tag":"dateTick","payload":{"hour":1,"minute":0}}');
+    retired.deliverText('{"tag":"hello","payload":{"protocolVersion":3}}');
 
     expect(events).toHaveLength(before);
   });

@@ -1,4 +1,4 @@
-import type { Account, Character, Gender, InventoryRow } from '@somnio/core';
+import type { Account, Character, InventoryRow, People } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import { insertCharacter, newCharacter } from './characters.ts';
@@ -9,8 +9,7 @@ export interface RegistrationRequest {
   name: string;
   passwordHash: string;
   email: string;
-  gender: Gender;
-  figure: number;
+  people: People;
   starterInventory: readonly InventoryRow[];
 }
 
@@ -56,7 +55,7 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       email: request.email,
       createdAt,
     };
-    const character = newCharacter(crypto.randomUUID(), request.name, request.figure, request.gender, createdAt);
+    const character = newCharacter(crypto.randomUUID(), request.name, request.people, createdAt);
     try {
       await this.db.transaction().execute(async (transaction) => {
         await transaction

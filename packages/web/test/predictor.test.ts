@@ -1,74 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { PORTAL_DIRECTIONS, sectorFromWire } from '@somnio/core';
-import type { Sector, WorldEntity } from '@somnio/core';
-import type { WireSector } from '@somnio/protocol';
-import type { SomnioMessage } from '@somnio/protocol';
+import { distance, isLegalMove } from '@somnio/core';
+import type { Point } from '@somnio/core';
+import type { SectorView, SomnioMessage } from '@somnio/protocol';
 import {
+  ClientWorld,
   FACING_EMIT_THRESHOLD_DEGREES,
   GameplayPredictor,
   MAX_TICK_ELAPSED_MS,
   POSITION_HEARTBEAT_INTERVAL_MS,
+  RemoteInterpolation,
   entityBlockers,
+  gaitFromHeld,
   noHeldKeys,
-  resolvedMove,
+  noopRenderSurface,
   velocityFromHeld,
 } from '@/client';
-import type { HeldKeys, PredictorSession } from '@/client';
-import type { ConnectionState, OverlayKind } from '@/client';
-import { noopRenderSurface } from '@/client';
-import type { WorldRenderSurface } from '@/client';
+import type { ClientEntity, ConnectionState, HeldKeys, OverlayKind, PredictorSession } from '@/client';
+import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { clientEntity, makeDoor } from './helpers/worldFixture';
 
 /**
- * Deterministic prediction-tick suite. Every positional expectation below is a **recorded**
- * literal: the arithmetic chain of `runOneGameplayTick` was run through the Float32 rig, heading,
- * relative-direction, and tempo rules for the same key-hold sequences, and the resulting positions
- * and remainders are pinned here verbatim.
- *
- * Re-deriving them in JavaScript would defeat the point — the suite exists to catch the predictor
- * drifting from the shared `@somnio/core` geometry, and expectations computed by the predictor
- * itself cannot do that.
+ * Deterministic prediction-tick suite. Positional expectations are derived here from the camera
+ * yaw and the gait speeds, never by running the predictor's own arithmetic, so the suite catches
+ * the predictor drifting from the shared `@somnio/core` movement rules.
  */
 
-/** Held W only. Screen-up under the yawed camera, so both world axes move. */
+/** Held W only. Screen-up under the camera's 35-degree yaw, so both world axes move. */
 const HELD_W: HeldKeys = { ...noHeldKeys(), w: true };
+const HELD_S: HeldKeys = { ...noHeldKeys(), s: true };
 
-/**
- * Travel heading for held W, and the facing the fixtures use so the step is `forward` with a 1.0
- * speed multiplier. The travel heading is 214.99998 — the Float32 narrowing of `atan2` lands just
- * under 215 — and facing 210 buckets it as forward either way.
- */
+const YAW = (35 * Math.PI) / 180;
+/** The unit world direction of held W. */
+const W_DIRECTION = { x: -Math.sin(YAW), z: -Math.cos(YAW) };
+
+/** Held W travels at heading 215; facing 210 buckets it as forward, with a 1.0 speed multiplier. */
 const FORWARD_FACING = 210;
 
-function wireSector(overrides: Partial<WireSector> = {}): WireSector {
-  return {
-    name: 'testsector',
-    version: 3,
-    dimensions: { width: 20, height: 20 },
-    floorMaterialID: 'grass-meadow',
-    light: { indoor: false, brightness: 100 },
-    objects: [],
-    collisionMasks: [],
-    portals: [],
-    npcs: [],
-    monsterSpawns: [],
-    floorPatches: [],
-    ...overrides,
-  };
+const START = { x: 10, z: 10 };
+
+function along(direction: { x: number; z: number }, metres: number, from: Point = START): Point {
+  return { x: from.x + direction.x * metres, z: from.z + direction.z * metres };
 }
 
-function entity(overrides: Partial<WorldEntity> = {}): WorldEntity {
-  return {
-    id: 1,
-    kind: 'player',
-    figure: 1,
-    gender: 0,
-    position: { x: 1000, y: 1000 },
-    facing: FORWARD_FACING,
-    tempo: 2,
-    maskSize: { width: 32, height: 48 },
-    name: 'Tester',
-    ...overrides,
-  };
+function self(overrides: Partial<ClientEntity> = {}): ClientEntity {
+  return clientEntity({ position: START, facing: FORWARD_FACING, ...overrides });
 }
 
 interface Rig {
@@ -78,28 +53,29 @@ interface Rig {
     presentedOverlay: OverlayKind | undefined;
     isChatInputFocused: boolean;
   };
+  world: ClientWorld;
+  interpolation: RemoteInterpolation;
   sent: SomnioMessage[];
+  /** The tick time each `move` was sent on. */
+  moveTimes: number[];
   held: HeldKeys;
   /** Cursor-derived facing; `undefined` leaves the entity's own facing alone. */
   mouseFacing: number | undefined;
   gateWrites: boolean[];
-  self(): WorldEntity;
-  positionsRendered: { x: number; y: number }[];
+  self(): ClientEntity;
+  moves(): Point[];
 }
 
-function makeRig(
-  options: {
-    sector?: Sector;
-    entities?: WorldEntity[];
-    held?: HeldKeys;
-    renderSurface?: WorldRenderSurface;
-  } = {},
-): Rig {
-  const entities = new Map<number, WorldEntity>();
-  for (const each of options.entities ?? [entity()]) entities.set(each.id, each);
+function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntity[]; held?: HeldKeys } = {}): Rig {
+  const entities = new Map<string, ClientEntity>();
+  for (const each of options.entities ?? [self()]) entities.set(each.id, each);
   const sent: SomnioMessage[] = [];
+  const moveTimes: number[] = [];
   const gateWrites: boolean[] = [];
-  const positionsRendered: { x: number; y: number }[] = [];
+  const world = new ClientWorld('outdoors', TEST_REGISTRY);
+  world.addSector(outdoorSector('Meadow', { x: 0, z: 0 }, options.sector));
+  const interpolation = new RemoteInterpolation();
+  let tickTime = 0;
 
   // Typed through the mutable shape the rig exposes, so a test assigning a bogus state or overlay is
   // a compile error rather than a silently-closed gate.
@@ -108,42 +84,48 @@ function makeRig(
     presentedOverlay: undefined,
     isChatInputFocused: false,
     entities,
-    selfEntityIndex: 1,
-    currentSector: options.sector ?? sectorFromWire(wireSector()),
+    selfId: 'self',
+    world,
   };
 
   const rig: Rig = {
     predictor: undefined as unknown as GameplayPredictor,
     session,
+    world,
+    interpolation,
     sent,
+    moveTimes,
     held: options.held ?? HELD_W,
     mouseFacing: undefined,
     gateWrites,
     self: () => {
-      const found = entities.get(1);
+      const found = entities.get('self');
       if (found === undefined) throw new Error('self entity missing');
       return found;
     },
-    positionsRendered,
+    moves: () => sent.flatMap((message) => (message.tag === 'move' ? [{ x: message.payload.x, z: message.payload.z }] : [])),
   };
 
-  const renderSurface: WorldRenderSurface = options.renderSurface ?? {
-    ...noopRenderSurface,
-    updateSubpixelPosition: (_id, position) => {
-      positionsRendered.push({ x: position.x, y: position.y });
-    },
-  };
-
-  rig.predictor = new GameplayPredictor({
+  const predictor = new GameplayPredictor({
     session,
     input: {
       snapshot: () => rig.held,
       setGameplayActive: (active) => gateWrites.push(active),
     },
-    renderSurface,
-    send: (message) => sent.push(message),
+    renderSurface: noopRenderSurface,
+    interpolation,
+    send: (message) => {
+      sent.push(message);
+      if (message.tag === 'move') moveTimes.push(tickTime);
+    },
     mouseFacing: () => rig.mouseFacing,
   });
+  rig.predictor = predictor;
+  const runTick = predictor.runTick.bind(predictor);
+  predictor.runTick = (nowMs: number): void => {
+    tickTime = nowMs;
+    runTick(nowMs);
+  };
   return rig;
 }
 
@@ -155,36 +137,26 @@ function runTicks(rig: Rig, steps: number, stepMs: number): void {
   }
 }
 
+function expectAt(actual: Point, expected: Point): void {
+  expect(actual.x).toBeCloseTo(expected.x, 9);
+  expect(actual.z).toBeCloseTo(expected.z, 9);
+}
+
 describe('elapsed-time handling', () => {
   it('does not move on the first tick, having no previous timestamp to measure from', () => {
     const rig = makeRig();
 
     rig.predictor.runTick(0);
 
-    expect(rig.self().position).toEqual({ x: 1000, y: 1000 });
+    expect(rig.self().position).toEqual(START);
   });
 
-  it('walks the recorded path over four 16 ms ticks', () => {
+  it('jogs two metres a second along the camera-rotated direction', () => {
     const rig = makeRig();
 
     runTicks(rig, 4, 16);
 
-    // Held W at tempo `default` from (1000, 1000):
-    //   tick 1 -> (999, 999)   tick 2 -> (998, 997)
-    //   tick 3 -> (997, 996)   tick 4 -> (996, 995)
-    expect(rig.self().position).toEqual({ x: 996, y: 995 });
-  });
-
-  it('carries the sub-pixel remainder across ticks', () => {
-    const rig = makeRig();
-
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
-
-    // Dropping this carry truncates every tick's fraction, producing a systematic speed deficit
-    // that reads as "slightly slow" and that no manual walk reveals.
-    expect(rig.predictor._movementRemainder.dx).toBeCloseTo(0.08227770183832628, 15);
-    expect(rig.predictor._movementRemainder.dy).toBeCloseTo(-0.31064327086238697, 15);
+    expectAt(rig.self().position, along(W_DIRECTION, 2 * 0.064));
   });
 
   it('advances by the same distance whether one 100 ms tick or a 5 s stall is reported', () => {
@@ -196,221 +168,222 @@ describe('elapsed-time handling', () => {
     clamped.predictor.runTick(0);
     clamped.predictor.runTick(MAX_TICK_ELAPSED_MS);
 
-    // A single tick is clamped to 100 ms, landing on (994, 992) either way. Without the clamp
-    // the stalled rig would teleport roughly 50x further.
-    expect(stalled.self().position).toEqual({ x: 994, y: 992 });
+    // A single tick is clamped to 100 ms. Without the clamp the stalled rig would teleport
+    // fifty times further.
+    expectAt(stalled.self().position, along(W_DIRECTION, 0.2));
     expect(clamped.self().position).toEqual(stalled.self().position);
   });
 
-  it('scales the step by tempo', () => {
-    const rig = makeRig({ held: { ...HELD_W, leftShift: true } });
+  it.each([
+    ['leftShift', 'run', 3],
+    ['leftOption', 'walk', 1],
+  ] as const)('scales the step by gait: %s is a %s', (key, gait, metresPerSecond) => {
+    const rig = makeRig({ held: { ...HELD_W, [key]: true } });
 
     runTicks(rig, 3, 100);
 
-    // Run tempo (150 px/s), 100 ms ticks: (991, 988) -> (983, 975) -> (974, 963).
-    expect(rig.self().position).toEqual({ x: 974, y: 963 });
+    expect(gaitFromHeld(rig.held)).toBe(gait);
+    expectAt(rig.self().position, along(W_DIRECTION, metresPerSecond * 0.3));
+    expect(rig.self().gait).toBe(gait);
   });
 
-  it('renders the sub-pixel position rather than the rounded grid position', () => {
-    const rig = makeRig();
+  it('halves the step when backpedalling', () => {
+    // Facing 30 looks back along the travel heading of 215.
+    const rig = makeRig({ entities: [self({ facing: 30 })] });
 
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
+    runTicks(rig, 1, 100);
 
-    const rendered = rig.positionsRendered.at(-1);
-    // 999 + 0.0822777..., 999 + (-0.3106432...). A renderer fed only the integer position shows
-    // left/right jitter, because a screen-straight walk alternates world directions tick to tick.
-    expect(rendered?.x).toBeCloseTo(999.0822777018383, 12);
-    expect(rendered?.y).toBeCloseTo(998.689356729138, 12);
+    expectAt(rig.self().position, along(W_DIRECTION, 0.1));
   });
 });
 
 describe('collision resolution', () => {
-  /**
-   * A mask covering the pixels immediately west of the player's feet box. The X candidate's feet
-   * overlap it; the Y candidate's do not, because the feet box's left edge sits exactly on the
-   * mask's exclusive right edge.
-   */
-  const westWall = { x: 990, y: 1020, width: 10, height: 40 };
+  /** A wall whose east face is one body radius west of the player, so no step west is clear. */
+  const westWall = { id: 'west-wall', x: 8.7, z: 5, width: 1, depth: 10 };
 
   it('slides along a blocked axis instead of sticking', () => {
-    const rig = makeRig({ sector: sectorFromWire(wireSector({ collisionMasks: [westWall] })) });
+    const rig = makeRig({ sector: { blockers: [westWall] } });
 
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
+    runTicks(rig, 1, 100);
 
-    // X is refused, Y commits. Testing both axes against the *origin* instead of resolving X
-    // first would let the diagonal step cut the corner.
-    expect(rig.self().position).toEqual({ x: 1000, y: 999 });
-  });
-
-  it('drops the carried fraction only on the axis collision cut', () => {
-    const rig = makeRig({ sector: sectorFromWire(wireSector({ collisionMasks: [westWall] })) });
-
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
-
-    // Keeping the X carry would let it accumulate against the wall and then release as a jump the
-    // moment the player steps clear of it.
-    expect(rig.predictor._movementRemainder.dx).toBe(0);
-    expect(rig.predictor._movementRemainder.dy).toBeCloseTo(-0.31064327086238697, 15);
+    // West is refused, north commits: the player glides up the wall's face.
+    expectAt(rig.self().position, { x: START.x, z: START.z + W_DIRECTION.z * 0.2 });
   });
 
   it('treats a peer as solid', () => {
-    // Feet boxes flush along the exclusive edge: no overlap now, overlap after one step west.
-    const peer = entity({ id: 2, kind: 'peer', position: { x: 968, y: 1000 }, name: 'Peer' });
-    const rig = makeRig({ entities: [entity(), peer] });
+    const peer = clientEntity({ id: 'peer', kind: 'peer', name: 'Peer', position: along(W_DIRECTION, 0.62) });
+    const rig = makeRig({ entities: [self(), peer] });
 
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
+    runTicks(rig, 3, 100);
 
-    // X is refused by the peer, Y still commits — a peer is a wall you slide along, not one you
-    // walk through.
-    expect(rig.self().position).toEqual({ x: 1000, y: 999 });
+    // A peer is a body the player stops at and slides round, never one walked through.
+    expect(distance(rig.self().position, peer.position)).toBeGreaterThanOrEqual(0.6 - 1e-6);
   });
 
-  it('lets the player slide free of a monster already overlapping their feet box', () => {
-    const overlapping = entity({ id: 3, kind: 'monster', position: { x: 1000, y: 1000 } });
-    const rig = makeRig({ entities: [entity(), overlapping] });
+  it('lets the player walk free of a monster already overlapping them', () => {
+    const overlapping = clientEntity({ id: 'monster:1', kind: 'monster', characterModelId: 'ghost', position: along(W_DIRECTION, 0.2) });
+    const rig = makeRig({ entities: [self(), overlapping] });
 
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
+    runTicks(rig, 1, 100);
 
-    // Soft-solid: a hard block here would trap the player with no escape, because monsters move
-    // on the 50 ms AI tick and can lag onto the player's own box.
-    expect(rig.self().position).toEqual({ x: 999, y: 999 });
+    // Soft-solid: a block here would hold the player in place, because monsters chase on the
+    // server's tick and can lag onto the player's own body.
+    expectAt(rig.self().position, along(W_DIRECTION, 0.2));
   });
 
-  it('blocks a monster the player is clear of', () => {
-    const playerFeet = { x: 1000, y: 1032, width: 32, height: 16 };
-    const clear = entity({ id: 3, kind: 'monster', position: { x: 900, y: 900 } });
-    const overlapping = entity({ id: 4, kind: 'monster', position: { x: 1000, y: 1000 } });
+  it('sorts the entities into contact-blocking NPCs and the bodies only this client stops at', () => {
+    const player = self();
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', position: { x: 12, z: 10 } });
+    const peer = clientEntity({ id: 'peer', kind: 'peer', position: { x: 10.1, z: 10 } });
+    const clear = clientEntity({ id: 'monster:1', kind: 'monster', position: { x: 14, z: 10 }, radius: 0.4 });
+    const overlapping = clientEntity({ id: 'monster:2', kind: 'monster', position: { x: 10.5, z: 10 } });
 
-    // The distinction is the whole of "soft-solid": one is a blocker, the other is dropped.
-    expect(entityBlockers([clear], 1, playerFeet)).toHaveLength(1);
-    expect(entityBlockers([overlapping], 1, playerFeet)).toHaveLength(0);
+    const blockers = entityBlockers([player, npc, peer, clear, overlapping], player);
+
+    // The distinction between the two monsters is the whole of "soft-solid": one is a body, the
+    // other is dropped. An overlapping peer stays, and blocks only a step that closes on it.
+    expect(blockers.npcs).toEqual([{ id: 'npc:Meadow/wirt', x: 12, z: 10, radius: 0.3 }]);
+    expect(blockers.bodies.map((body) => body.radius)).toEqual([0.3, 0.4]);
   });
 
-  it('excludes NPCs from the movement blocker set so the slide reaches their feet box', () => {
-    const npc = entity({ id: 5, kind: 'npc', position: { x: 968, y: 1000 }, name: 'Wirt' });
+  it('stops at a peer where it is drawn, halfway through its glide', () => {
+    // The peer was last reported three metres to the west and is gliding there from three metres to
+    // the east; at 50 ms it is drawn in the middle, right in the player's path.
+    const middle = along(W_DIRECTION, 0.62);
+    const peer = clientEntity({ id: 'peer', kind: 'peer', name: 'Peer', position: { x: middle.x + 3, z: middle.z } });
+    const blocked = makeRig({ entities: [self(), peer] });
+    const control = makeRig({ entities: [self(), peer] });
+    blocked.interpolation.retarget('peer', peer.position, { x: middle.x - 3, z: middle.z }, 0);
 
-    // If NPCs blocked movement the step would stop one pixel short, the feet boxes would never
-    // overlap, and the bump would never fire.
-    expect(entityBlockers([npc], 1, { x: 1000, y: 1032, width: 32, height: 16 })).toEqual([]);
-  });
+    blocked.predictor.runTick(0);
+    blocked.predictor.runTick(50);
+    control.predictor.runTick(0);
+    control.predictor.runTick(50);
 
-  it('resolves each axis against the already-resolved X', () => {
-    const sector = sectorFromWire(wireSector({ collisionMasks: [westWall] }));
-
-    const resolved = resolvedMove({ x: 1000, y: 1000 }, { x: 999, y: 999 }, sector, []);
-
-    expect(resolved).toEqual({ x: 1000, y: 999 });
+    expectAt(blocked.session.entities.get('peer')!.position, middle);
+    expect(distance(blocked.self().position, middle)).toBeGreaterThanOrEqual(0.6 - 1e-6);
+    // Against the last reported position, or the one before it, nothing stands in the way.
+    expectAt(control.self().position, along(W_DIRECTION, 0.1));
+    expect(blocked.self().position).not.toEqual(control.self().position);
   });
 });
 
 describe('triggers', () => {
-  /**
-   * An `arrivalPlacement` portal first, so a filtered re-enumeration of only the triggers would
-   * report index 0 for the second one.
-   */
-  const portals = [
-    {
-      direction: PORTAL_DIRECTIONS.arrivalPlacement,
-      x: 0,
-      y: 0,
-      width: 32,
-      height: 32,
-      targetSectorName: 'nordwiese',
-    },
-    {
-      direction: PORTAL_DIRECTIONS.outboundTrigger,
-      x: 960,
-      y: 1000,
-      width: 64,
-      height: 64,
-      targetSectorName: 'nordwald',
-    },
-  ];
+  /** A door standing south of the player, its trigger reaching 0.58 m north from z = 12. */
+  const doorSector = makeDoor('exit', { x: 10, z: 12 }, { sector: 'Hall', door: 'entry' });
+  const beforeDoor = { x: 9.5, z: 11 };
 
-  it('sends the portal offset within the full portals array', () => {
-    const rig = makeRig({ sector: sectorFromWire(wireSector({ portals })) });
+  function doorRig(): Rig {
+    return makeRig({ sector: doorSector, held: HELD_S, entities: [self({ position: beforeDoor, facing: 30 })] });
+  }
 
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
+  it('asks for the door by sector and id when a step lands in its trigger', () => {
+    const rig = doorRig();
 
-    const entered = rig.sent.filter((message) => message.tag === 'enterPortal');
-    expect(entered).toHaveLength(1);
-    // The server indexes `staticSector.portals[portalIndex]` against the *full* array. Reporting 0
-    // here — the offset within the filtered trigger list — teleports the player through the wrong
-    // portal, or gets rejected as a `snapBack`.
-    expect(entered[0]?.tag === 'enterPortal' && entered[0].payload.portalIndex).toBe(1);
+    runTicks(rig, 4, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toEqual([{ tag: 'useDoor', payload: { sector: 'Meadow', doorId: 'exit' } }]);
   });
 
-  it('latches the portal so one contact fires exactly one switch', () => {
-    const rig = makeRig({ sector: sectorFromWire(wireSector({ portals })) });
+  it('stops the player outside the trigger and holds them there', () => {
+    const rig = doorRig();
 
-    runTicks(rig, 4, 16);
+    runTicks(rig, 4, 100);
+    const held = rig.self().position;
+    runTicks(rig, 4, 100);
 
-    expect(rig.sent.filter((message) => message.tag === 'enterPortal')).toHaveLength(1);
+    expect(held.z).toBeLessThan(11.42);
+    expect(rig.self().position).toEqual(held);
   });
 
-  it('suppresses the position heartbeat on the tick a portal fires', () => {
-    const rig = makeRig({ sector: sectorFromWire(wireSector({ portals })) });
+  it('sends no move once the door has been asked for', () => {
+    const rig = doorRig();
 
-    rig.predictor.runTick(0);
-    const beforePortal = rig.sent.filter((message) => message.tag === 'clientPosition').length;
-    rig.predictor.runTick(16);
+    runTicks(rig, 10, 100);
 
-    // A trailing `clientPosition` would apply old-sector coordinates in the new sector, snapping
-    // the player off the arrival placement.
-    expect(rig.sent.filter((message) => message.tag === 'clientPosition')).toHaveLength(beforePortal);
+    // A trailing `move` would carry this space's coordinates into the one the door leads to.
+    const asked = rig.sent.findIndex((message) => message.tag === 'useDoor');
+    expect(asked).toBeGreaterThan(-1);
+    expect(rig.sent.slice(asked + 1)).toEqual([]);
   });
 
-  it('re-sends the NPC bump every overlapping tick, with no latch', () => {
-    const npc = entity({ id: 7, kind: 'npc', position: { x: 968, y: 1000 }, name: 'Wirt' });
-    const rig = makeRig({ entities: [entity(), npc] });
+  it('does not ask again for a refused door until a step has left its trigger', () => {
+    const rig = doorRig();
+    runTicks(rig, 4, 100);
+
+    rig.predictor.releaseDoor(false);
+    for (let time = 500; time <= 900; time += 100) rig.predictor.runTick(time);
+    // Still leaning on it: one request, not one per round trip.
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
+
+    rig.held = HELD_W;
+    rig.predictor.runTick(1000);
+    rig.held = HELD_S;
+    for (let time = 1100; time <= 1500; time += 100) rig.predictor.runTick(time);
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(2);
+  });
+
+  it('re-sends the NPC bump every blocked tick, with no latch', () => {
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: along(W_DIRECTION, 0.6) });
+    const rig = makeRig({ entities: [self(), npc] });
 
     runTicks(rig, 3, 16);
 
-    const bumps = rig.sent.filter((message) => message.tag === 'bumpNPC');
-    // Continuous rather than latched: the server's `targetingEntity` gate makes repeats no-ops,
-    // and the faithful legacy behaviour re-sent at tick rate.
-    expect(bumps.length).toBeGreaterThan(1);
-    expect(bumps.every((message) => message.tag === 'bumpNPC' && message.payload.npcIndex === 7)).toBe(true);
+    // Continuous rather than latched: the server ignores a bump it is already answering.
+    expect(rig.sent.filter((message) => message.tag === 'bump')).toEqual(Array(3).fill({ tag: 'bump', payload: { targetId: 'npc:Meadow/wirt' } }));
   });
 
-  it('blocks the step at the NPC threshold', () => {
-    const npc = entity({ id: 7, kind: 'npc', position: { x: 968, y: 1000 }, name: 'Wirt' });
-    const rig = makeRig({ entities: [entity(), npc] });
+  it('stops at the NPC rather than walking through it', () => {
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: along(W_DIRECTION, 0.6) });
+    const rig = makeRig({ entities: [self(), npc] });
 
     runTicks(rig, 3, 16);
 
-    // Blocked at the threshold, so the player stops against the NPC rather than through it.
-    expect(rig.self().position).toEqual({ x: 1000, y: 1000 });
+    expect(rig.self().position).toEqual(START);
+  });
+
+  it('does not bump an NPC it is merely walking past', () => {
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: { x: START.x + 1, z: START.z } });
+    const rig = makeRig({ entities: [self(), npc] });
+
+    runTicks(rig, 3, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'bump')).toEqual([]);
   });
 });
 
 describe('emission gates', () => {
   /**
    * A count, not a pattern match: this is the assertion that catches a tick emitting on every
-   * frame. Over two seconds of 16 ms ticks a 2 Hz heartbeat produces the priming emit plus one
-   * per interval; an ungated tick would produce 126.
+   * frame. Over one second of 16 ms ticks a 10 Hz heartbeat produces the priming emit plus one
+   * per interval; an ungated tick would produce 63.
    */
-  it('emits position at 2 Hz over a fixed interval', () => {
+  it('reports the position at 10 Hz over a fixed interval', () => {
     const rig = makeRig();
 
-    runTicks(rig, 125, 16);
+    runTicks(rig, 62, 16);
 
-    const emits = rig.sent.filter((message) => message.tag === 'clientPosition');
-    // t = 0 (first change, nothing throttling it yet), then 512, 1024, 1536.
-    expect(emits).toHaveLength(4);
-    expect(POSITION_HEARTBEAT_INTERVAL_MS).toBe(500);
+    // t = 0 (first change, nothing throttling it yet), then every seventh tick: 112, 224, ... 896.
+    expect(rig.moves()).toHaveLength(9);
+    expect(POSITION_HEARTBEAT_INTERVAL_MS).toBe(100);
+  });
+
+  it('reports metres, the facing, and the gait', () => {
+    const rig = makeRig();
+
+    runTicks(rig, 1, 100);
+
+    const expected = along(W_DIRECTION, 0.2);
+    const report = rig.sent.at(-1);
+    if (report?.tag !== 'move') throw new Error('expected a move');
+    expect(report.payload).toEqual({ x: rig.self().position.x, z: rig.self().position.z, facing: FORWARD_FACING, gait: 'jog' });
+    expectAt(report.payload, expected);
   });
 
   /**
    * The facing threshold needs its own pair of assertions, because a count alone cannot
    * distinguish a 1-degree threshold from 0 or 10 unless the driven sequence happens to straddle
-   * it. Both rigs are stationary so position and tempo cannot be what changes.
+   * it. Both rigs are stationary so position and gait cannot be what changes.
    */
   it('does not emit for a sub-threshold facing change', () => {
     const rig = makeRig({ held: noHeldKeys() });
@@ -456,24 +429,76 @@ describe('emission gates', () => {
   it('reports the final position after a throttled move rather than dropping it', () => {
     const rig = makeRig();
 
-    // t = 512 is the first tick past the 500 ms interval, so the final tick here is an emit.
-    runTicks(rig, 32, 16);
+    // t = 112 is the first tick past the 100 ms interval, so the final tick here is an emit.
+    runTicks(rig, 7, 16);
 
-    const emits = rig.sent.filter((message) => message.tag === 'clientPosition');
-    const last = emits.at(-1);
-    // The last-emitted snapshot is deliberately left unchanged while throttled, so the next tick
-    // past the interval still sees the move as pending.
-    expect(last?.tag === 'clientPosition' && last.payload.x).toBe(rig.self().position.x);
-    expect(last?.tag === 'clientPosition' && last.payload.y).toBe(rig.self().position.y);
+    // The last report is deliberately left unchanged while throttled, so the next tick past the
+    // interval still sees the move as pending.
+    expect(rig.moves().at(-1)).toEqual(rig.self().position);
+  });
+});
+
+describe('waypoints', () => {
+  /**
+   * A box whose south-west corner the player slides round: held W runs north-north-west, so the
+   * player glides west under the box's south face and turns north once past the corner.
+   */
+  const box = { id: 'box', x: 9, z: 8, width: 3, depth: 1 };
+  const start = { x: 9.6, z: 9.3 };
+
+  function slideRoundCorner(frameMs: number): { rig: Rig; reports: Point[] } {
+    const rig = makeRig({ sector: { blockers: [box] }, held: { ...HELD_W, leftShift: true }, entities: [self({ position: start })] });
+    runTicks(rig, Math.ceil(1000 / frameMs), frameMs);
+    // The slide really went round the corner, to the box's west side.
+    expect(rig.self().position.x).toBeLessThan(box.x);
+    expect(rig.self().position.z).toBeLessThan(box.z + box.depth);
+    return { rig, reports: [start, ...rig.moves()] };
+  }
+
+  it.each([16, 50, 99, 150])('reports a corner slide so that every report is a legal move from the last, at %i ms frames', (frameMs) => {
+    const { rig, reports } = slideRoundCorner(frameMs);
+
+    // What the server checks: each report against the one it accepted before.
+    for (let index = 1; index < reports.length; index += 1) {
+      expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index]!, 0.3, []), `report ${index}`).toBe(true);
+    }
   });
 
-  it('always reports entity index 0, the server-side self alias', () => {
-    const rig = makeRig();
+  /**
+   * At 99 ms a frame the heartbeat fires every second frame, which puts more than half a metre
+   * between two timed reports: the straight line between them cuts inside the rounded corner.
+   */
+  it.each([99, 150])('reports the position before the corner when the next beat alone would cut it, at %i ms frames', (frameMs) => {
+    const { rig, reports } = slideRoundCorner(frameMs);
 
-    runTicks(rig, 1, 16);
+    // A waypoint goes out on the tick that needed it, ahead of that tick's own heartbeat.
+    const waypoints = rig.moveTimes.flatMap((time, index) => (rig.moveTimes[index + 1] === time ? [index + 1] : []));
+    expect(waypoints.length).toBeGreaterThan(0);
+    for (const index of waypoints) {
+      expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index + 1]!, 0.3, []), `skipping report ${index}`).toBe(false);
+    }
+  });
 
-    const emit = rig.sent.find((message) => message.tag === 'clientPosition');
-    expect(emit?.tag === 'clientPosition' && emit.payload.entityIndex).toBe(0);
+  /**
+   * The same slide round a body instead of a corner: an NPC north of the player, which the player
+   * glides west along and passes on its west side. Nothing but the NPC stands between two timed
+   * reports, and the server refuses a report whose line from the last one cuts through it.
+   */
+  it.each([16, 50, 99, 150])('reports a slide round an NPC so that every report is a legal move from the last, at %i ms frames', (frameMs) => {
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', position: { x: START.x - 0.15, z: START.z - 0.8 } });
+    const rig = makeRig({ held: { ...HELD_W, leftShift: true }, entities: [self(), npc] });
+
+    runTicks(rig, Math.ceil(1000 / frameMs), frameMs);
+
+    // The player ran into the NPC and came out on its far side.
+    expect(rig.sent.some((message) => message.tag === 'bump')).toBe(true);
+    expect(rig.self().position.x).toBeLessThan(npc.position.x - 0.6);
+    expect(rig.self().position.z).toBeLessThan(npc.position.z);
+    const reports = [START, ...rig.moves()];
+    const body = { x: npc.position.x, z: npc.position.z, radius: npc.radius };
+    for (let index = 1; index < reports.length; index += 1) {
+      expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index]!, 0.3, [body]), `report ${index}`).toBe(true);
+    }
   });
 });
 
@@ -483,17 +508,6 @@ describe('the input gate', () => {
 
     rig.predictor.runTick(0);
 
-    expect(rig.gateWrites).toEqual([true]);
-  });
-
-  it('stays open through a sector hop so held keys survive', () => {
-    const rig = makeRig();
-    rig.session.connectionState = 'awaitingEnterSector';
-
-    rig.predictor.runTick(0);
-
-    // The `selfEntityIndex` guard is what stops movement in the gap, not the gate — keys keep
-    // being consumed and held WASD resumes motion on arrival.
     expect(rig.gateWrites).toEqual([true]);
   });
 
@@ -515,9 +529,9 @@ describe('the input gate', () => {
     expect(rig.gateWrites).toEqual([false]);
   });
 
-  it('closes when disconnected', () => {
+  it.each(['awaitingLoginResult', 'awaitingEnterSpace'] as const)('closes while %s', (state) => {
     const rig = makeRig();
-    rig.session.connectionState = 'awaitingLoginResult';
+    rig.session.connectionState = state;
 
     rig.predictor.runTick(0);
 
@@ -538,30 +552,58 @@ describe('the input gate', () => {
     expect(rig.gateWrites).toEqual([false, false]);
   });
 
-  it('returns before touching the world while chat is focused', () => {
+  it('returns before moving the player while chat is focused', () => {
     const rig = makeRig();
     rig.session.isChatInputFocused = true;
 
     rig.predictor.runTick(0);
     rig.predictor.runTick(16);
 
-    expect(rig.self().position).toEqual({ x: 1000, y: 1000 });
+    expect(rig.self().position).toEqual(START);
     expect(rig.sent).toHaveLength(0);
+  });
+
+  it('keeps drawing remote entities while chat is focused', () => {
+    const peer = clientEntity({ id: 'peer', kind: 'peer', position: { x: 2, z: 2 } });
+    const rig = makeRig({ entities: [self(), peer] });
+    rig.session.isChatInputFocused = true;
+    rig.interpolation.retarget('peer', peer.position, { x: 3, z: 2 }, 0);
+
+    rig.predictor.runTick(100);
+
+    expect(rig.session.entities.get('peer')?.position).toEqual({ x: 3, z: 2 });
+  });
+});
+
+describe('correction', () => {
+  it('snaps to the corrected position and measures the next report from it', () => {
+    const rig = makeRig({ held: noHeldKeys() });
+    rig.predictor.runTick(0);
+    const baseline = rig.sent.length;
+
+    rig.predictor.correct({ x: 4, z: 4 });
+    rig.predictor.runTick(1000);
+
+    expect(rig.self().position).toEqual({ x: 4, z: 4 });
+    // The server already holds this position, so standing on it is nothing to report.
+    expect(rig.sent).toHaveLength(baseline);
   });
 });
 
 describe('reset', () => {
-  it('drops the carry, the clocks, and the portal latch', () => {
+  it('drops the tick clock and the last report', () => {
     const rig = makeRig();
     runTicks(rig, 4, 16);
+    const before = rig.self().position;
+    const reports = rig.moves().length;
 
     rig.predictor.reset();
     rig.predictor.runTick(1000);
 
-    // A carried remainder or a stale tick timestamp would bias the first tick in a new sector; a
-    // stale portal latch would hold the arrival portal shut.
-    expect(rig.predictor._movementRemainder).toEqual({ dx: 0, dy: 0 });
-    expect(rig.self().position).toEqual({ x: 996, y: 995 });
+    // A stale tick timestamp would move the player on the first tick back; a stale report would
+    // leave the server not hearing from the client until something changed.
+    expect(rig.self().position).toEqual(before);
+    expect(rig.moves()).toHaveLength(reports + 1);
   });
 });
 

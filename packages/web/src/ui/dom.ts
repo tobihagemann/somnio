@@ -71,7 +71,7 @@ function controlIdentifier(kind: string, labelText: string): string {
 export const ICON_PATHS = {
   /** `bubble.left` — rounded balloon with the tail on the lower left. */
   chat: 'M3.5 5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9l-5 4v-4a2 2 0 0 1-1-2z',
-  /** `person.2` — one figure in front, a second shouldered in behind it. */
+  /** `person.2` — one person in front, a second shouldered in behind it. */
   players:
     'M15 20.5v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1.5M12.5 7.5a2.75 2.75 0 1 1-5.5 0 2.75 2.75 0 0 1 5.5 0M16.5 15.2a4 4 0 0 1 4.5 3.8v1.5M15.2 4.6a2.75 2.75 0 0 1 0 5.8',
   /** `bag` — body plus the handle arc. */

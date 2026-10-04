@@ -57,7 +57,7 @@ const scriptExtensions = new RangeTable(scriptsJSON.scriptExtensionRanges, (fiel
 const allowed = new RangeTable(identifierProfileJSON.allowedRanges, () => true);
 const generalCategory = new RangeTable(generalCategoriesJSON.ranges, (field) => field);
 
-export function scriptID(name: string): number | undefined {
+export function scriptId(name: string): number | undefined {
   const index = SCRIPT_NAMES.indexOf(name);
   return index === -1 ? undefined : index;
 }

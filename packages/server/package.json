@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Somnio gameplay server: the WebSocket gameplay and admin routes, per-sector simulation, world clock, and checkpointing over Postgres.",
+  "description": "Somnio gameplay server: the WebSocket gameplay and admin routes, per-space simulation, world clock, and checkpointing over Postgres.",
   "engines": {
     "node": ">=24.17.0"
   },

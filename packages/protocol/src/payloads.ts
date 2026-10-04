@@ -1,17 +1,22 @@
-import type { WireInventoryRow, WireSector, WireHand } from './wire.ts';
-import { WIRE_HAND_VALUES, decodeWireInventoryRow, decodeWireSector } from './wire.ts';
 import { truncateToUTF8Bytes } from './constants.ts';
+import { WireDecodingError } from './errors.ts';
+import type { SectorView } from './sectorView.ts';
+import { decodeSectorView } from './sectorView.ts';
 import {
   PROTOCOL_BYTE_CAPS,
+  isAbsent,
   mapArray,
   requireBool,
+  requireBoundedString,
+  requireEntityId,
   requireFloat,
-  requireInt16,
+  requireId,
   requireInt32,
+  requireMetres,
   requireNested,
-  requireRawEnum,
+  requirePositiveMetres,
   requireString,
-  requireUInt16,
+  requireStringEnum,
   requireWithinByteCap,
 } from './validate.ts';
 
@@ -21,14 +26,29 @@ import {
  * boundary rather than deep in a handler.
  */
 
+/**
+ * The string literal sets of the wire. Each array is the single declaration; the union is derived
+ * from it and the decoders validate against it.
+ */
+export const ENTITY_KINDS = ['player', 'npc', 'monster'] as const;
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+
+export const GAITS = ['walk', 'jog', 'run'] as const;
+export type Gait = (typeof GAITS)[number];
+
+export const HANDS = ['left', 'right'] as const;
+export type Hand = (typeof HANDS)[number];
+
+export const LOGIN_RESULTS = ['ok', 'badCredentials', 'alreadyLoggedIn'] as const;
+export type LoginResult = (typeof LOGIN_RESULTS)[number];
+
+export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed'] as const;
+export type RegisterResult = (typeof REGISTER_RESULTS)[number];
+
 export interface LoginMessage {
   nickname: string;
   password: string;
-  /**
-   * Request a resumable session token alongside a successful login. Optional so a client
-   * built before this field still decodes on a token-aware server — which is what keeps
-   * `helloVersion` at 3. Omitting it must yield no `sessionToken` frame at all.
-   */
+  /** Request a resumable session token alongside a successful login. Omitting it must yield no `sessionToken` frame at all. */
   requestSessionToken?: boolean;
 }
 
@@ -36,36 +56,36 @@ export interface RegisterMessage {
   nickname: string;
   password: string;
   passwordRepeat: string;
-  characterClass: number;
-  gender: number;
+  people: string;
   email: string;
 }
 
-export interface PositionMessage {
-  entityIndex: number;
+export interface MoveMessage {
   x: number;
-  y: number;
+  z: number;
   /** Continuous heading in degrees `[0, 360)` (0 = south, 90 = east). */
   facing: number;
-  tempo: number;
+  gait: Gait;
 }
 
-export interface SayMessage {
-  entityIndex: number;
+export interface ClientSayMessage {
   text: string;
 }
 
 export interface EquipToggleMessage {
   slot: number;
-  hand: WireHand;
+  /** Absent unequips the slot. */
+  hand?: Hand;
 }
 
-export interface BumpNPCMessage {
-  npcIndex: number;
+export interface BumpMessage {
+  targetId: string;
 }
 
-export interface EnterPortalMessage {
-  portalIndex: number;
+/** A door id is unique only within its sector, and a space can hold several sectors. */
+export interface UseDoorMessage {
+  sector: string;
+  doorId: string;
 }
 
 /** Redeem a stored session token in place of a password login. Accepted pre-login only. */
@@ -82,79 +102,92 @@ export interface HelloMessage {
   protocolVersion: number;
 }
 
-/**
- * The named map is the single declaration; the accepted-value list and the union are derived.
- *
- * Stating the set twice is how a new case gets added to the map and forgotten in the list, at which
- * point the decoder rejects the value the server just started sending and reports a decode failure.
- */
-export const LOGIN_RESULT = { ok: 0, badCredentials: 1, alreadyLoggedIn: 2 } as const;
-const LOGIN_RESULT_CODES = Object.values(LOGIN_RESULT);
-export type LoginResultCode = (typeof LOGIN_RESULT)[keyof typeof LOGIN_RESULT];
-
 export interface LoginResultMessage {
-  result: LoginResultCode;
+  result: LoginResult;
 }
-
-export const REGISTER_RESULT = {
-  ok: 0,
-  nicknameExists: 1,
-  failure: 2,
-  nameNotAllowed: 3,
-} as const;
-const REGISTER_RESULT_CODES = Object.values(REGISTER_RESULT);
-export type RegisterResultCode = (typeof REGISTER_RESULT)[keyof typeof REGISTER_RESULT];
 
 export interface RegisterResultMessage {
-  result: RegisterResultCode;
+  result: RegisterResult;
 }
 
-export interface EnterSectorMessage {
-  sector: WireSector;
+/**
+ * The first frame of every join. `worldSeconds` is the world clock at that moment; the client
+ * extrapolates from it, so no later frame carries the time.
+ */
+export interface EnterSpaceMessage {
+  spaceId: string;
+  selfId: string;
+  worldSeconds: number;
 }
 
-export interface MainCharacterMessage {
-  entityIndex: number;
+export interface SectorMessage {
+  sector: SectorView;
 }
-
-export const WIRE_ENTITY_TYPE = { player: 0, npc: 1, monster: 2 } as const;
-const WIRE_ENTITY_TYPES = Object.values(WIRE_ENTITY_TYPE);
-export type WireEntityType = (typeof WIRE_ENTITY_TYPE)[keyof typeof WIRE_ENTITY_TYPE];
 
 export interface EntityMessage {
-  entityIndex: number;
-  figure: number;
-  gender: number;
-  maskWidth: number;
-  maskHeight: number;
-  type: WireEntityType;
+  id: string;
+  kind: EntityKind;
+  characterModelId: string;
   name: string;
+  /** The body radius the server uses for this entity, in metres. */
+  radius: number;
   x: number;
-  y: number;
+  z: number;
   facing: number;
-  tempo: number;
+  gait: Gait;
+}
+
+export interface EntityMove {
+  id: string;
+  x: number;
+  z: number;
+  facing: number;
+  gait: Gait;
+}
+
+export interface MovesMessage {
+  moves: EntityMove[];
+}
+
+/** The last position the server accepted, sent in answer to a rejected `move`. */
+export interface CorrectionMessage {
+  x: number;
+  z: number;
+}
+
+export interface DoorRefusedMessage {
+  sector: string;
+  doorId: string;
+}
+
+export interface SayMessage {
+  entityId: string;
+  text: string;
 }
 
 export interface Energy {
-  hpCurrent: number;
-  hpMax: number;
+  healthCurrent: number;
+  healthMax: number;
   balanceCurrent: number;
   balanceMax: number;
-  manaCurrent: number;
-  manaMax: number;
+  spiritCurrent: number;
+  spiritMax: number;
 }
 
-export interface DateTickMessage {
-  hour: number;
-  minute: number;
+export interface InventoryRowMessage {
+  slot: number;
+  itemId: string;
+  quantity: number;
+  /** Absent when the row is not equipped. */
+  equippedHand?: Hand;
 }
 
 export interface InventoryMessage {
-  rows: WireInventoryRow[];
+  rows: InventoryRowMessage[];
 }
 
 export interface LeaveMessage {
-  entityIndex: number;
+  entityId: string;
   leftGame: boolean;
 }
 
@@ -170,10 +203,7 @@ export interface AdminSayMessage {
  */
 export interface SessionTokenMessage {
   token: string;
-  /**
-   * Seconds until expiry, so the client never has to trust its own clock offset. `Int32` on
-   * the wire: the 30-day lifetime is 2,592,000 seconds, well past an `Int16` ceiling.
-   */
+  /** Seconds until expiry, so the client never has to trust its own clock offset. */
   expiresInSeconds: number;
 }
 
@@ -183,36 +213,30 @@ export interface SessionRevokedMessage {
 }
 
 export function decodeLoginMessage(container: Record<string, unknown>, path: string): LoginMessage {
-  // `requestSessionToken` is the one Optional on this payload — the additive field that keeps
-  // `helloVersion` at 3 — so absent and explicit `null` both decode as "not requested", while a
-  // present value is still type-checked.
-  const raw = container['requestSessionToken'];
-  const requestSessionToken = raw === undefined || raw === null ? undefined : requireBool(container, 'requestSessionToken', path);
   return {
     nickname: requireString(container, 'nickname', path),
     password: requireString(container, 'password', path),
-    ...(requestSessionToken === undefined ? {} : { requestSessionToken }),
+    ...(isAbsent(container, 'requestSessionToken') ? {} : { requestSessionToken: requireBool(container, 'requestSessionToken', path) }),
   };
 }
 
+/** `people` decodes as a plain string: the list of peoples is the server's to check. */
 export function decodeRegisterMessage(container: Record<string, unknown>, path: string): RegisterMessage {
   return {
     nickname: requireString(container, 'nickname', path),
     password: requireString(container, 'password', path),
     passwordRepeat: requireString(container, 'passwordRepeat', path),
-    characterClass: requireInt16(container, 'characterClass', path),
-    gender: requireInt16(container, 'gender', path),
+    people: requireString(container, 'people', path),
     email: requireString(container, 'email', path),
   };
 }
 
-export function decodePositionMessage(container: Record<string, unknown>, path: string): PositionMessage {
+export function decodeMoveMessage(container: Record<string, unknown>, path: string): MoveMessage {
   return {
-    entityIndex: requireInt16(container, 'entityIndex', path),
-    x: requireInt16(container, 'x', path),
-    y: requireInt16(container, 'y', path),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
     facing: requireFloat(container, 'facing', path),
-    tempo: requireInt16(container, 'tempo', path),
+    gait: requireStringEnum(container, 'gait', path, GAITS),
   };
 }
 
@@ -220,41 +244,30 @@ export function decodePositionMessage(container: Record<string, unknown>, path: 
  * The client's chat line decodes uncapped: the server answers an over-cap `clientSay` by dropping
  * it and keeping the socket open, which it can only do if the frame reaches its handler.
  */
-export function decodeClientSay(container: Record<string, unknown>, path: string): SayMessage {
-  return {
-    entityIndex: requireInt16(container, 'entityIndex', path),
-    text: requireString(container, 'text', path),
-  };
-}
-
-/**
- * The server's chat line is capped on decode, not only on send; `requireWithinByteCap` records why
- * an uncapped inbound line freezes the tab. The same reasoning hardens the name plaque.
- */
-export function decodeServerSay(container: Record<string, unknown>, path: string): SayMessage {
-  return {
-    entityIndex: requireInt16(container, 'entityIndex', path),
-    text: requireWithinByteCap(requireString(container, 'text', path), PROTOCOL_BYTE_CAPS.say, `${path}.text`),
-  };
+export function decodeClientSayMessage(container: Record<string, unknown>, path: string): ClientSayMessage {
+  return { text: requireString(container, 'text', path) };
 }
 
 export function decodeEquipToggleMessage(container: Record<string, unknown>, path: string): EquipToggleMessage {
   return {
-    slot: requireInt16(container, 'slot', path),
-    hand: requireRawEnum(container, 'hand', path, WIRE_HAND_VALUES),
+    slot: requireInt32(container, 'slot', path),
+    ...(isAbsent(container, 'hand') ? {} : { hand: requireStringEnum(container, 'hand', path, HANDS) }),
   };
 }
 
-export function decodeBumpNPCMessage(container: Record<string, unknown>, path: string): BumpNPCMessage {
-  return { npcIndex: requireInt16(container, 'npcIndex', path) };
+export function decodeBumpMessage(container: Record<string, unknown>, path: string): BumpMessage {
+  return { targetId: requireEntityId(container, 'targetId', path) };
 }
 
-export function decodeEnterPortalMessage(container: Record<string, unknown>, path: string): EnterPortalMessage {
-  return { portalIndex: requireInt16(container, 'portalIndex', path) };
+export function decodeUseDoorMessage(container: Record<string, unknown>, path: string): UseDoorMessage {
+  return {
+    sector: requireBoundedString(container, 'sector', path, PROTOCOL_BYTE_CAPS.sectorName),
+    doorId: requireId(container, 'doorId', path),
+  };
 }
 
 /**
- * Uncapped on decode, like `decodeClientSay`: the server's session handler answers an over-cap
+ * Uncapped on decode, like `decodeClientSayMessage`: the server's session handler answers an over-cap
  * token with `loginResult(badCredentials)` and keeps the socket open, so the cap is its concern.
  */
 export function decodeRedeemSessionMessage(container: Record<string, unknown>, path: string): RedeemSessionMessage {
@@ -267,23 +280,31 @@ export function decodeRevokeSessionMessage(container: Record<string, unknown>, p
 }
 
 export function decodeHelloMessage(container: Record<string, unknown>, path: string): HelloMessage {
-  return { protocolVersion: requireUInt16(container, 'protocolVersion', path) };
+  return { protocolVersion: requireInt32(container, 'protocolVersion', path) };
 }
 
 export function decodeLoginResultMessage(container: Record<string, unknown>, path: string): LoginResultMessage {
-  return { result: requireRawEnum(container, 'result', path, LOGIN_RESULT_CODES) };
+  return { result: requireStringEnum(container, 'result', path, LOGIN_RESULTS) };
 }
 
 export function decodeRegisterResultMessage(container: Record<string, unknown>, path: string): RegisterResultMessage {
-  return { result: requireRawEnum(container, 'result', path, REGISTER_RESULT_CODES) };
+  return { result: requireStringEnum(container, 'result', path, REGISTER_RESULTS) };
 }
 
-export function decodeEnterSectorMessage(container: Record<string, unknown>, path: string): EnterSectorMessage {
-  return { sector: decodeWireSector(requireNested(container, 'sector', path), `${path}.sector`) };
+export function decodeEnterSpaceMessage(container: Record<string, unknown>, path: string): EnterSpaceMessage {
+  const worldSeconds = requireFloat(container, 'worldSeconds', path);
+  if (worldSeconds < 0) {
+    throw new WireDecodingError(`${path}.worldSeconds`, `expected a non-negative number, got ${worldSeconds}`);
+  }
+  return {
+    spaceId: requireBoundedString(container, 'spaceId', path, PROTOCOL_BYTE_CAPS.sectorName),
+    selfId: requireEntityId(container, 'selfId', path),
+    worldSeconds,
+  };
 }
 
-export function decodeMainCharacterMessage(container: Record<string, unknown>, path: string): MainCharacterMessage {
-  return { entityIndex: requireInt16(container, 'entityIndex', path) };
+export function decodeSectorMessage(container: Record<string, unknown>, path: string): SectorMessage {
+  return { sector: decodeSectorView(requireNested(container, 'sector', path), `${path}.sector`) };
 }
 
 /**
@@ -300,45 +321,88 @@ export function decodeMainCharacterMessage(container: Record<string, unknown>, p
  */
 export function decodeEntityMessage(container: Record<string, unknown>, path: string): EntityMessage {
   return {
-    entityIndex: requireInt16(container, 'entityIndex', path),
-    figure: requireInt16(container, 'figure', path),
-    gender: requireInt16(container, 'gender', path),
-    maskWidth: requireInt16(container, 'maskWidth', path),
-    maskHeight: requireInt16(container, 'maskHeight', path),
-    type: requireRawEnum(container, 'type', path, WIRE_ENTITY_TYPES),
+    id: requireEntityId(container, 'id', path),
+    kind: requireStringEnum(container, 'kind', path, ENTITY_KINDS),
+    characterModelId: requireString(container, 'characterModelId', path),
     name: truncateToUTF8Bytes(requireString(container, 'name', path), PROTOCOL_BYTE_CAPS.identifier),
-    x: requireInt16(container, 'x', path),
-    y: requireInt16(container, 'y', path),
+    radius: requirePositiveMetres(container, 'radius', path),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
     facing: requireFloat(container, 'facing', path),
-    tempo: requireInt16(container, 'tempo', path),
+    gait: requireStringEnum(container, 'gait', path, GAITS),
+  };
+}
+
+function decodeEntityMove(container: Record<string, unknown>, path: string): EntityMove {
+  return {
+    id: requireEntityId(container, 'id', path),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
+    facing: requireFloat(container, 'facing', path),
+    gait: requireStringEnum(container, 'gait', path, GAITS),
+  };
+}
+
+export function decodeMovesMessage(container: Record<string, unknown>, path: string): MovesMessage {
+  return { moves: mapArray(container, 'moves', path, decodeEntityMove) };
+}
+
+export function decodeCorrectionMessage(container: Record<string, unknown>, path: string): CorrectionMessage {
+  return {
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
+  };
+}
+
+export function decodeDoorRefusedMessage(container: Record<string, unknown>, path: string): DoorRefusedMessage {
+  return {
+    sector: requireBoundedString(container, 'sector', path, PROTOCOL_BYTE_CAPS.sectorName),
+    doorId: requireId(container, 'doorId', path),
+  };
+}
+
+/**
+ * The server's chat line is capped on decode, not only on send; `requireWithinByteCap` records why
+ * an uncapped inbound line freezes the tab. The same reasoning hardens the name plaque.
+ */
+export function decodeSayMessage(container: Record<string, unknown>, path: string): SayMessage {
+  return {
+    entityId: requireEntityId(container, 'entityId', path),
+    text: requireWithinByteCap(requireString(container, 'text', path), PROTOCOL_BYTE_CAPS.say, `${path}.text`),
   };
 }
 
 export function decodeEnergy(container: Record<string, unknown>, path: string): Energy {
   return {
-    hpCurrent: requireInt16(container, 'hpCurrent', path),
-    hpMax: requireInt16(container, 'hpMax', path),
-    balanceCurrent: requireInt16(container, 'balanceCurrent', path),
-    balanceMax: requireInt16(container, 'balanceMax', path),
-    manaCurrent: requireInt16(container, 'manaCurrent', path),
-    manaMax: requireInt16(container, 'manaMax', path),
+    healthCurrent: requireInt32(container, 'healthCurrent', path),
+    healthMax: requireInt32(container, 'healthMax', path),
+    balanceCurrent: requireInt32(container, 'balanceCurrent', path),
+    balanceMax: requireInt32(container, 'balanceMax', path),
+    spiritCurrent: requireInt32(container, 'spiritCurrent', path),
+    spiritMax: requireInt32(container, 'spiritMax', path),
   };
 }
 
-export function decodeDateTickMessage(container: Record<string, unknown>, path: string): DateTickMessage {
+function decodeInventoryRowMessage(container: Record<string, unknown>, path: string): InventoryRowMessage {
+  const quantity = requireInt32(container, 'quantity', path);
+  if (quantity < 0) {
+    throw new WireDecodingError(`${path}.quantity`, `expected a non-negative quantity, got ${quantity}`);
+  }
   return {
-    hour: requireInt16(container, 'hour', path),
-    minute: requireInt16(container, 'minute', path),
+    slot: requireInt32(container, 'slot', path),
+    itemId: requireBoundedString(container, 'itemId', path, PROTOCOL_BYTE_CAPS.identifier),
+    quantity,
+    ...(isAbsent(container, 'equippedHand') ? {} : { equippedHand: requireStringEnum(container, 'equippedHand', path, HANDS) }),
   };
 }
 
 export function decodeInventoryMessage(container: Record<string, unknown>, path: string): InventoryMessage {
-  return { rows: mapArray(container, 'rows', path, decodeWireInventoryRow) };
+  return { rows: mapArray(container, 'rows', path, decodeInventoryRowMessage) };
 }
 
 export function decodeLeaveMessage(container: Record<string, unknown>, path: string): LeaveMessage {
   return {
-    entityIndex: requireInt16(container, 'entityIndex', path),
+    entityId: requireEntityId(container, 'entityId', path),
     leftGame: requireBool(container, 'leftGame', path),
   };
 }

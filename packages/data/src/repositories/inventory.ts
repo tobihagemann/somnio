@@ -17,7 +17,7 @@ export class PostgresInventoryRepository implements InventoryRepository {
   async loadAll(characterId: string): Promise<InventoryRow[]> {
     const rows = await this.db
       .selectFrom('inventory_rows')
-      .select(['slot', 'category', 'item_id', 'extras', 'equipped_hand'])
+      .select(['slot', 'item_id', 'quantity', 'equipped_hand'])
       .where('character_id', '=', characterId)
       .orderBy('slot')
       .execute();

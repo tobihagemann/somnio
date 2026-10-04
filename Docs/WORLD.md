@@ -69,7 +69,7 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 ## Progression — Lucidity (in detail)
 
-Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no levels**. A dreamer never outgrows the world numerically; they broaden — more ranks, more capabilities, deeper mastery of the few things their class does. And the world is **open by design**: difficulty is **monster-gated, never zone-gated**. There are no level requirements, no rank checks on a portal, no "you may not pass" — any dreamer can walk from the Library straight into the Nordwald on day one. What stops them is what lives there. *(Hard rule: no sector, portal, or region may ever gain a rank or access gate. The nightmares are the barrier.)*
+Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no levels**. A dreamer never outgrows the world numerically; they broaden — more ranks, more capabilities, deeper mastery of the few things their class does. And the world is **open by design**: difficulty is **monster-gated, never zone-gated**. There are no level requirements, no rank checks at a border or a door, no "you may not pass" — any dreamer can walk from the Library straight into the Nordwald on day one. What stops them is what lives there. *(Hard rule: no sector, door, or region may ever gain a rank or access gate. The nightmares are the barrier.)*
 
 ### The trainable triad
 
@@ -100,9 +100,9 @@ Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a
 
 No permadeath, ever. The inn's beds are the **wake-point**: rest there and that is where you return when you fall. *(Wake-point and revive mechanics require the death and economy systems.)*
 
-### The class-model decision
+### Class and registration
 
-The trinity — **Kämpfer / Heiler / Mystiker** — is canonical. The codebase still carries the legacy eight-class enum (`CharacterClass`) from the original import; it reconciles with (or retires into) the trinity when class techniques land alongside combat.
+Registration chooses a people, not a class. A dreamer grows into one of the trinity's roles once class techniques arrive with combat.
 
 ## Edaria — the lucid heart
 
@@ -118,7 +118,7 @@ Edaria is Somnio's central town: where every stranger arrives, the calmest place
 
 The world radiates from Edaria in rings. The further out, the more the dream has frayed, the stranger the ground, and the stronger the nightmares — until the encircling **sea**, which is not a border but the place where the dreamed land simply *gives out*. Three of the four town gates open onto a near meadow; the **east gate opens straight into the Herbstwald** — there is no east meadow, the great wood grows right up to the wall. Everything else lies beyond.
 
-**How the lands connect.** Each land is a sector (a `.somnio-sector` file; the filename stem is the sector's name), and every border crossing is a pair of portal records — an `outboundTrigger` the dreamer walks into and an `arrivalPlacement` in the destination keyed back to where they came from, with `targetSectorName` naming the neighbor's filename stem. The rings chain outward by compass geography from Edaria's four gates: **north → Nordwiese → Nordwald**, **west → Westwiese → Sumpfgebiet/Friedhof**, **south → Südwiese → Ödland → Strand**, **east → Herbstwald** (and on toward Trolldorf). No portal carries a rank or access check — a dreamer may walk anywhere the ground goes; the nightmares are the barrier.
+**How the lands connect.** The outdoors is one continuous ground. Each land is a sector (a `.somnio-sector` file; the filename stem is the sector's name) placed by its origin, and where two sectors touch a dreamer walks straight across and sees the next land before reaching it. Interiors — the Library, the shop, the inn, the Arena — are rooms of their own. Each is reached through a door on a building and left through the door inside, which sets the dreamer down in front of the one they came in by. The rings chain outward by compass geography from Edaria's four gates: **north → Nordwiese → Nordwald**, **west → Westwiese → Sumpfgebiet/Friedhof**, **south → Südwiese → Ödland → Strand**, **east → Herbstwald** (and on toward Trolldorf). No border and no door carries a rank or access check — a dreamer may walk anywhere the ground goes; the nightmares are the barrier.
 
 **The near meadows** (the gentle ring, hugging Edaria — *Tier 1*)
 - **Nordwiese / Westwiese / Südwiese / Südwestwiese** — open grassland, the first ground a dreamer walks. Faint, almost harmless nightmares drift here.
