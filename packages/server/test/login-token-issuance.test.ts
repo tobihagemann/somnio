@@ -2,28 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Placement } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import { STARTER_SECTOR, hashPassword } from '@somnio/data';
-import type { SessionRepository } from '@somnio/data';
+import { STARTER_SECTOR } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { completeAuthenticatedJoin, handleLogin } from '../src/handlers/login.ts';
-import type { Logger } from '../src/logging.ts';
 import { handleRedeem, handleRevoke } from '../src/handlers/session.ts';
 import { collectMessages, loginResults } from './support/frames.ts';
 import { recordingLogger } from './support/logger.ts';
-import { makeOneSectorWorld } from './support/oneSectorWorld.ts';
-import { StubAccountRepository, StubSessionRepository, failingSessionRepository, makeAccount } from './support/stubRepositories.ts';
-
-async function makeAuthenticatedWorld(sessions: SessionRepository, name: string, password: string, logger?: Logger) {
-  const accountId = crypto.randomUUID();
-  const account = makeAccount({ id: accountId, name, passwordHash: await hashPassword(password) });
-  return makeOneSectorWorld({
-    sessions,
-    accountId,
-    characterName: name,
-    accounts: new StubAccountRepository(new Map([[name, account]])),
-    ...(logger === undefined ? {} : { logger }),
-  });
-}
+import { makeAuthenticatedWorld, makeOneSectorWorld } from './support/oneSectorWorld.ts';
+import { StubSessionRepository, failingSessionRepository } from './support/stubRepositories.ts';
 
 describe('session token issuance', () => {
   it('a login requesting a session token receives one', async () => {
@@ -120,7 +106,7 @@ describe('session token issuance', () => {
   });
 
   it('a login omitting requestSessionToken is answered without a token', async () => {
-    const world = await makeAuthenticatedWorld(new StubSessionRepository(), 'gated', 'hunter2-long');
+    const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'gated', password: 'hunter2-long' });
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'gated', password: 'hunter2-long' }, connection, world.dependencies);
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
@@ -129,7 +115,7 @@ describe('session token issuance', () => {
   });
 
   it('a login setting requestSessionToken is answered with one', async () => {
-    const world = await makeAuthenticatedWorld(new StubSessionRepository(), 'asker', 'hunter2-long');
+    const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'asker', password: 'hunter2-long' });
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'asker', password: 'hunter2-long', requestSessionToken: true }, connection, world.dependencies);
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
@@ -139,7 +125,7 @@ describe('session token issuance', () => {
   /** Uniform on the wire, specific in the log: the record is the operator's only guessing signal. */
   it('a login with the wrong password answers badCredentials and records a warn naming the account', async () => {
     const { logger, records } = recordingLogger();
-    const world = await makeAuthenticatedWorld(new StubSessionRepository(), 'asker', 'hunter2-long', logger);
+    const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'asker', password: 'hunter2-long', logger });
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'asker', password: 'wrong-password' }, connection, world.dependencies);
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
@@ -149,7 +135,7 @@ describe('session token issuance', () => {
 
   it('a login for an unknown account records the warn without the submitted string', async () => {
     const { logger, records } = recordingLogger();
-    const world = await makeAuthenticatedWorld(new StubSessionRepository(), 'asker', 'hunter2-long', logger);
+    const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'asker', password: 'hunter2-long', logger });
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'my-secret-pw', password: 'whatever-long' }, connection, world.dependencies);
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);

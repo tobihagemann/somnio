@@ -185,6 +185,7 @@ describe('renderChatLine', () => {
     { kind: 'serverUnreachable' },
     { kind: 'badCredentials' },
     { kind: 'alreadyLoggedIn' },
+    { kind: 'throttled' },
     { kind: 'errorCode', code: 'client_only_tag' },
     { kind: 'joined', playerName: 'Peer' },
     { kind: 'left', playerName: 'Peer' },
@@ -202,6 +203,12 @@ describe('renderChatLine', () => {
       expect(rendered).not.toContain('%@');
       expect(rendered).not.toContain('$@');
     }
+  });
+
+  /** Rendered as "Bad credentials.", it would tell a player with the right password that it is wrong. */
+  it('tells a throttled player to wait, in both locales', () => {
+    expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'en')).toBe('Too many attempts. Wait a little before trying again.');
+    expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'de')).toBe('Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut.');
   });
 
   it('selects the verb from the trailing punctuation', () => {

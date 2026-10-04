@@ -34,6 +34,11 @@ export async function handleRegister(message: RegisterMessage, connection: Conne
     sendRegisterResult(outbox, 'nameNotAllowed', logger);
     return;
   }
+  // Never refunded: every attempt that reaches the hash costs one, whatever it is answered.
+  if (!dependencies.attemptLimiter.admit('registration', connection.clientAddress)) {
+    sendRegisterResult(outbox, 'throttled', logger);
+    return;
+  }
   let passwordHash: string;
   try {
     passwordHash = await hashPassword(message.password);

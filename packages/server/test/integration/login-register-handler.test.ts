@@ -6,7 +6,7 @@ import { ConnectionActor } from '../../src/connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import { handleLogin } from '../../src/handlers/login.ts';
 import { handleRegister } from '../../src/handlers/register.ts';
-import { collectMessages, loginResults } from '../support/frames.ts';
+import { collectMessages, loginResults, registerResults } from '../support/frames.ts';
 import { TEST_PASSWORD, makeDatabaseDependencies, startDatabase, uniqueNickname } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
@@ -39,8 +39,7 @@ function registerMessage(nickname: string, overrides: Partial<RegisterMessage> =
 async function register(message: RegisterMessage) {
   const connection = new ConnectionActor(dependencies);
   await handleRegister(message, connection, dependencies);
-  const messages = await collectMessages(connection.outbox);
-  return messages.flatMap((frame) => (frame.tag === 'registerResult' ? [frame.payload.result] : []));
+  return registerResults(await collectMessages(connection.outbox));
 }
 
 async function login(nickname: string, password = TEST_PASSWORD) {

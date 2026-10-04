@@ -16,6 +16,7 @@ export type ChatLine =
   | { kind: 'serverUnreachable' }
   | { kind: 'badCredentials' }
   | { kind: 'alreadyLoggedIn' }
+  | { kind: 'throttled' }
   | { kind: 'errorCode'; code: string }
   | { kind: 'joined'; playerName: string }
   | { kind: 'left'; playerName: string }
@@ -50,6 +51,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'serverUnreachable':
     case 'badCredentials':
     case 'alreadyLoggedIn':
+    case 'throttled':
     case 'errorCode':
     case 'credentialSaveFailed':
     case 'sessionExpired':

@@ -223,6 +223,10 @@
     "en": "This browser cannot render 3D graphics.",
     "de": "Dieser Browser kann keine 3D-Grafik darstellen."
   },
+  "Too many attempts. Wait a little before trying again.": {
+    "en": "Too many attempts. Wait a little before trying again.",
+    "de": "Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut."
+  },
   "Try Again": {
     "en": "Try Again",
     "de": "Erneut versuchen"

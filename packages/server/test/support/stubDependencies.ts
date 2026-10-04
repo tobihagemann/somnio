@@ -1,6 +1,7 @@
 import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
+import { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import type { Logger } from '../../src/logging.ts';
 import { WorldClockService } from '../../src/services/worldClockService.ts';
@@ -17,6 +18,10 @@ import {
   StubWorldClockRepository,
 } from './stubRepositories.ts';
 
+export function enabledAttemptLimiter(): AttemptLimiter {
+  return new AttemptLimiter({ enabled: true, logger: testLogger() });
+}
+
 export interface StubDependencyOptions {
   logger?: Logger;
   outboxHighWatermark?: number;
@@ -26,6 +31,8 @@ export interface StubDependencyOptions {
   accounts?: StubAccountRepository;
   initialWorldSeconds?: number;
   worldRouter?: WorldRouter;
+  /** Defaults to a disabled limiter, so a suite that never asks for the limit is never throttled. */
+  attemptLimiter?: AttemptLimiter;
 }
 
 /**
@@ -46,6 +53,7 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,
     worldClock,
+    attemptLimiter: options.attemptLimiter ?? new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: options.outboxHighWatermark ?? 1024,
     logger,
   };

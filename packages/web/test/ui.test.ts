@@ -921,6 +921,25 @@ describe('the registration form validates before it sends', () => {
     expect(rig.error()).not.toBe('');
   });
 
+  /** The reason has to reach the form the player is looking at, each result with its own sentence. */
+  it.each([
+    ['nicknameExists', 'Nickname already exists.'],
+    ['nameNotAllowed', 'That name uses characters Somnio does not allow.'],
+    ['failure', 'Registration failed.'],
+    ['throttled', 'Too many attempts. Wait a little before trying again.'],
+  ] as const)('shows the reason for a %s result in the registration form', (result, reason) => {
+    const rig = registrationRig(container);
+    // The controller owns the overlay: the repaint after a result presents whatever it holds.
+    rig.shell.controller.presentedOverlay = { kind: 'registration' };
+    const visibleErrors = () =>
+      [...container.querySelectorAll('.form-error')].filter((node) => node.closest('.hidden') === null).map((node) => node.textContent);
+    expect(visibleErrors()).toEqual([]);
+
+    rig.shell.controller.dispatch({ tag: 'registerResult', payload: { result } });
+
+    expect(visibleErrors()).toEqual([reason]);
+  });
+
   /** A successful registration returns to a login form that is already filled in. */
   it('pre-fills the login form from the registration values', () => {
     const rig = registrationRig(container);

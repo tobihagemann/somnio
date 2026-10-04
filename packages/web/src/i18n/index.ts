@@ -90,6 +90,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'The server is currently not reachable. Try again later.',
   'Bad credentials.',
   'Already logged in.',
+  'Too many attempts. Wait a little before trying again.',
   'Error %@ occurred.',
   '%@ entered the game.',
   '%@ left the game.',

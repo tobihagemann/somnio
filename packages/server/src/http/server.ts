@@ -11,12 +11,15 @@ import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { AdminDependencies } from '../handlers/adminDispatcher.ts';
 import type { Logger } from '../logging.ts';
 import { timingSafeBearer } from './app.ts';
+import { resolveClientAddress } from './clientAddress.ts';
 
 export interface ServerOptions {
   app: Hono;
   host: string;
   port: number;
   adminToken: string;
+  /** Whether a gameplay client's address is the last `X-Forwarded-For` entry rather than the socket's. */
+  trustProxy: boolean;
   dependencies: ConnectionDependencies;
   adminDependencies: AdminDependencies;
   logger: Logger;
@@ -86,8 +89,9 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
         return;
       }
       if (path === '/ws') {
+        const clientAddress = resolveClientAddress(request, options.trustProxy);
         wss.handleUpgrade(request, socket, head, (ws) => {
-          track(ws, options.dependencies.logger, () => new ConnectionActor(options.dependencies).runConnection(socketFromWebSocket(ws)));
+          track(ws, options.dependencies.logger, () => new ConnectionActor(options.dependencies, clientAddress).runConnection(socketFromWebSocket(ws)));
         });
         return;
       }

@@ -64,9 +64,6 @@ export interface RegistrationForm {
  */
 export type AuthIntent = { kind: 'resume' } | { kind: 'login'; credentials: LoginCredentials } | { kind: 'register'; form: RegistrationForm };
 
-/** Which message the registration overlay shows. */
-export type RegistrationOutcome = 'ok' | 'nicknameExists' | 'nameNotAllowed' | 'failure';
-
 export interface ConnectionControllerOptions {
   transport: GameplayTransport;
   renderSurface?: WorldRenderSurface;
@@ -503,6 +500,13 @@ export class ConnectionController {
         this.presentedOverlay = { kind: 'login' };
         return;
       }
+      case 'throttled':
+        // Only a typed login is throttled, so there is no stored token to drop. The password may
+        // well be right, so the line says to wait rather than that it is wrong.
+        this.appendChat({ kind: 'throttled' });
+        this.teardown();
+        this.presentedOverlay = { kind: 'login' };
+        return;
       default:
         assertNever(result, 'login result');
     }
@@ -510,8 +514,8 @@ export class ConnectionController {
 
   /**
    * Every outcome ends the socket — the account either exists now or does not, and either way this
-   * connection has nothing left to authenticate. Only `ok` returns to the login overlay; the three
-   * failures leave the registration overlay up so the form can be corrected in place.
+   * connection has nothing left to authenticate. Only `ok` returns to the login overlay; the
+   * failures leave the registration overlay up so the form can be corrected or sent again in place.
    */
   private handleRegisterResult(result: RegisterResult): void {
     this.pendingRegistration = undefined;
@@ -519,27 +523,23 @@ export class ConnectionController {
     switch (result) {
       case 'ok':
         this.presentedOverlay = { kind: 'login' };
-        this.onRegistrationOutcome?.('ok');
-        return;
+        break;
       case 'nicknameExists':
-        this.onRegistrationOutcome?.('nicknameExists');
-        return;
       case 'nameNotAllowed':
-        this.onRegistrationOutcome?.('nameNotAllowed');
-        return;
       case 'failure':
-        this.onRegistrationOutcome?.('failure');
-        return;
+      case 'throttled':
+        break;
       default:
         assertNever(result, 'register result');
     }
+    this.onRegistrationOutcome?.(result);
   }
 
   /**
    * Reports the registration verdict to the overlay layer. It is a hook rather than a rendered
    * chat line because the overlay is where the player is looking.
    */
-  onRegistrationOutcome: ((outcome: RegistrationOutcome) => void) | undefined;
+  onRegistrationOutcome: ((result: RegisterResult) => void) | undefined;
 
   /**
    * A refresh can open the resumed connection before the previous socket's cleanup has

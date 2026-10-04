@@ -5,7 +5,7 @@ import { RegistrationError } from '@somnio/data';
 import type { RegistrationRequest } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { handleRegister } from '../src/handlers/register.ts';
-import { collectMessages } from './support/frames.ts';
+import { VALID_REGISTER_MESSAGE, collectMessages, registerResults } from './support/frames.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubRegistrationRepository } from './support/stubRepositories.ts';
 
@@ -20,20 +20,13 @@ class RecordingRegistrationRepository extends StubRegistrationRepository {
   }
 }
 
-const valid: RegisterMessage = {
-  nickname: 'Saibot',
-  password: 'hunter2-long',
-  passwordRepeat: 'hunter2-long',
-  people: 'soporen',
-  email: 'info@example.com',
-};
+const valid = VALID_REGISTER_MESSAGE;
 
 async function registerResult(message: RegisterMessage, repository = new RecordingRegistrationRepository()) {
   const dependencies = { ...(await makeStubConnectionDependencies()), registrations: repository };
   const connection = new ConnectionActor(dependencies);
   await handleRegister(message, connection, dependencies);
-  const messages = await collectMessages(connection.outbox);
-  return messages.flatMap((frame) => (frame.tag === 'registerResult' ? [frame.payload.result] : []));
+  return registerResults(await collectMessages(connection.outbox));
 }
 
 describe('handleRegister validation', () => {

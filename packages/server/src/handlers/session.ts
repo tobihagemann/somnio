@@ -10,7 +10,8 @@ import { completeAuthenticatedJoin, sendLoginResult } from './login.ts';
  * Redeeming a token in place of a password login. Every failure — unknown, expired, revoked —
  * answers `badCredentials`, deliberately telling the client nothing about which. An over-cap
  * token is refused before the repository is reached, so an unauthenticated frame cannot drive an
- * unbounded digest.
+ * unbounded digest. A redeem is outside the pre-login limit: a 256-bit token cannot be guessed,
+ * and a spent address budget must not refuse a valid resume.
  */
 export async function handleRedeem(message: RedeemSessionMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   const outbox = connection.outbox;

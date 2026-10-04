@@ -168,6 +168,11 @@ describe('round trips', () => {
     expect('requestSessionToken' in decoded.payload).toBe(false);
   });
 
+  /** The golden catalog records one member of each result set, and not this one. */
+  it.each(['loginResult', 'registerResult'] as const)('%s decodes a throttled result', (tag) => {
+    expect(decodeSomnioMessage(frame(tag, { result: 'throttled' }))).toEqual({ tag, payload: { result: 'throttled' } });
+  });
+
   /** An absent hand is the unequip, so it must stay absent rather than decode to a default hand. */
   it('equipToggle round-trips an unequip without a hand', () => {
     const message: SomnioMessage = { tag: 'equipToggle', payload: { slot: 1 } };
@@ -247,11 +252,11 @@ describe('string literal sets', () => {
   });
 
   it('pins LoginResult', () => {
-    expect(LOGIN_RESULTS).toEqual(['ok', 'badCredentials', 'alreadyLoggedIn']);
+    expect(LOGIN_RESULTS).toEqual(['ok', 'badCredentials', 'alreadyLoggedIn', 'throttled']);
   });
 
   it('pins RegisterResult', () => {
-    expect(REGISTER_RESULTS).toEqual(['ok', 'nicknameExists', 'failure', 'nameNotAllowed']);
+    expect(REGISTER_RESULTS).toEqual(['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled']);
   });
 });
 
@@ -261,7 +266,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(4);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(5);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

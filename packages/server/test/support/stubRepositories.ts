@@ -15,8 +15,8 @@ import type {
 
 /**
  * Shared repository doubles. Most answer the "do nothing" contract; the account and character
- * stubs take an overridable fixture, and `StubSessionRepository` records call counts. A double
- * only one suite drives stays private beside that suite.
+ * stubs take an overridable fixture, and the account and session stubs record call counts. A
+ * double only one suite drives stays private beside that suite.
  */
 export class StubAccountRepository implements AccountRepository {
   /**
@@ -25,6 +25,7 @@ export class StubAccountRepository implements AccountRepository {
    * disagreeing with the column. The integration suite covers the predicate.
    */
   private readonly accountsByName: ReadonlyMap<string, Account>;
+  findByNameCallCount = 0;
 
   constructor(accountsByName: ReadonlyMap<string, Account> = new Map()) {
     this.accountsByName = accountsByName;
@@ -35,6 +36,7 @@ export class StubAccountRepository implements AccountRepository {
   }
 
   findByName(name: string): Promise<Account | undefined> {
+    this.findByNameCallCount += 1;
     return Promise.resolve(this.accountsByName.get(name));
   }
 

@@ -29,6 +29,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Bad credentials.');
     case 'alreadyLoggedIn':
       return lookup('Already logged in.');
+    case 'throttled':
+      return lookup('Too many attempts. Wait a little before trying again.');
     case 'errorCode':
       return lookup('Error %@ occurred.', line.code);
     case 'joined':

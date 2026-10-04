@@ -9,6 +9,7 @@ import type {
 import type { Logger } from '../logging.ts';
 import type { WorldClockService } from '../services/worldClockService.ts';
 import type { WorldRouter } from '../world/worldRouter.ts';
+import type { AttemptLimiter } from './attemptLimiter.ts';
 
 /** Everything a connection needs; repositories are interfaces so tests substitute stubs. */
 export interface ConnectionDependencies {
@@ -20,6 +21,7 @@ export interface ConnectionDependencies {
   sessions: SessionRepository;
   worldRouter: WorldRouter;
   worldClock: WorldClockService;
+  attemptLimiter: AttemptLimiter;
   outboxHighWatermark: number;
   logger: Logger;
 }

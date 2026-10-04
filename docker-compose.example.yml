@@ -54,6 +54,9 @@ services:
       # Generate with: openssl rand -hex 32 — distinct from POSTGRES_PASSWORD above.
       SOMNIO_ADMIN_TOKEN: CHANGE_ME_ADMIN_TOKEN
       SOMNIO_SECTORS_DIR: /opt/somnio/sectors
+      # The `proxy` service appends each client's address to X-Forwarded-For, which the pre-login
+      # limit counts attempts against. Set to "0" only where clients reach the server directly.
+      SOMNIO_TRUST_PROXY: "1"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 5s

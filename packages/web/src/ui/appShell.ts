@@ -1,7 +1,8 @@
 import { bundledModelRegistry, clamp } from '@somnio/core';
 import { ConnectionController, GameplaySession, KeyboardSampler } from '@/client';
-import type { OverlayKind, RegistrationOutcome } from '@/client';
+import type { OverlayKind } from '@/client';
 import { assertNever } from '@somnio/protocol';
+import type { RegisterResult } from '@somnio/protocol';
 import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/transport';
 import type { GameplaySocketFactory } from '@/transport';
 import * as THREE from 'three';
@@ -72,14 +73,15 @@ export function detectDesktop(): boolean {
 }
 
 /**
- * The three failing `RegisterResultCode`s, worded as `RegistrationOverlayView` words them. Thunks
- * rather than constants so `t` runs after the locale resolves, and so each key sits in a literal
- * `t('...')` the catalog test's source scan can find.
+ * What the registration overlay says for each failing register result. Thunks rather than
+ * constants so `t` runs after the locale resolves, and so each key sits in a literal `t('...')`
+ * the catalog test's source scan can find.
  */
-const REGISTRATION_ERROR_TEXT: Record<Exclude<RegistrationOutcome, 'ok'>, () => string> = {
+const REGISTRATION_ERROR_TEXT: Record<Exclude<RegisterResult, 'ok'>, () => string> = {
   nicknameExists: () => t('Nickname already exists.'),
   nameNotAllowed: () => t('That name uses characters Somnio does not allow.'),
   failure: () => t('Registration failed.'),
+  throttled: () => t('Too many attempts. Wait a little before trying again.'),
 };
 
 export class AppShell {
@@ -190,10 +192,10 @@ export class AppShell {
     };
     this.session.onStateChanged = () => this.render();
     // On success the controller has already switched the presented overlay back to login, which
-    // `submitRegistration` pre-filled with the credentials just created. The three failures leave
-    // the registration overlay up carrying the reason.
-    this.controller.onRegistrationOutcome = (outcome) => {
-      this.overlays.showRegistrationError(outcome === 'ok' ? undefined : REGISTRATION_ERROR_TEXT[outcome]());
+    // `submitRegistration` pre-filled with the credentials just created. The failures leave the
+    // registration overlay up carrying the reason.
+    this.controller.onRegistrationOutcome = (result) => {
+      this.overlays.showRegistrationError(result === 'ok' ? undefined : REGISTRATION_ERROR_TEXT[result]());
       this.render();
     };
 

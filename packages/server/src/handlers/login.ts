@@ -11,7 +11,8 @@ import type { WorldRouter } from '../world/worldRouter.ts';
 
 /**
  * Login: look up the account, verify the password (paying the Argon2id cost for an unknown
- * account too, so the two failures are indistinguishable by timing), then the shared join.
+ * account too, so the two failures are indistinguishable by timing), then the shared join. An
+ * address past its budget of failed logins is answered `throttled` before the lookup.
  */
 export async function handleLogin(message: LoginMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   const outbox = connection.outbox;
@@ -21,6 +22,11 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
     utf8ByteLength(message.nickname) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes
   ) {
     sendLoginResult(outbox, 'badCredentials', logger);
+    return;
+  }
+  const limiter = dependencies.attemptLimiter;
+  if (!limiter.admit('login', connection.clientAddress)) {
+    sendLoginResult(outbox, 'throttled', logger);
     return;
   }
   try {
@@ -34,6 +40,9 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
       sendLoginResult(outbox, 'badCredentials', logger);
       return;
     }
+    // Only a verified login gets its attempt back. A lookup that throws keeps it spent, so no
+    // input a client can choose (a NUL, which Postgres refuses in a parameter) makes one free.
+    limiter.refund('login', connection.clientAddress);
     // Strictly request-gated: a client that never asked receives no `sessionToken` frame at all.
     await completeAuthenticatedJoin(account.id, connection, dependencies, message.requestSessionToken === true);
   } catch (error) {

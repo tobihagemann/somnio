@@ -16,6 +16,7 @@ import {
 } from '@somnio/data';
 import type { SomnioDatabase } from '@somnio/data';
 import { resolveServerConfiguration } from '../config.ts';
+import { AttemptLimiter } from '../connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { AdminDependencies } from '../handlers/adminDispatcher.ts';
 import { createApp } from '../http/app.ts';
@@ -109,6 +110,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
     return failStartup(error);
   }
 
+  const preloginLogger = logging.gameplayLogger('prelogin');
   const dependencies: ConnectionDependencies = {
     accounts,
     characters,
@@ -118,6 +120,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
     sessions,
     worldRouter,
     worldClock,
+    attemptLimiter: new AttemptLimiter({ enabled: configuration.preloginLimit !== 'off', logger: preloginLogger }),
     outboxHighWatermark: configuration.outboxHighWatermark,
     logger: logging.gameplayLogger('connection'),
   };
@@ -136,6 +139,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
       host: configuration.httpHost,
       port: options.port ?? configuration.httpPort,
       adminToken: configuration.adminToken,
+      trustProxy: configuration.preloginLimit === 'proxy',
       dependencies,
       adminDependencies,
       logger: logging.adminLogger('connection'),
@@ -157,7 +161,11 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const simulationRun = simulation.run(simulationControl.signal);
   const worldClockRun = worldClock.run(worldClockControl.signal);
   const checkpointRun = checkpoint.run(checkpointControl.signal);
-  lifecycle.info({ port: server.port, version: SERVER_VERSION }, 'SomnioServer ready');
+  // Through the gameplay logger, so the record is in the gameplay log an operator reads over `/admin`.
+  if (configuration.preloginLimit === 'off' && !configuration.devDefaults) {
+    preloginLogger.error('the pre-login limit is off until SOMNIO_TRUST_PROXY is set');
+  }
+  lifecycle.info({ port: server.port, version: SERVER_VERSION, prelogin_limit: configuration.preloginLimit }, 'SomnioServer ready');
 
   return {
     port: server.port,

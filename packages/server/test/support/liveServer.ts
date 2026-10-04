@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 import type { ClientOptions, RawData } from 'ws';
-import { MAX_WIRE_FRAME_SIZE, decodeSomnioMessage } from '@somnio/protocol';
-import type { SomnioMessage } from '@somnio/protocol';
+import { MAX_WIRE_FRAME_SIZE, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
+import type { LoginResult, SomnioMessage } from '@somnio/protocol';
 import { rawDataToBuffer } from '../../src/connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import type { AdminDependencies } from '../../src/handlers/adminDispatcher.ts';
@@ -17,6 +17,7 @@ export interface LiveServerOptions {
   adminDependencies?: AdminDependencies;
   adminToken?: string;
   app?: Hono;
+  trustProxy?: boolean;
 }
 
 export const TEST_ADMIN_TOKEN = 'secret';
@@ -34,6 +35,7 @@ export async function withLiveServer<T>(options: LiveServerOptions, body: (serve
     host: '127.0.0.1',
     port: 0,
     adminToken: options.adminToken ?? TEST_ADMIN_TOKEN,
+    trustProxy: options.trustProxy ?? false,
     dependencies,
     adminDependencies,
     logger: testLogger(),
@@ -157,6 +159,23 @@ export function adminURL(server: RunningServer): string {
 
 export function bearer(token: string): ClientOptions {
   return { headers: { authorization: `Bearer ${token}` } };
+}
+
+/** The header a reverse proxy would send, or what a client forges when there is none. */
+export function forwardedFor(addresses: string): ClientOptions {
+  return { headers: { 'x-forwarded-for': addresses } };
+}
+
+export const FAILED_LOGIN_FRAME = encodeSomnioMessage({ tag: 'login', payload: { nickname: 'nobody', password: 'wrong-password' } });
+
+/** One failed login on a socket of its own, as the browser client makes them. */
+export async function failedLogin(url: string, options: ClientOptions = {}): Promise<LoginResult> {
+  const client = await TestClient.open(url, options);
+  client.send(FAILED_LOGIN_FRAME);
+  const { target } = await client.until('loginResult');
+  await client.close();
+  if (target.tag !== 'loginResult') throw new Error('expected a loginResult');
+  return target.payload.result;
 }
 
 /** Resolves with `'opened'` when the upgrade succeeds, or the HTTP status the server refused it with. */

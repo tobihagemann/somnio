@@ -18,6 +18,7 @@ import type { DatabaseHarness } from '../../../../data/test/integration/support/
 import { bootServer } from '../../../src/bootstrap/runServer.ts';
 import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer.ts';
 import { DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
+import { AttemptLimiter } from '../../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
 import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
 import type { LoadedWorld } from '../../../src/sectors/sectorCache.ts';
@@ -45,13 +46,16 @@ export interface TestServer {
   stop(): Promise<void>;
 }
 
-/** The production boot over the fixture sectors and a throwaway database, on an ephemeral port. */
+/**
+ * The production boot over the fixture sectors and a throwaway database, on an ephemeral port.
+ * `env` is merged over the environment built here.
+ */
 export async function bootTestServer(
   databaseUrl: string,
-  options: Omit<BootOptions, 'logging' | 'port'> & { sectorsDirectory?: string } = {},
+  options: Omit<BootOptions, 'logging' | 'port'> & { sectorsDirectory?: string; env?: Record<string, string> } = {},
 ): Promise<TestServer> {
   const logging = tempLogging({ maxBytes: 1 << 20 });
-  const { sectorsDirectory, ...boot } = options;
+  const { sectorsDirectory, env, ...boot } = options;
   const server = await bootServer(
     {
       SOMNIO_DATABASE_URL: databaseUrl,
@@ -59,6 +63,7 @@ export async function bootTestServer(
       SOMNIO_ADMIN_TOKEN: TEST_ADMIN_TOKEN,
       SOMNIO_SECTORS_DIR: sectorsDirectory ?? DEV_SECTORS_DIRECTORY,
       SOMNIO_HTTP_HOST: '127.0.0.1',
+      ...env,
     },
     { ...boot, logging, port: 0, serverVersion: options.serverVersion ?? TEST_SERVER_VERSION },
   );
@@ -91,6 +96,7 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     sessions: new PostgresSessionRepository(db),
     worldRouter,
     worldClock: new WorldClockService(worldClocks, await worldClocks.load(), logger),
+    attemptLimiter: new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: 1024,
     logger,
   };

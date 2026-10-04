@@ -66,4 +66,18 @@ describe('resolveServerConfiguration', () => {
   it('empty admin token without dev defaults is rejected as missing', () => {
     expect(kindOf(() => resolveServerConfiguration({ SOMNIO_ADMIN_TOKEN: '', SOMNIO_SECTORS_DIR: '/srv/maps' }))).toBe('missingAdminToken');
   });
+
+  it.each([
+    ['1', 'proxy'],
+    ['0', 'direct'],
+    ['', 'off'],
+    [undefined, 'off'],
+  ])('SOMNIO_TRUST_PROXY=%j resolves the pre-login limit to %s', (raw, expected) => {
+    expect(resolveServerConfiguration({ SOMNIO_DEV_DEFAULTS: '1', SOMNIO_TRUST_PROXY: raw }).preloginLimit).toBe(expected);
+  });
+
+  /** Nothing but the two stated values: a spelling read as `0` would count every client behind the proxy as one. */
+  it.each(['true', 'yes'])('SOMNIO_TRUST_PROXY=%j throws invalidTrustProxy', (raw) => {
+    expect(kindOf(() => resolveServerConfiguration({ SOMNIO_DEV_DEFAULTS: '1', SOMNIO_TRUST_PROXY: raw }))).toBe('invalidTrustProxy');
+  });
 });

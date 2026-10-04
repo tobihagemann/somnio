@@ -761,6 +761,27 @@ describe('duplicate-login race on refresh', () => {
   });
 });
 
+describe('a throttled login', () => {
+  /** "Bad credentials." here would tell a player with the right password that it is wrong. */
+  it('reports the wait rather than bad credentials and returns to the login overlay', () => {
+    const rig = makeRig();
+    rig.controller.beginSession({
+      kind: 'login',
+      credentials: { nickname: 'a', password: 'right', rememberMe: false },
+    });
+    // Cleared so the assertion below sees the handler present the overlay, not the initial one.
+    rig.controller.presentedOverlay = undefined;
+    rig.socket().open();
+    rig.deliver(hello());
+
+    rig.deliver({ tag: 'loginResult', payload: { result: 'throttled' } });
+
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'throttled' }]);
+    expect(rig.controller.connectionState).toBe('disconnected');
+    expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
+  });
+});
+
 describe('inbound direction check', () => {
   it('treats a client-only tag arriving inbound as a hard error', () => {
     const rig = makeRig();
@@ -878,6 +899,7 @@ describe('registration', () => {
   it('returns to the login overlay on success and reports the outcome', () => {
     const outcomes: string[] = [];
     rig.controller.onRegistrationOutcome = (outcome) => outcomes.push(outcome);
+    rig.controller.presentedOverlay = { kind: 'registration' };
     register();
     rig.deliver({ tag: 'registerResult', payload: { result: 'ok' } });
     expect(outcomes).toEqual(['ok']);
@@ -885,7 +907,7 @@ describe('registration', () => {
     expect(rig.controller.connectionState).toBe('disconnected');
   });
 
-  it.each(['nicknameExists', 'failure', 'nameNotAllowed'] as const)('leaves the registration overlay up on result %s', (result) => {
+  it.each(['nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const)('leaves the registration overlay up on result %s', (result) => {
     const outcomes: string[] = [];
     rig.controller.onRegistrationOutcome = (outcome) => outcomes.push(outcome);
     rig.controller.presentedOverlay = { kind: 'registration' };

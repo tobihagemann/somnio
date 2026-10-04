@@ -86,6 +86,8 @@ export function socketFromWebSocket(ws: WebSocket): ConnectionSocket {
  */
 export class ConnectionActor {
   readonly outbox: ConnectionOutbox;
+  /** What the pre-login limit counts this connection's attempts against; absent, they are not counted. */
+  readonly clientAddress: string | undefined;
   state: ConnectionState = { kind: 'awaitingLogin' };
   private readonly dependencies: ConnectionDependencies;
   private readonly logger: Logger;
@@ -97,8 +99,9 @@ export class ConnectionActor {
   private markExited: () => void = () => {};
   private started = false;
 
-  constructor(dependencies: ConnectionDependencies) {
+  constructor(dependencies: ConnectionDependencies, clientAddress?: string) {
     this.dependencies = dependencies;
+    this.clientAddress = clientAddress;
     this.logger = dependencies.logger;
     this.outbox = new ConnectionOutbox(dependencies.outboxHighWatermark);
     this.exited = new Promise((resolve) => {

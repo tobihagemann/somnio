@@ -73,7 +73,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 4
+      "protocolVersion": 5
     },
     "tag": "hello"
   },

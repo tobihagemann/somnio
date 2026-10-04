@@ -39,10 +39,10 @@ export type Gait = (typeof GAITS)[number];
 export const HANDS = ['left', 'right'] as const;
 export type Hand = (typeof HANDS)[number];
 
-export const LOGIN_RESULTS = ['ok', 'badCredentials', 'alreadyLoggedIn'] as const;
+export const LOGIN_RESULTS = ['ok', 'badCredentials', 'alreadyLoggedIn', 'throttled'] as const;
 export type LoginResult = (typeof LOGIN_RESULTS)[number];
 
-export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed'] as const;
+export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const;
 export type RegisterResult = (typeof REGISTER_RESULTS)[number];
 
 export interface LoginMessage {
