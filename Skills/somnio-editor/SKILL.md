@@ -85,6 +85,8 @@ edit. AGENTS.md's "Sector format" has the full shape.
 - Collision comes from the registry: a placement blocks through its model's colliders, and the
   overlay shows them along with walk surfaces, ledges, door triggers, and arrival points. Add a
   blocker only for ground no model covers.
+- The overlay fills each floor patch in translucent purple, so a patched floor reads pink or
+  mauve in the editor and its screenshots. Judge a patch's colour in the browser client.
 - The overlay marks in red what the server would report at boot, and `issues()` lists the
   same: a door that does not resolve, has no sound counterpart, or arrives on something solid
   (an NPC included), walk surfaces of two placements that overlap, an `elevation` on a model
