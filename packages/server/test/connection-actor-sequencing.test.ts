@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeSomnioMessage } from '@somnio/protocol';
+import { decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
@@ -84,7 +84,7 @@ class RecordingSocket implements ConnectionSocket {
   private closeListener: (() => void) | undefined;
 
   send(frame: string): Promise<void> {
-    this.events.push(`send:${JSON.parse(frame).tag}`);
+    this.events.push(`send:${decodeSomnioMessage(frame).tag}`);
     return this.stallSends ? new Promise(() => {}) : Promise.resolve();
   }
 

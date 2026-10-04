@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionController, SessionStore, noopRenderSurface } from '@/client';
 import type { SessionStorageLike, WorldRenderSurface } from '@/client';
 import { GameplayTransport } from '@/transport';
-import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { EntityMessage, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
@@ -55,6 +55,14 @@ interface Rig {
   deliver: (message: SomnioMessage) => void;
 }
 
+/**
+ * The last frame the socket sent, as the raw envelope on the wire. The decoder reads a key sent as
+ * `null` as absent, so only the raw JSON shows whether an optional key was left out.
+ */
+function lastSentEnvelope(rig: Rig): { tag: string; payload: Record<string, unknown> } {
+  return JSON.parse(rig.socket().sent.at(-1)!) as { tag: string; payload: Record<string, unknown> };
+}
+
 function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldRenderSurface } = {}): Rig {
   const { factory, latest } = fakeSocketFactory();
   const transport = new GameplayTransport(factory);
@@ -72,7 +80,7 @@ function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldR
     controller,
     socket: latest,
     storage,
-    sentTags: () => latest().sent.map((frame) => JSON.parse(frame).tag as string),
+    sentTags: () => latest().sent.map((frame) => decodeSomnioMessage(frame).tag),
     deliver: (message) => latest().deliverText(encodeSomnioMessage(message)),
   };
 }
@@ -286,7 +294,7 @@ describe('session-token request gating', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const login = JSON.parse(rig.socket().sent.at(-1)!);
+    const login = lastSentEnvelope(rig);
     expect(login.tag).toBe('login');
     expect('requestSessionToken' in login.payload).toBe(false);
   });
@@ -297,7 +305,7 @@ describe('session-token request gating', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const login = JSON.parse(rig.socket().sent.at(-1)!);
+    const login = lastSentEnvelope(rig);
     expect(login.payload.requestSessionToken).toBe(true);
   });
 
@@ -318,7 +326,7 @@ describe('session-token request gating', () => {
     resumed.socket().open();
     resumed.deliver(hello());
 
-    const frame = JSON.parse(resumed.socket().sent.at(-1)!);
+    const frame = lastSentEnvelope(resumed);
     expect(frame.tag).toBe('redeemSession');
     expect(frame.payload.token).toBe('tok-abc');
   });
@@ -337,7 +345,7 @@ describe('token failure and revocation', () => {
     expect(rig.controller.resumeStoredSession()).toBe(true);
     rig.socket().open();
     rig.deliver(hello());
-    expect(JSON.parse(rig.socket().sent.at(-1)!).tag).toBe('redeemSession');
+    expect(rig.sentTags().at(-1)).toBe('redeemSession');
     rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
 
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
@@ -409,7 +417,7 @@ describe('token failure and revocation', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const frame = JSON.parse(rig.socket().sent.at(-1)!);
+    const frame = lastSentEnvelope(rig);
     expect(frame.tag).toBe('login');
     expect(frame.payload.nickname).toBe('bob');
     // `rememberMe: false` also has to remove a credential a previous session left behind.
@@ -1229,7 +1237,7 @@ describe('end of session identity', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const tags = rig.socket().sent.map((frame) => JSON.parse(frame).tag as string);
+    const tags = rig.sentTags();
     expect(tags).not.toContain('register');
   });
 
@@ -1254,7 +1262,7 @@ describe('end of session identity', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const tags = rig.socket().sent.map((frame) => JSON.parse(frame).tag as string);
+    const tags = rig.sentTags();
     expect(tags).not.toContain('register');
   });
 
@@ -1271,14 +1279,14 @@ describe('end of session identity', () => {
     rig.socket().open();
     // Left mid-resume on purpose: the redeem is in flight, so `resumingWithToken` is populated.
     rig.deliver(hello());
-    expect(rig.socket().sent.map((frame) => JSON.parse(frame).tag as string)).toContain('redeemSession');
+    expect(rig.sentTags()).toContain('redeemSession');
 
     rig.controller.leaveGame();
 
     rig.controller.beginSession({ kind: 'resume' });
     rig.socket().open();
     rig.deliver(hello());
-    const tags = rig.socket().sent.map((frame) => JSON.parse(frame).tag as string);
+    const tags = rig.sentTags();
     expect(tags).not.toContain('redeemSession');
   });
 
@@ -1400,7 +1408,7 @@ describe('an explicit authentication retires a resume already scheduled', () => 
       controller,
       socket: latest,
       storage,
-      sentTags: () => latest().sent.map((frame) => JSON.parse(frame).tag as string),
+      sentTags: () => latest().sent.map((frame) => decodeSomnioMessage(frame).tag),
       deliver: (message) => latest().deliverText(encodeSomnioMessage(message)),
     };
   }
@@ -1465,7 +1473,7 @@ describe('a torn-down registration does not become a login', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    const tags = rig.socket().sent.map((frame) => JSON.parse(frame).tag as string);
+    const tags = rig.sentTags();
     expect(tags).not.toContain('login');
     expect(tags).not.toContain('register');
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });

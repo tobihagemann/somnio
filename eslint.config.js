@@ -50,10 +50,6 @@ export default tseslint.config(
       },
     },
     rules: {
-      // Off workspace-wide: the protocol validators narrow `unknown` deliberately, and the
-      // type-checked preset's blanket bans on unsafe member access would fire on every field probe.
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
       // A leading underscore marks a parameter a stub keeps only to match its interface's arity.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
@@ -64,7 +60,11 @@ export default tseslint.config(
   },
   {
     files: ['packages/*/test/**/*.ts'],
-    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      // Expectations are built from asymmetric matchers, which are `any`.
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+    },
   },
   ...boundaryRules,
 );

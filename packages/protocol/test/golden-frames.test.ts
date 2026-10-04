@@ -74,7 +74,7 @@ describe('golden frames', () => {
   it('preserves the absence of the optional session-token request', () => {
     const plain = committed['login']!;
     expect('requestSessionToken' in (plain.payload as object)).toBe(false);
-    const reencoded = JSON.parse(encodeSomnioMessage(decodeSomnioMessage(JSON.stringify(plain))));
+    const reencoded: unknown = JSON.parse(encodeSomnioMessage(decodeSomnioMessage(JSON.stringify(plain))));
     expect('requestSessionToken' in (reencoded as { payload: object }).payload).toBe(false);
   });
 

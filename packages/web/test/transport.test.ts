@@ -1,7 +1,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { GameplayTransport, CLOSE_CODE, resolveGameplayURL } from '@/transport';
 import type { GameplayTransportEvent } from '@/transport';
-import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 
 /**
@@ -48,9 +48,7 @@ describe('outbox is live before the socket opens', () => {
     expect(latest().sent).toEqual([]);
 
     latest().open();
-    expect(latest().sent).toHaveLength(2);
-    expect(JSON.parse(latest().sent[0]!).tag).toBe('login');
-    expect(JSON.parse(latest().sent[1]!).tag).toBe('clientSay');
+    expect(latest().sent.map((frame) => decodeSomnioMessage(frame).tag)).toEqual(['login', 'clientSay']);
   });
 });
 
