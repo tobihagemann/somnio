@@ -25,7 +25,7 @@ FROM node:24-bookworm-slim AS build
 # than a failed build.
 ARG BUILD_VERSION
 # Path *inside the build context* to the asset pack root. To build without a pack, point it at an
-# empty directory; an empty value would copy the whole context.
+# empty directory. An empty value would copy the whole context, so the build refuses it below.
 ARG SOMNIO_ASSET_PACK=assets
 
 WORKDIR /src
@@ -71,6 +71,10 @@ RUN if ! grep -q "somnio-web ${BUILD_VERSION}" packages/web/dist/bundle/*.js; th
 # loop uses, so the hard/soft failure split (UI required, models and floors warn-only) and the
 # external-buffer check are identical in CI and on a developer machine.
 COPY Scripts/glb-buffer-uris.mjs Scripts/bundle-web-assets.sh Scripts/
+RUN if [ -z "${SOMNIO_ASSET_PACK}" ]; then \
+      echo "ERROR: --build-arg SOMNIO_ASSET_PACK must not be empty; point it at an empty directory to build without a pack" >&2; \
+      exit 1; \
+    fi
 COPY ${SOMNIO_ASSET_PACK}/ assets/
 RUN if [ -n "$(ls -A assets 2>/dev/null)" ]; then \
       SOMNIO_ASSET_SOURCE=/src/assets \
