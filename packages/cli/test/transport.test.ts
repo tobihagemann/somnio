@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeAdminDependencies } from '../../server/test/support/adminDependencies.ts';
 import { StubAdminWorldRouter } from '../../server/test/support/stubAdminWorldRouter.ts';
 import { TEST_ADMIN_TOKEN, adminURL, withLiveServer } from '../../server/test/support/liveServer.ts';
@@ -88,6 +88,18 @@ describe('send', () => {
       (ws) => ws.on('message', () => ws.close(1000)),
       async (url) => {
         await expectTransportError('noResponse', () => send({ tag: 'players' }, url, 'tok'));
+      },
+    );
+  });
+
+  it('surfaces timedOut when the server takes the request and never answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    cleanups.push(() => vi.useRealTimers());
+    await withScriptedServer(
+      // The request has arrived, so the only timer pending is the client's deadline.
+      (ws) => ws.on('message', () => vi.advanceTimersToNextTimer()),
+      async (url) => {
+        await expectTransportError('timedOut', () => send({ tag: 'players' }, url, 'tok'));
       },
     );
   });

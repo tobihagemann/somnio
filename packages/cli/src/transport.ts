@@ -6,7 +6,11 @@ import { resolveTrustRoots } from './trustRoots.ts';
 import type { TrustRootsResolution } from './trustRoots.ts';
 import { SecureTransportValidationError, validate } from './urlValidation.ts';
 
-export type AdminTransportErrorKind = 'noResponse' | 'unexpectedBinaryFrame' | 'decodeFailed' | 'connectFailed' | 'invalidTransportURL' | 'pinningRefused';
+export type AdminTransportErrorKind =
+  'noResponse' | 'timedOut' | 'unexpectedBinaryFrame' | 'decodeFailed' | 'connectFailed' | 'invalidTransportURL' | 'pinningRefused';
+
+/** How long a request may take from the dial to its response, so a server that accepts and then stays silent cannot hang the CLI. */
+const REQUEST_TIMEOUT_MS = 10_000;
 
 export class AdminTransportError extends Error {
   readonly kind: AdminTransportErrorKind;
@@ -51,7 +55,7 @@ function textOf(data: RawData): string {
 /**
  * Single-shot request/response over the `/admin` WebSocket: an authenticated connection, the
  * encoded request as one text frame, the first inbound text frame decoded as the response,
- * then a normal close.
+ * then a normal close. A request still unanswered after `REQUEST_TIMEOUT_MS` fails with `timedOut`.
  */
 export function send(request: AdminRequest, url: string, token: string, trust: TrustRootsResolution = resolveTrustRoots()): Promise<AdminResponse> {
   const dialURL = dialableURL(url);
@@ -63,9 +67,14 @@ export function send(request: AdminRequest, url: string, token: string, trust: T
     const settle = (outcome: { response: AdminResponse } | { error: AdminTransportError }) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       if ('response' in outcome) resolve(outcome.response);
       else reject(outcome.error);
     };
+    const deadline = setTimeout(() => {
+      settle({ error: new AdminTransportError('timedOut') });
+      socket.terminate();
+    }, REQUEST_TIMEOUT_MS);
     socket.on('open', () => socket.send(frame));
     socket.on('message', (data, isBinary) => {
       if (isBinary) {
