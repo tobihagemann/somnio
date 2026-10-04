@@ -26,16 +26,16 @@ import { currentGridSnap, persistGridSnap, stepOrFine } from './preferences';
 import { isValidSectorName } from './sectorName';
 import {
   byId,
+  followRename,
   isValidSelection,
   nextDoorId,
   rectRecord,
   removeAllSelections,
   renameRecord,
   selectionFootprint,
-  selectionKey,
   selectionsEqual,
 } from './selection';
-import type { EditorSelection } from './selection';
+import type { EditorSelection, RecordRename } from './selection';
 import { documentIssues, neighbours } from './surroundings';
 import type { DocumentIssues } from './surroundings';
 import { CursorReadout } from './ui/cursorReadout';
@@ -153,7 +153,11 @@ export class EditorShell implements EditorCommandTarget {
       this.overlays.root,
     );
 
-    this.document.onChanged = () => this.reconcile();
+    this.document.onChanged = (rename) => {
+      // Before the reconcile, which drops a selection whose id the document no longer holds.
+      if (rename !== undefined) this.selection = followRename(this.selection, rename);
+      this.reconcile();
+    };
     this.installHostHandlers();
     if (options.startRendering ?? true) this.startRenderer();
     this.renderUI();
@@ -343,22 +347,19 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   /** Changes the document as one undo step, surfacing a refusal in the error banner. */
-  private mutate(actionName: string, change: (sector: Sector) => void): CommitResult {
-    const result = this.document.mutate(actionName, change);
+  private mutate(actionName: string, change: (sector: Sector) => void, rename?: RecordRename): CommitResult {
+    const result = this.document.mutate(actionName, change, rename);
     if (!result.accepted) this.overlays.showError(result.message);
     return result;
   }
 
   /**
-   * A rename changes the identity the selection is keyed by, so the selection follows it in the
-   * same step: set before the commit reconciles, and put back when the document refuses.
+   * A rename changes the identity the selection is keyed by, so the step carries it and the
+   * selection follows it when the step is committed, undone, and redone.
    */
   private renameSelection(selection: EditorSelection, id: string): boolean {
-    const previous = this.selection;
-    this.selection = previous.map((entry) => (selectionKey(entry) === selectionKey(selection) ? { kind: selection.kind, id } : entry));
-    const { accepted } = this.mutate('Rename record', (sector) => renameRecord(selection, id, sector));
-    if (!accepted) this.selection = previous;
-    return accepted;
+    const rename = { from: selection, to: { kind: selection.kind, id } };
+    return this.mutate('Rename record', (sector) => renameRecord(selection, id, sector), rename).accepted;
   }
 
   /** Puts a door at one of a placement's model's anchors. It leads nowhere until its target is picked. */

@@ -2,6 +2,7 @@ import { SectorFileError, readSectorFile, rectsOverlap, writeSectorFile } from '
 import type { Sector } from '@somnio/core';
 import type { SectorKind } from '@somnio/protocol';
 import { SECTOR_API_PREFIX } from './sectorName';
+import type { RecordRename } from './selection';
 
 /**
  * The document model: one `Sector` and a single `commit` funnel that validates the next body and
@@ -25,6 +26,8 @@ import { SECTOR_API_PREFIX } from './sectorName';
 interface UndoEntry {
   actionName: string;
   sector: Sector;
+  /** The rename the step made, which undoing it reverses. */
+  rename: RecordRename | undefined;
 }
 
 export type CommitResult = { accepted: true } | { accepted: false; message: string };
@@ -102,8 +105,11 @@ export class EditorDocument {
   private undoStack: UndoEntry[] = [];
   private redoStack: UndoEntry[] = [];
   private savedSnapshot: Sector | undefined;
-  /** Notifies the shell after every document change — commit, undo, redo, load, save. */
-  onChanged: (() => void) | undefined;
+  /**
+   * Notifies the shell after every document change — commit, undo, redo, load, save. A change that
+   * renames a record passes the rename, so whatever names that record by id can follow it.
+   */
+  onChanged: ((rename?: RecordRename) => void) | undefined;
 
   /** The fresh-document sentinel: true until a sector is created or loaded, gating auto-present. */
   get isUninitialized(): boolean {
@@ -135,8 +141,11 @@ export class EditorDocument {
    * adds one is refused. A commit that changes nothing is accepted and is not an undo step: it
    * leaves both stacks as they are and notifies no one. Every other accepted commit clears the
    * redo stack.
+   *
+   * `rename` names an id change `next` already carries. It is not applied or checked here, only
+   * kept on the undo step and passed to `onChanged`.
    */
-  commit(actionName: string, next: Sector): CommitResult {
+  commit(actionName: string, next: Sector, rename?: RecordRename): CommitResult {
     try {
       writeSectorFile(next);
     } catch (error) {
@@ -148,34 +157,35 @@ export class EditorDocument {
       return { accepted: false, message: 'Floor patches must not overlap.' };
     }
     if (deepEqual(next, this.sector)) return { accepted: true };
-    this.undoStack.push({ actionName, sector: this.sector });
+    this.undoStack.push({ actionName, sector: this.sector, rename });
     this.sector = next;
     this.redoStack = [];
-    this.onChanged?.();
+    this.onChanged?.(rename);
     return { accepted: true };
   }
 
   /** Commits a change described as edits to a copy of the document. */
-  mutate(actionName: string, change: (sector: Sector) => void): CommitResult {
+  mutate(actionName: string, change: (sector: Sector) => void, rename?: RecordRename): CommitResult {
     const next = structuredClone(this.sector);
     change(next);
-    return this.commit(actionName, next);
+    return this.commit(actionName, next, rename);
   }
 
   undo(): void {
     const entry = this.undoStack.pop();
     if (entry === undefined) return;
-    this.redoStack.push({ actionName: entry.actionName, sector: this.sector });
+    this.redoStack.push({ ...entry, sector: this.sector });
     this.sector = entry.sector;
-    this.onChanged?.();
+    const reversed = entry.rename === undefined ? undefined : { from: entry.rename.to, to: entry.rename.from };
+    this.onChanged?.(reversed);
   }
 
   redo(): void {
     const entry = this.redoStack.pop();
     if (entry === undefined) return;
-    this.undoStack.push({ actionName: entry.actionName, sector: this.sector });
+    this.undoStack.push({ ...entry, sector: this.sector });
     this.sector = entry.sector;
-    this.onChanged?.();
+    this.onChanged?.(entry.rename);
   }
 
   /** Replaces the document with a freshly loaded sector. */

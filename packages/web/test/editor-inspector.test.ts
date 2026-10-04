@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Sector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { EditorDocument } from '@/editor/document';
-import { renameRecord } from '@/editor/selection';
+import { followRename, renameRecord } from '@/editor/selection';
 import type { EditorSelection } from '@/editor/selection';
 import type { DocumentIssues } from '@/editor/surroundings';
 import { InspectorPanel } from '@/editor/ui/inspector';
@@ -73,11 +73,8 @@ function harness(): Harness {
       {
         mutate: (actionName, change) => document.mutate(actionName, change),
         rename: (selection, id) => {
-          const previous = h.selection;
-          h.selection = [{ kind: selection.kind, id }];
-          const { accepted } = document.mutate('Rename record', (sector) => renameRecord(selection, id, sector));
-          if (!accepted) h.selection = previous;
-          return accepted;
+          const rename = { from: selection, to: { kind: selection.kind, id } };
+          return document.mutate('Rename record', (sector) => renameRecord(selection, id, sector), rename).accepted;
         },
         onSelect: (selection) => h.events.push(`select ${selection.kind} ${selection.id}`),
         onAddDoor: (placementId, anchor) => h.events.push(`add door ${placementId} ${anchor}`),
@@ -102,7 +99,10 @@ function harness(): Harness {
       else field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
     },
   };
-  document.onChanged = () => h.panel.render(document.sector, h.selection, false);
+  document.onChanged = (rename) => {
+    if (rename !== undefined) h.selection = followRename(h.selection, rename);
+    h.panel.render(document.sector, h.selection, false);
+  };
   globalThis.document.body.append(h.panel.root);
   h.select([]);
   return h;

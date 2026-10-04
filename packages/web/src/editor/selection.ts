@@ -185,6 +185,17 @@ export function removeAllSelections(selections: readonly EditorSelection[], sect
   sector.doors = sector.doors.filter((door) => byId(sector.placements, door.placement) !== undefined);
 }
 
+/** One record's change of id, as the selection naming it before and after. */
+export interface RecordRename {
+  from: EditorSelection;
+  to: EditorSelection;
+}
+
+/** The list with the renamed record named by its new id. */
+export function followRename(list: readonly EditorSelection[], rename: RecordRename): EditorSelection[] {
+  return list.map((entry) => (selectionKey(entry) === selectionKey(rename.from) ? rename.to : entry));
+}
+
 /** Gives the selected record a new id. A placement's doors follow it. */
 export function renameRecord(selection: EditorSelection, id: string, sector: Sector): void {
   if (selection.kind === 'spawn') return;

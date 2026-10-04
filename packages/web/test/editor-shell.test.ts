@@ -470,6 +470,22 @@ describe('commands', () => {
     expect(banner().classList.contains('hidden')).toBe(false);
   });
 
+  it('keeps a renamed record selected back through undo and forward through redo', () => {
+    const shell = withRecords();
+    shell.selection = [{ kind: 'blocker', id: 'blocker-1' }];
+    shell.inspector.render(shell.document.sector, shell.selection, false);
+    typeId(shell, 'north-wall');
+    shell.nudgeSelection('ArrowRight', false);
+    shell.undo();
+    expect(shell.selection).toEqual([{ kind: 'blocker', id: 'north-wall' }]);
+    shell.undo();
+    expect(shell.selection).toEqual([{ kind: 'blocker', id: 'blocker-1' }]);
+    expect(labelled(shell.inspector.root, 'Id').value).toBe('blocker-1');
+    shell.redo();
+    expect(shell.selection).toEqual([{ kind: 'blocker', id: 'north-wall' }]);
+    expect(labelled(shell.inspector.root, 'Id').value).toBe('north-wall');
+  });
+
   it('adds a door from the inspector and selects it', () => {
     const shell = shellWithDocument();
     shell.document.mutate('Seed', (sector) => {
