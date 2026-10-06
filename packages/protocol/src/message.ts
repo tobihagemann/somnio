@@ -1,9 +1,13 @@
 import type {
   AdminSayMessage,
-  BumpMessage,
+  AskTaskMessage,
+  BlowMessage,
   ClientSayMessage,
+  CompleteTaskMessage,
+  ConditionMessage,
   CorrectionMessage,
   DoorRefusedMessage,
+  EmptyMessage,
   Energy,
   EnterSpaceMessage,
   EntityMessage,
@@ -13,8 +17,10 @@ import type {
   LeaveMessage,
   LoginMessage,
   LoginResultMessage,
+  LucidityMessage,
   MoveMessage,
   MovesMessage,
+  RaisingMessage,
   RedeemSessionMessage,
   RegisterMessage,
   RegisterResultMessage,
@@ -23,7 +29,12 @@ import type {
   SectorMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
+  StudyMessage,
+  SwingMessage,
+  TalkMessage,
+  TendMessage,
   UseDoorMessage,
+  UseItemMessage,
 } from './payloads.ts';
 import { isClientOnlyTag } from './tags.ts';
 import type { ClientToServerTag } from './tags.ts';
@@ -38,8 +49,16 @@ export type SomnioMessage =
   | { tag: 'move'; payload: MoveMessage }
   | { tag: 'clientSay'; payload: ClientSayMessage }
   | { tag: 'equipToggle'; payload: EquipToggleMessage }
-  | { tag: 'bump'; payload: BumpMessage }
+  | { tag: 'talk'; payload: TalkMessage }
+  | { tag: 'swing'; payload: SwingMessage }
+  | { tag: 'tend'; payload: TendMessage }
   | { tag: 'useDoor'; payload: UseDoorMessage }
+  | { tag: 'askTask'; payload: AskTaskMessage }
+  | { tag: 'completeTask'; payload: CompleteTaskMessage }
+  | { tag: 'abandonTask'; payload: EmptyMessage }
+  | { tag: 'study'; payload: StudyMessage }
+  | { tag: 'wake'; payload: EmptyMessage }
+  | { tag: 'useItem'; payload: UseItemMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }
   | { tag: 'revokeSession'; payload: RevokeSessionMessage }
   | { tag: 'hello'; payload: HelloMessage }
@@ -55,6 +74,10 @@ export type SomnioMessage =
   | { tag: 'energy'; payload: Energy }
   | { tag: 'inventory'; payload: InventoryMessage }
   | { tag: 'leave'; payload: LeaveMessage }
+  | { tag: 'lucidity'; payload: LucidityMessage }
+  | { tag: 'condition'; payload: ConditionMessage }
+  | { tag: 'blow'; payload: BlowMessage }
+  | { tag: 'raising'; payload: RaisingMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
   | { tag: 'sessionRevoked'; payload: SessionRevokedMessage };

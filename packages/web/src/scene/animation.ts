@@ -52,6 +52,27 @@ export function resolveClipName(pose: AnimationPose, available: readonly string[
   return CLIP_PREFERENCES[pose].find((name) => available.includes(name));
 }
 
+/**
+ * Clips that play once, over whatever pose is looping: the fall, which then holds its last frame
+ * for as long as the entity lies fallen, and a blow given or taken, after which the entity returns
+ * to its looping pose.
+ *
+ * A table of its own rather than more poses: a pose is what an entity is doing and has to reach a
+ * clip on every model, while a one-shot is an event and has no fallback. A model with none of its
+ * clips keeps its looping pose.
+ */
+export type OneShot = 'fallen' | 'swing' | 'flinch';
+
+export const ONE_SHOT_CLIPS: Record<OneShot, readonly string[]> = {
+  fallen: ['Death_A', 'Death'],
+  swing: ['Interact', 'Punch'],
+  flinch: ['Hit_A', 'HitReact'],
+};
+
+export function resolveOneShotClipName(oneShot: OneShot, available: readonly string[]): string | undefined {
+  return ONE_SHOT_CLIPS[oneShot].find((name) => available.includes(name));
+}
+
 /** An entity counts as moving for this long after its last position change. */
 export const MOTION_GRACE_WINDOW = 0.15;
 

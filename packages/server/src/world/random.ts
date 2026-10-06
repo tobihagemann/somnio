@@ -22,6 +22,11 @@ export function seededRandom(seed: number | bigint): RandomSource {
   };
 }
 
+/** A number in `[0, 1)`, for a roll against a chance. */
+export function randomUnit(source: RandomSource): number {
+  return source.nextUInt32() / 0x1_0000_0000;
+}
+
 /** An integer in the inclusive range `[low, high]`; the modulo bias for spans not dividing 2^32 is immaterial for placement. */
 export function randomInRange(source: RandomSource, low: number, high: number): number {
   const span = high - low + 1;

@@ -23,7 +23,7 @@ import { createApp } from '../http/app.ts';
 import { startServer } from '../http/server.ts';
 import { PRODUCTION_LOG_MAX_ARCHIVES, PRODUCTION_LOG_MAX_BYTES, createLogging } from '../logging.ts';
 import type { Logging } from '../logging.ts';
-import { loadSectorCache, loadWorld, requireSectorsLoaded } from '../sectors/sectorCache.ts';
+import { loadSectorCache, loadWorld, requireSectorsLoaded, ruleSectorIssues } from '../sectors/sectorCache.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { CheckpointService } from '../services/checkpointService.ts';
 import { SimulationService } from '../services/simulationService.ts';
@@ -88,6 +88,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
     for (const issue of world.issues) {
       sectorsLogger.error({ sector: issue.sector, record: issue.record, id: issue.id, issue: issue.message }, 'world issue');
     }
+    for (const issue of ruleSectorIssues(sectors)) sectorsLogger.error({ issue }, 'world issue');
   } catch (error) {
     return failStartup(error);
   }

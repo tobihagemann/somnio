@@ -1,5 +1,5 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, assertNever, isClientOnlyMessage } from '@somnio/protocol';
-import type { EnterSpaceMessage, EntityKind, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
+import type { Condition, EnterSpaceMessage, EntityKind, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
 import { bundledModelRegistry, heading } from '@somnio/core';
 import type { ModelRegistry, People, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
@@ -26,10 +26,13 @@ const MAX_ROSTER_NAMES = 500;
  * The tags the controller hands to the gameplay half.
  *
  * Naming the subset as a type makes the ownership split compiler-enforced instead of
- * comment-enforced: the gameplay dispatcher's switch is exhaustive over exactly these seven, so
- * routing an eighth tag here without handling it fails to build.
+ * comment-enforced: the gameplay dispatcher's switch is exhaustive over exactly these, so
+ * routing another tag here without handling it fails to build.
  */
-export type GameplayMessage = Extract<SomnioMessage, { tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'adminSay' }>;
+export type GameplayMessage = Extract<
+  SomnioMessage,
+  { tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'lucidity' | 'blow' | 'raising' | 'adminSay' }
+>;
 
 export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSpace' | 'attached';
 
@@ -405,12 +408,18 @@ export class ConnectionController {
       case 'leave':
         this.handleLeave(message.payload.entityId, message.payload.leftGame);
         return;
+      case 'condition':
+        this.handleCondition(message.payload.entityId, message.payload.condition);
+        return;
       case 'moves':
       case 'correction':
       case 'doorRefused':
       case 'serverSay':
       case 'energy':
       case 'inventory':
+      case 'lucidity':
+      case 'blow':
+      case 'raising':
       case 'adminSay':
         this.onGameplayMessage?.(message);
         return;
@@ -635,6 +644,8 @@ export class ConnectionController {
       position: { x: payload.x, z: payload.z },
       facing: heading(payload.facing),
       gait: payload.gait,
+      condition: payload.condition,
+      service: payload.service,
     };
     this.entities.set(entity.id, entity);
     this.onEntityReset?.(entity.id);
@@ -668,6 +679,21 @@ export class ConnectionController {
    * footer disagrees with the characters visibly standing there.
    */
   onPlayersChanged: (() => void) | undefined;
+
+  /** The only word on anyone's health but the player's own: the band it stands in, sent when it changes. */
+  private handleCondition(entityId: string, condition: Condition): void {
+    const entity = this.entities.get(entityId);
+    if (entity === undefined) return;
+    this.entities.set(entityId, { ...entity, condition });
+    this.renderSurface.updateCondition(entityId, condition);
+    if (entityId === this.selfId) this.onSelfConditionChanged?.(condition);
+  }
+
+  /**
+   * Fires when the player's own condition changes, so the owner can act on a fall at once. A
+   * fallen dreamer's pools do not recover, so no other frame would come to repaint for.
+   */
+  onSelfConditionChanged: ((condition: Condition) => void) | undefined;
 
   /**
    * Dropping `leave` leaves departed peers rendered forever, which is why it is called out as

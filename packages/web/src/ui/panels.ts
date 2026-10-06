@@ -1,13 +1,14 @@
 import { utf8ByteLength } from '@somnio/protocol';
-import type { Energy, InventoryRowMessage } from '@somnio/protocol';
-import { clamp, itemLabelKey } from '@somnio/core';
+import type { Energy, InventoryRowMessage, LucidityMessage } from '@somnio/protocol';
+import { clamp, isTeachingId, itemLabelKey, practiceNeeded, roleLabelKey, teaching } from '@somnio/core';
 import type { ItemId } from '@somnio/core';
-import { chatLineCategory } from '@/client';
+import { chatLineCategory, taskIsDone } from '@/client';
 import type { ChatLine } from '@/client';
 import { renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { ICON_PATHS, element, floating, iconButton, replaceChildren, setHidden } from './dom';
 import type { IconName } from './dom';
+import { taskProgressText } from './servicePanel';
 
 /**
  * The four floating panels from `MainWindowView` — HUD top-leading, chat bottom-leading, players
@@ -37,6 +38,8 @@ interface HUDBar {
  * block, which would run the full bar one pixel past the track's trailing seam.
  */
 const HUD_FILL_SPAN = 148;
+/** The index of the balance bar among the three. */
+const BALANCE_BAR = 1;
 
 /**
  * Takes the **localized** label, not a catalog key. Every helper here does, so each key appears in a
@@ -83,11 +86,14 @@ export class GamePanels {
   readonly chatInput: HTMLTextAreaElement;
 
   private readonly bars: HUDBar[];
+  private readonly lucidity: HTMLElement;
   private readonly scrollback: HTMLElement;
   private readonly playersList: HTMLElement;
   private readonly itemsList: HTMLElement;
   private readonly playersFooter: HTMLElement;
   private readonly itemsFooter: HTMLElement;
+  private shownItems: readonly InventoryRowMessage[] | undefined;
+  private shownChat: { count: number; newest: ChatLine | undefined } | undefined;
   private readonly chatBody: HTMLElement;
   private readonly playersBody: HTMLElement;
   private readonly itemsBody: HTMLElement;
@@ -102,9 +108,10 @@ export class GamePanels {
     this.locale = locale;
 
     this.bars = [hudBar(t('Health'), 'rgb(224 0 0)'), hudBar(t('Balance'), 'rgb(0 0 224)'), hudBar(t('Spirit'), 'rgb(0 224 0)')];
+    this.lucidity = element('div', { className: 'hud-lucidity' });
     const hudPanel = element('div', {
       className: 'fantasy-panel hud-panel',
-      children: this.bars.map((bar) => bar.root),
+      children: [...this.bars.map((bar) => bar.root), this.lucidity],
     });
 
     this.scrollback = element('div', {
@@ -165,7 +172,8 @@ export class GamePanels {
     });
   }
 
-  renderEnergy(energy: Energy): void {
+  /** A winded player's balance bar is marked, and says so, until the balance is back to where the slow gait ends. */
+  renderEnergy(energy: Energy, winded: boolean): void {
     const pairs: [number, number][] = [
       [energy.healthCurrent, energy.healthMax],
       [energy.balanceCurrent, energy.balanceMax],
@@ -178,12 +186,40 @@ export class GamePanels {
       const fraction = max > 0 ? clamp(current / max, 0, 1) : 0;
       bar.fill.style.width = `${(fraction * HUD_FILL_SPAN).toFixed(2)}px`;
       // The reading lives in the tooltip and the accessible name, since the bar renders no text.
-      bar.root.setAttribute('title', `${bar.label} ${current}/${max}`);
-      bar.root.setAttribute('aria-label', `${bar.label} ${current}/${max}`);
+      const isWinded = winded && index === BALANCE_BAR;
+      const reading = `${bar.label} ${current}/${max}${isWinded ? `, ${t('winded')}` : ''}`;
+      bar.root.setAttribute('title', reading);
+      bar.root.setAttribute('aria-label', reading);
+      bar.root.classList.toggle('hud-bar__track--winded', isWinded);
     });
   }
 
+  /** The role, the teaching studied with its practice, and the task held, under the bars. */
+  renderLucidity(lucidity: LucidityMessage): void {
+    const lines = [lucidity.role === undefined ? t('No role yet') : t(roleLabelKey(lucidity.role))];
+    if (lucidity.study !== undefined && isTeachingId(lucidity.study)) {
+      const held = lucidity.ranks.find((rank) => rank.teachingId === lucidity.study);
+      const practice = String(Math.floor(held?.practice ?? 0));
+      lines.push(t('Studying %1$@: %2$@ of %3$@', t(teaching(lucidity.study).labelKey), practice, String(practiceNeeded(held?.rank ?? 0))));
+    } else if (lucidity.role !== undefined) {
+      lines.push(t('Studying nothing'));
+    }
+    const task = lucidity.task;
+    const progress = task === undefined ? undefined : taskProgressText(task);
+    if (task !== undefined && progress !== undefined) lines.push(taskIsDone(task) ? t('Your task is done. Return to your master.') : t('Task: %@', progress));
+    replaceChildren(
+      this.lucidity,
+      lines.map((line) => element('p', { className: 'hud-lucidity__line', text: line })),
+    );
+  }
+
   renderChat(lines: readonly ChatLine[]): void {
+    // The shell renders on every `energy` frame, and replacing the lines takes a reader's text
+    // selection with them. The history is appended to in place and trimmed at its cap, so its
+    // newest line and its length say whether it changed.
+    const newest = lines.at(-1);
+    if (this.shownChat?.count === lines.length && this.shownChat.newest === newest) return;
+    this.shownChat = { count: lines.length, newest };
     const atBottom = this.scrollback.scrollHeight - this.scrollback.scrollTop - this.scrollback.clientHeight < 24;
     // Synthesized at render time rather than stored, matching `ChatScrollbackView.renderedLines`
     // (`[.startupGreeting] + chatLines`). Prepending here keeps it out of the retained history, so
@@ -212,6 +248,10 @@ export class GamePanels {
   }
 
   renderItems(rows: readonly InventoryRowMessage[]): void {
+    // A row replaced between the two clicks of a double click, or while it holds the keyboard
+    // focus, is never activated, and the shell renders on every `energy` frame.
+    if (rows === this.shownItems) return;
+    this.shownItems = rows;
     replaceChildren(
       this.itemsList,
       rows.map((row) => {

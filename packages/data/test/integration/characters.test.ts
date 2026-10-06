@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { headingFromCardinal } from '@somnio/core';
-import type { Character, InventoryRow } from '@somnio/core';
+import { NO_LUCIDITY, fullPools, headingFromCardinal } from '@somnio/core';
+import type { Character, InventoryRow, Lucidity } from '@somnio/core';
 import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
 import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { RepositoryDecodingError } from '../../src/repositories/errors.ts';
@@ -43,6 +43,7 @@ describe('character repository', () => {
       spiritCurrent: 100,
       spiritMax: 100,
     });
+    expect(fetched?.lucidity).toEqual(NO_LUCIDITY);
   });
 
   it('stores a skeleton that rejects a confusable second character', async () => {
@@ -77,14 +78,8 @@ describe('character repository', () => {
       space: 'EdariaBibliothek',
       position: { x: 0, z: 0 },
       facing: 0,
-      energy: {
-        healthCurrent: 100,
-        healthMax: 100,
-        balanceCurrent: 100,
-        balanceMax: 100,
-        spiritCurrent: 100,
-        spiritMax: 100,
-      },
+      energy: fullPools(NO_LUCIDITY.ranks),
+      lucidity: NO_LUCIDITY,
       lastSeen: new Date(),
     };
     expect(await characters.snapshot(phantom)).toBe(false);
@@ -124,6 +119,70 @@ describe('character repository', () => {
     expect(await characters.persistCheckpoint(stale, [])).toBe(false);
     expect(await inventory.loadAll(original.id)).toEqual([purse]);
     expect((await characters.findByName('Checkpoint'))?.position).toEqual({ x: 8, z: 8 });
+  });
+
+  it('round-trips role, ranks with practice, study, and task through a checkpoint, by name and by account', async () => {
+    const account = await accounts.create('lucid', 'stub', 'lucid@x');
+    const original = await characters.create(account.id, 'Lucid', 'lumina');
+    const lucidity: Lucidity = {
+      role: 'heiler',
+      ranks: [
+        { teachingId: 'depth', rank: 0, practice: 7.25 },
+        { teachingId: 'touch', rank: 2, practice: 12.5 },
+      ],
+      study: 'depth',
+      task: { role: 'heiler', teachingId: 'drawing-back', progress: 22.5 },
+    };
+    const grown = { ...original, lucidity, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
+    expect(await characters.persistCheckpoint(grown, [])).toBe(true);
+    expect(await characters.findByName('Lucid')).toEqual(grown);
+    expect(await characters.findByAccount(account.id)).toEqual([grown]);
+
+    // A later checkpoint replaces the rank rows rather than adding to them, and a trial is stored without a teaching.
+    const later = {
+      ...grown,
+      lucidity: {
+        ...lucidity,
+        ranks: [{ teachingId: 'touch' as const, rank: 3, practice: 0 }],
+        study: undefined,
+        task: { role: 'heiler' as const, teachingId: undefined, progress: 1 },
+      },
+      lastSeen: new Date(grown.lastSeen.getTime() + 60_000),
+    };
+    expect(await characters.persistCheckpoint(later, [])).toBe(true);
+    expect(await characters.findByName('Lucid')).toEqual(later);
+  });
+
+  it('leaves the rank rows alone when a checkpoint is skipped as stale', async () => {
+    const account = await accounts.create('stale-ranks', 'stub', 'sr@x');
+    const original = await characters.create(account.id, 'StaleRanks', 'wachen');
+    const ranks = [{ teachingId: 'strike' as const, rank: 1, practice: 3 }];
+    const fresh = { ...original, lucidity: { ...NO_LUCIDITY, role: 'kaempfer' as const, ranks }, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
+    expect(await characters.persistCheckpoint(fresh, [])).toBe(true);
+    expect(await characters.persistCheckpoint({ ...original, lastSeen: original.lastSeen }, [])).toBe(false);
+    expect((await characters.findByName('StaleRanks'))?.lucidity.ranks).toEqual(ranks);
+  });
+
+  it.each([
+    ['a role', sql`UPDATE characters SET task_role = 'mystiker' WHERE name = 'Odd'`],
+    ['a studied teaching', sql`UPDATE characters SET study = 'fireball' WHERE name = 'Odd'`],
+    [
+      "a rank's teaching",
+      sql`INSERT INTO character_ranks (character_id, teaching_id, rank, practice) SELECT id, 'fireball', 1, 0 FROM characters WHERE name = 'Odd'`,
+    ],
+  ])('throws on %s it does not know', async (_label, corrupt) => {
+    const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}`, 'h', 'odd@example.com');
+    await characters.create(account.id, 'Odd', 'wachen');
+    await corrupt.execute(harness.db);
+    await expect(characters.findByName('Odd')).rejects.toThrow(RepositoryDecodingError);
+    await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
+  });
+
+  it('refuses a role outside the two and a pool below zero through the CHECK constraints', async () => {
+    const account = await accounts.create('checks', 'h', 'checks@example.com');
+    await characters.create(account.id, 'Checked', 'wachen');
+    await expect(sql`UPDATE characters SET role = 'mystiker' WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
+    await expect(sql`UPDATE characters SET health_current = -1 WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
   });
 
   it('resolves nothing for an unknown name', async () => {

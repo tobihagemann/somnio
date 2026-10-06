@@ -199,7 +199,39 @@ describe('inbound sequencing', () => {
     expect(world.dependencies.worldRouter.loggedInPlayerCount()).toBe(0);
     // Detached from the space and the account slot released, not merely a reset actor state.
     expect(world.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)?.snapshotForCheckpoint()).toEqual([]);
-    expect(world.dependencies.worldRouter.register(new ConnectionActor(world.dependencies), world.accountId, 'tester')).toBe(true);
+    expect(world.dependencies.worldRouter.register(new ConnectionActor(world.dependencies), world.accountId)).toBe(true);
+  });
+
+  /**
+   * The player leaves the space in the turn the snapshot is taken, so nothing that happens to them
+   * during the write is lost from it, and the account stays taken until the write has landed, so a
+   * login racing it cannot read the row from before.
+   */
+  it('a disconnect whose checkpoint write is pending has already left the space and still holds its account', async () => {
+    const sessions = new GatedSessionRepository();
+    const accountId = crypto.randomUUID();
+    sessions.resolveTo = accountId;
+    const characters = new GatedCharacterRepository(new Map([[accountId, [makeCharacter({ x: 5, z: 5 }, 'leaver')]]]));
+    const dependencies = await makeStubConnectionDependencies({ sessions, characters, sectors: [makeSector('A')] });
+    const socket = new RecordingSocket();
+    const connection = new ConnectionActor(dependencies);
+    const run = connection.runConnection(socket);
+    await settle();
+    socket.deliver(encodeSomnioMessage({ tag: 'redeemSession', payload: { token: 'ok' } }));
+    await settle();
+    await settle();
+    expect(connection.state.kind).toBe('attached');
+    const isRegistered = () => !dependencies.worldRouter.register(new ConnectionActor(dependencies), accountId);
+
+    characters.hold();
+    socket.peerClose();
+    await settle();
+    expect(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)?.snapshotForCheckpoint()).toEqual([]);
+    expect(isRegistered()).toBe(true);
+
+    characters.release();
+    await run;
+    expect(isRegistered()).toBe(false);
   });
 
   /** The shutdown drain waits for the exit path: the socket receives the 1001 close before the drain resolves. */

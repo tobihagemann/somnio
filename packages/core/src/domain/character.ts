@@ -1,6 +1,7 @@
 import type { Energy } from '@somnio/protocol';
 import type { Point } from '../geometry.ts';
 import type { Heading } from '../heading.ts';
+import type { Lucidity } from '../lucidity.ts';
 import type { People } from '../people.ts';
 
 export interface Character {
@@ -12,5 +13,6 @@ export interface Character {
   position: Point;
   facing: Heading;
   energy: Energy;
+  lucidity: Lucidity;
   lastSeen: Date;
 }

@@ -12,7 +12,7 @@ import { StubCharacterRepository, StubNPCDialogStateRepository } from './support
 /** A service over one outdoor sector, on a clock the test advances. */
 async function simulation(npcDialogStates = new StubNPCDialogStateRepository()) {
   const clock = { ms: 0 };
-  const sector = makeSector('Field', { npcs: [makeNPC('guard', { x: 10, z: 10 }, 'first.\n---\nsecond.')] });
+  const sector = makeSector('Field', { npcs: [makeNPC('guard', { x: 10, z: 10 }, 'first.\n---\nsecond.\n---\nthird.')] });
   const router = await WorldRouter.create(makeWorld([sector]), new StubCharacterRepository(), npcDialogStates, testLogger());
   const service = new SimulationService(router, 50, () => clock.ms);
   const space = router.space(OUTDOOR_SPACE_ID)!;
@@ -69,9 +69,9 @@ describe('SimulationService', () => {
       }
     }
     const { clock, service, space, join } = await simulation(new RecordingDialogRepository());
-    space.handleBump('npc:Field/guard', join('talker', 10).entityId);
+    space.handleTalk('npc:Field/guard', join('talker', 10).entityId);
     clock.ms += 50;
     await service.runPass();
-    expect(upserted).toEqual([{ sectorName: 'Field', npcId: 'guard', scriptStep: 2 }]);
+    expect(upserted).toEqual([{ sectorName: 'Field', npcId: 'guard', scriptStep: 3 }]);
   });
 });

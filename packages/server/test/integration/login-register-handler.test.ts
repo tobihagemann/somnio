@@ -108,7 +108,7 @@ describe('login handler over Postgres', () => {
     const connection = new ConnectionActor(own);
     await handleLogin({ nickname, password: TEST_PASSWORD }, connection, own);
     const messages = await collectMessages(connection.outbox);
-    expect(messages.map((message) => message.tag)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'entity']);
+    expect(messages.map((message) => message.tag)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'entity']);
   });
 
   it('an unknown nickname returns badCredentials', async () => {

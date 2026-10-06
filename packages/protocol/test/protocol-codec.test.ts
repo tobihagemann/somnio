@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONDITIONS,
   ENTITY_KINDS,
   GAITS,
   HANDS,
   LOGIN_RESULTS,
+  NPC_SERVICES,
+  RAISING_STATES,
   REGISTER_RESULTS,
+  ROLES,
   SECTOR_KINDS,
   OversizedFrameError,
   SOMNIO_PROTOCOL_CONSTANTS,
@@ -80,7 +84,19 @@ describe('tag discrimination', () => {
 describe('runtime validation the erased types cannot do', () => {
   const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 50, balanceMax: 100, spiritCurrent: 25, spiritMax: 50 };
   const move = { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' };
-  const entity = { id: 'monster:7', kind: 'monster', characterModelId: 'gespenst', name: 'Gespenst', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'jog' };
+  const entity = {
+    id: 'monster:7',
+    kind: 'monster',
+    characterModelId: 'gespenst',
+    name: 'Gespenst',
+    radius: 0.3,
+    x: 0,
+    z: 0,
+    facing: 0,
+    gait: 'jog',
+    condition: 'hale',
+  };
+  const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
   const row = { slot: 0, itemId: 'purse', quantity: 100 };
 
   it('rejects a missing required field', () => {
@@ -113,8 +129,10 @@ describe('runtime validation the erased types cannot do', () => {
     ['a coordinate past the metre cap', 'move', { ...move, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
     ['a negative coordinate past the metre cap', 'correction', { x: 0, z: -10_000.5 }, /z: exceeds 10000 metres/],
     ['an unknown hand', 'equipToggle', { slot: 1, hand: 'both' }, /unknown value "both"/],
-    ['an empty entity id', 'bump', { targetId: '' }, /targetId: expected a non-empty string/],
-    ['an over-cap entity id', 'bump', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
+    ['an empty entity id', 'talk', { npcId: '' }, /npcId: expected a non-empty string/],
+    ['an over-cap entity id', 'talk', { npcId: overCapEntityId }, /npcId: exceeds 320 UTF-8 bytes/],
+    ['an empty swing target', 'swing', { targetId: '' }, /targetId: expected a non-empty string/],
+    ['an over-cap tended dreamer', 'tend', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
     ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaMitte', doorId: 'Main Door' }, /doorId: expected an id/],
     ['an empty door id', 'doorRefused', { sector: 'EdariaMitte', doorId: '' }, /doorId: expected an id/],
     ['an over-cap door id', 'useDoor', { sector: 'EdariaMitte', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
@@ -133,6 +151,19 @@ describe('runtime validation the erased types cannot do', () => {
     ['an over-cap item id', 'inventory', { rows: [{ ...row, itemId: overCapId }] }, /itemId: exceeds 64 UTF-8 bytes/],
     ['an unknown equipped hand', 'inventory', { rows: [{ ...row, equippedHand: 'none' }] }, /unknown value "none"/],
     ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
+    ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
+    ['an unknown service', 'entity', { ...entity, service: 'banker' }, /unknown value "banker"/],
+    ['an unknown condition', 'condition', { entityId: 'monster:7', condition: 'dying' }, /unknown value "dying"/],
+    ['an unknown role', 'lucidity', { ...lucidity, role: 'mystiker' }, /unknown value "mystiker"/],
+    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'mystiker', progress: 0 } }, /task\.role: unknown value "mystiker"/],
+    ['a teaching id outside the id alphabet', 'study', { npcId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
+    ['a studied teaching outside the id alphabet', 'lucidity', { ...lucidity, study: 'Follow Through' }, /study: expected an id/],
+    ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
+    ['a fractional rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1.5, practice: 0 }] }, /fractional 1.5/],
+    ['negative practice', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1, practice: -0.5 }] }, /practice: expected a non-negative number/],
+    ['an unknown raising state', 'raising', { healerId: 'a', targetId: 'b', state: 'paused', seconds: 6 }, /unknown value "paused"/],
+    ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
+    ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
   ])('rejects %s', (_case, tag, payload, expected) => {
     expect(() => decodeSomnioMessage(frame(tag, payload))).toThrow(expected);
   });
@@ -142,8 +173,8 @@ describe('runtime validation the erased types cannot do', () => {
     const atCapEntityId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes);
     const atCapId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes);
     const atCapSectorName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('bump', { targetId: atCapEntityId }))).not.toThrow();
-    expect(() => decodeSomnioMessage(frame('bump', { targetId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('swing', { targetId: atCapEntityId }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('talk', { npcId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('useDoor', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('doorRefused', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', worldSeconds: 0 }))).not.toThrow();
@@ -171,6 +202,42 @@ describe('round trips', () => {
   /** The golden catalog records one member of each result set, and not this one. */
   it.each(['loginResult', 'registerResult'] as const)('%s decodes a throttled result', (tag) => {
     expect(decodeSomnioMessage(frame(tag, { result: 'throttled' }))).toEqual({ tag, payload: { result: 'throttled' } });
+  });
+
+  /** Without a teaching the request is for the master's trial, so the key must stay absent. */
+  it('askTask round-trips a trial request without a teaching', () => {
+    const message: SomnioMessage = { tag: 'askTask', payload: { npcId: 'npc:EdariaMitte/pugnax' } };
+    const decoded = roundTrip(message);
+    expect(decoded).toEqual(message);
+    expect('teachingId' in decoded.payload).toBe(false);
+  });
+
+  it('lucidity decodes a dreamer with no role, study, or task without those keys', () => {
+    const decoded = decodeSomnioMessage(frame('lucidity', { role: null, ranks: [], study: null, task: null }));
+    expect(decoded).toEqual({ tag: 'lucidity', payload: { ranks: [] } });
+  });
+
+  /** Without a target a swing meets the air and a `tend` lets go, so the key must stay absent on all three. */
+  it.each<SomnioMessage>([
+    { tag: 'swing', payload: {} },
+    { tag: 'tend', payload: {} },
+    { tag: 'blow', payload: { attackerId: 'a', hit: false } },
+  ])('$tag round-trips without a target', (message) => {
+    const decoded = roundTrip(message);
+    expect(decoded).toEqual(message);
+    expect('targetId' in decoded.payload).toBe(false);
+  });
+
+  it('entity decodes an NPC without a service without the key', () => {
+    const decoded = decodeSomnioMessage(
+      frame('entity', { id: 'a', kind: 'npc', characterModelId: 'libus', name: 'Libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk', condition: 'hale' }),
+    );
+    expect('service' in decoded.payload).toBe(false);
+  });
+
+  /** A verb with nothing to say still has to carry an object, and whatever a client puts in it is dropped. */
+  it.each(['abandonTask', 'wake'] as const)('%s decodes to an empty payload', (tag) => {
+    expect(decodeSomnioMessage(frame(tag, { extra: 1 }))).toEqual({ tag, payload: {} });
   });
 
   /** An absent hand is the unequip, so it must stay absent rather than decode to a default hand. */
@@ -258,6 +325,22 @@ describe('string literal sets', () => {
   it('pins RegisterResult', () => {
     expect(REGISTER_RESULTS).toEqual(['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled']);
   });
+
+  it('pins Role', () => {
+    expect(ROLES).toEqual(['kaempfer', 'heiler']);
+  });
+
+  it('pins NPCService', () => {
+    expect(NPC_SERVICES).toEqual(['kaempferMaster', 'heilerMaster']);
+  });
+
+  it('pins Condition', () => {
+    expect(CONDITIONS).toEqual(['hale', 'wounded', 'hurt', 'failing', 'fallen']);
+  });
+
+  it('pins RaisingState', () => {
+    expect(RAISING_STATES).toEqual(['begun', 'broken', 'done']);
+  });
 });
 
 /**
@@ -266,7 +349,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(5);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(6);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -337,7 +420,7 @@ describe('inbound field byte caps', () => {
    * would refuse a whole sector on nothing worse than a long label.
    */
   it('truncates an over-cap entity name instead of rejecting the frame', () => {
-    const base = { id: 'a', kind: 'npc', characterModelId: 'libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk' };
+    const base = { id: 'a', kind: 'npc', characterModelId: 'libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk', condition: 'hale' };
     const cap = SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes;
     const decoded = decodeSomnioMessage(frame('entity', { ...base, name: 'a'.repeat(cap + 40) }));
     if (decoded.tag !== 'entity') throw new Error('expected an entity frame');

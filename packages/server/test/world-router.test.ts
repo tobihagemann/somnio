@@ -56,14 +56,14 @@ async function routerOver(sectors: Sector[], dialogRepo = new RecordingDialogRep
   return WorldRouter.create(makeWorld(sectors), new StubCharacterRepository(), dialogRepo, testLogger());
 }
 
-/** Attaches a player beside the guard at (5, 5) of `sectorName` and bumps it. */
-function bump(router: WorldRouter, sectorName: string, playerName: string) {
+/** Attaches a player beside the guard at (5, 5) of `sectorName` and talks to it. */
+function talk(router: WorldRouter, sectorName: string, playerName: string) {
   const world = router.world;
   const spaceId = world.sectorSpace.get(sectorName)!;
   const sector = world.spaces.get(spaceId)!.sectors.find((candidate) => candidate.name === sectorName)!;
   const space = router.space(spaceId)!;
   const { outbox, entityId } = attachPlayer(space, sectorPointInSpace(sector, { x: 5, z: 6 }), playerName, { spaceId });
-  space.handleBump(`npc:${sectorName}/guard`, entityId);
+  space.handleTalk(`npc:${sectorName}/guard`, entityId);
   return { outbox, space, entityId };
 }
 
@@ -82,41 +82,41 @@ async function emptyRouterConnections(count: number) {
 }
 
 describe('WorldRouter ticks', () => {
-  it('persists a single-step wrap reset and skips the empty-script no-op', async () => {
+  it('persists the wrap reset of a script with one line after its greeting, and skips the empty-script no-op', async () => {
     const dialogRepo = new RecordingDialogRepository();
-    const router = await routerOver([interiorSector('A', guard('hi $name.')), interiorSector('B', guard(''))], dialogRepo);
-    bump(router, 'A', 'alice');
-    bump(router, 'B', 'bob');
+    const router = await routerOver([interiorSector('A', guard('hi.\n---\nbye $name.')), interiorSector('B', guard(''))], dialogRepo);
+    talk(router, 'A', 'alice');
+    talk(router, 'B', 'bob');
     await tick(router);
     expect(dialogRepo.upserted).toEqual([]);
     expect(dialogRepo.resets).toEqual([{ sectorName: 'A', npcId: 'guard' }]);
   });
 
   it('init pre-loads the persisted cursor from the repository', async () => {
-    const dialogRepo = new RecordingDialogRepository([{ sectorName: 'A', npcId: 'guard', scriptStep: 2 }]);
-    const router = await routerOver([interiorSector('A', guard('first line.\n---\nsecond line.'))], dialogRepo);
-    const { outbox } = bump(router, 'A', 'alice');
+    const dialogRepo = new RecordingDialogRepository([{ sectorName: 'A', npcId: 'guard', scriptStep: 3 }]);
+    const router = await routerOver([interiorSector('A', guard('first line.\n---\nsecond line.\n---\nthird line.'))], dialogRepo);
+    const { outbox } = talk(router, 'A', 'alice');
     router.runTickAcrossSpaces(0.05);
-    expect(serverSays(await collectMessages(outbox))).toEqual(['second line.']);
+    expect(serverSays(await collectMessages(outbox))).toEqual(['third line.']);
   });
 
   /** Two outdoor NPCs live in one space and share the sector-local id: the row is keyed by the NPC's own sector. */
   it('persists dialog advance and reset under the own sector of two outdoor NPCs sharing a local id', async () => {
-    const dialogRepo = new RecordingDialogRepository([{ sectorName: 'Middle', npcId: 'guard', scriptStep: 2 }]);
-    const script = guard('first.\n---\nsecond.\n---\nthird.');
+    const dialogRepo = new RecordingDialogRepository([{ sectorName: 'Middle', npcId: 'guard', scriptStep: 3 }]);
+    const script = guard('first.\n---\nsecond.\n---\nthird.\n---\nfourth.');
     const router = await routerOver(makeSectorLine({ west: script, middle: script }), dialogRepo);
-    const west = bump(router, 'West', 'alice');
-    const middle = bump(router, 'Middle', 'bob');
+    const west = talk(router, 'West', 'alice');
+    const middle = talk(router, 'Middle', 'bob');
     await tick(router);
     expect(dialogRepo.upserted).toEqual([
-      { sectorName: 'West', npcId: 'guard', scriptStep: 2 },
-      { sectorName: 'Middle', npcId: 'guard', scriptStep: 3 },
+      { sectorName: 'West', npcId: 'guard', scriptStep: 3 },
+      { sectorName: 'Middle', npcId: 'guard', scriptStep: 4 },
     ]);
     // The two sectors are neighbours, so each player hears both guards, told apart by entity id.
     const says = (await collectMessages(west.outbox)).flatMap((message) => (message.tag === 'serverSay' ? [message.payload] : []));
     expect(says).toEqual([
-      { entityId: 'npc:West/guard', text: 'first.' },
-      { entityId: 'npc:Middle/guard', text: 'second.' },
+      { entityId: 'npc:West/guard', text: 'second.' },
+      { entityId: 'npc:Middle/guard', text: 'third.' },
     ]);
     middle.space.detach(middle.entityId, true);
     await tick(router);
@@ -127,7 +127,7 @@ describe('WorldRouter ticks', () => {
     const dialogRepo = new RecordingDialogRepository();
     dialogRepo.nextUpsertThrows = true;
     const router = await routerOver([interiorSector('A', guard('first.\n---\nsecond.\n---\nthird.'))], dialogRepo);
-    bump(router, 'A', 'alice');
+    talk(router, 'A', 'alice');
     await tick(router);
     await tick(router);
     expect(dialogRepo.upsertCalls).toBeGreaterThanOrEqual(1);
@@ -136,8 +136,8 @@ describe('WorldRouter ticks', () => {
   it('tolerates a transient reset failure', async () => {
     const dialogRepo = new RecordingDialogRepository();
     dialogRepo.nextResetThrows = true;
-    const router = await routerOver([interiorSector('A', guard('Once: $name.'))], dialogRepo);
-    bump(router, 'A', 'alice');
+    const router = await routerOver([interiorSector('A', guard('Hi.\n---\nOnce: $name.'))], dialogRepo);
+    talk(router, 'A', 'alice');
     await tick(router);
     await tick(router);
     expect(dialogRepo.resetCalls).toBeGreaterThanOrEqual(1);
@@ -155,7 +155,7 @@ describe('WorldRouter connections', () => {
   it('broadcastToAllConnections fans out an identical frame to every attached connection', async () => {
     const { router, connections } = await emptyRouterConnections(2);
     for (const { actor, accountId } of connections) {
-      router.register(actor, accountId, `player-${accountId}`);
+      router.register(actor, accountId);
       actor.markAttached('player', 'X', accountId);
     }
     router.broadcastToAllConnections({ tag: 'adminSay', payload: { text: 'restart at noon' } });
@@ -173,7 +173,7 @@ describe('WorldRouter connections', () => {
   it('broadcastToAllConnections skips connections still awaiting login', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     const { actor, accountId } = connections[0]!;
-    router.register(actor, accountId, 'TestPlayer');
+    router.register(actor, accountId);
     router.broadcastToAllConnections({ tag: 'adminSay', payload: { text: 'restart at noon' } });
     actor.outbox.finish();
     expect(await collectOutbox(actor.outbox)).toEqual([]);
@@ -182,8 +182,8 @@ describe('WorldRouter connections', () => {
   it('loggedInPlayerCount counts only attached connections', async () => {
     const { router, connections } = await emptyRouterConnections(2);
     const [attached, unattached] = connections;
-    router.register(attached!.actor, attached!.accountId, 'Alice');
-    router.register(unattached!.actor, unattached!.accountId, 'Bob');
+    router.register(attached!.actor, attached!.accountId);
+    router.register(unattached!.actor, unattached!.accountId);
     attached!.actor.markAttached('player', 'X', attached!.accountId);
     expect(router.loggedInPlayerCount()).toBe(1);
   });
@@ -191,25 +191,36 @@ describe('WorldRouter connections', () => {
   it('register refuses a second connection for the same account', async () => {
     const { router, connections } = await emptyRouterConnections(2);
     const accountId = crypto.randomUUID();
-    expect(router.register(connections[0]!.actor, accountId, 'Alice')).toBe(true);
-    expect(router.register(connections[1]!.actor, accountId, 'Alice')).toBe(false);
+    expect(router.register(connections[0]!.actor, accountId)).toBe(true);
+    expect(router.register(connections[1]!.actor, accountId)).toBe(false);
   });
 
   it('kickByCharacterName returns false when nobody matches', async () => {
     const { router, connections } = await emptyRouterConnections(1);
-    router.register(connections[0]!.actor, connections[0]!.accountId, 'Alice');
+    router.register(connections[0]!.actor, connections[0]!.accountId);
+    router.nameRegistered(connections[0]!.accountId, 'Alice');
     expect(router.kickByCharacterName('Bob')).toBe(false);
+  });
+
+  /** Between the account's registration and its character being read, there is no name to match. */
+  it('kickByCharacterName matches no connection whose character is not loaded yet', async () => {
+    const { router, connections } = await emptyRouterConnections(1);
+    router.register(connections[0]!.actor, connections[0]!.accountId);
+    expect(router.kickByCharacterName('undefined')).toBe(false);
+    expect(router.kickByCharacterName('')).toBe(false);
   });
 
   it('kickByCharacterName normalizes case to match the schema collation', async () => {
     const { router, connections } = await emptyRouterConnections(1);
-    router.register(connections[0]!.actor, connections[0]!.accountId, 'Saibot');
+    router.register(connections[0]!.actor, connections[0]!.accountId);
+    router.nameRegistered(connections[0]!.accountId, 'Saibot');
     expect(router.kickByCharacterName('saibot')).toBe(true);
   });
 
   it('kickByCharacterName matches NFKC compatibility equivalent names', async () => {
     const { router, connections } = await emptyRouterConnections(1);
-    router.register(connections[0]!.actor, connections[0]!.accountId, 'Ｓａｉｂｏｔ');
+    router.register(connections[0]!.actor, connections[0]!.accountId);
+    router.nameRegistered(connections[0]!.accountId, 'Ｓａｉｂｏｔ');
     expect(router.kickByCharacterName('saibot')).toBe(true);
   });
 });

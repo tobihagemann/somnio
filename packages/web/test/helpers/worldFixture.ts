@@ -13,6 +13,8 @@ export function clientEntity(overrides: Partial<ClientEntity> = {}): ClientEntit
     position: { x: 10, z: 10 },
     facing: 0,
     gait: 'jog',
+    condition: 'hale',
+    service: undefined,
     ...overrides,
   };
 }
@@ -41,6 +43,18 @@ export function sectorFrame(sector: Sector): SomnioMessage {
 export function entityFrame(overrides: Partial<EntityMessage> = {}): SomnioMessage {
   return {
     tag: 'entity',
-    payload: { id: 'self', kind: 'player', characterModelId: 'hero', name: 'Tester', radius: 0.3, x: 10, z: 10, facing: 0, gait: 'jog', ...overrides },
+    payload: {
+      id: 'self',
+      kind: 'player',
+      characterModelId: 'hero',
+      name: 'Tester',
+      radius: 0.3,
+      x: 10,
+      z: 10,
+      facing: 0,
+      gait: 'jog',
+      condition: 'hale',
+      ...overrides,
+    },
   };
 }

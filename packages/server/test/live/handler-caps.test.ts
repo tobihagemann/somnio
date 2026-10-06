@@ -20,8 +20,8 @@ async function attach(client: TestClient, token: string): Promise<void> {
   client.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token } }));
   const { target } = await client.until('loginResult');
   expect(target).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
-  // `energy` closes the join of a player alone in the world.
-  await client.until('energy');
+  // `lucidity` closes the join of a player alone in the world.
+  await client.until('lucidity');
 }
 
 describe('over-cap handler frames over a live socket', () => {

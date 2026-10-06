@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { PEOPLES, headingFromCardinal } from '@somnio/core';
-import type { Character, InventoryRow, People } from '@somnio/core';
+import { NO_LUCIDITY, PEOPLES, fullPools, headingFromCardinal, isRole, isTeachingId } from '@somnio/core';
+import type { Character, InventoryRow, Lucidity, People, TeachingRank } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import type { Database } from '../schema.ts';
@@ -13,14 +13,15 @@ export interface CharacterRepository {
   findByAccount(accountId: string): Promise<Character[]>;
   findByName(name: string): Promise<Character | undefined>;
   /**
-   * Persists `character` over its row, skipped when the row's `last_seen` is already at or past
-   * the snapshot's — another writer committed fresher state. Returns whether the update landed.
+   * Persists the character's own row, leaving its rank rows as they are, skipped when the row's
+   * `last_seen` is already at or past the snapshot's — another writer committed fresher state.
+   * Returns whether the update landed.
    */
   snapshot(character: Character): Promise<boolean>;
   /**
-   * Atomically persists the character and replaces its inventory rows in one transaction, gated
-   * by the same `last_seen` skip-if-stale guard. Returns `false` (touching no inventory) when the
-   * character update was skipped as stale.
+   * Atomically persists the character and replaces its rank and inventory rows in one
+   * transaction, gated by the same `last_seen` skip-if-stale guard. Returns `false` (touching
+   * neither) when the character update was skipped as stale.
    */
   persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean>;
 }
@@ -42,6 +43,11 @@ const CHARACTER_COLUMNS = [
   'spirit_current',
   'spirit_max',
   'last_seen',
+  'role',
+  'study',
+  'task_role',
+  'task_teaching',
+  'task_progress',
 ] as const;
 
 type CharacterRow = {
@@ -59,9 +65,21 @@ type CharacterRow = {
   spirit_current: number;
   spirit_max: number;
   last_seen: Date;
+  role: string | null;
+  study: string | null;
+  task_role: string | null;
+  task_teaching: string | null;
+  task_progress: number;
 };
 
-/** Spawn defaults: the starter sector's space, full energy, and the `(0, 0)` sentinel the runtime re-resolves. */
+type RankRow = {
+  character_id: string;
+  teaching_id: string;
+  rank: number;
+  practice: number;
+};
+
+/** Spawn defaults: the starter sector's space, full energy, no role, and the `(0, 0)` sentinel the runtime re-resolves. */
 export function newCharacter(id: string, name: string, people: People, lastSeen: Date): Character {
   return {
     id,
@@ -70,19 +88,39 @@ export function newCharacter(id: string, name: string, people: People, lastSeen:
     space: STARTER_SECTOR,
     position: { x: 0, z: 0 },
     facing: headingFromCardinal('south'),
-    energy: {
-      healthCurrent: 100,
-      healthMax: 100,
-      balanceCurrent: 100,
-      balanceMax: 100,
-      spiritCurrent: 100,
-      spiritMax: 100,
-    },
+    energy: fullPools(NO_LUCIDITY.ranks),
+    lucidity: NO_LUCIDITY,
     lastSeen,
   };
 }
 
-function decodeCharacter(row: CharacterRow): Character {
+function decodeRole(field: string, raw: string): NonNullable<Lucidity['role']> {
+  if (!isRole(raw)) throw new RepositoryDecodingError(field, raw);
+  return raw;
+}
+
+function decodeTeachingId(field: string, raw: string): TeachingRank['teachingId'] {
+  if (!isTeachingId(raw)) throw new RepositoryDecodingError(field, raw);
+  return raw;
+}
+
+function decodeLucidity(row: CharacterRow, rankRows: readonly RankRow[]): Lucidity {
+  return {
+    role: row.role === null ? undefined : decodeRole('role', row.role),
+    ranks: rankRows.map((rank) => ({ teachingId: decodeTeachingId('teaching_id', rank.teaching_id), rank: rank.rank, practice: rank.practice })),
+    study: row.study === null ? undefined : decodeTeachingId('study', row.study),
+    task:
+      row.task_role === null
+        ? undefined
+        : {
+            role: decodeRole('task_role', row.task_role),
+            teachingId: row.task_teaching === null ? undefined : decodeTeachingId('task_teaching', row.task_teaching),
+            progress: row.task_progress,
+          },
+  };
+}
+
+function decodeCharacter(row: CharacterRow, rankRows: readonly RankRow[]): Character {
   const people = PEOPLES.find((candidate) => candidate === row.people);
   if (people === undefined) {
     throw new RepositoryDecodingError('people', row.people);
@@ -102,6 +140,7 @@ function decodeCharacter(row: CharacterRow): Character {
       spiritCurrent: row.spirit_current,
       spiritMax: row.spirit_max,
     },
+    lucidity: decodeLucidity(row, rankRows),
     lastSeen: row.last_seen,
   };
 }
@@ -120,6 +159,11 @@ function characterColumns(character: Character) {
     spirit_current: character.energy.spiritCurrent,
     spirit_max: character.energy.spiritMax,
     last_seen: character.lastSeen,
+    role: character.lucidity.role ?? null,
+    study: character.lucidity.study ?? null,
+    task_role: character.lucidity.task?.role ?? null,
+    task_teaching: character.lucidity.task?.teachingId ?? null,
+    task_progress: character.lucidity.task?.progress ?? 0,
   };
 }
 
@@ -166,7 +210,7 @@ export class PostgresCharacterRepository implements CharacterRepository {
 
   async findByAccount(accountId: string): Promise<Character[]> {
     const rows = await this.db.selectFrom('characters').select(CHARACTER_COLUMNS).where('account_id', '=', accountId).orderBy('name').execute();
-    return rows.map(decodeCharacter);
+    return this.withRanks(rows);
   }
 
   /** NFKC-only lookup through `name_normalized`, like the account repository's. */
@@ -176,7 +220,20 @@ export class PostgresCharacterRepository implements CharacterRepository {
       .select(CHARACTER_COLUMNS)
       .where('name_normalized', '=', sql<string>`LOWER(NORMALIZE(${name}, NFKC))`)
       .executeTakeFirst();
-    return row === undefined ? undefined : decodeCharacter(row);
+    return row === undefined ? undefined : (await this.withRanks([row]))[0];
+  }
+
+  /** Decodes the rows with each one's rank rows, ordered so a character reads back the same every time. */
+  private async withRanks(rows: readonly CharacterRow[]): Promise<Character[]> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
+    const rankRows = await this.db.selectFrom('character_ranks').selectAll().where('character_id', 'in', ids).orderBy('teaching_id').execute();
+    return rows.map((row) =>
+      decodeCharacter(
+        row,
+        rankRows.filter((rank) => rank.character_id === row.id),
+      ),
+    );
   }
 
   snapshot(character: Character): Promise<boolean> {
@@ -186,6 +243,13 @@ export class PostgresCharacterRepository implements CharacterRepository {
   persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean> {
     return this.db.transaction().execute(async (transaction) => {
       if (!(await guardedUpdate(transaction, character))) return false;
+      await transaction.deleteFrom('character_ranks').where('character_id', '=', character.id).execute();
+      for (const held of character.lucidity.ranks) {
+        await transaction
+          .insertInto('character_ranks')
+          .values({ character_id: character.id, teaching_id: held.teachingId, rank: held.rank, practice: held.practice })
+          .execute();
+      }
       await transaction.deleteFrom('inventory_rows').where('character_id', '=', character.id).execute();
       await insertInventoryRows(transaction, character.id, inventory);
       return true;

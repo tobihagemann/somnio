@@ -2,14 +2,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AppShell, GamePanels, Overlays, detectDesktop, element, field } from '@/ui';
+import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
 import { catalogTables, setLocale } from '@/i18n';
 import type { RegistrationForm } from '@/client';
-import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
-import type { InventoryRowMessage } from '@somnio/protocol';
+import { fullPools } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
+import type { InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
-import { enterSpaceFrame } from './helpers/worldFixture';
+import { outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
 import type { ChatLine } from '@/client';
 
 /**
@@ -142,14 +144,17 @@ describe('the four floating panels', () => {
     expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['Health', 'Balance', 'Spirit']);
     for (const track of tracks) expect(track.textContent).toBe('');
 
-    panels.renderEnergy({
-      healthCurrent: 30,
-      healthMax: 60,
-      balanceCurrent: 1,
-      balanceMax: 2,
-      spiritCurrent: 5,
-      spiritMax: 5,
-    });
+    panels.renderEnergy(
+      {
+        healthCurrent: 30,
+        healthMax: 60,
+        balanceCurrent: 1,
+        balanceMax: 2,
+        spiritCurrent: 5,
+        spiritMax: 5,
+      },
+      false,
+    );
     expect(tracks[0]?.getAttribute('aria-label')).toBe('Health 30/60');
     expect(tracks[0]?.getAttribute('title')).toBe('Health 30/60');
     // Each pool reads its own pair: three distinct readings, so a swapped pair cannot pass.
@@ -200,14 +205,17 @@ describe('the four floating panels', () => {
   it('scales each energy bar by its own maximum', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
-    panels.renderEnergy({
-      healthCurrent: 50,
-      healthMax: 100,
-      balanceCurrent: 3,
-      balanceMax: 4,
-      spiritCurrent: 0,
-      spiritMax: 10,
-    });
+    panels.renderEnergy(
+      {
+        healthCurrent: 50,
+        healthMax: 100,
+        balanceCurrent: 3,
+        balanceMax: 4,
+        spiritCurrent: 0,
+        spiritMax: 10,
+      },
+      false,
+    );
 
     const widths = [...panels.root.querySelectorAll('.hud-bar__fill')].map((node) => (node as HTMLElement).style.width);
     // Pixels against the 148px span, not a percentage of the 150px track: a percentage runs the
@@ -218,14 +226,17 @@ describe('the four floating panels', () => {
   it('collapses a bar whose maximum arrives as zero instead of rendering NaN', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
 
-    panels.renderEnergy({
-      healthCurrent: 5,
-      healthMax: 0,
-      balanceCurrent: 0,
-      balanceMax: 1,
-      spiritCurrent: 0,
-      spiritMax: 1,
-    });
+    panels.renderEnergy(
+      {
+        healthCurrent: 5,
+        healthMax: 0,
+        balanceCurrent: 0,
+        balanceMax: 1,
+        spiritCurrent: 0,
+        spiritMax: 1,
+      },
+      false,
+    );
 
     const first = panels.root.querySelector('.hud-bar__fill') as HTMLElement;
     expect(first.style.width).toBe('0px');
@@ -246,6 +257,29 @@ describe('the four floating panels', () => {
     expect(panels.root.querySelector('img')).toBeNull();
     expect(panels.root.querySelector('script')).toBeNull();
     expect(row?.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+
+  /** The shell renders on every `energy` frame, and replacing the lines takes a reader's text selection with them. */
+  it('keeps the chat lines across a render that brought none, and replaces them when one arrived', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const rows = (): Element[] => [...panels.root.querySelectorAll('.chat-line')];
+    const history: ChatLine[] = [{ kind: 'joined', playerName: 'Saibot' }];
+
+    panels.renderChat(history);
+    const shown = rows();
+    panels.renderChat(history);
+    expect(rows()).toEqual(shown);
+    expect(rows()[0]).toBe(shown[0]);
+
+    history.push({ kind: 'joined', playerName: 'Bren' });
+    panels.renderChat(history);
+    expect(rows().map((row) => row.textContent)).toEqual(['Welcome to Somnio!', 'Saibot entered the game.', 'Bren entered the game.']);
+
+    // At its cap the history keeps its length while its oldest line gives way to the newest.
+    history.shift();
+    history.push({ kind: 'left', playerName: 'Saibot' });
+    panels.renderChat(history);
+    expect(rows().map((row) => row.textContent)).toEqual(['Welcome to Somnio!', 'Bren entered the game.', 'Saibot left the game.']);
   });
 
   /**
@@ -312,6 +346,22 @@ describe('the four floating panels', () => {
     node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
 
     expect(activated).toEqual([purse, purse]);
+  });
+
+  /** The shell renders on every `energy` frame, and a row replaced between two clicks never sees the double click. */
+  it('keeps its rows across a render of the same inventory, and replaces them for a new one', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const rows = [{ slot: 0, itemId: 'mondstein', quantity: 1 }];
+    const row = (): Element | null => panels.root.querySelector('.trailing-list--items .list-row');
+
+    panels.renderItems(rows);
+    const first = row();
+    panels.renderItems(rows);
+    expect(row()).toBe(first);
+
+    panels.renderItems([{ slot: 0, itemId: 'mondstein', quantity: 1, equippedHand: 'right' }]);
+    expect(row()).not.toBe(first);
+    expect(row()?.querySelector('.list-row__marker')?.textContent).toBe('[R]');
   });
 
   /** Both trailing lists carry a count footer. */
@@ -1067,5 +1117,426 @@ describe('overlay focus moves on entry, not on every repaint', () => {
     shell.overlays.present({ kind: 'registration' });
     expect(document.activeElement).not.toBe(shell.overlays.loginNickname);
     expect((document.activeElement as HTMLInputElement | null)?.tagName).toBe('INPUT');
+  });
+});
+
+describe('the HUD beyond its bars', () => {
+  const energy = { healthCurrent: 30, healthMax: 60, balanceCurrent: 4, balanceMax: 100, spiritCurrent: 5, spiritMax: 5 };
+
+  it('marks the balance bar, and names the state, only while winded', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const tracks = (): Element[] => [...panels.root.querySelectorAll('.hud-bar__track')];
+
+    panels.renderEnergy(energy, true);
+    expect(tracks().map((track) => track.classList.contains('hud-bar__track--winded'))).toEqual([false, true, false]);
+    expect(tracks().map((track) => track.getAttribute('aria-label'))).toEqual(['Health 30/60', 'Balance 4/100, winded', 'Spirit 5/5']);
+
+    panels.renderEnergy({ ...energy, balanceCurrent: 15 }, false);
+    expect(tracks().some((track) => track.classList.contains('hud-bar__track--winded'))).toBe(false);
+    expect(tracks()[1]?.getAttribute('title')).toBe('Balance 15/100');
+  });
+
+  it.each<[string, LucidityMessage, string[]]>([
+    ['a dreamer with no role', { ranks: [] }, ['No role yet']],
+    ['a dreamer on a trial', { ranks: [], task: { role: 'heiler', progress: 0 } }, ['No role yet', 'Task: 0 of 1']],
+    [
+      'a Kämpfer studying, with a task under way',
+      {
+        role: 'kaempfer',
+        ranks: [{ teachingId: 'strike', rank: 1, practice: 12.9 }],
+        study: 'strike',
+        task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 },
+      },
+      ['Kämpfer', 'Studying Strike: 12 of 35', 'Task: 2 of 3'],
+    ],
+    [
+      'a Heiler studying nothing, with a task done',
+      { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 3, practice: 0 }], task: { role: 'heiler', teachingId: 'drawing-back', progress: 60 } },
+      ['Heiler', 'Studying nothing', 'Your task is done. Return to your master.'],
+    ],
+  ])('shows the role, the study, and the task of %s', (_label, lucidity, lines) => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    panels.renderLucidity(lucidity);
+    expect([...panels.root.querySelectorAll('.hud-lucidity__line')].map((line) => line.textContent)).toEqual(lines);
+  });
+});
+
+describe('the service panel', () => {
+  function mount() {
+    const calls: string[] = [];
+    const panel = new ServicePanel({
+      onAskTask: (teachingId) => calls.push(`ask:${teachingId ?? 'trial'}`),
+      onCompleteTask: () => calls.push('complete'),
+      onAbandonTask: () => calls.push('abandon'),
+      onStudy: (teachingId) => calls.push(`study:${teachingId}`),
+      onClose: () => calls.push('close'),
+    });
+    const npc = (service: NPCService, id = 'npc:EdariaMitte/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
+    const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
+    const press = (label: string): void => {
+      const node = [...panel.root.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
+      if (node === undefined) throw new Error(`no button "${label}"`);
+      node.click();
+    };
+    const text = (): string => panel.root.textContent ?? '';
+    const row = (id: string): string => panel.root.querySelector(`[data-teaching="${id}"]`)?.textContent ?? '';
+    return { panel, calls, npc, buttons, press, text, row };
+  }
+
+  beforeEach(() => setLocale('en'));
+
+  it('is hidden with no NPC, and for an NPC with nothing to offer', () => {
+    const p = mount();
+    p.panel.render(undefined, { ranks: [] });
+    expect(p.panel.root.classList.contains('hidden')).toBe(true);
+    p.panel.render(clientEntity({ id: 'npc:EdariaBibliothek/libus', kind: 'npc' }), { ranks: [] });
+    expect(p.panel.root.classList.contains('hidden')).toBe(true);
+  });
+
+  it('offers a dreamer with no role the trial, with what it asks and the condition it is held under', () => {
+    const p = mount();
+    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), { ranks: [] });
+    expect(p.panel.root.classList.contains('hidden')).toBe(false);
+    expect(p.panel.root.querySelector('h1')?.textContent).toBe('Sana');
+    expect(p.text()).toContain('Master of the Heiler');
+    expect(p.text()).toContain('Passing it commits you to nothing');
+    expect(p.text()).toContain('Walk to the Nordwald and come back.');
+    expect(p.text()).toContain('You cannot strike while you hold this trial.');
+    p.press('Ask for the trial');
+    p.press('Close');
+    expect(p.calls).toEqual(['ask:trial', 'close']);
+  });
+
+  /** The shell renders on every `energy` frame, and a button replaced under a held pointer never gets its click. */
+  it('keeps its controls across a render that changed nothing, and replaces them when the lucidity or the NPC did', () => {
+    const p = mount();
+    const lucidity = { ranks: [] };
+    const control = (): Element | null => p.panel.root.querySelector('.service-body button');
+
+    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    const first = control();
+    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    expect(control()).toBe(first);
+
+    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    expect(control()?.textContent).toBe('Give up the trial');
+
+    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    const asked = control();
+    expect(asked?.textContent).toBe('Ask for the trial');
+    // Another master, with nothing else changed.
+    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    expect(p.panel.root.querySelector('h1')?.textContent).toBe('Pugnax');
+    expect(p.text()).toContain('Master of the Kämpfer');
+    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.panel.render(undefined, lucidity);
+    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    expect(control()).not.toBe(asked);
+    expect(p.buttons()).toEqual(['Ask for the trial', 'Close']);
+  });
+
+  it('shows a trial under way with its progress and a way to give it up', () => {
+    const p = mount();
+    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    expect(p.text()).toContain('Your trial');
+    expect(p.text()).toContain('Drive off a nightmare. 0 of 1');
+    expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
+    p.press('Give up the trial');
+    expect(p.calls).toEqual(['abandon']);
+  });
+
+  it('asks a dreamer who passed the trial before making them the role for good', () => {
+    const p = mount();
+    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 1 } });
+    expect(p.text()).toContain('Become a Kämpfer?');
+    expect(p.text()).toContain('for good');
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Kämpfer', 'Close']);
+    p.press('Not yet');
+    p.press('Become a Kämpfer');
+    expect(p.calls).toEqual(['close', 'complete']);
+  });
+
+  it("tells a dreamer on the other master's trial that they hold one", () => {
+    const p = mount();
+    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'heiler', progress: 1 } });
+    expect(p.text()).toContain("You hold another master's trial.");
+    expect(p.buttons()).toEqual(['Give up that trial', 'Close']);
+  });
+
+  it('refuses a dreamer of the other role', () => {
+    const p = mount();
+    p.panel.render(p.npc('kaempferMaster'), { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] });
+    expect(p.text()).toContain('You are a Heiler. Pugnax has nothing to teach you.');
+    expect(p.buttons()).toEqual(['Close']);
+  });
+
+  const headings = (panel: ServicePanel): string[] => [...panel.root.querySelectorAll('h2')].map((node) => node.textContent ?? '');
+
+  it("sorts a Kämpfer's teachings by what can be done with each: studied, open to study, not yet, mastered", () => {
+    const p = mount();
+    const lucidity: LucidityMessage = {
+      role: 'kaempfer',
+      ranks: [
+        { teachingId: 'strike', rank: 1, practice: 12.5 },
+        { teachingId: 'toughening', rank: 5, practice: 0 },
+      ],
+      study: 'strike',
+    };
+    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    expect(p.text()).toContain('You study one teaching at a time.');
+    expect(headings(p.panel)).toEqual(['You are studying', 'You can study', 'Not yet', 'Mastered']);
+    expect([...p.panel.root.querySelectorAll('[data-teaching]')].map((node) => node.getAttribute('data-teaching'))).toEqual([
+      'strike',
+      'guard',
+      'balance-recovery',
+      'follow-through',
+      'toughening',
+    ]);
+    expect(p.row('strike')).toContain('Rank 1 of 5');
+    expect(p.row('strike')).toContain('12 of 35 practice toward rank 2');
+    expect(p.row('guard')).toContain('Study this');
+    expect(p.row('follow-through')).toContain('Needs Strike at rank 2');
+    expect(p.row('toughening')).toContain('Rank 5 of 5');
+    // One control per teaching that has something to do, and none for the rest.
+    expect(p.buttons()).toEqual(['Study this', 'Study this', 'Close']);
+    p.press('Study this');
+    expect(p.calls).toEqual(['study:guard']);
+  });
+
+  it('walks a teaching earned by a task from taking the task to learning it, saying what the task is before it is taken', () => {
+    const p = mount();
+    const ready: LucidityMessage = { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
+    p.panel.render(p.npc('kaempferMaster'), ready);
+    expect(p.text()).toContain('You study nothing. Choose a teaching below.');
+    expect(headings(p.panel)).toEqual(['You can study', 'Earned by a task']);
+    expect(p.row('follow-through')).toContain('Pugnax teaches its first rank for a task.');
+    expect(p.row('follow-through')).toContain('Drive off 3 nightmares.');
+    expect(p.row('follow-through')).toContain('Falling starts the count over.');
+    p.press('Take the task');
+
+    p.panel.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 } });
+    expect(p.row('follow-through')).toContain('Drive off 3 nightmares. 2 of 3');
+    p.press('Give up the task');
+
+    p.panel.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 3 } });
+    expect(p.row('follow-through')).toContain('You did what Pugnax asked.');
+    p.press('Learn Follow-through');
+    expect(p.calls).toEqual(['ask:follow-through', 'abandon', 'complete']);
+  });
+
+  it('holds back a second task while one is held, and says why', () => {
+    const p = mount();
+    const lucidity: LucidityMessage = {
+      role: 'heiler',
+      ranks: [{ teachingId: 'touch', rank: 2, practice: 0 }],
+      task: { role: 'heiler', teachingId: 'nothing-this-client-knows', progress: 0 },
+    };
+    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    expect(p.row('drawing-back')).toContain('Mend 60 health on other dreamers.');
+    expect(p.row('drawing-back')).toContain('Finish your current task first.');
+    expect(p.buttons()).not.toContain('Take the task');
+  });
+
+  it('renders in German', () => {
+    setLocale('de');
+    const p = mount();
+    p.panel.render(p.npc('kaempferMaster'), { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
+    expect(headings(p.panel)).toEqual(['Das lernst du', 'Das kannst du lernen', 'Noch nicht']);
+    expect(p.row('follow-through')).toContain('Braucht Schlag auf Rang 2');
+  });
+});
+
+describe('the fallen notice', () => {
+  function mount() {
+    let wakes = 0;
+    const notice = new FallenNotice(() => {
+      wakes += 1;
+    });
+    const visible = (): string[] =>
+      [...notice.root.querySelectorAll('button')].filter((node) => node.closest('.hidden') === null).map((node) => node.textContent ?? '');
+    const press = (label: string): void => [...notice.root.querySelectorAll('button')].find((node) => node.textContent === label)!.click();
+    return { notice, visible, press, wakes: () => wakes };
+  }
+
+  beforeEach(() => setLocale('en'));
+
+  it('shows only while the player lies fallen', () => {
+    const n = mount();
+    n.notice.render({ fallen: false, raise: undefined });
+    expect(n.notice.root.classList.contains('hidden')).toBe(true);
+    n.notice.render({ fallen: true, raise: undefined });
+    expect(n.notice.root.classList.contains('hidden')).toBe(false);
+    expect(n.notice.root.textContent).toContain('You cannot move, but you can still speak.');
+  });
+
+  it('gives up in two steps, naming where the dreamer will wake', () => {
+    const n = mount();
+    n.notice.render({ fallen: true, raise: undefined });
+    expect(n.visible()).toEqual(['Give up']);
+    n.press('Give up');
+    expect(n.visible()).toEqual(['Stay', 'Wake there']);
+    expect(n.notice.root.textContent).toContain('You will wake at the inn, weakened.');
+    expect(n.wakes()).toBe(0);
+    n.press('Stay');
+    expect(n.visible()).toEqual(['Give up']);
+    n.press('Give up');
+    n.press('Wake there');
+    expect(n.wakes()).toBe(1);
+  });
+
+  it('starts from the first step again after the dreamer has stood up', () => {
+    const n = mount();
+    n.notice.render({ fallen: true, raise: undefined });
+    n.press('Give up');
+    n.notice.render({ fallen: false, raise: undefined });
+    n.notice.render({ fallen: true, raise: undefined });
+    expect(n.visible()).toEqual(['Give up']);
+  });
+
+  it('counts a raise down while one runs', () => {
+    const n = mount();
+    n.notice.render({ fallen: true, raise: { healerName: 'Lumi', secondsLeft: 4 } });
+    expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 4 s');
+    n.notice.render({ fallen: true, raise: undefined });
+    expect(n.notice.root.querySelector('p.hidden')?.textContent).toContain('Lumi');
+  });
+});
+
+/**
+ * The session, the two panels, and the play field each have a suite of their own. These drive the
+ * whole composition over a socket, because only that shows a press reaches the session and a
+ * button reaches the request it names.
+ */
+describe('the play field and the panels through the shell', () => {
+  const PUGNAX = 'npc:Meadow/pugnax';
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    setLocale('en');
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+  });
+
+  /** A player in the world beside Pugnax, with another dreamer near, and every frame the client has sent since. */
+  function playing() {
+    const { factory, latest } = fakeSocketFactory();
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    shell.overlays.loginNickname.value = 'Tester';
+    (container.querySelector('input[type="password"]') as HTMLInputElement).value = 'hunter22';
+    container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    const socket = latest();
+    const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
+    socket.open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    deliver(enterSpaceFrame());
+    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    deliver(entityFrame());
+    deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'kaempferMaster' }));
+    deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
+    deliver({ tag: 'energy', payload: fullPools([]) });
+    deliver({ tag: 'lucidity', payload: { ranks: [] } });
+    socket.sent.length = 0;
+    const sent = (): SomnioMessage[] => socket.sent.map((text) => decodeSomnioMessage(text));
+    const press = (label: string): void => {
+      const node = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
+      if (node === undefined) throw new Error(`no button "${label}"`);
+      node.click();
+    };
+    const canvas = container.querySelector('canvas')!;
+    const tags = (): string[] => sent().map((message) => message.tag);
+    return { shell, deliver, sent, press, canvas, tags, swings: () => tags().filter((tag) => tag === 'swing').length };
+  }
+
+  it('swings on a left press on the play field, keeps swinging while it is held, and stops when the button comes up anywhere', () => {
+    const p = playing();
+    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 2 }));
+    expect(p.swings()).toBe(0);
+
+    const pressed = performance.now();
+    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0 }));
+    expect(p.swings()).toBe(1);
+    p.shell.session.runTick(pressed + 1100);
+    expect(p.swings()).toBe(2);
+
+    window.dispatchEvent(new PointerEvent('pointerup'));
+    p.shell.session.runTick(pressed + 2200);
+    expect(p.swings()).toBe(2);
+  });
+
+  /** With another button still down, the left one coming up fires no `pointerup`, only a move, wherever the pointer is by then. */
+  it('stops swinging when a move of that pointer shows the left button is up, over the play field or not', () => {
+    const p = playing();
+    const pressed = performance.now();
+    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1 }));
+    p.canvas.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, pointerId: 1, bubbles: true }));
+    // Another device hovering by, or lifting, says nothing about this one's button.
+    p.canvas.dispatchEvent(new PointerEvent('pointermove', { buttons: 0, pointerId: 2, bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2 }));
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2 }));
+    p.shell.session.runTick(pressed + 1100);
+    expect(p.swings()).toBe(2);
+
+    document.body.dispatchEvent(new PointerEvent('pointermove', { buttons: 2, pointerId: 1, bubbles: true }));
+    p.shell.session.runTick(pressed + 2200);
+    expect(p.swings()).toBe(2);
+  });
+
+  it('lets go of the dreamer tended on Escape, and opens the menu only on the next', () => {
+    const p = playing();
+    p.deliver({ tag: 'lucidity', payload: { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
+    p.shell.session.pressAt('bren', 0);
+    expect(p.shell.session.tending).toBe('bren');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    expect(p.shell.session.tending).toBeUndefined();
+    expect(p.shell.controller.presentedOverlay).toBeUndefined();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  it("sends each of a master's buttons as the request it names, from the trial to a teaching", () => {
+    const p = playing();
+    const panel = container.querySelector('.service-panel')!;
+    expect(panel.classList.contains('hidden')).toBe(true);
+    p.shell.session.pressAt(PUGNAX, 0);
+    expect(panel.classList.contains('hidden')).toBe(false);
+
+    p.press('Ask for the trial');
+    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'kaempfer', progress: 0 } } });
+    p.press('Give up the trial');
+    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'kaempfer', progress: 1 } } });
+    p.press('Become a Kämpfer');
+    p.deliver({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' } });
+    expect(container.querySelector('.hud-lucidity')?.textContent).toContain('Studying Strike');
+    (panel.querySelector('[data-teaching="toughening"] button') as HTMLButtonElement).click();
+
+    expect(p.sent()).toEqual([
+      { tag: 'talk', payload: { npcId: PUGNAX } },
+      { tag: 'askTask', payload: { npcId: PUGNAX } },
+      { tag: 'abandonTask', payload: {} },
+      { tag: 'completeTask', payload: { npcId: PUGNAX } },
+      { tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } },
+    ]);
+    p.press('Close');
+    expect(panel.classList.contains('hidden')).toBe(true);
+  });
+
+  it('shows a fallen player the notice, and wakes them once they confirm giving up', () => {
+    const p = playing();
+    const notice = container.querySelector('.fallen-notice')!;
+    expect(notice.classList.contains('hidden')).toBe(true);
+
+    p.deliver({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    expect(notice.classList.contains('hidden')).toBe(false);
+    p.press('Give up');
+    expect(p.tags()).toEqual([]);
+    p.press('Wake there');
+    expect(p.sent()).toEqual([{ tag: 'wake', payload: {} }]);
   });
 });

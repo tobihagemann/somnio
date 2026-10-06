@@ -1,7 +1,7 @@
 import type { Door, SectorView } from '@somnio/protocol';
 import { buildSpaceCollision, canStand, npcBodies } from './collision.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
-import { EDGE_TOLERANCE, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
+import { EDGE_TOLERANCE, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
 import type { Point, Rect, Transform } from './geometry.ts';
 import { heading, headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
@@ -12,8 +12,8 @@ import type { Sector } from './sector.ts';
 
 /**
  * The world as spaces: every outdoor sector lies in one continuous space at its `origin`, and
- * each interior is a space of its own. Bodies walk freely within a space and change space only
- * through a door.
+ * each interior is a space of its own. Bodies walk freely within a space and change space through
+ * a door, or by waking at the wake-point after giving up.
  */
 
 export const OUTDOOR_SPACE_ID = 'outdoors';
@@ -191,4 +191,9 @@ export function resolveDoor(sector: SectorView, door: Door, registry: ModelRegis
 /** Whether the point stands in the door's trigger, widened by `slack` on every side. */
 export function doorContains(resolved: ResolvedDoor, point: Point, slack: number): boolean {
   return rectContains(resolved.trigger, worldToModel(resolved.transform, point), slack);
+}
+
+/** Whether a dreamer stands within speaking distance of an NPC: where it greets them, answers a `talk`, and keeps a master's offer open. */
+export function withinSpeakingDistance(dreamer: Point, npc: Point): boolean {
+  return distance(dreamer, npc) <= SOMNIO_CONSTANTS.npcInteractionRadius;
 }

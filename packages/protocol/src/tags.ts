@@ -8,8 +8,16 @@ const CLIENT_TO_SERVER_TAGS = [
   'move',
   'clientSay',
   'equipToggle',
-  'bump',
+  'talk',
+  'swing',
+  'tend',
   'useDoor',
+  'askTask',
+  'completeTask',
+  'abandonTask',
+  'study',
+  'wake',
+  'useItem',
   // Session resumption. `redeemSession` is accepted pre-login (it is an alternative to a
   // password login and reuses `loginResult` for its outcome); `revokeSession` is accepted
   // only post-attach. Both are request-gated: the server never volunteers either response.
@@ -31,6 +39,10 @@ const SERVER_TO_CLIENT_TAGS = [
   'energy',
   'inventory',
   'leave',
+  'lucidity',
+  'condition',
+  'blow',
+  'raising',
   'adminSay',
   'sessionToken',
   'sessionRevoked',

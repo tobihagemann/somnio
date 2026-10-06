@@ -1,6 +1,6 @@
 import type { Door } from '@somnio/protocol';
-import { OUTDOOR_SPACE_ID, headingFromCardinal } from '@somnio/core';
-import type { Character, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
+import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
+import type { Character, InventoryRow, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../../core/test/support/worldFixture.ts';
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
@@ -64,14 +64,8 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
     space,
     position,
     facing: headingFromCardinal('south'),
-    energy: {
-      healthCurrent: 100,
-      healthMax: 100,
-      balanceCurrent: 100,
-      balanceMax: 100,
-      spiritCurrent: 100,
-      spiritMax: 100,
-    },
+    energy: fullPools(NO_LUCIDITY.ranks),
+    lucidity: NO_LUCIDITY,
     lastSeen: new Date(),
   };
 }
@@ -88,12 +82,15 @@ export interface AttachPlayerOptions {
   spaceId?: string;
   outbox?: ConnectionOutbox;
   worldSeconds?: number;
+  /** What the character differs in from a fresh one: its pools and what it has grown into. */
+  character?: Partial<Pick<Character, 'energy' | 'lucidity'>>;
+  inventory?: InventoryRow[];
 }
 
 /** Attaches a new character at `at`, on an outbox of its own unless one is given. */
 export function attachPlayer(space: SpaceActor, at: Point, name = 'tester', options: AttachPlayerOptions = {}) {
   const outbox = options.outbox ?? new ConnectionOutbox(4096);
-  const character = makeCharacter(at, name, options.spaceId);
-  space.attach(character, [], outbox, options.worldSeconds ?? 0);
+  const character = { ...makeCharacter(at, name, options.spaceId), ...options.character };
+  space.attach(character, options.inventory ?? [], outbox, options.worldSeconds ?? 0);
   return { outbox, character, entityId: character.id };
 }

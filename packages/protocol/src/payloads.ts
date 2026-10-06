@@ -45,6 +45,20 @@ export type LoginResult = (typeof LOGIN_RESULTS)[number];
 export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const;
 export type RegisterResult = (typeof REGISTER_RESULTS)[number];
 
+export const ROLES = ['kaempfer', 'heiler'] as const;
+export type Role = (typeof ROLES)[number];
+
+/** What asking an NPC offers beyond its dialog. */
+export const NPC_SERVICES = ['kaempferMaster', 'heilerMaster'] as const;
+export type NPCService = (typeof NPC_SERVICES)[number];
+
+/** How an entity's health stands, by quarters of its maximum. It is all another player learns of it. */
+export const CONDITIONS = ['hale', 'wounded', 'hurt', 'failing', 'fallen'] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
+export const RAISING_STATES = ['begun', 'broken', 'done'] as const;
+export type RaisingState = (typeof RAISING_STATES)[number];
+
 export interface LoginMessage {
   nickname: string;
   password: string;
@@ -78,8 +92,19 @@ export interface EquipToggleMessage {
   hand?: Hand;
 }
 
-export interface BumpMessage {
-  targetId: string;
+/** Asks an NPC to go on past its greeting. The client opens what a master offers with it. */
+export interface TalkMessage {
+  npcId: string;
+}
+
+/** One swing, at the nightmare the client picked in front of the dreamer, or at the air without one. */
+export interface SwingMessage {
+  targetId?: string;
+}
+
+/** The dreamer a Heiler tends from now on; absent tends no one. */
+export interface TendMessage {
+  targetId?: string;
 }
 
 /** A door id is unique only within its sector, and a space can hold several sectors. */
@@ -87,6 +112,28 @@ export interface UseDoorMessage {
   sector: string;
   doorId: string;
 }
+
+/** Asks a master for a task: their trial without a `teachingId`, the task that gates that teaching with one. */
+export interface AskTaskMessage {
+  npcId: string;
+  teachingId?: string;
+}
+
+export interface CompleteTaskMessage {
+  npcId: string;
+}
+
+export interface StudyMessage {
+  npcId: string;
+  teachingId: string;
+}
+
+export interface UseItemMessage {
+  slot: number;
+}
+
+/** The payload of a verb that says everything by its tag. */
+export type EmptyMessage = Record<string, never>;
 
 /** Redeem a stored session token in place of a password login. Accepted pre-login only. */
 export interface RedeemSessionMessage {
@@ -135,6 +182,9 @@ export interface EntityMessage {
   z: number;
   facing: number;
   gait: Gait;
+  condition: Condition;
+  /** Present on an NPC that offers one. */
+  service?: NPCService;
 }
 
 export interface EntityMove {
@@ -189,6 +239,50 @@ export interface InventoryMessage {
 export interface LeaveMessage {
   entityId: string;
   leftGame: boolean;
+}
+
+export interface TeachingRankMessage {
+  teachingId: string;
+  rank: number;
+  /** What the dreamer has done toward the next rank. */
+  practice: number;
+}
+
+export interface TaskMessage {
+  role: Role;
+  /** Absent for the role's trial. */
+  teachingId?: string;
+  progress: number;
+}
+
+/** What a dreamer has grown into, sent to that dreamer alone. */
+export interface LucidityMessage {
+  role?: Role;
+  ranks: TeachingRankMessage[];
+  /** The teaching whose next rank practice builds toward. */
+  study?: string;
+  task?: TaskMessage;
+}
+
+export interface ConditionMessage {
+  entityId: string;
+  condition: Condition;
+}
+
+/** One swing or strike, landed or not. */
+export interface BlowMessage {
+  attackerId: string;
+  /** Absent for a swing at the air. */
+  targetId?: string;
+  hit: boolean;
+}
+
+export interface RaisingMessage {
+  healerId: string;
+  targetId: string;
+  state: RaisingState;
+  /** How long the raise takes, with `begun`; 0 otherwise. */
+  seconds: number;
 }
 
 export interface AdminSayMessage {
@@ -255,8 +349,20 @@ export function decodeEquipToggleMessage(container: Record<string, unknown>, pat
   };
 }
 
-export function decodeBumpMessage(container: Record<string, unknown>, path: string): BumpMessage {
-  return { targetId: requireEntityId(container, 'targetId', path) };
+export function decodeTalkMessage(container: Record<string, unknown>, path: string): TalkMessage {
+  return { npcId: requireEntityId(container, 'npcId', path) };
+}
+
+function decodeOptionalTarget(container: Record<string, unknown>, path: string): { targetId?: string } {
+  return isAbsent(container, 'targetId') ? {} : { targetId: requireEntityId(container, 'targetId', path) };
+}
+
+export function decodeSwingMessage(container: Record<string, unknown>, path: string): SwingMessage {
+  return decodeOptionalTarget(container, path);
+}
+
+export function decodeTendMessage(container: Record<string, unknown>, path: string): TendMessage {
+  return decodeOptionalTarget(container, path);
 }
 
 export function decodeUseDoorMessage(container: Record<string, unknown>, path: string): UseDoorMessage {
@@ -264,6 +370,32 @@ export function decodeUseDoorMessage(container: Record<string, unknown>, path: s
     sector: requireBoundedString(container, 'sector', path, PROTOCOL_BYTE_CAPS.sectorName),
     doorId: requireId(container, 'doorId', path),
   };
+}
+
+export function decodeAskTaskMessage(container: Record<string, unknown>, path: string): AskTaskMessage {
+  return {
+    npcId: requireEntityId(container, 'npcId', path),
+    ...(isAbsent(container, 'teachingId') ? {} : { teachingId: requireId(container, 'teachingId', path) }),
+  };
+}
+
+export function decodeCompleteTaskMessage(container: Record<string, unknown>, path: string): CompleteTaskMessage {
+  return { npcId: requireEntityId(container, 'npcId', path) };
+}
+
+export function decodeStudyMessage(container: Record<string, unknown>, path: string): StudyMessage {
+  return {
+    npcId: requireEntityId(container, 'npcId', path),
+    teachingId: requireId(container, 'teachingId', path),
+  };
+}
+
+export function decodeUseItemMessage(container: Record<string, unknown>, path: string): UseItemMessage {
+  return { slot: requireInt32(container, 'slot', path) };
+}
+
+export function decodeEmptyMessage(): EmptyMessage {
+  return {};
 }
 
 /**
@@ -330,6 +462,8 @@ export function decodeEntityMessage(container: Record<string, unknown>, path: st
     z: requireMetres(container, 'z', path),
     facing: requireFloat(container, 'facing', path),
     gait: requireStringEnum(container, 'gait', path, GAITS),
+    condition: requireStringEnum(container, 'condition', path, CONDITIONS),
+    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, NPC_SERVICES) }),
   };
 }
 
@@ -404,6 +538,62 @@ export function decodeLeaveMessage(container: Record<string, unknown>, path: str
   return {
     entityId: requireEntityId(container, 'entityId', path),
     leftGame: requireBool(container, 'leftGame', path),
+  };
+}
+
+function requireNonNegative(value: number, path: string): number {
+  if (value < 0) {
+    throw new WireDecodingError(path, `expected a non-negative number, got ${value}`);
+  }
+  return value;
+}
+
+function decodeTeachingRankMessage(container: Record<string, unknown>, path: string): TeachingRankMessage {
+  return {
+    teachingId: requireId(container, 'teachingId', path),
+    rank: requireNonNegative(requireInt32(container, 'rank', path), `${path}.rank`),
+    practice: requireNonNegative(requireFloat(container, 'practice', path), `${path}.practice`),
+  };
+}
+
+function decodeTaskMessage(container: Record<string, unknown>, path: string): TaskMessage {
+  return {
+    role: requireStringEnum(container, 'role', path, ROLES),
+    ...(isAbsent(container, 'teachingId') ? {} : { teachingId: requireId(container, 'teachingId', path) }),
+    progress: requireNonNegative(requireFloat(container, 'progress', path), `${path}.progress`),
+  };
+}
+
+export function decodeLucidityMessage(container: Record<string, unknown>, path: string): LucidityMessage {
+  return {
+    ...(isAbsent(container, 'role') ? {} : { role: requireStringEnum(container, 'role', path, ROLES) }),
+    ranks: mapArray(container, 'ranks', path, decodeTeachingRankMessage),
+    ...(isAbsent(container, 'study') ? {} : { study: requireId(container, 'study', path) }),
+    ...(isAbsent(container, 'task') ? {} : { task: decodeTaskMessage(requireNested(container, 'task', path), `${path}.task`) }),
+  };
+}
+
+export function decodeConditionMessage(container: Record<string, unknown>, path: string): ConditionMessage {
+  return {
+    entityId: requireEntityId(container, 'entityId', path),
+    condition: requireStringEnum(container, 'condition', path, CONDITIONS),
+  };
+}
+
+export function decodeBlowMessage(container: Record<string, unknown>, path: string): BlowMessage {
+  return {
+    attackerId: requireEntityId(container, 'attackerId', path),
+    ...decodeOptionalTarget(container, path),
+    hit: requireBool(container, 'hit', path),
+  };
+}
+
+export function decodeRaisingMessage(container: Record<string, unknown>, path: string): RaisingMessage {
+  return {
+    healerId: requireEntityId(container, 'healerId', path),
+    targetId: requireEntityId(container, 'targetId', path),
+    state: requireStringEnum(container, 'state', path, RAISING_STATES),
+    seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
   };
 }
 

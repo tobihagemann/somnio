@@ -6,12 +6,13 @@ import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
 import type { WorldRenderSurface } from '@/client/renderSurface';
 import { WORLD_TIME_RATE, groundHeightAt, headingRadians, hourOfDay, objectModel, relativeDirection, sectorOrigin, sectorRect } from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Rect, Size, SpaceCollision } from '@somnio/core';
-import type { Gait, Placement, SectorView } from '@somnio/protocol';
-import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName } from './animation';
-import type { AnimationPose } from './animation';
+import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
+import { t } from '@/i18n';
+import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
+import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
-import { namePlaqueBackground, renderNamePlaque, renderSpeechBubble } from './overlayArt';
+import { NAME_PLAQUE, namePlaqueBackground, renderNamePlaque, renderSpeechBubble } from './overlayArt';
 import type { RasterArt } from './overlayArt';
 import {
   CHARACTER_SCALE,
@@ -52,9 +53,25 @@ interface EntityRenderState {
   lastMotionTime: number;
   pendingMotion: boolean;
   isPlaceholder: boolean;
-  /** Label under the feet; created once on first placement and rebuilt on a kind or name change. */
+  /**
+   * How far above its node the model reaches, measured once when the model is put in, standing in
+   * its idle pose. A skinned mesh keeps the bounds of the pose it was first measured in, so a first
+   * measure of a body that lies fallen would come back low and stay low.
+   */
+  headHeight: number;
+  /** Label under the feet; created once on first placement and rebuilt on a kind, name, or condition change. */
   namePlaque: THREE.Object3D | undefined;
   pose: AnimationPose | undefined;
+  condition: Condition;
+  /** A clip playing once over the looping pose; `held` keeps its last frame until the entity stands again. */
+  oneShot: { action: THREE.AnimationAction; held: boolean } | undefined;
+}
+
+/** A ring on the ground around a fallen body, drawn further round as the raise goes on. */
+interface RaiseRing {
+  mesh: THREE.Mesh;
+  elapsed: number;
+  seconds: number;
 }
 
 /** The base floor of a sector or one of its patches. */
@@ -101,7 +118,7 @@ function enableShadows(root: THREE.Object3D): void {
 }
 
 /**
- * Three.js implementation of the ten-method render surface.
+ * Three.js implementation of the render surface.
  *
  * Real 3D depth: placements and entities sit on the floor at their world XZ and the depth buffer
  * gives draw order for free — no painter's algorithm and no Y-flip.
@@ -129,6 +146,12 @@ export class WorldScene implements WorldRenderSurface {
   private readonly sectors = new Map<string, DrawnSector>();
   private readonly entityStates = new Map<string, EntityRenderState>();
   private readonly bubbles = new Map<string, { node: THREE.Object3D; remaining: number }>();
+  /** The short-lived word over an entity a blow missed. */
+  private readonly misses = new Map<string, { node: THREE.Object3D; remaining: number }>();
+  private readonly raiseRings = new Map<string, RaiseRing>();
+  /** The ring round the entity the player tends. */
+  private selection: { id: string; mesh: THREE.Mesh } | undefined;
+  private readonly raycaster = new THREE.Raycaster();
   private ground: (() => SpaceCollision) | undefined;
   /** The world clock as last told, and when; `undefined` holds the light at noon. */
   private clock: { worldSeconds: number; atMs: number } | undefined;
@@ -226,6 +249,9 @@ export class WorldScene implements WorldRenderSurface {
     this.sectors.clear();
     this.entityStates.clear();
     this.bubbles.clear();
+    this.misses.clear();
+    this.raiseRings.clear();
+    this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
     this.spaceRoot = new THREE.Object3D();
@@ -306,8 +332,11 @@ export class WorldScene implements WorldRenderSurface {
         lastMotionTime: Number.NEGATIVE_INFINITY,
         pendingMotion: false,
         isPlaceholder: true,
+        headHeight: 0,
         namePlaque: undefined,
         pose: undefined,
+        condition: entity.condition,
+        oneShot: undefined,
       };
       this.entityStates.set(entity.id, state);
       this.resolveEntityModel(state);
@@ -327,6 +356,7 @@ export class WorldScene implements WorldRenderSurface {
       state.name = entity.name;
       this.rebuildNamePlaque(state);
     }
+    if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
 
     state.facing = entity.facing;
     state.gait = entity.gait;
@@ -366,6 +396,84 @@ export class WorldScene implements WorldRenderSurface {
     if (state !== undefined) state.gait = gait;
   }
 
+  /** The plaque takes the condition's tint, and a fallen entity drops and stays down until it stands again. */
+  updateCondition(entityId: string, condition: Condition): void {
+    const state = this.entityStates.get(entityId);
+    if (state === undefined) return;
+    state.condition = condition;
+    this.rebuildNamePlaque(state);
+    if (condition === 'fallen') {
+      this.playOneShot(state, 'fallen');
+    } else if (state.oneShot?.held === true) {
+      this.endOneShot(state);
+    }
+  }
+
+  showBlow(attackerId: string, targetId: string | undefined, hit: boolean): void {
+    const attacker = this.entityStates.get(attackerId);
+    if (attacker !== undefined) this.playOneShot(attacker, 'swing');
+    const target = targetId === undefined ? undefined : this.entityStates.get(targetId);
+    if (targetId === undefined || target === undefined) return;
+    if (hit) {
+      this.playOneShot(target, 'flinch');
+      return;
+    }
+    disposeSubtree(this.misses.get(targetId)?.node);
+    const node = missQuad();
+    node.position.set(0, target.headHeight + BUBBLE_HEAD_GAP, 0);
+    target.node.add(node);
+    this.misses.set(targetId, { node, remaining: MISS_SECONDS });
+  }
+
+  showRaising(targetId: string, seconds: number | undefined): void {
+    disposeSubtree(this.raiseRings.get(targetId)?.mesh);
+    this.raiseRings.delete(targetId);
+    const state = this.entityStates.get(targetId);
+    if (state === undefined || seconds === undefined) return;
+    // It starts with nothing drawn: the tick widens its draw range as the raise goes on.
+    const mesh = groundRingMesh(state.radius * RAISE_RING_RADII, RAISE_RING_COLOR);
+    mesh.geometry.setDrawRange(0, 0);
+    state.node.add(mesh);
+    this.raiseRings.set(targetId, { mesh, elapsed: 0, seconds });
+  }
+
+  showSelection(entityId: string | undefined): void {
+    disposeSubtree(this.selection?.mesh);
+    this.selection = undefined;
+    const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
+    if (entityId === undefined || state === undefined) return;
+    const mesh = groundRingMesh(state.radius * SELECTION_RING_RADII, SELECTION_RING_COLOR);
+    state.node.add(mesh);
+    this.selection = { id: entityId, mesh };
+  }
+
+  /**
+   * The entity drawn under a point of the viewport, in normalized device coordinates, other than
+   * the one the camera follows. An entity is picked as an upright capsule from its feet to its
+   * head, a little wider than its body, and the one nearest the camera wins.
+   */
+  entityAt(x: number, y: number): string | undefined {
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    const ray = this.raycaster.ray;
+    const top = new THREE.Vector3();
+    const onRay = new THREE.Vector3();
+    let picked: string | undefined;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const [id, state] of this.entityStates) {
+      if (id === this.cameraFollowId) continue;
+      const feet = state.node.position;
+      top.copy(feet).setY(feet.y + state.headHeight);
+      const reach = state.radius * PICK_RADII;
+      if (ray.distanceSqToSegment(feet, top, onRay) > reach * reach) continue;
+      const along = onRay.distanceToSquared(ray.origin);
+      if (along >= nearest) continue;
+      picked = id;
+      nearest = along;
+    }
+    return picked;
+  }
+
   setClock(worldSeconds: number): void {
     this.clock = { worldSeconds, atMs: this.now() };
     this.relight();
@@ -378,14 +486,22 @@ export class WorldScene implements WorldRenderSurface {
     // a supersampled canvas texture per message, which is unbounded within a single space.
     disposeSubtree(this.bubbles.get(entityId)?.node);
     const node = speechBubbleQuad(lines);
-    // Measure the model only — the persistent name plaque hanging off the node would otherwise
-    // stretch the bounds and push the bubble up. The bounds are in world space, so the node's
-    // own height comes back off: the bubble hangs from the node, which may stand on raised ground.
-    state.node.updateWorldMatrix(true, true);
-    const headHeight = new THREE.Box3().setFromObject(state.modelHolder).max.y - state.node.position.y;
-    node.position.set(0, Math.max(headHeight, 0) + BUBBLE_HEAD_GAP, 0);
+    node.position.set(0, state.headHeight + BUBBLE_HEAD_GAP, 0);
     state.node.add(node);
     this.bubbles.set(entityId, { node, remaining: lifetimeMs / 1000 });
+  }
+
+  /**
+   * How far above its node an entity's model reaches. Measures the model only — the persistent
+   * name plaque hanging off the node would otherwise stretch the bounds and push an overlay up.
+   * The bounds are in world space, so the node's own height comes back off: overlays hang from
+   * the node, which may stand on raised ground.
+   */
+  private measureHeadHeight(state: EntityRenderState): number {
+    state.node.updateWorldMatrix(true, false);
+    // `updateMatrixWorld`, because only there does a skinned mesh re-read where it is bound, which its bounds are skinned against.
+    state.modelHolder.updateMatrixWorld(true);
+    return Math.max(new THREE.Box3().setFromObject(state.modelHolder).max.y - state.node.position.y, 0);
   }
 
   removeEntity(entityId: string): void {
@@ -393,6 +509,9 @@ export class WorldScene implements WorldRenderSurface {
     disposeSubtree(state?.node);
     this.entityStates.delete(entityId);
     this.bubbles.delete(entityId);
+    this.misses.delete(entityId);
+    this.raiseRings.delete(entityId);
+    if (this.selection?.id === entityId) this.selection = undefined;
   }
 
   showSplash(): void {
@@ -433,17 +552,66 @@ export class WorldScene implements WorldRenderSurface {
       }
 
       const direction = state.travelHeading === undefined ? 'forward' : relativeDirection(state.travelHeading, state.facing);
-      this.applyPose(isMoving ? movementPose(state.kind, state.gait, direction) : 'idle', state);
+      if (!this.oneShotIsPlaying(state)) this.applyPose(isMoving ? movementPose(state.kind, state.gait, direction) : 'idle', state);
       state.mixer?.update(dt);
     }
 
-    for (const [id, bubble] of this.bubbles) {
-      bubble.remaining -= dt;
-      if (bubble.remaining <= 0) {
-        disposeSubtree(bubble.node);
-        this.bubbles.delete(id);
+    for (const overlays of [this.bubbles, this.misses]) {
+      for (const [id, overlay] of overlays) {
+        overlay.remaining -= dt;
+        if (overlay.remaining <= 0) {
+          disposeSubtree(overlay.node);
+          overlays.delete(id);
+        }
       }
     }
+
+    for (const ring of this.raiseRings.values()) {
+      ring.elapsed = Math.min(ring.elapsed + dt, ring.seconds);
+      ring.mesh.geometry.setDrawRange(0, Math.floor((ring.elapsed / ring.seconds) * RING_SEGMENTS) * 6);
+    }
+  }
+
+  /**
+   * Plays a one-shot over the looping pose. A model that carries none of its clips keeps its
+   * pose, and nothing interrupts a held fall.
+   */
+  private playOneShot(state: EntityRenderState, oneShot: OneShot): void {
+    if (state.mixer === undefined || state.oneShot?.held === true) return;
+    const clips = this.assets.clipsFor(state.modelHolder.children[0] ?? state.modelHolder);
+    const name = resolveOneShotClipName(
+      oneShot,
+      clips.map((clip) => clip.name),
+    );
+    const clip = clips.find((candidate) => candidate.name === name);
+    if (clip === undefined) return;
+    const next = state.mixer.clipAction(clip);
+    next.setLoop(THREE.LoopOnce, 1);
+    next.clampWhenFinished = true;
+    this.fadeTo(state, next);
+    state.oneShot = { action: next, held: oneShot === 'fallen' };
+  }
+
+  /** Starts an action from its beginning, fading over from the one the entity was playing. */
+  private fadeTo(state: EntityRenderState, next: THREE.AnimationAction): void {
+    next.reset();
+    if (state.action !== undefined && state.action !== next) next.crossFadeFrom(state.action, CLIP_TRANSITION_DURATION, false);
+    next.play();
+    state.action = next;
+  }
+
+  /** Whether a one-shot still owns the entity's animation. One that has run out hands back to the looping pose. */
+  private oneShotIsPlaying(state: EntityRenderState): boolean {
+    if (state.oneShot === undefined) return false;
+    if (state.oneShot.held || state.oneShot.action.isRunning()) return true;
+    this.endOneShot(state);
+    return false;
+  }
+
+  /** Forgets the pose last applied, so the next tick fades the looping pose back in from the one-shot's last frame. */
+  private endOneShot(state: EntityRenderState): void {
+    state.oneShot = undefined;
+    state.pose = undefined;
   }
 
   private applyPose(pose: AnimationPose, state: EntityRenderState): void {
@@ -464,21 +632,17 @@ export class WorldScene implements WorldRenderSurface {
     const next = state.mixer.clipAction(clip);
     // Clips are cadence-tuned as authored, so they loop verbatim with no rate scaling.
     next.setLoop(THREE.LoopRepeat, Infinity);
-    next.reset();
-    if (state.action !== undefined && state.action !== next) {
-      next.crossFadeFrom(state.action, CLIP_TRANSITION_DURATION, false);
-    }
-    next.play();
-    state.action = next;
+    this.fadeTo(state, next);
   }
 
-  /** Players and NPCs get a plaque; monsters get none, and the local player's text is bold. */
+  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale; the local player's text is bold. */
   private rebuildNamePlaque(state: EntityRenderState): void {
     disposeSubtree(state.namePlaque);
     state.namePlaque = undefined;
-    const background = namePlaqueBackground(state.kind);
+    const background = namePlaqueBackground(state.kind, state.condition);
     if (background === undefined) return;
-    const plaque = namePlaqueQuad(state.name, background, state.kind === 'player');
+    const ink = state.kind !== 'npc' && state.condition === 'fallen' ? NAME_PLAQUE.fallenInk : NAME_PLAQUE.ink;
+    const plaque = namePlaqueQuad(state.name, background, state.kind === 'player', ink);
     state.node.add(plaque);
     state.namePlaque = plaque;
   }
@@ -489,6 +653,7 @@ export class WorldScene implements WorldRenderSurface {
     for (const child of [...state.modelHolder.children]) disposeSubtree(child);
     state.pose = undefined;
     state.action = undefined;
+    state.oneShot = undefined;
     const model = this.assets.character(state.characterModelId);
     if (model === undefined) {
       state.modelHolder.scale.setScalar(1);
@@ -497,6 +662,7 @@ export class WorldScene implements WorldRenderSurface {
       state.modelHolder.add(placeholder);
       state.isPlaceholder = true;
       state.mixer = undefined;
+      state.headHeight = this.measureHeadHeight(state);
       return;
     }
     enableShadows(model);
@@ -504,6 +670,11 @@ export class WorldScene implements WorldRenderSurface {
     state.modelHolder.scale.setScalar(CHARACTER_SCALE);
     state.mixer = new THREE.AnimationMixer(model);
     state.isPlaceholder = false;
+    // Posed first: until a clip plays, a model's bones rest wherever its file left them, which need not be a pose at all.
+    this.applyPose('idle', state);
+    state.mixer.update(0);
+    state.headHeight = this.measureHeadHeight(state);
+    if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
   }
 
   /**
@@ -718,6 +889,16 @@ export class WorldScene implements WorldRenderSurface {
     return this.entityStates.get(entityId)?.node.rotation.y;
   }
 
+  /** Where the middle of an entity's body is drawn, in normalized device coordinates: the point `entityAt` picks it at. */
+  _viewportPointFor(entityId: string): { x: number; y: number } | undefined {
+    const state = this.entityStates.get(entityId);
+    if (state === undefined) return undefined;
+    this.camera.updateMatrixWorld();
+    const feet = state.node.position;
+    const point = new THREE.Vector3(feet.x, feet.y + state.headHeight / 2, feet.z).project(this.camera);
+    return { x: point.x, y: point.y };
+  }
+
   /**
    * Test seam: an entity's live speech-bubble node.
    *
@@ -767,6 +948,16 @@ const OVERLAY_ORIENTATION = (() => {
 })();
 /** Gap between the speaker's head and the balloon's tail tip. */
 const BUBBLE_HEAD_GAP = 0.2;
+/** How long the word over a missed entity stays up. */
+const MISS_SECONDS = 0.8;
+const RING_SEGMENTS = 48;
+const RAISE_RING_COLOR = 0xc9a6ff;
+/** A ring's inner radius in body radii: the raise ring clears a body lying down, the selection ring sits inside it. */
+const RAISE_RING_RADII = 2;
+const SELECTION_RING_RADII = 1.4;
+const SELECTION_RING_COLOR = 0xffe9a3;
+/** How much wider than its body an entity is to the cursor. */
+const PICK_RADII = 1.5;
 /** Gap between the feet anchor and the top of the name plaque. */
 const PLAQUE_FEET_GAP = 0.15;
 /** Advance past the point where the below-the-feet quad clears the floor plane. */
@@ -869,10 +1060,28 @@ function speechBubbleQuad(lines: readonly string[]): THREE.Object3D {
  * invisible under the orthographic projection, but it lifts the quad's world height above the
  * floor and draws it in front of the speaker.
  */
-function namePlaqueQuad(name: string, background: string, bold: boolean): THREE.Object3D {
-  const { container, plate, size } = overlayQuad(renderNamePlaque(name, background, bold));
+function namePlaqueQuad(name: string, background: string, bold: boolean, ink: string): THREE.Object3D {
+  const { container, plate, size } = overlayQuad(renderNamePlaque(name, background, bold, ink));
   const drop = size.y + PLAQUE_FEET_GAP;
   const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
   plate.position.set(0, -(size.y / 2 + PLAQUE_FEET_GAP), drop / Math.tan(pitch) + PLAQUE_FLOOR_CLEARANCE);
   return container;
+}
+
+/** The word over an entity a blow missed, standing where a speech bubble's tail would. */
+function missQuad(): THREE.Object3D {
+  const { container, plate, size } = overlayQuad(renderNamePlaque(t('miss'), NAME_PLAQUE.playerBackground, false));
+  plate.position.y = size.y / 2;
+  return container;
+}
+
+/** A flat ring just above the ground round an entity's feet. */
+function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
+  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + 0.08, RING_SEGMENTS, 1);
+  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthWrite: false });
+  const mesh = new THREE.Mesh(geometry, material);
+  markOwned(mesh, { geometry: true, material: true });
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.03;
+  return mesh;
 }

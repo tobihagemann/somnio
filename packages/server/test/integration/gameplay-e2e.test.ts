@@ -80,7 +80,7 @@ describe('gameplay end to end', () => {
 
   it('a fresh player joins the starter sector at its spawn, with the world clock in enterSpace', async () => {
     const joined = await joinFreshPlayer(server.url, 'fresh');
-    expect(joined.join.map((message) => message.tag).slice(0, 6)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy']);
+    expect(joined.join.map((message) => message.tag).slice(0, 7)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(joined.spaceId).toBe(STARTER_SECTOR);
     expect(selfPosition(joined)).toEqual({ x: bibliothek.spawn!.x, z: bibliothek.spawn!.z });
     const enter = joined.join[1]!;
@@ -139,21 +139,25 @@ describe('gameplay end to end', () => {
     await cheat.client.close();
   });
 
-  it('an NPC speaks its first line to the player who bumps it from inside the dialog radius, and none to one who bumps from afar', async () => {
+  it('an NPC greets the player who comes within speaking distance, answers their talk with its next line, and says none to one who asks from afar', async () => {
     const libus = bibliothek.npcs.find((npc) => npc.id === 'libus')!;
     const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.npcInteractionRadius);
-    const bumper = await joinFreshPlayerAt(server, 'bumper', { space: STARTER_SECTOR, position: beside });
+    const talker = await joinFreshPlayerAt(server, 'talker', { space: STARTER_SECTOR, position: beside });
+    const line = (step: number) => ({
+      tag: 'serverSay',
+      payload: { entityId: LIBUS, text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.nickname) },
+    });
+    expect((await talker.client.until('serverSay')).target).toEqual(line(0));
     const afar = await joinFreshPlayer(server.url, 'afar');
     expect(distance(selfPosition(afar), libus)).toBeGreaterThan(SOMNIO_CONSTANTS.npcInteractionRadius);
-    afar.client.send(frame({ tag: 'bump', payload: { targetId: LIBUS } }));
-    // The drain is answered behind the bump, so the bump from afar is handled before the one from beside.
+    afar.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
+    // The drain is answered behind the `talk`, so the one from afar is handled before the one from beside.
     expect(await drainFrames(afar.client)).toEqual([]);
-    bumper.client.send(frame({ tag: 'bump', payload: { targetId: LIBUS } }));
-    const line = { tag: 'serverSay', payload: { entityId: LIBUS, text: dialogLine(dialogSteps(libus.dialogScript)[0]!, bumper.nickname) } };
-    expect((await bumper.client.until('serverSay')).target).toEqual(line);
-    // A line reaches everyone in the library, so this is all Libus has said since the bump from afar.
-    expect(await drainFrames(afar.client)).toEqual([line]);
-    await bumper.client.close();
+    talker.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
+    expect((await talker.client.until('serverSay')).target).toEqual(line(1));
+    // A line reaches everyone in the library, so this is all Libus has said since the `talk` from afar.
+    expect(await drainFrames(afar.client)).toEqual([line(1)]);
+    await talker.client.close();
     await afar.client.close();
   });
 
@@ -167,7 +171,7 @@ describe('gameplay end to end', () => {
       client.send(registerFrame(nickname));
       await client.until('registerResult');
       client.send(frame({ tag: 'login', payload: { nickname, password: 'secret-pass' } }));
-      await client.until('energy');
+      await client.until('lucidity');
       const characters = new PostgresCharacterRepository(local.db);
       const beforeShutdown = (await characters.findByName(nickname))!.lastSeen;
       const shutdown = own.server.shutdown();

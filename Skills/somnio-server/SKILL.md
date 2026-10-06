@@ -22,7 +22,7 @@ docker run -d --name somnio-pg -p 17663:5432 -e POSTGRES_PASSWORD=postgres -e PO
 
 The container can exit silently between sessions (podman machine hiccups). A server started against the dead container fails at startup with a connection error from the readiness probe — that signature means "start the container", not a code bug and not a reason to re-create the container.
 
-The migration refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or the previous TypeScript one, whose `kysely_migration` table holds a `0001_initial` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and character, so the next login shows "Bad credentials" until you register again.
+The migrator refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or the previous TypeScript one, whose `kysely_migration` table holds a `0001_initial` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and character, so the next login shows "Bad credentials" until you register again.
 
 On teardown use `docker stop somnio-pg` — keep the container; `docker rm`-ing it drops the dev account/character the same way.
 
@@ -51,7 +51,7 @@ SOMNIO_HTTP_HOST=127.0.0.1 SOMNIO_HTTP_PORT=17662 \
 node packages/server/src/main.ts
 ```
 
-`SOMNIO_DEV_DEFAULTS=1` is the explicit opt-in for the development fallbacks (the `dev-admin` token, the committed sector fixtures, the localhost database); without it a missing variable refuses to boot. The server auto-applies the migration on boot (including on a fresh empty database), so there is no manual migration step. `SOMNIO_SECTORS_DIR` defaults to the committed map fixtures (`packages/core/fixtures/sectors`); set it to load a different sector directory.
+`SOMNIO_DEV_DEFAULTS=1` is the explicit opt-in for the development fallbacks (the `dev-admin` token, the committed sector fixtures, the localhost database); without it a missing variable refuses to boot. The server applies pending migrations on boot (including on a fresh empty database), so there is no manual migration step. `SOMNIO_SECTORS_DIR` defaults to the committed map fixtures (`packages/core/fixtures/sectors`); set it to load a different sector directory.
 
 Sectors and the model registry are loaded **once at startup** — after editing any `.somnio-sector` fixture or `packages/core/data/ModelRegistry.json`, restart the server or it keeps serving the old map data and colliders. A sector or registry that does not parse, or a world `buildWorld` refuses, fails startup (AGENTS.md's "Sector format" lists the cases). A door that is not half of a sound pair is logged as a `world issue` and left inert while the server still boots, so read the startup log after a map edit.
 

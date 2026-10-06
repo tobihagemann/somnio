@@ -1,4 +1,4 @@
-import type { SectorView } from '@somnio/protocol';
+import type { NPCService, SectorView } from '@somnio/protocol';
 import type { Point, Rect } from './geometry.ts';
 import type { Heading } from './heading.ts';
 import type { MonsterKindId } from './monsterKinds.ts';
@@ -8,7 +8,7 @@ import type { MonsterKindId } from './monsterKinds.ts';
  * Every record position is relative to the sector's own north-west corner.
  */
 
-/** Where a new character enters the world. */
+/** Where a new character enters the world, in the starter sector, and where a dreamer who gave up wakes, in the inn. */
 export interface SectorSpawn {
   x: number;
   z: number;
@@ -23,6 +23,8 @@ export interface SectorNPC {
   z: number;
   facing: Heading;
   dialogScript: string;
+  /** What asking the NPC offers beyond its dialog. */
+  service?: NPCService;
 }
 
 /** An area that keeps up to `maxAlive` monsters of one kind alive. */

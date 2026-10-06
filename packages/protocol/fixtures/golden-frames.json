@@ -1,21 +1,60 @@
 {
+  "abandonTask": {
+    "payload": {},
+    "tag": "abandonTask"
+  },
   "adminSay": {
     "payload": {
       "text": "Server restart in 5 minutes"
     },
     "tag": "adminSay"
   },
-  "bump": {
+  "askTask": {
     "payload": {
-      "targetId": "npc:EdariaBibliothek/libus"
+      "npcId": "npc:EdariaMitte/pugnax",
+      "teachingId": "follow-through"
     },
-    "tag": "bump"
+    "tag": "askTask"
+  },
+  "askTask-trial": {
+    "payload": {
+      "npcId": "npc:EdariaMitte/pugnax"
+    },
+    "tag": "askTask"
+  },
+  "blow": {
+    "payload": {
+      "attackerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "hit": true,
+      "targetId": "monster:7"
+    },
+    "tag": "blow"
+  },
+  "blow-air": {
+    "payload": {
+      "attackerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "hit": false
+    },
+    "tag": "blow"
   },
   "clientSay": {
     "payload": {
       "text": "Hallo Welt"
     },
     "tag": "clientSay"
+  },
+  "completeTask": {
+    "payload": {
+      "npcId": "npc:EdariaMitte/pugnax"
+    },
+    "tag": "completeTask"
+  },
+  "condition": {
+    "payload": {
+      "condition": "hurt",
+      "entityId": "monster:7"
+    },
+    "tag": "condition"
   },
   "correction": {
     "payload": {
@@ -53,6 +92,7 @@
   "entity": {
     "payload": {
       "characterModelId": "libus",
+      "condition": "hale",
       "facing": 359.96875,
       "gait": "walk",
       "id": "npc:EdariaBibliothek/libus",
@@ -61,6 +101,22 @@
       "radius": 0.3,
       "x": 5.12,
       "z": 3.84
+    },
+    "tag": "entity"
+  },
+  "entity-with-service": {
+    "payload": {
+      "characterModelId": "kaempfer-meister",
+      "condition": "hale",
+      "facing": 0,
+      "gait": "jog",
+      "id": "npc:EdariaMitte/pugnax",
+      "kind": "npc",
+      "name": "Pugnax",
+      "radius": 0.3,
+      "service": "kaempferMaster",
+      "x": 37.32,
+      "z": 33.2
     },
     "tag": "entity"
   },
@@ -73,7 +129,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 5
+      "protocolVersion": 6
     },
     "tag": "hello"
   },
@@ -123,6 +179,36 @@
     },
     "tag": "loginResult"
   },
+  "lucidity": {
+    "payload": {
+      "ranks": [
+        {
+          "practice": 12.5,
+          "rank": 2,
+          "teachingId": "strike"
+        },
+        {
+          "practice": 0,
+          "rank": 0,
+          "teachingId": "follow-through"
+        }
+      ],
+      "role": "kaempfer",
+      "study": "strike",
+      "task": {
+        "progress": 1,
+        "role": "kaempfer",
+        "teachingId": "follow-through"
+      }
+    },
+    "tag": "lucidity"
+  },
+  "lucidity-empty": {
+    "payload": {
+      "ranks": []
+    },
+    "tag": "lucidity"
+  },
   "move": {
     "payload": {
       "facing": 137.5,
@@ -152,6 +238,15 @@
       ]
     },
     "tag": "moves"
+  },
+  "raising": {
+    "payload": {
+      "healerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "seconds": 6,
+      "state": "begun",
+      "targetId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+    },
+    "tag": "raising"
   },
   "redeemSession": {
     "payload": {
@@ -297,11 +392,54 @@
     },
     "tag": "sessionToken"
   },
+  "study": {
+    "payload": {
+      "npcId": "npc:EdariaMitte/pugnax",
+      "teachingId": "follow-through"
+    },
+    "tag": "study"
+  },
+  "swing": {
+    "payload": {
+      "targetId": "monster:7"
+    },
+    "tag": "swing"
+  },
+  "swing-air": {
+    "payload": {},
+    "tag": "swing"
+  },
+  "talk": {
+    "payload": {
+      "npcId": "npc:EdariaBibliothek/libus"
+    },
+    "tag": "talk"
+  },
+  "tend": {
+    "payload": {
+      "targetId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+    },
+    "tag": "tend"
+  },
+  "tend-no-one": {
+    "payload": {},
+    "tag": "tend"
+  },
   "useDoor": {
     "payload": {
       "doorId": "to-edariabibliothek",
       "sector": "EdariaMitte"
     },
     "tag": "useDoor"
+  },
+  "useItem": {
+    "payload": {
+      "slot": 2
+    },
+    "tag": "useItem"
+  },
+  "wake": {
+    "payload": {},
+    "tag": "wake"
   }
 }

@@ -5,12 +5,12 @@ import type { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { seededRandom } from '../src/world/random.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
+import { RESPAWN_MS } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, serverSays } from './support/frames.ts';
 import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
 const GUARD = 'npc:TestSector/guard';
 const COOLDOWN_MS = SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
-const RESPAWN_MS = monsterKind('gespenst').respawnSeconds * 1000;
 
 /** One 20 x 20 m sector on a clock the test advances. */
 function actor(overrides: Partial<Sector> = {}, options: Partial<SpaceActorOptions> = {}) {
@@ -26,58 +26,117 @@ async function monstersSeen(outbox: ConnectionOutbox) {
 }
 
 describe('NPC dialog', () => {
-  it('emits on the first step after a bump from inside the dialog radius', async () => {
-    const { space } = actor(guard('Hello, $name.\n---\nFollow up.'));
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
-    const digest = space.step(0.05);
+  const NEAR: Point = { x: 10, z: 11.2 };
+  const AWAY: Point = { x: 10, z: 12.7 };
+  const QUIET = { dialogUpserts: [], dialogResets: [] };
+  const KEY = { sectorName: 'TestSector', npcId: 'guard' };
+
+  it('greets a dreamer who comes within speaking distance with its first line, once, and leaves the cursor alone', async () => {
+    const { clock, space } = actor(guard('Hello, $name.\n---\nFollow up.'));
+    const alice = attachPlayer(space, AWAY, 'alice');
+    expect(space.step(0.05)).toEqual(QUIET);
+    space.handleMove({ ...NEAR, facing: 0, gait: 'jog' }, alice.entityId);
+    expect(space.step(0.05)).toEqual(QUIET);
+    clock.ms += 2 * COOLDOWN_MS;
+    space.step(0.05);
     expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
-    expect(digest.dialogUpserts).toEqual([{ sectorName: 'TestSector', npcId: 'guard', scriptStep: 2 }]);
-    expect(digest.dialogResets).toEqual([]);
   });
 
-  it('drops a bump from outside the dialog radius and a bump at anything but an NPC', async () => {
-    const { space } = actor(guard('Hello, $name.'));
-    const far = attachPlayer(space, { x: 10, z: 11.4 }, 'far');
-    const near = attachPlayer(space, { x: 10, z: 11.2 }, 'near');
-    space.handleBump(GUARD, far.entityId);
-    space.handleBump(far.entityId, near.entityId);
-    space.handleBump('npc:TestSector/nobody', near.entityId);
-    const digest = space.step(0.05);
-    expect(digest).toEqual({ dialogUpserts: [], dialogResets: [] });
-    expect(serverSays(await collectMessages(near.outbox))).toEqual([]);
+  it('greets a dreamer again who walked away and came back, but not within the greeting pause', async () => {
+    const { clock, space } = actor(guard('Hello, $name.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
+    const walk = (to: Point): void => {
+      clock.ms += 2000;
+      space.handleMove({ ...to, facing: 0, gait: 'jog' }, alice.entityId);
+      space.step(0.05);
+    };
+    space.step(0.05);
+    walk(AWAY);
+    walk(NEAR);
+    walk(AWAY);
+    clock.ms += SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000;
+    walk(NEAR);
+    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.', 'Hello, alice.']);
   });
 
-  it('holds the next step until the cooldown has passed on the clock, then wraps and clears targeting', async () => {
-    const { clock, space } = actor(guard('step.\n---\nstep two.'));
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
+  it('greets a dreamer who stays beside it once, however long they stay', async () => {
+    const { clock, space } = actor(guard('Hello, $name.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
+    space.step(0.05);
+    clock.ms += 2 * SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000;
+    space.step(0.05);
+    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
+  });
+
+  it('greets arrivals one at a time, a cooldown apart', async () => {
+    const { clock, space } = actor(guard('Hello, $name.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
+    const bob = attachPlayer(space, { x: 10.8, z: 10.9 }, 'bob');
     space.step(0.05);
     clock.ms = COOLDOWN_MS - 1;
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [] });
+    space.step(0.05);
+    expect(serverSays(await collectMessages(bob.outbox))).toEqual(['Hello, alice.']);
     clock.ms = COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [{ sectorName: 'TestSector', npcId: 'guard' }] });
-    clock.ms = 2 * COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [] });
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['step.', 'step two.']);
+    space.step(0.05);
+    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.', 'Hello, bob.']);
   });
 
-  it('a target walking out of the radius resets the cursor and emits one digest reset', () => {
-    const { clock, space } = actor(guard('first.\n---\nsecond.\n---\nthird.'));
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
+  it('answers a dreamer who asks with the lines after its greeting, the first at once and the rest a cooldown apart, then wraps and clears targeting', async () => {
+    const { clock, space } = actor(guard('Hello.\n---\nstep two, $name.\n---\nstep three.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
     space.step(0.05);
+    space.handleTalk(GUARD, alice.entityId);
+    expect(space.step(0.05)).toEqual({ dialogUpserts: [{ ...KEY, scriptStep: 3 }], dialogResets: [] });
+    clock.ms = COOLDOWN_MS - 1;
+    expect(space.step(0.05)).toEqual(QUIET);
+    clock.ms = COOLDOWN_MS;
+    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [KEY] });
+    clock.ms = 2 * COOLDOWN_MS;
+    expect(space.step(0.05)).toEqual(QUIET);
+    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello.', 'step two, alice.', 'step three.']);
+  });
+
+  it('drops a talk from beyond speaking distance and one at anything but an NPC', async () => {
+    const { clock, space } = actor(guard('Hello, $name.\n---\nFollow up.'));
+    const far = attachPlayer(space, { x: 10, z: 12.1 }, 'far');
+    const near = attachPlayer(space, NEAR, 'near');
+    space.handleTalk(GUARD, far.entityId);
+    space.handleTalk(far.entityId, near.entityId);
+    space.handleTalk('npc:TestSector/nobody', near.entityId);
+    expect(space.step(0.05)).toEqual(QUIET);
+    clock.ms = COOLDOWN_MS;
+    expect(space.step(0.05)).toEqual(QUIET);
+    expect(serverSays(await collectMessages(near.outbox))).toEqual(['Hello, near.']);
+  });
+
+  it('has nothing to go on with when its greeting is all it has', async () => {
+    const { clock, space } = actor(guard('Hello, $name.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
+    space.step(0.05);
+    space.handleTalk(GUARD, alice.entityId);
+    expect(space.step(0.05)).toEqual(QUIET);
+    clock.ms = COOLDOWN_MS;
+    expect(space.step(0.05)).toEqual(QUIET);
+    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
+  });
+
+  it('a target walking out of speaking distance resets the cursor and emits one digest reset', () => {
+    const { clock, space } = actor(guard('first.\n---\nsecond.\n---\nthird.'));
+    const alice = attachPlayer(space, NEAR, 'alice');
+    space.step(0.05);
+    space.handleTalk(GUARD, alice.entityId);
+    expect(space.step(0.05).dialogUpserts).toHaveLength(1);
     clock.ms += 1000;
-    space.handleMove({ x: 10, z: 12.7, facing: 0, gait: 'jog' }, alice.entityId);
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [{ sectorName: 'TestSector', npcId: 'guard' }] });
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [] });
+    space.handleMove({ ...AWAY, facing: 0, gait: 'jog' }, alice.entityId);
+    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [KEY] });
+    expect(space.step(0.05)).toEqual(QUIET);
   });
 
   it('a target leaving the space resets the cursor and emits one digest reset', () => {
     const { space } = actor(guard('first.\n---\nsecond.'));
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
+    const alice = attachPlayer(space, NEAR, 'alice');
     space.step(0.05);
+    space.handleTalk(GUARD, alice.entityId);
     space.detach(alice.entityId, false);
     expect(space.step(0.05).dialogResets).toHaveLength(1);
     expect(space.step(0.05).dialogResets).toEqual([]);
@@ -85,41 +144,49 @@ describe('NPC dialog', () => {
 });
 
 describe('cursor seeding', () => {
+  const NEAR: Point = { x: 10, z: 11.2 };
   const persisted = (scriptStep: number, npcId = 'guard'): NPCDialogState[] => [{ sectorName: 'TestSector', npcId, scriptStep }];
 
-  it('resumes at the persisted step', async () => {
-    const { space } = actor(guard('first.\n---\nsecond.\n---\nthird.'), { initialDialogStates: persisted(2) });
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
+  /** Greets the dreamer beside the guard, then has them ask it to go on. */
+  async function asked(script: string, states: NPCDialogState[]) {
+    const { space } = actor(guard(script), { initialDialogStates: states });
+    const alice = attachPlayer(space, NEAR, 'alice');
+    space.step(0.05);
+    space.handleTalk(GUARD, alice.entityId);
     const digest = space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['second.']);
+    return { digest, says: serverSays(await collectMessages(alice.outbox)) };
+  }
+
+  it('resumes at the persisted step', async () => {
+    const { digest, says } = await asked('first.\n---\nsecond.\n---\nthird.', persisted(3));
+    expect(says).toEqual(['first.', 'third.']);
+    expect(digest.dialogResets).toHaveLength(1);
+  });
+
+  it.each([7, 0, -1, 1])('a persisted cursor %i that is out of range or on the greeting starts past the greeting', async (scriptStep) => {
+    const { digest, says } = await asked('first.\n---\nsecond.\n---\nthird.', persisted(scriptStep));
+    expect(says).toEqual(['first.', 'second.']);
     expect(digest.dialogUpserts[0]?.scriptStep).toBe(3);
   });
 
-  it.each([7, 0, -1])('an out of range persisted cursor %i clamps to the first step', async (scriptStep) => {
-    const { space } = actor(guard('first.\n---\nsecond.\n---\nthird.'), { initialDialogStates: persisted(scriptStep) });
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
-    space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['first.']);
-  });
-
-  it('an empty script with a persisted cursor takes the no-op branch on emit', async () => {
-    const { space } = actor(guard(''), { initialDialogStates: persisted(3) });
-    const alice = attachPlayer(space, { x: 10, z: 11.2 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [] });
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual([]);
+  it('an empty script with a persisted cursor says nothing', async () => {
+    const { digest, says } = await asked('', persisted(3));
+    expect(digest).toEqual({ dialogUpserts: [], dialogResets: [] });
+    expect(says).toEqual([]);
   });
 
   it.each([false, true])('a persisted cursor stays with its NPC when the records are reordered (reversed: %s)', async (reversed) => {
-    const npcs = [makeNPC('guard', { x: 10, z: 10 }, 'guard one.\n---\nguard two.'), makeNPC('smith', { x: 11.6, z: 10 }, 'smith one.\n---\nsmith two.')];
-    const { space } = actor({ npcs: reversed ? npcs.toReversed() : npcs }, { initialDialogStates: persisted(2, 'smith') });
+    const npcs = [
+      makeNPC('guard', { x: 10, z: 10 }, 'guard one.\n---\nguard two.\n---\nguard three.'),
+      makeNPC('smith', { x: 11.6, z: 10 }, 'smith one.\n---\nsmith two.\n---\nsmith three.'),
+    ];
+    const { space } = actor({ npcs: reversed ? npcs.toReversed() : npcs }, { initialDialogStates: persisted(3, 'smith') });
     const alice = attachPlayer(space, { x: 10.8, z: 10.9 }, 'alice');
-    space.handleBump(GUARD, alice.entityId);
-    space.handleBump('npc:TestSector/smith', alice.entityId);
     space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox)).toSorted()).toEqual(['guard one.', 'smith two.']);
+    space.handleTalk(GUARD, alice.entityId);
+    space.handleTalk('npc:TestSector/smith', alice.entityId);
+    space.step(0.05);
+    expect(serverSays(await collectMessages(alice.outbox)).toSorted()).toEqual(['guard one.', 'guard two.', 'smith one.', 'smith three.']);
   });
 });
 

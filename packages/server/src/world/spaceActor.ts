@@ -1,9 +1,29 @@
 import { encodeSomnioMessage } from '@somnio/protocol';
-import type { ClientSayMessage, EntityMessage, EntityMove, Gait, Hand, InventoryMessage, MoveMessage, SomnioMessage } from '@somnio/protocol';
+import type {
+  ClientSayMessage,
+  Condition,
+  Energy,
+  EntityMessage,
+  EntityMove,
+  Gait,
+  Hand,
+  InventoryMessage,
+  LucidityMessage,
+  MoveMessage,
+  NPCService,
+  RaisingState,
+  SomnioMessage,
+} from '@somnio/protocol';
 import {
+  COMBAT,
+  FIRST_TEACHING,
+  PRACTICE,
   SOMNIO_CONSTANTS,
+  balancePace,
+  balancePerSecond,
   buildSpaceCollision,
   canStand,
+  conditionOf,
   dialogLine,
   dialogSteps,
   distance,
@@ -13,18 +33,38 @@ import {
   headingFromVector,
   isClear,
   isLegalMove,
+  isTeachingId,
+  itemInHand,
+  maxPools,
+  mendAmount,
   monsterKind,
   neighbourSectors,
   npcBodies,
+  practiceNeeded,
+  rankOf,
+  reaches,
+  roleOfService,
   sectorAt,
   sectorPointInSpace,
   sectorView,
+  strikeChance,
+  swingAllowed,
+  taskGoal,
+  taskSpec,
+  teaching,
+  teachingStanding,
+  windedAfter,
+  windedOnJoin,
+  withRank,
+  withinSpeakingDistance,
 } from '@somnio/core';
 import type {
   Body,
   Character,
   Heading,
   InventoryRow,
+  ItemId,
+  Lucidity,
   MonsterKind,
   MonsterSpawn,
   NPCDialogState,
@@ -33,12 +73,13 @@ import type {
   SectorNPC,
   Space,
   SpaceCollision,
+  TaskSpec,
 } from '@somnio/core';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
-import { randomInRange, systemRandom } from './random.ts';
+import { randomInRange, randomUnit, systemRandom } from './random.ts';
 import type { RandomSource } from './random.ts';
 
 interface PlayerSlot {
@@ -53,6 +94,32 @@ interface PlayerSlot {
   allowanceAt: number;
   rejectionLoggedAt: number | undefined;
   suppressedRejections: number;
+  /**
+   * What recovery and the running drain have not yet moved into `character.energy`, which holds
+   * whole numbers only. Each is under one unit, and none is saved.
+   */
+  carry: { health: number; balance: number; spirit: number };
+  /** Kept with `windedAfter` over every balance the dreamer is sent, as their client keeps it. */
+  winded: boolean;
+  /** When a move of non-zero length was last accepted, and at what gait. */
+  lastMoveAt: number;
+  lastGait: Gait;
+  swingReadyAt: number;
+  mendReadyAt: number;
+  /** Nightmares leave the dreamer alone until this moment. */
+  graceUntil: number;
+  condition: Condition;
+  /** The raise this fallen dreamer is being given. */
+  raise: Raise | undefined;
+  /** The dreamer a Heiler chose to tend: mended, or raised, whenever the Mondstein reaches them. */
+  tending: string | undefined;
+}
+
+interface Raise {
+  healerId: string;
+  elapsed: number;
+  /** The spirit the healer has paid toward the cost so far. */
+  charged: number;
 }
 
 interface NPCRuntime {
@@ -60,13 +127,20 @@ interface NPCRuntime {
   sector: string;
   definition: SectorNPC;
   position: Point;
+  /** The dreamer who asked it to go on, while it says the lines after its greeting. */
   targetingEntity: string | undefined;
-  /** The parsed script, cached so a step does not parse it again. */
+  /** The parsed script, cached so a step does not parse it again: the greeting, then what it says when asked. */
   dialogSteps: string[];
-  /** No step is emitted before this moment. */
+  /** No line after the greeting is spoken before this moment. */
   readyAt: number;
+  /** No greeting is spoken before this moment. A dreamer who asks right after being greeted is answered at once. */
+  greetReadyAt: number;
   /** 0-based cursor into `dialogSteps`. Persisted as 1-based; translated at the seam. */
   scriptStepIndex: number;
+  /** The dreamers within speaking distance it has taken note of, so each is greeted once per approach. */
+  near: Set<string>;
+  /** When it last greeted each dreamer in the space. */
+  greetedAt: Map<string, number>;
 }
 
 interface MonsterRuntime {
@@ -76,6 +150,13 @@ interface MonsterRuntime {
   position: Point;
   /** Turned toward the chase target while chasing. An idle monster keeps the facing it last had, south until its first chase. */
   facing: Heading;
+  health: number;
+  condition: Condition;
+  strikeReadyAt: number;
+  /** The spawn keeping it alive, which its end frees a slot of. */
+  timer: MonsterSpawnTimer;
+  /** Set once it is driven off: it lingers until this moment and does nothing. */
+  fadingUntil: number | undefined;
 }
 
 /** Per-`MonsterSpawn` cadence: while fewer than `maxAlive` of its monsters live, it spawns one at `spawnAt`. */
@@ -110,6 +191,18 @@ const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * 2;
 /** Minimum gap between rejected-move log lines per player; rejections in between are counted. */
 const REJECTED_MOVE_LOG_INTERVAL_MS = 5000;
 const PLACEMENT_ATTEMPTS = 64;
+/**
+ * How long after an accepted move a dreamer still counts as moving. Reports come ten times a
+ * second, so a walking dreamer never falls outside it, and one who stopped does a quarter of a
+ * second later.
+ */
+const MOVING_WINDOW_MS = 250;
+/**
+ * How far ahead of the swing rhythm a swing may arrive. A client swinging on the rhythm sends at a
+ * steady pace, but its frames do not arrive at one. A swing let in early does not bring the next
+ * one forward, so no dreamer swings more often than the rhythm for it.
+ */
+const SWING_ARRIVAL_SLACK_MS = 150;
 
 export interface SpaceActorOptions {
   logger: Logger;
@@ -120,12 +213,27 @@ export interface SpaceActorOptions {
   now?: () => number;
 }
 
-type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string } | { kind: 'clearTargetingNoEmit' };
+type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string };
 
-export function inventoryMessage(rows: readonly InventoryRow[]): InventoryMessage {
+function inventoryMessage(rows: readonly InventoryRow[]): InventoryMessage {
   return {
     rows: rows.map(({ slot, itemId, quantity, equippedHand }) => ({ slot, itemId, quantity, ...(equippedHand === undefined ? {} : { equippedHand }) })),
   };
+}
+
+function lucidityMessage({ role, ranks, study, task }: Lucidity): LucidityMessage {
+  return {
+    ...(role === undefined ? {} : { role }),
+    ranks: ranks.map(({ teachingId, rank, practice }) => ({ teachingId, rank, practice })),
+    ...(study === undefined ? {} : { study }),
+    ...(task === undefined
+      ? {}
+      : { task: { role: task.role, ...(task.teachingId === undefined ? {} : { teachingId: task.teachingId }), progress: task.progress } }),
+  };
+}
+
+function isFallen(slot: PlayerSlot): boolean {
+  return slot.condition === 'fallen';
 }
 
 /**
@@ -175,6 +283,9 @@ export class SpaceActor {
           definition: npc,
           position: sectorPointInSpace(sector, npc),
           targetingEntity: undefined,
+          near: new Set(),
+          greetedAt: new Map(),
+          greetReadyAt: 0,
           dialogSteps: steps,
           readyAt: 0,
           scriptStepIndex: this.resolveSeedStepIndex(persisted?.scriptStep, steps.length, id),
@@ -208,12 +319,21 @@ export class SpaceActor {
    * `enterSpace` first, and broadcasts one `entity` for the newcomer to the players who can see
    * them. The player's entity id is the character's. Throws when no sector holds the position
    * or the join sequence cannot be encoded; a throw leaves no slot and no frame behind.
+   *
+   * The pools' maxima are what the character's ranks give, whatever the row held.
    */
   attach(character: Character, inventory: InventoryRow[], outbox: ConnectionOutbox, worldSeconds: number): void {
     const sector = sectorAt(this.space, character.position);
     if (sector === undefined) throw new Error(`no sector of ${this.space.id} holds (${character.position.x}, ${character.position.z})`);
+    const maxima = maxPools(character.lucidity.ranks);
+    const energy: Energy = {
+      healthCurrent: Math.min(character.energy.healthCurrent, maxima.healthMax),
+      balanceCurrent: Math.min(character.energy.balanceCurrent, maxima.balanceMax),
+      spiritCurrent: Math.min(character.energy.spiritCurrent, maxima.spiritMax),
+      ...maxima,
+    };
     const slot: PlayerSlot = {
-      character,
+      character: { ...character, energy },
       inventory,
       outbox,
       gait: DEFAULT_GAIT,
@@ -222,6 +342,16 @@ export class SpaceActor {
       allowanceAt: this.now(),
       rejectionLoggedAt: undefined,
       suppressedRejections: 0,
+      carry: { health: 0, balance: 0, spirit: 0 },
+      winded: windedOnJoin(energy.balanceCurrent),
+      lastMoveAt: Number.NEGATIVE_INFINITY,
+      lastGait: DEFAULT_GAIT,
+      swingReadyAt: 0,
+      mendReadyAt: 0,
+      graceUntil: 0,
+      condition: conditionOf(energy.healthCurrent, energy.healthMax),
+      raise: undefined,
+      tending: undefined,
     };
     const interest = this.interest.get(sector.name)!;
     const messages: SomnioMessage[] = [
@@ -229,7 +359,8 @@ export class SpaceActor {
       ...[...interest].map((name) => this.sectorMessage(name)),
       { tag: 'entity', payload: this.playerEntity(slot) },
       { tag: 'inventory', payload: inventoryMessage(inventory) },
-      { tag: 'energy', payload: character.energy },
+      { tag: 'energy', payload: energy },
+      { tag: 'lucidity', payload: lucidityMessage(character.lucidity) },
     ];
     for (const other of this.entities()) {
       if (interest.has(other.sector)) messages.push({ tag: 'entity', payload: other.entity });
@@ -241,12 +372,13 @@ export class SpaceActor {
     this.broadcast({ tag: 'entity', payload: this.playerEntity(slot) }, slot.sector, character.id);
   }
 
-  /** `leftGame` is `true` for a disconnect and `false` for a door transfer. */
+  /** `leftGame` is `true` for a disconnect and `false` for a transfer: a door, or waking. */
   detach(entityId: string, leftGame: boolean): void {
     const slot = this.players.get(entityId);
     if (slot === undefined) return;
     this.players.delete(entityId);
     this.moved.delete(entityId);
+    for (const npc of this.npcs.values()) npc.greetedAt.delete(entityId);
     this.broadcast({ tag: 'leave', payload: { entityId, leftGame } }, slot.sector);
   }
 
@@ -267,10 +399,18 @@ export class SpaceActor {
    *
    * Other players and monsters are deliberately not checked. The mover saw them where they were a
    * moment ago, so that comparison would only ever correct an honest client.
+   *
+   * Running drains balance by the distance run. A winded dreamer's allowance is not shortened:
+   * their client holds the slow gait, and running at empty buys nothing but staying empty, so a
+   * late `energy` frame never gets an honest player corrected. A fallen dreamer does not move.
    */
   handleMove(message: MoveMessage, entityId: string): void {
     const slot = this.players.get(entityId);
     if (slot === undefined) return;
+    if (isFallen(slot)) {
+      this.snapBack(slot);
+      return;
+    }
     const now = this.now();
     slot.allowance = Math.min(ALLOWANCE_CAP_METRES, slot.allowance + ((now - slot.allowanceAt) / 1000) * ALLOWANCE_METRES_PER_SECOND);
     slot.allowanceAt = now;
@@ -293,7 +433,19 @@ export class SpaceActor {
     const previous = slot.sector;
     slot.sector = sectorAt(this.space, to)!.name;
     this.moved.set(entityId, { sector: slot.sector, move: { id: entityId, x: to.x, z: to.z, facing, gait: slot.gait } });
-    if (slot.sector !== previous) this.playerChangedSector(slot, previous);
+    if (slot.sector !== previous) {
+      this.playerChangedSector(slot, previous);
+      this.advanceTask(
+        slot,
+        (spec) => spec.kind === 'reach' && spec.sector === slot.sector,
+        (progress) => progress + 1,
+      );
+    }
+    // A turn on the spot is reported as a move too, and must not count as moving.
+    if (length === 0) return;
+    slot.lastMoveAt = now;
+    slot.lastGait = message.gait;
+    if (message.gait === 'run') this.drainBalance(slot, length * (COMBAT.runDrainPerSecond / gaitMetresPerSecond('run')));
   }
 
   private rejectMove(slot: PlayerSlot, to: Point, now: number): void {
@@ -351,46 +503,71 @@ export class SpaceActor {
   }
 
   /**
-   * Per-row equip with an implicit unequip of any other row holding the same hand; returns the
-   * post-mutation rows. Equip markers are per-player UI, so the result is re-emitted to the
-   * originating connection and never broadcast.
+   * Per-row equip with an implicit unequip of any other row holding the same hand. No one else is
+   * shown what a dreamer holds, so the rows go back to the player alone and are never broadcast.
    */
-  handleEquipToggle(slot: number, hand: Hand | undefined, entityId: string): InventoryRow[] | undefined {
+  handleEquipToggle(slot: number, hand: Hand | undefined, entityId: string): void {
     const player = this.players.get(entityId);
-    if (player === undefined) return undefined;
+    if (player === undefined) return;
     const rowIndex = player.inventory.findIndex((row) => row.slot === slot);
-    if (rowIndex === -1) return undefined;
+    if (rowIndex === -1) return;
     player.inventory = player.inventory.map((row, index) => {
       if (index === rowIndex) return { ...row, equippedHand: hand };
       if (hand !== undefined && row.equippedHand === hand) return { ...row, equippedHand: undefined };
       return row;
     });
-    return player.inventory;
+    this.sendInventory(player);
   }
 
   /**
-   * Flips the NPC's targeting once. A second bump while already targeting is a no-op, so the
-   * dialog is not retargeted mid-script. A bump at anything but an NPC, or from outside the dialog
-   * radius, is dropped, so it cannot force per-call writes through the step's reset path.
+   * Asking an NPC to go on: it says the lines after its greeting to the dreamer who asked. Its
+   * targeting flips once. A second `talk` while it is already targeting is a no-op, so it is not
+   * retargeted mid-script. One from outside speaking distance or from a fallen dreamer is
+   * dropped, so it cannot force per-call writes through the step's reset path. An NPC with
+   * nothing beyond its greeting has nothing to go on with.
    */
-  handleBump(targetId: string, entityId: string): void {
+  handleTalk(npcId: string, entityId: string): void {
     const player = this.players.get(entityId);
-    const npc = this.npcs.get(targetId);
-    if (player === undefined || npc === undefined) return;
-    if (npc.targetingEntity !== undefined) return;
-    if (!this.isWithinDialogRadius(npc, player)) return;
-    npc.targetingEntity = entityId;
+    const npc = this.npcs.get(npcId);
+    if (player === undefined || npc === undefined || isFallen(player) || npc.dialogSteps.length < 2) return;
+    if (npc.targetingEntity === undefined && this.inSpeakingDistance(npc, player)) npc.targetingEntity = entityId;
   }
 
-  private isWithinDialogRadius(npc: NPCRuntime, player: PlayerSlot): boolean {
-    return distance(npc.position, player.character.position) <= SOMNIO_CONSTANTS.npcInteractionRadius;
+  /** A standing dreamer's swing, at the nightmare their client picked or at the air. */
+  handleSwing(targetId: string | undefined, entityId: string): void {
+    const player = this.players.get(entityId);
+    if (player === undefined || isFallen(player)) return;
+    this.swing(player, targetId === undefined ? undefined : this.monsters.get(targetId));
   }
 
-  /** One simulation step: NPC dialog, monster spawns, monster chase. */
+  /**
+   * Chooses the dreamer a standing dreamer tends, or no one. Anyone may choose; it does something
+   * only for a Heiler holding the Mondstein. Nothing tending does harms another dreamer.
+   */
+  handleTend(targetId: string | undefined, entityId: string): void {
+    const player = this.players.get(entityId);
+    if (player === undefined || isFallen(player)) return;
+    player.tending = targetId !== undefined && targetId !== entityId && this.players.has(targetId) ? targetId : undefined;
+  }
+
+  /** Using the Mondstein from the inventory while it is in hand mends its holder. */
+  handleUseItem(inventorySlot: number, entityId: string): void {
+    const player = this.players.get(entityId);
+    if (player === undefined) return;
+    const row = player.inventory.find((candidate) => candidate.slot === inventorySlot);
+    if (row?.itemId !== ('mondstein' satisfies ItemId) || row.equippedHand !== 'right') return;
+    if (this.canMend(player)) this.mend(player, player);
+  }
+
+  private inSpeakingDistance(npc: NPCRuntime, player: PlayerSlot): boolean {
+    return withinSpeakingDistance(player.character.position, npc.position);
+  }
+
   step(elapsedSeconds: number): TickDigest {
     const digest: TickDigest = { dialogUpserts: [], dialogResets: [] };
     this.runNPCs(digest);
     this.runMonsterSpawns();
+    this.runPlayers(elapsedSeconds);
     this.runMonsters(elapsedSeconds);
     return digest;
   }
@@ -427,6 +604,11 @@ export class SpaceActor {
       sector: sectorAt(this.space, position)!.name,
       position,
       facing: headingFromCardinal('south'),
+      health: kind.health,
+      condition: 'hale',
+      strikeReadyAt: 0,
+      timer,
+      fadingUntil: undefined,
     };
     this.nextMonsterNumber += 1;
     this.monsters.set(monster.id, monster);
@@ -455,13 +637,39 @@ export class SpaceActor {
         case 'resetTargeting':
           this.resetTargeting(npc, digest);
           break;
-        case 'clearTargetingNoEmit':
-          npc.targetingEntity = undefined;
-          break;
         case 'emit':
           this.emitDialogStep(npc, action.targetName, digest);
           break;
       }
+      this.greetArrival(npc);
+    }
+  }
+
+  /**
+   * An NPC greets a dreamer who has come within speaking distance with the first line of its
+   * script: once per approach, and not again within the greeting pause, so one who hovers at the
+   * edge is not greeted over and over. While it is saying something else the arrivals wait, and
+   * it greets one of them per line.
+   */
+  private greetArrival(npc: NPCRuntime): void {
+    const greeting = npc.dialogSteps[0];
+    if (greeting === undefined) return;
+    for (const id of npc.near) {
+      const slot = this.players.get(id);
+      if (slot === undefined || !this.inSpeakingDistance(npc, slot)) npc.near.delete(id);
+    }
+    const now = this.now();
+    if (npc.targetingEntity !== undefined || now < npc.readyAt || now < npc.greetReadyAt) return;
+    for (const slot of this.players.values()) {
+      const id = slot.character.id;
+      if (npc.near.has(id) || !this.inSpeakingDistance(npc, slot)) continue;
+      npc.near.add(id);
+      const last = npc.greetedAt.get(id);
+      if (last !== undefined && now - last < SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000) continue;
+      npc.greetedAt.set(id, now);
+      this.broadcast({ tag: 'serverSay', payload: { entityId: npc.id, text: dialogLine(greeting, slot.character.name) } }, npc.sector);
+      npc.greetReadyAt = now + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
+      return;
     }
   }
 
@@ -469,19 +677,22 @@ export class SpaceActor {
     if (npc.targetingEntity === undefined) return { kind: 'holdCooldown' };
     const target = this.players.get(npc.targetingEntity);
     if (target === undefined) return { kind: 'resetTargeting' };
-    if (!this.isWithinDialogRadius(npc, target)) return { kind: 'resetTargeting' };
+    if (!this.inSpeakingDistance(npc, target)) return { kind: 'resetTargeting' };
     if (this.now() < npc.readyAt) return { kind: 'holdCooldown' };
-    if (npc.dialogSteps.length === 0) return { kind: 'clearTargetingNoEmit' };
     return { kind: 'emit', targetName: target.character.name };
   }
 
-  /** Emits the current step, restarts the cooldown, and advances the cursor, wrapping (and clearing targeting) at the last line. */
+  /**
+   * Emits the current step, restarts the cooldown, and advances the cursor, wrapping (and clearing
+   * targeting) at the last line. The first step is the greeting, so the cursor starts past it.
+   */
   private emitDialogStep(npc: NPCRuntime, targetName: string, digest: TickDigest): void {
-    const step = npc.dialogSteps[npc.scriptStepIndex]!;
+    const index = Math.max(npc.scriptStepIndex, 1);
+    const step = npc.dialogSteps[index]!;
     this.broadcast({ tag: 'serverSay', payload: { entityId: npc.id, text: dialogLine(step, targetName) } }, npc.sector);
     npc.readyAt = this.now() + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
     const key = { sectorName: npc.sector, npcId: npc.definition.id };
-    const nextIndex = npc.scriptStepIndex + 1;
+    const nextIndex = index + 1;
     if (nextIndex >= npc.dialogSteps.length) {
       npc.scriptStepIndex = 0;
       npc.targetingEntity = undefined;
@@ -498,36 +709,429 @@ export class SpaceActor {
     digest.dialogResets.push({ sectorName: npc.sector, npcId: npc.definition.id });
   }
 
-  /** Each monster orients toward and chases the nearest player inside its aggro radius; the others idle. */
+  /**
+   * Each monster orients toward and chases the nearest dreamer inside its aggro radius who stands
+   * and is past the grace after a raise, and strikes on its own rhythm once it has reached them;
+   * the others idle. One driven off does nothing more, and is gone once its fade is over.
+   */
   private runMonsters(elapsedSeconds: number): void {
+    const now = this.now();
     for (const monster of this.monsters.values()) {
-      let closest: { position: Point; distance: number } | undefined;
+      if (monster.fadingUntil !== undefined) {
+        if (now < monster.fadingUntil) continue;
+        this.monsters.delete(monster.id);
+        this.broadcast({ tag: 'leave', payload: { entityId: monster.id, leftGame: false } }, monster.sector);
+        continue;
+      }
+      let target: PlayerSlot | undefined;
+      let away = Number.POSITIVE_INFINITY;
       for (const slot of this.players.values()) {
-        const away = distance(monster.position, slot.character.position);
-        if (away > monster.kind.aggroRadius) continue;
-        if (closest !== undefined && away >= closest.distance) continue;
-        closest = { position: slot.character.position, distance: away };
+        if (isFallen(slot) || now < slot.graceUntil) continue;
+        const candidate = distance(monster.position, slot.character.position);
+        if (candidate > monster.kind.aggroRadius || candidate >= away) continue;
+        target = slot;
+        away = candidate;
       }
-      if (closest === undefined || closest.distance === 0) continue;
-      const dx = closest.position.x - monster.position.x;
-      const dz = closest.position.z - monster.position.z;
-      monster.facing = headingFromVector(dx, dz);
-      const reach = monster.kind.metresPerSecond * elapsedSeconds;
-      const proposed = { x: monster.position.x + (dx * reach) / closest.distance, z: monster.position.z + (dz * reach) / closest.distance };
-      if (
-        isLegalMove(this.collision, monster.position, proposed, monster.kind.radius, this.npcBodies) &&
-        !this.overlapsEntity(proposed, monster.kind.radius, monster)
-      ) {
-        const previous = monster.sector;
-        monster.position = proposed;
-        monster.sector = sectorAt(this.space, proposed)!.name;
-        if (monster.sector !== previous) this.entityChangedSector(this.monsterEntity(monster), previous, monster.sector);
-      }
-      this.moved.set(monster.id, {
-        sector: monster.sector,
-        move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
-      });
+      if (target === undefined) continue;
+      if (away > 0) this.chase(monster, target.character.position, away, elapsedSeconds);
+      if (now >= monster.strikeReadyAt && reaches(target.character.position, { ...monster.position, radius: monster.kind.radius }))
+        this.strike(monster, target);
     }
+  }
+
+  private chase(monster: MonsterRuntime, toward: Point, away: number, elapsedSeconds: number): void {
+    const dx = toward.x - monster.position.x;
+    const dz = toward.z - monster.position.z;
+    monster.facing = headingFromVector(dx, dz);
+    const reach = monster.kind.metresPerSecond * elapsedSeconds;
+    const proposed = { x: monster.position.x + (dx * reach) / away, z: monster.position.z + (dz * reach) / away };
+    if (
+      isLegalMove(this.collision, monster.position, proposed, monster.kind.radius, this.npcBodies) &&
+      !this.overlapsEntity(proposed, monster.kind.radius, monster)
+    ) {
+      const previous = monster.sector;
+      monster.position = proposed;
+      monster.sector = sectorAt(this.space, proposed)!.name;
+      if (monster.sector !== previous) this.entityChangedSector(this.monsterEntity(monster), previous, monster.sector);
+    }
+    this.moved.set(monster.id, {
+      sector: monster.sector,
+      move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
+    });
+  }
+
+  /**
+   * A nightmare's strike at a dreamer it has reached. A hit takes health and a little balance,
+   * and one that takes the last of a dreamer's health is the only way a dreamer falls.
+   */
+  private strike(monster: MonsterRuntime, target: PlayerSlot): void {
+    monster.strikeReadyAt = this.now() + monster.kind.strikeSeconds * 1000;
+    const energy = target.character.energy;
+    const hit = randomUnit(this.random) < strikeChance(monster.kind, energy.balanceCurrent, energy.balanceMax, target.character.lucidity.ranks);
+    this.broadcast({ tag: 'blow', payload: { attackerId: monster.id, targetId: target.character.id, hit } }, target.sector);
+    if (!hit) return;
+    this.setEnergy(target, {
+      ...energy,
+      healthCurrent: Math.max(0, energy.healthCurrent - monster.kind.damage),
+      balanceCurrent: Math.max(0, energy.balanceCurrent - monster.kind.balanceDamage),
+    });
+    if (!isFallen(target)) return;
+    // Falling lets go of the dreamer tended, as their client does: nothing they send while fallen could.
+    target.tending = undefined;
+    this.advanceTask(
+      target,
+      (spec) => spec.kind === 'driveOff' && spec.withoutFalling === true,
+      () => 0,
+    );
+    // Their client stops reporting at once and may have predicted a little past the last accepted position.
+    this.snapBack(target);
+  }
+
+  /**
+   * A dreamer's swing, at the swing rhythm, for the balance what they hold in hand costs, whether
+   * or not it meets anything. It meets the nightmare named when that one is in reach and still
+   * standing, and the air otherwise. With less balance than the cost, with something in hand that
+   * does not swing, or while they hold a task that forbids striking, no swing happens.
+   */
+  private swing(player: PlayerSlot, monster: MonsterRuntime | undefined): void {
+    const now = this.now();
+    if (now < player.swingReadyAt - SWING_ARRIVAL_SLACK_MS) return;
+    const { task, ranks } = player.character.lucidity;
+    const energy = player.character.energy;
+    const swing = swingAllowed(task === undefined ? undefined : taskSpec(task), itemInHand(player.inventory), ranks, energy.balanceCurrent);
+    if (swing === undefined) return;
+    player.swingReadyAt = Math.max(now, player.swingReadyAt) + swing.seconds * 1000;
+    this.setEnergy(player, { ...energy, balanceCurrent: energy.balanceCurrent - swing.balanceCost });
+    const reached =
+      monster !== undefined && monster.fadingUntil === undefined && reaches(player.character.position, { ...monster.position, radius: monster.kind.radius });
+    const met = reached ? monster : undefined;
+    const hit = met !== undefined && randomUnit(this.random) < COMBAT.hitChance;
+    this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, ...(met === undefined ? {} : { targetId: met.id }), hit } }, player.sector);
+    if (met === undefined || !hit) return;
+    met.health = Math.max(0, met.health - swing.damage);
+    this.setCondition(met);
+    if (met.health === 0) this.driveOff(met);
+  }
+
+  /**
+   * The one place a nightmare ends. It fades where it stands, its spawn has a slot to refill after
+   * the kind's respawn time, and the standing dreamers within the share radius split its bounty
+   * and each earn the practice in full.
+   */
+  private driveOff(monster: MonsterRuntime): void {
+    const now = this.now();
+    monster.fadingUntil = now + COMBAT.fadeSeconds * 1000;
+    monster.timer.alive -= 1;
+    monster.timer.spawnAt = now + monster.kind.respawnSeconds * 1000;
+    const near = [...this.players.values()].filter((slot) => !isFallen(slot) && distance(slot.character.position, monster.position) <= COMBAT.shareRadius);
+    const share = Math.floor(monster.kind.bounty / near.length);
+    for (const slot of near) {
+      if (share > 0) this.giveItem(slot, 'purse', share);
+      this.addPractice(slot, PRACTICE.nightmare);
+      this.advanceTask(
+        slot,
+        (spec) => spec.kind === 'driveOff',
+        (progress) => progress + 1,
+      );
+    }
+  }
+
+  /** A Heiler's Mondstein reaching another dreamer: a standing one is mended, a fallen one begins to be raised. */
+  private touch(healer: PlayerSlot, target: PlayerSlot): void {
+    if (!this.canMend(healer) || !this.touches(healer, target)) return;
+    if (!isFallen(target)) {
+      this.mend(healer, target);
+      return;
+    }
+    // The whole cost has to be there at the start, so a raise once begun can be finished.
+    if (target.raise !== undefined || rankOf(healer.character.lucidity.ranks, 'drawing-back') === 0) return;
+    if (healer.character.energy.spiritCurrent < COMBAT.raise.spiritCost) return;
+    target.raise = { healerId: healer.character.id, elapsed: 0, charged: 0 };
+    this.broadcastRaising(target, healer.character.id, 'begun');
+  }
+
+  /** Whether the dreamer is a standing Heiler holding the Mondstein. */
+  private wieldsMondstein(healer: PlayerSlot): boolean {
+    return !isFallen(healer) && healer.character.lucidity.role === 'heiler' && itemInHand(healer.inventory) === ('mondstein' satisfies ItemId);
+  }
+
+  /** Whether the dreamer can use the Mondstein right now: they wield it, and the last touch is past. */
+  private canMend(healer: PlayerSlot): boolean {
+    return this.wieldsMondstein(healer) && this.now() >= healer.mendReadyAt;
+  }
+
+  /** Whether a Mondstein reaches from one dreamer to the other. */
+  private touches(healer: PlayerSlot, target: PlayerSlot): boolean {
+    return reaches(healer.character.position, { ...target.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
+  }
+
+  /** Restores part of a standing dreamer's health for the healer's spirit. Mending oneself earns half the practice and no task progress. */
+  private mend(healer: PlayerSlot, target: PlayerSlot): void {
+    const amount = Math.min(mendAmount(healer.character.lucidity.ranks), target.character.energy.healthMax - target.character.energy.healthCurrent);
+    if (amount <= 0 || healer.character.energy.spiritCurrent < COMBAT.mend.spiritCost) return;
+    healer.mendReadyAt = this.now() + COMBAT.mend.seconds * 1000;
+    this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: healer.character.energy.spiritCurrent - COMBAT.mend.spiritCost });
+    this.setEnergy(target, { ...target.character.energy, healthCurrent: target.character.energy.healthCurrent + amount });
+    if (healer === target) {
+      this.addPractice(healer, amount * PRACTICE.perHealthMended * PRACTICE.selfMendShare);
+      return;
+    }
+    this.addPractice(healer, amount * PRACTICE.perHealthMended);
+    this.advanceTask(
+      healer,
+      (spec) => spec.kind === 'mend',
+      (progress) => progress + amount,
+    );
+  }
+
+  /** Recovers each standing dreamer's pools, lets each reach the dreamer they tend, then advances the raises under way. */
+  private runPlayers(elapsedSeconds: number): void {
+    for (const slot of this.players.values()) {
+      if (!isFallen(slot)) this.recover(slot, elapsedSeconds);
+    }
+    for (const slot of this.players.values()) {
+      if (slot.tending === undefined) continue;
+      const tended = this.players.get(slot.tending);
+      if (tended === undefined) slot.tending = undefined;
+      else this.touch(slot, tended);
+    }
+    for (const target of this.players.values()) {
+      if (target.raise !== undefined) this.advanceRaise(target, target.raise, elapsedSeconds);
+    }
+  }
+
+  private recover(slot: PlayerSlot, elapsedSeconds: number): void {
+    const energy = slot.character.energy;
+    const motion = this.now() - slot.lastMoveAt < MOVING_WINDOW_MS ? slot.lastGait : 'standing';
+    const balance = balancePerSecond(slot.character.lucidity.ranks) * balancePace(motion, slot.winded);
+    const recovered: Energy = {
+      ...energy,
+      healthCurrent: accrue(slot.carry, 'health', COMBAT.healthPerSecond * elapsedSeconds, energy.healthCurrent, energy.healthMax),
+      balanceCurrent: accrue(slot.carry, 'balance', balance * elapsedSeconds, energy.balanceCurrent, energy.balanceMax),
+      spiritCurrent: accrue(slot.carry, 'spirit', COMBAT.spiritPerSecond * elapsedSeconds, energy.spiritCurrent, energy.spiritMax),
+    };
+    if (
+      recovered.healthCurrent !== energy.healthCurrent ||
+      recovered.balanceCurrent !== energy.balanceCurrent ||
+      recovered.spiritCurrent !== energy.spiritCurrent
+    ) {
+      this.setEnergy(slot, recovered);
+    }
+  }
+
+  private drainBalance(slot: PlayerSlot, amount: number): void {
+    slot.carry.balance -= amount;
+    const whole = Math.floor(-slot.carry.balance);
+    if (whole < 1) return;
+    slot.carry.balance += whole;
+    const energy = slot.character.energy;
+    if (energy.balanceCurrent > 0) this.setEnergy(slot, { ...energy, balanceCurrent: Math.max(0, energy.balanceCurrent - whole) });
+  }
+
+  /**
+   * The one place a raise breaks or completes. One whose fallen dreamer leaves the space goes
+   * with their slot, unannounced. It holds only while the healer stays attached, tending the
+   * dreamer, standing, holding the Mondstein, in reach, and with spirit left; otherwise it breaks
+   * off and has to start over.
+   * The cost is charged in whole units as the time passes, so a completed raise has cost exactly
+   * the spirit cost. The raised dreamer is left alone by nightmares for the grace time. That is
+   * slot state, so it ends when they leave the space, and nightmares do not follow through a door.
+   */
+  private advanceRaise(target: PlayerSlot, raise: Raise, elapsedSeconds: number): void {
+    const healer = this.players.get(raise.healerId);
+    if (
+      healer === undefined ||
+      healer.tending !== target.character.id ||
+      !this.wieldsMondstein(healer) ||
+      healer.character.energy.spiritCurrent <= 0 ||
+      !this.touches(healer, target)
+    ) {
+      target.raise = undefined;
+      this.broadcastRaising(target, raise.healerId, 'broken');
+      return;
+    }
+    raise.elapsed += elapsedSeconds;
+    const due = Math.floor(COMBAT.raise.spiritCost * Math.min(1, raise.elapsed / COMBAT.raise.seconds));
+    if (due > raise.charged) {
+      const spirit = healer.character.energy.spiritCurrent;
+      this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: Math.max(0, spirit - (due - raise.charged)) });
+      raise.charged = due;
+    }
+    if (raise.elapsed < COMBAT.raise.seconds) return;
+    target.raise = undefined;
+    target.graceUntil = this.now() + COMBAT.raise.graceSeconds * 1000;
+    const energy = target.character.energy;
+    this.setEnergy(target, { ...energy, healthCurrent: Math.ceil(energy.healthMax * COMBAT.raise.healthFraction) });
+    this.broadcastRaising(target, raise.healerId, 'done');
+    this.addPractice(healer, PRACTICE.raise);
+  }
+
+  private broadcastRaising(target: PlayerSlot, healerId: string, state: RaisingState): void {
+    const seconds = state === 'begun' ? COMBAT.raise.seconds : 0;
+    this.broadcast({ tag: 'raising', payload: { healerId, targetId: target.character.id, state, seconds } }, target.sector);
+  }
+
+  /**
+   * Every change to a dreamer's pools. `character.energy` is their only representation, so a
+   * snapshot taken right after returns them. The dreamer is told, and anyone who sees them is told
+   * when their condition changed band. Winded is folded over each balance sent, as the client
+   * folds it over each `energy` frame, so both sides agree on it. Checking once a step after
+   * recovery would miss a swing or a hit that took balance to exactly zero.
+   */
+  private setEnergy(slot: PlayerSlot, energy: Energy): void {
+    slot.character = { ...slot.character, energy };
+    slot.winded = windedAfter(slot.winded, energy.balanceCurrent);
+    slot.outbox.sendEncoded({ tag: 'energy', payload: energy }, this.logger);
+    this.setCondition(slot);
+  }
+
+  /** Announces an entity's condition when its health crossed into another band. This is all another player learns of anyone's health. */
+  private setCondition(entity: PlayerSlot | MonsterRuntime): void {
+    const [id, current, max] =
+      'character' in entity
+        ? [entity.character.id, entity.character.energy.healthCurrent, entity.character.energy.healthMax]
+        : [entity.id, entity.health, entity.kind.health];
+    const condition = conditionOf(current, max);
+    if (condition === entity.condition) return;
+    entity.condition = condition;
+    this.broadcast({ tag: 'condition', payload: { entityId: id, condition } }, entity.sector);
+  }
+
+  /** Whether the player lies fallen; `false` for anyone not in this space. */
+  isFallen(entityId: string): boolean {
+    const slot = this.players.get(entityId);
+    return slot !== undefined && isFallen(slot);
+  }
+
+  /**
+   * Replaces what the dreamer has grown into, and tells them. A new rank can raise a pool's
+   * maximum, which then takes effect where the rank was earned.
+   */
+  private updateLucidity(slot: PlayerSlot, lucidity: Lucidity): void {
+    slot.character = { ...slot.character, lucidity };
+    slot.outbox.sendEncoded({ tag: 'lucidity', payload: lucidityMessage(lucidity) }, this.logger);
+    const energy = slot.character.energy;
+    const maxima = maxPools(slot.character.lucidity.ranks);
+    if (maxima.healthMax !== energy.healthMax || maxima.balanceMax !== energy.balanceMax || maxima.spiritMax !== energy.spiritMax) {
+      this.setEnergy(slot, { ...energy, ...maxima });
+    }
+  }
+
+  /** Adds practice toward the next rank of the teaching studied, carrying over into further ranks. Nothing accrues with no teaching studied. */
+  private addPractice(slot: PlayerSlot, amount: number): void {
+    const lucidity = slot.character.lucidity;
+    const study = lucidity.study;
+    if (study === undefined) return;
+    let rank = rankOf(lucidity.ranks, study);
+    let practice = (lucidity.ranks.find((held) => held.teachingId === study)?.practice ?? 0) + amount;
+    let mastered = false;
+    while (!mastered && practice >= practiceNeeded(rank)) {
+      practice -= practiceNeeded(rank);
+      rank += 1;
+      mastered = rank >= teaching(study).maxRank;
+    }
+    this.updateLucidity(slot, {
+      ...lucidity,
+      ranks: withRank(lucidity.ranks, { teachingId: study, rank, practice: mastered ? 0 : practice }),
+      study: mastered ? undefined : study,
+    });
+  }
+
+  /** Moves the held task's progress to what `next` makes of it, no further than its goal, when the task is one `counts` accepts. */
+  private advanceTask(slot: PlayerSlot, counts: (spec: TaskSpec) => boolean, next: (progress: number) => number): void {
+    const lucidity = slot.character.lucidity;
+    const task = lucidity.task;
+    if (task === undefined) return;
+    const spec = taskSpec(task);
+    if (!counts(spec)) return;
+    const progress = Math.min(taskGoal(spec), next(task.progress));
+    if (progress !== task.progress) this.updateLucidity(slot, { ...lucidity, task: { ...task, progress } });
+  }
+
+  /** Adds to the dreamer's row of the item, or puts a new row in the first free slot, and sends them their inventory. */
+  private giveItem(slot: PlayerSlot, itemId: ItemId, quantity: number): void {
+    if (slot.inventory.some((row) => row.itemId === itemId)) {
+      slot.inventory = slot.inventory.map((row) => (row.itemId === itemId ? { ...row, quantity: row.quantity + quantity } : row));
+    } else {
+      let free = 0;
+      while (slot.inventory.some((row) => row.slot === free)) free += 1;
+      slot.inventory = [...slot.inventory, { slot: free, itemId, quantity, equippedHand: undefined }];
+    }
+    this.sendInventory(slot);
+  }
+
+  private sendInventory(slot: PlayerSlot): void {
+    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory) }, this.logger);
+  }
+
+  /**
+   * The service the named NPC offers a dreamer who stands within speaking distance of it. Anything
+   * else (no such NPC, no service, too far, a fallen dreamer) is dropped silently, as a `talk` is.
+   */
+  private serviceFor(npcId: string, entityId: string): { player: PlayerSlot; service: NPCService } | undefined {
+    const player = this.players.get(entityId);
+    const npc = this.npcs.get(npcId);
+    const service = npc?.definition.service;
+    if (player === undefined || npc === undefined || service === undefined) return undefined;
+    if (isFallen(player) || !this.inSpeakingDistance(npc, player)) return undefined;
+    return { player, service };
+  }
+
+  /**
+   * A master sets a task for a dreamer who holds none: their trial for one without a role, or the
+   * task gating a teaching of the dreamer's own role, at rank 0 and with its needs met.
+   */
+  handleAskTask(npcId: string, teachingId: string | undefined, entityId: string): void {
+    const asked = this.serviceFor(npcId, entityId);
+    if (asked === undefined) return;
+    const role = roleOfService(asked.service);
+    const lucidity = asked.player.character.lucidity;
+    if (lucidity.task !== undefined) return;
+    if (teachingId === undefined) {
+      if (lucidity.role === undefined) this.updateLucidity(asked.player, { ...lucidity, task: { role, teachingId: undefined, progress: 0 } });
+      return;
+    }
+    if (!isTeachingId(teachingId) || lucidity.role !== role) return;
+    if (teaching(teachingId).role !== role || teachingStanding(lucidity.ranks, teachingId) !== 'task') return;
+    this.updateLucidity(asked.player, { ...lucidity, task: { role, teachingId, progress: 0 } });
+  }
+
+  /**
+   * The master who set a task takes it as done once it is at its goal. A trial makes the dreamer
+   * the role for good, teaches the role's first teaching and sets them to study it, and gives a
+   * Heiler their Mondstein. A gate teaches the first rank of its teaching.
+   */
+  handleCompleteTask(npcId: string, entityId: string): void {
+    const asked = this.serviceFor(npcId, entityId);
+    if (asked === undefined) return;
+    const lucidity = asked.player.character.lucidity;
+    const task = lucidity.task;
+    if (task === undefined || task.role !== roleOfService(asked.service) || task.progress < taskGoal(taskSpec(task))) return;
+    const learned = task.teachingId ?? FIRST_TEACHING[task.role];
+    this.updateLucidity(asked.player, {
+      role: task.role,
+      ranks: withRank(lucidity.ranks, { teachingId: learned, rank: 1, practice: 0 }),
+      study: task.teachingId === undefined ? learned : lucidity.study,
+      task: undefined,
+    });
+    if (task.teachingId === undefined && task.role === 'heiler') this.giveItem(asked.player, 'mondstein', 1);
+  }
+
+  /** Clears the task held, wherever the dreamer is. */
+  handleAbandonTask(entityId: string): void {
+    const player = this.players.get(entityId);
+    if (player?.character.lucidity.task === undefined) return;
+    this.updateLucidity(player, { ...player.character.lucidity, task: undefined });
+  }
+
+  /** A master sets a dreamer of their role to study a teaching they may build on: its needs met, below its last rank, and past its gate if it has one. */
+  handleStudy(npcId: string, teachingId: string, entityId: string): void {
+    const asked = this.serviceFor(npcId, entityId);
+    if (asked === undefined || !isTeachingId(teachingId)) return;
+    const lucidity = asked.player.character.lucidity;
+    if (lucidity.role === undefined || lucidity.role !== roleOfService(asked.service) || teaching(teachingId).role !== lucidity.role) return;
+    if (teachingStanding(lucidity.ranks, teachingId) !== 'open') return;
+    this.updateLucidity(asked.player, { ...lucidity, study: teachingId });
   }
 
   /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing disconnect snapshot. */
@@ -548,14 +1152,15 @@ export class SpaceActor {
     return { character: slot.character, inventory: slot.inventory };
   }
 
-  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster other than `excluding`. */
+  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster other than `excluding`. A fallen body still counts; a fading monster does not. */
   private overlapsEntity(point: Point, radius: number, excluding?: MonsterRuntime): boolean {
     for (const slot of this.players.values()) {
       if (distance(point, slot.character.position) < radius + SOMNIO_CONSTANTS.playerRadius) return true;
     }
     if (this.npcBodies.some((npc) => distance(point, npc) < radius + npc.radius)) return true;
     for (const monster of this.monsters.values()) {
-      if (monster !== excluding && distance(point, monster.position) < radius + monster.kind.radius) return true;
+      if (monster === excluding || monster.fadingUntil !== undefined) continue;
+      if (distance(point, monster.position) < radius + monster.kind.radius) return true;
     }
     return false;
   }
@@ -599,6 +1204,7 @@ export class SpaceActor {
       z: slot.character.position.z,
       facing: slot.character.facing,
       gait: slot.gait,
+      condition: slot.condition,
     };
   }
 
@@ -613,6 +1219,8 @@ export class SpaceActor {
       z: npc.position.z,
       facing: npc.definition.facing,
       gait: DEFAULT_GAIT,
+      condition: 'hale',
+      ...(npc.definition.service === undefined ? {} : { service: npc.definition.service }),
     };
   }
 
@@ -627,6 +1235,19 @@ export class SpaceActor {
       z: monster.position.z,
       facing: monster.facing,
       gait: DEFAULT_GAIT,
+      condition: monster.condition,
     };
   }
+}
+
+/**
+ * Adds `amount` to a pool's carry and returns the pool with the whole units moved into it, up to
+ * `max`. At the maximum the units are dropped, so nothing banks up there.
+ */
+function accrue(carry: PlayerSlot['carry'], pool: keyof PlayerSlot['carry'], amount: number, current: number, max: number): number {
+  carry[pool] += amount;
+  const whole = Math.floor(carry[pool]);
+  if (whole < 1) return current;
+  carry[pool] -= whole;
+  return Math.min(max, current + whole);
 }

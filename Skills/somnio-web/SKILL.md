@@ -76,7 +76,13 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `player()` | `{ x, z, facing, gait, name }` (`gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
 | `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
 | `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaMitte'` |
-| `entities()` | `[{ id, kind, name, x, z }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, and `id` is a string (a character id, `npc:<sector>/<npcId>`, `monster:<n>`) |
+| `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
+| `energy()` | the player's own pools as last sent: `{ healthCurrent, healthMax, balanceCurrent, balanceMax, spiritCurrent, spiritMax }` |
+| `lucidity()` | `{ role?, ranks: [{ teachingId, rank, practice }], study?, task? }` as last sent |
+| `winded()` | whether the player's balance gave out, which holds them to `walk` |
+| `servicePanel()` | the id of the master whose panel is open, or `undefined` |
+| `tending()` | the id of the dreamer the player tends, or `undefined` |
+| `screenPoint(entityId)` | `{ x, y }` in CSS pixels where that entity's body is drawn on the page, or `undefined` |
 | `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
@@ -104,11 +110,30 @@ JS
 
 The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft` to walk (1 m/s); the gait rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
 
-**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk into the NPC: it blocks the step, and the blocked contact sends the `bump`.
+**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, so a click can be aimed at it. The character faces the cursor, and takes the new facing on the next frame. A swing at a nightmare therefore needs the `pointermove` first and a frame's wait before the `pointerdown`; a click on an NPC or a player does not.
+
+```bash
+agent-browser eval --stdin <<'JS'
+(() => {
+  const canvas = document.querySelector('canvas')
+  const npc = window.somnio.entities().find((e) => e.kind === 'npc')
+  const at = window.somnio.screenPoint(npc.id)
+  const init = { clientX: at.x, clientY: at.y, button: 0, bubbles: true }
+  canvas.dispatchEvent(new PointerEvent('pointermove', init))
+  canvas.dispatchEvent(new PointerEvent('pointerdown', init))
+  window.dispatchEvent(new PointerEvent('pointerup', init))
+  return { npc: npc.id, at }
+})()
+JS
+```
+
+A swing repeats at the swing rhythm for as long as the button is down, so send the `pointerup` when one swing is all the step needs. To keep one held, withhold the `pointerup` and give every `pointermove` sent meanwhile `buttons: 1`: a constructed event defaults to `buttons: 0`, which reads as the left button having come up and ends the hold. `agent-browser click` takes a selector, not coordinates, so it cannot be aimed at an entity.
+
+**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its first line, unasked: once per approach, and not again within 30 s. Clicking it as above brings its remaining lines, a few seconds apart, and opens a master's panel (`window.somnio.servicePanel()`).
 
 ```bash
 agent-browser eval 'window.somnio.entities().filter((e) => e.kind === "npc")'
-# hold the direction key until the positions converge, then:
+# hold the direction key until the player is within 2 m, then:
 agent-browser wait --fn 'window.somnio.chatHistory().length > 0'
 agent-browser eval 'window.somnio.chatHistory().at(-1)'
 ```
@@ -126,7 +151,7 @@ agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind ==
 
 A client holds the entities in its own sector and the sectors touching it, so two players see each other in the same or in adjacent outdoor sectors and lose each other two sectors apart. Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that a peer walking out of view is removed. A peer's position arrives in a batched `moves` frame about ten times a second and is drawn interpolated, so compare with a tolerance.
 
-The client's own position is predicted, not authoritative. The server sends a `correction` for self only after it rejects a move, which an unmodified client causes only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
+The client's own position is predicted, not authoritative. The server sends a `correction` for self when it rejects a move and when the player falls. An unmodified client has a move rejected only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
 
 **Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
@@ -156,8 +181,10 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - Wrap any `eval --stdin` script that awaits in an async IIFE. `eval` runs a script body, not a module, so top-level `await` and top-level `return` both throw a `SyntaxError`.
 - Gate every wait on a predicate over `window.somnio`, not a sleep. Model prewarm makes first-load timing variable.
 - A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes without teleporting.
+- A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever key is held.
 - Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
-- Esc opens the game menu during a session and is inert on the login and version-skew overlays — there is nothing behind them to resume to.
+- Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. Test a panel while balance is recovering (`energy().balanceCurrent` rising after a run), when `energy` frames arrive several times a second.
+- Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned.
 - Vite hot-reloads code changes. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
 - When Step 4's gate times out, read the visible notice: `agent-browser eval 'document.querySelector(".blocking-notice:not(.hidden)")?.textContent'`. A WebGL or desktop-only notice means the browser cannot render the world — rerun with `agent-browser --headed` so a real GPU context is available.

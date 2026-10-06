@@ -12,6 +12,8 @@ export * from './worldEntity.ts';
 export * from './worldClock.ts';
 export * from './items.ts';
 export * from './monsterKinds.ts';
+export * from './lucidity.ts';
+export * from './combat.ts';
 export * from './npcDialog.ts';
 export * from './domain/account.ts';
 export * from './domain/character.ts';

@@ -61,6 +61,14 @@ describe('the written form', () => {
     expect(readSectorFile(text, 'Town')).toEqual(sector);
   });
 
+  it("writes an NPC's service and reads it back, and writes none for an NPC without one", () => {
+    const sector = interiorSector('Inn', { spawn: { x: 3, z: 4, facing: 0 }, npcs: [npc({ id: 'sana', service: 'heilerMaster' }), npc()] });
+    const text = writeSectorFile(sector);
+    expect(text.match(/"service"/g)).toHaveLength(1);
+    expect(text).toContain('"service": "heilerMaster"');
+    expect(readSectorFile(text, 'Inn')).toEqual(sector);
+  });
+
   it('writes what differs from a default', () => {
     const sector = outdoorSector(
       'Town',
@@ -107,6 +115,11 @@ describe('reader validation', () => {
     const text = edited('EdariaArena', from, to);
     expect(() => readSectorFile(text, 'EdariaArena')).toThrow(SectorFileError);
     expect(() => readSectorFile(text, 'EdariaArena')).toThrow(message);
+  });
+
+  it('rejects an NPC service it does not know', () => {
+    const text = edited('EdariaBibliothek', '"id": "libus"', '"id": "libus", "service": "banker"');
+    expect(() => readSectorFile(text, 'EdariaBibliothek')).toThrow(/npcs\[0\]\.service: unknown value "banker"/);
   });
 
   it('takes the sector name from the caller, never from the file', () => {

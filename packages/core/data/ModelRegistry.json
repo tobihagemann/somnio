@@ -10,7 +10,10 @@
           "Sneaking",
           "Walking_Backwards",
           "Running_Strafe_Left",
-          "Running_Strafe_Right"
+          "Running_Strafe_Right",
+          "Death_A",
+          "Hit_A",
+          "Interact"
         ],
         "stem": "WachenKaempfer"
       }
@@ -52,7 +55,10 @@
       "id": "gespenst",
       "model": {
         "expectedClips": [
-          "Flying_Idle"
+          "Flying_Idle",
+          "Death",
+          "HitReact",
+          "Punch"
         ],
         "stem": "Gespenst"
       }

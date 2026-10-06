@@ -1,6 +1,7 @@
 import { SOMNIO_CONSTANTS } from '@somnio/core';
 import type { WorldEntityKind } from '@somnio/core';
 import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol';
+import type { Condition } from '@somnio/protocol';
 
 /**
  * The speech bubble and name plaque, rasterized on a canvas in a top-left-origin overlay-pixel
@@ -29,6 +30,11 @@ export const NAME_PLAQUE = {
   fontSize: 11,
   playerBackground: 'rgb(221, 221, 221)',
   npcBackground: 'rgb(204, 255, 255)',
+  /** The plaque of an entity whose health has left the top quarter, by the band it stands in. */
+  conditionBackground: { wounded: 'rgb(242, 217, 78)', hurt: 'rgb(242, 154, 58)', failing: 'rgb(229, 83, 61)', fallen: 'rgb(51, 51, 51)' },
+  ink: 'rgb(0, 0, 0)',
+  /** Text on the dark plaque of a fallen body. */
+  fallenInk: 'rgb(255, 255, 255)',
 } as const;
 
 export interface RasterArt {
@@ -145,7 +151,7 @@ export function renderSpeechBubble(lines: readonly string[]): RasterArt {
  * The name is byte-clamped before measuring, so a hostile server cannot drive an enormous
  * supersampled bitmap off a pathological nickname.
  */
-export function renderNamePlaque(name: string, background: string, bold: boolean): RasterArt {
+export function renderNamePlaque(name: string, background: string, bold: boolean, ink: string = NAME_PLAQUE.ink): RasterArt {
   // `maxRenderedNameUTF8Bytes` is the protocol's identifier cap, which honest servers already
   // enforce at registration; the clamp is what stops a hostile one driving a giant bitmap.
   const clamped = truncateToUTF8Bytes(name, PROTOCOL_BYTE_CAPS.identifier);
@@ -163,7 +169,7 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
     context.strokeStyle = '#000000';
     context.lineWidth = 1;
     context.strokeRect(0.5, 0.5, width - 1, height - 1);
-    context.fillStyle = '#000000';
+    context.fillStyle = ink;
     context.font = font;
     context.textBaseline = 'alphabetic';
     context.textAlign = 'center';
@@ -233,10 +239,13 @@ export function baselineInCenteredBox(height: number, fontSize: number): number 
   return (height - lineBoxHeight(fontSize)) / 2 + lineBoxBaselineOffset(fontSize);
 }
 
-/** Background for an entity's plaque, or `undefined` for kinds that get none. */
-export function namePlaqueBackground(kind: WorldEntityKind): string | undefined {
-  if (kind === 'player' || kind === 'peer') return NAME_PLAQUE.playerBackground;
+/**
+ * Background for an entity's plaque, or `undefined` for one that gets none. A player's plaque is
+ * tinted by their condition, the local player's included. An NPC's never changes. A nightmare has
+ * a plaque only while it is not hale, so a wounded one stands out from the rest.
+ */
+export function namePlaqueBackground(kind: WorldEntityKind, condition: Condition): string | undefined {
   if (kind === 'npc') return NAME_PLAQUE.npcBackground;
-  // Monsters get no plaque.
-  return undefined;
+  if (condition !== 'hale') return NAME_PLAQUE.conditionBackground[condition];
+  return kind === 'monster' ? undefined : NAME_PLAQUE.playerBackground;
 }

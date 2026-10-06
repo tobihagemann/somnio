@@ -61,6 +61,10 @@ interface Rig {
   held: HeldKeys;
   /** Cursor-derived facing; `undefined` leaves the entity's own facing alone. */
   mouseFacing: number | undefined;
+  winded: boolean;
+  fallen: boolean;
+  /** Whether a swing is slowing the player. */
+  slowed: boolean;
   gateWrites: boolean[];
   self(): ClientEntity;
   moves(): Point[];
@@ -97,6 +101,9 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     moveTimes,
     held: options.held ?? HELD_W,
     mouseFacing: undefined,
+    winded: false,
+    fallen: false,
+    slowed: false,
     gateWrites,
     self: () => {
       const found = entities.get('self');
@@ -119,6 +126,9 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
       if (message.tag === 'move') moveTimes.push(tickTime);
     },
     mouseFacing: () => rig.mouseFacing,
+    winded: () => rig.winded,
+    fallen: () => rig.fallen,
+    slowed: () => rig.slowed,
   });
   rig.predictor = predictor;
   const runTick = predictor.runTick.bind(predictor);
@@ -242,8 +252,18 @@ describe('collision resolution', () => {
 
     // The distinction between the two monsters is the whole of "soft-solid": one is a body, the
     // other is dropped. An overlapping peer stays, and blocks only a step that closes on it.
-    expect(blockers.npcs).toEqual([{ id: 'npc:Meadow/wirt', x: 12, z: 10, radius: 0.3 }]);
+    expect(blockers.npcs).toEqual([{ x: 12, z: 10, radius: 0.3 }]);
     expect(blockers.bodies.map((body) => body.radius)).toEqual([0.3, 0.4]);
+  });
+
+  it('keeps a fallen peer solid, and drops a nightmare that is fading', () => {
+    const player = self();
+    const fallen = clientEntity({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 }, condition: 'fallen' });
+    const fading = clientEntity({ id: 'monster:1', kind: 'monster', position: { x: 14, z: 10 }, condition: 'fallen' });
+
+    const blockers = entityBlockers([player, fallen, fading], player);
+
+    expect(blockers.bodies).toEqual([{ x: 12, z: 10, radius: 0.3 }]);
   });
 
   it('stops at a peer where it is drawn, halfway through its glide', () => {
@@ -307,6 +327,22 @@ describe('triggers', () => {
     expect(rig.sent.slice(asked + 1)).toEqual([]);
   });
 
+  /** A held swing reports before each swing, and the rhythm can come round between `useDoor` and `enterSpace`. */
+  it('reports nothing ahead of the heartbeat either while the door is pending', () => {
+    const rig = doorRig();
+    runTicks(rig, 4, 100);
+    const turned = { ...rig.self(), facing: 200 };
+    rig.session.entities.set('self', turned);
+
+    rig.predictor.reportNow();
+    expect(rig.sent.at(-1)?.tag).toBe('useDoor');
+
+    // The same call reports the turn once the door has answered.
+    rig.predictor.releaseDoor(false);
+    rig.predictor.reportNow();
+    expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { facing: 200 } });
+  });
+
   it('does not ask again for a refused door until a step has left its trigger', () => {
     const rig = doorRig();
     runTicks(rig, 4, 100);
@@ -323,14 +359,16 @@ describe('triggers', () => {
     expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(2);
   });
 
-  it('re-sends the NPC bump every blocked tick, with no latch', () => {
-    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: along(W_DIRECTION, 0.6) });
-    const rig = makeRig({ entities: [self(), npc] });
+  it.each<[string, Partial<ClientEntity>]>([
+    ['an NPC with something to offer', { id: 'npc:Meadow/pugnax', kind: 'npc', service: 'kaempferMaster' }],
+    ['a peer', { id: 'peer', kind: 'peer' }],
+    ['a nightmare', { id: 'monster:1', kind: 'monster' }],
+  ])('asks nothing of %s it walks into: acting on something is a click', (_label, entity) => {
+    const rig = makeRig({ entities: [self(), clientEntity({ ...entity, position: along(W_DIRECTION, 0.61) })] });
 
-    runTicks(rig, 3, 16);
+    runTicks(rig, 3, 100);
 
-    // Continuous rather than latched: the server ignores a bump it is already answering.
-    expect(rig.sent.filter((message) => message.tag === 'bump')).toEqual(Array(3).fill({ tag: 'bump', payload: { targetId: 'npc:Meadow/wirt' } }));
+    expect(rig.sent.every((message) => message.tag === 'move')).toBe(true);
   });
 
   it('stops at the NPC rather than walking through it', () => {
@@ -341,14 +379,54 @@ describe('triggers', () => {
 
     expect(rig.self().position).toEqual(START);
   });
+});
 
-  it('does not bump an NPC it is merely walking past', () => {
-    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: { x: START.x + 1, z: START.z } });
-    const rig = makeRig({ entities: [self(), npc] });
+describe('a swing', () => {
+  it('slows the player to its share of their pace while it lasts', () => {
+    const rig = makeRig();
+    rig.slowed = true;
+    runTicks(rig, 1, 100);
+    expectAt(rig.self().position, along(W_DIRECTION, 0.14));
 
-    runTicks(rig, 3, 100);
+    rig.slowed = false;
+    runTicks(rig, 1, 100);
+    expectAt(rig.self().position, along(W_DIRECTION, 0.34));
+  });
 
-    expect(rig.sent.filter((message) => message.tag === 'bump')).toEqual([]);
+  it('is reported from where the player stands, ahead of the heartbeat, and once', () => {
+    const rig = makeRig();
+    rig.predictor.runTick(0);
+    rig.predictor.runTick(16);
+    expect(rig.moves()).toHaveLength(1);
+
+    rig.predictor.reportNow();
+    rig.predictor.reportNow();
+    expect(rig.moves()).toHaveLength(2);
+    expect(rig.moves().at(-1)).toEqual(rig.self().position);
+  });
+});
+
+describe('a balance that gave out, and a fall', () => {
+  it('moves a winded player at the slow gait whatever is held', () => {
+    const rig = makeRig({ held: { ...HELD_W, leftShift: true } });
+    rig.winded = true;
+
+    runTicks(rig, 1, 100);
+
+    expectAt(rig.self().position, along(W_DIRECTION, 0.1));
+    expect(rig.self().gait).toBe('walk');
+    expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { gait: 'walk' } });
+  });
+
+  it('neither moves nor reports while the player lies fallen', () => {
+    const rig = makeRig();
+    rig.fallen = true;
+    rig.mouseFacing = 90;
+
+    runTicks(rig, 5, 100);
+
+    expect(rig.self()).toMatchObject({ position: START, facing: FORWARD_FACING });
+    expect(rig.sent).toEqual([]);
   });
 });
 
@@ -491,7 +569,6 @@ describe('waypoints', () => {
     runTicks(rig, Math.ceil(1000 / frameMs), frameMs);
 
     // The player ran into the NPC and came out on its far side.
-    expect(rig.sent.some((message) => message.tag === 'bump')).toBe(true);
     expect(rig.self().position.x).toBeLessThan(npc.position.x - 0.6);
     expect(rig.self().position.z).toBeLessThan(npc.position.z);
     const reports = [START, ...rig.moves()];

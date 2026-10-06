@@ -1,15 +1,27 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
-import type { BumpMessage, ClientSayMessage, Door, EquipToggleMessage, MoveMessage, UseDoorMessage } from '@somnio/protocol';
-import { SOMNIO_CONSTANTS, doorContains, resolveDoor } from '@somnio/core';
-import type { ResolvedDoor } from '@somnio/core';
+import type {
+  AskTaskMessage,
+  ClientSayMessage,
+  CompleteTaskMessage,
+  Door,
+  EquipToggleMessage,
+  MoveMessage,
+  StudyMessage,
+  SwingMessage,
+  TalkMessage,
+  TendMessage,
+  UseDoorMessage,
+  UseItemMessage,
+} from '@somnio/protocol';
+import { COMBAT, SOMNIO_CONSTANTS, doorContains, resolveDoor } from '@somnio/core';
+import type { Character, ResolvedDoor } from '@somnio/core';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
-import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
-import { inventoryMessage } from '../world/spaceActor.ts';
+import type { PlayerCheckpoint } from '../world/spaceActor.ts';
 
-/** Where the player stands after a door transfer; it must replace the source space on the connection. */
-export interface DoorOutcome {
+/** Where the player stands after a transfer; it must replace the source space on the connection. */
+export interface TransferOutcome {
   spaceId: string;
 }
 
@@ -17,7 +29,7 @@ export interface DoorOutcome {
  * The player left the source space and could be attached nowhere: the connection must not keep
  * pointing at a space that no longer holds them.
  */
-export const DOOR_LOST = 'lost';
+export const TRANSFER_LOST = 'lost';
 
 export function handleMove(message: MoveMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleMove(message, entityId);
@@ -29,20 +41,40 @@ export function handleSay(message: ClientSayMessage, entityId: string, spaceId: 
   dependencies.worldRouter.space(spaceId)?.handleSay(message, entityId);
 }
 
-export function handleEquipToggle(
-  message: EquipToggleMessage,
-  entityId: string,
-  spaceId: string,
-  outbox: ConnectionOutbox,
-  dependencies: ConnectionDependencies,
-): void {
-  const rows = dependencies.worldRouter.space(spaceId)?.handleEquipToggle(message.slot, message.hand, entityId);
-  if (rows === undefined) return;
-  outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(rows) }, dependencies.logger);
+export function handleEquipToggle(message: EquipToggleMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleEquipToggle(message.slot, message.hand, entityId);
 }
 
-export function handleBump(message: BumpMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleBump(message.targetId, entityId);
+export function handleTalk(message: TalkMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleTalk(message.npcId, entityId);
+}
+
+export function handleSwing(message: SwingMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleSwing(message.targetId, entityId);
+}
+
+export function handleTend(message: TendMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleTend(message.targetId, entityId);
+}
+
+export function handleUseItem(message: UseItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleUseItem(message.slot, entityId);
+}
+
+export function handleAskTask(message: AskTaskMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleAskTask(message.npcId, message.teachingId, entityId);
+}
+
+export function handleCompleteTask(message: CompleteTaskMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleCompleteTask(message.npcId, entityId);
+}
+
+export function handleAbandonTask(entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleAbandonTask(entityId);
+}
+
+export function handleStudy(message: StudyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleStudy(message.npcId, message.teachingId, entityId);
 }
 
 /** A live door of one of the space's sectors, resolved to its trigger and arrival point. */
@@ -55,10 +87,42 @@ function doorIn(world: LoadedWorld, spaceId: string, sectorName: string, doorId:
 }
 
 /**
+ * Moves a player from one space to where `moved` stands, with `enterSpace` first in what they are
+ * sent. The source slot is released before the attach, so a failed attach puts the player back
+ * where they came from. The restoring `enterSpace` is what releases a client waiting on the
+ * transfer. If even the restore fails, the loss is reported so the actor closes.
+ */
+function transferPlayer(
+  checkpoint: PlayerCheckpoint,
+  moved: Character,
+  spaceId: string,
+  connection: ConnectionActor,
+  dependencies: ConnectionDependencies,
+): TransferOutcome | typeof TRANSFER_LOST {
+  const logger = dependencies.logger;
+  const oldSpace = dependencies.worldRouter.space(spaceId)!;
+  const worldSeconds = dependencies.worldClock.currentWorldSeconds();
+  oldSpace.detach(checkpoint.character.id, false);
+  try {
+    dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds);
+    return { spaceId: moved.space };
+  } catch (error) {
+    logger.error({ error: String(error), space: moved.space }, 'failed to attach after transfer');
+    try {
+      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds);
+      return { spaceId };
+    } catch (restoreError) {
+      logger.error({ error: String(restoreError), space: spaceId }, 'failed to restore after transfer');
+      return TRANSFER_LOST;
+    }
+  }
+}
+
+/**
  * The door transfer. `undefined` leaves the player where they are. It comes with a `doorRefused`
- * when the player's space has no such door or the player stands outside its trigger, and silently
- * when the source space or the player's slot is gone. `DOOR_LOST` means the player is attached
- * nowhere.
+ * when the player's space has no such door, the player stands outside its trigger, or the player
+ * lies fallen, and silently when the source space or the player's slot is gone. `TRANSFER_LOST`
+ * means the player is attached nowhere.
  * The player arrives in front of the counterpart door, facing away from it, whoever already
  * stands there: an overlapping pair can always separate.
  */
@@ -68,39 +132,46 @@ export function handleUseDoor(
   spaceId: string,
   connection: ConnectionActor,
   dependencies: ConnectionDependencies,
-): DoorOutcome | typeof DOOR_LOST | undefined {
-  const logger = dependencies.logger;
+): TransferOutcome | typeof TRANSFER_LOST | undefined {
   const world = dependencies.worldRouter.world;
   const oldSpace = dependencies.worldRouter.space(spaceId);
   const checkpoint = oldSpace?.snapshotForPlayer(entityId);
   if (oldSpace === undefined || checkpoint === undefined) return undefined;
   const source = doorIn(world, spaceId, message.sector, message.doorId);
-  if (source === undefined || !doorContains(source.resolved, checkpoint.character.position, SOMNIO_CONSTANTS.doorUseSlack)) {
-    connection.outbox.sendEncoded({ tag: 'doorRefused', payload: { sector: message.sector, doorId: message.doorId } }, logger);
+  if (source === undefined || oldSpace.isFallen(entityId) || !doorContains(source.resolved, checkpoint.character.position, SOMNIO_CONSTANTS.doorUseSlack)) {
+    connection.outbox.sendEncoded({ tag: 'doorRefused', payload: { sector: message.sector, doorId: message.doorId } }, dependencies.logger);
     return undefined;
   }
   // The world keeps a door only as half of a sound pair, so the counterpart and its space resolve.
   const target = source.door.target;
   const newSpaceId = world.sectorSpace.get(target.sector)!;
-  const newSpace = dependencies.worldRouter.space(newSpaceId)!;
   const arrival = doorIn(world, newSpaceId, target.sector, target.door)!.resolved;
-  oldSpace.detach(entityId, false);
   const moved = { ...checkpoint.character, space: newSpaceId, position: arrival.arrival, facing: arrival.facing };
-  const worldSeconds = dependencies.worldClock.currentWorldSeconds();
-  try {
-    newSpace.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds);
-    return { spaceId: newSpaceId };
-  } catch (error) {
-    // The source slot is already released, so put the player back where they came from (the
-    // restoring `enterSpace` is what releases the client's wait), and if even that fails,
-    // report the loss so the actor closes.
-    logger.error({ error: String(error), target: target.sector }, 'failed to attach through door');
-    try {
-      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds);
-      return { spaceId };
-    } catch (restoreError) {
-      logger.error({ error: String(restoreError), space: spaceId }, 'failed to restore after door');
-      return DOOR_LOST;
-    }
-  }
+  return transferPlayer(checkpoint, moved, spaceId, connection, dependencies);
+}
+
+/**
+ * Giving up: a fallen dreamer wakes at the world's wake-point with every pool at the weakened
+ * fraction of its maximum.
+ * `undefined` leaves the player where they are, which is all a standing dreamer's `wake` does.
+ */
+export function handleWake(
+  entityId: string,
+  spaceId: string,
+  connection: ConnectionActor,
+  dependencies: ConnectionDependencies,
+): TransferOutcome | typeof TRANSFER_LOST | undefined {
+  const world = dependencies.worldRouter.world;
+  const oldSpace = dependencies.worldRouter.space(spaceId);
+  if (oldSpace === undefined || !oldSpace.isFallen(entityId)) return undefined;
+  const checkpoint = oldSpace.snapshotForPlayer(entityId)!;
+  const character = checkpoint.character;
+  const weakened = (max: number): number => Math.ceil(max * COMBAT.weakenedFraction);
+  const energy = character.energy;
+  const moved = {
+    ...character,
+    ...world.wakeSpawn,
+    energy: { ...energy, healthCurrent: weakened(energy.healthMax), balanceCurrent: weakened(energy.balanceMax), spiritCurrent: weakened(energy.spiritMax) },
+  };
+  return transferPlayer(checkpoint, moved, spaceId, connection, dependencies);
 }

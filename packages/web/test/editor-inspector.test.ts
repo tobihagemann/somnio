@@ -309,6 +309,27 @@ describe('reseed lifecycle', () => {
   });
 });
 
+describe("an NPC's service", () => {
+  it('is written when one is chosen and removed again by None, each as one undo step', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    expect(h.picker('Service').value).toBe('');
+    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Kämpfer master', 'Heiler master']);
+
+    choose(h.picker('Service'), 'heilerMaster');
+    expect(h.document.sector.npcs[0]?.service).toBe('heilerMaster');
+
+    choose(h.picker('Service'), '');
+    // Removed, not emptied: an NPC without a service is saved without the key.
+    expect('service' in h.document.sector.npcs[0]!).toBe(false);
+
+    h.document.undo();
+    expect(h.picker('Service').value).toBe('heilerMaster');
+    h.document.undo();
+    expect(h.picker('Service').value).toBe('');
+  });
+});
+
 describe('ids', () => {
   it('renames a placement, re-points its doors, and shows the new id', () => {
     const h = harness();

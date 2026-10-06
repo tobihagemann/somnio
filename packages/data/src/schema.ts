@@ -1,6 +1,6 @@
 import type { Generated } from 'kysely';
 
-// The Postgres schema, as the migration creates it. `Generated<>` marks columns Postgres fills
+// The Postgres schema, as the migrations create it. `Generated<>` marks columns Postgres fills
 // (defaults and the generated `name_normalized`), so inserts may omit them. Positions are metres
 // in the character's space; facing is degrees, 0 = south, 90 = east.
 
@@ -32,6 +32,19 @@ export interface CharactersTable {
   spirit_max: number;
   last_seen: Date;
   name_skeleton: string;
+  role: string | null;
+  study: string | null;
+  /** Set while the character holds a task, with `task_teaching` null for the role's trial. */
+  task_role: string | null;
+  task_teaching: string | null;
+  task_progress: number;
+}
+
+export interface CharacterRanksTable {
+  character_id: string;
+  teaching_id: string;
+  rank: number;
+  practice: number;
 }
 
 export interface InventoryRowsTable {
@@ -63,6 +76,7 @@ export interface SessionsTable {
 export interface Database {
   accounts: AccountsTable;
   characters: CharactersTable;
+  character_ranks: CharacterRanksTable;
   inventory_rows: InventoryRowsTable;
   world_clock: WorldClockTable;
   npc_dialog_states: NPCDialogStatesTable;

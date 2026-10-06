@@ -8,7 +8,8 @@ export const SOMNIO_CONSTANTS = {
   maxStepHeight: 0.3,
   /** How far a door's trigger reaches out from its anchor: deeper than a body's radius, shallower than the arrival offset. */
   doorTriggerDepth: 0.58,
-  npcInteractionRadius: 1.28,
+  /** Speaking distance: how far from an NPC a dreamer can talk to it, and keep a master's offer open. */
+  npcInteractionRadius: 2,
   /** How far outside a door's trigger the server still accepts a `useDoor`. */
   doorUseSlack: 1.0,
 
@@ -16,8 +17,10 @@ export const SOMNIO_CONSTANTS = {
   maxSectorMonsterSpawns: 4096,
   /** Cap on one monster spawn's `maxAlive`. */
   maxSpawnAlive: 16,
-  /** Wall-clock gap between two dialog lines from one NPC. */
+  /** Wall-clock gap between two lines an NPC says when asked, and between two greetings. The first line asked for after a greeting is not held back. */
   npcDialogCooldownSeconds: 3.0,
+  /** How long after greeting a dreamer an NPC does not greet them again, however often they come back while they stay in its space. */
+  npcGreetingPauseSeconds: 30,
   /** An outdoor sector narrower than this would let the camera see past its neighbour. */
   minOutdoorSectorExtent: 16,
 

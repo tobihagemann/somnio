@@ -9,7 +9,7 @@ import { STARTER_SECTOR } from '@somnio/data';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import { TEST_REGISTRY, interiorSector } from '../../core/test/support/worldFixture.ts';
 import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
-import { SectorCacheError, loadSectorCache, loadWorld, requireSectorsLoaded } from '../src/sectors/sectorCache.ts';
+import { SectorCacheError, loadSectorCache, loadWorld, requireSectorsLoaded, ruleSectorIssues } from '../src/sectors/sectorCache.ts';
 import { makeSector, makeWorld } from './support/sectorFactory.ts';
 
 const CORRUPT_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/corrupt');
@@ -80,6 +80,15 @@ describe('loadWorld', () => {
     expect(world.issues).toEqual([]);
     expect([...world.spaces.keys()]).toEqual([OUTDOOR_SPACE_ID, 'EdariaArena', 'EdariaBibliothek', 'EdariaInn', 'EdariaShop']);
     expect(world.starterSpawn).toMatchObject({ space: STARTER_SECTOR });
+  });
+
+  it('names what the rules rely on and the sectors lack, and nothing in the shipped world', () => {
+    expect(ruleSectorIssues(loadSectorCache(DEV_SECTORS_DIRECTORY))).toEqual([]);
+    expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn')))).toEqual([
+      'sector EdariaInn has no spawn to wake at',
+      'the heiler trial names sector Nordwald, which is not loaded',
+    ]);
+    expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } }), makeSector('Nordwald')))).toEqual([]);
   });
 
   it('carries the starter spawn in the coordinates of its space', () => {

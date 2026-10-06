@@ -2,7 +2,23 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { decodeSomnioMessage, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { RawData, WebSocket } from 'ws';
-import { DOOR_LOST, handleBump, handleEquipToggle, handleMove, handleSay, handleUseDoor } from '../handlers/gameplay.ts';
+import {
+  TRANSFER_LOST,
+  handleAbandonTask,
+  handleAskTask,
+  handleCompleteTask,
+  handleEquipToggle,
+  handleMove,
+  handleSay,
+  handleStudy,
+  handleSwing,
+  handleTalk,
+  handleTend,
+  handleUseDoor,
+  handleUseItem,
+  handleWake,
+} from '../handlers/gameplay.ts';
+import type { TransferOutcome } from '../handlers/gameplay.ts';
 import { handleLogin } from '../handlers/login.ts';
 import { handleRegister } from '../handlers/register.ts';
 import { handleRedeem, handleRevoke } from '../handlers/session.ts';
@@ -264,8 +280,16 @@ export class ConnectionActor {
         case 'move':
         case 'clientSay':
         case 'equipToggle':
-        case 'bump':
+        case 'talk':
+        case 'swing':
+        case 'tend':
         case 'useDoor':
+        case 'askTask':
+        case 'completeTask':
+        case 'abandonTask':
+        case 'study':
+        case 'wake':
+        case 'useItem':
         case 'revokeSession':
         case 'hello':
         case 'loginResult':
@@ -280,6 +304,10 @@ export class ConnectionActor {
         case 'energy':
         case 'inventory':
         case 'leave':
+        case 'lucidity':
+        case 'condition':
+        case 'blow':
+        case 'raising':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -294,23 +322,36 @@ export class ConnectionActor {
         handleSay(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'equipToggle':
-        handleEquipToggle(message.payload, state.entityId, state.spaceId, this.outbox, this.dependencies);
+        handleEquipToggle(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'bump':
-        handleBump(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'talk':
+        handleTalk(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'useDoor': {
-        const outcome = handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies);
-        if (outcome === DOOR_LOST) {
-          // Nothing to snapshot or detach: the player is in no space, so the exit path must
-          // not run against the space they left.
-          this.dependencies.worldRouter.unregister(state.accountId);
-          this.state = { kind: 'awaitingLogin' };
-          return { kind: 'close', code: CLOSE_GOING_AWAY, reason: 'connection closed' };
-        }
-        if (outcome !== undefined) this.setAttached(outcome.spaceId);
+      case 'swing':
+        handleSwing(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      }
+      case 'tend':
+        handleTend(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'useDoor':
+        return this.applyTransfer(handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies), state.accountId);
+      case 'wake':
+        return this.applyTransfer(handleWake(state.entityId, state.spaceId, this, this.dependencies), state.accountId);
+      case 'useItem':
+        handleUseItem(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'askTask':
+        handleAskTask(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'completeTask':
+        handleCompleteTask(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'abandonTask':
+        handleAbandonTask(state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'study':
+        handleStudy(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
       // Revocation is accepted only while attached; the connection's own account scopes the delete.
       case 'revokeSession':
         await handleRevoke(message.payload, state.accountId, this, this.dependencies);
@@ -332,6 +373,10 @@ export class ConnectionActor {
       case 'energy':
       case 'inventory':
       case 'leave':
+      case 'lucidity':
+      case 'condition':
+      case 'blow':
+      case 'raising':
       case 'adminSay':
       case 'sessionToken':
       case 'sessionRevoked':
@@ -343,30 +388,46 @@ export class ConnectionActor {
     this.state = { kind: 'attached', entityId, spaceId, accountId };
   }
 
-  /** After a door transfer the space the player arrived in must replace the one they left. */
+  /** After a transfer the space the player arrived in must replace the one they left. */
   setAttached(spaceId: string): void {
     if (this.state.kind === 'attached') {
       this.state = { ...this.state, spaceId };
     }
   }
 
+  private applyTransfer(outcome: TransferOutcome | typeof TRANSFER_LOST | undefined, accountId: string): CloseDecision {
+    if (outcome === TRANSFER_LOST) {
+      // Nothing to snapshot or detach: the player is in no space, so the exit path must
+      // not run against the space they left.
+      this.dependencies.worldRouter.unregister(accountId);
+      this.state = { kind: 'awaitingLogin' };
+      return { kind: 'close', code: CLOSE_GOING_AWAY, reason: 'connection closed' };
+    }
+    if (outcome !== undefined) this.setAttached(outcome.spaceId);
+    return { kind: 'keepOpen' };
+  }
+
   private sendHello(): void {
     this.outbox.sendEncoded({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }, this.logger);
   }
 
+  /**
+   * The player leaves the space in the same turn their snapshot is taken, so nothing that happens
+   * there during the write (a strike, a raise) is lost from it. The account stays registered until
+   * the write has landed, so a login racing it is answered `alreadyLoggedIn` rather than reading
+   * the row from before.
+   */
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
     const state = this.state;
     if (state.kind !== 'attached') return;
     const space = this.dependencies.worldRouter.space(state.spaceId);
-    if (space !== undefined) {
-      const snapshot = space.snapshotForPlayer(state.entityId);
-      if (snapshot !== undefined) {
-        await persistPlayerCheckpoint(snapshot, this.dependencies.characters, this.logger, {
-          origin: 'disconnect',
-          space: state.spaceId,
-        });
-      }
-      space.detach(state.entityId, leftGame);
+    const snapshot = space?.snapshotForPlayer(state.entityId);
+    space?.detach(state.entityId, leftGame);
+    if (snapshot !== undefined) {
+      await persistPlayerCheckpoint(snapshot, this.dependencies.characters, this.logger, {
+        origin: 'disconnect',
+        space: state.spaceId,
+      });
     }
     this.dependencies.worldRouter.unregister(state.accountId);
     this.state = { kind: 'awaitingLogin' };

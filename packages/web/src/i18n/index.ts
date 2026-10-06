@@ -1,4 +1,5 @@
-import { ITEMS, PEOPLES, peopleLabelKey } from '@somnio/core';
+import { ITEMS, PEOPLES, TEACHINGS, peopleLabelKey, roleLabelKey } from '@somnio/core';
+import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 import webCatalogJSON from './catalog.json' with { type: 'json' };
@@ -66,9 +67,15 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name in the items panel and every people's name in the registration form.
+ * item's name in the items panel, every people's name in the registration form, and every role's
+ * and teaching's name in the HUD and a master's panel.
  */
-export const CORE_LABEL_KEYS: readonly string[] = [...Object.values(ITEMS).map((item) => item.labelKey), ...PEOPLES.map(peopleLabelKey)];
+export const CORE_LABEL_KEYS: readonly string[] = [
+  ...Object.values(ITEMS).map((item) => item.labelKey),
+  ...PEOPLES.map(peopleLabelKey),
+  ...ROLES.map(roleLabelKey),
+  ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
+];
 
 /**
  * Every catalog key the browser UI renders.
@@ -99,6 +106,13 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your password could not be saved.',
   'Your session expired. Please log in again.',
   'Reconnecting...',
+  'You receive %@c.',
+  'You are now a %@.',
+  'Your %1$@ deepens: rank %2$@.',
+  'Your task is done. Return to your master.',
+  'Your health gives out. You fall.',
+  '%@ draws you back into the dream.',
+  'You let go and wake, weakened.',
 
   // HUD and floating panels
   'Health',
@@ -109,6 +123,66 @@ export const RENDERED_KEYS: readonly string[] = [
   'Items',
   'Players: %@',
   'Items: %@',
+  'winded',
+  'No role yet',
+  'Studying %1$@: %2$@ of %3$@',
+  'Studying nothing',
+  'Task: %@',
+  '%1$@ of %2$@',
+  'miss',
+
+  // Masters and the fallen notice
+  'Master of the Kämpfer',
+  'Master of the Heiler',
+  'You are a %1$@. %2$@ has nothing to teach you.',
+  "You hold another master's trial. One trial at a time.",
+  'Give up that trial',
+  '%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.',
+  'Ask for the trial',
+  'Your trial',
+  'Give up the trial',
+  'Become a %@?',
+  'You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.',
+  'Become a %@',
+  'Not yet',
+  'Rank %1$@ of %2$@',
+  'Mastered',
+  '%1$@ of %2$@ practice toward rank %3$@',
+  'Study this',
+  'Needs %1$@ at rank %2$@',
+  'Finish your current task first.',
+  'Give up the task',
+  'Drive off a nightmare.',
+  'Drive off %@ nightmares.',
+  'Falling starts the count over.',
+  'Walk to the %@ and come back.',
+  'You cannot strike while you hold this trial.',
+  'Mend %@ health on other dreamers.',
+  'Each rank adds to every hit you land.',
+  'You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.',
+  'You study nothing. Choose a teaching below.',
+  'You are studying',
+  'You can study',
+  'Earned by a task',
+  '%@ teaches its first rank for a task.',
+  'Take the task',
+  'You did what %@ asked.',
+  'Learn %@',
+  'Each rank makes nightmares miss you more often.',
+  'Each rank shortens the pause between your swings.',
+  'Each rank brings your balance back faster.',
+  'Each rank raises your health by %@.',
+  'Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.',
+  'Each rank mends more with every touch.',
+  'Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.',
+  'Each rank raises your spirit by %@.',
+  'You have fallen',
+  'You cannot move, but you can still speak. A Heiler can draw you back.',
+  '%1$@ is drawing you back: %2$@ s',
+  'Give up',
+  'You will wake at the inn, weakened.',
+  'Wake there',
+  'Stay',
 
   // Login and registration
   'Somnio',

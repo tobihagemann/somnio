@@ -3,7 +3,7 @@ import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID, headingFromCardinal } from '@somnio/core';
 import type { Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
-import { DOOR_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
+import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeDoor, makeSector, makeSectorLine } from './support/sectorFactory.ts';
@@ -11,8 +11,8 @@ import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
 const WORLD_SECONDS = 123_456.5;
-/** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`. */
-const JOIN_FRAMES = 5;
+/** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`, `lucidity`. */
+const JOIN_FRAMES = 6;
 
 /** `Town` with a door at (10, 10) into the interior `Hall`, whose door at (5, 9) leads back. */
 function town(hall: Partial<Sector> = {}): Sector[] {
@@ -47,7 +47,7 @@ describe('handleUseDoor', () => {
     const w = await attachedAt(town(), { x: 10, z: 9.7 });
     w.useDoor('Town', 'inside');
     const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy']);
+    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: 'Hall', selfId: w.entityId, worldSeconds: WORLD_SECONDS } });
   });
 
@@ -103,13 +103,13 @@ describe('handleUseDoor', () => {
     const hall = town()[1]!;
     const w = await attachedAt(town({ placements: [...hall.placements, oversized] }), { x: 10, z: 9.7 });
     const outcome = w.useDoor('Town', 'inside');
-    expect(outcome).not.toBe(DOOR_LOST);
+    expect(outcome).not.toBe(TRANSFER_LOST);
     expect(outcome).toEqual({ spaceId: OUTDOOR_SPACE_ID });
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toMatchObject({ space: OUTDOOR_SPACE_ID, position: { x: 10, z: 9.7 } });
     expect(w.snapshotIn('Hall')).toBeUndefined();
     // The restoring `enterSpace` is what releases the client's wait for the transfer.
     const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy']);
+    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID } });
   });
 });

@@ -34,14 +34,14 @@ This single mechanism explains everything else:
 
 ## The loop
 
-A dreamer wakes into the Library, finds their feet in Edaria, then ventures outward to where the dream frays. They face nightmares, grow in lucidity, and return to Edaria's trainers and shops before going deeper — always holding the line against the unraveling, always needing others to do it.
+A dreamer wakes into the Library, finds their feet in Edaria, then ventures outward to where the dream frays. They face nightmares, grow in lucidity, and return to Edaria's masters and shops before going deeper — always holding the line against the unraveling, always needing others to do it.
 
 ## The trinity — three classes that need each other
 
 Three roles in tension, where support classes *cannot* go it alone:
 
-- **Kämpfer** (Fighter) — the front line. Walks into nightmares and swings. Trains the most martial ranks. The only truly self-sufficient role — but bring friends.
-- **Heiler** (Healer) — carries the **Mondstein** (moonstone): heals an ally on contact, draining their own strength to do it. Can barely fight. Exists to keep the group breathing. Precious and rare.
+- **Kämpfer** (Fighter) — the front line. Faces nightmares and swings. Trains the most martial ranks. The only truly self-sufficient role — but bring friends.
+- **Heiler** (Healer) — carries the **Mondstein** (moonstone): heals the ally they tend, from close by, draining their own strength to do it. Can barely fight. Exists to keep the group breathing. Precious and rare.
 - **Mystiker** (Mystic) — *deliberately secretive* support, not a fireball-wizard. Buffs allies, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen.
 
 ## The peoples — kinds of dreamers
@@ -63,9 +63,9 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 ## Progression, death, economy
 
-- **Lucidity, not levels.** Progression is horizontal skill-ranks trained at **Trainer** NPCs ("lucidity-mentors"), earned slowly and deeply rather than gained in a rush.
-- **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Heiler** or an ally revives them in the field — or they return to Edaria at a cost. No permadeath; falling pulls the community together.
-- **Economy** runs through Edaria's shops and trainers. A new dreamer starts with little more than a purse of coins and a humble cudgel. The **Mondstein** is the Heiler's tool.
+- **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush.
+- **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Heiler** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
+- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. The **Mondstein** is the Heiler's tool.
 
 ## Progression — Lucidity (in detail)
 
@@ -75,34 +75,45 @@ Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no le
 
 Three trained pools, carried from the game's legacy heritage (health / balance / spirit), wearing their dream-names:
 
-- **Gestalt** (health) — how firmly the dream-self holds together. When Gestalt gives out, the dreamer falls (see *Death* below).
-- **Gleichgewicht** (balance) — the combat resource: footing, timing, poise. Swinging and being struck both spend it; recovering it is what the pause in a fight *is*. The Kämpfer's primary pool.
+- **Gestalt** (health) — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, never as a number. When Gestalt gives out, the dreamer falls (see *Death* below).
+- **Gleichgewicht** (balance) — the combat resource: footing, timing, poise. Every swing spends it, whether it meets a nightmare or the air, and so do running and being struck. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Gleichgewicht runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Kämpfer's primary pool.
 - **Geist** (spirit) — the support resource: the reach of a Heiler's Mondstein and the depth of a Mystiker's senses. Support acts drain Geist; an empty Geist is why neither can go it alone.
+
+### Acting
+
+A dreamer acts on what they point at. A swing goes the way they face, meets the nearest nightmare in reach in front of them, and slows them for a breath. Someone a dreamer comes near greets them unasked; asking brings out the rest of what they have to say, and a master's offer with it. A Heiler chooses the dreamer they **tend**, and the Mondstein mends that dreamer, or draws them back when they have fallen, for as long as the Heiler holds it and stays close. Walking into someone only stops a dreamer; nothing a dreamer does harms another.
 
 ### Training
 
-Ranks are earned at **Trainer NPCs** — the lucidity-mentors in Edaria's three halls (and, later, far-trainers like Griswal) — **slowly, for coins plus prerequisites** (earlier ranks, sometimes an errand or an item). No experience bar: you pay, you study, you own the rank. Depth over rush.
+A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Gestalt mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and nothing to buy: depth over rush.
 
-A rank's mechanical effect is a **combat or support capability** — hit harder, recover Gleichgewicht faster, heal deeper, sense further. Ranks arrive with the combat system: none is granted or checked at runtime yet, and the trainers speak of their craft rather than teach it.
+The two trials:
 
-### Starter teachings (the first list on each hall's wall)
+- **Pugnax's trial** — drive off a nightmare. He sends a dreamer to the Arena to find one, and one driven off anywhere counts.
+- **Sana's trial** — walk to the Nordwald and return without striking anything. A dreamer holding it cannot swing.
 
-- **Kämpfer-Meister** — bump-attack ranks (strike, follow-through, guard), plus Gleichgewicht recovery and Gestalt toughening.
-- **Heiler-Meisterin** — Mondstein contact-heal ranks (touch, depth, drawing a fallen dreamer back), plus Geist deepening.
-- **The Mystiker** — locating the fallen, buffs and wards for a group walking into the fray, plus Geist deepening. Taught obliquely; half the lesson is finding the hall open.
+A rank's mechanical effect is a **combat or support capability** — hit harder, recover Gleichgewicht faster, heal deeper, sense further.
+
+### Starter teachings (the first list each master teaches)
+
+- **Kämpfer** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Gleichgewicht recovery, and Gestalt toughening.
+- **Heiler** — Touch (the Mondstein mends the dreamer tended), Depth (each touch mends more), Drawing back (raising the fallen; its task is Gestalt mended on other dreamers), and Geist deepening.
+- **The Mystiker** — locating the fallen, buffs and wards for a group walking into the fray, plus Geist deepening. Taught obliquely; half the lesson is finding the hall open. Not in the world yet.
+
+A Heiler can mend themselves with the Mondstein, for half the practice, so a Heiler alone still grows.
 
 ### Death as a social event (never permanent)
 
-Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world, unable to act. Two ways back:
+Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. Nightmares leave the fallen alone. Two ways back:
 
-- **Revived in the field** by a Heiler (the Mondstein's deepest use) or an ally — falling pulls the community together; a Mystiker locating the fallen is how a rescue party finds them.
-- **Return to Edaria at a cost** — the dreamer gives up the venture and wakes at the inn.
+- **Raised in the field by a Heiler**, and by nobody else. Drawing a dreamer back takes time and a good part of a Heiler's Geist, and the Heiler has to stay with them: parted, it breaks off and starts over. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystiker locating the fallen is how a rescue party will find them.
+- **Giving up** — the dreamer lets go of the venture and wakes at the inn in Edaria, weakened in all three pools and no poorer.
 
-No permadeath, ever. The inn's beds are the **wake-point**: rest there and that is where you return when you fall. *(Wake-point and revive mechanics require the death and economy systems.)*
+No permadeath, ever.
 
 ### Class and registration
 
-Registration chooses a people, not a class. A dreamer grows into one of the trinity's roles once class techniques arrive with combat.
+Registration chooses a people, not a class. A dreamer grows into the Kämpfer or the Heiler by passing that master's trial and accepting, and the other master then has nothing to teach them.
 
 ## Edaria — the lucid heart
 
@@ -110,8 +121,8 @@ Edaria is Somnio's central town: where every stranger arrives, the calmest place
 
 - **The central well** — the heart of the heart, a fountain at the crossing of every path.
 - **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Sei gegrüßt! Diese Bibliothek ist immer noch in Arbeit. Außerdem ist das Rennen hier verboten!"* ("Be greeted! This library is still a work in progress. And running is forbidden here!")
-- **The three halls** — where the Kämpfer, Heiler, and Mystiker trainers keep their doors. A dreamer learns their craft here.
-- **The shop & the inn** — a shop to outfit a dreamer; an inn whose beds are a **wake-point** (rest here, and here you return when you fall).
+- **The three halls** — where the Kämpfer, Heiler, and Mystiker masters keep their doors. Until the halls open, Pugnax and Sana teach in the square.
+- **The shop & the inn** — a shop to outfit a dreamer; an inn that is the **wake-point**: a dreamer who gives up wakes here.
 - **The sealed door** — a door in Edaria's heart that no living dreamer has opened, and none can say what lies behind it. (The deepest mystery; tied to the Sleeper.)
 
 ## The lands of Somnio — a gazetteer
@@ -148,12 +159,12 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 - **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
 - **Pugnax, the Kämpfer-Meister** — master of the fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
-- **The Heiler-Meisterin** — mistress of the healers' hall; keeper of the Mondstein lore, gentle and exacting.
+- **Sana, the Heiler-Meisterin** (*sanare*, to heal) — mistress of the healers' hall; keeper of the Mondstein lore, gentle and exacting.
 - **The Mystiker** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
 - **Mercus, the shopkeeper** (*der Krämer*; *merx*, wares) — outfits dreamers with what little a newcomer can afford.
 - **Quieta, the innkeeper** (*die Wirtin*; *quies*, rest) — keeps the wake-point; knows every regular by their falling.
 - **The priest at the Kirche** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
-- **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper and far-trainer for those who venture past the gentle rings.
+- **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper, and a master for those who venture past the gentle rings.
 
 ## The nightmares — a bestiary by tier
 

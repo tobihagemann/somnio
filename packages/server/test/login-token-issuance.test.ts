@@ -86,7 +86,7 @@ describe('session token issuance', () => {
     const messages = await collectMessages(connection.outbox);
     expect(loginResults(messages)).toEqual(['ok']);
     // The join is `enterSpace` first and once, and a redeemed session mints no token.
-    expect(messages.map((message) => message.tag)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy']);
+    expect(messages.map((message) => message.tag)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(sessions.isStored(issued.token)).toBe(true);
   });
 
@@ -119,7 +119,7 @@ describe('session token issuance', () => {
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'asker', password: 'hunter2-long', requestSessionToken: true }, connection, world.dependencies);
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
-    expect(tags).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'sessionToken']);
+    expect(tags).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'sessionToken']);
   });
 
   /** Uniform on the wire, specific in the log: the record is the operator's only guessing signal. */

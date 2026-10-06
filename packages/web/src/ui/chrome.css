@@ -236,6 +236,113 @@ body {
   width: 0;
 }
 
+/* The player's balance gave out: the bar pulses until it is back to where the slow gait ends. */
+.hud-bar__track--winded {
+  border-color: var(--somnio-chat-red);
+  animation: hud-winded 1s ease-in-out infinite alternate;
+}
+
+@keyframes hud-winded {
+  to {
+    border-color: rgb(255 255 255 / 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-bar__track--winded {
+    animation: none;
+  }
+}
+
+.hud-lucidity {
+  width: 150px;
+}
+
+.hud-lucidity__line {
+  margin: 0;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* A master's panel: down the right edge, over the Players and Items lists, so the player, the
+   master, their speech bubble, and the chat stay in view, and the player keeps moving. Its plate
+   lets nothing through: what lies under it is text, which even a faint showing makes hard to read. */
+.service-panel {
+  --somnio-plate: rgb(12 10 16);
+
+  position: absolute;
+  top: var(--somnio-edge-padding);
+  right: var(--somnio-edge-padding);
+  bottom: var(--somnio-edge-padding);
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+}
+
+.service-panel > * {
+  flex-shrink: 0;
+}
+
+/* The list scrolls between the master's name and the Close button, which stay in view at any window height. */
+.service-body {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 8px;
+  padding-right: 6px;
+  overflow-y: auto;
+}
+
+.service-subtitle {
+  margin: 0 0 8px;
+}
+
+.service-heading {
+  margin: 14px 0 6px;
+  font-size: 14px;
+}
+
+.service-text {
+  margin: 0 0 8px;
+}
+
+.teaching-row {
+  padding: 8px 0;
+  border-top: 1px solid rgb(255 255 255 / 0.2);
+}
+
+.teaching-row > p {
+  margin: 4px 0 0;
+}
+
+.teaching-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.teaching-rank {
+  color: var(--somnio-ink-dim);
+  white-space: nowrap;
+}
+
+.teaching-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+/* At the top edge, clear of the fallen body at the screen's centre and of whoever comes to raise it. */
+.fallen-notice {
+  position: absolute;
+  top: var(--somnio-edge-padding);
+  left: 50%;
+  width: 380px;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
 .chat-panel {
   display: flex;
   flex-direction: column;

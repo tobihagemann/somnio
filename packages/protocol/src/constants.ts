@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 5,
+  helloVersion: 6,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
@@ -28,7 +28,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxEntityIdUTF8Bytes: 320,
   /**
    * UTF-8 byte cap for a sector's name, which is also an interior's space id. It keeps
-   * `npc:<sector>/<npcId>` inside `maxEntityIdUTF8Bytes` with an npc id at the identifier cap, and
+   * `npc:<sector>/<id>` inside `maxEntityIdUTF8Bytes` with an npc id at the identifier cap, and
    * no sector file reaches it: a 255-byte file name leaves 241 for the stem of a `.somnio-sector`.
    */
   maxSectorNameUTF8Bytes: 251,

@@ -68,11 +68,22 @@
   "npcs": [
     {
       "characterModelId": "kaempfer-meister",
-      "dialogScript": "Na, $name? Halt dich gerade, wenn du mit mir sprichst.---Die Halle bleibt zu, bis du weißt, wofür du kämpfst.---Im Norden franst der Traum. Geh hin und sieh selbst - aber geh nicht allein.",
+      "dialogScript": "Na, $name? Halt dich gerade, wenn du mit mir sprichst.---Wer bei mir lernen will, vertreibt erst ein Gespenst. In der Arena findest du welche. Danach reden wir.---Im Norden franst der Traum. Geh hin und sieh selbst - aber geh nicht allein.",
       "facing": 0,
       "id": "pugnax",
       "name": "Pugnax",
+      "service": "kaempferMaster",
       "x": 37.32,
+      "z": 33.2
+    },
+    {
+      "characterModelId": "kraemer",
+      "dialogScript": "Sei willkommen, $name. Der Mondstein nimmt, was er gibt.---Wer heilen will, geht erst bis in den Nordwald und kehrt zurück, ohne einen Schlag zu führen.---Wer gefallen ist, den holt nur eine Heilerin zurück. Lass niemanden liegen.",
+      "facing": 0,
+      "id": "sana",
+      "name": "Sana",
+      "service": "heilerMaster",
+      "x": 3.64,
       "z": 33.2
     }
   ],

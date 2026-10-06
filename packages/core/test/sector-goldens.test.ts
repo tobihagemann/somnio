@@ -68,14 +68,14 @@ describe('the committed world', () => {
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 0, z: 0 },
         floorMaterialId: 'grass-meadow',
-        counts: { placements: 92, blockers: 0, doors: 4, npcs: 1, monsterSpawns: 0, floorPatches: 3 },
+        counts: { placements: 92, blockers: 0, doors: 4, npcs: 2, monsterSpawns: 0, floorPatches: 3 },
         doors: {
           'to-edariabibliothek': 'EdariaBibliothek/exit',
           'to-edariaarena': 'EdariaArena/exit',
           'to-edariashop': 'EdariaShop/exit',
           'to-edariainn': 'EdariaInn/exit',
         },
-        npcs: { pugnax: 'kaempfer-meister' },
+        npcs: { pugnax: 'kaempfer-meister', sana: 'kraemer' },
       },
       EdariaShop: {
         kind: 'interior',
@@ -105,6 +105,15 @@ describe('the committed world', () => {
         npcs: {},
       },
     });
+  });
+
+  it('gives each master their service, and the inn a spawn to wake at', () => {
+    const services = sectors.flatMap((sector) => sector.npcs.flatMap((npc) => (npc.service === undefined ? [] : [[`${sector.name}/${npc.id}`, npc.service]])));
+    expect(Object.fromEntries(services)).toEqual({
+      'EdariaMitte/pugnax': 'kaempferMaster',
+      'EdariaMitte/sana': 'heilerMaster',
+    });
+    expect(byName.get('EdariaInn')?.spawn).toBeDefined();
   });
 
   it('pairs every door with a door that points back', () => {

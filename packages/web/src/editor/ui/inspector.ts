@@ -1,5 +1,7 @@
 import { MONSTER_KIND_IDS, heading, objectModel } from '@somnio/core';
 import type { ModelRegistry, Sector } from '@somnio/core';
+import { NPC_SERVICES } from '@somnio/protocol';
+import type { NPCService } from '@somnio/protocol';
 import { button, element, field, replaceChildren, select } from '@/ui/dom';
 import { millimetres } from '../preferences';
 import { byId, isValidId, isValidSelection, selectionKey } from '../selection';
@@ -56,6 +58,8 @@ const POSITION_FIELDS = [
 ] as const;
 
 const RECT_FIELDS = [...POSITION_FIELDS, ['Width', 'width'], ['Depth', 'depth']] as const;
+
+const SERVICE_LABELS: Record<NPCService, string> = { kaempferMaster: 'Kämpfer master', heilerMaster: 'Heiler master' };
 
 function idOptions(ids: readonly string[]): PickerOption[] {
   return ids.map((id) => ({ value: id, label: id }));
@@ -223,6 +227,7 @@ export class InspectorPanel {
       this.picker('Character', () => idOptions(this.registry.characterModels.map((rule) => rule.id)), npc, 'characterModelId', actionName),
       ...this.numberFields(POSITION_FIELDS, npc, actionName),
       this.numberField('Facing', npc, 'facing', actionName, heading),
+      this.servicePicker(npc, actionName),
       this.scriptField(selection.id, npc, actionName),
     ]);
   }
@@ -297,6 +302,34 @@ export class InspectorPanel {
         if (value === current) return;
         setSelectValue(picker.input, value);
         current = value;
+      },
+    };
+  }
+
+  /**
+   * What asking the NPC offers. None removes the property rather than writing an empty
+   * value, so an NPC without a service is saved without the key.
+   */
+  private servicePicker(find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
+    const picker = select('Service', [{ value: '', label: 'None' }, ...NPC_SERVICES.map((service) => ({ value: service, label: SERVICE_LABELS[service] }))]);
+    const current = (sector: Sector): string => find(sector)?.service ?? '';
+    let shown = '';
+    picker.input.addEventListener('change', () => {
+      const service = NPC_SERVICES.find((candidate) => candidate === picker.input.value);
+      if ((service ?? '') === shown) return;
+      const { accepted } = this.callbacks.mutate(actionName, (draft) => {
+        const npc = find(draft);
+        if (npc === undefined) return;
+        if (service === undefined) delete npc.service;
+        else npc.service = service;
+      });
+      if (!accepted) setSelectValue(picker.input, shown);
+    });
+    return {
+      row: picker.row,
+      refresh: (sector) => {
+        shown = current(sector);
+        setSelectValue(picker.input, shown);
       },
     };
   }

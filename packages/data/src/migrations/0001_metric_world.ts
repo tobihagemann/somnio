@@ -2,7 +2,7 @@ import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
 
 /**
- * The whole schema in one migration.
+ * The schema every later migration builds on.
  *
  * `name_normalized` is the UNIQUE-enforced column so case- and NFKC-confusable collisions
  * ("Admin" vs "admin" vs full-width) cannot coexist; `name_skeleton` (computed by the name policy

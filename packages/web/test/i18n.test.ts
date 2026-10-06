@@ -95,8 +95,28 @@ describe('catalog coverage', () => {
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item and every people, each with its own German', () => {
-    expect([...CORE_LABEL_KEYS].sort()).toEqual(['Cudgel', 'Lumina', 'Purse', 'Soporen', 'Umbren', 'Wachen']);
+  it('are every item, people, role, and teaching, each with its own German', () => {
+    expect([...CORE_LABEL_KEYS].sort()).toEqual([
+      'Balance recovery',
+      'Cudgel',
+      'Depth',
+      'Drawing back',
+      'Follow-through',
+      'Guard',
+      'Heiler',
+      'Kämpfer',
+      'Lumina',
+      'Mondstein',
+      'Purse',
+      'Soporen',
+      'Spirit deepening',
+      'Strike',
+      'Touch',
+      'Toughening',
+      'Umbren',
+      'Wachen',
+    ]);
+    expect(translate('de', 'Follow-through')).toBe('Nachsetzen');
     expect(translate('de', 'Purse')).toBe('Geldbeutel');
     expect(translate('de', 'Cudgel')).toBe('Knüppel');
   });
@@ -191,6 +211,13 @@ describe('renderChatLine', () => {
     { kind: 'left', playerName: 'Peer' },
     { kind: 'startupGreeting' },
     { kind: 'purseBalance', coins: 42 },
+    { kind: 'coinsGained', coins: 4 },
+    { kind: 'becameRole', role: 'heiler' },
+    { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
+    { kind: 'taskDone' },
+    { kind: 'fell' },
+    { kind: 'raised', healerName: 'Lumi' },
+    { kind: 'wokeWeakened' },
     { kind: 'credentialSaveFailed' },
     { kind: 'sessionExpired' },
     { kind: 'reconnecting' },
@@ -209,6 +236,14 @@ describe('renderChatLine', () => {
   it('tells a throttled player to wait, in both locales', () => {
     expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'en')).toBe('Too many attempts. Wait a little before trying again.');
     expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'de')).toBe('Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut.');
+  });
+
+  /** Two placeholders and two names looked up on the way: swapped or left unlocalized, each still renders something. */
+  it('names the teaching and then its rank, the role by its name, and the Heiler who raised', () => {
+    expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'en')).toBe('Your Strike deepens: rank 2.');
+    expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'de')).toBe('Deine Lehre Schlag vertieft sich: Rang 2.');
+    expect(renderChatLine({ kind: 'becameRole', role: 'kaempfer' }, catalogTables, 'en')).toBe('You are now a Kämpfer.');
+    expect(renderChatLine({ kind: 'raised', healerName: 'Lumi' }, catalogTables, 'en')).toBe('Lumi draws you back into the dream.');
   });
 
   it('selects the verb from the trailing punctuation', () => {

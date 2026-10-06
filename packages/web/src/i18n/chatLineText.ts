@@ -1,5 +1,6 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
+import { roleLabelKey, teaching } from '@somnio/core';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 
@@ -41,6 +42,20 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Welcome to Somnio!');
     case 'purseBalance':
       return lookup('You own %@c.', String(line.coins));
+    case 'coinsGained':
+      return lookup('You receive %@c.', String(line.coins));
+    case 'becameRole':
+      return lookup('You are now a %@.', lookup(roleLabelKey(line.role)));
+    case 'rankGained':
+      return lookup('Your %1$@ deepens: rank %2$@.', lookup(teaching(line.teachingId).labelKey), String(line.rank));
+    case 'taskDone':
+      return lookup('Your task is done. Return to your master.');
+    case 'fell':
+      return lookup('Your health gives out. You fall.');
+    case 'raised':
+      return lookup('%@ draws you back into the dream.', line.healerName);
+    case 'wokeWeakened':
+      return lookup('You let go and wake, weakened.');
     case 'credentialSaveFailed':
       return lookup('Your password could not be saved.');
     case 'sessionExpired':

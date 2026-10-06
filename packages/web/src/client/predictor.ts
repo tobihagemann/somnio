@@ -1,4 +1,5 @@
 import {
+  COMBAT,
   MOVE_SUBSTEP,
   angularDistance,
   clamp,
@@ -71,8 +72,8 @@ export function gaitFromHeld(held: HeldKeys): Gait {
 }
 
 export interface EntityBlockers {
-  /** Block at contact, on the server too. Carry their id so a blocked step can bump the one it touched. */
-  npcs: (Body & { id: string })[];
+  /** Block at contact, on the server too. */
+  npcs: Body[];
   /** Other players and monsters, which only this client stops at. */
   bodies: Body[];
 }
@@ -83,18 +84,19 @@ export interface EntityBlockers {
  * Other players are always solid; monsters are *soft-solid* — a monster the player is clear of
  * blocks the step, but one already overlapping the player is dropped so the player can always
  * walk free. Monsters chase on the server's tick and can lag onto the player, and a block there
- * would hold them in place.
+ * would hold them in place. A fallen player still blocks; a nightmare driven off is fading and
+ * blocks nothing.
  */
 export function entityBlockers(entities: Iterable<ClientEntity>, self: ClientEntity): EntityBlockers {
   const blockers: EntityBlockers = { npcs: [], bodies: [] };
   for (const entity of entities) {
     if (entity.id === self.id) continue;
-    const body = { id: entity.id, x: entity.position.x, z: entity.position.z, radius: entity.radius };
+    const body = { x: entity.position.x, z: entity.position.z, radius: entity.radius };
     if (entity.kind === 'npc') {
       blockers.npcs.push(body);
       continue;
     }
-    if (entity.kind === 'monster' && distance(self.position, body) < self.radius + body.radius) continue;
+    if (entity.kind === 'monster' && (entity.condition === 'fallen' || distance(self.position, body) < self.radius + body.radius)) continue;
     blockers.bodies.push(body);
   }
   return blockers;
@@ -123,6 +125,12 @@ export interface PredictorOptions {
   send: (message: SomnioMessage) => void;
   /** Latest cursor-derived facing, or `undefined` before the pointer has been seen. */
   mouseFacing: () => Heading | undefined;
+  /** Whether the player's balance gave out: until it is back, only the slow gait moves them. */
+  winded: () => boolean;
+  /** Whether the player lies fallen, and so does not move or report. */
+  fallen: () => boolean;
+  /** Whether a swing is still slowing the player at `nowMs`. */
+  slowed: (nowMs: number) => boolean;
 }
 
 export class GameplayPredictor {
@@ -132,6 +140,9 @@ export class GameplayPredictor {
   private readonly interpolation: RemoteInterpolation;
   private readonly send: (message: SomnioMessage) => void;
   private readonly mouseFacing: () => Heading | undefined;
+  private readonly winded: () => boolean;
+  private readonly fallen: () => boolean;
+  private readonly slowed: (nowMs: number) => boolean;
 
   private lastTickMs: number | undefined;
   private lastReport: { position: Point; facing: Heading; gait: Gait } | undefined;
@@ -148,6 +159,9 @@ export class GameplayPredictor {
     this.interpolation = options.interpolation;
     this.send = options.send;
     this.mouseFacing = options.mouseFacing;
+    this.winded = options.winded;
+    this.fallen = options.fallen;
+    this.slowed = options.slowed;
   }
 
   /**
@@ -201,11 +215,11 @@ export class GameplayPredictor {
     const world = this.session.world;
     if (selfId === undefined || world === undefined) return;
     const existing = this.session.entities.get(selfId);
-    if (existing === undefined) return;
+    if (existing === undefined || this.fallen()) return;
 
     const selfEntity: ClientEntity = { ...existing };
     const held = this.input.snapshot();
-    const gait = gaitFromHeld(held);
+    const gait = this.winded() ? 'walk' : gaitFromHeld(held);
 
     // Refresh facing every tick regardless of velocity so a stationary player still tracks the
     // cursor.
@@ -227,7 +241,8 @@ export class GameplayPredictor {
       // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step, so
       // a wall-slide keeps clip and speed mutually consistent.
       travel = headingFromVector(direction.dx, direction.dz);
-      const metres = gaitMetresPerSecond(gait) * (elapsedMs / 1000) * speedMultiplier(relativeDirection(travel, selfEntity.facing));
+      const pace = speedMultiplier(relativeDirection(travel, selfEntity.facing)) * (this.slowed(nowMs) ? COMBAT.swingSlow.factor : 1);
+      const metres = gaitMetresPerSecond(gait) * (elapsedMs / 1000) * pace;
       selfEntity.position = this.walk(world, selfEntity, direction, metres);
     }
 
@@ -263,26 +278,17 @@ export class GameplayPredictor {
    * before is reported first. That waypoint is what carries a slide round a corner: the straight
    * line between two timed reports would cut inside it.
    *
-   * A blocked substep that touched an NPC bumps it, once a tick with no latch: the server ignores
-   * a bump it is already answering. A substep that lands in a door's trigger is not taken; it
-   * asks for the door and stops the player there until the server answers.
+   * A substep that lands in a door's trigger is not taken; it asks for the door and stops the
+   * player there until the server answers.
    */
   private walk(world: ClientWorld, self: ClientEntity, direction: { dx: number; dz: number }, metres: number): Point {
     const { npcs, bodies } = entityBlockers(this.session.entities.values(), self);
     let position = self.position;
-    let bumped = false;
     const substeps = Math.ceil(metres / MOVE_SUBSTEP);
     const length = metres / substeps;
     for (let index = 0; index < substeps; index += 1) {
       const target = { x: position.x + direction.dx * length, z: position.z + direction.dz * length };
       const step = resolveMove(world.collision, position, target, self.radius, npcs, bodies);
-      if (step.blocked && !bumped) {
-        const npc = npcs.find((candidate) => distance(target, candidate) < self.radius + candidate.radius);
-        if (npc !== undefined) {
-          bumped = true;
-          this.send({ tag: 'bump', payload: { targetId: npc.id } });
-        }
-      }
       const door = world.doors.find((candidate) => doorContains(candidate.resolved, step.position, 0));
       if (door !== undefined) {
         const key = `${door.sector}/${door.doorId}`;
@@ -326,6 +332,19 @@ export class GameplayPredictor {
     }
     this.lastHeartbeatMs = nowMs;
     this.report(entity.position, entity.facing, entity.gait);
+  }
+
+  /**
+   * Reports where the player stands and faces right now, ahead of the heartbeat, so a request
+   * that follows is judged from there. The walk keeps the line from the last report legal.
+   */
+  reportNow(): void {
+    const selfId = this.session.selfId;
+    const self = selfId === undefined ? undefined : this.session.entities.get(selfId);
+    if (self === undefined || this.awaitingDoor || this.fallen()) return;
+    const last = this.lastReport;
+    if (last?.position.x === self.position.x && last.position.z === self.position.z && last.facing === self.facing && last.gait === self.gait) return;
+    this.report(self.position, self.facing, self.gait);
   }
 
   private report(position: Point, facing: Heading, gait: Gait): void {

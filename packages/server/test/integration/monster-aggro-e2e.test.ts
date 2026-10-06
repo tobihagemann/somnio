@@ -4,6 +4,7 @@ import type { Point } from '@somnio/core';
 import type { ConnectionOutbox } from '../../src/connection/outbox.ts';
 import { seededRandom } from '../../src/world/random.ts';
 import type { SpaceActor } from '../../src/world/spaceActor.ts';
+import { RESPAWN_MS } from '../support/combat.ts';
 import { collectMessages, entities, entityMoves } from '../support/frames.ts';
 import { attachPlayer, makeClockedSpace } from '../support/sectorFactory.ts';
 import { fixtureWorld } from './support/harness.ts';
@@ -17,7 +18,7 @@ const FAR_AWAY: Point = { x: 20.48, z: 12 };
 /** The committed outdoor space with the Nordwald's first Gespenst already spawned, and where it stands. */
 async function nordwald() {
   const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID, { random: seededRandom(11) });
-  clock.ms = GESPENST.respawnSeconds * 1000;
+  clock.ms = RESPAWN_MS;
   // In the Nordwiese, which sees the Nordwald from well outside any aggro radius.
   const scout = attachPlayer(space, { x: 20.48, z: -15 }, 'scout');
   space.step(0);

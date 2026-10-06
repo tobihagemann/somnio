@@ -18,7 +18,8 @@ export interface AdminWorldRouter {
 
 interface LoggedInEntry {
   actor: ConnectionActor;
-  normalizedName: string;
+  /** Absent between the account's registration and its character being loaded. */
+  normalizedName: string | undefined;
 }
 
 /** Mirrors the `LOWER(NORMALIZE(name, NFKC))` collation of every `name_normalized` column. */
@@ -73,11 +74,21 @@ export class WorldRouter implements AdminWorldRouter {
     return this.spaceActors.get(id);
   }
 
-  /** `false` when the account is already registered; the caller answers `alreadyLoggedIn`. */
-  register(actor: ConnectionActor, accountId: string, characterName: string): boolean {
+  /**
+   * Reserves the account for the connection, before anything of it is read: a join that read
+   * first could load rows a departing connection's checkpoint is about to replace. `false` when
+   * the account is already registered; the caller answers `alreadyLoggedIn`.
+   */
+  register(actor: ConnectionActor, accountId: string): boolean {
     if (this.loggedIn.has(accountId)) return false;
-    this.loggedIn.set(accountId, { actor, normalizedName: normalize(characterName) });
+    this.loggedIn.set(accountId, { actor, normalizedName: undefined });
     return true;
+  }
+
+  /** Supplies the name `kickByCharacterName` matches, once the character is loaded. Until then the entry matches no kick. */
+  nameRegistered(accountId: string, characterName: string): void {
+    const entry = this.loggedIn.get(accountId);
+    if (entry !== undefined) entry.normalizedName = normalize(characterName);
   }
 
   unregister(accountId: string): void {

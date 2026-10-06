@@ -1,13 +1,14 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
+import type { Energy, LucidityMessage } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 
 /**
  * Read-only introspection surface for automated verification.
  *
- * It reads through two of the `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
+ * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
  * adds controller and session state the scene never sees — connection state, the space and sector,
- * the chat scrollback, the presented overlay, the zoom factor.
+ * the chat scrollback, the presented overlay, the zoom factor, and the player's own pools and lucidity.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -22,7 +23,17 @@ export interface SomnioDebugAPI {
   spaceId(): string | undefined;
   /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
-  entities(): { id: string; kind: string; name: string; x: number; z: number }[];
+  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string }[];
+  /** The player's own pools, as last sent. */
+  energy(): Energy;
+  lucidity(): LucidityMessage;
+  winded(): boolean;
+  /** The id of the NPC whose service panel is open. */
+  servicePanel(): string | undefined;
+  /** The id of the dreamer the player tends. */
+  tending(): string | undefined;
+  /** Where on the page an entity's body is drawn, in CSS pixels, so a click can be aimed at it. */
+  screenPoint(entityId: string): { x: number; y: number } | undefined;
   /** How many placed objects are still rendering a placeholder rather than a resolved model. */
   placeholderObjectCount(): number;
   /** The retained chat lines, localized as the chat panel renders them. The panel's greeting is not one of them. */
@@ -57,7 +68,14 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         name: entity.name,
         x: entity.position.x,
         z: entity.position.z,
+        condition: entity.condition,
       })),
+    energy: () => shell.session.energy,
+    lucidity: () => shell.session.lucidity,
+    winded: () => shell.session.winded,
+    servicePanel: () => shell.session.servicePanel?.id,
+    tending: () => shell.session.tending,
+    screenPoint: (entityId) => shell.pagePointOf(entityId),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,
     chatHistory: () => shell.controller.chatHistory.map((line) => renderChatLine(line, catalogTables, currentLocale())),
     cameraScale: () => shell.scene?._cameraScale(),

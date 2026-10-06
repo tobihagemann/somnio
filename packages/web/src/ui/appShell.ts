@@ -10,8 +10,10 @@ import { MAX_TICK_DELTA } from '@/scene/animation';
 import { WorldScene } from '@/scene/worldScene';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
+import { FallenNotice } from './fallenNotice';
 import { GamePanels } from './panels';
 import { BlockingNotices, Overlays } from './overlays';
+import { ServicePanel } from './servicePanel';
 import { element } from './dom';
 
 /**
@@ -89,6 +91,8 @@ export class AppShell {
   readonly session: GameplaySession;
   readonly scene: WorldScene | undefined;
   readonly panels: GamePanels;
+  readonly servicePanel: ServicePanel;
+  readonly fallenNotice: FallenNotice;
   readonly overlays: Overlays;
   readonly notices: BlockingNotices;
 
@@ -99,6 +103,8 @@ export class AppShell {
   private renderer: THREE.WebGLRenderer | undefined;
   private hoveringPanel = false;
   private lastFrameMs: number | undefined;
+  /** The pointer whose left button last pressed the play field. */
+  private pressPointerId: number | undefined;
 
   constructor(options: AppShellOptions) {
     setLocale(resolveLocale());
@@ -152,6 +158,15 @@ export class AppShell {
       currentLocale(),
     );
 
+    this.servicePanel = new ServicePanel({
+      onAskTask: (teachingId) => this.session.askTask(teachingId),
+      onCompleteTask: () => this.session.completeTask(),
+      onAbandonTask: () => this.session.abandonTask(),
+      onStudy: (teachingId) => this.session.study(teachingId),
+      onClose: () => this.session.closeServicePanel(),
+    });
+    this.fallenNotice = new FallenNotice(() => this.session.wake());
+
     this.overlays = new Overlays({
       // The overlay stays up until the world actually arrives: `submitLogin` does not touch
       // `presentedOverlay` and `handleEnterSpace` is what clears it. Dismissing on submit instead
@@ -179,7 +194,7 @@ export class AppShell {
 
     this.notices = new BlockingNotices();
 
-    this.container.append(this.canvas, this.panels.root, this.overlays.root, this.notices.root);
+    this.container.append(this.canvas, this.panels.root, this.servicePanel.root, this.fallenNotice.root, this.overlays.root, this.notices.root);
     this.controller.onChatLinesChanged = () => this.render();
     this.controller.onPlayersChanged = () => this.render();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
@@ -260,6 +275,9 @@ export class AppShell {
     this.canvas.addEventListener('pointermove', (event) => {
       const rect = this.canvas.getBoundingClientRect();
       this.session.updateMouseFacing({ x: event.clientX - rect.left, y: event.clientY - rect.top }, { x: rect.width / 2, y: rect.height / 2 });
+      // A pointer over what a click would ask or tend; a swing needs no target and no sign.
+      const action = this.session.clickAction(this.entityUnder(event));
+      this.canvas.style.cursor = action === 'talk' || action === 'tend' ? 'pointer' : '';
     });
 
     // A wheel event over a panel scrolls the panel; only the bare play field zooms.
@@ -277,9 +295,36 @@ export class AppShell {
 
     // Clicking the play field blurs the chat input — otherwise
     // WASD keeps going into the text box after the player looks back at the world.
-    this.canvas.addEventListener('pointerdown', () => {
+    this.canvas.addEventListener('pointerdown', (event) => {
       this.panels.chatInput.blur();
+      if (event.button !== 0) return;
+      this.pressPointerId = event.pointerId;
+      this.session.pressAt(this.entityUnder(event), performance.now());
     });
+    // A press ends when its own pointer's left button is up, whatever another pointer does. On the
+    // window, because that can happen over a panel or outside the page, and on a move as well:
+    // with another button still down, the left one coming up fires no `pointerup`.
+    const endPress = (event: PointerEvent, leftIsUp: boolean): void => {
+      if (event.pointerId === this.pressPointerId && leftIsUp) this.session.release();
+    };
+    window.addEventListener('pointerup', (event) => endPress(event, true));
+    window.addEventListener('pointercancel', (event) => endPress(event, true));
+    window.addEventListener('pointermove', (event) => endPress(event, (event.buttons & 1) === 0));
+  }
+
+  /** Where on the page an entity's body is drawn, in CSS pixels: the inverse of `entityUnder`, for an agent that has to click one. */
+  pagePointOf(entityId: string): { x: number; y: number } | undefined {
+    const point = this.scene?._viewportPointFor(entityId);
+    if (point === undefined) return undefined;
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: rect.left + ((point.x + 1) / 2) * rect.width, y: rect.top + ((1 - point.y) / 2) * rect.height };
+  }
+
+  /** The entity drawn under the pointer, if any. */
+  private entityUnder(event: PointerEvent): string | undefined {
+    const rect = this.canvas.getBoundingClientRect();
+    if (this.scene === undefined || rect.width === 0 || rect.height === 0) return undefined;
+    return this.scene.entityAt(((event.clientX - rect.left) / rect.width) * 2 - 1, 1 - ((event.clientY - rect.top) / rect.height) * 2);
   }
 
   /**
@@ -299,6 +344,11 @@ export class AppShell {
       // Nothing to resume to without a session, so Esc is inert rather than opening a menu whose
       // Resume would drop the player onto the splash.
       if (this.controller.connectionState === 'disconnected') return;
+      // Letting go of the dreamer tended comes before the menu.
+      if (this.session.tending !== undefined) {
+        this.session.tend(undefined);
+        return;
+      }
       this.present({ kind: 'gameMenu' });
       return;
     }
@@ -424,7 +474,10 @@ export class AppShell {
     // The panels are not gated on the connection: `MainWindowView` composes all four
     // unconditionally and lets the modal host sit over them, which is what makes the chat
     // scrollback readable behind the login overlay — where a rejected password reports itself.
-    this.panels.renderEnergy(this.session.energy);
+    this.panels.renderEnergy(this.session.energy, this.session.winded);
+    this.panels.renderLucidity(this.session.lucidity);
+    this.servicePanel.render(this.session.servicePanel, this.session.lucidity);
+    this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raise });
     this.panels.renderChat(this.controller.chatHistory);
     this.panels.renderPlayers(this.controller.players);
     this.panels.renderItems(this.session.inventory);

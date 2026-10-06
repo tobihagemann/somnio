@@ -1,11 +1,14 @@
 import { buildSpaceCollision, neighbourSectors, resolveDoor, sectorAt } from '@somnio/core';
 import type { ModelRegistry, Point, ResolvedDoor, SpaceCollision, WorldEntity } from '@somnio/core';
-import type { SectorView } from '@somnio/protocol';
+import type { Condition, NPCService, SectorView } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 
-/** An entity as the client holds it: where it is drawn, and the body radius the server gave it. */
+/** An entity as the client holds it: where it is drawn, the body radius the server gave it, and how its health stands. */
 export interface ClientEntity extends WorldEntity {
   radius: number;
+  condition: Condition;
+  /** What asking an NPC offers beyond its dialog. */
+  service: NPCService | undefined;
 }
 
 /** A door of a held sector with its trigger resolved, addressed the way `useDoor` names it. */

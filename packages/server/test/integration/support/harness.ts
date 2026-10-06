@@ -220,10 +220,11 @@ export function selfPosition(joined: JoinedClient): Point {
 
 /**
  * A point a player can stand on between touching `center` and `reach` away from it, found on
- * rings around it, so a suite does not pin where the committed sectors keep their furniture.
+ * rings around it, so a suite does not pin where the committed sectors keep their furniture. The
+ * outermost ring lies inside `reach`: a point computed at exactly that distance can round past it.
  */
 export function standableNear(space: SpaceActor, center: Point, reach: number): Point {
-  for (let radius = reach; radius > 2 * SOMNIO_CONSTANTS.playerRadius; radius -= 0.1) {
+  for (let radius = reach - 0.1; radius > 2 * SOMNIO_CONSTANTS.playerRadius; radius -= 0.1) {
     for (let step = 0; step < 16; step += 1) {
       const angle = (step * Math.PI) / 8;
       const candidate = { x: center.x + radius * Math.sin(angle), z: center.z + radius * Math.cos(angle) };

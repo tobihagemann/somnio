@@ -1,9 +1,30 @@
+import { ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
-import { ITEMS, itemLabelKey } from '../src/items.ts';
+import { ITEMS, itemInHand, itemLabelKey, itemWeapon } from '../src/items.ts';
+import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
-const CORE_KEYS = ['Cudgel', 'Lumina', 'Purse', 'Soporen', 'Umbren', 'Wachen'];
+const CORE_KEYS = [
+  'Balance recovery',
+  'Cudgel',
+  'Depth',
+  'Drawing back',
+  'Follow-through',
+  'Guard',
+  'Heiler',
+  'Kämpfer',
+  'Lumina',
+  'Mondstein',
+  'Purse',
+  'Soporen',
+  'Spirit deepening',
+  'Strike',
+  'Touch',
+  'Toughening',
+  'Umbren',
+  'Wachen',
+];
 
 describe('items', () => {
   it('resolves the purse and the cudgel', () => {
@@ -14,6 +35,19 @@ describe('items', () => {
   it('resolves nothing for an unknown id, inherited object keys included', () => {
     expect(itemLabelKey('sword')).toBeUndefined();
     expect(itemLabelKey('toString')).toBeUndefined();
+  });
+
+  it('makes a weapon of the cudgel alone', () => {
+    expect(itemWeapon('cudgel')).toEqual({ damage: 8, balanceCost: 18 });
+    expect(itemWeapon('mondstein')).toBeUndefined();
+    expect(itemWeapon('toString')).toBeUndefined();
+  });
+
+  it('holds what is in the right hand, and nothing for a row in the left', () => {
+    const cudgel = { itemId: 'cudgel', equippedHand: 'left' as const };
+    const mondstein = { itemId: 'mondstein', equippedHand: 'right' as const };
+    expect(itemInHand([{ itemId: 'purse' }, cudgel, mondstein])).toBe('mondstein');
+    expect(itemInHand([{ itemId: 'purse' }, cudgel])).toBeUndefined();
   });
 
   it('ships English and German for both labels', () => {
@@ -29,8 +63,13 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items and the peoples', () => {
-    const labels = [...Object.values(ITEMS).map((item) => item.labelKey), ...PEOPLES.map(peopleLabelKey)];
+  it('holds exactly the labels of the items, the peoples, the roles, and the teachings', () => {
+    const labels = [
+      ...Object.values(ITEMS).map((item) => item.labelKey),
+      ...PEOPLES.map(peopleLabelKey),
+      ...ROLES.map(roleLabelKey),
+      ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),
+    ];
     expect(labels.sort()).toEqual(CORE_KEYS);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GAITS } from '@somnio/protocol';
-import { CLIP_PREFERENCES, movementPose, resolveClipName } from '@/scene/animation';
+import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
 import { sunState } from '@/scene/dayNightSun';
 import { BUBBLE_WIDTH, bubbleLifetimeMs, capLines, wrapSpeech } from '@/scene/speechBubbleText';
@@ -58,6 +58,26 @@ describe('clip preference chains', () => {
 
   it('resolves nothing when the model has no usable clip', () => {
     expect(resolveClipName('idle', ['Unrelated'])).toBeUndefined();
+  });
+});
+
+describe('one-shot clips', () => {
+  /** What the player's model and the Gespenst carry, as the registry expects of each. */
+  const WACHEN = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Interact'];
+  const GESPENST = ['Flying_Idle', 'Death', 'HitReact', 'Punch'];
+
+  it.each([
+    ['fallen', 'Death_A', 'Death'],
+    ['swing', 'Interact', 'Punch'],
+    ['flinch', 'Hit_A', 'HitReact'],
+  ] as const)('resolves %s to %s on a dreamer and %s on a Gespenst', (oneShot, dreamer, ghost) => {
+    expect(resolveOneShotClipName(oneShot, WACHEN)).toBe(dreamer);
+    expect(resolveOneShotClipName(oneShot, GESPENST)).toBe(ghost);
+  });
+
+  /** An event has no fallback: a model without the clip keeps the pose it is looping. */
+  it.each(Object.keys(ONE_SHOT_CLIPS) as (keyof typeof ONE_SHOT_CLIPS)[])('resolves nothing for %s on a model that carries only looping clips', (oneShot) => {
+    expect(resolveOneShotClipName(oneShot, ['Idle', 'Walking_A', 'Flying_Idle'])).toBeUndefined();
   });
 });
 

@@ -1,11 +1,43 @@
 {
+  "Balance recovery": {
+    "en": "Balance recovery",
+    "de": "Standfestigkeit"
+  },
   "Cudgel": {
     "en": "Cudgel",
     "de": "Knüppel"
   },
+  "Depth": {
+    "en": "Depth",
+    "de": "Tiefe"
+  },
+  "Drawing back": {
+    "en": "Drawing back",
+    "de": "Zurückholen"
+  },
+  "Follow-through": {
+    "en": "Follow-through",
+    "de": "Nachsetzen"
+  },
+  "Guard": {
+    "en": "Guard",
+    "de": "Deckung"
+  },
+  "Heiler": {
+    "en": "Heiler",
+    "de": "Heiler"
+  },
+  "Kämpfer": {
+    "en": "Kämpfer",
+    "de": "Kämpfer"
+  },
   "Lumina": {
     "en": "Lumina",
     "de": "Lumina"
+  },
+  "Mondstein": {
+    "en": "Mondstein",
+    "de": "Mondstein"
   },
   "Purse": {
     "en": "Purse",
@@ -14,6 +46,22 @@
   "Soporen": {
     "en": "Soporen",
     "de": "Soporen"
+  },
+  "Spirit deepening": {
+    "en": "Spirit deepening",
+    "de": "Geistesstärke"
+  },
+  "Strike": {
+    "en": "Strike",
+    "de": "Schlag"
+  },
+  "Touch": {
+    "en": "Touch",
+    "de": "Berührung"
+  },
+  "Toughening": {
+    "en": "Toughening",
+    "de": "Abhärtung"
   },
   "Umbren": {
     "en": "Umbren",

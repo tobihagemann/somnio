@@ -1,3 +1,6 @@
+import type { TeachingId } from '@somnio/core';
+import type { Role } from '@somnio/protocol';
+
 /**
  * The chat line model and its verbs.
  *
@@ -22,6 +25,13 @@ export type ChatLine =
   | { kind: 'left'; playerName: string }
   | { kind: 'startupGreeting' }
   | { kind: 'purseBalance'; coins: number }
+  | { kind: 'coinsGained'; coins: number }
+  | { kind: 'becameRole'; role: Role }
+  | { kind: 'rankGained'; teachingId: TeachingId; rank: number }
+  | { kind: 'taskDone' }
+  | { kind: 'fell' }
+  | { kind: 'raised'; healerName: string }
+  | { kind: 'wokeWeakened' }
   | { kind: 'credentialSaveFailed' }
   | { kind: 'sessionExpired' }
   | { kind: 'reconnecting' };
@@ -63,6 +73,13 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'startupGreeting':
       return 'startupGreeting';
     case 'purseBalance':
+    case 'coinsGained':
+    case 'becameRole':
+    case 'rankGained':
+    case 'taskDone':
+    case 'fell':
+    case 'raised':
+    case 'wokeWeakened':
       return 'itemInfo';
   }
 }

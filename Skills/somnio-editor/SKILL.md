@@ -55,7 +55,7 @@ agent-browser eval 'window.somnioEditor.placeholderObjectCount()'   # 0 = real m
 | `body()` | record counts per array (`placements`, `blockers`, `doors`, `npcs`, `monsterSpawns`, `floorPatches`) |
 | `selection()` | `[{ kind, id }]`; `kind` is `'placement' \| 'blocker' \| 'door' \| 'npc' \| 'monsterSpawn' \| 'floorPatch' \| 'spawn'`, `id` the record's id |
 | `tool()` | `'select' \| 'placement' \| 'blocker' \| 'npc' \| 'monsterSpawn' \| 'floorPatch' \| 'spawn'` |
-| `issues()` | `string[]` of what the server would report at boot: one `<record> "<id>": <message>` line per record the overlay marks in red, preceded by the reason when the world would not load at all; `[]` for a clean sector |
+| `issues()` | `string[]` of what `buildWorld` would report at the server's boot: one `<record> "<id>": <message>` line per record the overlay marks in red, preceded by the reason when the world would not load at all; `[]` for a clean sector |
 | `overlay()` | `'gameMenu' \| 'newMap' \| 'sectorSettings' \| 'about' \| 'preferences' \| 'sectorPicker' \| 'saveAs' \| undefined` |
 | `isDirty()` | unsaved changes against the last save/load checkpoint |
 | `undoDepth()` | committed undo steps |
@@ -73,8 +73,8 @@ machine.
 **Verify via file (decisive).** After a save, read the sector JSON out of the sectors
 directory — screenshots can lie, the saved file cannot. An unedited open+save is byte-identical
 to the input (`cmp` against the fixture), so any diff is exactly your edit. Defaults are left
-out of the file (`yaw` and `elevation` at 0, empty arrays), so an absent key is not a lost
-edit. AGENTS.md's "Sector format" has the full shape.
+out of the file (`yaw` and `elevation` at 0, empty arrays, an NPC's Service at None), so an
+absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
 
 ## Notes
 
@@ -87,10 +87,12 @@ edit. AGENTS.md's "Sector format" has the full shape.
   blocker only for ground no model covers.
 - The overlay fills each floor patch in translucent purple, so a patched floor reads pink or
   mauve in the editor and its screenshots. Judge a patch's colour in the browser client.
-- The overlay marks in red what the server would report at boot, and `issues()` lists the
-  same: a door that does not resolve, has no sound counterpart, or arrives on something solid
-  (an NPC included), walk surfaces of two placements that overlap, an `elevation` on a model
-  with walk surfaces, and an unmapped model.
+- The overlay marks in red what `buildWorld` would report at the server's boot, and `issues()`
+  lists the same: a door that does not resolve, has no sound counterpart, or arrives on
+  something solid (an NPC included), walk surfaces of two placements that overlap, an
+  `elevation` on a model with walk surfaces, and an unmapped model. Two things the server logs
+  at boot are not among them: an `EdariaInn` without a spawn, and a missing `Nordwald`, which
+  the Heiler trial names.
 - Doors, NPCs, and monster spawns carry a text label (`<door id> -> <sector>/<door>`, the
   NPC's name, `<kind> x<maxAlive>`). The labels are DOM elements (`.editor-label`,
   `.editor-label--issue` in red), so `agent-browser snapshot` sees them.

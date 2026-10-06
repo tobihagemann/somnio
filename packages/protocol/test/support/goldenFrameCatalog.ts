@@ -14,7 +14,9 @@ export interface GoldenFrameEntry {
 }
 
 const PLAYER_ID = '0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c';
+const OTHER_PLAYER_ID = '7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
 const NPC_ID = 'npc:EdariaBibliothek/libus';
+const MASTER_ID = 'npc:EdariaMitte/pugnax';
 
 /** Every record array populated at once, with a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
@@ -67,8 +69,19 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'move', message: { tag: 'move', payload: { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' } } },
   { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt' } } },
   { name: 'equipToggle', message: { tag: 'equipToggle', payload: { slot: 1, hand: 'right' } } },
-  { name: 'bump', message: { tag: 'bump', payload: { targetId: NPC_ID } } },
+  { name: 'talk', message: { tag: 'talk', payload: { npcId: NPC_ID } } },
+  { name: 'swing', message: { tag: 'swing', payload: { targetId: 'monster:7' } } },
+  { name: 'swing-air', message: { tag: 'swing', payload: {} } },
+  { name: 'tend', message: { tag: 'tend', payload: { targetId: OTHER_PLAYER_ID } } },
+  { name: 'tend-no-one', message: { tag: 'tend', payload: {} } },
   { name: 'useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaMitte', doorId: 'to-edariabibliothek' } } },
+  { name: 'askTask', message: { tag: 'askTask', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
+  { name: 'askTask-trial', message: { tag: 'askTask', payload: { npcId: MASTER_ID } } },
+  { name: 'completeTask', message: { tag: 'completeTask', payload: { npcId: MASTER_ID } } },
+  { name: 'abandonTask', message: { tag: 'abandonTask', payload: {} } },
+  { name: 'study', message: { tag: 'study', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
+  { name: 'wake', message: { tag: 'wake', payload: {} } },
+  { name: 'useItem', message: { tag: 'useItem', payload: { slot: 2 } } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
   { name: 'revokeSession', message: { tag: 'revokeSession', payload: { token: 'tok-abc' } } },
   {
@@ -97,6 +110,26 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         z: 3.84,
         facing: 359.96875,
         gait: 'walk',
+        condition: 'hale',
+      },
+    },
+  },
+  {
+    name: 'entity-with-service',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: MASTER_ID,
+        kind: 'npc',
+        characterModelId: 'kaempfer-meister',
+        name: 'Pugnax',
+        radius: 0.3,
+        x: 37.32,
+        z: 33.2,
+        facing: 0,
+        gait: 'jog',
+        condition: 'hale',
+        service: 'kaempferMaster',
       },
     },
   },
@@ -142,6 +175,26 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     },
   },
   { name: 'leave', message: { tag: 'leave', payload: { entityId: PLAYER_ID, leftGame: true } } },
+  {
+    name: 'lucidity',
+    message: {
+      tag: 'lucidity',
+      payload: {
+        role: 'kaempfer',
+        ranks: [
+          { teachingId: 'strike', rank: 2, practice: 12.5 },
+          { teachingId: 'follow-through', rank: 0, practice: 0 },
+        ],
+        study: 'strike',
+        task: { role: 'kaempfer', teachingId: 'follow-through', progress: 1 },
+      },
+    },
+  },
+  { name: 'lucidity-empty', message: { tag: 'lucidity', payload: { ranks: [] } } },
+  { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
+  { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
+  { name: 'blow-air', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, hit: false } } },
+  { name: 'raising', message: { tag: 'raising', payload: { healerId: PLAYER_ID, targetId: OTHER_PLAYER_ID, state: 'begun', seconds: 6 } } },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {
     name: 'sessionToken',

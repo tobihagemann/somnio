@@ -7,9 +7,29 @@
     "en": "%1$@ exclaims, \"%2$@\"",
     "de": "%1$@ ruft, \"%2$@\""
   },
+  "%1$@ is drawing you back: %2$@ s": {
+    "en": "%1$@ is drawing you back: %2$@ s",
+    "de": "%1$@ holt dich zurück: %2$@ s"
+  },
+  "%1$@ of %2$@": {
+    "en": "%1$@ of %2$@",
+    "de": "%1$@ von %2$@"
+  },
+  "%1$@ of %2$@ practice toward rank %3$@": {
+    "en": "%1$@ of %2$@ practice toward rank %3$@",
+    "de": "%1$@ von %2$@ Übung bis Rang %3$@"
+  },
   "%1$@ says, \"%2$@\"": {
     "en": "%1$@ says, \"%2$@\"",
     "de": "%1$@ sagt, \"%2$@\""
+  },
+  "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.": {
+    "en": "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.",
+    "de": "%1$@ nimmt auf, wer eine Prüfung besteht. Sie verpflichtet dich zu nichts: Du entscheidest danach, ob du %2$@ wirst."
+  },
+  "%@ draws you back into the dream.": {
+    "en": "%@ draws you back into the dream.",
+    "de": "%@ holt dich in den Traum zurück."
   },
   "%@ entered the game.": {
     "en": "%@ entered the game.",
@@ -18,6 +38,10 @@
   "%@ left the game.": {
     "en": "%@ left the game.",
     "de": "%@ hat das Spiel verlassen."
+  },
+  "%@ teaches its first rank for a task.": {
+    "en": "%@ teaches its first rank for a task.",
+    "de": "%@ lehrt den ersten Rang für eine Aufgabe."
   },
   "*: repeat": {
     "en": "*: repeat",
@@ -39,6 +63,10 @@
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
   },
+  "Ask for the trial": {
+    "en": "Ask for the trial",
+    "de": "Um die Prüfung bitten"
+  },
   "Bad credentials.": {
     "en": "Bad credentials.",
     "de": "Falsche Zugangsdaten."
@@ -46,6 +74,14 @@
   "Balance": {
     "en": "Balance",
     "de": "Gleichgewicht"
+  },
+  "Become a %@": {
+    "en": "Become a %@",
+    "de": "%@ werden"
+  },
+  "Become a %@?": {
+    "en": "Become a %@?",
+    "de": "%@ werden?"
   },
   "Broadcast message: %@": {
     "en": "Broadcast message: %@",
@@ -67,6 +103,46 @@
     "en": "© Copyright 2026 Tobias Hagemann",
     "de": "© Copyright 2026 Tobias Hagemann"
   },
+  "Drive off %@ nightmares.": {
+    "en": "Drive off %@ nightmares.",
+    "de": "Vertreibe %@ Albträume."
+  },
+  "Drive off a nightmare.": {
+    "en": "Drive off a nightmare.",
+    "de": "Vertreibe einen Albtraum."
+  },
+  "Each rank adds to every hit you land.": {
+    "en": "Each rank adds to every hit you land.",
+    "de": "Jeder Rang verstärkt jeden Treffer, den du landest."
+  },
+  "Each rank brings your balance back faster.": {
+    "en": "Each rank brings your balance back faster.",
+    "de": "Mit jedem Rang kehrt dein Gleichgewicht schneller zurück."
+  },
+  "Each rank makes nightmares miss you more often.": {
+    "en": "Each rank makes nightmares miss you more often.",
+    "de": "Mit jedem Rang verfehlen Albträume dich öfter."
+  },
+  "Each rank mends more with every touch.": {
+    "en": "Each rank mends more with every touch.",
+    "de": "Jeder Rang heilt mit jeder Berührung mehr."
+  },
+  "Each rank raises your health by %@.": {
+    "en": "Each rank raises your health by %@.",
+    "de": "Jeder Rang erhöht deine Gestalt um %@."
+  },
+  "Each rank raises your spirit by %@.": {
+    "en": "Each rank raises your spirit by %@.",
+    "de": "Jeder Rang erhöht deinen Geist um %@."
+  },
+  "Each rank shortens the pause between your swings.": {
+    "en": "Each rank shortens the pause between your swings.",
+    "de": "Jeder Rang verkürzt die Pause zwischen deinen Schlägen."
+  },
+  "Earned by a task": {
+    "en": "Earned by a task",
+    "de": "Durch eine Aufgabe verdient"
+  },
   "Email:": {
     "en": "Email:",
     "de": "E-Mail:"
@@ -74,6 +150,14 @@
   "Error %@ occurred.": {
     "en": "Error %@ occurred.",
     "de": "Der Fehler %@ ist aufgetreten!"
+  },
+  "Falling starts the count over.": {
+    "en": "Falling starts the count over.",
+    "de": "Fällst du, beginnt die Zählung von vorn."
+  },
+  "Finish your current task first.": {
+    "en": "Finish your current task first.",
+    "de": "Erfülle zuerst deine jetzige Aufgabe."
   },
   "Floor textures by ambientCG.": {
     "en": "Floor textures by ambientCG.",
@@ -87,9 +171,33 @@
     "en": "Ghost model by Quaternius.",
     "de": "Geist-Modell von Quaternius."
   },
+  "Give up": {
+    "en": "Give up",
+    "de": "Aufgeben"
+  },
+  "Give up that trial": {
+    "en": "Give up that trial",
+    "de": "Diese Prüfung aufgeben"
+  },
+  "Give up the task": {
+    "en": "Give up the task",
+    "de": "Aufgabe aufgeben"
+  },
+  "Give up the trial": {
+    "en": "Give up the trial",
+    "de": "Prüfung aufgeben"
+  },
   "Health": {
     "en": "Health",
     "de": "Gestalt"
+  },
+  "Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.": {
+    "en": "Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.",
+    "de": "Klick mit dem Mondstein in der Hand einen Träumer an, um dich seiner anzunehmen. Dein Geist heilt ihn, solange du bei ihm bleibst."
+  },
+  "Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.": {
+    "en": "Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.",
+    "de": "Bleib mit dem Mondstein in der Hand bei einem gefallenen Träumer, dessen du dich annimmst, um ihn zurückzuholen."
   },
   "If you don't have an account, click here!": {
     "en": "If you don't have an account, click here!",
@@ -103,6 +211,10 @@
     "en": "Items: %@",
     "de": "Items: %@"
   },
+  "Learn %@": {
+    "en": "Learn %@",
+    "de": "%@ lernen"
+  },
   "Leave Game": {
     "en": "Leave Game",
     "de": "Spiel verlassen"
@@ -115,6 +227,26 @@
     "en": "Log In",
     "de": "Anmelden"
   },
+  "Master of the Heiler": {
+    "en": "Master of the Heiler",
+    "de": "Meisterin der Heiler"
+  },
+  "Master of the Kämpfer": {
+    "en": "Master of the Kämpfer",
+    "de": "Meister der Kämpfer"
+  },
+  "Mastered": {
+    "en": "Mastered",
+    "de": "Gemeistert"
+  },
+  "Mend %@ health on other dreamers.": {
+    "en": "Mend %@ health on other dreamers.",
+    "de": "Heile %@ Gestalt bei anderen Träumern."
+  },
+  "Needs %1$@ at rank %2$@": {
+    "en": "Needs %1$@ at rank %2$@",
+    "de": "Braucht %1$@ auf Rang %2$@"
+  },
   "Nickname": {
     "en": "Nickname",
     "de": "Nickname"
@@ -126,6 +258,14 @@
   "Nickname:": {
     "en": "Nickname:",
     "de": "Nickname:"
+  },
+  "No role yet": {
+    "en": "No role yet",
+    "de": "Noch keine Rolle"
+  },
+  "Not yet": {
+    "en": "Not yet",
+    "de": "Noch nicht"
   },
   "OK": {
     "en": "OK",
@@ -158,6 +298,10 @@
   "Players: %@": {
     "en": "Players: %@",
     "de": "Spieler: %@"
+  },
+  "Rank %1$@ of %2$@": {
+    "en": "Rank %1$@ of %2$@",
+    "de": "Rang %1$@ von %2$@"
   },
   "Reconnecting...": {
     "en": "Reconnecting...",
@@ -194,6 +338,30 @@
   "Spirit": {
     "en": "Spirit",
     "de": "Geist"
+  },
+  "Stay": {
+    "en": "Stay",
+    "de": "Bleiben"
+  },
+  "Study this": {
+    "en": "Study this",
+    "de": "Das lernen"
+  },
+  "Studying %1$@: %2$@ of %3$@": {
+    "en": "Studying %1$@: %2$@ of %3$@",
+    "de": "Du lernst %1$@: %2$@ von %3$@"
+  },
+  "Studying nothing": {
+    "en": "Studying nothing",
+    "de": "Du lernst nichts"
+  },
+  "Take the task": {
+    "en": "Take the task",
+    "de": "Aufgabe annehmen"
+  },
+  "Task: %@": {
+    "en": "Task: %@",
+    "de": "Aufgabe: %@"
   },
   "Thanks paragraph": {
     "en": "Somnio was my first passion project, developed from 2003 to 2006. This is its revival.",
@@ -243,13 +411,89 @@
     "en": "Version: %@",
     "de": "Version: %@"
   },
+  "Wake there": {
+    "en": "Wake there",
+    "de": "Dort aufwachen"
+  },
+  "Walk to the %@ and come back.": {
+    "en": "Walk to the %@ and come back.",
+    "de": "Geh bis in den %@ und kehre zurück."
+  },
   "Welcome to Somnio!": {
     "en": "Welcome to Somnio!",
     "de": "Willkommen zu Somnio!"
   },
+  "You are a %1$@. %2$@ has nothing to teach you.": {
+    "en": "You are a %1$@. %2$@ has nothing to teach you.",
+    "de": "Du bist %1$@. %2$@ kann dich nichts lehren."
+  },
+  "You are now a %@.": {
+    "en": "You are now a %@.",
+    "de": "Du bist jetzt %@."
+  },
+  "You are studying": {
+    "en": "You are studying",
+    "de": "Das lernst du"
+  },
+  "You can study": {
+    "en": "You can study",
+    "de": "Das kannst du lernen"
+  },
+  "You cannot move, but you can still speak. A Heiler can draw you back.": {
+    "en": "You cannot move, but you can still speak. A Heiler can draw you back.",
+    "de": "Du kannst dich nicht bewegen, aber noch sprechen. Ein Heiler kann dich zurückholen."
+  },
+  "You cannot strike while you hold this trial.": {
+    "en": "You cannot strike while you hold this trial.",
+    "de": "Solange du diese Prüfung trägst, kannst du nicht zuschlagen."
+  },
+  "You did what %@ asked.": {
+    "en": "You did what %@ asked.",
+    "de": "Du hast getan, was %@ verlangt hat."
+  },
+  "You have fallen": {
+    "en": "You have fallen",
+    "de": "Du bist gefallen"
+  },
+  "You hold another master's trial. One trial at a time.": {
+    "en": "You hold another master's trial. One trial at a time.",
+    "de": "Du stehst in der Prüfung eines anderen Meisters. Immer nur eine Prüfung."
+  },
+  "You let go and wake, weakened.": {
+    "en": "You let go and wake, weakened.",
+    "de": "Du lässt los und wachst geschwächt auf."
+  },
   "You own %@c.": {
     "en": "You own %@c.",
     "de": "Du besitzt %@c."
+  },
+  "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.": {
+    "en": "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.",
+    "de": "Du hast die Prüfung bestanden. Nimmst du an, bist du für immer %@. Das lässt sich nicht rückgängig machen, und der andere Meister lehrt dich danach nicht mehr."
+  },
+  "You receive %@c.": {
+    "en": "You receive %@c.",
+    "de": "Du erhältst %@c."
+  },
+  "You study nothing. Choose a teaching below.": {
+    "en": "You study nothing. Choose a teaching below.",
+    "de": "Du lernst nichts. Wähle unten eine Lehre."
+  },
+  "You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.": {
+    "en": "You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.",
+    "de": "Du lernst immer nur eine Lehre. Was du draußen tust, füllt ihre Übung, und volle Übung ist ihr nächster Rang."
+  },
+  "You will wake at the inn, weakened.": {
+    "en": "You will wake at the inn, weakened.",
+    "de": "Du wachst geschwächt im Gasthaus auf."
+  },
+  "Your %1$@ deepens: rank %2$@.": {
+    "en": "Your %1$@ deepens: rank %2$@.",
+    "de": "Deine Lehre %1$@ vertieft sich: Rang %2$@."
+  },
+  "Your health gives out. You fall.": {
+    "en": "Your health gives out. You fall.",
+    "de": "Deine Gestalt gibt nach. Du fällst."
   },
   "Your password could not be saved.": {
     "en": "Your password could not be saved.",
@@ -258,5 +502,21 @@
   "Your session expired. Please log in again.": {
     "en": "Your session expired. Please log in again.",
     "de": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
+  },
+  "Your task is done. Return to your master.": {
+    "en": "Your task is done. Return to your master.",
+    "de": "Deine Aufgabe ist erfüllt. Kehre zu deinem Meister zurück."
+  },
+  "Your trial": {
+    "en": "Your trial",
+    "de": "Deine Prüfung"
+  },
+  "miss": {
+    "en": "miss",
+    "de": "daneben"
+  },
+  "winded": {
+    "en": "winded",
+    "de": "außer Atem"
   }
 }

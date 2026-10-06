@@ -52,8 +52,9 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
 }
 
 /**
- * The join shared by a password login and a redeemed session: character and inventory lookup,
- * router registration, `loginResult(ok)`, attach, then the request-gated token.
+ * The join shared by a password login and a redeemed session: router registration, character and
+ * inventory lookup, `loginResult(ok)`, attach, then the request-gated token. The account is
+ * registered before anything is read and released on every path that does not attach.
  */
 export async function completeAuthenticatedJoin(
   accountId: string,
@@ -63,18 +64,19 @@ export async function completeAuthenticatedJoin(
 ): Promise<void> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
+  if (!dependencies.worldRouter.register(connection, accountId)) {
+    sendLoginResult(outbox, 'alreadyLoggedIn', logger);
+    return;
+  }
   try {
     const character = (await dependencies.characters.findByAccount(accountId))[0];
     if (character === undefined) {
+      dependencies.worldRouter.unregister(accountId);
       sendLoginResult(outbox, 'badCredentials', logger);
       return;
     }
     const inventory = await dependencies.inventories.loadAll(character.id);
-
-    if (!dependencies.worldRouter.register(connection, accountId, character.name)) {
-      sendLoginResult(outbox, 'alreadyLoggedIn', logger);
-      return;
-    }
+    dependencies.worldRouter.nameRegistered(accountId, character.name);
 
     let resolvedCharacter: Character = character;
     const spawn = resolvedSpawn(character, dependencies.worldRouter);
@@ -105,6 +107,7 @@ export async function completeAuthenticatedJoin(
     }
   } catch (error) {
     logger.error({ error: String(error) }, 'join failed');
+    dependencies.worldRouter.unregister(accountId);
     sendLoginResult(outbox, 'badCredentials', logger);
   }
 }

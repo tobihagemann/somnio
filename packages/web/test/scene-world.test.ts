@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { ORTHO_RIG, cameraPosition } from '@/scene/cameraRig';
 import { SUN_SHADOW, sunState } from '@/scene/dayNightSun';
-import { MAX_TICK_DELTA } from '@/scene/animation';
+import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { CHARACTER_SCALE, FLOOR_PATCH_LIFT, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import {
   NAME_PLAQUE,
@@ -94,6 +94,40 @@ function floorQuads(scene: WorldScene): THREE.Mesh[] {
 function planeSize(mesh: THREE.Mesh): { width: number; height: number } {
   const { width, height } = (mesh.geometry as THREE.PlaneGeometry).parameters;
   return { width, height };
+}
+
+/** The ground rings drawn round entities: the one tended, and each fallen body being raised. */
+function rings(scene: WorldScene): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  scene.scene.traverse((object) => {
+    if ((object as THREE.Mesh).geometry?.type === 'RingGeometry') found.push(object as THREE.Mesh);
+  });
+  return found;
+}
+
+/**
+ * A skinned model with its own skeleton, matching what `SkeletonUtils.clone` hands back: a box
+ * one unit tall standing on its node, every vertex bound to the one bone.
+ */
+function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton; bone: THREE.Bone } {
+  const bone = new THREE.Bone();
+  const skeleton = new THREE.Skeleton([bone]);
+  const geometry = new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0);
+  const vertices = geometry.getAttribute('position').count;
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Array<number>(vertices * 4).fill(0), 4));
+  geometry.setAttribute(
+    'skinWeight',
+    new THREE.Float32BufferAttribute(
+      Array.from({ length: vertices * 4 }, (_, index) => (index % 4 === 0 ? 1 : 0)),
+      4,
+    ),
+  );
+  const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.add(bone);
+  mesh.bind(skeleton);
+  const root = new THREE.Object3D();
+  root.add(mesh);
+  return { root, skeleton, bone };
 }
 
 function boxes(scene: WorldScene): THREE.Mesh[] {
@@ -808,6 +842,106 @@ describe('overlay quads', () => {
     // The bounds come from Float32 vertex data, hence the looser match.
     expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
   });
+
+  /**
+   * A skinned mesh keeps the bounds of the pose it is first measured in. A body first measured
+   * lying down would hang its balloon at knee height for as long as it stays in view.
+   */
+  it('hangs the balloon at standing height over a skinned model whose first words come while it lies down', () => {
+    const { root, bone } = skinnedModel();
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
+
+    bone.rotation.x = Math.PI / 2;
+    bone.updateMatrixWorld(true);
+    scene.showSpeechBubble('self', ['Hallo'], 3000);
+
+    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+  });
+
+  /** Until a clip plays, a model's bones rest wherever its file left them: for one model of the pack, far below its feet. */
+  it('measures a model standing in its idle pose, not where its bones rest', () => {
+    const { root, bone } = skinnedModel();
+    bone.name = 'Root';
+    bone.position.y = -15;
+    const idle = new THREE.AnimationClip('Idle', 1, [new THREE.VectorKeyframeTrack('Root.position', [0], [0, 0, 0])]);
+    const scene = makeScene({ ...emptyAssets(), character: () => root, clipsFor: () => [idle] });
+    scene.placeEntity(player());
+
+    scene.showSpeechBubble('self', ['Hallo'], 3000);
+
+    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+  });
+
+  /** The model that replaces a placeholder has a height of its own, and stands wherever the entity already does. */
+  it('measures again when a model replaces the placeholder of an entity on raised ground', async () => {
+    const assets = emptyAssets();
+    const scene = makeScene(assets);
+    const entered = world();
+    scene.enterSpace(entered);
+    entered.addSector(daisSector);
+    scene.addSector(daisSector);
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    scene.showSpeechBubble('self', ['Hallo'], 3000);
+    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+
+    // Twice as tall as the placeholder it replaces.
+    const { root } = skinnedModel();
+    root.scale.y = 2;
+    assets.character = () => root;
+    await scene.prewarm();
+    scene.showSpeechBubble('self', ['Hallo'], 3000);
+
+    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(2 * CHARACTER_SCALE + 0.2, 6);
+  });
+});
+
+describe('what the cursor is over, and the entity tended', () => {
+  /** Where a point of the world lands in the viewport, in normalized device coordinates. */
+  function viewportOf(scene: WorldScene, x: number, y: number, z: number): THREE.Vector3 {
+    scene.camera.updateMatrixWorld();
+    return new THREE.Vector3(x, y, z).project(scene.camera);
+  }
+
+  it('picks the entity drawn under a point by its body from feet to head, and never the player', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 } }));
+
+    const body = viewportOf(scene, 12, CHARACTER_SCALE / 2, 10);
+    expect(scene.entityAt(body.x, body.y)).toBe('peer');
+    const feet = viewportOf(scene, 12, 0, 10);
+    expect(scene.entityAt(feet.x, feet.y)).toBe('peer');
+    const drawn = scene._viewportPointFor('peer')!;
+    expect(drawn.x).toBeCloseTo(body.x, 6);
+    expect(drawn.y).toBeCloseTo(body.y, 6);
+    expect(scene._viewportPointFor('nobody')).toBeUndefined();
+    const own = viewportOf(scene, 10, CHARACTER_SCALE / 2, 10);
+    expect(scene.entityAt(own.x, own.y)).toBeUndefined();
+    const ground = viewportOf(scene, 12, 0, 13);
+    expect(scene.entityAt(ground.x, ground.y)).toBeUndefined();
+  });
+
+  it('rings the one entity tended, and frees the ring when another is chosen, none is, or the entity leaves', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
+    scene.placeEntity(player({ id: 'cara', kind: 'peer', position: { x: 8, z: 10 } }));
+
+    scene.showSelection('bren');
+    expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([12]);
+
+    scene.showSelection('cara');
+    expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([8]);
+    scene.showSelection(undefined);
+    expect(rings(scene)).toEqual([]);
+
+    scene.showSelection('nobody');
+    expect(rings(scene)).toEqual([]);
+    scene.showSelection('bren');
+    scene.removeEntity('bren');
+    expect(rings(scene)).toEqual([]);
+  });
 });
 
 describe('shadow casting survives every path a model can reach the scene by', () => {
@@ -956,6 +1090,142 @@ describe('movement poses', () => {
   });
 });
 
+describe('blows, falls, and raises', () => {
+  const CLIP_SECONDS = 1;
+
+  afterEach(() => vi.restoreAllMocks());
+
+  /** A scene whose character model carries `names` as clips, and the action of every clip started on it, in order. */
+  function fightingScene(names = ['Idle', 'Interact', 'Hit_A', 'Death_A']): { scene: WorldScene; started: () => string[]; last: () => THREE.AnimationAction } {
+    const clips = names.map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, []));
+    const scene = makeScene({ ...emptyAssets(), character: () => new THREE.Object3D(), clipsFor: () => clips });
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    const actions = (): THREE.AnimationAction[] => play.mock.contexts as THREE.AnimationAction[];
+    return { scene, started: () => actions().map((action) => action.getClip().name), last: () => actions().at(-1)! };
+  }
+
+  /** Runs the scene for `seconds`, in steps under the tick's own clamp. */
+  function run(scene: WorldScene, seconds: number): void {
+    for (let elapsed = 0; elapsed < seconds; elapsed += MAX_TICK_DELTA) scene.tick(MAX_TICK_DELTA);
+  }
+
+  function entityNode(scene: WorldScene, entityId: string): THREE.Object3D {
+    scene.showSelection(entityId);
+    const node = rings(scene)[0]!.parent!;
+    scene.showSelection(undefined);
+    return node;
+  }
+
+  it('plays a swing once over the pose, then fades the pose back in', () => {
+    const { scene, started, last } = fightingScene();
+    scene.placeEntity(player());
+    scene.tick(0.016);
+    expect(started()).toEqual(['Idle']);
+
+    const idle = last();
+    scene.showBlow('self', undefined, false);
+    expect(started()).toEqual(['Idle', 'Interact']);
+    expect(last().loop).toBe(THREE.LoopOnce);
+    // Half-way through the fade the pose has given half its weight to the swing.
+    scene.tick(CLIP_TRANSITION_DURATION / 2);
+    expect(idle.getEffectiveWeight()).toBeCloseTo(0.5, 6);
+    expect(last().getEffectiveWeight()).toBeCloseTo(0.5, 6);
+
+    run(scene, CLIP_SECONDS / 2);
+    expect(started()).toEqual(['Idle', 'Interact']);
+    run(scene, CLIP_SECONDS);
+    expect(started()).toEqual(['Idle', 'Interact', 'Idle']);
+  });
+
+  it('makes the one hit flinch, and marks a miss over the one missed for a moment', () => {
+    const { scene, started } = fightingScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
+    scene.tick(0.016);
+    const ghost = entityNode(scene, 'monster:1');
+    const before = ghost.children.length;
+
+    scene.showBlow('self', 'monster:1', true);
+    expect(started().slice(-2)).toEqual(['Interact', 'Hit_A']);
+    expect(ghost.children).toHaveLength(before);
+
+    scene.showBlow('self', 'monster:1', false);
+    scene.showBlow('self', 'monster:1', false);
+    expect(started().at(-1)).toBe('Interact');
+    expect(ghost.children).toHaveLength(before + 1);
+    run(scene, 1);
+    expect(ghost.children).toHaveLength(before);
+  });
+
+  it('hangs the miss mark over the head of the one missed, like a speech balloon', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
+    const ghost = entityNode(scene, 'monster:1');
+
+    scene.showBlow('self', 'monster:1', false);
+
+    expect(ghost.children.at(-1)!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+  });
+
+  it('drops a fallen entity once and keeps it down, whatever strikes it, until it stands again', () => {
+    const { scene, started, last } = fightingScene();
+    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
+    scene.tick(0.016);
+
+    scene.updateCondition('peer', 'fallen');
+    expect(started()).toEqual(['Idle', 'Death_A']);
+    expect(last().clampWhenFinished).toBe(true);
+    run(scene, CLIP_SECONDS * 3);
+    scene.showBlow('monster:1', 'peer', true);
+    expect(started()).toEqual(['Idle', 'Death_A']);
+
+    scene.updateCondition('peer', 'failing');
+    scene.tick(0.016);
+    expect(started()).toEqual(['Idle', 'Death_A', 'Idle']);
+  });
+
+  it('lays down an entity that comes into view already fallen', () => {
+    const { scene, started } = fightingScene();
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
+    scene.tick(0.016);
+    // Posed once to be measured standing, then down.
+    expect(started()).toEqual(['Idle', 'Death_A']);
+  });
+
+  it('keeps the pose of a model that carries none of the clips', () => {
+    const { scene, started } = fightingScene(['Idle']);
+    scene.placeEntity(player());
+    scene.tick(0.016);
+
+    scene.showBlow('self', undefined, false);
+    scene.updateCondition('self', 'fallen');
+    run(scene, CLIP_SECONDS * 2);
+
+    expect(started()).toEqual(['Idle']);
+  });
+
+  it('draws a ring round a body being raised further round as the raise goes on, and frees it when the raise ends', () => {
+    const scene = makeScene();
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
+
+    scene.showRaising('peer', 6);
+    const [ring] = rings(scene);
+    const whole = ring!.geometry.getIndex()!.count;
+    expect(ring!.geometry.drawRange.count).toBe(0);
+
+    run(scene, 3);
+    expect(ring!.geometry.drawRange.count).toBeCloseTo(whole / 2, -1);
+    run(scene, 4);
+    expect(ring!.geometry.drawRange.count).toBe(whole);
+
+    const dispose = vi.spyOn(ring!.geometry, 'dispose');
+    scene.showRaising('peer', undefined);
+    expect(rings(scene)).toEqual([]);
+    expect(dispose).toHaveBeenCalled();
+  });
+});
+
 describe('the sun travels with the camera focus', () => {
   /**
    * three.js derives a directional light's direction from `position - target.position`. Anchoring
@@ -1097,12 +1367,24 @@ describe('overlay artwork', () => {
     ['player', NAME_PLAQUE.playerBackground],
     ['peer', NAME_PLAQUE.playerBackground],
     ['npc', NAME_PLAQUE.npcBackground],
-  ] as const)('gives a %s a plaque', (kind, background) => {
-    expect(namePlaqueBackground(kind)).toBe(background);
+  ] as const)('gives a hale %s a plaque', (kind, background) => {
+    expect(namePlaqueBackground(kind, 'hale')).toBe(background);
   });
 
-  it('gives a monster no plaque', () => {
-    expect(namePlaqueBackground('monster')).toBeUndefined();
+  it('gives a hale monster no plaque', () => {
+    expect(namePlaqueBackground('monster', 'hale')).toBeUndefined();
+  });
+
+  it.each(['wounded', 'hurt', 'failing', 'fallen'] as const)('tints a %s player, peer, and monster alike, and leaves an NPC as it is', (condition) => {
+    const tint = NAME_PLAQUE.conditionBackground[condition];
+    expect(namePlaqueBackground('player', condition)).toBe(tint);
+    expect(namePlaqueBackground('peer', condition)).toBe(tint);
+    expect(namePlaqueBackground('monster', condition)).toBe(tint);
+    expect(namePlaqueBackground('npc', condition)).toBe(NAME_PLAQUE.npcBackground);
+  });
+
+  it('gives each band its own tint', () => {
+    expect(new Set(Object.values(NAME_PLAQUE.conditionBackground)).size).toBe(4);
   });
 
   /**
@@ -1155,6 +1437,35 @@ describe('name plaques hang off the entity node', () => {
 
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst' }));
     expect(plaqueCanvases(scene)).toHaveLength(2);
+  });
+
+  it('gives a nightmare a plaque while it is not hale, and takes it away when it is', () => {
+    const scene = makeScene();
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst' }));
+    expect(plaqueCanvases(scene)).toHaveLength(0);
+
+    scene.updateCondition('monster:1', 'hurt');
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+    scene.updateCondition('monster:1', 'failing');
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+
+    scene.updateCondition('monster:1', 'hale');
+    expect(plaqueCanvases(scene)).toHaveLength(0);
+  });
+
+  it("redraws a player's plaque when their condition changes, and takes the condition an entity is placed with", () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    const [hale] = plaqueCanvases(scene);
+
+    scene.updateCondition('self', 'wounded');
+    const [wounded] = plaqueCanvases(scene);
+    expect(wounded).not.toBe(hale);
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+
+    scene.placeEntity(player({ condition: 'fallen' }));
+    expect(plaqueCanvases(scene)).toHaveLength(1);
+    expect(plaqueCanvases(scene)[0]).not.toBe(wounded);
   });
 
   /** Re-placing the same entity must not stack a new plaque on each pass. */
@@ -1229,18 +1540,6 @@ describe('name plaques hang off the entity node', () => {
  * freeing what this file allocated, and *not* freeing what the asset cache lent it.
  */
 describe('GPU resource disposal', () => {
-  /** A skinned model with its own skeleton, matching what `SkeletonUtils.clone` hands back. */
-  function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton } {
-    const bone = new THREE.Bone();
-    const skeleton = new THREE.Skeleton([bone]);
-    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
-    mesh.add(bone);
-    mesh.bind(skeleton);
-    const root = new THREE.Object3D();
-    root.add(mesh);
-    return { root, skeleton };
-  }
-
   const patched = sector({ floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 0.64, depth: 0.64 }] });
 
   it.each([

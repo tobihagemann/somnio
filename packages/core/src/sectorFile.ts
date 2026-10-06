@@ -1,4 +1,5 @@
 import {
+  NPC_SERVICES,
   SOMNIO_PROTOCOL_CONSTANTS,
   WireDecodingError,
   decodeSectorView,
@@ -26,7 +27,7 @@ import type { MonsterSpawn, Sector, SectorNPC, SectorSpawn } from './sector.ts';
 /**
  * The `.somnio-sector` disk codec: the sector view the wire carries plus the server-side content,
  * as plain JSON with recursively sorted keys, a 2-space indent, and a trailing newline. Defaults
- * are left out (`yaw` and `elevation` at 0, empty record arrays, an unset `spawn`), so an
+ * are left out (`yaw` and `elevation` at 0, empty record arrays, an unset `spawn` or `service`), so an
  * unedited open-and-save is byte-stable.
  *
  * The sector name is never part of the JSON: it is the filename, supplied by the reader.
@@ -101,6 +102,7 @@ function decodeNPC(container: Record<string, unknown>, path: string): SectorNPC 
     z: requireMetres(container, 'z', path),
     facing: heading(requireFloat(container, 'facing', path)),
     dialogScript,
+    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, NPC_SERVICES) }),
   };
 }
 
