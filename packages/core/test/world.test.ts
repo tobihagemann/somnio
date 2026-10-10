@@ -150,9 +150,11 @@ describe('adjacency', () => {
 });
 
 describe('resolveDoor', () => {
-  it('puts the arrival point 0.8 m out of the door, facing away from it, in space coordinates', () => {
+  it('puts the arrival point 0.8 m out of the doorway, facing away from it, in space coordinates', () => {
     const resolved = resolveDoor(town({ origin: { x: 100, z: -50 } }), TOWN_DOOR, TEST_REGISTRY)!;
     // The hall's door side points south at yaw 270; its anchor is 1.42 m out and 0.9 m along the front.
+    expect(resolved.doorway.x).toBeCloseTo(100 + 10 - 0.9, 9);
+    expect(resolved.doorway.z).toBeCloseTo(-50 + 10 + 1.42, 9);
     expect(resolved.arrival.x).toBeCloseTo(100 + 10 - 0.9, 9);
     expect(resolved.arrival.z).toBeCloseTo(-50 + 10 + 1.42 + 0.8, 9);
     expect(resolved.facing).toBe(0);

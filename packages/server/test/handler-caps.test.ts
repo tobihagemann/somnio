@@ -10,15 +10,15 @@ import { StubSessionRepository } from './support/stubRepositories.ts';
 
 /** The server-side UTF-8 caps on the gameplay handlers: every over-cap frame is answered or dropped, never closed on. */
 describe('handler caps', () => {
-  it('handleSay drops an over-cap chat line but broadcasts a within-cap one', async () => {
+  it('handleSay drops an over-cap chat line but says a within-cap one', async () => {
     const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('A')] });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const speaker = attachPlayer(space, { x: 1, z: 1 });
     const peer = attachPlayer(space, { x: 2, z: 2 }, 'peer');
 
     const oversized = 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-    handleSay({ text: oversized }, speaker.entityId, OUTDOOR_SPACE_ID, dependencies);
-    handleSay({ text: 'hi' }, speaker.entityId, OUTDOOR_SPACE_ID, dependencies);
+    handleSay({ text: oversized, kind: 'say' }, speaker.entityId, OUTDOOR_SPACE_ID, dependencies);
+    handleSay({ text: 'hi', kind: 'say' }, speaker.entityId, OUTDOOR_SPACE_ID, dependencies);
 
     expect(serverSays(await collectMessages(peer.outbox))).toEqual(['hi']);
   });
@@ -34,7 +34,7 @@ describe('handler caps', () => {
     // The frame is a legal wire frame (the client-side decode is uncapped), so it reaches the handler.
     const frame = encodeSomnioMessage({
       tag: 'clientSay',
-      payload: { text: 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1) },
+      payload: { text: 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1), kind: 'say' },
     });
     const decision = await connection.dispatch(decodeSomnioMessage(frame));
     expect(decision).toEqual({ kind: 'keepOpen' });

@@ -6,6 +6,7 @@ import { ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIALS, isTeachingId, taskSpec, teaching } from '../src/lucidity.ts';
 import { MONSTER_KINDS, MONSTER_KIND_IDS, monsterKind } from '../src/monsterKinds.ts';
 import { PEOPLES } from '../src/people.ts';
+import { SPEECH } from '../src/speech.ts';
 
 /**
  * Literal pins for the string sets and tables this package owns. Their members are persisted
@@ -78,6 +79,15 @@ describe('literal sets', () => {
       if (needs === undefined) continue;
       expect(isTeachingId(needs.teachingId) && teaching(needs.teachingId).role).toBe(teaching(id).role);
     }
+  });
+
+  it('pins how far each kind of speech carries', () => {
+    expect(SPEECH).toEqual({
+      whisper: { clearMetres: 1.5, reachMetres: 3 },
+      say: { clearMetres: 6, reachMetres: 12 },
+      yell: { clearMetres: 40, reachMetres: 80 },
+      doorMuffleMetres: 44,
+    });
   });
 
   it('gives every gait a speed', () => {

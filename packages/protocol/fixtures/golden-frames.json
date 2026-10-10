@@ -39,7 +39,15 @@
   },
   "clientSay": {
     "payload": {
+      "kind": "say",
       "text": "Hallo Welt"
+    },
+    "tag": "clientSay"
+  },
+  "clientSay-yell": {
+    "payload": {
+      "kind": "yell",
+      "text": "Hilfe!"
     },
     "tag": "clientSay"
   },
@@ -129,7 +137,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 6
+      "protocolVersion": 7
     },
     "tag": "hello"
   },
@@ -374,8 +382,25 @@
   },
   "serverSay": {
     "payload": {
+      "clarity": 1,
       "entityId": "npc:EdariaBibliothek/libus",
-      "text": "Wer bist du?"
+      "kind": "say",
+      "name": "Libus",
+      "text": "Wer bist du?",
+      "x": 5.12,
+      "z": 3.84
+    },
+    "tag": "serverSay"
+  },
+  "serverSay-through-door": {
+    "payload": {
+      "clarity": 0.375,
+      "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "kind": "yell",
+      "name": "Saibot",
+      "text": "Hilfe ... hier!",
+      "x": 36.8,
+      "z": 7.04
     },
     "tag": "serverSay"
   },

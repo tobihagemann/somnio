@@ -1,4 +1,4 @@
-import type { SomnioMessage } from '@somnio/protocol';
+import type { ClientSayMessage, SomnioMessage } from '@somnio/protocol';
 import type { NPCDialogState } from '@somnio/core';
 import type { CharacterRepository, NPCDialogStateRepository } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
@@ -7,7 +7,7 @@ import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { persistPlayerCheckpoint } from './checkpointWriter.ts';
 import { SpaceActor } from './spaceActor.ts';
-import type { TickDigest } from './spaceActor.ts';
+import type { DoorVoice, TickDigest } from './spaceActor.ts';
 
 /** The surface of the router the admin dispatcher consumes, so its tests can substitute a stub. */
 export interface AdminWorldRouter {
@@ -152,6 +152,15 @@ export class WorldRouter implements AdminWorldRouter {
         this.logger.warn({ error: String(error), sector: sectorName, npc: npcId }, 'npc dialog reset failed');
       }
     }
+  }
+
+  /** A line said in a space, and a yell carried one door further into each space beyond. */
+  say(spaceId: string, entityId: string, message: ClientSayMessage): void {
+    const yell = this.spaceActors.get(spaceId)?.handleSay(message, entityId);
+    if (yell === undefined) return;
+    const bySpace = new Map<string, DoorVoice[]>();
+    for (const voice of yell.voices) bySpace.set(voice.spaceId, [...(bySpace.get(voice.spaceId) ?? []), voice]);
+    for (const [target, voices] of bySpace) this.spaceActors.get(target)?.hearThroughDoors(yell.utterance, voices);
   }
 
   flushMoves(): void {

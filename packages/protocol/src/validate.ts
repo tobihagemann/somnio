@@ -75,6 +75,15 @@ export function requireMetres(container: Record<string, unknown>, key: string, p
   return value;
 }
 
+/** A finite fraction in `[0, 1]`. */
+export function requireUnitInterval(container: Record<string, unknown>, key: string, path: string): number {
+  const value = requireFloat(container, key, path);
+  if (value < 0 || value > 1) {
+    throw new WireDecodingError(`${path}.${key}`, `expected a number from 0 to 1, got ${value}`);
+  }
+  return value;
+}
+
 export function requirePositiveMetres(container: Record<string, unknown>, key: string, path: string): number {
   const value = requireMetres(container, key, path);
   if (value <= 0) {

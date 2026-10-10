@@ -7,7 +7,7 @@ import { recordingLogger } from './support/logger.ts';
 
 const oversized: SomnioMessage = {
   tag: 'serverSay',
-  payload: { entityId: 'speaker', text: 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1) },
+  payload: { entityId: 'speaker', name: 'speaker', kind: 'say', text: 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), clarity: 1, x: 0, z: 0 },
 };
 
 /** The single outbound encode path: an oversized frame is dropped and logged, never thrown into a broadcast loop. */

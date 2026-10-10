@@ -13,17 +13,20 @@ import type {
   NPCService,
   RaisingState,
   SomnioMessage,
+  SpeechKind,
 } from '@somnio/protocol';
 import {
   COMBAT,
   FIRST_TEACHING,
   PRACTICE,
   SOMNIO_CONSTANTS,
+  SPEECH,
   balancePace,
   balancePerSecond,
   buildSpaceCollision,
   canStand,
   conditionOf,
+  crumble,
   dialogLine,
   dialogSteps,
   distance,
@@ -43,10 +46,12 @@ import {
   practiceNeeded,
   rankOf,
   reaches,
+  resolveDoor,
   roleOfService,
   sectorAt,
   sectorPointInSpace,
   sectorView,
+  speechClarity,
   strikeChance,
   swingAllowed,
   taskGoal,
@@ -78,6 +83,7 @@ import type {
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
+import { counterpartOf } from '../sectors/sectorCache.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { randomInRange, randomUnit, systemRandom } from './random.ts';
 import type { RandomSource } from './random.ts';
@@ -159,12 +165,52 @@ interface MonsterRuntime {
   fadingUntil: number | undefined;
 }
 
+/** A live door of the space whose counterpart lies in another space: a yell near it is heard on the far side. */
+interface Doorway {
+  /** The door's own opening, in this space. */
+  near: Point;
+  spaceId: string;
+  /** The counterpart's opening, in its space, where the voice comes out. */
+  far: Point;
+}
+
+interface Voice {
+  entityId: string;
+  name: string;
+  kind: SpeechKind;
+  text: string;
+}
+
+/**
+ * A line as said once. Every listener's crumble of it draws on the same `rolls`, each drawn when the
+ * first listener needs it. So one who hears it less clearly misses every word a clearer one missed,
+ * and listeners who pool what they heard learn no more than the clearest of them, except words a
+ * cut to the say cap took from that one's end.
+ */
+interface Utterance {
+  voice: Voice;
+  rolls: number[];
+}
+
 /** Per-`MonsterSpawn` cadence: while fewer than `maxAlive` of its monsters live, it spawns one at `spawnAt`. */
 interface MonsterSpawnTimer {
   sector: Sector;
   definition: MonsterSpawn;
   alive: number;
   spawnAt: number;
+}
+
+/** A yell's way into another space, through one door: it comes out at `source` already `baseMetres` along. */
+export interface DoorVoice {
+  spaceId: string;
+  source: Point;
+  baseMetres: number;
+}
+
+/** A yell spoken near doors, for the router to carry into the spaces beyond them. */
+export interface YellThroughDoors {
+  utterance: Utterance;
+  voices: DoorVoice[];
 }
 
 export interface PlayerCheckpoint {
@@ -209,6 +255,8 @@ export interface SpaceActorOptions {
   /** The persisted 1-based dialog cursors of the space's sectors. */
   initialDialogStates?: readonly NPCDialogState[];
   random?: RandomSource;
+  /** Picks the words a listener misses; separate from `random`, so speech never shifts the rolls of combat and placement. */
+  speechRandom?: RandomSource;
   /** Monotonic milliseconds, for the movement allowance and the dialog and spawn deadlines. */
   now?: () => number;
 }
@@ -239,7 +287,8 @@ function isFallen(slot: PlayerSlot): boolean {
 /**
  * One space's runtime: its player set, NPCs and monsters, and the broadcast stream that funnels
  * every peer-visible mutation through outboxes. A player is sent their own sector and its
- * neighbours, and the entities standing in them. Every method is synchronous, so Node's
+ * neighbours, and the entities standing in them. Speech alone ignores sectors: each listener hears
+ * a line by their distance from it. Every method is synchronous, so Node's
  * run-to-completion supplies the isolation the name implies; persistence is dispatched by the
  * router outside the space.
  */
@@ -256,7 +305,9 @@ export class SpaceActor {
   private readonly spawnTimers: MonsterSpawnTimer[] = [];
   /** The entities that moved since the last flush, each with the sector it now stands in. */
   private readonly moved = new Map<string, { sector: string; move: EntityMove }>();
+  private readonly doorways: Doorway[];
   private readonly random: RandomSource;
+  private readonly speechRandom: RandomSource;
   private readonly now: () => number;
   private nextMonsterNumber = 1;
   private readonly logger: Logger;
@@ -267,6 +318,7 @@ export class SpaceActor {
     this.playerModel = world.registry.playerModel;
     this.logger = options.logger;
     this.random = options.random ?? systemRandom;
+    this.speechRandom = options.speechRandom ?? systemRandom;
     this.now = options.now ?? (() => performance.now());
     for (const sector of this.space.sectors) {
       this.interest.set(sector.name, new Set([sector.name, ...neighbourSectors(this.space, sector.name).map((neighbour) => neighbour.name)]));
@@ -293,6 +345,7 @@ export class SpaceActor {
       }
     }
     this.npcBodies = npcBodies(this.space);
+    this.doorways = doorwaysOut(world, this.space);
   }
 
   /**
@@ -495,11 +548,62 @@ export class SpaceActor {
     }
   }
 
-  /** Re-broadcasts a chat line to the players who can see the speaker; the originating client renders its own bubble. */
-  handleSay(message: ClientSayMessage, entityId: string): void {
+  /**
+   * Says a line to everyone in the space within its reach, each hearing it as their distance from
+   * the speaker allows; the speaker's own client renders its own bubble. A fallen dreamer speaks
+   * too, which is how they call for help. A yell also goes to each door near enough that it is still
+   * heard beyond it, and what comes back is for the router to carry through them.
+   */
+  handleSay(message: ClientSayMessage, entityId: string): YellThroughDoors | undefined {
     const slot = this.players.get(entityId);
-    if (slot === undefined) return;
-    this.broadcast({ tag: 'serverSay', payload: { entityId, text: message.text } }, slot.sector, entityId);
+    if (slot === undefined) return undefined;
+    const { name, position } = slot.character;
+    const utterance: Utterance = { voice: { entityId, name, kind: message.kind, text: message.text }, rolls: [] };
+    this.speak(utterance, position, entityId);
+    if (message.kind !== 'yell') return undefined;
+    const voices = this.doorways.flatMap((doorway) => {
+      const baseMetres = distance(position, doorway.near) + SPEECH.doorMuffleMetres;
+      return baseMetres < SPEECH.yell.reachMetres ? [{ spaceId: doorway.spaceId, source: doorway.far, baseMetres }] : [];
+    });
+    return voices.length === 0 ? undefined : { utterance, voices };
+  }
+
+  /**
+   * A yell from another space, coming out of this one's doors. Each listener hears it by the
+   * shortest way, from that way's doorway. It is not relayed again.
+   */
+  hearThroughDoors(utterance: Utterance, voices: readonly DoorVoice[]): void {
+    for (const listener of this.players.values()) {
+      const position = listener.character.position;
+      const ways = voices.map((door) => ({ source: door.source, metres: door.baseMetres + distance(position, door.source) }));
+      const shortest = ways.reduce((best, way) => (way.metres < best.metres ? way : best));
+      this.sayTo(listener, utterance, shortest.source, shortest.metres);
+    }
+  }
+
+  /** Says a line from `source` to every player but `excluding`, each at their distance. Sector interest plays no part. */
+  private speak(utterance: Utterance, source: Point, excluding?: string): void {
+    for (const [id, listener] of this.players) {
+      if (id !== excluding) this.sayTo(listener, utterance, source, distance(listener.character.position, source));
+    }
+  }
+
+  /** The line as one listener `metres` along its way hears it; nothing past its reach. */
+  private sayTo(listener: PlayerSlot, { voice, rolls }: Utterance, source: Point, metres: number): void {
+    const clarity = speechClarity(voice.kind, metres);
+    if (clarity === undefined) return;
+    let next = 0;
+    const text = crumble(voice.text, clarity, () => {
+      if (next === rolls.length) rolls.push(randomUnit(this.speechRandom));
+      return rolls[next++]!;
+    });
+    listener.outbox.sendEncoded(
+      {
+        tag: 'serverSay',
+        payload: { ...voice, text, clarity, x: source.x, z: source.z },
+      },
+      this.logger,
+    );
   }
 
   /**
@@ -667,7 +771,7 @@ export class SpaceActor {
       const last = npc.greetedAt.get(id);
       if (last !== undefined && now - last < SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000) continue;
       npc.greetedAt.set(id, now);
-      this.broadcast({ tag: 'serverSay', payload: { entityId: npc.id, text: dialogLine(greeting, slot.character.name) } }, npc.sector);
+      this.speakAs(npc, dialogLine(greeting, slot.character.name));
       npc.greetReadyAt = now + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
       return;
     }
@@ -689,7 +793,7 @@ export class SpaceActor {
   private emitDialogStep(npc: NPCRuntime, targetName: string, digest: TickDigest): void {
     const index = Math.max(npc.scriptStepIndex, 1);
     const step = npc.dialogSteps[index]!;
-    this.broadcast({ tag: 'serverSay', payload: { entityId: npc.id, text: dialogLine(step, targetName) } }, npc.sector);
+    this.speakAs(npc, dialogLine(step, targetName));
     npc.readyAt = this.now() + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
     const key = { sectorName: npc.sector, npcId: npc.definition.id };
     const nextIndex = index + 1;
@@ -701,6 +805,11 @@ export class SpaceActor {
       npc.scriptStepIndex = nextIndex;
       digest.dialogUpserts.push({ ...key, scriptStep: nextIndex + 1 });
     }
+  }
+
+  /** An NPC talks like a dreamer: whoever it addresses stands within speaking distance and hears it whole, and bystanders by their distance. */
+  private speakAs(npc: NPCRuntime, text: string): void {
+    this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', text }, rolls: [] }, npc.position);
   }
 
   private resetTargeting(npc: NPCRuntime, digest: TickDigest): void {
@@ -1238,6 +1347,19 @@ export class SpaceActor {
       condition: monster.condition,
     };
   }
+}
+
+/** The space's live doors whose counterparts lie in other spaces, with both openings. A pair within one space carries no voice: it is already heard there. */
+function doorwaysOut(world: LoadedWorld, space: Space<Sector>): Doorway[] {
+  const doorways: Doorway[] = [];
+  for (const sector of space.sectors) {
+    for (const door of sector.doors) {
+      const counterpart = counterpartOf(world, door);
+      if (counterpart.spaceId === space.id) continue;
+      doorways.push({ near: resolveDoor(sector, door, world.registry)!.doorway, spaceId: counterpart.spaceId, far: counterpart.resolved.doorway });
+    }
+  }
+  return doorways;
 }
 
 /**

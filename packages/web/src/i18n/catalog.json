@@ -1,7 +1,15 @@
 {
+  "%1$@ asks from the %2$@, \"%3$@\"": {
+    "en": "%1$@ asks from the %2$@, \"%3$@\"",
+    "de": "%1$@ fragt aus dem %2$@, \"%3$@\""
+  },
   "%1$@ asks, \"%2$@\"": {
     "en": "%1$@ asks, \"%2$@\"",
     "de": "%1$@ fragt, \"%2$@\""
+  },
+  "%1$@ exclaims from the %2$@, \"%3$@\"": {
+    "en": "%1$@ exclaims from the %2$@, \"%3$@\"",
+    "de": "%1$@ ruft aus dem %2$@, \"%3$@\""
   },
   "%1$@ exclaims, \"%2$@\"": {
     "en": "%1$@ exclaims, \"%2$@\"",
@@ -19,6 +27,10 @@
     "en": "%1$@ of %2$@ practice toward rank %3$@",
     "de": "%1$@ von %2$@ Übung bis Rang %3$@"
   },
+  "%1$@ says from the %2$@, \"%3$@\"": {
+    "en": "%1$@ says from the %2$@, \"%3$@\"",
+    "de": "%1$@ sagt aus dem %2$@, \"%3$@\""
+  },
   "%1$@ says, \"%2$@\"": {
     "en": "%1$@ says, \"%2$@\"",
     "de": "%1$@ sagt, \"%2$@\""
@@ -27,6 +39,22 @@
     "en": "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.",
     "de": "%1$@ nimmt auf, wer eine Prüfung besteht. Sie verpflichtet dich zu nichts: Du entscheidest danach, ob du %2$@ wirst."
   },
+  "%1$@ whispers from the %2$@, \"%3$@\"": {
+    "en": "%1$@ whispers from the %2$@, \"%3$@\"",
+    "de": "%1$@ flüstert aus dem %2$@, \"%3$@\""
+  },
+  "%1$@ whispers, \"%2$@\"": {
+    "en": "%1$@ whispers, \"%2$@\"",
+    "de": "%1$@ flüstert, \"%2$@\""
+  },
+  "%1$@ yells from the %2$@, \"%3$@\"": {
+    "en": "%1$@ yells from the %2$@, \"%3$@\"",
+    "de": "%1$@ schreit aus dem %2$@, \"%3$@\""
+  },
+  "%1$@ yells, \"%2$@\"": {
+    "en": "%1$@ yells, \"%2$@\"",
+    "de": "%1$@ schreit, \"%2$@\""
+  },
   "%@ draws you back into the dream.": {
     "en": "%@ draws you back into the dream.",
     "de": "%@ holt dich in den Traum zurück."
@@ -34,6 +62,10 @@
   "%@ entered the game.": {
     "en": "%@ entered the game.",
     "de": "%@ hat das Spiel betreten."
+  },
+  "%@ is not a command. Write /w to whisper or /y to yell.": {
+    "en": "%@ is not a command. Write /w to whisper or /y to yell.",
+    "de": "%@ ist kein Befehl. Schreib /w zum Flüstern oder /y zum Schreien."
   },
   "%@ left the game.": {
     "en": "%@ left the game.",
@@ -359,6 +391,10 @@
     "en": "Take the task",
     "de": "Aufgabe annehmen"
   },
+  "Talk here. /w to whisper, /y to yell": {
+    "en": "Talk here. /w to whisper, /y to yell",
+    "de": "Hier reden. /w zum Flüstern, /y zum Schreien"
+  },
   "Task: %@": {
     "en": "Task: %@",
     "de": "Aufgabe: %@"
@@ -511,9 +547,41 @@
     "en": "Your trial",
     "de": "Deine Prüfung"
   },
+  "east": {
+    "en": "east",
+    "de": "Osten"
+  },
   "miss": {
     "en": "miss",
     "de": "daneben"
+  },
+  "north": {
+    "en": "north",
+    "de": "Norden"
+  },
+  "north-east": {
+    "en": "north-east",
+    "de": "Nordosten"
+  },
+  "north-west": {
+    "en": "north-west",
+    "de": "Nordwesten"
+  },
+  "south": {
+    "en": "south",
+    "de": "Süden"
+  },
+  "south-east": {
+    "en": "south-east",
+    "de": "Südosten"
+  },
+  "south-west": {
+    "en": "south-west",
+    "de": "Südwesten"
+  },
+  "west": {
+    "en": "west",
+    "de": "Westen"
   },
   "winded": {
     "en": "winded",

@@ -1,5 +1,15 @@
 import { PROTOCOL_BYTE_CAPS, assertNever, truncateToUTF8Bytes } from '@somnio/protocol';
-import type { Condition, Energy, EntityMove, InventoryRowMessage, LucidityMessage, RaisingMessage, SomnioMessage, TaskMessage } from '@somnio/protocol';
+import type {
+  Condition,
+  Energy,
+  EntityMove,
+  InventoryRowMessage,
+  LucidityMessage,
+  RaisingMessage,
+  SayMessage,
+  SomnioMessage,
+  TaskMessage,
+} from '@somnio/protocol';
 import {
   COMBAT,
   heading,
@@ -16,7 +26,9 @@ import {
 import type { Heading, ItemId, TaskSpec } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
+import { parseChatInput } from './chatCommand';
 import type { ClientEntity } from './clientWorld';
+import { compassPoint } from './compass';
 import type { ConnectionController, GameplayMessage } from './connectionController';
 import { GameplayPredictor } from './predictor';
 import { RemoteInterpolation } from './remoteInterpolation';
@@ -350,23 +362,36 @@ export class GameplaySession {
   }
 
   /**
-   * Sends a chat line. The text is capped in **UTF-8 bytes**, not code units: the server rejects
-   * on byte length, so a string of 200 emoji passes a `.length <= 256` check and is then refused.
+   * Says a chat line plainly, or as the whisper or yell its command names. The text is capped in
+   * **UTF-8 bytes**, not code units: the server rejects on byte length, so a string of 200 emoji
+   * passes a `.length <= 256` check and is then refused. An unknown command sends nothing and is answered in chat.
    */
   submitChat(rawText: string): void {
-    const text = truncateToUTF8Bytes(rawText.trim(), PROTOCOL_BYTE_CAPS.say);
-    const selfId = this.controller.selfId;
-    if (text.length === 0 || this.controller.connectionState !== 'attached' || selfId === undefined) {
+    const self = this.self;
+    if (this.controller.connectionState !== 'attached' || self === undefined) return;
+    const input = parseChatInput(rawText);
+    if (input === undefined) return;
+    if ('unknownCommand' in input) {
+      this.controller.appendChat({ kind: 'unknownCommand', command: input.unknownCommand });
       return;
     }
-    this.send({ tag: 'clientSay', payload: { text } });
+    const text = truncateToUTF8Bytes(input.text, PROTOCOL_BYTE_CAPS.say);
+    this.send({ tag: 'clientSay', payload: { text, kind: input.kind } });
     this.controller.appendChat({
       kind: 'spokenByOwn',
       senderName: this.controller.selfDisplayName,
       message: text,
+      speech: input.kind,
     });
     const lines = wrapSpeech(text, this.measureText);
-    this.controller.renderSurface.showSpeechBubble(selfId, lines, bubbleLifetimeMs(lines.length));
+    this.controller.renderSurface.showSpeechBubble({
+      entityId: self.id,
+      source: self.position,
+      lines,
+      lifetimeMs: bubbleLifetimeMs(lines.length),
+      kind: input.kind,
+      clarity: 1,
+    });
   }
 
   /**
@@ -428,7 +453,7 @@ export class GameplaySession {
         this.predictor.releaseDoor(false);
         return;
       case 'serverSay':
-        this.handleServerSay(message.payload.entityId, message.payload.text);
+        this.handleServerSay(message.payload);
         return;
       case 'energy':
         this.winded = this.seen.energy ? windedAfter(this.winded, message.payload.balanceCurrent) : windedOnJoin(message.payload.balanceCurrent);
@@ -507,13 +532,32 @@ export class GameplaySession {
     this.interpolation.retarget(move.id, entity.position, { x: move.x, z: move.z }, this.now());
   }
 
-  /** NPC dialog arrives here, not on a dedicated tag — there is no NPC-dialog verb. */
-  private handleServerSay(entityId: string, text: string): void {
-    const entity = this.controller.entities.get(entityId);
-    if (entity === undefined) return;
-    const kind = entity.kind === 'npc' || entity.kind === 'monster' ? 'spokenByNPC' : 'spokenByPeer';
-    this.controller.appendChat({ kind, senderName: entity.name, message: text });
-    const lines = wrapSpeech(text, this.measureText);
-    this.controller.renderSurface.showSpeechBubble(entityId, lines, bubbleLifetimeMs(lines.length));
+  /**
+   * NPC dialog arrives here, not on a dedicated tag: there is no NPC-dialog verb. A voice comes from
+   * the speaker's body when the client has one, and otherwise from where the server says (a speaker
+   * out of view, or behind a door). The bubble follows the body once it arrives. When the scene pins
+   * the bubble at the screen's edge, the chat line names the direction of the voice.
+   */
+  private handleServerSay(say: SayMessage): void {
+    const body = this.controller.entities.get(say.entityId);
+    const voice = body?.position ?? { x: say.x, z: say.z };
+    const lines = wrapSpeech(say.text, this.measureText);
+    const pinned = this.controller.renderSurface.showSpeechBubble({
+      entityId: say.entityId,
+      source: voice,
+      lines,
+      lifetimeMs: bubbleLifetimeMs(lines.length),
+      kind: say.kind,
+      clarity: say.clarity,
+    });
+    const self = this.self;
+    const direction = pinned && self !== undefined ? compassPoint(self.position, voice) : undefined;
+    this.controller.appendChat({
+      kind: body?.kind === 'npc' || body?.kind === 'monster' ? 'spokenByNPC' : 'spokenByPeer',
+      senderName: say.name,
+      message: say.text,
+      speech: say.kind,
+      ...(direction === undefined ? {} : { direction }),
+    });
   }
 }

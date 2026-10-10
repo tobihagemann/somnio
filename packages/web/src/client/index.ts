@@ -3,6 +3,8 @@ export * from './clientWorld';
 export * from './remoteInterpolation';
 export * from './sessionStore';
 export * from './chatLine';
+export * from './chatCommand';
+export * from './compass';
 export * from './input';
 export * from './predictor';
 export * from './connectionController';

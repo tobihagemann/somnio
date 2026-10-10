@@ -145,7 +145,15 @@ describe('gameplay end to end', () => {
     const talker = await joinFreshPlayerAt(server, 'talker', { space: STARTER_SECTOR, position: beside });
     const line = (step: number) => ({
       tag: 'serverSay',
-      payload: { entityId: LIBUS, text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.nickname) },
+      payload: {
+        entityId: LIBUS,
+        name: libus.name,
+        kind: 'say',
+        text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.nickname),
+        clarity: 1,
+        x: libus.x,
+        z: libus.z,
+      },
     });
     expect((await talker.client.until('serverSay')).target).toEqual(line(0));
     const afar = await joinFreshPlayer(server.url, 'afar');
@@ -155,8 +163,13 @@ describe('gameplay end to end', () => {
     expect(await drainFrames(afar.client)).toEqual([]);
     talker.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
     expect((await talker.client.until('serverSay')).target).toEqual(line(1));
-    // A line reaches everyone in the library, so this is all Libus has said since the `talk` from afar.
-    expect(await drainFrames(afar.client)).toEqual([line(1)]);
+    // The spawn is a little past the clear radius of Libus's lines, so the one from afar hears the line crumbled, and nothing else since the `talk`.
+    const overheard = await drainFrames(afar.client);
+    expect(overheard).toMatchObject([{ tag: 'serverSay', payload: { entityId: LIBUS, kind: 'say' } }]);
+    const [said] = overheard;
+    const payload = said?.tag === 'serverSay' ? said.payload : undefined;
+    expect(payload?.clarity).toBeLessThan(1);
+    expect(payload?.text).toContain('...');
     await talker.client.close();
     await afar.client.close();
   });

@@ -17,6 +17,7 @@ import {
   requirePositiveMetres,
   requireString,
   requireStringEnum,
+  requireUnitInterval,
   requireWithinByteCap,
 } from './validate.ts';
 
@@ -59,6 +60,10 @@ export type Condition = (typeof CONDITIONS)[number];
 export const RAISING_STATES = ['begun', 'broken', 'done'] as const;
 export type RaisingState = (typeof RAISING_STATES)[number];
 
+/** How loudly a line is spoken, which sets how far it carries. */
+export const SPEECH_KINDS = ['whisper', 'say', 'yell'] as const;
+export type SpeechKind = (typeof SPEECH_KINDS)[number];
+
 export interface LoginMessage {
   nickname: string;
   password: string;
@@ -84,6 +89,7 @@ export interface MoveMessage {
 
 export interface ClientSayMessage {
   text: string;
+  kind: SpeechKind;
 }
 
 export interface EquipToggleMessage {
@@ -210,9 +216,18 @@ export interface DoorRefusedMessage {
   doorId: string;
 }
 
+/** A line as one listener hears it: the server crumbles the text for each listener by distance. */
 export interface SayMessage {
+  /** The speaker. Through a door it names a body the listener does not have yet, which a bubble follows once it arrives. */
   entityId: string;
+  name: string;
+  kind: SpeechKind;
   text: string;
+  /** 1 for clear speech, falling toward 0 across the band where it crumbles. */
+  clarity: number;
+  /** Where the voice comes from, in the listener's space. */
+  x: number;
+  z: number;
 }
 
 export interface Energy {
@@ -339,7 +354,7 @@ export function decodeMoveMessage(container: Record<string, unknown>, path: stri
  * it and keeping the socket open, which it can only do if the frame reaches its handler.
  */
 export function decodeClientSayMessage(container: Record<string, unknown>, path: string): ClientSayMessage {
-  return { text: requireString(container, 'text', path) };
+  return { text: requireString(container, 'text', path), kind: requireStringEnum(container, 'kind', path, SPEECH_KINDS) };
 }
 
 export function decodeEquipToggleMessage(container: Record<string, unknown>, path: string): EquipToggleMessage {
@@ -497,12 +512,18 @@ export function decodeDoorRefusedMessage(container: Record<string, unknown>, pat
 
 /**
  * The server's chat line is capped on decode, not only on send; `requireWithinByteCap` records why
- * an uncapped inbound line freezes the tab. The same reasoning hardens the name plaque.
+ * an uncapped inbound line freezes the tab. The name is truncated as `decodeEntityMessage` truncates
+ * it, for the same reasons.
  */
 export function decodeSayMessage(container: Record<string, unknown>, path: string): SayMessage {
   return {
     entityId: requireEntityId(container, 'entityId', path),
+    name: truncateToUTF8Bytes(requireString(container, 'name', path), PROTOCOL_BYTE_CAPS.identifier),
+    kind: requireStringEnum(container, 'kind', path, SPEECH_KINDS),
     text: requireWithinByteCap(requireString(container, 'text', path), PROTOCOL_BYTE_CAPS.say, `${path}.text`),
+    clarity: requireUnitInterval(container, 'clarity', path),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
   };
 }
 

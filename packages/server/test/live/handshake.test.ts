@@ -56,7 +56,7 @@ describe('gameplay handshake over a live socket', () => {
     await withLiveServer({}, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       await client.next();
-      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance' } }));
+      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance', kind: 'say' } }));
       expect((await client.closed).code).toBe(CLOSE_PROTOCOL_ERROR);
     });
   });

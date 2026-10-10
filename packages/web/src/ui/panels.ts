@@ -125,7 +125,7 @@ export class GamePanels {
     // differently-counted bound at the field can only disagree with it.
     this.chatInput = element('textarea', {
       className: 'fantasy-field',
-      attributes: { 'aria-label': t('Chat') },
+      attributes: { 'aria-label': t('Chat'), placeholder: t('Talk here. /w to whisper, /y to yell') },
     });
     this.chatInput.addEventListener('focus', () => this.callbacks.onChatFocusChange(true));
     this.chatInput.addEventListener('blur', () => this.callbacks.onChatFocusChange(false));

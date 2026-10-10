@@ -3,17 +3,28 @@
  */
 import * as THREE from 'three';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
-import type { WorldRenderSurface } from '@/client/renderSurface';
-import { WORLD_TIME_RATE, groundHeightAt, headingRadians, hourOfDay, objectModel, relativeDirection, sectorOrigin, sectorRect } from '@somnio/core';
+import type { SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
+import {
+  WORLD_TIME_RATE,
+  clamp,
+  distance,
+  groundHeightAt,
+  headingRadians,
+  hourOfDay,
+  objectModel,
+  relativeDirection,
+  sectorOrigin,
+  sectorRect,
+} from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Rect, Size, SpaceCollision } from '@somnio/core';
-import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
+import type { Condition, Gait, Placement, SectorView, SpeechKind } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
-import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
+import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, offsetDirection, scaleForZoomFactor } from './cameraRig';
 import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
-import { NAME_PLAQUE, namePlaqueBackground, renderNamePlaque, renderSpeechBubble } from './overlayArt';
-import type { RasterArt } from './overlayArt';
+import { NAME_PLAQUE, namePlaqueBackground, renderNamePlaque, renderSpeechBubble, speechBubbleFrameSize } from './overlayArt';
+import type { BubbleTail, RasterArt } from './overlayArt';
 import {
   CHARACTER_SCALE,
   FLOOR_PATCH_LIFT,
@@ -65,6 +76,28 @@ interface EntityRenderState {
   condition: Condition;
   /** A clip playing once over the looping pose; `held` keeps its last frame until the entity stands again. */
   oneShot: { action: THREE.AnimationAction; held: boolean } | undefined;
+}
+
+/** A speech bubble, with what it was asked to show, so every frame can place it again. */
+interface SpeechBubble {
+  request: SpeechBubbleRequest;
+  node: THREE.Object3D;
+  plate: THREE.Mesh;
+  size: THREE.Vector2;
+  /** The side its art points its tail to, which is redrawn only when it changes. */
+  tail: BubbleTail;
+  remaining: number;
+}
+
+/** Where a bubble goes this frame: over a head, by the door a voice comes through, or at the edge of the screen toward the voice. */
+interface BubblePlacement {
+  /** Pinned at the screen's edge toward the voice, because there is no room for the bubble where the voice is drawn. */
+  atEdge: boolean;
+  tail: BubbleTail;
+  parent: THREE.Object3D;
+  position: THREE.Vector3;
+  /** Centred on its point, rather than hung from it by its tail tip. */
+  centred: boolean;
 }
 
 /** A ring on the ground around a fallen body, drawn further round as the raise goes on. */
@@ -145,7 +178,9 @@ export class WorldScene implements WorldRenderSurface {
   private pendingPlayerReveal = false;
   private readonly sectors = new Map<string, DrawnSector>();
   private readonly entityStates = new Map<string, EntityRenderState>();
-  private readonly bubbles = new Map<string, { node: THREE.Object3D; remaining: number }>();
+  private readonly bubbles = new Map<string, SpeechBubble>();
+  /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
+  private carriedBubble: Pick<SpeechBubble, 'request' | 'remaining'> | undefined;
   /** The short-lived word over an entity a blow missed. */
   private readonly misses = new Map<string, { node: THREE.Object3D; remaining: number }>();
   private readonly raiseRings = new Map<string, RaiseRing>();
@@ -155,6 +190,8 @@ export class WorldScene implements WorldRenderSurface {
   private ground: (() => SpaceCollision) | undefined;
   /** The world clock as last told, and when; `undefined` holds the light at noon. */
   private clock: { worldSeconds: number; atMs: number } | undefined;
+  /** The floor of the room being built, which a voice from its door is shown just beyond; `undefined` outdoors. */
+  private room: Rect | undefined;
   /** The interior light level of the space being built; `undefined` outdoors. */
   private spaceBrightness: number | undefined;
   /** The level lighting what is on screen, which during a held swap is still the outgoing space's. */
@@ -238,6 +275,8 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   private startSpace(hold: boolean): void {
+    const own = this.cameraFollowId === undefined ? undefined : this.bubbles.get(this.cameraFollowId);
+    this.carriedBubble = hold && own !== undefined ? { request: own.request, remaining: own.remaining } : undefined;
     disposeSubtree(this.previousRoot);
     if (hold) {
       this.previousRoot = this.spaceRoot;
@@ -254,6 +293,7 @@ export class WorldScene implements WorldRenderSurface {
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
+    this.room = undefined;
     this.spaceRoot = new THREE.Object3D();
     this.spaceRoot.visible = !hold;
     this.scene.add(this.spaceRoot);
@@ -294,6 +334,7 @@ export class WorldScene implements WorldRenderSurface {
     group.add(...floors.map((floor) => floor.mesh), ...placements.map((placed) => placed.node));
     this.spaceRoot.add(group);
     this.sectors.set(sector.name, { group, floors, placements });
+    if (sector.kind === 'interior') this.room = sectorRect(sector);
     this.spaceBrightness = sector.brightness;
     // Held back while a space is parked on screen: lighting by the incoming interior now would
     // relight the still-visible outgoing space, which is the flash the hold exists to prevent.
@@ -372,6 +413,7 @@ export class WorldScene implements WorldRenderSurface {
       this.cameraFollowId = entity.id;
       this.focusCamera(state.node.position);
       this.revealHeldSpaceIfPending();
+      this.hangCarriedBubble(entity);
     }
   }
 
@@ -479,16 +521,159 @@ export class WorldScene implements WorldRenderSurface {
     this.relight();
   }
 
-  showSpeechBubble(entityId: string, lines: string[], lifetimeMs: number): void {
-    const state = this.entityStates.get(entityId);
-    if (state === undefined || lines.length === 0) return;
+  showSpeechBubble(request: SpeechBubbleRequest): boolean {
     // Disposed, not just detached: speaking twice inside one lifetime window would otherwise leak
     // a supersampled canvas texture per message, which is unbounded within a single space.
-    disposeSubtree(this.bubbles.get(entityId)?.node);
-    const node = speechBubbleQuad(lines);
-    node.position.set(0, state.headHeight + BUBBLE_HEAD_GAP, 0);
-    state.node.add(node);
-    this.bubbles.set(entityId, { node, remaining: lifetimeMs / 1000 });
+    disposeSubtree(this.bubbles.get(request.entityId)?.node);
+    this.bubbles.delete(request.entityId);
+    if (request.lines.length === 0) return false;
+    const placement = this.bubblePlacement(request);
+    const bubble: SpeechBubble = { request, remaining: request.lifetimeMs / 1000, ...speechBubbleQuad(request, placement.tail) };
+    this.bubbles.set(request.entityId, bubble);
+    this.placeBubble(bubble, placement);
+    return placement.atEdge;
+  }
+
+  /**
+   * A speaker drawn on screen with room above their head has the bubble hung over it, which is also
+   * where it goes once a speaker not yet drawn arrives. A speaker with no body here is heard through
+   * a door or from out of view, so the bubble goes by the spot the voice comes from. Outdoors it
+   * hangs over that spot at doorway height, on the building over a door. In a room it goes just past
+   * the wall toward it, in the dark around the floor. Where that spot is off screen or has no room,
+   * the bubble is pinned where the line from the player toward the voice leaves the screen.
+   */
+  private bubblePlacement(request: SpeechBubbleRequest): BubblePlacement {
+    this.camera.updateMatrixWorld();
+    const state = this.entityStates.get(request.entityId);
+    const lineCount = request.lines.length;
+    if (state !== undefined) {
+      const feet = state.node.position;
+      const head = new THREE.Vector3(feet.x, feet.y + state.headHeight + BUBBLE_HEAD_GAP, feet.z);
+      if (this.hasRoomAbove(head, lineCount, request.kind)) {
+        return { atEdge: false, tail: 'down', parent: state.node, position: head.sub(feet), centred: false };
+      }
+      return this.edgePlacement(feet.clone(), lineCount, request.kind);
+    }
+    const source = new THREE.Vector3(request.source.x, this.groundHeight(request.source), request.source.z);
+    if (this.room !== undefined)
+      return this.beyondWallPlacement(this.room, request.source, lineCount, request.kind) ?? this.edgePlacement(source, lineCount, request.kind);
+    const doorway = source.clone().setY(source.y + DOORWAY_VOICE_HEIGHT);
+    if (this.hasRoomAbove(doorway, lineCount, request.kind)) {
+      return { atEdge: false, tail: 'down', parent: this.spaceRoot, position: doorway, centred: false };
+    }
+    return this.edgePlacement(source, lineCount, request.kind);
+  }
+
+  /**
+   * Pinned where the line from the player toward `voice` leaves the screen, inset so the whole
+   * bubble shows. That line is taken on screen rather than on the ground, because the camera's yaw
+   * and pitch turn every ground bearing.
+   */
+  private edgePlacement(voice: THREE.Vector3, lineCount: number, kind: SpeechKind): BubblePlacement {
+    const from = this.focus.clone().project(this.camera);
+    const toward = voice.project(this.camera);
+    let dx = toward.x - from.x;
+    let dy = toward.y - from.y;
+    // A voice on the player's own spot has no direction; it is pinned to the top, its tail down onto the player.
+    const ownSpot = Math.hypot(dx, dy) < SAME_SPOT_NDC;
+    if (ownSpot) [dx, dy] = [0, 1];
+    const half = this.ndcPerMetre();
+    const size = pinnedBubbleSize(lineCount, kind);
+    // Where the bubble is larger than the screen on an axis, the inset would invert: it is centred there instead.
+    const limitX = 1 - (size.width / 2) * half.x;
+    const limitY = 1 - (size.height / 2) * half.y;
+    const reachX = limitX > 0 && dx !== 0 ? (Math.sign(dx) * limitX - from.x) / dx : Number.POSITIVE_INFINITY;
+    const reachY = limitY > 0 && dy !== 0 ? (Math.sign(dy) * limitY - from.y) / dy : Number.POSITIVE_INFINITY;
+    const reach = Math.min(reachX, reachY);
+    const along = (start: number, delta: number, limit: number): number =>
+      limit <= 0 ? 0 : clamp(Number.isFinite(reach) ? start + delta * reach : start, -limit, limit);
+    return {
+      atEdge: true,
+      tail: ownSpot ? 'down' : tailToward(reachX <= reachY, dx, dy),
+      parent: this.spaceRoot,
+      position: this.liftedFromScreen(along(from.x, dx, limitX), along(from.y, dy, limitY)),
+      centred: true,
+    };
+  }
+
+  /**
+   * In a room, a voice from its door is shown in the dark just past the wall it comes through, on
+   * the screen side that wall lies on, with its tail toward the wall. `undefined` when that spot is
+   * not on screen.
+   */
+  private beyondWallPlacement(room: Rect, source: Point, lineCount: number, kind: SpeechKind): BubblePlacement | undefined {
+    const inside = { x: clamp(source.x, room.x, room.x + room.width), z: clamp(source.z, room.z, room.z + room.depth) };
+    const walls = [
+      { x: room.x, z: inside.z },
+      { x: room.x + room.width, z: inside.z },
+      { x: inside.x, z: room.z },
+      { x: inside.x, z: room.z + room.depth },
+    ];
+    const gaps = walls.map((wall) => distance(wall, inside));
+    const wall = walls[gaps.indexOf(Math.min(...gaps))]!;
+    const middle = new THREE.Vector3(room.x + room.width / 2, 0, room.z + room.depth / 2).project(this.camera);
+    const half = this.ndcPerMetre();
+    // Directions on screen are taken in metres, so the screen's aspect does not bend them.
+    const metres = (point: THREE.Vector3) => ({ x: (point.x - middle.x) / half.x, y: (point.y - middle.y) / half.y });
+    const foot = metres(new THREE.Vector3(wall.x, 0, wall.z).project(this.camera));
+    const length = Math.hypot(foot.x, foot.y);
+    if (length === 0) return undefined;
+    const out = { x: foot.x / length, y: foot.y / length };
+    // The wall's foot or its top, whichever is drawn further out: the wall itself is not the dark.
+    const top = metres(new THREE.Vector3(wall.x, ROOM_WALL_HEIGHT, wall.z).project(this.camera));
+    const edge = top.x * out.x + top.y * out.y > length ? top : foot;
+    const size = pinnedBubbleSize(lineCount, kind);
+    const clearance = BEYOND_WALL_GAP + (Math.abs(out.x) * size.width) / 2 + (Math.abs(out.y) * size.height) / 2;
+    const centre = { x: middle.x + (edge.x + out.x * clearance) * half.x, y: middle.y + (edge.y + out.y * clearance) * half.y };
+    if (Math.abs(centre.x) > 1 - (size.width / 2) * half.x || Math.abs(centre.y) > 1 - (size.height / 2) * half.y) return undefined;
+    return {
+      atEdge: false,
+      tail: tailToward(Math.abs(out.x) >= Math.abs(out.y), -out.x, -out.y),
+      parent: this.spaceRoot,
+      position: this.liftedFromScreen(centre.x, centre.y),
+      centred: true,
+    };
+  }
+
+  /**
+   * The point drawn at `(x, y)` in normalized device coordinates, at the player's depth and lifted
+   * well toward the camera, which under the orthographic camera does not move it on screen.
+   */
+  private liftedFromScreen(x: number, y: number): THREE.Vector3 {
+    const lift = offsetDirection();
+    return new THREE.Vector3(x, y, this.focus.clone().project(this.camera).z)
+      .unproject(this.camera)
+      .addScaledVector(new THREE.Vector3(lift.x, lift.y, lift.z), LIFTED_BUBBLE_DISTANCE);
+  }
+
+  /**
+   * Whether `anchor` is on screen with room above it for the whole of a bubble hung from it, and
+   * to either side for at most a quarter of the screen, so a narrow window keeps bubbles overhead.
+   */
+  private hasRoomAbove(anchor: THREE.Vector3, lineCount: number, kind: SpeechKind): boolean {
+    const drawn = anchor.clone().project(this.camera);
+    const half = this.ndcPerMetre();
+    const size = speechBubbleFrameSize(lineCount, 'down', kind);
+    const marginX = Math.min((size.width / 2) * OVERLAY_METRES_PER_PIXEL * half.x, MAX_SIDE_MARGIN_NDC);
+    const marginY = size.height * OVERLAY_METRES_PER_PIXEL * half.y;
+    return Math.abs(drawn.x) <= 1 - marginX && drawn.y >= -1 && drawn.y <= 1 - marginY;
+  }
+
+  /** How far a metre reaches across the screen, in normalized device coordinates. */
+  private ndcPerMetre(): { x: number; y: number } {
+    return { x: 2 / (this.camera.right - this.camera.left), y: 2 / (this.camera.top - this.camera.bottom) };
+  }
+
+  /** Moves a bubble to its placement, redrawing its art when the tail changes side. */
+  private placeBubble(bubble: SpeechBubble, placement: BubblePlacement): void {
+    if (bubble.tail !== placement.tail) {
+      disposeSubtree(bubble.node);
+      Object.assign(bubble, speechBubbleQuad(bubble.request, placement.tail));
+    }
+    if (bubble.node.parent !== placement.parent) placement.parent.add(bubble.node);
+    bubble.node.position.copy(placement.position);
+    // Hung from a point, the tail tip is the anchor and the body rises above it.
+    bubble.plate.position.y = placement.centred ? 0 : bubble.size.y / 2;
   }
 
   /**
@@ -508,6 +693,8 @@ export class WorldScene implements WorldRenderSurface {
     const state = this.entityStates.get(entityId);
     disposeSubtree(state?.node);
     this.entityStates.delete(entityId);
+    // A pinned bubble hangs off the space rather than the entity's node, so it goes on its own.
+    disposeSubtree(this.bubbles.get(entityId)?.node);
     this.bubbles.delete(entityId);
     this.misses.delete(entityId);
     this.raiseRings.delete(entityId);
@@ -520,6 +707,14 @@ export class WorldScene implements WorldRenderSurface {
     this.ground = undefined;
     this.relight();
     this.focusCamera(new THREE.Vector3());
+  }
+
+  /** What the player was saying as they went through a door goes on over their head for the rest of its time. */
+  private hangCarriedBubble(player: ClientEntity): void {
+    const carried = this.carriedBubble;
+    if (carried?.request.entityId !== player.id) return;
+    this.carriedBubble = undefined;
+    this.showSpeechBubble({ ...carried.request, source: player.position, lifetimeMs: carried.remaining * 1000 });
   }
 
   private groundHeight(position: Point): number {
@@ -556,6 +751,7 @@ export class WorldScene implements WorldRenderSurface {
       state.mixer?.update(dt);
     }
 
+    for (const bubble of this.bubbles.values()) this.placeBubble(bubble, this.bubblePlacement(bubble.request));
     for (const overlays of [this.bubbles, this.misses]) {
       for (const [id, overlay] of overlays) {
         overlay.remaining -= dt;
@@ -900,7 +1096,7 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Test seam: an entity's live speech-bubble node.
+   * Test seam: a speaker's live speech-bubble node.
    *
    * The bubble is the scene's highest-frequency allocator — one supersampled `CanvasTexture` per
    * chat line — and it is replaced, expired, and torn down through three separate paths. Reaching it
@@ -948,6 +1144,22 @@ const OVERLAY_ORIENTATION = (() => {
 })();
 /** Gap between the speaker's head and the balloon's tail tip. */
 const BUBBLE_HEAD_GAP = 0.2;
+/** How much of a speech bubble's opacity is left at the far end of the band, where speech crumbles away. */
+const FAINTEST_BUBBLE_OPACITY = 0.15;
+/** The most of the screen a head needs to either side to keep its bubble, in normalized device coordinates. */
+const MAX_SIDE_MARGIN_NDC = 0.5;
+/** How close on screen a voice is to the player before it has no direction. */
+const SAME_SPOT_NDC = 1e-3;
+/** How far toward the camera a bubble placed on the screen stands from the player's depth. */
+const LIFTED_BUBBLE_DISTANCE = 20;
+/** Drawn after the world, so nothing at a bubble's spot of the screen covers it. */
+const BUBBLE_RENDER_ORDER = 10;
+/** How high over a doorway outdoors a voice through it hangs its bubble: on the building, above the door. */
+const DOORWAY_VOICE_HEIGHT = 2.2;
+/** How high a room's walls are taken to be drawn, so a bubble past one clears its top. */
+const ROOM_WALL_HEIGHT = 2.5;
+/** The gap on screen, in metres, between a room's wall and a bubble past it. */
+const BEYOND_WALL_GAP = 0.3;
 /** How long the word over a missed entity stays up. */
 const MISS_SECONDS = 0.8;
 const RING_SEGMENTS = 48;
@@ -1045,11 +1257,30 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.
   return { container, plate, size };
 }
 
-/** Balloon anchored at its tail tip, so the caller pins the tip and the body rises above it. */
-function speechBubbleQuad(lines: readonly string[]): THREE.Object3D {
-  const { container, plate, size } = overlayQuad(renderSpeechBubble(lines));
-  plate.position.y = size.y / 2;
-  return container;
+/**
+ * A balloon in the request's style, its tail on `tail`, as faint as the line was heard. It draws
+ * over everything, so a building, a tree, or a wall nearer the camera cannot hide what was said.
+ */
+function speechBubbleQuad(request: SpeechBubbleRequest, tail: BubbleTail): Pick<SpeechBubble, 'node' | 'plate' | 'size' | 'tail'> {
+  const { container, plate, size } = overlayQuad(renderSpeechBubble(request.lines, tail, request.kind));
+  const material = plate.material as THREE.MeshBasicMaterial;
+  material.opacity = FAINTEST_BUBBLE_OPACITY + (1 - FAINTEST_BUBBLE_OPACITY) * request.clarity;
+  material.depthTest = false;
+  material.depthWrite = false;
+  plate.renderOrder = BUBBLE_RENDER_ORDER;
+  return { node: container, plate, size, tail };
+}
+
+/** The largest a bubble of `lineCount` lines placed on the screen is, in metres, whichever side its tail points to. */
+function pinnedBubbleSize(lineCount: number, kind: SpeechKind): { width: number; height: number } {
+  const below = speechBubbleFrameSize(lineCount, 'down', kind);
+  const beside = speechBubbleFrameSize(lineCount, 'right', kind);
+  return { width: Math.max(below.width, beside.width) * OVERLAY_METRES_PER_PIXEL, height: Math.max(below.height, beside.height) * OVERLAY_METRES_PER_PIXEL };
+}
+
+function tailToward(horizontal: boolean, x: number, y: number): BubbleTail {
+  if (horizontal) return x > 0 ? 'right' : 'left';
+  return y > 0 ? 'up' : 'down';
 }
 
 /**

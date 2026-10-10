@@ -1,5 +1,6 @@
 import type { TeachingId } from '@somnio/core';
-import type { Role } from '@somnio/protocol';
+import type { Role, SpeechKind } from '@somnio/protocol';
+import type { CompassPoint } from './compass';
 
 /**
  * The chat line model and its verbs.
@@ -10,10 +11,18 @@ import type { Role } from '@somnio/protocol';
  * has to re-render when the locale changes.
  */
 
+/** A line someone said: how, and the direction it came from when its bubble was pinned at the screen's edge. */
+interface Spoken {
+  senderName: string;
+  message: string;
+  speech: SpeechKind;
+  direction?: CompassPoint;
+}
+
 export type ChatLine =
-  | { kind: 'spokenByOwn'; senderName: string; message: string }
-  | { kind: 'spokenByPeer'; senderName: string; message: string }
-  | { kind: 'spokenByNPC'; senderName: string; message: string }
+  | ({ kind: 'spokenByOwn' } & Spoken)
+  | ({ kind: 'spokenByPeer' } & Spoken)
+  | ({ kind: 'spokenByNPC' } & Spoken)
   | { kind: 'adminBroadcast'; message: string }
   | { kind: 'connectionLost' }
   | { kind: 'serverUnreachable' }
@@ -21,6 +30,7 @@ export type ChatLine =
   | { kind: 'alreadyLoggedIn' }
   | { kind: 'throttled' }
   | { kind: 'errorCode'; code: string }
+  | { kind: 'unknownCommand'; command: string }
   | { kind: 'joined'; playerName: string }
   | { kind: 'left'; playerName: string }
   | { kind: 'startupGreeting' }
@@ -63,6 +73,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'alreadyLoggedIn':
     case 'throttled':
     case 'errorCode':
+    case 'unknownCommand':
     case 'credentialSaveFailed':
     case 'sessionExpired':
     case 'reconnecting':

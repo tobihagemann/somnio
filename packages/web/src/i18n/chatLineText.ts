@@ -1,5 +1,6 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
+import type { CompassPoint } from '@/client/compass';
 import { roleLabelKey, teaching } from '@somnio/core';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -19,7 +20,7 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'spokenByOwn':
     case 'spokenByPeer':
     case 'spokenByNPC':
-      return renderSpoken(line.senderName, line.message, lookup);
+      return renderSpoken(line, lookup);
     case 'adminBroadcast':
       return lookup('Broadcast message: %@', line.message);
     case 'connectionLost':
@@ -34,6 +35,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Too many attempts. Wait a little before trying again.');
     case 'errorCode':
       return lookup('Error %@ occurred.', line.code);
+    case 'unknownCommand':
+      return lookup('%@ is not a command. Write /w to whisper or /y to yell.', line.command);
     case 'joined':
       return lookup('%@ entered the game.', line.playerName);
     case 'left':
@@ -65,13 +68,49 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
   }
 }
 
-function renderSpoken(senderName: string, message: string, lookup: (key: string, ...args: string[]) => string): string {
-  switch (chatVerb(message)) {
+type Lookup = (key: string, ...args: string[]) => string;
+type SpokenLine = Extract<ChatLine, { kind: 'spokenByOwn' | 'spokenByPeer' | 'spokenByNPC' }>;
+
+/** A whisper and a yell keep their verb whatever the punctuation; a line said plainly takes its verb from it. */
+function renderSpoken(line: SpokenLine, lookup: Lookup): string {
+  const { senderName, message } = line;
+  const from = line.direction === undefined ? undefined : compassName(line.direction, lookup);
+  switch (line.speech === 'say' ? chatVerb(message) : line.speech) {
+    case 'whisper':
+      return from === undefined
+        ? lookup('%1$@ whispers, "%2$@"', senderName, message)
+        : lookup('%1$@ whispers from the %2$@, "%3$@"', senderName, from, message);
+    case 'yell':
+      return from === undefined ? lookup('%1$@ yells, "%2$@"', senderName, message) : lookup('%1$@ yells from the %2$@, "%3$@"', senderName, from, message);
     case 'question':
-      return lookup('%1$@ asks, "%2$@"', senderName, message);
+      return from === undefined ? lookup('%1$@ asks, "%2$@"', senderName, message) : lookup('%1$@ asks from the %2$@, "%3$@"', senderName, from, message);
     case 'exclamation':
-      return lookup('%1$@ exclaims, "%2$@"', senderName, message);
+      return from === undefined
+        ? lookup('%1$@ exclaims, "%2$@"', senderName, message)
+        : lookup('%1$@ exclaims from the %2$@, "%3$@"', senderName, from, message);
     case 'statement':
-      return lookup('%1$@ says, "%2$@"', senderName, message);
+      return from === undefined ? lookup('%1$@ says, "%2$@"', senderName, message) : lookup('%1$@ says from the %2$@, "%3$@"', senderName, from, message);
+  }
+}
+
+/** One literal lookup per direction, so the catalog test sees each one rendered. */
+function compassName(direction: CompassPoint, lookup: Lookup): string {
+  switch (direction) {
+    case 'north':
+      return lookup('north');
+    case 'north-east':
+      return lookup('north-east');
+    case 'east':
+      return lookup('east');
+    case 'south-east':
+      return lookup('south-east');
+    case 'south':
+      return lookup('south');
+    case 'south-west':
+      return lookup('south-west');
+    case 'west':
+      return lookup('west');
+    case 'north-west':
+      return lookup('north-west');
   }
 }

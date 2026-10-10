@@ -67,7 +67,8 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     },
   },
   { name: 'move', message: { tag: 'move', payload: { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' } } },
-  { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt' } } },
+  { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } } },
+  { name: 'clientSay-yell', message: { tag: 'clientSay', payload: { text: 'Hilfe!', kind: 'yell' } } },
   { name: 'equipToggle', message: { tag: 'equipToggle', payload: { slot: 1, hand: 'right' } } },
   { name: 'talk', message: { tag: 'talk', payload: { npcId: NPC_ID } } },
   { name: 'swing', message: { tag: 'swing', payload: { targetId: 'monster:7' } } },
@@ -147,7 +148,14 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   },
   { name: 'correction', message: { tag: 'correction', payload: { x: 10.25, z: 20.5 } } },
   { name: 'doorRefused', message: { tag: 'doorRefused', payload: { sector: 'EdariaMitte', doorId: 'to-edariabibliothek' } } },
-  { name: 'serverSay', message: { tag: 'serverSay', payload: { entityId: NPC_ID, text: 'Wer bist du?' } } },
+  {
+    name: 'serverSay',
+    message: { tag: 'serverSay', payload: { entityId: NPC_ID, name: 'Libus', kind: 'say', text: 'Wer bist du?', clarity: 1, x: 5.12, z: 3.84 } },
+  },
+  {
+    name: 'serverSay-through-door',
+    message: { tag: 'serverSay', payload: { entityId: PLAYER_ID, name: 'Saibot', kind: 'yell', text: 'Hilfe ... hier!', clarity: 0.375, x: 36.8, z: 7.04 } },
+  },
   {
     name: 'energy',
     message: {

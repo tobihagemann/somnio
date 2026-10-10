@@ -3,7 +3,6 @@ import type {
   AskTaskMessage,
   ClientSayMessage,
   CompleteTaskMessage,
-  Door,
   EquipToggleMessage,
   MoveMessage,
   StudyMessage,
@@ -13,11 +12,11 @@ import type {
   UseDoorMessage,
   UseItemMessage,
 } from '@somnio/protocol';
-import { COMBAT, SOMNIO_CONSTANTS, doorContains, resolveDoor } from '@somnio/core';
-import type { Character, ResolvedDoor } from '@somnio/core';
+import { COMBAT, SOMNIO_CONSTANTS, doorContains } from '@somnio/core';
+import type { Character } from '@somnio/core';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
-import type { LoadedWorld } from '../sectors/sectorCache.ts';
+import { counterpartOf, doorIn } from '../sectors/sectorCache.ts';
 import type { PlayerCheckpoint } from '../world/spaceActor.ts';
 
 /** Where the player stands after a transfer; it must replace the source space on the connection. */
@@ -38,7 +37,7 @@ export function handleMove(message: MoveMessage, entityId: string, spaceId: stri
 /** An over-cap chat line is dropped silently; the socket stays open. */
 export function handleSay(message: ClientSayMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   if (utf8ByteLength(message.text) > SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes) return;
-  dependencies.worldRouter.space(spaceId)?.handleSay(message, entityId);
+  dependencies.worldRouter.say(spaceId, entityId, message);
 }
 
 export function handleEquipToggle(message: EquipToggleMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
@@ -75,15 +74,6 @@ export function handleAbandonTask(entityId: string, spaceId: string, dependencie
 
 export function handleStudy(message: StudyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleStudy(message.npcId, message.teachingId, entityId);
-}
-
-/** A live door of one of the space's sectors, resolved to its trigger and arrival point. */
-function doorIn(world: LoadedWorld, spaceId: string, sectorName: string, doorId: string): { door: Door; resolved: ResolvedDoor } | undefined {
-  const sector = world.spaces.get(spaceId)?.sectors.find((candidate) => candidate.name === sectorName);
-  const door = sector?.doors.find((candidate) => candidate.id === doorId);
-  if (sector === undefined || door === undefined) return undefined;
-  const resolved = resolveDoor(sector, door, world.registry);
-  return resolved === undefined ? undefined : { door, resolved };
 }
 
 /**
@@ -142,10 +132,7 @@ export function handleUseDoor(
     connection.outbox.sendEncoded({ tag: 'doorRefused', payload: { sector: message.sector, doorId: message.doorId } }, dependencies.logger);
     return undefined;
   }
-  // The world keeps a door only as half of a sound pair, so the counterpart and its space resolve.
-  const target = source.door.target;
-  const newSpaceId = world.sectorSpace.get(target.sector)!;
-  const arrival = doorIn(world, newSpaceId, target.sector, target.door)!.resolved;
+  const { spaceId: newSpaceId, resolved: arrival } = counterpartOf(world, source.door);
   const moved = { ...checkpoint.character, space: newSpaceId, position: arrival.arrival, facing: arrival.facing };
   return transferPlayer(checkpoint, moved, spaceId, connection, dependencies);
 }

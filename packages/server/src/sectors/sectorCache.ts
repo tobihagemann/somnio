@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
-import { TRIALS, WorldError, buildWorld, parseModelRegistry, readSectorFile, sectorPointInSpace } from '@somnio/core';
-import type { Character, ModelRegistry, Sector, SectorSpawn, World } from '@somnio/core';
+import type { Door } from '@somnio/protocol';
+import { TRIALS, WorldError, buildWorld, parseModelRegistry, readSectorFile, resolveDoor, sectorPointInSpace } from '@somnio/core';
+import type { Character, ModelRegistry, ResolvedDoor, Sector, SectorSpawn, World } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 
 export type SectorCacheErrorKind = 'unreadable' | 'parseFailed' | 'noSectorsLoaded';
@@ -105,4 +106,19 @@ export function loadWorld(sectors: ReadonlyMap<string, Sector>, rawRegistry: unk
   const starterSpawn = spawnIn(starter, starter.spawn);
   const inn = sectors.get(WAKE_SECTOR);
   return { ...world, registry, starterSpawn, wakeSpawn: inn?.spawn === undefined ? starterSpawn : spawnIn(inn, inn.spawn) };
+}
+
+/** A live door of one of the space's sectors, resolved into the space. */
+export function doorIn(world: LoadedWorld, spaceId: string, sectorName: string, doorId: string): { door: Door; resolved: ResolvedDoor } | undefined {
+  const sector = world.spaces.get(spaceId)?.sectors.find((candidate) => candidate.name === sectorName);
+  const door = sector?.doors.find((candidate) => candidate.id === doorId);
+  if (sector === undefined || door === undefined) return undefined;
+  const resolved = resolveDoor(sector, door, world.registry);
+  return resolved === undefined ? undefined : { door, resolved };
+}
+
+/** The door a live door leads to, and its space. The world keeps a door only as half of a sound pair, so both resolve. */
+export function counterpartOf(world: LoadedWorld, door: Door): { spaceId: string; resolved: ResolvedDoor } {
+  const spaceId = world.sectorSpace.get(door.target.sector)!;
+  return { spaceId, resolved: doorIn(world, spaceId, door.target.sector, door.target.door)!.resolved };
 }

@@ -104,7 +104,7 @@ A Heiler can mend themselves with the Mondstein, for half the practice, so a Hei
 
 ### Death as a social event (never permanent)
 
-Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. Nightmares leave the fallen alone. Two ways back:
+Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. A yell carries far, which is how the fallen call for help. Nightmares leave the fallen alone. Two ways back:
 
 - **Raised in the field by a Heiler**, and by nobody else. Drawing a dreamer back takes time and a good part of a Heiler's Geist, and the Heiler has to stay with them: parted, it breaks off and starts over. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystiker locating the fallen is how a rescue party will find them.
 - **Giving up** — the dreamer lets go of the venture and wakes at the inn in Edaria, weakened in all three pools and no poorer.

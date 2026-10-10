@@ -10,6 +10,7 @@ import {
   REGISTER_RESULTS,
   ROLES,
   SECTOR_KINDS,
+  SPEECH_KINDS,
   OversizedFrameError,
   SOMNIO_PROTOCOL_CONSTANTS,
   UnrecognizedTagError,
@@ -98,6 +99,7 @@ describe('runtime validation the erased types cannot do', () => {
   };
   const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
   const row = { slot: 0, itemId: 'purse', quantity: 100 };
+  const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
 
   it('rejects a missing required field', () => {
     expect(() => decodeSomnioMessage(frame('energy', { healthCurrent: 100 }))).toThrow(/healthMax: expected Int32, got nothing/);
@@ -164,6 +166,12 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown raising state', 'raising', { healerId: 'a', targetId: 'b', state: 'paused', seconds: 6 }, /unknown value "paused"/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
+    ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
+    ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
+    ['an unknown speech kind on a serverSay', 'serverSay', { ...say, kind: 'sing' }, /unknown value "sing"/],
+    ['a clarity below 0', 'serverSay', { ...say, clarity: -0.1 }, /clarity: expected a number from 0 to 1, got -0.1/],
+    ['a clarity above 1', 'serverSay', { ...say, clarity: 1.5 }, /clarity: expected a number from 0 to 1, got 1.5/],
+    ['a voice past the metre cap', 'serverSay', { ...say, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
   ])('rejects %s', (_case, tag, payload, expected) => {
     expect(() => decodeSomnioMessage(frame(tag, payload))).toThrow(expected);
   });
@@ -341,6 +349,10 @@ describe('string literal sets', () => {
   it('pins RaisingState', () => {
     expect(RAISING_STATES).toEqual(['begun', 'broken', 'done']);
   });
+
+  it('pins SpeechKind', () => {
+    expect(SPEECH_KINDS).toEqual(['whisper', 'say', 'yell']);
+  });
 });
 
 /**
@@ -349,7 +361,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(6);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(7);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -384,12 +396,22 @@ describe('protocol constants', () => {
  * separately; a 1 MiB `serverSay` sits comfortably inside it.
  */
 describe('inbound field byte caps', () => {
+  const say = { entityId: 'a', name: 'Alice', kind: 'say', clarity: 1, x: 0, z: 0 };
+
   it('rejects a serverSay past the say cap', () => {
     const overCap = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: overCap }))).toThrow(WireDecodingError);
+    expect(() => decodeSomnioMessage(frame('serverSay', { ...say, text: overCap }))).toThrow(WireDecodingError);
     // One byte under is accepted, so the test pins the boundary rather than "long strings fail".
     const atCap = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: atCap }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('serverSay', { ...say, text: atCap }))).not.toThrow();
+  });
+
+  /** A speaker's name is an entity name by another route, bounded the same way. */
+  it('truncates an over-cap speaker name on a serverSay instead of rejecting the frame', () => {
+    const cap = SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes;
+    const decoded = decodeSomnioMessage(frame('serverSay', { ...say, name: 'a'.repeat(cap + 40), text: 'hallo' }));
+    if (decoded.tag !== 'serverSay') throw new Error('expected a serverSay frame');
+    expect(utf8ByteLength(decoded.payload.name)).toBe(cap);
   });
 
   /** Counted in UTF-8 bytes, not code units: 100 emoji are 400 bytes but a `.length` of 200. */
@@ -397,7 +419,7 @@ describe('inbound field byte caps', () => {
     const emoji = '😀'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes / 4 + 1);
     expect(emoji.length).toBeLessThan(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
     expect(utf8ByteLength(emoji)).toBeGreaterThan(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('serverSay', { entityId: 'a', text: emoji }))).toThrow(WireDecodingError);
+    expect(() => decodeSomnioMessage(frame('serverSay', { ...say, text: emoji }))).toThrow(WireDecodingError);
   });
 
   it('rejects an adminSay past the say cap', () => {
@@ -440,9 +462,9 @@ describe('inbound field byte caps', () => {
    */
   it('decodes an over-cap clientSay, redeemSession, and revokeSession', () => {
     const overCapSay = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 44);
-    expect(decodeSomnioMessage(frame('clientSay', { text: overCapSay }))).toEqual({
+    expect(decodeSomnioMessage(frame('clientSay', { text: overCapSay, kind: 'say' }))).toEqual({
       tag: 'clientSay',
-      payload: { text: overCapSay },
+      payload: { text: overCapSay, kind: 'say' },
     });
     const overCapToken = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 44);
     expect(decodeSomnioMessage(frame('redeemSession', { token: overCapToken }))).toEqual({

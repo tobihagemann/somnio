@@ -5,7 +5,10 @@ import { SOMNIO_CONSTANTS } from '@somnio/core';
  * wrap is testable without font metrics.
  */
 
-export const BUBBLE_WIDTH = SOMNIO_CONSTANTS.speechBubbleWidthPixels;
+/** How far a line keeps from each side of the bubble, so no letter touches its outline. */
+const BUBBLE_TEXT_INSET = 5;
+/** The widest a line may be. */
+export const BUBBLE_TEXT_WIDTH = SOMNIO_CONSTANTS.speechBubbleWidthPixels - 2 * BUBBLE_TEXT_INSET;
 const BUBBLE_FONT_SIZE = SOMNIO_CONSTANTS.speechBubbleFontSize;
 
 /** ASCII, matching the project-wide rule — never the Unicode ellipsis. */
@@ -21,11 +24,11 @@ export function capLines(lines: string[], maxLines = 4, glyph = TRUNCATION_GLYPH
 }
 
 /**
- * Greedy word wrap against `BUBBLE_WIDTH`.
+ * Greedy word wrap against `BUBBLE_TEXT_WIDTH`.
  *
- * Respects existing whitespace boundaries only: a single unbreakable word wider than the bubble
- * is emitted as its own line and left for the renderer to truncate at draw time, rather than
- * being split mid-word.
+ * Respects existing whitespace boundaries only: a single unbreakable word wider than that is
+ * emitted as its own line and left for the renderer to squeeze at draw time, rather than being
+ * split mid-word.
  */
 export function wrapSpeech(text: string, widthOf: (line: string) => number, maxLines = 4, glyph = TRUNCATION_GLYPH): string[] {
   const words = text.split(' ');
@@ -34,7 +37,7 @@ export function wrapSpeech(text: string, widthOf: (line: string) => number, maxL
   let current = '';
   for (const word of words) {
     const candidate = current === '' ? word : `${current} ${word}`;
-    if (widthOf(candidate) <= BUBBLE_WIDTH) {
+    if (widthOf(candidate) <= BUBBLE_TEXT_WIDTH) {
       current = candidate;
     } else {
       if (current !== '') lines.push(current);

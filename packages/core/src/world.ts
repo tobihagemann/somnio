@@ -153,6 +153,8 @@ export function neighbourSectors<S extends SectorView>(space: Space<S>, sectorNa
 }
 
 export interface ResolvedDoor {
+  /** The door's anchor in the space's coordinates: the opening itself, where a voice through it comes out. */
+  doorway: Point;
   /** Where a body coming out of the door stands, in the space's coordinates. */
   arrival: Point;
   /** The heading out of the door, which an arriving body faces. */
@@ -176,6 +178,7 @@ export function resolveDoor(sector: SectorView, door: Door, registry: ModelRegis
   const reach = { x: out.x * depth, z: out.z * depth };
   const across = { x: (Math.abs(out.z) * anchor.width) / 2, z: (Math.abs(out.x) * anchor.width) / 2 };
   return {
+    doorway: modelToWorld(transform, anchor),
     arrival: modelToWorld(transform, { x: anchor.x + out.x * DOOR_ARRIVAL_OFFSET, z: anchor.z + out.z * DOOR_ARRIVAL_OFFSET }),
     facing: heading(anchor.facing + placement.yaw),
     transform,

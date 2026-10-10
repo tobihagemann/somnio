@@ -182,7 +182,7 @@ describe('production outbound path', () => {
         if (event.kind === 'message') {
           inbound.push(event.message);
           if (event.message.tag === 'hello') {
-            transport.send({ tag: 'clientSay', payload: { text: 'conformance' } });
+            transport.send({ tag: 'clientSay', payload: { text: 'conformance', kind: 'say' } });
           }
         }
         if (event.kind === 'peerEOF' || event.kind === 'connectFailed') {
@@ -197,6 +197,6 @@ describe('production outbound path', () => {
     expect(say).toBeDefined();
     expect(say?.wasString).toBe(true);
     // The frame the server received is exactly what the production encoder produced.
-    expect(say?.text).toBe(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance' } }));
+    expect(say?.text).toBe(encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'conformance', kind: 'say' } }));
   });
 });

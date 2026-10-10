@@ -16,6 +16,7 @@ import {
   translate,
   webCatalog,
 } from '@/i18n';
+import { COMPASS_POINTS } from '@/client';
 import type { ChatLine } from '@/client';
 
 /**
@@ -197,9 +198,16 @@ describe('resolveLocale', () => {
 
 describe('renderChatLine', () => {
   const lines: ChatLine[] = [
-    { kind: 'spokenByOwn', senderName: 'Ich', message: 'Hallo' },
-    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Was?' },
-    { kind: 'spokenByNPC', senderName: 'Wirt', message: 'Halt!' },
+    { kind: 'spokenByOwn', senderName: 'Ich', message: 'Hallo', speech: 'say' },
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Was?', speech: 'say' },
+    { kind: 'spokenByNPC', senderName: 'Wirt', message: 'Halt!', speech: 'say' },
+    { kind: 'spokenByOwn', senderName: 'Ich', message: 'psst', speech: 'whisper' },
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Hilfe!', speech: 'yell' },
+    ...COMPASS_POINTS.map((direction): ChatLine => ({ kind: 'spokenByPeer', senderName: 'Peer', message: 'Da.', speech: 'say', direction })),
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Wo?', speech: 'say', direction: 'west' },
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Halt!', speech: 'say', direction: 'west' },
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'psst', speech: 'whisper', direction: 'west' },
+    { kind: 'spokenByPeer', senderName: 'Peer', message: 'Hilfe!', speech: 'yell', direction: 'west' },
     { kind: 'adminBroadcast', message: 'Wartung' },
     { kind: 'connectionLost' },
     { kind: 'serverUnreachable' },
@@ -207,6 +215,7 @@ describe('renderChatLine', () => {
     { kind: 'alreadyLoggedIn' },
     { kind: 'throttled' },
     { kind: 'errorCode', code: 'client_only_tag' },
+    { kind: 'unknownCommand', command: '/tanz' },
     { kind: 'joined', playerName: 'Peer' },
     { kind: 'left', playerName: 'Peer' },
     { kind: 'startupGreeting' },
@@ -247,18 +256,41 @@ describe('renderChatLine', () => {
   });
 
   it('selects the verb from the trailing punctuation', () => {
-    const asks = renderChatLine({ kind: 'spokenByPeer', senderName: 'Peer', message: 'Wo?' }, catalogTables, 'de');
-    const says = renderChatLine({ kind: 'spokenByPeer', senderName: 'Peer', message: 'Da.' }, catalogTables, 'de');
+    const asks = renderChatLine({ kind: 'spokenByPeer', senderName: 'Peer', message: 'Wo?', speech: 'say' }, catalogTables, 'de');
+    const says = renderChatLine({ kind: 'spokenByPeer', senderName: 'Peer', message: 'Da.', speech: 'say' }, catalogTables, 'de');
 
     expect(asks).not.toBe(says);
   });
 
   it('substitutes the sender and message in the right order', () => {
-    const rendered = renderChatLine({ kind: 'spokenByPeer', senderName: 'Alice', message: 'Bob' }, catalogTables, 'en');
+    const rendered = renderChatLine({ kind: 'spokenByPeer', senderName: 'Alice', message: 'Bob', speech: 'say' }, catalogTables, 'en');
 
     // Both arguments are single words, so a swapped positional order would still read plausibly —
     // asserting on the exact string is the only way to catch it.
     expect(rendered).toBe('Alice says, "Bob"');
+  });
+
+  /** A whisper that asks and a yell that exclaims keep their own verb. */
+  it.each<[ChatLine, string, string]>([
+    [
+      { kind: 'spokenByPeer', senderName: 'Alice', message: 'Bist du da?', speech: 'whisper' },
+      'Alice whispers, "Bist du da?"',
+      'Alice flüstert, "Bist du da?"',
+    ],
+    [{ kind: 'spokenByOwn', senderName: 'Alice', message: 'Hilfe!', speech: 'yell' }, 'Alice yells, "Hilfe!"', 'Alice schreit, "Hilfe!"'],
+    [
+      { kind: 'spokenByPeer', senderName: 'Alice', message: 'Hier drüben.', speech: 'say', direction: 'north-east' },
+      'Alice says from the north-east, "Hier drüben."',
+      'Alice sagt aus dem Nordosten, "Hier drüben."',
+    ],
+    [
+      { kind: 'unknownCommand', command: '/tanz' },
+      '/tanz is not a command. Write /w to whisper or /y to yell.',
+      '/tanz ist kein Befehl. Schreib /w zum Flüstern oder /y zum Schreien.',
+    ],
+  ])('renders %j in both locales', (line, english, german) => {
+    expect(renderChatLine(line, catalogTables, 'en')).toBe(english);
+    expect(renderChatLine(line, catalogTables, 'de')).toBe(german);
   });
 });
 

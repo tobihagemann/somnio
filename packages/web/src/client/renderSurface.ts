@@ -1,6 +1,19 @@
 import type { Heading, Point } from '@somnio/core';
-import type { Condition, Gait, SectorView } from '@somnio/protocol';
+import type { Condition, Gait, SectorView, SpeechKind } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
+
+/** A line to show as a bubble: over its speaker's head when there is room for it there, and placed toward the voice otherwise. */
+export interface SpeechBubbleRequest {
+  /** The speaker, whose body the bubble follows once it is drawn. A second line from them replaces the first. */
+  entityId: string;
+  /** Where the voice comes from while the speaker has no body drawn. */
+  source: Point;
+  lines: string[];
+  lifetimeMs: number;
+  kind: SpeechKind;
+  /** How clearly the line was heard: a fainter bubble the lower it is. */
+  clarity: number;
+}
 
 /**
  * The world render surface — the contract the Three.js scene implements. Declared here rather
@@ -32,7 +45,8 @@ export interface WorldRenderSurface {
   showSelection(entityId: string | undefined): void;
   /** The world clock at this moment; the renderer runs it forward by itself. */
   setClock(worldSeconds: number): void;
-  showSpeechBubble(entityId: string, lines: string[], lifetimeMs: number): void;
+  /** Whether the bubble was pinned at the screen's edge rather than hung over a head. */
+  showSpeechBubble(request: SpeechBubbleRequest): boolean;
   removeEntity(entityId: string): void;
   showSplash(): void;
 }
@@ -50,7 +64,7 @@ export const noopRenderSurface: WorldRenderSurface = {
   showRaising: () => {},
   showSelection: () => {},
   setClock: () => {},
-  showSpeechBubble: () => {},
+  showSpeechBubble: () => false,
   removeEntity: () => {},
   showSplash: () => {},
 };

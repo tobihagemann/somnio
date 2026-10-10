@@ -62,7 +62,7 @@ describe('over-cap handler frames over a live socket', () => {
       const client = await TestClient.open(gameplayURL(server));
       await attach(client, world.token);
       const text = 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text } }));
+      client.send(encodeSomnioMessage({ tag: 'clientSay', payload: { text, kind: 'say' } }));
       client.send(encodeSomnioMessage({ tag: 'revokeSession', payload: { token: 'unknown' } }));
       expect(await client.next()).toEqual({ tag: 'sessionRevoked', payload: { revoked: false } });
       await client.close();
@@ -74,7 +74,7 @@ describe('over-cap handler frames over a live socket', () => {
     await withLiveServer({ dependencies: world.dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       await attach(client, world.token);
-      const say = encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'padded' } });
+      const say = encodeSomnioMessage({ tag: 'clientSay', payload: { text: 'padded', kind: 'say' } });
       const padded = say + ' '.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength - Buffer.byteLength(say, 'utf8'));
       expect(Buffer.byteLength(padded, 'utf8')).toBe(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength);
       client.send(padded);

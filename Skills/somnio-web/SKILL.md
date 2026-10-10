@@ -140,6 +140,16 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image.
 
+**Zoom.** Use real wheel input over the bare play field. The client ignores a wheel event while the pointer is over a panel, so a `WheelEvent` dispatched from `eval` after the pointer last rested on a panel zooms nothing. A negative delta zooms in, toward `zoomFactor()` 2.0:
+
+```bash
+agent-browser mouse move 700 450   # a point on the canvas, clear of the panels
+agent-browser mouse wheel -200
+agent-browser eval 'window.somnio.zoomFactor()'
+```
+
+**German UI.** Open a session with the browser's accepted language set; `--lang` alone is ignored. `--args` applies only when the session's browser launches, and splits on commas. `agent-browser --session de --args "--accept-lang=de-DE" open 'http://localhost:17669/'`, then confirm `agent-browser --session de eval 'navigator.languages'` reads `["de-DE"]`.
+
 **Two players in view of each other.** Separate `agent-browser` sessions get separate `localStorage`, so each holds its own session token.
 
 ```bash
@@ -185,7 +195,7 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
 - Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. Test a panel while balance is recovering (`energy().balanceCurrent` rising after a run), when `energy` frames arrive several times a second.
 - Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
-- `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned.
+- `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned (the German UI recipe pins it).
 - Vite hot-reloads code changes. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
 - When Step 4's gate times out, read the visible notice: `agent-browser eval 'document.querySelector(".blocking-notice:not(.hidden)")?.textContent'`. A WebGL or desktop-only notice means the browser cannot render the world — rerun with `agent-browser --headed` so a real GPU context is available.
-- On teardown, close the browser sessions (`agent-browser close`, plus `--session a` / `--session b` for the two-player recipe) and stop Vite, but keep the Postgres container so the dev character persists (see `/somnio-server`).
+- On teardown, close the browser sessions (`agent-browser close`, plus `--session a` / `--session b` for the two-player recipe and `--session de` for the German UI) and stop Vite, but keep the Postgres container so the dev character persists (see `/somnio-server`).

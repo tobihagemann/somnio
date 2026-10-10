@@ -42,7 +42,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
   },
   { label: 'pre-login leave', message: { tag: 'leave', payload: leave }, attachFirst: false },
   { label: 'pre-login move', message: { tag: 'move', payload: move }, attachFirst: false },
-  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt' } }, attachFirst: false },
+  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, attachFirst: false },
   {
     label: 'pre-login equipToggle',
     message: { tag: 'equipToggle', payload: { slot: 1, hand: 'left' } },

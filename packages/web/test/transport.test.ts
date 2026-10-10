@@ -44,7 +44,7 @@ describe('outbox is live before the socket opens', () => {
     transport.connect('ws://test/ws', delegate);
 
     transport.send({ tag: 'login', payload: { nickname: 'a', password: 'b' } });
-    transport.send({ tag: 'clientSay', payload: { text: 'hi' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'hi', kind: 'say' } });
     expect(latest().sent).toEqual([]);
 
     latest().open();
@@ -63,13 +63,13 @@ describe('outbound frames are text', () => {
     transport.connect('ws://test/ws', () => {});
     latest().open();
 
-    transport.send({ tag: 'clientSay', payload: { text: 'Hallo Welt' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } });
 
     const frame = latest().sent[0];
     expect(typeof frame).toBe('string');
     expect(JSON.parse(frame!)).toEqual({
       tag: 'clientSay',
-      payload: { text: 'Hallo Welt' },
+      payload: { text: 'Hallo Welt', kind: 'say' },
     });
   });
 
@@ -225,7 +225,7 @@ describe('close handling', () => {
     const socket = latest();
     socket.open();
 
-    transport.send({ tag: 'clientSay', payload: { text: 'bye' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'bye', kind: 'say' } });
     transport.disconnect();
 
     // Through the ordered log, not two independent arrays: their lengths are both 1 whichever way
@@ -246,7 +246,7 @@ describe('close handling', () => {
     transport.connect('ws://test/ws', () => {});
     const socket = latest();
 
-    transport.send({ tag: 'clientSay', payload: { text: 'never sent' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'never sent', kind: 'say' } });
     transport.disconnect();
 
     expect(socket.sent).toEqual([]);
@@ -285,7 +285,7 @@ describe('superseded sockets cannot act on their replacement', () => {
     // No spurious peerEOF, and the replacement is still the transport's live socket: a frame sent
     // now has to reach it rather than being dropped because the slot was cleared.
     expect(events.filter((event) => event.kind === 'peerEOF')).toHaveLength(0);
-    transport.send({ tag: 'clientSay', payload: { text: 'still here' } });
+    transport.send({ tag: 'clientSay', payload: { text: 'still here', kind: 'say' } });
     expect(replacement.sent.at(-1)).toContain('clientSay');
   });
 

@@ -1,7 +1,8 @@
 import { SOMNIO_CONSTANTS } from '@somnio/core';
 import type { WorldEntityKind } from '@somnio/core';
 import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol';
-import type { Condition } from '@somnio/protocol';
+import type { Condition, SpeechKind } from '@somnio/protocol';
+import { BUBBLE_TEXT_WIDTH } from './speechBubbleText';
 
 /**
  * The speech bubble and name plaque, rasterized on a canvas in a top-left-origin overlay-pixel
@@ -24,7 +25,20 @@ const SPEECH_BUBBLE = {
   tailHalfBase: 7,
   bodyPadding: 5,
   cornerRadius: 8,
+  /** `casing` is the width of a black edge stroked under the line, so a yellow outline still reads against the world. */
+  outline: {
+    whisper: { lineWidth: 1, dash: [3, 2], color: '#000000', casing: 0 },
+    say: { lineWidth: 1, dash: [], color: '#000000', casing: 0 },
+    yell: { lineWidth: 1.6, dash: [], color: 'rgb(255, 222, 0)', casing: 3.6 },
+  },
+  /** A yell's teeth stand out from the body, tall and short in turn, one every `toothWidth` pixels along an edge. */
+  burst: { toothWidth: 6, major: 5, minor: 2.5 },
 } as const;
+
+/** The sides of a balloon in the order its outline walks them: each edge runs from one corner to the next, clockwise. */
+const BALLOON_SIDES = ['up', 'right', 'down', 'left'] as const;
+/** The side a balloon's tail points to: down onto the spot it hangs over, or toward the voice from a bubble placed away from it. */
+export type BubbleTail = (typeof BALLOON_SIDES)[number];
 
 export const NAME_PLAQUE = {
   fontSize: 11,
@@ -44,10 +58,17 @@ export interface RasterArt {
   heightPixels: number;
 }
 
-export function speechBubbleFrameSize(lineCount: number): { width: number; height: number } {
+/** How far past the body the outline reaches on a side: the tail on its own side, and a yell's teeth everywhere. */
+function frameMargin(side: BubbleTail, tail: BubbleTail, kind: SpeechKind): number {
+  if (side === tail) return SPEECH_BUBBLE.tailHeight;
+  return kind === 'yell' ? SPEECH_BUBBLE.burst.major : 0;
+}
+
+/** The body, plus the tail on the side it points to and the teeth of a yell. */
+export function speechBubbleFrameSize(lineCount: number, tail: BubbleTail, kind: SpeechKind): { width: number; height: number } {
   return {
-    width: SPEECH_BUBBLE.widthPixels,
-    height: Math.max(lineCount, 1) * SPEECH_BUBBLE.lineHeight + SPEECH_BUBBLE.tailHeight + 2 * SPEECH_BUBBLE.bodyPadding,
+    width: SPEECH_BUBBLE.widthPixels + frameMargin('left', tail, kind) + frameMargin('right', tail, kind),
+    height: Math.max(lineCount, 1) * SPEECH_BUBBLE.lineHeight + 2 * SPEECH_BUBBLE.bodyPadding + frameMargin('up', tail, kind) + frameMargin('down', tail, kind),
   };
 }
 
@@ -68,78 +89,144 @@ function rasterCanvas(
 }
 
 /**
- * How far the tail's base sits above the body's bottom edge: the triangle is declared at
- * `bodyHeight - 2` while the rounded body's bottom edge is at `bodyHeight - 0.5`, so 1.5px of the
- * triangle lies inside the body and the union hides it.
+ * How far inside the body the tail's triangle is taken to start. Only its part outside the body is
+ * walked, so the mouth is the triangle's width where it crosses the body's edge.
  */
 const TAIL_BODY_TUCK = 1.5;
 
-/**
- * Rounded body plus downward tail as **one** outline, inset half a stroke so the 1px border
- * survives the bitmap edge.
- *
- * Authored as a single traversal rather than a rounded rect plus a triangle: canvas has no boolean
- * path union, so two subpaths would stroke the body edge across the tail mouth and the balloon
- * would read as a rectangle with a separate pennant hanging off it. Walking the union directly
- * needs no boolean.
- */
-function balloonPath(width: number, height: number): Path2D {
-  const radius = SPEECH_BUBBLE.cornerRadius;
-  const half = SPEECH_BUBBLE.tailHalfBase;
-  const left = 0.5;
-  const right = width - 0.5;
-  const top = 0.5;
-  const bottom = height - SPEECH_BUBBLE.tailHeight - 0.5;
-  const centerX = width / 2;
+/** The corners of the body, clockwise from the top left, and the tip of the tail on each side. */
+function balloonFrame(width: number, height: number, tail: BubbleTail, kind: SpeechKind, inset: number) {
+  const left = inset + frameMargin('left', tail, kind);
+  const right = width - inset - frameMargin('right', tail, kind);
+  const top = inset + frameMargin('up', tail, kind);
+  const bottom = height - inset - frameMargin('down', tail, kind);
+  return {
+    body: { left, top, right, bottom },
+    corners: [
+      { x: left, y: top },
+      { x: right, y: top },
+      { x: right, y: bottom },
+      { x: left, y: bottom },
+    ],
+    tips: {
+      up: { x: (left + right) / 2, y: inset },
+      right: { x: width - inset, y: (top + bottom) / 2 },
+      down: { x: (left + right) / 2, y: height - inset },
+      left: { x: inset, y: (top + bottom) / 2 },
+    },
+  };
+}
 
+/**
+ * Body plus tail as **one** outline, inset half a stroke so the border survives the bitmap edge.
+ *
+ * Authored as a single traversal rather than a body plus a triangle: canvas has no boolean path
+ * union, so two subpaths would stroke the body edge across the tail mouth and the balloon would
+ * read as a rectangle with a separate pennant hanging off it. Walking the union directly needs no
+ * boolean. A said or whispered balloon has rounded corners; a yell's bursts into teeth instead.
+ */
+function balloonPath(width: number, height: number, tail: BubbleTail, kind: SpeechKind, inset: number): Path2D {
+  const { corners, tips } = balloonFrame(width, height, tail, kind, inset);
+  const bursting = kind === 'yell';
+  const radius = bursting ? 0 : SPEECH_BUBBLE.cornerRadius;
+  const mouthHalf = SPEECH_BUBBLE.tailHalfBase * (1 - TAIL_BODY_TUCK / (SPEECH_BUBBLE.tailHeight + TAIL_BODY_TUCK));
   const path = new Path2D();
-  path.moveTo(left + radius, top);
-  path.lineTo(right - radius, top);
-  path.arcTo(right, top, right, top + radius, radius);
-  path.lineTo(right, bottom - radius);
-  path.arcTo(right, bottom, right - radius, bottom, radius);
-  // The tail interrupts the bottom edge, which is exactly what the union expresses.
-  //
-  // `half` is the triangle's half-base where it is *declared*, 2px above the body's bottom edge
-  // (the tail base tucks into the body so the union has no seam). Walking the outline directly
-  // means the mouth has to be the width of the union at the crossing, not at the declaration —
-  // the upper 1.5px of the triangle is inside the body and never drawn. Using the full `half`
-  // here draws a mouth ~0.9px wider per side than the union has at the crossing.
-  const mouthHalf = half * (1 - TAIL_BODY_TUCK / (SPEECH_BUBBLE.tailHeight + TAIL_BODY_TUCK));
-  path.lineTo(centerX + mouthHalf, bottom);
-  path.lineTo(centerX, height - 0.5);
-  path.lineTo(centerX - mouthHalf, bottom);
-  path.lineTo(left + radius, bottom);
-  path.arcTo(left, bottom, left, bottom - radius, radius);
-  path.lineTo(left, top + radius);
-  path.arcTo(left, top, left + radius, top, radius);
+  BALLOON_SIDES.forEach((side, index) => {
+    const from = corners[index]!;
+    const to = corners[(index + 1) % corners.length]!;
+    const after = corners[(index + 2) % corners.length]!;
+    const along = { x: Math.sign(to.x - from.x), y: Math.sign(to.y - from.y) };
+    const onward = { x: Math.sign(after.x - to.x), y: Math.sign(after.y - to.y) };
+    const tip = side === tail ? tips[side] : undefined;
+    if (bursting) {
+      burstEdge(path, from, to, along, index === 0, tip === undefined ? undefined : { tip, mouthHalf });
+      return;
+    }
+    const start = { x: from.x + along.x * radius, y: from.y + along.y * radius };
+    if (index === 0) path.moveTo(start.x, start.y);
+    if (tip !== undefined) {
+      const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+      path.lineTo(middle.x - along.x * mouthHalf, middle.y - along.y * mouthHalf);
+      path.lineTo(tip.x, tip.y);
+      path.lineTo(middle.x + along.x * mouthHalf, middle.y + along.y * mouthHalf);
+    }
+    path.lineTo(to.x - along.x * radius, to.y - along.y * radius);
+    path.arcTo(to.x, to.y, to.x + onward.x * radius, to.y + onward.y * radius, radius);
+  });
   path.closePath();
   return path;
 }
 
 /**
- * The comic balloon: white body, 1px black outline, centred black text.
+ * One edge of a yell's burst, starting with a tall tooth pointing diagonally out of its corner. Each
+ * edge is cut into a multiple of four steps, so the tall-short rhythm meets every corner on a tall
+ * tooth. On the tail's edge the tail takes the place of the teeth at its mouth.
+ */
+function burstEdge(
+  path: Path2D,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  along: { x: number; y: number },
+  first: boolean,
+  tail: { tip: { x: number; y: number }; mouthHalf: number } | undefined,
+): void {
+  const { toothWidth, major, minor } = SPEECH_BUBBLE.burst;
+  const out = { x: along.y, y: -along.x };
+  const corner = major / Math.SQRT2;
+  const peak = { x: from.x + (out.x - along.x) * corner, y: from.y + (out.y - along.y) * corner };
+  if (first) path.moveTo(peak.x, peak.y);
+  else path.lineTo(peak.x, peak.y);
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  const segments = Math.max(4, 4 * Math.round(length / (2 * toothWidth)));
+  const at = (distance: number, height: number) => ({ x: from.x + along.x * distance + out.x * height, y: from.y + along.y * distance + out.y * height });
+  let tailDrawn = false;
+  for (let index = 1; index < segments; index += 1) {
+    const distance = (length * index) / segments;
+    if (tail !== undefined && Math.abs(distance - length / 2) < tail.mouthHalf + toothWidth / 2) {
+      if (tailDrawn) continue;
+      tailDrawn = true;
+      for (const point of [at(length / 2 - tail.mouthHalf, 0), tail.tip, at(length / 2 + tail.mouthHalf, 0)]) path.lineTo(point.x, point.y);
+      continue;
+    }
+    const point = at(distance, index % 2 === 1 ? 0 : index % 4 === 0 ? major : minor);
+    path.lineTo(point.x, point.y);
+  }
+}
+
+/**
+ * The comic balloon: white body, an outline by kind, centred black text, its tail on `tail`.
  *
  * Drawn as a transparent-background path fill: a canvas texture carries its own alpha, so the
  * silhouette and the artwork are one pass with no separate opacity mask.
  */
-export function renderSpeechBubble(lines: readonly string[]): RasterArt {
-  const { width, height } = speechBubbleFrameSize(lines.length);
+export function renderSpeechBubble(lines: readonly string[], tail: BubbleTail, kind: SpeechKind): RasterArt {
+  const { width, height } = speechBubbleFrameSize(lines.length, tail, kind);
   const { canvas, context } = rasterCanvas(width, height);
   if (context !== null) {
-    const balloon = balloonPath(width, height);
+    const outline = SPEECH_BUBBLE.outline[kind];
+    const inset = Math.max(outline.lineWidth, outline.casing) / 2;
+    const balloon = balloonPath(width, height, tail, kind, inset);
     context.fillStyle = '#ffffff';
     context.fill(balloon);
-    context.strokeStyle = '#000000';
-    context.lineWidth = 1;
+    context.lineJoin = 'round';
+    context.setLineDash([...outline.dash]);
+    if (outline.casing > 0) {
+      context.strokeStyle = '#000000';
+      context.lineWidth = outline.casing;
+      context.stroke(balloon);
+    }
+    context.strokeStyle = outline.color;
+    context.lineWidth = outline.lineWidth;
     context.stroke(balloon);
+    context.setLineDash([]);
+    const { body } = balloonFrame(width, height, tail, kind, 0);
     context.fillStyle = '#000000';
     context.font = `${SPEECH_BUBBLE.fontSize}px system-ui, sans-serif`;
     context.textBaseline = 'alphabetic';
     context.textAlign = 'center';
     lines.forEach((line, index) => {
-      const boxTop = SPEECH_BUBBLE.bodyPadding + index * SPEECH_BUBBLE.lineHeight;
-      context.fillText(line, width / 2, baselineBelowBoxTop(boxTop, SPEECH_BUBBLE.fontSize));
+      const boxTop = body.top + SPEECH_BUBBLE.bodyPadding + index * SPEECH_BUBBLE.lineHeight;
+      context.fillText(line, (body.left + body.right) / 2, baselineBelowBoxTop(boxTop, SPEECH_BUBBLE.fontSize), BUBBLE_TEXT_WIDTH);
     });
   }
   return { canvas, widthPixels: width, heightPixels: height };

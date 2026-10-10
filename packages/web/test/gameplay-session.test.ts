@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ConnectionController, GameplaySession, REMOTE_INTERPOLATION_SECONDS, noHeldKeys, noopRenderSurface } from '@/client';
-import type { ClientEntity, HeldKeys } from '@/client';
+import { ConnectionController, GameplaySession, REMOTE_INTERPOLATION_SECONDS, compassPoint, noHeldKeys, noopRenderSurface } from '@/client';
+import type { ClientEntity, HeldKeys, SpeechBubbleRequest } from '@/client';
 import { GameplayTransport } from '@/transport';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -29,6 +29,10 @@ interface Rig {
   selections: (string | undefined)[];
   /** Every `showBlow`, `showRaising`, and `updateCondition` call, by name. */
   shown: unknown[][];
+  /** Every `showSpeechBubble` call. */
+  bubbles: SpeechBubbleRequest[];
+  /** What the scene answers a bubble with: whether it pinned it at the edge. */
+  pinsBubbles: boolean;
   held: HeldKeys;
   /** The clock remote reports are stamped with. */
   now: number;
@@ -41,6 +45,7 @@ function makeRig(): Rig {
   const gaits: Rig['gaits'] = [];
   const selections: Rig['selections'] = [];
   const shown: Rig['shown'] = [];
+  const bubbles: Rig['bubbles'] = [];
 
   const controller = new ConnectionController({
     transport: new GameplayTransport(factory),
@@ -54,10 +59,26 @@ function makeRig(): Rig {
       showBlow: (...blow) => shown.push(['showBlow', ...blow]),
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
       updateCondition: (...condition) => shown.push(['updateCondition', ...condition]),
+      showSpeechBubble: (request) => {
+        bubbles.push(request);
+        return rig.pinsBubbles;
+      },
     },
   });
 
-  const rig: Rig = { session: undefined as unknown as GameplaySession, controller, sent, positions, gaits, selections, shown, held: noHeldKeys(), now: 0 };
+  const rig: Rig = {
+    session: undefined as unknown as GameplaySession,
+    controller,
+    sent,
+    positions,
+    gaits,
+    selections,
+    shown,
+    bubbles,
+    pinsBubbles: false,
+    held: noHeldKeys(),
+    now: 0,
+  };
   rig.session = new GameplaySession({
     controller,
     send: (message) => sent.push(message),
@@ -250,7 +271,49 @@ describe('outbound chat', () => {
 
     rig.controller.connectionState = 'attached';
     rig.session.submitChat('hello');
-    expect(rig.sent).toEqual([{ tag: 'clientSay', payload: { text: 'hello' } }]);
+    expect(rig.sent).toEqual([{ tag: 'clientSay', payload: { text: 'hello', kind: 'say' } }]);
+  });
+
+  it.each([
+    ['/w hi', 'whisper', 'hi'],
+    ['/flüstern hi', 'whisper', 'hi'],
+    ['/Y HI', 'yell', 'HI'],
+    ['/schreien  Hilfe!', 'yell', 'Hilfe!'],
+    ['/s hallo', 'say', 'hallo'],
+    ['  /w hi', 'whisper', 'hi'],
+  ] as const)('speaks %j as a %s of %j, for that line alone', (input, kind, text) => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+
+    rig.session.submitChat(input);
+    rig.session.submitChat('and now?');
+
+    expect(rig.sent).toEqual([
+      { tag: 'clientSay', payload: { text, kind } },
+      { tag: 'clientSay', payload: { text: 'and now?', kind: 'say' } },
+    ]);
+    expect(rig.controller.chatHistory[0]).toMatchObject({ kind: 'spokenByOwn', message: text, speech: kind });
+    expect(rig.bubbles[0]).toMatchObject({ entityId: 'self', kind, clarity: 1 });
+  });
+
+  it.each(['/x hi', '  /x hi'])('sends nothing for a command it does not know, and says so: %j', (input) => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+
+    rig.session.submitChat(input);
+
+    expect(rig.sent).toEqual([]);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'unknownCommand', command: '/x' }]);
+  });
+
+  it.each(['/w', '/w   ', '/'])('sends nothing, and says nothing, for %j', (input) => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+
+    rig.session.submitChat(input);
+
+    expect(rig.sent).toEqual([]);
+    expect(rig.controller.chatHistory).toEqual([]);
   });
 
   it('drops a blank line rather than sending an empty frame', () => {
@@ -311,6 +374,8 @@ describe('inventory activation', () => {
 });
 
 describe('inbound gameplay dispatch', () => {
+  const SAY = { name: 'Someone', kind: 'say', text: 'Hallo', clarity: 1, x: 0, z: 0 } as const;
+
   /**
    * NPC dialog arrives as `serverSay`, not on a tag of its own, so this discrimination is the only
    * thing that routes it to the NPC chat style rather than the peer one. Inverting it — or
@@ -325,21 +390,44 @@ describe('inbound gameplay dispatch', () => {
     const rig = makeRig();
     rig.controller.entities.set('npc:Meadow/wirt', clientEntity({ id: 'npc:Meadow/wirt', kind, name: 'Wirt' }));
 
-    rig.controller.dispatch({ tag: 'serverSay', payload: { entityId: 'npc:Meadow/wirt', text: 'Willkommen!' } });
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'npc:Meadow/wirt', name: 'Wirt', text: 'Willkommen!' } });
 
     expect(rig.controller.chatHistory.at(-1)).toEqual({
       kind: expected,
       senderName: 'Wirt',
       message: 'Willkommen!',
+      speech: 'say',
     });
   });
 
-  it('ignores serverSay for an entity it does not know', () => {
+  it('hangs the bubble of a speaker on screen over them, faded as the line was heard, and names no direction', () => {
     const rig = makeRig();
+    attach(rig, [clientEntity(), clientEntity({ id: 'peer', kind: 'peer', name: 'Bren', position: { x: 14, z: 10 } })]);
 
-    rig.controller.dispatch({ tag: 'serverSay', payload: { entityId: 'stranger', text: 'ghost' } });
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'peer', name: 'Bren', kind: 'whisper', clarity: 0.4 } });
 
-    expect(rig.controller.chatHistory).toEqual([]);
+    // The voice comes from the body where it is drawn, not from where the frame says.
+    expect(rig.bubbles).toEqual([{ entityId: 'peer', source: { x: 14, z: 10 }, lines: ['Hallo'], lifetimeMs: 3000, kind: 'whisper', clarity: 0.4 }]);
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'spokenByPeer', senderName: 'Bren', message: 'Hallo', speech: 'whisper' });
+  });
+
+  /** A voice through a door, or a speaker this client draws nowhere, still speaks: from where the frame says, for a bubble that follows the speaker once they arrive. */
+  it('hears a speaker it draws no body of, and names the direction the voice comes from', () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+    rig.pinsBubbles = true;
+
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'bren', name: 'Bren', kind: 'yell', x: 13, z: 7 } });
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'cara', name: 'Cara', x: 4, z: 10 } });
+
+    expect(rig.bubbles.map(({ entityId, source }) => ({ entityId, source }))).toEqual([
+      { entityId: 'bren', source: { x: 13, z: 7 } },
+      { entityId: 'cara', source: { x: 4, z: 10 } },
+    ]);
+    expect(rig.controller.chatHistory).toEqual([
+      { kind: 'spokenByPeer', senderName: 'Bren', message: 'Hallo', speech: 'yell', direction: 'north-east' },
+      { kind: 'spokenByPeer', senderName: 'Cara', message: 'Hallo', speech: 'say', direction: 'west' },
+    ]);
   });
 
   /**
@@ -919,5 +1007,26 @@ describe('tending', () => {
     rig.session.pressAt('bren', 0);
     expect(rig.session.tending).toBeUndefined();
     expect(tends(rig)).toEqual([]);
+  });
+});
+
+describe('compassPoint', () => {
+  /** `x` runs east and `z` south, so a voice at positive `z` lies to the south. */
+  it.each([
+    [{ x: 0, z: 5 }, 'south'],
+    [{ x: 5, z: 5 }, 'south-east'],
+    [{ x: 5, z: 0 }, 'east'],
+    [{ x: 5, z: -5 }, 'north-east'],
+    [{ x: 0, z: -5 }, 'north'],
+    [{ x: -5, z: -5 }, 'north-west'],
+    [{ x: -5, z: 0 }, 'west'],
+    [{ x: -5, z: 5 }, 'south-west'],
+    [{ x: -1, z: 5 }, 'south'],
+  ] as const)('names a voice at %j the %s', (to, direction) => {
+    expect(compassPoint({ x: 0, z: 0 }, to)).toBe(direction);
+  });
+
+  it('names no direction for a voice on the spot', () => {
+    expect(compassPoint({ x: 0, z: 0 }, { x: 0.05, z: 0 })).toBeUndefined();
   });
 });

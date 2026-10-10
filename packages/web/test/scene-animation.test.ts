@@ -3,7 +3,7 @@ import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
 import { sunState } from '@/scene/dayNightSun';
-import { BUBBLE_WIDTH, bubbleLifetimeMs, capLines, wrapSpeech } from '@/scene/speechBubbleText';
+import { BUBBLE_TEXT_WIDTH, bubbleLifetimeMs, capLines, wrapSpeech } from '@/scene/speechBubbleText';
 
 describe('movementPose', () => {
   it.each([
@@ -255,11 +255,13 @@ describe('speech bubble wrap', () => {
     expect(wrapSpeech('hallo', tenPerChar)).toEqual(['hallo']);
   });
 
-  it('wraps greedily at the bubble width', () => {
+  /** 5px short of each side of the 150px bubble, so no letter touches its outline. */
+  it('wraps greedily inside the bubble', () => {
+    expect(BUBBLE_TEXT_WIDTH).toBe(140);
     const lines = wrapSpeech('aaaaa bbbbb ccccc ddddd', tenPerChar);
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
-      expect(tenPerChar(line)).toBeLessThanOrEqual(BUBBLE_WIDTH);
+      expect(tenPerChar(line)).toBeLessThanOrEqual(BUBBLE_TEXT_WIDTH);
     }
   });
 

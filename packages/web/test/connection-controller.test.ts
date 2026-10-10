@@ -792,7 +792,7 @@ describe('inbound direction check', () => {
     rig.socket().open();
     rig.deliver(hello());
 
-    rig.deliver({ tag: 'clientSay', payload: { text: 'echo' } });
+    rig.deliver({ tag: 'clientSay', payload: { text: 'echo', kind: 'say' } });
 
     expect(rig.controller.connectionState).toBe('disconnected');
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'errorCode', code: 'client_only_tag' });

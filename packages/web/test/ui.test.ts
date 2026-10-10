@@ -244,7 +244,7 @@ describe('the four floating panels', () => {
 
   it('inserts chat as text, never as markup', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const hostile: ChatLine[] = [{ kind: 'spokenByPeer', senderName: '<img src=x onerror=alert(1)>', message: '<script>x</script>' }];
+    const hostile: ChatLine[] = [{ kind: 'spokenByPeer', senderName: '<img src=x onerror=alert(1)>', message: '<script>x</script>', speech: 'say' }];
 
     panels.renderChat(hostile);
 
@@ -435,6 +435,13 @@ describe('the four floating panels', () => {
     expect(document.activeElement).toBe(panels.chatInput);
     expect(panels.chatInput.value).toBe('zwei');
     panels.root.remove();
+  });
+
+  it('teaches the whisper and yell commands in the empty chat field', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const placeholder = panels.chatInput.getAttribute('placeholder') ?? '';
+    expect(placeholder).toContain('/w');
+    expect(placeholder).toContain('/y');
   });
 
   it('reports chat focus so the caller can close the gameplay gate', () => {

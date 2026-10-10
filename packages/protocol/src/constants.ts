@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 6,
+  helloVersion: 7,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
