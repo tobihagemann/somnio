@@ -5,6 +5,7 @@ import {
   TRIALS,
   forbidsStriking,
   isRole,
+  isSoundTask,
   isTeachingId,
   practiceNeeded,
   rankOf,
@@ -55,6 +56,19 @@ describe('tasks', () => {
   it("reads a task without a teaching as its role's trial and one with a teaching as that teaching's gate", () => {
     expect(taskSpec({ role: 'heiler', teachingId: undefined })).toBe(TRIALS.heiler);
     expect(taskSpec({ role: 'heiler', teachingId: 'drawing-back' })).toEqual({ kind: 'mend', amount: 60 });
+  });
+
+  it('has no spec for a task naming a teaching without a gate', () => {
+    expect(taskSpec({ role: 'heiler', teachingId: 'touch' })).toBeUndefined();
+  });
+
+  it.each([
+    ["a role's trial", { role: 'heiler', teachingId: undefined }, true],
+    ["the gate of a teaching of the task's role", { role: 'heiler', teachingId: 'drawing-back' }, true],
+    ['a teaching without a gate', { role: 'heiler', teachingId: 'touch' }, false],
+    ["another role's gate", { role: 'kaempfer', teachingId: 'drawing-back' }, false],
+  ] as const)('judges a task naming %s sound: %s', (_label, task, sound) => {
+    expect(isSoundTask(task)).toBe(sound);
   });
 
   it('is done at its count, at its amount, or on arriving', () => {

@@ -915,6 +915,7 @@ describe('registration', () => {
     rig.deliver({ tag: 'registerResult', payload: { result } });
     expect(outcomes).toEqual([result]);
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'registration' });
+    expect(rig.controller.connectionState).toBe('disconnected');
   });
 
   /**

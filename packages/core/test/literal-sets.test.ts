@@ -67,7 +67,7 @@ describe('literal sets', () => {
   it('pins the kind of every trial and gate', () => {
     expect({ kaempfer: TRIALS.kaempfer.kind, heiler: TRIALS.heiler.kind }).toEqual({ kaempfer: 'driveOff', heiler: 'reach' });
     const gated = TEACHING_IDS.filter((id) => teaching(id).gate !== undefined);
-    expect(Object.fromEntries(gated.map((id) => [id, taskSpec({ role: TEACHINGS[id].role, teachingId: id }).kind]))).toEqual({
+    expect(Object.fromEntries(gated.map((id) => [id, taskSpec({ role: TEACHINGS[id].role, teachingId: id })?.kind]))).toEqual({
       'follow-through': 'driveOff',
       'drawing-back': 'mend',
     });

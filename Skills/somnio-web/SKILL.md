@@ -110,7 +110,7 @@ JS
 
 The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft` to walk (1 m/s); the gait rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
 
-**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, so a click can be aimed at it. The character faces the cursor, and takes the new facing on the next frame. A swing at a nightmare therefore needs the `pointermove` first and a frame's wait before the `pointerdown`; a click on an NPC or a player does not.
+**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
 
 ```bash
 agent-browser eval --stdin <<'JS'
@@ -119,7 +119,6 @@ agent-browser eval --stdin <<'JS'
   const npc = window.somnio.entities().find((e) => e.kind === 'npc')
   const at = window.somnio.screenPoint(npc.id)
   const init = { clientX: at.x, clientY: at.y, button: 0, bubbles: true }
-  canvas.dispatchEvent(new PointerEvent('pointermove', init))
   canvas.dispatchEvent(new PointerEvent('pointerdown', init))
   window.dispatchEvent(new PointerEvent('pointerup', init))
   return { npc: npc.id, at }
@@ -162,6 +161,13 @@ agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind ==
 A client holds the entities in its own sector and the sectors touching it, so two players see each other in the same or in adjacent outdoor sectors and lose each other two sectors apart. Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that a peer walking out of view is removed. A peer's position arrives in a batched `moves` frame about ten times a second and is drawn interpolated, so compare with a tolerance.
 
 The client's own position is predicted, not authoritative. The server sends a `correction` for self when it rejects a move and when the player falls. An unmodified client has a move rejected only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
+
+**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head.
+
+- **Pinned at the edge.** Put both outdoors, further apart than the screen shows (12 m is enough at the default zoom) and within a yell's 80 m. The bubble pins where the line toward the speaker leaves the screen, and the listener's chat line names a compass direction.
+- **Past a room's wall.** Keep the listener in the room and put the speaker outdoors within about 30 m of that room's door. The listener has to stand just inside the door: walking in through the door lands them on its arrival point, 0.8 m in. Further in, at the default zoom, the spot past the wall no longer fits on screen and the bubble falls back to the edge pin. A voice placed by the door names no direction in chat, which tells the two placements apart, and it always arrives crumbled.
+
+Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
 
 **Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 

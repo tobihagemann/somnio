@@ -870,6 +870,16 @@ describe('a swing', () => {
     expect(swings(rig)).toHaveLength(1);
   });
 
+  it('stops swinging when the chat input takes focus with the button still down, and does not start again when it lets go', () => {
+    const rig = fighter();
+    rig.session.pressAt(undefined, 0);
+    rig.controller.setChatInputFocused(true);
+    for (let time = 100; time <= 2000; time += 100) rig.session.runTick(time);
+    rig.controller.setChatInputFocused(false);
+    for (let time = 2100; time <= 4000; time += 100) rig.session.runTick(time);
+    expect(swings(rig)).toHaveLength(1);
+  });
+
   it('swings past a nightmare that is already fading', () => {
     const rig = fighter();
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });

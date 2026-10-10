@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { NO_LUCIDITY, PEOPLES, fullPools, headingFromCardinal, isRole, isTeachingId } from '@somnio/core';
+import { NO_LUCIDITY, PEOPLES, fullPools, headingFromCardinal, isRole, isSoundTask, isTeachingId } from '@somnio/core';
 import type { Character, InventoryRow, Lucidity, People, TeachingRank } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
@@ -104,19 +104,21 @@ function decodeTeachingId(field: string, raw: string): TeachingRank['teachingId'
   return raw;
 }
 
+/** A task no master could have set is dropped rather than refused, so it cannot lock the character out. */
 function decodeLucidity(row: CharacterRow, rankRows: readonly RankRow[]): Lucidity {
+  const task =
+    row.task_role === null
+      ? undefined
+      : {
+          role: decodeRole('task_role', row.task_role),
+          teachingId: row.task_teaching === null ? undefined : decodeTeachingId('task_teaching', row.task_teaching),
+          progress: row.task_progress,
+        };
   return {
     role: row.role === null ? undefined : decodeRole('role', row.role),
     ranks: rankRows.map((rank) => ({ teachingId: decodeTeachingId('teaching_id', rank.teaching_id), rank: rank.rank, practice: rank.practice })),
     study: row.study === null ? undefined : decodeTeachingId('study', row.study),
-    task:
-      row.task_role === null
-        ? undefined
-        : {
-            role: decodeRole('task_role', row.task_role),
-            teachingId: row.task_teaching === null ? undefined : decodeTeachingId('task_teaching', row.task_teaching),
-            progress: row.task_progress,
-          },
+    task: task !== undefined && isSoundTask(task) ? task : undefined,
   };
 }
 

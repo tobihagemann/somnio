@@ -178,6 +178,17 @@ describe('character repository', () => {
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
   });
 
+  it.each([
+    ['a teaching without a gate', sql`UPDATE characters SET task_role = 'heiler', task_teaching = 'touch' WHERE name = 'Odd'`],
+    ["another role's gate", sql`UPDATE characters SET task_role = 'kaempfer', task_teaching = 'drawing-back' WHERE name = 'Odd'`],
+  ])('drops a task naming %s', async (_label, corrupt) => {
+    const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}`, 'h', 'odd@example.com');
+    await characters.create(account.id, 'Odd', 'wachen');
+    await corrupt.execute(harness.db);
+    expect((await characters.findByName('Odd'))?.lucidity.task).toBeUndefined();
+    await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
+  });
+
   it('refuses a role outside the two and a pool below zero through the CHECK constraints', async () => {
     const account = await accounts.create('checks', 'h', 'checks@example.com');
     await characters.create(account.id, 'Checked', 'wachen');

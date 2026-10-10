@@ -4,8 +4,9 @@ import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
 import { catalogTables, setLocale } from '@/i18n';
+import { mouseFacingHeading } from '@/client';
 import type { RegistrationForm } from '@/client';
-import { fullPools } from '@somnio/core';
+import { fullPools, headingRadians } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
@@ -1473,6 +1474,16 @@ describe('the play field and the panels through the shell', () => {
     window.dispatchEvent(new PointerEvent('pointerup'));
     p.shell.session.runTick(pressed + 2200);
     expect(p.swings()).toBe(2);
+  });
+
+  /** A tap on a touch screen comes with no move before it, and nothing has turned the player toward it yet. */
+  it('swings toward where a press lands with no move before it', () => {
+    const p = playing();
+    const pointer = { clientX: 0, clientY: -100 };
+    const toward = headingRadians(mouseFacingHeading({ x: pointer.clientX, y: pointer.clientY }, { x: 0, y: 0 }));
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 10 + 0.7 * Math.sin(toward), z: 10 + 0.7 * Math.cos(toward) }));
+    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...pointer }));
+    expect(p.sent().flatMap((message) => (message.tag === 'swing' ? [message.payload] : []))).toEqual([{ targetId: 'monster:1' }]);
   });
 
   /** With another button still down, the left one coming up fires no `pointerup`, only a move, wherever the pointer is by then. */

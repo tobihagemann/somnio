@@ -21,7 +21,7 @@ import type { Condition, Gait, Placement, SectorView, SpeechKind } from '@somnio
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
-import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, offsetDirection, scaleForZoomFactor } from './cameraRig';
+import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
 import { NAME_PLAQUE, namePlaqueBackground, renderNamePlaque, renderSpeechBubble, speechBubbleFrameSize } from './overlayArt';
 import type { BubbleTail, RasterArt } from './overlayArt';
@@ -591,7 +591,7 @@ export class WorldScene implements WorldRenderSurface {
       atEdge: true,
       tail: ownSpot ? 'down' : tailToward(reachX <= reachY, dx, dy),
       parent: this.spaceRoot,
-      position: this.liftedFromScreen(along(from.x, dx, limitX), along(from.y, dy, limitY)),
+      position: new THREE.Vector3(along(from.x, dx, limitX), along(from.y, dy, limitY), from.z).unproject(this.camera),
       centred: true,
     };
   }
@@ -630,20 +630,9 @@ export class WorldScene implements WorldRenderSurface {
       atEdge: false,
       tail: tailToward(Math.abs(out.x) >= Math.abs(out.y), -out.x, -out.y),
       parent: this.spaceRoot,
-      position: this.liftedFromScreen(centre.x, centre.y),
+      position: new THREE.Vector3(centre.x, centre.y, this.focus.clone().project(this.camera).z).unproject(this.camera),
       centred: true,
     };
-  }
-
-  /**
-   * The point drawn at `(x, y)` in normalized device coordinates, at the player's depth and lifted
-   * well toward the camera, which under the orthographic camera does not move it on screen.
-   */
-  private liftedFromScreen(x: number, y: number): THREE.Vector3 {
-    const lift = offsetDirection();
-    return new THREE.Vector3(x, y, this.focus.clone().project(this.camera).z)
-      .unproject(this.camera)
-      .addScaledVector(new THREE.Vector3(lift.x, lift.y, lift.z), LIFTED_BUBBLE_DISTANCE);
   }
 
   /**
@@ -1150,8 +1139,6 @@ const FAINTEST_BUBBLE_OPACITY = 0.15;
 const MAX_SIDE_MARGIN_NDC = 0.5;
 /** How close on screen a voice is to the player before it has no direction. */
 const SAME_SPOT_NDC = 1e-3;
-/** How far toward the camera a bubble placed on the screen stands from the player's depth. */
-const LIFTED_BUBBLE_DISTANCE = 20;
 /** Drawn after the world, so nothing at a bubble's spot of the screen covers it. */
 const BUBBLE_RENDER_ORDER = 10;
 /** How high over a doorway outdoors a voice through it hangs its bubble: on the building, above the door. */

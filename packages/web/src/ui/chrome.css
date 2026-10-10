@@ -284,13 +284,37 @@ body {
   flex-shrink: 0;
 }
 
-/* The list scrolls between the master's name and the Close button, which stay in view at any window height. */
+/* The list scrolls between the master's name and the Close button, which stay in view at any window height.
+   While more of it lies below, its foot fades out, clearing over the last stretch of the scroll. A list
+   that fits leaves its scroll timeline inactive, so nothing fades. */
 .service-body {
+  --service-body-fade-depth: 48px;
+
   flex: 1;
   min-height: 0;
   margin-bottom: 8px;
   padding-right: 6px;
   overflow-y: auto;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--service-body-fade)), transparent);
+  animation: service-body-more-below linear both;
+  animation-timeline: scroll(self);
+  animation-range: calc(100% - var(--service-body-fade-depth)) 100%;
+}
+
+@property --service-body-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes service-body-more-below {
+  from {
+    --service-body-fade: var(--service-body-fade-depth);
+  }
+
+  to {
+    --service-body-fade: 0px;
+  }
 }
 
 .service-subtitle {

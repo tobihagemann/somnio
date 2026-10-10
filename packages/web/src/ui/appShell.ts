@@ -273,8 +273,7 @@ export class AppShell {
     window.addEventListener('blur', () => this.session.handleVisibilityLoss());
 
     this.canvas.addEventListener('pointermove', (event) => {
-      const rect = this.canvas.getBoundingClientRect();
-      this.session.updateMouseFacing({ x: event.clientX - rect.left, y: event.clientY - rect.top }, { x: rect.width / 2, y: rect.height / 2 });
+      this.updateMouseFacing(event);
       // A pointer over what a click would ask or tend; a swing needs no target and no sign.
       const action = this.session.clickAction(this.entityUnder(event));
       this.canvas.style.cursor = action === 'talk' || action === 'tend' ? 'pointer' : '';
@@ -299,6 +298,8 @@ export class AppShell {
       this.panels.chatInput.blur();
       if (event.button !== 0) return;
       this.pressPointerId = event.pointerId;
+      // A press with no move before it, such as a tap on a touch screen, still swings toward where it lands.
+      this.updateMouseFacing(event);
       this.session.pressAt(this.entityUnder(event), performance.now());
     });
     // A press ends when its own pointer's left button is up, whatever another pointer does. On the
@@ -318,6 +319,11 @@ export class AppShell {
     if (point === undefined) return undefined;
     const rect = this.canvas.getBoundingClientRect();
     return { x: rect.left + ((point.x + 1) / 2) * rect.width, y: rect.top + ((1 - point.y) / 2) * rect.height };
+  }
+
+  private updateMouseFacing(event: PointerEvent): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.session.updateMouseFacing({ x: event.clientX - rect.left, y: event.clientY - rect.top }, { x: rect.width / 2, y: rect.height / 2 });
   }
 
   /** The entity drawn under the pointer, if any. */

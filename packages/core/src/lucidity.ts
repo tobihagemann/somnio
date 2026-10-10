@@ -158,9 +158,19 @@ export function teachingStanding(ranks: readonly HeldRank[], teachingId: Teachin
   return taught.gate !== undefined && rank === 0 ? 'task' : 'open';
 }
 
-/** What a held task asks for. A task is only ever set for a gated teaching; one read back from a row or a frame is not rechecked. */
-export function taskSpec(task: Pick<LucidityTask, 'role' | 'teachingId'>): TaskSpec {
-  return task.teachingId === undefined ? TRIALS[task.role] : teaching(task.teachingId).gate!;
+/** Whether a master could have set the task: a trial, or the gate of a teaching of the task's own role. */
+export function isSoundTask(task: Pick<LucidityTask, 'role' | 'teachingId'>): boolean {
+  if (task.teachingId === undefined) return true;
+  const taught = teaching(task.teachingId);
+  return taught.gate !== undefined && taught.role === task.role;
+}
+
+/**
+ * What a held task asks for. The server holds only sound tasks, but a client whose teachings differ
+ * from the server's can read one naming a teaching it knows without a gate, which asks for nothing.
+ */
+export function taskSpec(task: Pick<LucidityTask, 'role' | 'teachingId'>): TaskSpec | undefined {
+  return task.teachingId === undefined ? TRIALS[task.role] : teaching(task.teachingId).gate;
 }
 
 /** The progress at which a task is done. */

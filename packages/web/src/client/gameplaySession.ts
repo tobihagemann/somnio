@@ -57,13 +57,13 @@ const ZERO_ENERGY: Energy = {
 
 const NO_LUCIDITY: LucidityMessage = { ranks: [] };
 
-/** What a task as the wire carries it asks for; `undefined` for a teaching this client does not know. */
+/** What a task as the wire carries it asks for; `undefined` for a teaching this client does not know or one without a gate. */
 export function taskSpecOf(task: TaskMessage): TaskSpec | undefined {
   if (task.teachingId !== undefined && !isTeachingId(task.teachingId)) return undefined;
   return taskSpec({ role: task.role, teachingId: task.teachingId });
 }
 
-/** Whether a task as the wire carries it is at its goal. A teaching this client does not know has no goal to reach. */
+/** Whether a task as the wire carries it is at its goal. A task this client cannot read has no goal to reach. */
 export function taskIsDone(task: TaskMessage): boolean {
   const spec = taskSpecOf(task);
   return spec !== undefined && task.progress >= taskGoal(spec);
@@ -149,9 +149,12 @@ export class GameplaySession {
 
     this.controller.onGameplayMessage = (message) => this.dispatch(message);
     // The controller owns the two predicates the gate reads, so it is also what reports the gate
-    // closing. Clearing held keys there rather than in each DOM handler is what keeps a stale
-    // held bit from resuming movement when focus returns.
-    this.controller.onGateClosed = () => this.input.clearHeldKeys();
+    // closing. Releasing held keys and a held swing there rather than in each DOM handler is what
+    // keeps a stale hold from resuming when focus returns.
+    this.controller.onGateClosed = () => {
+      this.input.clearHeldKeys();
+      this.swingHeld = false;
+    };
     this.controller.onSpaceEntered = () => {
       this.resetSpaceState();
       this.latestMouseFacing = undefined;
@@ -285,7 +288,7 @@ export class GameplaySession {
     const nightmares = [...this.controller.entities.values()]
       .filter((entity) => entity.kind === 'monster' && entity.condition !== 'fallen')
       .map((entity) => ({ id: entity.id, x: entity.position.x, z: entity.position.z, radius: entity.radius }));
-    const met = swingTarget(self.position, self.facing, nightmares);
+    const met = swingTarget(self.position, this.latestMouseFacing ?? self.facing, nightmares);
     this.predictor.reportNow();
     this.send({ tag: 'swing', payload: met === undefined ? {} : { targetId: met.id } });
   }

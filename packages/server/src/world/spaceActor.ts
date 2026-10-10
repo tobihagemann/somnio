@@ -1152,7 +1152,7 @@ export class SpaceActor {
     const task = lucidity.task;
     if (task === undefined) return;
     const spec = taskSpec(task);
-    if (!counts(spec)) return;
+    if (spec === undefined || !counts(spec)) return;
     const progress = Math.min(taskGoal(spec), next(task.progress));
     if (progress !== task.progress) this.updateLucidity(slot, { ...lucidity, task: { ...task, progress } });
   }
@@ -1215,7 +1215,9 @@ export class SpaceActor {
     if (asked === undefined) return;
     const lucidity = asked.player.character.lucidity;
     const task = lucidity.task;
-    if (task === undefined || task.role !== roleOfService(asked.service) || task.progress < taskGoal(taskSpec(task))) return;
+    if (task === undefined || task.role !== roleOfService(asked.service)) return;
+    const spec = taskSpec(task);
+    if (spec === undefined || task.progress < taskGoal(spec)) return;
     const learned = task.teachingId ?? FIRST_TEACHING[task.role];
     this.updateLucidity(asked.player, {
       role: task.role,
