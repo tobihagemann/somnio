@@ -164,6 +164,32 @@ A client holds the entities in its own sector and the sectors touching it, so tw
 
 The client's own position is predicted, not authoritative. The server sends a `correction` for self when it rejects a move and when the player falls. An unmodified client has a move rejected only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
 
+**More players without more browsers.** When a case needs several bodies on screen at once (crowded plaques or bubbles), run each extra player as a small Node script beside one browser session. Node 24 has a global `WebSocket`. Register the accounts over the wire first (Step 3), then per player:
+
+```js
+const [nickname, dx, dz, line] = process.argv.slice(2)
+const ws = new WebSocket('ws://127.0.0.1:17662/ws')
+const send = (tag, payload) => ws.send(JSON.stringify({ tag, payload }))
+let selfId
+ws.onmessage = ({ data }) => {
+  const { tag, payload } = JSON.parse(data)
+  if (tag === 'hello') send('login', { nickname, password: '<password>' })
+  if (tag === 'enterSpace') selfId = payload.selfId
+  if (tag === 'correction') console.log(nickname, 'step refused, still at', payload.x, payload.z)
+  if (tag === 'entity' && payload.id === selfId) {
+    // A step under 7.5 m onto open floor stays inside the movement allowance.
+    setTimeout(() => send('move', { x: payload.x + Number(dx), z: payload.z + Number(dz), facing: 0, gait: 'walk' }), 500)
+    if (line) setInterval(() => send('clientSay', { text: line, kind: 'say' }), 4000)
+  }
+}
+```
+
+```bash
+node <dir>/bot.mjs <nickname> 0.7 0.3 'Hallo' & echo $!   # nickname, step east, step south, a line to repeat
+```
+
+New accounts start at the starter spawn in `EdariaBibliothek`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its character and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE name IN ('<nickname>', ...);"`.
+
 **Hide the tab.** Open the session `--headed` from its first command. There, a second tab in front fires `visibilitychange` on the game page and stops its `requestAnimationFrame`; switching back makes it visible again. Tab ids are the `t<n>` ids `tab list` prints, and positional integers are refused. An `eval` sent while the blank tab is in front runs in that tab, so switch back before reading `window.somnio`.
 
 ```bash
