@@ -44,8 +44,14 @@ export const NAME_PLAQUE = {
   fontSize: 11,
   playerBackground: 'rgb(221, 221, 221)',
   npcBackground: 'rgb(204, 255, 255)',
-  /** The plaque of an entity whose health has left the top quarter, by the band it stands in. */
-  conditionBackground: { wounded: 'rgb(242, 217, 78)', hurt: 'rgb(242, 154, 58)', failing: 'rgb(229, 83, 61)', fallen: 'rgb(51, 51, 51)' },
+  /** The plaque of an entity below its maximum health, by the band it stands in. */
+  conditionBackground: {
+    grazed: 'rgb(126, 201, 92)',
+    wounded: 'rgb(242, 217, 78)',
+    hurt: 'rgb(242, 154, 58)',
+    failing: 'rgb(229, 83, 61)',
+    fallen: 'rgb(51, 51, 51)',
+  },
   ink: 'rgb(0, 0, 0)',
   /** Text on the dark plaque of a fallen body. */
   fallenInk: 'rgb(255, 255, 255)',
@@ -329,7 +335,7 @@ export function baselineInCenteredBox(height: number, fontSize: number): number 
 /**
  * Background for an entity's plaque, or `undefined` for one that gets none. A player's plaque is
  * tinted by their condition, the local player's included. An NPC's never changes. A nightmare has
- * a plaque only while it is not hale, so a wounded one stands out from the rest.
+ * a plaque only while it is not hale, so one that has taken harm stands out from the rest.
  */
 export function namePlaqueBackground(kind: WorldEntityKind, condition: Condition): string | undefined {
   if (kind === 'npc') return NAME_PLAQUE.npcBackground;

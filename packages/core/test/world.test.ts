@@ -2,7 +2,7 @@ import type { Door } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { modelToWorld } from '../src/geometry.ts';
-import type { Sector, SectorNPC } from '../src/sector.ts';
+import type { MonsterSpawn, Sector, SectorNPC } from '../src/sector.ts';
 import { OUTDOOR_SPACE_ID, WorldError, buildWorld, doorContains, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from './support/worldFixture.ts';
 
@@ -116,6 +116,40 @@ describe('buildWorld', () => {
       { sector: 'Room', record: 'door', id: 'exit', message: 'the arrival point (5.00, 9.10) is not clear' },
     ]);
     expect(doorsOf(sectors, 'Town')).toEqual([]);
+  });
+
+  it("reports a door whose arrival point lies within a nightmare's reach of a monster spawn's area once, and keeps it live", () => {
+    // The room's door puts an arriving body at (5, 9.1); a nightmare's reach is 0.85 m.
+    const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'gespenst', x: 4, z: 7.5, width: 2, depth, maxAlive: 1 });
+    const spawned = (...monsterSpawns: MonsterSpawn[]): Sector[] => [town(), room({ monsterSpawns })];
+    const inReach = {
+      sector: 'Room',
+      record: 'door',
+      id: 'exit',
+      message: 'the arrival point (5.00, 9.10) lies within reach of monster spawn "spawn-1" in Room',
+    };
+    expect(buildWorld(spawned(spawn('spawn-1', 1)), TEST_REGISTRY).issues).toEqual([inReach]);
+    expect(doorsOf(spawned(spawn('spawn-1', 1)), 'Room')).toEqual(['exit']);
+    expect(buildWorld(spawned(spawn('spawn-1', 1), spawn('spawn-2', 1)), TEST_REGISTRY).issues).toEqual([inReach]);
+    expect(buildWorld(spawned(spawn('spawn-1', 0.7)), TEST_REGISTRY).issues).toEqual([]);
+    // A spawn in another sector of the space reaches the door too, measured in the space's coordinates:
+    // the hall's door puts an arriving body 0.28 m north of Field.
+    const field = outdoorSector('Field', { x: 100, z: -30 }, { monsterSpawns: [{ ...spawn('spawn-1', 1), x: 8.5, z: 0, width: 1 }] });
+    const hallTown = town({ origin: { x: 100, z: -50 }, placements: [{ ...HALL, z: 17.5 }] });
+    expect(buildWorld([hallTown, field, room()], TEST_REGISTRY).issues).toEqual([
+      { sector: 'Town', record: 'door', id: 'to-room', message: 'the arrival point (109.10, -30.28) lies within reach of monster spawn "spawn-1" in Field' },
+    ]);
+    // A nightmare's centre may stand EDGE_TOLERANCE past its area on either axis, so the reach is
+    // measured from the widened area: along a side and diagonally off a corner, just within it and just beyond.
+    const issueCount = (monsterSpawn: MonsterSpawn): number => buildWorld(spawned(monsterSpawn), TEST_REGISTRY).issues.length;
+    const southEdge = (z: number): MonsterSpawn => ({ ...spawn('spawn-1', z - 7.5), x: 4, z: 7.5 });
+    expect([issueCount(southEdge(9.1 - 0.8505)), issueCount(southEdge(9.1 - 0.8515))]).toEqual([1, 0]);
+    const cornerOff = (away: number): MonsterSpawn => ({ ...spawn('spawn-1', 9.1 - away - 6), x: 2, z: 6, width: 5 - away - 2 });
+    expect([issueCount(cornerOff(0.6018)), issueCount(cornerOff(0.6023))]).toEqual([1, 0]);
+    // An inert door is reported for what makes it inert, and for nothing more.
+    expect(buildWorld([room({ monsterSpawns: [spawn('spawn-1', 1)] })], TEST_REGISTRY).issues).toEqual([
+      { sector: 'Room', record: 'door', id: 'exit', message: 'target door "to-room" in Town does not exist' },
+    ]);
   });
 
   it('carries the collision issues of every space', () => {

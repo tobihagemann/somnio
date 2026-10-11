@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { COMBAT, SOMNIO_CONSTANTS, monsterKind } from '@somnio/core';
+import { monsterKind, reachDistance } from '@somnio/core';
 import { seededRandom } from '../../src/world/random.ts';
 import { CUDGEL_IN_HAND, RESPAWN_MS, STRIKER, payloads } from '../support/combat.ts';
 import { collectMessages, entities } from '../support/frames.ts';
@@ -7,6 +7,8 @@ import { attachPlayer, makeClockedSpace } from '../support/sectorFactory.ts';
 import { fixtureWorld, standableNear } from './support/harness.ts';
 
 const GESPENST = monsterKind('gespenst');
+/** On the refuge by the door, which no Gespenst of the Arena comes to. */
+const REFUGE_AT = { x: 8.5, z: 8 };
 
 /**
  * The committed Arena on a clock and a seeded roll: a booted server has neither seam, and its
@@ -16,13 +18,12 @@ it('a Gespenst of the committed Arena is fought to its fade, and its spawn then 
   const { clock, space } = makeClockedSpace(fixtureWorld(), 'EdariaArena', { random: seededRandom(3) });
   clock.ms = RESPAWN_MS;
   space.step(0);
-  const scout = attachPlayer(space, { x: 5.12, z: 8 }, 'scout', { spaceId: 'EdariaArena' });
+  const scout = attachPlayer(space, REFUGE_AT, 'scout', { spaceId: 'EdariaArena' });
   space.detach(scout.entityId, true);
   const [ghost] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
   if (ghost === undefined) throw new Error('no Gespenst spawned in the Arena');
 
-  const reach = SOMNIO_CONSTANTS.playerRadius + GESPENST.radius + COMBAT.reachSlack;
-  const fighter = attachPlayer(space, standableNear(space, ghost, reach), 'fighter', {
+  const fighter = attachPlayer(space, standableNear(space, ghost, reachDistance(GESPENST.radius)), 'fighter', {
     spaceId: 'EdariaArena',
     character: STRIKER,
     inventory: [CUDGEL_IN_HAND],
@@ -53,7 +54,7 @@ it('a Gespenst of the committed Arena is fought to its fade, and its spawn then 
     clock.ms += RESPAWN_MS;
     space.step(0);
   }
-  const observer = attachPlayer(space, { x: 5.12, z: 8 }, 'observer', { spaceId: 'EdariaArena' });
+  const observer = attachPlayer(space, REFUGE_AT, 'observer', { spaceId: 'EdariaArena' });
   const alive = entities(await collectMessages(observer.outbox)).filter((entity) => entity.kind === 'monster');
   expect(alive.map((entity) => entity.id).sort()).toEqual(['monster:2', 'monster:3', 'monster:4']);
 });

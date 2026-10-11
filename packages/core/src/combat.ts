@@ -61,11 +61,12 @@ export const COMBAT = {
   fadeSeconds: 1,
 } as const;
 
-/** The band a health total stands in. Anything above zero is still standing. */
+/** The band a health total stands in: hale only at the maximum, then by quarters. Anything above zero is still standing. */
 export function conditionOf(current: number, max: number): Condition {
   if (current <= 0) return 'fallen';
+  if (current >= max) return 'hale';
   const part = current / max;
-  if (part > 0.75) return 'hale';
+  if (part > 0.75) return 'grazed';
   if (part > 0.5) return 'wounded';
   if (part > 0.25) return 'hurt';
   return 'failing';
@@ -127,9 +128,14 @@ export function swingAllowed(task: TaskSpec | undefined, itemInHand: string | un
   return swing !== undefined && balance >= swing.balanceCost ? swing : undefined;
 }
 
-/** Whether a dreamer at `from` reaches a body, or is reached by it: as far as contact, and the reach slack beyond. */
+/** How far apart a dreamer and a body of `radius` stand at most when one reaches the other: contact, and the reach slack beyond. */
+export function reachDistance(radius: number): number {
+  return SOMNIO_CONSTANTS.playerRadius + radius + COMBAT.reachSlack;
+}
+
+/** Whether a dreamer at `from` reaches a body, or is reached by it. */
 export function reaches(from: Point, body: Body): boolean {
-  return distance(from, body) <= SOMNIO_CONSTANTS.playerRadius + body.radius + COMBAT.reachSlack;
+  return distance(from, body) <= reachDistance(body.radius);
 }
 
 /**

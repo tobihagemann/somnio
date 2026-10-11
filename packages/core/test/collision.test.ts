@@ -295,4 +295,15 @@ describe('walk surfaces of two placements', () => {
   it('are not reported when they only touch', () => {
     expect(field([dais, placement('dais-2', 'dais', 7, 5)]).issues).toEqual([]);
   });
+
+  it('report each placement once, however many it overlaps, naming the first it overlaps', () => {
+    const stacked = ['dais-0', 'dais-1', 'dais-2'].map((id) => placement(id, 'dais', 5, 5));
+    const overlap = (id: string, first: string) => ({
+      sector: 'Field',
+      record: 'placement',
+      id,
+      message: `walk surfaces overlap those of "${first}" in Field`,
+    });
+    expect(field(stacked).issues).toEqual([overlap('dais-0', 'dais-1'), overlap('dais-1', 'dais-0'), overlap('dais-2', 'dais-0')]);
+  });
 });

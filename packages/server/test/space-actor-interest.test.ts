@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { Sector } from '@somnio/core';
+import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
 import { collectMessages, entities, entityMoves } from './support/frames.ts';
-import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
+import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
 
 /** West (x 0 to 20), Middle (20 to 40), East (40 to 60): West and East are not neighbours. */
-function line(overrides: { east?: Partial<Sector> } = {}) {
-  const { clock, space } = makeClockedSpace(makeWorld(makeSectorLine(overrides)));
+function line(overrides: { east?: Partial<Sector> } = {}, options: Partial<SpaceActorOptions> = {}) {
+  const { clock, space } = makeClockedSpace(makeWorld(makeSectorLine(overrides)), undefined, options);
   const join = (name: string, x: number) => attachPlayer(space, { x, z: 10 }, name);
   /** Walks along z = 10 in accepted moves, a second of clock apart. */
   const walk = (entityId: string, toX: number) => {
@@ -62,7 +63,8 @@ describe('interest on a line of three sectors', () => {
   });
 
   it('a stationary observer gets entity when a monster crosses from the third sector into the second, and leave when it crosses back', async () => {
-    const { clock, space, join, walk } = line({ east: { monsterSpawns: [makeMonsterSpawn({ x: 1, z: 10 })] } });
+    // Its ground reaches 4 m past East's west edge, into Middle.
+    const { clock, space, join, walk } = line({ east: { monsterSpawns: [makeMonsterGround({ x: 1, z: 10 }, 5)] } }, { random: landsAtCentre(5) });
     const observer = join('observer', 5);
     const bait = join('bait', 38.5);
     clock.ms = 60_000;

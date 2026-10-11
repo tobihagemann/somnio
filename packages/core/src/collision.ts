@@ -24,7 +24,7 @@ export const MOVE_SUBSTEP = 0.05;
 /** A distance this close to a radius is contact, and contact is clear, so a slide along a wall does not stick. */
 const CONTACT_TOLERANCE = 1e-6;
 
-/** Something round that stands in the way: an NPC, or a player or monster as the client draws it. */
+/** Something round that stands in the way: an NPC, a player, or a monster. */
 export interface Body extends Point {
   radius: number;
 }
@@ -89,11 +89,20 @@ export function buildSpaceCollision(space: Space, registry: ModelRegistry): Spac
       });
     }
   }
+  // Each placement is reported once, naming the first it overlaps, so the issues grow with the placements and not with their pairs.
+  const reported = new Set<PlacedModel>();
   models.forEach((model, index) => {
-    for (const other of models.slice(index + 1)) {
-      if (!walkSurfacesOverlap(model, other)) continue;
-      issues.push(placementIssue(model.sector, model.placement, `walk surfaces overlap those of "${other.placement}" in ${other.sector}`));
-      issues.push(placementIssue(other.sector, other.placement, `walk surfaces overlap those of "${model.placement}" in ${model.sector}`));
+    for (let next = index + 1; next < models.length; next += 1) {
+      const other = models[next]!;
+      if ((reported.has(model) && reported.has(other)) || !walkSurfacesOverlap(model, other)) continue;
+      for (const [placed, overlapped] of [
+        [model, other],
+        [other, model],
+      ] as const) {
+        if (reported.has(placed)) continue;
+        reported.add(placed);
+        issues.push(placementIssue(placed.sector, placed.placement, `walk surfaces overlap those of "${overlapped.placement}" in ${overlapped.sector}`));
+      }
     }
   });
   return { sectors, edges: sectors.flatMap((rect) => openEdges(rect, sectors, () => true)), blockers, models, issues };
@@ -215,7 +224,8 @@ function quadsOverlap(a: readonly Point[], b: readonly Point[]): boolean {
   return true;
 }
 
-function distanceToRect(point: Point, rect: Rect): number {
+/** How far the point lies from the rect: 0 on or inside it. */
+export function distanceToRect(point: Point, rect: Rect): number {
   return distance(point, { x: clamp(point.x, rect.x, rect.x + rect.width), z: clamp(point.z, rect.z, rect.z + rect.depth) });
 }
 

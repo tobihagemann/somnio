@@ -137,7 +137,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 7
+      "protocolVersion": 8
     },
     "tag": "hello"
   },

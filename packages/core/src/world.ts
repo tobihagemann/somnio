@@ -1,5 +1,6 @@
 import type { Door, SectorView } from '@somnio/protocol';
-import { buildSpaceCollision, canStand, npcBodies } from './collision.ts';
+import { buildSpaceCollision, canStand, distanceToRect, npcBodies } from './collision.ts';
+import { reachDistance } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { EDGE_TOLERANCE, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
 import type { Point, Rect, Transform } from './geometry.ts';
@@ -7,7 +8,8 @@ import { heading, headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
 import { objectModel } from './modelRegistry.ts';
 import type { ModelRegistry } from './modelRegistry.ts';
-import { sectorPointInSpace, sectorRect } from './sector.ts';
+import { monsterKind } from './monsterKinds.ts';
+import { sectorPointInSpace, sectorRect, spawnArea } from './sector.ts';
 import type { Sector } from './sector.ts';
 
 /**
@@ -38,7 +40,11 @@ export interface World {
   spaces: Map<string, Space<Sector>>;
   /** Sector name to the id of the space holding it. */
   sectorSpace: Map<string, string>;
-  /** Every door reported here is inert: the sectors in `spaces` no longer carry it. */
+  /**
+   * What loading reported. A door reported for not being half of a sound pair is inert, and the
+   * sectors in `spaces` do not carry it. A door reported because its arrival point lies within a
+   * nightmare's reach stays live.
+   */
   issues: WorldIssue[];
 }
 
@@ -55,8 +61,10 @@ export class WorldError extends Error {
  * overlap, an outdoor sector smaller than `minOutdoorSectorExtent`, a sector named like the
  * outdoor space, and a `spawn` a body cannot stand on. A door is live only as half of a sound
  * pair: both doors resolve, point at each other, and have an arrival point a body can stand on.
- * Any other door is reported and dropped from its sector. The collision issues of each space are
- * reported too. Standing means clear of colliders, blockers, ledges, and the space's NPCs.
+ * Any other door is reported and dropped from its sector. A live door whose arrival point lies
+ * within a nightmare's reach of a monster spawn's area in its space is reported and kept. The
+ * collision issues of each space are reported too. Standing means clear of colliders, blockers,
+ * ledges, and the space's NPCs.
  */
 export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry): World {
   const outdoor = sectors.filter((sector) => sector.kind === 'outdoor');
@@ -79,7 +87,8 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
   const issues: WorldIssue[] = [];
   for (const space of groups) {
     const collision = buildSpaceCollision(space, registry);
-    issues.push(...collision.issues);
+    // Not a spread: a space's issues can outnumber the arguments one call may take.
+    for (const issue of collision.issues) issues.push(issue);
     const npcs = npcBodies(space);
     const stands = (point: Point): boolean => canStand(collision, point, npcs);
     for (const sector of space.sectors) standsIn.set(sector.name, stands);
@@ -94,6 +103,7 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
 
   const byName = new Map(sectors.map((sector) => [sector.name, sector]));
   const unsound = new Map<Door, string>();
+  const arrivals = new Map<Door, Point>();
   for (const sector of sectors) {
     for (const door of sector.doors) {
       const resolved = resolveDoor(sector, door, registry);
@@ -101,6 +111,8 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
         unsound.set(door, `placement "${door.placement}" has no door anchor "${door.anchor}"`);
       } else if (!standsIn.get(sector.name)!(resolved.arrival)) {
         unsound.set(door, `the arrival point (${resolved.arrival.x.toFixed(2)}, ${resolved.arrival.z.toFixed(2)}) is not clear`);
+      } else {
+        arrivals.set(door, resolved.arrival);
       }
     }
   }
@@ -118,6 +130,28 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
       if (message === undefined) continue;
       inert.add(door);
       issues.push({ sector: sector.name, record: 'door', id: door.id, message });
+    }
+  }
+  for (const space of groups) {
+    // Where a nightmare's centre can be: its area widened by EDGE_TOLERANCE on every side, as the simulation's containment test allows.
+    const grounds = space.sectors.flatMap((sector) =>
+      sector.monsterSpawns.map((spawn) => {
+        const area = spawnArea(sector, spawn);
+        const width = area.width + 2 * EDGE_TOLERANCE;
+        const depth = area.depth + 2 * EDGE_TOLERANCE;
+        return { sector: sector.name, spawn, standing: { x: area.x - EDGE_TOLERANCE, z: area.z - EDGE_TOLERANCE, width, depth } };
+      }),
+    );
+    for (const sector of space.sectors) {
+      for (const door of sector.doors) {
+        const arrival = arrivals.get(door);
+        if (arrival === undefined || inert.has(door)) continue;
+        // One issue a door, however many spawns reach it, so the issues grow with the doors and not with doors times spawns.
+        const near = grounds.find(({ spawn, standing }) => distanceToRect(arrival, standing) <= reachDistance(monsterKind(spawn.kind).radius));
+        if (near === undefined) continue;
+        const message = `the arrival point (${arrival.x.toFixed(2)}, ${arrival.z.toFixed(2)}) lies within reach of monster spawn "${near.spawn.id}" in ${near.sector}`;
+        issues.push({ sector: sector.name, record: 'door', id: door.id, message });
+      }
     }
   }
 

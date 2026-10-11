@@ -89,8 +89,9 @@ absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
   mauve in the editor and its screenshots. Judge a patch's colour in the browser client.
 - The overlay marks in red what `buildWorld` would report at the server's boot, and `issues()`
   lists the same: a door that does not resolve, has no sound counterpart, or arrives on
-  something solid (an NPC included), walk surfaces of two placements that overlap, an
-  `elevation` on a model with walk surfaces, and an unmapped model. Two things the server logs
+  something solid (an NPC included). A door that arrives within a nightmare's reach of a monster
+  spawn's area is reported too, though it stays live. So are walk surfaces of two placements that
+  overlap, an `elevation` on a model with walk surfaces, and an unmapped model. Two things the server logs
   at boot are not among them: an `EdariaInn` without a spawn, and a missing `Nordwald`, which
   the Heiler trial names.
 - Doors, NPCs, and monster spawns carry a text label (`<door id> -> <sector>/<door>`, the

@@ -95,7 +95,7 @@ describe('swinging at a nightmare', () => {
     expect(payloads(messages, 'condition')).toEqual([]);
   });
 
-  /** A Gespenst has 60 health and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
+  /** A Gespenst has 60 health, is grazed by any hit, and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
   it.each([
     ['bare hands', [], 8, 4],
     ['the cudgel', [CUDGEL_IN_HAND], 18, 2],
@@ -111,7 +111,11 @@ describe('swinging at a nightmare', () => {
         await collectMessages(swing === hitsToWound ? watcher.outbox : attachPlayer(space, { x: 16, z: 16 }, `w${swing}`).outbox),
         'condition',
       );
-      if (swing === hitsToWound) expect(announced).toEqual([{ entityId: GHOST, condition: 'wounded' }]);
+      if (swing === hitsToWound)
+        expect(announced).toEqual([
+          { entityId: GHOST, condition: 'grazed' },
+          { entityId: GHOST, condition: 'wounded' },
+        ]);
       else expect(announced).toEqual([]);
     }
     expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100 - hitsToWound * cost);
@@ -138,7 +142,11 @@ describe('swinging at a nightmare', () => {
     // Three swings meet it and the fourth meets the air: a fading nightmare takes none.
     const swings = payloads(messages, 'blow').filter((blow) => blow.attackerId === alice.entityId);
     expect(swings.map((blow) => blow.targetId)).toEqual([GHOST, GHOST, GHOST, undefined]);
-    expect(payloads(messages, 'condition').at(-1)).toEqual({ entityId: GHOST, condition: 'fallen' });
+    expect(
+      payloads(messages, 'condition')
+        .filter((sent) => sent.entityId === GHOST)
+        .at(-1),
+    ).toEqual({ entityId: GHOST, condition: 'fallen' });
     const tags = messages.map((message) =>
       message.tag === 'leave' || (message.tag === 'entity' && message.payload.kind === 'monster') ? message.tag : undefined,
     );
@@ -192,6 +200,7 @@ describe('a join', () => {
   });
 });
 
+/** The ghost's ground is its one point, so every dreamer it strikes here stands outside it, within its reach. */
 describe('a nightmare striking', () => {
   it('takes health and a little balance, both there in a snapshot taken at once', async () => {
     const { space, steps } = arena();
@@ -233,8 +242,8 @@ describe('a nightmare striking', () => {
     expect(payloads(mine, 'blow')).toHaveLength(1);
     const seen = (await collectMessages(watcher.outbox)).slice(6);
     expect(payloads(seen, 'condition')).toEqual([{ entityId: alice.entityId, condition: 'fallen' }]);
-    // The nightmare turned to her once, in the step it struck, and never again.
-    expect(entityMoves(seen).filter((move) => move.id === GHOST)).toHaveLength(1);
+    // She lies due south, the way it already faced, so it neither moved nor turned.
+    expect(entityMoves(seen).filter((move) => move.id === GHOST)).toEqual([]);
     expect(seen.map((message) => message.tag)).not.toContain('energy');
   });
 

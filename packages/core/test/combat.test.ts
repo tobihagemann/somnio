@@ -23,7 +23,8 @@ import { ranks } from './support/ranks.ts';
 describe('conditionOf', () => {
   it.each([
     [100, 'hale'],
-    [76, 'hale'],
+    [99, 'grazed'],
+    [76, 'grazed'],
     [75, 'wounded'],
     [51, 'wounded'],
     [50, 'hurt'],
@@ -37,7 +38,8 @@ describe('conditionOf', () => {
 
   it('bands by the share of the maximum, not by the number', () => {
     expect(conditionOf(100, 150)).toBe('wounded');
-    expect(conditionOf(113, 150)).toBe('hale');
+    expect(conditionOf(113, 150)).toBe('grazed');
+    expect(conditionOf(150, 150)).toBe('hale');
   });
 });
 

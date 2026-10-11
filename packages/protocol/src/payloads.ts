@@ -53,8 +53,8 @@ export type Role = (typeof ROLES)[number];
 export const NPC_SERVICES = ['kaempferMaster', 'heilerMaster'] as const;
 export type NPCService = (typeof NPC_SERVICES)[number];
 
-/** How an entity's health stands, by quarters of its maximum. It is all another player learns of it. */
-export const CONDITIONS = ['hale', 'wounded', 'hurt', 'failing', 'fallen'] as const;
+/** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it. */
+export const CONDITIONS = ['hale', 'grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
 export const RAISING_STATES = ['begun', 'broken', 'done'] as const;

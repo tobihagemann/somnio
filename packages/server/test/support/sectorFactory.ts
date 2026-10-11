@@ -6,6 +6,7 @@ import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../../core/test
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
 import { loadWorld } from '../../src/sectors/sectorCache.ts';
 import type { LoadedWorld } from '../../src/sectors/sectorCache.ts';
+import type { RandomSource } from '../../src/world/random.ts';
 import { SpaceActor } from '../../src/world/spaceActor.ts';
 import type { SpaceActorOptions } from '../../src/world/spaceActor.ts';
 import { testLogger } from './logger.ts';
@@ -51,9 +52,27 @@ export function makeNPC(id: string, at: Point, dialogScript: string): SectorNPC 
   return { id, name: 'test-npc', characterModelId: 'hero', ...at, facing: headingFromCardinal('south'), dialogScript };
 }
 
-/** A spawn whose area is the single point `at`, so the spawn position is independent of the RNG; `size` widens it for placement sampling. */
+/**
+ * A spawn whose area is the single point `at`, so the spawn position is independent of the RNG;
+ * `size` widens it for placement sampling. The area is also its monster's home ground, which a
+ * single point makes too small to chase in: it strikes only what comes within its reach.
+ */
 export function makeMonsterSpawn(at: Point, size = 0, maxAlive = 1): MonsterSpawn {
   return { id: 'spawn-1', kind: 'gespenst', ...at, width: size, depth: size, maxAlive };
+}
+
+/** A spawn whose area, and so its monsters' home ground, is a square of side `2 * half` centred on `at`. */
+export function makeMonsterGround(at: Point, half: number, maxAlive = 1): MonsterSpawn {
+  return { id: 'spawn-1', kind: 'gespenst', x: at.x - half, z: at.z - half, width: 2 * half, depth: 2 * half, maxAlive };
+}
+
+/**
+ * A source whose every draw lands placement on the centre of a `makeMonsterGround` area of the
+ * same `half`, so its monster spawns exactly on `at`. Every later roll is near 0, so every strike
+ * and swing hits.
+ */
+export function landsAtCentre(half: number): RandomSource {
+  return { nextUInt32: () => Math.round(half * 100) };
 }
 
 export function makeCharacter(position: Point, name = 'tester', space: string = OUTDOOR_SPACE_ID): Character {

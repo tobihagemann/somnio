@@ -9,6 +9,8 @@ export interface MonsterKind {
   /** How long a spawn waits before it fills a free slot. */
   respawnSeconds: number;
   health: number;
+  /** The health it recovers each second while at rest. */
+  restHealthPerSecond: number;
   /** The gap between two of its strikes. */
   strikeSeconds: number;
   /** Its chance to land a strike on a dreamer at full balance with no Guard. */
@@ -30,6 +32,7 @@ export const MONSTER_KINDS = {
     aggroRadius: 3.84,
     respawnSeconds: 60,
     health: 60,
+    restHealthPerSecond: 1,
     strikeSeconds: 1.5,
     hitChance: 0.6,
     damage: 9,

@@ -1400,16 +1400,19 @@ describe('overlay artwork', () => {
     expect(namePlaqueBackground('monster', 'hale')).toBeUndefined();
   });
 
-  it.each(['wounded', 'hurt', 'failing', 'fallen'] as const)('tints a %s player, peer, and monster alike, and leaves an NPC as it is', (condition) => {
-    const tint = NAME_PLAQUE.conditionBackground[condition];
-    expect(namePlaqueBackground('player', condition)).toBe(tint);
-    expect(namePlaqueBackground('peer', condition)).toBe(tint);
-    expect(namePlaqueBackground('monster', condition)).toBe(tint);
-    expect(namePlaqueBackground('npc', condition)).toBe(NAME_PLAQUE.npcBackground);
-  });
+  it.each(['grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const)(
+    'tints a %s player, peer, and monster alike, and leaves an NPC as it is',
+    (condition) => {
+      const tint = NAME_PLAQUE.conditionBackground[condition];
+      expect(namePlaqueBackground('player', condition)).toBe(tint);
+      expect(namePlaqueBackground('peer', condition)).toBe(tint);
+      expect(namePlaqueBackground('monster', condition)).toBe(tint);
+      expect(namePlaqueBackground('npc', condition)).toBe(NAME_PLAQUE.npcBackground);
+    },
+  );
 
   it('gives each band its own tint', () => {
-    expect(new Set(Object.values(NAME_PLAQUE.conditionBackground)).size).toBe(4);
+    expect(new Set(Object.values(NAME_PLAQUE.conditionBackground)).size).toBe(5);
   });
 
   /**

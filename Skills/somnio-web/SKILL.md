@@ -76,7 +76,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `player()` | `{ x, z, facing, gait, name }` (`gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
 | `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
 | `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaMitte'` |
-| `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
+| `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'` (full health), `'grazed'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
 | `energy()` | the player's own pools as last sent: `{ healthCurrent, healthMax, balanceCurrent, balanceMax, spiritCurrent, spiritMax }` |
 | `lucidity()` | `{ role?, ranks: [{ teachingId, rank, practice }], study?, task? }` as last sent |
 | `winded()` | whether the player's balance gave out, which holds them to `walk` |
@@ -109,6 +109,8 @@ JS
 ```
 
 The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft` to walk (1 m/s); the gait rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
+
+The keys move in screen directions, which the camera's fixed 35° yaw turns on the ground. `KeyA` moves about (−0.82, +0.57) in world x/z and `KeyW` about (−0.57, −0.82). `KeyW`+`KeyA` heads about 10° north of west and `KeyS`+`KeyD` about 10° south of east. Read `player()` after each hold and correct.
 
 **Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
 
@@ -195,6 +197,7 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 ## Notes
 
 - Wrap any `eval --stdin` script that awaits in an async IIFE. `eval` runs a script body, not a module, so top-level `await` and top-level `return` both throw a `SyntaxError`.
+- An `eval` whose promise awaits longer than about 25 s never returns, and its `agent-browser` process hangs. Keep each eval's awaits to 12 s or less, and run several evals from the shell for a longer hold. A key held down stays held across evals.
 - Gate every wait on a predicate over `window.somnio`, not a sleep. Model prewarm makes first-load timing variable.
 - A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes without teleporting.
 - A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever key is held.

@@ -17,12 +17,14 @@ import type {
 } from '@somnio/protocol';
 import {
   COMBAT,
+  EDGE_TOLERANCE,
   FIRST_TEACHING,
   PRACTICE,
   SOMNIO_CONSTANTS,
   SPEECH,
   balancePace,
   balancePerSecond,
+  bodyBlocks,
   buildSpaceCollision,
   canStand,
   conditionOf,
@@ -34,6 +36,7 @@ import {
   heading,
   headingFromCardinal,
   headingFromVector,
+  headingRadians,
   isClear,
   isLegalMove,
   isTeachingId,
@@ -45,12 +48,15 @@ import {
   npcBodies,
   practiceNeeded,
   rankOf,
+  reachDistance,
   reaches,
+  rectContains,
   resolveDoor,
   roleOfService,
   sectorAt,
   sectorPointInSpace,
   sectorView,
+  spawnArea,
   speechClarity,
   strikeChance,
   swingAllowed,
@@ -74,6 +80,7 @@ import type {
   MonsterSpawn,
   NPCDialogState,
   Point,
+  Rect,
   Sector,
   SectorNPC,
   Space,
@@ -154,13 +161,22 @@ interface MonsterRuntime {
   kind: MonsterKind;
   sector: string;
   position: Point;
-  /** Turned toward the chase target while chasing. An idle monster keeps the facing it last had, south until its first chase. */
+  /** Toward where it means to go, even when its way is blocked, and toward whoever it strikes. Otherwise it keeps the facing it last had, south until it first turns. */
   facing: Heading;
   health: number;
   condition: Condition;
   strikeReadyAt: number;
   /** The spawn keeping it alive, which its end frees a slot of. */
   timer: MonsterSpawnTimer;
+  /** Where it spawned, which it walks back to when no one is left to chase. */
+  home: Point;
+  /** Its spawn's area in the space: it chases only dreamers standing inside, and never leaves it. */
+  ground: Rect;
+  /** The side it last turned to round something in its way. */
+  steerSide: 1 | -1;
+  /** The closest it has come to `home` on the current walk back, and when. */
+  homeBest: number;
+  homeBestAt: number;
   /** Set once it is driven off: it lingers until this moment and does nothing. */
   fadingUntil: number | undefined;
 }
@@ -249,6 +265,20 @@ const MOVING_WINDOW_MS = 250;
  * one forward, so no dreamer swings more often than the rhythm for it.
  */
 const SWING_ARRIVAL_SLACK_MS = 150;
+/**
+ * A nightmare walking home that has come no `HOME_PROGRESS_METRES` nearer for this long stops
+ * steering and tries only the straight step home, as when a body lies on its home or bodies wall
+ * it off.
+ */
+const HOME_PROGRESS_SECONDS = 1;
+const HOME_PROGRESS_METRES = 0.01;
+/**
+ * How far inside its stop distance a nightmare's step ends. A step ending exactly at reach can
+ * land a rounding error outside it, and the strides left would then be too small to close it.
+ */
+const STOP_SLACK = 0.01;
+/** The turns off the bearing to its goal, in degrees, that a nightmare tries on each side when the straight step is blocked. */
+const STEER_DEGREES = [30, 60, 90];
 
 export interface SpaceActorOptions {
   logger: Logger;
@@ -700,7 +730,8 @@ export class SpaceActor {
 
   private spawnMonster(timer: MonsterSpawnTimer): boolean {
     const kind = monsterKind(timer.definition.kind);
-    const position = this.randomFreePoint(timer.sector, timer.definition, kind.radius);
+    const { sector, definition } = timer;
+    const position = this.randomFreePoint(sector, definition, kind.radius);
     if (position === undefined) return false;
     const monster: MonsterRuntime = {
       id: `monster:${this.nextMonsterNumber}`,
@@ -713,6 +744,11 @@ export class SpaceActor {
       strikeReadyAt: 0,
       timer,
       fadingUntil: undefined,
+      home: position,
+      ground: spawnArea(sector, definition),
+      steerSide: 1,
+      homeBest: 0,
+      homeBestAt: this.now(),
     };
     this.nextMonsterNumber += 1;
     this.monsters.set(monster.id, monster);
@@ -720,12 +756,16 @@ export class SpaceActor {
     return true;
   }
 
-  /** Centimetre-grid sampling inside the spawn's area, validated against the world and live entities, up to the retry cap. */
+  /**
+   * Centimetre-grid sampling inside the spawn's area, validated against the world and live
+   * entities, up to the retry cap. Rounding can carry a size with a fraction of a centimetre past
+   * itself, so the offset is held to the size, which keeps a nightmare's home inside its ground.
+   */
   private randomFreePoint(sector: Sector, area: MonsterSpawn, radius: number): Point | undefined {
     for (let attempt = 0; attempt < PLACEMENT_ATTEMPTS; attempt += 1) {
       const candidate = sectorPointInSpace(sector, {
-        x: area.x + randomInRange(this.random, 0, Math.round(area.width * 100)) / 100,
-        z: area.z + randomInRange(this.random, 0, Math.round(area.depth * 100)) / 100,
+        x: area.x + Math.min(area.width, randomInRange(this.random, 0, Math.round(area.width * 100)) / 100),
+        z: area.z + Math.min(area.depth, randomInRange(this.random, 0, Math.round(area.depth * 100)) / 100),
       });
       if (isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius)) return candidate;
     }
@@ -819,9 +859,12 @@ export class SpaceActor {
   }
 
   /**
-   * Each monster orients toward and chases the nearest dreamer inside its aggro radius who stands
-   * and is past the grace after a raise, and strikes on its own rhythm once it has reached them;
-   * the others idle. One driven off does nothing more, and is gone once its fade is over.
+   * Each monster keeps to its home ground, the area of the spawn that made it. Of the dreamers who
+   * stand and are past the grace after a raise, it chases the nearest inside both that ground and
+   * its aggro radius. With none to chase it walks back home. On its own rhythm it strikes the
+   * dreamer it chases once it has reached them. Otherwise it strikes the nearest such dreamer in
+   * its reach, wherever they stand, which can be just outside the ground. At rest with no one in
+   * reach it heals slowly. One driven off does nothing more, and is gone once its fade is over.
    */
   private runMonsters(elapsedSeconds: number): void {
     const now = this.now();
@@ -832,41 +875,130 @@ export class SpaceActor {
         this.broadcast({ tag: 'leave', payload: { entityId: monster.id, leftGame: false } }, monster.sector);
         continue;
       }
-      let target: PlayerSlot | undefined;
-      let away = Number.POSITIVE_INFINITY;
-      for (const slot of this.players.values()) {
-        if (isFallen(slot) || now < slot.graceUntil) continue;
-        const candidate = distance(monster.position, slot.character.position);
-        if (candidate > monster.kind.aggroRadius || candidate >= away) continue;
-        target = slot;
-        away = candidate;
+      const { position, facing } = monster;
+      const body = (): Body => ({ ...monster.position, radius: monster.kind.radius });
+      const chased = this.nearestDreamer(
+        monster.position,
+        (slot, away) => away <= monster.kind.aggroRadius && rectContains(monster.ground, slot.character.position, EDGE_TOLERANCE),
+      );
+      let moved: boolean;
+      if (chased === undefined) {
+        moved = this.walkHome(monster, elapsedSeconds);
+      } else {
+        monster.homeBest = Number.POSITIVE_INFINITY;
+        monster.homeBestAt = now;
+        moved = this.stepToward(monster, chased.character.position, elapsedSeconds, reachDistance(monster.kind.radius), false);
       }
-      if (target === undefined) continue;
-      if (away > 0) this.chase(monster, target.character.position, away, elapsedSeconds);
-      if (now >= monster.strikeReadyAt && reaches(target.character.position, { ...monster.position, radius: monster.kind.radius }))
-        this.strike(monster, target);
+      const struck =
+        chased !== undefined && reaches(chased.character.position, body())
+          ? chased
+          : this.nearestDreamer(monster.position, (slot) => reaches(slot.character.position, body()));
+      if (struck !== undefined && now >= monster.strikeReadyAt) {
+        monster.facing = headingFromVector(struck.character.position.x - monster.position.x, struck.character.position.z - monster.position.z);
+        this.strike(monster, struck);
+      } else if (chased === undefined && struck === undefined && !moved) {
+        this.rest(monster, elapsedSeconds);
+      }
+      if (monster.position !== position || monster.facing !== facing) {
+        this.moved.set(monster.id, {
+          sector: monster.sector,
+          move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
+        });
+      }
     }
   }
 
-  private chase(monster: MonsterRuntime, toward: Point, away: number, elapsedSeconds: number): void {
-    const dx = toward.x - monster.position.x;
-    const dz = toward.z - monster.position.z;
-    monster.facing = headingFromVector(dx, dz);
-    const reach = monster.kind.metresPerSecond * elapsedSeconds;
-    const proposed = { x: monster.position.x + (dx * reach) / away, z: monster.position.z + (dz * reach) / away };
-    if (
-      isLegalMove(this.collision, monster.position, proposed, monster.kind.radius, this.npcBodies) &&
-      !this.overlapsEntity(proposed, monster.kind.radius, monster)
-    ) {
-      const previous = monster.sector;
-      monster.position = proposed;
-      monster.sector = sectorAt(this.space, proposed)!.name;
-      if (monster.sector !== previous) this.entityChangedSector(this.monsterEntity(monster), previous, monster.sector);
+  /** The nearest standing dreamer past the grace after a raise whom `qualifies` accepts at their distance from `from`. */
+  private nearestDreamer(from: Point, qualifies: (slot: PlayerSlot, away: number) => boolean): PlayerSlot | undefined {
+    const now = this.now();
+    let nearest: PlayerSlot | undefined;
+    let best = Number.POSITIVE_INFINITY;
+    for (const slot of this.players.values()) {
+      if (isFallen(slot) || now < slot.graceUntil) continue;
+      const away = distance(from, slot.character.position);
+      if (away >= best || !qualifies(slot, away)) continue;
+      nearest = slot;
+      best = away;
     }
-    this.moved.set(monster.id, {
-      sector: monster.sector,
-      move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
-    });
+    return nearest;
+  }
+
+  /**
+   * A step back toward home, which reports whether it moved. Once it has come no nearer for a
+   * while it rests, trying only the straight step home, and sets out again once that is free.
+   */
+  private walkHome(monster: MonsterRuntime, elapsedSeconds: number): boolean {
+    const now = this.now();
+    const resting = now - monster.homeBestAt >= HOME_PROGRESS_SECONDS * 1000;
+    const moved = this.stepToward(monster, monster.home, elapsedSeconds, 0, resting);
+    const away = distance(monster.position, monster.home);
+    if ((moved && resting) || away <= monster.homeBest - HOME_PROGRESS_METRES) {
+      monster.homeBest = away;
+      monster.homeBestAt = now;
+    }
+    return moved;
+  }
+
+  /**
+   * One step toward `goal`, ending no nearer than `stopWithin` less the stop slack. Reports whether
+   * it moved. When the straight step is blocked and `straightOnly` is unset, it tries headings turned
+   * off the bearing, every angle on the side it last turned to before any on the other. It keeps to
+   * its ground and steps round every body, the fallen too. A step away from a body it overlaps is
+   * never refused for that body. At its ground's edge or corner, though, every candidate can still
+   * close on it, and then it stays. It faces its bearing to `goal` even when blocked, except within
+   * `stopWithin` of it, where it does not turn.
+   */
+  private stepToward(monster: MonsterRuntime, goal: Point, elapsedSeconds: number, stopWithin: number, straightOnly: boolean): boolean {
+    const from = monster.position;
+    const away = distance(from, goal);
+    if (away <= stopWithin) return false;
+    const bearing = headingFromVector(goal.x - from.x, goal.z - from.z);
+    monster.facing = bearing;
+    const stride = Math.min(monster.kind.metresPerSecond * elapsedSeconds, away - Math.max(0, stopWithin - STOP_SLACK));
+    if (stride <= 0) return false;
+    const radius = monster.kind.radius;
+    const bodies = this.bodiesAround(monster);
+    const legal = (end: Point): boolean =>
+      rectContains(monster.ground, end, EDGE_TOLERANCE) &&
+      isLegalMove(this.collision, from, end, radius, this.npcBodies) &&
+      !bodies.some((body) => bodyBlocks(from, end, radius, body));
+    const straight = stride === away ? goal : { x: from.x + ((goal.x - from.x) * stride) / away, z: from.z + ((goal.z - from.z) * stride) / away };
+    let end: Point | undefined = legal(straight) ? straight : undefined;
+    if (end === undefined && !straightOnly) {
+      for (const side of [monster.steerSide, monster.steerSide === 1 ? -1 : 1] as const) {
+        for (const degrees of STEER_DEGREES) {
+          const radians = headingRadians(bearing + side * degrees);
+          const turned = { x: from.x + Math.sin(radians) * stride, z: from.z + Math.cos(radians) * stride };
+          if (!legal(turned)) continue;
+          end = turned;
+          monster.steerSide = side;
+          break;
+        }
+        if (end !== undefined) break;
+      }
+    }
+    if (end === undefined) return false;
+    const previous = monster.sector;
+    monster.position = end;
+    monster.sector = sectorAt(this.space, end)!.name;
+    if (monster.sector !== previous) this.entityChangedSector(this.monsterEntity(monster), previous, monster.sector);
+    return true;
+  }
+
+  /** Every body a nightmare steps round: each dreamer, fallen or standing, and every other nightmare not fading. */
+  private bodiesAround(monster: MonsterRuntime): Body[] {
+    const bodies: Body[] = [];
+    for (const slot of this.players.values()) bodies.push({ ...slot.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
+    for (const other of this.monsters.values()) {
+      if (other !== monster && other.fadingUntil === undefined) bodies.push({ ...other.position, radius: other.kind.radius });
+    }
+    return bodies;
+  }
+
+  private rest(monster: MonsterRuntime, elapsedSeconds: number): void {
+    if (monster.health >= monster.kind.health) return;
+    monster.health = Math.min(monster.kind.health, monster.health + monster.kind.restHealthPerSecond * elapsedSeconds);
+    this.setCondition(monster);
   }
 
   /**
@@ -1263,14 +1395,14 @@ export class SpaceActor {
     return { character: slot.character, inventory: slot.inventory };
   }
 
-  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster other than `excluding`. A fallen body still counts; a fading monster does not. */
-  private overlapsEntity(point: Point, radius: number, excluding?: MonsterRuntime): boolean {
+  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster. A fallen body still counts; a fading monster does not. */
+  private overlapsEntity(point: Point, radius: number): boolean {
     for (const slot of this.players.values()) {
       if (distance(point, slot.character.position) < radius + SOMNIO_CONSTANTS.playerRadius) return true;
     }
     if (this.npcBodies.some((npc) => distance(point, npc) < radius + npc.radius)) return true;
     for (const monster of this.monsters.values()) {
-      if (monster === excluding || monster.fadingUntil !== undefined) continue;
+      if (monster.fadingUntil !== undefined) continue;
       if (distance(point, monster.position) < radius + monster.kind.radius) return true;
     }
     return false;

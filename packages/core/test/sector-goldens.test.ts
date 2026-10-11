@@ -41,7 +41,7 @@ describe('the committed world', () => {
         size: { width: 10.24, depth: 10.24 },
         brightness: 75,
         floorMaterialId: 'stone-arena',
-        counts: { placements: 1, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, floorPatches: 0 },
+        counts: { placements: 1, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, floorPatches: 1 },
         doors: { exit: 'EdariaMitte/to-edariaarena' },
         npcs: {},
       },

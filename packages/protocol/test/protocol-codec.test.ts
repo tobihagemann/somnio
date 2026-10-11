@@ -343,7 +343,7 @@ describe('string literal sets', () => {
   });
 
   it('pins Condition', () => {
-    expect(CONDITIONS).toEqual(['hale', 'wounded', 'hurt', 'failing', 'fallen']);
+    expect(CONDITIONS).toEqual(['hale', 'grazed', 'wounded', 'hurt', 'failing', 'fallen']);
   });
 
   it('pins RaisingState', () => {
@@ -361,7 +361,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(7);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

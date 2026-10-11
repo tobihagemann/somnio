@@ -28,16 +28,26 @@
     }
   ],
   "floorMaterialId": "stone-arena",
+  "floorPatches": [
+    {
+      "depth": 10.24,
+      "floorMaterialId": "cobble-town",
+      "id": "refuge",
+      "width": 2.88,
+      "x": 7.36,
+      "z": 0
+    }
+  ],
   "kind": "interior",
   "monsterSpawns": [
     {
-      "depth": 4.8,
+      "depth": 7.68,
       "id": "spawn-1",
       "kind": "gespenst",
       "maxAlive": 3,
-      "width": 7.04,
-      "x": 1.6,
-      "z": 2.08
+      "width": 5.76,
+      "x": 0.64,
+      "z": 1.28
     }
   ],
   "placements": [

@@ -37,6 +37,7 @@ describe('literal sets', () => {
         aggroRadius: 3.84,
         respawnSeconds: 60,
         health: 60,
+        restHealthPerSecond: 1,
         strikeSeconds: 1.5,
         hitChance: 0.6,
         damage: 9,
