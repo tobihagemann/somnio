@@ -5,9 +5,9 @@ import { assertNever } from '@somnio/protocol';
 import type { RegisterResult } from '@somnio/protocol';
 import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/transport';
 import type { GameplaySocketFactory } from '@/transport';
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import { MAX_TICK_DELTA } from '@/scene/animation';
-import { WorldScene } from '@/scene/worldScene';
+import { WorldScene, createWorldRenderer } from '@/scene/worldScene';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
@@ -418,14 +418,7 @@ export class AppShell {
   private startRenderer(): void {
     const scene = this.scene;
     if (scene === undefined) return;
-    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    // three.js does not shadow at all unless asked. Without this every prop and character sits on
-    // the floor with nothing under it and reads as floating. PCF-soft gives a soft edge; the hard
-    // default reads as a cut-out.
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer = renderer;
+    this.renderer = createWorldRenderer(this.canvas);
     this.handleResize();
     // First load has no bundled assets to fall back on, so the loading state is the difference
     // between "loading" and "apparently broken".

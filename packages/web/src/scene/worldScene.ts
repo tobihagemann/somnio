@@ -86,7 +86,7 @@ interface SpeechBubble {
   size: THREE.Vector2;
   /** The side its art points its tail to, which is redrawn only when it changes. */
   tail: BubbleTail;
-  remaining: number;
+  expiresAtMs: number;
 }
 
 /** Where a bubble goes this frame: over a head, by the door a voice comes through, or at the edge of the screen toward the voice. */
@@ -103,7 +103,7 @@ interface BubblePlacement {
 /** A ring on the ground around a fallen body, drawn further round as the raise goes on. */
 interface RaiseRing {
   mesh: THREE.Mesh;
-  elapsed: number;
+  startedAtMs: number;
   seconds: number;
 }
 
@@ -142,6 +142,19 @@ const ORIGIN = new THREE.Vector3();
  * — a single sweep after load would miss every clone the prewarm has not produced yet, and those
  * are exactly the props whose missing shadows read as floating.
  */
+/**
+ * The renderer a world scene draws through. three.js does not shadow at all unless asked, and
+ * without shadows every prop and character reads as floating. PCF, three's own default, softens
+ * each edge over a disc of `shadow.radius` texels; the basic filter's hard edge reads as a cut-out.
+ */
+export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  return renderer;
+}
+
 function enableShadows(root: THREE.Object3D): void {
   root.traverse((object) => {
     if (!(object as THREE.Mesh).isMesh) return;
@@ -180,9 +193,9 @@ export class WorldScene implements WorldRenderSurface {
   private readonly entityStates = new Map<string, EntityRenderState>();
   private readonly bubbles = new Map<string, SpeechBubble>();
   /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
-  private carriedBubble: Pick<SpeechBubble, 'request' | 'remaining'> | undefined;
+  private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
   /** The short-lived word over an entity a blow missed. */
-  private readonly misses = new Map<string, { node: THREE.Object3D; remaining: number }>();
+  private readonly misses = new Map<string, { node: THREE.Object3D; expiresAtMs: number }>();
   private readonly raiseRings = new Map<string, RaiseRing>();
   /** The ring round the entity the player tends. */
   private selection: { id: string; mesh: THREE.Mesh } | undefined;
@@ -276,7 +289,7 @@ export class WorldScene implements WorldRenderSurface {
 
   private startSpace(hold: boolean): void {
     const own = this.cameraFollowId === undefined ? undefined : this.bubbles.get(this.cameraFollowId);
-    this.carriedBubble = hold && own !== undefined ? { request: own.request, remaining: own.remaining } : undefined;
+    this.carriedBubble = hold && own !== undefined ? { request: own.request, expiresAtMs: own.expiresAtMs } : undefined;
     disposeSubtree(this.previousRoot);
     if (hold) {
       this.previousRoot = this.spaceRoot;
@@ -464,7 +477,7 @@ export class WorldScene implements WorldRenderSurface {
     const node = missQuad();
     node.position.set(0, target.headHeight + BUBBLE_HEAD_GAP, 0);
     target.node.add(node);
-    this.misses.set(targetId, { node, remaining: MISS_SECONDS });
+    this.misses.set(targetId, { node, expiresAtMs: this.now() + MISS_SECONDS * 1000 });
   }
 
   showRaising(targetId: string, seconds: number | undefined): void {
@@ -476,7 +489,7 @@ export class WorldScene implements WorldRenderSurface {
     const mesh = groundRingMesh(state.radius * RAISE_RING_RADII, RAISE_RING_COLOR);
     mesh.geometry.setDrawRange(0, 0);
     state.node.add(mesh);
-    this.raiseRings.set(targetId, { mesh, elapsed: 0, seconds });
+    this.raiseRings.set(targetId, { mesh, startedAtMs: this.now(), seconds });
   }
 
   showSelection(entityId: string | undefined): void {
@@ -528,7 +541,7 @@ export class WorldScene implements WorldRenderSurface {
     this.bubbles.delete(request.entityId);
     if (request.lines.length === 0) return false;
     const placement = this.bubblePlacement(request);
-    const bubble: SpeechBubble = { request, remaining: request.lifetimeMs / 1000, ...speechBubbleQuad(request, placement.tail) };
+    const bubble: SpeechBubble = { request, expiresAtMs: this.now() + request.lifetimeMs, ...speechBubbleQuad(request, placement.tail) };
     this.bubbles.set(request.entityId, bubble);
     this.placeBubble(bubble, placement);
     return placement.atEdge;
@@ -703,7 +716,7 @@ export class WorldScene implements WorldRenderSurface {
     const carried = this.carriedBubble;
     if (carried?.request.entityId !== player.id) return;
     this.carriedBubble = undefined;
-    this.showSpeechBubble({ ...carried.request, source: player.position, lifetimeMs: carried.remaining * 1000 });
+    this.showSpeechBubble({ ...carried.request, source: player.position, lifetimeMs: carried.expiresAtMs - this.now() });
   }
 
   private groundHeight(position: Point): number {
@@ -741,19 +754,20 @@ export class WorldScene implements WorldRenderSurface {
     }
 
     for (const bubble of this.bubbles.values()) this.placeBubble(bubble, this.bubblePlacement(bubble.request));
+    // Overlays run on wall time, not on the clamped frame delta: a hidden tab gets no frames, and a
+    // line said before it was hidden must not hang on after it returns.
+    const nowMs = this.now();
     for (const overlays of [this.bubbles, this.misses]) {
       for (const [id, overlay] of overlays) {
-        overlay.remaining -= dt;
-        if (overlay.remaining <= 0) {
-          disposeSubtree(overlay.node);
-          overlays.delete(id);
-        }
+        if (nowMs < overlay.expiresAtMs) continue;
+        disposeSubtree(overlay.node);
+        overlays.delete(id);
       }
     }
 
     for (const ring of this.raiseRings.values()) {
-      ring.elapsed = Math.min(ring.elapsed + dt, ring.seconds);
-      ring.mesh.geometry.setDrawRange(0, Math.floor((ring.elapsed / ring.seconds) * RING_SEGMENTS) * 6);
+      const progress = Math.min((nowMs - ring.startedAtMs) / (ring.seconds * 1000), 1);
+      ring.mesh.geometry.setDrawRange(0, Math.floor(progress * RING_SEGMENTS) * 6);
     }
   }
 

@@ -141,6 +141,19 @@ describe('remote moves', () => {
     expect(rig.controller.entities.get('other')?.position).toEqual({ x: 2.5, z: 3 });
   });
 
+  it('starts a new glide from where the last one reached when no tick drew it, as in a hidden tab', () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity(), clientEntity({ id: 'other', kind: 'peer', position: { x: 2, z: 2 } })]);
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: 'other', x: 3, z: 2, facing: 0, gait: 'jog' }] } });
+
+    rig.now = 1000;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: 'other', x: 6, z: 2, facing: 0, gait: 'jog' }] } });
+    rig.session.runTick(1000 + (REMOTE_INTERPOLATION_SECONDS * 1000) / 2);
+
+    // Halfway from (3, 2), where the first glide ended. From (2, 2), the last drawn spot, it would be (4, 2).
+    expect(rig.controller.entities.get('other')?.position).toEqual({ x: 4.5, z: 2 });
+  });
+
   it('drops the glide when the entity is placed again', () => {
     const rig = makeRig();
     attach(rig, [clientEntity(), clientEntity({ id: 'other', kind: 'peer', position: { x: 2, z: 2 } })]);

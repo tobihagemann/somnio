@@ -3,7 +3,7 @@ import { MONSTER_KIND_IDS, bundledModelRegistry, sectorOrigin } from '@somnio/co
 import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
-import { WorldScene } from '@/scene/worldScene';
+import { WorldScene, createWorldRenderer } from '@/scene/worldScene';
 import { element, floating } from '@/ui/dom';
 import { AuthoringOverlay, overlayLabels } from './authoringOverlay';
 import type { AuthoringFacingHandle, AuthoringHandleSet } from './authoringOverlay';
@@ -725,10 +725,7 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   private startRenderer(): void {
-    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const renderer = createWorldRenderer(this.canvas);
     this.renderer = renderer;
     this.handleResize();
     void this.scene.prewarm();

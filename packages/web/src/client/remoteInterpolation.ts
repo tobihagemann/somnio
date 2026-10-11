@@ -20,9 +20,13 @@ interface Motion {
 export class RemoteInterpolation {
   private readonly motions = new Map<string, Motion>();
 
-  /** Starts a glide from where the entity is drawn now to a newly reported position. */
-  retarget(id: string, from: Point, to: Point, nowMs: number): void {
-    this.motions.set(id, { from, to, startMs: nowMs });
+  /**
+   * Starts a glide to a newly reported position from where the current one has reached, or from
+   * `placedAt` when there is none. Not from where the entity was last drawn: a hidden tab draws
+   * nothing, and every report it receives would otherwise glide from where it was hidden.
+   */
+  retarget(id: string, placedAt: Point, to: Point, nowMs: number): void {
+    this.motions.set(id, { from: this.positionAt(id, nowMs) ?? placedAt, to, startMs: nowMs });
   }
 
   /** `undefined` for an entity that has not moved since it was placed. */

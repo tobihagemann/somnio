@@ -164,6 +164,17 @@ A client holds the entities in its own sector and the sectors touching it, so tw
 
 The client's own position is predicted, not authoritative. The server sends a `correction` for self when it rejects a move and when the player falls. An unmodified client has a move rejected only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
 
+**Hide the tab.** Open the session `--headed` from its first command. There, a second tab in front fires `visibilitychange` on the game page and stops its `requestAnimationFrame`; switching back makes it visible again. Tab ids are the `t<n>` ids `tab list` prints, and positional integers are refused. An `eval` sent while the blank tab is in front runs in that tab, so switch back before reading `window.somnio`.
+
+```bash
+agent-browser --session a --headed open 'http://localhost:17669/'
+# log in, then:
+agent-browser --session a tab new about:blank   # the game tab is now hidden
+agent-browser --session a tab t1                # t1 in a fresh session; otherwise the game's id from `tab list`
+```
+
+Hiding clears held keys, so dispatch a held key again after switching back. Peers, speech bubbles, and raise rings follow the clock, so on return they show where things stand now. To see what the first frames back draw, install a `visibilitychange` listener before hiding that, on `visible`, records a sample (say a peer's `entities()` position) on each `requestAnimationFrame` for a few hundred milliseconds, and read the samples after switching back.
+
 **Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head.
 
 - **Pinned at the edge.** Put both outdoors, further apart than the screen shows (12 m is enough at the default zoom) and within a yell's 80 m. The bubble pins where the line toward the speaker leaves the screen, and the listener's chat line names a compass direction.
@@ -199,7 +210,7 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - Wrap any `eval --stdin` script that awaits in an async IIFE. `eval` runs a script body, not a module, so top-level `await` and top-level `return` both throw a `SyntaxError`.
 - An `eval` whose promise awaits longer than about 25 s never returns, and its `agent-browser` process hangs. Keep each eval's awaits to 12 s or less, and run several evals from the shell for a longer hold. A key held down stays held across evals.
 - Gate every wait on a predicate over `window.somnio`, not a sleep. Model prewarm makes first-load timing variable.
-- A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes without teleporting.
+- A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes the player's walk without teleporting.
 - A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever key is held.
 - Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
 - Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. Test a panel while balance is recovering (`energy().balanceCurrent` rising after a run), when `energy` frames arrive several times a second.

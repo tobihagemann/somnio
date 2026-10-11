@@ -1115,9 +1115,12 @@ describe('blows, falls, and raises', () => {
   afterEach(() => vi.restoreAllMocks());
 
   /** A scene whose character model carries `names` as clips, and the action of every clip started on it, in order. */
-  function fightingScene(names = ['Idle', 'Interact', 'Hit_A', 'Death_A']): { scene: WorldScene; started: () => string[]; last: () => THREE.AnimationAction } {
+  function fightingScene(
+    names = ['Idle', 'Interact', 'Hit_A', 'Death_A'],
+    now?: () => number,
+  ): { scene: WorldScene; started: () => string[]; last: () => THREE.AnimationAction } {
     const clips = names.map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, []));
-    const scene = makeScene({ ...emptyAssets(), character: () => new THREE.Object3D(), clipsFor: () => clips });
+    const scene = makeScene({ ...emptyAssets(), character: () => new THREE.Object3D(), clipsFor: () => clips }, now);
     const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
     const actions = (): THREE.AnimationAction[] => play.mock.contexts as THREE.AnimationAction[];
     return { scene, started: () => actions().map((action) => action.getClip().name), last: () => actions().at(-1)! };
@@ -1157,7 +1160,8 @@ describe('blows, falls, and raises', () => {
   });
 
   it('makes the one hit flinch, and marks a miss over the one missed for a moment', () => {
-    const { scene, started } = fightingScene();
+    let nowMs = 0;
+    const { scene, started } = fightingScene(undefined, () => nowMs);
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
     scene.tick(0.016);
@@ -1172,7 +1176,8 @@ describe('blows, falls, and raises', () => {
     scene.showBlow('self', 'monster:1', false);
     expect(started().at(-1)).toBe('Interact');
     expect(ghost.children).toHaveLength(before + 1);
-    run(scene, 1);
+    nowMs = 1000;
+    scene.tick(0.016);
     expect(ghost.children).toHaveLength(before);
   });
 
@@ -1224,8 +1229,9 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle']);
   });
 
-  it('draws a ring round a body being raised further round as the raise goes on, and frees it when the raise ends', () => {
-    const scene = makeScene();
+  it('draws a ring round a body being raised as far round as the raise has gone, however few frames were drawn, and frees it when the raise ends', () => {
+    let nowMs = 0;
+    const scene = makeScene(emptyAssets(), () => nowMs);
     scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
 
     scene.showRaising('peer', 6);
@@ -1233,9 +1239,11 @@ describe('blows, falls, and raises', () => {
     const whole = ring!.geometry.getIndex()!.count;
     expect(ring!.geometry.drawRange.count).toBe(0);
 
-    run(scene, 3);
-    expect(ring!.geometry.drawRange.count).toBeCloseTo(whole / 2, -1);
-    run(scene, 4);
+    nowMs = 3000;
+    scene.tick(0.016);
+    expect(ring!.geometry.drawRange.count).toBe(whole / 2);
+    nowMs = 7000;
+    scene.tick(0.016);
     expect(ring!.geometry.drawRange.count).toBe(whole);
 
     const dispose = vi.spyOn(ring!.geometry, 'dispose');
@@ -1681,8 +1689,8 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
     return found;
   }
 
-  function sceneWithEntity(): WorldScene {
-    const scene = makeScene();
+  function sceneWithEntity(now?: () => number): WorldScene {
+    const scene = makeScene(emptyAssets(), now);
     scene.placeEntity(player());
     return scene;
   }
@@ -1712,17 +1720,33 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
   });
 
   it('disposes a bubble when its lifetime runs out', () => {
-    const scene = sceneWithEntity();
+    let nowMs = 0;
+    const scene = sceneWithEntity(() => nowMs);
     scene.showSpeechBubble(said('self', ['fleeting'], 1000));
     const mesh = bubbleMeshes(scene)[0]!;
     const mapDispose = vi.spyOn((mesh.material as THREE.MeshBasicMaterial).map!, 'dispose');
 
-    // Driven in whole frames rather than one long one: `tick` clamps each delta to `MAX_TICK_DELTA`,
-    // so a single 1.5 s call advances the countdown by 0.1 s and the bubble would still be up.
-    for (let elapsed = 0; elapsed <= 1; elapsed += MAX_TICK_DELTA) scene.tick(MAX_TICK_DELTA);
+    nowMs = 1000;
+    scene.tick(MAX_TICK_DELTA);
 
     expect(bubbleMeshes(scene)).toHaveLength(0);
     expect(mapDispose).toHaveBeenCalled();
+  });
+
+  it('runs a bubble out on the clock however few frames were drawn, counting from when it was said', () => {
+    let nowMs = 0;
+    const scene = sceneWithEntity(() => nowMs);
+    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
+    scene.showSpeechBubble(said('self', ['before the tab was hidden'], 3000));
+    scene.tick(MAX_TICK_DELTA);
+
+    nowMs = 60_000;
+    scene.showSpeechBubble(said('peer', ['while it was hidden'], 3000));
+    nowMs = 61_000;
+    scene.tick(0);
+
+    expect(scene._bubbleNodeFor('self')).toBeUndefined();
+    expect(scene._bubbleNodeFor('peer')).toBeDefined();
   });
 
   it('disposes an outstanding bubble when its entity leaves', () => {
@@ -1755,8 +1779,8 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
   }
 
   /** The player at (10, 10), and a peer `x` metres along. */
-  function sceneWithPeer(x: number, aspect = 1): WorldScene {
-    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect);
+  function sceneWithPeer(x: number, aspect = 1, now?: () => number): WorldScene {
+    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect, now);
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x, z: 10 } }));
     return scene;
@@ -1950,9 +1974,11 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
   });
 
   it("carries the player's own bubble through a door for the rest of its time, and no one else's", () => {
-    const scene = sceneWithPeer(11);
+    let nowMs = 0;
+    const scene = sceneWithPeer(11, 1, () => nowMs);
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
     scene.showSpeechBubble(said('peer', ['Tschüss'], 3000));
+    nowMs = 1000;
     scene.tick(MAX_TICK_DELTA);
 
     scene.enterSpace(world('EdariaInn'));
@@ -1962,7 +1988,11 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
     const node = scene._bubbleNodeFor('self')!;
     expect(node.parent?.position).toMatchObject({ x: 2, z: 2 });
     expect(scene._bubbleNodeFor('peer')).toBeUndefined();
-    for (let elapsed = MAX_TICK_DELTA; elapsed < 3 - MAX_TICK_DELTA / 2; elapsed += MAX_TICK_DELTA) scene.tick(MAX_TICK_DELTA);
+    nowMs = 2999;
+    scene.tick(MAX_TICK_DELTA);
+    expect(scene._bubbleNodeFor('self')).toBe(node);
+    nowMs = 3000;
+    scene.tick(MAX_TICK_DELTA);
     expect(scene._bubbleNodeFor('self')).toBeUndefined();
   });
 
