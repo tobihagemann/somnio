@@ -8,12 +8,14 @@ import type { GameplaySocketFactory } from '@/transport';
 import type * as THREE from 'three';
 import { MAX_TICK_DELTA } from '@/scene/animation';
 import { WorldScene, createWorldRenderer } from '@/scene/worldScene';
+import { paintBubbles } from '@/scene/bubbleLayer';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
 import { GamePanels } from './panels';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
+import { screenOccluders, viewportPoint } from './occluders';
 import { element } from './dom';
 
 /**
@@ -98,6 +100,12 @@ export class AppShell {
 
   private readonly container: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
+  /** The speech bubbles, painted over the world and under the panels. */
+  private readonly bubbleCanvas: HTMLCanvasElement;
+  private bubbleContext: CanvasRenderingContext2D | null = null;
+  /** Where each bubble is painted opaque before it is laid on the bubble layer at its opacity. */
+  private readonly bubbleScratch: HTMLCanvasElement;
+  private bubbleScratchContext: CanvasRenderingContext2D | null = null;
   private readonly transport: GameplayTransport;
   private readonly keyboard: KeyboardSampler;
   private renderer: THREE.WebGLRenderer | undefined;
@@ -115,6 +123,8 @@ export class AppShell {
     };
 
     this.canvas = element('canvas', { attributes: { id: 'somnio-canvas' } });
+    this.bubbleCanvas = element('canvas', { attributes: { id: 'somnio-bubbles' } });
+    this.bubbleScratch = element('canvas');
     this.transport = new GameplayTransport(options.socketFactory ?? browserSocketFactory);
     this.keyboard = new KeyboardSampler();
 
@@ -194,7 +204,15 @@ export class AppShell {
 
     this.notices = new BlockingNotices();
 
-    this.container.append(this.canvas, this.panels.root, this.servicePanel.root, this.fallenNotice.root, this.overlays.root, this.notices.root);
+    this.container.append(
+      this.canvas,
+      this.bubbleCanvas,
+      this.panels.root,
+      this.servicePanel.root,
+      this.fallenNotice.root,
+      this.overlays.root,
+      this.notices.root,
+    );
     this.controller.onChatLinesChanged = () => this.render();
     this.controller.onPlayersChanged = () => this.render();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
@@ -274,10 +292,12 @@ export class AppShell {
 
     this.canvas.addEventListener('pointermove', (event) => {
       this.updateMouseFacing(event);
+      this.scene?.setPointer(this.viewportPointOf(event));
       // A pointer over what a click would ask or tend; a swing needs no target and no sign.
       const action = this.session.clickAction(this.entityUnder(event));
       this.canvas.style.cursor = action === 'talk' || action === 'tend' ? 'pointer' : '';
     });
+    this.canvas.addEventListener('pointerleave', () => this.scene?.setPointer(undefined));
 
     // A wheel event over a panel scrolls the panel; only the bare play field zooms.
     this.canvas.addEventListener(
@@ -326,11 +346,16 @@ export class AppShell {
     this.session.updateMouseFacing({ x: event.clientX - rect.left, y: event.clientY - rect.top }, { x: rect.width / 2, y: rect.height / 2 });
   }
 
+  /** Where the pointer is over the canvas, in normalized device coordinates. */
+  private viewportPointOf(event: PointerEvent): { x: number; y: number } | undefined {
+    return viewportPoint(this.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+  }
+
   /** The entity drawn under the pointer, if any. */
   private entityUnder(event: PointerEvent): string | undefined {
-    const rect = this.canvas.getBoundingClientRect();
-    if (this.scene === undefined || rect.width === 0 || rect.height === 0) return undefined;
-    return this.scene.entityAt(((event.clientX - rect.left) / rect.width) * 2 - 1, 1 - ((event.clientY - rect.top) / rect.height) * 2);
+    const point = this.viewportPointOf(event);
+    if (this.scene === undefined || point === undefined) return undefined;
+    return this.scene.entityAt(point.x, point.y);
   }
 
   /**
@@ -410,6 +435,8 @@ export class AppShell {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
     this.renderer?.setSize(width, height, false);
+    this.bubbleCanvas.width = Math.round(width * window.devicePixelRatio);
+    this.bubbleCanvas.height = Math.round(height * window.devicePixelRatio);
     // Holds the vertical world extent constant and lets aspect drive width, so a bigger window
     // magnifies rather than reveals. This is the MMO-fairness contract, not a rendering detail.
     this.scene?.setViewportAspect(this.aspect());
@@ -419,6 +446,8 @@ export class AppShell {
     const scene = this.scene;
     if (scene === undefined) return;
     this.renderer = createWorldRenderer(this.canvas);
+    this.bubbleContext = this.bubbleCanvas.getContext('2d');
+    this.bubbleScratchContext = this.bubbleScratch.getContext('2d');
     this.handleResize();
     // First load has no bundled assets to fall back on, so the loading state is the difference
     // between "loading" and "apparently broken".
@@ -449,9 +478,12 @@ export class AppShell {
     if (this.controller.connectionState !== 'disconnected') this.session.runTick(timestamp);
     const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
     this.lastFrameMs = timestamp;
+    const covering = [...this.panels.occluders, this.servicePanel.root, this.fallenNotice.root].map((panel) => panel.getBoundingClientRect());
+    this.scene?.setScreenOccluders(screenOccluders(this.canvas.getBoundingClientRect(), covering));
     this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
     if (this.scene !== undefined && this.renderer !== undefined) {
       this.renderer.render(this.scene.scene, this.scene.camera);
+      paintBubbles(this.bubbleContext, this.bubbleScratchContext, this.scene.placedBubbles(), this.bubbleCanvas);
     }
     // Deliberately not re-rendering the DOM here. The panels rebuild their subtrees wholesale, and
     // doing that 60 times a second would drop a text selection in the scrollback on every frame —

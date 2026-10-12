@@ -2,7 +2,7 @@ import type { Heading, Point } from '@somnio/core';
 import type { Condition, Gait, SectorView, SpeechKind } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
-/** A line to show as a bubble: over its speaker's head when there is room for it there, and placed toward the voice otherwise. */
+/** A line to show as a bubble: round its speaker's head while that is drawn on screen, and placed toward the voice otherwise. */
 export interface SpeechBubbleRequest {
   /** The speaker, whose body the bubble follows once it is drawn. A second line from them replaces the first. */
   entityId: string;
@@ -45,7 +45,7 @@ export interface WorldRenderSurface {
   showSelection(entityId: string | undefined): void;
   /** The world clock at this moment; the renderer runs it forward by itself. */
   setClock(worldSeconds: number): void;
-  /** Whether the bubble was pinned at the screen's edge rather than hung over a head. */
+  /** Whether the bubble was pinned at the screen's edge rather than hung round a head or by the door its voice comes through. */
   showSpeechBubble(request: SpeechBubbleRequest): boolean;
   removeEntity(entityId: string): void;
   showSplash(): void;

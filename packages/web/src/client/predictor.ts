@@ -209,6 +209,7 @@ export class GameplayPredictor {
     // Assigning the gate is what clears held keys when it closes: the sink drops its bitset on
     // deactivation, so an overlay opening mid-hold cannot leave the character walking.
     this.input.setGameplayActive(this.gateIsOpen());
+    // Before the local player steps, so that step collides with what this frame draws.
     this.drawRemoteEntities(nowMs);
     if (this.session.isChatInputFocused) return;
     const selfId = this.session.selfId;
@@ -256,8 +257,8 @@ export class GameplayPredictor {
     if (!this.awaitingDoor) this.reportIfChanged(selfEntity, nowMs);
   }
 
-  /** Samples every gliding remote entity once a tick, before the local player steps, so that step collides with what this frame draws. */
-  private drawRemoteEntities(nowMs: number): void {
+  /** Moves every gliding remote entity to where it stands at `nowMs`, in the session's entities and on the render surface. */
+  drawRemoteEntities(nowMs: number): void {
     for (const entity of this.session.entities.values()) {
       const position = this.interpolation.positionAt(entity.id, nowMs);
       if (position === undefined) continue;

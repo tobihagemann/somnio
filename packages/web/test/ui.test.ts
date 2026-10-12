@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
 import { catalogTables, setLocale } from '@/i18n';
 import { mouseFacingHeading } from '@/client';
@@ -135,6 +135,15 @@ describe('the four floating panels', () => {
     expect(panels.root.querySelector('.trailing-list--players')).not.toBeNull();
     expect(panels.root.querySelector('.trailing-list--items')).not.toBeNull();
     expect(panels.root.querySelectorAll('.hud-bar__track')).toHaveLength(3);
+  });
+
+  /** Speech bubbles keep clear of what this lists; a panel left out would cover them. */
+  it('lists every panel body and toggle as covering the play field', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+
+    const shown = [...panels.root.querySelectorAll('.floating')].flatMap((column) => [...column.children]);
+    expect(shown).toHaveLength(7);
+    expect(new Set(panels.occluders)).toEqual(new Set(shown));
   });
 
   /** A bar is a bare track: its name is carried by `title` and `aria-label`, never drawn. */
@@ -1502,6 +1511,17 @@ describe('the play field and the panels through the shell', () => {
     document.body.dispatchEvent(new PointerEvent('pointermove', { buttons: 2, pointerId: 1, bubbles: true }));
     p.shell.session.runTick(pressed + 2200);
     expect(p.swings()).toBe(2);
+  });
+
+  it('tells the scene where the pointer rests on the play field, and when it leaves', () => {
+    const p = playing();
+    const pointer = vi.spyOn(p.shell.scene!, 'setPointer');
+    vi.spyOn(p.canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 100));
+
+    p.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 150, clientY: 25 }));
+    p.canvas.dispatchEvent(new PointerEvent('pointerleave'));
+
+    expect(pointer.mock.calls).toEqual([[{ x: 0.5, y: 0.5 }], [undefined]]);
   });
 
   it('lets go of the dreamer tended on Escape, and opens the menu only on the next', () => {

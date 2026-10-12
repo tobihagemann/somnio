@@ -17,14 +17,18 @@ import {
   sectorRect,
 } from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Rect, Size, SpaceCollision } from '@somnio/core';
-import type { Condition, Gait, Placement, SectorView, SpeechKind } from '@somnio/protocol';
+import { CONDITIONS } from '@somnio/protocol';
+import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
-import { NAME_PLAQUE, namePlaqueBackground, renderNamePlaque, renderSpeechBubble, speechBubbleFrameSize } from './overlayArt';
-import type { BubbleTail, RasterArt } from './overlayArt';
+import { layoutBubbles, tailTip } from './bubbleLayout';
+import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
+import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
+import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
+import type { RasterArt } from './overlayArt';
 import {
   CHARACTER_SCALE,
   FLOOR_PATCH_LIFT,
@@ -65,13 +69,20 @@ interface EntityRenderState {
   pendingMotion: boolean;
   isPlaceholder: boolean;
   /**
-   * How far above its node the model reaches, measured once when the model is put in, standing in
+   * How far above its node the model reaches standing, measured once when the model is put in, in
    * its idle pose. A skinned mesh keeps the bounds of the pose it was first measured in, so a first
-   * measure of a body that lies fallen would come back low and stay low.
+   * measure of a body that lies fallen would come back low and stay low. `headPoint` is what follows
+   * the pose.
    */
   headHeight: number;
-  /** Label under the feet; created once on first placement and rebuilt on a kind, name, or condition change. */
+  /** The model's head bone, which a fallen body's head is followed down by; `undefined` for a model without one. */
+  headBone: THREE.Object3D | undefined;
+  /** How far above the node the head bone stands in the idle pose; always positive where `headBone` is set. */
+  headBoneRest: number;
+  /** Label under the feet. Created on first placement and rebuilt on a kind, name, or condition change, and when the pointer comes over a hale nightmare or leaves it. */
   namePlaque: THREE.Object3D | undefined;
+  /** The plaque's own mesh, which carries its draw order. */
+  namePlaquePlate: THREE.Mesh | undefined;
   pose: AnimationPose | undefined;
   condition: Condition;
   /** A clip playing once over the looping pose; `held` keeps its last frame until the entity stands again. */
@@ -81,23 +92,26 @@ interface EntityRenderState {
 /** A speech bubble, with what it was asked to show, so every frame can place it again. */
 interface SpeechBubble {
   request: SpeechBubbleRequest;
-  node: THREE.Object3D;
-  plate: THREE.Mesh;
-  size: THREE.Vector2;
-  /** The side its art points its tail to, which is redrawn only when it changes. */
-  tail: BubbleTail;
   expiresAtMs: number;
+  /** Its frame, a yell's teeth included, in metres on the screen. */
+  size: ScreenSize;
+  mode: BubbleMode | undefined;
+  /** The offset from its speaker's head it held last tick; `undefined` while it hung from no head. */
+  spot: ScreenPoint | undefined;
+  /** What it hung from last tick, and whether that was its speaker's head; `undefined` while it hung from nothing. */
+  anchor: { at: ScreenPoint; head: boolean } | undefined;
+  /** Where its middle is drawn, gliding after where the layout puts it; `undefined` before its first frame. */
+  drawn: ScreenPoint | undefined;
 }
 
-/** Where a bubble goes this frame: over a head, by the door a voice comes through, or at the edge of the screen toward the voice. */
-interface BubblePlacement {
-  /** Pinned at the screen's edge toward the voice, because there is no room for the bubble where the voice is drawn. */
-  atEdge: boolean;
-  tail: BubbleTail;
-  parent: THREE.Object3D;
-  position: THREE.Vector3;
-  /** Centred on its point, rather than hung from it by its tail tip. */
-  centred: boolean;
+/** What the layout is asked about one bubble, and what its tail points at once it is placed. */
+interface BubbleEntry {
+  bubble: SpeechBubble;
+  request: BubbleRequest;
+  /** Whether its anchor is its speaker's head. */
+  fromHead: boolean;
+  /** What a fixed bubble's tail points toward: the wall the voice comes through. */
+  wall: ScreenPoint | undefined;
 }
 
 /** A ring on the ground around a fallen body, drawn further round as the raise goes on. */
@@ -192,6 +206,14 @@ export class WorldScene implements WorldRenderSurface {
   private readonly sectors = new Map<string, DrawnSector>();
   private readonly entityStates = new Map<string, EntityRenderState>();
   private readonly bubbles = new Map<string, SpeechBubble>();
+  /** The bubbles as last laid out. */
+  private placed: PlacedBubble[] = [];
+  /** The outgoing space's bubbles, kept on screen with it during a held swap. */
+  private heldBubbles: PlacedBubbles | undefined;
+  private screenOccluders: readonly ScreenRect[] = [];
+  private pointer: { x: number; y: number } | undefined;
+  /** The entity drawn under the pointer, whose plaque shows through the world. */
+  private hovered: string | undefined;
   /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
   private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
   /** The short-lived word over an entity a blow missed. */
@@ -290,6 +312,7 @@ export class WorldScene implements WorldRenderSurface {
   private startSpace(hold: boolean): void {
     const own = this.cameraFollowId === undefined ? undefined : this.bubbles.get(this.cameraFollowId);
     this.carriedBubble = hold && own !== undefined ? { request: own.request, expiresAtMs: own.expiresAtMs } : undefined;
+    this.heldBubbles = hold ? this.placedBubbles() : undefined;
     disposeSubtree(this.previousRoot);
     if (hold) {
       this.previousRoot = this.spaceRoot;
@@ -301,6 +324,8 @@ export class WorldScene implements WorldRenderSurface {
     this.sectors.clear();
     this.entityStates.clear();
     this.bubbles.clear();
+    this.placed = [];
+    this.hovered = undefined;
     this.misses.clear();
     this.raiseRings.clear();
     this.selection = undefined;
@@ -318,6 +343,7 @@ export class WorldScene implements WorldRenderSurface {
     if (!this.pendingPlayerReveal) return;
     disposeSubtree(this.previousRoot);
     this.previousRoot = undefined;
+    this.heldBubbles = undefined;
     this.spaceRoot.visible = true;
     this.pendingPlayerReveal = false;
     // Applied in the same frame the new space becomes visible, so the light change and the geometry
@@ -387,7 +413,10 @@ export class WorldScene implements WorldRenderSurface {
         pendingMotion: false,
         isPlaceholder: true,
         headHeight: 0,
+        headBone: undefined,
+        headBoneRest: 0,
         namePlaque: undefined,
+        namePlaquePlate: undefined,
         pose: undefined,
         condition: entity.condition,
         oneShot: undefined,
@@ -408,7 +437,7 @@ export class WorldScene implements WorldRenderSurface {
     // Rebuilt on a kind or name change, because both pick the plaque's fill and its width.
     if (state.namePlaque === undefined || kindChanged || state.name !== entity.name) {
       state.name = entity.name;
-      this.rebuildNamePlaque(state);
+      this.rebuildNamePlaque(state, entity.id === this.hovered);
     }
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
 
@@ -456,7 +485,7 @@ export class WorldScene implements WorldRenderSurface {
     const state = this.entityStates.get(entityId);
     if (state === undefined) return;
     state.condition = condition;
-    this.rebuildNamePlaque(state);
+    this.rebuildNamePlaque(state, entityId === this.hovered);
     if (condition === 'fallen') {
       this.playOneShot(state, 'fallen');
     } else if (state.oneShot?.held === true) {
@@ -475,7 +504,7 @@ export class WorldScene implements WorldRenderSurface {
     }
     disposeSubtree(this.misses.get(targetId)?.node);
     const node = missQuad();
-    node.position.set(0, target.headHeight + BUBBLE_HEAD_GAP, 0);
+    node.position.set(0, target.headHeight + MISS_HEAD_GAP, 0);
     target.node.add(node);
     this.misses.set(targetId, { node, expiresAtMs: this.now() + MISS_SECONDS * 1000 });
   }
@@ -504,21 +533,20 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * The entity drawn under a point of the viewport, in normalized device coordinates, other than
-   * the one the camera follows. An entity is picked as an upright capsule from its feet to its
-   * head, a little wider than its body, and the one nearest the camera wins.
+   * the one the camera follows. An entity is picked as a capsule from its feet to its head as drawn,
+   * a little wider than its body, and the one nearest the camera wins.
    */
   entityAt(x: number, y: number): string | undefined {
     this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
     const ray = this.raycaster.ray;
-    const top = new THREE.Vector3();
     const onRay = new THREE.Vector3();
     let picked: string | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
       if (id === this.cameraFollowId) continue;
       const feet = state.node.position;
-      top.copy(feet).setY(feet.y + state.headHeight);
+      const top = this.headPoint(state);
       const reach = state.radius * PICK_RADII;
       if (ray.distanceSqToSegment(feet, top, onRay) > reach * reach) continue;
       const along = onRay.distanceToSquared(ray.origin);
@@ -535,86 +563,133 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   showSpeechBubble(request: SpeechBubbleRequest): boolean {
-    // Disposed, not just detached: speaking twice inside one lifetime window would otherwise leak
-    // a supersampled canvas texture per message, which is unbounded within a single space.
-    disposeSubtree(this.bubbles.get(request.entityId)?.node);
     this.bubbles.delete(request.entityId);
-    if (request.lines.length === 0) return false;
-    const placement = this.bubblePlacement(request);
-    const bubble: SpeechBubble = { request, expiresAtMs: this.now() + request.lifetimeMs, ...speechBubbleQuad(request, placement.tail) };
-    this.bubbles.set(request.entityId, bubble);
-    this.placeBubble(bubble, placement);
-    return placement.atEdge;
-  }
-
-  /**
-   * A speaker drawn on screen with room above their head has the bubble hung over it, which is also
-   * where it goes once a speaker not yet drawn arrives. A speaker with no body here is heard through
-   * a door or from out of view, so the bubble goes by the spot the voice comes from. Outdoors it
-   * hangs over that spot at doorway height, on the building over a door. In a room it goes just past
-   * the wall toward it, in the dark around the floor. Where that spot is off screen or has no room,
-   * the bubble is pinned where the line from the player toward the voice leaves the screen.
-   */
-  private bubblePlacement(request: SpeechBubbleRequest): BubblePlacement {
-    this.camera.updateMatrixWorld();
-    const state = this.entityStates.get(request.entityId);
-    const lineCount = request.lines.length;
-    if (state !== undefined) {
-      const feet = state.node.position;
-      const head = new THREE.Vector3(feet.x, feet.y + state.headHeight + BUBBLE_HEAD_GAP, feet.z);
-      if (this.hasRoomAbove(head, lineCount, request.kind)) {
-        return { atEdge: false, tail: 'down', parent: state.node, position: head.sub(feet), centred: false };
-      }
-      return this.edgePlacement(feet.clone(), lineCount, request.kind);
-    }
-    const source = new THREE.Vector3(request.source.x, this.groundHeight(request.source), request.source.z);
-    if (this.room !== undefined)
-      return this.beyondWallPlacement(this.room, request.source, lineCount, request.kind) ?? this.edgePlacement(source, lineCount, request.kind);
-    const doorway = source.clone().setY(source.y + DOORWAY_VOICE_HEIGHT);
-    if (this.hasRoomAbove(doorway, lineCount, request.kind)) {
-      return { atEdge: false, tail: 'down', parent: this.spaceRoot, position: doorway, centred: false };
-    }
-    return this.edgePlacement(source, lineCount, request.kind);
-  }
-
-  /**
-   * Pinned where the line from the player toward `voice` leaves the screen, inset so the whole
-   * bubble shows. That line is taken on screen rather than on the ground, because the camera's yaw
-   * and pitch turn every ground bearing.
-   */
-  private edgePlacement(voice: THREE.Vector3, lineCount: number, kind: SpeechKind): BubblePlacement {
-    const from = this.focus.clone().project(this.camera);
-    const toward = voice.project(this.camera);
-    let dx = toward.x - from.x;
-    let dy = toward.y - from.y;
-    // A voice on the player's own spot has no direction; it is pinned to the top, its tail down onto the player.
-    const ownSpot = Math.hypot(dx, dy) < SAME_SPOT_NDC;
-    if (ownSpot) [dx, dy] = [0, 1];
-    const half = this.ndcPerMetre();
-    const size = pinnedBubbleSize(lineCount, kind);
-    // Where the bubble is larger than the screen on an axis, the inset would invert: it is centred there instead.
-    const limitX = 1 - (size.width / 2) * half.x;
-    const limitY = 1 - (size.height / 2) * half.y;
-    const reachX = limitX > 0 && dx !== 0 ? (Math.sign(dx) * limitX - from.x) / dx : Number.POSITIVE_INFINITY;
-    const reachY = limitY > 0 && dy !== 0 ? (Math.sign(dy) * limitY - from.y) / dy : Number.POSITIVE_INFINITY;
-    const reach = Math.min(reachX, reachY);
-    const along = (start: number, delta: number, limit: number): number =>
-      limit <= 0 ? 0 : clamp(Number.isFinite(reach) ? start + delta * reach : start, -limit, limit);
-    return {
-      atEdge: true,
-      tail: ownSpot ? 'down' : tailToward(reachX <= reachY, dx, dy),
-      parent: this.spaceRoot,
-      position: new THREE.Vector3(along(from.x, dx, limitX), along(from.y, dy, limitY), from.z).unproject(this.camera),
-      centred: true,
+    if (request.lines.length === 0 || request.lifetimeMs <= 0) return false;
+    const frame = speechBubbleFrameSize(request.lines, request.kind);
+    const bubble: SpeechBubble = {
+      request,
+      expiresAtMs: this.now() + request.lifetimeMs,
+      size: { width: frame.width * OVERLAY_METRES_PER_PIXEL, height: frame.height * OVERLAY_METRES_PER_PIXEL },
+      mode: undefined,
+      spot: undefined,
+      anchor: undefined,
+      drawn: undefined,
     };
+    this.bubbles.set(request.entityId, bubble);
+    this.layoutSpeechBubbles(0);
+    return bubble.mode === 'pinned';
+  }
+
+  /** What covers the screen over the world, such as the panels, as rects in normalized device coordinates. */
+  setScreenOccluders(rects: readonly ScreenRect[]): void {
+    this.screenOccluders = rects;
+  }
+
+  /** Where the pointer is over the viewport, in normalized device coordinates; `undefined` once it leaves. */
+  setPointer(point: { x: number; y: number } | undefined): void {
+    this.pointer = point;
+  }
+
+  /** The bubbles to paint over the world this frame, in the order they were placed. */
+  placedBubbles(): PlacedBubbles {
+    if (this.pendingPlayerReveal && this.heldBubbles !== undefined) return this.heldBubbles;
+    const ndc = this.ndcPerMetre();
+    return { halfSize: { x: 1 / ndc.x, y: 1 / ndc.y }, bubbles: this.placed };
+  }
+
+  /**
+   * Places every bubble at once, so they keep apart. A speaker drawn with their head on screen has
+   * the bubble round that head. A speaker with no body here is heard through a door or from out of
+   * view. Outdoors the bubble hangs by the spot the voice comes from at doorway height, on the
+   * building over a door. In a room it goes just past the wall toward it, in the dark around the
+   * floor. A bubble whose head or doorway is off screen, or whose spot past the wall is off screen or
+   * taken, is pinned on the line from the player toward the voice, as near the screen's edge as is free.
+   */
+  private layoutSpeechBubbles(dt: number): void {
+    const nowMs = this.now();
+    for (const [id, bubble] of this.bubbles) {
+      if (nowMs >= bubble.expiresAtMs) this.bubbles.delete(id);
+    }
+    this.camera.updateMatrixWorld();
+    const ndc = this.ndcPerMetre();
+    const toScreen = (point: THREE.Vector3): ScreenPoint => {
+      const projected = point.clone().project(this.camera);
+      return { x: projected.x / ndc.x, y: projected.y / ndc.y };
+    };
+    const onScreen = (point: ScreenPoint) => Math.abs(point.x * ndc.x) <= 1 && Math.abs(point.y * ndc.y) <= 1;
+    const heads = new Map<string, ScreenDisc>();
+    for (const [id, state] of this.entityStates) {
+      const head = this.headDisc(state);
+      heads.set(id, { centre: toScreen(head.centre), radius: head.radius });
+    }
+    const entries = [...this.bubbles].map(([id, bubble]): BubbleEntry => {
+      const head = heads.get(id);
+      const base = { size: bubble.size, fixed: undefined, held: undefined };
+      if (head !== undefined) {
+        const held = bubble.anchor?.head === true ? bubble.spot : undefined;
+        return { bubble, request: { ...base, anchor: head, voice: head.centre, held }, fromHead: true, wall: undefined };
+      }
+      const source = bubble.request.source;
+      const voice = toScreen(new THREE.Vector3(source.x, this.groundHeight(source), source.z));
+      if (this.room !== undefined) {
+        const beyond = this.beyondWall(this.room, source, bubble.size, toScreen);
+        return { bubble, request: { ...base, anchor: undefined, fixed: beyond?.centre, voice }, fromHead: false, wall: beyond?.wall };
+      }
+      const doorway = toScreen(new THREE.Vector3(source.x, this.groundHeight(source) + DOORWAY_VOICE_HEIGHT, source.z));
+      return { bubble, request: { ...base, anchor: { centre: doorway, radius: 0 }, voice }, fromHead: false, wall: undefined };
+    });
+    // Voices with no head on screen first: where they go is fixed by where the voice is.
+    const headShown = (entry: BubbleEntry) => entry.fromHead && onScreen(entry.request.anchor!.centre);
+    entries.sort((first, second) => Number(headShown(first)) - Number(headShown(second)));
+    const placements = layoutBubbles({
+      halfSize: { x: 1 / ndc.x, y: 1 / ndc.y },
+      covered: this.screenOccluders.map((rect) => ({ left: rect.left / ndc.x, bottom: rect.bottom / ndc.y, right: rect.right / ndc.x, top: rect.top / ndc.y })),
+      heads: [...heads.values()],
+      player: toScreen(this.focus),
+      bubbles: entries.map((entry) => entry.request),
+    });
+    const glide = 1 - Math.exp(-dt / BUBBLE_GLIDE_SECONDS);
+    this.placed = entries.map(({ bubble, request, fromHead, wall }, index) => {
+      const { centre, mode } = placements[index]!;
+      const anchor = mode === 'anchored' ? request.anchor : undefined;
+      if (bubble.drawn === undefined) {
+        bubble.drawn = centre;
+      } else {
+        // Carried along with what it hangs from, so only a change of spot glides.
+        const carried = anchor !== undefined && bubble.anchor?.head === fromHead ? bubble.anchor.at : undefined;
+        const from =
+          anchor === undefined || carried === undefined
+            ? bubble.drawn
+            : { x: bubble.drawn.x + anchor.centre.x - carried.x, y: bubble.drawn.y + anchor.centre.y - carried.y };
+        bubble.drawn = { x: from.x + (centre.x - from.x) * glide, y: from.y + (centre.y - from.y) * glide };
+      }
+      bubble.mode = mode;
+      bubble.anchor = anchor === undefined ? undefined : { at: anchor.centre, head: fromHead };
+      bubble.spot = anchor !== undefined && fromHead ? { x: centre.x - anchor.centre.x, y: centre.y - anchor.centre.y } : undefined;
+      const target = anchor !== undefined ? { anchor } : { toward: mode === 'fixed' && wall !== undefined ? wall : request.voice };
+      return {
+        centre: bubble.drawn,
+        size: bubble.size,
+        tail: tailTip(bubble.drawn, bubble.size, target),
+        lines: bubble.request.lines,
+        kind: bubble.request.kind,
+        opacity: FAINTEST_BUBBLE_OPACITY + (1 - FAINTEST_BUBBLE_OPACITY) * bubble.request.clarity,
+        mode,
+      };
+    });
   }
 
   /**
    * In a room, a voice from its door is shown in the dark just past the wall it comes through, on
-   * the screen side that wall lies on, with its tail toward the wall. `undefined` when that spot is
-   * not on screen.
+   * the screen side that wall lies on: the spot for the bubble's middle, and the wall's edge its
+   * tail points back to. `undefined` when the wall has no side on screen to lie on.
    */
-  private beyondWallPlacement(room: Rect, source: Point, lineCount: number, kind: SpeechKind): BubblePlacement | undefined {
+  private beyondWall(
+    room: Rect,
+    source: Point,
+    size: ScreenSize,
+    toScreen: (point: THREE.Vector3) => ScreenPoint,
+  ): { centre: ScreenPoint; wall: ScreenPoint } | undefined {
     const inside = { x: clamp(source.x, room.x, room.x + room.width), z: clamp(source.z, room.z, room.z + room.depth) };
     const walls = [
       { x: room.x, z: inside.z },
@@ -624,41 +699,23 @@ export class WorldScene implements WorldRenderSurface {
     ];
     const gaps = walls.map((wall) => distance(wall, inside));
     const wall = walls[gaps.indexOf(Math.min(...gaps))]!;
-    const middle = new THREE.Vector3(room.x + room.width / 2, 0, room.z + room.depth / 2).project(this.camera);
-    const half = this.ndcPerMetre();
-    // Directions on screen are taken in metres, so the screen's aspect does not bend them.
-    const metres = (point: THREE.Vector3) => ({ x: (point.x - middle.x) / half.x, y: (point.y - middle.y) / half.y });
-    const foot = metres(new THREE.Vector3(wall.x, 0, wall.z).project(this.camera));
+    const middle = toScreen(new THREE.Vector3(room.x + room.width / 2, 0, room.z + room.depth / 2));
+    const fromMiddle = (point: THREE.Vector3) => {
+      const drawn = toScreen(point);
+      return { x: drawn.x - middle.x, y: drawn.y - middle.y };
+    };
+    const foot = fromMiddle(new THREE.Vector3(wall.x, 0, wall.z));
     const length = Math.hypot(foot.x, foot.y);
     if (length === 0) return undefined;
     const out = { x: foot.x / length, y: foot.y / length };
     // The wall's foot or its top, whichever is drawn further out: the wall itself is not the dark.
-    const top = metres(new THREE.Vector3(wall.x, ROOM_WALL_HEIGHT, wall.z).project(this.camera));
+    const top = fromMiddle(new THREE.Vector3(wall.x, ROOM_WALL_HEIGHT, wall.z));
     const edge = top.x * out.x + top.y * out.y > length ? top : foot;
-    const size = pinnedBubbleSize(lineCount, kind);
     const clearance = BEYOND_WALL_GAP + (Math.abs(out.x) * size.width) / 2 + (Math.abs(out.y) * size.height) / 2;
-    const centre = { x: middle.x + (edge.x + out.x * clearance) * half.x, y: middle.y + (edge.y + out.y * clearance) * half.y };
-    if (Math.abs(centre.x) > 1 - (size.width / 2) * half.x || Math.abs(centre.y) > 1 - (size.height / 2) * half.y) return undefined;
     return {
-      atEdge: false,
-      tail: tailToward(Math.abs(out.x) >= Math.abs(out.y), -out.x, -out.y),
-      parent: this.spaceRoot,
-      position: new THREE.Vector3(centre.x, centre.y, this.focus.clone().project(this.camera).z).unproject(this.camera),
-      centred: true,
+      centre: { x: middle.x + edge.x + out.x * clearance, y: middle.y + edge.y + out.y * clearance },
+      wall: { x: middle.x + edge.x, y: middle.y + edge.y },
     };
-  }
-
-  /**
-   * Whether `anchor` is on screen with room above it for the whole of a bubble hung from it, and
-   * to either side for at most a quarter of the screen, so a narrow window keeps bubbles overhead.
-   */
-  private hasRoomAbove(anchor: THREE.Vector3, lineCount: number, kind: SpeechKind): boolean {
-    const drawn = anchor.clone().project(this.camera);
-    const half = this.ndcPerMetre();
-    const size = speechBubbleFrameSize(lineCount, 'down', kind);
-    const marginX = Math.min((size.width / 2) * OVERLAY_METRES_PER_PIXEL * half.x, MAX_SIDE_MARGIN_NDC);
-    const marginY = size.height * OVERLAY_METRES_PER_PIXEL * half.y;
-    return Math.abs(drawn.x) <= 1 - marginX && drawn.y >= -1 && drawn.y <= 1 - marginY;
   }
 
   /** How far a metre reaches across the screen, in normalized device coordinates. */
@@ -666,16 +723,28 @@ export class WorldScene implements WorldRenderSurface {
     return { x: 2 / (this.camera.right - this.camera.left), y: 2 / (this.camera.top - this.camera.bottom) };
   }
 
-  /** Moves a bubble to its placement, redrawing its art when the tail changes side. */
-  private placeBubble(bubble: SpeechBubble, placement: BubblePlacement): void {
-    if (bubble.tail !== placement.tail) {
-      disposeSubtree(bubble.node);
-      Object.assign(bubble, speechBubbleQuad(bubble.request, placement.tail));
-    }
-    if (bubble.node.parent !== placement.parent) placement.parent.add(bubble.node);
-    bubble.node.position.copy(placement.position);
-    // Hung from a point, the tail tip is the anchor and the body rises above it.
-    bubble.plate.position.y = placement.centred ? 0 : bubble.size.y / 2;
+  /**
+   * The top of the head as drawn. Standing, it is `headHeight` over the feet. While a fall holds the
+   * body down, it follows the head bone, raised by the part of `headHeight` above that bone. That
+   * part shrinks in the proportion the bone has come down by, so the point starts where the standing
+   * head is and never jumps.
+   */
+  private headPoint(state: EntityRenderState): THREE.Vector3 {
+    const feet = state.node.position;
+    const bone = state.headBone;
+    if (state.oneShot?.held !== true || bone === undefined) return new THREE.Vector3(feet.x, feet.y + state.headHeight, feet.z);
+    // The mixer sets only local transforms, so the bone's world matrix is stale until asked for.
+    bone.updateWorldMatrix(true, false);
+    const point = bone.getWorldPosition(new THREE.Vector3());
+    const share = clamp((point.y - feet.y) / state.headBoneRest, 0, 1);
+    return point.setY(point.y + (state.headHeight - state.headBoneRest) * share);
+  }
+
+  /** The head as a ball for the bubbles to keep clear of, hanging from the top of the head as drawn. */
+  private headDisc(state: EntityRenderState): { centre: THREE.Vector3; radius: number } {
+    const radius = (HEAD_SHARE * state.headHeight) / 2;
+    const centre = this.headPoint(state);
+    return { centre: centre.setY(centre.y - radius), radius };
   }
 
   /**
@@ -695,8 +764,6 @@ export class WorldScene implements WorldRenderSurface {
     const state = this.entityStates.get(entityId);
     disposeSubtree(state?.node);
     this.entityStates.delete(entityId);
-    // A pinned bubble hangs off the space rather than the entity's node, so it goes on its own.
-    disposeSubtree(this.bubbles.get(entityId)?.node);
     this.bubbles.delete(entityId);
     this.misses.delete(entityId);
     this.raiseRings.delete(entityId);
@@ -753,16 +820,16 @@ export class WorldScene implements WorldRenderSurface {
       state.mixer?.update(dt);
     }
 
-    for (const bubble of this.bubbles.values()) this.placeBubble(bubble, this.bubblePlacement(bubble.request));
-    // Overlays run on wall time, not on the clamped frame delta: a hidden tab gets no frames, and a
+    this.updateHover();
+    this.orderPlaques();
+    // Overlays run out on wall time, not on the clamped frame delta: a hidden tab gets no frames, and a
     // line said before it was hidden must not hang on after it returns.
+    this.layoutSpeechBubbles(dt);
     const nowMs = this.now();
-    for (const overlays of [this.bubbles, this.misses]) {
-      for (const [id, overlay] of overlays) {
-        if (nowMs < overlay.expiresAtMs) continue;
-        disposeSubtree(overlay.node);
-        overlays.delete(id);
-      }
+    for (const [id, miss] of this.misses) {
+      if (nowMs < miss.expiresAtMs) continue;
+      disposeSubtree(miss.node);
+      this.misses.delete(id);
     }
 
     for (const ring of this.raiseRings.values()) {
@@ -834,16 +901,68 @@ export class WorldScene implements WorldRenderSurface {
     this.fadeTo(state, next);
   }
 
-  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale; the local player's text is bold. */
-  private rebuildNamePlaque(state: EntityRenderState): void {
+  /** Hovers the entity under the pointer, which is what a click would reach. A hale nightmare has a plaque only while hovered, so its plaque is rebuilt as the pointer comes and goes. */
+  private updateHover(): void {
+    const hovered = this.pointer === undefined ? undefined : this.entityAt(this.pointer.x, this.pointer.y);
+    if (hovered === this.hovered) return;
+    const left = this.hovered === undefined ? undefined : this.entityStates.get(this.hovered);
+    const entered = hovered === undefined ? undefined : this.entityStates.get(hovered);
+    this.hovered = hovered;
+    for (const [state, isHovered] of [
+      [left, false],
+      [entered, true],
+    ] as const) {
+      if (state?.kind === 'monster' && state.condition === 'hale') this.rebuildNamePlaque(state, isHovered);
+    }
+  }
+
+  /**
+   * Plaques are hidden by the world but never by each other's depth, so which draws over which is
+   * their draw order: the hovered one, the one tended, the more hurt over the less hurt, the
+   * player's own, then the rest, nearer the camera over further. Only the hovered one shows through
+   * the world.
+   */
+  private orderPlaques(): void {
+    for (const [id, state] of this.entityStates) {
+      const plate = state.namePlaquePlate;
+      if (plate === undefined) continue;
+      plate.renderOrder = this.plaqueOrder(id, state.condition);
+      (plate.material as THREE.MeshBasicMaterial).depthTest = id !== this.hovered;
+    }
+  }
+
+  private plaqueOrder(id: string, condition: Condition): number {
+    if (id === this.hovered) return PLAQUE_ORDER.hovered;
+    if (id === this.selection?.id) return PLAQUE_ORDER.tended;
+    // `CONDITIONS` runs from hale to fallen.
+    const band = CONDITIONS.indexOf(condition);
+    if (band > 0) return PLAQUE_ORDER.hurt + band - 1;
+    return id === this.cameraFollowId ? PLAQUE_ORDER.own : PLAQUE_ORDER.rest;
+  }
+
+  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale or is hovered; the local player's text is bold. */
+  private rebuildNamePlaque(state: EntityRenderState, hovered: boolean): void {
     disposeSubtree(state.namePlaque);
     state.namePlaque = undefined;
-    const background = namePlaqueBackground(state.kind, state.condition);
+    state.namePlaquePlate = undefined;
+    const background = namePlaqueBackground(state.kind, state.condition, hovered);
     if (background === undefined) return;
     const ink = state.kind !== 'npc' && state.condition === 'fallen' ? NAME_PLAQUE.fallenInk : NAME_PLAQUE.ink;
-    const plaque = namePlaqueQuad(state.name, background, state.kind === 'player', ink);
-    state.node.add(plaque);
-    state.namePlaque = plaque;
+    const { container, plate } = namePlaqueQuad(state.name, background, state.kind === 'player', ink);
+    state.node.add(container);
+    state.namePlaque = container;
+    state.namePlaquePlate = plate;
+  }
+
+  /** Finds the model's head bone and how high it stands over the feet. The model must stand in its idle pose, the one `headHeight` is measured in. A bone at or below the feet is not kept. */
+  private findHeadBone(state: EntityRenderState, model: THREE.Object3D): void {
+    let bone: THREE.Object3D | undefined;
+    model.traverse((object) => {
+      if (bone === undefined && (object as THREE.Bone).isBone && object.name.toLowerCase() === 'head') bone = object;
+    });
+    const rest = bone === undefined ? 0 : bone.getWorldPosition(new THREE.Vector3()).y - state.node.position.y;
+    state.headBone = rest > 0 ? bone : undefined;
+    state.headBoneRest = rest;
   }
 
   private resolveEntityModel(state: EntityRenderState): void {
@@ -862,6 +981,7 @@ export class WorldScene implements WorldRenderSurface {
       state.isPlaceholder = true;
       state.mixer = undefined;
       state.headHeight = this.measureHeadHeight(state);
+      state.headBone = undefined;
       return;
     }
     enableShadows(model);
@@ -873,6 +993,7 @@ export class WorldScene implements WorldRenderSurface {
     this.applyPose('idle', state);
     state.mixer.update(0);
     state.headHeight = this.measureHeadHeight(state);
+    this.findHeadBone(state, model);
     if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
   }
 
@@ -1080,8 +1201,8 @@ export class WorldScene implements WorldRenderSurface {
   /**
    * Test seam: the entity node's own yaw, which must stay identity.
    *
-   * The counterpart to `_yawFor`, and separate from it on purpose — the plaque and the speech
-   * bubble hang off this node, so a facing yaw reaching it tilts them with the character. Reading
+   * The counterpart to `_yawFor`, and separate from it on purpose — the plaque and the miss mark
+   * hang off this node, so a facing yaw reaching it tilts them with the character. Reading
    * the holder cannot see that: both would turn together and the holder's value would look right.
    */
   _nodeYawFor(entityId: string): number | undefined {
@@ -1093,21 +1214,8 @@ export class WorldScene implements WorldRenderSurface {
     const state = this.entityStates.get(entityId);
     if (state === undefined) return undefined;
     this.camera.updateMatrixWorld();
-    const feet = state.node.position;
-    const point = new THREE.Vector3(feet.x, feet.y + state.headHeight / 2, feet.z).project(this.camera);
+    const point = this.headPoint(state).add(state.node.position).multiplyScalar(0.5).project(this.camera);
     return { x: point.x, y: point.y };
-  }
-
-  /**
-   * Test seam: a speaker's live speech-bubble node.
-   *
-   * The bubble is the scene's highest-frequency allocator — one supersampled `CanvasTexture` per
-   * chat line — and it is replaced, expired, and torn down through three separate paths. Reaching it
-   * by name is what lets a test spy on the texture it is about to lose; searching the graph for it
-   * cannot distinguish a bubble from the name plaque hanging off the same node.
-   */
-  _bubbleNodeFor(entityId: string): THREE.Object3D | undefined {
-    return this.bubbles.get(entityId)?.node;
   }
 }
 
@@ -1126,17 +1234,14 @@ function placementPlaceholder(footprint: Size): THREE.Object3D {
   return box;
 }
 
-/** World metres per pixel of overlay artwork. */
-const OVERLAY_METRES_PER_PIXEL = 0.016;
-
 /**
  * Fixed screen-aligned orientation for overlay quads: the camera's **own** orientation.
  *
  * Constant because the rig is locked — only the camera's position follows the player. Rebuilding it
  * from `pitchDegrees`/`yawDegrees` as Euler angles instead looks right and is not: those describe
  * the rig's offset direction, not the look rotation, and a quad carrying them sits at a residual
- * yaw that foreshortens its width. The artwork then reads as a squeezed balloon with its last word
- * apparently cut off, which is a texture-mapping symptom of a rotation bug.
+ * yaw that foreshortens its width. The artwork then reads as squeezed, which looks like a
+ * texture-mapping fault and is a rotation bug.
  */
 const OVERLAY_ORIENTATION = (() => {
   const eye = cameraPosition({ x: 0, y: 0, z: 0 });
@@ -1145,16 +1250,16 @@ const OVERLAY_ORIENTATION = (() => {
   const matrix = new THREE.Matrix4().lookAt(new THREE.Vector3(eye.x, eye.y, eye.z), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
   return new THREE.Quaternion().setFromRotationMatrix(matrix);
 })();
-/** Gap between the speaker's head and the balloon's tail tip. */
-const BUBBLE_HEAD_GAP = 0.2;
+/** Gap between an entity's head and the word over it a blow missed. */
+const MISS_HEAD_GAP = 0.2;
 /** How much of a speech bubble's opacity is left at the far end of the band, where speech crumbles away. */
 const FAINTEST_BUBBLE_OPACITY = 0.15;
-/** The most of the screen a head needs to either side to keep its bubble, in normalized device coordinates. */
-const MAX_SIDE_MARGIN_NDC = 0.5;
-/** How close on screen a voice is to the player before it has no direction. */
-const SAME_SPOT_NDC = 1e-3;
-/** Drawn after the world, so nothing at a bubble's spot of the screen covers it. */
-const BUBBLE_RENDER_ORDER = 10;
+/** How long a bubble takes to glide most of the way to a new spot. */
+const BUBBLE_GLIDE_SECONDS = 0.07;
+/** How much of a figure's standing height its head takes up. */
+const HEAD_SHARE = 0.4;
+/** Plaque draw orders, a later one drawn over an earlier; the bands below full health take one each from `hurt` up, the least hurt first. */
+const PLAQUE_ORDER = { rest: 1, own: 2, hurt: 3, tended: 8, hovered: 9 } as const;
 /** How high over a doorway outdoors a voice through it hangs its bubble: on the building, above the door. */
 const DOORWAY_VOICE_HEIGHT = 2.2;
 /** How high a room's walls are taken to be drawn, so a bubble past one clears its top. */
@@ -1196,7 +1301,7 @@ function markOwned(mesh: THREE.Mesh, options: { geometry: boolean; material: boo
  * Releases the GPU resources a detached subtree owned, then detaches it.
  *
  * `removeFromParent()` alone drops the reference but leaves the geometry, material, and texture in
- * `WebGLRenderer`'s internal maps, so every door and every chat bubble would accumulate VRAM
+ * `WebGLRenderer`'s internal maps, so every door and every plaque rebuilt would accumulate VRAM
  * until the context is lost — the world going black with nothing the player can act on. Three.js
  * documents disposal as the caller's job for exactly this reason.
  *
@@ -1238,7 +1343,7 @@ function disposeSubtree(root: THREE.Object3D | undefined): void {
  * Overlay quad with a **fixed** screen-aligned orientation rather than a billboard.
  *
  * A billboard aims each quad at the camera *point*, which under an orthographic projection
- * leaves off-centre speakers visibly tilted — the camera rig is locked, so a constant
+ * leaves off-centre entities visibly tilted — the camera rig is locked, so a constant
  * orientation is both correct and cheaper.
  *
  * Returns the container and the plate separately so the caller can position the plate inside the
@@ -1259,48 +1364,24 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.
 }
 
 /**
- * A balloon in the request's style, its tail on `tail`, as faint as the line was heard. It draws
- * over everything, so a building, a tree, or a wall nearer the camera cannot hide what was said.
- */
-function speechBubbleQuad(request: SpeechBubbleRequest, tail: BubbleTail): Pick<SpeechBubble, 'node' | 'plate' | 'size' | 'tail'> {
-  const { container, plate, size } = overlayQuad(renderSpeechBubble(request.lines, tail, request.kind));
-  const material = plate.material as THREE.MeshBasicMaterial;
-  material.opacity = FAINTEST_BUBBLE_OPACITY + (1 - FAINTEST_BUBBLE_OPACITY) * request.clarity;
-  material.depthTest = false;
-  material.depthWrite = false;
-  plate.renderOrder = BUBBLE_RENDER_ORDER;
-  return { node: container, plate, size, tail };
-}
-
-/** The largest a bubble of `lineCount` lines placed on the screen is, in metres, whichever side its tail points to. */
-function pinnedBubbleSize(lineCount: number, kind: SpeechKind): { width: number; height: number } {
-  const below = speechBubbleFrameSize(lineCount, 'down', kind);
-  const beside = speechBubbleFrameSize(lineCount, 'right', kind);
-  return { width: Math.max(below.width, beside.width) * OVERLAY_METRES_PER_PIXEL, height: Math.max(below.height, beside.height) * OVERLAY_METRES_PER_PIXEL };
-}
-
-function tailToward(horizontal: boolean, x: number, y: number): BubbleTail {
-  if (horizontal) return x > 0 ? 'right' : 'left';
-  return y > 0 ? 'up' : 'down';
-}
-
-/**
  * Name plaque hanging just below the feet anchor.
  *
  * Hanging at negative Y alone would dip the quad below the floor plane, which always occludes
  * below-ground content under the downward 3/4 camera. The toward-camera Z advance compensates —
  * invisible under the orthographic projection, but it lifts the quad's world height above the
- * floor and draws it in front of the speaker.
+ * floor and draws it in front of the entity.
  */
-function namePlaqueQuad(name: string, background: string, bold: boolean, ink: string): THREE.Object3D {
+function namePlaqueQuad(name: string, background: string, bold: boolean, ink: string): { container: THREE.Object3D; plate: THREE.Mesh } {
   const { container, plate, size } = overlayQuad(renderNamePlaque(name, background, bold, ink));
   const drop = size.y + PLAQUE_FEET_GAP;
   const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
   plate.position.set(0, -(size.y / 2 + PLAQUE_FEET_GAP), drop / Math.tan(pitch) + PLAQUE_FLOOR_CLEARANCE);
-  return container;
+  // Never hidden by another plaque's depth; `orderPlaques` decides which shows.
+  (plate.material as THREE.MeshBasicMaterial).depthWrite = false;
+  return { container, plate };
 }
 
-/** The word over an entity a blow missed, standing where a speech bubble's tail would. */
+/** The word over an entity a blow missed, a gap above its standing head. */
 function missQuad(): THREE.Object3D {
   const { container, plate, size } = overlayQuad(renderNamePlaque(t('miss'), NAME_PLAQUE.playerBackground, false));
   plate.position.y = size.y / 2;

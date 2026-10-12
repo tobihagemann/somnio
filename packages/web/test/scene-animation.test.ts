@@ -265,10 +265,20 @@ describe('speech bubble wrap', () => {
     }
   });
 
-  /** A single unbreakable word wider than the bubble is emitted whole, not split mid-word. */
-  it('emits an oversized single token as its own line', () => {
-    const huge = 'x'.repeat(40);
-    expect(wrapSpeech(huge, tenPerChar)).toEqual([huge]);
+  /** Squeezed onto one line by the renderer instead, it would be unreadable. */
+  it('breaks a word wider than a line across lines', () => {
+    expect(wrapSpeech(`hi ${'x'.repeat(20)} ok`, tenPerChar)).toEqual(['hi', 'x'.repeat(14), `${'x'.repeat(6)} ok`]);
+  });
+
+  it('breaks a long word between graphemes, never inside one', () => {
+    const lines = wrapSpeech(
+      'ü'.repeat(10) + '👍🏽'.repeat(10),
+      (line) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(line)].length * 10,
+    );
+    expect(lines.join('')).toBe('ü'.repeat(10) + '👍🏽'.repeat(10));
+    expect(lines.map((line) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(line)].length)).toEqual([14, 6]);
+    // Measured by code unit, a thumb fits where its skin tone does not; split there, the tone would start the next line on its own.
+    expect(wrapSpeech('👍🏽'.repeat(10), tenPerChar)).toEqual(['👍🏽'.repeat(3), '👍🏽'.repeat(3), '👍🏽'.repeat(3), '👍🏽']);
   });
 
   it('caps at four lines and marks truncation with an ASCII ellipsis', () => {

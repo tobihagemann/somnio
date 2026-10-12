@@ -443,6 +443,21 @@ describe('inbound gameplay dispatch', () => {
     ]);
   });
 
+  /** A hidden tab runs no tick, so a line heard there would otherwise be placed from where the speaker was when it was hidden. */
+  it('places a voice and names its direction from where the speaker stands now, with no frame drawn since they moved', () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity(), clientEntity({ id: 'peer', kind: 'peer', name: 'Bren', position: { x: 2, z: 10 } })]);
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: 'peer', x: 20, z: 10, facing: 0, gait: 'jog' }] } });
+    rig.now = 1000;
+    rig.pinsBubbles = true;
+
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'peer', name: 'Bren', kind: 'yell' } });
+
+    expect(rig.positions.filter((write) => write.id === 'peer').at(-1)).toEqual({ id: 'peer', x: 20, z: 10 });
+    expect(rig.bubbles.map((bubble) => bubble.source)).toEqual([{ x: 20, z: 10 }]);
+    expect(rig.controller.chatHistory.at(-1)).toMatchObject({ direction: 'east' });
+  });
+
   /**
    * `onStateChanged` is the *only* repaint hook `AppShell` wires for session state, so dropping the
    * notification freezes the HUD bars and the items panel for the rest of the session while the

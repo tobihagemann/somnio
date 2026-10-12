@@ -8,27 +8,25 @@ import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { CHARACTER_SCALE, FLOOR_PATCH_LIFT, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import {
   NAME_PLAQUE,
+  OVERLAY_METRES_PER_PIXEL,
   baselineBelowBoxTop,
   baselineInCenteredBox,
   namePlaqueBackground,
   lineBoxHeight,
+  paintSpeechBubble,
   renderNamePlaque,
-  renderSpeechBubble,
   speechBubbleFrameSize,
 } from '@/scene/overlayArt';
-import type * as OverlayArt from '@/scene/overlayArt';
+import { paintBubbles } from '@/scene/bubbleLayer';
+import type { PlacedBubble } from '@/scene/bubbleLayer';
+import { tailTip } from '@/scene/bubbleLayout';
+import type { ScreenPoint } from '@/scene/bubbleLayout';
 import type { Point } from '@somnio/core';
 import type { SectorView, SpeechKind } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
 import type { ClientEntity, SpeechBubbleRequest } from '@/client';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity } from './helpers/worldFixture';
-
-// Passed through, so the art is the real one; the spy only records what each bubble was drawn as.
-vi.mock('@/scene/overlayArt', async (importOriginal) => {
-  const actual = await importOriginal<typeof OverlayArt>();
-  return { ...actual, renderSpeechBubble: vi.fn(actual.renderSpeechBubble) };
-});
 
 /**
  * Graph-level coverage. Pixels are not unit-testable without a GPU, but the placement, framing,
@@ -86,6 +84,29 @@ function said(entityId: string, lines: string[], lifetimeMs: number, overrides: 
   return voiced(entityId, lines, { x: 10, z: 10 }, { lifetimeMs, ...overrides });
 }
 
+/** Where a world point is drawn, in metres on the screen from its middle, as `placedBubbles` reports bubbles. */
+function screenOf(scene: WorldScene, point: THREE.Vector3): ScreenPoint {
+  scene.camera.updateMatrixWorld();
+  const drawn = point.clone().project(scene.camera);
+  const { halfSize } = scene.placedBubbles();
+  return { x: drawn.x * halfSize.x, y: drawn.y * halfSize.y };
+}
+
+/** The bubble whose first line is `line`. */
+function bubbleSaying(scene: WorldScene, line: string): PlacedBubble | undefined {
+  return scene.placedBubbles().bubbles.find((bubble) => bubble.lines[0] === line);
+}
+
+/** How much of a figure's standing height its head is taken to fill. */
+const HEAD_SHARE = 0.4;
+
+/** The top of the rim of a standing head, `headHeight` over `feet`, as drawn. A bubble straight over the head ends its tail there. */
+function standingHeadTop(scene: WorldScene, feet: THREE.Vector3, headHeight: number): ScreenPoint {
+  const radius = (HEAD_SHARE * headHeight) / 2;
+  const centre = screenOf(scene, feet.clone().setY(feet.y + headHeight - radius));
+  return { x: centre.x, y: centre.y + radius };
+}
+
 /** A sector whose dais, a step (0.2 m) up, covers x and z 4..6. */
 const daisSector = sector({ placements: [placement('dais-1', 'dais', { x: 5, z: 5 })] });
 
@@ -126,10 +147,15 @@ function rings(scene: WorldScene): THREE.Mesh[] {
 
 /**
  * A skinned model with its own skeleton, matching what `SkeletonUtils.clone` hands back: a box
- * one unit tall standing on its node, every vertex bound to the one bone.
+ * one unit tall standing on its node, every vertex bound to the one bone. A `head` bone under it
+ * stands 0.9 units up, as the pack's models carry one.
  */
-function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton; bone: THREE.Bone } {
+function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton; bone: THREE.Bone; head: THREE.Bone } {
   const bone = new THREE.Bone();
+  const head = new THREE.Bone();
+  head.name = 'head';
+  head.position.y = 0.9;
+  bone.add(head);
   const skeleton = new THREE.Skeleton([bone]);
   const geometry = new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0);
   const vertices = geometry.getAttribute('position').count;
@@ -146,7 +172,7 @@ function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton; bone:
   mesh.bind(skeleton);
   const root = new THREE.Object3D();
   root.add(mesh);
-  return { root, skeleton, bone };
+  return { root, skeleton, bone, head };
 }
 
 function boxes(scene: WorldScene): THREE.Mesh[] {
@@ -845,37 +871,20 @@ describe('overlay quads', () => {
   });
 
   /**
-   * `BUBBLE_HEAD_GAP` sits between the speaker's head and the balloon tail. The head is measured
-   * off the model holder's bounds, relative to the entity's own feet: on raised ground the bounds
-   * are higher in the world, and the balloon hangs off a node that is already up there.
+   * A bubble over a head ends its tail on the head's rim. The head is measured off the model
+   * holder's bounds, relative to the entity's own feet: on raised ground the bounds are higher in
+   * the world, and the head is drawn from a node that is already up there.
    */
   it.each([
-    ['on the floor', { x: 12, z: 12 }],
-    ['on raised ground', { x: 5, z: 5 }],
-  ])('lifts a speech balloon a gap above the head of a speaker %s', (_name, position) => {
+    ['on the floor', { x: 12, z: 12 }, 0],
+    ['on raised ground', { x: 5, z: 5 }, 0.2],
+  ])('ends the tail of a speech balloon on the head of a speaker %s', (_name, position, ground) => {
     const scene = sceneWithGround();
     scene.placeEntity(player({ position }));
 
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
 
-    // The bounds come from Float32 vertex data, hence the looser match.
-    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
-  });
-
-  /**
-   * A skinned mesh keeps the bounds of the pose it is first measured in. A body first measured
-   * lying down would hang its balloon at knee height for as long as it stays in view.
-   */
-  it('hangs the balloon at standing height over a skinned model whose first words come while it lies down', () => {
-    const { root, bone } = skinnedModel();
-    const scene = makeScene({ ...emptyAssets(), character: () => root });
-    scene.placeEntity(player());
-
-    bone.rotation.x = Math.PI / 2;
-    bone.updateMatrixWorld(true);
-    scene.showSpeechBubble(said('self', ['Hallo'], 3000));
-
-    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+    expectTailAt(scene, standingHeadTop(scene, new THREE.Vector3(position.x, ground, position.z), CHARACTER_SCALE));
   });
 
   /** Until a clip plays, a model's bones rest wherever its file left them: for one model of the pack, far below its feet. */
@@ -889,7 +898,7 @@ describe('overlay quads', () => {
 
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
 
-    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+    expectTailAt(scene, standingHeadTop(scene, new THREE.Vector3(10, 0, 10), CHARACTER_SCALE));
   });
 
   /** The model that replaces a placeholder has a height of its own, and stands wherever the entity already does. */
@@ -902,7 +911,8 @@ describe('overlay quads', () => {
     scene.addSector(daisSector);
     scene.placeEntity(player({ position: { x: 5, z: 5 } }));
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
-    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+    const feet = new THREE.Vector3(5, 0.2, 5);
+    expectTailAt(scene, standingHeadTop(scene, feet, CHARACTER_SCALE));
 
     // Twice as tall as the placeholder it replaces.
     const { root } = skinnedModel();
@@ -911,9 +921,67 @@ describe('overlay quads', () => {
     await scene.prewarm();
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
 
-    expect(scene._bubbleNodeFor('self')!.position.y).toBeCloseTo(2 * CHARACTER_SCALE + 0.2, 6);
+    expectTailAt(scene, standingHeadTop(scene, feet, 2 * CHARACTER_SCALE));
+  });
+
+  /**
+   * A skinned mesh keeps the bounds of the pose it is first measured in, so the head is followed
+   * down by its bone instead. The fall carries the head well past where the upright body would be
+   * picked, so the bubble and the pick both have to follow it.
+   */
+  describe('a fallen body', () => {
+    /** A peer at (12, 10) whose fall lowers its head bone to near the ground, 1.2 units east of its feet. */
+    function fallenPeer(): { scene: WorldScene; head: THREE.Bone } {
+      const { root, head } = skinnedModel();
+      const idle = new THREE.AnimationClip('Idle', 1, []);
+      const fall = new THREE.AnimationClip('Death_A', 1, [new THREE.VectorKeyframeTrack('head.position', [0, 1], [0, 0.9, 0, 1.2, 0.2, 0])]);
+      const scene = makeScene({ ...emptyAssets(), character: (id) => (id === 'fallen' ? root : undefined), clipsFor: () => [idle, fall] });
+      scene.placeEntity(player());
+      scene.placeEntity(player({ id: 'peer', kind: 'peer', characterModelId: 'fallen', position: { x: 12, z: 10 } }));
+      scene.updateCondition('peer', 'fallen');
+      for (let elapsed = 0; elapsed < 2; elapsed += MAX_TICK_DELTA) scene.tick(MAX_TICK_DELTA);
+      return { scene, head };
+    }
+
+    function lyingHead(head: THREE.Bone): THREE.Vector3 {
+      head.updateWorldMatrix(true, false);
+      return head.getWorldPosition(new THREE.Vector3());
+    }
+
+    it('ends the tail of its bubble where the head lies, and at the standing head once it stands', () => {
+      const { scene, head } = fallenPeer();
+      const standing = standingHeadTop(scene, new THREE.Vector3(12, 0, 10), CHARACTER_SCALE);
+      const lying = screenOf(scene, lyingHead(head));
+      expect(Math.hypot(lying.x - standing.x, lying.y - standing.y)).toBeGreaterThan(0.6);
+
+      scene.showSpeechBubble(said('peer', ['Hallo'], 3000));
+      const tail = bubbleSaying(scene, 'Hallo')!.tail!;
+      expect(Math.hypot(tail.x - lying.x, tail.y - lying.y)).toBeLessThan(0.15);
+
+      scene.updateCondition('peer', 'hale');
+      scene.tick(MAX_TICK_DELTA);
+      expectTailAt(scene, standing);
+    });
+
+    it('is picked where the head lies, and not where its head would stand', () => {
+      const { scene, head } = fallenPeer();
+      scene.camera.updateMatrixWorld();
+      const lying = lyingHead(head).project(scene.camera);
+      const upright = new THREE.Vector3(12, CHARACTER_SCALE, 10).project(scene.camera);
+
+      expect(scene.entityAt(lying.x, lying.y)).toBe('peer');
+      expect(scene.entityAt(upright.x, upright.y)).toBeUndefined();
+    });
   });
 });
+
+/** The one bubble on screen ends its tail at `expected`. */
+function expectTailAt(scene: WorldScene, expected: ScreenPoint): void {
+  const [bubble] = scene.placedBubbles().bubbles;
+  // The bounds come from Float32 vertex data, hence the looser match.
+  expect(bubble!.tail!.x).toBeCloseTo(expected.x, 5);
+  expect(bubble!.tail!.y).toBeCloseTo(expected.y, 5);
+}
 
 describe('what the cursor is over, and the entity tended', () => {
   /** Where a point of the world lands in the viewport, in normalized device coordinates. */
@@ -1004,7 +1072,7 @@ describe('shadow casting survives every path a model can reach the scene by', ()
 describe('entity yaw slews on the model holder only', () => {
   /**
    * The overlays hang off the stable node, so the facing yaw must live on the model holder. A
-   * yaw on the node would tilt the name plaque and speech bubble with the character.
+   * yaw on the node would tilt the name plaque and the miss mark with the character.
    */
   it('leaves the entity node unrotated while the holder turns', () => {
     const scene = makeScene();
@@ -1181,7 +1249,7 @@ describe('blows, falls, and raises', () => {
     expect(ghost.children).toHaveLength(before);
   });
 
-  it('hangs the miss mark over the head of the one missed, like a speech balloon', () => {
+  it('hangs the miss mark over the head of the one missed', () => {
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
@@ -1372,28 +1440,37 @@ describe('the sun travels with the camera focus', () => {
 });
 
 describe('overlay artwork', () => {
-  /**
-   * The bubble frame: the body grows a line at a time and the tail plus the two body
-   * paddings are fixed, so the frame is `lines * 12 + 20`. The wrap step measures against the same
-   * width, and a mismatch here overflows the balloon rather than failing anything.
-   */
+  /** The body grows a line at a time and its two paddings are fixed, so the frame is `lines * 12 + 10` tall. */
   it.each([
-    [1, 32],
-    [2, 44],
-    [4, 68],
-  ])('frames %i bubble line(s) at %ipx tall', (lines, height) => {
-    expect(speechBubbleFrameSize(lines, 'down', 'say')).toEqual({ width: 150, height });
+    [1, 22],
+    [2, 34],
+    [4, 58],
+  ])('frames %i bubble line(s) at %ipx tall', (count, height) => {
+    expect(speechBubbleFrameSize(Array<string>(count).fill('Hallo'), 'say').height).toBe(height);
   });
 
-  /** `max(lineCount, 1)`: an empty balloon still has a body rather than collapsing onto its tail. */
+  /** An empty balloon still has a body. */
   it('never frames a bubble shorter than one line', () => {
-    expect(speechBubbleFrameSize(0, 'down', 'say')).toEqual(speechBubbleFrameSize(1, 'down', 'say'));
+    expect(speechBubbleFrameSize([], 'say').height).toBe(speechBubbleFrameSize(['Ja.'], 'say').height);
   });
 
-  /** A yell's teeth stand 5px out on every side but the tail's, which reaches past them. */
+  /**
+   * As wide as its widest line, between three corner radii and a full line's width.
+   * Without a canvas to measure on, a character is taken as 6.6px wide.
+   */
+  it('fits the width of a bubble to its text', () => {
+    expect(speechBubbleFrameSize(['Ja'], 'say').width).toBe(24);
+    const short = speechBubbleFrameSize(['Hallo'], 'say').width;
+    const longer = speechBubbleFrameSize(['Hallo', 'Hallo Welt'], 'say').width;
+    expect(short).toBeGreaterThan(24);
+    expect(longer).toBeGreaterThan(short);
+    expect(longer).toBeLessThan(150);
+    expect(speechBubbleFrameSize(['Hallo Welt, wie geht es dir heute?'], 'say').width).toBe(150);
+  });
+
+  /** A yell's teeth stand 5px out on every side. */
   it('frames a yell with room for its teeth', () => {
-    expect(speechBubbleFrameSize(1, 'down', 'yell')).toEqual({ width: 160, height: 37 });
-    expect(speechBubbleFrameSize(1, 'left', 'yell')).toEqual({ width: 165, height: 32 });
+    expect(speechBubbleFrameSize(['Hallo Welt, wie geht es dir heute?'], 'yell')).toEqual({ width: 160, height: 32 });
   });
 
   it.each([
@@ -1401,21 +1478,22 @@ describe('overlay artwork', () => {
     ['peer', NAME_PLAQUE.playerBackground],
     ['npc', NAME_PLAQUE.npcBackground],
   ] as const)('gives a hale %s a plaque', (kind, background) => {
-    expect(namePlaqueBackground(kind, 'hale')).toBe(background);
+    expect(namePlaqueBackground(kind, 'hale', false)).toBe(background);
   });
 
-  it('gives a hale monster no plaque', () => {
-    expect(namePlaqueBackground('monster', 'hale')).toBeUndefined();
+  it('gives a hale monster a plaque only while it is hovered', () => {
+    expect(namePlaqueBackground('monster', 'hale', false)).toBeUndefined();
+    expect(namePlaqueBackground('monster', 'hale', true)).toBe(NAME_PLAQUE.playerBackground);
   });
 
   it.each(['grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const)(
     'tints a %s player, peer, and monster alike, and leaves an NPC as it is',
     (condition) => {
       const tint = NAME_PLAQUE.conditionBackground[condition];
-      expect(namePlaqueBackground('player', condition)).toBe(tint);
-      expect(namePlaqueBackground('peer', condition)).toBe(tint);
-      expect(namePlaqueBackground('monster', condition)).toBe(tint);
-      expect(namePlaqueBackground('npc', condition)).toBe(NAME_PLAQUE.npcBackground);
+      expect(namePlaqueBackground('player', condition, false)).toBe(tint);
+      expect(namePlaqueBackground('peer', condition, false)).toBe(tint);
+      expect(namePlaqueBackground('monster', condition, false)).toBe(tint);
+      expect(namePlaqueBackground('npc', condition, false)).toBe(NAME_PLAQUE.npcBackground);
     },
   );
 
@@ -1566,6 +1644,117 @@ describe('name plaques hang off the entity node', () => {
     expect(disposed).toContain('geometry');
     expect(disposed).toContain('material');
   });
+
+  describe('which plaque shows over which', () => {
+    /** The plaque plate of the entity standing at `x`. */
+    function plateAt(scene: WorldScene, x: number): THREE.Mesh | undefined {
+      let found: THREE.Mesh | undefined;
+      scene.scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        const material = mesh.material as THREE.MeshBasicMaterial | undefined;
+        if (mesh.isMesh && material?.map?.image instanceof HTMLCanvasElement && mesh.parent?.parent?.position.x === x) found = mesh;
+      });
+      return found;
+    }
+
+    function depthTested(plate: THREE.Mesh): boolean {
+      return (plate.material as THREE.MeshBasicMaterial).depthTest;
+    }
+
+    /** The player at 10, and peers at 8 (hale), 11 (tended), and 12 (hurt). */
+    function crowd(): WorldScene {
+      const scene = makeScene();
+      scene.placeEntity(player());
+      scene.placeEntity(player({ id: 'hale', kind: 'peer', position: { x: 8, z: 10 } }));
+      scene.placeEntity(player({ id: 'tended', kind: 'peer', position: { x: 11, z: 10 } }));
+      scene.placeEntity(player({ id: 'hurt', kind: 'peer', condition: 'hurt', position: { x: 12, z: 10 } }));
+      scene.showSelection('tended');
+      scene.tick(0.016);
+      return scene;
+    }
+
+    function orders(scene: WorldScene): number[] {
+      return [11, 12, 10, 8].map((x) => plateAt(scene, x)!.renderOrder);
+    }
+
+    it('draws the plaque tended over a hurt one, a hurt one over the own, and the own over the rest, none hidden by another', () => {
+      const scene = crowd();
+
+      const [tended, hurt, own, hale] = orders(scene);
+      expect(tended).toBeGreaterThan(hurt!);
+      expect(hurt).toBeGreaterThan(own!);
+      expect(own).toBeGreaterThan(hale!);
+      for (const x of [8, 10, 11, 12]) expect((plateAt(scene, x)!.material as THREE.MeshBasicMaterial).depthWrite).toBe(false);
+    });
+
+    it('draws a more hurt plaque over a less hurt one', () => {
+      const scene = makeScene();
+      scene.placeEntity(player());
+      scene.placeEntity(player({ id: 'grazed', kind: 'peer', condition: 'grazed', position: { x: 8, z: 10 } }));
+      scene.placeEntity(player({ id: 'failing', kind: 'peer', condition: 'failing', position: { x: 12, z: 10 } }));
+      scene.tick(0.016);
+
+      expect(plateAt(scene, 12)!.renderOrder).toBeGreaterThan(plateAt(scene, 8)!.renderOrder);
+      expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(plateAt(scene, 10)!.renderOrder);
+    });
+
+    it('draws the plaque tended over even a fallen one', () => {
+      const scene = crowd();
+      scene.placeEntity(player({ id: 'down', kind: 'peer', condition: 'fallen', position: { x: 6, z: 10 } }));
+      scene.tick(0.016);
+
+      expect(plateAt(scene, 11)!.renderOrder).toBeGreaterThan(plateAt(scene, 6)!.renderOrder);
+      expect(plateAt(scene, 6)!.renderOrder).toBeGreaterThan(plateAt(scene, 12)!.renderOrder);
+    });
+
+    it('brings the hovered plaque over every other and through the world, and puts it back when the pointer leaves', () => {
+      const scene = crowd();
+      const before = orders(scene);
+
+      scene.setPointer(scene._viewportPointFor('hale'));
+      scene.tick(0.016);
+      expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(Math.max(...before));
+      expect(depthTested(plateAt(scene, 8)!)).toBe(false);
+
+      scene.setPointer(undefined);
+      scene.tick(0.016);
+      expect(orders(scene)).toEqual(before);
+      expect(depthTested(plateAt(scene, 8)!)).toBe(true);
+    });
+
+    /** Hover picks what a click would reach, which is never the player. */
+    it("hovers nothing over the player's own body", () => {
+      const scene = crowd();
+      const before = orders(scene);
+
+      scene.setPointer(scene._viewportPointFor('self'));
+      scene.tick(0.016);
+
+      expect(orders(scene)).toEqual(before);
+      expect([8, 10, 11, 12].every((x) => depthTested(plateAt(scene, x)!))).toBe(true);
+    });
+
+    it('shows the name of a hale nightmare only while it is hovered', () => {
+      const scene = makeScene();
+      scene.placeEntity(player());
+      scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst', position: { x: 12, z: 10 } }));
+      expect(plateAt(scene, 12)).toBeUndefined();
+
+      scene.setPointer(scene._viewportPointFor('monster:1'));
+      scene.tick(0.016);
+      expect(plateAt(scene, 12)).toBeDefined();
+
+      // Struck and healed again under a resting pointer, it keeps its name.
+      scene.updateCondition('monster:1', 'grazed');
+      scene.updateCondition('monster:1', 'hale');
+      scene.tick(0.016);
+      expect(plateAt(scene, 12)).toBeDefined();
+
+      scene.setPointer(undefined);
+      scene.tick(0.016);
+      expect(plateAt(scene, 12)).toBeUndefined();
+    });
+  });
 });
 
 /**
@@ -1676,61 +1865,33 @@ describe('GPU resource disposal', () => {
   });
 });
 
-describe('speech bubbles are freed as they are replaced and expire', () => {
-  /** Every mesh under an entity's live bubble node, which is where its own texture hangs. */
-  function bubbleMeshes(scene: WorldScene): THREE.Mesh[] {
-    const node = scene._bubbleNodeFor('self');
-    if (node === undefined) return [];
-    const found: THREE.Mesh[] = [];
-    node.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) found.push(mesh);
-    });
-    return found;
-  }
-
+describe('speech bubbles leave as they are replaced and expire', () => {
   function sceneWithEntity(now?: () => number): WorldScene {
     const scene = makeScene(emptyAssets(), now);
     scene.placeEntity(player());
     return scene;
   }
 
-  /**
-   * The highest-frequency allocator in the file: one supersampled `CanvasTexture` per chat line.
-   * Nothing else reclaims them inside a space, so a bubble replaced without disposal leaks
-   * unboundedly for as long as anyone is talking.
-   */
-  it('disposes the previous bubble when an entity speaks again', () => {
-    const scene = sceneWithEntity();
-    scene.showSpeechBubble(said('self', ['first'], 5000));
-    const first = bubbleMeshes(scene);
-    expect(first).toHaveLength(1);
-    const geometryDispose = vi.spyOn(first[0]!.geometry, 'dispose');
-    const material = first[0]!.material as THREE.MeshBasicMaterial;
-    const mapDispose = vi.spyOn(material.map!, 'dispose');
-    const materialDispose = vi.spyOn(material, 'dispose');
+  function lines(scene: WorldScene): string[] {
+    return scene.placedBubbles().bubbles.map((bubble) => bubble.lines[0]!);
+  }
 
-    scene.showSpeechBubble(said('self', ['second'], 5000));
-
-    expect(geometryDispose).toHaveBeenCalled();
-    expect(mapDispose).toHaveBeenCalled();
-    expect(materialDispose).toHaveBeenCalled();
-    // Replaced, not accumulated: one bubble per entity at a time.
-    expect(bubbleMeshes(scene)).toHaveLength(1);
-  });
-
-  it('disposes a bubble when its lifetime runs out', () => {
+  it('keeps one bubble per speaker, and drops it when it runs out or its speaker leaves', () => {
     let nowMs = 0;
     const scene = sceneWithEntity(() => nowMs);
-    scene.showSpeechBubble(said('self', ['fleeting'], 1000));
-    const mesh = bubbleMeshes(scene)[0]!;
-    const mapDispose = vi.spyOn((mesh.material as THREE.MeshBasicMaterial).map!, 'dispose');
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 } }));
+    scene.showSpeechBubble(said('self', ['first'], 5000));
+    scene.showSpeechBubble(said('self', ['second'], 1000));
+    scene.showSpeechBubble(said('peer', ['mid-sentence'], 5000));
+    expect(lines(scene)).toEqual(['second', 'mid-sentence']);
 
     nowMs = 1000;
     scene.tick(MAX_TICK_DELTA);
+    expect(lines(scene)).toEqual(['mid-sentence']);
 
-    expect(bubbleMeshes(scene)).toHaveLength(0);
-    expect(mapDispose).toHaveBeenCalled();
+    scene.removeEntity('peer');
+    scene.tick(MAX_TICK_DELTA);
+    expect(lines(scene)).toEqual([]);
   });
 
   it('runs a bubble out on the clock however few frames were drawn, counting from when it was said', () => {
@@ -1745,38 +1906,39 @@ describe('speech bubbles are freed as they are replaced and expire', () => {
     nowMs = 61_000;
     scene.tick(0);
 
-    expect(scene._bubbleNodeFor('self')).toBeUndefined();
-    expect(scene._bubbleNodeFor('peer')).toBeDefined();
+    expect(lines(scene)).toEqual(['while it was hidden']);
   });
 
-  it('disposes an outstanding bubble when its entity leaves', () => {
+  /** A carried bubble whose time ran out on the way through the door. */
+  it('shows nothing for a line with no time left', () => {
     const scene = sceneWithEntity();
-    scene.showSpeechBubble(said('self', ['mid-sentence'], 5000));
-    const mesh = bubbleMeshes(scene)[0]!;
-    const mapDispose = vi.spyOn((mesh.material as THREE.MeshBasicMaterial).map!, 'dispose');
 
-    scene.removeEntity('self');
+    expect(scene.showSpeechBubble(said('self', ['too late'], 0))).toBe(false);
 
-    expect(bubbleMeshes(scene)).toHaveLength(0);
-    expect(mapDispose).toHaveBeenCalled();
+    expect(lines(scene)).toEqual([]);
+  });
+
+  /** Placed around a bubble that has run out but was not yet swept, the new one would be pushed off its own head. */
+  it('places a line around the bubbles still showing, not one that ran out without a frame drawn', () => {
+    let nowMs = 0;
+    const scene = sceneWithEntity(() => nowMs);
+    scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
+    scene.placeEntity(player({ id: 'cara', kind: 'peer', position: { x: 12, z: 10 } }));
+    scene.showSpeechBubble(said('bren', ['Hallo'], 1000));
+    const over = bubbleSaying(scene, 'Hallo')!.centre;
+
+    nowMs = 5000;
+    scene.showSpeechBubble(said('cara', ['Tschüss'], 3000));
+
+    expect(lines(scene)).toEqual(['Tschüss']);
+    expect(bubbleSaying(scene, 'Tschüss')!.centre.x).toBeCloseTo(over.x, 9);
+    expect(bubbleSaying(scene, 'Tschüss')!.centre.y).toBeCloseTo(over.y, 9);
   });
 });
 
-describe('speech bubbles hang over a head on screen and are pinned at the edge otherwise', () => {
-  /** Where a world point is drawn, in normalized device coordinates. */
-  function drawnAt(scene: WorldScene, point: THREE.Vector3): THREE.Vector3 {
-    scene.camera.updateMatrixWorld();
-    return point.clone().project(scene.camera);
-  }
-
-  /** Whether a bubble hangs off the space itself rather than off an entity's node. */
-  function isPinned(scene: WorldScene, node: THREE.Object3D): boolean {
-    return node.parent?.parent === scene.scene;
-  }
-
-  function plateOf(node: THREE.Object3D): THREE.Mesh {
-    return node.children[0] as THREE.Mesh;
-  }
+describe('speech bubbles hang round a head on screen and are pinned at the edge otherwise', () => {
+  /** A line as wide as a bubble gets. */
+  const LONG = 'Hallo Welt, wie geht es dir heute?';
 
   /** The player at (10, 10), and a peer `x` metres along. */
   function sceneWithPeer(x: number, aspect = 1, now?: () => number): WorldScene {
@@ -1786,35 +1948,51 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
     return scene;
   }
 
-  /** Drawn over the world, so a building or a tree nearer the camera cannot hide what was said. */
-  it('hangs the bubble of a speaker on screen over their head, over everything', () => {
+  function bodyOf(bubble: PlacedBubble): { left: number; bottom: number; right: number; top: number } {
+    const { centre, size } = bubble;
+    return { left: centre.x - size.width / 2, bottom: centre.y - size.height / 2, right: centre.x + size.width / 2, top: centre.y + size.height / 2 };
+  }
+
+  function insideScreen(scene: WorldScene, bubble: PlacedBubble): boolean {
+    const { halfSize } = scene.placedBubbles();
+    const body = bodyOf(bubble);
+    return body.left >= -halfSize.x && body.right <= halfSize.x && body.bottom >= -halfSize.y && body.top <= halfSize.y;
+  }
+
+  /** Runs the scene long enough for every bubble to settle where it is going. */
+  function settle(scene: WorldScene): void {
+    for (let frame = 0; frame < 20; frame += 1) scene.tick(MAX_TICK_DELTA);
+  }
+
+  it('hangs the bubble of a speaker on screen over their head', () => {
     const scene = sceneWithPeer(11);
 
     expect(scene.showSpeechBubble(said('peer', ['Hallo'], 3000))).toBe(false);
 
-    const node = scene._bubbleNodeFor('peer')!;
-    expect(isPinned(scene, node)).toBe(false);
-    expect(node.parent?.position.x).toBe(11);
-    const material = plateOf(node).material as THREE.MeshBasicMaterial;
-    expect(material.depthTest).toBe(false);
-    expect(material.depthWrite).toBe(false);
+    const bubble = bubbleSaying(scene, 'Hallo')!;
+    const head = screenOf(scene, new THREE.Vector3(11, CHARACTER_SCALE, 10));
+    expect(bubble.mode).toBe('anchored');
+    expect(bubble.centre.x).toBeCloseTo(head.x, 9);
+    expect(bodyOf(bubble).bottom).toBeGreaterThan(head.y);
   });
 
+  /** It looks for the spot round the head afresh rather than keeping the offset it had while pinned. */
   it('pins the bubble of a speaker off screen at the edge, and hangs it on their head once they walk into view', () => {
     const scene = sceneWithPeer(40);
 
     expect(scene.showSpeechBubble(said('peer', ['Hallo'], 3000))).toBe(true);
 
-    const node = scene._bubbleNodeFor('peer')!;
-    expect(isPinned(scene, node)).toBe(true);
-    const pinned = drawnAt(scene, node.position);
-    expect(Math.max(Math.abs(pinned.x), Math.abs(pinned.y))).toBeGreaterThan(0.5);
-    expect(Math.max(Math.abs(pinned.x), Math.abs(pinned.y))).toBeLessThan(1);
+    const pinned = bubbleSaying(scene, 'Hallo')!;
+    const { halfSize } = scene.placedBubbles();
+    expect(pinned.mode).toBe('pinned');
+    expect(Math.max(Math.abs(pinned.centre.x) / halfSize.x, Math.abs(pinned.centre.y) / halfSize.y)).toBeGreaterThan(0.5);
+    expect(insideScreen(scene, pinned)).toBe(true);
 
     scene.updatePosition('peer', { x: 11, z: 10 }, 0, undefined);
     scene.tick(MAX_TICK_DELTA);
-
-    expect(isPinned(scene, scene._bubbleNodeFor('peer')!)).toBe(false);
+    expect(bubbleSaying(scene, 'Hallo')!.mode).toBe('anchored');
+    settle(scene);
+    expect(bubbleSaying(scene, 'Hallo')!.centre.x).toBeCloseTo(screenOf(scene, new THREE.Vector3(11, CHARACTER_SCALE, 10)).x, 6);
   });
 
   /** The camera is turned 35 degrees, so a voice due east is not drawn straight to the right. */
@@ -1824,8 +2002,8 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
 
     expect(scene.showSpeechBubble(voiced('bren', ['Hallo'], source))).toBe(true);
 
-    const toward = drawnAt(scene, new THREE.Vector3(source.x, 0, source.z));
-    const pinned = drawnAt(scene, scene._bubbleNodeFor('bren')!.position);
+    const toward = screenOf(scene, new THREE.Vector3(source.x, 0, source.z));
+    const pinned = bubbleSaying(scene, 'Hallo')!.centre;
     expect(Math.abs(toward.y)).toBeGreaterThan(0.1);
     expect(Math.atan2(pinned.y, pinned.x)).toBeCloseTo(Math.atan2(toward.y, toward.x), 6);
   });
@@ -1837,53 +2015,48 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
 
     expect(scene.showSpeechBubble(voiced('bren', ['Hallo'], { x: 10, z: 10 }))).toBe(true);
 
-    const node = scene._bubbleNodeFor('bren')!;
-    expect([node.position.x, node.position.y, node.position.z].every(Number.isFinite)).toBe(true);
-    const pinned = drawnAt(scene, node.position);
+    const pinned = bubbleSaying(scene, 'Hallo')!.centre;
     expect(pinned.x).toBeCloseTo(0, 6);
-    expect(pinned.y).toBeGreaterThan(0.5);
+    expect(pinned.y).toBeGreaterThan(scene.placedBubbles().halfSize.y / 2);
   });
 
-  /** Zoomed in all the way, four lines are taller than the screen above the player's head, and one line is not. */
-  it("pins the player's own bubble to the top, its tail down onto them, when the screen has no room above their head for all of it", () => {
+  /** Zoomed in all the way, four lines are taller than the screen above the player's head. */
+  it("hangs the player's own bubble beside their head when the screen has no room above it", () => {
     const scene = sceneWithPeer(11);
     scene.applyZoomFactor(2);
-    const drawn = vi.mocked(renderSpeechBubble);
 
-    expect(scene.showSpeechBubble(said('self', ['Hallo'], 3000))).toBe(false);
-    drawn.mockClear();
-    expect(scene.showSpeechBubble(said('self', ['one', 'two', 'three', 'four'], 3000))).toBe(true);
+    expect(scene.showSpeechBubble(said('self', ['one', 'two', 'three', 'four'], 3000))).toBe(false);
 
-    const pinned = drawnAt(scene, scene._bubbleNodeFor('self')!.position);
-    expect(pinned.x).toBeCloseTo(0, 6);
-    expect(pinned.y).toBeGreaterThan(0.5);
-    expect(drawn.mock.calls.at(-1)?.[1]).toBe('down');
+    const bubble = bubbleSaying(scene, 'one')!;
+    expect(bubble.mode).toBe('anchored');
+    expect(insideScreen(scene, bubble)).toBe(true);
   });
 
-  /** 2.7 m across the screen is drawn 0.9 of the way to its edge, too close for half a bubble's 2.4 m width. */
-  it.each([
-    [1, 'right'],
-    [-1, 'left'],
-  ] as const)('pins the bubble of a speaker drawn near the screen edge on side %i to that edge, its tail to the %s', (side, tail) => {
+  /** 2.7 m across the screen is drawn 0.9 of the way to its edge. */
+  it.each([1, -1])('slides the bubble of a speaker drawn near the screen edge on side %i inward', (side) => {
     const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
     const across = { x: 10 + side * 2.7 * Math.cos(yaw), z: 10 - side * 2.7 * Math.sin(yaw) };
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'peer', kind: 'peer', position: across }));
-    expect(side * drawnAt(scene, new THREE.Vector3(across.x, 0, across.z)).x).toBeCloseTo(0.9, 6);
-    const drawn = vi.mocked(renderSpeechBubble);
-    drawn.mockClear();
+    const feet = screenOf(scene, new THREE.Vector3(across.x, 0, across.z));
+    expect((side * feet.x) / scene.placedBubbles().halfSize.x).toBeCloseTo(0.9, 6);
 
-    expect(scene.showSpeechBubble(said('peer', ['Hallo'], 3000))).toBe(true);
+    expect(scene.showSpeechBubble(said('peer', [LONG], 3000))).toBe(false);
 
-    expect(drawn.mock.calls.at(-1)?.[1]).toBe(tail);
+    const bubble = bubbleSaying(scene, LONG)!;
+    expect(bubble.mode).toBe('anchored');
+    expect(insideScreen(scene, bubble)).toBe(true);
   });
 
-  /** A 400 x 1000 window shows 2.4 m across, no wider than a bubble, so no head has a bubble's width to either side of it. */
+  /** A 380 x 1000 window shows 2.28 m across, narrower than the 2.4 m of a full bubble. */
   it('keeps the bubble of a speaker beside the player overhead in a window narrower than a bubble', () => {
-    const scene = sceneWithPeer(10.5, 0.4);
+    const scene = sceneWithPeer(10.5, 0.38);
+    expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
-    expect(scene.showSpeechBubble(said('peer', ['Hallo'], 3000))).toBe(false);
+    expect(scene.showSpeechBubble(said('peer', [LONG], 3000))).toBe(false);
+
+    expect(bubbleSaying(scene, LONG)!.mode).toBe('anchored');
   });
 
   /** Outdoors a voice with no body hangs its bubble over its spot at doorway height, on the building over a door. */
@@ -1892,10 +2065,40 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
 
     expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 11, z: 9 }, { kind: 'yell' }))).toBe(false);
 
-    const node = scene._bubbleNodeFor('bren')!;
-    expect(isPinned(scene, node)).toBe(true);
-    expect({ x: node.position.x, z: node.position.z }).toEqual({ x: 11, z: 9 });
-    expect(node.position.y).toBeGreaterThan(2);
+    const bubble = bubbleSaying(scene, 'Hilfe!')!;
+    const doorway = screenOf(scene, new THREE.Vector3(11, 2.2, 9));
+    expect(bubble.mode).toBe('anchored');
+    expect(bubble.centre.x).toBeCloseTo(doorway.x, 9);
+    expect(bodyOf(bubble).bottom).toBeGreaterThan(doorway.y);
+    expect(bubble.tail!.y).toBeCloseTo(doorway.y, 9);
+  });
+
+  it('keeps a bubble clear of what covers the screen over its speaker', () => {
+    const scene = sceneWithPeer(11);
+    const head = screenOf(scene, new THREE.Vector3(11, CHARACTER_SCALE, 10));
+    const { halfSize } = scene.placedBubbles();
+    const panel = { left: head.x - 0.6, bottom: head.y + 0.05, right: head.x + 0.6, top: head.y + 1 };
+    scene.setScreenOccluders([
+      { left: panel.left / halfSize.x, bottom: panel.bottom / halfSize.y, right: panel.right / halfSize.x, top: panel.top / halfSize.y },
+    ]);
+
+    expect(scene.showSpeechBubble(said('peer', ['Hallo'], 3000))).toBe(false);
+
+    const body = bodyOf(bubbleSaying(scene, 'Hallo')!);
+    expect(body.left >= panel.right || body.right <= panel.left || body.bottom >= panel.top || body.top <= panel.bottom).toBe(true);
+  });
+
+  it('keeps the bubbles of two speakers standing together apart', () => {
+    const scene = sceneWithPeer(12);
+    scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
+
+    scene.showSpeechBubble(said('peer', ['Hallo'], 3000));
+    scene.showSpeechBubble(said('bren', ['Wer kommt mit?'], 3000));
+    settle(scene);
+
+    const first = bodyOf(bubbleSaying(scene, 'Hallo')!);
+    const second = bodyOf(bubbleSaying(scene, 'Wer kommt mit?')!);
+    expect(first.left >= second.right || first.right <= second.left || first.bottom >= second.top || first.top <= second.bottom).toBe(true);
   });
 
   describe('in a room', () => {
@@ -1914,66 +2117,81 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
 
     it('shows a voice from the door just past the wall, in the dark, with its tail toward the wall', () => {
       const scene = roomScene(0.5);
-      const drawn = vi.mocked(renderSpeechBubble);
-      drawn.mockClear();
 
       expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }, { kind: 'yell' }))).toBe(false);
 
-      const bubble = drawnAt(scene, scene._bubbleNodeFor('bren')!.position);
-      const wall = drawnAt(scene, new THREE.Vector3(5, 2.5, 0));
-      expect(bubble.y).toBeGreaterThan(wall.y);
-      expect(Math.abs(bubble.y)).toBeLessThan(1);
-      expect(drawn.mock.calls.at(-1)?.[1]).toBe('down');
+      const bubble = bubbleSaying(scene, 'Hilfe!')!;
+      expect(bubble.mode).toBe('fixed');
+      expect(bodyOf(bubble).bottom).toBeGreaterThan(screenOf(scene, new THREE.Vector3(5, 2.5, 0)).y);
+      expect(insideScreen(scene, bubble)).toBe(true);
+      expect(bubble.tail!.y).toBeLessThan(bodyOf(bubble).bottom);
     });
 
     /** A side wall leaves room for a bubble beside it only in a wide window. */
     it.each([
-      [{ x: 10, z: 5 }, 'left'],
-      [{ x: 0, z: 5 }, 'right'],
-      [{ x: 5, z: 10 }, 'up'],
-    ] as const)('points the tail of a voice from the door at %j back toward its wall: %s', (source, tail) => {
+      [{ x: 10, z: 5 }, 'east'],
+      [{ x: 0, z: 5 }, 'west'],
+      [{ x: 5, z: 10 }, 'south'],
+    ] as const)('points the tail of a voice from the door at %j back toward its %s wall', (source, _wall) => {
       const scene = roomScene(0.5, 2);
-      const drawn = vi.mocked(renderSpeechBubble);
-      drawn.mockClear();
 
       expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], source))).toBe(false);
 
-      expect(drawn.mock.calls.at(-1)?.[1]).toBe(tail);
+      const bubble = bubbleSaying(scene, 'Hilfe!')!;
+      const body = bodyOf(bubble);
+      const tail = bubble.tail!;
+      const wall = screenOf(scene, new THREE.Vector3(source.x, 1.25, source.z));
+      expect(bubble.mode).toBe('fixed');
+      expect(tail.x < body.left || tail.x > body.right || tail.y < body.bottom || tail.y > body.top).toBe(true);
+      expect(Math.hypot(tail.x - wall.x, tail.y - wall.y)).toBeLessThan(Math.hypot(bubble.centre.x - wall.x, bubble.centre.y - wall.y));
+    });
+
+    /** Its spot past the wall is the one place it can go, and a bubble round a head can go anywhere round it, so it takes its spot first. */
+    it('places a voice from the door before a bubble round a head that spoke earlier', () => {
+      const scene = roomScene(0.5);
+      scene.placeEntity(player({ id: 'aya', kind: 'peer', position: { x: 5, z: 1 } }));
+      scene.showSpeechBubble(voiced('aya', ['Hallo'], { x: 5, z: 1 }));
+
+      scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }, { kind: 'yell' }));
+      scene.tick(MAX_TICK_DELTA);
+
+      expect(scene.placedBubbles().bubbles.map((bubble) => [bubble.lines[0], bubble.mode])).toEqual([
+        ['Hilfe!', 'fixed'],
+        ['Hallo', 'anchored'],
+      ]);
     });
 
     it('hangs it over the yeller once they come in through the door', () => {
       const scene = roomScene(0.5);
       scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }, { kind: 'yell' }));
-      expect(isPinned(scene, scene._bubbleNodeFor('bren')!)).toBe(true);
+      expect(bubbleSaying(scene, 'Hilfe!')!.mode).toBe('fixed');
 
       scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 5, z: 1 } }));
       scene.tick(MAX_TICK_DELTA);
 
-      const node = scene._bubbleNodeFor('bren')!;
-      expect(isPinned(scene, node)).toBe(false);
-      expect(node.parent?.position).toMatchObject({ x: 5, z: 1 });
+      expect(bubbleSaying(scene, 'Hilfe!')!.mode).toBe('anchored');
     });
 
     it('pins it at the edge of the screen when the wall is off screen', () => {
-      const scene = roomScene(2);
+      const scene = roomScene(2, 0.6);
+      expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
-      expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }))).toBe(true);
+      expect(scene.showSpeechBubble(voiced('bren', [LONG], { x: 5, z: 0 }))).toBe(true);
     });
   });
 
-  /** At the closest zoom a 600 x 1000 window shows 1.8 m across, less than the 2.4 m a bubble is wide. */
+  /** At the closest zoom a 600 x 1000 window shows 1.8 m across, less than the 2.4 m a full bubble is wide. */
   it('centres a pinned bubble across a window too narrow for it', () => {
     const scene = sceneWithPeer(40, 0.6);
     scene.applyZoomFactor(2);
+    expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
-    scene.showSpeechBubble(said('peer', ['Hallo'], 3000));
+    expect(scene.showSpeechBubble(said('peer', [LONG], 3000))).toBe(true);
 
-    const node = scene._bubbleNodeFor('peer')!;
-    expect([node.position.x, node.position.y, node.position.z].every(Number.isFinite)).toBe(true);
-    expect(drawnAt(scene, node.position).x).toBeCloseTo(0, 6);
+    expect(bubbleSaying(scene, LONG)!.centre.x).toBe(0);
   });
 
-  it("carries the player's own bubble through a door for the rest of its time, and no one else's", () => {
+  it("keeps the bubbles with the outgoing space until the player lands, then carries the player's own through the door for the rest of its time", () => {
     let nowMs = 0;
     const scene = sceneWithPeer(11, 1, () => nowMs);
     scene.showSpeechBubble(said('self', ['Hallo'], 3000));
@@ -1982,18 +2200,19 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
     scene.tick(MAX_TICK_DELTA);
 
     scene.enterSpace(world('EdariaInn'));
+    scene.tick(MAX_TICK_DELTA);
+    expect(scene.placedBubbles().bubbles.map((bubble) => bubble.lines[0])).toEqual(['Hallo', 'Tschüss']);
+
     scene.placeEntity(player({ position: { x: 2, z: 2 } }));
     scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 3, z: 2 } }));
-
-    const node = scene._bubbleNodeFor('self')!;
-    expect(node.parent?.position).toMatchObject({ x: 2, z: 2 });
-    expect(scene._bubbleNodeFor('peer')).toBeUndefined();
+    expect(scene.placedBubbles().bubbles.map((bubble) => bubble.lines[0])).toEqual(['Hallo']);
+    expect(bubbleSaying(scene, 'Hallo')!.centre.x).toBeCloseTo(screenOf(scene, new THREE.Vector3(2, 0, 2)).x, 6);
     nowMs = 2999;
     scene.tick(MAX_TICK_DELTA);
-    expect(scene._bubbleNodeFor('self')).toBe(node);
+    expect(bubbleSaying(scene, 'Hallo')).toBeDefined();
     nowMs = 3000;
     scene.tick(MAX_TICK_DELTA);
-    expect(scene._bubbleNodeFor('self')).toBeUndefined();
+    expect(scene.placedBubbles().bubbles).toEqual([]);
   });
 
   it('carries no bubble to the splash', () => {
@@ -2003,20 +2222,7 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
     scene.showSplash();
     scene.placeEntity(player());
 
-    expect(scene._bubbleNodeFor('self')).toBeUndefined();
-  });
-
-  it('frees a pinned bubble when its speaker leaves', () => {
-    const scene = sceneWithPeer(40);
-    scene.showSpeechBubble(said('peer', ['Hallo'], 3000));
-    const node = scene._bubbleNodeFor('peer')!;
-    const mapDispose = vi.spyOn((plateOf(node).material as THREE.MeshBasicMaterial).map!, 'dispose');
-
-    scene.removeEntity('peer');
-
-    expect(node.parent).toBeNull();
-    expect(scene._bubbleNodeFor('peer')).toBeUndefined();
-    expect(mapDispose).toHaveBeenCalled();
+    expect(scene.placedBubbles().bubbles).toEqual([]);
   });
 
   it.each([
@@ -2027,13 +2233,11 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
 
     scene.showSpeechBubble(said('peer', ['Hallo'], 3000, { clarity }));
 
-    expect((plateOf(scene._bubbleNodeFor('peer')!).material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(opacity, 12);
+    expect(bubbleSaying(scene, 'Hallo')!.opacity).toBeCloseTo(opacity, 12);
   });
 
-  it('draws each kind of speech in its own style, its tail toward the edge it is pinned to', () => {
+  it('draws each kind of speech in its own style, its tail toward the head it hangs over or the edge it is pinned to', () => {
     const scene = sceneWithPeer(11);
-    const drawn = vi.mocked(renderSpeechBubble);
-    drawn.mockClear();
 
     scene.showSpeechBubble(said('peer', ['psst'], 3000, { kind: 'whisper' }));
     // Straight away from the camera, which is drawn straight up the screen.
@@ -2041,51 +2245,106 @@ describe('speech bubbles hang over a head on screen and are pinned at the edge o
     const away = { x: 10 - 40 * Math.sin(yaw), z: 10 - 40 * Math.cos(yaw) };
     scene.showSpeechBubble(voiced('bren', ['Hilfe!'], away, { kind: 'yell' }));
 
-    expect(drawn.mock.calls.map(([, tail, kind]) => [kind, tail])).toEqual([
-      ['whisper', 'down'],
-      ['yell', 'up'],
-    ]);
+    const whisper = bubbleSaying(scene, 'psst')!;
+    const yell = bubbleSaying(scene, 'Hilfe!')!;
+    expect([whisper.kind, yell.kind]).toEqual(['whisper', 'yell']);
+    expect(whisper.tail!.y).toBeLessThan(bodyOf(whisper).bottom);
+    expect(yell.mode).toBe('pinned');
+    expect(yell.tail!.y).toBeGreaterThan(bodyOf(yell).top);
   });
 });
 
 describe('speech balloon art', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
+  afterEach(() => vi.unstubAllGlobals());
 
-  /** A 2D context recording the outline settings in force at each stroke, and a path counting its straight edges. */
-  function recordBalloon(kind: SpeechKind): { strokes: { color: unknown; width: unknown; dash: number[] }[]; edges: number } {
+  /** A path recording the points it passes through, the rects added to it, and whether it was closed. */
+  class RecordedPath {
+    points: { x: number; y: number }[] = [];
+    rects: number[][] = [];
+    closed = false;
+    moveTo(x: number, y: number): void {
+      this.points.push({ x, y });
+    }
+    lineTo(x: number, y: number): void {
+      this.points.push({ x, y });
+    }
+    arcTo(): void {}
+    rect(...args: number[]): void {
+      this.rects.push(args);
+    }
+    closePath(): void {
+      this.closed = true;
+    }
+  }
+
+  /** A 2D context that records what is drawn on it. `events` is the order of its calls. */
+  function recordingContext(): {
+    context: CanvasRenderingContext2D;
+    strokes: { color: unknown; width: unknown; dash: number[] }[];
+    stroked: RecordedPath[];
+    fills: RecordedPath[];
+    fillAlphas: number[];
+    clips: { path: RecordedPath; rule: string | undefined }[];
+    clears: number[][];
+    transforms: number[][];
+    copies: { alpha: number; image: unknown; rects: number[] }[];
+    events: string[];
+  } {
     const strokes: { color: unknown; width: unknown; dash: number[] }[] = [];
+    const stroked: RecordedPath[] = [];
+    const fills: RecordedPath[] = [];
+    const fillAlphas: number[] = [];
+    const clips: { path: RecordedPath; rule: string | undefined }[] = [];
+    const clears: number[][] = [];
+    const transforms: number[][] = [];
+    const copies: { alpha: number; image: unknown; rects: number[] }[] = [];
+    const events: string[] = [];
     let dash: number[] = [];
-    let edges = 0;
     const context = {
+      canvas: { width: 0, height: 0 },
       strokeStyle: '',
       lineWidth: 1,
-      scale() {},
-      fill() {},
-      fillText() {},
+      globalAlpha: 1,
+      save() {
+        events.push('save');
+      },
+      restore() {
+        events.push('restore');
+      },
+      clip(path: RecordedPath, rule?: string) {
+        clips.push({ path, rule });
+        events.push('clip');
+      },
+      setTransform(...matrix: number[]) {
+        transforms.push(matrix);
+        events.push('transform');
+      },
+      clearRect(...rect: number[]) {
+        clears.push(rect);
+        events.push('clear');
+      },
+      fillText() {
+        events.push('text');
+      },
+      drawImage(image: unknown, ...rects: number[]) {
+        copies.push({ alpha: context.globalAlpha, image, rects });
+        events.push('copy');
+      },
+      fill(path: RecordedPath) {
+        fills.push(path);
+        fillAlphas.push(context.globalAlpha);
+        events.push('fill');
+      },
       setLineDash(next: number[]) {
         dash = next;
       },
-      stroke() {
+      stroke(path: RecordedPath) {
+        stroked.push(path);
         strokes.push({ color: context.strokeStyle, width: context.lineWidth, dash });
       },
     };
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
-    vi.stubGlobal(
-      'Path2D',
-      class {
-        moveTo() {}
-        lineTo() {
-          edges += 1;
-        }
-        arcTo() {}
-        closePath() {}
-      },
-    );
-    renderSpeechBubble(['Hallo'], 'down', kind);
-    return { strokes, edges };
+    vi.stubGlobal('Path2D', RecordedPath);
+    return { context: context as unknown as CanvasRenderingContext2D, strokes, stroked, fills, fillAlphas, clips, clears, transforms, copies, events };
   }
 
   it.each([
@@ -2099,11 +2358,216 @@ describe('speech balloon art', () => {
       ],
     ],
   ] as const)('outlines a %s balloon with %j', (kind, strokes) => {
-    expect(recordBalloon(kind).strokes).toEqual(strokes);
+    const recorded = recordingContext();
+
+    paintSpeechBubble(recorded.context, ['Hallo'], kind, undefined);
+
+    expect(recorded.strokes).toEqual(strokes);
   });
 
   it("bursts a yell's outline into teeth", () => {
-    expect(recordBalloon('yell').edges).toBeGreaterThan(4 * recordBalloon('say').edges);
+    const edges = (kind: SpeechKind): number => {
+      const recorded = recordingContext();
+      paintSpeechBubble(recorded.context, ['Hallo'], kind, undefined);
+      return recorded.fills[0]!.points.length;
+    };
+
+    expect(edges('yell')).toBeGreaterThan(4 * edges('say'));
+  });
+
+  /** Stroked as two lines, a tail and its body meet as two cut-off ends that never quite join. */
+  it.each(['whisper', 'say', 'yell'] as const)('fills and strokes a %s body and its tail as one closed outline through the tip', (kind) => {
+    const recorded = recordingContext();
+    const tip = { x: 70, y: 60 };
+
+    paintSpeechBubble(recorded.context, ['Hallo'], kind, tip);
+
+    const [outline] = recorded.fills;
+    expect(recorded.fills).toHaveLength(1);
+    expect(outline!.closed).toBe(true);
+    expect(outline!.points).toContainEqual(tip);
+    expect(recorded.stroked.every((path) => path === outline)).toBe(true);
+  });
+
+  /**
+   * Where the tail leaves the body: the two points either side of the tip lie on the edge facing it,
+   * and the stretch between them lies on the tip's side of that edge's middle. A tail leaving the far
+   * edge, or mirrored along its own, would cross the text.
+   */
+  it.each([
+    ['above, left of the middle', { x: 10, y: -20 }, 'y', 'top'],
+    ['below, right of the middle', { x: 70, y: 70 }, 'y', 'bottom'],
+    ['below, left of the middle', { x: 10, y: 70 }, 'y', 'bottom'],
+    ['to the right, low', { x: 120, y: 40 }, 'x', 'right'],
+    ['to the left, high', { x: -40, y: 8 }, 'x', 'left'],
+  ] as const)('leaves a say from the edge facing a tip %s', (_where, tip, axis, edge) => {
+    const recorded = recordingContext();
+    const lines = ['Hallo Welt', 'wie geht', 'es dir?'];
+    const frame = speechBubbleFrameSize(lines, 'say');
+
+    paintSpeechBubble(recorded.context, lines, 'say', tip);
+
+    const points = recorded.fills[0]!.points;
+    const at = points.findIndex((point) => point.x === tip.x && point.y === tip.y);
+    const mouth = [points[at - 1]!, points[at + 1]!];
+    const middle = { x: frame.width / 2, y: frame.height / 2 };
+    for (const point of mouth) {
+      if (edge === 'top' || edge === 'left') expect(point[axis]).toBeLessThan(middle[axis] - 5);
+      else expect(point[axis]).toBeGreaterThan(middle[axis] + 5);
+    }
+    const along = axis === 'y' ? 'x' : 'y';
+    const stretch = (mouth[0]![along] + mouth[1]![along]) / 2;
+    expect(Math.sign(stretch - middle[along])).toBe(Math.sign(tip[along] - middle[along]));
+  });
+
+  /** As the layout points it, straight out of the edge it judges on the whole frame, so the tail does not bend round a corner. */
+  it('leaves a yell from the side a short tail points straight out of, near its diagonal', () => {
+    const recorded = recordingContext();
+    const lines = ['Hallo Welt, wie geht es dir heute?'];
+    const frame = speechBubbleFrameSize(lines, 'yell');
+    const size = { width: frame.width * OVERLAY_METRES_PER_PIXEL, height: frame.height * OVERLAY_METRES_PER_PIXEL };
+    // Toward a voice just under the frame's diagonal, judged on the frame: a side.
+    const toward = { x: size.width, y: -size.height * 0.95 };
+    const tip = tailTip({ x: 0, y: 0 }, size, { toward })!;
+    const overlayTip = { x: (tip.x + size.width / 2) / OVERLAY_METRES_PER_PIXEL, y: (size.height / 2 - tip.y) / OVERLAY_METRES_PER_PIXEL };
+
+    paintSpeechBubble(recorded.context, lines, 'yell', overlayTip);
+
+    const points = recorded.fills[0]!.points;
+    const at = points.findIndex((point) => Math.abs(point.x - overlayTip.x) < 1e-9 && Math.abs(point.y - overlayTip.y) < 1e-9);
+    expect(at).toBeGreaterThan(0);
+    for (const point of [points[at - 1]!, points[at + 1]!]) expect(point.x).toBeCloseTo(frame.width - 5 - 1.8);
+  });
+
+  it('draws no tail toward a tip inside the body', () => {
+    const recorded = recordingContext();
+
+    paintSpeechBubble(recorded.context, ['Hallo'], 'say', { x: 20, y: 10 });
+
+    expect(recorded.fills[0]!.points).not.toContainEqual({ x: 20, y: 10 });
+  });
+
+  /** Marks stacked on a letter reach far past its line, and would otherwise be drawn over the world. */
+  it('clips its text to the balloon, and lets the clip go after', () => {
+    const recorded = recordingContext();
+
+    paintSpeechBubble(recorded.context, ['Hallo'], 'say', { x: 70, y: 60 });
+
+    expect(recorded.clips.map((clip) => clip.path)).toEqual([recorded.fills[0]]);
+    expect(recorded.events).toEqual(['fill', 'save', 'clip', 'text', 'restore']);
+  });
+
+  const placedBubble = (x: number, opacity = 1): PlacedBubble => ({
+    centre: { x, y: 0.5 },
+    size: { width: 1, height: 0.4 },
+    tail: { x, y: -0.6 },
+    lines: ['Hallo'],
+    kind: 'say',
+    opacity,
+    mode: 'anchored',
+  });
+
+  /** So a tail may pass behind another bubble, but never through its text. */
+  it('copies every bubble outside its frame before any inside it', () => {
+    const layer = recordingContext();
+    const scratch = recordingContext();
+
+    paintBubbles(layer.context, scratch.context, { halfSize: { x: 3, y: 3 }, bubbles: [placedBubble(-1), placedBubble(1)] }, { width: 600, height: 600 });
+
+    expect(layer.clips.map((clip) => clip.rule)).toEqual(['evenodd', 'evenodd', 'nonzero', 'nonzero']);
+    expect(layer.copies).toHaveLength(4);
+  });
+
+  /** Painted straight onto the layer at its opacity, the outline and the text would each show what is painted under them through. */
+  it('paints a faint bubble opaque and lays the picture down at its opacity', () => {
+    const layer = recordingContext();
+    const scratch = recordingContext();
+
+    paintBubbles(layer.context, scratch.context, { halfSize: { x: 3, y: 3 }, bubbles: [placedBubble(1, 0.3)] }, { width: 600, height: 600 });
+
+    expect(scratch.fillAlphas).not.toHaveLength(0);
+    expect(scratch.fillAlphas.every((alpha) => alpha === 1)).toBe(true);
+    expect(layer.copies.map((copy) => copy.alpha)).toEqual([0.3, 0.3]);
+  });
+
+  describe('a bubble off the pixel grid, its tail reaching past the edge of a wide screen', () => {
+    // 100 canvas pixels a metre. The frame runs from (2.003, 0.75) to (3.003, 0.25) on the screen,
+    // and the tail's tip lies 1 cm inside the right edge, so the outline round it reaches past.
+    const pixelSize = { width: 800, height: 600 };
+    const bubble: PlacedBubble = { ...placedBubble(2.503), size: { width: 1, height: 0.5 }, tail: { x: 3.99, y: -0.6 } };
+    const frame = [600, 225, 101, 50];
+    const extent = [600, 225, 200, 142];
+
+    function painted() {
+      const layer = recordingContext();
+      const scratch = recordingContext();
+      paintBubbles(layer.context, scratch.context, { halfSize: { x: 4, y: 3 }, bubbles: [bubble] }, pixelSize);
+      return { layer, scratch };
+    }
+
+    /** Whole pixels, so the two clips share no half-covered pixel along the frame. */
+    it('clips to everything but its frame, then to its frame, each grown out to whole pixels', () => {
+      const { layer } = painted();
+
+      expect(layer.clips.map((clip) => [clip.rule, clip.path.rects])).toEqual([
+        ['evenodd', [[0, 0, 800, 600], frame]],
+        ['nonzero', [frame]],
+      ]);
+    });
+
+    it('copies its frame and its tail from the scratch canvas, pixel for pixel, cut off at the screen', () => {
+      const { layer, scratch } = painted();
+
+      expect(layer.copies.map((copy) => copy.rects)).toEqual([
+        [...extent, ...extent],
+        [...extent, ...extent],
+      ]);
+      expect(layer.copies.every((copy) => copy.image === scratch.context.canvas)).toBe(true);
+    });
+
+    /** A clip left in force would cut every later bubble down to this one's frame. */
+    it('clears the layer once, and sets and lets go of each clip round its copy', () => {
+      const { layer } = painted();
+
+      expect(layer.transforms).toEqual([[1, 0, 0, 1, 0, 0]]);
+      expect(layer.clears).toEqual([[0, 0, 800, 600]]);
+      expect(layer.events).toEqual(['transform', 'clear', 'save', 'clip', 'copy', 'restore', 'save', 'clip', 'copy', 'restore']);
+    });
+
+    /** What an earlier bubble or an earlier frame left there would be copied along. */
+    it('clears what it is about to copy, in canvas pixels, before it paints', () => {
+      const { scratch } = painted();
+
+      expect(scratch.clears).toEqual([extent, extent]);
+      expect(scratch.events.slice(0, 4)).toEqual(['transform', 'clear', 'transform', 'fill']);
+      expect(scratch.transforms[0]).toEqual([1, 0, 0, 1, 0, 0]);
+    });
+
+    it('paints it with its frame at its place on the screen and its tail to the tip', () => {
+      const { scratch } = painted();
+
+      const scale = 100 * OVERLAY_METRES_PER_PIXEL;
+      const [scaleX, skewY, skewX, scaleY, left, top] = scratch.transforms[1]!;
+      expect([scaleX, skewY, skewX, scaleY]).toEqual([scale, 0, 0, scale]);
+      expect(left).toBeCloseTo(600.3, 9);
+      expect(top).toBeCloseTo(225, 9);
+      const tip = { x: (3.99 - 2.003) / OVERLAY_METRES_PER_PIXEL, y: (0.75 + 0.6) / OVERLAY_METRES_PER_PIXEL };
+      expect(scratch.fills[0]!.points.some((point) => Math.abs(point.x - tip.x) < 1e-9 && Math.abs(point.y - tip.y) < 1e-9)).toBe(true);
+    });
+
+    it('keeps the scratch canvas as large as the layer', () => {
+      const { scratch } = painted();
+
+      expect(scratch.context.canvas).toMatchObject(pixelSize);
+    });
+  });
+
+  it('clears the layer and paints nothing with no scratch canvas to paint on', () => {
+    const layer = recordingContext();
+
+    paintBubbles(layer.context, null, { halfSize: { x: 3, y: 3 }, bubbles: [placedBubble(1)] }, { width: 600, height: 600 });
+
+    expect(layer.events).toEqual(['transform', 'clear']);
   });
 });
 

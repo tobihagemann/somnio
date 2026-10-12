@@ -57,6 +57,15 @@ body {
   height: 100%;
 }
 
+/* Over the world and under the panels; the pointer goes through to the world. */
+#somnio-bubbles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /*
  * `border-width: 0` with a non-zero `border-image-width` is load-bearing, not a quirk.
  *

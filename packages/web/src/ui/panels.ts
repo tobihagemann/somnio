@@ -84,6 +84,8 @@ function itemLabel(itemId: string): string {
 export class GamePanels {
   readonly root: HTMLElement;
   readonly chatInput: HTMLTextAreaElement;
+  /** What covers the play field: each panel body and toggle, measuring nothing while it is hidden. */
+  readonly occluders: readonly HTMLElement[];
 
   private readonly bars: HUDBar[];
   private readonly lucidity: HTMLElement;
@@ -162,10 +164,14 @@ export class GamePanels {
       children: [element('div', { className: 'trailing-column', children: [this.itemsList, this.itemsFooter] })],
     });
 
-    const chatColumn = this.floating('bottom-leading', 'chat', [this.chatBody, this.toggle(t('Chat'), 'chat', this.chatBody)]);
-    const playersColumn = this.floating('top-trailing', 'players', [this.toggle(t('Players'), 'players', this.playersBody), this.playersBody]);
-    const itemsColumn = this.floating('bottom-trailing', 'items', [this.itemsBody, this.toggle(t('Items'), 'items', this.itemsBody)]);
+    const chatToggle = this.toggle(t('Chat'), 'chat', this.chatBody);
+    const playersToggle = this.toggle(t('Players'), 'players', this.playersBody);
+    const itemsToggle = this.toggle(t('Items'), 'items', this.itemsBody);
+    const chatColumn = this.floating('bottom-leading', 'chat', [this.chatBody, chatToggle]);
+    const playersColumn = this.floating('top-trailing', 'players', [playersToggle, this.playersBody]);
+    const itemsColumn = this.floating('bottom-trailing', 'items', [this.itemsBody, itemsToggle]);
     const hudColumn = this.floating('top-leading', 'hud', [hudPanel]);
+    this.occluders = [hudPanel, this.chatBody, this.playersBody, this.itemsBody, chatToggle, playersToggle, itemsToggle];
 
     this.root = element('div', {
       children: [hudColumn, chatColumn, playersColumn, itemsColumn],
@@ -289,7 +295,7 @@ export class GamePanels {
   private handleChatKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Enter') return;
     // Always consumed, including with Shift held: canvas `fillText` drops `\n` outright, and
-    // `wrapSpeech` tokenizes on spaces only, so a newline rides inside one unbreakable "word" and
+    // `wrapSpeech` tokenizes on spaces only, so a newline rides inside a "word" and
     // both the measured width and the `lines.length`-derived bubble height come out wrong.
     // Returning before `preventDefault` would let the textarea insert a break the renderer cannot
     // draw and the server would happily relay.

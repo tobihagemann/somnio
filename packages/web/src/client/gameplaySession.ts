@@ -539,9 +539,12 @@ export class GameplaySession {
    * NPC dialog arrives here, not on a dedicated tag: there is no NPC-dialog verb. A voice comes from
    * the speaker's body when the client has one, and otherwise from where the server says (a speaker
    * out of view, or behind a door). The bubble follows the body once it arrives. When the scene pins
-   * the bubble at the screen's edge, the chat line names the direction of the voice.
+   * the bubble at the screen's edge, the chat line names the direction of the voice. The voice and
+   * the direction are both taken from where the bodies stand as the line arrives. A hidden tab runs
+   * no tick, so the positions last drawn there are stale.
    */
   private handleServerSay(say: SayMessage): void {
+    this.predictor.drawRemoteEntities(this.now());
     const body = this.controller.entities.get(say.entityId);
     const voice = body?.position ?? { x: say.x, z: say.z };
     const lines = wrapSpeech(say.text, this.measureText);

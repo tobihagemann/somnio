@@ -82,7 +82,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `winded()` | whether the player's balance gave out, which holds them to `walk` |
 | `servicePanel()` | the id of the master whose panel is open, or `undefined` |
 | `tending()` | the id of the dreamer the player tends, or `undefined` |
-| `screenPoint(entityId)` | `{ x, y }` in CSS pixels where that entity's body is drawn on the page, or `undefined` |
+| `screenPoint(entityId)` | `{ x, y }` in CSS pixels where that entity's body is drawn on the page (a fallen body where it lies), or `undefined` |
 | `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
@@ -112,7 +112,7 @@ The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft
 
 The keys move in screen directions, which the camera's fixed 35° yaw turns on the ground. `KeyA` moves about (−0.82, +0.57) in world x/z and `KeyW` about (−0.57, −0.82). `KeyW`+`KeyA` heads about 10° north of west and `KeyS`+`KeyD` about 10° south of east. Read `player()` after each hold and correct.
 
-**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
+**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, a fallen body where it lies, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
 
 ```bash
 agent-browser eval --stdin <<'JS'
@@ -201,10 +201,12 @@ agent-browser --session a tab t1                # t1 in a fresh session; otherwi
 
 Hiding clears held keys, so dispatch a held key again after switching back. Peers, speech bubbles, and raise rings follow the clock, so on return they show where things stand now. To see what the first frames back draw, install a `visibilitychange` listener before hiding that, on `visible`, records a sample (say a peer's `entities()` position) on each `requestAnimationFrame` for a few hundred milliseconds, and read the samples after switching back.
 
-**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head.
+**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
 
-- **Pinned at the edge.** Put both outdoors, further apart than the screen shows (12 m is enough at the default zoom) and within a yell's 80 m. The bubble pins where the line toward the speaker leaves the screen, and the listener's chat line names a compass direction.
-- **Past a room's wall.** Keep the listener in the room and put the speaker outdoors within about 30 m of that room's door. The listener has to stand just inside the door: walking in through the door lands them on its arrival point, 0.8 m in. Further in, at the default zoom, the spot past the wall no longer fits on screen and the bubble falls back to the edge pin. A voice placed by the door names no direction in chat, which tells the two placements apart, and it always arrives crumbled.
+To read what the scene computed, such as where each bubble was placed and in which mode, wrap a scene method from an `eval` on the dev server. Inside an async IIFE, `const { WorldScene } = await import('/src/scene/worldScene.ts')` returns the module the page runs, so replacing `WorldScene.prototype.placedBubbles` with a wrapper that stores its result on `window` records every frame's placements. The working tree stays untouched, and a page reload removes the wrapper. Restart Vite first when `worldScene.ts` or anything it imports was edited since Vite started: the page then loads the module under a `?t=` URL, the plain import returns a second copy, and the wrapper on it never runs.
+
+- **Pinned at the edge.** Put both outdoors, further apart than the screen shows (12 m is enough at the default zoom) and within a yell's 80 m. The bubble pins on the line toward the speaker, as near the screen's edge as is clear of heads, other bubbles, and panels. The listener's chat line names a compass direction.
+- **Past a room's wall.** Keep the listener in the room and put the speaker outdoors within about 30 m of that room's door. Collapse the listener's chat panel first with its toggle button: while it is open it covers the spot past the starter room's wall for all but the shortest lines, so the bubble pins at the edge and the chat line names a direction. The listener has to stand just inside the door: walking in through the door lands them on its arrival point, 0.8 m in. Further in, at the default zoom, the spot past the wall no longer fits on screen and the bubble falls back to the edge pin. A voice placed by the door names no direction in chat, which tells the two placements apart, and it always arrives crumbled.
 
 Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
 
