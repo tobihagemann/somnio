@@ -139,7 +139,7 @@ agent-browser wait --fn 'window.somnio.chatHistory().length > 0'
 agent-browser eval 'window.somnio.chatHistory().at(-1)'
 ```
 
-**Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image.
+**Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image. A capture is at 1x device scale unless the viewport says otherwise. Judge fine detail, such as where two outlines join, at 2x: `agent-browser set viewport <width> <height> 2`. Set it before opening the page, or reload after, because the renderer reads the scale once at load. Confirm with `document.querySelector('canvas').width`, which reads twice the canvas's `clientWidth` at 2x; `window.devicePixelRatio` reads `2` even while the world is still drawn at 1x. Enlarged, a 1x capture shows lines as joined that are visibly broken on a 2x display.
 
 **Zoom.** Use real wheel input over the bare play field. The client ignores a wheel event while the pointer is over a panel, so a `WheelEvent` dispatched from `eval` after the pointer last rested on a panel zooms nothing. A negative delta zooms in, toward `zoomFactor()` 2.0:
 
@@ -210,18 +210,18 @@ To read what the scene computed, such as where each bubble was placed and in whi
 
 Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
 
-**Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
+**Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. When a re-login still fails that way after the wait, restart Vite: its proxy can keep the old upstream socket open. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
-docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-46 WHERE name='<nickname>';"
+docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-15 WHERE name='<nickname>';"
 agent-browser open 'http://localhost:17669/'
-# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'Nordwald'; the old sector
+# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'Nordwiese'; the old sector
 # here means the checkpoint won the race; close and repeat. A position inside geometry or outside
 # every sector self-heals to the starter spawn in EdariaBibliothek with no error, so pick open ground.
 ```
 
-`space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -46)` is open ground in the Nordwald, whose origin is `(5.12, -61.44)`. An interior's positions run from its own north-west corner.
+`space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -15)` is open ground in the Nordwiese, whose origin is `(5.12, -30.72)`. The Nordwald north of it, at origin `(5.12, -61.44)`, holds a nightmare spawn area: a player placed inside it, as at `(20, -46)`, is struck and falls within half a minute. An interior's positions run from its own north-west corner.
 
 **Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
 
@@ -244,6 +244,6 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. Test a panel while balance is recovering (`energy().balanceCurrent` rising after a run), when `energy` frames arrive several times a second.
 - Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned (the German UI recipe pins it).
-- Vite hot-reloads code changes. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
+- Vite hot-reloads code changes. An edit to a `.ts` file made while a session is attached reloads the page: a client that did not check "Remember password" is back on the login overlay, the earlier snapshot's refs are dead, and the fields may still hold their text. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
 - When Step 4's gate times out, read the visible notice: `agent-browser eval 'document.querySelector(".blocking-notice:not(.hidden)")?.textContent'`. A WebGL or desktop-only notice means the browser cannot render the world — rerun with `agent-browser --headed` so a real GPU context is available.
 - On teardown, close the browser sessions (`agent-browser close`, plus `--session a` / `--session b` for the two-player recipe and `--session de` for the German UI) and stop Vite, but keep the Postgres container so the dev character persists (see `/somnio-server`).
