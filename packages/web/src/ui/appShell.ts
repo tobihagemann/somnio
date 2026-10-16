@@ -7,7 +7,7 @@ import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/t
 import type { GameplaySocketFactory } from '@/transport';
 import type * as THREE from 'three';
 import { MAX_TICK_DELTA } from '@/scene/animation';
-import { WorldScene, createWorldRenderer } from '@/scene/worldScene';
+import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { paintBubbles } from '@/scene/bubbleLayer';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
@@ -270,7 +270,7 @@ export class AppShell {
     // Without this the sampler holds no listeners and every key is silently dropped, so the gate
     // works perfectly and the character never moves.
     this.keyboard.start();
-    window.addEventListener('resize', () => this.handleResize());
+    watchViewport(() => this.handleResize());
 
     // Esc is bound to the game menu. Fullscreen is never entered automatically,
     // because the browser gives Esc to "exit fullscreen" first and the key would stop reaching the
@@ -434,7 +434,7 @@ export class AppShell {
   private handleResize(): void {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
-    this.renderer?.setSize(width, height, false);
+    if (this.renderer !== undefined) sizeWorldRenderer(this.renderer, width, height);
     this.bubbleCanvas.width = Math.round(width * window.devicePixelRatio);
     this.bubbleCanvas.height = Math.round(height * window.devicePixelRatio);
     // Holds the vertical world extent constant and lets aspect drive width, so a bigger window

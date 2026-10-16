@@ -150,25 +150,52 @@ const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, r
 const ORIGIN = new THREE.Vector3();
 
 /**
- * Enrols a subtree in shadow casting.
- *
- * Called per added subtree rather than once over the scene, because models resolve asynchronously
- * — a single sweep after load would miss every clone the prewarm has not produced yet, and those
- * are exactly the props whose missing shadows read as floating.
- */
-/**
  * The renderer a world scene draws through. three.js does not shadow at all unless asked, and
  * without shadows every prop and character reads as floating. PCF, three's own default, softens
  * each edge over a disc of `shadow.radius` texels; the basic filter's hard edge reads as a cut-out.
  */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   return renderer;
 }
 
+export function sizeWorldRenderer(renderer: THREE.WebGLRenderer, width: number, height: number): void {
+  // `setPixelRatio` resizes the drawing buffer at the old size, so it runs only when the ratio changed.
+  if (renderer.getPixelRatio() !== window.devicePixelRatio) renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(width, height, false);
+}
+
+/**
+ * Calls `onChange` whenever the window is resized or `devicePixelRatio` changes. A window moved to a
+ * display with another scale fires no `resize`, so a media query for the current ratio is watched as
+ * well. That query only notices leaving its own ratio, so each change re-arms the watch with a query
+ * for the new one.
+ */
+export function watchViewport(onChange: () => void): void {
+  window.addEventListener('resize', onChange);
+  watchPixelRatio(onChange);
+}
+
+function watchPixelRatio(onChange: () => void): void {
+  window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
+    'change',
+    () => {
+      onChange();
+      watchPixelRatio(onChange);
+    },
+    { once: true },
+  );
+}
+
+/**
+ * Enrols a subtree in shadow casting.
+ *
+ * Called per added subtree rather than once over the scene, because models resolve asynchronously
+ * — a single sweep after load would miss every clone the prewarm has not produced yet, and those
+ * are exactly the props whose missing shadows read as floating.
+ */
 function enableShadows(root: THREE.Object3D): void {
   root.traverse((object) => {
     if (!(object as THREE.Mesh).isMesh) return;

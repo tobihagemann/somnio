@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { WorldScene } from '@/scene/worldScene';
+import { WorldScene, watchViewport } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { ORTHO_RIG, cameraPosition } from '@/scene/cameraRig';
 import { SUN_SHADOW, sunState } from '@/scene/dayNightSun';
@@ -971,6 +971,16 @@ describe('overlay quads', () => {
 
       expect(scene.entityAt(lying.x, lying.y)).toBe('peer');
       expect(scene.entityAt(upright.x, upright.y)).toBeUndefined();
+    });
+
+    it('reports its screen point where it lies, and a click there picks it', () => {
+      const { scene } = fallenPeer();
+      scene.camera.updateMatrixWorld();
+      const point = scene._viewportPointFor('peer')!;
+      const upright = new THREE.Vector3(12, CHARACTER_SCALE / 2, 10).project(scene.camera);
+
+      expect(scene.entityAt(point.x, point.y)).toBe('peer');
+      expect(Math.hypot(point.x - upright.x, point.y - upright.y)).toBeGreaterThan(0.1);
     });
   });
 });
@@ -2597,5 +2607,29 @@ describe('per-entity resources are freed when they are swapped out', () => {
     await scene.prewarm();
 
     expect(geometryDispose).toHaveBeenCalled();
+  });
+});
+
+describe('the device pixel ratio', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A window moved from a 1x display to a 2x one and back, each move firing only the query for the ratio it left. */
+  it('reports every change, asking again for the ratio it changed to', () => {
+    const queries = new Map<string, EventTarget>();
+    vi.stubGlobal('devicePixelRatio', 1);
+    vi.stubGlobal('matchMedia', (query: string) => {
+      const list = new EventTarget();
+      queries.set(query, list);
+      return list;
+    });
+    const onChange = vi.fn();
+
+    watchViewport(onChange);
+    vi.stubGlobal('devicePixelRatio', 2);
+    queries.get('(resolution: 1dppx)')!.dispatchEvent(new Event('change'));
+    vi.stubGlobal('devicePixelRatio', 1);
+    queries.get('(resolution: 2dppx)')!.dispatchEvent(new Event('change'));
+
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 });

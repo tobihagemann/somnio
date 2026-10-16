@@ -16,20 +16,27 @@ export const BUBBLE_FONT = `${BUBBLE_FONT_SIZE}px system-ui, sans-serif`;
 /** ASCII, matching the project-wide rule — never the Unicode ellipsis. */
 const TRUNCATION_GLYPH = '...';
 
-/** Returns at most `maxLines` lines, marking truncation on the last surviving line. */
-export function capLines(lines: string[], maxLines = 4, glyph = TRUNCATION_GLYPH): string[] {
-  if (maxLines <= 0) return [];
-  if (lines.length <= maxLines) return lines;
-  const capped = lines.slice(0, maxLines);
-  capped[capped.length - 1] += glyph;
-  return capped;
+const MAX_BUBBLE_LINES = 4;
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/**
+ * Keeps the first `MAX_BUBBLE_LINES` lines, marking truncation at the end of the last. That line
+ * gives up graphemes, and any space they leave at its end, until it fits `BUBBLE_TEXT_WIDTH` with
+ * the mark, since the painter squeezes a wider line to that width.
+ */
+function capLines(lines: string[], widthOf: (line: string) => number): string[] {
+  if (lines.length <= MAX_BUBBLE_LINES) return lines;
+  const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(lines[MAX_BUBBLE_LINES - 1]!), ({ segment }) => segment);
+  const marked = () => graphemes.join('').trimEnd() + TRUNCATION_GLYPH;
+  while (graphemes.length > 0 && widthOf(marked()) > BUBBLE_TEXT_WIDTH) graphemes.pop();
+  return [...lines.slice(0, MAX_BUBBLE_LINES - 1), marked()];
 }
 
 /**
  * Greedy word wrap against `BUBBLE_TEXT_WIDTH`, breaking at spaces. A word wider than a line on its
  * own is broken across lines between its graphemes, so it is not squeezed onto one line.
  */
-export function wrapSpeech(text: string, widthOf: (line: string) => number, maxLines = 4, glyph = TRUNCATION_GLYPH): string[] {
+export function wrapSpeech(text: string, widthOf: (line: string) => number): string[] {
   const words = text.split(' ').flatMap((word) => breakWord(word, widthOf));
   const lines: string[] = [];
   let current = '';
@@ -43,7 +50,7 @@ export function wrapSpeech(text: string, widthOf: (line: string) => number, maxL
     }
   }
   if (current !== '') lines.push(current);
-  return capLines(lines, maxLines, glyph);
+  return capLines(lines, widthOf);
 }
 
 /** A word cut into pieces that each fit a line, between graphemes so no letter or emoji is split. */
@@ -51,7 +58,7 @@ function breakWord(word: string, widthOf: (line: string) => number): string[] {
   if (widthOf(word) <= BUBBLE_TEXT_WIDTH) return [word];
   const pieces: string[] = [];
   let piece = '';
-  for (const { segment } of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(word)) {
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(word)) {
     if (piece !== '' && widthOf(piece + segment) > BUBBLE_TEXT_WIDTH) {
       pieces.push(piece);
       piece = '';

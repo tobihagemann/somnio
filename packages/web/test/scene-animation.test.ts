@@ -3,7 +3,7 @@ import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
 import { sunState } from '@/scene/dayNightSun';
-import { BUBBLE_TEXT_WIDTH, bubbleLifetimeMs, capLines, wrapSpeech } from '@/scene/speechBubbleText';
+import { BUBBLE_TEXT_WIDTH, bubbleLifetimeMs, wrapSpeech } from '@/scene/speechBubbleText';
 
 describe('movementPose', () => {
   it.each([
@@ -288,12 +288,14 @@ describe('speech bubble wrap', () => {
     expect(lines.join('')).not.toContain('…');
   });
 
-  it('does not mark truncation when everything fits', () => {
-    expect(capLines(['a', 'b'])).toEqual(['a', 'b']);
+  const threeFullLines = `${'a'.repeat(14)} ${'b'.repeat(14)} ${'c'.repeat(14)}`;
+
+  it('cuts a full last line back so the truncation mark fits beside it', () => {
+    expect(wrapSpeech(`${threeFullLines} dddd eeeeeeeee f`, tenPerChar).at(-1)).toBe('dddd eeeeee...');
   });
 
-  it('returns nothing for a zero line budget', () => {
-    expect(capLines(['a'], 0)).toEqual([]);
+  it('leaves no space before the truncation mark where the cut ends a word', () => {
+    expect(wrapSpeech(`${threeFullLines} dddddddddd eee f`, tenPerChar).at(-1)).toBe('dddddddddd...');
   });
 
   it('derives the lifetime as two seconds plus one per line', () => {

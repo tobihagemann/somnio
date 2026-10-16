@@ -31,6 +31,18 @@ the variable elsewhere to author a different directory:
 SOMNIO_EDITOR_SECTORS_DIR=/path/to/sectors npm run editor --workspace packages/web
 ```
 
+The `editor` script asks for 17669 and passes `--open` to launch a browser. When the browser
+client's Vite already holds 17669, the editor moves to the next free port, and 17669 keeps
+serving `editor.html` without the file API. To serve the editor beside a running client, or with
+agent-browser as the only browser, start Vite on a port of your own from `packages/web`. The
+variable has no default there, so name the staging directory:
+
+```bash
+SOMNIO_EDITOR_SECTORS_DIR=../../sectors npx vite --port <port> --strictPort
+```
+
+Then open `http://localhost:<port>/editor.html` in Step 2 in place of the default port.
+
 The API is loopback-only (`/__editor/sectors`; GET list, GET/PUT per stem, no DELETE) and
 saves atomically, so a running dev server can read the files while you author them. Save As
 writes the new name and leaves the original file in place.

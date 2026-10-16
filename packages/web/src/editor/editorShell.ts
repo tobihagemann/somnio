@@ -3,7 +3,7 @@ import { MONSTER_KIND_IDS, bundledModelRegistry, sectorOrigin } from '@somnio/co
 import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
-import { WorldScene, createWorldRenderer } from '@/scene/worldScene';
+import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { element, floating } from '@/ui/dom';
 import { AuthoringOverlay, overlayLabels } from './authoringOverlay';
 import type { AuthoringFacingHandle, AuthoringHandleSet } from './authoringOverlay';
@@ -507,7 +507,7 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   private installHostHandlers(): void {
-    window.addEventListener('resize', () => this.handleResize());
+    watchViewport(() => this.handleResize());
     window.addEventListener('keydown', (event) => handleEditorKeydown(this, event));
     // Explicit `⌘S` saves are the only write path, so a mis-closed tab must prompt.
     window.addEventListener('beforeunload', (event) => {
@@ -742,7 +742,7 @@ export class EditorShell implements EditorCommandTarget {
   private handleResize(): void {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
-    this.renderer?.setSize(width, height, false);
+    if (this.renderer !== undefined) sizeWorldRenderer(this.renderer, width, height);
     this.camera.updateViewportSize({ width, height }, this.document.sector);
     this.refreshOverlay();
   }

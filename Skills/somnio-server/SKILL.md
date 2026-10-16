@@ -20,6 +20,8 @@ docker start somnio-pg
 docker run -d --name somnio-pg -p 17663:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=somnio postgres:16
 ```
 
+Run these container commands with the sandbox disabled. Sandboxed, they fail with "Cannot connect to Podman ... operation not permitted" whatever state Podman is in. Unsandboxed, the same message ending in `connection refused` means the Podman machine is stopped: run `podman machine start`, then start the container.
+
 The container can exit silently between sessions (podman machine hiccups). A server started against the dead container fails at startup with a connection error from the readiness probe — that signature means "start the container", not a code bug and not a reason to re-create the container.
 
 The migrator refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or the previous TypeScript one, whose `kysely_migration` table holds a `0001_initial` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and character, so the next login shows "Bad credentials" until you register again.
