@@ -223,6 +223,26 @@ agent-browser open 'http://localhost:17669/'
 
 `space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -15)` is open ground in the Nordwiese, whose origin is `(5.12, -30.72)`. The Nordwald north of it, at origin `(5.12, -61.44)`, holds a nightmare spawn area: a player placed inside it, as at `(20, -46)`, is struck and falls within half a minute. An interior's positions run from its own north-west corner.
 
+**Give a character a role, ranks, or pools.** Write under the same rule as relocating: close both players' sessions (and stop any bot) and wait for the checkpoint first, or it overwrites the row. Several statements go in one heredoc, and `docker exec` needs `-i` for it: without `-i` the heredoc never reaches psql, which prints nothing and applies nothing. This makes `<healer>` a Heiler with `touch` at rank 2 and `drawing-back` at rank 1 (the ranks the game requires for raising) and the Mondstein in the right hand, in inventory slot 2. It also lays `<dreamer>` down fallen (a partial `health_current` gives a mend something to do instead). The upserts make the block safe to run again:
+
+```bash
+docker exec -i somnio-pg psql -U postgres -d somnio -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+UPDATE characters SET role='heiler' WHERE name='<healer>';
+INSERT INTO character_ranks (character_id, teaching_id, rank, practice)
+  SELECT id, t, r, 0 FROM characters, (VALUES ('touch', 2), ('drawing-back', 1)) AS v(t, r) WHERE name='<healer>'
+  ON CONFLICT (character_id, teaching_id) DO UPDATE SET rank = EXCLUDED.rank;
+UPDATE inventory_rows SET equipped_hand=NULL WHERE character_id=(SELECT id FROM characters WHERE name='<healer>');
+INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand)
+  SELECT id, 2, 'mondstein', 1, 'right' FROM characters WHERE name='<healer>'
+  ON CONFLICT (character_id, slot) DO UPDATE SET item_id = EXCLUDED.item_id, quantity = 1, equipped_hand = 'right';
+UPDATE characters SET health_current=0 WHERE name='<dreamer>';
+COMMIT;
+SQL
+```
+
+After logging in, `window.somnio.lucidity().role` on the healer reads `'heiler'` and `window.somnio.energy().healthCurrent` on the dreamer reads `0`. Anything else means a checkpoint won the race, so close and repeat. A raised dreamer stands again, and one who wakes is also moved to the inn, so a retry re-runs the block, plus the relocation recipe after a wake.
+
 **Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
 
 ```bash
@@ -242,6 +262,9 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever key is held.
 - Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
 - Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. Test a panel while balance is recovering (`energy().balanceCurrent` rising after a run), when `energy` frames arrive several times a second.
+- Navigating the game tab to `about:blank` (`agent-browser open about:blank`) leaves its gameplay socket open, and the server keeps the player logged in. To log that player in again, close the session (`agent-browser --session <name> close`) and wait as in the relocation recipe.
+- Bodies standing on one spot (a bot on the spawn) overlap on screen, and a click at `screenPoint(id)` reaches the body nearer the camera. Aim a little beside it, on the side away from the other body, and confirm the click reached the intended entity: `tending()` for a tend, `servicePanel()` for a master.
+- Separate `agent-browser` calls are slow enough to miss a short server window, such as letting go before a 6 s raise finishes. Do the timed steps inside one `eval`, within the 12 s limit on its awaits.
 - Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned (the German UI recipe pins it).
 - Vite hot-reloads code changes. An edit to a `.ts` file made while a session is attached reloads the page: a client that did not check "Remember password" is back on the login overlay, the earlier snapshot's refs are dead, and the fields may still hold their text. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
