@@ -57,6 +57,12 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Your health gives out. You fall.');
     case 'raised':
       return lookup('%@ draws you back into the dream.', line.healerName);
+    case 'raiseBroken':
+      return lookup('%@ loses hold of you.', line.healerName);
+    case 'raisedOther':
+      return lookup('You draw %@ back into the dream.', line.targetName);
+    case 'raiseBrokenOther':
+      return lookup('You lose hold of %@.', line.targetName);
     case 'wokeWeakened':
       return lookup('You let go and wake, weakened.');
     case 'credentialSaveFailed':

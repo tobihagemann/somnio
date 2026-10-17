@@ -1329,6 +1329,37 @@ describe('blows, falls, and raises', () => {
     expect(rings(scene)).toEqual([]);
     expect(dispose).toHaveBeenCalled();
   });
+
+  it('swells a ring out from the feet of a body mended and fades it in half a second, one at a time, then frees it', () => {
+    let nowMs = 0;
+    const scene = makeScene(emptyAssets(), () => nowMs);
+    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
+
+    scene.showMend('peer');
+    nowMs = 100;
+    scene.showMend('peer');
+    const [pulse] = rings(scene);
+    expect(rings(scene)).toHaveLength(1);
+
+    nowMs = 350;
+    scene.tick(0.016);
+    expect(pulse!.scale.x).toBeGreaterThan(1);
+    expect(pulse!.scale.x).toBeLessThan(3 / 1.4);
+    const opacity = (pulse!.material as THREE.MeshBasicMaterial).opacity;
+    expect(opacity).toBeGreaterThan(0);
+    expect(opacity).toBeLessThan(0.9);
+
+    // Restarted by the second mend: it would be gone by now had it kept the first one's start.
+    nowMs = 550;
+    scene.tick(0.016);
+    expect(rings(scene)).toEqual([pulse]);
+
+    const dispose = vi.spyOn(pulse!.geometry, 'dispose');
+    nowMs = 700;
+    scene.tick(0.016);
+    expect(rings(scene)).toEqual([]);
+    expect(dispose).toHaveBeenCalled();
+  });
 });
 
 describe('the sun travels with the camera focus', () => {

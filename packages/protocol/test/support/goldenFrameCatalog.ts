@@ -203,6 +203,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-air', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, hit: false } } },
   { name: 'raising', message: { tag: 'raising', payload: { healerId: PLAYER_ID, targetId: OTHER_PLAYER_ID, state: 'begun', seconds: 6 } } },
+  { name: 'mend', message: { tag: 'mend', payload: { targetId: OTHER_PLAYER_ID } } },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {
     name: 'sessionToken',

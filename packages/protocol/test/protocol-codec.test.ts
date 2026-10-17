@@ -165,6 +165,7 @@ describe('runtime validation the erased types cannot do', () => {
     ['negative practice', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1, practice: -0.5 }] }, /practice: expected a non-negative number/],
     ['an unknown raising state', 'raising', { healerId: 'a', targetId: 'b', state: 'paused', seconds: 6 }, /unknown value "paused"/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
+    ['a mend without its target', 'mend', {}, /targetId: expected/],
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
@@ -361,7 +362,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(8);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(9);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

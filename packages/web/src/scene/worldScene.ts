@@ -246,6 +246,8 @@ export class WorldScene implements WorldRenderSurface {
   /** The short-lived word over an entity a blow missed. */
   private readonly misses = new Map<string, { node: THREE.Object3D; expiresAtMs: number }>();
   private readonly raiseRings = new Map<string, RaiseRing>();
+  /** The ring swelling from the feet of an entity just mended. */
+  private readonly mendPulses = new Map<string, { mesh: THREE.Mesh; startedAtMs: number }>();
   /** The ring round the entity the player tends. */
   private selection: { id: string; mesh: THREE.Mesh } | undefined;
   private readonly raycaster = new THREE.Raycaster();
@@ -355,6 +357,7 @@ export class WorldScene implements WorldRenderSurface {
     this.hovered = undefined;
     this.misses.clear();
     this.raiseRings.clear();
+    this.mendPulses.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
@@ -546,6 +549,17 @@ export class WorldScene implements WorldRenderSurface {
     mesh.geometry.setDrawRange(0, 0);
     state.node.add(mesh);
     this.raiseRings.set(targetId, { mesh, startedAtMs: this.now(), seconds });
+  }
+
+  showMend(targetId: string): void {
+    disposeSubtree(this.mendPulses.get(targetId)?.mesh);
+    this.mendPulses.delete(targetId);
+    const state = this.entityStates.get(targetId);
+    if (state === undefined) return;
+    // It starts at the selection ring's radius: the tick swells and fades it.
+    const mesh = groundRingMesh(state.radius * SELECTION_RING_RADII, MEND_PULSE_COLOR);
+    state.node.add(mesh);
+    this.mendPulses.set(targetId, { mesh, startedAtMs: this.now() });
   }
 
   showSelection(entityId: string | undefined): void {
@@ -794,6 +808,7 @@ export class WorldScene implements WorldRenderSurface {
     this.bubbles.delete(entityId);
     this.misses.delete(entityId);
     this.raiseRings.delete(entityId);
+    this.mendPulses.delete(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
   }
 
@@ -857,6 +872,19 @@ export class WorldScene implements WorldRenderSurface {
       if (nowMs < miss.expiresAtMs) continue;
       disposeSubtree(miss.node);
       this.misses.delete(id);
+    }
+    for (const [id, pulse] of this.mendPulses) {
+      const progress = (nowMs - pulse.startedAtMs) / (MEND_PULSE_SECONDS * 1000);
+      if (progress >= 1) {
+        disposeSubtree(pulse.mesh);
+        this.mendPulses.delete(id);
+        continue;
+      }
+      const eased = 1 - (1 - progress) ** 2;
+      // Scaled in the ring's own plane, which widens the band a little as it swells.
+      const scale = 1 + (MEND_PULSE_RADII / SELECTION_RING_RADII - 1) * eased;
+      pulse.mesh.scale.set(scale, scale, 1);
+      (pulse.mesh.material as THREE.MeshBasicMaterial).opacity = RING_OPACITY * (1 - progress);
     }
 
     for (const ring of this.raiseRings.values()) {
@@ -1296,11 +1324,18 @@ const BEYOND_WALL_GAP = 0.3;
 /** How long the word over a missed entity stays up. */
 const MISS_SECONDS = 0.8;
 const RING_SEGMENTS = 48;
-const RAISE_RING_COLOR = 0xc9a6ff;
+const RING_OPACITY = 0.9;
+const RAISE_RING_COLOR = 0xffd27a;
 /** A ring's inner radius in body radii: the raise ring clears a body lying down, the selection ring sits inside it. */
 const RAISE_RING_RADII = 2;
 const SELECTION_RING_RADII = 1.4;
-const SELECTION_RING_COLOR = 0xffe9a3;
+/** How long a mend's ring takes to swell and fade, and the inner radius it swells to, in body radii. */
+const MEND_PULSE_SECONDS = 0.5;
+const MEND_PULSE_RADII = 3;
+/** The Mondstein's moonlight, apart from the health colours and from the raise ring. */
+const MEND_PULSE_COLOR = 0xd8e6ff;
+/** A friendly green, bluer than the plaque of a grazed body beside it. */
+const SELECTION_RING_COLOR = 0x8ef0b0;
 /** How much wider than its body an entity is to the cursor. */
 const PICK_RADII = 1.5;
 /** Gap between the feet anchor and the top of the name plaque. */
@@ -1418,7 +1453,7 @@ function missQuad(): THREE.Object3D {
 /** A flat ring just above the ground round an entity's feet. */
 function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   const geometry = new THREE.RingGeometry(innerRadius, innerRadius + 0.08, RING_SEGMENTS, 1);
-  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthWrite: false });
+  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: RING_OPACITY, depthWrite: false });
   const mesh = new THREE.Mesh(geometry, material);
   markOwned(mesh, { geometry: true, material: true });
   mesh.rotation.x = -Math.PI / 2;

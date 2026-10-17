@@ -41,6 +41,9 @@ export type ChatLine =
   | { kind: 'taskDone' }
   | { kind: 'fell' }
   | { kind: 'raised'; healerName: string }
+  | { kind: 'raiseBroken'; healerName: string }
+  | { kind: 'raisedOther'; targetName: string }
+  | { kind: 'raiseBrokenOther'; targetName: string }
   | { kind: 'wokeWeakened' }
   | { kind: 'credentialSaveFailed' }
   | { kind: 'sessionExpired' }
@@ -90,6 +93,9 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'taskDone':
     case 'fell':
     case 'raised':
+    case 'raiseBroken':
+    case 'raisedOther':
+    case 'raiseBrokenOther':
     case 'wokeWeakened':
       return 'itemInfo';
   }

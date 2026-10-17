@@ -40,6 +40,7 @@ const SPEECH_BUBBLE = {
 
 export const NAME_PLAQUE = {
   fontSize: 11,
+  backgroundOpacity: 0.85,
   playerBackground: 'rgb(221, 221, 221)',
   npcBackground: 'rgb(204, 255, 255)',
   /** The plaque of an entity below its maximum health, by the band it stands in. */
@@ -294,8 +295,11 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
   const height = Math.max(Math.ceil(lineBoxHeight(NAME_PLAQUE.fontSize) + 4), 1);
   const { canvas, context } = rasterCanvas(width, height);
   if (context !== null) {
+    // Only the fill is translucent, so the ring round the feet shows through the plaque while its name and border stay solid.
+    context.globalAlpha = NAME_PLAQUE.backgroundOpacity;
     context.fillStyle = background;
     context.fillRect(0, 0, width, height);
+    context.globalAlpha = 1;
     context.strokeStyle = '#000000';
     context.lineWidth = 1;
     context.strokeRect(0.5, 0.5, width - 1, height - 1);

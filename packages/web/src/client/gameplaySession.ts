@@ -484,6 +484,9 @@ export class GameplaySession {
       case 'raising':
         this.handleRaising(message.payload);
         return;
+      case 'mend':
+        this.controller.renderSurface.showMend(message.payload.targetId);
+        return;
       case 'adminSay':
         this.controller.appendChat({ kind: 'adminBroadcast', message: message.payload.text });
         return;
@@ -508,16 +511,34 @@ export class GameplaySession {
     }
   }
 
+  /**
+   * The scene shows every raise. The Heiler giving one is told when it is done, and when it breaks
+   * while they still hold on. The dreamer being raised is told when it is done or breaks.
+   */
   private handleRaising(raising: RaisingMessage): void {
     this.controller.renderSurface.showRaising(raising.targetId, raising.state === 'begun' ? raising.seconds : undefined);
+    if (raising.healerId === this.controller.selfId) {
+      const targetName = this.controller.entities.get(raising.targetId)?.name ?? '';
+      if (raising.state === 'done') {
+        this.controller.appendChat({ kind: 'raisedOther', targetName });
+      } else if (raising.state === 'broken' && this.tending === raising.targetId && itemInHand(this.inventory) === ('mondstein' satisfies ItemId)) {
+        // Still holding on, so the break was not theirs. Letting go clears `tending`, and so does a
+        // fall, whose `condition` comes a step before the break. Putting the stone away keeps
+        // `tending`, but its `inventory` frame also comes before the break.
+        this.controller.appendChat({ kind: 'raiseBrokenOther', targetName });
+      }
+      return;
+    }
     if (raising.targetId !== this.controller.selfId) return;
     const healerName = this.controller.entities.get(raising.healerId)?.name ?? '';
     if (raising.state === 'begun') {
       this.raiseEndsAtMs = this.now() + raising.seconds * 1000;
       this.raise = { healerName, secondsLeft: Math.ceil(raising.seconds) };
     } else {
+      // The name kept from the begin: a Heiler who left is out of view before their raise breaks.
+      const kept = this.raise?.healerName ?? healerName;
       this.raise = undefined;
-      if (raising.state === 'done') this.controller.appendChat({ kind: 'raised', healerName });
+      this.controller.appendChat({ kind: raising.state === 'done' ? 'raised' : 'raiseBroken', healerName: kept });
     }
     this.onStateChanged?.();
   }

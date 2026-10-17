@@ -71,6 +71,10 @@
     "en": "%@ left the game.",
     "de": "%@ hat das Spiel verlassen."
   },
+  "%@ loses hold of you.": {
+    "en": "%@ loses hold of you.",
+    "de": "%@ verliert den Halt an dir."
+  },
   "%@ teaches its first rank for a task.": {
     "en": "%@ teaches its first rank for a task.",
     "de": "%@ lehrt den ersten Rang für eine Aufgabe."
@@ -487,6 +491,10 @@
     "en": "You did what %@ asked.",
     "de": "Du hast getan, was %@ verlangt hat."
   },
+  "You draw %@ back into the dream.": {
+    "en": "You draw %@ back into the dream.",
+    "de": "Du holst %@ in den Traum zurück."
+  },
   "You have fallen": {
     "en": "You have fallen",
     "de": "Du bist gefallen"
@@ -498,6 +506,10 @@
   "You let go and wake, weakened.": {
     "en": "You let go and wake, weakened.",
     "de": "Du lässt los und wachst geschwächt auf."
+  },
+  "You lose hold of %@.": {
+    "en": "You lose hold of %@.",
+    "de": "Du verlierst den Halt an %@."
   },
   "You own %@c.": {
     "en": "You own %@c.",

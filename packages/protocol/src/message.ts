@@ -18,6 +18,7 @@ import type {
   LoginMessage,
   LoginResultMessage,
   LucidityMessage,
+  MendMessage,
   MoveMessage,
   MovesMessage,
   RaisingMessage,
@@ -78,6 +79,7 @@ export type SomnioMessage =
   | { tag: 'condition'; payload: ConditionMessage }
   | { tag: 'blow'; payload: BlowMessage }
   | { tag: 'raising'; payload: RaisingMessage }
+  | { tag: 'mend'; payload: MendMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
   | { tag: 'sessionRevoked'; payload: SessionRevokedMessage };

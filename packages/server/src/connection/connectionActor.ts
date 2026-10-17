@@ -308,6 +308,7 @@ export class ConnectionActor {
         case 'condition':
         case 'blow':
         case 'raising':
+        case 'mend':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -377,6 +378,7 @@ export class ConnectionActor {
       case 'condition':
       case 'blow':
       case 'raising':
+      case 'mend':
       case 'adminSay':
       case 'sessionToken':
       case 'sessionRevoked':

@@ -124,6 +124,12 @@ interface PlayerSlot {
   condition: Condition;
   /** The raise this fallen dreamer is being given. */
   raise: Raise | undefined;
+  /**
+   * The hold on each Heiler who began a raise on this fallen dreamer: when they may begin another.
+   * It is kept on the dreamer because a door or a reconnect gives the Heiler a fresh slot. The
+   * dreamer's own reconnect clears it.
+   */
+  raiseReadyAt: Map<string, number>;
   /** The dreamer a Heiler chose to tend: mended, or raised, whenever the Mondstein reaches them. */
   tending: string | undefined;
 }
@@ -434,6 +440,7 @@ export class SpaceActor {
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
       raise: undefined,
+      raiseReadyAt: new Map(),
       tending: undefined,
     };
     const interest = this.interest.get(sector.name)!;
@@ -1077,16 +1084,27 @@ export class SpaceActor {
     }
   }
 
-  /** A Heiler's Mondstein reaching another dreamer: a standing one is mended, a fallen one begins to be raised. */
+  /**
+   * A Heiler's Mondstein reaching another dreamer: a standing one is mended, a fallen one begins to
+   * be raised. Beginning a raise spends the touch, as a mend does. It also holds that Heiler back
+   * from another raise on this dreamer for one touch interval. The hold is theirs alone, so another
+   * Heiler can take over as soon as they let go.
+   */
   private touch(healer: PlayerSlot, target: PlayerSlot): void {
     if (!this.canMend(healer) || !this.touches(healer, target)) return;
     if (!isFallen(target)) {
       this.mend(healer, target);
       return;
     }
+    const now = this.now();
+    if (target.raise !== undefined || now < (target.raiseReadyAt.get(healer.character.id) ?? 0)) return;
     // The whole cost has to be there at the start, so a raise once begun can be finished.
-    if (target.raise !== undefined || rankOf(healer.character.lucidity.ranks, 'drawing-back') === 0) return;
-    if (healer.character.energy.spiritCurrent < COMBAT.raise.spiritCost) return;
+    if (rankOf(healer.character.lucidity.ranks, 'drawing-back') === 0 || healer.character.energy.spiritCurrent < COMBAT.raise.spiritCost) return;
+    this.spendTouch(healer);
+    for (const [id, readyAt] of target.raiseReadyAt) {
+      if (readyAt <= now) target.raiseReadyAt.delete(id);
+    }
+    target.raiseReadyAt.set(healer.character.id, healer.mendReadyAt);
     target.raise = { healerId: healer.character.id, elapsed: 0, charged: 0 };
     this.broadcastRaising(target, healer.character.id, 'begun');
   }
@@ -1101,18 +1119,27 @@ export class SpaceActor {
     return this.wieldsMondstein(healer) && this.now() >= healer.mendReadyAt;
   }
 
+  /** The Mondstein reaches no one again until the touch interval has passed. */
+  private spendTouch(healer: PlayerSlot): void {
+    healer.mendReadyAt = this.now() + COMBAT.mend.seconds * 1000;
+  }
+
   /** Whether a Mondstein reaches from one dreamer to the other. */
   private touches(healer: PlayerSlot, target: PlayerSlot): boolean {
     return reaches(healer.character.position, { ...target.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
   }
 
-  /** Restores part of a standing dreamer's health for the healer's spirit. Mending oneself earns half the practice and no task progress. */
+  /**
+   * Restores part of a standing dreamer's health for the healer's spirit, and shows everyone who
+   * sees them that it landed. Mending oneself earns half the practice and no task progress.
+   */
   private mend(healer: PlayerSlot, target: PlayerSlot): void {
     const amount = Math.min(mendAmount(healer.character.lucidity.ranks), target.character.energy.healthMax - target.character.energy.healthCurrent);
     if (amount <= 0 || healer.character.energy.spiritCurrent < COMBAT.mend.spiritCost) return;
-    healer.mendReadyAt = this.now() + COMBAT.mend.seconds * 1000;
+    this.spendTouch(healer);
     this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: healer.character.energy.spiritCurrent - COMBAT.mend.spiritCost });
     this.setEnergy(target, { ...target.character.energy, healthCurrent: target.character.energy.healthCurrent + amount });
+    this.broadcast({ tag: 'mend', payload: { targetId: target.character.id } }, target.sector);
     if (healer === target) {
       this.addPractice(healer, amount * PRACTICE.perHealthMended * PRACTICE.selfMendShare);
       return;

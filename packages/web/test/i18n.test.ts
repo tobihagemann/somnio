@@ -226,6 +226,9 @@ describe('renderChatLine', () => {
     { kind: 'taskDone' },
     { kind: 'fell' },
     { kind: 'raised', healerName: 'Lumi' },
+    { kind: 'raiseBroken', healerName: 'Lumi' },
+    { kind: 'raisedOther', targetName: 'Bren' },
+    { kind: 'raiseBrokenOther', targetName: 'Bren' },
     { kind: 'wokeWeakened' },
     { kind: 'credentialSaveFailed' },
     { kind: 'sessionExpired' },
@@ -253,6 +256,10 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'de')).toBe('Deine Lehre Schlag vertieft sich: Rang 2.');
     expect(renderChatLine({ kind: 'becameRole', role: 'kaempfer' }, catalogTables, 'en')).toBe('You are now a Kämpfer.');
     expect(renderChatLine({ kind: 'raised', healerName: 'Lumi' }, catalogTables, 'en')).toBe('Lumi draws you back into the dream.');
+    expect(renderChatLine({ kind: 'raiseBroken', healerName: 'Lumi' }, catalogTables, 'en')).toBe('Lumi loses hold of you.');
+    expect(renderChatLine({ kind: 'raisedOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You draw Bren back into the dream.');
+    expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You lose hold of Bren.');
+    expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'de')).toBe('Du verlierst den Halt an Bren.');
   });
 
   it('selects the verb from the trailing punctuation', () => {

@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { COMBAT } from '@somnio/core';
 import type { Character, InventoryRow, Point } from '@somnio/core';
 import type { Energy } from '@somnio/protocol';
+import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { BESIDE_GHOST, CUDGEL_IN_HAND, GHOST, MONDSTEIN_IN_HAND, arena, characterOf, energy, energyOf, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
-import { attachPlayer } from './support/sectorFactory.ts';
+import { attachPlayer, makeSectorLine } from './support/sectorFactory.ts';
 
 const HEALER_AT: Point = { x: 5, z: 5 };
 /** Within a Mondstein's reach of `HEALER_AT`. */
@@ -53,6 +54,28 @@ describe('mending', () => {
     expect(energyOf(space, target.entityId).healthCurrent).toBeLessThan(80);
   });
 
+  it('shows each mend, with no amount, to everyone who sees the mended dreamer', async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const { healer, target } = pair(space, HEALER, { energy: energy({ healthCurrent: 50 }) });
+    const bystander = attachPlayer(space, { x: 8, z: 8 }, 'bystander');
+    space.handleTend(target.entityId, healer.entityId);
+    steps(1);
+    for (const player of [healer, target, bystander]) {
+      expect(payloads(await collectMessages(player.outbox), 'mend')).toEqual([{ targetId: target.entityId }]);
+    }
+  });
+
+  /** The arena is the west of a line of three sectors, so a player in the east sees the mended dreamer's sector and not the Heiler's. */
+  it("shows a mend to whoever sees the mended dreamer's sector, not the Heiler's", async () => {
+    const { space, steps } = arena({}, { ghost: false, sectors: makeSectorLine().slice(1) });
+    const healer = attachPlayer(space, { x: 19.7, z: 10 }, 'healer', { character: HEALER, inventory: [MONDSTEIN_IN_HAND] });
+    const target = attachPlayer(space, { x: 20.3, z: 10 }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
+    const east = attachPlayer(space, { x: 45, z: 10 }, 'east');
+    space.handleTend(target.entityId, healer.entityId);
+    steps(1);
+    expect(payloads(await collectMessages(east.outbox), 'mend')).toEqual([{ targetId: target.entityId }]);
+  });
+
   it.each<[string, (healerId: string) => string]>([
     ['themselves', (healerId) => healerId],
     ['someone who is not there', () => 'nobody'],
@@ -80,13 +103,14 @@ describe('mending', () => {
     ['from a Heiler with the Mondstein in the other hand', HEALER, [{ ...MONDSTEIN_IN_HAND, equippedHand: 'left' }, CUDGEL_IN_HAND], {}],
     ['from a Heiler with too little spirit', { ...HEALER, energy: energy({ spiritCurrent: 7 }) }, [MONDSTEIN_IN_HAND], {}],
     ['for a dreamer at full health', HEALER, [MONDSTEIN_IN_HAND], { healthCurrent: 100 }],
-  ])('does nothing %s', (_label, healerCharacter, inventory, targetEnergy) => {
+  ])('does nothing %s', async (_label, healerCharacter, inventory, targetEnergy) => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, healerCharacter, { energy: energy({ healthCurrent: 50, ...targetEnergy }) }, inventory);
     const before = [energyOf(space, healer.entityId), energyOf(space, target.entityId)];
     space.handleTend(target.entityId, healer.entityId);
     steps(1);
     expect([energyOf(space, healer.entityId), energyOf(space, target.entityId)]).toEqual(before);
+    expect(payloads(await collectMessages(target.outbox), 'mend')).toEqual([]);
   });
 
   it("does not reach a dreamer beyond a body's contact and the reach slack", () => {
@@ -98,12 +122,13 @@ describe('mending', () => {
     expect(energyOf(space, target.entityId).healthCurrent).toBe(50);
   });
 
-  it('mends the holder who uses the Mondstein in hand, for the same spirit', () => {
+  it('mends the holder who uses the Mondstein in hand, for the same spirit, and shows it', async () => {
     const { space } = arena({}, { ghost: false });
     const hurt = { ...HEALER, energy: energy({ healthCurrent: 50 }) };
     const healer = attachPlayer(space, HEALER_AT, 'healer', { character: hurt, inventory: [MONDSTEIN_IN_HAND] });
     space.handleUseItem(MONDSTEIN_IN_HAND.slot, healer.entityId);
     expect(energyOf(space, healer.entityId)).toMatchObject({ healthCurrent: 60, spiritCurrent: 92 });
+    expect(payloads(await collectMessages(healer.outbox), 'mend')).toEqual([{ targetId: healer.entityId }]);
   });
 
   it.each<[string, Partial<Character>, InventoryRow[], number]>([
@@ -166,18 +191,21 @@ describe('raising', () => {
     expect(charged).toBe(COMBAT.raise.spiritCost);
   });
 
-  it('breaks off when the Heiler steps out of reach, and leaves the dreamer fallen to start over', async () => {
+  it('breaks off when the Heiler steps out of reach, and begins again at once when they step back', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     space.handleTend(target.entityId, healer.entityId);
     steps(60);
     space.handleMove({ x: 5, z: 4.7, facing: 0, gait: 'jog' }, healer.entityId);
-    steps(100);
-    expect(space.isFallen(target.entityId)).toBe(true);
+    steps(1);
+    // Back on the step after the break: the hold runs from the raise's beginning, long past.
+    space.handleMove({ x: 5, z: 5, facing: 0, gait: 'jog' }, healer.entityId);
+    steps(1);
     const raising = { healerId: healer.entityId, targetId: target.entityId };
     expect(payloads(await collectMessages(target.outbox), 'raising')).toEqual([
       { ...raising, state: 'begun', seconds: 6 },
       { ...raising, state: 'broken', seconds: 0 },
+      { ...raising, state: 'begun', seconds: 6 },
     ]);
   });
 
@@ -193,6 +221,70 @@ describe('raising', () => {
     act(space, healer.entityId);
     steps(1);
     expect(payloads(await collectMessages(target.outbox), 'raising').map((sent) => sent.state)).toEqual(['begun', 'broken']);
+  });
+
+  it('spends the touch on beginning a raise, so the next begins no sooner than a touch interval later', async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const { healer, target: first } = pair(space);
+    const second = attachPlayer(space, { x: 5.7, z: 5 }, 'second', { character: FALLEN });
+    space.handleTend(first.entityId, healer.entityId);
+    steps(1);
+    space.handleTend(second.entityId, healer.entityId);
+    steps(5);
+    // Two checkpoints need two outboxes: collecting one finishes it.
+    const begunAndBroken = payloads(await collectMessages(healer.outbox), 'raising').map(({ targetId, state }) => ({ targetId, state }));
+    expect(begunAndBroken).toEqual([
+      { targetId: first.entityId, state: 'begun' },
+      { targetId: first.entityId, state: 'broken' },
+    ]);
+    steps(20);
+    const onSecond = payloads(await collectMessages(second.outbox), 'raising').filter((raising) => raising.targetId === second.entityId);
+    expect(onSecond.map((raising) => raising.state)).toEqual(['begun']);
+  });
+
+  it("begins no raise from the same Heiler on a dreamer within a touch interval, though they come back with a fresh touch and another Heiler's raise came between", async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const { healer, target } = pair(space);
+    const other = attachPlayer(space, { x: 5.7, z: 5.7 }, 'other', { character: HEALER, inventory: [MONDSTEIN_IN_HAND] });
+    space.handleTend(target.entityId, healer.entityId);
+    steps(1);
+    space.detach(healer.entityId, false);
+    steps(1);
+    const back = new ConnectionOutbox(4096);
+    space.attach(healer.character, [MONDSTEIN_IN_HAND], back, 0);
+    space.handleTend(target.entityId, other.entityId);
+    steps(1);
+    space.handleTend(undefined, other.entityId);
+    steps(1);
+    space.handleTend(target.entityId, healer.entityId);
+    steps(5);
+    const raisings = payloads(await collectMessages(target.outbox), 'raising').map(({ healerId, state }) => ({ healerId, state }));
+    expect(raisings).toEqual([
+      { healerId: healer.entityId, state: 'begun' },
+      { healerId: healer.entityId, state: 'broken' },
+      { healerId: other.entityId, state: 'begun' },
+      { healerId: other.entityId, state: 'broken' },
+    ]);
+    steps(20);
+    const own = payloads(await collectMessages(back), 'raising').filter((raising) => raising.healerId === healer.entityId);
+    expect(own.map((raising) => raising.state)).toEqual(['begun']);
+  });
+
+  it('lets another Heiler take over at once from one who let go', async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const { healer, target } = pair(space);
+    const other = attachPlayer(space, { x: 5.7, z: 5.7 }, 'other', { character: HEALER, inventory: [MONDSTEIN_IN_HAND] });
+    space.handleTend(target.entityId, healer.entityId);
+    steps(1);
+    space.handleTend(undefined, healer.entityId);
+    space.handleTend(target.entityId, other.entityId);
+    steps(2);
+    const raisings = payloads(await collectMessages(target.outbox), 'raising').map(({ healerId, state }) => ({ healerId, state }));
+    expect(raisings).toEqual([
+      { healerId: healer.entityId, state: 'begun' },
+      { healerId: healer.entityId, state: 'broken' },
+      { healerId: other.entityId, state: 'begun' },
+    ]);
   });
 
   /** The whole cost is there at the start, and a Heiler can still spend it elsewhere while the raise runs. */

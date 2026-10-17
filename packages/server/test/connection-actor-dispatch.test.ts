@@ -80,6 +80,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
     message: { tag: 'raising', payload: { healerId: 'peer', targetId: 'player', state: 'begun', seconds: 6 } },
     attachFirst: true,
   },
+  { label: 'post-attach mend', message: { tag: 'mend', payload: { targetId: 'player' } }, attachFirst: true },
   {
     label: 'pre-login revokeSession',
     message: { tag: 'revokeSession', payload: { token: 'tok' } },

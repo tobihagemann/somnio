@@ -128,6 +128,9 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your task is done. Return to your master.',
   'Your health gives out. You fall.',
   '%@ draws you back into the dream.',
+  '%@ loses hold of you.',
+  'You draw %@ back into the dream.',
+  'You lose hold of %@.',
   'You let go and wake, weakened.',
 
   // HUD and floating panels

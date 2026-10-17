@@ -41,6 +41,8 @@ export interface WorldRenderSurface {
   showBlow(attackerId: string, targetId: string | undefined, hit: boolean): void;
   /** A raise under way on a fallen entity, taking `seconds`; `undefined` ends it. */
   showRaising(targetId: string, seconds: number | undefined): void;
+  /** A mend landing on an entity: a ring swells from its feet and fades. */
+  showMend(targetId: string): void;
   /** Marks the one entity the player tends; `undefined` marks none. */
   showSelection(entityId: string | undefined): void;
   /** The world clock at this moment; the renderer runs it forward by itself. */
@@ -62,6 +64,7 @@ export const noopRenderSurface: WorldRenderSurface = {
   updateCondition: () => {},
   showBlow: () => {},
   showRaising: () => {},
+  showMend: () => {},
   showSelection: () => {},
   setClock: () => {},
   showSpeechBubble: () => false,

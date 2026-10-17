@@ -27,7 +27,7 @@ interface Rig {
   gaits: { id: string; gait: string }[];
   /** Every `showSelection` call. */
   selections: (string | undefined)[];
-  /** Every `showBlow`, `showRaising`, and `updateCondition` call, by name. */
+  /** Every `showBlow`, `showRaising`, `showMend`, and `updateCondition` call, by name. */
   shown: unknown[][];
   /** Every `showSpeechBubble` call. */
   bubbles: SpeechBubbleRequest[];
@@ -58,6 +58,7 @@ function makeRig(): Rig {
       showSelection: (id) => selections.push(id),
       showBlow: (...blow) => shown.push(['showBlow', ...blow]),
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
+      showMend: (...mend) => shown.push(['showMend', ...mend]),
       updateCondition: (...condition) => shown.push(['updateCondition', ...condition]),
       showSpeechBubble: (request) => {
         bubbles.push(request);
@@ -603,7 +604,7 @@ describe('winded and fallen', () => {
     expect(rig.controller.chatHistory.filter((line) => line.kind === 'wokeWeakened')).toHaveLength(1);
   });
 
-  it('counts a raise given to the player down by whole seconds, and reports being drawn back', () => {
+  it('counts a raise given to the player down by whole seconds, and reports it breaking and being drawn back', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
@@ -617,12 +618,25 @@ describe('winded and fallen', () => {
 
     rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken', seconds: 0 } });
     expect(rig.session.raise).toBeUndefined();
-    expect(rig.controller.chatHistory).toEqual([]);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBroken', healerName: 'Lumi' }]);
 
     rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
     rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'done', seconds: 0 } });
     expect(rig.session.raise).toBeUndefined();
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raised', healerName: 'Lumi' });
+  });
+
+  /** The Heiler's `leave` comes a step before the break it causes. */
+  it('names the Heiler whose raise broke, though they have already left', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
+    rig.controller.dispatch(entityFrame({ id: 'healer', name: 'Lumi' }));
+    const raising = { healerId: 'healer', targetId: 'self' };
+    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: 'healer', leftGame: true } });
+    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken', seconds: 0 } });
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raiseBroken', healerName: 'Lumi' });
   });
 
   it('leaves a raise given to someone else to the scene', () => {
@@ -633,7 +647,7 @@ describe('winded and fallen', () => {
     expect(rig.session.raise).toBeUndefined();
   });
 
-  it('shows the scene every blow, every raise begun and ended, and every change of condition', () => {
+  it('shows the scene every blow, every raise begun and ended, every mend, and every change of condition', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
@@ -646,6 +660,7 @@ describe('winded and fallen', () => {
     const raising = { healerId: 'self', targetId: 'peer', seconds: 0 };
     rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
     rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken' } });
+    rig.controller.dispatch({ tag: 'mend', payload: { targetId: 'peer' } });
 
     expect(rig.shown).toEqual([
       ['showBlow', 'monster:1', 'peer', true],
@@ -653,6 +668,7 @@ describe('winded and fallen', () => {
       ['updateCondition', 'peer', 'fallen'],
       ['showRaising', 'peer', 6],
       ['showRaising', 'peer', undefined],
+      ['showMend', 'peer'],
     ]);
   });
 
@@ -1036,6 +1052,40 @@ describe('tending', () => {
     rig.controller.dispatch({ tag: 'leave', payload: { entityId: 'bren', leftGame: false } });
     rig.session.runTick(0);
     expect(tends(rig)).toEqual([{ targetId: 'bren' }]);
+  });
+
+  describe('a raise the Heiler gives', () => {
+    const raising = (state: 'begun' | 'broken' | 'done') => ({
+      tag: 'raising' as const,
+      payload: { healerId: 'self', targetId: 'bren', state, seconds: state === 'begun' ? 6 : 0 },
+    });
+
+    it('reports it done and broken, and says nothing of its beginning', () => {
+      const rig = healer();
+      rig.session.pressAt('bren', 0);
+      rig.controller.dispatch(raising('begun'));
+      expect(rig.controller.chatHistory).toEqual([]);
+      rig.controller.dispatch(raising('broken'));
+      rig.controller.dispatch(raising('begun'));
+      rig.controller.dispatch(raising('done'));
+      expect(rig.controller.chatHistory).toEqual([
+        { kind: 'raiseBrokenOther', targetName: 'Bren' },
+        { kind: 'raisedOther', targetName: 'Bren' },
+      ]);
+    });
+
+    it.each<[string, (rig: Rig) => void]>([
+      ['lets go of them', (rig) => rig.session.tend(undefined)],
+      ['puts the Mondstein away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'mondstein', quantity: 1 }] } })],
+      ['falls', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
+    ])('says nothing of the break when the Heiler first %s', (_label, letGo) => {
+      const rig = healer();
+      rig.session.pressAt('bren', 0);
+      rig.controller.dispatch(raising('begun'));
+      letGo(rig);
+      rig.controller.dispatch(raising('broken'));
+      expect(rig.controller.chatHistory.filter((line) => line.kind !== 'fell')).toEqual([]);
+    });
   });
 
   it('is not what a click at a dreamer does for anyone but a Heiler', () => {

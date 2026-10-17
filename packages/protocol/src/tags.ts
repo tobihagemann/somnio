@@ -43,6 +43,7 @@ const SERVER_TO_CLIENT_TAGS = [
   'condition',
   'blow',
   'raising',
+  'mend',
   'adminSay',
   'sessionToken',
   'sessionRevoked',

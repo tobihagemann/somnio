@@ -300,6 +300,11 @@ export interface RaisingMessage {
   seconds: number;
 }
 
+/** A Heiler's touch mended a dreamer. It carries no amount: all anyone learns of another's health is its condition. */
+export interface MendMessage {
+  targetId: string;
+}
+
 export interface AdminSayMessage {
   text: string;
 }
@@ -616,6 +621,10 @@ export function decodeRaisingMessage(container: Record<string, unknown>, path: s
     state: requireStringEnum(container, 'state', path, RAISING_STATES),
     seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
   };
+}
+
+export function decodeMendMessage(container: Record<string, unknown>, path: string): MendMessage {
+  return { targetId: requireEntityId(container, 'targetId', path) };
 }
 
 export function decodeAdminSayMessage(container: Record<string, unknown>, path: string): AdminSayMessage {
