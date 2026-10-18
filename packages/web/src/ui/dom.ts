@@ -216,6 +216,14 @@ export function setHidden(node: HTMLElement, hidden: boolean): void {
   node.classList.toggle('hidden', hidden);
 }
 
+export function isHidden(node: HTMLElement): boolean {
+  return node.classList.contains('hidden');
+}
+
+export function toggleHidden(node: HTMLElement): void {
+  node.classList.toggle('hidden');
+}
+
 export function replaceChildren(node: HTMLElement, children: readonly Node[]): void {
   node.replaceChildren(...children);
 }

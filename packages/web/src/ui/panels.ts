@@ -6,7 +6,7 @@ import { chatLineCategory, taskIsDone } from '@/client';
 import type { ChatLine } from '@/client';
 import { renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
-import { ICON_PATHS, element, floating, iconButton, replaceChildren, setHidden } from './dom';
+import { ICON_PATHS, element, floating, iconButton, isHidden, replaceChildren, setHidden, toggleHidden } from './dom';
 import type { IconName } from './dom';
 import { taskProgressText } from './servicePanel';
 
@@ -96,6 +96,7 @@ export class GamePanels {
   private readonly itemsFooter: HTMLElement;
   private shownItems: readonly InventoryRowMessage[] | undefined;
   private shownChat: { count: number; newest: ChatLine | undefined } | undefined;
+  private chatAtNewestWhenHidden = true;
   private readonly chatBody: HTMLElement;
   private readonly playersBody: HTMLElement;
   private readonly itemsBody: HTMLElement;
@@ -164,9 +165,9 @@ export class GamePanels {
       children: [element('div', { className: 'trailing-column', children: [this.itemsList, this.itemsFooter] })],
     });
 
-    const chatToggle = this.toggle(t('Chat'), 'chat', this.chatBody);
-    const playersToggle = this.toggle(t('Players'), 'players', this.playersBody);
-    const itemsToggle = this.toggle(t('Items'), 'items', this.itemsBody);
+    const chatToggle = this.toggle(t('Chat'), 'chat', () => this.toggleChat());
+    const playersToggle = this.toggle(t('Players'), 'players', () => toggleHidden(this.playersBody));
+    const itemsToggle = this.toggle(t('Items'), 'items', () => toggleHidden(this.itemsBody));
     const chatColumn = this.floating('bottom-leading', 'chat', [this.chatBody, chatToggle]);
     const playersColumn = this.floating('top-trailing', 'players', [playersToggle, this.playersBody]);
     const itemsColumn = this.floating('bottom-trailing', 'items', [this.itemsBody, itemsToggle]);
@@ -226,7 +227,7 @@ export class GamePanels {
     const newest = lines.at(-1);
     if (this.shownChat?.count === lines.length && this.shownChat.newest === newest) return;
     this.shownChat = { count: lines.length, newest };
-    const atBottom = this.scrollback.scrollHeight - this.scrollback.scrollTop - this.scrollback.clientHeight < 24;
+    const atNewest = this.scrollbackAtNewest();
     // Synthesized at render time rather than stored, matching `ChatScrollbackView.renderedLines`
     // (`[.startupGreeting] + chatLines`). Prepending here keeps it out of the retained history, so
     // it can never be trimmed away by the scrollback cap or duplicated by a re-render.
@@ -242,7 +243,7 @@ export class GamePanels {
     );
     // Only auto-scroll when the reader was already at the bottom, so scrolling back through
     // history is not yanked away by the next arriving line.
-    if (atBottom) this.scrollback.scrollTop = this.scrollback.scrollHeight;
+    if (atNewest) this.scrollToNewest();
   }
 
   renderPlayers(players: readonly string[]): void {
@@ -307,10 +308,35 @@ export class GamePanels {
     this.chatInput.blur();
   }
 
-  private toggle(label: string, name: IconName, body: HTMLElement): HTMLElement {
-    return iconButton(label, ICON_PATHS[name], () => setHidden(body, !body.classList.contains('hidden')), {
+  private toggle(label: string, name: IconName, onClick: () => void): HTMLElement {
+    return iconButton(label, ICON_PATHS[name], onClick, {
       className: 'fantasy-button fantasy-button--compact',
     });
+  }
+
+  /**
+   * A collapsed scrollback measures nothing and takes no scroll. Lines that arrive while it is
+   * collapsed therefore leave it at its old offset when it reopens, short of the newest line, and
+   * it would stop following the lines after them too. So whether the reader was at the newest line
+   * is taken as it collapses, not as a line arrives.
+   */
+  private toggleChat(): void {
+    if (isHidden(this.chatBody)) {
+      setHidden(this.chatBody, false);
+      if (this.chatAtNewestWhenHidden) this.scrollToNewest();
+    } else {
+      this.chatAtNewestWhenHidden = this.scrollbackAtNewest();
+      setHidden(this.chatBody, true);
+    }
+  }
+
+  /** Within a line (24px) of the newest. */
+  private scrollbackAtNewest(): boolean {
+    return this.scrollback.scrollHeight - this.scrollback.scrollTop - this.scrollback.clientHeight < 24;
+  }
+
+  private scrollToNewest(): void {
+    this.scrollback.scrollTop = this.scrollback.scrollHeight;
   }
 
   /**

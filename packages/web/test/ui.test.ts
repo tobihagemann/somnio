@@ -6,7 +6,7 @@ import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDeskt
 import { catalogTables, setLocale } from '@/i18n';
 import { mouseFacingHeading } from '@/client';
 import type { RegistrationForm } from '@/client';
-import { fullPools, headingRadians } from '@somnio/core';
+import { clamp, fullPools, headingRadians } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
@@ -47,6 +47,35 @@ function overlayCallbacks(): ConstructorParameters<typeof Overlays>[0] {
     onToggleFullscreen: () => {},
     appVersion: '1.2.3',
   };
+}
+
+function joinedLines(count: number): ChatLine[] {
+  return Array.from({ length: count }, (_, index) => ({ kind: 'joined', playerName: `Dreamer${index}` }));
+}
+
+/**
+ * `happy-dom` lays nothing out, so the scrollback is given a browser's metrics. While a hidden
+ * ancestor leaves it without a box, it measures nothing and takes no scroll, and once shown it is
+ * back at its old offset.
+ */
+function laidOutScrollback(panels: GamePanels): HTMLElement {
+  const scrollback = panels.root.querySelector('.chat-scrollback') as HTMLElement;
+  const boxHeight = 180;
+  const rowHeight = 30;
+  const boxed = () => scrollback.closest('.hidden') === null;
+  const contentHeight = () => Math.max(boxHeight, scrollback.childElementCount * rowHeight);
+  let offset = 0;
+  Object.defineProperties(scrollback, {
+    clientHeight: { get: () => (boxed() ? boxHeight : 0) },
+    scrollHeight: { get: () => (boxed() ? contentHeight() : 0) },
+    scrollTop: {
+      get: () => (boxed() ? offset : 0),
+      set: (value: number) => {
+        if (boxed()) offset = clamp(value, 0, contentHeight() - boxHeight);
+      },
+    },
+  });
+  return scrollback;
 }
 
 describe('panel chrome metrics', () => {
@@ -201,15 +230,56 @@ describe('the four floating panels', () => {
 
   it('toggles its panel body on click', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const chatBody = panels.root.querySelector('.chat-panel') as HTMLElement;
-    // Scoped to the button: the scrollback and the chat input carry the same accessible name.
-    const toggle = panels.root.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
+    const bodies = {
+      Chat: panels.root.querySelector('.chat-panel') as HTMLElement,
+      Players: panels.root.querySelector('.trailing-list--players')?.closest('.fantasy-panel') as HTMLElement,
+      Items: panels.root.querySelector('.trailing-list--items')?.closest('.fantasy-panel') as HTMLElement,
+    };
+    const hiddenLabels = () =>
+      Object.entries(bodies)
+        .filter(([, body]) => body.classList.contains('hidden'))
+        .map(([label]) => label);
 
-    expect(chatBody.classList.contains('hidden')).toBe(false);
+    for (const label of Object.keys(bodies)) {
+      // Scoped to the button: each panel's list or log, and the chat input, carry its toggle's accessible name.
+      const toggle = panels.root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
+      toggle.click();
+      expect(hiddenLabels()).toEqual([label]);
+      toggle.click();
+      expect(hiddenLabels()).toEqual([]);
+    }
+  });
+
+  it('reopens the chat at the newest line when lines were said while it was collapsed', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const scrollback = laidOutScrollback(panels);
+    const toggle = panels.root.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
+    const history = joinedLines(20);
+    panels.renderChat(history);
+    expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
+
     toggle.click();
-    expect(chatBody.classList.contains('hidden')).toBe(true);
+    history.push(...joinedLines(2));
+    panels.renderChat(history);
     toggle.click();
-    expect(chatBody.classList.contains('hidden')).toBe(false);
+
+    expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
+  });
+
+  it('reopens the chat where a reader scrolled back through it left it', () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+    const scrollback = laidOutScrollback(panels);
+    const toggle = panels.root.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
+    const history = joinedLines(20);
+    panels.renderChat(history);
+    scrollback.scrollTop = 120;
+
+    toggle.click();
+    history.push(...joinedLines(2));
+    panels.renderChat(history);
+    toggle.click();
+
+    expect(scrollback.scrollTop).toBe(120);
   });
 
   it('scales each energy bar by its own maximum', () => {
