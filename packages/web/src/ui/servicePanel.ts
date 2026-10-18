@@ -107,6 +107,8 @@ export class ServicePanel {
   private readonly callbacks: ServicePanelCallbacks;
   private readonly title: HTMLElement;
   private readonly subtitle: HTMLElement;
+  private readonly purse: HTMLElement;
+  private readonly purseAmount: HTMLElement;
   private readonly body: HTMLElement;
   private shown: { npcId: string; reads: readonly unknown[] } | undefined;
 
@@ -114,12 +116,16 @@ export class ServicePanel {
     this.callbacks = callbacks;
     this.title = element('h1', { className: 'overlay-title' });
     this.subtitle = element('p', { className: 'form-note service-subtitle' });
+    this.purseAmount = element('strong');
+    // Above the scrolling body, so what the dreamer can afford stays in view however far the wares are scrolled.
+    this.purse = element('p', { className: 'shop-purse', children: [element('span', { text: t('Your purse') }), this.purseAmount] });
     this.body = element('div', { className: 'service-body' });
     this.root = element('section', {
       className: 'fantasy-panel service-panel hidden',
       children: [
         this.title,
         this.subtitle,
+        this.purse,
         this.body,
         element('div', { className: 'form-actions', children: [button(t('Close'), () => callbacks.onClose())] }),
       ],
@@ -135,30 +141,32 @@ export class ServicePanel {
     }
     // The shell renders on every state change, each `energy` frame of a recovering pool included,
     // and a button replaced while the pointer is held on it never gets its click.
-    const { reads, build } = this.bodyFor(npc, service, lucidity, inventory, tradeLocked);
+    const { reads, purse, build } = this.bodyFor(npc, service, lucidity, inventory, tradeLocked);
     const shown = this.shown;
     if (shown?.npcId === npc.id && reads.every((read, index) => read === shown.reads[index])) return;
     this.shown = { npcId: npc.id, reads };
     this.root.setAttribute('aria-label', npc.name);
     this.title.textContent = npc.name;
     this.subtitle.textContent = SERVICE_TITLE[service]();
+    setHidden(this.purse, purse === undefined);
+    if (purse !== undefined) this.purseAmount.textContent = t('%@c', String(purse));
     replaceChildren(this.body, build());
   }
 
-  /** The body a service shows, with the inputs it reads, so a frame it does not read leaves it standing. */
+  /** The body a service shows, with the inputs it reads, so a frame it does not read leaves it standing. The shopkeeper's also carries the purse shown above it. */
   private bodyFor(
     npc: ClientEntity,
     service: NPCService,
     lucidity: LucidityMessage,
     inventory: readonly InventoryRowMessage[],
     tradeLocked: boolean,
-  ): { reads: readonly unknown[]; build: () => HTMLElement[] } {
+  ): { reads: readonly unknown[]; purse?: number; build: () => HTMLElement[] } {
     switch (service) {
       case 'kaempferMaster':
       case 'heilerMaster':
         return { reads: [lucidity], build: () => this.master(npc, masterRole(service), lucidity) };
       case 'shopkeeper':
-        return { reads: [inventory, tradeLocked], build: () => this.shop(npc, inventory, tradeLocked) };
+        return { reads: [inventory, tradeLocked], purse: purseCoins(inventory), build: () => this.shop(npc, inventory, tradeLocked) };
     }
   }
 
@@ -167,10 +175,6 @@ export class ServicePanel {
     const forSale = WARES.filter((ware) => !canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
     const yours = WARES.filter((ware) => canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
     return [
-      element('p', {
-        className: 'shop-purse',
-        children: [element('span', { text: t('Your purse') }), element('strong', { text: t('%@c', String(purseCoins(inventory))) })],
-      }),
       paragraph(t('%@ deals in weapons. He buys back what he sells for half its price.', npc.name)),
       ...(forSale.length === 0 ? [] : [element('h2', { className: 'service-heading', text: t('For sale') }), ...forSale]),
       element('h2', { className: 'service-heading', text: t('Sell') }),

@@ -1458,6 +1458,7 @@ describe('the service panel', () => {
       p.render(mercus(), { ranks: [] }, [purse(100), carried('cudgel', 1, 'right')]);
       expect(p.text()).toContain('Shopkeeper');
       expect(p.panel.root.querySelector('.shop-purse')?.textContent).toBe('Your purse100c');
+      expect(p.panel.root.querySelector('.service-body .shop-purse')).toBeNull();
       expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
       expect(wares(p.panel)).toEqual(['dagger', 'sword', 'mace', 'cudgel']);
       expect(ware(p.panel, 'dagger')).toContain('6 damage, 10 balance a swing');
@@ -1480,6 +1481,17 @@ describe('the service panel', () => {
       p.render(mercus(), { ranks: [] }, [purse(500)]);
       expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
       expect(p.text()).toContain('You carry nothing Mercus buys.');
+    });
+
+    it('keeps the purse current through a trade, and hides it at a master', () => {
+      const p = mount();
+      const purseLine = (): HTMLElement => p.panel.root.querySelector<HTMLElement>('.shop-purse')!;
+      p.render(mercus(), { ranks: [] }, [purse(100)]);
+      p.render(mercus(), { ranks: [] }, [purse(40), carried('dagger', 1)]);
+      expect(purseLine().textContent).toBe('Your purse40c');
+      expect(purseLine().classList.contains('hidden')).toBe(false);
+      p.render(p.npc('kaempferMaster'), { ranks: [] }, [purse(40)]);
+      expect(purseLine().classList.contains('hidden')).toBe(true);
     });
 
     /** A recovering pool renders the shell several times a second, and a button replaced under a held pointer never gets its click. */
