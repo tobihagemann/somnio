@@ -1410,12 +1410,21 @@ describe('the fallen notice', () => {
     expect(n.visible()).toEqual(['Give up']);
   });
 
-  it('counts a raise down while one runs', () => {
+  it('counts a raise down while one runs, naming every Heiler holding on', () => {
     const n = mount();
-    n.notice.render({ fallen: true, raise: { healerName: 'Lumi', secondsLeft: 4 } });
+    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi'], secondsLeft: 4 } });
     expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 4 s');
+    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi', 'Bren'], secondsLeft: 2 } });
+    expect(n.notice.root.textContent).toContain('Lumi and Bren are drawing you back: 2 s');
     n.notice.render({ fallen: true, raise: undefined });
     expect(n.notice.root.querySelector('p.hidden')?.textContent).toContain('Lumi');
+  });
+
+  it('names the Heilers drawing the player back as German lists them', () => {
+    setLocale('de');
+    const n = mount();
+    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi', 'Bren'], secondsLeft: 2 } });
+    expect(n.notice.root.textContent).toContain('Lumi und Bren holen dich zurück: 2 s');
   });
 });
 

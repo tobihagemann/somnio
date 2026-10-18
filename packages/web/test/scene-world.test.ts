@@ -1307,12 +1307,12 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle']);
   });
 
-  it('draws a ring round a body being raised as far round as the raise has gone, however few frames were drawn, and frees it when the raise ends', () => {
+  it('draws a ring round a body being raised as far round as the raise has gone, at its pace from each snapshot, however few frames were drawn, and frees it when the raise ends', () => {
     let nowMs = 0;
     const scene = makeScene(emptyAssets(), () => nowMs);
     scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
 
-    scene.showRaising('peer', 6);
+    scene.showRaising('peer', { progress: 0, seconds: 6 });
     const [ring] = rings(scene);
     const whole = ring!.geometry.getIndex()!.count;
     expect(ring!.geometry.drawRange.count).toBe(0);
@@ -1320,11 +1320,19 @@ describe('blows, falls, and raises', () => {
     nowMs = 3000;
     scene.tick(0.016);
     expect(ring!.geometry.drawRange.count).toBe(whole / 2);
-    nowMs = 7000;
-    scene.tick(0.016);
-    expect(ring!.geometry.drawRange.count).toBe(whole);
 
-    const dispose = vi.spyOn(ring!.geometry, 'dispose');
+    // A second Heiler joins: the rest goes at twice the pace.
+    scene.showRaising('peer', { progress: 0.5, seconds: 1.5 });
+    const [faster, ...others] = rings(scene);
+    expect(others).toEqual([]);
+    nowMs = 3750;
+    scene.tick(0.016);
+    expect(faster!.geometry.drawRange.count).toBe((whole * 3) / 4);
+    nowMs = 4500;
+    scene.tick(0.016);
+    expect(faster!.geometry.drawRange.count).toBe(whole);
+
+    const dispose = vi.spyOn(faster!.geometry, 'dispose');
     scene.showRaising('peer', undefined);
     expect(rings(scene)).toEqual([]);
     expect(dispose).toHaveBeenCalled();

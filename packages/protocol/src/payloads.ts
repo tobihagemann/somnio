@@ -1,4 +1,4 @@
-import { truncateToUTF8Bytes } from './constants.ts';
+import { SOMNIO_PROTOCOL_CONSTANTS, truncateToUTF8Bytes } from './constants.ts';
 import { WireDecodingError } from './errors.ts';
 import type { SectorView } from './sectorView.ts';
 import { decodeSectorView } from './sectorView.ts';
@@ -9,6 +9,7 @@ import {
   requireBool,
   requireBoundedString,
   requireEntityId,
+  requireEntityIds,
   requireFloat,
   requireId,
   requireInt32,
@@ -57,7 +58,7 @@ export type NPCService = (typeof NPC_SERVICES)[number];
 export const CONDITIONS = ['hale', 'grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
-export const RAISING_STATES = ['begun', 'broken', 'done'] as const;
+export const RAISING_STATES = ['holding', 'broken', 'done'] as const;
 export type RaisingState = (typeof RAISING_STATES)[number];
 
 /** How loudly a line is spoken, which sets how far it carries. */
@@ -292,11 +293,17 @@ export interface BlowMessage {
   hit: boolean;
 }
 
+/**
+ * A raise on a fallen dreamer as it stands, whole in every frame. While `holding`, `healerIds` are
+ * the Heilers holding on in the order they took hold, `progress` is the share done, and `seconds`
+ * the time left at their pace. `done` and `broken` name the Heilers holding on just before the
+ * end, with `seconds` 0 and `progress` 1 when done, 0 when broken.
+ */
 export interface RaisingMessage {
-  healerId: string;
   targetId: string;
+  healerIds: string[];
   state: RaisingState;
-  /** How long the raise takes, with `begun`; 0 otherwise. */
+  progress: number;
   seconds: number;
 }
 
@@ -615,10 +622,15 @@ export function decodeBlowMessage(container: Record<string, unknown>, path: stri
 }
 
 export function decodeRaisingMessage(container: Record<string, unknown>, path: string): RaisingMessage {
+  const healerIds = requireEntityIds(container, 'healerIds', path, SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers);
+  if (healerIds.length === 0) {
+    throw new WireDecodingError(`${path}.healerIds`, 'expected at least one healer');
+  }
   return {
-    healerId: requireEntityId(container, 'healerId', path),
     targetId: requireEntityId(container, 'targetId', path),
+    healerIds,
     state: requireStringEnum(container, 'state', path, RAISING_STATES),
+    progress: requireUnitInterval(container, 'progress', path),
     seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
   };
 }

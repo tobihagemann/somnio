@@ -225,8 +225,10 @@ describe('renderChatLine', () => {
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'taskDone' },
     { kind: 'fell' },
-    { kind: 'raised', healerName: 'Lumi' },
-    { kind: 'raiseBroken', healerName: 'Lumi' },
+    { kind: 'raised', healerNames: ['Lumi'] },
+    { kind: 'raised', healerNames: ['Lumi', 'Bren'] },
+    { kind: 'raiseBroken', healerNames: ['Lumi'] },
+    { kind: 'raiseBroken', healerNames: ['Lumi', 'Bren'] },
     { kind: 'raisedOther', targetName: 'Bren' },
     { kind: 'raiseBrokenOther', targetName: 'Bren' },
     { kind: 'wokeWeakened' },
@@ -255,11 +257,18 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'en')).toBe('Your Strike deepens: rank 2.');
     expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'de')).toBe('Deine Lehre Schlag vertieft sich: Rang 2.');
     expect(renderChatLine({ kind: 'becameRole', role: 'kaempfer' }, catalogTables, 'en')).toBe('You are now a Kämpfer.');
-    expect(renderChatLine({ kind: 'raised', healerName: 'Lumi' }, catalogTables, 'en')).toBe('Lumi draws you back into the dream.');
-    expect(renderChatLine({ kind: 'raiseBroken', healerName: 'Lumi' }, catalogTables, 'en')).toBe('Lumi loses hold of you.');
+    expect(renderChatLine({ kind: 'raised', healerNames: ['Lumi'] }, catalogTables, 'en')).toBe('Lumi draws you back into the dream.');
+    expect(renderChatLine({ kind: 'raiseBroken', healerNames: ['Lumi'] }, catalogTables, 'en')).toBe('Lumi loses hold of you.');
     expect(renderChatLine({ kind: 'raisedOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You draw Bren back into the dream.');
     expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You lose hold of Bren.');
     expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'de')).toBe('Du verlierst den Halt an Bren.');
+  });
+
+  it('names several Heilers as the language lists them', () => {
+    const three = ['Lumi', 'Bren', 'Kai'];
+    expect(renderChatLine({ kind: 'raised', healerNames: three }, catalogTables, 'en')).toBe('Lumi, Bren, and Kai draw you back into the dream.');
+    expect(renderChatLine({ kind: 'raised', healerNames: three }, catalogTables, 'de')).toBe('Lumi, Bren und Kai holen dich in den Traum zurück.');
+    expect(renderChatLine({ kind: 'raiseBroken', healerNames: ['Lumi', 'Bren'] }, catalogTables, 'de')).toBe('Lumi und Bren verlieren den Halt an dir.');
   });
 
   it('selects the verb from the trailing punctuation', () => {

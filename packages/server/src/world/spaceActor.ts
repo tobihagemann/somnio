@@ -1,4 +1,4 @@
-import { encodeSomnioMessage } from '@somnio/protocol';
+import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
 import type {
   ClientSayMessage,
   Condition,
@@ -122,23 +122,19 @@ interface PlayerSlot {
   /** Nightmares leave the dreamer alone until this moment. */
   graceUntil: number;
   condition: Condition;
-  /** The raise this fallen dreamer is being given. */
+  /** The raise this fallen dreamer is being given, by every Heiler holding on. */
   raise: Raise | undefined;
-  /**
-   * The hold on each Heiler who began a raise on this fallen dreamer: when they may begin another.
-   * It is kept on the dreamer because a door or a reconnect gives the Heiler a fresh slot. The
-   * dreamer's own reconnect clears it.
-   */
-  raiseReadyAt: Map<string, number>;
   /** The dreamer a Heiler chose to tend: mended, or raised, whenever the Mondstein reaches them. */
   tending: string | undefined;
 }
 
 interface Raise {
-  healerId: string;
-  elapsed: number;
-  /** The spirit the healer has paid toward the cost so far. */
-  charged: number;
+  /** The pace-seconds done, up to the raise time: each Heiler holding on adds one a second. */
+  work: number;
+  /** The Heilers holding on, in the order they took hold. */
+  holders: string[];
+  /** Each Heiler who has held on, also after they dropped out: the seconds held and the spirit paid for them. */
+  shares: Map<string, { seconds: number; charged: number }>;
 }
 
 interface NPCRuntime {
@@ -285,6 +281,8 @@ const HOME_PROGRESS_METRES = 0.01;
 const STOP_SLACK = 0.01;
 /** The turns off the bearing to its goal, in degrees, that a nightmare tries on each side when the straight step is blocked. */
 const STEER_DEGREES = [30, 60, 90];
+/** How far a Heiler's seconds held may fall short of the next whole unit of spirit and still be charged it. A sum of step times lands a rounding error under the exact figure. */
+const SHARE_SLACK_SECONDS = 1e-9;
 
 export interface SpaceActorOptions {
   logger: Logger;
@@ -440,7 +438,6 @@ export class SpaceActor {
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
       raise: undefined,
-      raiseReadyAt: new Map(),
       tending: undefined,
     };
     const interest = this.interest.get(sector.name)!;
@@ -454,6 +451,9 @@ export class SpaceActor {
     ];
     for (const other of this.entities()) {
       if (interest.has(other.sector)) messages.push({ tag: 'entity', payload: other.entity });
+    }
+    for (const other of this.players.values()) {
+      if (other.raise !== undefined && interest.has(other.sector)) messages.push(this.raisingMessage(other, 'holding', other.raise.holders));
     }
     const frames = messages.map((message) => encodeSomnioMessage(message));
     for (const frame of frames) outbox.send(frame);
@@ -470,6 +470,10 @@ export class SpaceActor {
     this.moved.delete(entityId);
     for (const npc of this.npcs.values()) npc.greetedAt.delete(entityId);
     this.broadcast({ tag: 'leave', payload: { entityId, leftGame } }, slot.sector);
+    // A Heiler who leaves drops out at once, so one back under the same id before the next step holds on only once they take hold again.
+    for (const target of this.players.values()) {
+      if (target.raise?.holders.includes(entityId) === true) this.releaseRaise(target, target.raise);
+    }
   }
 
   /** Whether a player can stand at the point: clear of the world and of every NPC. */
@@ -570,6 +574,10 @@ export class SpaceActor {
       } else if (previous.has(other.sector) && !current.has(other.sector)) {
         slot.outbox.sendEncoded({ tag: 'leave', payload: { entityId: other.entity.id, leftGame: false } }, this.logger);
       }
+    }
+    for (const [id, other] of this.players) {
+      if (id === slot.character.id || other.raise === undefined || !current.has(other.sector) || previous.has(other.sector)) continue;
+      slot.outbox.sendEncoded(this.raisingMessage(other, 'holding', other.raise.holders), this.logger);
     }
     this.entityChangedSector(this.playerEntity(slot), from, slot.sector);
   }
@@ -1085,10 +1093,11 @@ export class SpaceActor {
   }
 
   /**
-   * A Heiler's Mondstein reaching another dreamer: a standing one is mended, a fallen one begins to
-   * be raised. Beginning a raise spends the touch, as a mend does. It also holds that Heiler back
-   * from another raise on this dreamer for one touch interval. The hold is theirs alone, so another
-   * Heiler can take over as soon as they let go.
+   * A Heiler's Mondstein reaching another dreamer: a standing one is mended, and on a fallen one the
+   * Heiler takes hold, beginning a raise or joining the one under way. Beginning needs the raise's
+   * whole spirit cost on hand, so a lone Heiler can finish it. Joining needs a mend's worth, and room
+   * among the most Heilers one raise holds. Taking hold spends the touch, as a mend does, and that is
+   * the only limit on how often a Heiler takes hold.
    */
   private touch(healer: PlayerSlot, target: PlayerSlot): void {
     if (!this.canMend(healer) || !this.touches(healer, target)) return;
@@ -1096,17 +1105,17 @@ export class SpaceActor {
       this.mend(healer, target);
       return;
     }
-    const now = this.now();
-    if (target.raise !== undefined || now < (target.raiseReadyAt.get(healer.character.id) ?? 0)) return;
-    // The whole cost has to be there at the start, so a raise once begun can be finished.
-    if (rankOf(healer.character.lucidity.ranks, 'drawing-back') === 0 || healer.character.energy.spiritCurrent < COMBAT.raise.spiritCost) return;
+    const id = healer.character.id;
+    const holders = target.raise?.holders ?? [];
+    if (holders.includes(id) || holders.length >= SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers) return;
+    if (rankOf(healer.character.lucidity.ranks, 'drawing-back') === 0) return;
+    const needed = target.raise === undefined ? COMBAT.raise.spiritCost : COMBAT.mend.spiritCost;
+    if (healer.character.energy.spiritCurrent < needed) return;
     this.spendTouch(healer);
-    for (const [id, readyAt] of target.raiseReadyAt) {
-      if (readyAt <= now) target.raiseReadyAt.delete(id);
-    }
-    target.raiseReadyAt.set(healer.character.id, healer.mendReadyAt);
-    target.raise = { healerId: healer.character.id, elapsed: 0, charged: 0 };
-    this.broadcastRaising(target, healer.character.id, 'begun');
+    target.raise ??= { work: 0, holders: [], shares: new Map() };
+    target.raise.holders.push(id);
+    if (!target.raise.shares.has(id)) target.raise.shares.set(id, { seconds: 0, charged: 0 });
+    this.broadcastRaising(target, 'holding', target.raise.holders);
   }
 
   /** Whether the dreamer is a standing Heiler holding the Mondstein. */
@@ -1152,10 +1161,19 @@ export class SpaceActor {
     );
   }
 
-  /** Recovers each standing dreamer's pools, lets each reach the dreamer they tend, then advances the raises under way. */
+  /**
+   * Recovers each standing dreamer's pools, drops out the Heilers who no longer hold on to a raise,
+   * lets each reach the dreamer they tend, then advances the raises under way. Dropping out comes
+   * before the touches, so a raise its last Heiler dropped out of is broken before anyone else can
+   * take hold of it. A Heiler tending the dreamer can then only begin a new one, at its whole
+   * spirit cost.
+   */
   private runPlayers(elapsedSeconds: number): void {
     for (const slot of this.players.values()) {
       if (!isFallen(slot)) this.recover(slot, elapsedSeconds);
+    }
+    for (const target of this.players.values()) {
+      if (target.raise !== undefined) this.releaseRaise(target, target.raise);
     }
     for (const slot of this.players.values()) {
       if (slot.tending === undefined) continue;
@@ -1197,46 +1215,78 @@ export class SpaceActor {
   }
 
   /**
-   * The one place a raise breaks or completes. One whose fallen dreamer leaves the space goes
-   * with their slot, unannounced. It holds only while the healer stays attached, tending the
-   * dreamer, standing, holding the Mondstein, in reach, and with spirit left; otherwise it breaks
-   * off and has to start over.
-   * The cost is charged in whole units as the time passes, so a completed raise has cost exactly
-   * the spirit cost. The raised dreamer is left alone by nightmares for the grace time. That is
-   * slot state, so it ends when they leave the space, and nightmares do not follow through a door.
+   * The one place a raise breaks, and the one place a Heiler drops out of one. A Heiler holds on
+   * only while they stay attached, tending the dreamer, standing, holding the Mondstein, in reach,
+   * and with spirit left. One who does not drops out, taking only their pace with them. Once the
+   * last has dropped out, the raise breaks off and has to start over. A raise whose fallen dreamer
+   * leaves the space goes with their slot, unannounced.
+   */
+  private releaseRaise(target: PlayerSlot, raise: Raise): void {
+    const before = raise.holders;
+    raise.holders = before.filter((id) => {
+      const healer = this.players.get(id);
+      return (
+        healer !== undefined &&
+        healer.tending === target.character.id &&
+        this.wieldsMondstein(healer) &&
+        healer.character.energy.spiritCurrent > 0 &&
+        this.touches(healer, target)
+      );
+    });
+    if (raise.holders.length === 0) {
+      target.raise = undefined;
+      this.broadcastRaising(target, 'broken', before);
+    } else if (raise.holders.length < before.length) {
+      this.broadcastRaising(target, 'holding', raise.holders);
+    }
+  }
+
+  /**
+   * The one place a raise completes. Each Heiler holding on adds their pace, so two of them finish
+   * it in half the time. Each pays spirit in whole units for the seconds they held, so a lone
+   * Heiler pays exactly the spirit cost and a group never more.
+   *
+   * Once it is done, every Heiler who held on and is still in the space earns their share of the
+   * practice. The raised dreamer is left alone by nightmares for the grace time. That is slot
+   * state, so it ends when they leave the space, and nightmares do not follow through a door.
    */
   private advanceRaise(target: PlayerSlot, raise: Raise, elapsedSeconds: number): void {
-    const healer = this.players.get(raise.healerId);
-    if (
-      healer === undefined ||
-      healer.tending !== target.character.id ||
-      !this.wieldsMondstein(healer) ||
-      healer.character.energy.spiritCurrent <= 0 ||
-      !this.touches(healer, target)
-    ) {
-      target.raise = undefined;
-      this.broadcastRaising(target, raise.healerId, 'broken');
-      return;
+    const credit = Math.min(elapsedSeconds, (COMBAT.raise.seconds - raise.work) / raise.holders.length);
+    for (const id of raise.holders) {
+      const share = raise.shares.get(id)!;
+      share.seconds += credit;
+      const due = Math.floor((COMBAT.raise.spiritCost * (share.seconds + SHARE_SLACK_SECONDS)) / COMBAT.raise.seconds);
+      if (due > share.charged) {
+        const healer = this.players.get(id)!;
+        this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: Math.max(0, healer.character.energy.spiritCurrent - (due - share.charged)) });
+        share.charged = due;
+      }
     }
-    raise.elapsed += elapsedSeconds;
-    const due = Math.floor(COMBAT.raise.spiritCost * Math.min(1, raise.elapsed / COMBAT.raise.seconds));
-    if (due > raise.charged) {
-      const spirit = healer.character.energy.spiritCurrent;
-      this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: Math.max(0, spirit - (due - raise.charged)) });
-      raise.charged = due;
-    }
-    if (raise.elapsed < COMBAT.raise.seconds) return;
+    const finishes = credit < elapsedSeconds;
+    raise.work = finishes ? COMBAT.raise.seconds : raise.work + credit * raise.holders.length;
+    if (raise.work < COMBAT.raise.seconds) return;
     target.raise = undefined;
     target.graceUntil = this.now() + COMBAT.raise.graceSeconds * 1000;
     const energy = target.character.energy;
     this.setEnergy(target, { ...energy, healthCurrent: Math.ceil(energy.healthMax * COMBAT.raise.healthFraction) });
-    this.broadcastRaising(target, raise.healerId, 'done');
-    this.addPractice(healer, PRACTICE.raise);
+    this.broadcastRaising(target, 'done', raise.holders);
+    const held = [...raise.shares.values()].reduce((sum, share) => sum + share.seconds, 0);
+    for (const [id, share] of raise.shares) {
+      const healer = this.players.get(id);
+      if (healer !== undefined) this.addPractice(healer, (PRACTICE.raise * share.seconds) / held);
+    }
   }
 
-  private broadcastRaising(target: PlayerSlot, healerId: string, state: RaisingState): void {
-    const seconds = state === 'begun' ? COMBAT.raise.seconds : 0;
-    this.broadcast({ tag: 'raising', payload: { healerId, targetId: target.character.id, state, seconds } }, target.sector);
+  private broadcastRaising(target: PlayerSlot, state: RaisingState, healerIds: readonly string[]): void {
+    this.broadcast(this.raisingMessage(target, state, healerIds), target.sector);
+  }
+
+  /** The raise on the dreamer as it stands, or as it ended when `state` is an end. */
+  private raisingMessage(target: PlayerSlot, state: RaisingState, healerIds: readonly string[]): SomnioMessage {
+    const snapshot = { targetId: target.character.id, healerIds: [...healerIds], state };
+    if (state !== 'holding') return { tag: 'raising', payload: { ...snapshot, progress: state === 'done' ? 1 : 0, seconds: 0 } };
+    const work = target.raise!.work;
+    return { tag: 'raising', payload: { ...snapshot, progress: work / COMBAT.raise.seconds, seconds: (COMBAT.raise.seconds - work) / healerIds.length } };
   }
 
   /**

@@ -74,6 +74,7 @@ export const PRACTICE = {
   perHealthMended: 0.25,
   /** The share of `perHealthMended` a Heiler earns mending themselves. */
   selfMendShare: 0.5,
+  /** For a raise done, shared among every Heiler who held on in proportion to the seconds each held. The share of one who has left the space is forfeited. */
   raise: 10,
 } as const;
 

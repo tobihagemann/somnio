@@ -6,7 +6,7 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
 import { fullPools } from '@somnio/core';
-import type { SomnioMessage } from '@somnio/protocol';
+import type { RaisingState, SomnioMessage } from '@somnio/protocol';
 
 /**
  * The gameplay half of the client.
@@ -88,6 +88,11 @@ function makeRig(): Rig {
     now: () => rig.now,
   });
   return rig;
+}
+
+/** A `raising` snapshot of the raise on `targetId`, held by `healerIds`. */
+function raisingFrame(targetId: string, healerIds: string[], state: RaisingState, progress = 0, seconds = state === 'holding' ? 6 : 0): SomnioMessage {
+  return { tag: 'raising', payload: { targetId, healerIds, state, progress, seconds } };
 }
 
 function attach(rig: Rig, entities: readonly ClientEntity[]): void {
@@ -609,45 +614,71 @@ describe('winded and fallen', () => {
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
     rig.controller.dispatch(entityFrame({ id: 'healer', name: 'Lumi' }));
-    const raising = { healerId: 'healer', targetId: 'self' };
     rig.now = 1000;
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
-    expect(rig.session.raise).toEqual({ healerName: 'Lumi', secondsLeft: 6 });
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'holding'));
+    expect(rig.session.raise).toEqual({ healerNames: ['Lumi'], secondsLeft: 6 });
     rig.session.runTick(3500);
-    expect(rig.session.raise).toEqual({ healerName: 'Lumi', secondsLeft: 4 });
+    expect(rig.session.raise).toEqual({ healerNames: ['Lumi'], secondsLeft: 4 });
 
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken', seconds: 0 } });
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'broken'));
     expect(rig.session.raise).toBeUndefined();
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBroken', healerName: 'Lumi' }]);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBroken', healerNames: ['Lumi'] }]);
 
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'done', seconds: 0 } });
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'holding'));
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'done', 1));
     expect(rig.session.raise).toBeUndefined();
-    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raised', healerName: 'Lumi' });
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raised', healerNames: ['Lumi'] });
   });
 
-  /** The Heiler's `leave` comes a step before the break it causes. */
+  it('names every Heiler holding on to the raise given to the player, and counts down at once at their pace', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
+    rig.controller.dispatch(entityFrame({ id: 'healer', name: 'Lumi' }));
+    rig.controller.dispatch(entityFrame({ id: 'other', name: 'Bren' }));
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'holding'));
+    rig.controller.dispatch(raisingFrame('self', ['healer', 'other'], 'holding', 0, 3));
+    expect(rig.session.raise).toEqual({ healerNames: ['Lumi', 'Bren'], secondsLeft: 3 });
+    rig.session.runTick(1600);
+    expect(rig.session.raise).toEqual({ healerNames: ['Lumi', 'Bren'], secondsLeft: 2 });
+
+    rig.controller.dispatch(raisingFrame('self', ['healer', 'other'], 'done', 1));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'raised', healerNames: ['Lumi', 'Bren'] }]);
+  });
+
+  /** The tick's timestamp is when the frame began, which can be a little before the snapshot arrived. */
+  it('never counts the raise given to the player up on a frame that began before its snapshot arrived', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
+    rig.controller.dispatch(entityFrame({ id: 'healer', name: 'Lumi' }));
+    rig.now = 1000;
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'holding', 0, 3));
+    rig.session.runTick(999);
+    expect(rig.session.raise).toEqual({ healerNames: ['Lumi'], secondsLeft: 3 });
+  });
+
+  /** The Heiler's `leave` comes just before the break it causes. */
   it('names the Heiler whose raise broke, though they have already left', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
     rig.controller.dispatch(entityFrame({ id: 'healer', name: 'Lumi' }));
-    const raising = { healerId: 'healer', targetId: 'self' };
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'holding'));
     rig.controller.dispatch({ tag: 'leave', payload: { entityId: 'healer', leftGame: true } });
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken', seconds: 0 } });
-    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raiseBroken', healerName: 'Lumi' });
+    rig.controller.dispatch(raisingFrame('self', ['healer'], 'broken'));
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raiseBroken', healerNames: ['Lumi'] });
   });
 
   it('leaves a raise given to someone else to the scene', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
-    rig.controller.dispatch({ tag: 'raising', payload: { healerId: 'healer', targetId: 'peer', state: 'begun', seconds: 6 } });
+    rig.controller.dispatch(raisingFrame('peer', ['healer'], 'holding'));
     expect(rig.session.raise).toBeUndefined();
   });
 
-  it('shows the scene every blow, every raise begun and ended, every mend, and every change of condition', () => {
+  it('shows the scene every blow, every raise as it stands and as it ends, every mend, and every change of condition', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
@@ -657,16 +688,15 @@ describe('winded and fallen', () => {
     rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'monster:1', targetId: 'peer', hit: true } });
     rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'peer', hit: false } });
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } });
-    const raising = { healerId: 'self', targetId: 'peer', seconds: 0 };
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'begun', seconds: 6 } });
-    rig.controller.dispatch({ tag: 'raising', payload: { ...raising, state: 'broken' } });
+    rig.controller.dispatch(raisingFrame('peer', ['self'], 'holding', 0.25, 4.5));
+    rig.controller.dispatch(raisingFrame('peer', ['self'], 'broken'));
     rig.controller.dispatch({ tag: 'mend', payload: { targetId: 'peer' } });
 
     expect(rig.shown).toEqual([
       ['showBlow', 'monster:1', 'peer', true],
       ['showBlow', 'peer', undefined, false],
       ['updateCondition', 'peer', 'fallen'],
-      ['showRaising', 'peer', 6],
+      ['showRaising', 'peer', { progress: 0.25, seconds: 4.5 }],
       ['showRaising', 'peer', undefined],
       ['showMend', 'peer'],
     ]);
@@ -1055,18 +1085,15 @@ describe('tending', () => {
   });
 
   describe('a raise the Heiler gives', () => {
-    const raising = (state: 'begun' | 'broken' | 'done') => ({
-      tag: 'raising' as const,
-      payload: { healerId: 'self', targetId: 'bren', state, seconds: state === 'begun' ? 6 : 0 },
-    });
+    const raising = (state: RaisingState, healerIds = ['self']) => raisingFrame('bren', healerIds, state);
 
-    it('reports it done and broken, and says nothing of its beginning', () => {
+    it('reports it done and broken, and says nothing of taking hold', () => {
       const rig = healer();
       rig.session.pressAt('bren', 0);
-      rig.controller.dispatch(raising('begun'));
+      rig.controller.dispatch(raising('holding'));
       expect(rig.controller.chatHistory).toEqual([]);
       rig.controller.dispatch(raising('broken'));
-      rig.controller.dispatch(raising('begun'));
+      rig.controller.dispatch(raising('holding'));
       rig.controller.dispatch(raising('done'));
       expect(rig.controller.chatHistory).toEqual([
         { kind: 'raiseBrokenOther', targetName: 'Bren' },
@@ -1074,17 +1101,64 @@ describe('tending', () => {
       ]);
     });
 
+    it('reports losing hold when a snapshot leaves the Heiler out while another holds on, and nothing of the other joining', () => {
+      const rig = healer();
+      rig.session.pressAt('bren', 0);
+      rig.controller.dispatch(raising('holding'));
+      rig.controller.dispatch(raising('holding', ['self', 'cara']));
+      expect(rig.controller.chatHistory).toEqual([]);
+      rig.controller.dispatch(raising('holding', ['cara']));
+      expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBrokenOther', targetName: 'Bren' }]);
+    });
+
+    it('reports losing hold once, and nothing when another Heiler then begins anew', () => {
+      const rig = healer();
+      rig.session.pressAt('bren', 0);
+      rig.controller.dispatch(raising('holding'));
+      rig.controller.dispatch(raising('broken'));
+      rig.controller.dispatch(raising('holding', ['cara']));
+      expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBrokenOther', targetName: 'Bren' }]);
+    });
+
     it.each<[string, (rig: Rig) => void]>([
       ['lets go of them', (rig) => rig.session.tend(undefined)],
       ['puts the Mondstein away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'mondstein', quantity: 1 }] } })],
       ['falls', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
-    ])('says nothing of the break when the Heiler first %s', (_label, letGo) => {
+    ])('says nothing of losing hold when the Heiler first %s', (_label, letGo) => {
+      for (const end of [raising('broken', ['self', 'cara']), raising('holding', ['cara'])]) {
+        const rig = healer();
+        rig.session.pressAt('bren', 0);
+        rig.controller.dispatch(raising('holding', ['self', 'cara']));
+        letGo(rig);
+        rig.controller.dispatch(end);
+        expect(rig.controller.chatHistory.filter((line) => line.kind !== 'fell')).toEqual([]);
+      }
+    });
+
+    it('tells every Heiler named at the end that it is done, and no one who dropped out before it', () => {
+      const named = healer();
+      named.controller.dispatch(raising('done', ['cara', 'self']));
+      expect(named.controller.chatHistory).toEqual([{ kind: 'raisedOther', targetName: 'Bren' }]);
+
+      const dropped = healer();
+      dropped.session.pressAt('bren', 0);
+      dropped.controller.dispatch(raising('holding', ['self', 'cara']));
+      dropped.session.tend(undefined);
+      dropped.controller.dispatch(raising('holding', ['cara']));
+      dropped.controller.dispatch(raising('done', ['cara']));
+      expect(dropped.controller.chatHistory).toEqual([]);
+    });
+
+    /** The dreamer took their raise along when they left, with no frame to say so. */
+    it('says nothing of losing hold of a dreamer who left and came back to another Heiler', () => {
       const rig = healer();
       rig.session.pressAt('bren', 0);
-      rig.controller.dispatch(raising('begun'));
-      letGo(rig);
-      rig.controller.dispatch(raising('broken'));
-      expect(rig.controller.chatHistory.filter((line) => line.kind !== 'fell')).toEqual([]);
+      rig.controller.dispatch(raising('holding'));
+      rig.controller.dispatch({ tag: 'leave', payload: { entityId: 'bren', leftGame: true } });
+      rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 11, z: 10, condition: 'fallen' }));
+      rig.controller.dispatch(raising('holding', ['cara']));
+      expect(rig.session.tending).toBe('bren');
+      expect(rig.controller.chatHistory.filter((line) => line.kind !== 'left' && line.kind !== 'joined')).toEqual([]);
     });
   });
 

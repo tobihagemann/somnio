@@ -104,8 +104,8 @@ export class GameplaySession {
   servicePanel: ClientEntity | undefined;
   /** The dreamer a Heiler chose to tend, as the server was last told. */
   tending: string | undefined;
-  /** The raise being given to the fallen player: who gives it, and the whole seconds left. */
-  raise: { healerName: string; secondsLeft: number } | undefined;
+  /** The raise being given to the fallen player: the Heilers holding on, and the whole seconds left. */
+  raise: { healerNames: string[]; secondsLeft: number } | undefined;
 
   /**
    * What has arrived since `enterSpace`. The first frame of each kind in a space states what is,
@@ -114,6 +114,8 @@ export class GameplaySession {
    */
   private seen = { energy: false, inventory: false, lucidity: false };
   private raiseEndsAtMs = 0;
+  /** The fallen dreamers whose raise this player was last told they hold on to. */
+  private readonly heldRaises = new Set<string>();
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
   private waking = false;
   /** Whether the button that began a swing is still down, which keeps swinging. */
@@ -163,6 +165,8 @@ export class GameplaySession {
     };
     this.controller.onEntityReset = (entityId) => {
       this.interpolation.delete(entityId);
+      // A fallen dreamer who leaves takes their raise along without a `raising` frame, so the player holds it no more.
+      this.heldRaises.delete(entityId);
       // The player's own entity carries their condition, which is what the fallen notice follows.
       if (entityId === this.controller.selfId) this.onStateChanged?.();
     };
@@ -192,6 +196,7 @@ export class GameplaySession {
     this.seen = { energy: false, inventory: false, lucidity: false };
     this.servicePanel = undefined;
     this.raise = undefined;
+    this.heldRaises.clear();
     this.swingHeld = false;
     this.swingReadyAtMs = 0;
     this.slowedUntilMs = 0;
@@ -313,9 +318,13 @@ export class GameplaySession {
     if (self === undefined || !withinSpeakingDistance(self.position, npc.position)) this.closeServicePanel();
   }
 
+  /**
+   * Counts the raise down between snapshots, and never up: a frame's timestamp can lie a little
+   * before the moment the last snapshot arrived, which would otherwise read a whole second more.
+   */
   private countDownRaise(timestampMs: number): void {
     if (this.raise === undefined) return;
-    const secondsLeft = Math.max(0, Math.ceil((this.raiseEndsAtMs - timestampMs) / 1000));
+    const secondsLeft = Math.min(this.raise.secondsLeft, Math.max(0, Math.ceil((this.raiseEndsAtMs - timestampMs) / 1000)));
     if (secondsLeft === this.raise.secondsLeft) return;
     this.raise = { ...this.raise, secondsLeft };
     this.onStateChanged?.();
@@ -512,33 +521,41 @@ export class GameplaySession {
   }
 
   /**
-   * The scene shows every raise. The Heiler giving one is told when it is done, and when it breaks
-   * while they still hold on. The dreamer being raised is told when it is done or breaks.
+   * The scene shows every raise as it stands. A Heiler is told when a raise they hold on to is
+   * done, and when they lose hold of it while still tending the dreamer with the Mondstein in hand.
+   * The dreamer being raised is shown who draws them back and for how long, and told when it is
+   * done or breaks.
    */
   private handleRaising(raising: RaisingMessage): void {
-    this.controller.renderSurface.showRaising(raising.targetId, raising.state === 'begun' ? raising.seconds : undefined);
-    if (raising.healerId === this.controller.selfId) {
-      const targetName = this.controller.entities.get(raising.targetId)?.name ?? '';
-      if (raising.state === 'done') {
-        this.controller.appendChat({ kind: 'raisedOther', targetName });
-      } else if (raising.state === 'broken' && this.tending === raising.targetId && itemInHand(this.inventory) === ('mondstein' satisfies ItemId)) {
-        // Still holding on, so the break was not theirs. Letting go clears `tending`, and so does a
-        // fall, whose `condition` comes a step before the break. Putting the stone away keeps
-        // `tending`, but its `inventory` frame also comes before the break.
+    const { targetId, healerIds, state } = raising;
+    this.controller.renderSurface.showRaising(targetId, state === 'holding' ? { progress: raising.progress, seconds: raising.seconds } : undefined);
+    const selfId = this.controller.selfId;
+    const named = selfId !== undefined && healerIds.includes(selfId);
+    if (named || this.heldRaises.has(targetId)) {
+      const targetName = this.controller.entities.get(targetId)?.name ?? '';
+      const holding = state === 'holding' && named;
+      if (state === 'done') {
+        if (named) this.controller.appendChat({ kind: 'raisedOther', targetName });
+      } else if (this.heldRaises.has(targetId) && !holding && this.tending === targetId && itemInHand(this.inventory) === ('mondstein' satisfies ItemId)) {
+        // Still tending with the stone in hand, so they did not let go. Letting go clears `tending`, and
+        // so does a fall, whose `condition` comes a step before the drop. Putting the stone away keeps
+        // `tending`, but its `inventory` frame also comes before the drop.
         this.controller.appendChat({ kind: 'raiseBrokenOther', targetName });
       }
+      if (holding) this.heldRaises.add(targetId);
+      else this.heldRaises.delete(targetId);
       return;
     }
-    if (raising.targetId !== this.controller.selfId) return;
-    const healerName = this.controller.entities.get(raising.healerId)?.name ?? '';
-    if (raising.state === 'begun') {
+    if (targetId !== selfId) return;
+    const names = healerIds.map((id) => this.controller.entities.get(id)?.name ?? '');
+    if (state === 'holding') {
       this.raiseEndsAtMs = this.now() + raising.seconds * 1000;
-      this.raise = { healerName, secondsLeft: Math.ceil(raising.seconds) };
+      this.raise = { healerNames: names, secondsLeft: Math.ceil(raising.seconds) };
     } else {
-      // The name kept from the begin: a Heiler who left is out of view before their raise breaks.
-      const kept = this.raise?.healerName ?? healerName;
+      // The names kept from the last snapshot, which held the same Heilers: one who left is out of view by now.
+      const healerNames = this.raise?.healerNames ?? names;
       this.raise = undefined;
-      this.controller.appendChat({ kind: raising.state === 'done' ? 'raised' : 'raiseBroken', healerName: kept });
+      this.controller.appendChat({ kind: state === 'done' ? 'raised' : 'raiseBroken', healerNames });
     }
     this.onStateChanged?.();
   }

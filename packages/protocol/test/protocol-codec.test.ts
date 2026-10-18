@@ -100,6 +100,7 @@ describe('runtime validation the erased types cannot do', () => {
   const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
   const row = { slot: 0, itemId: 'purse', quantity: 100 };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
+  const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
 
   it('rejects a missing required field', () => {
     expect(() => decodeSomnioMessage(frame('energy', { healthCurrent: 100 }))).toThrow(/healthMax: expected Int32, got nothing/);
@@ -163,7 +164,21 @@ describe('runtime validation the erased types cannot do', () => {
     ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
     ['a fractional rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1.5, practice: 0 }] }, /fractional 1.5/],
     ['negative practice', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1, practice: -0.5 }] }, /practice: expected a non-negative number/],
-    ['an unknown raising state', 'raising', { healerId: 'a', targetId: 'b', state: 'paused', seconds: 6 }, /unknown value "paused"/],
+    ['an unknown raising state', 'raising', { ...raising, state: 'paused' }, /unknown value "paused"/],
+    ['a raise held by no one', 'raising', { ...raising, healerIds: [] }, /healerIds: expected at least one healer/],
+    [
+      'a raise held by more Heilers than the cap',
+      'raising',
+      // The first id is no string, so only a count checked before the ids reports the cap.
+      { ...raising, healerIds: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers }, (_, index) => `h${index}`)] },
+      /healerIds: exceeds 32 ids \(got 33\)/,
+    ],
+    ['a Heiler named twice in a raise', 'raising', { ...raising, healerIds: ['a', 'c', 'a'] }, /healerIds\[2\]: duplicate id "a"/],
+    ['a Heiler id that is no string', 'raising', { ...raising, healerIds: ['a', 7] }, /healerIds\[1\]: expected a string, got number/],
+    ['an empty Heiler id', 'raising', { ...raising, healerIds: ['a', ''] }, /healerIds\[1\]: expected a non-empty string/],
+    ['an over-cap Heiler id', 'raising', { ...raising, healerIds: [overCapEntityId] }, /healerIds\[0\]: exceeds 320 UTF-8 bytes/],
+    ['a raise past its end', 'raising', { ...raising, progress: 1.5 }, /progress: expected a number from 0 to 1, got 1.5/],
+    ['a raise with negative time left', 'raising', { ...raising, seconds: -1 }, /seconds: expected a non-negative number/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
     ['a mend without its target', 'mend', {}, /targetId: expected/],
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
@@ -190,6 +205,8 @@ describe('runtime validation the erased types cannot do', () => {
     expect(() => decodeSomnioMessage(frame('move', { ...move, x: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: 0 }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('inventory', { rows: [{ ...row, itemId: atCapId, quantity: 0 }] }))).not.toThrow();
+    const atCapHealers = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers }, (_, index) => `h${index}`);
+    expect(() => decodeSomnioMessage(frame('raising', { targetId: 'b', healerIds: atCapHealers, state: 'holding', progress: 0, seconds: 0 }))).not.toThrow();
   });
 });
 
@@ -348,7 +365,7 @@ describe('string literal sets', () => {
   });
 
   it('pins RaisingState', () => {
-    expect(RAISING_STATES).toEqual(['begun', 'broken', 'done']);
+    expect(RAISING_STATES).toEqual(['holding', 'broken', 'done']);
   });
 
   it('pins SpeechKind', () => {
@@ -362,7 +379,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(9);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -385,6 +402,7 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFloorPatches).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
   });
 });
 

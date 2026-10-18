@@ -21,11 +21,7 @@ export function requireObject(value: unknown, path: string): Record<string, unkn
 }
 
 export function requireString(container: Record<string, unknown>, key: string, path: string): string {
-  const value = container[key];
-  if (typeof value !== 'string') {
-    throw new WireDecodingError(`${path}.${key}`, `expected a string, got ${describe(value)}`);
-  }
-  return value;
+  return requireStringValue(container[key], `${path}.${key}`);
 }
 
 export function requireBool(container: Record<string, unknown>, key: string, path: string): boolean {
@@ -169,13 +165,27 @@ export function requireEntityId(container: Record<string, unknown>, key: string,
   return requireBoundedString(container, key, path, PROTOCOL_BYTE_CAPS.entityId);
 }
 
+/** A list of at most `maxCount` distinct runtime entity ids, each as `requireEntityId` checks one. The count is capped before any id is decoded. */
+export function requireEntityIds(container: Record<string, unknown>, key: string, path: string, maxCount: number): string[] {
+  const ids = requireArray(container, key, path);
+  if (ids.length > maxCount) {
+    throw new WireDecodingError(`${path}.${key}`, `exceeds ${maxCount} ids (got ${ids.length})`);
+  }
+  const seen = new Set<string>();
+  return ids.map((element, index) => {
+    const elementPath = `${path}.${key}[${index}]`;
+    const id = requireBoundedStringValue(element, PROTOCOL_BYTE_CAPS.entityId, elementPath);
+    if (seen.has(id)) {
+      throw new WireDecodingError(elementPath, `duplicate id "${id}"`);
+    }
+    seen.add(id);
+    return id;
+  });
+}
+
 /** A non-empty string within a UTF-8 byte cap. */
 export function requireBoundedString(container: Record<string, unknown>, key: string, path: string, maxBytes: number): string {
-  const value = requireWithinByteCap(requireString(container, key, path), maxBytes, `${path}.${key}`);
-  if (value === '') {
-    throw new WireDecodingError(`${path}.${key}`, 'expected a non-empty string');
-  }
-  return value;
+  return requireBoundedStringValue(container[key], maxBytes, `${path}.${key}`);
 }
 
 /**
@@ -208,6 +218,21 @@ export const PROTOCOL_BYTE_CAPS = {
   entityId: SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes,
   sectorName: SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes,
 } as const;
+
+function requireStringValue(value: unknown, path: string): string {
+  if (typeof value !== 'string') {
+    throw new WireDecodingError(path, `expected a string, got ${describe(value)}`);
+  }
+  return value;
+}
+
+function requireBoundedStringValue(value: unknown, maxBytes: number, path: string): string {
+  const bounded = requireWithinByteCap(requireStringValue(value, path), maxBytes, path);
+  if (bounded === '') {
+    throw new WireDecodingError(path, 'expected a non-empty string');
+  }
+  return bounded;
+}
 
 function describe(value: unknown): string {
   if (value === undefined) return 'nothing';

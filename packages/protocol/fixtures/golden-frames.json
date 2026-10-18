@@ -137,7 +137,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 9
+      "protocolVersion": 10
     },
     "tag": "hello"
   },
@@ -255,10 +255,14 @@
   },
   "raising": {
     "payload": {
-      "healerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
-      "seconds": 6,
-      "state": "begun",
-      "targetId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      "healerIds": [
+        "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+        "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      ],
+      "progress": 0.25,
+      "seconds": 2.25,
+      "state": "holding",
+      "targetId": "3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7"
     },
     "tag": "raising"
   },

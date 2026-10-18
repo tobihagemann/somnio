@@ -1,4 +1,8 @@
 {
+  "%1$@ are drawing you back: %2$@ s": {
+    "en": "%1$@ are drawing you back: %2$@ s",
+    "de": "%1$@ holen dich zurück: %2$@ s"
+  },
   "%1$@ asks from the %2$@, \"%3$@\"": {
     "en": "%1$@ asks from the %2$@, \"%3$@\"",
     "de": "%1$@ fragt aus dem %2$@, \"%3$@\""
@@ -55,6 +59,10 @@
     "en": "%1$@ yells, \"%2$@\"",
     "de": "%1$@ schreit, \"%2$@\""
   },
+  "%@ draw you back into the dream.": {
+    "en": "%@ draw you back into the dream.",
+    "de": "%@ holen dich in den Traum zurück."
+  },
   "%@ draws you back into the dream.": {
     "en": "%@ draws you back into the dream.",
     "de": "%@ holt dich in den Traum zurück."
@@ -70,6 +78,10 @@
   "%@ left the game.": {
     "en": "%@ left the game.",
     "de": "%@ hat das Spiel verlassen."
+  },
+  "%@ lose hold of you.": {
+    "en": "%@ lose hold of you.",
+    "de": "%@ verlieren den Halt an dir."
   },
   "%@ loses hold of you.": {
     "en": "%@ loses hold of you.",

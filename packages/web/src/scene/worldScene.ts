@@ -3,7 +3,7 @@
  */
 import * as THREE from 'three';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
-import type { SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
+import type { RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
 import {
   WORLD_TIME_RATE,
   clamp,
@@ -114,11 +114,10 @@ interface BubbleEntry {
   wall: ScreenPoint | undefined;
 }
 
-/** A ring on the ground around a fallen body, drawn further round as the raise goes on. */
-interface RaiseRing {
+/** A ring on the ground around a fallen body, drawn further round as the raise goes on: from `progress` at `anchoredAtMs`, whole after `seconds`. */
+interface RaiseRing extends RaiseProgress {
   mesh: THREE.Mesh;
-  startedAtMs: number;
-  seconds: number;
+  anchoredAtMs: number;
 }
 
 /** The base floor of a sector or one of its patches. */
@@ -539,16 +538,16 @@ export class WorldScene implements WorldRenderSurface {
     this.misses.set(targetId, { node, expiresAtMs: this.now() + MISS_SECONDS * 1000 });
   }
 
-  showRaising(targetId: string, seconds: number | undefined): void {
+  showRaising(targetId: string, raise: RaiseProgress | undefined): void {
     disposeSubtree(this.raiseRings.get(targetId)?.mesh);
     this.raiseRings.delete(targetId);
     const state = this.entityStates.get(targetId);
-    if (state === undefined || seconds === undefined) return;
-    // It starts with nothing drawn: the tick widens its draw range as the raise goes on.
+    if (state === undefined || raise === undefined) return;
+    // It starts with nothing drawn: the tick, which runs before the next render, draws it from `progress` on.
     const mesh = groundRingMesh(state.radius * RAISE_RING_RADII, RAISE_RING_COLOR);
     mesh.geometry.setDrawRange(0, 0);
     state.node.add(mesh);
-    this.raiseRings.set(targetId, { mesh, startedAtMs: this.now(), seconds });
+    this.raiseRings.set(targetId, { mesh, anchoredAtMs: this.now(), ...raise });
   }
 
   showMend(targetId: string): void {
@@ -888,7 +887,8 @@ export class WorldScene implements WorldRenderSurface {
     }
 
     for (const ring of this.raiseRings.values()) {
-      const progress = Math.min((nowMs - ring.startedAtMs) / (ring.seconds * 1000), 1);
+      const since = ring.seconds === 0 ? 0 : Math.min((nowMs - ring.anchoredAtMs) / (ring.seconds * 1000), 1);
+      const progress = ring.progress + (1 - ring.progress) * since;
       ring.mesh.geometry.setDrawRange(0, Math.floor(progress * RING_SEGMENTS) * 6);
     }
   }

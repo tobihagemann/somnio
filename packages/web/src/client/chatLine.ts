@@ -40,8 +40,8 @@ export type ChatLine =
   | { kind: 'rankGained'; teachingId: TeachingId; rank: number }
   | { kind: 'taskDone' }
   | { kind: 'fell' }
-  | { kind: 'raised'; healerName: string }
-  | { kind: 'raiseBroken'; healerName: string }
+  | { kind: 'raised'; healerNames: string[] }
+  | { kind: 'raiseBroken'; healerNames: string[] }
   | { kind: 'raisedOther'; targetName: string }
   | { kind: 'raiseBrokenOther'; targetName: string }
   | { kind: 'wokeWeakened' }

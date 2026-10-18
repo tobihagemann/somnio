@@ -15,6 +15,7 @@ export interface GoldenFrameEntry {
 
 const PLAYER_ID = '0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c';
 const OTHER_PLAYER_ID = '7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
+const FALLEN_PLAYER_ID = '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7';
 const NPC_ID = 'npc:EdariaBibliothek/libus';
 const MASTER_ID = 'npc:EdariaMitte/pugnax';
 
@@ -202,7 +203,13 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-air', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, hit: false } } },
-  { name: 'raising', message: { tag: 'raising', payload: { healerId: PLAYER_ID, targetId: OTHER_PLAYER_ID, state: 'begun', seconds: 6 } } },
+  {
+    name: 'raising',
+    message: {
+      tag: 'raising',
+      payload: { targetId: FALLEN_PLAYER_ID, healerIds: [PLAYER_ID, OTHER_PLAYER_ID], state: 'holding', progress: 0.25, seconds: 2.25 },
+    },
+  },
   { name: 'mend', message: { tag: 'mend', payload: { targetId: OTHER_PLAYER_ID } } },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {

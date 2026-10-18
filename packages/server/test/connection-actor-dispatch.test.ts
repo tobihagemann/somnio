@@ -77,7 +77,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
   { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, attachFirst: true },
   {
     label: 'post-attach raising',
-    message: { tag: 'raising', payload: { healerId: 'peer', targetId: 'player', state: 'begun', seconds: 6 } },
+    message: { tag: 'raising', payload: { targetId: 'player', healerIds: ['peer'], state: 'holding', progress: 0, seconds: 6 } },
     attachFirst: true,
   },
   { label: 'post-attach mend', message: { tag: 'mend', payload: { targetId: 'player' } }, attachFirst: true },

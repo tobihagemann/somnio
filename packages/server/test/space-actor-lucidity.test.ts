@@ -316,7 +316,7 @@ describe('a gate', () => {
     world.space.handleTend(fallen.entityId, healer.entityId);
     world.steps(1);
     // Only the touch after the rank began a raise.
-    expect(payloads(await collectMessages(fallen.outbox), 'raising').map((raising) => raising.state)).toEqual(['begun']);
+    expect(payloads(await collectMessages(fallen.outbox), 'raising').map((raising) => raising.state)).toEqual(['holding']);
   });
 });
 

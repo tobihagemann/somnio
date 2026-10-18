@@ -56,9 +56,13 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'fell':
       return lookup('Your health gives out. You fall.');
     case 'raised':
-      return lookup('%@ draws you back into the dream.', line.healerName);
+      return line.healerNames.length === 1
+        ? lookup('%@ draws you back into the dream.', line.healerNames[0]!)
+        : lookup('%@ draw you back into the dream.', formatNameList(line.healerNames, locale));
     case 'raiseBroken':
-      return lookup('%@ loses hold of you.', line.healerName);
+      return line.healerNames.length === 1
+        ? lookup('%@ loses hold of you.', line.healerNames[0]!)
+        : lookup('%@ lose hold of you.', formatNameList(line.healerNames, locale));
     case 'raisedOther':
       return lookup('You draw %@ back into the dream.', line.targetName);
     case 'raiseBrokenOther':
@@ -72,6 +76,11 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'reconnecting':
       return lookup('Reconnecting...');
   }
+}
+
+/** Names joined as the language lists them: "Lumi, Bren, and Kai", "Lumi, Bren und Kai". */
+export function formatNameList(names: readonly string[], locale: CatalogLocale): string {
+  return new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
 }
 
 type Lookup = (key: string, ...args: string[]) => string;

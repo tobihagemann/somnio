@@ -15,6 +15,12 @@ export interface SpeechBubbleRequest {
   clarity: number;
 }
 
+/** A raise under way as its last snapshot states it: the share done, and the seconds left at the pace of those holding on. */
+export interface RaiseProgress {
+  progress: number;
+  seconds: number;
+}
+
 /**
  * The world render surface — the contract the Three.js scene implements. Declared here rather
  * than in the scene module so the controller can drive a renderer or a test spy without importing
@@ -39,8 +45,8 @@ export interface WorldRenderSurface {
   updateCondition(entityId: string, condition: Condition): void;
   /** One swing or strike: the attacker lunges, and the target flinches or is missed. A swing at the air has no target. */
   showBlow(attackerId: string, targetId: string | undefined, hit: boolean): void;
-  /** A raise under way on a fallen entity, taking `seconds`; `undefined` ends it. */
-  showRaising(targetId: string, seconds: number | undefined): void;
+  /** A raise under way on a fallen entity; `undefined` ends it. */
+  showRaising(targetId: string, raise: RaiseProgress | undefined): void;
   /** A mend landing on an entity: a ring swells from its feet and fades. */
   showMend(targetId: string): void;
   /** Marks the one entity the player tends; `undefined` marks none. */

@@ -1,4 +1,5 @@
-import { t } from '@/i18n';
+import type { GameplaySession } from '@/client';
+import { currentLocale, formatNameList, t } from '@/i18n';
 import { button, element, setHidden } from './dom';
 
 /**
@@ -9,8 +10,7 @@ import { button, element, setHidden } from './dom';
 
 export interface FallenState {
   fallen: boolean;
-  /** The raise being given to the player, with the whole seconds it still takes. */
-  raise: { healerName: string; secondsLeft: number } | undefined;
+  raise: GameplaySession['raise'];
 }
 
 export class FallenNotice {
@@ -48,11 +48,17 @@ export class FallenNotice {
     if (!state.fallen) this.confirm(false);
     setHidden(this.root, !state.fallen);
     setHidden(this.raise, state.raise === undefined);
-    if (state.raise !== undefined) this.raise.textContent = t('%1$@ is drawing you back: %2$@ s', state.raise.healerName, String(state.raise.secondsLeft));
+    if (state.raise !== undefined) this.raise.textContent = raiseText(state.raise);
   }
 
   private confirm(asking: boolean): void {
     setHidden(this.giveUp, asking);
     setHidden(this.confirmation, !asking);
   }
+}
+
+function raiseText({ healerNames, secondsLeft }: NonNullable<FallenState['raise']>): string {
+  return healerNames.length === 1
+    ? t('%1$@ is drawing you back: %2$@ s', healerNames[0]!, String(secondsLeft))
+    : t('%1$@ are drawing you back: %2$@ s', formatNameList(healerNames, currentLocale()), String(secondsLeft));
 }
