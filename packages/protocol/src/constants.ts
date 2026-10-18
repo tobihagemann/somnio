@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 10,
+  helloVersion: 11,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
@@ -43,6 +43,12 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxSectorFloorPatches: 4096,
   /** The most Heilers who hold one raise at once, which bounds the list a `raising` frame names. */
   maxRaiseHealers: 32,
+  /** The most rows an `inventory` frame carries, generous over the handful of items a dreamer holds. */
+  maxInventoryRows: 32,
+  /** The most ranks a `lucidity` frame carries, generous over the teachings there are. */
+  maxLucidityRanks: 32,
+  /** The most entities one `moves` frame carries; the server splits a larger batch across frames. */
+  maxMovesPerFrame: 256,
 
   /**
    * Slack the WebSocket-layer frame ceiling keeps above the encoder guard, so an oversized

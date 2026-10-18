@@ -65,7 +65,7 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 - **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush.
 - **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Heiler** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
-- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. The **Mondstein** is the Heiler's tool.
+- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. Mercus sells four weapons (a dagger, a cudgel, a short sword, and a mace), and the harder each strikes, the more Gleichgewicht its swing spends. A dreamer carries one of each at most, and he buys them back at half price. The **Mondstein** is the Heiler's tool.
 
 ## Progression — Lucidity (in detail)
 
@@ -85,7 +85,7 @@ A dreamer acts on what they point at. A swing goes the way they face, meets the 
 
 ### Training
 
-A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Gestalt mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and nothing to buy: depth over rush.
+A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Gestalt mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and no rank for sale: depth over rush.
 
 The two trials:
 
@@ -161,7 +161,7 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 - **Pugnax, the Kämpfer-Meister** — master of the fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
 - **Sana, the Heiler-Meisterin** (*sanare*, to heal) — mistress of the healers' hall; keeper of the Mondstein lore, gentle and exacting.
 - **The Mystiker** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
-- **Mercus, the shopkeeper** (*der Krämer*; *merx*, wares) — outfits dreamers with what little a newcomer can afford.
+- **Mercus, the shopkeeper** (*der Krämer*; *merx*, wares) — deals in weapons, from the dagger a newcomer can afford to the mace a seasoned dreamer saves for.
 - **Quieta, the innkeeper** (*die Wirtin*; *quies*, rest) — keeps the wake-point; knows every regular by their falling.
 - **The priest at the Kirche** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
 - **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper, and a master for those who venture past the gentle rings.

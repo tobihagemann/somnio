@@ -1,28 +1,37 @@
 import {
   COMBAT,
+  ITEMS,
+  SHOP,
   TEACHINGS,
   TEACHING_IDS,
   TRIALS,
+  WARES,
+  buyBackPrice,
+  canBuy,
+  canSell,
   isTeachingId,
+  itemInHand,
+  masterRole,
   practiceNeeded,
+  purseCoins,
   roleLabelKey,
-  roleOfService,
   taskGoal,
   teaching,
   teachingStanding,
   unmetNeed,
 } from '@somnio/core';
-import type { TaskSpec, TeachingId, TeachingStanding } from '@somnio/core';
-import type { LucidityMessage, NPCService, Role, TaskMessage } from '@somnio/protocol';
+import type { TaskSpec, TeachingId, TeachingStanding, Ware } from '@somnio/core';
+import type { InventoryRowMessage, LucidityMessage, NPCService, Role, TaskMessage } from '@somnio/protocol';
 import type { ClientEntity } from '@/client';
 import { taskIsDone, taskSpecOf } from '@/client';
 import { t } from '@/i18n';
 import { button, element, replaceChildren, setHidden } from './dom';
 
 /**
- * What a master offers, opened by a click at them and closed by walking away. It sits beside the
- * world rather than over it: it is no overlay, so the player keeps moving. Every control in it
- * asks the server, which answers with the `lucidity` frame the panel is next rendered from.
+ * What a master or the shopkeeper offers, opened by a click at them and closed by walking away. It
+ * sits beside the world rather than over it: it is no overlay, so the player keeps moving. Every
+ * control in it asks the server. The panel shows the outcome once the `lucidity` or `inventory`
+ * frame answering it arrives, and a refused request gets no answer.
  */
 
 export interface ServicePanelCallbacks {
@@ -31,6 +40,8 @@ export interface ServicePanelCallbacks {
   onCompleteTask: () => void;
   onAbandonTask: () => void;
   onStudy: (teachingId: string) => void;
+  onBuy: (itemId: string) => void;
+  onSell: (itemId: string) => void;
   onClose: () => void;
 }
 
@@ -38,6 +49,7 @@ export interface ServicePanelCallbacks {
 const SERVICE_TITLE: Record<NPCService, () => string> = {
   kaempferMaster: () => t('Master of the Kämpfer'),
   heilerMaster: () => t('Master of the Heiler'),
+  shopkeeper: () => t('Shopkeeper'),
 };
 
 const TEACHING_BLURB: Record<TeachingId, () => string> = {
@@ -96,7 +108,7 @@ export class ServicePanel {
   private readonly title: HTMLElement;
   private readonly subtitle: HTMLElement;
   private readonly body: HTMLElement;
-  private shown: { npcId: string; lucidity: LucidityMessage } | undefined;
+  private shown: { npcId: string; reads: readonly unknown[] } | undefined;
 
   constructor(callbacks: ServicePanelCallbacks) {
     this.callbacks = callbacks;
@@ -114,7 +126,7 @@ export class ServicePanel {
     });
   }
 
-  render(npc: ClientEntity | undefined, lucidity: LucidityMessage): void {
+  render(npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): void {
     const service = npc?.service;
     setHidden(this.root, service === undefined);
     if (npc === undefined || service === undefined) {
@@ -123,12 +135,79 @@ export class ServicePanel {
     }
     // The shell renders on every state change, each `energy` frame of a recovering pool included,
     // and a button replaced while the pointer is held on it never gets its click.
-    if (this.shown?.npcId === npc.id && this.shown.lucidity === lucidity) return;
-    this.shown = { npcId: npc.id, lucidity };
+    const { reads, build } = this.bodyFor(npc, service, lucidity, inventory, tradeLocked);
+    const shown = this.shown;
+    if (shown?.npcId === npc.id && reads.every((read, index) => read === shown.reads[index])) return;
+    this.shown = { npcId: npc.id, reads };
     this.root.setAttribute('aria-label', npc.name);
     this.title.textContent = npc.name;
     this.subtitle.textContent = SERVICE_TITLE[service]();
-    replaceChildren(this.body, this.master(npc, roleOfService(service), lucidity));
+    replaceChildren(this.body, build());
+  }
+
+  /** The body a service shows, with the inputs it reads, so a frame it does not read leaves it standing. */
+  private bodyFor(
+    npc: ClientEntity,
+    service: NPCService,
+    lucidity: LucidityMessage,
+    inventory: readonly InventoryRowMessage[],
+    tradeLocked: boolean,
+  ): { reads: readonly unknown[]; build: () => HTMLElement[] } {
+    switch (service) {
+      case 'kaempferMaster':
+      case 'heilerMaster':
+        return { reads: [lucidity], build: () => this.master(npc, masterRole(service), lucidity) };
+      case 'shopkeeper':
+        return { reads: [inventory, tradeLocked], build: () => this.shop(npc, inventory, tradeLocked) };
+    }
+  }
+
+  /** Every ware the dreamer does not carry, to buy, and those they carry, to sell back. Every button is disabled while a trade holds the lock. */
+  private shop(npc: ClientEntity, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): HTMLElement[] {
+    const forSale = WARES.filter((ware) => !canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
+    const yours = WARES.filter((ware) => canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
+    return [
+      element('p', {
+        className: 'shop-purse',
+        children: [element('span', { text: t('Your purse') }), element('strong', { text: t('%@c', String(purseCoins(inventory))) })],
+      }),
+      paragraph(t('%@ deals in weapons. He buys back what he sells for half its price.', npc.name)),
+      ...(forSale.length === 0 ? [] : [element('h2', { className: 'service-heading', text: t('For sale') }), ...forSale]),
+      element('h2', { className: 'service-heading', text: t('Sell') }),
+      ...(yours.length === 0 ? [paragraph(t('You carry nothing %@ buys.', npc.name), 'form-note')] : yours),
+    ];
+  }
+
+  private wareRow(ware: Ware, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): HTMLElement {
+    const { labelKey, weapon } = ITEMS[ware];
+    const price = SHOP.prices[ware];
+    const short = price - purseCoins(inventory);
+    let notes: HTMLElement[] = [];
+    let action: HTMLButtonElement;
+    if (canSell(inventory, ware)) {
+      action = button(t('Sell for %@c', String(buyBackPrice(ware))), () => this.callbacks.onSell(ware));
+      action.disabled = tradeLocked;
+    } else {
+      action = button(t('Buy for %@c', String(price)), () => this.callbacks.onBuy(ware));
+      action.disabled = tradeLocked || !canBuy(inventory, ware);
+      if (short > 0) notes = [paragraph(t('You need %@c more.', String(short)), 'form-note')];
+    }
+    return element('div', {
+      className: 'ware-row',
+      attributes: { 'data-ware': ware },
+      children: [
+        element('div', {
+          className: 'ware-head',
+          children: [
+            element('strong', { text: t(labelKey) }),
+            ...(itemInHand(inventory) === ware ? [element('span', { className: 'ware-tag', text: t('In hand') })] : []),
+          ],
+        }),
+        paragraph(t('%1$@ damage, %2$@ balance a swing', String(weapon.damage), String(weapon.balanceCost)), 'service-text'),
+        ...notes,
+        element('div', { className: 'ware-action', children: [action] }),
+      ],
+    });
   }
 
   private master(npc: ClientEntity, role: Role, lucidity: LucidityMessage): HTMLElement[] {

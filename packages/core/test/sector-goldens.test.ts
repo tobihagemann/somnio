@@ -107,11 +107,12 @@ describe('the committed world', () => {
     });
   });
 
-  it('gives each master their service, and the inn a spawn to wake at', () => {
+  it('gives each master and the shopkeeper their service, and the inn a spawn to wake at', () => {
     const services = sectors.flatMap((sector) => sector.npcs.flatMap((npc) => (npc.service === undefined ? [] : [[`${sector.name}/${npc.id}`, npc.service]])));
     expect(Object.fromEntries(services)).toEqual({
       'EdariaMitte/pugnax': 'kaempferMaster',
       'EdariaMitte/sana': 'heilerMaster',
+      'EdariaShop/mercus': 'shopkeeper',
     });
     expect(byName.get('EdariaInn')?.spawn).toBeDefined();
   });

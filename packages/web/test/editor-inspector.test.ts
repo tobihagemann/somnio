@@ -314,7 +314,7 @@ describe("an NPC's service", () => {
     const h = harness();
     h.select([{ kind: 'npc', id: 'libus' }]);
     expect(h.picker('Service').value).toBe('');
-    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Kämpfer master', 'Heiler master']);
+    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Kämpfer master', 'Heiler master', 'Shopkeeper']);
 
     choose(h.picker('Service'), 'heilerMaster');
     expect(h.document.sector.npcs[0]?.service).toBe('heilerMaster');

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { InventoryRow } from '@somnio/core';
 import { seededRandom } from '../src/world/random.ts';
 import {
   BESIDE_GHOST,
@@ -14,12 +13,11 @@ import {
   energy,
   energyOf,
   lucidity,
+  PURSE,
   payloads,
 } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, serverSays } from './support/frames.ts';
 import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
-
-const PURSE: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
 
 describe('swinging at a nightmare', () => {
   it('lands one swing per swing interval, each for the balance bare hands cost', async () => {

@@ -13,7 +13,7 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
-import type { ChatLine } from '@/client';
+import type { ChatLine, ClientEntity } from '@/client';
 
 /**
  * The DOM layer, against `happy-dom`.
@@ -1249,6 +1249,8 @@ describe('the HUD beyond its bars', () => {
 });
 
 describe('the service panel', () => {
+  const NO_ROWS: readonly InventoryRowMessage[] = [];
+
   function mount() {
     const calls: string[] = [];
     const panel = new ServicePanel({
@@ -1256,8 +1258,12 @@ describe('the service panel', () => {
       onCompleteTask: () => calls.push('complete'),
       onAbandonTask: () => calls.push('abandon'),
       onStudy: (teachingId) => calls.push(`study:${teachingId}`),
+      onBuy: (itemId) => calls.push(`buy:${itemId}`),
+      onSell: (itemId) => calls.push(`sell:${itemId}`),
       onClose: () => calls.push('close'),
     });
+    const render = (npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory = NO_ROWS, tradeLocked = false): void =>
+      panel.render(npc, lucidity, inventory, tradeLocked);
     const npc = (service: NPCService, id = 'npc:EdariaMitte/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
     const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
     const press = (label: string): void => {
@@ -1267,22 +1273,22 @@ describe('the service panel', () => {
     };
     const text = (): string => panel.root.textContent ?? '';
     const row = (id: string): string => panel.root.querySelector(`[data-teaching="${id}"]`)?.textContent ?? '';
-    return { panel, calls, npc, buttons, press, text, row };
+    return { panel, render, calls, npc, buttons, press, text, row };
   }
 
   beforeEach(() => setLocale('en'));
 
   it('is hidden with no NPC, and for an NPC with nothing to offer', () => {
     const p = mount();
-    p.panel.render(undefined, { ranks: [] });
+    p.render(undefined, { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
-    p.panel.render(clientEntity({ id: 'npc:EdariaBibliothek/libus', kind: 'npc' }), { ranks: [] });
+    p.render(clientEntity({ id: 'npc:EdariaBibliothek/libus', kind: 'npc' }), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
   });
 
   it('offers a dreamer with no role the trial, with what it asks and the condition it is held under', () => {
     const p = mount();
-    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), { ranks: [] });
+    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(false);
     expect(p.panel.root.querySelector('h1')?.textContent).toBe('Sana');
     expect(p.text()).toContain('Master of the Heiler');
@@ -1300,31 +1306,34 @@ describe('the service panel', () => {
     const lucidity = { ranks: [] };
     const control = (): Element | null => p.panel.root.querySelector('.service-body button');
 
-    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('kaempferMaster'), lucidity);
     const first = control();
-    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('kaempferMaster'), lucidity);
+    expect(control()).toBe(first);
+    // A master reads no inventory, so a bounty landing in the purse leaves the panel standing.
+    p.render(p.npc('kaempferMaster'), lucidity, [{ slot: 0, itemId: 'purse', quantity: 5 }]);
     expect(control()).toBe(first);
 
-    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
     expect(control()?.textContent).toBe('Give up the trial');
 
-    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
     const asked = control();
     expect(asked?.textContent).toBe('Ask for the trial');
     // Another master, with nothing else changed.
-    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('kaempferMaster'), lucidity);
     expect(p.panel.root.querySelector('h1')?.textContent).toBe('Pugnax');
     expect(p.text()).toContain('Master of the Kämpfer');
-    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
-    p.panel.render(undefined, lucidity);
-    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(undefined, lucidity);
+    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
     expect(control()).not.toBe(asked);
     expect(p.buttons()).toEqual(['Ask for the trial', 'Close']);
   });
 
   it('shows a trial under way with its progress and a way to give it up', () => {
     const p = mount();
-    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
     expect(p.text()).toContain('Your trial');
     expect(p.text()).toContain('Drive off a nightmare. 0 of 1');
     expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
@@ -1334,7 +1343,7 @@ describe('the service panel', () => {
 
   it('asks a dreamer who passed the trial before making them the role for good', () => {
     const p = mount();
-    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 1 } });
+    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 1 } });
     expect(p.text()).toContain('Become a Kämpfer?');
     expect(p.text()).toContain('for good');
     expect(p.buttons()).toEqual(['Not yet', 'Become a Kämpfer', 'Close']);
@@ -1345,14 +1354,14 @@ describe('the service panel', () => {
 
   it("tells a dreamer on the other master's trial that they hold one", () => {
     const p = mount();
-    p.panel.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'heiler', progress: 1 } });
+    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'heiler', progress: 1 } });
     expect(p.text()).toContain("You hold another master's trial.");
     expect(p.buttons()).toEqual(['Give up that trial', 'Close']);
   });
 
   it('refuses a dreamer of the other role', () => {
     const p = mount();
-    p.panel.render(p.npc('kaempferMaster'), { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] });
+    p.render(p.npc('kaempferMaster'), { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] });
     expect(p.text()).toContain('You are a Heiler. Pugnax has nothing to teach you.');
     expect(p.buttons()).toEqual(['Close']);
   });
@@ -1369,7 +1378,7 @@ describe('the service panel', () => {
       ],
       study: 'strike',
     };
-    p.panel.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('kaempferMaster'), lucidity);
     expect(p.text()).toContain('You study one teaching at a time.');
     expect(headings(p.panel)).toEqual(['You are studying', 'You can study', 'Not yet', 'Mastered']);
     expect([...p.panel.root.querySelectorAll('[data-teaching]')].map((node) => node.getAttribute('data-teaching'))).toEqual([
@@ -1393,7 +1402,7 @@ describe('the service panel', () => {
   it('walks a teaching earned by a task from taking the task to learning it, saying what the task is before it is taken', () => {
     const p = mount();
     const ready: LucidityMessage = { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
-    p.panel.render(p.npc('kaempferMaster'), ready);
+    p.render(p.npc('kaempferMaster'), ready);
     expect(p.text()).toContain('You study nothing. Choose a teaching below.');
     expect(headings(p.panel)).toEqual(['You can study', 'Earned by a task']);
     expect(p.row('follow-through')).toContain('Pugnax teaches its first rank for a task.');
@@ -1401,11 +1410,11 @@ describe('the service panel', () => {
     expect(p.row('follow-through')).toContain('Falling starts the count over.');
     p.press('Take the task');
 
-    p.panel.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 } });
+    p.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 } });
     expect(p.row('follow-through')).toContain('Drive off 3 nightmares. 2 of 3');
     p.press('Give up the task');
 
-    p.panel.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 3 } });
+    p.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 3 } });
     expect(p.row('follow-through')).toContain('You did what Pugnax asked.');
     p.press('Learn Follow-through');
     expect(p.calls).toEqual(['ask:follow-through', 'abandon', 'complete']);
@@ -1418,7 +1427,7 @@ describe('the service panel', () => {
       ranks: [{ teachingId: 'touch', rank: 2, practice: 0 }],
       task: { role: 'heiler', teachingId: 'nothing-this-client-knows', progress: 0 },
     };
-    p.panel.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
     expect(p.row('drawing-back')).toContain('Mend 60 health on other dreamers.');
     expect(p.row('drawing-back')).toContain('Finish your current task first.');
     expect(p.buttons()).not.toContain('Take the task');
@@ -1427,9 +1436,78 @@ describe('the service panel', () => {
   it('renders in German', () => {
     setLocale('de');
     const p = mount();
-    p.panel.render(p.npc('kaempferMaster'), { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
+    p.render(p.npc('kaempferMaster'), { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
     expect(headings(p.panel)).toEqual(['Das lernst du', 'Das kannst du lernen', 'Noch nicht']);
     expect(p.row('follow-through')).toContain('Braucht Schlag auf Rang 2');
+  });
+
+  describe('of the shopkeeper', () => {
+    const mercus = () => clientEntity({ id: 'npc:EdariaShop/mercus', kind: 'npc', name: 'Mercus', service: 'shopkeeper' });
+    const purse = (quantity: number): InventoryRowMessage => ({ slot: 0, itemId: 'purse', quantity });
+    const carried = (itemId: string, slot: number, equippedHand?: 'right'): InventoryRowMessage => ({
+      slot,
+      itemId,
+      quantity: 1,
+      ...(equippedHand === undefined ? {} : { equippedHand }),
+    });
+    const wares = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-ware]')].map((node) => node.getAttribute('data-ware'));
+    const ware = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-ware="${id}"]`)?.textContent ?? '';
+
+    it('offers what the dreamer does not carry, says what each costs and does, and buys back what they carry', () => {
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, [purse(100), carried('cudgel', 1, 'right')]);
+      expect(p.text()).toContain('Shopkeeper');
+      expect(p.panel.root.querySelector('.shop-purse')?.textContent).toBe('Your purse100c');
+      expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
+      expect(wares(p.panel)).toEqual(['dagger', 'sword', 'mace', 'cudgel']);
+      expect(ware(p.panel, 'dagger')).toContain('6 damage, 10 balance a swing');
+      expect(ware(p.panel, 'dagger')).not.toContain('more.');
+      expect(ware(p.panel, 'sword')).toContain('You need 50c more.');
+      expect(ware(p.panel, 'mace')).toContain('You need 140c more.');
+      expect(ware(p.panel, 'cudgel')).toContain('In hand');
+      expect(ware(p.panel, 'dagger')).not.toContain('In hand');
+      expect(p.buttons()).toEqual(['Buy for 60c', 'Buy for 150c (disabled)', 'Buy for 240c (disabled)', 'Sell for 15c', 'Close']);
+      p.press('Buy for 60c');
+      p.press('Sell for 15c');
+      expect(p.calls).toEqual(['buy:dagger', 'sell:cudgel']);
+    });
+
+    it('drops the wares on sale once the dreamer carries every one, and says when they carry none', () => {
+      const p = mount();
+      const everything = [purse(0), carried('dagger', 1), carried('cudgel', 2), carried('sword', 3), carried('mace', 4)];
+      p.render(mercus(), { ranks: [] }, everything);
+      expect(headings(p.panel)).toEqual(['Sell']);
+      p.render(mercus(), { ranks: [] }, [purse(500)]);
+      expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
+      expect(p.text()).toContain('You carry nothing Mercus buys.');
+    });
+
+    /** A recovering pool renders the shell several times a second, and a button replaced under a held pointer never gets its click. */
+    it('keeps its buttons across a render that changed nothing, and locks every trade while one is under way', () => {
+      const p = mount();
+      const lucidity = { ranks: [] };
+      const inventory = [purse(100), carried('cudgel', 1)];
+      const sell = (): Element | null => p.panel.root.querySelector('[data-ware="cudgel"] button');
+      p.render(mercus(), lucidity, inventory);
+      const first = sell();
+      p.render(mercus(), lucidity, inventory);
+      expect(sell()).toBe(first);
+      // The shop reads no lucidity, so a frame of practice leaves its buttons standing.
+      p.render(mercus(), { ranks: [{ teachingId: 'strike', rank: 1, practice: 1 }] }, inventory);
+      expect(sell()).toBe(first);
+
+      p.render(mercus(), lucidity, inventory, true);
+      expect(p.buttons()).toEqual(['Buy for 60c (disabled)', 'Buy for 150c (disabled)', 'Buy for 240c (disabled)', 'Sell for 15c (disabled)', 'Close']);
+    });
+
+    it('renders in German, naming each ware in the locale', () => {
+      setLocale('de');
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, [purse(100), carried('cudgel', 1, 'right')]);
+      expect(headings(p.panel)).toEqual(['Im Angebot', 'Verkaufen']);
+      expect(ware(p.panel, 'sword')).toContain('Kurzschwert');
+      expect(ware(p.panel, 'cudgel')).toContain('In der Hand');
+    });
   });
 });
 
@@ -1505,6 +1583,7 @@ describe('the fallen notice', () => {
  */
 describe('the play field and the panels through the shell', () => {
   const PUGNAX = 'npc:Meadow/pugnax';
+  const MERCUS = 'npc:Meadow/mercus';
   let container: HTMLElement;
 
   beforeEach(() => {
@@ -1515,6 +1594,7 @@ describe('the play field and the panels through the shell', () => {
 
   afterEach(() => {
     container.remove();
+    vi.restoreAllMocks();
   });
 
   /** A player in the world beside Pugnax, with another dreamer near, and every frame the client has sent since. */
@@ -1642,6 +1722,43 @@ describe('the play field and the panels through the shell', () => {
     ]);
     p.press('Close');
     expect(panel.classList.contains('hidden')).toBe(true);
+  });
+
+  it("sends the shopkeeper's buttons as the trades they name, and holds them from a trade until a moment after its answer", () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const purse = { slot: 0, itemId: 'purse', quantity: 100 };
+    p.deliver(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 9, z: 9, service: 'shopkeeper' }));
+    p.deliver({ tag: 'inventory', payload: { rows: [purse, { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' }] } });
+    p.shell.session.pressAt(MERCUS, clock);
+    const panel = container.querySelector('.service-panel')!;
+    const action = (ware: string): HTMLButtonElement => panel.querySelector(`[data-ware="${ware}"] button`)!;
+
+    p.press('Buy for 60c');
+    expect(action('cudgel').disabled).toBe(true);
+    p.deliver({
+      tag: 'inventory',
+      payload: {
+        rows: [
+          { ...purse, quantity: 40 },
+          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
+          { slot: 2, itemId: 'dagger', quantity: 1 },
+        ],
+        trade: { kind: 'bought', itemId: 'dagger', coins: 60 },
+      },
+    });
+    clock += 600;
+    p.shell.session.runTick(clock);
+    expect(action('cudgel').disabled).toBe(false);
+    p.press('Sell for 15c');
+
+    // The tick reports the player's position too, which is no trade.
+    expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
+      { tag: 'talk', payload: { npcId: MERCUS } },
+      { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
+      { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },
+    ]);
   });
 
   it('shows a fallen player the notice, and wakes them once they confirm giving up', () => {

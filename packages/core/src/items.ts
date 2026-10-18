@@ -4,7 +4,10 @@ import type { Hand } from '@somnio/protocol';
 export const ITEMS = {
   /** Its row's `quantity` is the coin count. */
   purse: { labelKey: 'Purse' },
+  dagger: { labelKey: 'Dagger', weapon: { damage: 6, balanceCost: 10 } },
   cudgel: { labelKey: 'Cudgel', weapon: { damage: 8, balanceCost: 18 } },
+  sword: { labelKey: 'Short sword', weapon: { damage: 11, balanceCost: 24 } },
+  mace: { labelKey: 'Mace', weapon: { damage: 14, balanceCost: 32 } },
   /** The Heiler's tool. In hand it mends the dreamer its holder tends, or its holder when used, and does not swing. */
   mondstein: { labelKey: 'Mondstein' },
 } as const;
@@ -33,4 +36,9 @@ export function itemWeapon(itemId: string): Weapon | undefined {
 /** The item a dreamer holds: the row in the right hand, the one hand a client ever uses. */
 export function itemInHand(rows: readonly { itemId: string; equippedHand?: Hand | undefined }[]): string | undefined {
   return rows.find((row) => row.equippedHand === 'right')?.itemId;
+}
+
+/** The coins a dreamer carries: their purse's quantity, and none without a purse. */
+export function purseCoins(rows: readonly { itemId: string; quantity: number }[]): number {
+  return rows.find((row) => row.itemId === ('purse' satisfies ItemId))?.quantity ?? 0;
 }

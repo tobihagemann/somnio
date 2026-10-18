@@ -11,6 +11,14 @@
     "en": "%1$@ asks, \"%2$@\"",
     "de": "%1$@ fragt, \"%2$@\""
   },
+  "%1$@ bought for %2$@c.": {
+    "en": "%1$@ bought for %2$@c.",
+    "de": "%1$@ für %2$@c gekauft."
+  },
+  "%1$@ damage, %2$@ balance a swing": {
+    "en": "%1$@ damage, %2$@ balance a swing",
+    "de": "%1$@ Schaden, %2$@ Gleichgewicht je Schlag"
+  },
   "%1$@ exclaims from the %2$@, \"%3$@\"": {
     "en": "%1$@ exclaims from the %2$@, \"%3$@\"",
     "de": "%1$@ ruft aus dem %2$@, \"%3$@\""
@@ -39,6 +47,14 @@
     "en": "%1$@ says, \"%2$@\"",
     "de": "%1$@ sagt, \"%2$@\""
   },
+  "%1$@ sold for %2$@c.": {
+    "en": "%1$@ sold for %2$@c.",
+    "de": "%1$@ für %2$@c verkauft."
+  },
+  "%1$@ sold for %2$@c. Your hands are empty.": {
+    "en": "%1$@ sold for %2$@c. Your hands are empty.",
+    "de": "%1$@ für %2$@c verkauft. Deine Hände sind leer."
+  },
   "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.": {
     "en": "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.",
     "de": "%1$@ nimmt auf, wer eine Prüfung besteht. Sie verpflichtet dich zu nichts: Du entscheidest danach, ob du %2$@ wirst."
@@ -58,6 +74,10 @@
   "%1$@ yells, \"%2$@\"": {
     "en": "%1$@ yells, \"%2$@\"",
     "de": "%1$@ schreit, \"%2$@\""
+  },
+  "%@ deals in weapons. He buys back what he sells for half its price.": {
+    "en": "%@ deals in weapons. He buys back what he sells for half its price.",
+    "de": "%@ handelt mit Waffen. Was er verkauft, kauft er zum halben Preis zurück."
   },
   "%@ draw you back into the dream.": {
     "en": "%@ draw you back into the dream.",
@@ -90,6 +110,10 @@
   "%@ teaches its first rank for a task.": {
     "en": "%@ teaches its first rank for a task.",
     "de": "%@ lehrt den ersten Rang für eine Aufgabe."
+  },
+  "%@c": {
+    "en": "%@c",
+    "de": "%@c"
   },
   "*: repeat": {
     "en": "*: repeat",
@@ -134,6 +158,10 @@
   "Broadcast message: %@": {
     "en": "Broadcast message: %@",
     "de": "Broadcast Nachricht: %@"
+  },
+  "Buy for %@c": {
+    "en": "Buy for %@c",
+    "de": "Für %@c kaufen"
   },
   "Cancel": {
     "en": "Cancel",
@@ -211,6 +239,10 @@
     "en": "Floor textures by ambientCG.",
     "de": "Bodentexturen von ambientCG."
   },
+  "For sale": {
+    "en": "For sale",
+    "de": "Im Angebot"
+  },
   "Fullscreen": {
     "en": "Fullscreen",
     "de": "Vollbild"
@@ -250,6 +282,10 @@
   "If you don't have an account, click here!": {
     "en": "If you don't have an account, click here!",
     "de": "Wenn du keinen Account hast, klick hier!"
+  },
+  "In hand": {
+    "en": "In hand",
+    "de": "In der Hand"
   },
   "Items": {
     "en": "Items",
@@ -366,6 +402,18 @@
   "Resume": {
     "en": "Resume",
     "de": "Fortsetzen"
+  },
+  "Sell": {
+    "en": "Sell",
+    "de": "Verkaufen"
+  },
+  "Sell for %@c": {
+    "en": "Sell for %@c",
+    "de": "Für %@c verkaufen"
+  },
+  "Shopkeeper": {
+    "en": "Shopkeeper",
+    "de": "Krämer"
   },
   "Sign Up": {
     "en": "Sign Up",
@@ -499,6 +547,10 @@
     "en": "You cannot strike while you hold this trial.",
     "de": "Solange du diese Prüfung trägst, kannst du nicht zuschlagen."
   },
+  "You carry nothing %@ buys.": {
+    "en": "You carry nothing %@ buys.",
+    "de": "Du trägst nichts, was %@ kauft."
+  },
   "You did what %@ asked.": {
     "en": "You did what %@ asked.",
     "de": "Du hast getan, was %@ verlangt hat."
@@ -522,6 +574,10 @@
   "You lose hold of %@.": {
     "en": "You lose hold of %@.",
     "de": "Du verlierst den Halt an %@."
+  },
+  "You need %@c more.": {
+    "en": "You need %@c more.",
+    "de": "Dir fehlen %@c."
   },
   "You own %@c.": {
     "en": "You own %@c.",
@@ -558,6 +614,10 @@
   "Your password could not be saved.": {
     "en": "Your password could not be saved.",
     "de": "Dein Passwort konnte nicht gespeichert werden."
+  },
+  "Your purse": {
+    "en": "Your purse",
+    "de": "Dein Geldbeutel"
   },
   "Your session expired. Please log in again.": {
     "en": "Your session expired. Please log in again.",

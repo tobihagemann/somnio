@@ -9,12 +9,15 @@ import type {
   SayMessage,
   SomnioMessage,
   TaskMessage,
+  TradeMessage,
 } from '@somnio/protocol';
 import {
   COMBAT,
   heading,
   isTeachingId,
   itemInHand,
+  itemWeapon,
+  purseCoins,
   swingAllowed,
   swingTarget,
   taskGoal,
@@ -72,9 +75,10 @@ export function taskIsDone(task: TaskMessage): boolean {
 /** What a left click on the play field does, by what it points at. */
 export type ClickAction = 'talk' | 'tend' | 'swing';
 
-function purseCoins(rows: readonly InventoryRowMessage[]): number {
-  return rows.find((row) => row.itemId === ('purse' satisfies ItemId))?.quantity ?? 0;
-}
+/** How long the shop's buttons wait for a trade's answer. A refused trade gets none, so the lock gives way on its own. */
+const TRADE_ANSWER_TIMEOUT_MS = 1500;
+/** How long they stay locked after the answer, so a double click trades once. */
+const TRADE_SETTLE_MS = 500;
 
 export interface GameplaySessionOptions {
   controller: ConnectionController;
@@ -123,6 +127,8 @@ export class GameplaySession {
   /** The server's swing rhythm, kept here so a held button asks once a swing rather than once a tick. */
   private swingReadyAtMs = 0;
   private slowedUntilMs = 0;
+  /** When the shop's buttons give way, or 0 once the tick has redrawn them free. */
+  private tradeLockedUntilMs = 0;
 
   private readonly controller: ConnectionController;
   private readonly send: (message: SomnioMessage) => void;
@@ -200,6 +206,7 @@ export class GameplaySession {
     this.swingHeld = false;
     this.swingReadyAtMs = 0;
     this.slowedUntilMs = 0;
+    this.tradeLockedUntilMs = 0;
     // The server holds it per space, so a new space starts with no one tended there either.
     this.tending = undefined;
     this.controller.renderSurface.showSelection(undefined);
@@ -212,6 +219,10 @@ export class GameplaySession {
     this.countDownRaise(timestampMs);
     if (this.tending !== undefined && !this.controller.entities.has(this.tending)) this.tend(undefined);
     if (this.swingHeld) this.swing(timestampMs);
+    if (this.tradeLockedUntilMs !== 0 && !this.tradeLocked()) {
+      this.tradeLockedUntilMs = 0;
+      this.onStateChanged?.();
+    }
   }
 
   private get self(): ClientEntity | undefined {
@@ -407,19 +418,20 @@ export class GameplaySession {
   }
 
   /**
-   * Double-click activation. The cudgel toggles equip in its fixed hand — the player never picks
+   * Double-click activation. A weapon toggles equip in its fixed hand — the player never picks
    * one — and the purse reports its balance to the chat log rather than equipping. The Mondstein
-   * is taken in that same hand, which puts the cudgel away, and used once it is there.
+   * is taken in that same hand, which puts the weapon away, and used once it is there.
    */
   activateInventoryRow(row: InventoryRowMessage): void {
     if (this.controller.connectionState !== 'attached') return;
+    if (itemWeapon(row.itemId) !== undefined) {
+      // Re-toggling leaves the hand out to unequip; the server clears whatever else held it.
+      this.send({ tag: 'equipToggle', payload: { slot: row.slot, ...(row.equippedHand === undefined ? { hand: 'right' } : {}) } });
+      return;
+    }
     switch (row.itemId) {
       case 'purse' satisfies ItemId:
         this.controller.appendChat({ kind: 'purseBalance', coins: row.quantity });
-        return;
-      case 'cudgel' satisfies ItemId:
-        // Re-toggling leaves the hand out to unequip; the server clears whatever else held it.
-        this.send({ tag: 'equipToggle', payload: { slot: row.slot, ...(row.equippedHand === undefined ? { hand: 'right' } : {}) } });
         return;
       case 'mondstein' satisfies ItemId:
         if (row.equippedHand === 'right') this.send({ tag: 'useItem', payload: { slot: row.slot } });
@@ -444,6 +456,29 @@ export class GameplaySession {
 
   study(teachingId: string): void {
     if (this.servicePanel !== undefined) this.send({ tag: 'study', payload: { npcId: this.servicePanel.id, teachingId } });
+  }
+
+  /** Asks the shopkeeper whose panel is open to sell one of a ware. */
+  buy(itemId: string): void {
+    this.trade('buy', itemId);
+  }
+
+  /** Asks the shopkeeper whose panel is open to buy back a ware. */
+  sell(itemId: string): void {
+    this.trade('sell', itemId);
+  }
+
+  /** Whether the shop's buttons are locked, from a trade until a moment after its answer. */
+  tradeLocked(): boolean {
+    return this.now() < this.tradeLockedUntilMs;
+  }
+
+  private trade(tag: 'buy' | 'sell', itemId: string): void {
+    const npc = this.servicePanel;
+    if (npc?.service !== 'shopkeeper' || this.tradeLocked()) return;
+    this.send({ tag, payload: { npcId: npc.id, itemId } });
+    this.tradeLockedUntilMs = this.now() + TRADE_ANSWER_TIMEOUT_MS;
+    this.onStateChanged?.();
   }
 
   /** Gives up: the server answers a fallen dreamer with the `enterSpace` of the wake-point. */
@@ -474,8 +509,15 @@ export class GameplaySession {
         this.onStateChanged?.();
         return;
       case 'inventory': {
-        const gained = purseCoins(message.payload.rows) - purseCoins(this.inventory);
-        if (this.seen.inventory && gained > 0) this.controller.appendChat({ kind: 'coinsGained', coins: gained });
+        const trade = message.payload.trade;
+        if (trade !== undefined) {
+          // A trade is its own news: the coins it moved are not announced again.
+          this.announceTrade(trade);
+          this.tradeLockedUntilMs = this.now() + TRADE_SETTLE_MS;
+        } else {
+          const gained = purseCoins(message.payload.rows) - purseCoins(this.inventory);
+          if (this.seen.inventory && gained > 0) this.controller.appendChat({ kind: 'coinsGained', coins: gained });
+        }
         this.seen.inventory = true;
         this.inventory = message.payload.rows;
         this.onStateChanged?.();
@@ -507,6 +549,19 @@ export class GameplaySession {
   }
 
   onStateChanged: (() => void) | undefined;
+
+  private announceTrade({ kind, itemId, coins }: TradeMessage): void {
+    switch (kind) {
+      case 'bought':
+        this.controller.appendChat({ kind, itemId, coins });
+        break;
+      case 'sold': {
+        const emptiedHand = itemInHand(this.inventory) === itemId;
+        this.controller.appendChat({ kind, itemId, coins, emptiedHand });
+        break;
+      }
+    }
+  }
 
   /** The chat lines for what changed from one `lucidity` frame to the next. */
   private announceLucidity(before: LucidityMessage, after: LucidityMessage): void {

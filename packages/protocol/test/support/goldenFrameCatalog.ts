@@ -18,6 +18,7 @@ const OTHER_PLAYER_ID = '7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
 const FALLEN_PLAYER_ID = '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7';
 const NPC_ID = 'npc:EdariaBibliothek/libus';
 const MASTER_ID = 'npc:EdariaMitte/pugnax';
+const SHOPKEEPER_ID = 'npc:EdariaShop/mercus';
 
 /** Every record array populated at once, with a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
@@ -82,6 +83,8 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'completeTask', message: { tag: 'completeTask', payload: { npcId: MASTER_ID } } },
   { name: 'abandonTask', message: { tag: 'abandonTask', payload: {} } },
   { name: 'study', message: { tag: 'study', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
+  { name: 'buy', message: { tag: 'buy', payload: { npcId: SHOPKEEPER_ID, itemId: 'dagger' } } },
+  { name: 'sell', message: { tag: 'sell', payload: { npcId: SHOPKEEPER_ID, itemId: 'cudgel' } } },
   { name: 'wake', message: { tag: 'wake', payload: {} } },
   { name: 'useItem', message: { tag: 'useItem', payload: { slot: 2 } } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
@@ -180,6 +183,20 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
           { slot: 0, itemId: 'purse', quantity: 100 },
           { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
         ],
+      },
+    },
+  },
+  {
+    name: 'inventory-after-trade',
+    message: {
+      tag: 'inventory',
+      payload: {
+        rows: [
+          { slot: 0, itemId: 'purse', quantity: 40 },
+          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
+          { slot: 2, itemId: 'dagger', quantity: 1 },
+        ],
+        trade: { kind: 'bought', itemId: 'dagger', coins: 60 },
       },
     },
   },

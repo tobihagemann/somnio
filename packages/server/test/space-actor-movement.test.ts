@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Gait } from '@somnio/protocol';
 import { MOVE_SUBSTEP, OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, buildSpaceCollision, gaitMetresPerSecond, isLegalMove, resolveMove } from '@somnio/core';
 import type { Point, Sector } from '@somnio/core';
@@ -41,6 +42,22 @@ describe('SpaceActor.handleMove', () => {
     expect(entityMoves(await collectMessages(peer.outbox))).toEqual([{ id: mover.entityId, x: 5.5, z: 5.5, facing: 90, gait: 'run' }]);
     const own = await collectMessages(mover.outbox);
     expect(own.filter((message) => message.tag === 'moves' || message.tag === 'correction')).toEqual([]);
+  });
+
+  /** A client refuses a `moves` frame over the cap, so a crowd's batch goes out in as many frames as it takes, none lost. */
+  it('splits a batch larger than one frame holds across frames, in order', async () => {
+    const { space } = field();
+    const peer = attachPlayer(space, { x: 19, z: 19 }, 'peer');
+    const count = SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame + 1;
+    const movers = Array.from({ length: count }, (_, index) => attachPlayer(space, { x: 1 + (index % 17), z: 1 + Math.floor(index / 17) }, `mover-${index}`));
+    for (const mover of movers) space.handleMove(move(mover.character.position.x + 0.1, mover.character.position.z), mover.entityId);
+    space.flushMoves();
+    const messages = await collectMessages(peer.outbox);
+    expect(messages.flatMap((message) => (message.tag === 'moves' ? [message.payload.moves.length] : []))).toEqual([
+      SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame,
+      1,
+    ]);
+    expect(entityMoves(messages).map((entry) => entry.id)).toEqual(movers.map((mover) => mover.entityId));
   });
 
   /** A client may send any degree value; the stored and broadcast facing is the wrapped one. */

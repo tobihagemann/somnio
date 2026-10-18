@@ -7,6 +7,7 @@ import {
   CUDGEL_IN_HAND,
   GHOST,
   MONDSTEIN_IN_HAND,
+  PURSE,
   RESPAWN_MS,
   arena,
   characterOf,
@@ -107,7 +108,7 @@ describe('a trial', () => {
 
   it('makes a Heiler of a dreamer who reaches the Nordwald and returns, and gives them a Mondstein', async () => {
     const world = town();
-    const alice = attachPlayer(world.space, AT_SANA, 'alice', { inventory: [{ slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined }] });
+    const alice = attachPlayer(world.space, AT_SANA, 'alice', { inventory: [PURSE] });
     world.space.handleAskTask(SANA, undefined, alice.entityId);
     walk(world, alice.entityId, { x: 19.5, z: 5 });
     expect(lucidityOf(world.space, alice.entityId).task?.progress).toBe(0);

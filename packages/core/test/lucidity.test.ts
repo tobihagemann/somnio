@@ -7,9 +7,9 @@ import {
   isRole,
   isSoundTask,
   isTeachingId,
+  masterRole,
   practiceNeeded,
   rankOf,
-  roleOfService,
   taskGoal,
   taskSpec,
   teachingStanding,
@@ -93,8 +93,9 @@ describe('guards and services', () => {
     expect(forbidsStriking(TEACHINGS['drawing-back'].gate)).toBe(false);
   });
 
-  it('gives each master a role', () => {
-    expect(roleOfService('kaempferMaster')).toBe('kaempfer');
-    expect(roleOfService('heilerMaster')).toBe('heiler');
+  it('gives each master a role, and the shopkeeper none', () => {
+    expect(masterRole('kaempferMaster')).toBe('kaempfer');
+    expect(masterRole('heilerMaster')).toBe('heiler');
+    expect(masterRole('shopkeeper')).toBeUndefined();
   });
 });

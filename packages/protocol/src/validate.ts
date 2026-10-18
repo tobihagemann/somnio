@@ -100,21 +100,22 @@ export function requireNested(container: Record<string, unknown>, key: string, p
   return requireObject(container[key], `${path}.${key}`);
 }
 
+/** The count is capped before any element is decoded. */
 export function mapArray<T>(
   container: Record<string, unknown>,
   key: string,
   path: string,
+  maxCount: number,
   decodeElement: (element: Record<string, unknown>, elementPath: string) => T,
 ): T[] {
-  return requireArray(container, key, path).map((element, index) =>
-    decodeElement(requireObject(element, `${path}.${key}[${index}]`), `${path}.${key}[${index}]`),
-  );
+  const elements = requireArray(container, key, path);
+  if (elements.length > maxCount) {
+    throw new WireDecodingError(`${path}.${key}`, `exceeds ${maxCount} records (got ${elements.length})`);
+  }
+  return elements.map((element, index) => decodeElement(requireObject(element, `${path}.${key}[${index}]`), `${path}.${key}[${index}]`));
 }
 
-/**
- * The record arrays of a sector: a missing key decodes as empty, the count is capped before any
- * element is decoded, and every `id` is unique within the array.
- */
+/** The record arrays of a sector: a missing key decodes as empty, and every `id` is unique within the array. */
 export function mapRecords<T extends { id: string }>(
   container: Record<string, unknown>,
   key: string,
@@ -123,11 +124,7 @@ export function mapRecords<T extends { id: string }>(
   decodeElement: (element: Record<string, unknown>, elementPath: string) => T,
 ): T[] {
   if (isAbsent(container, key)) return [];
-  const count = requireArray(container, key, path).length;
-  if (count > maxCount) {
-    throw new WireDecodingError(`${path}.${key}`, `exceeds ${maxCount} records (got ${count})`);
-  }
-  const records = mapArray(container, key, path, decodeElement);
+  const records = mapArray(container, key, path, maxCount, decodeElement);
   const seen = new Set<string>();
   records.forEach((record, index) => {
     if (seen.has(record.id)) {

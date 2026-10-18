@@ -1,4 +1,4 @@
-import { GAITS } from '@somnio/protocol';
+import { GAITS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { gaitMetresPerSecond } from '../src/gait.ts';
@@ -21,9 +21,17 @@ describe('literal sets', () => {
   it('pins the items', () => {
     expect(ITEMS).toEqual({
       purse: { labelKey: 'Purse' },
+      dagger: { labelKey: 'Dagger', weapon: { damage: 6, balanceCost: 10 } },
       cudgel: { labelKey: 'Cudgel', weapon: { damage: 8, balanceCost: 18 } },
+      sword: { labelKey: 'Short sword', weapon: { damage: 11, balanceCost: 24 } },
+      mace: { labelKey: 'Mace', weapon: { damage: 14, balanceCost: 32 } },
       mondstein: { labelKey: 'Mondstein' },
     });
+  });
+
+  /** An `inventory` frame carries a row for each item carried, and its decoder refuses more than the cap. */
+  it('fits a row of every item in one inventory frame', () => {
+    expect(Object.keys(ITEMS).length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows);
   });
 
   it('pins the monster kinds', () => {
@@ -62,6 +70,11 @@ describe('literal sets', () => {
       'spirit-deepening': 'heiler',
     });
     expect(FIRST_TEACHING).toEqual({ kaempfer: 'strike', heiler: 'touch' });
+  });
+
+  /** A `lucidity` frame carries a rank for each teaching held, and its decoder refuses more than the cap. */
+  it('fits a rank of every teaching in one lucidity frame', () => {
+    expect(TEACHING_IDS.length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks);
   });
 
   /** A task's progress is stored as a bare number, which means something only against the kind of task it counts. */

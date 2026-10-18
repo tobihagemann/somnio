@@ -51,7 +51,7 @@ export const ROLES = ['kaempfer', 'heiler'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** What asking an NPC offers beyond its dialog. */
-export const NPC_SERVICES = ['kaempferMaster', 'heilerMaster'] as const;
+export const NPC_SERVICES = ['kaempferMaster', 'heilerMaster', 'shopkeeper'] as const;
 export type NPCService = (typeof NPC_SERVICES)[number];
 
 /** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it. */
@@ -60,6 +60,10 @@ export type Condition = (typeof CONDITIONS)[number];
 
 export const RAISING_STATES = ['holding', 'broken', 'done'] as const;
 export type RaisingState = (typeof RAISING_STATES)[number];
+
+/** What a trade did, from the dreamer's side. */
+export const TRADE_KINDS = ['bought', 'sold'] as const;
+export type TradeKind = (typeof TRADE_KINDS)[number];
 
 /** How loudly a line is spoken, which sets how far it carries. */
 export const SPEECH_KINDS = ['whisper', 'say', 'yell'] as const;
@@ -133,6 +137,18 @@ export interface CompleteTaskMessage {
 export interface StudyMessage {
   npcId: string;
   teachingId: string;
+}
+
+/** Asks the shopkeeper to sell one of a ware the dreamer does not carry. */
+export interface BuyMessage {
+  npcId: string;
+  itemId: string;
+}
+
+/** Asks the shopkeeper to buy back the ware the dreamer carries. */
+export interface SellMessage {
+  npcId: string;
+  itemId: string;
 }
 
 export interface UseItemMessage {
@@ -248,8 +264,17 @@ export interface InventoryRowMessage {
   equippedHand?: Hand;
 }
 
+/** A trade that produced the frame carrying it: the ware, and the coins paid or received. */
+export interface TradeMessage {
+  kind: TradeKind;
+  itemId: string;
+  coins: number;
+}
+
 export interface InventoryMessage {
   rows: InventoryRowMessage[];
+  /** Present only on the frame a trade produced. */
+  trade?: TradeMessage;
 }
 
 export interface LeaveMessage {
@@ -417,6 +442,20 @@ export function decodeStudyMessage(container: Record<string, unknown>, path: str
   };
 }
 
+export function decodeBuyMessage(container: Record<string, unknown>, path: string): BuyMessage {
+  return {
+    npcId: requireEntityId(container, 'npcId', path),
+    itemId: requireId(container, 'itemId', path),
+  };
+}
+
+export function decodeSellMessage(container: Record<string, unknown>, path: string): SellMessage {
+  return {
+    npcId: requireEntityId(container, 'npcId', path),
+    itemId: requireId(container, 'itemId', path),
+  };
+}
+
 export function decodeUseItemMessage(container: Record<string, unknown>, path: string): UseItemMessage {
   return { slot: requireInt32(container, 'slot', path) };
 }
@@ -505,7 +544,7 @@ function decodeEntityMove(container: Record<string, unknown>, path: string): Ent
 }
 
 export function decodeMovesMessage(container: Record<string, unknown>, path: string): MovesMessage {
-  return { moves: mapArray(container, 'moves', path, decodeEntityMove) };
+  return { moves: mapArray(container, 'moves', path, SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame, decodeEntityMove) };
 }
 
 export function decodeCorrectionMessage(container: Record<string, unknown>, path: string): CorrectionMessage {
@@ -563,8 +602,19 @@ function decodeInventoryRowMessage(container: Record<string, unknown>, path: str
   };
 }
 
+function decodeTradeMessage(container: Record<string, unknown>, path: string): TradeMessage {
+  return {
+    kind: requireStringEnum(container, 'kind', path, TRADE_KINDS),
+    itemId: requireId(container, 'itemId', path),
+    coins: requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`),
+  };
+}
+
 export function decodeInventoryMessage(container: Record<string, unknown>, path: string): InventoryMessage {
-  return { rows: mapArray(container, 'rows', path, decodeInventoryRowMessage) };
+  return {
+    rows: mapArray(container, 'rows', path, SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows, decodeInventoryRowMessage),
+    ...(isAbsent(container, 'trade') ? {} : { trade: decodeTradeMessage(requireNested(container, 'trade', path), `${path}.trade`) }),
+  };
 }
 
 export function decodeLeaveMessage(container: Record<string, unknown>, path: string): LeaveMessage {
@@ -600,7 +650,7 @@ function decodeTaskMessage(container: Record<string, unknown>, path: string): Ta
 export function decodeLucidityMessage(container: Record<string, unknown>, path: string): LucidityMessage {
   return {
     ...(isAbsent(container, 'role') ? {} : { role: requireStringEnum(container, 'role', path, ROLES) }),
-    ranks: mapArray(container, 'ranks', path, decodeTeachingRankMessage),
+    ranks: mapArray(container, 'ranks', path, SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks, decodeTeachingRankMessage),
     ...(isAbsent(container, 'study') ? {} : { study: requireId(container, 'study', path) }),
     ...(isAbsent(container, 'task') ? {} : { task: decodeTaskMessage(requireNested(container, 'task', path), `${path}.task`) }),
   };

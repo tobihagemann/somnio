@@ -2,6 +2,7 @@ import type {
   AdminSayMessage,
   AskTaskMessage,
   BlowMessage,
+  BuyMessage,
   ClientSayMessage,
   CompleteTaskMessage,
   ConditionMessage,
@@ -28,6 +29,7 @@ import type {
   RevokeSessionMessage,
   SayMessage,
   SectorMessage,
+  SellMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
   StudyMessage,
@@ -58,6 +60,8 @@ export type SomnioMessage =
   | { tag: 'completeTask'; payload: CompleteTaskMessage }
   | { tag: 'abandonTask'; payload: EmptyMessage }
   | { tag: 'study'; payload: StudyMessage }
+  | { tag: 'buy'; payload: BuyMessage }
+  | { tag: 'sell'; payload: SellMessage }
   | { tag: 'wake'; payload: EmptyMessage }
   | { tag: 'useItem'; payload: UseItemMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }

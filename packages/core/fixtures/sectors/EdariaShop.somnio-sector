@@ -36,6 +36,7 @@
       "facing": 0,
       "id": "mercus",
       "name": "Mercus",
+      "service": "shopkeeper",
       "x": 2.56,
       "z": 1.96
     }

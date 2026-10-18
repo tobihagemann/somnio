@@ -173,6 +173,8 @@ export class AppShell {
       onCompleteTask: () => this.session.completeTask(),
       onAbandonTask: () => this.session.abandonTask(),
       onStudy: (teachingId) => this.session.study(teachingId),
+      onBuy: (itemId) => this.session.buy(itemId),
+      onSell: (itemId) => this.session.sell(itemId),
       onClose: () => this.session.closeServicePanel(),
     });
     this.fallenNotice = new FallenNotice(() => this.session.wake());
@@ -507,7 +509,7 @@ export class AppShell {
     // scrollback readable behind the login overlay — where a rejected password reports itself.
     this.panels.renderEnergy(this.session.energy, this.session.winded);
     this.panels.renderLucidity(this.session.lucidity);
-    this.servicePanel.render(this.session.servicePanel, this.session.lucidity);
+    this.servicePanel.render(this.session.servicePanel, this.session.lucidity, this.session.inventory, this.session.tradeLocked());
     this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raise });
     this.panels.renderChat(this.controller.chatHistory);
     this.panels.renderPlayers(this.controller.players);

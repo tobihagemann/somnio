@@ -3,7 +3,7 @@ import { NO_LUCIDITY, OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { Character, InventoryRow, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
-import { CUDGEL_IN_HAND, GHOST, MONDSTEIN_IN_HAND, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
+import { CUDGEL_IN_HAND, GHOST, MONDSTEIN_IN_HAND, PURSE, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -60,6 +60,8 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
   { label: 'pre-login completeTask', message: { tag: 'completeTask', payload: { npcId: entity.id } }, attachFirst: false },
   { label: 'pre-login abandonTask', message: { tag: 'abandonTask', payload: {} }, attachFirst: false },
   { label: 'pre-login study', message: { tag: 'study', payload: { npcId: entity.id, teachingId: 'strike' } }, attachFirst: false },
+  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, itemId: 'dagger' } }, attachFirst: false },
+  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: 'cudgel' } }, attachFirst: false },
   { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, attachFirst: false },
   { label: 'pre-login useItem', message: { tag: 'useItem', payload: { slot: 1 } }, attachFirst: false },
   {
@@ -132,14 +134,19 @@ describe('ConnectionActor.dispatch', () => {
  */
 describe('an attached connection', () => {
   const PUGNAX = 'npc:Town/pugnax';
+  const MERCUS = 'npc:Town/mercus';
   const HEILER: Partial<Character> = { lucidity: lucidity('heiler', { touch: 1 }), energy: energy({ healthCurrent: 50 }) };
   const TRIAL_PASSED: Partial<Character> = { lucidity: { ...NO_LUCIDITY, task: { role: 'kaempfer', teachingId: undefined, progress: 1 } } };
 
   afterEach(() => vi.restoreAllMocks());
 
-  /** A dreamer beside Pugnax, with a hurt dreamer in a Mondstein's reach. */
+  /** A dreamer beside Pugnax and Mercus, with a hurt dreamer in a Mondstein's reach. */
   async function attached(character: Partial<Character>, inventory: InventoryRow[], overrides: Partial<Sector> = {}) {
-    const sectors = [makeSector('Town', { npcs: [{ ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'kaempferMaster' }], ...overrides })];
+    const npcs = [
+      { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'kaempferMaster' as const },
+      { ...makeNPC('mercus', { x: 8.6, z: 9.5 }, ''), service: 'shopkeeper' as const },
+    ];
+    const sectors = [makeSector('Town', { npcs, ...overrides })];
     const dependencies = await makeStubConnectionDependencies({ sectors });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const connection = new ConnectionActor(dependencies);
@@ -193,6 +200,25 @@ describe('an attached connection', () => {
       () => ({ tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } }),
       (a) => a.own().character.lucidity.study,
       'toughening',
+    ],
+    [
+      'a purchase',
+      {},
+      [PURSE],
+      () => ({ tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } }),
+      (a) => a.own().inventory,
+      [
+        { ...PURSE, quantity: 40 },
+        { slot: 1, itemId: 'dagger', quantity: 1, equippedHand: undefined },
+      ],
+    ],
+    [
+      'a sale',
+      {},
+      [PURSE, CUDGEL_IN_HAND],
+      () => ({ tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } }),
+      (a) => a.own().inventory,
+      [{ ...PURSE, quantity: 115 }],
     ],
   ])('takes %s to the space', async (_label, character, inventory, message, read, expected) => {
     const a = await attached(character, inventory);

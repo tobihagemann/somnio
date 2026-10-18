@@ -14,18 +14,23 @@ import type {
   RaisingState,
   SomnioMessage,
   SpeechKind,
+  TradeMessage,
 } from '@somnio/protocol';
 import {
   COMBAT,
   EDGE_TOLERANCE,
   FIRST_TEACHING,
   PRACTICE,
+  SHOP,
   SOMNIO_CONSTANTS,
   SPEECH,
   balancePace,
   balancePerSecond,
   bodyBlocks,
   buildSpaceCollision,
+  buyBackPrice,
+  canBuy,
+  canSell,
   canStand,
   conditionOf,
   crumble,
@@ -41,6 +46,7 @@ import {
   isLegalMove,
   isTeachingId,
   itemInHand,
+  masterRole,
   maxPools,
   mendAmount,
   monsterKind,
@@ -52,7 +58,6 @@ import {
   reaches,
   rectContains,
   resolveDoor,
-  roleOfService,
   sectorAt,
   sectorPointInSpace,
   sectorView,
@@ -297,9 +302,10 @@ export interface SpaceActorOptions {
 
 type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string };
 
-function inventoryMessage(rows: readonly InventoryRow[]): InventoryMessage {
+function inventoryMessage(rows: readonly InventoryRow[], trade?: TradeMessage): InventoryMessage {
   return {
     rows: rows.map(({ slot, itemId, quantity, equippedHand }) => ({ slot, itemId, quantity, ...(equippedHand === undefined ? {} : { equippedHand }) })),
+    ...(trade === undefined ? {} : { trade }),
   };
 }
 
@@ -721,12 +727,15 @@ export class SpaceActor {
     return digest;
   }
 
-  /** One batched `moves` frame per player for everything that moved in their view since the last flush. */
+  /** Batched `moves` frames per player for everything that moved in their view since the last flush, as many as the per-frame cap needs. */
   flushMoves(): void {
     if (this.moved.size === 0) return;
+    const perFrame = SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame;
     for (const [id, viewer] of this.players) {
       const moves = [...this.moved.values()].filter((entry) => entry.move.id !== id && this.sees(viewer, entry.sector)).map((entry) => entry.move);
-      if (moves.length > 0) viewer.outbox.sendEncoded({ tag: 'moves', payload: { moves } }, this.logger);
+      for (let start = 0; start < moves.length; start += perFrame) {
+        viewer.outbox.sendEncoded({ tag: 'moves', payload: { moves: moves.slice(start, start + perFrame) } }, this.logger);
+      }
     }
     this.moved.clear();
   }
@@ -1366,8 +1375,13 @@ export class SpaceActor {
     if (progress !== task.progress) this.updateLucidity(slot, { ...lucidity, task: { ...task, progress } });
   }
 
-  /** Adds to the dreamer's row of the item, or puts a new row in the first free slot, and sends them their inventory. */
   private giveItem(slot: PlayerSlot, itemId: ItemId, quantity: number): void {
+    this.addItem(slot, itemId, quantity);
+    this.sendInventory(slot);
+  }
+
+  /** Adds to the dreamer's row of the item, or puts a new row in the first free slot. */
+  private addItem(slot: PlayerSlot, itemId: ItemId, quantity: number): void {
     if (slot.inventory.some((row) => row.itemId === itemId)) {
       slot.inventory = slot.inventory.map((row) => (row.itemId === itemId ? { ...row, quantity: row.quantity + quantity } : row));
     } else {
@@ -1375,11 +1389,15 @@ export class SpaceActor {
       while (slot.inventory.some((row) => row.slot === free)) free += 1;
       slot.inventory = [...slot.inventory, { slot: free, itemId, quantity, equippedHand: undefined }];
     }
-    this.sendInventory(slot);
   }
 
-  private sendInventory(slot: PlayerSlot): void {
-    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory) }, this.logger);
+  /** Drops the dreamer's row of the item, and with it whatever hand held it. */
+  private removeItem(slot: PlayerSlot, itemId: ItemId): void {
+    slot.inventory = slot.inventory.filter((row) => row.itemId !== itemId);
+  }
+
+  private sendInventory(slot: PlayerSlot, trade?: TradeMessage): void {
+    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, trade) }, this.logger);
   }
 
   /**
@@ -1402,9 +1420,9 @@ export class SpaceActor {
   handleAskTask(npcId: string, teachingId: string | undefined, entityId: string): void {
     const asked = this.serviceFor(npcId, entityId);
     if (asked === undefined) return;
-    const role = roleOfService(asked.service);
+    const role = masterRole(asked.service);
     const lucidity = asked.player.character.lucidity;
-    if (lucidity.task !== undefined) return;
+    if (role === undefined || lucidity.task !== undefined) return;
     if (teachingId === undefined) {
       if (lucidity.role === undefined) this.updateLucidity(asked.player, { ...lucidity, task: { role, teachingId: undefined, progress: 0 } });
       return;
@@ -1424,7 +1442,7 @@ export class SpaceActor {
     if (asked === undefined) return;
     const lucidity = asked.player.character.lucidity;
     const task = lucidity.task;
-    if (task === undefined || task.role !== roleOfService(asked.service)) return;
+    if (task === undefined || task.role !== masterRole(asked.service)) return;
     const spec = taskSpec(task);
     if (spec === undefined || task.progress < taskGoal(spec)) return;
     const learned = task.teachingId ?? FIRST_TEACHING[task.role];
@@ -1449,9 +1467,33 @@ export class SpaceActor {
     const asked = this.serviceFor(npcId, entityId);
     if (asked === undefined || !isTeachingId(teachingId)) return;
     const lucidity = asked.player.character.lucidity;
-    if (lucidity.role === undefined || lucidity.role !== roleOfService(asked.service) || teaching(teachingId).role !== lucidity.role) return;
+    if (lucidity.role === undefined || lucidity.role !== masterRole(asked.service) || teaching(teachingId).role !== lucidity.role) return;
     if (teachingStanding(lucidity.ranks, teachingId) !== 'open') return;
     this.updateLucidity(asked.player, { ...lucidity, study: teachingId });
+  }
+
+  /**
+   * The shopkeeper sells a dreamer one of a ware they do not carry, for its price. The purse and the
+   * new row go out together in one `inventory` frame that says what was bought. Anything else is
+   * dropped silently.
+   */
+  handleBuy(npcId: string, itemId: string, entityId: string): void {
+    const asked = this.serviceFor(npcId, entityId);
+    if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, itemId)) return;
+    const price = SHOP.prices[itemId];
+    this.addItem(asked.player, 'purse', -price);
+    this.addItem(asked.player, itemId, 1);
+    this.sendInventory(asked.player, { kind: 'bought', itemId, coins: price });
+  }
+
+  /** The shopkeeper buys back a ware the dreamer carries, for its buy-back price. One sold from the hand leaves the hand empty. Anything else is dropped silently. */
+  handleSell(npcId: string, itemId: string, entityId: string): void {
+    const asked = this.serviceFor(npcId, entityId);
+    if (asked?.service !== 'shopkeeper' || !canSell(asked.player.inventory, itemId)) return;
+    const coins = buyBackPrice(itemId);
+    this.removeItem(asked.player, itemId);
+    this.addItem(asked.player, 'purse', coins);
+    this.sendInventory(asked.player, { kind: 'sold', itemId, coins });
   }
 
   /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing disconnect snapshot. */

@@ -59,7 +59,7 @@ const POSITION_FIELDS = [
 
 const RECT_FIELDS = [...POSITION_FIELDS, ['Width', 'width'], ['Depth', 'depth']] as const;
 
-const SERVICE_LABELS: Record<NPCService, string> = { kaempferMaster: 'Kämpfer master', heilerMaster: 'Heiler master' };
+const SERVICE_LABELS: Record<NPCService, string> = { kaempferMaster: 'Kämpfer master', heilerMaster: 'Heiler master', shopkeeper: 'Shopkeeper' };
 
 function idOptions(ids: readonly string[]): PickerOption[] {
   return ids.map((id) => ({ value: id, label: id }));

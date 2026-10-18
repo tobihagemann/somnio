@@ -1,7 +1,7 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
 import type { CompassPoint } from '@/client/compass';
-import { roleLabelKey, teaching } from '@somnio/core';
+import { itemLabelKey, roleLabelKey, teaching } from '@somnio/core';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 
@@ -47,6 +47,12 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('You own %@c.', String(line.coins));
     case 'coinsGained':
       return lookup('You receive %@c.', String(line.coins));
+    case 'bought':
+      return lookup('%1$@ bought for %2$@c.', itemName(line.itemId, lookup), String(line.coins));
+    case 'sold':
+      return line.emptiedHand
+        ? lookup('%1$@ sold for %2$@c. Your hands are empty.', itemName(line.itemId, lookup), String(line.coins))
+        : lookup('%1$@ sold for %2$@c.', itemName(line.itemId, lookup), String(line.coins));
     case 'becameRole':
       return lookup('You are now a %@.', lookup(roleLabelKey(line.role)));
     case 'rankGained':
@@ -106,6 +112,15 @@ function renderSpoken(line: SpokenLine, lookup: Lookup): string {
     case 'statement':
       return from === undefined ? lookup('%1$@ says, "%2$@"', senderName, message) : lookup('%1$@ says from the %2$@, "%3$@"', senderName, from, message);
   }
+}
+
+/**
+ * An item's display name in the lookup's locale. An id the item table does not know renders raw, so
+ * an operator seeing it in a screenshot can tell which item is missing from the table.
+ */
+export function itemName(itemId: string, lookup: Lookup): string {
+  const key = itemLabelKey(itemId);
+  return key === undefined ? itemId : lookup(key);
 }
 
 /** One literal lookup per direction, so the catalog test sees each one rendered. */

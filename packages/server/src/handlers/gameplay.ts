@@ -1,10 +1,12 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type {
   AskTaskMessage,
+  BuyMessage,
   ClientSayMessage,
   CompleteTaskMessage,
   EquipToggleMessage,
   MoveMessage,
+  SellMessage,
   StudyMessage,
   SwingMessage,
   TalkMessage,
@@ -74,6 +76,14 @@ export function handleAbandonTask(entityId: string, spaceId: string, dependencie
 
 export function handleStudy(message: StudyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleStudy(message.npcId, message.teachingId, entityId);
+}
+
+export function handleBuy(message: BuyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleBuy(message.npcId, message.itemId, entityId);
+}
+
+export function handleSell(message: SellMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleSell(message.npcId, message.itemId, entityId);
 }
 
 /**

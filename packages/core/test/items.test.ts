@@ -1,13 +1,14 @@
 import { ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
-import { ITEMS, itemInHand, itemLabelKey, itemWeapon } from '../src/items.ts';
+import { ITEMS, itemInHand, itemLabelKey, itemWeapon, purseCoins } from '../src/items.ts';
 import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
   'Balance recovery',
   'Cudgel',
+  'Dagger',
   'Depth',
   'Drawing back',
   'Follow-through',
@@ -15,8 +16,10 @@ const CORE_KEYS = [
   'Heiler',
   'Kämpfer',
   'Lumina',
+  'Mace',
   'Mondstein',
   'Purse',
+  'Short sword',
   'Soporen',
   'Spirit deepening',
   'Strike',
@@ -33,12 +36,16 @@ describe('items', () => {
   });
 
   it('resolves nothing for an unknown id, inherited object keys included', () => {
-    expect(itemLabelKey('sword')).toBeUndefined();
+    expect(itemLabelKey('longsword')).toBeUndefined();
     expect(itemLabelKey('toString')).toBeUndefined();
   });
 
-  it('makes a weapon of the cudgel alone', () => {
+  it('makes weapons of the dagger, the cudgel, the short sword, and the mace alone', () => {
+    expect(itemWeapon('dagger')).toEqual({ damage: 6, balanceCost: 10 });
     expect(itemWeapon('cudgel')).toEqual({ damage: 8, balanceCost: 18 });
+    expect(itemWeapon('sword')).toEqual({ damage: 11, balanceCost: 24 });
+    expect(itemWeapon('mace')).toEqual({ damage: 14, balanceCost: 32 });
+    expect(itemWeapon('purse')).toBeUndefined();
     expect(itemWeapon('mondstein')).toBeUndefined();
     expect(itemWeapon('toString')).toBeUndefined();
   });
@@ -48,6 +55,16 @@ describe('items', () => {
     const mondstein = { itemId: 'mondstein', equippedHand: 'right' as const };
     expect(itemInHand([{ itemId: 'purse' }, cudgel, mondstein])).toBe('mondstein');
     expect(itemInHand([{ itemId: 'purse' }, cudgel])).toBeUndefined();
+  });
+
+  it('reads the purse, and an empty one with none', () => {
+    expect(
+      purseCoins([
+        { itemId: 'cudgel', quantity: 1 },
+        { itemId: 'purse', quantity: 42 },
+      ]),
+    ).toBe(42);
+    expect(purseCoins([{ itemId: 'cudgel', quantity: 1 }])).toBe(0);
   });
 
   it('ships English and German for both labels', () => {

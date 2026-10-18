@@ -37,6 +37,13 @@
     },
     "tag": "blow"
   },
+  "buy": {
+    "payload": {
+      "itemId": "dagger",
+      "npcId": "npc:EdariaShop/mercus"
+    },
+    "tag": "buy"
+  },
   "clientSay": {
     "payload": {
       "kind": "say",
@@ -137,7 +144,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 10
+      "protocolVersion": 11
     },
     "tag": "hello"
   },
@@ -156,6 +163,34 @@
           "slot": 1
         }
       ]
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-trade": {
+    "payload": {
+      "rows": [
+        {
+          "itemId": "purse",
+          "quantity": 40,
+          "slot": 0
+        },
+        {
+          "equippedHand": "right",
+          "itemId": "cudgel",
+          "quantity": 1,
+          "slot": 1
+        },
+        {
+          "itemId": "dagger",
+          "quantity": 1,
+          "slot": 2
+        }
+      ],
+      "trade": {
+        "coins": 60,
+        "itemId": "dagger",
+        "kind": "bought"
+      }
     },
     "tag": "inventory"
   },
@@ -389,6 +424,13 @@
       }
     },
     "tag": "sector"
+  },
+  "sell": {
+    "payload": {
+      "itemId": "cudgel",
+      "npcId": "npc:EdariaShop/mercus"
+    },
+    "tag": "sell"
   },
   "serverSay": {
     "payload": {

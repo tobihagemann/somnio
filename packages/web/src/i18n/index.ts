@@ -123,6 +123,9 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your session expired. Please log in again.',
   'Reconnecting...',
   'You receive %@c.',
+  '%1$@ bought for %2$@c.',
+  '%1$@ sold for %2$@c.',
+  '%1$@ sold for %2$@c. Your hands are empty.',
   'You are now a %@.',
   'Your %1$@ deepens: rank %2$@.',
   'Your task is done. Return to your master.',
@@ -206,6 +209,20 @@ export const RENDERED_KEYS: readonly string[] = [
   'You will wake at the inn, weakened.',
   'Wake there',
   'Stay',
+
+  // Shop
+  'Shopkeeper',
+  'Your purse',
+  '%@c',
+  '%@ deals in weapons. He buys back what he sells for half its price.',
+  'For sale',
+  'Sell',
+  '%1$@ damage, %2$@ balance a swing',
+  'Buy for %@c',
+  'Sell for %@c',
+  'You need %@c more.',
+  'In hand',
+  'You carry nothing %@ buys.',
 
   // Login and registration
   'Somnio',

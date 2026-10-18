@@ -16,6 +16,8 @@ const CLIENT_TO_SERVER_TAGS = [
   'completeTask',
   'abandonTask',
   'study',
+  'buy',
+  'sell',
   'wake',
   'useItem',
   // Session resumption. `redeemSession` is accepted pre-login (it is an alternative to a

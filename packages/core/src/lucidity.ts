@@ -191,12 +191,16 @@ export function forbidsStriking(spec: TaskSpec): boolean {
   return spec.kind === 'reach' && spec.withoutStriking === true;
 }
 
-/** The role a master teaches. */
-export function roleOfService(service: NPCService): Role {
+/** The role a master teaches; `undefined` for a service that is no master's. */
+export function masterRole(service: 'kaempferMaster' | 'heilerMaster'): Role;
+export function masterRole(service: NPCService): Role | undefined;
+export function masterRole(service: NPCService): Role | undefined {
   switch (service) {
     case 'kaempferMaster':
       return 'kaempfer';
     case 'heilerMaster':
       return 'heiler';
+    case 'shopkeeper':
+      return undefined;
   }
 }

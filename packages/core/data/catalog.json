@@ -7,6 +7,10 @@
     "en": "Cudgel",
     "de": "Knüppel"
   },
+  "Dagger": {
+    "en": "Dagger",
+    "de": "Dolch"
+  },
   "Depth": {
     "en": "Depth",
     "de": "Tiefe"
@@ -35,6 +39,10 @@
     "en": "Lumina",
     "de": "Lumina"
   },
+  "Mace": {
+    "en": "Mace",
+    "de": "Streitkolben"
+  },
   "Mondstein": {
     "en": "Mondstein",
     "de": "Mondstein"
@@ -42,6 +50,10 @@
   "Purse": {
     "en": "Purse",
     "de": "Geldbeutel"
+  },
+  "Short sword": {
+    "en": "Short sword",
+    "de": "Kurzschwert"
   },
   "Soporen": {
     "en": "Soporen",

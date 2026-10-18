@@ -1,10 +1,10 @@
 import { utf8ByteLength } from '@somnio/protocol';
 import type { Energy, InventoryRowMessage, LucidityMessage } from '@somnio/protocol';
-import { clamp, isTeachingId, itemLabelKey, practiceNeeded, roleLabelKey, teaching } from '@somnio/core';
+import { clamp, isTeachingId, practiceNeeded, roleLabelKey, teaching } from '@somnio/core';
 import type { ItemId } from '@somnio/core';
 import { chatLineCategory, taskIsDone } from '@/client';
 import type { ChatLine } from '@/client';
-import { renderChatLine, t } from '@/i18n';
+import { itemName, renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { ICON_PATHS, element, floating, iconButton, isHidden, replaceChildren, setHidden, toggleHidden } from './dom';
 import type { IconName } from './dom';
@@ -70,15 +70,6 @@ function rowMarker(row: InventoryRowMessage): string {
   if (row.equippedHand === 'left') return '[L]';
   if (row.equippedHand === 'right') return '[R]';
   return '';
-}
-
-/**
- * An item's display name. An id the item table does not know renders raw, so an operator seeing
- * it in a screenshot can tell which item is missing from the table.
- */
-function itemLabel(itemId: string): string {
-  const key = itemLabelKey(itemId);
-  return key === undefined ? itemId : t(key);
 }
 
 export class GamePanels {
@@ -266,7 +257,7 @@ export class GamePanels {
           className: 'list-row list-row--activatable',
           attributes: { role: 'listitem', tabindex: 0 },
           children: [
-            element('span', { className: 'list-row__name', text: itemLabel(row.itemId) }),
+            element('span', { className: 'list-row__name', text: itemName(row.itemId, t) }),
             element('span', { className: 'list-row__marker', text: rowMarker(row) }),
           ],
         });

@@ -100,6 +100,7 @@ describe('the names rendered through a core label key', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
       'Balance recovery',
       'Cudgel',
+      'Dagger',
       'Depth',
       'Drawing back',
       'Follow-through',
@@ -107,8 +108,10 @@ describe('the names rendered through a core label key', () => {
       'Heiler',
       'Kämpfer',
       'Lumina',
+      'Mace',
       'Mondstein',
       'Purse',
+      'Short sword',
       'Soporen',
       'Spirit deepening',
       'Strike',
@@ -120,6 +123,7 @@ describe('the names rendered through a core label key', () => {
     expect(translate('de', 'Follow-through')).toBe('Nachsetzen');
     expect(translate('de', 'Purse')).toBe('Geldbeutel');
     expect(translate('de', 'Cudgel')).toBe('Knüppel');
+    expect(translate('de', 'Short sword')).toBe('Kurzschwert');
   });
 });
 
@@ -221,6 +225,9 @@ describe('renderChatLine', () => {
     { kind: 'startupGreeting' },
     { kind: 'purseBalance', coins: 42 },
     { kind: 'coinsGained', coins: 4 },
+    { kind: 'bought', itemId: 'dagger', coins: 60 },
+    { kind: 'sold', itemId: 'sword', coins: 75, emptiedHand: false },
+    { kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true },
     { kind: 'becameRole', role: 'heiler' },
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'taskDone' },
@@ -262,6 +269,17 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'raisedOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You draw Bren back into the dream.');
     expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You lose hold of Bren.');
     expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'de')).toBe('Du verlierst den Halt an Bren.');
+  });
+
+  /** The ware is named in the line's own locale, which a lookup through the active one would miss. */
+  it('names the ware traded and the coins, and an emptied hand only when there was one', () => {
+    expect(renderChatLine({ kind: 'bought', itemId: 'dagger', coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
+    expect(renderChatLine({ kind: 'bought', itemId: 'dagger', coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
+    expect(renderChatLine({ kind: 'sold', itemId: 'sword', coins: 75, emptiedHand: false }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
+    expect(renderChatLine({ kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true }, catalogTables, 'en')).toBe(
+      'Cudgel sold for 15c. Your hands are empty.',
+    );
+    expect(renderChatLine({ kind: 'sold', itemId: 'lantern', coins: 1, emptiedHand: false }, catalogTables, 'en')).toBe('lantern sold for 1c.');
   });
 
   it('names several Heilers as the language lists them', () => {

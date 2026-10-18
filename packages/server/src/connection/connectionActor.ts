@@ -6,10 +6,12 @@ import {
   TRANSFER_LOST,
   handleAbandonTask,
   handleAskTask,
+  handleBuy,
   handleCompleteTask,
   handleEquipToggle,
   handleMove,
   handleSay,
+  handleSell,
   handleStudy,
   handleSwing,
   handleTalk,
@@ -288,6 +290,8 @@ export class ConnectionActor {
         case 'completeTask':
         case 'abandonTask':
         case 'study':
+        case 'buy':
+        case 'sell':
         case 'wake':
         case 'useItem':
         case 'revokeSession':
@@ -352,6 +356,12 @@ export class ConnectionActor {
         return { kind: 'keepOpen' };
       case 'study':
         handleStudy(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'buy':
+        handleBuy(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'sell':
+        handleSell(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       // Revocation is accepted only while attached; the connection's own account scopes the delete.
       case 'revokeSession':

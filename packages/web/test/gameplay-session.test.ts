@@ -369,14 +369,16 @@ describe('inventory activation', () => {
   });
 
   /** Unequipped asks for the right hand; already-equipped leaves the hand out to clear it. */
-  it.each([
-    [{}, { slot: 4, hand: 'right' }],
-    [{ equippedHand: 'right' }, { slot: 4 }],
-  ] as const)('toggles the cudgel from %j with %j', (equipped, expected) => {
+  it.each(
+    ['dagger', 'cudgel', 'sword', 'mace'].flatMap((itemId) => [
+      [itemId, {}, { slot: 4, hand: 'right' }],
+      [itemId, { equippedHand: 'right' }, { slot: 4 }],
+    ]) as [string, { equippedHand?: 'right' }, { slot: number; hand?: 'right' }][],
+  )('toggles the %s from %j with %j', (itemId, equipped, expected) => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
 
-    rig.session.activateInventoryRow({ slot: 4, itemId: 'cudgel', quantity: 1, ...equipped });
+    rig.session.activateInventoryRow({ slot: 4, itemId, quantity: 1, ...equipped });
 
     expect(rig.sent).toEqual([{ tag: 'equipToggle', payload: expected }]);
   });
@@ -875,6 +877,110 @@ describe('the service panel', () => {
     rig.session.completeTask();
     rig.session.study('guard');
     expect(rig.sent).toEqual([]);
+  });
+
+  it('trades with no master', () => {
+    const { rig } = atMaster();
+    rig.sent.length = 0;
+    rig.session.buy('dagger');
+    rig.session.sell('cudgel');
+    expect(rig.sent).toEqual([]);
+    expect(rig.session.tradeLocked()).toBe(false);
+  });
+});
+
+describe('the shop', () => {
+  const MERCUS = 'npc:Meadow/mercus';
+  const rows = (purse: number, ...weapons: { itemId: string; equippedHand?: 'right' }[]) => [
+    { slot: 0, itemId: 'purse', quantity: purse },
+    ...weapons.map((weapon, index) => ({ slot: index + 1, quantity: 1, ...weapon })),
+  ];
+
+  const trades = (rig: Rig) => rig.sent.filter((message) => message.tag === 'buy' || message.tag === 'sell');
+
+  /** Joins a meadow holding a cudgel, with Mercus a step south, and clicks him. */
+  function atMercus(): { rig: Rig; repaints: () => number } {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame({ facing: 30 }));
+    rig.controller.dispatch(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 10.3, z: 10.6, service: 'shopkeeper' }));
+    rig.controller.dispatch({ tag: 'inventory', payload: { rows: rows(100, { itemId: 'cudgel', equippedHand: 'right' }) } });
+    rig.session.pressAt(MERCUS, 0);
+    rig.sent.length = 0;
+    let repaints = 0;
+    rig.session.onStateChanged = () => {
+      repaints += 1;
+    };
+    return { rig, repaints: () => repaints };
+  }
+
+  it('asks the shopkeeper whose panel is open', () => {
+    const { rig } = atMercus();
+    rig.session.buy('dagger');
+    rig.now = 5000;
+    rig.session.sell('cudgel');
+    expect(trades(rig)).toEqual([
+      { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
+      { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },
+    ]);
+  });
+
+  it('announces what a trade bought or sold, and not the coins it moved', () => {
+    const { rig } = atMercus();
+    rig.controller.dispatch({
+      tag: 'inventory',
+      payload: { rows: rows(40, { itemId: 'cudgel', equippedHand: 'right' }, { itemId: 'dagger' }), trade: { kind: 'bought', itemId: 'dagger', coins: 60 } },
+    });
+    rig.controller.dispatch({
+      tag: 'inventory',
+      payload: { rows: rows(70, { itemId: 'cudgel', equippedHand: 'right' }), trade: { kind: 'sold', itemId: 'dagger', coins: 30 } },
+    });
+    rig.controller.dispatch({ tag: 'inventory', payload: { rows: rows(85), trade: { kind: 'sold', itemId: 'cudgel', coins: 15 } } });
+    expect(rig.controller.chatHistory).toEqual([
+      { kind: 'bought', itemId: 'dagger', coins: 60 },
+      { kind: 'sold', itemId: 'dagger', coins: 30, emptiedHand: false },
+      { kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true },
+    ]);
+  });
+
+  it('locks every trade from the request until a moment after its answer, and redraws once it gives way', () => {
+    const { rig, repaints } = atMercus();
+    rig.session.buy('dagger');
+    expect(repaints()).toBe(1);
+    expect(rig.session.tradeLocked()).toBe(true);
+    rig.session.buy('sword');
+    rig.session.sell('cudgel');
+    expect(trades(rig)).toHaveLength(1);
+
+    rig.now = 300;
+    rig.controller.dispatch({
+      tag: 'inventory',
+      payload: { rows: rows(40, { itemId: 'cudgel', equippedHand: 'right' }, { itemId: 'dagger' }), trade: { kind: 'bought', itemId: 'dagger', coins: 60 } },
+    });
+    const answered = repaints();
+    rig.now = 799;
+    rig.session.runTick(799);
+    expect(rig.session.tradeLocked()).toBe(true);
+    rig.now = 800;
+    rig.session.runTick(800);
+    rig.session.runTick(900);
+    expect(rig.session.tradeLocked()).toBe(false);
+    expect(repaints() - answered).toBe(1);
+    rig.session.sell('cudgel');
+    expect(trades(rig)).toHaveLength(2);
+  });
+
+  it('lets a trade the server refused go after a while', () => {
+    const { rig, repaints } = atMercus();
+    rig.session.buy('mace');
+    rig.now = 1499;
+    rig.session.runTick(1499);
+    expect(rig.session.tradeLocked()).toBe(true);
+    rig.now = 1500;
+    rig.session.runTick(1500);
+    expect(rig.session.tradeLocked()).toBe(false);
+    expect(repaints()).toBe(2);
   });
 });
 

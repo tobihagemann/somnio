@@ -12,6 +12,7 @@ export const GHOST = 'monster:1';
 export const RESPAWN_MS = monsterKind('gespenst').respawnSeconds * 1000;
 const STEP_SECONDS = 0.05;
 
+export const PURSE: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
 export const CUDGEL_IN_HAND: InventoryRow = { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' };
 export const MONDSTEIN_IN_HAND: InventoryRow = { slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' };
 

@@ -11,6 +11,7 @@ export * from './collision.ts';
 export * from './worldEntity.ts';
 export * from './worldClock.ts';
 export * from './items.ts';
+export * from './shop.ts';
 export * from './monsterKinds.ts';
 export * from './lucidity.ts';
 export * from './combat.ts';
