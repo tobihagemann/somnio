@@ -177,6 +177,28 @@ export class StubSessionRepository implements SessionRepository {
   }
 }
 
+/** A session repository whose redemption blocks until released, holding one connection mid-handler. */
+export class HeldSessionRepository extends StubSessionRepository {
+  private release: () => void = () => {};
+  private markReached: () => void = () => {};
+  /** Declared after `markReached`: field initializers run in order, and this one assigns it. */
+  readonly reached = new Promise<void>((resolve) => {
+    this.markReached = resolve;
+  });
+
+  override async redeem(token: string) {
+    this.markReached();
+    await new Promise<void>((resolve) => {
+      this.release = resolve;
+    });
+    return super.redeem(token);
+  }
+
+  releaseHandler(): void {
+    this.release();
+  }
+}
+
 /** Distinguishable from a real database error, so a degraded-path test cannot pass on an unrelated throw. */
 export class RepositoryFailure extends Error {
   constructor() {

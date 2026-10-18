@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { SKELETON_ALGORITHM_VERSION, UNICODE_DATA_VERSION, confusableSkeleton, validateForRegistration } from '../src/namePolicy/namePolicy.ts';
+import {
+  SKELETON_ALGORITHM_VERSION,
+  UNICODE_DATA_VERSION,
+  confusableSkeleton,
+  postgresNameKey,
+  validateForRegistration,
+} from '../src/namePolicy/namePolicy.ts';
 import { UNICODE_DATA_VERSION_OF_TABLES } from '../src/namePolicy/tables.ts';
 
 /**
@@ -83,6 +89,26 @@ describe('registration validation', () => {
 
   it.each(['', '   ', '---', '_-_', '́'])('rejects %j for having no visible base character', (name) => {
     expect(validateForRegistration(name)).toBe('emptyAfterNormalization');
+  });
+});
+
+/** Postgres lowercases each character on its own, after NFKC; a key finer than that splits one account, a coarser one merges two. */
+describe('postgres name key', () => {
+  it.each([
+    ['TOBİAS', 'tobias'],
+    ['TOBI\u0307AS', 'tobias'],
+    ['ΟΔΥΣΣΕΥΣ', 'οδυσσευσ'],
+    ['ΟΔΥΣΣΕΥϹ', 'οδυσσευσ'],
+    ['Ｓａｉｂｏｔ', 'saibot'],
+  ])('gives %s the key of %s', (name, key) => {
+    expect(postgresNameKey(name)).toBe(key);
+  });
+
+  it.each([
+    ['tobi\u0307as', 'tobias'],
+    ['οδυσσευς', 'οδυσσευσ'],
+  ])('keeps %s and %s apart, as the column does', (first, second) => {
+    expect(postgresNameKey(first)).not.toBe(postgresNameKey(second));
   });
 });
 

@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
-import { ModelRegistryError, OUTDOOR_SPACE_ID, WorldError } from '@somnio/core';
+import { ModelRegistryError, OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, WorldError } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import { TEST_REGISTRY, interiorSector } from '../../core/test/support/worldFixture.ts';
@@ -52,6 +52,32 @@ describe('loadSectorCache', () => {
   it('unreadable directory surfaces SectorCacheError unreadable', () => {
     const bogus = `/var/empty/does-not-exist-${crypto.randomUUID()}`;
     expect(errorKind(() => loadSectorCache(bogus))).toEqual({ kind: 'unreadable', path: bogus });
+  });
+
+  /** Unreadable as well, so a loader that reads before its size check, or swallows the check, reports `unreadable`. */
+  it('a file over the byte cap surfaces SectorCacheError tooLarge without being read', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sector-cache-'));
+    const path = join(directory, 'Huge.somnio-sector');
+    try {
+      writeFileSync(path, '');
+      truncateSync(path, SOMNIO_CONSTANTS.maxSectorFileBytes + 1);
+      chmodSync(path, 0o000);
+      expect(errorKind(() => loadSectorCache(directory))).toEqual({ kind: 'tooLarge', path });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  /** A device reports size 0, so only refusing what is not a regular file keeps `/dev/zero` or a FIFO from being read without end. */
+  it('a sector path that is not a regular file surfaces SectorCacheError unreadable', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sector-cache-'));
+    const path = join(directory, 'Device.somnio-sector');
+    try {
+      symlinkSync('/dev/null', path);
+      expect(errorKind(() => loadSectorCache(directory))).toEqual({ kind: 'unreadable', path });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('a directory without somnio-sector files loads an empty map', () => {

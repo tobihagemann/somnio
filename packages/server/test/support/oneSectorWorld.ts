@@ -17,6 +17,7 @@ export interface OneSectorWorldOptions {
   placements?: Placement[];
   logger?: Logger;
   attemptLimiter?: AttemptLimiter;
+  accountLimiter?: AttemptLimiter;
 }
 
 /** A world of one outdoor sector (`A`) holding one character: the minimum a join needs. */
@@ -30,11 +31,12 @@ export async function makeOneSectorWorld(options: OneSectorWorldOptions) {
     ...(options.accounts === undefined ? {} : { accounts: options.accounts }),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
     ...(options.attemptLimiter === undefined ? {} : { attemptLimiter: options.attemptLimiter }),
+    ...(options.accountLimiter === undefined ? {} : { accountLimiter: options.accountLimiter }),
   });
   return { dependencies, accountId };
 }
 
-type AuthenticatedWorldOptions = Pick<OneSectorWorldOptions, 'sessions' | 'logger' | 'attemptLimiter'> & { name: string; password: string };
+type AuthenticatedWorldOptions = Pick<OneSectorWorldOptions, 'sessions' | 'logger' | 'attemptLimiter' | 'accountLimiter'> & { name: string; password: string };
 
 /** A one-sector world whose character belongs to an account a password login can reach. */
 export async function makeAuthenticatedWorld({ name, password, ...world }: AuthenticatedWorldOptions) {

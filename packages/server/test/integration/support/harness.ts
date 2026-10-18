@@ -17,7 +17,7 @@ import { startDatabase } from '../../../../data/test/integration/support/harness
 import type { DatabaseHarness } from '../../../../data/test/integration/support/harness.ts';
 import { bootServer } from '../../../src/bootstrap/runServer.ts';
 import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer.ts';
-import { DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
+import { DEFAULT_LOGIN_DEADLINE_MS, DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
 import { AttemptLimiter } from '../../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
 import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
@@ -97,7 +97,9 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     worldRouter,
     worldClock: new WorldClockService(worldClocks, await worldClocks.load(), logger),
     attemptLimiter: new AttemptLimiter({ enabled: false, logger }),
+    accountLimiter: new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: 1024,
+    loginDeadlineMs: DEFAULT_LOGIN_DEADLINE_MS,
     logger,
   };
 }

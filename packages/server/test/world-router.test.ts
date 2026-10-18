@@ -347,6 +347,14 @@ describe('WorldRouter connections', () => {
     expect(router.kickByCharacterName('saibot')).toBe(true);
   });
 
+  /** Postgres lowercases `İ` to `i`, so the column holds one account under both spellings. */
+  it('kickByCharacterName folds İ as the schema collation does', async () => {
+    const { router, connections } = await emptyRouterConnections(1);
+    router.register(connections[0]!.actor, connections[0]!.accountId);
+    router.nameRegistered(connections[0]!.accountId, 'tobias');
+    expect(router.kickByCharacterName('TOBİAS')).toBe(true);
+  });
+
   it('kickByCharacterName matches NFKC compatibility equivalent names', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     router.register(connections[0]!.actor, connections[0]!.accountId);

@@ -1,5 +1,6 @@
 import type { ClientSayMessage, SomnioMessage } from '@somnio/protocol';
 import type { NPCDialogState } from '@somnio/core';
+import { postgresNameKey } from '@somnio/data';
 import type { CharacterRepository, NPCDialogStateRepository } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
@@ -18,13 +19,8 @@ export interface AdminWorldRouter {
 
 interface LoggedInEntry {
   actor: ConnectionActor;
-  /** Absent between the account's registration and its character being loaded. */
-  normalizedName: string | undefined;
-}
-
-/** Mirrors the `LOWER(NORMALIZE(name, NFKC))` collation of every `name_normalized` column. */
-function normalize(name: string): string {
-  return name.normalize('NFKC').toLowerCase();
+  /** The `postgresNameKey` of the character's name; absent between the account's registration and its character being loaded. */
+  nameKey: string | undefined;
 }
 
 /**
@@ -81,14 +77,14 @@ export class WorldRouter implements AdminWorldRouter {
    */
   register(actor: ConnectionActor, accountId: string): boolean {
     if (this.loggedIn.has(accountId)) return false;
-    this.loggedIn.set(accountId, { actor, normalizedName: undefined });
+    this.loggedIn.set(accountId, { actor, nameKey: undefined });
     return true;
   }
 
   /** Supplies the name `kickByCharacterName` matches, once the character is loaded. Until then the entry matches no kick. */
   nameRegistered(accountId: string, characterName: string): void {
     const entry = this.loggedIn.get(accountId);
-    if (entry !== undefined) entry.normalizedName = normalize(characterName);
+    if (entry !== undefined) entry.nameKey = postgresNameKey(characterName);
   }
 
   unregister(accountId: string): void {
@@ -106,10 +102,10 @@ export class WorldRouter implements AdminWorldRouter {
 
   /** Disconnects every logged-in connection whose cached name matches; the connection's own exit path unregisters it. */
   kickByCharacterName(name: string): boolean {
-    const needle = normalize(name);
+    const needle = postgresNameKey(name);
     let kicked = false;
     for (const entry of [...this.loggedIn.values()]) {
-      if (entry.normalizedName !== needle) continue;
+      if (entry.nameKey !== needle) continue;
       entry.actor.disconnectForAdminKick();
       kicked = true;
     }

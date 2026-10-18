@@ -14,11 +14,22 @@ export interface ServerConfiguration {
   sectorsDirectory: string;
   checkpointIntervalMs: number;
   outboxHighWatermark: number;
+  /** How many client addresses the pre-login limit holds budgets for; a new address past it is refused. */
+  addressLimitKeys: number;
+  /** How many nicknames the account budget holds; a new nickname past it is refused. */
+  accountLimitKeys: number;
+  /** How many sockets one address may hold before they log in, while the pre-login limit is on. */
+  preloginSocketsPerAddress: number;
+  /** How many sockets the server holds before they log in, whatever the pre-login limit says. */
+  preloginSockets: number;
+  loginDeadlineMs: number;
   devDefaults: boolean;
   /**
-   * Where the pre-login limit reads a client's address: `proxy` the last `X-Forwarded-For` entry,
-   * `direct` the socket. `off` limits nothing. An unstated `SOMNIO_TRUST_PROXY` resolves to `off`
-   * rather than `direct`, because behind a proxy every client would share the proxy's address.
+   * Where the per-address pre-login limits read a client's address: `proxy` the last
+   * `X-Forwarded-For` entry, `direct` the socket. `off` limits no address. The account budget, the
+   * login deadline, and the total cap on sockets awaiting login stay on. An unstated
+   * `SOMNIO_TRUST_PROXY` resolves to `off` rather than `direct`, because behind a proxy every
+   * client would share the proxy's address.
    */
   preloginLimit: 'proxy' | 'direct' | 'off';
 }
@@ -42,6 +53,11 @@ export const DEV_ADMIN_TOKEN = 'dev-admin';
 export const DEV_SECTORS_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), '../../core/fixtures/sectors');
 export const DEFAULT_CHECKPOINT_INTERVAL_MS = 30_000;
 export const DEFAULT_OUTBOX_HIGH_WATERMARK = 1024;
+export const DEFAULT_ADDRESS_LIMIT_KEYS = 10_000;
+export const DEFAULT_ACCOUNT_LIMIT_KEYS = 10_000;
+export const DEFAULT_PRELOGIN_SOCKETS_PER_ADDRESS = 8;
+export const DEFAULT_PRELOGIN_SOCKETS = 128;
+export const DEFAULT_LOGIN_DEADLINE_MS = 30_000;
 
 export function resolveServerConfiguration(env: Record<string, string | undefined>): ServerConfiguration {
   const devDefaults = isTruthy(env['SOMNIO_DEV_DEFAULTS']);
@@ -77,6 +93,11 @@ export function resolveServerConfiguration(env: Record<string, string | undefine
     sectorsDirectory,
     checkpointIntervalMs: DEFAULT_CHECKPOINT_INTERVAL_MS,
     outboxHighWatermark: DEFAULT_OUTBOX_HIGH_WATERMARK,
+    addressLimitKeys: DEFAULT_ADDRESS_LIMIT_KEYS,
+    accountLimitKeys: DEFAULT_ACCOUNT_LIMIT_KEYS,
+    preloginSocketsPerAddress: DEFAULT_PRELOGIN_SOCKETS_PER_ADDRESS,
+    preloginSockets: DEFAULT_PRELOGIN_SOCKETS,
+    loginDeadlineMs: DEFAULT_LOGIN_DEADLINE_MS,
     devDefaults,
     preloginLimit,
   };

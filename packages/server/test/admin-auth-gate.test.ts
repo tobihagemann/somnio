@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { decodeAdminResponse, encodeAdminRequest } from '@somnio/protocol';
 import { timingSafeBearer } from '../src/http/app.ts';
 import { makeAdminDependencies } from './support/adminDependencies.ts';
+import type { RunningServer } from '../src/http/server.ts';
 import { TEST_ADMIN_TOKEN, TestClient, adminURL, attemptUpgrade, bearer, withLiveServer } from './support/liveServer.ts';
+import { enabledAttemptLimiter, makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubAdminWorldRouter } from './support/stubAdminWorldRouter.ts';
 
 describe('timingSafeBearer', () => {
@@ -63,5 +65,33 @@ describe('/admin upgrade', () => {
     } finally {
       adminDependencies.logging.cleanup();
     }
+  });
+});
+
+describe('the /admin budget of failed bearers', () => {
+  async function withLimitedServer(body: (server: RunningServer) => Promise<void>): Promise<void> {
+    await withLiveServer({ trustProxy: true, dependencies: await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() }) }, body);
+  }
+
+  function upgradeFrom(server: RunningServer, address: string, token: string): Promise<'opened' | number> {
+    return attemptUpgrade(adminURL(server), { headers: { authorization: `Bearer ${token}`, 'x-forwarded-for': address } });
+  }
+
+  it('answers 429 past ten wrong bearers from one address, before comparing the bearer', async () => {
+    await withLimitedServer(async (server) => {
+      for (let attempt = 0; attempt < 10; attempt += 1) expect(await upgradeFrom(server, '203.0.113.7', 'wrong')).toBe(401);
+      expect(await upgradeFrom(server, '203.0.113.7', 'wrong')).toBe(429);
+      expect(await upgradeFrom(server, '203.0.113.7', TEST_ADMIN_TOKEN)).toBe(429);
+      expect(await upgradeFrom(server, '203.0.113.8', TEST_ADMIN_TOKEN)).toBe('opened');
+    });
+  });
+
+  it('gives a correct bearer its attempt back', async () => {
+    await withLimitedServer(async (server) => {
+      for (let attempt = 0; attempt < 9; attempt += 1) expect(await upgradeFrom(server, '203.0.113.7', 'wrong')).toBe(401);
+      expect(await upgradeFrom(server, '203.0.113.7', TEST_ADMIN_TOKEN)).toBe('opened');
+      expect(await upgradeFrom(server, '203.0.113.7', 'wrong')).toBe(401);
+      expect(await upgradeFrom(server, '203.0.113.7', 'wrong')).toBe(429);
+    });
   });
 });

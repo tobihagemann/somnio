@@ -8,6 +8,7 @@ import type { WebSocket } from 'ws';
 import { runAdminConnection } from '../admin/adminConnection.ts';
 import { ConnectionActor, socketFromWebSocket } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
+import type { SocketAdmission } from '../connection/socketAdmission.ts';
 import type { AdminDependencies } from '../handlers/adminDispatcher.ts';
 import type { Logger } from '../logging.ts';
 import { timingSafeBearer } from './app.ts';
@@ -21,6 +22,8 @@ export interface ServerOptions {
   /** Whether a gameplay client's address is the last `X-Forwarded-For` entry rather than the socket's. */
   trustProxy: boolean;
   dependencies: ConnectionDependencies;
+  /** The slots of gameplay sockets that have not logged in. */
+  socketAdmission: SocketAdmission;
   adminDependencies: AdminDependencies;
   logger: Logger;
 }
@@ -38,11 +41,13 @@ export interface RunningServer {
 const CRLF = '\r\n';
 
 /**
- * Binds the HTTP server and routes `upgrade` requests: `/ws` to a `ConnectionActor`, `/admin` to
- * the admin connection behind the bearer gate (a missing or wrong bearer answers 401 before the
- * upgrade), anything else 404. `maxPayload` is the wire frame ceiling, so a frame above it closes
- * 1009 before the decoder runs; the 64-byte slack window between it and `maxFrameLength` reaches
- * the decoder, whose own cap closes 1002.
+ * Binds the HTTP server and routes `upgrade` requests. `/ws` goes to a `ConnectionActor` once the
+ * socket admission grants it a slot, and answers 429 for a full address or 503 for a full server.
+ * `/admin` goes to the admin connection behind the bearer gate. An address past its budget of
+ * failed bearers is answered 429 before the bearer is compared, and a missing or wrong bearer
+ * 401. Anything else is answered 404. `maxPayload` is the wire frame ceiling, so a frame above it
+ * closes 1009 before the decoder runs; the 64-byte slack window between it and `maxFrameLength`
+ * reaches the decoder, whose own cap closes 1002.
  */
 export function startServer(options: ServerOptions): Promise<RunningServer> {
   return new Promise((resolve, reject) => {
@@ -90,17 +95,42 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       }
       if (path === '/ws') {
         const clientAddress = resolveClientAddress(request, options.trustProxy);
+        const reservation = options.socketAdmission.reserve(clientAddress);
+        if (reservation === 'addressFull') {
+          rejectUpgrade(socket, 429, 'Too Many Requests');
+          return;
+        }
+        if (reservation === 'serverFull') {
+          rejectUpgrade(socket, 503, 'Service Unavailable');
+          return;
+        }
+        // `ws` aborts a bad handshake without calling back; the slot is then freed with the socket.
+        // Once accepted, the actor holds it until the player logs in or its exit path has finished.
+        let accepted = false;
+        socket.once('close', () => {
+          if (!accepted) reservation.release();
+        });
         wss.handleUpgrade(request, socket, head, (ws) => {
-          track(ws, options.dependencies.logger, () => new ConnectionActor(options.dependencies, clientAddress).runConnection(socketFromWebSocket(ws)));
+          accepted = true;
+          track(ws, options.dependencies.logger, () =>
+            new ConnectionActor(options.dependencies, clientAddress, reservation).runConnection(socketFromWebSocket(ws)),
+          );
         });
         return;
       }
       if (path === '/admin') {
+        const clientAddress = resolveClientAddress(request, options.trustProxy);
+        const limiter = options.dependencies.attemptLimiter;
+        if (!limiter.admit('admin', clientAddress)) {
+          rejectUpgrade(socket, 429, 'Too Many Requests');
+          return;
+        }
         if (!timingSafeBearer(request.headers.authorization, options.adminToken)) {
           options.logger.warn({ reason: 'missing_or_bad_token' }, 'rejected /admin upgrade');
           rejectUpgrade(socket, 401, 'Unauthorized');
           return;
         }
+        limiter.refund('admin', clientAddress);
         wss.handleUpgrade(request, socket, head, (ws) => {
           track(ws, options.logger, () => runAdminConnection(ws, options.adminDependencies));
         });

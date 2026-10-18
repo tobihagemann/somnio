@@ -1,6 +1,7 @@
 import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
+import { DEFAULT_LOGIN_DEADLINE_MS } from '../../src/config.ts';
 import { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import type { Logger } from '../../src/logging.ts';
@@ -33,6 +34,9 @@ export interface StubDependencyOptions {
   worldRouter?: WorldRouter;
   /** Defaults to a disabled limiter, so a suite that never asks for the limit is never throttled. */
   attemptLimiter?: AttemptLimiter;
+  /** Defaults to a disabled limiter, like `attemptLimiter`. */
+  accountLimiter?: AttemptLimiter;
+  loginDeadlineMs?: number;
 }
 
 /**
@@ -54,7 +58,9 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     worldRouter,
     worldClock,
     attemptLimiter: options.attemptLimiter ?? new AttemptLimiter({ enabled: false, logger }),
+    accountLimiter: options.accountLimiter ?? new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: options.outboxHighWatermark ?? 1024,
+    loginDeadlineMs: options.loginDeadlineMs ?? DEFAULT_LOGIN_DEADLINE_MS,
     logger,
   };
 }

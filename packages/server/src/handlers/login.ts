@@ -1,6 +1,6 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { LoginMessage, LoginResult } from '@somnio/protocol';
-import { SESSION_POLICY, verifyAccountPassword } from '@somnio/data';
+import { SESSION_POLICY, postgresNameKey, verifyAccountPassword } from '@somnio/data';
 import type { Character } from '@somnio/core';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
@@ -9,23 +9,35 @@ import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import type { WorldRouter } from '../world/worldRouter.ts';
 
+/** Refused before either budget: no account holds one, and a NUL makes Postgres throw in the lookup. */
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
 /**
  * Login: look up the account, verify the password (paying the Argon2id cost for an unknown
- * account too, so the two failures are indistinguishable by timing), then the shared join. An
- * address past its budget of failed logins is answered `throttled` before the lookup.
+ * account too, so the two failures are indistinguishable by timing), then the shared join. A
+ * nickname with a control character is answered `badCredentials` before anything is counted. An address past its budget of failed logins, or a nickname past
+ * its account budget, is answered `throttled` before the lookup.
  */
 export async function handleLogin(message: LoginMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   if (
     utf8ByteLength(message.password) > SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes ||
-    utf8ByteLength(message.nickname) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes
+    utf8ByteLength(message.nickname) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes ||
+    CONTROL_CHARACTER.test(message.nickname)
   ) {
     sendLoginResult(outbox, 'badCredentials', logger);
     return;
   }
   const limiter = dependencies.attemptLimiter;
+  // The address first, so a throttled address cannot drain an account's budget.
   if (!limiter.admit('login', connection.clientAddress)) {
+    sendLoginResult(outbox, 'throttled', logger);
+    return;
+  }
+  // Keyed as `findByName` matches, so every spelling of one account draws on one budget.
+  const nicknameKey = postgresNameKey(message.nickname);
+  if (!dependencies.accountLimiter.admit('account', nicknameKey)) {
     sendLoginResult(outbox, 'throttled', logger);
     return;
   }
@@ -40,9 +52,10 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
       sendLoginResult(outbox, 'badCredentials', logger);
       return;
     }
-    // Only a verified login gets its attempt back. A lookup that throws keeps it spent, so no
-    // input a client can choose (a NUL, which Postgres refuses in a parameter) makes one free.
+    // Only a verified login gets its attempts back. A lookup that throws keeps them spent, so
+    // attempts are not free while the database is failing.
     limiter.refund('login', connection.clientAddress);
+    dependencies.accountLimiter.refund('account', nicknameKey);
     // Strictly request-gated: a client that never asked receives no `sessionToken` frame at all.
     await completeAuthenticatedJoin(account.id, connection, dependencies, message.requestSessionToken === true);
   } catch (error) {

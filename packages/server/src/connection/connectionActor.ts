@@ -28,6 +28,7 @@ import type { Logger } from '../logging.ts';
 import { persistPlayerCheckpoint } from '../world/checkpointWriter.ts';
 import type { ConnectionDependencies } from './dependencies.ts';
 import { ConnectionOutbox } from './outbox.ts';
+import type { SocketReservation } from './socketAdmission.ts';
 
 export type ConnectionState = { kind: 'awaitingLogin' } | { kind: 'attached'; entityId: string; spaceId: string; accountId: string };
 
@@ -41,6 +42,7 @@ const SOCKET_CLOSE_GRACE_MS = 1000;
 const SHUTDOWN_DRAIN_CAP_MS = 5000;
 export const CLOSE_POLICY_VIOLATION = 1008;
 export const FRAME_VALIDATION_FAILED = 'frame validation failed';
+export const LOGIN_TIMED_OUT = 'login timed out';
 
 /** The narrow socket surface the actor drives, so tests can hand in a recording double. */
 export interface ConnectionSocket {
@@ -104,11 +106,14 @@ export function socketFromWebSocket(ws: WebSocket): ConnectionSocket {
  */
 export class ConnectionActor {
   readonly outbox: ConnectionOutbox;
-  /** What the pre-login limit counts this connection's attempts against; absent, they are not counted. */
+  /** What the per-address budgets count this connection's attempts against; absent, those budgets count nothing. */
   readonly clientAddress: string | undefined;
   state: ConnectionState = { kind: 'awaitingLogin' };
   private readonly dependencies: ConnectionDependencies;
   private readonly logger: Logger;
+  /** The slot among sockets not yet logged in, given up once the player is in the world or the connection has ended. */
+  private readonly reservation: SocketReservation | undefined;
+  private loginDeadline: NodeJS.Timeout | undefined;
   private loopEnd: ((decision: CloseDecision | 'peerClosed') => void) | undefined;
   /** The drain running a handler right now; awaited before teardown so a close mid-login cannot outrun it. */
   private inflight: Promise<void> = Promise.resolve();
@@ -117,9 +122,10 @@ export class ConnectionActor {
   private markExited: () => void = () => {};
   private started = false;
 
-  constructor(dependencies: ConnectionDependencies, clientAddress?: string) {
+  constructor(dependencies: ConnectionDependencies, clientAddress?: string, reservation?: SocketReservation) {
     this.dependencies = dependencies;
     this.clientAddress = clientAddress;
+    this.reservation = reservation;
     this.logger = dependencies.logger;
     this.outbox = new ConnectionOutbox(dependencies.outboxHighWatermark);
     this.exited = new Promise((resolve) => {
@@ -133,6 +139,8 @@ export class ConnectionActor {
     try {
       await this.driveConnection(socket);
     } finally {
+      // Held until here, so a handler stuck past its socket's close still counts against the caps.
+      this.reservation?.release();
       this.markExited();
     }
   }
@@ -141,7 +149,10 @@ export class ConnectionActor {
     this.logger.info('connection opened');
     const writer = this.runWriter(socket);
     this.sendHello();
-    const ended = await this.runInboundLoop(socket);
+    const loop = this.runInboundLoop(socket);
+    this.loginDeadline = this.startLoginDeadline(socket);
+    const ended = await loop;
+    clearTimeout(this.loginDeadline);
     // A peer close resolves the loop while a handler may still be awaiting Postgres; a login that
     // completed after cleanup would attach a phantom player nothing can detach.
     await this.inflight;
@@ -215,6 +226,20 @@ export class ConnectionActor {
       }
     }
     if (this.outbox.overflowed) void socket.close(CLOSE_POLICY_VIOLATION, 'outbox overflow');
+  }
+
+  /**
+   * Closes a socket still not logged in once the deadline passes, frames or not. The transport is
+   * closed directly, as on an outbox overflow, so the close does not wait behind a handler that
+   * is still running. Ending the loop then runs the exit path, which logs the reason.
+   */
+  private startLoginDeadline(socket: ConnectionSocket): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      void socket.close(CLOSE_POLICY_VIOLATION, LOGIN_TIMED_OUT);
+      this.loopEnd?.({ kind: 'close', code: CLOSE_POLICY_VIOLATION, reason: LOGIN_TIMED_OUT });
+    }, this.dependencies.loginDeadlineMs);
+    timer.unref();
+    return timer;
   }
 
   /** An admin kick releases the loop; teardown belongs to `runConnection`'s exit path. */
@@ -396,8 +421,11 @@ export class ConnectionActor {
     }
   }
 
+  /** A later fall back to `awaitingLogin` restarts no deadline: it happens only on the way out. */
   markAttached(entityId: string, spaceId: string, accountId: string): void {
     this.state = { kind: 'attached', entityId, spaceId, accountId };
+    clearTimeout(this.loginDeadline);
+    this.reservation?.release();
   }
 
   /** After a transfer the space the player arrived in must replace the one they left. */

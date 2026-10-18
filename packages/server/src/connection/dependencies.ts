@@ -21,7 +21,12 @@ export interface ConnectionDependencies {
   sessions: SessionRepository;
   worldRouter: WorldRouter;
   worldClock: WorldClockService;
+  /** The pre-login budgets per client address: logins, registrations, and `/admin` bearers. */
   attemptLimiter: AttemptLimiter;
+  /** The failed logins per account, keyed by the folded nickname, whatever address they come from. */
+  accountLimiter: AttemptLimiter;
   outboxHighWatermark: number;
+  /** How long a socket may stay without logging in before the server closes it. */
+  loginDeadlineMs: number;
   logger: Logger;
 }

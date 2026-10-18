@@ -1,11 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import type { Stats } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import type { Door } from '@somnio/protocol';
-import { TRIALS, WorldError, buildWorld, parseModelRegistry, readSectorFile, resolveDoor, sectorPointInSpace } from '@somnio/core';
+import { SOMNIO_CONSTANTS, TRIALS, WorldError, buildWorld, parseModelRegistry, readSectorFile, resolveDoor, sectorPointInSpace } from '@somnio/core';
 import type { Character, ModelRegistry, ResolvedDoor, Sector, SectorSpawn, World } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 
-export type SectorCacheErrorKind = 'unreadable' | 'parseFailed' | 'noSectorsLoaded';
+export type SectorCacheErrorKind = 'unreadable' | 'tooLarge' | 'parseFailed' | 'noSectorsLoaded';
 
 export class SectorCacheError extends Error {
   readonly kind: SectorCacheErrorKind;
@@ -24,7 +25,8 @@ const EXTENSION = '.somnio-sector';
 /**
  * Reads every `.somnio-sector` file in `directory` (sorted, other entries skipped) and keys each
  * by its extension-stripped filename — the filename-as-sector-id convention door targets rely
- * on. Throws on the first parse failure so startup fails closed.
+ * on. Throws on the first file that is unreadable, too large, or fails to parse, so startup fails
+ * closed.
  */
 export function loadSectorCache(directory: string): Map<string, Sector> {
   let entries: string[];
@@ -38,6 +40,18 @@ export function loadSectorCache(directory: string): Map<string, Sector> {
     if (entry.startsWith('.') || extname(entry) !== EXTENSION) continue;
     const name = basename(entry, EXTENSION);
     const path = join(directory, entry);
+    let stats: Stats;
+    try {
+      stats = statSync(path);
+    } catch {
+      throw new SectorCacheError('unreadable', path, `sector file is unreadable: ${path}`);
+    }
+    // Checked before the read, because the reader's own cap runs on text already in memory. Only a
+    // regular file's size bounds its read: a FIFO or a device reports 0 and reads without end.
+    if (!stats.isFile()) throw new SectorCacheError('unreadable', path, `sector file is not a regular file: ${path}`);
+    if (stats.size > SOMNIO_CONSTANTS.maxSectorFileBytes) {
+      throw new SectorCacheError('tooLarge', path, `sector file is ${stats.size} bytes, over the ${SOMNIO_CONSTANTS.maxSectorFileBytes}-byte cap: ${path}`);
+    }
     let text: string;
     try {
       text = readFileSync(path, 'utf8');

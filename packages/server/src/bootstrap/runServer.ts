@@ -18,6 +18,7 @@ import type { SomnioDatabase } from '@somnio/data';
 import { resolveServerConfiguration } from '../config.ts';
 import { AttemptLimiter } from '../connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
+import { SocketAdmission } from '../connection/socketAdmission.ts';
 import type { AdminDependencies } from '../handlers/adminDispatcher.ts';
 import { createApp } from '../http/app.ts';
 import { startServer } from '../http/server.ts';
@@ -112,6 +113,8 @@ export async function bootServer(env: Record<string, string | undefined>, option
   }
 
   const preloginLogger = logging.gameplayLogger('prelogin');
+  const connectionLogger = logging.gameplayLogger('connection');
+  const preloginLimitOn = configuration.preloginLimit !== 'off';
   const dependencies: ConnectionDependencies = {
     accounts,
     characters,
@@ -121,9 +124,16 @@ export async function bootServer(env: Record<string, string | undefined>, option
     sessions,
     worldRouter,
     worldClock,
-    attemptLimiter: new AttemptLimiter({ enabled: configuration.preloginLimit !== 'off', logger: preloginLogger }),
+    // An `/admin` attempt costs no hash, so new addresses can arrive fast enough to need a cap.
+    attemptLimiter: new AttemptLimiter({ enabled: preloginLimitOn, logger: preloginLogger, maxKeys: configuration.addressLimitKeys }),
+    // Always on: it counts nicknames, not addresses. Each new key waits on an Argon2 hash or,
+    // with control characters refused, a database error. During an outage those return fast, so
+    // `maxKeys` caps the table. An entry with one attempt spent is evicted within about six
+    // minutes: the one-minute refill plus the five-minute pass.
+    accountLimiter: new AttemptLimiter({ enabled: true, logger: preloginLogger, logKey: false, maxKeys: configuration.accountLimitKeys }),
     outboxHighWatermark: configuration.outboxHighWatermark,
-    logger: logging.gameplayLogger('connection'),
+    loginDeadlineMs: configuration.loginDeadlineMs,
+    logger: connectionLogger,
   };
   const adminDependencies: AdminDependencies = {
     worldRouter,
@@ -142,6 +152,12 @@ export async function bootServer(env: Record<string, string | undefined>, option
       adminToken: configuration.adminToken,
       trustProxy: configuration.preloginLimit === 'proxy',
       dependencies,
+      socketAdmission: new SocketAdmission({
+        perAddressEnabled: preloginLimitOn,
+        perAddress: configuration.preloginSocketsPerAddress,
+        total: configuration.preloginSockets,
+        logger: preloginLogger,
+      }),
       adminDependencies,
       logger: logging.adminLogger('connection'),
     });
@@ -164,7 +180,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const checkpointRun = checkpoint.run(checkpointControl.signal);
   // Through the gameplay logger, so the record is in the gameplay log an operator reads over `/admin`.
   if (configuration.preloginLimit === 'off' && !configuration.devDefaults) {
-    preloginLogger.error('the pre-login limit is off until SOMNIO_TRUST_PROXY is set');
+    preloginLogger.error('the per-address pre-login limits are off until SOMNIO_TRUST_PROXY is set');
   }
   lifecycle.info({ port: server.port, version: SERVER_VERSION, prelogin_limit: configuration.preloginLimit }, 'SomnioServer ready');
 

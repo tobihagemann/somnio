@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AttemptLimiter } from '../src/connection/attemptLimiter.ts';
+import type { ATTEMPT_LIMITS, AttemptLimiterOptions } from '../src/connection/attemptLimiter.ts';
 import { recordingLogger } from './support/logger.ts';
 
 const ADDRESS = '203.0.113.7';
@@ -7,15 +8,15 @@ const OTHER = '203.0.113.8';
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 
-function makeLimiter(enabled = true) {
+function makeLimiter(enabled = true, options: Pick<AttemptLimiterOptions, 'logKey' | 'maxKeys'> = {}) {
   const clock = { ms: 0 };
   const { logger, records } = recordingLogger();
-  const limiter = new AttemptLimiter({ enabled, logger, now: () => clock.ms });
+  const limiter = new AttemptLimiter({ enabled, logger, now: () => clock.ms, ...options });
   return { limiter, clock, records };
 }
 
-function admits(limiter: AttemptLimiter, kind: 'login' | 'registration', address: string, count: number): boolean[] {
-  return Array.from({ length: count }, () => limiter.admit(kind, address));
+function admits(limiter: AttemptLimiter, kind: keyof typeof ATTEMPT_LIMITS, key: string, count: number): boolean[] {
+  return Array.from({ length: count }, () => limiter.admit(kind, key));
 }
 
 const TEN_ADMITTED = Array<boolean>(10).fill(true);
@@ -35,6 +36,11 @@ describe('AttemptLimiter budgets', () => {
     expect(limiter.admit('registration', ADDRESS)).toBe(false);
     clock.ms = 300 * SECOND;
     expect(admits(limiter, 'registration', ADDRESS, 2)).toEqual([true, false]);
+  });
+
+  it('admits ten attempts at one account and refuses the eleventh', () => {
+    const { limiter } = makeLimiter();
+    expect(admits(limiter, 'account', 'alice', 11)).toEqual([...TEN_ADMITTED, false]);
   });
 
   it('a refund restores one attempt', () => {
@@ -125,6 +131,14 @@ describe('AttemptLimiter eviction', () => {
     expect(admits(limiter, 'login', ADDRESS, 2)).toEqual([true, false]);
   });
 
+  it('drops an entry once the one budget it spent has refilled', () => {
+    const { limiter, clock } = makeLimiter();
+    limiter.admit('admin', ADDRESS);
+    clock.ms = 5 * MINUTE;
+    limiter.admit('login', OTHER);
+    expect(limiter.size).toBe(1);
+  });
+
   it('a refund for an address with no entry creates none', () => {
     const { limiter } = makeLimiter();
     limiter.refund('login', ADDRESS);
@@ -148,6 +162,14 @@ describe('AttemptLimiter throttle records', () => {
     clock.ms = 2 * MINUTE;
     admits(limiter, 'login', ADDRESS, 2);
     expect(throttleRecords(records).map((record) => record['suppressed_since_last'])).toEqual([0, 2, 0]);
+  });
+
+  it('names no key when told not to', () => {
+    const { limiter, records } = makeLimiter(true, { logKey: false });
+    admits(limiter, 'account', 'alice-typed-this', 11);
+    expect(throttleRecords(records)).toHaveLength(1);
+    expect(throttleRecords(records)[0]).not.toHaveProperty('address');
+    expect(JSON.stringify(records)).not.toContain('alice-typed-this');
   });
 
   it('keeps an address quiet for the interval across both budgets', () => {
@@ -174,5 +196,44 @@ describe('AttemptLimiter throttle records', () => {
     clock.ms = 10 * MINUTE;
     limiter.admit('login', OTHER);
     expect(limiter.size).toBe(1);
+  });
+});
+
+describe('AttemptLimiter key cap', () => {
+  function fullRecords(records: Record<string, unknown>[]) {
+    return records.filter((record) => record['msg'] === 'attempt table full');
+  }
+
+  it('refuses a new key while every held key has spent budget', () => {
+    const { limiter } = makeLimiter(true, { maxKeys: 2 });
+    limiter.admit('login', ADDRESS);
+    limiter.admit('login', OTHER);
+    expect(limiter.admit('login', '203.0.113.9')).toBe(false);
+    expect(limiter.size).toBe(2);
+    expect(limiter.admit('login', ADDRESS)).toBe(true);
+  });
+
+  it('admits a new key once an eviction pass has dropped a refilled one', () => {
+    const { limiter, clock } = makeLimiter(true, { maxKeys: 2 });
+    limiter.admit('login', ADDRESS);
+    clock.ms = 4 * MINUTE + 30 * SECOND;
+    limiter.admit('login', OTHER);
+    clock.ms = 5 * MINUTE;
+    // `ADDRESS` refilled long ago; `OTHER` is thirty seconds into its refill.
+    expect(limiter.admit('login', '203.0.113.9')).toBe(true);
+    expect(limiter.size).toBe(2);
+  });
+
+  it('logs a full table at most once a minute and counts the refusals in between', () => {
+    const { limiter, clock, records } = makeLimiter(true, { maxKeys: 2 });
+    // No eviction pass runs before five minutes, so both keys stay held below.
+    admits(limiter, 'login', ADDRESS, 10);
+    admits(limiter, 'login', OTHER, 10);
+    for (let key = 0; key < 20; key += 1) limiter.admit('login', `198.51.100.${key}`);
+    expect(fullRecords(records)).toMatchObject([{ level: 40, budget: 'login', suppressed_since_last: 0 }]);
+
+    clock.ms = 61 * SECOND;
+    limiter.admit('login', '198.51.100.20');
+    expect(fullRecords(records).map((record) => record['suppressed_since_last'])).toEqual([0, 19]);
   });
 });

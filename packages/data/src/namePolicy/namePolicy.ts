@@ -29,12 +29,31 @@ export const SKELETON_ALGORITHM_VERSION = 1;
 export type NamePolicyRejection = 'disallowedCharacter' | 'mixedScript' | 'emptyAfterNormalization';
 
 /**
- * The TR39 skeleton of `name`, base-normalized to match `name_normalized` so the two uniqueness
- * layers agree: NFKC + lowercase, then NFD, then a single confusable-prototype replacement pass (a
- * source scalar may map to a multi-scalar prototype), then NFD again.
+ * The value `LOWER(NORMALIZE(name, NFKC))` gives every `name_normalized` column, so two names
+ * share it exactly when they name one row. Under the database's libc collation Postgres lowercases
+ * each character on its own, while JS lowercasing is full and context-sensitive. So `İ` becomes
+ * `i` there but `i` + U+0307 in JS, and a word-final `Σ` becomes `σ` there but `ς` in JS. Both are
+ * mapped first. Folding more, such as dropping every U+0307, would merge distinct accounts.
+ */
+export function postgresNameKey(name: string): string {
+  return name.normalize('NFKC').replaceAll('İ', 'i').replaceAll('Σ', 'σ').toLowerCase();
+}
+
+/**
+ * The base the skeleton and the registration check share. It differs from `postgresNameKey` on
+ * `İ` and a word-final `Σ`. The skeleton builds on it, so a change to it is a
+ * `SKELETON_ALGORITHM_VERSION` bump.
+ */
+function normalizedName(name: string): string {
+  return name.normalize('NFKC').toLowerCase();
+}
+
+/**
+ * The TR39 skeleton of `name`: `normalizedName`, then NFD, then a single confusable-prototype
+ * replacement pass (a source scalar may map to a multi-scalar prototype), then NFD again.
  */
 export function confusableSkeleton(name: string): string {
-  const base = name.normalize('NFKC').toLowerCase();
+  const base = normalizedName(name);
   const mapped: number[] = [];
   for (const character of base.normalize('NFD')) {
     const scalar = character.codePointAt(0)!;
@@ -51,7 +70,7 @@ export function confusableSkeleton(name: string): string {
  * resolve first.
  */
 export function validateForRegistration(name: string): NamePolicyRejection | undefined {
-  const scalars = [...name.normalize('NFKC').toLowerCase()].map((character) => character.codePointAt(0)!);
+  const scalars = [...normalizedName(name)].map((character) => character.codePointAt(0)!);
   // Require a visible base character (letter or digit), not merely a non-empty string: a name of
   // only spaces, hyphens, underscores, or combining marks would otherwise pass and yield a blank
   // or parasitic display name usable for impersonation.
