@@ -183,6 +183,10 @@
     "en": "© Copyright 2026 Tobias Hagemann",
     "de": "© Copyright 2026 Tobias Hagemann"
   },
+  "Could not log out other browsers. Try again.": {
+    "en": "Could not log out other browsers. Try again.",
+    "de": "Andere Browser konnten nicht abgemeldet werden. Versuche es erneut."
+  },
   "Drive off %@ nightmares.": {
     "en": "Drive off %@ nightmares.",
     "de": "Vertreibe %@ Albträume."
@@ -230,6 +234,10 @@
   "Error %@ occurred.": {
     "en": "Error %@ occurred.",
     "de": "Der Fehler %@ ist aufgetreten!"
+  },
+  "Every other browser that remembers your password will have to log in again.": {
+    "en": "Every other browser that remembers your password will have to log in again.",
+    "de": "Jeder andere Browser, der sich dein Passwort merkt, muss sich erneut anmelden."
   },
   "Falling starts the count over.": {
     "en": "Falling starts the count over.",
@@ -315,6 +323,22 @@
     "en": "Log In",
     "de": "Anmelden"
   },
+  "Log Out Other Browsers": {
+    "en": "Log Out Other Browsers",
+    "de": "Andere Browser abmelden"
+  },
+  "Log Them Out": {
+    "en": "Log Them Out",
+    "de": "Abmelden"
+  },
+  "Logged out %@ other browsers.": {
+    "en": "Logged out %@ other browsers.",
+    "de": "%@ andere Browser abgemeldet."
+  },
+  "Logged out one other browser.": {
+    "en": "Logged out one other browser.",
+    "de": "Einen anderen Browser abgemeldet."
+  },
   "Master of the Heiler": {
     "en": "Master of the Heiler",
     "de": "Meisterin der Heiler"
@@ -350,6 +374,10 @@
   "Nickname:": {
     "en": "Nickname:",
     "de": "Nickname:"
+  },
+  "No other browser remembers your password.": {
+    "en": "No other browser remembers your password.",
+    "de": "Kein anderer Browser merkt sich dein Passwort."
   },
   "No role yet": {
     "en": "No role yet",

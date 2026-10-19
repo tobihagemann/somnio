@@ -144,7 +144,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 11
+      "protocolVersion": 12
     },
     "tag": "hello"
   },
@@ -288,6 +288,19 @@
     },
     "tag": "moves"
   },
+  "otherSessions": {
+    "payload": {
+      "count": 2
+    },
+    "tag": "otherSessions"
+  },
+  "otherSessionsRevoked": {
+    "payload": {
+      "count": 2,
+      "revoked": true
+    },
+    "tag": "otherSessionsRevoked"
+  },
   "raising": {
     "payload": {
       "healerIds": [
@@ -322,6 +335,10 @@
       "result": "nameNotAllowed"
     },
     "tag": "registerResult"
+  },
+  "revokeOtherSessions": {
+    "payload": {},
+    "tag": "revokeOtherSessions"
   },
   "revokeSession": {
     "payload": {

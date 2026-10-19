@@ -25,6 +25,8 @@ import {
   decodeMendMessage,
   decodeMoveMessage,
   decodeMovesMessage,
+  decodeOtherSessionsMessage,
+  decodeOtherSessionsRevokedMessage,
   decodeRaisingMessage,
   decodeRedeemSessionMessage,
   decodeRegisterMessage,
@@ -77,6 +79,7 @@ const PAYLOAD_DECODERS: Record<SomnioMessageTag, PayloadDecoder> = {
   useItem: decodeUseItemMessage,
   redeemSession: decodeRedeemSessionMessage,
   revokeSession: decodeRevokeSessionMessage,
+  revokeOtherSessions: decodeEmptyMessage,
   hello: decodeHelloMessage,
   loginResult: decodeLoginResultMessage,
   registerResult: decodeRegisterResultMessage,
@@ -98,6 +101,8 @@ const PAYLOAD_DECODERS: Record<SomnioMessageTag, PayloadDecoder> = {
   adminSay: decodeAdminSayMessage,
   sessionToken: decodeSessionTokenMessage,
   sessionRevoked: decodeSessionRevokedMessage,
+  otherSessions: decodeOtherSessionsMessage,
+  otherSessionsRevoked: decodeOtherSessionsRevokedMessage,
 };
 
 /**

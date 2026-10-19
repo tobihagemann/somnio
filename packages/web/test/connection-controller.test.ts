@@ -459,6 +459,80 @@ describe('token failure and revocation', () => {
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
   });
 
+  it('sends revokeOtherSessions on logOutOtherBrowsers while attached', () => {
+    const rig = makeRig();
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.controller.logOutOtherBrowsers();
+    expect(rig.sentTags()).not.toContain('revokeOtherSessions');
+
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.controller.logOutOtherBrowsers();
+    expect(lastSentEnvelope(rig)).toEqual({ tag: 'revokeOtherSessions', payload: {} });
+  });
+
+  /** Only the other browsers' sessions ended, so unlike after `sessionRevoked` this browser keeps its stored token and stays in the world. */
+  it('reports otherSessionsRevoked in chat and keeps the session', () => {
+    const storage = new MemoryStorage();
+    const rig = makeRig({ storage });
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame());
+    rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 100 } });
+    const lines = rig.controller.chatHistory.length;
+
+    rig.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 2 } });
+
+    expect(rig.controller.chatHistory.slice(lines)).toEqual([{ kind: 'loggedOutOtherBrowsers', count: 2 }]);
+    expect(rig.controller.sessionStore.load()?.token).toBe('tok');
+    expect(rig.controller.presentedOverlay).toBeUndefined();
+    expect(rig.controller.inWorld).toBe(true);
+  });
+
+  /** Nothing can add to the count while attached, so only a revoke or the end of the session changes it. */
+  it('keeps the count of other sessions through a door and drops it with the session', () => {
+    const rig = makeRig();
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver({ tag: 'otherSessions', payload: { count: 2 } });
+    rig.deliver(enterSpaceFrame('EdariaInn'));
+    expect(rig.controller.otherSessionCount).toBe(2);
+
+    rig.socket().deliverClose();
+    expect(rig.controller.otherSessionCount).toBe(0);
+  });
+
+  it('keeps the count when the revoke fails', () => {
+    const rig = makeRig();
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver({ tag: 'otherSessions', payload: { count: 2 } });
+    rig.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: false, count: 0 } });
+    expect(rig.controller.otherSessionCount).toBe(2);
+  });
+
+  it('reports a failed otherSessionsRevoked as its own chat line', () => {
+    const rig = makeRig();
+    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: false, count: 0 } });
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'logOutOtherBrowsersFailed' });
+  });
+
   it('drops a locally expired token rather than presenting it', () => {
     const storage = new MemoryStorage();
     storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'old', expiresAt: Date.now() - 1000 }));

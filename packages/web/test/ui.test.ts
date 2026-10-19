@@ -44,6 +44,7 @@ function overlayCallbacks(): ConstructorParameters<typeof Overlays>[0] {
     onDismissOverlay: () => {},
     onCancelRegistration: () => {},
     onLeaveGame: () => {},
+    onLogOutOtherBrowsers: () => {},
     onRetryConnection: () => {},
     onToggleFullscreen: () => {},
     appVersion: '1.2.3',
@@ -1412,6 +1413,101 @@ describe('leaving the game clears every credential surface', () => {
     // A peer close with nothing user-initiated behind it — a server restart is enough.
     rig.socket().deliverClose();
     expectCleared(rig);
+  });
+});
+
+describe("the game menu's Log Out Other Browsers", () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    setLocale('en');
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+  });
+
+  /** A login answered up to the join, with the player's own body placed only when `placed`, and `others` other browsers remembered. */
+  function joined(placed: boolean, others = 1) {
+    const { factory, latest } = fakeSocketFactory();
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    shell.controller.beginSession({ kind: 'login', credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: false } });
+    const socket = latest();
+    const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
+    socket.open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    deliver(enterSpaceFrame());
+    if (placed) deliver(entityFrame());
+    deliver({ tag: 'otherSessions', payload: { count: others } });
+    const escape = (): void => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    const presented = (): Element => container.querySelector('.overlay-scrim:not(.hidden)')!;
+    const visible = (): string[] =>
+      [...presented().querySelectorAll('button')].filter((node) => node.closest('.hidden') === null).map((node) => node.textContent ?? '');
+    const press = (label: string): void => [...presented().querySelectorAll('button')].find((node) => node.textContent === label)!.click();
+    return { shell, socket, deliver, escape, visible, press, presented };
+  }
+
+  it('is not offered while the player is not yet in the world', () => {
+    const g = joined(false);
+    g.escape();
+    expect(g.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+    expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'About Somnio']);
+  });
+
+  it('is not offered when no other browser remembers the account', () => {
+    const g = joined(true, 0);
+    g.escape();
+    expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'About Somnio']);
+  });
+
+  /** The count is the join's last frame, so a menu opened as the world arrives is up before it lands. */
+  it('appears in a menu already open when the count arrives', () => {
+    const g = joined(false, 0);
+    g.escape();
+    g.deliver(entityFrame());
+    expect(g.visible()).not.toContain('Log Out Other Browsers');
+    g.deliver({ tag: 'otherSessions', payload: { count: 1 } });
+    expect(g.visible()).toContain('Log Out Other Browsers');
+  });
+
+  it('is withdrawn once the other browsers are logged out', () => {
+    const g = joined(true);
+    g.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
+    g.escape();
+    expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'About Somnio']);
+  });
+
+  it('asks in a dialog of its own, and Cancel goes back to the menu', () => {
+    const g = joined(true);
+    g.escape();
+    expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'Log Out Other Browsers', 'About Somnio']);
+    g.press('Log Out Other Browsers');
+    expect(g.shell.controller.presentedOverlay?.kind).toBe('logOutOtherBrowsers');
+    expect(g.visible()).toEqual(['Log Them Out', 'Cancel']);
+    expect(g.presented().textContent).toContain('Every other browser that remembers your password will have to log in again.');
+    g.press('Cancel');
+    expect(g.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  it('goes back to the menu on Escape', () => {
+    const g = joined(true);
+    g.escape();
+    g.press('Log Out Other Browsers');
+    g.escape();
+    expect(g.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  it('sends revokeOtherSessions and closes the menu on confirm', () => {
+    const g = joined(true);
+    g.escape();
+    g.socket.sent.length = 0;
+    g.press('Log Out Other Browsers');
+    g.press('Log Them Out');
+    expect(g.socket.sent.map((text) => decodeSomnioMessage(text))).toEqual([{ tag: 'revokeOtherSessions', payload: {} }]);
+    expect(g.shell.controller.presentedOverlay).toBeUndefined();
   });
 });
 

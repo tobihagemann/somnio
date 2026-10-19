@@ -157,6 +157,24 @@ export class StubSessionRepository implements SessionRepository {
     return Promise.resolve(true);
   }
 
+  revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+    const now = Date.now();
+    let count = 0;
+    for (const [token, entry] of this.issued) {
+      if (entry.accountId === accountId && token !== keepToken) {
+        this.issued.delete(token);
+        if (entry.expiresAt.getTime() > now) count += 1;
+      }
+    }
+    return Promise.resolve(count);
+  }
+
+  countAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+    const now = Date.now();
+    const others = [...this.issued].filter(([token, entry]) => entry.accountId === accountId && token !== keepToken && entry.expiresAt.getTime() > now);
+    return Promise.resolve(others.length);
+  }
+
   deleteExpired(asOf: Date): Promise<number> {
     let count = 0;
     for (const [token, entry] of this.issued) {
@@ -216,6 +234,8 @@ export const failingSessionRepository: SessionRepository = {
   issue: () => Promise.reject(new RepositoryFailure()),
   redeem: () => Promise.reject(new RepositoryFailure()),
   revoke: () => Promise.reject(new RepositoryFailure()),
+  revokeAllExcept: () => Promise.reject(new RepositoryFailure()),
+  countAllExcept: () => Promise.reject(new RepositoryFailure()),
   deleteExpired: () => Promise.reject(new RepositoryFailure()),
 };
 

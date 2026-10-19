@@ -6,7 +6,7 @@ import { t } from '@/i18n';
 import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom';
 
 /**
- * The six `OverlayKind` cases. A browser client updates by reloading, so the version-skew overlay
+ * The `OverlayKind` cases. A browser client updates by reloading, so the version-skew overlay
  * offers a retry rather than an update action.
  *
  * Each overlay is built once and shown or hidden, so focus and typed-but-unsubmitted text survive a
@@ -23,6 +23,7 @@ export interface OverlayCallbacks {
   /** Back out of the registration form to login, dropping its inline error. Bound to Esc and Cancel alike. */
   onCancelRegistration: () => void;
   onLeaveGame: () => void;
+  onLogOutOtherBrowsers: () => void;
   onRetryConnection: () => void;
   onToggleFullscreen: () => void;
   appVersion: string;
@@ -60,6 +61,7 @@ export class Overlays {
     error: HTMLElement;
   };
   private readonly skewMessage: HTMLElement;
+  private readonly logOutOtherBrowsers: HTMLButtonElement;
   private presentedKind: OverlayKind['kind'] | undefined;
 
   constructor(callbacks: OverlayCallbacks) {
@@ -170,16 +172,28 @@ export class Overlays {
     });
 
     // Game menu, options, about, version skew
-    // A vertical stack of full-width buttons in `GameMenuOverlayView`'s order, not a row of
-    // actions: the menu is a 280pt column, and laying it out as a form footer both reorders the
-    // entries and squeezes each label until it wraps or clips.
+    this.logOutOtherBrowsers = button(t('Log Out Other Browsers'), () => this.callbacks.onShowOverlay({ kind: 'logOutOtherBrowsers' }));
+    setHidden(this.logOutOtherBrowsers, true);
+    // A vertical stack of full-width buttons, not a row of actions: the menu is a 280pt column, and
+    // laying it out as a form footer both reorders the entries and squeezes each label until it wraps or clips.
     const gameMenu = element('div', {
       className: 'menu-actions',
       children: [
         button(t('Resume'), () => this.callbacks.onResume()),
         button(t('Options'), () => this.callbacks.onShowOverlay({ kind: 'options' })),
         button(t('Leave Game'), () => this.callbacks.onLeaveGame()),
+        this.logOutOtherBrowsers,
         button(t('About Somnio'), () => this.callbacks.onShowOverlay({ kind: 'about' })),
+      ],
+    });
+
+    const logOutOtherBrowsers = element('div', {
+      children: [
+        element('p', { className: 'service-text', text: t('Every other browser that remembers your password will have to log in again.') }),
+        element('div', {
+          className: 'menu-actions',
+          children: [button(t('Log Them Out'), () => this.callbacks.onLogOutOtherBrowsers()), button(t('Cancel'), () => this.callbacks.onDismissOverlay())],
+        }),
       ],
     });
 
@@ -237,6 +251,7 @@ export class Overlays {
       login: scrim(card(t('Somnio'), [loginForm], 'default', 'accessibleOnly')),
       registration: scrim(card(t('Sign Up'), [registrationForm], 'wide', 'accessibleOnly')),
       gameMenu: scrim(card(t('Somnio'), [gameMenu], 'menu')),
+      logOutOtherBrowsers: scrim(card(t('Log Out Other Browsers'), [logOutOtherBrowsers], 'menu')),
       options: scrim(card(t('Options'), [options], 'menu')),
       about: scrim(card(t('About Somnio'), [about], 'default', 'accessibleOnly')),
       updateRequired: scrim(card(t('Update required'), [updateRequired])),
@@ -262,6 +277,10 @@ export class Overlays {
     if (!entered) return;
     if (overlay?.kind === 'login') this.loginNickname.focus();
     if (overlay?.kind === 'registration') this.registration.nickname.focus();
+  }
+
+  setLogOutOtherBrowsersShown(shown: boolean): void {
+    setHidden(this.logOutOtherBrowsers, !shown);
   }
 
   /**

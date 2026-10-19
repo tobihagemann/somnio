@@ -66,14 +66,16 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
 
 /**
  * The join shared by a password login and a redeemed session: router registration, character and
- * inventory lookup, `loginResult(ok)`, attach, then the request-gated token. The account is
- * registered before anything is read and released on every path that does not attach.
+ * inventory lookup, `loginResult(ok)`, attach, the request-gated token, then the count of other
+ * sessions. The account is registered before anything is read and released on every path that does
+ * not attach. `redeemedToken` is the token a resume presented.
  */
 export async function completeAuthenticatedJoin(
   accountId: string,
   connection: ConnectionActor,
   dependencies: ConnectionDependencies,
   issueSessionToken: boolean,
+  redeemedToken?: string,
 ): Promise<void> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
@@ -108,9 +110,12 @@ export async function completeAuthenticatedJoin(
       dependencies.worldRouter.space(spawn.space)!.attach(resolvedCharacter, [...inventory], outbox, dependencies.worldClock.currentWorldSeconds());
       connection.markAttached(character.id, spawn.space, accountId);
       logger.info({ name: character.name, space: spawn.space }, 'player joined');
+      connection.sessionToken = redeemedToken;
       // Issued only once the player is in the world: a token minted before a join that then
       // failed would outlive it for 30 days with nothing able to revoke it.
-      if (issueSessionToken) await issueToken(accountId, outbox, dependencies);
+      if (issueSessionToken) await issueToken(accountId, connection, dependencies);
+      // After the issue, so the count spares the row this browser is about to hold.
+      await sendOtherSessions(accountId, connection, dependencies);
     } catch (error) {
       logger.error({ error: String(error) }, 'failed to attach to space');
       dependencies.worldRouter.unregister(accountId);
@@ -126,13 +131,24 @@ export async function completeAuthenticatedJoin(
 }
 
 /** A failure here is logged and swallowed: the player is already authenticated. */
-async function issueToken(accountId: string, outbox: ConnectionOutbox, dependencies: ConnectionDependencies): Promise<void> {
+async function issueToken(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   try {
     const session = await dependencies.sessions.issue(accountId, SESSION_POLICY.defaultLifetimeSeconds);
+    connection.sessionToken = session.token;
     const remaining = Math.max(0, Math.round((session.expiresAt.getTime() - Date.now()) / 1000));
-    outbox.sendEncoded({ tag: 'sessionToken', payload: { token: session.token, expiresInSeconds: remaining } }, dependencies.logger);
+    connection.outbox.sendEncoded({ tag: 'sessionToken', payload: { token: session.token, expiresInSeconds: remaining } }, dependencies.logger);
   } catch (error) {
     dependencies.logger.warn({ error: String(error) }, 'session token issuance failed');
+  }
+}
+
+/** A failure here is logged and swallowed like an issuance's. The client then offers no Log Out Other Browsers until the next login or resume. */
+async function sendOtherSessions(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
+  try {
+    const count = await dependencies.sessions.countAllExcept(accountId, connection.sessionToken);
+    connection.outbox.sendEncoded({ tag: 'otherSessions', payload: { count } }, dependencies.logger);
+  } catch (error) {
+    dependencies.logger.warn({ error: String(error) }, 'other sessions count failed');
   }
 }
 

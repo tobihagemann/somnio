@@ -240,6 +240,10 @@ describe('renderChatLine', () => {
     { kind: 'raiseBrokenOther', targetName: 'Bren' },
     { kind: 'wokeWeakened' },
     { kind: 'credentialSaveFailed' },
+    { kind: 'loggedOutOtherBrowsers', count: 0 },
+    { kind: 'loggedOutOtherBrowsers', count: 1 },
+    { kind: 'loggedOutOtherBrowsers', count: 2 },
+    { kind: 'logOutOtherBrowsersFailed' },
     { kind: 'sessionExpired' },
     { kind: 'reconnecting' },
   ];
@@ -257,6 +261,14 @@ describe('renderChatLine', () => {
   it('tells a throttled player to wait, in both locales', () => {
     expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'en')).toBe('Too many attempts. Wait a little before trying again.');
     expect(renderChatLine({ kind: 'throttled' }, catalogTables, 'de')).toBe('Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut.');
+  });
+
+  it('says how many other browsers were logged out, none, or that it failed', () => {
+    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 0 }, catalogTables, 'en')).toBe('No other browser remembers your password.');
+    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 1 }, catalogTables, 'en')).toBe('Logged out one other browser.');
+    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 3 }, catalogTables, 'en')).toBe('Logged out 3 other browsers.');
+    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 3 }, catalogTables, 'de')).toBe('3 andere Browser abgemeldet.');
+    expect(renderChatLine({ kind: 'logOutOtherBrowsersFailed' }, catalogTables, 'en')).toBe('Could not log out other browsers. Try again.');
   });
 
   /** Two placeholders and two names looked up on the way: swapped or left unlocalized, each still renders something. */

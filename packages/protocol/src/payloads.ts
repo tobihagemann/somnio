@@ -358,6 +358,17 @@ export interface SessionRevokedMessage {
   revoked: boolean;
 }
 
+/** Sent once per login or resume: how many other browsers could still resume this account. */
+export interface OtherSessionsMessage {
+  count: number;
+}
+
+/** Answers `revokeOtherSessions`: whether the delete ran, and how many of the account's other sessions it ended. */
+export interface OtherSessionsRevokedMessage {
+  revoked: boolean;
+  count: number;
+}
+
 export function decodeLoginMessage(container: Record<string, unknown>, path: string): LoginMessage {
   return {
     nickname: requireString(container, 'nickname', path),
@@ -708,4 +719,15 @@ export function decodeSessionTokenMessage(container: Record<string, unknown>, pa
 
 export function decodeSessionRevokedMessage(container: Record<string, unknown>, path: string): SessionRevokedMessage {
   return { revoked: requireBool(container, 'revoked', path) };
+}
+
+export function decodeOtherSessionsMessage(container: Record<string, unknown>, path: string): OtherSessionsMessage {
+  return { count: requireNonNegative(requireInt32(container, 'count', path), `${path}.count`) };
+}
+
+export function decodeOtherSessionsRevokedMessage(container: Record<string, unknown>, path: string): OtherSessionsRevokedMessage {
+  return {
+    revoked: requireBool(container, 'revoked', path),
+    count: requireNonNegative(requireInt32(container, 'count', path), `${path}.count`),
+  };
 }

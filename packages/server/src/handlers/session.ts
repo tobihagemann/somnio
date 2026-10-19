@@ -28,7 +28,7 @@ export async function handleRedeem(message: RedeemSessionMessage, connection: Co
     }
     // No rotation on redemption: rotating before `worldRouter.register` succeeds would invalidate the
     // credential on the first `alreadyLoggedIn` answer and break the client's bounded retry.
-    await completeAuthenticatedJoin(resolved.accountId, connection, dependencies, false);
+    await completeAuthenticatedJoin(resolved.accountId, connection, dependencies, false, message.token);
   } catch (error) {
     logger.error({ error: String(error) }, 'session redemption failed');
     sendLoginResult(outbox, 'badCredentials', logger);
@@ -60,6 +60,26 @@ export async function handleRevoke(
   }
 }
 
+/**
+ * Spares the token this connection redeemed or was issued, the one this browser holds. The server
+ * records it rather than the client naming it, so the request needs no token the client may not
+ * have saved yet.
+ */
+export async function handleRevokeOthers(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
+  const outbox = connection.outbox;
+  const logger = dependencies.logger;
+  try {
+    sendOtherSessionsRevoked(outbox, true, await dependencies.sessions.revokeAllExcept(accountId, connection.sessionToken), logger);
+  } catch (error) {
+    logger.error({ error: String(error) }, 'other sessions revocation failed');
+    sendOtherSessionsRevoked(outbox, false, 0, logger);
+  }
+}
+
 function sendSessionRevoked(outbox: ConnectionOutbox, revoked: boolean, logger: Logger): void {
   outbox.sendEncoded({ tag: 'sessionRevoked', payload: { revoked } }, logger);
+}
+
+function sendOtherSessionsRevoked(outbox: ConnectionOutbox, revoked: boolean, count: number, logger: Logger): void {
+  outbox.sendEncoded({ tag: 'otherSessionsRevoked', payload: { revoked, count } }, logger);
 }

@@ -219,6 +219,11 @@ export class AppShell {
       // splash, and presents login as its last statement. Presenting again here would fire
       // `onOverlayChanged` twice for one click, running `clearHeldKeys` and a full `render()` twice.
       onLeaveGame: () => this.controller.leaveGame(),
+      // Closes the menu, so the chat line that answers is in view.
+      onLogOutOtherBrowsers: () => {
+        this.controller.logOutOtherBrowsers();
+        this.present(undefined);
+      },
       onRetryConnection: () => {
         this.present(undefined);
         this.controller.beginSession();
@@ -253,6 +258,7 @@ export class AppShell {
     );
     this.controller.onChatLinesChanged = () => this.render();
     this.controller.onPlayersChanged = () => this.render();
+    this.controller.onOtherSessionsChanged = () => this.render();
     this.controller.onSplashShown = () => this.splash?.restart();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
     this.controller.onSessionIdentityEnded = () => this.overlays.clearCredentialForms();
@@ -437,6 +443,7 @@ export class AppShell {
         return;
       case 'about':
       case 'options':
+      case 'logOutOtherBrowsers':
         this.dismissOverlay();
         return;
       case 'gameMenu':
@@ -564,6 +571,7 @@ export class AppShell {
     setHidden(this.splashWordmark, inWorld);
     this.container.classList.toggle('somnio-prelogin', !inWorld);
     this.panels.setShown(inWorld);
+    this.overlays.setLogOutOtherBrowsersShown(inWorld && this.controller.otherSessionCount > 0);
     // The last failure says why on the login card, and a silent resume's retry under the wordmark.
     const sessionStatus = this.controller.sessionStatus;
     const status = inWorld || sessionStatus === undefined ? undefined : renderChatLine(sessionStatus, catalogTables, currentLocale());

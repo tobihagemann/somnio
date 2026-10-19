@@ -70,6 +70,14 @@ class GatedSessionRepository implements SessionRepository {
     return Promise.resolve(false);
   }
 
+  revokeAllExcept(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  countAllExcept(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
   deleteExpired(): Promise<number> {
     return Promise.resolve(0);
   }

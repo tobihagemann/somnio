@@ -171,6 +171,8 @@ describe('runtime validation the erased types cannot do', () => {
       /moves: exceeds 256 records \(got 257\)/,
     ],
     ['a negative quantity', 'inventory', { rows: [{ ...row, quantity: -1 }] }, /quantity: expected a non-negative quantity/],
+    ['a negative count of other sessions', 'otherSessions', { count: -1 }, /count: expected a non-negative number/],
+    ['a negative count of other sessions revoked', 'otherSessionsRevoked', { revoked: true, count: -1 }, /count: expected a non-negative number/],
     ['an empty item id', 'inventory', { rows: [{ ...row, itemId: '' }] }, /itemId: expected a non-empty string/],
     ['an over-cap item id', 'inventory', { rows: [{ ...row, itemId: overCapId }] }, /itemId: exceeds 64 UTF-8 bytes/],
     ['an unknown equipped hand', 'inventory', { rows: [{ ...row, equippedHand: 'none' }] }, /unknown value "none"/],
@@ -441,7 +443,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(11);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(12);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

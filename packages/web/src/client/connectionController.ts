@@ -40,7 +40,13 @@ export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginR
 export type VersionSkew = 'clientOutdated' | 'serverOutdated';
 
 export type OverlayKind =
-  { kind: 'login' } | { kind: 'registration' } | { kind: 'about' } | { kind: 'updateRequired'; skew: VersionSkew } | { kind: 'options' } | { kind: 'gameMenu' };
+  | { kind: 'login' }
+  | { kind: 'registration' }
+  | { kind: 'about' }
+  | { kind: 'updateRequired'; skew: VersionSkew }
+  | { kind: 'options' }
+  | { kind: 'gameMenu' }
+  | { kind: 'logOutOtherBrowsers' };
 
 export interface LoginCredentials {
   nickname: string;
@@ -122,6 +128,12 @@ export class ConnectionController {
    * back for the length of every door.
    */
   inWorld = false;
+  /**
+   * How many other browsers could still resume this account: the login's or resume's `otherSessions`,
+   * and 0 once they are logged out. Nothing can add to it while this one is in the world, so it needs
+   * no refresh, and a 0 can hide Log Out Other Browsers for the rest of the session.
+   */
+  otherSessionCount = 0;
   /**
    * Why the last login, resume, or connection failed, or that a resume is retrying, for the login
    * card or the wordmark to say. Kept apart from the chat, whose line stays after this clears on the
@@ -329,6 +341,17 @@ export class ConnectionController {
     this.presentedOverlay = { kind: 'login' };
   }
 
+  /**
+   * Ends every other browser's remembered session; the server spares the one this connection holds.
+   * Sent only while attached, because the server closes on the tag before login.
+   */
+  logOutOtherBrowsers(): void {
+    if (this.connectionState !== 'attached') return;
+    this.transport.send({ tag: 'revokeOtherSessions', payload: {} });
+  }
+
+  onOtherSessionsChanged: (() => void) | undefined;
+
   /** Fires each time the splash replaces the world, so the owner can start over what plays on it. */
   onSplashShown: (() => void) | undefined;
 
@@ -413,6 +436,18 @@ export class ConnectionController {
         // The server has retired this token, so the identity it authenticated is over here too —
         // the same surfaces `leaveGame` drops, for the same reason.
         this.endSessionIdentity();
+        return;
+      case 'otherSessions':
+        this.otherSessionCount = message.payload.count;
+        this.onOtherSessionsChanged?.();
+        return;
+      case 'otherSessionsRevoked':
+        // Only the other sessions ended, so unlike `sessionRevoked` the identity here stays.
+        if (message.payload.revoked) {
+          this.otherSessionCount = 0;
+          this.onOtherSessionsChanged?.();
+        }
+        this.appendChat(message.payload.revoked ? { kind: 'loggedOutOtherBrowsers', count: message.payload.count } : { kind: 'logOutOtherBrowsersFailed' });
         return;
       case 'enterSpace':
         this.handleEnterSpace(message.payload);
@@ -783,6 +818,7 @@ export class ConnectionController {
     this.onTeardown?.();
     this.connectionState = 'disconnected';
     this.inWorld = false;
+    this.otherSessionCount = 0;
     this.entities.clear();
     this.players = [];
     this.selfId = undefined;

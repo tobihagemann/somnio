@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { collectMessages, collectTags, loginResults } from './support/frames.ts';
+import { recordingLogger } from './support/logger.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
-import { StubSessionRepository } from './support/stubRepositories.ts';
+import { StubSessionRepository, failingSessionRepository } from './support/stubRepositories.ts';
 
 /** The session verbs' placement in the state machine and their answers; the dispatch suite is the mirror image. */
 describe('session tag placement', () => {
@@ -83,6 +84,25 @@ describe('session tag placement', () => {
     const messages = await collectMessages(connection.outbox);
     expect(messages).toContainEqual({ tag: 'sessionRevoked', payload: { revoked: true } });
     expect(sessions.isStored(issued.token)).toBe(false);
+  });
+
+  it('revokeOtherSessions is accepted after attach and answered with the count', async () => {
+    const sessions = new StubSessionRepository();
+    const accountId = crypto.randomUUID();
+    await sessions.issue(accountId, 3600);
+    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    connection.markAttached('player', 'EdariaBibliothek', accountId);
+    expect(await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} })).toEqual({ kind: 'keepOpen' });
+    expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
+  });
+
+  it('a revokeOtherSessions that throws answers and records an error', async () => {
+    const { logger, records } = recordingLogger();
+    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions: failingSessionRepository, logger }));
+    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} });
+    expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: false, count: 0 } });
+    expect(records.filter((record) => record['msg'] === 'other sessions revocation failed')).toMatchObject([{ level: 50 }]);
   });
 
   it('an expired token answers badCredentials', async () => {

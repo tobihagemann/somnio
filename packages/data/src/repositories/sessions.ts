@@ -24,6 +24,15 @@ export interface SessionRepository {
    * delete their session, and `false` cannot be read as "that token does not exist".
    */
   revoke(token: string, accountId: string): Promise<boolean>;
+  /**
+   * Deletes every row of `accountId` but the one for `keepToken`, and returns how many of them were
+   * still unexpired: the sessions it ended, as `countAllExcept` counts them. The kept row is spared
+   * whatever its expiry: an expired one cannot be redeemed, and `deleteExpired` collects it. A
+   * `keepToken` with no row in this account spares nothing.
+   */
+  revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number>;
+  /** How many of `accountId`'s unexpired rows `revokeAllExcept` would end: the sessions other browsers could still resume. */
+  countAllExcept(accountId: string, keepToken: string | undefined): Promise<number>;
   /** Bulk cleanup of expired rows; expiry is already enforced on the read path. */
   deleteExpired(asOf: Date): Promise<number>;
 }
@@ -84,6 +93,25 @@ export class PostgresSessionRepository implements SessionRepository {
       .returning('token_digest')
       .execute();
     return deleted.length > 0;
+  }
+
+  async revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+    const now = new Date();
+    let query = this.db.deleteFrom('sessions').where('account_id', '=', accountId);
+    if (keepToken !== undefined) query = query.where('token_digest', '!=', sessionTokenDigest(keepToken));
+    const deleted = await query.returning('expires_at').execute();
+    return deleted.filter((row) => row.expires_at > now).length;
+  }
+
+  async countAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+    let query = this.db
+      .selectFrom('sessions')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('account_id', '=', accountId)
+      .where('expires_at', '>', new Date());
+    if (keepToken !== undefined) query = query.where('token_digest', '!=', sessionTokenDigest(keepToken));
+    const row = await query.executeTakeFirstOrThrow();
+    return Number(row.count);
   }
 
   async deleteExpired(asOf: Date): Promise<number> {

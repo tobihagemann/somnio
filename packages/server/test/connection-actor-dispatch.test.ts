@@ -88,6 +88,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
     message: { tag: 'revokeSession', payload: { token: 'tok' } },
     attachFirst: false,
   },
+  { label: 'pre-login revokeOtherSessions', message: { tag: 'revokeOtherSessions', payload: {} }, attachFirst: false },
   {
     label: 'post-attach redeemSession',
     message: { tag: 'redeemSession', payload: { token: 'tok' } },
@@ -111,6 +112,18 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
   {
     label: 'post-attach sessionRevoked',
     message: { tag: 'sessionRevoked', payload: { revoked: true } },
+    attachFirst: true,
+  },
+  { label: 'pre-login otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, attachFirst: false },
+  { label: 'post-attach otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, attachFirst: true },
+  {
+    label: 'pre-login otherSessionsRevoked',
+    message: { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } },
+    attachFirst: false,
+  },
+  {
+    label: 'post-attach otherSessionsRevoked',
+    message: { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } },
     attachFirst: true,
   },
 ];

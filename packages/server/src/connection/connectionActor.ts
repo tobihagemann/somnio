@@ -23,7 +23,7 @@ import {
 import type { TransferOutcome } from '../handlers/gameplay.ts';
 import { handleLogin } from '../handlers/login.ts';
 import { handleRegister } from '../handlers/register.ts';
-import { handleRedeem, handleRevoke } from '../handlers/session.ts';
+import { handleRedeem, handleRevoke, handleRevokeOthers } from '../handlers/session.ts';
 import type { Logger } from '../logging.ts';
 import { persistPlayerCheckpoint } from '../world/checkpointWriter.ts';
 import type { ConnectionDependencies } from './dependencies.ts';
@@ -109,6 +109,11 @@ export class ConnectionActor {
   /** What the per-address budgets count this connection's attempts against; absent, those budgets count nothing. */
   readonly clientAddress: string | undefined;
   state: ConnectionState = { kind: 'awaitingLogin' };
+  /**
+   * The raw token this connection redeemed or was issued, the one `revokeOtherSessions` spares.
+   * Held here rather than in `state`, because issuance follows `markAttached`.
+   */
+  sessionToken: string | undefined;
   private readonly dependencies: ConnectionDependencies;
   private readonly logger: Logger;
   /** The slot among sockets not yet logged in, given up once the player is in the world or the connection has ended. */
@@ -320,6 +325,7 @@ export class ConnectionActor {
         case 'wake':
         case 'useItem':
         case 'revokeSession':
+        case 'revokeOtherSessions':
         case 'hello':
         case 'loginResult':
         case 'registerResult':
@@ -341,6 +347,8 @@ export class ConnectionActor {
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
+        case 'otherSessions':
+        case 'otherSessionsRevoked':
           return this.protocolErrorClose('unexpected tag before login', 0);
       }
     }
@@ -392,6 +400,9 @@ export class ConnectionActor {
       case 'revokeSession':
         await handleRevoke(message.payload, state.accountId, this, this.dependencies);
         return { kind: 'keepOpen' };
+      case 'revokeOtherSessions':
+        await handleRevokeOthers(state.accountId, this, this.dependencies);
+        return { kind: 'keepOpen' };
       case 'login':
       case 'register':
       case 'redeemSession':
@@ -417,6 +428,8 @@ export class ConnectionActor {
       case 'adminSay':
       case 'sessionToken':
       case 'sessionRevoked':
+      case 'otherSessions':
+      case 'otherSessionsRevoked':
         return this.protocolErrorClose('server-only tag from client', 0);
     }
   }

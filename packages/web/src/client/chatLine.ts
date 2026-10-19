@@ -48,6 +48,8 @@ export type ChatLine =
   | { kind: 'raiseBrokenOther'; targetName: string }
   | { kind: 'wokeWeakened' }
   | { kind: 'credentialSaveFailed' }
+  | { kind: 'loggedOutOtherBrowsers'; count: number }
+  | { kind: 'logOutOtherBrowsersFailed' }
   | { kind: 'sessionExpired' }
   | { kind: 'reconnecting' };
 
@@ -80,6 +82,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'errorCode':
     case 'unknownCommand':
     case 'credentialSaveFailed':
+    case 'logOutOtherBrowsersFailed':
     case 'sessionExpired':
     case 'reconnecting':
       return 'error';
@@ -101,6 +104,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'raisedOther':
     case 'raiseBrokenOther':
     case 'wokeWeakened':
+    case 'loggedOutOtherBrowsers':
       return 'itemInfo';
   }
 }

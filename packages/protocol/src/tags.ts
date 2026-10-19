@@ -20,11 +20,13 @@ const CLIENT_TO_SERVER_TAGS = [
   'sell',
   'wake',
   'useItem',
-  // Session resumption. `redeemSession` is accepted pre-login (it is an alternative to a
-  // password login and reuses `loginResult` for its outcome); `revokeSession` is accepted
-  // only post-attach. Both are request-gated: the server never volunteers either response.
+  // Remembered sessions. `redeemSession` is accepted pre-login: it is an alternative to a password
+  // login and reuses `loginResult` for its outcome. `revokeSession` and `revokeOtherSessions` are
+  // accepted only post-attach. The server sends their answers only on request. `otherSessions`,
+  // sent unasked at a login or resume, answers none of them.
   'redeemSession',
   'revokeSession',
+  'revokeOtherSessions',
 ] as const;
 
 const SERVER_TO_CLIENT_TAGS = [
@@ -49,6 +51,8 @@ const SERVER_TO_CLIENT_TAGS = [
   'adminSay',
   'sessionToken',
   'sessionRevoked',
+  'otherSessions',
+  'otherSessionsRevoked',
 ] as const;
 
 export const SOMNIO_MESSAGE_TAGS = [...CLIENT_TO_SERVER_TAGS, ...SERVER_TO_CLIENT_TAGS] as const;

@@ -87,7 +87,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
-| `overlay()` | `'login'` \| `'registration'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `undefined` |
+| `overlay()` | `'login'` \| `'registration'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `'logOutOtherBrowsers'` \| `undefined` |
 | `zoomFactor()` | session zoom, 0.5–2.0 |
 | `splashShot()` | the id of the splash shot playing behind the pre-login screens (`'town'`, `'follow-dreamer'`, ... `'time-lapse'`), or `undefined` while none plays |
 
@@ -167,6 +167,8 @@ agent-browser --session a eval 'window.somnio.entities().filter((e) => e.kind ==
 A client holds the entities in its own sector and the sectors touching it, so two players see each other in the same or in adjacent outdoor sectors and lose each other two sectors apart. Use this for anything needing an independent observer — that a peer's position matches what the walker believes, or that a peer walking out of view is removed. A peer's position arrives in a batched `moves` frame about ten times a second and is drawn interpolated, so compare with a tolerance.
 
 The client's own position is predicted, not authoritative. The server sends a `correction` for self when it rejects a move and when the player falls. An unmodified client has a move rejected only when its reports are held back for longer than the movement allowance covers (two seconds' worth at a little over running speed) and then arrive together.
+
+**Log Out Other Browsers.** The game menu offers it only while the player is in the world and another browser remembers the account. To make it appear, log the account in with "Remember password" in a second session and close that session with `agent-browser --session <name> close`, not Leave Game, which revokes its token. Wait for the server to drop it as Step 4 describes, then log in the session under test. The entry opens a dialog of its own (`window.somnio.overlay()` reads `'logOutOtherBrowsers'`) with "Log Them Out" and "Cancel". Confirming closes it, and `chatHistory()` ends with the count ("Einen anderen Browser abgemeldet." / "Logged out one other browser.").
 
 **More players without more browsers.** When a case needs several bodies on screen at once (crowded plaques or bubbles), run each extra player as a small Node script beside one browser session. Node 24 has a global `WebSocket`. Register the accounts over the wire first (Step 3), then per player:
 

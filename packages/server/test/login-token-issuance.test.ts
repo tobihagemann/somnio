@@ -5,7 +5,7 @@ import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { completeAuthenticatedJoin, handleLogin } from '../src/handlers/login.ts';
-import { handleRedeem, handleRevoke } from '../src/handlers/session.ts';
+import { handleRedeem, handleRevoke, handleRevokeOthers } from '../src/handlers/session.ts';
 import { collectMessages, loginResults } from './support/frames.ts';
 import { recordingLogger } from './support/logger.ts';
 import { makeAuthenticatedWorld, makeOneSectorWorld } from './support/oneSectorWorld.ts';
@@ -86,7 +86,16 @@ describe('session token issuance', () => {
     const messages = await collectMessages(connection.outbox);
     expect(loginResults(messages)).toEqual(['ok']);
     // The join is `enterSpace` first and once, and a redeemed session mints no token.
-    expect(messages.map((message) => message.tag)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
+    expect(messages.map((message) => message.tag)).toEqual([
+      'loginResult',
+      'enterSpace',
+      'sector',
+      'entity',
+      'inventory',
+      'energy',
+      'lucidity',
+      'otherSessions',
+    ]);
     expect(sessions.isStored(issued.token)).toBe(true);
   });
 
@@ -105,6 +114,74 @@ describe('session token issuance', () => {
     expect(await collectMessages(connection.outbox)).toEqual([{ tag: 'sessionRevoked', payload: { revoked: false } }]);
   });
 
+  /** Counted after issuance, so the row this browser is about to hold is not one of the others. */
+  it("a remembered login counts the account's other live sessions, not its own or an expired one", async () => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions });
+    sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
+    sessions.plant('aged', world.accountId, new Date(Date.now() - 60_000));
+    const connection = new ConnectionActor(world.dependencies);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    expect((await collectMessages(connection.outbox)).at(-1)).toEqual({ tag: 'otherSessions', payload: { count: 1 } });
+  });
+
+  it('a resume does not count the session it redeemed', async () => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions });
+    for (const token of ['redeemed', 'elsewhere']) sessions.plant(token, world.accountId, new Date(Date.now() + 60_000));
+    const connection = new ConnectionActor(world.dependencies);
+    await handleRedeem({ token: 'redeemed' }, connection, world.dependencies);
+    expect((await collectMessages(connection.outbox)).at(-1)).toEqual({ tag: 'otherSessions', payload: { count: 1 } });
+  });
+
+  it('a count that throws still completes the join, without the frame', async () => {
+    const { logger, records } = recordingLogger();
+    const world = await makeOneSectorWorld({ sessions: failingSessionRepository, logger });
+    const connection = new ConnectionActor(world.dependencies);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
+    expect(tags).toContain('enterSpace');
+    expect(tags).not.toContain('otherSessions');
+    expect(records.filter((record) => record['msg'] === 'other sessions count failed')).toMatchObject([{ level: 40 }]);
+  });
+
+  /** The token is issued after the attach, and must still reach the connection for its row to be spared. */
+  it('revoking the other sessions after a remembered login keeps the token it was issued', async () => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions });
+    sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
+    const connection = new ConnectionActor(world.dependencies);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await handleRevokeOthers(world.accountId, connection, world.dependencies);
+    const messages = await collectMessages(connection.outbox);
+    expect(messages.at(-1)).toEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
+    const issued = messages.find((message) => message.tag === 'sessionToken');
+    expect(issued?.tag === 'sessionToken' && sessions.isStored(issued.payload.token)).toBe(true);
+    expect(sessions.isStored('elsewhere')).toBe(false);
+  });
+
+  it('revoking the other sessions after a resume keeps the token redeemed', async () => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions });
+    for (const token of ['redeemed', 'elsewhere', 'abandoned']) sessions.plant(token, world.accountId, new Date(Date.now() + 60_000));
+    const connection = new ConnectionActor(world.dependencies);
+    await handleRedeem({ token: 'redeemed' }, connection, world.dependencies);
+    await handleRevokeOthers(world.accountId, connection, world.dependencies);
+    expect(sessions.isStored('redeemed')).toBe(true);
+    expect(sessions.isStored('elsewhere')).toBe(false);
+    expect(sessions.isStored('abandoned')).toBe(false);
+  });
+
+  it('revoking the other sessions after a login that asked for no token ends them all', async () => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions });
+    sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
+    const connection = new ConnectionActor(world.dependencies);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    await handleRevokeOthers(world.accountId, connection, world.dependencies);
+    expect(sessions.isStored('elsewhere')).toBe(false);
+  });
+
   it('a login omitting requestSessionToken is answered without a token', async () => {
     const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'gated', password: 'hunter2-long' });
     const connection = new ConnectionActor(world.dependencies);
@@ -119,7 +196,7 @@ describe('session token issuance', () => {
     const connection = new ConnectionActor(world.dependencies);
     await handleLogin({ nickname: 'asker', password: 'hunter2-long', requestSessionToken: true }, connection, world.dependencies);
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
-    expect(tags).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'sessionToken']);
+    expect(tags).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'sessionToken', 'otherSessions']);
   });
 
   /** Uniform on the wire, specific in the log: the record is the operator's only guessing signal. */

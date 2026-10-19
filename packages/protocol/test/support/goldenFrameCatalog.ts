@@ -89,6 +89,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'useItem', message: { tag: 'useItem', payload: { slot: 2 } } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
   { name: 'revokeSession', message: { tag: 'revokeSession', payload: { token: 'tok-abc' } } },
+  { name: 'revokeOtherSessions', message: { tag: 'revokeOtherSessions', payload: {} } },
   {
     name: 'hello',
     message: { tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } },
@@ -234,4 +235,6 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: { tag: 'sessionToken', payload: { token: 'tok-abc', expiresInSeconds: 2_592_000 } },
   },
   { name: 'sessionRevoked', message: { tag: 'sessionRevoked', payload: { revoked: true } } },
+  { name: 'otherSessions', message: { tag: 'otherSessions', payload: { count: 2 } } },
+  { name: 'otherSessionsRevoked', message: { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 2 } } },
 ];

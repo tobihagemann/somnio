@@ -22,6 +22,8 @@ import type {
   MendMessage,
   MoveMessage,
   MovesMessage,
+  OtherSessionsMessage,
+  OtherSessionsRevokedMessage,
   RaisingMessage,
   RedeemSessionMessage,
   RegisterMessage,
@@ -66,6 +68,7 @@ export type SomnioMessage =
   | { tag: 'useItem'; payload: UseItemMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }
   | { tag: 'revokeSession'; payload: RevokeSessionMessage }
+  | { tag: 'revokeOtherSessions'; payload: EmptyMessage }
   | { tag: 'hello'; payload: HelloMessage }
   | { tag: 'loginResult'; payload: LoginResultMessage }
   | { tag: 'registerResult'; payload: RegisterResultMessage }
@@ -86,7 +89,9 @@ export type SomnioMessage =
   | { tag: 'mend'; payload: MendMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
-  | { tag: 'sessionRevoked'; payload: SessionRevokedMessage };
+  | { tag: 'sessionRevoked'; payload: SessionRevokedMessage }
+  | { tag: 'otherSessions'; payload: OtherSessionsMessage }
+  | { tag: 'otherSessionsRevoked'; payload: OtherSessionsRevokedMessage };
 
 /**
  * Direction check that narrows the **message**, not just its tag. A predicate over
