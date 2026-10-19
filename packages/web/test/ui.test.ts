@@ -164,6 +164,15 @@ describe('panel chrome metrics', () => {
     expect(/\n\.overlay-scrim\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.55)');
   });
 
+  it('narrows the fallen notice to keep clear of the Players panel and the HUD', () => {
+    expect(/\n\.trailing-column\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('width: var(--somnio-trailing-column-width)');
+    const width = /\n\.fallen-notice\s*\{[^}]*\n\s*width: ([^;]*);/.exec(css)?.[1];
+    expect(width).toMatch(/^min\(380px, calc\(100% - 2 \*/);
+    expect(width).toContain('var(--somnio-trailing-column-width)');
+    // Without the floor the confirmation's buttons spill out of the plate in the narrowest windows.
+    expect(/\n\.fallen-notice\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('min-width: min-content');
+  });
+
   it('draws the standalone rule without the ornamented sheet', () => {
     const divider = /\n\.fantasy-divider\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(divider).toBeDefined();
