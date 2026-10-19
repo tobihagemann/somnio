@@ -127,7 +127,7 @@ export class ConnectionController {
    * card or the wordmark to say. Kept apart from the chat, whose line stays after this clears on the
    * next attempt or the join.
    */
-  loginStatus: ChatLine | undefined;
+  sessionStatus: ChatLine | undefined;
 
   readonly sessionStore: SessionStore;
   readonly renderSurface: WorldRenderSurface;
@@ -250,7 +250,7 @@ export class ConnectionController {
    */
   beginSession(intent: AuthIntent = { kind: 'resume' }): void {
     this.resumeAttempts = 0;
-    this.loginStatus = undefined;
+    this.sessionStatus = undefined;
     this.connect(intent);
   }
 
@@ -267,7 +267,7 @@ export class ConnectionController {
    * is already populated.
    */
   register(form: RegistrationForm): void {
-    this.loginStatus = undefined;
+    this.sessionStatus = undefined;
     this.connect({ kind: 'register', form });
   }
 
@@ -295,7 +295,7 @@ export class ConnectionController {
     this.resumingWithToken = undefined;
     this.chatLines = [];
     this.selfDisplayName = '';
-    this.loginStatus = undefined;
+    this.sessionStatus = undefined;
     this.onChatLinesChanged?.();
     this.onSessionIdentityEnded?.();
   }
@@ -350,19 +350,19 @@ export class ConnectionController {
         this.dispatch(event.message);
         return;
       case 'connectFailed':
-        this.reportLoginFailure({ kind: 'serverUnreachable' });
+        this.reportSessionFailure({ kind: 'serverUnreachable' });
         this.endSessionWithRecovery();
         return;
       case 'decodeFailed':
-        this.reportLoginFailure({ kind: 'errorCode', code: String(event.error) });
+        this.reportSessionFailure({ kind: 'errorCode', code: String(event.error) });
         this.endSessionWithRecovery();
         return;
       case 'unexpectedBinaryFrame':
-        this.reportLoginFailure({ kind: 'errorCode', code: 'unexpected_binary_frame' });
+        this.reportSessionFailure({ kind: 'errorCode', code: 'unexpected_binary_frame' });
         this.endSessionWithRecovery();
         return;
       case 'peerEOF':
-        this.reportLoginFailure({ kind: 'connectionLost' });
+        this.reportSessionFailure({ kind: 'connectionLost' });
         this.endSessionWithRecovery();
         return;
       default:
@@ -380,7 +380,7 @@ export class ConnectionController {
   dispatch(message: SomnioMessage): void {
     // A client-only tag arriving inbound is a hard error.
     if (isClientOnlyMessage(message)) {
-      this.reportLoginFailure({ kind: 'errorCode', code: 'client_only_tag' });
+      this.reportSessionFailure({ kind: 'errorCode', code: 'client_only_tag' });
       this.endSessionWithRecovery();
       return;
     }
@@ -450,7 +450,7 @@ export class ConnectionController {
 
   private handleHello(protocolVersion: number): void {
     if (this.connectionState !== 'awaitingHello') {
-      this.reportLoginFailure({ kind: 'errorCode', code: 'unexpected_hello' });
+      this.reportSessionFailure({ kind: 'errorCode', code: 'unexpected_hello' });
       this.endSessionWithRecovery();
       return;
     }
@@ -523,7 +523,7 @@ export class ConnectionController {
         // say: a rejection during a resume is a dead token, not a wrong password. Reporting
         // "Bad credentials." there would tell a returning player their password is wrong when they
         // never typed one.
-        this.reportLoginFailure(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
+        this.reportSessionFailure(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
         this.teardown();
         this.presentedOverlay = { kind: 'login' };
         return;
@@ -531,7 +531,7 @@ export class ConnectionController {
       case 'throttled':
         // Only a typed login is throttled, so there is no stored token to drop. The password may
         // well be right, so the line says to wait rather than that it is wrong.
-        this.reportLoginFailure({ kind: 'throttled' });
+        this.reportSessionFailure({ kind: 'throttled' });
         this.teardown();
         this.presentedOverlay = { kind: 'login' };
         return;
@@ -583,11 +583,11 @@ export class ConnectionController {
       // Announced rather than silent: the retry usually resolves in milliseconds, but when the
       // previous socket is slow to unwind the player is left looking at a dead screen with no idea
       // anything is happening.
-      this.reportLoginFailure({ kind: 'reconnecting' });
+      this.reportSessionFailure({ kind: 'reconnecting' });
       this.scheduleResume();
       return;
     }
-    this.reportLoginFailure({ kind: 'alreadyLoggedIn' });
+    this.reportSessionFailure({ kind: 'alreadyLoggedIn' });
     this.teardown();
     this.presentedOverlay = { kind: 'login' };
   }
@@ -596,8 +596,8 @@ export class ConnectionController {
    * Says why the session ended or never began, on the login card as well as in the chat. The status
    * goes first: on a resume's retry the chat line's repaint is the last until the next join.
    */
-  private reportLoginFailure(line: ChatLine): void {
-    this.loginStatus = line;
+  private reportSessionFailure(line: ChatLine): void {
+    this.sessionStatus = line;
     this.appendChat(line);
   }
 
@@ -622,7 +622,7 @@ export class ConnectionController {
     this.renderSurface.enterSpace(this.world);
     this.renderSurface.setClock(payload.worldSeconds);
     this.connectionState = 'attached';
-    this.loginStatus = undefined;
+    this.sessionStatus = undefined;
     this.presentedOverlay = undefined;
     this.onSpaceEntered?.();
   }

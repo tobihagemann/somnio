@@ -47,7 +47,7 @@ export class Overlays {
   private readonly views: Record<OverlayKind['kind'], HTMLElement>;
   private readonly loginPassword: HTMLInputElement;
   private readonly loginRemember: HTMLInputElement;
-  /** One line under the login form: the form's own check, or else the controller's login status. */
+  /** One line under the login form: the form's own check, or else the controller's session status. */
   private readonly loginError: HTMLElement;
   private loginInvalid: string | undefined;
   private loginStatus: string | undefined;

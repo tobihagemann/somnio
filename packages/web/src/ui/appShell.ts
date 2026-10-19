@@ -565,8 +565,8 @@ export class AppShell {
     this.container.classList.toggle('somnio-prelogin', !inWorld);
     this.panels.setShown(inWorld);
     // The last failure says why on the login card, and a silent resume's retry under the wordmark.
-    const loginStatus = this.controller.loginStatus;
-    const status = inWorld || loginStatus === undefined ? undefined : renderChatLine(loginStatus, catalogTables, currentLocale());
+    const sessionStatus = this.controller.sessionStatus;
+    const status = inWorld || sessionStatus === undefined ? undefined : renderChatLine(sessionStatus, catalogTables, currentLocale());
     this.overlays.showLoginStatus(overlay?.kind === 'login' ? status : undefined);
     this.wordmarkStatus.textContent = overlay === undefined ? (status ?? '') : '';
     this.panels.renderEnergy(this.session.energy, this.session.winded);

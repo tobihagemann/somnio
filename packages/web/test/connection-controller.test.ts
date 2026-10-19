@@ -1560,19 +1560,19 @@ describe('the status the login card and the splash say', () => {
     login(rig);
     answered(rig);
     rig.deliver({ tag: 'loginResult', payload: { result } });
-    expect(rig.controller.loginStatus).toEqual(line);
+    expect(rig.controller.sessionStatus).toEqual(line);
   });
 
   it('says a session expired when a resume is refused', () => {
     const rig = resuming();
     rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
-    expect(rig.controller.loginStatus).toEqual({ kind: 'sessionExpired' });
+    expect(rig.controller.sessionStatus).toEqual({ kind: 'sessionExpired' });
   });
 
   it('says a resume is reconnecting while it retries', () => {
     const rig = resuming();
     rig.deliver({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } });
-    expect(rig.controller.loginStatus).toEqual({ kind: 'reconnecting' });
+    expect(rig.controller.sessionStatus).toEqual({ kind: 'reconnecting' });
   });
 
   it.each([
@@ -1583,7 +1583,7 @@ describe('the status the login card and the splash say', () => {
     const rig = makeRig();
     login(rig);
     fail(rig);
-    expect(rig.controller.loginStatus).toMatchObject(line);
+    expect(rig.controller.sessionStatus).toMatchObject(line);
   });
 
   it('clears the status on the next attempt, a sign-up, and the world arriving', () => {
@@ -1592,23 +1592,23 @@ describe('the status the login card and the splash say', () => {
       login(rig);
       answered(rig);
       rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
-      expect(rig.controller.loginStatus).toBeDefined();
+      expect(rig.controller.sessionStatus).toBeDefined();
     };
     failed();
     login(rig);
-    expect(rig.controller.loginStatus).toBeUndefined();
+    expect(rig.controller.sessionStatus).toBeUndefined();
 
     failed();
     rig.controller.register({ nickname: 'Ida', password: 'hunter2-long', passwordRepeat: 'hunter2-long', people: 'wachen', email: 'ida@example.com' });
-    expect(rig.controller.loginStatus).toBeUndefined();
+    expect(rig.controller.sessionStatus).toBeUndefined();
 
     login(rig);
     answered(rig);
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     // Standing in for a resume's retry, whose status the join answers.
-    rig.controller.loginStatus = { kind: 'reconnecting' };
+    rig.controller.sessionStatus = { kind: 'reconnecting' };
     rig.deliver(enterSpaceFrame());
-    expect(rig.controller.loginStatus).toBeUndefined();
+    expect(rig.controller.sessionStatus).toBeUndefined();
   });
 
   /** A refused save arrives after a login that went through, so it is no reason the login failed. */
@@ -1619,7 +1619,7 @@ describe('the status the login card and the splash say', () => {
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 60 } });
     expect(rig.controller.chatHistory.map((line) => line.kind)).toContain('credentialSaveFailed');
-    expect(rig.controller.loginStatus).toBeUndefined();
+    expect(rig.controller.sessionStatus).toBeUndefined();
   });
 });
 
