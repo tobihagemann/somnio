@@ -259,6 +259,7 @@ export class AppShell {
     this.controller.onChatLinesChanged = () => this.render();
     this.controller.onPlayersChanged = () => this.render();
     this.controller.onOtherSessionsChanged = () => this.render();
+    this.controller.onSessionStatusChanged = () => this.render();
     this.controller.onSplashShown = () => this.splash?.restart();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
     this.controller.onSessionIdentityEnded = () => this.overlays.clearCredentialForms();

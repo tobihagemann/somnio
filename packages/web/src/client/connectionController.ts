@@ -134,12 +134,25 @@ export class ConnectionController {
    * no refresh, and a 0 can hide Log Out Other Browsers for the rest of the session.
    */
   otherSessionCount = 0;
+
+  private status: ChatLine | undefined;
+
   /**
    * Why the last login, resume, or connection failed, or that a resume is retrying, for the login
    * card or the wordmark to say. Kept apart from the chat, whose line stays after this clears on the
-   * next attempt or the join.
+   * next attempt or the join. Notifying on write, like `presentedOverlay`, so no site has to count
+   * on a later write to repaint it.
    */
-  sessionStatus: ChatLine | undefined;
+  get sessionStatus(): ChatLine | undefined {
+    return this.status;
+  }
+
+  set sessionStatus(status: ChatLine | undefined) {
+    this.status = status;
+    this.onSessionStatusChanged?.();
+  }
+
+  onSessionStatusChanged: (() => void) | undefined;
 
   readonly sessionStore: SessionStore;
   readonly renderSurface: WorldRenderSurface;
@@ -627,10 +640,6 @@ export class ConnectionController {
     this.presentedOverlay = { kind: 'login' };
   }
 
-  /**
-   * Says why the session ended or never began, on the login card as well as in the chat. The status
-   * goes first: on a resume's retry the chat line's repaint is the last until the next join.
-   */
   private reportSessionFailure(line: ChatLine): void {
     this.sessionStatus = line;
     this.appendChat(line);
