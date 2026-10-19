@@ -208,8 +208,13 @@ export function scrim(cardNode: HTMLElement): HTMLElement {
  * world input over chrome) stays in `GamePanels`, which attaches its own listeners; the
  * editor's panels need none.
  */
-export function floating(position: string, children: readonly Node[]): HTMLElement {
-  return element('div', { className: `floating floating--${position}`, children });
+export function floating(children: readonly Node[]): HTMLElement {
+  return element('div', { className: 'floating', children });
+}
+
+/** One side's floating columns, the first in the top corner and the last in the bottom one. */
+export function floatingStack(side: 'leading' | 'trailing', columns: readonly HTMLElement[]): HTMLElement {
+  return element('div', { className: `floating-stack floating-stack--${side}`, children: columns });
 }
 
 export function setHidden(node: HTMLElement, hidden: boolean): void {

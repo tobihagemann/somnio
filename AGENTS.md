@@ -102,6 +102,7 @@ The map editor is a second Vite entry point (`packages/web/editor.html` + `packa
 - **Neighbours are drawn read-only.** For an outdoor document the outdoor sectors touching it are drawn at their origins, so roads, walls, and tree lines can meet across a border.
 - **Record labels are DOM elements** over the canvas, so `agent-browser snapshot` sees them.
 - **English-only.** The editor renders literal English and never imports `@/i18n`, keeping `RENDERED_KEYS` and the catalog tests untouched.
+- **It shares the client's chrome.** The editor loads `packages/web/src/ui/chrome.css` and builds its corner panels with the `packages/web/src/ui/dom.ts` helpers (`floating`, `floatingStack`, the panel and button builders). A change to either reaches the editor too, so check it there as well as in the game.
 - The `/somnio-editor` skill covers serving and driving the editor with `agent-browser` (`window.somnioEditor` is its debug surface).
 
 ### Web asset pack

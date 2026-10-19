@@ -235,36 +235,54 @@ body {
   outline: none;
 }
 
+/* Each side's columns share one stack as tall as the window. In a short window the space between them
+   goes first, then the list of a column that gives way, so the two keep apart until that list is gone.
+   The stack itself lets clicks through to the play field. */
+.floating-stack {
+  position: absolute;
+  top: var(--somnio-edge-padding);
+  bottom: var(--somnio-edge-padding);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.floating-stack--leading {
+  left: var(--somnio-edge-padding);
+  align-items: flex-start;
+}
+
+.floating-stack--trailing {
+  right: var(--somnio-edge-padding);
+  align-items: flex-end;
+}
+
 /* `align-items` shrink-wraps every column: the panel toggles are small square controls in all
    four corners, not bars as wide as the panel they sit under. */
 .floating {
-  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+  pointer-events: auto;
 }
 
-.floating--top-leading {
-  top: var(--somnio-edge-padding);
-  left: var(--somnio-edge-padding);
-}
-
-.floating--bottom-leading {
-  bottom: var(--somnio-edge-padding);
-  left: var(--somnio-edge-padding);
-}
-
-.floating--top-trailing {
-  top: var(--somnio-edge-padding);
-  right: var(--somnio-edge-padding);
+.floating-stack--trailing > .floating {
   align-items: flex-end;
 }
 
-.floating--bottom-trailing {
-  bottom: var(--somnio-edge-padding);
-  right: var(--somnio-edge-padding);
-  align-items: flex-end;
+/* A flex item's automatic minimum is its full content height, so each box down to a column's scrolling
+   list has to be let shrink. A column that does not yield keeps its size. */
+.floating--yields {
+  min-height: 0;
+}
+
+.floating--yields > .fantasy-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .hud-panel {
@@ -461,6 +479,8 @@ body {
    * leave 38px and fit a line less.
    */
   height: 64px;
+  /* The scrollback above gives way in a short window, never the field. */
+  flex-shrink: 0;
   /* 6 (chrome padding) + 4 (container inset), less the 1px the border already contributes. */
   padding: 9px;
   /* 16px per row at this size makes the 44px text area exactly 2.75 rows. */
@@ -511,6 +531,7 @@ body {
   flex-direction: column;
   gap: 4px;
   width: 180px;
+  min-height: 0;
 }
 
 .trailing-list {

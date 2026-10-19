@@ -6,7 +6,7 @@ import { chatLineCategory, taskIsDone } from '@/client';
 import type { ChatLine } from '@/client';
 import { itemName, renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
-import { ICON_PATHS, element, floating, iconButton, isHidden, replaceChildren, setHidden, toggleHidden } from './dom';
+import { ICON_PATHS, element, floating, floatingStack, iconButton, isHidden, replaceChildren, setHidden, toggleHidden } from './dom';
 import type { IconName } from './dom';
 import { taskProgressText } from './servicePanel';
 
@@ -160,14 +160,15 @@ export class GamePanels {
     const chatToggle = this.toggle(t('Chat'), 'chat', () => this.toggleChat());
     const playersToggle = this.toggle(t('Players'), 'players', () => toggleHidden(this.playersBody));
     const itemsToggle = this.toggle(t('Items'), 'items', () => toggleHidden(this.itemsBody));
-    const chatColumn = this.floating('bottom-leading', 'chat', [this.chatBody, chatToggle]);
-    const playersColumn = this.floating('top-trailing', 'players', [playersToggle, this.playersBody]);
-    const itemsColumn = this.floating('bottom-trailing', 'items', [this.itemsBody, itemsToggle]);
-    const hudColumn = this.floating('top-leading', 'hud', [hudPanel]);
+    const chatColumn = this.floating('chat', [this.chatBody, chatToggle]);
+    const playersColumn = this.floating('players', [playersToggle, this.playersBody]);
+    const itemsColumn = this.floating('items', [this.itemsBody, itemsToggle]);
+    const hudColumn = this.floating('hud', [hudPanel]);
+    for (const column of [chatColumn, playersColumn]) column.classList.add('floating--yields');
     this.occluders = [hudPanel, this.chatBody, this.playersBody, this.itemsBody, chatToggle, playersToggle, itemsToggle];
 
     this.root = element('div', {
-      children: [hudColumn, chatColumn, playersColumn, itemsColumn],
+      children: [floatingStack('leading', [hudColumn, chatColumn]), floatingStack('trailing', [playersColumn, itemsColumn])],
     });
   }
 
@@ -343,12 +344,11 @@ export class GamePanels {
   }
 
   /**
-   * Panels never overlap, but a cursor sliding straight from one to the next can report the enter
-   * before the exit — tracking the hovered set rather than one flag keeps the aggregate stable
-   * through that reorder.
+   * A cursor sliding straight from one panel to the next can report the enter before the exit, so
+   * tracking the hovered set rather than one flag keeps the aggregate stable through that reorder.
    */
-  private floating(position: string, id: string, children: readonly Node[]): HTMLElement {
-    const node = floating(position, children);
+  private floating(id: string, children: readonly Node[]): HTMLElement {
+    const node = floating(children);
     node.addEventListener('pointerenter', () => this.setHovered(id, true));
     node.addEventListener('pointerleave', () => this.setHovered(id, false));
     return node;

@@ -1,6 +1,6 @@
 /*
  * Editor-only chrome, layered over the shared `chrome.css` vocabulary (the fantasy panel,
- * button, field, floating-corner, and overlay classes are reused as-is).
+ * button, field, floating-stack, and overlay classes are reused as-is).
  */
 
 #somnio-editor-root {

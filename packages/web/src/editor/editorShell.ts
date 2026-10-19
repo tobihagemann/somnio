@@ -4,7 +4,7 @@ import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
-import { element, floating } from '@/ui/dom';
+import { element, floating, floatingStack } from '@/ui/dom';
 import { AuthoringOverlay, overlayLabels } from './authoringOverlay';
 import type { AuthoringFacingHandle, AuthoringHandleSet } from './authoringOverlay';
 import { candidateSelections, gridPoint, nudgeDelta, screenPoint } from './canvasController';
@@ -147,9 +147,8 @@ export class EditorShell implements EditorCommandTarget {
       this.canvas,
       this.labels.root,
       this.marqueeNode,
-      floating('top-leading', [this.palette.root]),
-      floating('top-trailing', [this.inspector.root]),
-      floating('bottom-leading', [this.readout.root]),
+      floatingStack('leading', [floating([this.palette.root]), floating([this.readout.root])]),
+      floatingStack('trailing', [floating([this.inspector.root])]),
       this.overlays.root,
     );
 

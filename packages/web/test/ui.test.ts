@@ -197,6 +197,27 @@ describe('the four floating panels', () => {
     expect(panels.root.querySelectorAll('.hud-bar__track')).toHaveLength(3);
   });
 
+  /** In a short window one of a side's columns gives way to the other only while they share one stack. */
+  it("stacks each side's two columns, the top one first, and lets the chat and the players give way", () => {
+    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
+
+    const panelIn = (column: Element): string | undefined =>
+      ['hud-panel', 'chat-panel', 'trailing-list--players', 'trailing-list--items'].find((name) => column.querySelector(`.${name}`) !== null);
+    const stacks = [...panels.root.querySelectorAll('.floating-stack')].map((stack) =>
+      [...stack.children].map((column) => [panelIn(column), column.classList.contains('floating--yields')]),
+    );
+    expect(stacks).toEqual([
+      [
+        ['hud-panel', false],
+        ['chat-panel', true],
+      ],
+      [
+        ['trailing-list--players', true],
+        ['trailing-list--items', false],
+      ],
+    ]);
+  });
+
   /** Speech bubbles keep clear of what this lists; a panel left out would cover them. */
   it('lists every panel body and toggle as covering the play field', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
