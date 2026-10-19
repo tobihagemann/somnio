@@ -145,6 +145,26 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image. A capture is at 1x device scale unless the viewport says otherwise. Judge fine detail, such as where two outlines join, at 2x: `agent-browser set viewport <width> <height> 2`. Set it before opening the page. On an open page, change the size along with the scale, or reload. The client follows a real zoom or a move to another display, but a `set viewport` that changes only the scale fires neither `resize` nor the media-query change the client watches, so the world stays drawn at the old scale. Confirm with `document.querySelector('canvas').width`, which reads twice the canvas's `clientWidth` at 2x; `window.devicePixelRatio` reads `2` even while the world is still drawn at 1x. Enlarged, a 1x capture shows lines as joined that are visibly broken on a 2x display.
 
+**Check a layout across window widths.** A `set viewport <width> <height>` on an open page resizes it and the client lays out again, so one session can judge a panel at several widths without reloading. jsdom does no layout, so measure a width rule here: compare rects in pixels rather than judging from a screenshot alone. The corner panels are `.floating-stack--leading > .floating .fantasy-panel` (the HUD, then the chat) and `.floating-stack--trailing > .floating .fantasy-panel` (Players, then Items), and `querySelector` returns the top one. Keep the Players panel open: collapsed, its rect reads zero. A surface shown in one game state only needs that state before the loop: the fallen notice needs a fallen player, which the "Give a character a role, ranks, or pools" recipe below sets up.
+
+```bash
+for w in 1280 760 700; do
+  agent-browser set viewport $w 700
+  agent-browser eval --stdin <<'JS'
+(() => {
+  const rect = (selector) => document.querySelector(selector).getBoundingClientRect()
+  const box = rect('.fallen-notice')
+  const hud = rect('.floating-stack--leading > .floating .fantasy-panel')
+  const players = rect('.floating-stack--trailing > .floating .fantasy-panel')
+  return { width: innerWidth, boxWidth: box.width, gapLeft: box.left - hud.right, gapRight: players.left - box.right }
+})()
+JS
+done
+agent-browser set viewport 1280 720   # the other recipes assume a wide window
+```
+
+A negative gap is an overlap.
+
 **Zoom.** Use real wheel input over the bare play field. The client ignores a wheel event while the pointer is over a panel, so a `WheelEvent` dispatched from `eval` after the pointer last rested on a panel zooms nothing. A negative delta zooms in, toward `zoomFactor()` 2.0:
 
 ```bash
