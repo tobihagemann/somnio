@@ -135,6 +135,10 @@
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
   },
+  "Anyone up for the Nordwald?": {
+    "en": "Anyone up for the Nordwald?",
+    "de": "Kommt jemand mit in den Nordwald?"
+  },
   "Ask for the trial": {
     "en": "Ask for the trial",
     "de": "Um die Prüfung bitten"
@@ -322,6 +326,10 @@
   "Mastered": {
     "en": "Mastered",
     "de": "Gemeistert"
+  },
+  "Meet me at the inn.": {
+    "en": "Meet me at the inn.",
+    "de": "Wir treffen uns im Gasthaus."
   },
   "Mend %@ health on other dreamers.": {
     "en": "Mend %@ health on other dreamers.",
@@ -518,6 +526,10 @@
   "Walk to the %@ and come back.": {
     "en": "Walk to the %@ and come back.",
     "de": "Geh bis in den %@ und kehre zurück."
+  },
+  "Watch out, nightmares about!": {
+    "en": "Watch out, nightmares about!",
+    "de": "Vorsicht, hier spuken Albträume!"
   },
   "Welcome to Somnio!": {
     "en": "Welcome to Somnio!",

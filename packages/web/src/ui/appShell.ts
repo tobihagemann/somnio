@@ -10,13 +10,15 @@ import { MAX_TICK_DELTA } from '@/scene/animation';
 import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { paintBubbles } from '@/scene/bubbleLayer';
 import { HttpModelAssets } from '@/scene/modelAssets';
-import { catalogTables, currentLocale, resolveLocale, setLocale, t } from '@/i18n';
+import { canvasWidthMeasurer } from '@/scene/speechBubbleText';
+import { SplashDirector } from '@/splash/director';
+import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
 import { GamePanels } from './panels';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
 import { screenOccluders, viewportPoint } from './occluders';
-import { element } from './dom';
+import { element, setHidden } from './dom';
 
 /**
  * Composition root: canvas, DOM overlays, controller, session, and every browser-host concern.
@@ -92,6 +94,8 @@ export class AppShell {
   readonly controller: ConnectionController;
   readonly session: GameplaySession;
   readonly scene: WorldScene | undefined;
+  /** The reel behind the pre-login screens; there is none without a scene to play it on. */
+  readonly splash: SplashDirector | undefined;
   readonly panels: GamePanels;
   readonly servicePanel: ServicePanel;
   readonly fallenNotice: FallenNotice;
@@ -106,6 +110,14 @@ export class AppShell {
   /** Where each bubble is painted opaque before it is laid on the bubble layer at its opacity. */
   private readonly bubbleScratch: HTMLCanvasElement;
   private bubbleScratchContext: CanvasRenderingContext2D | null = null;
+  /** Dims the world under the pre-login screens and holds the dip between shots. */
+  private readonly splashVeil: HTMLElement;
+  private readonly splashDip: HTMLElement;
+  private shownDipOpacity = 0;
+  /** The wordmark over every pre-login screen, with the line a silent resume reports under it. */
+  private readonly splashWordmark: HTMLElement;
+  private readonly wordmarkImage: HTMLImageElement;
+  private readonly wordmarkStatus: HTMLElement;
   private readonly transport: GameplayTransport;
   private readonly keyboard: KeyboardSampler;
   private renderer: THREE.WebGLRenderer | undefined;
@@ -134,6 +146,13 @@ export class AppShell {
     // the player sees, instead of a WebGL error thrown from a constructor.
     const registry = bundledModelRegistry();
     this.scene = capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect()) : undefined;
+    this.splash =
+      this.scene === undefined
+        ? undefined
+        : new SplashDirector(this.scene, registry, canvasWidthMeasurer(), {
+            reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+            attached: () => this.controller.connectionState === 'attached',
+          });
 
     this.controller = new ConnectionController({
       transport: this.transport,
@@ -183,7 +202,11 @@ export class AppShell {
       // The overlay stays up until the world actually arrives: `submitLogin` does not touch
       // `presentedOverlay` and `handleEnterSpace` is what clears it. Dismissing on submit instead
       // leaves nothing on screen for a rejected password to return to.
-      onLogin: (credentials) => this.controller.beginSession({ kind: 'login', credentials }),
+      onLogin: (credentials) => {
+        this.controller.beginSession({ kind: 'login', credentials });
+        // Rendered at once, so the last failure leaves the card before any answer to this attempt arrives.
+        this.render();
+      },
       onRegister: (form) => {
         this.overlays.showRegistrationError(undefined);
         this.controller.register(form);
@@ -206,17 +229,31 @@ export class AppShell {
 
     this.notices = new BlockingNotices();
 
+    this.splashDip = element('div', { className: 'splash-dip' });
+    this.splashVeil = element('div', { className: 'splash-veil', children: [this.splashDip] });
+    this.wordmarkImage = element('img', {
+      className: 'splash-wordmark__image',
+      attributes: { alt: t('Somnio'), src: '/assets/Branding/somnio-wordmark.png' },
+    });
+    this.wordmarkStatus = element('p', { className: 'splash-wordmark__status' });
+    this.splashWordmark = element('div', { className: 'splash-wordmark', children: [this.wordmarkImage, this.wordmarkStatus] });
+    this.container.classList.add('somnio-prelogin');
+    this.panels.setShown(false);
+
     this.container.append(
       this.canvas,
       this.bubbleCanvas,
+      this.splashVeil,
       this.panels.root,
       this.servicePanel.root,
       this.fallenNotice.root,
       this.overlays.root,
       this.notices.root,
+      this.splashWordmark,
     );
     this.controller.onChatLinesChanged = () => this.render();
     this.controller.onPlayersChanged = () => this.render();
+    this.controller.onSplashShown = () => this.splash?.restart();
     // The form is the one credential surface the controller cannot reach, so it clears through here.
     this.controller.onSessionIdentityEnded = () => this.overlays.clearCredentialForms();
     this.controller.onOverlayChanged = (overlay) => {
@@ -287,8 +324,12 @@ export class AppShell {
     // elapsed time, so the integrated delta is not the hazard. Stale input is: a `keyup` delivered
     // while hidden leaves the held set populated and the character walks on return.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.session.handleVisibilityLoss();
-      else this.lastFrameMs = undefined;
+      if (document.visibilityState === 'hidden') {
+        this.session.handleVisibilityLoss();
+      } else {
+        this.lastFrameMs = undefined;
+        this.splash?.replayShot();
+      }
     });
     window.addEventListener('blur', () => this.session.handleVisibilityLoss());
 
@@ -439,6 +480,7 @@ export class AppShell {
     if (this.renderer !== undefined) sizeWorldRenderer(this.renderer, width, height);
     this.bubbleCanvas.width = Math.round(width * window.devicePixelRatio);
     this.bubbleCanvas.height = Math.round(height * window.devicePixelRatio);
+    this.splash?.setViewport(width, height);
     // Holds the vertical world extent constant and lets aspect drive width, so a bigger window
     // magnifies rather than reveals. This is the MMO-fairness contract, not a rendering detail.
     this.scene?.setViewportAspect(this.aspect());
@@ -480,8 +522,18 @@ export class AppShell {
     if (this.controller.connectionState !== 'disconnected') this.session.runTick(timestamp);
     const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
     this.lastFrameMs = timestamp;
-    const covering = [...this.panels.occluders, this.servicePanel.root, this.fallenNotice.root].map((panel) => panel.getBoundingClientRect());
+    // Before the world is on screen the card and the wordmark cover it, so the staged bubbles keep clear of them.
+    const splashCovering = this.controller.inWorld ? [] : [this.overlays.presentedCard, this.wordmarkImage];
+    const covering = [...this.panels.occluders, this.servicePanel.root, this.fallenNotice.root, ...splashCovering]
+      .filter((node) => node !== undefined)
+      .map((node) => node.getBoundingClientRect());
     this.scene?.setScreenOccluders(screenOccluders(this.canvas.getBoundingClientRect(), covering));
+    this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
+    const dipOpacity = this.splash?.dipOpacity ?? 0;
+    if (dipOpacity !== this.shownDipOpacity) {
+      this.shownDipOpacity = dipOpacity;
+      this.splashDip.style.opacity = String(dipOpacity);
+    }
     this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
     if (this.scene !== undefined && this.renderer !== undefined) {
       this.renderer.render(this.scene.scene, this.scene.camera);
@@ -503,10 +555,20 @@ export class AppShell {
 
   /** Pushes controller and session state into the DOM. Cheap enough to run per frame. */
   render(): void {
-    this.overlays.present(this.controller.presentedOverlay);
-    // The panels are not gated on the connection: `MainWindowView` composes all four
-    // unconditionally and lets the modal host sit over them, which is what makes the chat
-    // scrollback readable behind the login overlay — where a rejected password reports itself.
+    const overlay = this.controller.presentedOverlay;
+    this.overlays.present(overlay);
+    // Everything pre-login gives way in the frame the player's own body first appears, not at
+    // `enterSpace`, which comes a little before it and on every later join as well.
+    const inWorld = this.controller.inWorld;
+    setHidden(this.splashVeil, inWorld);
+    setHidden(this.splashWordmark, inWorld);
+    this.container.classList.toggle('somnio-prelogin', !inWorld);
+    this.panels.setShown(inWorld);
+    // The last failure says why on the login card, and a silent resume's retry under the wordmark.
+    const loginStatus = this.controller.loginStatus;
+    const status = inWorld || loginStatus === undefined ? undefined : renderChatLine(loginStatus, catalogTables, currentLocale());
+    this.overlays.showLoginStatus(overlay?.kind === 'login' ? status : undefined);
+    this.wordmarkStatus.textContent = overlay === undefined ? (status ?? '') : '';
     this.panels.renderEnergy(this.session.energy, this.session.winded);
     this.panels.renderLucidity(this.session.lucidity);
     this.servicePanel.render(this.session.servicePanel, this.session.lucidity, this.session.inventory, this.session.tradeLocked());

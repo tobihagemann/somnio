@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene, watchViewport } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
-import { ORTHO_RIG, cameraPosition } from '@/scene/cameraRig';
+import { ORTHO_RIG, cameraPosition, scaleForZoomFactor } from '@/scene/cameraRig';
 import { SUN_SHADOW, sunState } from '@/scene/dayNightSun';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { CHARACTER_SCALE, FLOOR_PATCH_LIFT, PLACEHOLDER_HEIGHT } from '@/scene/placement';
@@ -265,6 +265,24 @@ describe('camera framing', () => {
     scene.updatePosition('self', { x: 13, z: 5 }, 0, undefined);
     expect(cameraFocus(scene).x).toBeCloseTo(13, 9);
     expect(cameraFocus(scene).z).toBeCloseTo(5, 9);
+  });
+
+  /** The first frame of the game is at the player's zoom, while the splash held on screen until then keeps its shot. */
+  it('frames a splash shot at its own scale whatever the zoom, until the player lands', () => {
+    const scene = makeScene();
+    scene.frameShot({ x: 12, z: 7 }, 5);
+    expect(scene.camera.top).toBe(5);
+    expect(cameraFocus(scene).x).toBeCloseTo(12, 9);
+    expect(cameraFocus(scene).z).toBeCloseTo(7, 9);
+    scene.applyZoomFactor(2);
+    expect(scene.camera.top).toBe(5);
+
+    scene.enterSpace(world());
+    scene.addSector(sector());
+    expect(scene._cameraScale()).toBe(5);
+    scene.placeEntity(player());
+
+    expect(scene._cameraScale()).toBe(scaleForZoomFactor(2));
   });
 
   it('does not follow anyone else', () => {

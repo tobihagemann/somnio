@@ -7,9 +7,10 @@ set -euo pipefail
 #
 # Env-var contract:
 #   SOMNIO_ASSET_SOURCE   — required. Absolute path to the asset root. Geometry comes from
-#                           Web/Models/ (glTF); textures from the *root* FloorMaterials/
-#                           and UI/, which are already web-native PNGs and are therefore
-#                           not duplicated under Web/.
+#                           Web/Models/ (glTF) and the favicons, home-screen icon, and
+#                           wordmark from Web/Branding/; textures from the *root* FloorMaterials/ and UI/,
+#                           which are already web-native PNGs and are therefore not
+#                           duplicated under Web/.
 #   SOMNIO_WEB_ASSET_DEST — required. Directory that becomes `/assets` on the served
 #                           site. Normally `packages/web/dist/assets`.
 #
@@ -39,13 +40,23 @@ DEST="${SOMNIO_WEB_ASSET_DEST%/}"
 
 # `source-subdir:dest-subdir:required` triples. Models/ and FloorMaterials/ warn rather
 # than fail so an in-progress pack still yields a loadable page — the model loader
-# renders placeholders and the floor falls back to an untextured plane. UI/ is a hard
-# failure: the panel chrome has no designed fallback, and every panel would render as an
-# unstyled box.
+# renders placeholders and the floor falls back to an untextured plane. UI/ and Branding/
+# are hard failures: neither the panel chrome nor the favicon and wordmark have a
+# designed fallback, so every panel would render as an unstyled box and the page would ship
+# without its wordmark and icons.
 SUBTREES=(
   "Web/Models:Models:optional"
+  "Web/Branding:Branding:required"
   "FloorMaterials:FloorMaterials:optional"
   "UI:UI:required"
+)
+
+# Checked file by file after the copy: a directory check alone passes a partial export.
+BRANDING_FILES=(
+  "somnio-icon-64.png"
+  "somnio-icon-dark-64.png"
+  "somnio-icon-180.png"
+  "somnio-wordmark.png"
 )
 
 for entry in "${SUBTREES[@]}"; do
@@ -55,7 +66,7 @@ for entry in "${SUBTREES[@]}"; do
   if [[ ! -d "$src" ]]; then
     if [[ "$requirement" == "required" ]]; then
       echo "ERROR: Web asset bundling: required subtree '${from}' missing at ${src}." >&2
-      echo "       The browser client needs the UI chrome textures (somnio-assets UI/ subtree)." >&2
+      echo "       The browser client has no fallback for it; restore somnio-assets ${from}/." >&2
       exit 1
     fi
     echo "WARN: Web asset bundling: subtree '${from}' missing at ${src}; skipping."
@@ -70,6 +81,14 @@ for entry in "${SUBTREES[@]}"; do
   # carries neither rsync nor python3, and with the destination cleared above rsync's --delete
   # would add nothing.
   cp -a "${src}/." "${dest}/"
+done
+
+for file in "${BRANDING_FILES[@]}"; do
+  if [[ ! -f "${DEST}/Branding/${file}" ]]; then
+    echo "ERROR: Web asset bundling: brand file 'Web/Branding/${file}' missing from the pack." >&2
+    echo "       Regenerate it with somnio-assets Branding/scripts/export_web.py." >&2
+    exit 1
+  fi
 done
 
 # Self-containment check. Today's pack is entirely single-file binary GLBs, so this finds

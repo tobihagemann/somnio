@@ -1527,3 +1527,143 @@ describe('the online roster is bounded', () => {
     expect(rig.controller.players.length).toBe(500);
   });
 });
+
+/**
+ * The panels are hidden until the player stands in the world, so the login card says why an attempt
+ * failed. Read from a field rather than the chat history, whose line outlives the status.
+ */
+describe('the status the login card and the splash say', () => {
+  function login(rig: Rig): void {
+    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: true } });
+  }
+
+  function answered(rig: Rig): void {
+    rig.socket().open();
+    rig.deliver(hello());
+  }
+
+  function resuming(): Rig {
+    const storage = new MemoryStorage();
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    const rig = makeRig({ storage });
+    rig.controller.resumeStoredSession();
+    answered(rig);
+    return rig;
+  }
+
+  it.each([
+    ['badCredentials', { kind: 'badCredentials' }],
+    ['throttled', { kind: 'throttled' }],
+    ['alreadyLoggedIn', { kind: 'alreadyLoggedIn' }],
+  ] as const)('says a login answered %s', (result, line) => {
+    const rig = makeRig();
+    login(rig);
+    answered(rig);
+    rig.deliver({ tag: 'loginResult', payload: { result } });
+    expect(rig.controller.loginStatus).toEqual(line);
+  });
+
+  it('says a session expired when a resume is refused', () => {
+    const rig = resuming();
+    rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
+    expect(rig.controller.loginStatus).toEqual({ kind: 'sessionExpired' });
+  });
+
+  it('says a resume is reconnecting while it retries', () => {
+    const rig = resuming();
+    rig.deliver({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } });
+    expect(rig.controller.loginStatus).toEqual({ kind: 'reconnecting' });
+  });
+
+  it.each([
+    ['an unreachable server', (rig: Rig) => rig.socket().deliverError(), { kind: 'serverUnreachable' }],
+    ['a dropped connection', (rig: Rig) => (rig.socket().open(), rig.socket().deliverClose()), { kind: 'connectionLost' }],
+    ['a malformed frame', (rig: Rig) => (rig.socket().open(), rig.socket().deliverText('{ not json')), { kind: 'errorCode' }],
+  ] as const)('says %s', (_label, fail, line) => {
+    const rig = makeRig();
+    login(rig);
+    fail(rig);
+    expect(rig.controller.loginStatus).toMatchObject(line);
+  });
+
+  it('clears the status on the next attempt, a sign-up, and the world arriving', () => {
+    const rig = makeRig();
+    const failed = (): void => {
+      login(rig);
+      answered(rig);
+      rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } });
+      expect(rig.controller.loginStatus).toBeDefined();
+    };
+    failed();
+    login(rig);
+    expect(rig.controller.loginStatus).toBeUndefined();
+
+    failed();
+    rig.controller.register({ nickname: 'Ida', password: 'hunter2-long', passwordRepeat: 'hunter2-long', people: 'wachen', email: 'ida@example.com' });
+    expect(rig.controller.loginStatus).toBeUndefined();
+
+    login(rig);
+    answered(rig);
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    // Standing in for a resume's retry, whose status the join answers.
+    rig.controller.loginStatus = { kind: 'reconnecting' };
+    rig.deliver(enterSpaceFrame());
+    expect(rig.controller.loginStatus).toBeUndefined();
+  });
+
+  /** A refused save arrives after a login that went through, so it is no reason the login failed. */
+  it('says nothing when a remembered token cannot be saved', () => {
+    const rig = makeRig({ storage: new WriteRejectingStorage() });
+    login(rig);
+    answered(rig);
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 60 } });
+    expect(rig.controller.chatHistory.map((line) => line.kind)).toContain('credentialSaveFailed');
+    expect(rig.controller.loginStatus).toBeUndefined();
+  });
+});
+
+describe('the splash and the world', () => {
+  function attach(rig: Rig): void {
+    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+  }
+
+  it('tells the owner each time the splash replaces the world', () => {
+    const rig = makeRig();
+    let shown = 0;
+    rig.controller.onSplashShown = () => {
+      shown += 1;
+    };
+
+    attach(rig);
+    rig.controller.leaveGame();
+    expect(shown).toBe(1);
+
+    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.socket().deliverError();
+    expect(shown).toBe(2);
+  });
+
+  /** Every join clears the entities before the player's body returns, so a door must not read as leaving the world. */
+  it('counts the player in the world from their own body on, through every later join, until the session ends', () => {
+    const rig = makeRig();
+    attach(rig);
+    expect(rig.controller.inWorld).toBe(false);
+
+    rig.deliver(entityFrame());
+    expect(rig.controller.inWorld).toBe(true);
+
+    rig.deliver(enterSpaceFrame('EdariaInn'));
+    expect(rig.controller.inWorld).toBe(true);
+    rig.deliver(peer());
+    rig.deliver(entityFrame());
+    expect(rig.controller.inWorld).toBe(true);
+
+    rig.socket().deliverClose();
+    expect(rig.controller.inWorld).toBe(false);
+  });
+});

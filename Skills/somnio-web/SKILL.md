@@ -15,7 +15,7 @@ The client needs a running backend. Stand up the local server on port 17662 firs
 
 Node 24.17.0 or newer (the root `package.json` pins `engines`, `.nvmrc` carries the version).
 
-Without an asset pack the page loads and plays with placeholder models, an untextured floor, and unstyled panels. To render the real world, build the served asset root from the `somnio-assets` working tree **before** starting Vite; a pack added afterwards is not served until restart:
+Without an asset pack the page loads and plays with placeholder models, an untextured floor, unstyled panels, and no wordmark or favicon. To render the real world, build the served asset root from the `somnio-assets` working tree **before** starting Vite; a pack added afterwards is not served until restart:
 
 ```bash
 SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=packages/web/public/assets Scripts/bundle-web-assets.sh
@@ -54,15 +54,16 @@ agent-browser type <nickname-ref> '<nickname>'
 agent-browser type <password-ref> '<password>'
 agent-browser click <log-in-ref>
 agent-browser wait --fn 'window.somnio.connectionState() === "attached"'
+agent-browser wait --fn 'window.somnio.player() !== undefined'
 ```
 
 That first predicate does two jobs, and both are load-bearing. The model prewarm shows a progress notice, so waiting it out is what keeps `snapshot` from running against a half-built page. And `overlay()` alone is not a readiness signal: it initializes to `login` before anything is presented, so on a host with no WebGL or a handheld viewport it answers `login` while the page actually shows a blocking notice and no form exists. Checking for a visible notice covers both.
 
-`attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick.
+`attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick. That is a little before the world is on screen. The splash veil and the wordmark go, and the panels appear, only once the player's own body is placed, which is what the last wait checks.
 
-Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials.
+Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it and set it in the observing one. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
 
-`agent-browser type` **appends** to a pre-filled field. The overlays keep field values for the page lifetime, and Step 3's sign-up handoff deliberately pre-fills the login form — so registering and then running the login block verbatim produces doubled text and a "Falsche Zugangsdaten." / "Bad credentials." chat line. Clear the fields first (`agent-browser eval 'document.querySelectorAll("input").forEach(i => { i.value = "" })'`) or open a fresh page before typing.
+`agent-browser type` **appends** to a pre-filled field. The overlays keep field values for the page lifetime, and Step 3's sign-up handoff deliberately pre-fills the login form — so registering and then running the login block verbatim produces doubled text and "Falsche Zugangsdaten." / "Bad credentials." on the login card, under the form. Clear the fields first (`agent-browser eval 'document.querySelectorAll("input").forEach(i => { i.value = "" })'`) or open a fresh page before typing.
 
 ## Debug API
 
@@ -88,6 +89,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
 | `overlay()` | `'login'` \| `'registration'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `undefined` |
 | `zoomFactor()` | session zoom, 0.5–2.0 |
+| `splashShot()` | the id of the splash shot playing behind the pre-login screens (`'town'`, `'follow-dreamer'`, ... `'time-lapse'`), or `undefined` while none plays |
 
 `<html data-somnio-build>` carries the build stamp (`somnio-web <version>`) with no `?debug=1` gate, so any loaded page identifies its build. It is set by `main.ts` once the bundle runs, not baked into the served HTML — read it with `agent-browser eval 'document.documentElement.dataset.somnioBuild'`, since `curl` of the same URL returns a bare `<html lang="en">`.
 
@@ -138,6 +140,8 @@ agent-browser eval 'window.somnio.entities().filter((e) => e.kind === "npc")'
 agent-browser wait --fn 'window.somnio.chatHistory().length > 0'
 agent-browser eval 'window.somnio.chatHistory().at(-1)'
 ```
+
+**Watch the splash.** Before login the world behind the pre-login screens plays the splash reel: ten shots of 6–8 s joined by a half-second dip to dark, then from the first again. It needs no server. It stops when a session attaches, and its last frame stays until the player's body is placed. Poll `window.somnio.splashShot()` to see which shot is up and wait for the next, and screenshot each: `agent-browser screenshot` captures the reel, the 50% veil over it, and the wordmark. Under `prefers-reduced-motion: reduce` it holds the first shot, `town`. Emulate that with `agent-browser set media light reduced-motion` and confirm with `matchMedia('(prefers-reduced-motion: reduce)').matches`. The client reads it once at startup, so set it before opening the page or reload after.
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image. A capture is at 1x device scale unless the viewport says otherwise. Judge fine detail, such as where two outlines join, at 2x: `agent-browser set viewport <width> <height> 2`. Set it before opening the page. On an open page, change the size along with the scale, or reload. The client follows a real zoom or a move to another display, but a `set viewport` that changes only the scale fires neither `resize` nor the media-query change the client watches, so the world stays drawn at the old scale. Confirm with `document.querySelector('canvas').width`, which reads twice the canvas's `clientWidth` at 2x; `window.devicePixelRatio` reads `2` even while the world is still drawn at 1x. Enlarged, a 1x capture shows lines as joined that are visibly broken on a 2x display.
 
@@ -190,7 +194,7 @@ node <dir>/bot.mjs <nickname> 0.7 0.3 'Hallo' & echo $!   # nickname, step east,
 
 New accounts start at the starter spawn in `EdariaBibliothek`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its character and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE name IN ('<nickname>', ...);"`.
 
-For a crowd of hundreds, hold every bot's socket in one Node process rather than one process per bot, and open them in batches that log in before the next batch dials. The server holds at most 128 sockets awaiting login, and 8 per address while `SOMNIO_TRUST_PROXY` is set (the compose topology sets it). It answers past those caps with 503 or 429, and closes a socket not logged in within 30 s. Register the accounts over the wire one after another first, give them a shared name prefix, and delete them afterwards with `DELETE FROM accounts WHERE name LIKE '<prefix>%'`. To count or size the frames the browser player receives, wrap the `onmessage` setter on `WebSocket.prototype` from an `eval` before logging in, so the game's socket reports each frame to the wrapper. A remembered session opens its socket at page load, before any `eval` runs, so log in without "Remember password" for this.
+For a crowd of hundreds, hold every bot's socket in one Node process rather than one process per bot, and open them in batches that log in before the next batch dials. The server holds at most 128 sockets awaiting login, and 8 per address while `SOMNIO_TRUST_PROXY` is set (the compose topology sets it). It answers past those caps with 503 or 429, and closes a socket not logged in within 30 s. Register the accounts over the wire one after another first, give them a shared name prefix, and delete them afterwards with `DELETE FROM accounts WHERE name LIKE '<prefix>%'`. To count or size the frames the browser player receives, wrap the `onmessage` setter on `WebSocket.prototype` from an `eval` before logging in, so the game's socket reports each frame to the wrapper. A remembered session opens its socket at page load, before any `eval` runs, so log in without "Remember password" for this, or install the wrapper with `--init-script` as Step 4 describes.
 
 **Hide the tab.** Open the session `--headed` from its first command. There, a second tab in front fires `visibilitychange` on the game page and stops its `requestAnimationFrame`; switching back makes it visible again. Tab ids are the `t<n>` ids `tab list` prints, and positional integers are refused. An `eval` sent while the blank tab is in front runs in that tab, so switch back before reading `window.somnio`.
 
@@ -203,6 +207,27 @@ agent-browser --session a tab t1                # t1 in a fresh session; otherwi
 
 Hiding clears held keys, so dispatch a held key again after switching back. Peers, speech bubbles, and raise rings follow the clock, so on return they show where things stand now. To see what the first frames back draw, install a `visibilitychange` listener before hiding that, on `visible`, records a sample (say a peer's `entities()` position) on each `requestAnimationFrame` for a few hundred milliseconds, and read the samples after switching back.
 
+Headless, hold the frames instead: a hidden tab is a page whose `requestAnimationFrame` stops while its socket keeps delivering, so a login can complete there. Dispatching `visibilitychange` alone is no substitute, because the frame loop keeps running and catches up before anything is read.
+
+```bash
+agent-browser eval --stdin <<'JS'
+window.__realRAF = window.requestAnimationFrame
+window.__heldFrames = []
+window.requestAnimationFrame = (callback) => { window.__heldFrames.push(callback); return 0 }
+Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+document.dispatchEvent(new Event('visibilitychange'))
+JS
+# act while hidden, then return and let the frames run again:
+agent-browser eval --stdin <<'JS'
+delete document.visibilityState
+document.dispatchEvent(new Event('visibilitychange'))
+window.requestAnimationFrame = window.__realRAF
+window.__heldFrames.splice(0).forEach((callback) => window.__realRAF(callback))
+JS
+```
+
+What the frame loop writes to the page, such as the splash dip's opacity, changes only on a frame, so read it inside a `requestAnimationFrame` callback scheduled after the restore, not straight after the return. `splashShot()` is current at once, because the return itself halts a reel whose session has attached.
+
 **Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
 
 To read what the scene computed, such as where each bubble was placed and in which mode, wrap a scene method from an `eval` on the dev server. Inside an async IIFE, `const { WorldScene } = await import('/src/scene/worldScene.ts')` returns the module the page runs, so replacing `WorldScene.prototype.placedBubbles` with a wrapper that stores its result on `window` records every frame's placements. The working tree stays untouched, and a page reload removes the wrapper. Restart Vite first when `worldScene.ts` or anything it imports was edited since Vite started: the page then loads the module under a `?t=` URL, the plain import returns a second copy, and the wrapper on it never runs.
@@ -212,7 +237,7 @@ To read what the scene computed, such as where each bubble was placed and in whi
 
 Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
 
-**Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." in chat. When a re-login still fails that way after the wait, restart Vite: its proxy can keep the old upstream socket open. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
+**Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." on the login card. When a re-login still fails that way after the wait, restart Vite: its proxy can keep the old upstream socket open. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)

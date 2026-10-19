@@ -4,6 +4,7 @@ import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
 import { catalogTables, setLocale } from '@/i18n';
+import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import { mouseFacingHeading } from '@/client';
 import type { RegistrationForm } from '@/client';
 import { clamp, fullPools, headingRadians } from '@somnio/core';
@@ -145,6 +146,23 @@ describe('panel chrome metrics', () => {
     expect(field).toContain('line-height: 16px');
   });
 
+  /**
+   * The wordmark band ends above the tallest card, so the wordmark keeps its place whichever card
+   * shows. The reel frames its figures clear of the same card and band, so the stylesheet and the
+   * reel must agree on its size.
+   */
+  it('veils the world at half black and holds the wordmark in a band above the tallest card', () => {
+    expect(/\n\.splash-veil\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.5)');
+    expect(css).toContain(`--somnio-splash-card-half: ${PRE_LOGIN_CARD.height / 2}px`);
+    expect(/\n\.overlay-card--wide\s*\{([^}]*)\}/.exec(css)?.[1]).toContain(`width: min(${PRE_LOGIN_CARD.width}px,`);
+    const band = /\n\.splash-wordmark\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(band).toContain(`top: ${WORDMARK_BAND_INSET}px`);
+    expect(band).toContain(`bottom: calc(50% + var(--somnio-splash-card-half) + ${WORDMARK_BAND_INSET}px)`);
+    expect(/\.splash-wordmark__image\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('width: min(440px, calc(100vw - 48px))');
+    // The in-game menus keep their own scrim.
+    expect(/\n\.overlay-scrim\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.55)');
+  });
+
   it('draws the standalone rule without the ornamented sheet', () => {
     const divider = /\n\.fantasy-divider\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(divider).toBeDefined();
@@ -152,6 +170,18 @@ describe('panel chrome metrics', () => {
     // half-cut end ornament off every standalone rule in the app.
     expect(divider).not.toContain('divider.png');
     expect(divider).toContain('background-size: 100% 1.5px');
+  });
+});
+
+describe('the page head', () => {
+  it('links the cloud-S favicon, its dark-sky variant, and the home-screen icon', () => {
+    const html = readFileSync(resolve(WEB_ROOT, 'index.html'), 'utf8');
+    const links = [...html.matchAll(/<link [^>]*>/g)].map((match) => match[0]);
+    expect(links.find((link) => link.includes('somnio-icon-64.png'))).toContain('rel="icon"');
+    expect(links.find((link) => link.includes('somnio-icon-64.png'))).not.toContain('media=');
+    expect(links.find((link) => link.includes('somnio-icon-dark-64.png'))).toContain('media="(prefers-color-scheme: dark)"');
+    expect(links.find((link) => link.includes('rel="apple-touch-icon"'))).toContain('href="/assets/Branding/somnio-icon-180.png"');
+    for (const link of links) expect(link).toContain('href="/assets/Branding/');
   });
 });
 
@@ -731,6 +761,7 @@ describe('the app shell in a host that cannot render', () => {
     const notice = container.querySelector('.blocking-notice:not(.hidden)');
     expect(notice).not.toBeNull();
     expect(notice?.textContent).toContain('WebGL');
+    expect(container.querySelector('.splash-wordmark')?.classList.contains('hidden')).toBe(false);
   });
 
   it('shows the desktop-only notice at a handheld viewport', () => {
@@ -738,6 +769,7 @@ describe('the app shell in a host that cannot render', () => {
 
     const notice = container.querySelector('.blocking-notice:not(.hidden)');
     expect(notice?.textContent).toContain('keyboard');
+    expect(container.querySelector('.splash-wordmark')?.classList.contains('hidden')).toBe(false);
   });
 
   it('prefers the mobile notice over the WebGL one when both apply', () => {
@@ -791,6 +823,21 @@ describe('the login overlay across an authentication attempt', () => {
     return { shell, socket: latest, dialogVisible };
   }
 
+  /** Every line shown under the login form. */
+  function loginErrors(): string[] {
+    return [...container.querySelectorAll('[aria-label="Somnio"] .form-error')]
+      .filter((node) => !node.classList.contains('hidden'))
+      .map((node) => node.textContent ?? '');
+  }
+
+  function loginStatus(): string {
+    return loginErrors().join(' / ');
+  }
+
+  function wordmarkStatus(): string {
+    return container.querySelector('.splash-wordmark__status')?.textContent ?? '';
+  }
+
   function submitLogin(shell: AppShell, container: HTMLElement): void {
     shell.overlays.loginNickname.value = 'Tester';
     const password = container.querySelector('input[type="password"]') as HTMLInputElement;
@@ -832,14 +879,220 @@ describe('the login overlay across an authentication attempt', () => {
 
     expect(dialogVisible()).toBe(true);
     expect(shell.controller.connectionState).toBe('disconnected');
-    // The reason goes to the chat scrollback rather than inline in the form — the
-    // registration overlay is the only one that carries its error in the panel. So the scrollback
-    // has to be *readable* behind the overlay, which is why the panels are not gated on the
-    // connection: with the socket torn down, a state-gated panel would hide the explanation.
-    const scrollback = container.querySelector('.chat-scrollback');
-    expect(scrollback?.textContent ?? '').not.toBe('');
-    expect(scrollback?.closest('.floating')?.classList.contains('hidden')).toBe(false);
-    expect(shell.panels.root.classList.contains('hidden')).toBe(false);
+    // The panels stay hidden until the player is in the world, so the reason is said on the card.
+    expect(loginStatus()).toBe('Bad credentials.');
+    expect(shell.panels.root.classList.contains('hidden')).toBe(true);
+  });
+
+  /** A status left standing while the next attempt is under way reads as that attempt's answer. */
+  it('clears the reason from the card as soon as the next login is submitted', () => {
+    const { shell, socket } = loginShell();
+    submitLogin(shell, container);
+    socket().open();
+    socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'badCredentials' } }));
+    expect(loginStatus()).toBe('Bad credentials.');
+
+    submitLogin(shell, container);
+
+    expect(loginStatus()).toBe('');
+  });
+
+  /** The form's own check is the newer word, so it stands in for the server's last one rather than beside it. */
+  it("shows the form's own check in place of the server's reason, never both", () => {
+    const { shell, socket } = loginShell();
+    submitLogin(shell, container);
+    socket().open();
+    socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'badCredentials' } }));
+    expect(loginErrors()).toEqual(['Bad credentials.']);
+
+    (container.querySelector('input[type="password"]') as HTMLInputElement).value = '';
+    container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    shell.render();
+    expect(loginErrors()).toEqual(['Bad credentials.']);
+
+    shell.overlays.loginNickname.value = '';
+    container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    shell.render();
+    expect(loginErrors()).toEqual(['That name uses characters Somnio does not allow.']);
+  });
+
+  it("shows the server's reason for a corrected login, not the form's earlier check", () => {
+    const { shell, socket } = loginShell();
+    shell.overlays.loginNickname.value = '';
+    container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(loginErrors()).toEqual(['That name uses characters Somnio does not allow.']);
+
+    submitLogin(shell, container);
+    socket().open();
+    socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'badCredentials' } }));
+
+    expect(loginErrors()).toEqual(['Bad credentials.']);
+  });
+
+  /** A refused login never attached, so nothing restarts the reel; it must not have stopped. */
+  it('keeps the reel playing while a login is under way and after the server refuses it', () => {
+    const { shell, socket } = loginShell();
+    const splash = shell.splash!;
+    splash.update(0.05);
+    submitLogin(shell, container);
+    socket().open();
+    socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+    expect(shell.controller.connectionState).toBe('awaitingLoginResult');
+    splash.update(0.05);
+    expect(splash.currentShotId).toBe('town');
+
+    socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'badCredentials' } }));
+    splash.update(0.05);
+    expect(splash.currentShotId).toBe('town');
+  });
+
+  /** The world being joined arrives while the card is still up; the reel must not frame or light it meanwhile. */
+  it('stops the reel at the join, before the player is placed', () => {
+    const { shell, socket } = loginShell();
+    const splash = shell.splash!;
+    const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
+    splash.update(0.05);
+    expect(splash.currentShotId).toBe('town');
+    submitLogin(shell, container);
+    socket().open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    deliver(enterSpaceFrame());
+    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    expect(shell.controller.inWorld).toBe(false);
+
+    splash.update(0.05);
+
+    expect(splash.currentShotId).toBeUndefined();
+  });
+
+  it('says nothing under the wordmark while another card than the login is up', () => {
+    const { shell, socket } = loginShell();
+    submitLogin(shell, container);
+    socket().deliverError();
+    expect(loginStatus()).toBe('The server is currently not reachable. Try again later.');
+
+    shell.controller.presentedOverlay = { kind: 'registration' };
+
+    expect(wordmarkStatus()).toBe('');
+    expect(loginStatus()).toBe('');
+  });
+
+  /**
+   * The splash gives way when the player's own body is in the world, not at `enterSpace`, and a later
+   * join, which clears the entities before the body returns, never brings it back.
+   */
+  it('shows the panels in place of the splash once the player stands in the world, and keeps them through a door', () => {
+    const { shell, socket } = loginShell();
+    const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
+    const shown = () => ({
+      panels: !shell.panels.root.classList.contains('hidden'),
+      veil: !container.querySelector('.splash-veil')!.classList.contains('hidden'),
+      wordmark: !container.querySelector('.splash-wordmark')!.classList.contains('hidden'),
+      // Takes the in-game menus' own scrim away only while the veil darkens instead.
+      prelogin: container.classList.contains('somnio-prelogin'),
+    });
+    submitLogin(shell, container);
+    socket().open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    expect(shown()).toEqual({ panels: false, veil: true, wordmark: true, prelogin: true });
+
+    deliver(enterSpaceFrame());
+    expect(shown()).toEqual({ panels: false, veil: true, wordmark: true, prelogin: true });
+
+    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    deliver(entityFrame());
+    expect(shown()).toEqual({ panels: true, veil: false, wordmark: false, prelogin: false });
+
+    deliver(enterSpaceFrame('EdariaInn'));
+    expect(shown()).toEqual({ panels: true, veil: false, wordmark: false, prelogin: false });
+  });
+
+  /**
+   * A hidden tab draws no frames, so a login can complete there with nothing to halt the reel; the
+   * tab coming back must not frame or light the game as the shot it left.
+   */
+  it('plays the reel only until a session attaches, and from its first shot again once the login card returns', () => {
+    const { shell, socket } = loginShell();
+    const splash = shell.splash!;
+    const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
+    const tabTo = (state: 'hidden' | 'visible'): void => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    splash.update(0.05);
+    expect(splash.currentShotId).toBe('town');
+    tabTo('hidden');
+    tabTo('visible');
+    expect(splash.dipOpacity).toBe(1);
+
+    tabTo('hidden');
+    submitLogin(shell, container);
+    socket().open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    deliver(enterSpaceFrame());
+    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    deliver(entityFrame());
+    const gameScale = shell.scene!._cameraScale();
+    tabTo('visible');
+    expect(shell.scene!._cameraScale()).toBe(gameScale);
+    expect(splash.dipOpacity).toBe(0);
+    splash.update(0.05);
+    expect(splash.currentShotId).toBeUndefined();
+
+    shell.controller.leaveGame();
+    splash.update(0.05);
+    expect(splash.currentShotId).toBe('town');
+  });
+
+  it('shows the newest chat line once the panels appear, though the lines came while they were hidden', () => {
+    const { shell, socket } = loginShell();
+    const scrollback = laidOutScrollback(shell.panels);
+    const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
+    submitLogin(shell, container);
+    socket().open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    for (const line of joinedLines(20)) shell.controller.appendChat(line);
+
+    deliver(enterSpaceFrame());
+    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    deliver(entityFrame());
+
+    expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
+  });
+
+  /** A remembered session resumes with no card up, so its retry is said under the wordmark. */
+  it('says a silent resume is reconnecting under the wordmark', () => {
+    localStorage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    try {
+      const { shell, socket } = loginShell();
+      shell.controller.scheduleResume = () => {};
+      expect(shell.controller.presentedOverlay).toBeUndefined();
+      socket().open();
+      socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+
+      socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } }));
+
+      expect(wordmarkStatus()).toBe('Reconnecting...');
+    } finally {
+      localStorage.removeItem('somnio.sessionToken');
+    }
+  });
+
+  it('names the login dialog without a visible title, and shows the wordmark over it', () => {
+    loginShell();
+    const login = container.querySelector('[aria-label="Somnio"]')!;
+    expect(login.querySelector('.overlay-title')).toBeNull();
+    const wordmark = container.querySelector<HTMLImageElement>('.splash-wordmark__image')!;
+    expect(wordmark.getAttribute('alt')).toBe('Somnio');
+    expect(wordmark.getAttribute('src')).toBe('/assets/Branding/somnio-wordmark.png');
+    expect(wordmark.closest('.hidden')).toBeNull();
   });
 
   it('replaces the dialog with the version notice on a skewed hello', () => {
@@ -860,6 +1113,7 @@ describe('the login overlay across an authentication attempt', () => {
     expect(shell.controller.presentedOverlay?.kind).toBe('updateRequired');
     const notice = container.querySelector('[aria-label="Update required"]')?.closest('.overlay-scrim');
     expect(notice?.classList.contains('hidden')).toBe(false);
+    expect(container.querySelector('.splash-wordmark')?.classList.contains('hidden')).toBe(false);
   });
 
   it('takes the dialog down once the world arrives', () => {

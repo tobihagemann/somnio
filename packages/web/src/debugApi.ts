@@ -41,6 +41,8 @@ export interface SomnioDebugAPI {
   cameraScale(): number | undefined;
   overlay(): string | undefined;
   zoomFactor(): number;
+  /** The id of the splash shot playing, or `undefined` while none is. */
+  splashShot(): string | undefined;
 }
 
 export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
@@ -81,6 +83,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     cameraScale: () => shell.scene?._cameraScale(),
     overlay: () => shell.controller.presentedOverlay?.kind,
     zoomFactor: () => shell.session.zoom.factor,
+    splashShot: () => shell.splash?.currentShotId,
   };
 }
 

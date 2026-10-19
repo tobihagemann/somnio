@@ -10,7 +10,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./catalog": "./src/catalog.ts",
-    "./data/ModelRegistry.json": "./data/ModelRegistry.json"
+    "./data/ModelRegistry.json": "./data/ModelRegistry.json",
+    "./fixtures/sectors/*": "./fixtures/sectors/*"
   },
   "dependencies": {
     "@somnio/protocol": "0.0.0"

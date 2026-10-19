@@ -268,6 +268,8 @@ export class WorldScene implements WorldRenderSurface {
   private readonly shadowOrientation = new THREE.Quaternion();
   private readonly shadowOrientationInverse = new THREE.Quaternion();
   private zoomFactor = 1;
+  /** The scale a splash shot is framed at, which outranks the zoom until the player lands. */
+  private shotScale: number | undefined;
   private aspect = 1;
 
   constructor(assets: ModelAssets, registry: ModelRegistry, aspect = 1, now: () => number = () => performance.now()) {
@@ -311,8 +313,15 @@ export class WorldScene implements WorldRenderSurface {
     this.applyFraming();
   }
 
+  /** Frames a shot with no player to follow: the camera looks at `focus` on the ground at `scale`, whatever the zoom. */
+  frameShot(focus: Point, scale: number): void {
+    this.shotScale = clampedScale(scale);
+    this.applyFraming();
+    this.focusCamera(new THREE.Vector3(focus.x, 0, focus.z));
+  }
+
   private applyFraming(): void {
-    const bounds = frustumBounds(scaleForZoomFactor(this.zoomFactor), this.aspect);
+    const bounds = frustumBounds(this.shotScale ?? scaleForZoomFactor(this.zoomFactor), this.aspect);
     this.camera.left = bounds.left;
     this.camera.right = bounds.right;
     this.camera.top = bounds.top;
@@ -375,6 +384,9 @@ export class WorldScene implements WorldRenderSurface {
     this.heldBubbles = undefined;
     this.spaceRoot.visible = true;
     this.pendingPlayerReveal = false;
+    // Here rather than at `enterSpace`, which would rescale the splash still on screen until now.
+    this.shotScale = undefined;
+    this.applyFraming();
     // Applied in the same frame the new space becomes visible, so the light change and the geometry
     // change land together rather than one flashing ahead of the other.
     this.litBrightness = this.spaceBrightness;

@@ -47,7 +47,10 @@ export class Overlays {
   private readonly views: Record<OverlayKind['kind'], HTMLElement>;
   private readonly loginPassword: HTMLInputElement;
   private readonly loginRemember: HTMLInputElement;
+  /** One line under the login form: the form's own check, or else the controller's login status. */
   private readonly loginError: HTMLElement;
+  private loginInvalid: string | undefined;
+  private loginStatus: string | undefined;
   private readonly registration: {
     nickname: HTMLInputElement;
     password: HTMLInputElement;
@@ -230,7 +233,8 @@ export class Overlays {
     });
 
     this.views = {
-      login: scrim(card(t('Somnio'), [loginForm])),
+      // The wordmark above the card names the game, so the card shows no title of its own.
+      login: scrim(card(t('Somnio'), [loginForm], 'default', 'accessibleOnly')),
       registration: scrim(card(t('Sign Up'), [registrationForm], 'wide', 'accessibleOnly')),
       gameMenu: scrim(card(t('Somnio'), [gameMenu], 'menu')),
       options: scrim(card(t('Options'), [options], 'menu')),
@@ -238,6 +242,10 @@ export class Overlays {
       updateRequired: scrim(card(t('Update required'), [updateRequired])),
     };
     this.root = element('div', { children: Object.values(this.views) });
+  }
+
+  get presentedCard(): HTMLElement | undefined {
+    return this.presentedKind === undefined ? undefined : (this.views[this.presentedKind].firstElementChild as HTMLElement);
   }
 
   present(overlay: OverlayKind | undefined): void {
@@ -278,6 +286,18 @@ export class Overlays {
   }
 
   showLoginError(message: string | undefined): void {
+    this.loginInvalid = message;
+    this.paintLoginError();
+  }
+
+  /** Kept apart from the form's own check, because `render()` repaints often and would otherwise clear it. */
+  showLoginStatus(message: string | undefined): void {
+    this.loginStatus = message;
+    this.paintLoginError();
+  }
+
+  private paintLoginError(): void {
+    const message = this.loginInvalid ?? this.loginStatus;
     this.loginError.textContent = message ?? '';
     setHidden(this.loginError, message === undefined);
   }

@@ -6,16 +6,15 @@ import type { Sector } from '../../src/sector.ts';
 
 /**
  * The committed `.somnio-sector` fixtures, resolved from this file so no test depends on the cwd.
- * The one place to edit when the fixtures move.
  */
-const FIXTURES_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures');
+export const SECTOR_FIXTURES_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures/sectors');
 
 export const SECTOR_FIXTURE_NAMES = ['EdariaArena', 'EdariaBibliothek', 'EdariaInn', 'EdariaMitte', 'EdariaShop', 'Nordwald', 'Nordwiese'] as const;
 export type SectorFixtureName = (typeof SECTOR_FIXTURE_NAMES)[number];
 
 /** Reads a committed `.somnio-sector` fixture, decoded as UTF-8. */
 export function readSectorFixture(name: SectorFixtureName): string {
-  return readFileSync(resolve(FIXTURES_ROOT, 'sectors', `${name}.somnio-sector`), 'utf8');
+  return readFileSync(resolve(SECTOR_FIXTURES_DIRECTORY, `${name}.somnio-sector`), 'utf8');
 }
 
 export function loadSectorFixtures(): Sector[] {

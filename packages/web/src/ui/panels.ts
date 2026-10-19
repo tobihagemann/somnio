@@ -88,6 +88,7 @@ export class GamePanels {
   private shownItems: readonly InventoryRowMessage[] | undefined;
   private shownChat: { count: number; newest: ChatLine | undefined } | undefined;
   private chatAtNewestWhenHidden = true;
+  private chatAtNewestWhenPanelsHidden = true;
   private readonly chatBody: HTMLElement;
   private readonly playersBody: HTMLElement;
   private readonly itemsBody: HTMLElement;
@@ -271,6 +272,17 @@ export class GamePanels {
       }),
     );
     this.itemsFooter.textContent = t('Items: %@', String(rows.length));
+  }
+
+  /**
+   * Hidden whole, the scrollback measures nothing, as a collapsed one does. So whether it sat at the
+   * newest line is taken as the panels hide, the way `toggleChat` takes it.
+   */
+  setShown(shown: boolean): void {
+    if (shown !== isHidden(this.root)) return;
+    if (!shown) this.chatAtNewestWhenPanelsHidden = this.scrollbackAtNewest();
+    setHidden(this.root, !shown);
+    if (shown && this.chatAtNewestWhenPanelsHidden) this.scrollToNewest();
   }
 
   clearChatInput(): void {

@@ -116,6 +116,18 @@ export class ConnectionController {
   selfId: string | undefined;
   selfDisplayName = '';
   world: ClientWorld | undefined;
+  /**
+   * Whether the player's own body has been placed since the last teardown. Every later join clears
+   * the entities before the body returns, so a flag read off the entities would bring the splash
+   * back for the length of every door.
+   */
+  inWorld = false;
+  /**
+   * Why the last login, resume, or connection failed, or that a resume is retrying, for the login
+   * card or the wordmark to say. Kept apart from the chat, whose line stays after this clears on the
+   * next attempt or the join.
+   */
+  loginStatus: ChatLine | undefined;
 
   readonly sessionStore: SessionStore;
   readonly renderSurface: WorldRenderSurface;
@@ -238,6 +250,7 @@ export class ConnectionController {
    */
   beginSession(intent: AuthIntent = { kind: 'resume' }): void {
     this.resumeAttempts = 0;
+    this.loginStatus = undefined;
     this.connect(intent);
   }
 
@@ -254,6 +267,7 @@ export class ConnectionController {
    * is already populated.
    */
   register(form: RegistrationForm): void {
+    this.loginStatus = undefined;
     this.connect({ kind: 'register', form });
   }
 
@@ -271,9 +285,8 @@ export class ConnectionController {
    * The scrollback belongs here and not in `teardown`, and the distinction is the whole reason
    * these are two methods. Ending a *session identity* is deliberate — Leave Game, or a revoke
    * from the server — and the next person at a shared browser must not read the previous player's
-   * conversation through the login card's scrim. A teardown is not deliberate: it also covers a
-   * dropped connection, where the `connectionLost` line explaining what happened is the one thing
-   * the player needs to still be there.
+   * conversation once they log in. A teardown is not deliberate: it also covers a dropped
+   * connection, whose `connectionLost` line the player who logs back in still finds there.
    */
   private endSessionIdentity(): void {
     this.sessionStore.clear();
@@ -282,6 +295,7 @@ export class ConnectionController {
     this.resumingWithToken = undefined;
     this.chatLines = [];
     this.selfDisplayName = '';
+    this.loginStatus = undefined;
     this.onChatLinesChanged?.();
     this.onSessionIdentityEnded?.();
   }
@@ -311,8 +325,12 @@ export class ConnectionController {
     this.endSessionIdentity();
     this.teardown();
     this.renderSurface.showSplash();
+    this.onSplashShown?.();
     this.presentedOverlay = { kind: 'login' };
   }
+
+  /** Fires each time the splash replaces the world, so the owner can start over what plays on it. */
+  onSplashShown: (() => void) | undefined;
 
   setChatInputFocused(focused: boolean): void {
     this.isChatInputFocused = focused;
@@ -332,19 +350,19 @@ export class ConnectionController {
         this.dispatch(event.message);
         return;
       case 'connectFailed':
-        this.appendChat({ kind: 'serverUnreachable' });
+        this.reportLoginFailure({ kind: 'serverUnreachable' });
         this.endSessionWithRecovery();
         return;
       case 'decodeFailed':
-        this.appendChat({ kind: 'errorCode', code: String(event.error) });
+        this.reportLoginFailure({ kind: 'errorCode', code: String(event.error) });
         this.endSessionWithRecovery();
         return;
       case 'unexpectedBinaryFrame':
-        this.appendChat({ kind: 'errorCode', code: 'unexpected_binary_frame' });
+        this.reportLoginFailure({ kind: 'errorCode', code: 'unexpected_binary_frame' });
         this.endSessionWithRecovery();
         return;
       case 'peerEOF':
-        this.appendChat({ kind: 'connectionLost' });
+        this.reportLoginFailure({ kind: 'connectionLost' });
         this.endSessionWithRecovery();
         return;
       default:
@@ -362,7 +380,7 @@ export class ConnectionController {
   dispatch(message: SomnioMessage): void {
     // A client-only tag arriving inbound is a hard error.
     if (isClientOnlyMessage(message)) {
-      this.appendChat({ kind: 'errorCode', code: 'client_only_tag' });
+      this.reportLoginFailure({ kind: 'errorCode', code: 'client_only_tag' });
       this.endSessionWithRecovery();
       return;
     }
@@ -432,7 +450,7 @@ export class ConnectionController {
 
   private handleHello(protocolVersion: number): void {
     if (this.connectionState !== 'awaitingHello') {
-      this.appendChat({ kind: 'errorCode', code: 'unexpected_hello' });
+      this.reportLoginFailure({ kind: 'errorCode', code: 'unexpected_hello' });
       this.endSessionWithRecovery();
       return;
     }
@@ -505,7 +523,7 @@ export class ConnectionController {
         // say: a rejection during a resume is a dead token, not a wrong password. Reporting
         // "Bad credentials." there would tell a returning player their password is wrong when they
         // never typed one.
-        this.appendChat(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
+        this.reportLoginFailure(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
         this.teardown();
         this.presentedOverlay = { kind: 'login' };
         return;
@@ -513,7 +531,7 @@ export class ConnectionController {
       case 'throttled':
         // Only a typed login is throttled, so there is no stored token to drop. The password may
         // well be right, so the line says to wait rather than that it is wrong.
-        this.appendChat({ kind: 'throttled' });
+        this.reportLoginFailure({ kind: 'throttled' });
         this.teardown();
         this.presentedOverlay = { kind: 'login' };
         return;
@@ -565,13 +583,22 @@ export class ConnectionController {
       // Announced rather than silent: the retry usually resolves in milliseconds, but when the
       // previous socket is slow to unwind the player is left looking at a dead screen with no idea
       // anything is happening.
-      this.appendChat({ kind: 'reconnecting' });
+      this.reportLoginFailure({ kind: 'reconnecting' });
       this.scheduleResume();
       return;
     }
-    this.appendChat({ kind: 'alreadyLoggedIn' });
+    this.reportLoginFailure({ kind: 'alreadyLoggedIn' });
     this.teardown();
     this.presentedOverlay = { kind: 'login' };
+  }
+
+  /**
+   * Says why the session ended or never began, on the login card as well as in the chat. The status
+   * goes first: on a resume's retry the chat line's repaint is the last until the next join.
+   */
+  private reportLoginFailure(line: ChatLine): void {
+    this.loginStatus = line;
+    this.appendChat(line);
   }
 
   /** Overridable so tests drive the retry without real timers. */
@@ -595,6 +622,7 @@ export class ConnectionController {
     this.renderSurface.enterSpace(this.world);
     this.renderSurface.setClock(payload.worldSeconds);
     this.connectionState = 'attached';
+    this.loginStatus = undefined;
     this.presentedOverlay = undefined;
     this.onSpaceEntered?.();
   }
@@ -654,6 +682,8 @@ export class ConnectionController {
     // space with its ground already under the character.
     if (kind === 'player') this.world?.follow(entity.position, this.renderSurface);
     this.renderSurface.placeEntity(entity);
+    // Before the roster push below, whose repaint is what shows the world in place of the splash.
+    if (kind === 'player') this.inWorld = true;
     if (
       (kind === 'peer' || kind === 'player') &&
       !this.players.includes(entity.name) &&
@@ -732,8 +762,8 @@ export class ConnectionController {
    *
    * The browser presents the login overlay directly rather than routing through the game menu: it is
    * the same surface `leaveGame` and the `alreadyLoggedIn` retry already use, so this needs no new
-   * UI, and the splash replaces the frozen world behind it. The chat line naming the cause stays
-   * readable behind the overlay.
+   * UI, and the splash replaces the frozen world behind it. A cause the caller reported first shows
+   * on that card.
    */
   private endSessionWithRecovery(): void {
     this.teardown();
@@ -744,6 +774,7 @@ export class ConnectionController {
     // `sessionRevoked` reach it through `endSessionIdentity`; the failure paths did not.
     this.onSessionIdentityEnded?.();
     this.renderSurface.showSplash();
+    this.onSplashShown?.();
     this.presentedOverlay = { kind: 'login' };
   }
 
@@ -751,6 +782,7 @@ export class ConnectionController {
     this.transport.disconnect();
     this.onTeardown?.();
     this.connectionState = 'disconnected';
+    this.inWorld = false;
     this.entities.clear();
     this.players = [];
     this.selfId = undefined;

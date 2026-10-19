@@ -269,4 +269,9 @@ export const RENDERED_KEYS: readonly string[] = [
   'The game is played with a keyboard and a mouse. Come back from a laptop or desktop.',
   'Loading the world...',
   'Fullscreen',
+
+  // The splash reel's dreamers
+  'Anyone up for the Nordwald?',
+  'Watch out, nightmares about!',
+  'Meet me at the inn.',
 ];
