@@ -93,6 +93,7 @@ import type {
   TaskSpec,
 } from '@somnio/core';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
+import { LogThrottle } from '../connection/logThrottle.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
 import { counterpartOf } from '../sectors/sectorCache.ts';
@@ -110,8 +111,7 @@ interface PlayerSlot {
   /** The metres the player may still move, as of `allowanceAt`. */
   allowance: number;
   allowanceAt: number;
-  rejectionLoggedAt: number | undefined;
-  suppressedRejections: number;
+  rejectionLog: LogThrottle;
   /**
    * What recovery and the running drain have not yet moved into `character.energy`, which holds
    * whole numbers only. Each is under one unit, and none is saved.
@@ -257,7 +257,7 @@ const DEFAULT_GAIT: Gait = 'jog';
  */
 const ALLOWANCE_METRES_PER_SECOND = gaitMetresPerSecond('run') * 1.25;
 const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * 2;
-/** Minimum gap between rejected-move log lines per player; rejections in between are counted. */
+/** Minimum gap between one player's rejected-move warnings. */
 const REJECTED_MOVE_LOG_INTERVAL_MS = 5000;
 const PLACEMENT_ATTEMPTS = 64;
 /**
@@ -433,8 +433,7 @@ export class SpaceActor {
       sector: sector.name,
       allowance: ALLOWANCE_CAP_METRES,
       allowanceAt: this.now(),
-      rejectionLoggedAt: undefined,
-      suppressedRejections: 0,
+      rejectionLog: new LogThrottle(REJECTED_MOVE_LOG_INTERVAL_MS),
       carry: { health: 0, balance: 0, spirit: 0 },
       winded: windedOnJoin(energy.balanceCurrent),
       lastMoveAt: Number.NEGATIVE_INFINITY,
@@ -550,17 +549,10 @@ export class SpaceActor {
 
   private rejectMove(slot: PlayerSlot, to: Point, now: number): void {
     this.snapBack(slot);
-    if (slot.rejectionLoggedAt !== undefined && now - slot.rejectionLoggedAt < REJECTED_MOVE_LOG_INTERVAL_MS) {
-      slot.suppressedRejections += 1;
-      return;
-    }
+    const suppressed = slot.rejectionLog.take(now);
+    if (suppressed === undefined) return;
     const from = slot.character.position;
-    this.logger.warn(
-      { entity_id: slot.character.id, from: `${from.x},${from.z}`, to: `${to.x},${to.z}`, suppressed_since_last: slot.suppressedRejections },
-      'move rejected',
-    );
-    slot.rejectionLoggedAt = now;
-    slot.suppressedRejections = 0;
+    this.logger.warn({ entity_id: slot.character.id, from: `${from.x},${from.z}`, to: `${to.x},${to.z}`, suppressed_since_last: suppressed }, 'move rejected');
   }
 
   private snapBack(slot: PlayerSlot): void {
