@@ -1,0 +1,60 @@
+{
+  "floorMaterialId": "grass-meadow",
+  "floorPatches": [
+    {
+      "depth": 8.96,
+      "floorMaterialId": "cobble-town",
+      "id": "patch-1",
+      "width": 2.56,
+      "x": 28.16,
+      "z": 10.88
+    }
+  ],
+  "kind": "outdoor",
+  "origin": {
+    "x": -30.72,
+    "z": 5.12
+  },
+  "placements": [
+    {
+      "id": "pine-tree-1",
+      "modelId": "pine-tree",
+      "x": 5.91,
+      "z": 3.2
+    },
+    {
+      "id": "pine-tree-2",
+      "modelId": "pine-tree",
+      "x": 7.19,
+      "z": 27.52
+    },
+    {
+      "id": "pine-tree-3",
+      "modelId": "pine-tree",
+      "x": 25.11,
+      "z": 5.12
+    },
+    {
+      "id": "pine-tree-4",
+      "modelId": "pine-tree",
+      "x": 23.83,
+      "z": 25.6
+    },
+    {
+      "id": "pine-tree-5",
+      "modelId": "pine-tree",
+      "x": 14.23,
+      "z": 7.68
+    },
+    {
+      "id": "pine-tree-6",
+      "modelId": "pine-tree",
+      "x": 11.67,
+      "z": 23.68
+    }
+  ],
+  "size": {
+    "depth": 30.72,
+    "width": 30.72
+  }
+}

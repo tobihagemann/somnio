@@ -37,9 +37,9 @@ describe('the committed registry parses', () => {
 
   it('resolves the NPC and monster models by id', () => {
     expect(modelForCharacter(registry, 'libus')?.stem).toBe('Libus');
-    expect(modelForCharacter(registry, 'kraemer')?.stem).toBe('Kraemer');
-    expect(modelForCharacter(registry, 'kaempfer-meister')?.stem).toBe('KaempferMeister');
-    expect(modelForCharacter(registry, 'gespenst')?.stem).toBe('Gespenst');
+    expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Kraemer');
+    expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('KaempferMeister');
+    expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Gespenst');
   });
 
   it('returns undefined for an unmapped character so the loader renders a placeholder', () => {
@@ -106,9 +106,9 @@ describe('the committed registry parses', () => {
     expect(objectModel(registry, 'stone-wall-corner')?.colliders).toHaveLength(2);
   });
 
-  it('gives a door anchor to the door and to the three buildings with an interior', () => {
+  it('gives a door anchor to the door and to the five buildings with an interior', () => {
     const anchored = registry.objectModels.filter((rule) => rule.doors.length > 0).map((rule) => rule.id);
-    expect(anchored.sort()).toEqual(['building-house', 'building-tavern', 'building-townhall', 'door']);
+    expect(anchored.sort()).toEqual(['building-barracks', 'building-chapel', 'building-house', 'building-tavern', 'building-townhall', 'door']);
   });
 });
 

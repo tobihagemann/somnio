@@ -2,11 +2,11 @@
   "doors": [
     {
       "anchor": "main",
-      "id": "to-edariabibliothek",
+      "id": "to-edarialibrary",
       "placement": "building-townhall-1",
       "target": {
         "door": "exit",
-        "sector": "EdariaBibliothek"
+        "sector": "EdariaLibrary"
       }
     },
     {
@@ -34,6 +34,24 @@
       "target": {
         "door": "exit",
         "sector": "EdariaInn"
+      }
+    },
+    {
+      "anchor": "main",
+      "id": "to-edariafighterhall",
+      "placement": "building-barracks-1",
+      "target": {
+        "door": "exit",
+        "sector": "EdariaFighterHall"
+      }
+    },
+    {
+      "anchor": "main",
+      "id": "to-edariahealerhall",
+      "placement": "building-chapel-1",
+      "target": {
+        "door": "exit",
+        "sector": "EdariaHealerHall"
       }
     }
   ],
@@ -65,28 +83,6 @@
     }
   ],
   "kind": "outdoor",
-  "npcs": [
-    {
-      "characterModelId": "kaempfer-meister",
-      "dialogScript": "Na, $name? Halt dich gerade, wenn du mit mir sprichst.---Wer bei mir lernen will, vertreibt erst ein Gespenst. In der Arena findest du welche. Danach reden wir.---Im Norden franst der Traum. Geh hin und sieh selbst - aber geh nicht allein.",
-      "facing": 0,
-      "id": "pugnax",
-      "name": "Pugnax",
-      "service": "kaempferMaster",
-      "x": 37.32,
-      "z": 33.2
-    },
-    {
-      "characterModelId": "kraemer",
-      "dialogScript": "Sei willkommen, $name. Der Mondstein nimmt, was er gibt.---Wer heilen will, geht erst bis in den Nordwald und kehrt zurück, ohne einen Schlag zu führen.---Wer gefallen ist, den holt nur eine Heilerin zurück. Lass niemanden liegen.",
-      "facing": 0,
-      "id": "sana",
-      "name": "Sana",
-      "service": "heilerMaster",
-      "x": 3.64,
-      "z": 33.2
-    }
-  ],
   "origin": {
     "x": 0,
     "z": 0
@@ -690,6 +686,19 @@
       "modelId": "pine-tree",
       "x": 28.8,
       "z": 30.23
+    },
+    {
+      "id": "building-chapel-1",
+      "modelId": "building-chapel",
+      "x": 11.2,
+      "yaw": 270,
+      "z": 4.4
+    },
+    {
+      "id": "building-keep-1",
+      "modelId": "building-keep",
+      "x": 7.04,
+      "z": 34.4
     }
   ],
   "size": {

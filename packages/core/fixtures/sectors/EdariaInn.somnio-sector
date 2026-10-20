@@ -30,7 +30,7 @@
       "placement": "door-1",
       "target": {
         "door": "to-edariainn",
-        "sector": "EdariaMitte"
+        "sector": "EdariaSquare"
       }
     }
   ],
@@ -38,8 +38,8 @@
   "kind": "interior",
   "npcs": [
     {
-      "characterModelId": "kraemer",
-      "dialogScript": "Ah, $name! Setz dich ans Feuer.---Ein Bett ist frei, wenn die Träume dich müde machen.---Wer hier ruht, wacht auch hier wieder auf. So war es schon immer.",
+      "characterModelId": "merchant",
+      "dialogScript": "Ah, $name! Sit by the fire.---A bed is free when the dreams wear you out.---Whoever rests here wakes here too. It has always been so.",
       "facing": 90,
       "id": "quieta",
       "name": "Quieta",

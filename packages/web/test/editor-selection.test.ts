@@ -34,7 +34,7 @@ function populatedSector(overrides: Partial<Sector> = {}): Sector {
     floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 12, z: 2, width: 3, depth: 2 }],
     spawn: { x: 6, z: 12, facing: 0 },
     npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 0, dialogScript: '' }],
-    monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
+    monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
     ...overrides,
   });
 }
@@ -213,7 +213,7 @@ describe('pick ordering', () => {
       doors: [],
       blockers: [{ id: 'blocker-1', x: 0, z: 0, width: 10, depth: 10 }],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 4.5, z: 5, facing: 0, dialogScript: '' }],
-      monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 0, z: 0, width: 12, depth: 12, maxAlive: 3 }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 0, z: 0, width: 12, depth: 12, maxAlive: 3 }],
       floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 14, depth: 14 }],
     });
     const pick = (x: number, z: number): EditorSelection | undefined => selectRecord({ x, z }, overlap, TEST_REGISTRY);

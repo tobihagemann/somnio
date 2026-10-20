@@ -6,24 +6,24 @@ import { collectMessages, entities } from '../support/frames.ts';
 import { attachPlayer, makeClockedSpace } from '../support/sectorFactory.ts';
 import { fixtureWorld, standableNear } from './support/harness.ts';
 
-const GESPENST = monsterKind('gespenst');
-/** On the refuge by the door, which no Gespenst of the Arena comes to. */
+const GHOST = monsterKind('ghost');
+/** On the refuge by the door, which no Ghost of the Arena comes to. */
 const REFUGE_AT = { x: 8.5, z: 8 };
 
 /**
  * The committed Arena on a clock and a seeded roll: a booted server has neither seam, and its
- * first Gespenst spawns a minute after boot.
+ * first Ghost spawns a minute after boot.
  */
-it('a Gespenst of the committed Arena is fought to its fade, and its spawn then keeps a full count alive again', async () => {
+it('a Ghost of the committed Arena is fought to its fade, and its spawn then keeps a full count alive again', async () => {
   const { clock, space } = makeClockedSpace(fixtureWorld(), 'EdariaArena', { random: seededRandom(3) });
   clock.ms = RESPAWN_MS;
   space.step(0);
   const scout = attachPlayer(space, REFUGE_AT, 'scout', { spaceId: 'EdariaArena' });
   space.detach(scout.entityId, true);
   const [ghost] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
-  if (ghost === undefined) throw new Error('no Gespenst spawned in the Arena');
+  if (ghost === undefined) throw new Error('no Ghost spawned in the Arena');
 
-  const fighter = attachPlayer(space, standableNear(space, ghost, reachDistance(GESPENST.radius)), 'fighter', {
+  const fighter = attachPlayer(space, standableNear(space, ghost, reachDistance(GHOST.radius)), 'fighter', {
     spaceId: 'EdariaArena',
     character: STRIKER,
     inventory: [CUDGEL_IN_HAND],
@@ -37,7 +37,7 @@ it('a Gespenst of the committed Arena is fought to its fade, and its spawn then 
     }
   }
   // Its bounty is what put a purse beside the cudgel.
-  expect(space.snapshotForPlayer(fighter.entityId)!.inventory).toContainEqual({ slot: 0, itemId: 'purse', quantity: GESPENST.bounty, equippedHand: undefined });
+  expect(space.snapshotForPlayer(fighter.entityId)!.inventory).toContainEqual({ slot: 0, itemId: 'purse', quantity: GHOST.bounty, equippedHand: undefined });
   expect(space.isFallen(fighter.entityId)).toBe(false);
   space.detach(fighter.entityId, true);
   const fight = await collectMessages(fighter.outbox);

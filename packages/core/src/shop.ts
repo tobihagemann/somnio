@@ -30,7 +30,7 @@ export function canBuy(rows: Rows, itemId: string): itemId is Ware {
   return isWare(itemId) && !carries(rows, itemId) && purseCoins(rows) >= SHOP.prices[itemId];
 }
 
-/** Whether a dreamer can sell the item: a ware they carry. The purse and the Mondstein are no wares. */
+/** Whether a dreamer can sell the item: a ware they carry. The purse and the Moonstone are no wares. */
 export function canSell(rows: Rows, itemId: string): itemId is Ware {
   return isWare(itemId) && carries(rows, itemId);
 }

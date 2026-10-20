@@ -35,7 +35,7 @@ export class FallenNotice {
       attributes: { 'aria-label': t('You have fallen'), 'aria-live': 'polite' },
       children: [
         element('h1', { className: 'overlay-title', text: t('You have fallen') }),
-        element('p', { className: 'service-text', text: t('You cannot move, but you can still speak. A Heiler can draw you back.') }),
+        element('p', { className: 'service-text', text: t('You cannot move, but you can still speak. A Healer can draw you back.') }),
         this.raise,
         this.giveUp,
         this.confirmation,

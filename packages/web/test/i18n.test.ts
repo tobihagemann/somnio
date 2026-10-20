@@ -92,38 +92,48 @@ describe('catalog coverage', () => {
   it('falls back to the English key for an unknown lookup', () => {
     // Safe only because catalog keys *are* the English source strings.
     expect(translate('de', 'Not A Catalog Key')).toBe('Not A Catalog Key');
+    expect(translate('de', 'constructor')).toBe('constructor');
   });
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item, people, role, and teaching, each with its own German', () => {
+  it('are every item, people, role, teaching, nightmare, and place a trial names, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
       'Balance recovery',
       'Cudgel',
       'Dagger',
       'Depth',
       'Drawing back',
+      'Fighter',
       'Follow-through',
+      'Ghost',
       'Guard',
-      'Heiler',
-      'Kämpfer',
+      'Healer',
       'Lumina',
       'Mace',
-      'Mondstein',
+      'Moonstone',
+      'North Wood',
       'Purse',
       'Short sword',
-      'Soporen',
+      'Sopors',
       'Spirit deepening',
       'Strike',
       'Touch',
       'Toughening',
-      'Umbren',
-      'Wachen',
+      'Umbrae',
+      'Vigils',
     ]);
     expect(translate('de', 'Follow-through')).toBe('Nachsetzen');
     expect(translate('de', 'Purse')).toBe('Geldbeutel');
     expect(translate('de', 'Cudgel')).toBe('Knüppel');
     expect(translate('de', 'Short sword')).toBe('Kurzschwert');
+    expect(['Fighter', 'Healer', 'Moonstone', 'Ghost', 'North Wood'].map((key) => translate('de', key))).toEqual([
+      'Kämpfer',
+      'Heiler',
+      'Mondstein',
+      'Gespenst',
+      'Nordwald',
+    ]);
   });
 });
 
@@ -228,7 +238,7 @@ describe('renderChatLine', () => {
     { kind: 'bought', itemId: 'dagger', coins: 60 },
     { kind: 'sold', itemId: 'sword', coins: 75, emptiedHand: false },
     { kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true },
-    { kind: 'becameRole', role: 'heiler' },
+    { kind: 'becameRole', role: 'healer' },
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'taskDone' },
     { kind: 'fell' },
@@ -272,10 +282,10 @@ describe('renderChatLine', () => {
   });
 
   /** Two placeholders and two names looked up on the way: swapped or left unlocalized, each still renders something. */
-  it('names the teaching and then its rank, the role by its name, and the Heiler who raised', () => {
+  it('names the teaching and then its rank, the role by its name, and the Healer who raised', () => {
     expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'en')).toBe('Your Strike deepens: rank 2.');
     expect(renderChatLine({ kind: 'rankGained', teachingId: 'strike', rank: 2 }, catalogTables, 'de')).toBe('Deine Lehre Schlag vertieft sich: Rang 2.');
-    expect(renderChatLine({ kind: 'becameRole', role: 'kaempfer' }, catalogTables, 'en')).toBe('You are now a Kämpfer.');
+    expect(renderChatLine({ kind: 'becameRole', role: 'fighter' }, catalogTables, 'en')).toBe('You are now a Fighter.');
     expect(renderChatLine({ kind: 'raised', healerNames: ['Lumi'] }, catalogTables, 'en')).toBe('Lumi draws you back into the dream.');
     expect(renderChatLine({ kind: 'raiseBroken', healerNames: ['Lumi'] }, catalogTables, 'en')).toBe('Lumi loses hold of you.');
     expect(renderChatLine({ kind: 'raisedOther', targetName: 'Bren' }, catalogTables, 'en')).toBe('You draw Bren back into the dream.');
@@ -294,7 +304,7 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'sold', itemId: 'lantern', coins: 1, emptiedHand: false }, catalogTables, 'en')).toBe('lantern sold for 1c.');
   });
 
-  it('names several Heilers as the language lists them', () => {
+  it('names several Healers as the language lists them', () => {
     const three = ['Lumi', 'Bren', 'Kai'];
     expect(renderChatLine({ kind: 'raised', healerNames: three }, catalogTables, 'en')).toBe('Lumi, Bren, and Kai draw you back into the dream.');
     expect(renderChatLine({ kind: 'raised', healerNames: three }, catalogTables, 'de')).toBe('Lumi, Bren und Kai holen dich in den Traum zurück.');

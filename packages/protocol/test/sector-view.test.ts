@@ -8,7 +8,7 @@ import type { SectorView } from '../src/index.ts';
  */
 
 const outdoor: SectorView = {
-  name: 'EdariaMitte',
+  name: 'EdariaSquare',
   kind: 'outdoor',
   origin: { x: 5.12, z: -30.72 },
   size: { width: 40.96, depth: 40.96 },
@@ -19,11 +19,11 @@ const outdoor: SectorView = {
     { id: 'candle-1', modelId: 'candle', x: 12, z: 9.5, yaw: 0, elevation: 0.75 },
   ],
   blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
-  doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaBibliothek', door: 'exit' } }],
+  doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }],
 };
 
 const interior: SectorView = {
-  name: 'EdariaBibliothek',
+  name: 'EdariaLibrary',
   kind: 'interior',
   brightness: 75,
   size: { width: 10.24, depth: 7.68 },
@@ -41,7 +41,7 @@ function decode(json: Record<string, unknown>): SectorView {
 describe('omitted defaults', () => {
   it('decodes absent record arrays as empty and absent yaw and elevation as 0', () => {
     const decoded = decode({
-      name: 'EdariaMitte',
+      name: 'EdariaSquare',
       kind: 'outdoor',
       origin: { x: 0, z: 0 },
       size: { width: 16, depth: 16 },
@@ -56,7 +56,7 @@ describe('omitted defaults', () => {
 
   it('encodes without empty arrays, a zero yaw or elevation, or the key of the other kind', () => {
     expect(encodeSectorView(interior)).toEqual({
-      name: 'EdariaBibliothek',
+      name: 'EdariaLibrary',
       kind: 'interior',
       brightness: 75,
       size: { width: 10.24, depth: 7.68 },
@@ -85,7 +85,7 @@ describe('rejections', () => {
   const blocker = { id: 'b', x: 0, z: 0, width: 1, depth: 1 };
   const patch = { ...blocker, floorMaterialId: 'cobble-town' };
   const placement = { id: 'p', modelId: 'rug', x: 0, z: 0 };
-  const door = { id: 'd', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaBibliothek', door: 'exit' } };
+  const door = { id: 'd', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } };
   const records = <T extends { id: string }>(count: number, record: T): T[] => Array.from({ length: count }, (_, index) => ({ ...record, id: `r-${index}` }));
   const atCapName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
 
@@ -135,12 +135,12 @@ describe('rejections', () => {
     ],
     [
       'a door on a placement the sector does not have',
-      { ...outdoorJSON, doors: [{ id: 'library', placement: 'tavern', anchor: 'main', target: { sector: 'EdariaBibliothek', door: 'exit' } }] },
+      { ...outdoorJSON, doors: [{ id: 'library', placement: 'tavern', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }] },
       /doors\[0\]\.placement: no placement "tavern"/,
     ],
     [
       'a door whose target door is not an id',
-      { ...outdoorJSON, doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaBibliothek', door: '' } }] },
+      { ...outdoorJSON, doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: '' } }] },
       /doors\[0\]\.target\.door: expected an id/,
     ],
   ])('rejects %s', (_case, json, expected) => {

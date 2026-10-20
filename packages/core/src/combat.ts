@@ -53,7 +53,7 @@ export const COMBAT = {
   /** The share of each pool a dreamer who gave up wakes with. */
   weakenedFraction: 0.25,
 
-  /** How far beyond contact a swing, a strike, or a Mondstein still reaches. */
+  /** How far beyond contact a swing, a strike, or a Moonstone still reaches. */
   reachSlack: 0.25,
   /** How far from a fading nightmare a dreamer still shares its bounty and earns practice. */
   shareRadius: 6,
@@ -178,7 +178,7 @@ export function fullPools(ranks: readonly HeldRank[]): Energy {
   return { healthCurrent: maxima.healthMax, balanceCurrent: maxima.balanceMax, spiritCurrent: maxima.spiritMax, ...maxima };
 }
 
-/** The health one touch of the Mondstein restores. */
+/** The health one touch of the Moonstone restores. */
 export function mendAmount(ranks: readonly HeldRank[]): number {
   return COMBAT.mend.health + COMBAT.mend.healthPerDepthRank * rankOf(ranks, 'depth');
 }

@@ -15,20 +15,20 @@ describe('the shop', () => {
 
   it('deals in weapons alone, and in nothing inherited from an object', () => {
     expect(isWare('dagger')).toBe(true);
-    expect(['purse', 'mondstein', 'toString'].map(isWare)).toEqual([false, false, false]);
+    expect(['purse', 'moonstone', 'toString'].map(isWare)).toEqual([false, false, false]);
   });
 
   it('sells a ware the purse covers and the dreamer does not carry', () => {
     expect(canBuy([purse(60)], 'dagger')).toBe(true);
     expect(canBuy([purse(59)], 'dagger')).toBe(false);
     expect(canBuy([purse(100), carried('dagger')], 'dagger')).toBe(false);
-    expect(canBuy([purse(100)], 'mondstein')).toBe(false);
+    expect(canBuy([purse(100)], 'moonstone')).toBe(false);
   });
 
   it('buys back only a ware the dreamer carries', () => {
     expect(canSell([carried('cudgel')], 'cudgel')).toBe(true);
     expect(canSell([carried('cudgel')], 'mace')).toBe(false);
-    expect(canSell([purse(100), carried('mondstein')], 'mondstein')).toBe(false);
+    expect(canSell([purse(100), carried('moonstone')], 'moonstone')).toBe(false);
     expect(canSell([purse(100)], 'purse')).toBe(false);
   });
 });

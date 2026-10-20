@@ -18,8 +18,8 @@ import {
 import type { Lucidity } from '../src/lucidity.ts';
 import { ranks } from './support/ranks.ts';
 
-function kaempfer(strike: number): Lucidity {
-  return { ...NO_LUCIDITY, role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: strike, practice: 0 }] };
+function fighter(strike: number): Lucidity {
+  return { ...NO_LUCIDITY, role: 'fighter', ranks: [{ teachingId: 'strike', rank: strike, practice: 0 }] };
 }
 
 describe('practice', () => {
@@ -31,12 +31,12 @@ describe('practice', () => {
 describe('what a teaching needs', () => {
   it('reads a teaching nobody holds as rank 0', () => {
     expect(rankOf([], 'strike')).toBe(0);
-    expect(rankOf(kaempfer(2).ranks, 'strike')).toBe(2);
+    expect(rankOf(fighter(2).ranks, 'strike')).toBe(2);
   });
 
   it('names the need a dreamer falls short of, and none once it is met', () => {
-    expect(unmetNeed(kaempfer(1).ranks, 'follow-through')).toEqual({ teachingId: 'strike', rank: 2 });
-    expect(unmetNeed(kaempfer(2).ranks, 'follow-through')).toBeUndefined();
+    expect(unmetNeed(fighter(1).ranks, 'follow-through')).toEqual({ teachingId: 'strike', rank: 2 });
+    expect(unmetNeed(fighter(2).ranks, 'follow-through')).toBeUndefined();
     expect(unmetNeed([], 'strike')).toBeUndefined();
   });
 
@@ -54,19 +54,19 @@ describe('what a teaching needs', () => {
 
 describe('tasks', () => {
   it("reads a task without a teaching as its role's trial and one with a teaching as that teaching's gate", () => {
-    expect(taskSpec({ role: 'heiler', teachingId: undefined })).toBe(TRIALS.heiler);
-    expect(taskSpec({ role: 'heiler', teachingId: 'drawing-back' })).toEqual({ kind: 'mend', amount: 60 });
+    expect(taskSpec({ role: 'healer', teachingId: undefined })).toBe(TRIALS.healer);
+    expect(taskSpec({ role: 'healer', teachingId: 'drawing-back' })).toEqual({ kind: 'mend', amount: 60 });
   });
 
   it('has no spec for a task naming a teaching without a gate', () => {
-    expect(taskSpec({ role: 'heiler', teachingId: 'touch' })).toBeUndefined();
+    expect(taskSpec({ role: 'healer', teachingId: 'touch' })).toBeUndefined();
   });
 
   it.each([
-    ["a role's trial", { role: 'heiler', teachingId: undefined }, true],
-    ["the gate of a teaching of the task's role", { role: 'heiler', teachingId: 'drawing-back' }, true],
-    ['a teaching without a gate', { role: 'heiler', teachingId: 'touch' }, false],
-    ["another role's gate", { role: 'kaempfer', teachingId: 'drawing-back' }, false],
+    ["a role's trial", { role: 'healer', teachingId: undefined }, true],
+    ["the gate of a teaching of the task's role", { role: 'healer', teachingId: 'drawing-back' }, true],
+    ['a teaching without a gate', { role: 'healer', teachingId: 'touch' }, false],
+    ["another role's gate", { role: 'fighter', teachingId: 'drawing-back' }, false],
   ] as const)('judges a task naming %s sound: %s', (_label, task, sound) => {
     expect(isSoundTask(task)).toBe(sound);
   });
@@ -74,28 +74,28 @@ describe('tasks', () => {
   it('is done at its count, at its amount, or on arriving', () => {
     expect(taskGoal({ kind: 'driveOff', count: 3 })).toBe(3);
     expect(taskGoal({ kind: 'mend', amount: 60 })).toBe(60);
-    expect(taskGoal({ kind: 'reach', sector: 'Nordwald' })).toBe(1);
+    expect(taskGoal({ kind: 'reach', sector: 'NorthWood', labelKey: 'North Wood' })).toBe(1);
   });
 });
 
 describe('guards and services', () => {
   it('knows the roles and the teachings, and nothing inherited from an object', () => {
-    expect(isRole('heiler')).toBe(true);
-    expect(isRole('mystiker')).toBe(false);
+    expect(isRole('healer')).toBe(true);
+    expect(isRole('mystic')).toBe(false);
     expect(isTeachingId('follow-through')).toBe(true);
     expect(isTeachingId('followThrough')).toBe(false);
     expect(isTeachingId('toString')).toBe(false);
   });
 
-  it("forbids striking under the Heiler's trial alone", () => {
-    expect(forbidsStriking(TRIALS.heiler)).toBe(true);
-    expect(forbidsStriking(TRIALS.kaempfer)).toBe(false);
+  it("forbids striking under the Healer's trial alone", () => {
+    expect(forbidsStriking(TRIALS.healer)).toBe(true);
+    expect(forbidsStriking(TRIALS.fighter)).toBe(false);
     expect(forbidsStriking(TEACHINGS['drawing-back'].gate)).toBe(false);
   });
 
   it('gives each master a role, and the shopkeeper none', () => {
-    expect(masterRole('kaempferMaster')).toBe('kaempfer');
-    expect(masterRole('heilerMaster')).toBe('heiler');
+    expect(masterRole('fighterMaster')).toBe('fighter');
+    expect(masterRole('healerMaster')).toBe('healer');
     expect(masterRole('shopkeeper')).toBeUndefined();
   });
 });

@@ -1015,7 +1015,9 @@ export class WorldScene implements WorldRenderSurface {
     const background = namePlaqueBackground(state.kind, state.condition, hovered);
     if (background === undefined) return;
     const ink = state.kind !== 'npc' && state.condition === 'fallen' ? NAME_PLAQUE.fallenInk : NAME_PLAQUE.ink;
-    const { container, plate } = namePlaqueQuad(state.name, background, state.kind === 'player', ink);
+    // A nightmare's name is its kind's catalog key; a dreamer's or an NPC's is their own.
+    const name = state.kind === 'monster' ? t(state.name) : state.name;
+    const { container, plate } = namePlaqueQuad(name, background, state.kind === 'player', ink);
     state.node.add(container);
     state.namePlaque = container;
     state.namePlaquePlate = plate;
@@ -1344,7 +1346,7 @@ const SELECTION_RING_RADII = 1.4;
 /** How long a mend's ring takes to swell and fade, and the inner radius it swells to, in body radii. */
 const MEND_PULSE_SECONDS = 0.5;
 const MEND_PULSE_RADII = 3;
-/** The Mondstein's moonlight, apart from the health colours and from the raise ring. */
+/** The Moonstone's moonlight, apart from the health colours and from the raise ring. */
 const MEND_PULSE_COLOR = 0xd8e6ff;
 /** A friendly green, bluer than the plaque of a grazed body beside it. */
 const SELECTION_RING_COLOR = 0x8ef0b0;

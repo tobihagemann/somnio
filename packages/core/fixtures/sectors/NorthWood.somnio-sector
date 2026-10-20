@@ -5,7 +5,7 @@
     {
       "depth": 7.36,
       "id": "spawn-1",
-      "kind": "gespenst",
+      "kind": "ghost",
       "maxAlive": 3,
       "width": 12.16,
       "x": 9.28,

@@ -4,6 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NO_LUCIDITY } from '@somnio/core';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
 import { down as metricWorldDown, up as metricWorldUp } from '../../src/migrations/0001_metric_world.ts';
+import { down as lucidityDown, up as lucidityUp } from '../../src/migrations/0002_lucidity.ts';
+import { down as englishNamesDown, up as englishNamesUp } from '../../src/migrations/0003_english_names.ts';
+import { PostgresInventoryRepository } from '../../src/repositories/inventory.ts';
 import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
@@ -107,12 +110,106 @@ describe('migrating a database that holds characters', () => {
 
     const veteran = await new PostgresCharacterRepository(harness.db).findByName('Veteran');
     expect(veteran).toMatchObject({
-      people: 'soporen',
+      people: 'sopors',
       space: 'outdoors',
       position: { x: 12.5, z: 20 },
       energy: { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 },
       lucidity: NO_LUCIDITY,
     });
+  });
+});
+
+describe('migrating a database that holds characters with the German names', () => {
+  let harness: DatabaseHarness;
+
+  beforeAll(async () => {
+    harness = await startDatabase({ migrate: false });
+  });
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  it('renames the role, the task, the people, the starter sector, and the stone, refuses the old role after, and renames them back down', async () => {
+    const before = new Migrator({
+      db: harness.db,
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({
+            '0001_metric_world': { up: metricWorldUp, down: metricWorldDown },
+            '0002_lucidity': { up: lucidityUp, down: lucidityDown },
+          }),
+      },
+    });
+    expect((await before.migrateToLatest()).error).toBeUndefined();
+    const accountId = crypto.randomUUID();
+    const characterId = crypto.randomUUID();
+    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
+      VALUES (${accountId}, 'heilerin', 'h', 'h@example.com', 'heilerin')`.execute(harness.db);
+    await sql`INSERT INTO characters (
+      id, account_id, name, people, space, position_x, position_z, facing,
+      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton,
+      role, study, task_role, task_teaching, task_progress
+    ) VALUES (
+      ${characterId}, ${accountId}, 'Heilerin', 'wachen', 'EdariaBibliothek', 2.88, 4.32, 0,
+      100, 100, 100, 100, 100, 100, NOW(), 'heilerin',
+      'heiler', 'touch', 'heiler', 'drawing-back', 12
+    )`.execute(harness.db);
+    await sql`INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand)
+      VALUES (${characterId}, 0, 'purse', 40, NULL), (${characterId}, 1, 'mondstein', 1, 'right')`.execute(harness.db);
+    const fighterAccountId = crypto.randomUUID();
+    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
+      VALUES (${fighterAccountId}, 'kaempferin', 'h', 'k@example.com', 'kaempferin')`.execute(harness.db);
+    await sql`INSERT INTO characters (
+      id, account_id, name, people, space, position_x, position_z, facing,
+      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton,
+      role, task_role, task_teaching, task_progress
+    ) VALUES (
+      ${crypto.randomUUID()}, ${fighterAccountId}, 'Kaempferin', 'umbren', 'outdoors', 12.5, 20, 90,
+      100, 100, 100, 100, 100, 100, NOW(), 'kaempferin',
+      'kaempfer', 'kaempfer', 'follow-through', 1
+    )`.execute(harness.db);
+
+    await migrateToLatest(harness.db);
+
+    expect(await new PostgresCharacterRepository(harness.db).findByName('Heilerin')).toMatchObject({
+      people: 'vigils',
+      space: 'EdariaLibrary',
+      lucidity: { role: 'healer', study: 'touch', task: { role: 'healer', teachingId: 'drawing-back', progress: 12 } },
+    });
+    expect(await new PostgresInventoryRepository(harness.db).loadAll(characterId)).toEqual([
+      { slot: 0, itemId: 'purse', quantity: 40, equippedHand: undefined },
+      { slot: 1, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
+    ]);
+    expect(await new PostgresCharacterRepository(harness.db).findByName('Kaempferin')).toMatchObject({
+      people: 'umbrae',
+      lucidity: { role: 'fighter', task: { role: 'fighter', teachingId: 'follow-through', progress: 1 } },
+    });
+    await expect(sql`UPDATE characters SET role = 'heiler' WHERE id = ${characterId}`.execute(harness.db)).rejects.toThrow(/characters_role_check/);
+
+    const all = new Migrator({
+      db: harness.db,
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({
+            '0001_metric_world': { up: metricWorldUp, down: metricWorldDown },
+            '0002_lucidity': { up: lucidityUp, down: lucidityDown },
+            '0003_english_names': { up: englishNamesUp, down: englishNamesDown },
+          }),
+      },
+    });
+    expect((await all.migrateDown()).error).toBeUndefined();
+
+    const rows = await sql<{ name: string; people: string; space: string; role: string; task_role: string }>`
+      SELECT name, people, space, role, task_role FROM characters ORDER BY name
+    `.execute(harness.db);
+    expect(rows.rows).toEqual([
+      { name: 'Heilerin', people: 'wachen', space: 'EdariaBibliothek', role: 'heiler', task_role: 'heiler' },
+      { name: 'Kaempferin', people: 'umbren', space: 'outdoors', role: 'kaempfer', task_role: 'kaempfer' },
+    ]);
+    const items = await sql<{ item_id: string }>`SELECT item_id FROM inventory_rows WHERE character_id = ${characterId} ORDER BY slot`.execute(harness.db);
+    expect(items.rows.map((row) => row.item_id)).toEqual(['purse', 'mondstein']);
+    await expect(sql`UPDATE characters SET role = 'healer' WHERE id = ${characterId}`.execute(harness.db)).rejects.toThrow(/characters_role_check/);
   });
 });
 

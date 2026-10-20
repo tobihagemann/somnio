@@ -4,11 +4,13 @@ import { Migrator } from 'kysely/migration';
 import type { Migration, MigrationProvider } from 'kysely/migration';
 import { down as metricWorldDown, up as metricWorldUp } from './migrations/0001_metric_world.ts';
 import { down as lucidityDown, up as lucidityUp } from './migrations/0002_lucidity.ts';
+import { down as englishNamesDown, up as englishNamesUp } from './migrations/0003_english_names.ts';
 
 /** The migration list, in order. In memory rather than a filesystem walk: nothing compiles the tree. */
 const MIGRATIONS: Record<string, Migration> = {
   '0001_metric_world': { up: metricWorldUp, down: metricWorldDown },
   '0002_lucidity': { up: lucidityUp, down: lucidityDown },
+  '0003_english_names': { up: englishNamesUp, down: englishNamesDown },
 };
 
 const provider: MigrationProvider = {

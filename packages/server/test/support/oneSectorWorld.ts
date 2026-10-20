@@ -1,4 +1,5 @@
 import type { Placement } from '@somnio/protocol';
+import type { SectorNPC } from '@somnio/core';
 import { hashPassword } from '@somnio/data';
 import type { SessionRepository } from '@somnio/data';
 import type { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
@@ -15,6 +16,7 @@ export interface OneSectorWorldOptions {
   characterSpace?: string;
   accounts?: StubAccountRepository;
   placements?: Placement[];
+  npcs?: SectorNPC[];
   logger?: Logger;
   attemptLimiter?: AttemptLimiter;
   accountLimiter?: AttemptLimiter;
@@ -26,7 +28,7 @@ export async function makeOneSectorWorld(options: OneSectorWorldOptions) {
   const character = makeCharacter({ x: 5, z: 5 }, options.characterName ?? 'tester', options.characterSpace);
   const dependencies = await makeStubConnectionDependencies({
     sessions: options.sessions,
-    sectors: [makeSector('A', { placements: options.placements ?? [] })],
+    sectors: [makeSector('A', { placements: options.placements ?? [], npcs: options.npcs ?? [] })],
     characters: new StubCharacterRepository(new Map([[accountId, [character]]])),
     ...(options.accounts === undefined ? {} : { accounts: options.accounts }),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
@@ -36,7 +38,10 @@ export async function makeOneSectorWorld(options: OneSectorWorldOptions) {
   return { dependencies, accountId };
 }
 
-type AuthenticatedWorldOptions = Pick<OneSectorWorldOptions, 'sessions' | 'logger' | 'attemptLimiter' | 'accountLimiter'> & { name: string; password: string };
+type AuthenticatedWorldOptions = Pick<OneSectorWorldOptions, 'sessions' | 'npcs' | 'logger' | 'attemptLimiter' | 'accountLimiter'> & {
+  name: string;
+  password: string;
+};
 
 /** A one-sector world whose character belongs to an account a password login can reach. */
 export async function makeAuthenticatedWorld({ name, password, ...world }: AuthenticatedWorldOptions) {

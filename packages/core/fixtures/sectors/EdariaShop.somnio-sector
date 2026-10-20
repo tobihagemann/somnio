@@ -23,7 +23,7 @@
       "placement": "door-1",
       "target": {
         "door": "to-edariashop",
-        "sector": "EdariaMitte"
+        "sector": "EdariaSquare"
       }
     }
   ],
@@ -31,8 +31,8 @@
   "kind": "interior",
   "npcs": [
     {
-      "characterModelId": "kraemer",
-      "dialogScript": "Willkommen, $name!---Sieh dich ruhig um - viel ist es noch nicht.---Die nächste Lieferung kommt mit dem Händler aus dem Herbstwald. Bis dahin: nur das Nötigste.",
+      "characterModelId": "merchant",
+      "dialogScript": "Welcome, $name!---Have a look around. There is not much yet.---The next delivery comes with the trader from the Autumn Wood. Until then, only the bare essentials.",
       "facing": 0,
       "id": "mercus",
       "name": "Mercus",

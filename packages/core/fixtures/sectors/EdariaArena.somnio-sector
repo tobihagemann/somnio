@@ -23,7 +23,7 @@
       "placement": "door-1",
       "target": {
         "door": "to-edariaarena",
-        "sector": "EdariaMitte"
+        "sector": "EdariaSquare"
       }
     }
   ],
@@ -43,7 +43,7 @@
     {
       "depth": 7.68,
       "id": "spawn-1",
-      "kind": "gespenst",
+      "kind": "ghost",
       "maxAlive": 3,
       "width": 5.76,
       "x": 0.64,

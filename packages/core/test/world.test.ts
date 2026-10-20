@@ -120,7 +120,7 @@ describe('buildWorld', () => {
 
   it("reports a door whose arrival point lies within a nightmare's reach of a monster spawn's area once, and keeps it live", () => {
     // The room's door puts an arriving body at (5, 9.1); a nightmare's reach is 0.85 m.
-    const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'gespenst', x: 4, z: 7.5, width: 2, depth, maxAlive: 1 });
+    const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'ghost', x: 4, z: 7.5, width: 2, depth, maxAlive: 1 });
     const spawned = (...monsterSpawns: MonsterSpawn[]): Sector[] => [town(), room({ monsterSpawns })];
     const inReach = {
       sector: 'Room',

@@ -1,5 +1,5 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
-import type { LoginMessage, LoginResult } from '@somnio/protocol';
+import type { Locale, LoginMessage, LoginResult } from '@somnio/protocol';
 import { SESSION_POLICY, postgresNameKey, verifyAccountPassword } from '@somnio/data';
 import type { Character } from '@somnio/core';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
@@ -57,7 +57,7 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
     limiter.refund('login', connection.clientAddress);
     dependencies.accountLimiter.refund('account', nicknameKey);
     // Strictly request-gated: a client that never asked receives no `sessionToken` frame at all.
-    await completeAuthenticatedJoin(account.id, connection, dependencies, message.requestSessionToken === true);
+    await completeAuthenticatedJoin(account.id, connection, dependencies, message.requestSessionToken === true, message.locale ?? 'en');
   } catch (error) {
     logger.error({ error: String(error) }, 'login failed');
     sendLoginResult(outbox, 'badCredentials', logger);
@@ -68,13 +68,15 @@ export async function handleLogin(message: LoginMessage, connection: ConnectionA
  * The join shared by a password login and a redeemed session: router registration, character and
  * inventory lookup, `loginResult(ok)`, attach, the request-gated token, then the count of other
  * sessions. The account is registered before anything is read and released on every path that does
- * not attach. `redeemedToken` is the token a resume presented.
+ * not attach. `locale` is what NPCs speak to the player in for the rest of the connection.
+ * `redeemedToken` is the token a resume presented.
  */
 export async function completeAuthenticatedJoin(
   accountId: string,
   connection: ConnectionActor,
   dependencies: ConnectionDependencies,
   issueSessionToken: boolean,
+  locale: Locale,
   redeemedToken?: string,
 ): Promise<void> {
   const outbox = connection.outbox;
@@ -106,8 +108,9 @@ export async function completeAuthenticatedJoin(
     }
 
     sendLoginResult(outbox, 'ok', logger);
+    connection.locale = locale;
     try {
-      dependencies.worldRouter.space(spawn.space)!.attach(resolvedCharacter, [...inventory], outbox, dependencies.worldClock.currentWorldSeconds());
+      dependencies.worldRouter.space(spawn.space)!.attach(resolvedCharacter, [...inventory], outbox, dependencies.worldClock.currentWorldSeconds(), locale);
       connection.markAttached(character.id, spawn.space, accountId);
       logger.info({ name: character.name, space: spawn.space }, 'player joined');
       connection.sessionToken = redeemedToken;

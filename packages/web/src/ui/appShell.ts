@@ -159,6 +159,7 @@ export class AppShell {
       ...(this.scene === undefined ? {} : { renderSurface: this.scene }),
       registry,
       resolveURL: () => resolveGameplayURL(window.location),
+      locale: currentLocale(),
     });
 
     this.session = new GameplaySession({

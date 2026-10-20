@@ -4,6 +4,7 @@ import {
   ENTITY_KINDS,
   GAITS,
   HANDS,
+  LOCALES,
   LOGIN_RESULTS,
   NPC_SERVICES,
   RAISING_STATES,
@@ -102,8 +103,8 @@ describe('runtime validation the erased types cannot do', () => {
   const entity = {
     id: 'monster:7',
     kind: 'monster',
-    characterModelId: 'gespenst',
-    name: 'Gespenst',
+    characterModelId: 'ghost',
+    name: 'Ghost',
     radius: 0.3,
     x: 0,
     z: 0,
@@ -150,9 +151,9 @@ describe('runtime validation the erased types cannot do', () => {
     ['an over-cap entity id', 'talk', { npcId: overCapEntityId }, /npcId: exceeds 320 UTF-8 bytes/],
     ['an empty swing target', 'swing', { targetId: '' }, /targetId: expected a non-empty string/],
     ['an over-cap tended dreamer', 'tend', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
-    ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaMitte', doorId: 'Main Door' }, /doorId: expected an id/],
-    ['an empty door id', 'doorRefused', { sector: 'EdariaMitte', doorId: '' }, /doorId: expected an id/],
-    ['an over-cap door id', 'useDoor', { sector: 'EdariaMitte', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
+    ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaSquare', doorId: 'Main Door' }, /doorId: expected an id/],
+    ['an empty door id', 'doorRefused', { sector: 'EdariaSquare', doorId: '' }, /doorId: expected an id/],
+    ['an over-cap door id', 'useDoor', { sector: 'EdariaSquare', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
     ['an over-cap sector name on useDoor', 'useDoor', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
     ['an empty sector name on useDoor', 'useDoor', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
     ['an over-cap sector name on doorRefused', 'doorRefused', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
@@ -197,8 +198,8 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
     ['an unknown service', 'entity', { ...entity, service: 'banker' }, /unknown value "banker"/],
     ['an unknown condition', 'condition', { entityId: 'monster:7', condition: 'dying' }, /unknown value "dying"/],
-    ['an unknown role', 'lucidity', { ...lucidity, role: 'mystiker' }, /unknown value "mystiker"/],
-    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'mystiker', progress: 0 } }, /task\.role: unknown value "mystiker"/],
+    ['an unknown role', 'lucidity', { ...lucidity, role: 'mystic' }, /unknown value "mystic"/],
+    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'mystic', progress: 0 } }, /task\.role: unknown value "mystic"/],
     ['a teaching id outside the id alphabet', 'study', { npcId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
     ['a studied teaching outside the id alphabet', 'lucidity', { ...lucidity, study: 'Follow Through' }, /study: expected an id/],
     ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
@@ -214,16 +215,16 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown raising state', 'raising', { ...raising, state: 'paused' }, /unknown value "paused"/],
     ['a raise held by no one', 'raising', { ...raising, healerIds: [] }, /healerIds: expected at least one healer/],
     [
-      'a raise held by more Heilers than the cap',
+      'a raise held by more Healers than the cap',
       'raising',
       // The first id is no string, so only a count checked before the ids reports the cap.
       { ...raising, healerIds: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers }, (_, index) => `h${index}`)] },
       /healerIds: exceeds 32 ids \(got 33\)/,
     ],
-    ['a Heiler named twice in a raise', 'raising', { ...raising, healerIds: ['a', 'c', 'a'] }, /healerIds\[2\]: duplicate id "a"/],
-    ['a Heiler id that is no string', 'raising', { ...raising, healerIds: ['a', 7] }, /healerIds\[1\]: expected a string, got number/],
-    ['an empty Heiler id', 'raising', { ...raising, healerIds: ['a', ''] }, /healerIds\[1\]: expected a non-empty string/],
-    ['an over-cap Heiler id', 'raising', { ...raising, healerIds: [overCapEntityId] }, /healerIds\[0\]: exceeds 320 UTF-8 bytes/],
+    ['a Healer named twice in a raise', 'raising', { ...raising, healerIds: ['a', 'c', 'a'] }, /healerIds\[2\]: duplicate id "a"/],
+    ['a Healer id that is no string', 'raising', { ...raising, healerIds: ['a', 7] }, /healerIds\[1\]: expected a string, got number/],
+    ['an empty Healer id', 'raising', { ...raising, healerIds: ['a', ''] }, /healerIds\[1\]: expected a non-empty string/],
+    ['an over-cap Healer id', 'raising', { ...raising, healerIds: [overCapEntityId] }, /healerIds\[0\]: exceeds 320 UTF-8 bytes/],
     ['a raise past its end', 'raising', { ...raising, progress: 1.5 }, /progress: expected a number from 0 to 1, got 1.5/],
     ['a raise with negative time left', 'raising', { ...raising, seconds: -1 }, /seconds: expected a non-negative number/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
@@ -231,6 +232,8 @@ describe('runtime validation the erased types cannot do', () => {
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
+    ['an unknown locale on a login', 'login', { nickname: 'Saibot', password: 'hunter2', locale: 'fr' }, /locale: unknown value "fr"/],
+    ['an unknown locale on a redeemSession', 'redeemSession', { token: 'tok-abc', locale: 'en-GB' }, /locale: unknown value "en-GB"/],
     ['an unknown speech kind on a serverSay', 'serverSay', { ...say, kind: 'sing' }, /unknown value "sing"/],
     ['a clarity below 0', 'serverSay', { ...say, clarity: -0.1 }, /clarity: expected a number from 0 to 1, got -0.1/],
     ['a clarity above 1', 'serverSay', { ...say, clarity: 1.5 }, /clarity: expected a number from 0 to 1, got 1.5/],
@@ -278,6 +281,13 @@ describe('round trips', () => {
     expect('requestSessionToken' in decoded.payload).toBe(false);
   });
 
+  /** Without a locale the server speaks English, so the key must stay absent rather than decode to a default. */
+  it.each(['login', 'redeemSession'] as const)('%s decodes without a locale, and with each locale', (tag) => {
+    const payload = tag === 'login' ? { nickname: 'Saibot', password: 'hunter2' } : { token: 'tok-abc' };
+    expect('locale' in decodeSomnioMessage(frame(tag, payload)).payload).toBe(false);
+    for (const locale of LOCALES) expect(decodeSomnioMessage(frame(tag, { ...payload, locale }))).toEqual({ tag, payload: { ...payload, locale } });
+  });
+
   /** The golden catalog records one member of each result set, and not this one. */
   it.each(['loginResult', 'registerResult'] as const)('%s decodes a throttled result', (tag) => {
     expect(decodeSomnioMessage(frame(tag, { result: 'throttled' }))).toEqual({ tag, payload: { result: 'throttled' } });
@@ -285,7 +295,7 @@ describe('round trips', () => {
 
   /** Without a teaching the request is for the master's trial, so the key must stay absent. */
   it('askTask round-trips a trial request without a teaching', () => {
-    const message: SomnioMessage = { tag: 'askTask', payload: { npcId: 'npc:EdariaMitte/pugnax' } };
+    const message: SomnioMessage = { tag: 'askTask', payload: { npcId: 'npc:EdariaFighterHall/pugnax' } };
     const decoded = roundTrip(message);
     expect(decoded).toEqual(message);
     expect('teachingId' in decoded.payload).toBe(false);
@@ -346,7 +356,7 @@ describe('round trips', () => {
   it('enterSpace round-trips a fractional world time near year 500 exactly', () => {
     const message: SomnioMessage = {
       tag: 'enterSpace',
-      payload: { spaceId: 'EdariaBibliothek', selfId: 'a', worldSeconds: 500 * 12 * 28 * 86_400 + 0.125 },
+      payload: { spaceId: 'EdariaLibrary', selfId: 'a', worldSeconds: 500 * 12 * 28 * 86_400 + 0.125 },
     };
     expect(roundTrip(message)).toEqual(message);
   });
@@ -413,11 +423,15 @@ describe('string literal sets', () => {
   });
 
   it('pins Role', () => {
-    expect(ROLES).toEqual(['kaempfer', 'heiler']);
+    expect(ROLES).toEqual(['fighter', 'healer']);
   });
 
   it('pins NPCService', () => {
-    expect(NPC_SERVICES).toEqual(['kaempferMaster', 'heilerMaster', 'shopkeeper']);
+    expect(NPC_SERVICES).toEqual(['fighterMaster', 'healerMaster', 'shopkeeper']);
+  });
+
+  it('pins Locale', () => {
+    expect(LOCALES).toEqual(['en', 'de']);
   });
 
   it('pins Condition', () => {
@@ -443,7 +457,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(12);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(13);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

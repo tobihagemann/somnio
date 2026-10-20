@@ -87,7 +87,7 @@ describe('swingFor', () => {
   });
 
   it('does not swing what is no weapon', () => {
-    expect(swingFor('mondstein', [])).toBeUndefined();
+    expect(swingFor('moonstone', [])).toBeUndefined();
     expect(swingFor('purse', [])).toBeUndefined();
   });
 
@@ -105,12 +105,12 @@ describe('swingAllowed', () => {
   });
 
   it('is none with something in hand that does not swing', () => {
-    expect(swingAllowed(undefined, 'mondstein', [], 100)).toBeUndefined();
+    expect(swingAllowed(undefined, 'moonstone', [], 100)).toBeUndefined();
   });
 
   it('is none while a task forbids striking, and is not held back by one that does not', () => {
-    expect(swingAllowed(TRIALS.heiler, 'cudgel', [], 100)).toBeUndefined();
-    expect(swingAllowed(TRIALS.kaempfer, 'cudgel', [], 100)).toEqual(swingFor('cudgel', []));
+    expect(swingAllowed(TRIALS.healer, 'cudgel', [], 100)).toBeUndefined();
+    expect(swingAllowed(TRIALS.fighter, 'cudgel', [], 100)).toEqual(swingFor('cudgel', []));
   });
 });
 
@@ -141,21 +141,21 @@ describe('what a swing meets', () => {
 });
 
 describe('strikeChance', () => {
-  const gespenst = monsterKind('gespenst');
+  const ghost = monsterKind('ghost');
 
   it('rises as the balance falls', () => {
-    expect(strikeChance(gespenst, 100, 100, [])).toBeCloseTo(0.6, 9);
-    expect(strikeChance(gespenst, 50, 100, [])).toBeCloseTo(0.75, 9);
-    expect(strikeChance(gespenst, 0, 100, [])).toBeCloseTo(0.9, 9);
+    expect(strikeChance(ghost, 100, 100, [])).toBeCloseTo(0.6, 9);
+    expect(strikeChance(ghost, 50, 100, [])).toBeCloseTo(0.75, 9);
+    expect(strikeChance(ghost, 0, 100, [])).toBeCloseTo(0.9, 9);
   });
 
   it('falls with Guard', () => {
-    expect(strikeChance(gespenst, 100, 100, ranks({ guard: 3 }))).toBeCloseTo(0.36, 9);
+    expect(strikeChance(ghost, 100, 100, ranks({ guard: 3 }))).toBeCloseTo(0.36, 9);
   });
 
   it('stays a chance', () => {
-    expect(strikeChance({ ...gespenst, hitChance: 0.95 }, 0, 100, [])).toBe(1);
-    expect(strikeChance({ ...gespenst, hitChance: 0.1 }, 100, 100, ranks({ guard: 3 }))).toBe(0);
+    expect(strikeChance({ ...ghost, hitChance: 0.95 }, 0, 100, [])).toBe(1);
+    expect(strikeChance({ ...ghost, hitChance: 0.1 }, 100, 100, ranks({ guard: 3 }))).toBe(0);
   });
 });
 

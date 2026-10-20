@@ -25,7 +25,7 @@ describe('registration repository', () => {
       name,
       passwordHash,
       email: `${passwordHash}@example.com`,
-      people: 'umbren',
+      people: 'umbrae',
       starterInventory,
     });
 
@@ -45,9 +45,9 @@ describe('registration repository', () => {
     const { account, character } = await register('fighter-one', 'argon2-hash-stub', STARTER_ROWS);
     expect(account.name).toBe('fighter-one');
     expect(character.name).toBe('fighter-one');
-    expect(character.space).toBe('EdariaBibliothek');
+    expect(character.space).toBe('EdariaLibrary');
     expect((await accounts.findByName('fighter-one'))?.id).toBe(account.id);
-    expect((await characters.findByAccount(account.id)).map((stored) => stored.people)).toEqual(['umbren']);
+    expect((await characters.findByAccount(account.id)).map((stored) => stored.people)).toEqual(['umbrae']);
     expect(await inventory.loadAll(character.id)).toEqual(STARTER_ROWS);
   });
 

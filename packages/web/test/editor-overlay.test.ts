@@ -66,7 +66,7 @@ describe('AuthoringOverlay', () => {
       ],
       doors: [door],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialogScript: '' }],
-      monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
       spawn: { x: 5, z: 15, facing: 0 },
     });
     const selection = [selectionFootprint({ kind: 'blocker', id: 'blocker-1' }, body, TEST_REGISTRY)!];
@@ -277,7 +277,7 @@ describe('overlayLabels', () => {
       { id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialogScript: '' },
       { id: 'npc-2', name: '', characterModelId: 'hero', x: 4, z: 9, facing: 0, dialogScript: '' },
     ],
-    monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 12, z: 12, width: 4, depth: 2, maxAlive: 3 }],
+    monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 2, maxAlive: 3 }],
   });
 
   it('names a door by where it leads, an NPC by its name or id, and a monster spawn by what it keeps alive', () => {
@@ -285,7 +285,7 @@ describe('overlayLabels', () => {
       { text: 'exit -> Mitte/to-test', at: { x: 10, z: 19 - 0.29 }, issue: false },
       { text: 'Libus', at: { x: 3, z: 9 }, issue: false },
       { text: 'npc-2', at: { x: 4, z: 9 }, issue: false },
-      { text: 'gespenst x3', at: { x: 14, z: 13 }, issue: false },
+      { text: 'ghost x3', at: { x: 14, z: 13 }, issue: false },
     ]);
   });
 

@@ -59,14 +59,14 @@ describe('SpaceActor.attach', () => {
       placements: [{ id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 }],
     });
     const outbox = new ConnectionOutbox(1024);
-    expect(() => space.attach(makeCharacter({ x: 2, z: 2 }), [], outbox, 0)).toThrow();
+    expect(() => space.attach(makeCharacter({ x: 2, z: 2 }), [], outbox, 0, 'en')).toThrow();
     expect(await collectMessages(outbox)).toEqual([]);
     expect(space.snapshotForCheckpoint()).toEqual([]);
   });
 
   it('refuses a position no sector of the space holds', () => {
     const { space } = actor();
-    expect(() => space.attach(makeCharacter({ x: 25, z: 2 }), [], new ConnectionOutbox(1024), 0)).toThrow(/no sector/);
+    expect(() => space.attach(makeCharacter({ x: 25, z: 2 }), [], new ConnectionOutbox(1024), 0, 'en')).toThrow(/no sector/);
   });
 });
 

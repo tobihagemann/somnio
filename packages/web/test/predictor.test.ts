@@ -360,7 +360,7 @@ describe('triggers', () => {
   });
 
   it.each<[string, Partial<ClientEntity>]>([
-    ['an NPC with something to offer', { id: 'npc:Meadow/pugnax', kind: 'npc', service: 'kaempferMaster' }],
+    ['an NPC with something to offer', { id: 'npc:Meadow/pugnax', kind: 'npc', service: 'fighterMaster' }],
     ['a peer', { id: 'peer', kind: 'peer' }],
     ['a nightmare', { id: 'monster:1', kind: 'monster' }],
   ])('asks nothing of %s it walks into: acting on something is a click', (_label, entity) => {

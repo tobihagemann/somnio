@@ -211,7 +211,7 @@ describe('monster spawn cadence', () => {
     const late = attachPlayer(space, { x: 18, z: 18 }, 'late');
     clock.ms = RESPAWN_MS;
     space.step(0.05);
-    const kind = monsterKind('gespenst');
+    const kind = monsterKind('ghost');
     const spawned = { id: 'monster:1', kind: 'monster', characterModelId: kind.characterModelId, name: kind.name, radius: kind.radius, x: 10, z: 10 };
     expect(await monstersSeen(early.outbox)).toMatchObject([spawned]);
     expect(await monstersSeen(late.outbox)).toMatchObject([spawned]);
@@ -267,8 +267,8 @@ describe('monster aggro and chase', () => {
   /** Outside every ground and aggro radius here, where a watcher joins. */
   const AFAR: Point = { x: 1, z: 19 };
   const FALLEN = { character: { energy: energy({ healthCurrent: 0 }) } };
-  const REACH = reachDistance(monsterKind('gespenst').radius);
-  const STRIDE = monsterKind('gespenst').metresPerSecond * 0.05;
+  const REACH = reachDistance(monsterKind('ghost').radius);
+  const STRIDE = monsterKind('ghost').metresPerSecond * 0.05;
 
   type Steps = (count: number, each?: () => void) => void;
 
@@ -520,7 +520,7 @@ describe('monster aggro and chase', () => {
     // Both reached her, the one behind by coming round the other.
     expect(distance(one!, alice)).toBeLessThanOrEqual(REACH);
     expect(distance(other!, alice)).toBeLessThanOrEqual(REACH);
-    expect(distance(one!, other!)).toBeGreaterThanOrEqual(2 * monsterKind('gespenst').radius - 1e-6);
+    expect(distance(one!, other!)).toBeGreaterThanOrEqual(2 * monsterKind('ghost').radius - 1e-6);
   });
 
   it('turns to face a dreamer it strikes, and sends the turn', async () => {

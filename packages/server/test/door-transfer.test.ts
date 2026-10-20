@@ -5,8 +5,9 @@ import type { Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
+import { payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
-import { attachPlayer, makeDoor, makeSector, makeSectorLine } from './support/sectorFactory.ts';
+import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
@@ -32,7 +33,7 @@ async function attachedAt(sectors: Sector[], at: Point, characters = new StubCha
   connection.markAttached(entityId, OUTDOOR_SPACE_ID, crypto.randomUUID());
   const useDoor = (sector: string, doorId: string) => handleUseDoor({ sector, doorId }, entityId, OUTDOOR_SPACE_ID, connection, dependencies);
   const snapshotIn = (spaceId: string) => dependencies.worldRouter.space(spaceId)!.snapshotForPlayer(entityId)?.character;
-  return { connection, entityId, useDoor, snapshotIn };
+  return { connection, dependencies, entityId, useDoor, snapshotIn };
 }
 
 describe('handleUseDoor', () => {
@@ -111,5 +112,30 @@ describe('handleUseDoor', () => {
     const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
     expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID } });
+  });
+
+  /** A step the dialog catalog translates, greeted to whoever arrives within speaking distance. */
+  const GREETING = 'Welcome, $name!';
+
+  it('takes the language NPCs speak to the player in through the door', async () => {
+    const w = await attachedAt(town({ npcs: [makeNPC('greeter', { x: 5, z: 7 }, GREETING)] }), { x: 10, z: 9.7 });
+    w.connection.locale = 'de';
+    w.useDoor('Town', 'inside');
+    w.dependencies.worldRouter.space('Hall')!.step(0.05);
+    expect(payloads(await collectMessages(w.connection.outbox), 'serverSay').map((line) => line.text)).toEqual(['Willkommen, walker!']);
+  });
+
+  it('keeps the language NPCs speak to the player in when the target cannot attach', async () => {
+    const oversized = { id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 };
+    const [outside, hall] = town();
+    const sectors = [
+      { ...outside!, npcs: [makeNPC('greeter', { x: 11, z: 8.5 }, GREETING)] },
+      { ...hall!, placements: [...hall!.placements, oversized] },
+    ];
+    const w = await attachedAt(sectors, { x: 10, z: 9.7 });
+    w.connection.locale = 'de';
+    expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: OUTDOOR_SPACE_ID });
+    w.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!.step(0.05);
+    expect(payloads(await collectMessages(w.connection.outbox), 'serverSay').map((line) => line.text)).toEqual(['Willkommen, walker!']);
   });
 });

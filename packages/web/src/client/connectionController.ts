@@ -1,5 +1,5 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, assertNever, isClientOnlyMessage } from '@somnio/protocol';
-import type { Condition, EnterSpaceMessage, EntityKind, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
+import type { Condition, EnterSpaceMessage, EntityKind, Locale, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
 import { bundledModelRegistry, heading } from '@somnio/core';
 import type { ModelRegistry, People, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
@@ -82,6 +82,8 @@ export interface ConnectionControllerOptions {
   /** Bounded retry budget for the `alreadyLoggedIn` refresh race. */
   maxResumeRetries?: number;
   resolveURL?: () => string;
+  /** The language the page reads in, which NPCs speak to the player in; English unless given. */
+  locale?: Locale;
 }
 
 /**
@@ -161,6 +163,7 @@ export class ConnectionController {
   private readonly registry: ModelRegistry;
   private readonly resolveURL: () => string;
   private readonly maxResumeRetries: number;
+  private readonly locale: Locale;
   private credentials: LoginCredentials | undefined;
   /** Set between `register` being submitted and its `registerResult` arriving. */
   private pendingRegistration: RegistrationForm | undefined;
@@ -178,6 +181,7 @@ export class ConnectionController {
     this.registry = options.registry ?? bundledModelRegistry();
     this.resolveURL = options.resolveURL ?? (() => '/ws');
     this.maxResumeRetries = options.maxResumeRetries ?? 3;
+    this.locale = options.locale ?? 'en';
   }
 
   get chatHistory(): readonly ChatLine[] {
@@ -528,7 +532,7 @@ export class ConnectionController {
     // it was handed explicit credentials — the token is set solely on the credential-free resume
     // path. Setting it unconditionally here would make a typed login redeem a stored token instead.
     if (this.resumingWithToken !== undefined) {
-      this.transport.send({ tag: 'redeemSession', payload: { token: this.resumingWithToken } });
+      this.transport.send({ tag: 'redeemSession', payload: { token: this.resumingWithToken, locale: this.locale } });
       return;
     }
     const credentials = this.credentials;
@@ -545,6 +549,7 @@ export class ConnectionController {
         // Request-gated: omitted entirely unless the user opted in, which is what keeps the
         // server from volunteering a new tag to a client that never asked for one.
         ...(credentials.rememberMe ? { requestSessionToken: true } : {}),
+        locale: this.locale,
       },
     });
   }

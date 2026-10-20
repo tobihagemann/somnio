@@ -3,7 +3,7 @@ import { ConnectionController, SessionStore, noopRenderSurface } from '@/client'
 import type { SessionStorageLike, WorldRenderSurface } from '@/client';
 import { GameplayTransport } from '@/transport';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
-import type { EntityMessage, SomnioMessage } from '@somnio/protocol';
+import type { EntityMessage, Locale, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -63,7 +63,7 @@ function lastSentEnvelope(rig: Rig): { tag: string; payload: Record<string, unkn
   return JSON.parse(rig.socket().sent.at(-1)!) as { tag: string; payload: Record<string, unknown> };
 }
 
-function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldRenderSurface } = {}): Rig {
+function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldRenderSurface; locale?: Locale } = {}): Rig {
   const { factory, latest } = fakeSocketFactory();
   const transport = new GameplayTransport(factory);
   const storage = options.storage ?? new MemoryStorage();
@@ -73,6 +73,7 @@ function makeRig(options: { storage?: SessionStorageLike; renderSurface?: WorldR
     resolveURL: () => 'ws://test/ws',
     registry: TEST_REGISTRY,
     ...(options.renderSurface === undefined ? {} : { renderSurface: options.renderSurface }),
+    ...(options.locale === undefined ? {} : { locale: options.locale }),
   });
   // Retries are driven explicitly in the retry test rather than through real timers.
   controller.scheduleResume = () => {};
@@ -131,7 +132,7 @@ describe('connection state machine', () => {
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
 
-    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 })));
+    rig.deliver(sectorFrame(outdoorSector('EdariaSquare', { x: 0, z: 0 })));
     expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
     expect(rig.controller.world).toBeUndefined();
 
@@ -152,7 +153,7 @@ describe('connection state machine', () => {
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver(enterSpaceFrame());
-    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 })));
+    rig.deliver(sectorFrame(outdoorSector('EdariaSquare', { x: 0, z: 0 })));
     rig.deliver(peer());
     expect(rig.controller.entities.size).toBe(1);
     expect(rig.controller.players).toEqual(['Peer']);
@@ -329,6 +330,30 @@ describe('session-token request gating', () => {
     const frame = lastSentEnvelope(resumed);
     expect(frame.tag).toBe('redeemSession');
     expect(frame.payload.token).toBe('tok-abc');
+  });
+
+  /** NPCs speak to the player in the language the server is told, and it is told on every way in. */
+  it("names the page's language on a login and on a resume, and English when it was given none", () => {
+    const storage = new MemoryStorage();
+    const login = makeRig({ storage, locale: 'de' });
+    login.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    login.socket().open();
+    login.deliver(hello());
+    expect(lastSentEnvelope(login)).toMatchObject({ tag: 'login', payload: { locale: 'de' } });
+    login.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    login.deliver({ tag: 'sessionToken', payload: { token: 'tok-abc', expiresInSeconds: 2_592_000 } });
+
+    const resumed = makeRig({ storage, locale: 'de' });
+    resumed.controller.connect({ kind: 'resume' });
+    resumed.socket().open();
+    resumed.deliver(hello());
+    expect(lastSentEnvelope(resumed)).toMatchObject({ tag: 'redeemSession', payload: { token: 'tok-abc', locale: 'de' } });
+
+    const unset = makeRig();
+    unset.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    unset.socket().open();
+    unset.deliver(hello());
+    expect(lastSentEnvelope(unset).payload.locale).toBe('en');
   });
 });
 
@@ -757,7 +782,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Newcomer',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'wachen',
+      people: 'vigils',
       email: 'new@example.com',
     });
     rig.socket().open();
@@ -781,7 +806,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Abandoned',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'wachen',
+      people: 'vigils',
       email: 'abandoned@example.com',
     });
     rig.socket().open();
@@ -817,7 +842,7 @@ describe('duplicate-login race on refresh', () => {
       nickname: 'Interrupted',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'wachen',
+      people: 'vigils',
       email: 'interrupted@example.com',
     });
     rig.socket().open();
@@ -937,7 +962,7 @@ describe('registration', () => {
       nickname: 'Wanda',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      people: 'wachen',
+      people: 'vigils',
       email: 'wanda@example.invalid',
     });
     rig.socket().open();
@@ -952,7 +977,7 @@ describe('registration', () => {
       nickname: 'Wanda',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      people: 'wachen',
+      people: 'vigils',
       email: 'wanda@example.invalid',
     });
   });
@@ -1135,7 +1160,7 @@ describe('terminal transport failures present a recovery surface', () => {
     const rig = makeRig();
     attach(rig);
 
-    rig.deliver(sectorFrame(outdoorSector('EdariaMitte', { x: 0, z: 0 }, { size: { width: 4096, depth: 4096 } })));
+    rig.deliver(sectorFrame(outdoorSector('EdariaSquare', { x: 0, z: 0 }, { size: { width: 4096, depth: 4096 } })));
 
     expect(rig.controller.connectionState).toBe('disconnected');
     expect(rig.controller.presentedOverlay).toEqual({ kind: 'login' });
@@ -1322,7 +1347,7 @@ describe('end of session identity', () => {
       nickname: 'Carol',
       password: 'carol-secret',
       passwordRepeat: 'carol-secret',
-      people: 'wachen',
+      people: 'vigils',
       email: 'carol@example.invalid',
     });
     rig.socket().open();
@@ -1349,7 +1374,7 @@ describe('end of session identity', () => {
       nickname: 'Dora',
       password: 'dora-secret',
       passwordRepeat: 'dora-secret',
-      people: 'wachen',
+      people: 'vigils',
       email: 'dora@example.invalid',
     });
     rig.socket().open();
@@ -1529,7 +1554,7 @@ describe('an explicit authentication retires a resume already scheduled', () => 
       nickname: 'Grace',
       password: 'grace-secret',
       passwordRepeat: 'grace-secret',
-      people: 'wachen',
+      people: 'vigils',
       email: 'grace@example.invalid',
     });
     rig.socket().open();
@@ -1558,7 +1583,7 @@ describe('a torn-down registration does not become a login', () => {
       nickname: 'Judy',
       password: 'judy-secret',
       passwordRepeat: 'judy-secret',
-      people: 'wachen',
+      people: 'vigils',
       email: 'judy@example.invalid',
     });
     rig.socket().open();
@@ -1673,7 +1698,7 @@ describe('the status the login card and the splash say', () => {
     expect(rig.controller.sessionStatus).toBeUndefined();
 
     failed();
-    rig.controller.register({ nickname: 'Ida', password: 'hunter2-long', passwordRepeat: 'hunter2-long', people: 'wachen', email: 'ida@example.com' });
+    rig.controller.register({ nickname: 'Ida', password: 'hunter2-long', passwordRepeat: 'hunter2-long', people: 'vigils', email: 'ida@example.com' });
     expect(rig.controller.sessionStatus).toBeUndefined();
 
     login(rig);

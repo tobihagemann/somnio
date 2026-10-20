@@ -22,8 +22,8 @@
       "id": "exit",
       "placement": "door-1",
       "target": {
-        "door": "to-edariabibliothek",
-        "sector": "EdariaMitte"
+        "door": "to-edarialibrary",
+        "sector": "EdariaSquare"
       }
     }
   ],
@@ -32,7 +32,7 @@
   "npcs": [
     {
       "characterModelId": "libus",
-      "dialogScript": "Sei gegrüßt, $name!---Diese Bibliothek ist immer noch in Arbeit.---Außerdem ist das Rennen hier verboten!",
+      "dialogScript": "Greetings, $name!---This library is still a work in progress.---And running is forbidden in here!",
       "facing": 270,
       "id": "libus",
       "name": "Libus",

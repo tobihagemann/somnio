@@ -5,7 +5,7 @@ import {
   BESIDE_GHOST,
   CUDGEL_IN_HAND,
   GHOST,
-  MONDSTEIN_IN_HAND,
+  MOONSTONE_IN_HAND,
   RESPAWN_MS,
   STRIKER,
   arena,
@@ -67,7 +67,7 @@ describe('swinging at a nightmare', () => {
 
   it.each([
     ['with less balance than the swing costs', { character: { energy: energy({ balanceCurrent: 7 }) } }],
-    ['with the Mondstein in hand', { inventory: [MONDSTEIN_IN_HAND] }],
+    ['with the Moonstone in hand', { inventory: [MOONSTONE_IN_HAND] }],
   ])('does not swing %s', async (_label, options) => {
     const { space } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', options);
@@ -93,7 +93,7 @@ describe('swinging at a nightmare', () => {
     expect(payloads(messages, 'condition')).toEqual([]);
   });
 
-  /** A Gespenst has 60 health, is grazed by any hit, and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
+  /** A Ghost has 60 health, is grazed by any hit, and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
   it.each([
     ['bare hands', [], 8, 4],
     ['the cudgel', [CUDGEL_IN_HAND], 18, 2],
@@ -155,7 +155,7 @@ describe('swinging at a nightmare', () => {
 
   it('splits the bounty among the standing dreamers within the share radius, and gives each of them the practice in full', () => {
     const { clock, space } = arena();
-    const studying = { lucidity: lucidity('kaempfer', { strike: 5 }, { study: 'toughening' }) };
+    const studying = { lucidity: lucidity('fighter', { strike: 5 }, { study: 'toughening' }) };
     const striker = attachPlayer(space, BESIDE_GHOST, 'striker', { character: studying, inventory: [PURSE, CUDGEL_IN_HAND] });
     const near = attachPlayer(space, { x: 10, z: 15.9 }, 'near', { character: studying, inventory: [PURSE] });
     const far = attachPlayer(space, { x: 10, z: 16.1 }, 'far', { character: studying, inventory: [PURSE] });
@@ -172,7 +172,7 @@ describe('swinging at a nightmare', () => {
 
   it('raises the health maximum where a Toughening rank is earned, and recovery then passes the old one', async () => {
     const { clock, space, steps } = arena();
-    const almost = lucidity('kaempfer', { strike: 5 }, { study: 'toughening' });
+    const almost = lucidity('fighter', { strike: 5 }, { study: 'toughening' });
     almost.ranks.push({ teachingId: 'toughening', rank: 0, practice: 15 });
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: [CUDGEL_IN_HAND] });
     for (let swing = 0; swing < 3; swing += 1) {
@@ -190,7 +190,7 @@ describe('swinging at a nightmare', () => {
 describe('a join', () => {
   it('gives the pools the maxima the ranks give, whatever the row held, and no more in them than that', () => {
     const { space } = arena({}, { ghost: false });
-    const tough = attachPlayer(space, { x: 5, z: 5 }, 'tough', { character: { lucidity: lucidity('kaempfer', { strike: 1, toughening: 2 }) } });
+    const tough = attachPlayer(space, { x: 5, z: 5 }, 'tough', { character: { lucidity: lucidity('fighter', { strike: 1, toughening: 2 }) } });
     expect(energyOf(space, tough.entityId)).toMatchObject({ healthCurrent: 100, healthMax: 120 });
     const stale = energy({ healthCurrent: 150, healthMax: 150, spiritCurrent: 130, spiritMax: 130 });
     const plain = attachPlayer(space, { x: 6, z: 5 }, 'plain', { character: { energy: stale } });
@@ -358,7 +358,7 @@ describe('what a dreamer never does', () => {
     const { space, steps } = arena({}, { ghost: false });
     const victim = attachPlayer(space, { x: 5, z: 5 }, 'victim', { character: { energy: energy({ healthCurrent: 50 }) } });
     const brawler = attachPlayer(space, { x: 5, z: 5.6 }, 'brawler', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
-    const pretender = attachPlayer(space, { x: 5.6, z: 5 }, 'pretender', { inventory: [MONDSTEIN_IN_HAND] });
+    const pretender = attachPlayer(space, { x: 5.6, z: 5 }, 'pretender', { inventory: [MOONSTONE_IN_HAND] });
     const before = [victim, pretender].map((player) => energyOf(space, player.entityId));
     space.handleSwing(victim.entityId, brawler.entityId);
     space.handleTend(victim.entityId, pretender.entityId);
@@ -372,13 +372,13 @@ describe('what a dreamer never does', () => {
   it('does nothing a fallen dreamer asks for: no swing, no answer, no mending', async () => {
     const { space, steps, dice } = arena({ npcs: [makeNPC('guard', { x: 10, z: 12 }, 'Hello, $name.\n---\nMore.')] });
     dice.hit = false;
-    const fallen = { energy: energy({ healthCurrent: 0 }), lucidity: lucidity('heiler', { touch: 3 }) };
-    const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: [MONDSTEIN_IN_HAND] });
+    const fallen = { energy: energy({ healthCurrent: 0 }), lucidity: lucidity('healer', { touch: 3 }) };
+    const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: [MOONSTONE_IN_HAND] });
     const hurt = attachPlayer(space, { x: 10.6, z: 10.85 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
     space.handleSwing(GHOST, alice.entityId);
     space.handleTalk('npc:TestSector/guard', alice.entityId);
     space.handleTend(hurt.entityId, alice.entityId);
-    space.handleUseItem(MONDSTEIN_IN_HAND.slot, alice.entityId);
+    space.handleUseItem(MOONSTONE_IN_HAND.slot, alice.entityId);
     steps(1);
     expect(energyOf(space, alice.entityId)).toEqual(fallen.energy);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);

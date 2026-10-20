@@ -135,8 +135,8 @@
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
   },
-  "Anyone up for the Nordwald?": {
-    "en": "Anyone up for the Nordwald?",
+  "Anyone up for the North Wood?": {
+    "en": "Anyone up for the North Wood?",
     "de": "Kommt jemand mit in den Nordwald?"
   },
   "Ask for the trial": {
@@ -283,12 +283,12 @@
     "en": "Health",
     "de": "Gestalt"
   },
-  "Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.": {
-    "en": "Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.",
+  "Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.": {
+    "en": "Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.",
     "de": "Klick mit dem Mondstein in der Hand einen Träumer an, um dich seiner anzunehmen. Dein Geist heilt ihn, solange du bei ihm bleibst."
   },
-  "Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.": {
-    "en": "Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.",
+  "Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.": {
+    "en": "Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.",
     "de": "Bleib mit dem Mondstein in der Hand bei einem gefallenen Träumer, dessen du dich annimmst, um ihn zurückzuholen."
   },
   "If you don't have an account, click here!": {
@@ -339,13 +339,13 @@
     "en": "Logged out one other browser.",
     "de": "Einen anderen Browser abgemeldet."
   },
-  "Master of the Heiler": {
-    "en": "Master of the Heiler",
-    "de": "Meisterin der Heiler"
-  },
-  "Master of the Kämpfer": {
-    "en": "Master of the Kämpfer",
+  "Master of the Fighters": {
+    "en": "Master of the Fighters",
     "de": "Meister der Kämpfer"
+  },
+  "Master of the Healers": {
+    "en": "Master of the Healers",
+    "de": "Meisterin der Heiler"
   },
   "Mastered": {
     "en": "Mastered",
@@ -579,8 +579,8 @@
     "en": "You can study",
     "de": "Das kannst du lernen"
   },
-  "You cannot move, but you can still speak. A Heiler can draw you back.": {
-    "en": "You cannot move, but you can still speak. A Heiler can draw you back.",
+  "You cannot move, but you can still speak. A Healer can draw you back.": {
+    "en": "You cannot move, but you can still speak. A Healer can draw you back.",
     "de": "Du kannst dich nicht bewegen, aber noch sprechen. Ein Heiler kann dich zurückholen."
   },
   "You cannot strike while you hold this trial.": {

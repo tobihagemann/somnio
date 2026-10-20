@@ -10,8 +10,8 @@ import type { NPCService, Role } from '@somnio/protocol';
 export type TaskSpec =
   /** Falling sets a `withoutFalling` count back to zero. */
   | { kind: 'driveOff'; count: number; withoutFalling?: boolean }
-  /** A dreamer holding a `withoutStriking` task cannot swing. */
-  | { kind: 'reach'; sector: string; withoutStriking?: boolean }
+  /** A dreamer holding a `withoutStriking` task cannot swing. `labelKey` is the catalog key of the sector's display name. */
+  | { kind: 'reach'; sector: string; labelKey: string; withoutStriking?: boolean }
   /** Health mended on other dreamers. */
   | { kind: 'mend'; amount: number };
 
@@ -28,27 +28,27 @@ export interface Teaching {
 
 /** The teachings, by id. An id is persisted and travels the wire, so it is kebab-case like a record id. */
 export const TEACHINGS = {
-  strike: { role: 'kaempfer', labelKey: 'Strike', maxRank: 5 },
-  guard: { role: 'kaempfer', labelKey: 'Guard', maxRank: 3, needs: { teachingId: 'strike', rank: 1 } },
+  strike: { role: 'fighter', labelKey: 'Strike', maxRank: 5 },
+  guard: { role: 'fighter', labelKey: 'Guard', maxRank: 3, needs: { teachingId: 'strike', rank: 1 } },
   'follow-through': {
-    role: 'kaempfer',
+    role: 'fighter',
     labelKey: 'Follow-through',
     maxRank: 3,
     needs: { teachingId: 'strike', rank: 2 },
     gate: { kind: 'driveOff', count: 3, withoutFalling: true },
   },
-  'balance-recovery': { role: 'kaempfer', labelKey: 'Balance recovery', maxRank: 3 },
-  toughening: { role: 'kaempfer', labelKey: 'Toughening', maxRank: 5 },
-  touch: { role: 'heiler', labelKey: 'Touch', maxRank: 3 },
-  depth: { role: 'heiler', labelKey: 'Depth', maxRank: 5, needs: { teachingId: 'touch', rank: 1 } },
+  'balance-recovery': { role: 'fighter', labelKey: 'Balance recovery', maxRank: 3 },
+  toughening: { role: 'fighter', labelKey: 'Toughening', maxRank: 5 },
+  touch: { role: 'healer', labelKey: 'Touch', maxRank: 3 },
+  depth: { role: 'healer', labelKey: 'Depth', maxRank: 5, needs: { teachingId: 'touch', rank: 1 } },
   'drawing-back': {
-    role: 'heiler',
+    role: 'healer',
     labelKey: 'Drawing back',
     maxRank: 1,
     needs: { teachingId: 'touch', rank: 2 },
     gate: { kind: 'mend', amount: 60 },
   },
-  'spirit-deepening': { role: 'heiler', labelKey: 'Spirit deepening', maxRank: 5 },
+  'spirit-deepening': { role: 'healer', labelKey: 'Spirit deepening', maxRank: 5 },
 } as const satisfies Record<string, Teaching>;
 export type TeachingId = keyof typeof TEACHINGS;
 
@@ -60,21 +60,21 @@ export function teaching(id: TeachingId): Teaching {
 
 /** What each master asks of a dreamer before taking them on. Passing it commits nothing. */
 export const TRIALS: Record<Role, TaskSpec> = {
-  kaempfer: { kind: 'driveOff', count: 1 },
-  heiler: { kind: 'reach', sector: 'Nordwald', withoutStriking: true },
+  fighter: { kind: 'driveOff', count: 1 },
+  healer: { kind: 'reach', sector: 'NorthWood', labelKey: 'North Wood', withoutStriking: true },
 };
 
 /** The teaching a dreamer is taught, and set to study, on taking the role. */
-export const FIRST_TEACHING: Record<Role, TeachingId> = { kaempfer: 'strike', heiler: 'touch' };
+export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch' };
 
 /** What doing a thing adds toward the next rank of the teaching studied. */
 export const PRACTICE = {
   /** For a nightmare fading within the share radius, in full to each dreamer there. */
   nightmare: 10,
   perHealthMended: 0.25,
-  /** The share of `perHealthMended` a Heiler earns mending themselves. */
+  /** The share of `perHealthMended` a Healer earns mending themselves. */
   selfMendShare: 0.5,
-  /** For a raise done, shared among every Heiler who held on in proportion to the seconds each held. The share of one who has left the space is forfeited. */
+  /** For a raise done, shared among every Healer who held on in proportion to the seconds each held. The share of one who has left the space is forfeited. */
   raise: 10,
 } as const;
 
@@ -107,7 +107,7 @@ export interface Lucidity {
 
 export const NO_LUCIDITY: Lucidity = { role: undefined, ranks: [], study: undefined, task: undefined };
 
-const ROLE_LABEL_KEYS: Record<Role, string> = { kaempfer: 'Kämpfer', heiler: 'Heiler' };
+const ROLE_LABEL_KEYS: Record<Role, string> = { fighter: 'Fighter', healer: 'Healer' };
 
 /** The catalog key of a role's display name. */
 export function roleLabelKey(role: Role): string {
@@ -192,14 +192,14 @@ export function forbidsStriking(spec: TaskSpec): boolean {
 }
 
 /** The role a master teaches; `undefined` for a service that is no master's. */
-export function masterRole(service: 'kaempferMaster' | 'heilerMaster'): Role;
+export function masterRole(service: 'fighterMaster' | 'healerMaster'): Role;
 export function masterRole(service: NPCService): Role | undefined;
 export function masterRole(service: NPCService): Role | undefined {
   switch (service) {
-    case 'kaempferMaster':
-      return 'kaempfer';
-    case 'heilerMaster':
-      return 'heiler';
+    case 'fighterMaster':
+      return 'fighter';
+    case 'healerMaster':
+      return 'healer';
     case 'shopkeeper':
       return undefined;
   }

@@ -104,12 +104,12 @@ function transferPlayer(
   const worldSeconds = dependencies.worldClock.currentWorldSeconds();
   oldSpace.detach(checkpoint.character.id, false);
   try {
-    dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds);
+    dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale);
     return { spaceId: moved.space };
   } catch (error) {
     logger.error({ error: String(error), space: moved.space }, 'failed to attach after transfer');
     try {
-      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds);
+      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale);
       return { spaceId };
     } catch (restoreError) {
       logger.error({ error: String(restoreError), space: spaceId }, 'failed to restore after transfer');

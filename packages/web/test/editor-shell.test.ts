@@ -74,9 +74,12 @@ describe('neighbours', () => {
   const others = (name: string): Sector[] => sectors.filter((sector) => sector.name !== name);
 
   it.each([
-    ['EdariaMitte', ['Nordwiese']],
-    ['Nordwiese', ['EdariaMitte', 'Nordwald']],
-    ['Nordwald', ['Nordwiese']],
+    ['EdariaSquare', ['AutumnWood', 'NorthMeadow', 'SouthMeadow', 'WestMeadow']],
+    ['NorthMeadow', ['EdariaSquare', 'NorthWood']],
+    ['NorthWood', ['NorthMeadow']],
+    ['WestMeadow', ['EdariaSquare']],
+    ['SouthMeadow', ['EdariaSquare']],
+    ['AutumnWood', ['EdariaSquare']],
     ['EdariaShop', []],
   ] as const)('of %s are %j', (name, expected) => {
     const found = neighbours(fixture(name), others(name)).map((sector) => sector.name);
@@ -84,31 +87,31 @@ describe('neighbours', () => {
   });
 
   it('follow the document origin, and leave out a sector the document overlaps', () => {
-    const wiese = fixture('Nordwiese');
-    const names = (document: Sector): string[] => neighbours(document, others('Nordwiese')).map((sector) => sector.name);
-    expect(names({ ...wiese, origin: { x: 40.96, z: 0 } })).toEqual(['EdariaMitte']);
-    expect(names({ ...wiese, origin: { x: 200, z: 0 } })).toEqual([]);
-    // Deep enough to reach into EdariaMitte, which it then overlaps instead of bordering.
-    expect(names({ ...wiese, size: { width: 30.72, depth: 40 } })).toEqual(['Nordwald']);
+    const meadow = fixture('NorthMeadow');
+    const names = (document: Sector): string[] => neighbours(document, others('NorthMeadow')).map((sector) => sector.name);
+    expect(names({ ...meadow, origin: { x: 40.96, z: 0 } })).toEqual(['EdariaSquare']);
+    expect(names({ ...meadow, origin: { x: 200, z: 0 } })).toEqual([]);
+    // Deep enough to reach into EdariaSquare, which it then overlaps instead of bordering.
+    expect(names({ ...meadow, size: { width: 30.72, depth: 40 } })).toEqual(['NorthWood']);
   });
 
   it('are drawn read-only beside an outdoor document and dropped when it no longer borders them', async () => {
     stubFixtureAPI();
     const shell = headlessShell();
-    await open(shell, 'EdariaMitte');
-    const wall = fixture('Nordwiese').placements[0]!.id;
-    await vi.waitFor(() => expect(shell.scene.placementNode('Nordwiese', wall)).toBeDefined());
-    expect(shell.scene.placementNode('Nordwald', fixture('Nordwald').placements[0]!.id)).toBeUndefined();
+    await open(shell, 'EdariaSquare');
+    const wall = fixture('NorthMeadow').placements[0]!.id;
+    await vi.waitFor(() => expect(shell.scene.placementNode('NorthMeadow', wall)).toBeDefined());
+    expect(shell.scene.placementNode('NorthWood', fixture('NorthWood').placements[0]!.id)).toBeUndefined();
     // Neither saved nor part of the document.
-    expect(shell.recordCounts().placements).toBe(fixture('EdariaMitte').placements.length);
+    expect(shell.recordCounts().placements).toBe(fixture('EdariaSquare').placements.length);
     expect(shell.document.isDirty).toBe(false);
 
     shell.document.mutate('Move sector', (sector) => {
       sector.origin = { x: 200, z: 200 };
     });
-    expect(shell.scene.placementNode('Nordwiese', wall)).toBeUndefined();
+    expect(shell.scene.placementNode('NorthMeadow', wall)).toBeUndefined();
     shell.document.undo();
-    expect(shell.scene.placementNode('Nordwiese', wall)).toBeDefined();
+    expect(shell.scene.placementNode('NorthMeadow', wall)).toBeDefined();
   });
 
   it('takes the sector it showed out of the scene when another is opened', async () => {
@@ -131,28 +134,28 @@ describe('neighbours', () => {
 
 describe('issues', () => {
   const sectors = loadSectorFixtures();
-  const mitte = (): Sector => fixture('EdariaMitte');
-  const others = sectors.filter((sector) => sector.name !== 'EdariaMitte');
+  const square = (): Sector => fixture('EdariaSquare');
+  const others = sectors.filter((sector) => sector.name !== 'EdariaSquare');
 
   it.each(SECTOR_FIXTURE_NAMES)('reports none for the committed %s', (name) => {
     expect(issueMessages(documentIssues(fixture(name), sectors, registry))).toEqual([]);
   });
 
   it('reports a door the server would leave inert, on the document side only', () => {
-    const document = mitte();
+    const document = square();
     const door = document.doors.find((candidate) => candidate.target.sector === 'EdariaShop')!;
     door.target.door = 'cellar';
     expect(issueMessages(documentIssues(document, others, registry))).toEqual([`door "${door.id}": target door "cellar" in EdariaShop does not exist`]);
   });
 
   it('reports a door whose target sector is not among the files', () => {
-    const issues = documentIssues(mitte(), [], registry);
+    const issues = documentIssues(square(), [], registry);
     expect(issues.error).toBeUndefined();
-    expect(issues.records.map((issue) => issue.record)).toEqual(['door', 'door', 'door', 'door']);
+    expect(issues.records.map((issue) => issue.record)).toEqual(['door', 'door', 'door', 'door', 'door', 'door']);
   });
 
   it('reports a model the registry does not know and an elevation its walk surfaces ignore', () => {
-    const document = mitte();
+    const document = square();
     const house = document.placements.find((placement) => placement.modelId === 'building-house')!;
     house.elevation = 1;
     document.placements.push({ id: 'odd-1', modelId: 'odd', x: 1, z: 1, yaw: 0, elevation: 0 });
@@ -161,11 +164,11 @@ describe('issues', () => {
   });
 
   it('reports why the world would not load, and still the collision issues of the document', () => {
-    const document = mitte();
-    document.origin = { x: 5.12, z: -10 };
+    const document = square();
+    document.origin = { x: 0, z: -10 };
     document.placements.push({ id: 'odd-1', modelId: 'odd', x: 1, z: 1, yaw: 0, elevation: 0 });
     const issues = documentIssues(document, others, registry);
-    expect(issues.error).toMatch(/^outdoor sectors EdariaMitte and Nordwiese overlap$/);
+    expect(issues.error).toMatch(/^outdoor sectors EdariaSquare and NorthMeadow overlap$/);
     expect(issues.records.map((issue) => issue.id)).toEqual(['odd-1']);
     expect(issueMessages(issues).length).toBe(2);
   });
@@ -175,9 +178,9 @@ describe('issues', () => {
     const shell = headlessShell();
     installEditorDebugAPI(shell);
     const debug = (window as unknown as { somnioEditor: { issues(): string[]; body(): Record<string, number>; selection(): unknown[] } }).somnioEditor;
-    await open(shell, 'EdariaMitte');
+    await open(shell, 'EdariaSquare');
     expect(debug.issues()).toEqual([]);
-    const { doors, placements, npcs, monsterSpawns, floorPatches, blockers } = mitte();
+    const { doors, placements, npcs, monsterSpawns, floorPatches, blockers } = square();
     expect(debug.body()).toEqual({
       placements: placements.length,
       blockers: blockers.length,
@@ -279,7 +282,7 @@ describe('sector settings', () => {
   it('stays open over an unchanged document when the document refuses the edit', () => {
     const shell = shellWithDocument();
     shell.document.mutate('Seed', (sector) => {
-      sector.npcs.push({ id: 'npc-1', name: '', characterModelId: 'kaempfer-meister', x: 10, z: 19, facing: 0, dialogScript: '' });
+      sector.npcs.push({ id: 'npc-1', name: '', characterModelId: 'fighter-master', x: 10, z: 19, facing: 0, dialogScript: '' });
     });
     const before = structuredClone(shell.document.sector);
     const depth = shell.document.undoDepth;
@@ -341,8 +344,8 @@ describe('commands', () => {
       sector.doors.push({ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } });
       sector.blockers.push({ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 });
       sector.floorPatches.push({ id: 'patch-1', floorMaterialId: 'cobble-town', x: 4, z: 4, width: 2, depth: 2 });
-      sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'kaempfer-meister', x: 14, z: 6, facing: 0, dialogScript: '' });
-      sector.monsterSpawns.push({ id: 'spawn-1', kind: 'gespenst', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2 });
+      sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'fighter-master', x: 14, z: 6, facing: 0, dialogScript: '' });
+      sector.monsterSpawns.push({ id: 'spawn-1', kind: 'ghost', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2 });
       sector.spawn = { x: 8, z: 8, facing: 0 };
     });
     return shell;

@@ -17,7 +17,7 @@ function npc(overrides: Partial<SectorNPC> = {}): SectorNPC {
 }
 
 function monsterSpawn(overrides: Partial<MonsterSpawn> = {}): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'gespenst', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, ...overrides };
+  return { id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, ...overrides };
 }
 
 /** A committed sector file with one piece of its text replaced, for the reader's refusals. */
@@ -62,10 +62,10 @@ describe('the written form', () => {
   });
 
   it("writes an NPC's service and reads it back, and writes none for an NPC without one", () => {
-    const sector = interiorSector('Inn', { spawn: { x: 3, z: 4, facing: 0 }, npcs: [npc({ id: 'sana', service: 'heilerMaster' }), npc()] });
+    const sector = interiorSector('Inn', { spawn: { x: 3, z: 4, facing: 0 }, npcs: [npc({ id: 'sana', service: 'healerMaster' }), npc()] });
     const text = writeSectorFile(sector);
     expect(text.match(/"service"/g)).toHaveLength(1);
-    expect(text).toContain('"service": "heilerMaster"');
+    expect(text).toContain('"service": "healerMaster"');
     expect(readSectorFile(text, 'Inn')).toEqual(sector);
   });
 
@@ -108,7 +108,7 @@ describe('reader validation', () => {
     ['a duplicate record id', '"id": "blocker-2"', '"id": "blocker-1"', /duplicate id "blocker-1"/],
     ['an id outside the id alphabet', '"id": "blocker-1"', '"id": "Blocker 1"', /lowercase letters, digits, and hyphens/],
     ['a door on a placement the sector lacks', '"placement": "door-1"', '"placement": "door-9"', /no placement "door-9"/],
-    ['an unknown monster kind', '"kind": "gespenst"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
+    ['an unknown monster kind', '"kind": "ghost"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
     ['a spawn that keeps nothing alive', '"maxAlive": 3', '"maxAlive": 0', /maxAlive: expected 1 to 16/],
     ['a spawn area without extent', '"width": 5.76', '"width": 0', /expected a positive length/],
   ])('rejects %s', (_name, from, to, message) => {
@@ -118,8 +118,8 @@ describe('reader validation', () => {
   });
 
   it('rejects an NPC service it does not know', () => {
-    const text = edited('EdariaBibliothek', '"id": "libus"', '"id": "libus", "service": "banker"');
-    expect(() => readSectorFile(text, 'EdariaBibliothek')).toThrow(/npcs\[0\]\.service: unknown value "banker"/);
+    const text = edited('EdariaLibrary', '"id": "libus"', '"id": "libus", "service": "banker"');
+    expect(() => readSectorFile(text, 'EdariaLibrary')).toThrow(/npcs\[0\]\.service: unknown value "banker"/);
   });
 
   it('takes the sector name from the caller, never from the file', () => {
@@ -128,7 +128,7 @@ describe('reader validation', () => {
   });
 
   it('normalizes an out-of-range facing rather than rejecting it', () => {
-    const sector = readSectorFile(edited('EdariaBibliothek', '"facing": 270', '"facing": 450'), 'EdariaBibliothek');
+    const sector = readSectorFile(edited('EdariaLibrary', '"facing": 270', '"facing": 450'), 'EdariaLibrary');
     expect(sector.npcs[0]?.facing).toBe(90);
   });
 });

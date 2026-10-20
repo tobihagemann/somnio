@@ -22,7 +22,7 @@ it("checkpointAll persists every logged-in player's full character and inventory
     name,
     passwordHash: await hashPassword(TEST_PASSWORD),
     email: `${name}@example.invalid`,
-    people: 'wachen',
+    people: 'vigils',
     starterInventory: STARTER_INVENTORY,
   });
   const space = dependencies.worldRouter.space(STARTER_SECTOR)!;
@@ -32,7 +32,7 @@ it("checkpointAll persists every logged-in player's full character and inventory
     facing: headingFromCardinal('north'),
     energy: { ...character.energy, healthCurrent: 42 },
   };
-  space.attach(staged, [...STARTER_INVENTORY], new ConnectionOutbox(1024), 0);
+  space.attach(staged, [...STARTER_INVENTORY], new ConnectionOutbox(1024), 0, 'en');
 
   await dependencies.worldRouter.checkpointAll();
 

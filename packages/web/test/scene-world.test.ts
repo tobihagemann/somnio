@@ -27,6 +27,7 @@ import { ClientWorld } from '@/client';
 import type { ClientEntity, SpeechBubbleRequest } from '@/client';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity } from './helpers/worldFixture';
+import { setLocale } from '@/i18n';
 
 /**
  * Graph-level coverage. Pixels are not unit-testable without a GPU, but the placement, framing,
@@ -59,7 +60,7 @@ function makeScene(assets: ModelAssets = emptyAssets(), now?: () => number): Wor
 }
 
 function sector(overrides: Partial<SectorView> = {}): SectorView {
-  return outdoorSector('EdariaMitte', { x: 0, z: 0 }, overrides);
+  return outdoorSector('EdariaSquare', { x: 0, z: 0 }, overrides);
 }
 
 function placement(id: string, modelId: string, overrides: Partial<SectorView['placements'][number]> = {}): SectorView['placements'][number] {
@@ -249,7 +250,7 @@ describe('camera framing', () => {
     const scene = makeScene();
     const before = scene.camera.position.clone();
 
-    scene.addSector(outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }));
+    scene.addSector(outdoorSector('NorthMeadow', { x: 5.12, z: -30.72 }));
 
     expect(scene.camera.position).toEqual(before);
   });
@@ -311,9 +312,11 @@ describe('sectors', () => {
   it('stands a sector at its origin and a placement at its own position, yaw, and elevation within it', () => {
     const scene = makeScene();
 
-    scene.addSector(outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { placements: [placement('rug-1', 'rug', { x: 4, z: 6, yaw: 270, elevation: 0.4 })] }));
+    scene.addSector(
+      outdoorSector('NorthMeadow', { x: 5.12, z: -30.72 }, { placements: [placement('rug-1', 'rug', { x: 4, z: 6, yaw: 270, elevation: 0.4 })] }),
+    );
 
-    const node = scene.placementNode('Nordwiese', 'rug-1')!;
+    const node = scene.placementNode('NorthMeadow', 'rug-1')!;
     expect(node.position).toEqual(new THREE.Vector3(4, 0.4, 6));
     // Degrees counter-clockwise seen from above is the sense of a rotation about +Y.
     expect(node.rotation.y).toBeCloseTo((270 * Math.PI) / 180, 12);
@@ -329,33 +332,33 @@ describe('sectors', () => {
 
     scene.addSector(sector({ placements: [placement('dais-1', 'dais', { elevation: 0.4 })] }));
 
-    expect(scene.placementNode('EdariaMitte', 'dais-1')!.position.y).toBe(0);
+    expect(scene.placementNode('EdariaSquare', 'dais-1')!.position.y).toBe(0);
   });
 
   it('finds a placement node by sector and id, and nothing for either unknown', () => {
     const scene = makeScene();
     scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
-    scene.addSector(outdoorSector('Nordwiese', { x: 0, z: -20 }, { placements: [placement('box-1', 'box', { x: 1 })] }));
+    scene.addSector(outdoorSector('NorthMeadow', { x: 0, z: -20 }, { placements: [placement('box-1', 'box', { x: 1 })] }));
 
     // The same id in two sectors is two placements.
-    expect(scene.placementNode('EdariaMitte', 'box-1')!.position.x).toBe(4);
-    expect(scene.placementNode('Nordwiese', 'box-1')!.position.x).toBe(1);
-    expect(scene.placementNode('EdariaMitte', 'box-2')).toBeUndefined();
-    expect(scene.placementNode('Nordwald', 'box-1')).toBeUndefined();
+    expect(scene.placementNode('EdariaSquare', 'box-1')!.position.x).toBe(4);
+    expect(scene.placementNode('NorthMeadow', 'box-1')!.position.x).toBe(1);
+    expect(scene.placementNode('EdariaSquare', 'box-2')).toBeUndefined();
+    expect(scene.placementNode('NorthWood', 'box-1')).toBeUndefined();
   });
 
   it('removes one sector and leaves the others drawn', () => {
     const scene = makeScene();
     scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
-    scene.addSector(outdoorSector('Nordwiese', { x: 0, z: -20 }, { placements: [placement('box-1', 'box')] }));
+    scene.addSector(outdoorSector('NorthMeadow', { x: 0, z: -20 }, { placements: [placement('box-1', 'box')] }));
     const removed = floorQuads(scene)[0]!;
     const geometryDispose = vi.spyOn(removed.geometry, 'dispose');
 
-    scene.removeSector('EdariaMitte');
+    scene.removeSector('EdariaSquare');
 
     expect(floorQuads(scene)).toHaveLength(1);
-    expect(scene.placementNode('EdariaMitte', 'box-1')).toBeUndefined();
-    expect(scene.placementNode('Nordwiese', 'box-1')).toBeDefined();
+    expect(scene.placementNode('EdariaSquare', 'box-1')).toBeUndefined();
+    expect(scene.placementNode('NorthMeadow', 'box-1')).toBeDefined();
     expect(geometryDispose).toHaveBeenCalled();
   });
 
@@ -367,7 +370,7 @@ describe('sectors', () => {
 
     expect(floorQuads(scene)).toHaveLength(1);
     expect(scene._placeholderObjectCount()).toBe(1);
-    expect(scene.placementNode('EdariaMitte', 'box-1')!.position.x).toBe(9);
+    expect(scene.placementNode('EdariaSquare', 'box-1')!.position.x).toBe(9);
   });
 
   /**
@@ -413,7 +416,7 @@ describe('sectors', () => {
   it('renders floor patches as their own quads, at their place in the sector', () => {
     const scene = makeScene();
     scene.addSector(
-      outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
+      outdoorSector('NorthMeadow', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
     );
 
     const [floor, patch] = floorQuads(scene);
@@ -770,14 +773,14 @@ describe('post-prewarm self-heal', () => {
     const assets = emptyAssets();
     const scene = makeScene(assets);
     scene.addSector(sector({ placements: [placement('door-1', 'door', { yaw: 270 })] }));
-    const node = scene.placementNode('EdariaMitte', 'door-1')!;
+    const node = scene.placementNode('EdariaSquare', 'door-1')!;
     const before = { position: node.position.clone(), yaw: node.rotation.y };
 
     const warm = resolvingAssets();
     assets.object = (id) => warm.object(id);
     await scene.prewarm();
 
-    expect(scene.placementNode('EdariaMitte', 'door-1')).toBe(node);
+    expect(scene.placementNode('EdariaSquare', 'door-1')).toBe(node);
     expect(node.position).toEqual(before.position);
     expect(node.rotation.y).toBe(before.yaw);
     expect(node.children).toHaveLength(1);
@@ -812,7 +815,7 @@ describe('post-prewarm self-heal', () => {
     const assets = emptyAssets();
     const scene = makeScene(assets);
     scene.addSector(
-      outdoorSector('Nordwiese', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
+      outdoorSector('NorthMeadow', { x: 5.12, z: -30.72 }, { floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 4, width: 3, depth: 5 }] }),
     );
 
     assets.floorTexture = () => cached;
@@ -1182,13 +1185,13 @@ describe('movement poses', () => {
 
   it('walks an NPC whatever its gait and its travel against its facing', () => {
     const scene = animatedScene();
-    scene.placeEntity(player({ id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus' }));
+    scene.placeEntity(player({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus' }));
 
-    scene.updateGait('npc:EdariaMitte/libus', 'run');
-    scene.updatePosition('npc:EdariaMitte/libus', { x: 9.9, z: 10 }, 90, 270);
+    scene.updateGait('npc:EdariaSquare/libus', 'run');
+    scene.updatePosition('npc:EdariaSquare/libus', { x: 9.9, z: 10 }, 90, 270);
     scene.tick(0.016);
 
-    expect(scene._poseFor('npc:EdariaMitte/libus')).toBe('walking');
+    expect(scene._poseFor('npc:EdariaSquare/libus')).toBe('walking');
   });
 
   /** A stationary tick passes no travel; overwriting the last one would drop the backpedal clip mid-glide. */
@@ -1339,7 +1342,7 @@ describe('blows, falls, and raises', () => {
     scene.tick(0.016);
     expect(ring!.geometry.drawRange.count).toBe(whole / 2);
 
-    // A second Heiler joins: the rest goes at twice the pace.
+    // A second Healer joins: the rest goes at twice the pace.
     scene.showRaising('peer', { progress: 0.5, seconds: 1.5 });
     const [faster, ...others] = rings(scene);
     expect(others).toEqual([]);
@@ -1494,7 +1497,7 @@ describe('the sun travels with the camera focus', () => {
     // would hold even with the floor's flag removed — and the floor is the only surface a shadow
     // lands on.
     const floor = scene
-      .placementNode('EdariaMitte', 'box-1')!
+      .placementNode('EdariaSquare', 'box-1')!
       .parent!.children.find((child) => (child as THREE.Mesh).geometry instanceof THREE.PlaneGeometry) as THREE.Mesh | undefined;
     expect(floor).toBeDefined();
     expect(floor!.receiveShadow).toBe(true);
@@ -1613,16 +1616,16 @@ describe('name plaques hang off the entity node', () => {
     scene.placeEntity(player());
     expect(plaqueCanvases(scene)).toHaveLength(1);
 
-    scene.placeEntity(player({ id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus' }));
+    scene.placeEntity(player({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus' }));
     expect(plaqueCanvases(scene)).toHaveLength(2);
 
-    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst' }));
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost' }));
     expect(plaqueCanvases(scene)).toHaveLength(2);
   });
 
   it('gives a nightmare a plaque while it is not hale, and takes it away when it is', () => {
     const scene = makeScene();
-    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst' }));
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost' }));
     expect(plaqueCanvases(scene)).toHaveLength(0);
 
     scene.updateCondition('monster:1', 'hurt');
@@ -1632,6 +1635,22 @@ describe('name plaques hang off the entity node', () => {
 
     scene.updateCondition('monster:1', 'hale');
     expect(plaqueCanvases(scene)).toHaveLength(0);
+  });
+
+  it("names a nightmare in the reader's language, and a dreamer as they are called", () => {
+    const written: string[] = [];
+    const context = { scale() {}, fillRect() {}, strokeRect() {}, measureText: () => ({ width: 40 }), fillText: (text: string) => written.push(text) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    setLocale('de');
+    try {
+      const scene = makeScene();
+      scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', condition: 'hurt' }));
+      scene.placeEntity(player({ id: 'peer', kind: 'peer', name: 'Ghost' }));
+      expect(written).toEqual(['Gespenst', 'Ghost']);
+    } finally {
+      setLocale('en');
+      vi.restoreAllMocks();
+    }
   });
 
   it("redraws a player's plaque when their condition changes, and takes the condition an entity is placed with", () => {
@@ -1804,7 +1823,7 @@ describe('name plaques hang off the entity node', () => {
     it('shows the name of a hale nightmare only while it is hovered', () => {
       const scene = makeScene();
       scene.placeEntity(player());
-      scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Gespenst', position: { x: 12, z: 10 } }));
+      scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
       expect(plateAt(scene, 12)).toBeUndefined();
 
       scene.setPointer(scene._viewportPointFor('monster:1'));
@@ -1835,7 +1854,7 @@ describe('GPU resource disposal', () => {
   const patched = sector({ floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 0.64, depth: 0.64 }] });
 
   it.each([
-    ['its sector leaves the draw set', (scene: WorldScene) => scene.removeSector('EdariaMitte')],
+    ['its sector leaves the draw set', (scene: WorldScene) => scene.removeSector('EdariaSquare')],
     [
       'the next space is revealed',
       (scene: WorldScene) => {
@@ -1874,7 +1893,7 @@ describe('GPU resource disposal', () => {
     scene.addSector(sector({ placements: [placement('box-1', 'box')] }));
     expect(scene._placeholderObjectCount()).toBe(0);
 
-    scene.removeSector('EdariaMitte');
+    scene.removeSector('EdariaSquare');
 
     // `SkeletonUtils.clone` shares both with the prototype, so disposing either would blank every
     // other instance built from the same cache entry.

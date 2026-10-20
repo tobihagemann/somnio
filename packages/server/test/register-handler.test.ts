@@ -81,7 +81,7 @@ describe('handleRegister validation', () => {
     expect(repository.requests[0]).toMatchObject({
       name: 'Saibot',
       email: 'info@example.com',
-      people: 'soporen',
+      people: 'sopors',
     });
   });
 });

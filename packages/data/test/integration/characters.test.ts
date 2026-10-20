@@ -32,7 +32,7 @@ describe('character repository', () => {
     const fetched = await characters.findByName('Alice the Bold');
     expect(fetched?.id).toBe(created.id);
     expect(fetched?.people).toBe('lumina');
-    expect(fetched?.space).toBe('EdariaBibliothek');
+    expect(fetched?.space).toBe('EdariaLibrary');
     expect(fetched?.position).toEqual({ x: 0, z: 0 });
     expect(fetched?.facing).toBe(headingFromCardinal('south'));
     expect(fetched?.energy).toEqual({
@@ -49,8 +49,8 @@ describe('character repository', () => {
   it('stores a skeleton that rejects a confusable second character', async () => {
     const owner = await accounts.create('owner-a', 'h', 'a@example.com');
     const other = await accounts.create('owner-b', 'h', 'b@example.com');
-    await characters.create(owner.id, 'ADMIN', 'wachen');
-    await expect(characters.create(other.id, 'АDMIN', 'wachen')).rejects.toThrow();
+    await characters.create(owner.id, 'ADMIN', 'vigils');
+    await expect(characters.create(other.id, 'АDMIN', 'vigils')).rejects.toThrow();
   });
 
   it.each([
@@ -64,7 +64,7 @@ describe('character repository', () => {
         id, account_id, name, people, space, position_x, position_z, facing,
         health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton
       ) VALUES (
-        ${crypto.randomUUID()}, ${account.id}, ${`over-${label}`}, 'wachen', 'EdariaBibliothek', 0, 0, 0,
+        ${crypto.randomUUID()}, ${account.id}, ${`over-${label}`}, 'vigils', 'EdariaLibrary', 0, 0, 0,
         ${sql.raw(energy)}, NOW(), ${`over-${label}`}
       )`.execute(harness.db),
     ).rejects.toThrow();
@@ -74,8 +74,8 @@ describe('character repository', () => {
     const phantom: Character = {
       id: crypto.randomUUID(),
       name: 'Phantom',
-      people: 'soporen',
-      space: 'EdariaBibliothek',
+      people: 'sopors',
+      space: 'EdariaLibrary',
       position: { x: 0, z: 0 },
       facing: 0,
       energy: fullPools(NO_LUCIDITY.ranks),
@@ -87,7 +87,7 @@ describe('character repository', () => {
 
   it('skips a snapshot whose last_seen is older than the persisted row', async () => {
     const account = await accounts.create('stale-tester', 'stub', 's@x');
-    const original = await characters.create(account.id, 'Stale', 'umbren');
+    const original = await characters.create(account.id, 'Stale', 'umbrae');
 
     const fresh = {
       ...original,
@@ -104,7 +104,7 @@ describe('character repository', () => {
 
   it('persists a checkpoint atomically and skips a stale one without touching inventory', async () => {
     const account = await accounts.create('checkpoint-tester', 'stub', 'cp@x');
-    const original = await characters.create(account.id, 'Checkpoint', 'wachen');
+    const original = await characters.create(account.id, 'Checkpoint', 'vigils');
     const purse: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
 
     const fresh = {
@@ -125,13 +125,13 @@ describe('character repository', () => {
     const account = await accounts.create('lucid', 'stub', 'lucid@x');
     const original = await characters.create(account.id, 'Lucid', 'lumina');
     const lucidity: Lucidity = {
-      role: 'heiler',
+      role: 'healer',
       ranks: [
         { teachingId: 'depth', rank: 0, practice: 7.25 },
         { teachingId: 'touch', rank: 2, practice: 12.5 },
       ],
       study: 'depth',
-      task: { role: 'heiler', teachingId: 'drawing-back', progress: 22.5 },
+      task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
     };
     const grown = { ...original, lucidity, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
     expect(await characters.persistCheckpoint(grown, [])).toBe(true);
@@ -145,7 +145,7 @@ describe('character repository', () => {
         ...lucidity,
         ranks: [{ teachingId: 'touch' as const, rank: 3, practice: 0 }],
         study: undefined,
-        task: { role: 'heiler' as const, teachingId: undefined, progress: 1 },
+        task: { role: 'healer' as const, teachingId: undefined, progress: 1 },
       },
       lastSeen: new Date(grown.lastSeen.getTime() + 60_000),
     };
@@ -155,16 +155,16 @@ describe('character repository', () => {
 
   it('leaves the rank rows alone when a checkpoint is skipped as stale', async () => {
     const account = await accounts.create('stale-ranks', 'stub', 'sr@x');
-    const original = await characters.create(account.id, 'StaleRanks', 'wachen');
+    const original = await characters.create(account.id, 'StaleRanks', 'vigils');
     const ranks = [{ teachingId: 'strike' as const, rank: 1, practice: 3 }];
-    const fresh = { ...original, lucidity: { ...NO_LUCIDITY, role: 'kaempfer' as const, ranks }, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
+    const fresh = { ...original, lucidity: { ...NO_LUCIDITY, role: 'fighter' as const, ranks }, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
     expect(await characters.persistCheckpoint(fresh, [])).toBe(true);
     expect(await characters.persistCheckpoint({ ...original, lastSeen: original.lastSeen }, [])).toBe(false);
     expect((await characters.findByName('StaleRanks'))?.lucidity.ranks).toEqual(ranks);
   });
 
   it.each([
-    ['a role', sql`UPDATE characters SET task_role = 'mystiker' WHERE name = 'Odd'`],
+    ['a role', sql`UPDATE characters SET task_role = 'mystic' WHERE name = 'Odd'`],
     ['a studied teaching', sql`UPDATE characters SET study = 'fireball' WHERE name = 'Odd'`],
     [
       "a rank's teaching",
@@ -172,18 +172,18 @@ describe('character repository', () => {
     ],
   ])('throws on %s it does not know', async (_label, corrupt) => {
     const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}`, 'h', 'odd@example.com');
-    await characters.create(account.id, 'Odd', 'wachen');
+    await characters.create(account.id, 'Odd', 'vigils');
     await corrupt.execute(harness.db);
     await expect(characters.findByName('Odd')).rejects.toThrow(RepositoryDecodingError);
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
   });
 
   it.each([
-    ['a teaching without a gate', sql`UPDATE characters SET task_role = 'heiler', task_teaching = 'touch' WHERE name = 'Odd'`],
-    ["another role's gate", sql`UPDATE characters SET task_role = 'kaempfer', task_teaching = 'drawing-back' WHERE name = 'Odd'`],
+    ['a teaching without a gate', sql`UPDATE characters SET task_role = 'healer', task_teaching = 'touch' WHERE name = 'Odd'`],
+    ["another role's gate", sql`UPDATE characters SET task_role = 'fighter', task_teaching = 'drawing-back' WHERE name = 'Odd'`],
   ])('drops a task naming %s', async (_label, corrupt) => {
     const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}`, 'h', 'odd@example.com');
-    await characters.create(account.id, 'Odd', 'wachen');
+    await characters.create(account.id, 'Odd', 'vigils');
     await corrupt.execute(harness.db);
     expect((await characters.findByName('Odd'))?.lucidity.task).toBeUndefined();
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
@@ -191,8 +191,8 @@ describe('character repository', () => {
 
   it('refuses a role outside the two and a pool below zero through the CHECK constraints', async () => {
     const account = await accounts.create('checks', 'h', 'checks@example.com');
-    await characters.create(account.id, 'Checked', 'wachen');
-    await expect(sql`UPDATE characters SET role = 'mystiker' WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
+    await characters.create(account.id, 'Checked', 'vigils');
+    await expect(sql`UPDATE characters SET role = 'mystic' WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
     await expect(sql`UPDATE characters SET health_current = -1 WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
   });
 
@@ -211,7 +211,7 @@ describe('character repository', () => {
       id, account_id, name, people, space, position_x, position_z, facing,
       health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton
     ) VALUES (
-      ${crypto.randomUUID()}, ${account.id}, 'WeirdPeople', 'elves', 'EdariaBibliothek', 0, 0, 0,
+      ${crypto.randomUUID()}, ${account.id}, 'WeirdPeople', 'elves', 'EdariaLibrary', 0, 0, 0,
       100, 100, 100, 100, 100, 100, NOW(), 'weirdpeople'
     )`.execute(harness.db);
     await expect(characters.findByName('WeirdPeople')).rejects.toThrow(RepositoryDecodingError);
@@ -219,7 +219,7 @@ describe('character repository', () => {
 
   it('lists every character on the account ordered by name', async () => {
     const account = await accounts.create('lister', 'hash', 'l@example.com');
-    await characters.create(account.id, 'Beta', 'wachen');
+    await characters.create(account.id, 'Beta', 'vigils');
     await characters.create(account.id, 'Alpha', 'lumina');
     expect((await characters.findByAccount(account.id)).map((character) => character.name)).toEqual(['Alpha', 'Beta']);
   });

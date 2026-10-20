@@ -17,23 +17,23 @@ describe('npc dialog state repository', () => {
   });
 
   it('moves the cursor forward on a composite-key upsert', async () => {
-    await states.upsert({ sectorName: 'EdariaBibliothek', npcId: 'libus', scriptStep: 1 });
-    await states.upsert({ sectorName: 'EdariaBibliothek', npcId: 'libus', scriptStep: 2 });
-    expect((await states.find('EdariaBibliothek', 'libus'))?.scriptStep).toBe(2);
+    await states.upsert({ sectorName: 'EdariaLibrary', npcId: 'libus', scriptStep: 1 });
+    await states.upsert({ sectorName: 'EdariaLibrary', npcId: 'libus', scriptStep: 2 });
+    expect((await states.find('EdariaLibrary', 'libus'))?.scriptStep).toBe(2);
   });
 
   it('resets only the targeted row', async () => {
-    await states.upsert({ sectorName: 'EdariaBibliothek', npcId: 'libus', scriptStep: 3 });
-    await states.upsert({ sectorName: 'EdariaBibliothek', npcId: 'quieta', scriptStep: 5 });
-    await states.reset('EdariaBibliothek', 'libus');
-    expect(await states.find('EdariaBibliothek', 'libus')).toBeUndefined();
-    expect((await states.find('EdariaBibliothek', 'quieta'))?.scriptStep).toBe(5);
+    await states.upsert({ sectorName: 'EdariaLibrary', npcId: 'libus', scriptStep: 3 });
+    await states.upsert({ sectorName: 'EdariaLibrary', npcId: 'quieta', scriptStep: 5 });
+    await states.reset('EdariaLibrary', 'libus');
+    expect(await states.find('EdariaLibrary', 'libus')).toBeUndefined();
+    expect((await states.find('EdariaLibrary', 'quieta'))?.scriptStep).toBe(5);
   });
 
   it('keeps the same npc id apart per sector', async () => {
-    await states.upsert({ sectorName: 'EdariaBibliothek', npcId: 'quieta', scriptStep: 4 });
+    await states.upsert({ sectorName: 'EdariaLibrary', npcId: 'quieta', scriptStep: 4 });
     await states.upsert({ sectorName: 'EdariaArena', npcId: 'quieta', scriptStep: 6 });
-    expect(await states.loadAll('EdariaBibliothek')).toEqual([{ sectorName: 'EdariaBibliothek', npcId: 'quieta', scriptStep: 4 }]);
+    expect(await states.loadAll('EdariaLibrary')).toEqual([{ sectorName: 'EdariaLibrary', npcId: 'quieta', scriptStep: 4 }]);
     expect(await states.loadAll('EdariaArena')).toEqual([{ sectorName: 'EdariaArena', npcId: 'quieta', scriptStep: 6 }]);
   });
 });

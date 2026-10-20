@@ -515,7 +515,7 @@ describe('inbound gameplay dispatch', () => {
   });
 });
 
-describe('the Mondstein', () => {
+describe('the Moonstone', () => {
   it.each([
     ['takes it in hand when it is put away', {}, { tag: 'equipToggle', payload: { slot: 2, hand: 'right' } }],
     ['uses it once it is in hand', { equippedHand: 'right' }, { tag: 'useItem', payload: { slot: 2 } }],
@@ -523,7 +523,7 @@ describe('the Mondstein', () => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
 
-    rig.session.activateInventoryRow({ slot: 2, itemId: 'mondstein', quantity: 1, ...equipped });
+    rig.session.activateInventoryRow({ slot: 2, itemId: 'moonstone', quantity: 1, ...equipped });
 
     expect(rig.sent).toEqual([expected]);
   });
@@ -632,7 +632,7 @@ describe('winded and fallen', () => {
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'raised', healerNames: ['Lumi'] });
   });
 
-  it('names every Heiler holding on to the raise given to the player, and counts down at once at their pace', () => {
+  it('names every Healer holding on to the raise given to the player, and counts down at once at their pace', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
@@ -660,8 +660,8 @@ describe('winded and fallen', () => {
     expect(rig.session.raise).toEqual({ healerNames: ['Lumi'], secondsLeft: 3 });
   });
 
-  /** The Heiler's `leave` comes just before the break it causes. */
-  it('names the Heiler whose raise broke, though they have already left', () => {
+  /** The Healer's `leave` comes just before the break it causes. */
+  it('names the Healer whose raise broke, though they have already left', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame({ condition: 'fallen' }));
@@ -727,20 +727,20 @@ describe('chat lines from what changed', () => {
     rig.controller.dispatch({
       tag: 'lucidity',
       payload: {
-        role: 'kaempfer',
+        role: 'fighter',
         ranks: [strike(3)],
         study: 'strike',
-        task: { role: 'kaempfer', teachingId: 'follow-through', progress: 3 },
+        task: { role: 'fighter', teachingId: 'follow-through', progress: 3 },
       },
     });
 
     expect(rig.controller.chatHistory).toEqual([]);
-    expect(rig.session.lucidity.role).toBe('kaempfer');
+    expect(rig.session.lucidity.role).toBe('fighter');
 
     // Nor after a door: the new space's first frames restate what the player already knew.
     rig.controller.dispatch(enterSpaceFrame('Hall'));
     rig.controller.dispatch(purse(100));
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [strike(3)] } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(3)] } });
     expect(rig.controller.chatHistory).toEqual([]);
   });
 
@@ -756,21 +756,21 @@ describe('chat lines from what changed', () => {
   it('reports a new role, a new rank, and a task reaching its goal', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
-    const trial = (progress: number) => ({ role: 'kaempfer' as const, progress });
+    const trial = (progress: number) => ({ role: 'fighter' as const, progress });
     rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: trial(0) } });
 
     rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: trial(1) } });
     expect(rig.controller.chatHistory).toEqual([{ kind: 'taskDone' }]);
 
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [strike(1)], study: 'strike' } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(1)], study: 'strike' } });
     expect(rig.controller.chatHistory.slice(1)).toEqual([
-      { kind: 'becameRole', role: 'kaempfer' },
+      { kind: 'becameRole', role: 'fighter' },
       { kind: 'rankGained', teachingId: 'strike', rank: 1 },
     ]);
 
     // Practice alone is no news; the rank it earns is.
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [strike(1, 10)], study: 'strike' } });
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [strike(2, 5)], study: 'strike' } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(1, 10)], study: 'strike' } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(2, 5)], study: 'strike' } });
     expect(rig.controller.chatHistory.slice(3)).toEqual([{ kind: 'rankGained', teachingId: 'strike', rank: 2 }]);
   });
 });
@@ -791,7 +791,7 @@ describe('the service panel', () => {
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
     rig.controller.dispatch(entityFrame({ facing: 30 }));
-    rig.controller.dispatch(entityFrame({ id: MASTER, kind: 'npc', name: 'Pugnax', x: 10.3, z: 10.6, service: 'kaempferMaster' }));
+    rig.controller.dispatch(entityFrame({ id: MASTER, kind: 'npc', name: 'Pugnax', x: 10.3, z: 10.6, service: 'fighterMaster' }));
     rig.session.pressAt(MASTER, time);
     tick(3);
     return { rig, tick };
@@ -824,7 +824,7 @@ describe('the service panel', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
-    rig.controller.dispatch(entityFrame({ id: MASTER, kind: 'npc', x: 10, z: 12.1, service: 'kaempferMaster' }));
+    rig.controller.dispatch(entityFrame({ id: MASTER, kind: 'npc', x: 10, z: 12.1, service: 'fighterMaster' }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
     expect(rig.session.clickAction(MASTER)).toBeUndefined();
     rig.session.pressAt(MASTER, 0);
@@ -1069,7 +1069,7 @@ describe('a swing', () => {
 
   it('keeps the shorter rhythm of Follow-through', () => {
     const rig = fighter();
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [{ teachingId: 'follow-through', rank: 3, practice: 0 }] } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [{ teachingId: 'follow-through', rank: 3, practice: 0 }] } });
     rig.session.pressAt(undefined, 0);
     for (let time = 100; time <= 1400; time += 100) rig.session.runTick(time);
     expect(swings(rig)).toHaveLength(3);
@@ -1078,10 +1078,10 @@ describe('a swing', () => {
   it.each<[string, (rig: Rig) => void]>([
     ['with less balance than what is in hand costs', (rig) => rig.controller.dispatch({ tag: 'energy', payload: { ...FULL, balanceCurrent: 17 } })],
     [
-      'with the Mondstein in hand',
-      (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' }] } }),
+      'with the Moonstone in hand',
+      (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }] } }),
     ],
-    ["while holding the Heiler's trial", (rig) => rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: { role: 'heiler', progress: 0 } } })],
+    ["while holding the Healer's trial", (rig) => rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: { role: 'healer', progress: 0 } } })],
     ['while fallen', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ['under an overlay', (rig) => (rig.controller.presentedOverlay = { kind: 'gameMenu' })],
   ])('does not swing %s', (_label, arrange) => {
@@ -1123,7 +1123,7 @@ describe('a swing', () => {
 });
 
 describe('tending', () => {
-  const HEILER = { tag: 'lucidity' as const, payload: { role: 'heiler' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } };
+  const HEALER = { tag: 'lucidity' as const, payload: { role: 'healer' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } };
   const tends = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'tend' ? [message.payload] : []));
 
   function healer(): Rig {
@@ -1134,12 +1134,12 @@ describe('tending', () => {
     rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 11, z: 10 }));
     rig.controller.dispatch(entityFrame({ id: 'cara', kind: 'player', name: 'Cara', x: 9, z: 10 }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
-    rig.controller.dispatch(HEILER);
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' }] } });
+    rig.controller.dispatch(HEALER);
+    rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }] } });
     return rig;
   }
 
-  it('tends the dreamer a Heiler clicks, marks them, and lets go on a second click', () => {
+  it('tends the dreamer a Healer clicks, marks them, and lets go on a second click', () => {
     const rig = healer();
     expect(rig.session.clickAction('bren')).toBe('tend');
     rig.session.pressAt('bren', 0);
@@ -1190,7 +1190,7 @@ describe('tending', () => {
     expect(tends(rig)).toEqual([{ targetId: 'bren' }]);
   });
 
-  describe('a raise the Heiler gives', () => {
+  describe('a raise the Healer gives', () => {
     const raising = (state: RaisingState, healerIds = ['self']) => raisingFrame('bren', healerIds, state);
 
     it('reports it done and broken, and says nothing of taking hold', () => {
@@ -1207,7 +1207,7 @@ describe('tending', () => {
       ]);
     });
 
-    it('reports losing hold when a snapshot leaves the Heiler out while another holds on, and nothing of the other joining', () => {
+    it('reports losing hold when a snapshot leaves the Healer out while another holds on, and nothing of the other joining', () => {
       const rig = healer();
       rig.session.pressAt('bren', 0);
       rig.controller.dispatch(raising('holding'));
@@ -1217,7 +1217,7 @@ describe('tending', () => {
       expect(rig.controller.chatHistory).toEqual([{ kind: 'raiseBrokenOther', targetName: 'Bren' }]);
     });
 
-    it('reports losing hold once, and nothing when another Heiler then begins anew', () => {
+    it('reports losing hold once, and nothing when another Healer then begins anew', () => {
       const rig = healer();
       rig.session.pressAt('bren', 0);
       rig.controller.dispatch(raising('holding'));
@@ -1228,9 +1228,9 @@ describe('tending', () => {
 
     it.each<[string, (rig: Rig) => void]>([
       ['lets go of them', (rig) => rig.session.tend(undefined)],
-      ['puts the Mondstein away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'mondstein', quantity: 1 }] } })],
+      ['puts the Moonstone away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'moonstone', quantity: 1 }] } })],
       ['falls', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
-    ])('says nothing of losing hold when the Heiler first %s', (_label, letGo) => {
+    ])('says nothing of losing hold when the Healer first %s', (_label, letGo) => {
       for (const end of [raising('broken', ['self', 'cara']), raising('holding', ['cara'])]) {
         const rig = healer();
         rig.session.pressAt('bren', 0);
@@ -1241,7 +1241,7 @@ describe('tending', () => {
       }
     });
 
-    it('tells every Heiler named at the end that it is done, and no one who dropped out before it', () => {
+    it('tells every Healer named at the end that it is done, and no one who dropped out before it', () => {
       const named = healer();
       named.controller.dispatch(raising('done', ['cara', 'self']));
       expect(named.controller.chatHistory).toEqual([{ kind: 'raisedOther', targetName: 'Bren' }]);
@@ -1256,7 +1256,7 @@ describe('tending', () => {
     });
 
     /** The dreamer took their raise along when they left, with no frame to say so. */
-    it('says nothing of losing hold of a dreamer who left and came back to another Heiler', () => {
+    it('says nothing of losing hold of a dreamer who left and came back to another Healer', () => {
       const rig = healer();
       rig.session.pressAt('bren', 0);
       rig.controller.dispatch(raising('holding'));
@@ -1268,9 +1268,9 @@ describe('tending', () => {
     });
   });
 
-  it('is not what a click at a dreamer does for anyone but a Heiler', () => {
+  it('is not what a click at a dreamer does for anyone but a Healer', () => {
     const rig = healer();
-    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [] } });
+    rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [] } });
     expect(rig.session.clickAction('bren')).toBe('swing');
     rig.session.pressAt('bren', 0);
     expect(rig.session.tending).toBeUndefined();

@@ -1,5 +1,5 @@
 export interface MonsterKind {
-  /** The display name an entity of this kind carries. */
+  /** The name an entity of this kind carries: a core catalog key, which the client translates. */
   name: string;
   characterModelId: string;
   radius: number;
@@ -24,9 +24,9 @@ export interface MonsterKind {
 
 /** The kinds a monster spawn can name, by id. */
 export const MONSTER_KINDS = {
-  gespenst: {
-    name: 'Gespenst',
-    characterModelId: 'gespenst',
+  ghost: {
+    name: 'Ghost',
+    characterModelId: 'ghost',
     radius: 0.3,
     metresPerSecond: 2.4,
     aggroRadius: 3.84,

@@ -20,7 +20,7 @@ it('register then logout snapshot then load reproduces the character state', asy
     name,
     passwordHash: await hashPassword(TEST_PASSWORD),
     email: `${name}@example.invalid`,
-    people: 'umbren',
+    people: 'umbrae',
     starterInventory: STARTER_INVENTORY,
   });
   const characters = new PostgresCharacterRepository(harness.db);
@@ -40,7 +40,7 @@ it('register then logout snapshot then load reproduces the character state', asy
   expect(reloaded.position).toEqual({ x: 4.125, z: -7.5 });
   expect(reloaded.facing).toBe(heading(137.5));
   expect(reloaded.energy.healthCurrent).toBe(75);
-  expect(reloaded.people).toBe('umbren');
+  expect(reloaded.people).toBe('umbrae');
   const inventory = await new PostgresInventoryRepository(harness.db).loadAll(character.id);
   expect(inventory.length).toBe(2);
   expect(inventory[0]).toEqual({ slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined });

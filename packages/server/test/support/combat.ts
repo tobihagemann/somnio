@@ -9,12 +9,12 @@ const GHOST_AT: Point = { x: 10, z: 10 };
 /** In reach of the nightmare at `GHOST_AT`, and south of it. */
 export const BESIDE_GHOST: Point = { x: 10, z: 10.7 };
 export const GHOST = 'monster:1';
-export const RESPAWN_MS = monsterKind('gespenst').respawnSeconds * 1000;
+export const RESPAWN_MS = monsterKind('ghost').respawnSeconds * 1000;
 const STEP_SECONDS = 0.05;
 
 export const PURSE: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
 export const CUDGEL_IN_HAND: InventoryRow = { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' };
-export const MONDSTEIN_IN_HAND: InventoryRow = { slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' };
+export const MOONSTONE_IN_HAND: InventoryRow = { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' };
 
 export function energy(overrides: Partial<Energy> = {}): Energy {
   return { ...fullPools([]), ...overrides };
@@ -24,12 +24,12 @@ export function lucidity(role: Lucidity['role'], held: Partial<Record<TeachingId
   return { ...NO_LUCIDITY, role, ranks: ranks(held), ...overrides };
 }
 
-/** A Kämpfer whose every landed cudgel swing takes 23 of a Gespenst's 60 health, so three drive it off. */
-export const STRIKER: Partial<Character> = { lucidity: lucidity('kaempfer', { strike: 5 }) };
+/** A Fighter whose every landed cudgel swing takes 23 of a Ghost's 60 health, so three drive it off. */
+export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { strike: 5 }) };
 
 /**
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
- * set and misses otherwise. With `ghost`, a Gespenst already stands at `GHOST_AT`.
+ * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`.
  */
 export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; sectors?: Sector[] } = {}) {
   const dice = { hit: true };

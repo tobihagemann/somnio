@@ -35,18 +35,18 @@ async function seeded(prefix: string, changes: Partial<Character>, inventory: In
 
 it('what a dreamer has grown into joins as it was stored, and a checkpoint stores what changed and nothing else', async () => {
   const lucidity: Lucidity = {
-    role: 'heiler',
+    role: 'healer',
     ranks: [
       { teachingId: 'depth', rank: 1, practice: 3 },
       { teachingId: 'touch', rank: 2, practice: 12.5 },
     ],
     study: 'depth',
-    task: { role: 'heiler', teachingId: 'drawing-back', progress: 22.5 },
+    task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
   };
   const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 60, balanceMax: 100, spiritCurrent: 30, spiritMax: 100 };
   const inventory: InventoryRow[] = [
     { slot: 0, itemId: 'purse', quantity: 137, equippedHand: undefined },
-    { slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' },
+    { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
   ];
   const stored = await seeded('lucid', { lucidity, energy }, inventory);
 
@@ -57,7 +57,7 @@ it('what a dreamer has grown into joins as it was stored, and a checkpoint store
   expect(sent('inventory')).toEqual({
     rows: [
       { slot: 0, itemId: 'purse', quantity: 137 },
-      { slot: 2, itemId: 'mondstein', quantity: 1, equippedHand: 'right' },
+      { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
     ],
   });
 

@@ -1,0 +1,62 @@
+{
+  "Greetings, $name!": {
+    "en": "Greetings, $name!",
+    "de": "Sei gegrüßt, $name!"
+  },
+  "This library is still a work in progress.": {
+    "en": "This library is still a work in progress.",
+    "de": "Diese Bibliothek ist immer noch in Arbeit."
+  },
+  "And running is forbidden in here!": {
+    "en": "And running is forbidden in here!",
+    "de": "Außerdem ist das Rennen hier verboten!"
+  },
+  "Ah, $name! Sit by the fire.": {
+    "en": "Ah, $name! Sit by the fire.",
+    "de": "Ah, $name! Setz dich ans Feuer."
+  },
+  "A bed is free when the dreams wear you out.": {
+    "en": "A bed is free when the dreams wear you out.",
+    "de": "Ein Bett ist frei, wenn die Träume dich müde machen."
+  },
+  "Whoever rests here wakes here too. It has always been so.": {
+    "en": "Whoever rests here wakes here too. It has always been so.",
+    "de": "Wer hier ruht, wacht auch hier wieder auf. So war es schon immer."
+  },
+  "Welcome, $name!": {
+    "en": "Welcome, $name!",
+    "de": "Willkommen, $name!"
+  },
+  "Have a look around. There is not much yet.": {
+    "en": "Have a look around. There is not much yet.",
+    "de": "Sieh dich ruhig um - viel ist es noch nicht."
+  },
+  "The next delivery comes with the trader from the Autumn Wood. Until then, only the bare essentials.": {
+    "en": "The next delivery comes with the trader from the Autumn Wood. Until then, only the bare essentials.",
+    "de": "Die nächste Lieferung kommt mit dem Händler aus dem Herbstwald. Bis dahin: nur das Nötigste."
+  },
+  "Well, $name? Stand up straight when you speak to me.": {
+    "en": "Well, $name? Stand up straight when you speak to me.",
+    "de": "Na, $name? Halt dich gerade, wenn du mit mir sprichst."
+  },
+  "Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.": {
+    "en": "Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.",
+    "de": "Wer bei mir lernen will, vertreibt erst ein Gespenst. In der Arena findest du welche. Danach reden wir."
+  },
+  "In the north the dream frays. Go and see for yourself, but do not go alone.": {
+    "en": "In the north the dream frays. Go and see for yourself, but do not go alone.",
+    "de": "Im Norden franst der Traum. Geh hin und sieh selbst - aber geh nicht allein."
+  },
+  "Be welcome, $name. The Moonstone takes what it gives.": {
+    "en": "Be welcome, $name. The Moonstone takes what it gives.",
+    "de": "Sei willkommen, $name. Der Mondstein nimmt, was er gibt."
+  },
+  "Whoever would heal first walks into the North Wood and comes back without striking a blow.": {
+    "en": "Whoever would heal first walks into the North Wood and comes back without striking a blow.",
+    "de": "Wer heilen will, geht erst bis in den Nordwald und kehrt zurück, ohne einen Schlag zu führen."
+  },
+  "Only a Healer draws back the fallen. Leave no one lying.": {
+    "en": "Only a Healer draws back the fallen. Leave no one lying.",
+    "de": "Wer gefallen ist, den holt nur eine Heilerin zurück. Lass niemanden liegen."
+  }
+}

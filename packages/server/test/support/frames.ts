@@ -39,6 +39,6 @@ export const VALID_REGISTER_MESSAGE: RegisterMessage = {
   nickname: 'Saibot',
   password: 'hunter2-long',
   passwordRepeat: 'hunter2-long',
-  people: 'soporen',
+  people: 'sopors',
   email: 'info@example.com',
 };

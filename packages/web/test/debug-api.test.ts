@@ -50,31 +50,31 @@ describe('the debug API', () => {
     const app = shell();
     app.controller.selfId = 'self';
     app.controller.entities.set('self', clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90 }));
-    app.controller.entities.set('npc:EdariaMitte/libus', clientEntity({ id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus', position: { x: 3, z: 4 } }));
+    app.controller.entities.set('npc:EdariaSquare/libus', clientEntity({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', position: { x: 3, z: 4 } }));
 
     const api = makeDebugAPI(app);
     expect(api.player()).toEqual({ x: 12.8, z: 9.6, facing: 90, gait: 'jog', name: 'Tester' });
     expect(api.entities()).toEqual([
       { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale' },
-      { id: 'npc:EdariaMitte/libus', kind: 'npc', name: 'Libus', x: 3, z: 4, condition: 'hale' },
+      { id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', x: 3, z: 4, condition: 'hale' },
     ]);
   });
 
   it("reports the player's own pools, lucidity, winded state, open service panel, and the dreamer they tend", () => {
     const app = shell();
     const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 0, balanceMax: 100, spiritCurrent: 70, spiritMax: 110 };
-    const lucidity = { role: 'heiler' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 2.5 }], study: 'touch' };
+    const lucidity = { role: 'healer' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 2.5 }], study: 'touch' };
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', worldSeconds: 0 } });
     app.controller.dispatch({ tag: 'energy', payload: energy });
     app.controller.dispatch({ tag: 'lucidity', payload: lucidity });
-    app.session.servicePanel = clientEntity({ id: 'npc:EdariaMitte/sana', kind: 'npc', service: 'heilerMaster' });
+    app.session.servicePanel = clientEntity({ id: 'npc:EdariaHealerHall/sana', kind: 'npc', service: 'healerMaster' });
     app.session.tending = 'bren';
 
     const api = makeDebugAPI(app);
     expect(api.energy()).toEqual(energy);
     expect(api.lucidity()).toEqual(lucidity);
     expect(api.winded()).toBe(true);
-    expect(api.servicePanel()).toBe('npc:EdariaMitte/sana');
+    expect(api.servicePanel()).toBe('npc:EdariaHealerHall/sana');
     expect(api.tending()).toBe('bren');
     // No scene draws anything in this shell, so there is nowhere to point.
     expect(api.screenPoint('bren')).toBeUndefined();
@@ -83,8 +83,8 @@ describe('the debug API', () => {
   it('reports the space, and the sector the predicted position stands in', () => {
     const app = shell();
     const world = new ClientWorld('outdoors', TEST_REGISTRY);
-    world.addSector(outdoorSector('EdariaMitte', { x: 0, z: 0 }));
-    world.addSector(outdoorSector('Nordwiese', { x: 0, z: -20 }));
+    world.addSector(outdoorSector('EdariaSquare', { x: 0, z: 0 }));
+    world.addSector(outdoorSector('NorthMeadow', { x: 0, z: -20 }));
     app.controller.world = world;
     const api = makeDebugAPI(app);
 
@@ -92,7 +92,7 @@ describe('the debug API', () => {
     expect(api.sectorName()).toBeUndefined();
 
     world.follow({ x: 10, z: -5 }, app.controller.renderSurface);
-    expect(api.sectorName()).toBe('Nordwiese');
+    expect(api.sectorName()).toBe('NorthMeadow');
   });
 
   it('returns chat lines already localized, as the panel renders them', () => {

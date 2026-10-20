@@ -2,7 +2,8 @@ import { ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
 import { ITEMS, itemInHand, itemLabelKey, itemWeapon, purseCoins } from '../src/items.ts';
-import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
+import { TEACHINGS, TRIALS, roleLabelKey } from '../src/lucidity.ts';
+import { MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
@@ -11,22 +12,24 @@ const CORE_KEYS = [
   'Dagger',
   'Depth',
   'Drawing back',
+  'Fighter',
   'Follow-through',
+  'Ghost',
   'Guard',
-  'Heiler',
-  'Kämpfer',
+  'Healer',
   'Lumina',
   'Mace',
-  'Mondstein',
+  'Moonstone',
+  'North Wood',
   'Purse',
   'Short sword',
-  'Soporen',
+  'Sopors',
   'Spirit deepening',
   'Strike',
   'Touch',
   'Toughening',
-  'Umbren',
-  'Wachen',
+  'Umbrae',
+  'Vigils',
 ];
 
 describe('items', () => {
@@ -46,14 +49,14 @@ describe('items', () => {
     expect(itemWeapon('sword')).toEqual({ damage: 11, balanceCost: 24 });
     expect(itemWeapon('mace')).toEqual({ damage: 14, balanceCost: 32 });
     expect(itemWeapon('purse')).toBeUndefined();
-    expect(itemWeapon('mondstein')).toBeUndefined();
+    expect(itemWeapon('moonstone')).toBeUndefined();
     expect(itemWeapon('toString')).toBeUndefined();
   });
 
   it('holds what is in the right hand, and nothing for a row in the left', () => {
     const cudgel = { itemId: 'cudgel', equippedHand: 'left' as const };
-    const mondstein = { itemId: 'mondstein', equippedHand: 'right' as const };
-    expect(itemInHand([{ itemId: 'purse' }, cudgel, mondstein])).toBe('mondstein');
+    const moonstone = { itemId: 'moonstone', equippedHand: 'right' as const };
+    expect(itemInHand([{ itemId: 'purse' }, cudgel, moonstone])).toBe('moonstone');
     expect(itemInHand([{ itemId: 'purse' }, cudgel])).toBeUndefined();
   });
 
@@ -80,12 +83,14 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items, the peoples, the roles, and the teachings', () => {
+  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, and the places a trial names', () => {
     const labels = [
       ...Object.values(ITEMS).map((item) => item.labelKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),
       ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),
+      ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
+      ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
     ];
     expect(labels.sort()).toEqual(CORE_KEYS);
   });

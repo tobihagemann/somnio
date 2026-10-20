@@ -47,8 +47,8 @@ export interface ServicePanelCallbacks {
 
 /** Thunks rather than constants so `t` runs after the locale resolves, each key in a literal `t('...')` the catalog test can find. */
 const SERVICE_TITLE: Record<NPCService, () => string> = {
-  kaempferMaster: () => t('Master of the Kämpfer'),
-  heilerMaster: () => t('Master of the Heiler'),
+  fighterMaster: () => t('Master of the Fighters'),
+  healerMaster: () => t('Master of the Healers'),
   shopkeeper: () => t('Shopkeeper'),
 };
 
@@ -58,9 +58,9 @@ const TEACHING_BLURB: Record<TeachingId, () => string> = {
   'follow-through': () => t('Each rank shortens the pause between your swings.'),
   'balance-recovery': () => t('Each rank brings your balance back faster.'),
   toughening: () => t('Each rank raises your health by %@.', String(COMBAT.healthPerTougheningRank)),
-  touch: () => t('Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.'),
+  touch: () => t('Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.'),
   depth: () => t('Each rank mends more with every touch.'),
-  'drawing-back': () => t('Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.'),
+  'drawing-back': () => t('Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.'),
   'spirit-deepening': () => t('Each rank raises your spirit by %@.', String(COMBAT.spiritPerDeepeningRank)),
 };
 
@@ -77,7 +77,10 @@ function taskText(spec: TaskSpec): string[] {
         ...(spec.withoutFalling === true ? [t('Falling starts the count over.')] : []),
       ];
     case 'reach':
-      return [t('Walk to the %@ and come back.', spec.sector), ...(spec.withoutStriking === true ? [t('You cannot strike while you hold this trial.')] : [])];
+      return [
+        t('Walk to the %@ and come back.', t(spec.labelKey)),
+        ...(spec.withoutStriking === true ? [t('You cannot strike while you hold this trial.')] : []),
+      ];
     case 'mend':
       return [t('Mend %@ health on other dreamers.', String(spec.amount))];
   }
@@ -162,8 +165,8 @@ export class ServicePanel {
     tradeLocked: boolean,
   ): { reads: readonly unknown[]; purse?: number; build: () => HTMLElement[] } {
     switch (service) {
-      case 'kaempferMaster':
-      case 'heilerMaster':
+      case 'fighterMaster':
+      case 'healerMaster':
         return { reads: [lucidity], build: () => this.master(npc, masterRole(service), lucidity) };
       case 'shopkeeper':
         return { reads: [inventory, tradeLocked], purse: purseCoins(inventory), build: () => this.shop(npc, inventory, tradeLocked) };

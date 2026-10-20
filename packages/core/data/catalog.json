@@ -19,21 +19,25 @@
     "en": "Drawing back",
     "de": "Zurückholen"
   },
+  "Fighter": {
+    "en": "Fighter",
+    "de": "Kämpfer"
+  },
   "Follow-through": {
     "en": "Follow-through",
     "de": "Nachsetzen"
+  },
+  "Ghost": {
+    "en": "Ghost",
+    "de": "Gespenst"
   },
   "Guard": {
     "en": "Guard",
     "de": "Deckung"
   },
-  "Heiler": {
-    "en": "Heiler",
+  "Healer": {
+    "en": "Healer",
     "de": "Heiler"
-  },
-  "Kämpfer": {
-    "en": "Kämpfer",
-    "de": "Kämpfer"
   },
   "Lumina": {
     "en": "Lumina",
@@ -43,9 +47,13 @@
     "en": "Mace",
     "de": "Streitkolben"
   },
-  "Mondstein": {
-    "en": "Mondstein",
+  "Moonstone": {
+    "en": "Moonstone",
     "de": "Mondstein"
+  },
+  "North Wood": {
+    "en": "North Wood",
+    "de": "Nordwald"
   },
   "Purse": {
     "en": "Purse",
@@ -55,9 +63,9 @@
     "en": "Short sword",
     "de": "Kurzschwert"
   },
-  "Soporen": {
-    "en": "Soporen",
-    "de": "Soporen"
+  "Sopors": {
+    "en": "Sopors",
+    "de": "Sopors"
   },
   "Spirit deepening": {
     "en": "Spirit deepening",
@@ -75,12 +83,12 @@
     "en": "Toughening",
     "de": "Abhärtung"
   },
-  "Umbren": {
-    "en": "Umbren",
-    "de": "Umbren"
+  "Umbrae": {
+    "en": "Umbrae",
+    "de": "Umbrae"
   },
-  "Wachen": {
-    "en": "Wachen",
-    "de": "Wachen"
+  "Vigils": {
+    "en": "Vigils",
+    "de": "Vigils"
   }
 }

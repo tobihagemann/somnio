@@ -38,11 +38,11 @@ That topology serves a production build, so `?debug=1` is required — without i
 
 ## Step 3: Create an account
 
-Register through the UI: click "If you don't have an account, click here!", fill nickname, both password fields, and **email** (the server rejects an empty one), pick a people, then submit. A successful sign-up returns to the login overlay with the nickname and password already filled in. Fresh characters spawn in the `EdariaBibliothek` starter sector.
+Register through the UI: click "If you don't have an account, click here!", fill nickname, both password fields, and **email** (the server rejects an empty one), pick a people, then submit. A successful sign-up returns to the login overlay with the nickname and password already filled in. Fresh characters spawn in the `EdariaLibrary` starter sector.
 
 Re-snapshot after every overlay change — the refs are per-snapshot, and typing against stale refs from the previous overlay silently fills the wrong fields.
 
-To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","people":"wachen","email":"..."}}` (password ≥ 8 UTF-8 bytes; `people` is one of `wachen`, `soporen`, `umbren`, `lumina`; expect `{"tag":"registerResult","payload":{"result":"ok"}}`).
+To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","people":"vigils","email":"..."}}` (password ≥ 8 UTF-8 bytes; `people` is one of `vigils`, `sopors`, `umbrae`, `lumina`; expect `{"tag":"registerResult","payload":{"result":"ok"}}`).
 
 ## Step 4: Open the client and log in
 
@@ -71,14 +71,14 @@ To test that retry itself, keep the issuing session connected while the observin
 
 `window.somnio` is read-only and exposes what the canvas cannot show. It is present in dev builds and requires `?debug=1` in production, because `entities()` reports the name and position of every peer in view.
 
-Positions are metres in the coordinates of the current space: `x` runs east, `z` south, and an outdoor position includes its sector's origin (the Nordwald lies at negative `z`). `facing` is a heading in degrees, 0 = south and 90 = east.
+Positions are metres in the coordinates of the current space: `x` runs east, `z` south, and an outdoor position includes its sector's origin (the North Wood lies at negative `z`). `facing` is a heading in degrees, 0 = south and 90 = east.
 
 | Call | Returns |
 |---|---|
 | `connectionState()` | `'disconnected'` \| `'awaitingHello'` \| `'awaitingLoginResult'` \| `'awaitingEnterSpace'` \| `'attached'` |
 | `player()` | `{ x, z, facing, gait, name }` (`gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
 | `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
-| `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaMitte'` |
+| `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaSquare'` |
 | `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'` (full health), `'grazed'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
 | `energy()` | the player's own pools as last sent: `{ healthCurrent, healthMax, balanceCurrent, balanceMax, spiritCurrent, spiritMax }` |
 | `lucidity()` | `{ role?, ranks: [{ teachingId, rank, practice }], study?, task? }` as last sent |
@@ -116,7 +116,9 @@ The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft
 
 The keys move in screen directions, which the camera's fixed 35° yaw turns on the ground. `KeyA` moves about (−0.82, +0.57) in world x/z and `KeyW` about (−0.57, −0.82). `KeyW`+`KeyA` heads about 10° north of west and `KeyS`+`KeyD` about 10° south of east. Read `player()` after each hold and correct.
 
-**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Heiler's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, a fallen body where it lies, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
+A loop that steers toward a point has to release its keys as soon as `spaceId()` changes. Otherwise a door's trigger takes the player through, and the loop goes on steering by the old space's coordinates and can walk straight back out. `player()` reads `undefined` during that join, so guard every read. Walk into a door head-on: a building's door posts can stop a player sliding sideways along its front short of the trigger.
+
+**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Healer's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, a fallen body where it lies, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
 
 ```bash
 agent-browser eval --stdin <<'JS'
@@ -216,7 +218,7 @@ ws.onmessage = ({ data }) => {
 node <dir>/bot.mjs <nickname> 0.7 0.3 'Hallo' & echo $!   # nickname, step east, step south, a line to repeat
 ```
 
-New accounts start at the starter spawn in `EdariaBibliothek`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its character and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE name IN ('<nickname>', ...);"`.
+New accounts start at the starter spawn in `EdariaLibrary`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its character and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE name IN ('<nickname>', ...);"`.
 
 For a crowd of hundreds, hold every bot's socket in one Node process rather than one process per bot, and open them in batches that log in before the next batch dials. The server holds at most 128 sockets awaiting login, and 8 per address while `SOMNIO_TRUST_PROXY` is set (the compose topology sets it). It answers past those caps with 503 or 429, and closes a socket not logged in within 30 s. Register the accounts over the wire one after another first, give them a shared name prefix, and delete them afterwards with `DELETE FROM accounts WHERE name LIKE '<prefix>%'`. To count or size the frames the browser player receives, wrap the `onmessage` setter on `WebSocket.prototype` from an `eval` before logging in, so the game's socket reports each frame to the wrapper. A remembered session opens its socket at page load, before any `eval` runs, so log in without "Remember password" for this, or install the wrapper with `--init-script` as Step 4 describes.
 
@@ -252,7 +254,7 @@ JS
 
 What the frame loop writes to the page, such as the splash dip's opacity, changes only on a frame, so read it inside a `requestAnimationFrame` callback scheduled after the restore, not straight after the return. `splashShot()` is current at once, because the return itself halts a reel whose session has attached.
 
-**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaBibliothek`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
+**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaLibrary`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
 
 To read what the scene computed, such as where each bubble was placed and in which mode, wrap a scene method from an `eval` on the dev server. Inside an async IIFE, `const { WorldScene } = await import('/src/scene/worldScene.ts')` returns the module the page runs, so replacing `WorldScene.prototype.placedBubbles` with a wrapper that stores its result on `window` records every frame's placements. The working tree stays untouched, and a page reload removes the wrapper. Restart Vite first when `worldScene.ts` or anything it imports was edited since Vite started: the page then loads the module under a `?t=` URL, the plain import returns a second copy, and the wrapper on it never runs.
 
@@ -267,32 +269,32 @@ Relocate with the recipe below. Its `sectorName()` check cannot confirm a move w
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
 docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-15 WHERE name='<nickname>';"
 agent-browser open 'http://localhost:17669/'
-# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'Nordwiese'; the old sector
+# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'NorthMeadow'; the old sector
 # here means the checkpoint won the race; close and repeat. A position inside geometry or outside
-# every sector self-heals to the starter spawn in EdariaBibliothek with no error, so pick open ground.
+# every sector self-heals to the starter spawn in EdariaLibrary with no error, so pick open ground.
 ```
 
-`space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -15)` is open ground in the Nordwiese, whose origin is `(5.12, -30.72)`. The Nordwald north of it, at origin `(5.12, -61.44)`, holds a nightmare spawn area: a player placed inside it, as at `(20, -46)`, is struck and falls within half a minute. An interior's positions run from its own north-west corner.
+`space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -15)` is open ground in the North Meadow, whose origin is `(5.12, -30.72)`. The North Wood north of it, at origin `(5.12, -61.44)`, holds a nightmare spawn area: a player placed inside it, as at `(20, -46)`, is struck and falls within half a minute. An interior's positions run from its own north-west corner.
 
-**Give a character a role, ranks, or pools.** Write under the same rule as relocating: close both players' sessions (and stop any bot) and wait for the checkpoint first, or it overwrites the row. Several statements go in one heredoc, and `docker exec` needs `-i` for it: without `-i` the heredoc never reaches psql, which prints nothing and applies nothing. This makes `<healer>` a Heiler with `touch` at rank 2 and `drawing-back` at rank 1 (the ranks the game requires for raising) and the Mondstein in the right hand, in inventory slot 2. It also lays `<dreamer>` down fallen (a partial `health_current` gives a mend something to do instead). The upserts make the block safe to run again:
+**Give a character a role, ranks, or pools.** Write under the same rule as relocating: close both players' sessions (and stop any bot) and wait for the checkpoint first, or it overwrites the row. Several statements go in one heredoc, and `docker exec` needs `-i` for it: without `-i` the heredoc never reaches psql, which prints nothing and applies nothing. This makes `<healer>` a Healer with `touch` at rank 2 and `drawing-back` at rank 1 (the ranks the game requires for raising) and the Moonstone in the right hand, in inventory slot 2. It also lays `<dreamer>` down fallen (a partial `health_current` gives a mend something to do instead). The upserts make the block safe to run again:
 
 ```bash
 docker exec -i somnio-pg psql -U postgres -d somnio -v ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
-UPDATE characters SET role='heiler' WHERE name='<healer>';
+UPDATE characters SET role='healer' WHERE name='<healer>';
 INSERT INTO character_ranks (character_id, teaching_id, rank, practice)
   SELECT id, t, r, 0 FROM characters, (VALUES ('touch', 2), ('drawing-back', 1)) AS v(t, r) WHERE name='<healer>'
   ON CONFLICT (character_id, teaching_id) DO UPDATE SET rank = EXCLUDED.rank;
 UPDATE inventory_rows SET equipped_hand=NULL WHERE character_id=(SELECT id FROM characters WHERE name='<healer>');
 INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand)
-  SELECT id, 2, 'mondstein', 1, 'right' FROM characters WHERE name='<healer>'
+  SELECT id, 2, 'moonstone', 1, 'right' FROM characters WHERE name='<healer>'
   ON CONFLICT (character_id, slot) DO UPDATE SET item_id = EXCLUDED.item_id, quantity = 1, equipped_hand = 'right';
 UPDATE characters SET health_current=0 WHERE name='<dreamer>';
 COMMIT;
 SQL
 ```
 
-After logging in, `window.somnio.lucidity().role` on the healer reads `'heiler'` and `window.somnio.energy().healthCurrent` on the dreamer reads `0`. Anything else means a checkpoint won the race, so close and repeat. A raised dreamer stands again, and one who wakes is also moved to the inn, so a retry re-runs the block, plus the relocation recipe after a wake.
+After logging in, `window.somnio.lucidity().role` on the healer reads `'healer'` and `window.somnio.energy().healthCurrent` on the dreamer reads `0`. Anything else means a checkpoint won the race, so close and repeat. A raised dreamer stands again, and one who wakes is also moved to the inn, so a retry re-runs the block, plus the relocation recipe after a wake.
 
 **Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
 
@@ -328,7 +330,7 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 - `agent-browser mouse wheel` over the chat scrollback does not scroll it in a headless session: its `scrollTop` is unchanged even when read after a pause. To scroll it to a given offset, set its `scrollTop` from an `eval` (`document.querySelector('.chat-scrollback').scrollTop = 40`). The play field's zoom still takes the wheel.
 - Navigating the game tab to `about:blank` (`agent-browser open about:blank`) leaves its gameplay socket open, and the server keeps the player logged in. To log that player in again, close the session (`agent-browser --session <name> close`) and wait as in the relocation recipe.
 - Bodies standing on one spot (a bot on the spawn) overlap on screen, and a click at `screenPoint(id)` reaches the body nearer the camera. Aim a little beside it, on the side away from the other body, and confirm the click reached the intended entity: `tending()` for a tend, `servicePanel()` for a master or the shopkeeper.
-- A Mondstein reaches another player only within 0.85 m, centre to centre (`reachDistance` in `packages/core/src/combat.ts`). A Heiler placed by coordinates further off still tends, but never mends or raises. Place them about 0.6 m from the dreamer, and confirm the distance from `entities()` before waiting for a mend or a raise.
+- A Moonstone reaches another player only within 0.85 m, centre to centre (`reachDistance` in `packages/core/src/combat.ts`). A Healer placed by coordinates further off still tends, but never mends or raises. Place them about 0.6 m from the dreamer, and confirm the distance from `entities()` before waiting for a mend or a raise.
 - Separate `agent-browser` calls are slow enough to miss a short server window, such as letting go before a 6 s raise finishes. Do the timed steps inside one `eval`, within the 12 s limit on its awaits.
 - Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned (the German UI recipe pins it).

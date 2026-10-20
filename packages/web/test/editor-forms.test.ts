@@ -56,7 +56,7 @@ describe('SectorForm', () => {
   it('reads back the values it was given', () => {
     const form = new SectorForm(['grass', 'cobble'], () => {});
     const values = {
-      name: 'Nordwiese',
+      name: 'NorthMeadow',
       kind: 'outdoor',
       width: 30.72,
       depth: 30.72,

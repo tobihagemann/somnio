@@ -15,7 +15,7 @@ import { SPEECH } from '../src/speech.ts';
  */
 describe('literal sets', () => {
   it('pins the peoples', () => {
-    expect(PEOPLES).toEqual(['wachen', 'soporen', 'umbren', 'lumina']);
+    expect(PEOPLES).toEqual(['vigils', 'sopors', 'umbrae', 'lumina']);
   });
 
   it('pins the items', () => {
@@ -25,7 +25,7 @@ describe('literal sets', () => {
       cudgel: { labelKey: 'Cudgel', weapon: { damage: 8, balanceCost: 18 } },
       sword: { labelKey: 'Short sword', weapon: { damage: 11, balanceCost: 24 } },
       mace: { labelKey: 'Mace', weapon: { damage: 14, balanceCost: 32 } },
-      mondstein: { labelKey: 'Mondstein' },
+      moonstone: { labelKey: 'Moonstone' },
     });
   });
 
@@ -35,11 +35,11 @@ describe('literal sets', () => {
   });
 
   it('pins the monster kinds', () => {
-    expect(MONSTER_KIND_IDS).toEqual(['gespenst']);
+    expect(MONSTER_KIND_IDS).toEqual(['ghost']);
     expect(MONSTER_KINDS).toEqual({
-      gespenst: {
-        name: 'Gespenst',
-        characterModelId: 'gespenst',
+      ghost: {
+        name: 'Ghost',
+        characterModelId: 'ghost',
         radius: 0.3,
         metresPerSecond: 2.4,
         aggroRadius: 3.84,
@@ -53,23 +53,23 @@ describe('literal sets', () => {
         bounty: 12,
       },
     });
-    expect(monsterKind('gespenst')).toBe(MONSTER_KINDS.gespenst);
+    expect(monsterKind('ghost')).toBe(MONSTER_KINDS.ghost);
   });
 
   /** A teaching id is stored with every rank a character holds, beside the character's one role, and a held task is stored by its role and teaching. */
   it('pins the teachings with their roles', () => {
     expect(Object.fromEntries(TEACHING_IDS.map((id) => [id, TEACHINGS[id].role]))).toEqual({
-      strike: 'kaempfer',
-      guard: 'kaempfer',
-      'follow-through': 'kaempfer',
-      'balance-recovery': 'kaempfer',
-      toughening: 'kaempfer',
-      touch: 'heiler',
-      depth: 'heiler',
-      'drawing-back': 'heiler',
-      'spirit-deepening': 'heiler',
+      strike: 'fighter',
+      guard: 'fighter',
+      'follow-through': 'fighter',
+      'balance-recovery': 'fighter',
+      toughening: 'fighter',
+      touch: 'healer',
+      depth: 'healer',
+      'drawing-back': 'healer',
+      'spirit-deepening': 'healer',
     });
-    expect(FIRST_TEACHING).toEqual({ kaempfer: 'strike', heiler: 'touch' });
+    expect(FIRST_TEACHING).toEqual({ fighter: 'strike', healer: 'touch' });
   });
 
   /** A `lucidity` frame carries a rank for each teaching held, and its decoder refuses more than the cap. */
@@ -79,7 +79,7 @@ describe('literal sets', () => {
 
   /** A task's progress is stored as a bare number, which means something only against the kind of task it counts. */
   it('pins the kind of every trial and gate', () => {
-    expect({ kaempfer: TRIALS.kaempfer.kind, heiler: TRIALS.heiler.kind }).toEqual({ kaempfer: 'driveOff', heiler: 'reach' });
+    expect({ fighter: TRIALS.fighter.kind, healer: TRIALS.healer.kind }).toEqual({ fighter: 'driveOff', healer: 'reach' });
     const gated = TEACHING_IDS.filter((id) => teaching(id).gate !== undefined);
     expect(Object.fromEntries(gated.map((id) => [id, taskSpec({ role: TEACHINGS[id].role, teachingId: id })?.kind]))).toEqual({
       'follow-through': 'driveOff',

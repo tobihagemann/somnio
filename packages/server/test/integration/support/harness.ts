@@ -124,7 +124,7 @@ export function registerFrame(nickname: string, password = TEST_PASSWORD): strin
       nickname,
       password,
       passwordRepeat: password,
-      people: 'wachen',
+      people: 'vigils',
       email: `${nickname}@example.invalid`,
     },
   });

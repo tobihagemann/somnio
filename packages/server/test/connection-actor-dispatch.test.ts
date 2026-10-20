@@ -3,7 +3,7 @@ import { NO_LUCIDITY, OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { Character, InventoryRow, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
-import { CUDGEL_IN_HAND, GHOST, MONDSTEIN_IN_HAND, PURSE, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
+import { CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, PURSE, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -12,7 +12,7 @@ const move = { x: 10, z: 20, facing: 1, gait: 'run' } as const;
 const moves = { moves: [{ id: 'peer', ...move }] };
 const leave = { entityId: 'peer', leftGame: true };
 const entity = {
-  id: 'npc:EdariaBibliothek/libus',
+  id: 'npc:EdariaLibrary/libus',
   kind: 'npc',
   characterModelId: 'libus',
   name: 'Libus',
@@ -27,7 +27,7 @@ const register = {
   nickname: 'Saibot',
   password: 'p',
   passwordRepeat: 'p',
-  people: 'wachen',
+  people: 'vigils',
   email: 'info@example.com',
 };
 const sessionToken = { token: 'tok', expiresInSeconds: 2_592_000 };
@@ -53,7 +53,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
   { label: 'pre-login tend', message: { tag: 'tend', payload: { targetId: entity.id } }, attachFirst: false },
   {
     label: 'pre-login useDoor',
-    message: { tag: 'useDoor', payload: { sector: 'EdariaBibliothek', doorId: 'exit' } },
+    message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } },
     attachFirst: false,
   },
   { label: 'pre-login askTask', message: { tag: 'askTask', payload: { npcId: entity.id } }, attachFirst: false },
@@ -135,7 +135,7 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
 describe('ConnectionActor.dispatch', () => {
   it.each(cases)('closes with protocolError for $label', async ({ message, attachFirst }) => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    if (attachFirst) connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    if (attachFirst) connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     const decision = await connection.dispatch(message);
     expect(decision).toEqual({ kind: 'close', code: CLOSE_PROTOCOL_ERROR, reason: 'frame validation failed' });
   });
@@ -148,15 +148,15 @@ describe('ConnectionActor.dispatch', () => {
 describe('an attached connection', () => {
   const PUGNAX = 'npc:Town/pugnax';
   const MERCUS = 'npc:Town/mercus';
-  const HEILER: Partial<Character> = { lucidity: lucidity('heiler', { touch: 1 }), energy: energy({ healthCurrent: 50 }) };
-  const TRIAL_PASSED: Partial<Character> = { lucidity: { ...NO_LUCIDITY, task: { role: 'kaempfer', teachingId: undefined, progress: 1 } } };
+  const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 1 }), energy: energy({ healthCurrent: 50 }) };
+  const TRIAL_PASSED: Partial<Character> = { lucidity: { ...NO_LUCIDITY, task: { role: 'fighter', teachingId: undefined, progress: 1 } } };
 
   afterEach(() => vi.restoreAllMocks());
 
-  /** A dreamer beside Pugnax and Mercus, with a hurt dreamer in a Mondstein's reach. */
+  /** A dreamer beside Pugnax and Mercus, with a hurt dreamer in a Moonstone's reach. */
   async function attached(character: Partial<Character>, inventory: InventoryRow[], overrides: Partial<Sector> = {}) {
     const npcs = [
-      { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'kaempferMaster' as const },
+      { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'fighterMaster' as const },
       { ...makeNPC('mercus', { x: 8.6, z: 9.5 }, ''), service: 'shopkeeper' as const },
     ];
     const sectors = [makeSector('Town', { npcs, ...overrides })];
@@ -179,12 +179,12 @@ describe('an attached connection', () => {
 
   it.each<[string, Partial<Character>, InventoryRow[], (a: Attached) => SomnioMessage, (a: Attached) => unknown, unknown]>([
     ['a swing', {}, [], () => ({ tag: 'swing', payload: {} }), (a) => a.own().character.energy.balanceCurrent, 92],
-    ['a tend', HEILER, [MONDSTEIN_IN_HAND], (a) => ({ tag: 'tend', payload: { targetId: a.hurtId } }), (a) => a.hurt().energy.healthCurrent, 60],
+    ['a tend', HEALER, [MOONSTONE_IN_HAND], (a) => ({ tag: 'tend', payload: { targetId: a.hurtId } }), (a) => a.hurt().energy.healthCurrent, 60],
     [
-      'a use of the Mondstein',
-      HEILER,
-      [MONDSTEIN_IN_HAND],
-      () => ({ tag: 'useItem', payload: { slot: MONDSTEIN_IN_HAND.slot } }),
+      'a use of the Moonstone',
+      HEALER,
+      [MOONSTONE_IN_HAND],
+      () => ({ tag: 'useItem', payload: { slot: MOONSTONE_IN_HAND.slot } }),
       (a) => a.own().character.energy.healthCurrent,
       60,
     ],
@@ -196,19 +196,19 @@ describe('an attached connection', () => {
       (a) => a.own().inventory,
       [CUDGEL_IN_HAND],
     ],
-    ['a request for the trial', {}, [], () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.task?.role, 'kaempfer'],
+    ['a request for the trial', {}, [], () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.task?.role, 'fighter'],
     [
       "a request for a teaching's task",
-      { lucidity: lucidity('kaempfer', { strike: 2 }) },
+      { lucidity: lucidity('fighter', { strike: 2 }) },
       [],
       () => ({ tag: 'askTask', payload: { npcId: PUGNAX, teachingId: 'follow-through' } }),
       (a) => a.own().character.lucidity.task?.teachingId,
       'follow-through',
     ],
-    ['a trial handed in', TRIAL_PASSED, [], () => ({ tag: 'completeTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.role, 'kaempfer'],
+    ['a trial handed in', TRIAL_PASSED, [], () => ({ tag: 'completeTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.role, 'fighter'],
     [
       'a teaching to study',
-      { lucidity: lucidity('kaempfer', { strike: 1 }) },
+      { lucidity: lucidity('fighter', { strike: 1 }) },
       [],
       () => ({ tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } }),
       (a) => a.own().character.lucidity.study,

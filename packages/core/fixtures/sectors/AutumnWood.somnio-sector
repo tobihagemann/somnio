@@ -1,0 +1,454 @@
+{
+  "floorMaterialId": "forest-floor",
+  "kind": "outdoor",
+  "monsterSpawns": [
+    {
+      "depth": 9,
+      "id": "spawn-1",
+      "kind": "ghost",
+      "maxAlive": 3,
+      "width": 12,
+      "x": 24,
+      "z": 4
+    },
+    {
+      "depth": 9,
+      "id": "spawn-2",
+      "kind": "ghost",
+      "maxAlive": 3,
+      "width": 12,
+      "x": 24,
+      "z": 28
+    }
+  ],
+  "origin": {
+    "x": 40.96,
+    "z": 0
+  },
+  "placements": [
+    {
+      "id": "pine-tree-1",
+      "modelId": "pine-tree",
+      "x": 1.6,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-2",
+      "modelId": "pine-tree",
+      "x": 5.44,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-3",
+      "modelId": "pine-tree",
+      "x": 9.28,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-4",
+      "modelId": "pine-tree",
+      "x": 13.12,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-5",
+      "modelId": "pine-tree",
+      "x": 16.96,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-6",
+      "modelId": "pine-tree",
+      "x": 20.8,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-7",
+      "modelId": "pine-tree",
+      "x": 24.64,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-8",
+      "modelId": "pine-tree",
+      "x": 28.48,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-9",
+      "modelId": "pine-tree",
+      "x": 32.32,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-10",
+      "modelId": "pine-tree",
+      "x": 36.16,
+      "z": 1.6
+    },
+    {
+      "id": "pine-tree-11",
+      "modelId": "pine-tree",
+      "x": 3.52,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-12",
+      "modelId": "pine-tree",
+      "x": 7.36,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-13",
+      "modelId": "pine-tree",
+      "x": 11.2,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-14",
+      "modelId": "pine-tree",
+      "x": 15.04,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-15",
+      "modelId": "pine-tree",
+      "x": 18.88,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-16",
+      "modelId": "pine-tree",
+      "x": 22.72,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-17",
+      "modelId": "pine-tree",
+      "x": 38.08,
+      "z": 5.38
+    },
+    {
+      "id": "pine-tree-18",
+      "modelId": "pine-tree",
+      "x": 1.6,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-19",
+      "modelId": "pine-tree",
+      "x": 5.44,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-20",
+      "modelId": "pine-tree",
+      "x": 9.28,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-21",
+      "modelId": "pine-tree",
+      "x": 13.12,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-22",
+      "modelId": "pine-tree",
+      "x": 16.96,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-23",
+      "modelId": "pine-tree",
+      "x": 20.8,
+      "z": 9.16
+    },
+    {
+      "id": "pine-tree-24",
+      "modelId": "pine-tree",
+      "x": 3.52,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-25",
+      "modelId": "pine-tree",
+      "x": 7.36,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-26",
+      "modelId": "pine-tree",
+      "x": 11.2,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-27",
+      "modelId": "pine-tree",
+      "x": 15.04,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-28",
+      "modelId": "pine-tree",
+      "x": 18.88,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-29",
+      "modelId": "pine-tree",
+      "x": 22.72,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-30",
+      "modelId": "pine-tree",
+      "x": 38.08,
+      "z": 12.94
+    },
+    {
+      "id": "pine-tree-31",
+      "modelId": "pine-tree",
+      "x": 28.48,
+      "z": 16.72
+    },
+    {
+      "id": "pine-tree-32",
+      "modelId": "pine-tree",
+      "x": 32.32,
+      "z": 16.72
+    },
+    {
+      "id": "pine-tree-33",
+      "modelId": "pine-tree",
+      "x": 36.16,
+      "z": 16.72
+    },
+    {
+      "id": "pine-tree-34",
+      "modelId": "pine-tree",
+      "x": 26.56,
+      "z": 20.5
+    },
+    {
+      "id": "pine-tree-35",
+      "modelId": "pine-tree",
+      "x": 30.4,
+      "z": 20.5
+    },
+    {
+      "id": "pine-tree-36",
+      "modelId": "pine-tree",
+      "x": 34.24,
+      "z": 20.5
+    },
+    {
+      "id": "pine-tree-37",
+      "modelId": "pine-tree",
+      "x": 38.08,
+      "z": 20.5
+    },
+    {
+      "id": "pine-tree-38",
+      "modelId": "pine-tree",
+      "x": 28.48,
+      "z": 24.28
+    },
+    {
+      "id": "pine-tree-39",
+      "modelId": "pine-tree",
+      "x": 32.32,
+      "z": 24.28
+    },
+    {
+      "id": "pine-tree-40",
+      "modelId": "pine-tree",
+      "x": 36.16,
+      "z": 24.28
+    },
+    {
+      "id": "pine-tree-41",
+      "modelId": "pine-tree",
+      "x": 3.52,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-42",
+      "modelId": "pine-tree",
+      "x": 7.36,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-43",
+      "modelId": "pine-tree",
+      "x": 11.2,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-44",
+      "modelId": "pine-tree",
+      "x": 15.04,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-45",
+      "modelId": "pine-tree",
+      "x": 18.88,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-46",
+      "modelId": "pine-tree",
+      "x": 22.72,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-47",
+      "modelId": "pine-tree",
+      "x": 38.08,
+      "z": 28.06
+    },
+    {
+      "id": "pine-tree-48",
+      "modelId": "pine-tree",
+      "x": 1.6,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-49",
+      "modelId": "pine-tree",
+      "x": 5.44,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-50",
+      "modelId": "pine-tree",
+      "x": 9.28,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-51",
+      "modelId": "pine-tree",
+      "x": 13.12,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-52",
+      "modelId": "pine-tree",
+      "x": 16.96,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-53",
+      "modelId": "pine-tree",
+      "x": 20.8,
+      "z": 31.84
+    },
+    {
+      "id": "pine-tree-54",
+      "modelId": "pine-tree",
+      "x": 3.52,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-55",
+      "modelId": "pine-tree",
+      "x": 7.36,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-56",
+      "modelId": "pine-tree",
+      "x": 11.2,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-57",
+      "modelId": "pine-tree",
+      "x": 15.04,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-58",
+      "modelId": "pine-tree",
+      "x": 18.88,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-59",
+      "modelId": "pine-tree",
+      "x": 22.72,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-60",
+      "modelId": "pine-tree",
+      "x": 38.08,
+      "z": 35.62
+    },
+    {
+      "id": "pine-tree-61",
+      "modelId": "pine-tree",
+      "x": 1.6,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-62",
+      "modelId": "pine-tree",
+      "x": 5.44,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-63",
+      "modelId": "pine-tree",
+      "x": 9.28,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-64",
+      "modelId": "pine-tree",
+      "x": 13.12,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-65",
+      "modelId": "pine-tree",
+      "x": 16.96,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-66",
+      "modelId": "pine-tree",
+      "x": 20.8,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-67",
+      "modelId": "pine-tree",
+      "x": 24.64,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-68",
+      "modelId": "pine-tree",
+      "x": 28.48,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-69",
+      "modelId": "pine-tree",
+      "x": 32.32,
+      "z": 39.4
+    },
+    {
+      "id": "pine-tree-70",
+      "modelId": "pine-tree",
+      "x": 36.16,
+      "z": 39.4
+    }
+  ],
+  "size": {
+    "depth": 40.96,
+    "width": 40.96
+  }
+}

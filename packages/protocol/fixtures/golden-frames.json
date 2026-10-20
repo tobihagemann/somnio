@@ -11,14 +11,14 @@
   },
   "askTask": {
     "payload": {
-      "npcId": "npc:EdariaMitte/pugnax",
+      "npcId": "npc:EdariaFighterHall/pugnax",
       "teachingId": "follow-through"
     },
     "tag": "askTask"
   },
   "askTask-trial": {
     "payload": {
-      "npcId": "npc:EdariaMitte/pugnax"
+      "npcId": "npc:EdariaFighterHall/pugnax"
     },
     "tag": "askTask"
   },
@@ -60,7 +60,7 @@
   },
   "completeTask": {
     "payload": {
-      "npcId": "npc:EdariaMitte/pugnax"
+      "npcId": "npc:EdariaFighterHall/pugnax"
     },
     "tag": "completeTask"
   },
@@ -80,8 +80,8 @@
   },
   "doorRefused": {
     "payload": {
-      "doorId": "to-edariabibliothek",
-      "sector": "EdariaMitte"
+      "doorId": "to-edarialibrary",
+      "sector": "EdariaSquare"
     },
     "tag": "doorRefused"
   },
@@ -110,7 +110,7 @@
       "condition": "hale",
       "facing": 359.96875,
       "gait": "walk",
-      "id": "npc:EdariaBibliothek/libus",
+      "id": "npc:EdariaLibrary/libus",
       "kind": "npc",
       "name": "Libus",
       "radius": 0.3,
@@ -121,15 +121,15 @@
   },
   "entity-with-service": {
     "payload": {
-      "characterModelId": "kaempfer-meister",
+      "characterModelId": "fighter-master",
       "condition": "hale",
       "facing": 0,
       "gait": "jog",
-      "id": "npc:EdariaMitte/pugnax",
+      "id": "npc:EdariaFighterHall/pugnax",
       "kind": "npc",
       "name": "Pugnax",
       "radius": 0.3,
-      "service": "kaempferMaster",
+      "service": "fighterMaster",
       "x": 37.32,
       "z": 33.2
     },
@@ -144,7 +144,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 12
+      "protocolVersion": 13
     },
     "tag": "hello"
   },
@@ -208,6 +208,14 @@
     },
     "tag": "login"
   },
+  "login-with-locale": {
+    "payload": {
+      "locale": "de",
+      "nickname": "Saibot",
+      "password": "hunter2"
+    },
+    "tag": "login"
+  },
   "login-with-session-request": {
     "payload": {
       "nickname": "Saibot",
@@ -236,11 +244,11 @@
           "teachingId": "follow-through"
         }
       ],
-      "role": "kaempfer",
+      "role": "fighter",
       "study": "strike",
       "task": {
         "progress": 1,
-        "role": "kaempfer",
+        "role": "fighter",
         "teachingId": "follow-through"
       }
     },
@@ -320,13 +328,20 @@
     },
     "tag": "redeemSession"
   },
+  "redeemSession-with-locale": {
+    "payload": {
+      "locale": "de",
+      "token": "tok-abc"
+    },
+    "tag": "redeemSession"
+  },
   "register": {
     "payload": {
       "email": "info@example.com",
       "nickname": "Saibot",
       "password": "passw0rd",
       "passwordRepeat": "passw0rd",
-      "people": "wachen"
+      "people": "vigils"
     },
     "tag": "register"
   },
@@ -361,11 +376,11 @@
         "doors": [
           {
             "anchor": "main",
-            "id": "to-edariabibliothek",
+            "id": "to-edarialibrary",
             "placement": "townhall",
             "target": {
               "door": "exit",
-              "sector": "EdariaBibliothek"
+              "sector": "EdariaLibrary"
             }
           }
         ],
@@ -381,7 +396,7 @@
           }
         ],
         "kind": "outdoor",
-        "name": "EdariaMitte",
+        "name": "EdariaSquare",
         "origin": {
           "x": 0,
           "z": 0
@@ -415,15 +430,15 @@
             "id": "exit",
             "placement": "door-1",
             "target": {
-              "door": "to-edariabibliothek",
-              "sector": "EdariaMitte"
+              "door": "to-edarialibrary",
+              "sector": "EdariaSquare"
             }
           }
         ],
         "floorMaterialId": "wood-warm",
         "floorPatches": [],
         "kind": "interior",
-        "name": "EdariaBibliothek",
+        "name": "EdariaLibrary",
         "placements": [
           {
             "elevation": 0,
@@ -452,10 +467,10 @@
   "serverSay": {
     "payload": {
       "clarity": 1,
-      "entityId": "npc:EdariaBibliothek/libus",
+      "entityId": "npc:EdariaLibrary/libus",
       "kind": "say",
       "name": "Libus",
-      "text": "Wer bist du?",
+      "text": "Greetings, Saibot!",
       "x": 5.12,
       "z": 3.84
     },
@@ -488,7 +503,7 @@
   },
   "study": {
     "payload": {
-      "npcId": "npc:EdariaMitte/pugnax",
+      "npcId": "npc:EdariaFighterHall/pugnax",
       "teachingId": "follow-through"
     },
     "tag": "study"
@@ -505,7 +520,7 @@
   },
   "talk": {
     "payload": {
-      "npcId": "npc:EdariaBibliothek/libus"
+      "npcId": "npc:EdariaLibrary/libus"
     },
     "tag": "talk"
   },
@@ -521,8 +536,8 @@
   },
   "useDoor": {
     "payload": {
-      "doorId": "to-edariabibliothek",
-      "sector": "EdariaMitte"
+      "doorId": "to-edarialibrary",
+      "sector": "EdariaSquare"
     },
     "tag": "useDoor"
   },

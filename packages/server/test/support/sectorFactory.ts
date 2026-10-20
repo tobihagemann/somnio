@@ -1,4 +1,4 @@
-import type { Door } from '@somnio/protocol';
+import type { Door, Locale } from '@somnio/protocol';
 import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
 import type { Character, InventoryRow, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
@@ -58,12 +58,12 @@ export function makeNPC(id: string, at: Point, dialogScript: string): SectorNPC 
  * single point makes too small to chase in: it strikes only what comes within its reach.
  */
 export function makeMonsterSpawn(at: Point, size = 0, maxAlive = 1): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'gespenst', ...at, width: size, depth: size, maxAlive };
+  return { id: 'spawn-1', kind: 'ghost', ...at, width: size, depth: size, maxAlive };
 }
 
 /** A spawn whose area, and so its monsters' home ground, is a square of side `2 * half` centred on `at`. */
 export function makeMonsterGround(at: Point, half: number, maxAlive = 1): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'gespenst', x: at.x - half, z: at.z - half, width: 2 * half, depth: 2 * half, maxAlive };
+  return { id: 'spawn-1', kind: 'ghost', x: at.x - half, z: at.z - half, width: 2 * half, depth: 2 * half, maxAlive };
 }
 
 /**
@@ -79,7 +79,7 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
   return {
     id: crypto.randomUUID(),
     name,
-    people: 'wachen',
+    people: 'vigils',
     space,
     position,
     facing: headingFromCardinal('south'),
@@ -104,12 +104,14 @@ export interface AttachPlayerOptions {
   /** What the character differs in from a fresh one: its pools and what it has grown into. */
   character?: Partial<Pick<Character, 'energy' | 'lucidity'>>;
   inventory?: InventoryRow[];
+  /** The language NPCs speak to the player in; English unless given. */
+  locale?: Locale;
 }
 
 /** Attaches a new character at `at`, on an outbox of its own unless one is given. */
 export function attachPlayer(space: SpaceActor, at: Point, name = 'tester', options: AttachPlayerOptions = {}) {
   const outbox = options.outbox ?? new ConnectionOutbox(4096);
   const character = { ...makeCharacter(at, name, options.spaceId), ...options.character };
-  space.attach(character, options.inventory ?? [], outbox, options.worldSeconds ?? 0);
+  space.attach(character, options.inventory ?? [], outbox, options.worldSeconds ?? 0, options.locale ?? 'en');
   return { outbox, character, entityId: character.id };
 }

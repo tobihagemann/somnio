@@ -4,11 +4,14 @@ import type { Placement } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
+import type { ConnectionDependencies } from '../src/connection/dependencies.ts';
 import { completeAuthenticatedJoin, handleLogin } from '../src/handlers/login.ts';
 import { handleRedeem, handleRevoke, handleRevokeOthers } from '../src/handlers/session.ts';
+import { payloads } from './support/combat.ts';
 import { collectMessages, loginResults } from './support/frames.ts';
 import { recordingLogger } from './support/logger.ts';
 import { makeAuthenticatedWorld, makeOneSectorWorld } from './support/oneSectorWorld.ts';
+import { makeNPC } from './support/sectorFactory.ts';
 import { StubSessionRepository, failingSessionRepository } from './support/stubRepositories.ts';
 
 describe('session token issuance', () => {
@@ -16,7 +19,7 @@ describe('session token issuance', () => {
     const sessions = new StubSessionRepository();
     const world = await makeOneSectorWorld({ sessions });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true, 'en');
     const messages = await collectMessages(connection.outbox);
     expect(messages.map((message) => message.tag)).toContain('loginResult');
     const token = messages.find((message) => message.tag === 'sessionToken');
@@ -30,7 +33,7 @@ describe('session token issuance', () => {
   it('a login that did not ask receives no session token', async () => {
     const world = await makeOneSectorWorld({ sessions: new StubSessionRepository() });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
     expect(tags).toContain('loginResult');
     expect(tags).not.toContain('sessionToken');
@@ -39,7 +42,7 @@ describe('session token issuance', () => {
   it('a failed token issuance still completes the join', async () => {
     const world = await makeOneSectorWorld({ sessions: failingSessionRepository });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
     expect(tags).toContain('loginResult');
     expect(tags).not.toContain('sessionToken');
@@ -52,7 +55,7 @@ describe('session token issuance', () => {
     const oversized: Placement = { id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 };
     const world = await makeOneSectorWorld({ sessions, placements: [oversized] });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true, 'en');
     const messages = await collectMessages(connection.outbox);
     expect(loginResults(messages)).toEqual(['ok', 'badCredentials']);
     const tags = messages.map((message) => message.tag);
@@ -62,7 +65,7 @@ describe('session token issuance', () => {
 
     // The router slot is released: a retry is answered `ok`, not `alreadyLoggedIn`.
     const retry = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, retry, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, retry, world.dependencies, false, 'en');
     expect(loginResults(await collectMessages(retry.outbox))[0]).toBe('ok');
   });
 
@@ -70,7 +73,7 @@ describe('session token issuance', () => {
   it('a character whose saved space the world no longer has joins at the starter spawn', async () => {
     const world = await makeOneSectorWorld({ sessions: new StubSessionRepository(), characterSpace: 'Gone' });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false, 'en');
     const messages = await collectMessages(connection.outbox);
     expect(loginResults(messages)).toEqual(['ok']);
     expect(messages[1]).toMatchObject({ tag: 'enterSpace', payload: { spaceId: STARTER_SECTOR } });
@@ -99,6 +102,39 @@ describe('session token issuance', () => {
     expect(sessions.isStored(issued.token)).toBe(true);
   });
 
+  /**
+   * NPCs speak to the connection in the language its login or resume names, and in English to one that
+   * names none. The connection keeps it for every later join, through a door or on waking.
+   */
+  const NAMED_LOCALES = [
+    [{ locale: 'de' as const }, 'de', 'Willkommen, tester!'],
+    [{}, 'en', 'Welcome, tester!'],
+  ] as const;
+  const GREETER = makeNPC('greeter', { x: 5, z: 6.5 }, 'Welcome, $name!');
+
+  async function greetingHeard(dependencies: ConnectionDependencies, connection: ConnectionActor): Promise<string[]> {
+    dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!.step(0.05);
+    return payloads(await collectMessages(connection.outbox), 'serverSay').map((line) => line.text);
+  }
+
+  it.each(NAMED_LOCALES)('a resume naming %j keeps %s and hears %j', async (named, locale, line) => {
+    const sessions = new StubSessionRepository();
+    const world = await makeOneSectorWorld({ sessions, npcs: [GREETER] });
+    const issued = await sessions.issue(world.accountId, 3600);
+    const connection = new ConnectionActor(world.dependencies);
+    await handleRedeem({ token: issued.token, ...named }, connection, world.dependencies);
+    expect(await greetingHeard(world.dependencies, connection)).toEqual([line]);
+    expect(connection.locale).toBe(locale);
+  });
+
+  it.each(NAMED_LOCALES)('a login naming %j keeps %s and hears %j', async (named, locale, line) => {
+    const world = await makeAuthenticatedWorld({ sessions: new StubSessionRepository(), name: 'tester', password: 'hunter2-long', npcs: [GREETER] });
+    const connection = new ConnectionActor(world.dependencies);
+    await handleLogin({ nickname: 'tester', password: 'hunter2-long', ...named }, connection, world.dependencies);
+    expect(await greetingHeard(world.dependencies, connection)).toEqual([line]);
+    expect(connection.locale).toBe(locale);
+  });
+
   it('a redeem that throws answers badCredentials rather than nothing', async () => {
     const world = await makeOneSectorWorld({ sessions: failingSessionRepository });
     const connection = new ConnectionActor(world.dependencies);
@@ -121,7 +157,7 @@ describe('session token issuance', () => {
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     sessions.plant('aged', world.accountId, new Date(Date.now() - 60_000));
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true, 'en');
     expect((await collectMessages(connection.outbox)).at(-1)).toEqual({ tag: 'otherSessions', payload: { count: 1 } });
   });
 
@@ -138,7 +174,7 @@ describe('session token issuance', () => {
     const { logger, records } = recordingLogger();
     const world = await makeOneSectorWorld({ sessions: failingSessionRepository, logger });
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
     expect(tags).toContain('enterSpace');
     expect(tags).not.toContain('otherSessions');
@@ -151,7 +187,7 @@ describe('session token issuance', () => {
     const world = await makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, true, 'en');
     await handleRevokeOthers(world.accountId, connection, world.dependencies);
     const messages = await collectMessages(connection.outbox);
     expect(messages.at(-1)).toEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
@@ -177,7 +213,7 @@ describe('session token issuance', () => {
     const world = await makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, connection, world.dependencies, false, 'en');
     await handleRevokeOthers(world.accountId, connection, world.dependencies);
     expect(sessions.isStored('elsewhere')).toBe(false);
   });
@@ -225,9 +261,9 @@ describe('session token issuance', () => {
   it('a second join for the same account answers alreadyLoggedIn', async () => {
     const world = await makeOneSectorWorld({ sessions: new StubSessionRepository() });
     const first = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, first, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, first, world.dependencies, false, 'en');
     const second = new ConnectionActor(world.dependencies);
-    await completeAuthenticatedJoin(world.accountId, second, world.dependencies, false);
+    await completeAuthenticatedJoin(world.accountId, second, world.dependencies, false, 'en');
     expect(loginResults(await collectMessages(second.outbox))).toEqual(['alreadyLoggedIn']);
   });
 });

@@ -34,7 +34,7 @@ import { dragContext, emptySector } from './helpers/editorFixture';
  * gesture commits.
  */
 
-const DEFAULTS: PlacementDefaults = { modelId: 'box', floorMaterialId: 'cobble', characterModelId: 'hero', monsterKind: 'gespenst' };
+const DEFAULTS: PlacementDefaults = { modelId: 'box', floorMaterialId: 'cobble', characterModelId: 'hero', monsterKind: 'ghost' };
 
 /** The press/drag location a user aiming at a sector-relative ground point would produce. */
 function viewportPoint(point: Point, ctx: DragContext): ScreenPoint {
@@ -122,9 +122,9 @@ describe('resize', () => {
   });
 
   it('writes a handle resize to the monster spawn area', () => {
-    const body = emptySector({ monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }] });
+    const body = emptySector({ monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }] });
     applyBounds({ kind: 'monsterSpawn', id: 'spawn-1' }, { x: 0.5, z: 0.5, width: 4, depth: 3 }, body);
-    expect(body.monsterSpawns[0]).toEqual({ id: 'spawn-1', kind: 'gespenst', x: 0.5, z: 0.5, width: 4, depth: 3, maxAlive: 3 });
+    expect(body.monsterSpawns[0]).toEqual({ id: 'spawn-1', kind: 'ghost', x: 0.5, z: 0.5, width: 4, depth: 3, maxAlive: 3 });
   });
 });
 
@@ -171,7 +171,7 @@ describe('placement', () => {
     expect(body.placements).toEqual([{ id: 'box-1', modelId: 'box', x: 3, z: 4, yaw: 0, elevation: 0 }]);
     expect(body.blockers).toEqual([{ id: 'blocker-1', x: 3, z: 4, width: 1, depth: 1 }]);
     expect(body.npcs).toEqual([{ id: 'npc-1', name: '', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialogScript: '' }]);
-    expect(body.monsterSpawns).toEqual([{ id: 'spawn-1', kind: 'gespenst', x: 3, z: 4, width: 1, depth: 1, maxAlive: 1 }]);
+    expect(body.monsterSpawns).toEqual([{ id: 'spawn-1', kind: 'ghost', x: 3, z: 4, width: 1, depth: 1, maxAlive: 1 }]);
     expect(body.floorPatches).toEqual([{ id: 'patch-1', floorMaterialId: 'cobble', x: 3, z: 4, width: 1, depth: 1 }]);
   });
 

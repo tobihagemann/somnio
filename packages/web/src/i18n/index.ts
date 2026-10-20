@@ -1,4 +1,4 @@
-import { ITEMS, PEOPLES, TEACHINGS, peopleLabelKey, roleLabelKey } from '@somnio/core';
+import { ITEMS, MONSTER_KINDS, PEOPLES, TEACHINGS, TRIALS, peopleLabelKey, roleLabelKey } from '@somnio/core';
 import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -67,14 +67,17 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name in the items panel, every people's name in the registration form, and every role's
- * and teaching's name in the HUD and a master's panel.
+ * item's name in the items panel, every people's name in the registration form, every role's and
+ * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, and every
+ * place a trial sends a dreamer to.
  */
 export const CORE_LABEL_KEYS: readonly string[] = [
   ...Object.values(ITEMS).map((item) => item.labelKey),
   ...PEOPLES.map(peopleLabelKey),
   ...ROLES.map(roleLabelKey),
   ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
+  ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
+  ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
 ];
 
 /**
@@ -161,8 +164,8 @@ export const RENDERED_KEYS: readonly string[] = [
   'miss',
 
   // Masters and the fallen notice
-  'Master of the Kämpfer',
-  'Master of the Heiler',
+  'Master of the Fighters',
+  'Master of the Healers',
   'You are a %1$@. %2$@ has nothing to teach you.',
   "You hold another master's trial. One trial at a time.",
   'Give up that trial',
@@ -201,12 +204,12 @@ export const RENDERED_KEYS: readonly string[] = [
   'Each rank shortens the pause between your swings.',
   'Each rank brings your balance back faster.',
   'Each rank raises your health by %@.',
-  'Holding the Mondstein, click a dreamer to tend them. Your spirit mends them while you stay close.',
+  'Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.',
   'Each rank mends more with every touch.',
-  'Holding the Mondstein, stay close to a fallen dreamer you tend to raise them.',
+  'Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.',
   'Each rank raises your spirit by %@.',
   'You have fallen',
-  'You cannot move, but you can still speak. A Heiler can draw you back.',
+  'You cannot move, but you can still speak. A Healer can draw you back.',
   '%1$@ is drawing you back: %2$@ s',
   '%1$@ are drawing you back: %2$@ s',
   'Give up',
@@ -278,7 +281,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Fullscreen',
 
   // The splash reel's dreamers
-  'Anyone up for the Nordwald?',
+  'Anyone up for the North Wood?',
   'Watch out, nightmares about!',
   'Meet me at the inn.',
 ];

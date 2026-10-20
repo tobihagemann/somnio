@@ -28,7 +28,7 @@ export async function handleRedeem(message: RedeemSessionMessage, connection: Co
     }
     // No rotation on redemption: rotating before `worldRouter.register` succeeds would invalidate the
     // credential on the first `alreadyLoggedIn` answer and break the client's bounded retry.
-    await completeAuthenticatedJoin(resolved.accountId, connection, dependencies, false, message.token);
+    await completeAuthenticatedJoin(resolved.accountId, connection, dependencies, false, message.locale ?? 'en', message.token);
   } catch (error) {
     logger.error({ error: String(error) }, 'session redemption failed');
     sendLoginResult(outbox, 'badCredentials', logger);

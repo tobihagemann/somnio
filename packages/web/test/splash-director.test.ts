@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bundledModelRegistry, dialogLine, dialogSteps } from '@somnio/core';
+import { setLocale } from '@/i18n';
 import type { Point } from '@somnio/core';
 import type { ClientEntity, RaiseProgress, SpeechBubbleRequest } from '@/client';
 import { SplashDirector } from '@/splash/director';
@@ -121,7 +122,7 @@ const REEL: SplashShot[] = [
   },
 ];
 
-/** A dreamer who falls, then lies there while a Heiler raises them. */
+/** A dreamer who falls, then lies there while a Healer raises them. */
 const RAISE_REEL: SplashShot[] = [
   {
     id: 'fall',
@@ -140,7 +141,7 @@ const RAISE_REEL: SplashShot[] = [
     camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 2.5, to: 2.5 } },
     actors: [
       { kind: 'carried', id: WALKER, path: [] },
-      { kind: 'peer', id: NEWCOMER, name: 'Heiler', at: { x: 21, z: 23 }, facing: 270, gait: 'walk', path: [{ x: 19.6, z: 22.5 }], faces: WALKER },
+      { kind: 'peer', id: NEWCOMER, name: 'Healer', at: { x: 21, z: 23 }, facing: 270, gait: 'walk', path: [{ x: 19.6, z: 22.5 }], faces: WALKER },
     ],
     beats: [
       { at: 1.5, kind: 'raise', target: WALKER, raise: { progress: 0, seconds: 5 } },
@@ -160,7 +161,14 @@ describe('the splash director', () => {
     d.director.update(FRAME);
 
     expect(d.calls[0]?.name).toBe('showSplash');
-    expect(d.named('addSector').map((call) => (call.args[0] as { name: string }).name)).toEqual(['EdariaMitte', 'Nordwald', 'Nordwiese']);
+    expect(d.named('addSector').map((call) => (call.args[0] as { name: string }).name)).toEqual([
+      'AutumnWood',
+      'EdariaSquare',
+      'NorthMeadow',
+      'NorthWood',
+      'SouthMeadow',
+      'WestMeadow',
+    ]);
     expect(d.named('placeEntity').map((call) => [(call.args[0] as ClientEntity).id, (call.args[0] as ClientEntity).condition])).toEqual([
       [WALKER, 'hale'],
       [STROLLER, 'hale'],
@@ -239,7 +247,7 @@ describe('the splash director', () => {
     d.director.restart();
     d.director.update(FRAME);
     expect(d.calls[0]?.name).toBe('showSplash');
-    expect(d.named('addSector')).toHaveLength(3);
+    expect(d.named('addSector')).toHaveLength(6);
     expect(d.director.currentShotId).toBe('first');
     expect(d.director.dipOpacity).toBe(0);
   });
@@ -266,26 +274,39 @@ describe('the splash director', () => {
     expect(d.director.currentShotId).toBe('indoors');
   });
 
-  it("greets with the first step of the NPC's own dialog, said to the dreamer who came near", () => {
-    const pugnax = splashSectors()
-      .find((sector) => sector.name === 'EdariaMitte')!
-      .npcs.find((npc) => npc.id === 'pugnax')!;
+  /** Pugnax in his hall, greeting a dreamer as the committed sector scripts him. */
+  function greeted(): SpeechBubbleRequest {
     const d = directing([
       {
         id: 'greeting',
-        space: 'outdoors',
+        space: 'EdariaFighterHall',
         seconds: 6,
         hour: 12,
-        camera: { kind: 'subject', subject: 'npc:EdariaMitte/pugnax', side: 'right', drop: 0.5, scale: { from: 2.2, to: 2.2 } },
-        actors: [{ kind: 'npc', sector: 'EdariaMitte', npc: 'pugnax' }],
-        beats: [{ at: 1, kind: 'greeting', npc: 'npc:EdariaMitte/pugnax', listener: 'Mira' }],
+        camera: { kind: 'subject', subject: 'npc:EdariaFighterHall/pugnax', side: 'right', drop: 0.5, scale: { from: 2.2, to: 2.2 } },
+        actors: [{ kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' }],
+        beats: [{ at: 1, kind: 'greeting', npc: 'npc:EdariaFighterHall/pugnax', listener: 'Mira' }],
       },
     ]);
     d.step(1.5);
+    return d.named('showSpeechBubble')[0]?.args[0] as SpeechBubbleRequest;
+  }
 
-    const bubble = d.named('showSpeechBubble')[0]?.args[0] as SpeechBubbleRequest;
-    expect(bubble.entityId).toBe('npc:EdariaMitte/pugnax');
+  it("greets with the first step of the NPC's own dialog, said to the dreamer who came near", () => {
+    const pugnax = splashSectors()
+      .find((sector) => sector.name === 'EdariaFighterHall')!
+      .npcs.find((npc) => npc.id === 'pugnax')!;
+    const bubble = greeted();
+    expect(bubble.entityId).toBe('npc:EdariaFighterHall/pugnax');
     expect(bubble.lines.join(' ')).toBe(dialogLine(dialogSteps(pugnax.dialogScript)[0]!, 'Mira'));
+  });
+
+  it('greets in the language the page reads in', () => {
+    setLocale('de');
+    try {
+      expect(greeted().lines.join(' ')).toBe('Na, Mira? Halt dich gerade, wenn du mit mir sprichst.');
+    } finally {
+      setLocale('en');
+    }
   });
 
   /** The scene runs the clock on by itself, so a shot set only once would drift out of daylight. */

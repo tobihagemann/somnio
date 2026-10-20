@@ -26,7 +26,7 @@ export interface CharacterRepository {
   persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean>;
 }
 
-export const STARTER_SECTOR = 'EdariaBibliothek';
+export const STARTER_SECTOR = 'EdariaLibrary';
 
 const CHARACTER_COLUMNS = [
   'id',

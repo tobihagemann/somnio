@@ -207,8 +207,8 @@ describe('the splash reel', () => {
   });
 
   it('starts every nightmare inside its spawn area', () => {
-    const nordwald = sectors.find((sector) => sector.name === 'Nordwald')!;
-    const area = spawnArea(nordwald, nordwald.monsterSpawns[0]!);
+    const northWood = sectors.find((sector) => sector.name === 'NorthWood')!;
+    const area = spawnArea(northWood, northWood.monsterSpawns[0]!);
     for (const shot of reel) {
       for (const actor of shot.actors) {
         if (actor.kind === 'monster' && !actor.carried) expect(rectContains(area, actor.start), actor.id).toBe(true);

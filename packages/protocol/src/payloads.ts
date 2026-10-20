@@ -47,11 +47,11 @@ export type LoginResult = (typeof LOGIN_RESULTS)[number];
 export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const;
 export type RegisterResult = (typeof REGISTER_RESULTS)[number];
 
-export const ROLES = ['kaempfer', 'heiler'] as const;
+export const ROLES = ['fighter', 'healer'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** What asking an NPC offers beyond its dialog. */
-export const NPC_SERVICES = ['kaempferMaster', 'heilerMaster', 'shopkeeper'] as const;
+export const NPC_SERVICES = ['fighterMaster', 'healerMaster', 'shopkeeper'] as const;
 export type NPCService = (typeof NPC_SERVICES)[number];
 
 /** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it. */
@@ -69,11 +69,17 @@ export type TradeKind = (typeof TRADE_KINDS)[number];
 export const SPEECH_KINDS = ['whisper', 'say', 'yell'] as const;
 export type SpeechKind = (typeof SPEECH_KINDS)[number];
 
+/** The languages a reader can read the world in. */
+export const LOCALES = ['en', 'de'] as const;
+export type Locale = (typeof LOCALES)[number];
+
 export interface LoginMessage {
   nickname: string;
   password: string;
   /** Request a resumable session token alongside a successful login. Omitting it must yield no `sessionToken` frame at all. */
   requestSessionToken?: boolean;
+  /** The language NPCs speak to this connection in; English when absent. */
+  locale?: Locale;
 }
 
 export interface RegisterMessage {
@@ -113,7 +119,7 @@ export interface SwingMessage {
   targetId?: string;
 }
 
-/** The dreamer a Heiler tends from now on; absent tends no one. */
+/** The dreamer a Healer tends from now on; absent tends no one. */
 export interface TendMessage {
   targetId?: string;
 }
@@ -161,6 +167,8 @@ export type EmptyMessage = Record<string, never>;
 /** Redeem a stored session token in place of a password login. Accepted pre-login only. */
 export interface RedeemSessionMessage {
   token: string;
+  /** As on `login`. */
+  locale?: Locale;
 }
 
 /** Revoke the token presented on this connection. Accepted post-attach only. */
@@ -320,8 +328,8 @@ export interface BlowMessage {
 
 /**
  * A raise on a fallen dreamer as it stands, whole in every frame. While `holding`, `healerIds` are
- * the Heilers holding on in the order they took hold, `progress` is the share done, and `seconds`
- * the time left at their pace. `done` and `broken` name the Heilers holding on just before the
+ * the Healers holding on in the order they took hold, `progress` is the share done, and `seconds`
+ * the time left at their pace. `done` and `broken` name the Healers holding on just before the
  * end, with `seconds` 0 and `progress` 1 when done, 0 when broken.
  */
 export interface RaisingMessage {
@@ -332,7 +340,7 @@ export interface RaisingMessage {
   seconds: number;
 }
 
-/** A Heiler's touch mended a dreamer. It carries no amount: all anyone learns of another's health is its condition. */
+/** A Healer's touch mended a dreamer. It carries no amount: all anyone learns of another's health is its condition. */
 export interface MendMessage {
   targetId: string;
 }
@@ -374,7 +382,12 @@ export function decodeLoginMessage(container: Record<string, unknown>, path: str
     nickname: requireString(container, 'nickname', path),
     password: requireString(container, 'password', path),
     ...(isAbsent(container, 'requestSessionToken') ? {} : { requestSessionToken: requireBool(container, 'requestSessionToken', path) }),
+    ...decodeOptionalLocale(container, path),
   };
+}
+
+function decodeOptionalLocale(container: Record<string, unknown>, path: string): { locale?: Locale } {
+  return isAbsent(container, 'locale') ? {} : { locale: requireStringEnum(container, 'locale', path, LOCALES) };
 }
 
 /** `people` decodes as a plain string: the list of peoples is the server's to check. */
@@ -480,7 +493,7 @@ export function decodeEmptyMessage(): EmptyMessage {
  * token with `loginResult(badCredentials)` and keeps the socket open, so the cap is its concern.
  */
 export function decodeRedeemSessionMessage(container: Record<string, unknown>, path: string): RedeemSessionMessage {
-  return { token: requireString(container, 'token', path) };
+  return { token: requireString(container, 'token', path), ...decodeOptionalLocale(container, path) };
 }
 
 /** Uncapped like its redeem twin; the server answers an over-cap token with `sessionRevoked(false)`. */

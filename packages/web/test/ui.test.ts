@@ -261,7 +261,7 @@ describe('the four floating panels', () => {
     expect(tracks.map((node) => node.getAttribute('title'))).toEqual(['Health 30/60', 'Balance 1/2', 'Spirit 5/5']);
   });
 
-  /** The canon names of the three pools, which are not translations of the English ones. */
+  /** The German names of the three pools, where health is Gestalt rather than a literal translation. */
   it('names the energy bars Gestalt, Gleichgewicht, and Geist in German', () => {
     setLocale('de');
     try {
@@ -492,7 +492,7 @@ describe('the four floating panels', () => {
   /** The shell renders on every `energy` frame, and a row replaced between two clicks never sees the double click. */
   it('keeps its rows across a render of the same inventory, and replaces them for a new one', () => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const rows = [{ slot: 0, itemId: 'mondstein', quantity: 1 }];
+    const rows = [{ slot: 0, itemId: 'moonstone', quantity: 1 }];
     const row = (): Element | null => panels.root.querySelector('.trailing-list--items .list-row');
 
     panels.renderItems(rows);
@@ -500,7 +500,7 @@ describe('the four floating panels', () => {
     panels.renderItems(rows);
     expect(row()).toBe(first);
 
-    panels.renderItems([{ slot: 0, itemId: 'mondstein', quantity: 1, equippedHand: 'right' }]);
+    panels.renderItems([{ slot: 0, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }]);
     expect(row()).not.toBe(first);
     expect(row()?.querySelector('.list-row__marker')?.textContent).toBe('[R]');
   });
@@ -895,6 +895,21 @@ describe('the login overlay across an authentication attempt', () => {
     expect(dialogVisible()).toBe(true);
   });
 
+  /** NPCs speak to the player in the language the login names, so it names the page's. */
+  it('names the page language on the login it sends', () => {
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['de-DE']);
+    try {
+      const { shell, socket } = loginShell();
+      submitLogin(shell, container);
+      socket().open();
+      socket().deliverText(encodeSomnioMessage({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } }));
+      expect(JSON.parse(socket().sent.at(-1)!)).toMatchObject({ tag: 'login', payload: { locale: 'de' } });
+    } finally {
+      languages.mockRestore();
+      setLocale('en');
+    }
+  });
+
   it('leaves the dialog open when the server rejects the credentials', () => {
     const { shell, socket, dialogVisible } = loginShell();
     submitLogin(shell, container);
@@ -1160,7 +1175,7 @@ describe('the login overlay across an authentication attempt', () => {
     socket().deliverText(encodeSomnioMessage({ tag: 'loginResult', payload: { result: 'ok' } }));
     expect(dialogVisible()).toBe(true);
 
-    socket().deliverText(encodeSomnioMessage(enterSpaceFrame('EdariaBibliothek')));
+    socket().deliverText(encodeSomnioMessage(enterSpaceFrame('EdariaLibrary')));
 
     expect(dialogVisible()).toBe(false);
     expect(shell.controller.presentedOverlay).toBeUndefined();
@@ -1300,9 +1315,9 @@ describe('the registration form validates before it sends', () => {
     const rig = registrationRig(container);
 
     expect([...rig.people.options].map((option) => [option.value, option.textContent])).toEqual([
-      ['wachen', 'Wachen'],
-      ['soporen', 'Soporen'],
-      ['umbren', 'Umbren'],
+      ['vigils', 'Vigils'],
+      ['sopors', 'Sopors'],
+      ['umbrae', 'Umbrae'],
       ['lumina', 'Lumina'],
     ]);
     expect(rig.people.labels[0]?.textContent).toBe('People:');
@@ -1316,10 +1331,10 @@ describe('the registration form validates before it sends', () => {
   it('carries the chosen people through to the register call', () => {
     const rig = registrationRig(container);
     fill(rig);
-    rig.people.value = 'umbren';
+    rig.people.value = 'umbrae';
     rig.submit();
 
-    expect(rig.lastForm()).toEqual({ nickname: 'Tester', password: 'hunter22', passwordRepeat: 'hunter22', people: 'umbren', email: 'tester@example.com' });
+    expect(rig.lastForm()).toEqual({ nickname: 'Tester', password: 'hunter22', passwordRepeat: 'hunter22', people: 'umbrae', email: 'tester@example.com' });
   });
 
   /**
@@ -1605,21 +1620,21 @@ describe('the HUD beyond its bars', () => {
 
   it.each<[string, LucidityMessage, string[]]>([
     ['a dreamer with no role', { ranks: [] }, ['No role yet']],
-    ['a dreamer on a trial', { ranks: [], task: { role: 'heiler', progress: 0 } }, ['No role yet', 'Task: 0 of 1']],
+    ['a dreamer on a trial', { ranks: [], task: { role: 'healer', progress: 0 } }, ['No role yet', 'Task: 0 of 1']],
     [
-      'a Kämpfer studying, with a task under way',
+      'a Fighter studying, with a task under way',
       {
-        role: 'kaempfer',
+        role: 'fighter',
         ranks: [{ teachingId: 'strike', rank: 1, practice: 12.9 }],
         study: 'strike',
-        task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 },
+        task: { role: 'fighter', teachingId: 'follow-through', progress: 2 },
       },
-      ['Kämpfer', 'Studying Strike: 12 of 35', 'Task: 2 of 3'],
+      ['Fighter', 'Studying Strike: 12 of 35', 'Task: 2 of 3'],
     ],
     [
-      'a Heiler studying nothing, with a task done',
-      { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 3, practice: 0 }], task: { role: 'heiler', teachingId: 'drawing-back', progress: 60 } },
-      ['Heiler', 'Studying nothing', 'Your task is done. Return to your master.'],
+      'a Healer studying nothing, with a task done',
+      { role: 'healer', ranks: [{ teachingId: 'touch', rank: 3, practice: 0 }], task: { role: 'healer', teachingId: 'drawing-back', progress: 60 } },
+      ['Healer', 'Studying nothing', 'Your task is done. Return to your master.'],
     ],
   ])('shows the role, the study, and the task of %s', (_label, lucidity, lines) => {
     const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
@@ -1644,7 +1659,7 @@ describe('the service panel', () => {
     });
     const render = (npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory = NO_ROWS, tradeLocked = false): void =>
       panel.render(npc, lucidity, inventory, tradeLocked);
-    const npc = (service: NPCService, id = 'npc:EdariaMitte/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
+    const npc = (service: NPCService, id = 'npc:EdariaFighterHall/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
     const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
     const press = (label: string): void => {
       const node = [...panel.root.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
@@ -1662,18 +1677,18 @@ describe('the service panel', () => {
     const p = mount();
     p.render(undefined, { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
-    p.render(clientEntity({ id: 'npc:EdariaBibliothek/libus', kind: 'npc' }), { ranks: [] });
+    p.render(clientEntity({ id: 'npc:EdariaLibrary/libus', kind: 'npc' }), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
   });
 
   it('offers a dreamer with no role the trial, with what it asks and the condition it is held under', () => {
     const p = mount();
-    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), { ranks: [] });
+    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(false);
     expect(p.panel.root.querySelector('h1')?.textContent).toBe('Sana');
-    expect(p.text()).toContain('Master of the Heiler');
+    expect(p.text()).toContain('Master of the Healers');
     expect(p.text()).toContain('Passing it commits you to nothing');
-    expect(p.text()).toContain('Walk to the Nordwald and come back.');
+    expect(p.text()).toContain('Walk to the North Wood and come back.');
     expect(p.text()).toContain('You cannot strike while you hold this trial.');
     p.press('Ask for the trial');
     p.press('Close');
@@ -1686,34 +1701,34 @@ describe('the service panel', () => {
     const lucidity = { ranks: [] };
     const control = (): Element | null => p.panel.root.querySelector('.service-body button');
 
-    p.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('fighterMaster'), lucidity);
     const first = control();
-    p.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('fighterMaster'), lucidity);
     expect(control()).toBe(first);
     // A master reads no inventory, so a bounty landing in the purse leaves the panel standing.
-    p.render(p.npc('kaempferMaster'), lucidity, [{ slot: 0, itemId: 'purse', quantity: 5 }]);
+    p.render(p.npc('fighterMaster'), lucidity, [{ slot: 0, itemId: 'purse', quantity: 5 }]);
     expect(control()).toBe(first);
 
-    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 0 } });
     expect(control()?.textContent).toBe('Give up the trial');
 
-    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
     const asked = control();
     expect(asked?.textContent).toBe('Ask for the trial');
     // Another master, with nothing else changed.
-    p.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('fighterMaster'), lucidity);
     expect(p.panel.root.querySelector('h1')?.textContent).toBe('Pugnax');
-    expect(p.text()).toContain('Master of the Kämpfer');
-    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    expect(p.text()).toContain('Master of the Fighters');
+    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
     p.render(undefined, lucidity);
-    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
     expect(control()).not.toBe(asked);
     expect(p.buttons()).toEqual(['Ask for the trial', 'Close']);
   });
 
   it('shows a trial under way with its progress and a way to give it up', () => {
     const p = mount();
-    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 0 } });
+    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 0 } });
     expect(p.text()).toContain('Your trial');
     expect(p.text()).toContain('Drive off a nightmare. 0 of 1');
     expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
@@ -1723,42 +1738,42 @@ describe('the service panel', () => {
 
   it('asks a dreamer who passed the trial before making them the role for good', () => {
     const p = mount();
-    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'kaempfer', progress: 1 } });
-    expect(p.text()).toContain('Become a Kämpfer?');
+    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 1 } });
+    expect(p.text()).toContain('Become a Fighter?');
     expect(p.text()).toContain('for good');
-    expect(p.buttons()).toEqual(['Not yet', 'Become a Kämpfer', 'Close']);
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Fighter', 'Close']);
     p.press('Not yet');
-    p.press('Become a Kämpfer');
+    p.press('Become a Fighter');
     expect(p.calls).toEqual(['close', 'complete']);
   });
 
   it("tells a dreamer on the other master's trial that they hold one", () => {
     const p = mount();
-    p.render(p.npc('kaempferMaster'), { ranks: [], task: { role: 'heiler', progress: 1 } });
+    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'healer', progress: 1 } });
     expect(p.text()).toContain("You hold another master's trial.");
     expect(p.buttons()).toEqual(['Give up that trial', 'Close']);
   });
 
   it('refuses a dreamer of the other role', () => {
     const p = mount();
-    p.render(p.npc('kaempferMaster'), { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] });
-    expect(p.text()).toContain('You are a Heiler. Pugnax has nothing to teach you.');
+    p.render(p.npc('fighterMaster'), { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] });
+    expect(p.text()).toContain('You are a Healer. Pugnax has nothing to teach you.');
     expect(p.buttons()).toEqual(['Close']);
   });
 
   const headings = (panel: ServicePanel): string[] => [...panel.root.querySelectorAll('h2')].map((node) => node.textContent ?? '');
 
-  it("sorts a Kämpfer's teachings by what can be done with each: studied, open to study, not yet, mastered", () => {
+  it("sorts a Fighter's teachings by what can be done with each: studied, open to study, not yet, mastered", () => {
     const p = mount();
     const lucidity: LucidityMessage = {
-      role: 'kaempfer',
+      role: 'fighter',
       ranks: [
         { teachingId: 'strike', rank: 1, practice: 12.5 },
         { teachingId: 'toughening', rank: 5, practice: 0 },
       ],
       study: 'strike',
     };
-    p.render(p.npc('kaempferMaster'), lucidity);
+    p.render(p.npc('fighterMaster'), lucidity);
     expect(p.text()).toContain('You study one teaching at a time.');
     expect(headings(p.panel)).toEqual(['You are studying', 'You can study', 'Not yet', 'Mastered']);
     expect([...p.panel.root.querySelectorAll('[data-teaching]')].map((node) => node.getAttribute('data-teaching'))).toEqual([
@@ -1781,8 +1796,8 @@ describe('the service panel', () => {
 
   it('walks a teaching earned by a task from taking the task to learning it, saying what the task is before it is taken', () => {
     const p = mount();
-    const ready: LucidityMessage = { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
-    p.render(p.npc('kaempferMaster'), ready);
+    const ready: LucidityMessage = { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
+    p.render(p.npc('fighterMaster'), ready);
     expect(p.text()).toContain('You study nothing. Choose a teaching below.');
     expect(headings(p.panel)).toEqual(['You can study', 'Earned by a task']);
     expect(p.row('follow-through')).toContain('Pugnax teaches its first rank for a task.');
@@ -1790,11 +1805,11 @@ describe('the service panel', () => {
     expect(p.row('follow-through')).toContain('Falling starts the count over.');
     p.press('Take the task');
 
-    p.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 2 } });
+    p.render(p.npc('fighterMaster'), { ...ready, task: { role: 'fighter', teachingId: 'follow-through', progress: 2 } });
     expect(p.row('follow-through')).toContain('Drive off 3 nightmares. 2 of 3');
     p.press('Give up the task');
 
-    p.render(p.npc('kaempferMaster'), { ...ready, task: { role: 'kaempfer', teachingId: 'follow-through', progress: 3 } });
+    p.render(p.npc('fighterMaster'), { ...ready, task: { role: 'fighter', teachingId: 'follow-through', progress: 3 } });
     expect(p.row('follow-through')).toContain('You did what Pugnax asked.');
     p.press('Learn Follow-through');
     expect(p.calls).toEqual(['ask:follow-through', 'abandon', 'complete']);
@@ -1803,11 +1818,11 @@ describe('the service panel', () => {
   it('holds back a second task while one is held, and says why', () => {
     const p = mount();
     const lucidity: LucidityMessage = {
-      role: 'heiler',
+      role: 'healer',
       ranks: [{ teachingId: 'touch', rank: 2, practice: 0 }],
-      task: { role: 'heiler', teachingId: 'nothing-this-client-knows', progress: 0 },
+      task: { role: 'healer', teachingId: 'nothing-this-client-knows', progress: 0 },
     };
-    p.render(p.npc('heilerMaster', 'npc:EdariaMitte/sana', 'Sana'), lucidity);
+    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
     expect(p.row('drawing-back')).toContain('Mend 60 health on other dreamers.');
     expect(p.row('drawing-back')).toContain('Finish your current task first.');
     expect(p.buttons()).not.toContain('Take the task');
@@ -1816,7 +1831,7 @@ describe('the service panel', () => {
   it('renders in German', () => {
     setLocale('de');
     const p = mount();
-    p.render(p.npc('kaempferMaster'), { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
+    p.render(p.npc('fighterMaster'), { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
     expect(headings(p.panel)).toEqual(['Das lernst du', 'Das kannst du lernen', 'Noch nicht']);
     expect(p.row('follow-through')).toContain('Braucht Schlag auf Rang 2');
   });
@@ -1870,7 +1885,7 @@ describe('the service panel', () => {
       p.render(mercus(), { ranks: [] }, [purse(40), carried('dagger', 1)]);
       expect(purseLine().textContent).toBe('Your purse40c');
       expect(purseLine().classList.contains('hidden')).toBe(false);
-      p.render(p.npc('kaempferMaster'), { ranks: [] }, [purse(40)]);
+      p.render(p.npc('fighterMaster'), { ranks: [] }, [purse(40)]);
       expect(purseLine().classList.contains('hidden')).toBe(true);
     });
 
@@ -1950,7 +1965,7 @@ describe('the fallen notice', () => {
     expect(n.visible()).toEqual(['Give up']);
   });
 
-  it('counts a raise down while one runs, naming every Heiler holding on', () => {
+  it('counts a raise down while one runs, naming every Healer holding on', () => {
     const n = mount();
     n.notice.render({ fallen: true, raise: { healerNames: ['Lumi'], secondsLeft: 4 } });
     expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 4 s');
@@ -1960,7 +1975,7 @@ describe('the fallen notice', () => {
     expect(n.notice.root.querySelector('p.hidden')?.textContent).toContain('Lumi');
   });
 
-  it('names the Heilers drawing the player back as German lists them', () => {
+  it('names the Healers drawing the player back as German lists them', () => {
     setLocale('de');
     const n = mount();
     n.notice.render({ fallen: true, raise: { healerNames: ['Lumi', 'Bren'], secondsLeft: 2 } });
@@ -2004,7 +2019,7 @@ describe('the play field and the panels through the shell', () => {
     deliver(enterSpaceFrame());
     deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
     deliver(entityFrame());
-    deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'kaempferMaster' }));
+    deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'fighterMaster' }));
     deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
     deliver({ tag: 'energy', payload: fullPools([]) });
     deliver({ tag: 'lucidity', payload: { ranks: [] } });
@@ -2077,7 +2092,7 @@ describe('the play field and the panels through the shell', () => {
 
   it('lets go of the dreamer tended on Escape, and opens the menu only on the next', () => {
     const p = playing();
-    p.deliver({ tag: 'lucidity', payload: { role: 'heiler', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
+    p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
     p.shell.session.pressAt('bren', 0);
     expect(p.shell.session.tending).toBe('bren');
 
@@ -2097,11 +2112,11 @@ describe('the play field and the panels through the shell', () => {
     expect(panel.classList.contains('hidden')).toBe(false);
 
     p.press('Ask for the trial');
-    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'kaempfer', progress: 0 } } });
+    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'fighter', progress: 0 } } });
     p.press('Give up the trial');
-    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'kaempfer', progress: 1 } } });
-    p.press('Become a Kämpfer');
-    p.deliver({ tag: 'lucidity', payload: { role: 'kaempfer', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' } });
+    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'fighter', progress: 1 } } });
+    p.press('Become a Fighter');
+    p.deliver({ tag: 'lucidity', payload: { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' } });
     expect(container.querySelector('.hud-lucidity')?.textContent).toContain('Studying Strike');
     (panel.querySelector('[data-teaching="toughening"] button') as HTMLButtonElement).click();
 

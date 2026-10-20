@@ -37,7 +37,7 @@ function body(): Sector {
       ],
       doors: [{ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } }],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 90, dialogScript: 'Hallo' }],
-      monsterSpawns: [{ id: 'spawn-1', kind: 'gespenst', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
       floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 12, z: 2, width: 3, depth: 2 }],
       spawn: { x: 6, z: 12, facing: 0 },
     },
@@ -314,17 +314,17 @@ describe("an NPC's service", () => {
     const h = harness();
     h.select([{ kind: 'npc', id: 'libus' }]);
     expect(h.picker('Service').value).toBe('');
-    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Kämpfer master', 'Heiler master', 'Shopkeeper']);
+    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Fighter master', 'Healer master', 'Shopkeeper']);
 
-    choose(h.picker('Service'), 'heilerMaster');
-    expect(h.document.sector.npcs[0]?.service).toBe('heilerMaster');
+    choose(h.picker('Service'), 'healerMaster');
+    expect(h.document.sector.npcs[0]?.service).toBe('healerMaster');
 
     choose(h.picker('Service'), '');
     // Removed, not emptied: an NPC without a service is saved without the key.
     expect('service' in h.document.sector.npcs[0]!).toBe(false);
 
     h.document.undo();
-    expect(h.picker('Service').value).toBe('heilerMaster');
+    expect(h.picker('Service').value).toBe('healerMaster');
     h.document.undo();
     expect(h.picker('Service').value).toBe('');
   });

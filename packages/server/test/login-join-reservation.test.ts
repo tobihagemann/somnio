@@ -29,7 +29,7 @@ async function joining(answer: () => Promise<Character[]>) {
   const accountId = crypto.randomUUID();
   const join = () => {
     const connection = new ConnectionActor(dependencies);
-    return { connection, done: completeAuthenticatedJoin(accountId, connection, dependencies, false) };
+    return { connection, done: completeAuthenticatedJoin(accountId, connection, dependencies, false, 'en') };
   };
   const isRegistered = () => !dependencies.worldRouter.register(new ConnectionActor(dependencies), accountId);
   return { characters, join, isRegistered };

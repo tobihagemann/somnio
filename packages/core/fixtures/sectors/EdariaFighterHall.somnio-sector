@@ -1,0 +1,167 @@
+{
+  "blockers": [
+    {
+      "depth": 0.6,
+      "id": "blocker-1",
+      "width": 0.12,
+      "x": 4.04,
+      "z": 9.64
+    },
+    {
+      "depth": 0.6,
+      "id": "blocker-2",
+      "width": 0.12,
+      "x": 6.08,
+      "z": 9.64
+    }
+  ],
+  "brightness": 85,
+  "doors": [
+    {
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-edariafighterhall",
+        "sector": "EdariaSquare"
+      }
+    }
+  ],
+  "floorMaterialId": "stone-arena",
+  "kind": "interior",
+  "npcs": [
+    {
+      "characterModelId": "fighter-master",
+      "dialogScript": "Well, $name? Stand up straight when you speak to me.---Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.---In the north the dream frays. Go and see for yourself, but do not go alone.",
+      "facing": 0,
+      "id": "pugnax",
+      "name": "Pugnax",
+      "service": "fighterMaster",
+      "x": 5.12,
+      "z": 3.2
+    }
+  ],
+  "placements": [
+    {
+      "id": "bench-1",
+      "modelId": "bench",
+      "x": 0.36,
+      "yaw": 90,
+      "z": 2
+    },
+    {
+      "id": "bench-2",
+      "modelId": "bench",
+      "x": 0.36,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "bench-3",
+      "modelId": "bench",
+      "x": 0.36,
+      "yaw": 90,
+      "z": 6
+    },
+    {
+      "id": "bench-4",
+      "modelId": "bench",
+      "x": 0.36,
+      "yaw": 90,
+      "z": 7.2
+    },
+    {
+      "id": "bench-5",
+      "modelId": "bench",
+      "x": 9.88,
+      "yaw": 90,
+      "z": 2
+    },
+    {
+      "id": "bench-6",
+      "modelId": "bench",
+      "x": 9.88,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "bench-7",
+      "modelId": "bench",
+      "x": 9.88,
+      "yaw": 90,
+      "z": 6
+    },
+    {
+      "id": "bench-8",
+      "modelId": "bench",
+      "x": 9.88,
+      "yaw": 90,
+      "z": 7.2
+    },
+    {
+      "id": "barrel-1",
+      "modelId": "barrel",
+      "x": 0.62,
+      "z": 0.6
+    },
+    {
+      "id": "barrel-2",
+      "modelId": "barrel",
+      "x": 1.58,
+      "z": 0.6
+    },
+    {
+      "id": "barrel-stack-1",
+      "modelId": "barrel-stack",
+      "x": 2.6,
+      "z": 0.4
+    },
+    {
+      "id": "chest-1",
+      "modelId": "chest",
+      "x": 4.2,
+      "z": 0.5
+    },
+    {
+      "id": "chest-2",
+      "modelId": "chest",
+      "x": 6.04,
+      "z": 0.5
+    },
+    {
+      "id": "crate-stack-1",
+      "modelId": "crate-stack",
+      "x": 8.5,
+      "z": 0.65
+    },
+    {
+      "id": "crate-stack-2",
+      "modelId": "crate-stack",
+      "x": 9.6,
+      "z": 0.65
+    },
+    {
+      "id": "keg-1",
+      "modelId": "keg",
+      "x": 8.6,
+      "z": 9.6
+    },
+    {
+      "id": "rug-1",
+      "modelId": "rug",
+      "x": 5.12,
+      "yaw": 90,
+      "z": 5.2
+    },
+    {
+      "id": "door-1",
+      "modelId": "door",
+      "x": 5.12,
+      "z": 10.145
+    }
+  ],
+  "size": {
+    "depth": 10.24,
+    "width": 10.24
+  }
+}

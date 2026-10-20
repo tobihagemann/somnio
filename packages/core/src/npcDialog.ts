@@ -1,4 +1,10 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
+import type { Locale } from '@somnio/protocol';
+import dialogJSON from '../data/dialog.json' with { type: 'json' };
+import { lookupIn, readCatalog } from './i18n/catalog.ts';
+
+/** Each step an NPC says, keyed by its English, in every language a reader reads. */
+const DIALOG = readCatalog(dialogJSON);
 
 /** Where a step names the player the NPC speaks to. */
 const NAME_TOKEN = '$name';
@@ -23,6 +29,11 @@ export function dialogSteps(dialogScript: string): string[] {
 export function dialogLine(step: string, targetName: string): string {
   // A replacer function, so a `$&` in the name is inserted as written rather than expanded.
   return step.replaceAll(NAME_TOKEN, () => targetName);
+}
+
+/** The line a step becomes when spoken to `targetName` in `locale`. A step the dialog catalog does not hold is said as written. */
+export function localizedDialogLine(step: string, locale: Locale, targetName: string): string {
+  return dialogLine(lookupIn(DIALOG, locale, step, []), targetName);
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "characterModels": [
     {
-      "id": "wachen-kaempfer",
+      "id": "dreamer",
       "model": {
         "expectedClips": [
           "Idle",
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "kraemer",
+      "id": "merchant",
       "model": {
         "expectedClips": [
           "Idle",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "kaempfer-meister",
+      "id": "fighter-master",
       "model": {
         "expectedClips": [
           "Idle",
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "gespenst",
+      "id": "ghost",
       "model": {
         "expectedClips": [
           "Flying_Idle",
@@ -427,16 +427,31 @@
           "z": -2.93
         },
         {
-          "depth": 1.88,
-          "width": 0.41,
+          "depth": 0.36,
+          "width": 0.2,
           "x": 2.64,
           "z": -0.94
+        },
+        {
+          "depth": 0.33,
+          "width": 0.2,
+          "x": 2.64,
+          "z": 0.58
         },
         {
           "depth": 0.88,
           "width": 0.56,
           "x": 2.64,
           "z": 0.91
+        }
+      ],
+      "doors": [
+        {
+          "facing": 90,
+          "id": "main",
+          "width": 1.16,
+          "x": 2.64,
+          "z": 0
         }
       ],
       "footprint": {
@@ -447,7 +462,16 @@
       "model": {
         "expectedClips": [],
         "stem": "BuildingBarracks"
-      }
+      },
+      "walkSurfaces": [
+        {
+          "depth": 1.68,
+          "height": 0.2,
+          "width": 0.31,
+          "x": 2.64,
+          "z": -0.84
+        }
+      ]
     },
     {
       "footprint": {
@@ -472,6 +496,29 @@
       }
     },
     {
+      "colliders": [
+        {
+          "depth": 4.56,
+          "width": 3.6,
+          "x": -2.56,
+          "z": -2.28
+        },
+        {
+          "depth": 1.9,
+          "width": 1.21,
+          "x": 1.04,
+          "z": -0.95
+        }
+      ],
+      "doors": [
+        {
+          "facing": 90,
+          "id": "main",
+          "width": 0.9,
+          "x": 2.25,
+          "z": 0
+        }
+      ],
       "footprint": {
         "depth": 4.56,
         "width": 5.12
@@ -806,5 +853,5 @@
       }
     }
   ],
-  "playerModel": "wachen-kaempfer"
+  "playerModel": "dreamer"
 }

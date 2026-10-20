@@ -100,7 +100,7 @@ describe('login handler over Postgres', () => {
     if (connection.state.kind === 'attached') dependencies.worldRouter.unregister(connection.state.accountId);
   });
 
-  it('a fresh login into EdariaBibliothek streams the exact join frame order', async () => {
+  it('a fresh login into EdariaLibrary streams the exact join frame order', async () => {
     // A private router, so no player another case left attached adds an entity frame.
     const own = await makeDatabaseDependencies(harness.db);
     const nickname = uniqueNickname('order');

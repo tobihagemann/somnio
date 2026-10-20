@@ -17,7 +17,7 @@ describe('session tag placement', () => {
 
   it('revokeSession is accepted after attach', async () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     expect(await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } })).toEqual({
       kind: 'keepOpen',
     });
@@ -32,7 +32,7 @@ describe('session tag placement', () => {
 
   it('revocation acknowledges even when nothing was removed', async () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } });
     expect(await collectTags(connection.outbox)).toContain('sessionRevoked');
   });
@@ -54,7 +54,7 @@ describe('session tag placement', () => {
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached('player', 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaLibrary', accountId);
     const oversized = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     const decision = await connection.dispatch({ tag: 'revokeSession', payload: { token: oversized } });
     expect(decision).toEqual({ kind: 'keepOpen' });
@@ -67,7 +67,7 @@ describe('session tag placement', () => {
     const sessions = new StubSessionRepository();
     const victim = await sessions.issue(crypto.randomUUID(), 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: victim.token } });
     const messages = await collectMessages(connection.outbox);
     expect(messages).toContainEqual({ tag: 'sessionRevoked', payload: { revoked: false } });
@@ -79,7 +79,7 @@ describe('session tag placement', () => {
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached('player', 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaLibrary', accountId);
     await connection.dispatch({ tag: 'revokeSession', payload: { token: issued.token } });
     const messages = await collectMessages(connection.outbox);
     expect(messages).toContainEqual({ tag: 'sessionRevoked', payload: { revoked: true } });
@@ -91,7 +91,7 @@ describe('session tag placement', () => {
     const accountId = crypto.randomUUID();
     await sessions.issue(accountId, 3600);
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
-    connection.markAttached('player', 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaLibrary', accountId);
     expect(await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} })).toEqual({ kind: 'keepOpen' });
     expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
   });
@@ -99,7 +99,7 @@ describe('session tag placement', () => {
   it('a revokeOtherSessions that throws answers and records an error', async () => {
     const { logger, records } = recordingLogger();
     const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions: failingSessionRepository, logger }));
-    connection.markAttached('player', 'EdariaBibliothek', crypto.randomUUID());
+    connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} });
     expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: false, count: 0 } });
     expect(records.filter((record) => record['msg'] === 'other sessions revocation failed')).toMatchObject([{ level: 50 }]);

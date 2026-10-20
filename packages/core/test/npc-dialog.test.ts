@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
-import { dialogLine, dialogLineFits, dialogSteps } from '../src/npcDialog.ts';
+import { catalogViolations, readCatalog } from '../src/i18n/catalog.ts';
+import { dialogLine, dialogLineFits, dialogSteps, localizedDialogLine } from '../src/npcDialog.ts';
+import dialogJSON from '../data/dialog.json' with { type: 'json' };
+import { loadSectorFixtures } from './support/sectorFixture.ts';
 
 const SAY = SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes;
 const NAME = SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes;
@@ -49,5 +52,31 @@ describe('dialog lines', () => {
 
   it('measures the longest line as the one spoken to a name at the identifier cap', () => {
     expect(utf8ByteLength(dialogLine(`${'a'.repeat(SAY - NAME)}$name`, 'n'.repeat(NAME)))).toBe(256);
+  });
+});
+
+describe('the dialog catalog', () => {
+  const steps = loadSectorFixtures().flatMap((sector) => sector.npcs.flatMap((npc) => dialogSteps(npc.dialogScript)));
+  const names = (line: string): number => line.split('$name').length - 1;
+
+  it('translates every step a committed NPC says', () => {
+    expect(steps.filter((step) => !Object.hasOwn(dialogJSON, step))).toEqual([]);
+  });
+
+  it.each(Object.entries(dialogJSON))('keeps %j English as its key, naming the dreamer as often in German, within the say cap', (step, { en, de }) => {
+    expect(en).toBe(step);
+    expect(names(de)).toBe(names(step));
+    expect(dialogLineFits(de)).toBe(true);
+  });
+
+  it('holds every translation to the rules of every catalog', () => {
+    expect(catalogViolations(readCatalog(dialogJSON), Object.keys(dialogJSON))).toEqual([]);
+  });
+
+  it('says a step in the language asked for, and one it does not hold as written', () => {
+    expect(localizedDialogLine('Welcome, $name!', 'de', 'Mira')).toBe('Willkommen, Mira!');
+    expect(localizedDialogLine('Welcome, $name!', 'en', 'Mira')).toBe('Welcome, Mira!');
+    expect(localizedDialogLine('Hello, $name.', 'de', 'Mira')).toBe('Hello, Mira.');
+    expect(localizedDialogLine('constructor', 'de', 'Mira')).toBe('constructor');
   });
 });

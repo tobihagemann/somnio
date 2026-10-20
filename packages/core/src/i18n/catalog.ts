@@ -1,3 +1,6 @@
+import { LOCALES } from '@somnio/protocol';
+import type { Locale } from '@somnio/protocol';
+
 /**
  * Bilingual string catalogs. Each package ships its own `{key: {en, de}}` JSON and merges what it
  * renders through `mergeCatalogs`; catalog keys are the English source strings, which is why an
@@ -5,8 +8,9 @@
  * as a raw identifier.
  */
 
-export type CatalogLocale = 'en' | 'de';
-export const CATALOG_LOCALES: readonly CatalogLocale[] = ['en', 'de'];
+/** The wire's own locales, so the one a page resolves is the one it sends. */
+export type CatalogLocale = Locale;
+export const CATALOG_LOCALES: readonly CatalogLocale[] = LOCALES;
 
 /** One locale's `key -> value` table. */
 export type LocaleTable = Record<string, string>;
@@ -80,8 +84,13 @@ export function formatTemplate(template: string, args: readonly string[]): strin
  * behaviour) cannot land in one caller and not another.
  */
 export function lookupIn(tables: CatalogTables, locale: CatalogLocale, key: string, args: readonly string[]): string {
-  const template = tables[locale][key] ?? tables.en[key] ?? key;
+  const template = entry(tables[locale], key) ?? entry(tables.en, key) ?? key;
   return args.length === 0 ? template : formatTemplate(template, [...args]);
+}
+
+/** A table's own value for `key`, so a key such as `constructor` is not read off the prototype. */
+function entry(table: LocaleTable, key: string): string | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
 }
 
 /** One catalog rule violation, as `catalogViolations` reports it. */

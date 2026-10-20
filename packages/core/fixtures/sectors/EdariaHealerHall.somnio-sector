@@ -1,0 +1,117 @@
+{
+  "blockers": [
+    {
+      "depth": 0.6,
+      "id": "blocker-1",
+      "width": 0.12,
+      "x": 2.76,
+      "z": 7.08
+    },
+    {
+      "depth": 0.6,
+      "id": "blocker-2",
+      "width": 0.12,
+      "x": 4.8,
+      "z": 7.08
+    }
+  ],
+  "brightness": 100,
+  "doors": [
+    {
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-edariahealerhall",
+        "sector": "EdariaSquare"
+      }
+    }
+  ],
+  "floorMaterialId": "wood-warm",
+  "kind": "interior",
+  "npcs": [
+    {
+      "characterModelId": "merchant",
+      "dialogScript": "Be welcome, $name. The Moonstone takes what it gives.---Whoever would heal first walks into the North Wood and comes back without striking a blow.---Only a Healer draws back the fallen. Leave no one lying.",
+      "facing": 0,
+      "id": "sana",
+      "name": "Sana",
+      "service": "healerMaster",
+      "x": 3.84,
+      "z": 2
+    }
+  ],
+  "placements": [
+    {
+      "id": "bed-1",
+      "modelId": "bed",
+      "x": 0.5,
+      "yaw": 90,
+      "z": 2
+    },
+    {
+      "id": "bed-2",
+      "modelId": "bed",
+      "x": 0.5,
+      "yaw": 90,
+      "z": 3.6
+    },
+    {
+      "id": "bed-3",
+      "modelId": "bed",
+      "x": 7.18,
+      "yaw": 270,
+      "z": 2
+    },
+    {
+      "id": "bed-4",
+      "modelId": "bed",
+      "x": 7.18,
+      "yaw": 270,
+      "z": 3.6
+    },
+    {
+      "id": "round-table-1",
+      "modelId": "round-table",
+      "x": 0.6,
+      "z": 5.4
+    },
+    {
+      "id": "round-table-2",
+      "modelId": "round-table",
+      "x": 7.08,
+      "z": 5.4
+    },
+    {
+      "elevation": 0.432,
+      "id": "candle-1",
+      "modelId": "candle",
+      "x": 0.6,
+      "z": 5.4
+    },
+    {
+      "elevation": 0.432,
+      "id": "candle-2",
+      "modelId": "candle",
+      "x": 7.08,
+      "z": 5.4
+    },
+    {
+      "id": "rug-1",
+      "modelId": "rug",
+      "x": 3.84,
+      "yaw": 90,
+      "z": 3.4
+    },
+    {
+      "id": "door-1",
+      "modelId": "door",
+      "x": 3.84,
+      "z": 7.585
+    }
+  ],
+  "size": {
+    "depth": 7.68,
+    "width": 7.68
+  }
+}

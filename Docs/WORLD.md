@@ -14,7 +14,7 @@ Somnio is **cooperative and community-first** — the world pushes players toget
 
 **Somnio** is Latin for *"I dream."*
 
-> The whole world is the dream of a single great **Sleeper** — one mind's dream, in its 500th year. Dreamers live inside it: the human-like **Wachen** and the dream-born peoples. They enter Somnio through the **Library** in Edaria, the threshold where sleeping minds arrive.
+> The whole world is the dream of a single great **Sleeper** — one mind's dream, in its 500th year. Dreamers live inside it: the human-like **Vigils** and the dream-born peoples. They enter Somnio through the **Library** in Edaria, the threshold where sleeping minds arrive.
 >
 > But the Sleeper is growing **restless**. As they stir toward waking, the dream frays at its edges, and **nightmares seep through the cracks** — that is what the monsters *are*. Edaria is the lucid heart, the calmest place, farthest from the unraveling verge. The dreamers' shared purpose: venture to the fraying edges, push the nightmares back, and **hold the dream together** — because if the Sleeper ever fully wakes, Somnio ends.
 
@@ -40,9 +40,9 @@ A dreamer wakes into the Library, finds their feet in Edaria, then ventures outw
 
 Three roles in tension, where support classes *cannot* go it alone:
 
-- **Kämpfer** (Fighter) — the front line. Faces nightmares and swings. Trains the most martial ranks. The only truly self-sufficient role — but bring friends.
-- **Heiler** (Healer) — carries the **Mondstein** (moonstone): heals the ally they tend, from close by, draining their own strength to do it. Can barely fight. Exists to keep the group breathing. Precious and rare.
-- **Mystiker** (Mystic) — *deliberately secretive* support, not a fireball-wizard. Buffs allies, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen.
+- **Fighter** — the front line. Faces nightmares and swings. Trains the most martial ranks. The only truly self-sufficient role — but bring friends.
+- **Healer** — carries the **Moonstone**: heals the ally they tend, from close by, draining their own strength to do it. Can barely fight. Exists to keep the group breathing. Precious and rare.
+- **Mystic** — *deliberately secretive* support, not a fireball-wizard. Buffs allies, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen.
 
 ## The peoples — kinds of dreamers
 
@@ -50,128 +50,129 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 | People | Root | What they are | Temperament | Aptitude lean |
 |---|---|---|---|---|
-| **die Wachen** (the Waking) | *vigilia* | Newly-arrived sleepers, still half-remembering the waking world. The everyman — and *you*, fresh through the Library gate. | curious, adaptable | none — jack-of-all |
-| **die Soporen** (the Deep) | *sopor*, deep sleep | Drowsy, stone-skinned giants born in the dream's underlevels; move as if underwater, speak rarely. | stoic, immovable | **Kämpfer** |
-| **die Umbren** (the Shadow) | *umbra* | Wispy, half-translucent folk of the shadow-verge where dream thins toward nightmare — bordering the dark without being of it. | quick, wary, perceptive | **Mystiker** |
-| **die Lumina** (the Light) | *lumen* | Soft, radiant folk of the bright high places; born to mend, communal by nature. The Mondstein feels made for their hands. | warm, selfless | **Heiler** |
+| **Vigils** (the Waking) | *vigilia* | Newly-arrived sleepers, still half-remembering the waking world. The everyman — and *you*, fresh through the Library gate. | curious, adaptable | none — jack-of-all |
+| **Sopors** (the Deep) | *sopor*, deep sleep | Drowsy, stone-skinned giants born in the dream's underlevels; move as if underwater, speak rarely. | stoic, immovable | **Fighter** |
+| **Umbrae** (the Shadow) | *umbra* | Wispy, half-translucent folk of the shadow-verge where dream thins toward nightmare — bordering the dark without being of it. | quick, wary, perceptive | **Mystic** |
+| **Lumina** (the Light) | *lumen* | Soft, radiant folk of the bright high places; born to mend, communal by nature. The Moonstone feels made for their hands. | warm, selfless | **Healer** |
 
 ## Naming convention
 
-- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Wachen*, *Soporen*, *Umbren*, *Lumina*), primordial sites. Names from before the common tongue.
-- **Vernacular German** for everyday life — roles and items (*Kämpfer*, *Heiler*, *Mystiker*, *Mondstein*) *and the lands dreamers themselves named and walk* (*Nordwald*, *Sumpfgebiet*, *Trolldorf*).
-- In-world logic: Latin is the old dream-tongue, spoken by the world's bones; German is the common tongue the dreamers brought with them. The contrast is itself lore. (*Edaria* is the inherited name of the heart — older than either.)
+- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Vigils*, *Sopors*, *Umbrae*, *Lumina*), primordial sites, and Edaria's old souls (*Libus*, *Pugnax*, *Sana*, *Mercus*, *Quieta*). Names from before the common tongue.
+- **English** for everything dreamers say — roles and items (*Fighter*, *Healer*, *Mystic*, *Moonstone*), the nightmares (*Ghost*), *and the lands dreamers themselves named and walk* (*North Wood*, *the Swamp*, *Troll Village*).
+- In-world logic: Latin is the old dream-tongue, spoken by the world's bones; English is the common tongue the dreamers brought with them. The contrast is itself lore. (*Edaria* is the inherited name of the heart — older than either.)
+- The game reads in English and in German. German translates the common tongue (Fighter is *Kämpfer*, the Moonstone the *Mondstein*, the North Wood the *Nordwald*) and leaves the Latin as it is.
 
 ## Progression, death, economy
 
 - **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush.
-- **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Heiler** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
-- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. Mercus sells four weapons (a dagger, a cudgel, a short sword, and a mace), and the harder each strikes, the more Gleichgewicht its swing spends. A dreamer carries one of each at most, and he buys them back at half price. The **Mondstein** is the Heiler's tool.
+- **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Healer** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
+- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. Mercus sells four weapons (a dagger, a cudgel, a short sword, and a mace), and the harder each strikes, the more Balance its swing spends. A dreamer carries one of each at most, and he buys them back at half price. The **Moonstone** is the Healer's tool.
 
 ## Progression — Lucidity (in detail)
 
-Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no levels**. A dreamer never outgrows the world numerically; they broaden — more ranks, more capabilities, deeper mastery of the few things their class does. And the world is **open by design**: difficulty is **monster-gated, never zone-gated**. There are no level requirements, no rank checks at a border or a door, no "you may not pass" — any dreamer can walk from the Library straight into the Nordwald on day one. What stops them is what lives there. *(Hard rule: no sector, door, or region may ever gain a rank or access gate. The nightmares are the barrier.)*
+Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no levels**. A dreamer never outgrows the world numerically; they broaden — more ranks, more capabilities, deeper mastery of the few things their class does. And the world is **open by design**: difficulty is **monster-gated, never zone-gated**. There are no level requirements, no rank checks at a border or a door, no "you may not pass" — any dreamer can walk from the Library straight into the North Wood on day one. What stops them is what lives there. *(Hard rule: no sector, door, or region may ever gain a rank or access gate. The nightmares are the barrier.)*
 
 ### The trainable triad
 
-Three trained pools, carried from the game's legacy heritage (health / balance / spirit), wearing their dream-names:
+Three trained pools, carried from the game's legacy heritage (in German Gestalt, Gleichgewicht, and Geist):
 
-- **Gestalt** (health) — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, never as a number. When Gestalt gives out, the dreamer falls (see *Death* below).
-- **Gleichgewicht** (balance) — the combat resource: footing, timing, poise. Every swing spends it, whether it meets a nightmare or the air, and so do running and being struck. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Gleichgewicht runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Kämpfer's primary pool.
-- **Geist** (spirit) — the support resource: the reach of a Heiler's Mondstein and the depth of a Mystiker's senses. Support acts drain Geist; an empty Geist is why neither can go it alone.
+- **Health** — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, never as a number. When Health gives out, the dreamer falls (see *Death* below).
+- **Balance** — the combat resource: footing, timing, poise. Every swing spends it, whether it meets a nightmare or the air, and so do running and being struck. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Balance runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Fighter's primary pool.
+- **Spirit** — the support resource: the reach of a Healer's Moonstone and the depth of a Mystic's senses. Support acts drain Spirit; an empty Spirit is why neither can go it alone.
 
 ### Acting
 
-A dreamer acts on what they point at. A swing goes the way they face, meets the nearest nightmare in reach in front of them, and slows them for a breath. Someone a dreamer comes near greets them unasked; asking brings out the rest of what they have to say, and a master's offer with it. A Heiler chooses the dreamer they **tend**, and the Mondstein mends that dreamer, or draws them back when they have fallen, for as long as the Heiler holds it and stays close. Walking into someone only stops a dreamer; nothing a dreamer does harms another.
+A dreamer acts on what they point at. A swing goes the way they face, meets the nearest nightmare in reach in front of them, and slows them for a breath. Someone a dreamer comes near greets them unasked; asking brings out the rest of what they have to say, and a master's offer with it. A Healer chooses the dreamer they **tend**, and the Moonstone mends that dreamer, or draws them back when they have fallen, for as long as the Healer holds it and stays close. Walking into someone only stops a dreamer; nothing a dreamer does harms another.
 
 ### Training
 
-A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Gestalt mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and no rank for sale: depth over rush.
+A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and no rank for sale: depth over rush.
 
 The two trials:
 
 - **Pugnax's trial** — drive off a nightmare. He sends a dreamer to the Arena to find one, and one driven off anywhere counts.
-- **Sana's trial** — walk to the Nordwald and return without striking anything. A dreamer holding it cannot swing.
+- **Sana's trial** — walk to the North Wood and return without striking anything. A dreamer holding it cannot swing.
 
-A rank's mechanical effect is a **combat or support capability** — hit harder, recover Gleichgewicht faster, heal deeper, sense further.
+A rank's mechanical effect is a **combat or support capability** — hit harder, recover Balance faster, heal deeper, sense further.
 
 ### Starter teachings (the first list each master teaches)
 
-- **Kämpfer** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Gleichgewicht recovery, and Gestalt toughening.
-- **Heiler** — Touch (the Mondstein mends the dreamer tended), Depth (each touch mends more), Drawing back (raising the fallen; its task is Gestalt mended on other dreamers), and Geist deepening.
-- **The Mystiker** — locating the fallen, buffs and wards for a group walking into the fray, plus Geist deepening. Taught obliquely; half the lesson is finding the hall open. Not in the world yet.
+- **Fighter** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Balance recovery, and Toughening.
+- **Healer** — Touch (the Moonstone mends the dreamer tended), Depth (each touch mends more), Drawing back (raising the fallen; its task is Health mended on other dreamers), and Spirit deepening.
+- **The Mystic** — locating the fallen, buffs and wards for a group walking into the fray, plus Spirit deepening. Taught obliquely; half the lesson is finding the hall open. Not in the world yet.
 
-A Heiler can mend themselves with the Mondstein, for half the practice, so a Heiler alone still grows.
+A Healer can mend themselves with the Moonstone, for half the practice, so a Healer alone still grows.
 
 ### Death as a social event (never permanent)
 
-Faithful to the heritage: when a dreamer's Gestalt gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. A yell carries far, which is how the fallen call for help. Nightmares leave the fallen alone. Two ways back:
+Faithful to the heritage: when a dreamer's Health gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. A yell carries far, which is how the fallen call for help. Nightmares leave the fallen alone. Two ways back:
 
-- **Raised in the field by a Heiler**, and by nobody else. Drawing a dreamer back takes time and a good part of a Heiler's Geist, and the Heiler has to stay with them. Several Heilers can draw a dreamer back together, sooner and sharing the Geist it costs. It breaks off and starts over only when the last of them parts. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystiker locating the fallen is how a rescue party will find them.
+- **Raised in the field by a Healer**, and by nobody else. Drawing a dreamer back takes time and a good part of a Healer's Spirit, and the Healer has to stay with them. Several Healers can draw a dreamer back together, sooner and sharing the Spirit it costs. It breaks off and starts over only when the last of them parts. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystic locating the fallen is how a rescue party will find them.
 - **Giving up** — the dreamer lets go of the venture and wakes at the inn in Edaria, weakened in all three pools and no poorer.
 
 No permadeath, ever.
 
 ### Class and registration
 
-Registration chooses a people, not a class. A dreamer grows into the Kämpfer or the Heiler by passing that master's trial and accepting, and the other master then has nothing to teach them.
+Registration chooses a people, not a class. A dreamer grows into the Fighter or the Healer by passing that master's trial and accepting, and the other master then has nothing to teach them.
 
 ## Edaria — the lucid heart
 
 Edaria is Somnio's central town: where every stranger arrives, the calmest place, the one spot the dream never frays. It is a **walled square with four gates** — north, south, east, west — each opening onto a different ring of the lands. Within its walls:
 
 - **The central well** — the heart of the heart, a fountain at the crossing of every path.
-- **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Sei gegrüßt! Diese Bibliothek ist immer noch in Arbeit. Außerdem ist das Rennen hier verboten!"* ("Be greeted! This library is still a work in progress. And running is forbidden here!")
-- **The three halls** — where the Kämpfer, Heiler, and Mystiker masters keep their doors. Until the halls open, Pugnax and Sana teach in the square.
+- **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Greetings! This library is still a work in progress. And running is forbidden in here!"*
+- **The three halls** — where the Fighter, Healer, and Mystic masters keep their doors. Pugnax teaches in the Fighters' hall, the old barracks in the south-east quarter. Sana teaches in the Healers' hall, the chapel beside the inn. The Mystic's hall has not opened.
 - **The shop & the inn** — a shop to outfit a dreamer; an inn that is the **wake-point**: a dreamer who gives up wakes here.
-- **The sealed door** — a door in Edaria's heart that no living dreamer has opened, and none can say what lies behind it. (The deepest mystery; tied to the Sleeper.)
+- **The sealed door** — the door of the keep in the south-west quarter, which no living dreamer has opened, and none can say what lies behind it. (The deepest mystery; tied to the Sleeper.)
 
 ## The lands of Somnio — a gazetteer
 
-The world radiates from Edaria in rings. The further out, the more the dream has frayed, the stranger the ground, and the stronger the nightmares — until the encircling **sea**, which is not a border but the place where the dreamed land simply *gives out*. Three of the four town gates open onto a near meadow; the **east gate opens straight into the Herbstwald** — there is no east meadow, the great wood grows right up to the wall. Everything else lies beyond.
+The world radiates from Edaria in rings. The further out, the more the dream has frayed, the stranger the ground, and the stronger the nightmares — until the encircling **sea**, which is not a border but the place where the dreamed land simply *gives out*. Three of the four town gates open onto a near meadow; the **east gate opens straight into the Autumn Wood** — there is no east meadow, the great wood grows right up to the wall. Everything else lies beyond.
 
-**How the lands connect.** The outdoors is one continuous ground. Each land is a sector (a `.somnio-sector` file; the filename stem is the sector's name) placed by its origin, and where two sectors touch a dreamer walks straight across and sees the next land before reaching it. Interiors — the Library, the shop, the inn, the Arena — are rooms of their own. Each is reached through a door on a building and left through the door inside, which sets the dreamer down in front of the one they came in by. The rings chain outward by compass geography from Edaria's four gates: **north → Nordwiese → Nordwald**, **west → Westwiese → Sumpfgebiet/Friedhof**, **south → Südwiese → Ödland → Strand**, **east → Herbstwald** (and on toward Trolldorf). No border and no door carries a rank or access check — a dreamer may walk anywhere the ground goes; the nightmares are the barrier.
+**How the lands connect.** The outdoors is one continuous ground. Each land is a sector (a `.somnio-sector` file; the filename stem is the sector's name) placed by its origin, and where two sectors touch a dreamer walks straight across and sees the next land before reaching it. Interiors — the Library, the shop, the inn, the Arena, the two halls — are rooms of their own. Each is reached through a door on a building and left through the door inside, which sets the dreamer down in front of the one they came in by. The rings chain outward by compass geography from Edaria's four gates: **north → North Meadow → North Wood**, **west → West Meadow → the Swamp/the Graveyard**, **south → South Meadow → the Wastes → the Beach**, **east → Autumn Wood** (and on toward Troll Village). Of these, the North Meadow, North Wood, West and South Meadows, and Autumn Wood are in the world. No border and no door carries a rank or access check — a dreamer may walk anywhere the ground goes; the nightmares are the barrier.
 
 **The near meadows** (the gentle ring, hugging Edaria — *Tier 1*)
-- **Nordwiese / Westwiese / Südwiese / Südwestwiese** — open grassland, the first ground a dreamer walks. Faint, almost harmless nightmares drift here.
+- **North Meadow / West Meadow / South Meadow / South-West Meadow** — open grassland, the first ground a dreamer walks. Faint, almost harmless nightmares drift here.
 
 **The forests** (the second ring — *Tier 2*)
-- **Nordwald** — dark pine forest north past the Nordwiese.
-- **Herbstwald** — a great autumn-colored wood east of Edaria, the largest near region.
-- **Südwestwald** — a long forest strip running south, toward Griswal's land.
+- **North Wood** — dark pine forest north past the North Meadow.
+- **Autumn Wood** — a great autumn-colored wood east of Edaria, the largest near region.
+- **South-West Wood** — a long forest strip running south, toward Griswal's land.
 
 **The mire & the dead** (west, where the dream rots — *Tier 3*)
-- **Sumpfgebiet** — a wide swamp of pools and reeds, with a **lake (der See)** and a **cave** sunk beneath it. The dream waterlogged and sour.
-- **Kirche & Friedhof** — a church and graveyard at the swamp's edge, a *thin place* where the dead don't rest and nightmares pool thickest.
+- **The Swamp** — a wide swamp of pools and reeds, with a **lake** and a **cave** sunk beneath it. The dream waterlogged and sour.
+- **Church & Graveyard** — a church and graveyard at the swamp's edge, a *thin place* where the dead don't rest and nightmares pool thickest.
 
 **The wilds** (organized danger — *Tier 4*)
-- **Trolldorf** — a troll settlement east beyond the Herbstwald; a warband of nightmares with a camp of their own.
-- **Rasthöhle** — a cave on the eastern road.
-- **Griswal's & the Bärenhöhle** — a lone homestead in the southwest and a bear-cave beside it.
-- **Dschungel** — dense jungle far to the east.
+- **Troll Village** — a troll settlement east beyond the Autumn Wood; a warband of nightmares with a camp of their own.
+- **Rest Cave** — a cave on the eastern road.
+- **Griswal's & the Bear Cave** — a lone homestead in the southwest and a bear-cave beside it.
+- **The Jungle** — dense jungle far to the east.
 
 **The frayed edge** (the rim, nearest the unraveling — *Tier 5*)
-- **Ödland** — barrens south of Edaria where the dream has worn through to bare nothing.
-- **Savanne → Wüste** — savanna giving way to open desert, the hot dead far-east.
-- **Strand** — the southern coast; the sea begins here.
-- **Piratenstrand** — a pirate shore at the far south; raiders washed up from beyond the dream's edge.
+- **The Wastes** — barrens south of Edaria where the dream has worn through to bare nothing.
+- **Savanna → Desert** — savanna giving way to open desert, the hot dead far-east.
+- **The Beach** — the southern coast; the sea begins here.
+- **Pirate Shore** — a pirate shore at the far south; raiders washed up from beyond the dream's edge.
 
 ## People of Edaria
 
 - **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
-- **Pugnax, the Kämpfer-Meister** — master of the fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
-- **Sana, the Heiler-Meisterin** (*sanare*, to heal) — mistress of the healers' hall; keeper of the Mondstein lore, gentle and exacting.
-- **The Mystiker** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
-- **Mercus, the shopkeeper** (*der Krämer*; *merx*, wares) — deals in weapons, from the dagger a newcomer can afford to the mace a seasoned dreamer saves for.
-- **Quieta, the innkeeper** (*die Wirtin*; *quies*, rest) — keeps the wake-point; knows every regular by their falling.
-- **The priest at the Kirche** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
+- **Pugnax, the Fighter master** — master of the Fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
+- **Sana, the Healer master** (*sanare*, to heal) — mistress of the Healers' hall; keeper of the Moonstone lore, gentle and exacting.
+- **The Mystic** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
+- **Mercus, the shopkeeper** (*merx*, wares) — deals in weapons, from the dagger a newcomer can afford to the mace a seasoned dreamer saves for.
+- **Quieta, the innkeeper** (*quies*, rest) — keeps the wake-point; knows every regular by their falling.
+- **The priest at the church** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
 - **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper, and a master for those who venture past the gentle rings.
 
 ## The nightmares — a bestiary by tier
 
 Monsters are the dream fraying, and they grow with distance from Edaria — the small→big progression the world is built around. Each should read as a *leaked piece of dread*, sharing a coherent visual language distinct from the dreamers. The tiers track the gazetteer:
 
-- **Tier 1 — the Shallows** (Arena, near meadows): the **Gespenst** (ghost) a dreamer first meets in the Arena; faint wisps and drifting dreads.
-- **Tier 2 — the Forests**: beasts the dream shaped wrong — wolves, boars, a *Waldschrat* (forest bogey).
-- **Tier 3 — the Mire & the Dead** (Sumpfgebiet, Friedhof): swamp-things (a giant ant, a *Sumpfpilz* mushroom-horror) and restless undead — skeletons and stronger Gespenster where the dead won't lie still.
-- **Tier 4 — the Wilds** (Trolldorf, caves, jungle): bigger, organized threats — **trolls**, a cave **bear**, jungle predators.
-- **Tier 5 — the Frayed Edge** (Ödland, Wüste, Piratenstrand): the harshest — desert horrors, **pirates** raiding from beyond the rim, and whatever leaks straight from the waking void where the dream gives out.
+- **Tier 1 — the Shallows** (Arena, near meadows): the **Ghost** a dreamer first meets in the Arena; faint wisps and drifting dreads.
+- **Tier 2 — the Forests**: beasts the dream shaped wrong — wolves, boars, a forest bogey.
+- **Tier 3 — the Mire & the Dead** (the Swamp, the Graveyard): swamp-things (a giant ant, a swamp-mushroom horror) and restless undead — skeletons and stronger Ghosts where the dead won't lie still.
+- **Tier 4 — the Wilds** (Troll Village, caves, jungle): bigger, organized threats — **trolls**, a cave **bear**, jungle predators.
+- **Tier 5 — the Frayed Edge** (the Wastes, the Desert, Pirate Shore): the harshest — desert horrors, **pirates** raiding from beyond the rim, and whatever leaks straight from the waking void where the dream gives out.

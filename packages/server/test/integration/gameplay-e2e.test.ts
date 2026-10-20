@@ -28,16 +28,16 @@ const LIBUS = `npc:${STARTER_SECTOR}/libus`;
 let harness: DatabaseHarness;
 let server: TestServer;
 const world = fixtureWorld();
-const bibliothek = world.spaces.get(STARTER_SECTOR)!.sectors[0]!;
-const mitte = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'EdariaMitte')!;
+const librarySector = world.spaces.get(STARTER_SECTOR)!.sectors[0]!;
+const square = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'EdariaSquare')!;
 const libraryExit = resolveDoor(
-  bibliothek,
-  bibliothek.doors.find((door) => door.id === 'exit')!,
+  librarySector,
+  librarySector.doors.find((door) => door.id === 'exit')!,
   world.registry,
 )!;
 const townhallDoor = resolveDoor(
-  mitte,
-  mitte.doors.find((door) => door.id === 'to-edariabibliothek')!,
+  square,
+  square.doors.find((door) => door.id === 'to-edarialibrary')!,
   world.registry,
 )!;
 
@@ -82,7 +82,7 @@ describe('gameplay end to end', () => {
     const joined = await joinFreshPlayer(server.url, 'fresh');
     expect(joined.join.map((message) => message.tag).slice(0, 7)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
     expect(joined.spaceId).toBe(STARTER_SECTOR);
-    expect(selfPosition(joined)).toEqual({ x: bibliothek.spawn!.x, z: bibliothek.spawn!.z });
+    expect(selfPosition(joined)).toEqual({ x: librarySector.spawn!.x, z: librarySector.spawn!.z });
     const enter = joined.join[1]!;
     const worldSeconds = enter.tag === 'enterSpace' ? enter.payload.worldSeconds : Number.NaN;
     // The clock was loaded from the database and has only run forward since the boot.
@@ -113,7 +113,7 @@ describe('gameplay end to end', () => {
     const { target: enter } = await walker.client.until('enterSpace');
     expect(enter).toMatchObject({ tag: 'enterSpace', payload: { spaceId: OUTDOOR_SPACE_ID, selfId: walker.entityId } });
     const arrival = await drainFrames(walker.client);
-    expect(arrival.flatMap((message) => (message.tag === 'sector' ? [message.payload.sector.name] : []))).toContain('EdariaMitte');
+    expect(arrival.flatMap((message) => (message.tag === 'sector' ? [message.payload.sector.name] : []))).toContain('EdariaSquare');
     const self = arrival.find((message) => message.tag === 'entity' && message.payload.id === walker.entityId);
     expect(self).toMatchObject({ payload: { x: townhallDoor.arrival.x, z: townhallDoor.arrival.z, facing: townhallDoor.facing } });
     const { target: leave } = await stayer.client.until('leave');
@@ -126,7 +126,7 @@ describe('gameplay end to end', () => {
     const cheat = await joinFreshPlayer(server.url, 'cheat');
     const spawn = selfPosition(cheat);
     // The far corner is more than the 7.5 m a full movement allowance covers, whatever stands in between.
-    const corner = { x: bibliothek.size.width - SOMNIO_CONSTANTS.playerRadius, z: bibliothek.size.depth - SOMNIO_CONSTANTS.playerRadius };
+    const corner = { x: librarySector.size.width - SOMNIO_CONSTANTS.playerRadius, z: librarySector.size.depth - SOMNIO_CONSTANTS.playerRadius };
     expect(distance(spawn, corner)).toBeGreaterThan(7.5);
     cheat.client.send(frame({ tag: 'move', payload: { ...corner, facing: 0, gait: 'run' } }));
     cheat.client.send(frame({ tag: 'useDoor', payload: { sector: STARTER_SECTOR, doorId: 'exit' } }));
@@ -140,7 +140,7 @@ describe('gameplay end to end', () => {
   });
 
   it('an NPC greets the player who comes within speaking distance, answers their talk with its next line, and says none to one who asks from afar', async () => {
-    const libus = bibliothek.npcs.find((npc) => npc.id === 'libus')!;
+    const libus = librarySector.npcs.find((npc) => npc.id === 'libus')!;
     const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.npcInteractionRadius);
     const talker = await joinFreshPlayerAt(server, 'talker', { space: STARTER_SECTOR, position: beside });
     const line = (step: number) => ({

@@ -106,9 +106,9 @@ export class GameplaySession {
   winded = false;
   /** The NPC whose service panel is open. It does not close the input gate: the player walks away from it. */
   servicePanel: ClientEntity | undefined;
-  /** The dreamer a Heiler chose to tend, as the server was last told. */
+  /** The dreamer a Healer chose to tend, as the server was last told. */
   tending: string | undefined;
-  /** The raise being given to the fallen player: the Heilers holding on, and the whole seconds left. */
+  /** The raise being given to the fallen player: the Healers holding on, and the whole seconds left. */
   raise: { healerNames: string[]; secondsLeft: number } | undefined;
 
   /**
@@ -237,7 +237,7 @@ export class GameplaySession {
 
   /**
    * What a left click at an entity, or at none, would do. An NPC is asked to go on from within
-   * speaking distance, and from further away the click does nothing. A Heiler's click at another dreamer
+   * speaking distance, and from further away the click does nothing. A Healer's click at another dreamer
    * tends them. Everything else is a swing toward the cursor.
    */
   clickAction(entityId: string | undefined): ClickAction | undefined {
@@ -245,7 +245,7 @@ export class GameplaySession {
     if (self === undefined || !this.acting) return undefined;
     const entity = entityId === undefined ? undefined : this.controller.entities.get(entityId);
     if (entity?.kind === 'npc') return withinSpeakingDistance(self.position, entity.position) ? 'talk' : undefined;
-    if (entity?.kind === 'peer' && this.lucidity.role === 'heiler') return 'tend';
+    if (entity?.kind === 'peer' && this.lucidity.role === 'healer') return 'tend';
     return 'swing';
   }
 
@@ -419,7 +419,7 @@ export class GameplaySession {
 
   /**
    * Double-click activation. A weapon toggles equip in its fixed hand — the player never picks
-   * one — and the purse reports its balance to the chat log rather than equipping. The Mondstein
+   * one — and the purse reports its balance to the chat log rather than equipping. The Moonstone
    * is taken in that same hand, which puts the weapon away, and used once it is there.
    */
   activateInventoryRow(row: InventoryRowMessage): void {
@@ -433,7 +433,7 @@ export class GameplaySession {
       case 'purse' satisfies ItemId:
         this.controller.appendChat({ kind: 'purseBalance', coins: row.quantity });
         return;
-      case 'mondstein' satisfies ItemId:
+      case 'moonstone' satisfies ItemId:
         if (row.equippedHand === 'right') this.send({ tag: 'useItem', payload: { slot: row.slot } });
         else this.send({ tag: 'equipToggle', payload: { slot: row.slot, hand: 'right' } });
         return;
@@ -576,8 +576,8 @@ export class GameplaySession {
   }
 
   /**
-   * The scene shows every raise as it stands. A Heiler is told when a raise they hold on to is
-   * done, and when they lose hold of it while still tending the dreamer with the Mondstein in hand.
+   * The scene shows every raise as it stands. A Healer is told when a raise they hold on to is
+   * done, and when they lose hold of it while still tending the dreamer with the Moonstone in hand.
    * The dreamer being raised is shown who draws them back and for how long, and told when it is
    * done or breaks.
    */
@@ -591,7 +591,7 @@ export class GameplaySession {
       const holding = state === 'holding' && named;
       if (state === 'done') {
         if (named) this.controller.appendChat({ kind: 'raisedOther', targetName });
-      } else if (this.heldRaises.has(targetId) && !holding && this.tending === targetId && itemInHand(this.inventory) === ('mondstein' satisfies ItemId)) {
+      } else if (this.heldRaises.has(targetId) && !holding && this.tending === targetId && itemInHand(this.inventory) === ('moonstone' satisfies ItemId)) {
         // Still tending with the stone in hand, so they did not let go. Letting go clears `tending`, and
         // so does a fall, whose `condition` comes a step before the drop. Putting the stone away keeps
         // `tending`, but its `inventory` frame also comes before the drop.
@@ -607,7 +607,7 @@ export class GameplaySession {
       this.raiseEndsAtMs = this.now() + raising.seconds * 1000;
       this.raise = { healerNames: names, secondsLeft: Math.ceil(raising.seconds) };
     } else {
-      // The names kept from the last snapshot, which held the same Heilers: one who left is out of view by now.
+      // The names kept from the last snapshot, which held the same Healers: one who left is out of view by now.
       const healerNames = this.raise?.healerNames ?? names;
       this.raise = undefined;
       this.controller.appendChat({ kind: state === 'done' ? 'raised' : 'raiseBroken', healerNames });

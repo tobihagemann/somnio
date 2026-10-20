@@ -62,17 +62,17 @@ describe('clip preference chains', () => {
 });
 
 describe('one-shot clips', () => {
-  /** What the player's model and the Gespenst carry, as the registry expects of each. */
-  const WACHEN = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Interact'];
-  const GESPENST = ['Flying_Idle', 'Death', 'HitReact', 'Punch'];
+  /** What the player's model and the Ghost carry, as the registry expects of each. */
+  const DREAMER = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Interact'];
+  const GHOST = ['Flying_Idle', 'Death', 'HitReact', 'Punch'];
 
   it.each([
     ['fallen', 'Death_A', 'Death'],
     ['swing', 'Interact', 'Punch'],
     ['flinch', 'Hit_A', 'HitReact'],
-  ] as const)('resolves %s to %s on a dreamer and %s on a Gespenst', (oneShot, dreamer, ghost) => {
-    expect(resolveOneShotClipName(oneShot, WACHEN)).toBe(dreamer);
-    expect(resolveOneShotClipName(oneShot, GESPENST)).toBe(ghost);
+  ] as const)('resolves %s to %s on a dreamer and %s on a Ghost', (oneShot, dreamer, ghost) => {
+    expect(resolveOneShotClipName(oneShot, DREAMER)).toBe(dreamer);
+    expect(resolveOneShotClipName(oneShot, GHOST)).toBe(ghost);
   });
 
   /** An event has no fallback: a model without the clip keeps the pose it is looping. */

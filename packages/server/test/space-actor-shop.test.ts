@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Character, InventoryRow, Point, Sector } from '@somnio/core';
-import { CUDGEL_IN_HAND, MONDSTEIN_IN_HAND, PURSE, arena, characterOf, energy, lucidity, payloads } from './support/combat.ts';
+import { CUDGEL_IN_HAND, MOONSTONE_IN_HAND, PURSE, arena, characterOf, energy, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeNPC } from './support/sectorFactory.ts';
 
@@ -12,7 +12,7 @@ const AT_PUGNAX: Point = { x: 16, z: 5 };
 const SHOP_FLOOR: Partial<Sector> = {
   npcs: [
     { ...makeNPC('mercus', { x: 4, z: 4 }, ''), service: 'shopkeeper' },
-    { ...makeNPC('pugnax', { x: 16, z: 4 }, ''), service: 'kaempferMaster' },
+    { ...makeNPC('pugnax', { x: 16, z: 4 }, ''), service: 'fighterMaster' },
   ],
 };
 
@@ -49,7 +49,7 @@ describe('buying from the shopkeeper', () => {
     ['by a fallen dreamer', AT_MERCUS, MERCUS, 'dagger', { character: { energy: energy({ healthCurrent: 0 }) } }],
     ['at a master', AT_PUGNAX, PUGNAX, 'dagger', {}],
     ['of the purse', AT_MERCUS, MERCUS, 'purse', {}],
-    ['of the Mondstein', AT_MERCUS, MERCUS, 'mondstein', {}],
+    ['of the Moonstone', AT_MERCUS, MERCUS, 'moonstone', {}],
     ['of an item nobody sells', AT_MERCUS, MERCUS, 'lantern', {}],
     ['of a weapon already carried', AT_MERCUS, MERCUS, 'cudgel', {}],
     ['for a purse too short', AT_MERCUS, MERCUS, 'sword', {}],
@@ -82,7 +82,7 @@ describe('selling to the shopkeeper', () => {
     ['from beyond speaking distance', { x: 4, z: 6.1 }, MERCUS, 'cudgel', [PURSE, CUDGEL_IN_HAND]],
     ['at a master', AT_PUGNAX, PUGNAX, 'cudgel', [PURSE, CUDGEL_IN_HAND]],
     ['of the purse', AT_MERCUS, MERCUS, 'purse', [PURSE, CUDGEL_IN_HAND]],
-    ['of the Mondstein', AT_MERCUS, MERCUS, 'mondstein', [PURSE, MONDSTEIN_IN_HAND]],
+    ['of the Moonstone', AT_MERCUS, MERCUS, 'moonstone', [PURSE, MOONSTONE_IN_HAND]],
     ['of a weapon not carried', AT_MERCUS, MERCUS, 'mace', [PURSE, CUDGEL_IN_HAND]],
   ])('changes nothing and sends nothing %s', async (_label, at, npcId, itemId, inventory) => {
     const s = shop(at, { inventory });
@@ -99,12 +99,12 @@ describe('selling to the shopkeeper', () => {
 });
 
 describe('the shopkeeper', () => {
-  const passed: Partial<Character> = { lucidity: lucidity(undefined, {}, { task: { role: 'kaempfer', teachingId: undefined, progress: 1 } }) };
+  const passed: Partial<Character> = { lucidity: lucidity(undefined, {}, { task: { role: 'fighter', teachingId: undefined, progress: 1 } }) };
 
   it.each<[string, Partial<Character>, (space: Shop['world']['space'], entityId: string) => void]>([
     ['sets no trial', {}, (space, entityId) => space.handleAskTask(MERCUS, undefined, entityId)],
     ['takes no trial as done', passed, (space, entityId) => space.handleCompleteTask(MERCUS, entityId)],
-    ['sets no teaching to study', { lucidity: lucidity('kaempfer', { strike: 1 }) }, (space, entityId) => space.handleStudy(MERCUS, 'guard', entityId)],
+    ['sets no teaching to study', { lucidity: lucidity('fighter', { strike: 1 }) }, (space, entityId) => space.handleStudy(MERCUS, 'guard', entityId)],
   ])('%s', (_label, character, request) => {
     const s = shop(AT_MERCUS, { character });
     const before = characterOf(s.world.space, s.dreamer.entityId).lucidity;

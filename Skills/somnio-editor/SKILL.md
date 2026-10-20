@@ -21,6 +21,9 @@ mkdir -p sectors && cp packages/core/fixtures/sectors/*.somnio-sector sectors/
 npm ci && npm run editor --workspace packages/web
 ```
 
+The copy only adds files. A staging directory seeded before a fixture rename still holds the old
+stems, and an old outdoor sector overlaps its renamed copy, so delete the old stems.
+
 `npm run editor` opens `http://localhost:17669/editor.html` and sets `SOMNIO_EDITOR_SECTORS_DIR`
 (default: the repo-root `sectors/`). That variable is the load-bearing part, since it is both the
 gate and the root of the file API. A bare `npm run dev --workspace packages/web` never mounts it,
@@ -56,8 +59,8 @@ Gate every wait on a predicate over it, not a sleep:
 agent-browser open 'http://localhost:17669/editor.html'
 agent-browser wait --fn 'window.somnioEditor !== undefined && window.somnioEditor.overlay() === "sectorPicker"'
 agent-browser snapshot -i        # tool palette, inspector, picker rows are real DOM with refs
-agent-browser eval 'const b=[...document.querySelectorAll("button")]; b.find(x=>x.textContent==="EdariaMitte").click(); "ok"'
-agent-browser wait --fn 'window.somnioEditor.sectorName() === "EdariaMitte"'
+agent-browser eval 'const b=[...document.querySelectorAll("button")]; b.find(x=>x.textContent==="EdariaSquare").click(); "ok"'
+agent-browser wait --fn 'window.somnioEditor.sectorName() === "EdariaSquare"'
 agent-browser eval 'window.somnioEditor.placeholderObjectCount()'   # 0 = real models resolved
 ```
 
@@ -104,8 +107,8 @@ absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
   something solid (an NPC included). A door that arrives within a nightmare's reach of a monster
   spawn's area is reported too, though it stays live. So are walk surfaces of two placements that
   overlap, an `elevation` on a model with walk surfaces, and an unmapped model. Two things the server logs
-  at boot are not among them: an `EdariaInn` without a spawn, and a missing `Nordwald`, which
-  the Heiler trial names.
+  at boot are not among them: an `EdariaInn` without a spawn, and a missing `NorthWood`, which
+  the Healer trial names.
 - Doors, NPCs, and monster spawns carry a text label (`<door id> -> <sector>/<door>`, the
   NPC's name, `<kind> x<maxAlive>`). The labels are DOM elements (`.editor-label`,
   `.editor-label--issue` in red), so `agent-browser snapshot` sees them.

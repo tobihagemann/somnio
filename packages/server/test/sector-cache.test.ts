@@ -28,14 +28,14 @@ describe('loadSectorCache', () => {
   it('reads every shipped sector and keys by bare filename', () => {
     const sectors = loadSectorCache(DEV_SECTORS_DIRECTORY);
     expect([...sectors.keys()]).toEqual([...SECTOR_FIXTURE_NAMES]);
-    const bibliothek = sectors.get('EdariaBibliothek');
-    expect(bibliothek?.name).toBe('EdariaBibliothek');
-    expect(bibliothek?.kind).toBe('interior');
+    const library = sectors.get('EdariaLibrary');
+    expect(library?.name).toBe('EdariaLibrary');
+    expect(library?.kind).toBe('interior');
   });
 
   it('returns one entry per loaded sector', () => {
     const sectors = loadSectorCache(DEV_SECTORS_DIRECTORY);
-    expect(sectors.size).toBe(7);
+    expect(sectors.size).toBe(12);
     expect(sectors.get('EdariaArena')?.monsterSpawns.length).toBe(1);
   });
 
@@ -84,7 +84,7 @@ describe('loadSectorCache', () => {
     const directory = mkdtempSync(join(tmpdir(), 'sector-cache-'));
     try {
       // A stale extension-less file must be skipped, not loaded.
-      writeFileSync(join(directory, 'EdariaMitte'), Buffer.from([0]));
+      writeFileSync(join(directory, 'EdariaSquare'), Buffer.from([0]));
       expect(loadSectorCache(directory).size).toBe(0);
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -104,7 +104,15 @@ describe('loadWorld', () => {
   it('loads the shipped sectors over the shipped registry with nothing to report', () => {
     const world = loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
     expect(world.issues).toEqual([]);
-    expect([...world.spaces.keys()]).toEqual([OUTDOOR_SPACE_ID, 'EdariaArena', 'EdariaBibliothek', 'EdariaInn', 'EdariaShop']);
+    expect([...world.spaces.keys()]).toEqual([
+      OUTDOOR_SPACE_ID,
+      'EdariaArena',
+      'EdariaFighterHall',
+      'EdariaHealerHall',
+      'EdariaInn',
+      'EdariaLibrary',
+      'EdariaShop',
+    ]);
     expect(world.starterSpawn).toMatchObject({ space: STARTER_SECTOR });
   });
 
@@ -112,9 +120,9 @@ describe('loadWorld', () => {
     expect(ruleSectorIssues(loadSectorCache(DEV_SECTORS_DIRECTORY))).toEqual([]);
     expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn')))).toEqual([
       'sector EdariaInn has no spawn to wake at',
-      'the heiler trial names sector Nordwald, which is not loaded',
+      'the healer trial names sector NorthWood, which is not loaded',
     ]);
-    expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } }), makeSector('Nordwald')))).toEqual([]);
+    expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } }), makeSector('NorthWood')))).toEqual([]);
   });
 
   it('carries the starter spawn in the coordinates of its space', () => {

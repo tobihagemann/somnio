@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 12,
+  helloVersion: 13,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
@@ -41,7 +41,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxSectorBlockers: 4096,
   maxSectorDoors: 4096,
   maxSectorFloorPatches: 4096,
-  /** The most Heilers who hold one raise at once, which bounds the list a `raising` frame names. */
+  /** The most Healers who hold one raise at once, which bounds the list a `raising` frame names. */
   maxRaiseHealers: 32,
   /** The most rows an `inventory` frame carries, generous over the handful of items a dreamer holds. */
   maxInventoryRows: 32,

@@ -255,15 +255,15 @@ describe('file API round trips', () => {
         puts.push({ url, body: typeof init.body === 'string' ? init.body : '' });
         return new Response(null, { status: 204 });
       }
-      return new Response(readSectorFixture('EdariaMitte'), { status: 200 });
+      return new Response(readSectorFixture('EdariaSquare'), { status: 200 });
     });
     const document = new EditorDocument();
-    await document.load('EdariaMitte');
+    await document.load('EdariaSquare');
     await document.save();
     expect(puts.length).toBe(1);
-    expect(puts[0]?.url).toContain('/__editor/sectors/EdariaMitte');
+    expect(puts[0]?.url).toContain('/__editor/sectors/EdariaSquare');
     // An unedited save writes the exact committed bytes — the codec check under real use.
-    expect(puts[0]?.body).toBe(readSectorFixture('EdariaMitte'));
+    expect(puts[0]?.body).toBe(readSectorFixture('EdariaSquare'));
   });
 
   it('saveAs writes the new name and leaves the original in place', async () => {

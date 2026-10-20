@@ -123,6 +123,39 @@ describe('speech carries by distance', () => {
     expect(crumbled[0]!.text).toContain('...');
     expect(await heard(far.outbox)).toEqual([]);
   });
+
+  /** A step the dialog catalog translates, so a German listener hears its German. */
+  const STEP = 'Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.';
+  const GERMAN = 'Wer bei mir lernen will, vertreibt erst ein Gespenst. In der Arena findest du welche. Danach reden wir.';
+
+  it('says an NPC line to each listener in their own language, crumbling it as for one listener of that language', async () => {
+    const guard: Point = { x: 10, z: 10 };
+    const { space } = speechSpace(makeSectorLine({ west: { npcs: [makeNPC('guard', guard, STEP)] } }));
+    const greeted = attachPlayer(space, { x: 10, z: 11.5 }, 'alice', { locale: 'de' });
+    const english = attachPlayer(space, { x: 13, z: 10 });
+    const nearer = attachPlayer(space, { x: 17, z: 10 }, 'nearer', { locale: 'de' });
+    const further = attachPlayer(space, { x: 20, z: 10 }, 'further', { locale: 'de' });
+
+    space.step(0.05);
+
+    expect((await heard(greeted.outbox)).map((line) => line.text)).toEqual([GERMAN]);
+    expect((await heard(english.outbox)).map((line) => line.text)).toEqual([STEP]);
+    const words = async (outbox: ConnectionOutbox) => (await heard(outbox))[0]!.text.split(' ').filter((word) => word !== '...');
+    const [near, far] = [await words(nearer.outbox), await words(further.outbox)];
+    expect(near.every((word) => GERMAN.split(' ').includes(word))).toBe(true);
+    expect(far.every((word) => near.includes(word))).toBe(true);
+    expect(far.length).toBeLessThan(near.length);
+  });
+
+  it('never translates what a dreamer says, even a line the dialog catalog holds', async () => {
+    const { space } = speechSpace();
+    const speaker = attachPlayer(space, { x: 5, z: 10 });
+    const listener = attachPlayer(space, { x: 6, z: 10 }, 'listener', { locale: 'de' });
+
+    space.handleSay(say(STEP), speaker.entityId);
+
+    expect((await heard(listener.outbox)).map((line) => line.text)).toEqual([STEP]);
+  });
 });
 
 describe('a yell heard through a door', () => {
@@ -131,7 +164,7 @@ describe('a yell heard through a door', () => {
     const nearer = attachPlayer(space, { x: 14, z: 10 });
     const other = attachPlayer(space, { x: 5, z: 10 });
 
-    space.hearThroughDoors({ voice: { entityId: 'saibot', name: 'Saibot', kind: 'yell', text: LINE }, rolls: [] }, [
+    space.hearThroughDoors({ voice: { entityId: 'saibot', name: 'Saibot', kind: 'yell', line: { words: LINE } }, rolls: [] }, [
       { spaceId: OUTDOOR_SPACE_ID, source: { x: 5, z: 10 }, baseMetres: 50 },
       { spaceId: OUTDOOR_SPACE_ID, source: { x: 15, z: 10 }, baseMetres: 44 },
     ]);

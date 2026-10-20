@@ -8,6 +8,7 @@ import type {
   Gait,
   Hand,
   InventoryMessage,
+  Locale,
   LucidityMessage,
   MoveMessage,
   NPCService,
@@ -34,7 +35,6 @@ import {
   canStand,
   conditionOf,
   crumble,
-  dialogLine,
   dialogSteps,
   distance,
   gaitMetresPerSecond,
@@ -46,6 +46,7 @@ import {
   isLegalMove,
   isTeachingId,
   itemInHand,
+  localizedDialogLine,
   masterRole,
   maxPools,
   mendAmount,
@@ -105,6 +106,8 @@ interface PlayerSlot {
   character: Character;
   inventory: InventoryRow[];
   outbox: ConnectionOutbox;
+  /** The language NPCs speak to this player in. */
+  locale: Locale;
   gait: Gait;
   /** The sector the player stands in, which decides what they are sent. */
   sector: string;
@@ -127,18 +130,18 @@ interface PlayerSlot {
   /** Nightmares leave the dreamer alone until this moment. */
   graceUntil: number;
   condition: Condition;
-  /** The raise this fallen dreamer is being given, by every Heiler holding on. */
+  /** The raise this fallen dreamer is being given, by every Healer holding on. */
   raise: Raise | undefined;
-  /** The dreamer a Heiler chose to tend: mended, or raised, whenever the Mondstein reaches them. */
+  /** The dreamer a Healer chose to tend: mended, or raised, whenever the Moonstone reaches them. */
   tending: string | undefined;
 }
 
 interface Raise {
-  /** The pace-seconds done, up to the raise time: each Heiler holding on adds one a second. */
+  /** The pace-seconds done, up to the raise time: each Healer holding on adds one a second. */
   work: number;
-  /** The Heilers holding on, in the order they took hold. */
+  /** The Healers holding on, in the order they took hold. */
   holders: string[];
-  /** Each Heiler who has held on, also after they dropped out: the seconds held and the spirit paid for them. */
+  /** Each Healer who has held on, also after they dropped out: the seconds held and the spirit paid for them. */
   shares: Map<string, { seconds: number; charged: number }>;
 }
 
@@ -201,14 +204,16 @@ interface Voice {
   entityId: string;
   name: string;
   kind: SpeechKind;
-  text: string;
+  /** A dreamer's words as said, or the step of its script an NPC says to a dreamer, which each listener hears in their own language. */
+  line: { words: string } | { step: string; targetName: string };
 }
 
 /**
  * A line as said once. Every listener's crumble of it draws on the same `rolls`, each drawn when the
  * first listener needs it. So one who hears it less clearly misses every word a clearer one missed,
  * and listeners who pool what they heard learn no more than the clearest of them, except words a
- * cut to the say cap took from that one's end.
+ * cut to the say cap took from that one's end. That holds among listeners who hear it in one
+ * language: an NPC's line in two languages is two texts, whose words the same rolls pick apart.
  */
 interface Utterance {
   voice: Voice;
@@ -286,7 +291,7 @@ const HOME_PROGRESS_METRES = 0.01;
 const STOP_SLACK = 0.01;
 /** The turns off the bearing to its goal, in degrees, that a nightmare tries on each side when the straight step is blocked. */
 const STEER_DEGREES = [30, 60, 90];
-/** How far a Heiler's seconds held may fall short of the next whole unit of spirit and still be charged it. A sum of step times lands a rounding error under the exact figure. */
+/** How far a Healer's seconds held may fall short of the next whole unit of spirit and still be charged it. A sum of step times lands a rounding error under the exact figure. */
 const SHARE_SLACK_SECONDS = 1e-9;
 
 export interface SpaceActorOptions {
@@ -413,9 +418,10 @@ export class SpaceActor {
    * them. The player's entity id is the character's. Throws when no sector holds the position
    * or the join sequence cannot be encoded; a throw leaves no slot and no frame behind.
    *
-   * The pools' maxima are what the character's ranks give, whatever the row held.
+   * The pools' maxima are what the character's ranks give, whatever the row held. NPCs speak to the
+   * player in `locale`.
    */
-  attach(character: Character, inventory: InventoryRow[], outbox: ConnectionOutbox, worldSeconds: number): void {
+  attach(character: Character, inventory: InventoryRow[], outbox: ConnectionOutbox, worldSeconds: number, locale: Locale): void {
     const sector = sectorAt(this.space, character.position);
     if (sector === undefined) throw new Error(`no sector of ${this.space.id} holds (${character.position.x}, ${character.position.z})`);
     const maxima = maxPools(character.lucidity.ranks);
@@ -429,6 +435,7 @@ export class SpaceActor {
       character: { ...character, energy },
       inventory,
       outbox,
+      locale,
       gait: DEFAULT_GAIT,
       sector: sector.name,
       allowance: ALLOWANCE_CAP_METRES,
@@ -475,7 +482,7 @@ export class SpaceActor {
     this.moved.delete(entityId);
     for (const npc of this.npcs.values()) npc.greetedAt.delete(entityId);
     this.broadcast({ tag: 'leave', payload: { entityId, leftGame } }, slot.sector);
-    // A Heiler who leaves drops out at once, so one back under the same id before the next step holds on only once they take hold again.
+    // A Healer who leaves drops out at once, so one back under the same id before the next step holds on only once they take hold again.
     for (const target of this.players.values()) {
       if (target.raise?.holders.includes(entityId) === true) this.releaseRaise(target, target.raise);
     }
@@ -601,7 +608,7 @@ export class SpaceActor {
     const slot = this.players.get(entityId);
     if (slot === undefined) return undefined;
     const { name, position } = slot.character;
-    const utterance: Utterance = { voice: { entityId, name, kind: message.kind, text: message.text }, rolls: [] };
+    const utterance: Utterance = { voice: { entityId, name, kind: message.kind, line: { words: message.text } }, rolls: [] };
     this.speak(utterance, position, entityId);
     if (message.kind !== 'yell') return undefined;
     const voices = this.doorways.flatMap((doorway) => {
@@ -631,19 +638,21 @@ export class SpaceActor {
     }
   }
 
-  /** The line as one listener `metres` along its way hears it; nothing past its reach. */
+  /** The line as one listener `metres` along its way hears it, in their language; nothing past its reach. */
   private sayTo(listener: PlayerSlot, { voice, rolls }: Utterance, source: Point, metres: number): void {
     const clarity = speechClarity(voice.kind, metres);
     if (clarity === undefined) return;
+    const { line } = voice;
+    const said = 'words' in line ? line.words : localizedDialogLine(line.step, listener.locale, line.targetName);
     let next = 0;
-    const text = crumble(voice.text, clarity, () => {
+    const text = crumble(said, clarity, () => {
       if (next === rolls.length) rolls.push(randomUnit(this.speechRandom));
       return rolls[next++]!;
     });
     listener.outbox.sendEncoded(
       {
         tag: 'serverSay',
-        payload: { ...voice, text, clarity, x: source.x, z: source.z },
+        payload: { entityId: voice.entityId, name: voice.name, kind: voice.kind, text, clarity, x: source.x, z: source.z },
       },
       this.logger,
     );
@@ -689,7 +698,7 @@ export class SpaceActor {
 
   /**
    * Chooses the dreamer a standing dreamer tends, or no one. Anyone may choose; it does something
-   * only for a Heiler holding the Mondstein. Nothing tending does harms another dreamer.
+   * only for a Healer holding the Moonstone. Nothing tending does harms another dreamer.
    */
   handleTend(targetId: string | undefined, entityId: string): void {
     const player = this.players.get(entityId);
@@ -697,12 +706,12 @@ export class SpaceActor {
     player.tending = targetId !== undefined && targetId !== entityId && this.players.has(targetId) ? targetId : undefined;
   }
 
-  /** Using the Mondstein from the inventory while it is in hand mends its holder. */
+  /** Using the Moonstone from the inventory while it is in hand mends its holder. */
   handleUseItem(inventorySlot: number, entityId: string): void {
     const player = this.players.get(entityId);
     if (player === undefined) return;
     const row = player.inventory.find((candidate) => candidate.slot === inventorySlot);
-    if (row?.itemId !== ('mondstein' satisfies ItemId) || row.equippedHand !== 'right') return;
+    if (row?.itemId !== ('moonstone' satisfies ItemId) || row.equippedHand !== 'right') return;
     if (this.canMend(player)) this.mend(player, player);
   }
 
@@ -827,7 +836,7 @@ export class SpaceActor {
       const last = npc.greetedAt.get(id);
       if (last !== undefined && now - last < SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000) continue;
       npc.greetedAt.set(id, now);
-      this.speakAs(npc, dialogLine(greeting, slot.character.name));
+      this.speakAs(npc, greeting, slot.character.name);
       npc.greetReadyAt = now + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
       return;
     }
@@ -849,7 +858,7 @@ export class SpaceActor {
   private emitDialogStep(npc: NPCRuntime, targetName: string, digest: TickDigest): void {
     const index = Math.max(npc.scriptStepIndex, 1);
     const step = npc.dialogSteps[index]!;
-    this.speakAs(npc, dialogLine(step, targetName));
+    this.speakAs(npc, step, targetName);
     npc.readyAt = this.now() + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
     const key = { sectorName: npc.sector, npcId: npc.definition.id };
     const nextIndex = index + 1;
@@ -864,8 +873,8 @@ export class SpaceActor {
   }
 
   /** An NPC talks like a dreamer: whoever it addresses stands within speaking distance and hears it whole, and bystanders by their distance. */
-  private speakAs(npc: NPCRuntime, text: string): void {
-    this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', text }, rolls: [] }, npc.position);
+  private speakAs(npc: NPCRuntime, step: string, targetName: string): void {
+    this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', line: { step, targetName } }, rolls: [] }, npc.position);
   }
 
   private resetTargeting(npc: NPCRuntime, digest: TickDigest): void {
@@ -1094,11 +1103,11 @@ export class SpaceActor {
   }
 
   /**
-   * A Heiler's Mondstein reaching another dreamer: a standing one is mended, and on a fallen one the
-   * Heiler takes hold, beginning a raise or joining the one under way. Beginning needs the raise's
-   * whole spirit cost on hand, so a lone Heiler can finish it. Joining needs a mend's worth, and room
-   * among the most Heilers one raise holds. Taking hold spends the touch, as a mend does, and that is
-   * the only limit on how often a Heiler takes hold.
+   * A Healer's Moonstone reaching another dreamer: a standing one is mended, and on a fallen one the
+   * Healer takes hold, beginning a raise or joining the one under way. Beginning needs the raise's
+   * whole spirit cost on hand, so a lone Healer can finish it. Joining needs a mend's worth, and room
+   * among the most Healers one raise holds. Taking hold spends the touch, as a mend does, and that is
+   * the only limit on how often a Healer takes hold.
    */
   private touch(healer: PlayerSlot, target: PlayerSlot): void {
     if (!this.canMend(healer) || !this.touches(healer, target)) return;
@@ -1119,22 +1128,22 @@ export class SpaceActor {
     this.broadcastRaising(target, 'holding', target.raise.holders);
   }
 
-  /** Whether the dreamer is a standing Heiler holding the Mondstein. */
-  private wieldsMondstein(healer: PlayerSlot): boolean {
-    return !isFallen(healer) && healer.character.lucidity.role === 'heiler' && itemInHand(healer.inventory) === ('mondstein' satisfies ItemId);
+  /** Whether the dreamer is a standing Healer holding the Moonstone. */
+  private wieldsMoonstone(healer: PlayerSlot): boolean {
+    return !isFallen(healer) && healer.character.lucidity.role === 'healer' && itemInHand(healer.inventory) === ('moonstone' satisfies ItemId);
   }
 
-  /** Whether the dreamer can use the Mondstein right now: they wield it, and the last touch is past. */
+  /** Whether the dreamer can use the Moonstone right now: they wield it, and the last touch is past. */
   private canMend(healer: PlayerSlot): boolean {
-    return this.wieldsMondstein(healer) && this.now() >= healer.mendReadyAt;
+    return this.wieldsMoonstone(healer) && this.now() >= healer.mendReadyAt;
   }
 
-  /** The Mondstein reaches no one again until the touch interval has passed. */
+  /** The Moonstone reaches no one again until the touch interval has passed. */
   private spendTouch(healer: PlayerSlot): void {
     healer.mendReadyAt = this.now() + COMBAT.mend.seconds * 1000;
   }
 
-  /** Whether a Mondstein reaches from one dreamer to the other. */
+  /** Whether a Moonstone reaches from one dreamer to the other. */
   private touches(healer: PlayerSlot, target: PlayerSlot): boolean {
     return reaches(healer.character.position, { ...target.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
   }
@@ -1163,10 +1172,10 @@ export class SpaceActor {
   }
 
   /**
-   * Recovers each standing dreamer's pools, drops out the Heilers who no longer hold on to a raise,
+   * Recovers each standing dreamer's pools, drops out the Healers who no longer hold on to a raise,
    * lets each reach the dreamer they tend, then advances the raises under way. Dropping out comes
-   * before the touches, so a raise its last Heiler dropped out of is broken before anyone else can
-   * take hold of it. A Heiler tending the dreamer can then only begin a new one, at its whole
+   * before the touches, so a raise its last Healer dropped out of is broken before anyone else can
+   * take hold of it. A Healer tending the dreamer can then only begin a new one, at its whole
    * spirit cost.
    */
   private runPlayers(elapsedSeconds: number): void {
@@ -1216,8 +1225,8 @@ export class SpaceActor {
   }
 
   /**
-   * The one place a raise breaks, and the one place a Heiler drops out of one. A Heiler holds on
-   * only while they stay attached, tending the dreamer, standing, holding the Mondstein, in reach,
+   * The one place a raise breaks, and the one place a Healer drops out of one. A Healer holds on
+   * only while they stay attached, tending the dreamer, standing, holding the Moonstone, in reach,
    * and with spirit left. One who does not drops out, taking only their pace with them. Once the
    * last has dropped out, the raise breaks off and has to start over. A raise whose fallen dreamer
    * leaves the space goes with their slot, unannounced.
@@ -1229,7 +1238,7 @@ export class SpaceActor {
       return (
         healer !== undefined &&
         healer.tending === target.character.id &&
-        this.wieldsMondstein(healer) &&
+        this.wieldsMoonstone(healer) &&
         healer.character.energy.spiritCurrent > 0 &&
         this.touches(healer, target)
       );
@@ -1243,11 +1252,11 @@ export class SpaceActor {
   }
 
   /**
-   * The one place a raise completes. Each Heiler holding on adds their pace, so two of them finish
+   * The one place a raise completes. Each Healer holding on adds their pace, so two of them finish
    * it in half the time. Each pays spirit in whole units for the seconds they held, so a lone
-   * Heiler pays exactly the spirit cost and a group never more.
+   * Healer pays exactly the spirit cost and a group never more.
    *
-   * Once it is done, every Heiler who held on and is still in the space earns their share of the
+   * Once it is done, every Healer who held on and is still in the space earns their share of the
    * practice. The raised dreamer is left alone by nightmares for the grace time. That is slot
    * state, so it ends when they leave the space, and nightmares do not follow through a door.
    */
@@ -1427,7 +1436,7 @@ export class SpaceActor {
   /**
    * The master who set a task takes it as done once it is at its goal. A trial makes the dreamer
    * the role for good, teaches the role's first teaching and sets them to study it, and gives a
-   * Heiler their Mondstein. A gate teaches the first rank of its teaching.
+   * Healer their Moonstone. A gate teaches the first rank of its teaching.
    */
   handleCompleteTask(npcId: string, entityId: string): void {
     const asked = this.serviceFor(npcId, entityId);
@@ -1444,7 +1453,7 @@ export class SpaceActor {
       study: task.teachingId === undefined ? learned : lucidity.study,
       task: undefined,
     });
-    if (task.teachingId === undefined && task.role === 'heiler') this.giveItem(asked.player, 'mondstein', 1);
+    if (task.teachingId === undefined && task.role === 'healer') this.giveItem(asked.player, 'moonstone', 1);
   }
 
   /** Clears the task held, wherever the dreamer is. */

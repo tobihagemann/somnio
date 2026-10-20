@@ -8,8 +8,8 @@ export const ITEMS = {
   cudgel: { labelKey: 'Cudgel', weapon: { damage: 8, balanceCost: 18 } },
   sword: { labelKey: 'Short sword', weapon: { damage: 11, balanceCost: 24 } },
   mace: { labelKey: 'Mace', weapon: { damage: 14, balanceCost: 32 } },
-  /** The Heiler's tool. In hand it mends the dreamer its holder tends, or its holder when used, and does not swing. */
-  mondstein: { labelKey: 'Mondstein' },
+  /** The Healer's tool. In hand it mends the dreamer its holder tends, or its holder when used, and does not swing. */
+  moonstone: { labelKey: 'Moonstone' },
 } as const;
 export type ItemId = keyof typeof ITEMS;
 

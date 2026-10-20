@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { decodeSomnioMessage, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import type { SomnioMessage } from '@somnio/protocol';
+import type { Locale, SomnioMessage } from '@somnio/protocol';
 import type { RawData, WebSocket } from 'ws';
 import {
   TRANSFER_LOST,
@@ -114,6 +114,8 @@ export class ConnectionActor {
    * Held here rather than in `state`, because issuance follows `markAttached`.
    */
   sessionToken: string | undefined;
+  /** The language NPCs speak to this player in, as their login or resume named it. */
+  locale: Locale = 'en';
   private readonly dependencies: ConnectionDependencies;
   private readonly logger: Logger;
   /** The slot among sockets not yet logged in, given up once the player is in the world or the connection has ended. */

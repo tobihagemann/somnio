@@ -22,7 +22,7 @@ describe('resolvedSpawn', () => {
   });
 
   it('puts a fresh character, stored at the origin sentinel, on the starter spawn', async () => {
-    expect(resolvedSpawn(newCharacter(crypto.randomUUID(), 'fresh', 'wachen', new Date()), await router())).toEqual(STARTER_SPAWN);
+    expect(resolvedSpawn(newCharacter(crypto.randomUUID(), 'fresh', 'vigils', new Date()), await router())).toEqual(STARTER_SPAWN);
   });
 
   it.each<[string, Partial<Sector>]>([

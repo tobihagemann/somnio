@@ -34,25 +34,43 @@ function contents(sector: Sector): object {
 }
 
 describe('the committed world', () => {
-  it('is three outdoor lands and four interiors, each holding what it was authored with', () => {
+  it('is six outdoor lands and six interiors, each holding what it was authored with', () => {
     expect(Object.fromEntries(sectors.map((sector) => [sector.name, contents(sector)]))).toEqual({
+      AutumnWood: {
+        kind: 'outdoor',
+        size: { width: 40.96, depth: 40.96 },
+        origin: { x: 40.96, z: 0 },
+        floorMaterialId: 'forest-floor',
+        counts: { placements: 70, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 2, floorPatches: 0 },
+        doors: {},
+        npcs: {},
+      },
       EdariaArena: {
         kind: 'interior',
         size: { width: 10.24, depth: 10.24 },
         brightness: 75,
         floorMaterialId: 'stone-arena',
         counts: { placements: 1, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, floorPatches: 1 },
-        doors: { exit: 'EdariaMitte/to-edariaarena' },
+        doors: { exit: 'EdariaSquare/to-edariaarena' },
         npcs: {},
       },
-      EdariaBibliothek: {
+      EdariaFighterHall: {
         kind: 'interior',
         size: { width: 10.24, depth: 10.24 },
+        brightness: 85,
+        floorMaterialId: 'stone-arena',
+        counts: { placements: 18, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        doors: { exit: 'EdariaSquare/to-edariafighterhall' },
+        npcs: { pugnax: 'fighter-master' },
+      },
+      EdariaHealerHall: {
+        kind: 'interior',
+        size: { width: 7.68, depth: 7.68 },
         brightness: 100,
         floorMaterialId: 'wood-warm',
-        counts: { placements: 33, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
-        doors: { exit: 'EdariaMitte/to-edariabibliothek' },
-        npcs: { libus: 'libus' },
+        counts: { placements: 10, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        doors: { exit: 'EdariaSquare/to-edariahealerhall' },
+        npcs: { sana: 'merchant' },
       },
       EdariaInn: {
         kind: 'interior',
@@ -60,22 +78,17 @@ describe('the committed world', () => {
         brightness: 100,
         floorMaterialId: 'wood-warm',
         counts: { placements: 18, blockers: 3, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
-        doors: { exit: 'EdariaMitte/to-edariainn' },
-        npcs: { quieta: 'kraemer' },
+        doors: { exit: 'EdariaSquare/to-edariainn' },
+        npcs: { quieta: 'merchant' },
       },
-      EdariaMitte: {
-        kind: 'outdoor',
-        size: { width: 40.96, depth: 40.96 },
-        origin: { x: 0, z: 0 },
-        floorMaterialId: 'grass-meadow',
-        counts: { placements: 92, blockers: 0, doors: 4, npcs: 2, monsterSpawns: 0, floorPatches: 3 },
-        doors: {
-          'to-edariabibliothek': 'EdariaBibliothek/exit',
-          'to-edariaarena': 'EdariaArena/exit',
-          'to-edariashop': 'EdariaShop/exit',
-          'to-edariainn': 'EdariaInn/exit',
-        },
-        npcs: { pugnax: 'kaempfer-meister', sana: 'kraemer' },
+      EdariaLibrary: {
+        kind: 'interior',
+        size: { width: 10.24, depth: 10.24 },
+        brightness: 100,
+        floorMaterialId: 'wood-warm',
+        counts: { placements: 33, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        doors: { exit: 'EdariaSquare/to-edarialibrary' },
+        npcs: { libus: 'libus' },
       },
       EdariaShop: {
         kind: 'interior',
@@ -83,10 +96,35 @@ describe('the committed world', () => {
         brightness: 100,
         floorMaterialId: 'wood-warm',
         counts: { placements: 22, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
-        doors: { exit: 'EdariaMitte/to-edariashop' },
-        npcs: { mercus: 'kraemer' },
+        doors: { exit: 'EdariaSquare/to-edariashop' },
+        npcs: { mercus: 'merchant' },
       },
-      Nordwald: {
+      EdariaSquare: {
+        kind: 'outdoor',
+        size: { width: 40.96, depth: 40.96 },
+        origin: { x: 0, z: 0 },
+        floorMaterialId: 'grass-meadow',
+        counts: { placements: 94, blockers: 0, doors: 6, npcs: 0, monsterSpawns: 0, floorPatches: 3 },
+        doors: {
+          'to-edarialibrary': 'EdariaLibrary/exit',
+          'to-edariaarena': 'EdariaArena/exit',
+          'to-edariashop': 'EdariaShop/exit',
+          'to-edariainn': 'EdariaInn/exit',
+          'to-edariafighterhall': 'EdariaFighterHall/exit',
+          'to-edariahealerhall': 'EdariaHealerHall/exit',
+        },
+        npcs: {},
+      },
+      NorthMeadow: {
+        kind: 'outdoor',
+        size: { width: 30.72, depth: 30.72 },
+        origin: { x: 5.12, z: -30.72 },
+        floorMaterialId: 'grass-meadow',
+        counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
+        doors: {},
+        npcs: {},
+      },
+      NorthWood: {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -61.44 },
@@ -95,10 +133,19 @@ describe('the committed world', () => {
         doors: {},
         npcs: {},
       },
-      Nordwiese: {
+      SouthMeadow: {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
-        origin: { x: 5.12, z: -30.72 },
+        origin: { x: 5.12, z: 40.96 },
+        floorMaterialId: 'grass-meadow',
+        counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
+        doors: {},
+        npcs: {},
+      },
+      WestMeadow: {
+        kind: 'outdoor',
+        size: { width: 30.72, depth: 30.72 },
+        origin: { x: -30.72, z: 5.12 },
         floorMaterialId: 'grass-meadow',
         counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
         doors: {},
@@ -110,8 +157,8 @@ describe('the committed world', () => {
   it('gives each master and the shopkeeper their service, and the inn a spawn to wake at', () => {
     const services = sectors.flatMap((sector) => sector.npcs.flatMap((npc) => (npc.service === undefined ? [] : [[`${sector.name}/${npc.id}`, npc.service]])));
     expect(Object.fromEntries(services)).toEqual({
-      'EdariaMitte/pugnax': 'kaempferMaster',
-      'EdariaMitte/sana': 'heilerMaster',
+      'EdariaFighterHall/pugnax': 'fighterMaster',
+      'EdariaHealerHall/sana': 'healerMaster',
       'EdariaShop/mercus': 'shopkeeper',
     });
     expect(byName.get('EdariaInn')?.spawn).toBeDefined();
@@ -128,21 +175,25 @@ describe('the committed world', () => {
     expect(unpaired).toEqual([]);
   });
 
-  it('tiles the outdoor lands north of the town so their openings meet', () => {
-    expect(byName.get('EdariaMitte')).toMatchObject({ origin: { x: 0, z: 0 }, size: { width: 40.96, depth: 40.96 } });
-    expect(byName.get('Nordwiese')).toMatchObject({ origin: { x: 5.12, z: -30.72 }, size: { width: 30.72, depth: 30.72 } });
-    expect(byName.get('Nordwald')).toMatchObject({ origin: { x: 5.12, z: -61.44 }, size: { width: 30.72, depth: 30.72 } });
+  it('tiles the outdoor lands round the town so their openings meet its gates', () => {
+    expect(byName.get('EdariaSquare')).toMatchObject({ origin: { x: 0, z: 0 }, size: { width: 40.96, depth: 40.96 } });
+    expect(byName.get('NorthMeadow')).toMatchObject({ origin: { x: 5.12, z: -30.72 }, size: { width: 30.72, depth: 30.72 } });
+    expect(byName.get('NorthWood')).toMatchObject({ origin: { x: 5.12, z: -61.44 }, size: { width: 30.72, depth: 30.72 } });
+    expect(byName.get('WestMeadow')).toMatchObject({ origin: { x: -30.72, z: 5.12 }, size: { width: 30.72, depth: 30.72 } });
+    expect(byName.get('SouthMeadow')).toMatchObject({ origin: { x: 5.12, z: 40.96 }, size: { width: 30.72, depth: 30.72 } });
+    expect(byName.get('AutumnWood')).toMatchObject({ origin: { x: 40.96, z: 0 }, size: { width: 40.96, depth: 40.96 } });
   });
 
   it('builds with every door live, no collision issue, and a clear starter spawn', () => {
     const world = buildWorld(sectors, bundledModelRegistry());
     expect(world.issues).toEqual([]);
-    expect(byName.get('EdariaBibliothek')?.spawn).toBeDefined();
+    expect(byName.get('EdariaLibrary')?.spawn).toBeDefined();
 
     const outdoors = world.spaces.get(OUTDOOR_SPACE_ID)!;
     const neighbours = (name: string): string[] => neighbourSectors(outdoors, name).map((sector) => sector.name);
-    expect(neighbours('EdariaMitte')).toEqual(['Nordwiese']);
-    expect(neighbours('Nordwiese').sort()).toEqual(['EdariaMitte', 'Nordwald']);
-    expect(neighbours('Nordwald')).toEqual(['Nordwiese']);
+    expect(neighbours('EdariaSquare')).toEqual(['AutumnWood', 'NorthMeadow', 'SouthMeadow', 'WestMeadow']);
+    expect(neighbours('NorthMeadow')).toEqual(['EdariaSquare', 'NorthWood']);
+    expect(neighbours('NorthWood')).toEqual(['NorthMeadow']);
+    for (const land of ['WestMeadow', 'SouthMeadow', 'AutumnWood']) expect(neighbours(land)).toEqual(['EdariaSquare']);
   });
 });

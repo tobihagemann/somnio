@@ -2,23 +2,23 @@ import {
   OUTDOOR_SPACE_ID,
   SOMNIO_CONSTANTS,
   clamp,
-  dialogLine,
   dialogSteps,
   distance,
   gaitMetresPerSecond,
+  localizedDialogLine,
   monsterKind,
   sectorPointInSpace,
 } from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Sector } from '@somnio/core';
 import type { Condition, Gait, SpeechKind } from '@somnio/protocol';
 import type { RaiseProgress } from '@/client/renderSurface';
-import { t } from '@/i18n';
+import { currentLocale, t } from '@/i18n';
 import { ORTHO_RIG, worldMovement } from '@/scene/cameraRig';
 
 /**
  * The splash reel: a fixed sequence of short shots of the committed world, staged in the browser
  * with scripted dreamers, NPCs, and nightmares. Positions are in the coordinates of the shot's
- * space, so an outdoor point carries its sector's origin and the Nordwald lies at negative `z`.
+ * space, so an outdoor point carries its sector's origin and the North Wood lies at negative `z`.
  */
 
 /** How long the dip to dark between two shots takes, half of it falling and half rising. */
@@ -134,10 +134,10 @@ const MIRA = 'splash:mira';
 const TAMO = 'splash:tamo';
 const LINNEA = 'splash:linnea';
 const ODO = 'splash:odo';
-const PUGNAX = 'npc:EdariaMitte/pugnax';
-const LIBUS = 'npc:EdariaBibliothek/libus';
-const GESPENST = 'monster:splash-1';
-const NORDWALD_SPAWN = { sector: 'Nordwald', id: 'spawn-1' };
+const PUGNAX = 'npc:EdariaFighterHall/pugnax';
+const LIBUS = 'npc:EdariaLibrary/libus';
+const GHOST = 'monster:splash-1';
+const NORTH_WOOD_SPAWN = { sector: 'NorthWood', id: 'spawn-1' };
 
 /** The reel in the order it plays. Every scripted path is a straight run between points the reel test proves legal. */
 export const SPLASH_REEL: readonly SplashShot[] = [
@@ -189,15 +189,15 @@ export const SPLASH_REEL: readonly SplashShot[] = [
   },
   {
     id: 'npc-greeting',
-    space: OUTDOOR_SPACE_ID,
+    space: 'EdariaFighterHall',
     seconds: 7,
     hour: 12,
     camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.5, scale: { from: 2.2, to: 2.2 } },
     actors: [
-      { kind: 'npc', sector: 'EdariaMitte', npc: 'pugnax' },
-      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 39.6, z: 32.1 }, facing: 220, gait: 'walk', path: [{ x: 38.4, z: 33.7 }], faces: PUGNAX },
+      { kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' },
+      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 5.6, z: 8.8 }, facing: 180, gait: 'walk', path: [{ x: 5.5, z: 4.6 }], faces: PUGNAX },
     ],
-    beats: [{ at: 2.6, kind: 'greeting', npc: PUGNAX, listener: 'Mira' }],
+    beats: [{ at: 4.4, kind: 'greeting', npc: PUGNAX, listener: 'Mira' }],
   },
   {
     id: 'speech',
@@ -211,7 +211,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
       { kind: 'peer', id: ODO, name: 'Odo', at: { x: 22.32, z: 23.34 }, facing: 180, gait: 'walk', path: [] },
     ],
     beats: [
-      { at: 0.6, kind: 'speech', speaker: TAMO, speech: 'say', text: () => t('Anyone up for the Nordwald?') },
+      { at: 0.6, kind: 'speech', speaker: TAMO, speech: 'say', text: () => t('Anyone up for the North Wood?') },
       { at: 2.4, kind: 'speech', speaker: ODO, speech: 'yell', text: () => t('Watch out, nightmares about!') },
       { at: 4.2, kind: 'speech', speaker: LINNEA, speech: 'whisper', text: () => t('Meet me at the inn.') },
     ],
@@ -221,12 +221,12 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 6,
     hour: 13,
-    camera: { kind: 'subject', subject: GESPENST, side: 'left', drop: 0.4, scale: { from: 2.6, to: 2.6 } },
+    camera: { kind: 'subject', subject: GHOST, side: 'left', drop: 0.4, scale: { from: 2.6, to: 2.6 } },
     actors: [
       {
         kind: 'monster',
-        id: GESPENST,
-        spawn: NORDWALD_SPAWN,
+        id: GHOST,
+        spawn: NORTH_WOOD_SPAWN,
         at: { x: 18.5, z: -50.3 },
         facing: 90,
         path: [
@@ -244,26 +244,26 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     hour: 13,
     camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.4, scale: { from: 2.6, to: 2.4 } },
     actors: [
-      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 19, z: -46.6 }, facing: 35, gait: 'walk', path: [], faces: GESPENST },
-      { kind: 'carried', id: GESPENST, path: [], faces: AUREL },
+      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 19, z: -46.6 }, facing: 35, gait: 'walk', path: [], faces: GHOST },
+      { kind: 'carried', id: GHOST, path: [], faces: AUREL },
     ],
     beats: [
-      { at: 0.5, kind: 'blow', attacker: GESPENST, target: AUREL, hit: true },
+      { at: 0.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
       { at: 0.5, kind: 'condition', id: AUREL, condition: 'grazed' },
-      { at: 0.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: false },
-      { at: 1.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: true },
-      { at: 1.8, kind: 'condition', id: GESPENST, condition: 'grazed' },
-      { at: 2, kind: 'blow', attacker: GESPENST, target: AUREL, hit: true },
+      { at: 0.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
+      { at: 1.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
+      { at: 1.8, kind: 'condition', id: GHOST, condition: 'grazed' },
+      { at: 2, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
       { at: 2, kind: 'condition', id: AUREL, condition: 'wounded' },
-      { at: 2.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: false },
-      { at: 3.5, kind: 'blow', attacker: GESPENST, target: AUREL, hit: true },
+      { at: 2.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
+      { at: 3.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
       { at: 3.5, kind: 'condition', id: AUREL, condition: 'hurt' },
-      { at: 3.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: true },
-      { at: 4.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: false },
-      { at: 5, kind: 'blow', attacker: GESPENST, target: AUREL, hit: true },
+      { at: 3.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
+      { at: 4.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
+      { at: 5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
       { at: 5, kind: 'condition', id: AUREL, condition: 'failing' },
-      { at: 5.8, kind: 'blow', attacker: AUREL, target: GESPENST, hit: true },
-      { at: 6.5, kind: 'blow', attacker: GESPENST, target: AUREL, hit: true },
+      { at: 5.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
+      { at: 6.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
       { at: 6.5, kind: 'condition', id: AUREL, condition: 'fallen' },
     ],
   },
@@ -275,7 +275,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.4, scale: { from: 2.4, to: 2.4 } },
     actors: [
       { kind: 'carried', id: AUREL, path: [] },
-      { kind: 'carried', id: GESPENST, path: [{ x: 22.5, z: -48.5 }] },
+      { kind: 'carried', id: GHOST, path: [{ x: 22.5, z: -48.5 }] },
       { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 16.5, z: -43.5 }, facing: 120, gait: 'jog', path: [{ x: 19.65, z: -46.63 }], faces: AUREL },
     ],
     beats: [
@@ -298,12 +298,12 @@ export const SPLASH_REEL: readonly SplashShot[] = [
   },
   {
     id: 'library',
-    space: 'EdariaBibliothek',
+    space: 'EdariaLibrary',
     seconds: 6,
     hour: 12,
     camera: { kind: 'subject', subject: LIBUS, side: 'right', drop: 0.4, scale: { from: 3, to: 2.6 } },
     actors: [
-      { kind: 'npc', sector: 'EdariaBibliothek', npc: 'libus' },
+      { kind: 'npc', sector: 'EdariaLibrary', npc: 'libus' },
       {
         kind: 'peer',
         id: LINNEA,
@@ -346,7 +346,13 @@ export function stageReel(reel: readonly SplashShot[], sectors: readonly Sector[
       if (beat.kind !== 'greeting') return beat;
       const npc = findNPC(spaceSectors, beat.npc);
       if (npc === undefined) throw new Error(`splash shot ${shot.id}: no NPC ${beat.npc}`);
-      return { at: beat.at, kind: 'speech', speaker: beat.npc, speech: 'say', text: () => dialogLine(dialogSteps(npc.dialogScript)[0] ?? '', beat.listener) };
+      return {
+        at: beat.at,
+        kind: 'speech',
+        speaker: beat.npc,
+        speech: 'say',
+        text: () => localizedDialogLine(dialogSteps(npc.dialogScript)[0] ?? '', currentLocale(), beat.listener),
+      };
     });
     staged.push({ ...shot, sectors: spaceSectors, actors, beats });
   }

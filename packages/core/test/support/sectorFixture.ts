@@ -9,7 +9,20 @@ import type { Sector } from '../../src/sector.ts';
  */
 export const SECTOR_FIXTURES_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures/sectors');
 
-export const SECTOR_FIXTURE_NAMES = ['EdariaArena', 'EdariaBibliothek', 'EdariaInn', 'EdariaMitte', 'EdariaShop', 'Nordwald', 'Nordwiese'] as const;
+export const SECTOR_FIXTURE_NAMES = [
+  'AutumnWood',
+  'EdariaArena',
+  'EdariaFighterHall',
+  'EdariaHealerHall',
+  'EdariaInn',
+  'EdariaLibrary',
+  'EdariaShop',
+  'EdariaSquare',
+  'NorthMeadow',
+  'NorthWood',
+  'SouthMeadow',
+  'WestMeadow',
+] as const;
 export type SectorFixtureName = (typeof SECTOR_FIXTURE_NAMES)[number];
 
 /** Reads a committed `.somnio-sector` fixture, decoded as UTF-8. */

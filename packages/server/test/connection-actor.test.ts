@@ -6,7 +6,7 @@ describe('ConnectionActor state primitives', () => {
   it('setAttached replaces spaceId while preserving entityId and accountId', async () => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
     const accountId = crypto.randomUUID();
-    connection.markAttached('player', 'EdariaBibliothek', accountId);
+    connection.markAttached('player', 'EdariaLibrary', accountId);
     connection.setAttached('EdariaArena');
     expect(connection.state).toEqual({
       kind: 'attached',
