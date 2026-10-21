@@ -4,9 +4,9 @@
 // A self-contained binary GLB embeds its buffer and prints nothing, which is what every model in
 // today's pack does. A JSON glTF — including one carrying a `.glb` extension, which is legal and
 // which a pipeline change could start emitting — prints each `buffers[].uri` and `images[].uri`
-// that is not a data URI, so `bundle-web-assets.sh` can verify the sidecar shipped: three.js
-// resolves both kinds relative to the model URL at load time, and a missing one is a runtime 404
-// for the model's geometry or its texture.
+// that three.js does not decode as a data URI, so `bundle-web-assets.sh` can verify the sidecar
+// shipped: three.js resolves both kinds relative to the model URL at load time, and a missing one
+// is a runtime 404 for the model's geometry or its texture.
 //
 // Both arrays, because glTF 2.0 declares external file references nowhere else — the pair is the
 // whole surface, not a sample of it. The asset repo's `Pipeline/glb_buffer_uris.py` walks the same
@@ -33,6 +33,8 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const GLB_MAGIC = 0x46546c67 // 'glTF'
+// three.js's `LoaderUtils.resolveURL` test for a data URI it passes through rather than fetches.
+const DATA_URI = /^data:.*,.*$/i
 
 /** Parses either container: a binary GLB's first (JSON) chunk, or a plain JSON glTF document. */
 export function readGLTF(path) {
@@ -73,8 +75,9 @@ export function uriToPath(uri) {
 export function externalResourcePaths(document) {
   const paths = []
   for (const declared of [...(document.buffers ?? []), ...(document.images ?? [])]) {
-    // An embedded resource has no `uri`; a data: URI needs no separate file.
-    if (declared.uri && !declared.uri.startsWith('data:')) paths.push(uriToPath(declared.uri))
+    // An embedded resource has no `uri`, and a data: URI three.js decodes needs no separate file.
+    // It decodes one only when it carries a comma; any other it fetches next to the model.
+    if (declared.uri && !DATA_URI.test(declared.uri)) paths.push(uriToPath(declared.uri))
   }
   return paths
 }

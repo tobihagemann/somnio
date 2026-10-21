@@ -21,10 +21,6 @@ function blocker(id: string, x = 0) {
   return { id, x, z: 0, width: 1, depth: 1 };
 }
 
-function patch(id: string, x: number) {
-  return { id, floorMaterialId: 'cobble-town', x, z: 0, width: 2, depth: 2 };
-}
-
 function stubFetch(handler: (url: string, init?: RequestInit) => Response): void {
   vi.stubGlobal('fetch', (input: string | URL, init?: RequestInit) => Promise.resolve(handler(String(input), init)));
 }
@@ -131,6 +127,12 @@ describe('commit', () => {
       /no placement/,
     ],
     ['a brightness on an outdoor sector', (sector) => (sector.brightness = 50), /brightness/],
+    [
+      'a mark painting past the sector',
+      (sector) =>
+        sector.ground.marks.push({ id: 'road', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: -2, z: 5 }] } }),
+      /paints more than 1\.5 metres past the sector/,
+    ],
   ])('refuses %s with the codec reason and leaves the document and its history alone', (_name, change, reason) => {
     const document = initializedDocument();
     document.mutate('Place blocker', (sector) => {
@@ -145,34 +147,17 @@ describe('commit', () => {
     expect(document.undoDepth).toBe(depth);
   });
 
-  it.each<[string, ReturnType<typeof patch>[], (sector: Sector) => void, boolean]>([
-    ['refuses a move that slides one patch over another', [patch('a', 0), patch('b', 2)], (sector) => (sector.floorPatches[0]!.x = 0.01), false],
-    ['allows patches that only touch', [patch('a', 0), patch('b', 4)], (sector) => (sector.floorPatches[0]!.x = 2), true],
-    ['refuses a new patch over an existing one', [patch('a', 0)], (sector) => sector.floorPatches.push(patch('b', 1)), false],
-    // A file that already carries an overlap still edits elsewhere.
-    ['allows an edit beside an overlap the body already had', [patch('a', 0), patch('b', 1), patch('c', 8)], (sector) => (sector.floorPatches[2]!.x = 9), true],
-    ['allows renaming and deleting around an overlap the body already had', [patch('a', 0), patch('b', 1), patch('c', 8)], renameAndDelete, true],
-    [
-      'refuses a second overlap in a body that already had one',
-      [patch('a', 0), patch('b', 1), patch('c', 8)],
-      (sector) => (sector.floorPatches[2]!.x = 2.5),
-      false,
-    ],
-    // A and B overlap and C touches B: moving B resolves A-B but creates B-C, so the count stays at one.
-    ['refuses trading one overlap for a different one', [patch('a', 0), patch('b', 1.9), patch('c', 3.9)], (sector) => (sector.floorPatches[1]!.x = 2), false],
-  ])('%s', (_name, patches, change, accepted) => {
+  /** Marks paint in order, so one over another is how a road crosses a plaza, not a mistake. */
+  it('accepts marks that overlap', () => {
     const document = initializedDocument();
-    // Loaded, not committed: a file is never refused for what it already carries.
-    document.sector.floorPatches = structuredClone(patches);
-    const result = document.mutate('Edit', change);
-    expect(result.accepted).toBe(accepted);
-    if (!result.accepted) expect(result.message).toBe('Floor patches must not overlap.');
+    const dab = (id: string): Sector['ground']['marks'][number] => ({
+      id,
+      materialId: 'dirt-path',
+      opacity: 1,
+      shape: { kind: 'stroke', radius: 1, points: [{ x: 5, z: 5 }] },
+    });
+    expect(document.mutate('Paint ground', (sector) => sector.ground.marks.push(dab('a'), dab('b'))).accepted).toBe(true);
   });
-
-  function renameAndDelete(sector: Sector): void {
-    sector.floorPatches[1]!.id = 'renamed';
-    sector.floorPatches.splice(2, 1);
-  }
 });
 
 describe('dirty checkpoint', () => {
@@ -204,8 +189,7 @@ describe('dirty checkpoint', () => {
       kind: 'interior',
       brightness: 60,
       size: { width: 5, depth: 4 },
-      floorMaterialId: 'grass-meadow',
-      floorPatches: [],
+      ground: { backgroundMaterialId: 'grass-meadow', marks: [] },
       placements: [],
       blockers: [],
       doors: [],

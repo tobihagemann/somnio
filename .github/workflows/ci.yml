@@ -175,7 +175,7 @@ jobs:
         # runs inside the image build where the error is buried in build output; this names the
         # problem up front.
         run: |
-          for subtree in Web/Models Web/Branding FloorMaterials UI; do
+          for subtree in Web/Models Web/Branding UI; do
             if [[ ! -d "assets/${subtree}" ]]; then
               echo "ERROR: asset pack is missing ${subtree}/" >&2
               exit 1

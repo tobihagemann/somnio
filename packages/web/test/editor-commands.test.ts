@@ -12,6 +12,7 @@ class RecordingTarget implements EditorCommandTarget {
   calls: string[] = [];
   overlayPresented = false;
   nudgeHandled = true;
+  polygonDrawn = true;
   isOverlayPresented(): boolean {
     return this.overlayPresented;
   }
@@ -35,6 +36,10 @@ class RecordingTarget implements EditorCommandTarget {
   }
   toggleGrid(): void {
     this.calls.push('grid');
+  }
+  closeGroundPolygon(): boolean {
+    this.calls.push('closePolygon');
+    return this.polygonDrawn;
   }
   copySelection(): void {
     this.calls.push('copy');
@@ -128,6 +133,20 @@ describe('handleEditorKeydown', () => {
     handleEditorKeydown(target, press({ key: 'Delete' }));
     handleEditorKeydown(target, press({ key: 'Backspace' }));
     expect(target.calls).toEqual(['delete', 'delete']);
+  });
+
+  it('closes a ground polygon on Enter, preventing the default only when one was being drawn', () => {
+    const drawing = new RecordingTarget();
+    const drawingEvent = press({ key: 'Enter' });
+    handleEditorKeydown(drawing, drawingEvent);
+    expect(drawing.calls).toEqual(['closePolygon']);
+    expect(drawingEvent.defaultPrevented).toBe(true);
+
+    const idle = new RecordingTarget();
+    idle.polygonDrawn = false;
+    const idleEvent = press({ key: 'Enter' });
+    handleEditorKeydown(idle, idleEvent);
+    expect(idleEvent.defaultPrevented).toBe(false);
   });
 
   it('prevents the default only when a nudge was handled', () => {

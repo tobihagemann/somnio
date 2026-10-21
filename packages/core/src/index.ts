@@ -5,6 +5,8 @@ export * from './people.ts';
 export * from './constants.ts';
 export * from './sector.ts';
 export * from './sectorFile.ts';
+export * from './ground.ts';
+export * from './hash.ts';
 export * from './modelRegistry.ts';
 export * from './world.ts';
 export * from './collision.ts';

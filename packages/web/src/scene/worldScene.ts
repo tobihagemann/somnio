@@ -8,11 +8,15 @@ import {
   WORLD_TIME_RATE,
   clamp,
   distance,
+  distanceToRect,
   groundHeightAt,
   headingRadians,
   hourOfDay,
+  neighbourSectors,
   objectModel,
+  paddedRasterRect,
   relativeDirection,
+  sectorAt,
   sectorOrigin,
   sectorRect,
 } from '@somnio/core';
@@ -23,23 +27,23 @@ import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { ENVIRONMENT_FILL_INTENSITY, SUN_SHADOW, sunState } from './dayNightSun';
+import { SUN_SHADOW, sunState } from './dayNightSun';
+import { groundFieldKey, rasterizeGround } from './groundField';
+import type { GroundField, GroundFieldInputs } from './groundField';
+import { GROUND_MATERIAL_IDS, GROUND_RECIPES, groundFragmentChunks, groundMaterialChannel } from './groundMaterials';
+import { defaultGroundRasterizer } from './groundRasterizer';
+import type { GroundRasterizer } from './groundRasterizer';
+import { GrassSpring } from './grassSpring';
+import type { GrassBatch, GrassContact } from './grassSpring';
+import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
+import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
 import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
 import type { RasterArt } from './overlayArt';
-import {
-  CHARACTER_SCALE,
-  FLOOR_PATCH_LIFT,
-  PLACEHOLDER_HEIGHT,
-  easedHeight,
-  floorUVRect,
-  placeholderFootprint,
-  placementElevation,
-  textureAspect,
-} from './placement';
-import type { ModelAssets } from './modelAssets';
+import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
+import type { ModelAssets, PrototypeMesh } from './modelAssets';
 import { yawStep } from './yawSlew';
 
 /**
@@ -77,6 +81,8 @@ interface EntityRenderState {
   headHeight: number;
   /** The model's head bone, which a fallen body's head is followed down by; `undefined` for a model without one. */
   headBone: THREE.Object3D | undefined;
+  /** The bones that brush grass: the feet and toes on the ground, and the lower legs wading through it. */
+  grassBones: { bone: THREE.Object3D; foot: boolean }[];
   /** How far above the node the head bone stands in the idle pose; always positive where `headBone` is set. */
   headBoneRest: number;
   /** Label under the feet. Created on first placement and rebuilt on a kind, name, or condition change, and when the pointer comes over a hale nightmare or leaves it. */
@@ -120,16 +126,6 @@ interface RaiseRing extends RaiseProgress {
   anchoredAtMs: number;
 }
 
-/** The base floor of a sector or one of its patches. */
-interface FloorQuad {
-  mesh: THREE.Mesh;
-  /** The ground it covers in space coordinates, which is what fixes its texture phase. */
-  rect: Rect;
-  materialId: string;
-  lift: number;
-  isFallback: boolean;
-}
-
 interface PlacedModel {
   node: THREE.Object3D;
   placement: Placement;
@@ -137,10 +133,26 @@ interface PlacedModel {
 }
 
 interface DrawnSector {
+  view: SectorView;
   /** Stands at the sector's origin, so its records keep their sector-relative positions. */
   group: THREE.Object3D;
-  floors: FloorQuad[];
   placements: PlacedModel[];
+}
+
+/**
+ * A sector's painted ground. It hangs off the space root, not the sector's group, because it has to
+ * outlive a re-add of the sector: the field drawn stays until the one for the sector's new inputs
+ * arrives.
+ */
+interface DrawnGround {
+  mesh: THREE.Mesh;
+  /** What the drawn field was rasterized from; `undefined` while the flat background stands in. */
+  key: string | undefined;
+  field: GroundField | undefined;
+  /** What the field asked for last was rasterized from; a field for anything else is stale. */
+  pending: string | undefined;
+  /** What grows on the ground, and what it was placed from: the field and the placements and doors here and next door. */
+  scatter: { group: THREE.Object3D; key: string; batches: GrassBatch[] } | undefined;
 }
 
 const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1 });
@@ -148,16 +160,25 @@ const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, r
 /** Shared zero vector for basis construction; never mutated. */
 const ORIGIN = new THREE.Vector3();
 
-/**
- * The renderer a world scene draws through. three.js does not shadow at all unless asked, and
- * without shadows every prop and character reads as floating. PCF, three's own default, softens
- * each edge over a disc of `shadow.radius` texels; the basic filter's hard edge reads as a cut-out.
- */
+/** The renderer a world scene draws through. */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  configureWorldRenderer(renderer);
+  return renderer;
+}
+
+/**
+ * three.js does not shadow at all unless asked, and without shadows every prop and character
+ * reads as floating. PCF, three's own default, softens each edge over a disc of `shadow.radius`
+ * texels; the basic filter's hard edge reads as a cut-out. Tone mapping keeps a lit wall from
+ * clipping to white, and the neutral curve keeps the painted colours' hue where a filmic one
+ * would wash them toward grey.
+ */
+export function configureWorldRenderer(renderer: Pick<THREE.WebGLRenderer, 'shadowMap' | 'toneMapping' | 'toneMappingExposure'>): void {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  return renderer;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1;
 }
 
 export function sizeWorldRenderer(renderer: THREE.WebGLRenderer, width: number, height: number): void {
@@ -220,8 +241,8 @@ export class WorldScene implements WorldRenderSurface {
   private readonly registry: ModelRegistry;
   private readonly now: () => number;
   private readonly sun = new THREE.DirectionalLight(0xffffff, 1);
-  private readonly ambient = new THREE.DirectionalLight(0xffffff, 1);
-  private readonly environmentFill = new THREE.AmbientLight(0xffffff, ENVIRONMENT_FILL_INTENSITY);
+  /** The sky above and the ground's bounce below, so no side of anything drops to black. */
+  private readonly fill = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
   /** Retained so `repositionSun` can re-anchor the light without recomputing the day/night state. */
   private readonly sunDirection = new THREE.Vector3(0, 1, 0);
   /** Holds every sector group and entity of the space on screen. */
@@ -230,6 +251,20 @@ export class WorldScene implements WorldRenderSurface {
   private previousRoot: THREE.Object3D | undefined;
   private pendingPlayerReveal = false;
   private readonly sectors = new Map<string, DrawnSector>();
+  private readonly grounds = new Map<string, DrawnGround>();
+  /** Sectors whose ground may no longer match its inputs: added, changed, or beside one that was. */
+  private readonly dirtyGrounds = new Set<string>();
+  private readonly groundRasterizer: GroundRasterizer;
+  /** Counts spaces, so a field asked for in the space before is dropped. */
+  private groundGeneration = 0;
+  /** Sectors whose scatter may no longer match what it was placed from. */
+  private readonly scatterDue = new Set<string>();
+  private readonly grass = new GrassSpring();
+  private readonly bending = new Map<GrassBatch, THREE.InstancedBufferAttribute[]>();
+  /** One bending copy of each prototype material grass is drawn with, shared by every batch and never freed. */
+  private readonly bendingMaterials = new Map<THREE.Material, THREE.Material>();
+  /** The clock the wind sways the grass by. */
+  private readonly wind = { value: 0 };
   private readonly entityStates = new Map<string, EntityRenderState>();
   private readonly bubbles = new Map<string, SpeechBubble>();
   /** The bubbles as last laid out. */
@@ -272,25 +307,26 @@ export class WorldScene implements WorldRenderSurface {
   private shotScale: number | undefined;
   private aspect = 1;
 
-  constructor(assets: ModelAssets, registry: ModelRegistry, aspect = 1, now: () => number = () => performance.now()) {
+  constructor(
+    assets: ModelAssets,
+    registry: ModelRegistry,
+    aspect = 1,
+    now: () => number = () => performance.now(),
+    groundRasterizer: GroundRasterizer = defaultGroundRasterizer(),
+  ) {
     this.assets = assets;
     this.registry = registry;
     this.now = now;
+    this.groundRasterizer = groundRasterizer;
     this.aspect = aspect;
     const bounds = frustumBounds(ORTHO_RIG.defaultScale, aspect);
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
     this.configureSunShadow();
-    // A fixed low fill standing in for sky ambience, so the shadow side never drops to black.
-    this.ambient.position.set(-0.3, 1, -0.4).multiplyScalar(30);
     // The target's world matrix is what gives a directional light its direction, and an object
     // outside the graph never gets one updated.
-    this.scene.add(this.sun, this.sun.target, this.ambient, this.environmentFill, this.spaceRoot);
-    // The void outside the floor, so every space sits on black rather than the default clear
-    // colour — including during a swap.
-    const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-    backdrop.rotation.x = -Math.PI / 2;
-    backdrop.position.y = -0.005;
-    this.scene.add(backdrop);
+    this.scene.add(this.sun, this.sun.target, this.fill, this.spaceRoot);
+    // What shows past the world's edge, tinted with the light by `relight`.
+    this.scene.background = new THREE.Color();
     this.relight();
     this.focusCamera(new THREE.Vector3());
   }
@@ -359,6 +395,13 @@ export class WorldScene implements WorldRenderSurface {
       this.litBrightness = undefined;
     }
     this.sectors.clear();
+    // The ground meshes go with the space root they hang in, as everything else of the space does.
+    this.grounds.clear();
+    this.dirtyGrounds.clear();
+    this.groundGeneration += 1;
+    this.scatterDue.clear();
+    this.grass.clear();
+    this.bending.clear();
     this.entityStates.clear();
     this.bubbles.clear();
     this.placed = [];
@@ -376,9 +419,13 @@ export class WorldScene implements WorldRenderSurface {
     this.pendingPlayerReveal = hold;
   }
 
-  /** Atomic swap once the local player lands: drop the held space and show the new one. */
-  private revealHeldSpaceIfPending(): void {
+  /**
+   * Atomic swap once the local player lands: drop the held space and show the new one. The ground
+   * under the player is painted first, here and now, so the space never appears on a flat floor.
+   */
+  private revealHeldSpaceIfPending(at: Point): void {
     if (!this.pendingPlayerReveal) return;
+    this.paintGroundNow(at);
     disposeSubtree(this.previousRoot);
     this.previousRoot = undefined;
     this.heldBubbles = undefined;
@@ -393,27 +440,25 @@ export class WorldScene implements WorldRenderSurface {
     this.relight();
   }
 
-  /** Draws a sector at its origin, replacing one already drawn under the same name. */
+  /**
+   * Draws a sector at its origin, replacing one already drawn under the same name. Its ground is
+   * rasterized off the frame, and the ground drawn so far stays until the new one arrives.
+   */
   addSector(sector: SectorView): void {
-    this.removeSector(sector.name);
+    disposeSubtree(this.sectors.get(sector.name)?.group);
     const origin = sectorOrigin(sector);
     const group = new THREE.Object3D();
     group.position.set(origin.x, 0, origin.z);
-    const floors = [
-      this.buildFloorQuad(sectorRect(sector), sector.floorMaterialId, 0, origin),
-      ...sector.floorPatches.map((patch) =>
-        this.buildFloorQuad(
-          { x: origin.x + patch.x, z: origin.z + patch.z, width: patch.width, depth: patch.depth },
-          patch.floorMaterialId,
-          FLOOR_PATCH_LIFT,
-          origin,
-        ),
-      ),
-    ];
     const placements = sector.placements.map((placement) => this.buildPlacement(placement));
-    group.add(...floors.map((floor) => floor.mesh), ...placements.map((placed) => placed.node));
+    group.add(...placements.map((placed) => placed.node));
     this.spaceRoot.add(group);
-    this.sectors.set(sector.name, { group, floors, placements });
+    this.sectors.set(sector.name, { view: sector, group, placements });
+    if (!this.grounds.has(sector.name)) {
+      const mesh = groundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
+      this.spaceRoot.add(mesh);
+      this.grounds.set(sector.name, { mesh, key: undefined, field: undefined, pending: undefined, scatter: undefined });
+    }
+    this.markGroundDirty(sector.name);
     if (sector.kind === 'interior') this.room = sectorRect(sector);
     this.spaceBrightness = sector.brightness;
     // Held back while a space is parked on screen: lighting by the incoming interior now would
@@ -425,8 +470,238 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   removeSector(name: string): void {
+    const touching = this.touchingSectors(name);
     disposeSubtree(this.sectors.get(name)?.group);
     this.sectors.delete(name);
+    const ground = this.grounds.get(name);
+    disposeSubtree(ground?.mesh);
+    if (ground !== undefined) this.dropScatter(ground);
+    this.grounds.delete(name);
+    this.dirtyGrounds.delete(name);
+    for (const neighbour of touching) this.dirtyGrounds.add(neighbour);
+  }
+
+  /** Whether every drawn sector's ground is painted for its current inputs and its scatter placed, so nothing drawn is still to change. */
+  isSettled(): boolean {
+    return (
+      this.dirtyGrounds.size === 0 &&
+      this.scatterDue.size === 0 &&
+      [...this.grounds.values()].every((ground) => ground.field !== undefined && ground.pending === undefined)
+    );
+  }
+
+  /** The sector's ground and the grounds of the drawn sectors touching it, whose border blend reads it. */
+  private markGroundDirty(name: string): void {
+    this.dirtyGrounds.add(name);
+    for (const neighbour of this.touchingSectors(name)) this.dirtyGrounds.add(neighbour);
+  }
+
+  private touchingSectors(name: string): string[] {
+    const views = [...this.sectors.values()].map((drawn) => drawn.view);
+    if (views.find((view) => view.name === name)?.kind !== 'outdoor') return [];
+    return neighbourSectors({ id: '', sectors: views.filter((view) => view.kind === 'outdoor') }, name).map((view) => view.name);
+  }
+
+  private groundInputs(sector: SectorView): GroundFieldInputs {
+    return { sector, neighbours: this.touchingSectors(sector.name).map((name) => this.sectors.get(name)!.view) };
+  }
+
+  /** Asks for a field for every dirty sector whose ground no longer matches its inputs, the nearest the camera first. */
+  private updateGrounds(): void {
+    if (this.dirtyGrounds.size === 0) return;
+    const names = [...this.dirtyGrounds].filter((name) => this.sectors.has(name)).sort((a, b) => this.distanceToSector(a) - this.distanceToSector(b));
+    this.dirtyGrounds.clear();
+    for (const name of names) {
+      const ground = this.grounds.get(name)!;
+      const inputs = this.groundInputs(this.sectors.get(name)!.view);
+      const key = groundFieldKey(inputs);
+      if (key === ground.key) {
+        ground.pending = undefined;
+        this.scatterDue.add(name);
+        continue;
+      }
+      if (key === ground.pending) continue;
+      ground.pending = key;
+      const generation = this.groundGeneration;
+      this.groundRasterizer.rasterize(inputs, (field) => {
+        if (generation !== this.groundGeneration || this.grounds.get(name) !== ground || ground.pending !== key) return;
+        this.installGround(name, ground, key, field);
+      });
+    }
+  }
+
+  /** Rasterizes the ground under `at` on the spot, when what is drawn there is not for its current inputs. */
+  private paintGroundNow(at: Point): void {
+    const views = [...this.sectors.values()].map((drawn) => drawn.view);
+    const sector = sectorAt({ id: '', sectors: views }, at);
+    const ground = sector === undefined ? undefined : this.grounds.get(sector.name);
+    if (sector === undefined || ground === undefined) return;
+    const inputs = this.groundInputs(sector);
+    const key = groundFieldKey(inputs);
+    if (key === ground.key) return;
+    this.installGround(sector.name, ground, key, rasterizeGround(inputs));
+  }
+
+  private installGround(name: string, ground: DrawnGround, key: string, field: GroundField): void {
+    const mesh = groundMesh(this.sectors.get(name)!.view, field.raster, field.weights);
+    this.spaceRoot.add(mesh);
+    disposeSubtree(ground.mesh);
+    ground.mesh = mesh;
+    ground.key = key;
+    ground.field = field;
+    ground.pending = undefined;
+    this.scatterDue.add(name);
+  }
+
+  /**
+   * Places the scatter of one sector that is due, the nearest the camera first. One a frame,
+   * because a sector's scatter takes milliseconds, and a border crossing makes several due at once.
+   */
+  private growScatter(): void {
+    const names = [...this.scatterDue].filter((name) => this.grounds.has(name));
+    this.scatterDue.clear();
+    if (names.length === 0) return;
+    const nearest = names.reduce((best, name) => (this.distanceToSector(name) < this.distanceToSector(best) ? name : best));
+    for (const name of names) if (name !== nearest) this.scatterDue.add(name);
+    this.updateScatter(nearest, this.grounds.get(nearest)!);
+  }
+
+  private distanceToSector(name: string): number {
+    return distanceToRect({ x: this.focus.x, z: this.focus.z }, sectorRect(this.sectors.get(name)!.view));
+  }
+
+  /**
+   * Places the sector's scatter again when anything it was placed from changed: its field, or the
+   * placements and doors of the sector and its touching neighbours, whose footprints and triggers it
+   * keeps off. It waits for the field and for the scatter models to be cached.
+   */
+  private updateScatter(name: string, ground: DrawnGround): void {
+    const field = ground.field;
+    if (field === undefined) return;
+    const sector = this.sectors.get(name)!.view;
+    const neighbours = this.touchingSectors(name).map((neighbour) => this.sectors.get(neighbour)!.view);
+    const key = JSON.stringify([ground.key, [sector, ...neighbours].map((each) => [each.name, sectorOrigin(each), each.placements, each.doors])]);
+    if (key === ground.scatter?.key) return;
+    const prototypes = new Map([...GRASS_MODEL_IDS, PEBBLE_MODEL_ID].map((id) => [id, this.assets.prototypeMeshes(id)] as const));
+    if ([...prototypes.values()].some((meshes) => meshes === undefined)) return;
+    const scatter = scatterSector({ sector, neighbours, field, registry: this.registry });
+    const group = new THREE.Group();
+    group.name = SCATTER_NAME;
+    const batches: GrassBatch[] = [];
+    for (const id of GRASS_MODEL_IDS) {
+      const tufts = scatter.tufts.filter((tuft) => tuft.modelId === id);
+      if (tufts.length === 0) continue;
+      const footprint = objectModel(this.registry, id)?.footprint;
+      const halfWidth = footprint === undefined ? 0.1 : Math.max(footprint.width, footprint.depth) / 2;
+      batches.push(this.bend(this.instanced(group, prototypes.get(id)!, tufts, true), tufts, halfWidth));
+    }
+    if (scatter.pebbles.length > 0) this.instanced(group, prototypes.get(PEBBLE_MODEL_ID)!, scatter.pebbles, false);
+    if (scatter.flowers.length > 0) batches.push(this.bend(this.flowers(group, scatter.flowers), scatter.flowers, FLOWER_HEAD_RADIUS));
+    this.dropScatter(ground);
+    this.spaceRoot.add(group);
+    ground.scatter = { group, key, batches };
+  }
+
+  private dropScatter(ground: DrawnGround): void {
+    if (ground.scatter === undefined) return;
+    for (const batch of ground.scatter.batches) {
+      this.grass.remove(batch);
+      this.bending.delete(batch);
+    }
+    disposeSubtree(ground.scatter.group);
+    ground.scatter = undefined;
+  }
+
+  /**
+   * One instanced mesh per mesh of the model, each over its own clone of the prototype's geometry
+   * with the mesh's place in the model baked in, so instances stand as a placed model does.
+   */
+  private instanced(group: THREE.Group, meshes: readonly PrototypeMesh[], items: readonly ScatterTuft[], bending: boolean): THREE.InstancedMesh[] {
+    const matrix = new THREE.Matrix4();
+    const rotation = new THREE.Quaternion();
+    return meshes.map((prototype) => {
+      const geometry = prototype.geometry.clone().applyMatrix4(prototype.matrix);
+      const mesh = new THREE.InstancedMesh(geometry, bending ? this.bendingMaterial(prototype.material) : prototype.material, items.length);
+      items.forEach((item, index) => {
+        rotation.setFromAxisAngle(UP, THREE.MathUtils.degToRad(item.yaw));
+        mesh.setMatrixAt(index, matrix.compose(new THREE.Vector3(item.x, 0, item.z), rotation, UNIT_SCALE));
+      });
+      return addScatterMesh(group, mesh);
+    });
+  }
+
+  /** Flower clusters: a coloured head on a stem each. */
+  private flowers(group: THREE.Group, flowers: readonly { x: number; z: number; colour: number; height: number }[]): THREE.InstancedMesh[] {
+    const matrix = new THREE.Matrix4();
+    const colour = new THREE.Color();
+    const head = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(FLOWER_HEAD_RADIUS, 0), this.bendingMaterial(FLOWER_HEAD_MATERIAL), flowers.length);
+    const stem = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.005, 0.005, 0.1, 4).translate(0, 0.05, 0),
+      this.bendingMaterial(FLOWER_STEM_MATERIAL),
+      flowers.length,
+    );
+    flowers.forEach((flower, index) => {
+      head.setMatrixAt(index, matrix.makeTranslation(flower.x, flower.height, flower.z));
+      head.setColorAt(index, colour.setHex(flower.colour));
+      stem.setMatrixAt(index, matrix.makeScale(1, flower.height / 0.1, 1).setPosition(flower.x, 0, flower.z));
+    });
+    return [addScatterMesh(group, head), addScatterMesh(group, stem)];
+  }
+
+  /**
+   * Bends the meshes' instances as one batch, rooted at the items: each mesh carries its own tilt
+   * attribute over the batch's tilts, which the grass spring moves.
+   */
+  private bend(meshes: readonly THREE.InstancedMesh[], items: readonly Point[], halfWidth: number): GrassBatch {
+    const tilts = new Float32Array(items.length * 2);
+    const attributes = meshes.map((mesh) => {
+      const attribute = new THREE.InstancedBufferAttribute(tilts, 2);
+      attribute.setUsage(THREE.DynamicDrawUsage);
+      mesh.geometry.setAttribute('aTilt', attribute);
+      return attribute;
+    });
+    const batch = { roots: new Float32Array(items.flatMap((item) => [item.x, item.z])), halfWidths: new Float32Array(items.length).fill(halfWidth), tilts };
+    this.grass.add(batch);
+    this.bending.set(batch, attributes);
+    return batch;
+  }
+
+  /**
+   * A copy of the material whose vertex stage tilts each instance about its root by its `aTilt`
+   * and a light wind, so a blade keeps its length as it leans.
+   */
+  private bendingMaterial(source: THREE.Material): THREE.Material {
+    let bending = this.bendingMaterials.get(source);
+    if (bending !== undefined) return bending;
+    bending = source.clone();
+    const wind = this.wind;
+    bending.onBeforeCompile = (shader) => {
+      shader.uniforms['uWindTime'] = wind;
+      shader.vertexShader = `attribute vec2 aTilt;\nuniform float uWindTime;\n${shader.vertexShader.replace('#include <project_vertex>', BEND_VERTEX)}`;
+    };
+    bending.customProgramCacheKey = () => `${SCATTER_NAME}-${source.type}`;
+    this.bendingMaterials.set(source, bending);
+    return bending;
+  }
+
+  /** The grass each body brushes this frame, leaning and springing back. */
+  private bendGrass(dt: number): void {
+    this.wind.value = this.sceneClock;
+    if (this.bending.size === 0) return;
+    const contacts: GrassContact[] = [];
+    const at = new THREE.Vector3();
+    for (const state of this.entityStates.values()) {
+      if (state.grassBones.length === 0) continue;
+      state.node.updateMatrixWorld(true);
+      for (const { bone, foot } of state.grassBones) {
+        at.setFromMatrixPosition(bone.matrixWorld);
+        if (foot && at.y - state.node.position.y > GRASS_FOOT_CONTACT_HEIGHT) continue;
+        contacts.push({ x: at.x, z: at.z, radius: foot ? GRASS_FOOT_RADIUS : GRASS_LEG_RADIUS });
+      }
+    }
+    for (const batch of this.grass.step(contacts, dt)) {
+      for (const attribute of this.bending.get(batch) ?? []) attribute.needsUpdate = true;
+    }
   }
 
   placeEntity(entity: ClientEntity): void {
@@ -455,6 +730,7 @@ export class WorldScene implements WorldRenderSurface {
         isPlaceholder: true,
         headHeight: 0,
         headBone: undefined,
+        grassBones: [],
         headBoneRest: 0,
         namePlaque: undefined,
         namePlaquePlate: undefined,
@@ -495,7 +771,7 @@ export class WorldScene implements WorldRenderSurface {
     if (entity.kind === 'player') {
       this.cameraFollowId = entity.id;
       this.focusCamera(state.node.position);
-      this.revealHeldSpaceIfPending();
+      this.revealHeldSpaceIfPending(entity.position);
       this.hangCarriedBubble(entity);
     }
   }
@@ -873,6 +1149,9 @@ export class WorldScene implements WorldRenderSurface {
       state.mixer?.update(dt);
     }
 
+    this.updateGrounds();
+    this.growScatter();
+    this.bendGrass(dt);
     this.updateHover();
     this.orderPlaques();
     // Overlays run out on wall time, not on the clamped frame delta: a hidden tab gets no frames, and a
@@ -1051,6 +1330,7 @@ export class WorldScene implements WorldRenderSurface {
       state.mixer = undefined;
       state.headHeight = this.measureHeadHeight(state);
       state.headBone = undefined;
+      state.grassBones = [];
       return;
     }
     enableShadows(model);
@@ -1063,50 +1343,11 @@ export class WorldScene implements WorldRenderSurface {
     state.mixer.update(0);
     state.headHeight = this.measureHeadHeight(state);
     this.findHeadBone(state, model);
-    if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
-  }
-
-  /**
-   * One textured quad on the ground: a sector's base floor, or a patch lifted just above it.
-   * `origin` is the sector group's position, which the mesh is placed relative to.
-   */
-  private buildFloorQuad(rect: Rect, materialId: string, lift: number, origin: Point): FloorQuad {
-    const texture = this.assets.floorTexture(materialId);
-    const geometry = new THREE.PlaneGeometry(rect.width, rect.depth);
-    const uv = floorUVRect(rect, textureAspect(texture?.image as { width: number; height: number } | undefined));
-    // V is **negated**. `PlaneGeometry` emits indices 0/1 as the local +Y row, which
-    // `rotation.x = -pi/2` maps to world -Z — the smaller z. So V has to decrease as z grows, and
-    // negating makes it a function of z alone: with an intercept that depended on the quad's own
-    // position and depth, each quad would mirror about its own centre and abutting rects would
-    // meet at two different phases.
-    const attribute = geometry.getAttribute('uv') as THREE.BufferAttribute;
-    const corners = [
-      [uv.origin.x, -uv.origin.y],
-      [uv.origin.x + uv.span.x, -uv.origin.y],
-      [uv.origin.x, -(uv.origin.y + uv.span.y)],
-      [uv.origin.x + uv.span.x, -(uv.origin.y + uv.span.y)],
-    ];
-    corners.forEach(([u, v], index) => attribute.setXY(index, u!, v!));
-    attribute.needsUpdate = true;
-
-    // Cloned because the mesh owns its material, and disposal takes the material's map with it.
-    // Handing over the cache entry itself would leave the next quad that paints this material
-    // re-uploading the texture and regenerating its mipmaps on the first drawn frame.
-    const map = texture?.clone();
-    if (map !== undefined) map.needsUpdate = true;
-    const material = new THREE.MeshStandardMaterial({
-      roughness: 1,
-      metalness: 0,
-      ...(map === undefined ? { color: new THREE.Color(0x808080) } : { map }),
+    state.grassBones = GRASS_BONES.flatMap(({ name, foot }) => {
+      const bone = model.getObjectByName(name);
+      return bone === undefined ? [] : [{ bone, foot }];
     });
-    const mesh = new THREE.Mesh(geometry, material);
-    markOwned(mesh, { geometry: true, material: true });
-    // Receives but does not cast: a ground plane casting into its own depth comparison is the
-    // classic source of shadow acne, and there is nothing below it to catch a shadow anyway.
-    mesh.receiveShadow = true;
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(rect.x - origin.x + rect.width / 2, lift, rect.z - origin.z + rect.depth / 2);
-    return { mesh, rect, materialId, lift, isFallback: texture === undefined };
+    if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
   }
 
   /** A placement stands at its record's position and yaw; the model's own origin is its ground-footprint centre. */
@@ -1137,17 +1378,9 @@ export class WorldScene implements WorldRenderSurface {
         enableShadows(model);
         placed.isPlaceholder = false;
       }
-      // Floors heal like every placed model rather than staying grey. Rebuilt rather than
-      // re-textured in place: the UVs depend on the texture's aspect, so the attribute has to be
-      // recomputed alongside the map.
-      sector.floors = sector.floors.map((floor) => {
-        if (!floor.isFallback || this.assets.floorTexture(floor.materialId) === undefined) return floor;
-        const rebuilt = this.buildFloorQuad(floor.rect, floor.materialId, floor.lift, { x: sector.group.position.x, z: sector.group.position.z });
-        sector.group.add(rebuilt.mesh);
-        disposeSubtree(floor.mesh);
-        return rebuilt;
-      });
     }
+    // A sector whose scatter waited for its models is placed over the next frames, from the same fields.
+    for (const name of this.grounds.keys()) this.scatterDue.add(name);
     for (const state of this.entityStates.values()) {
       if (state.isPlaceholder) this.resolveEntityModel(state);
     }
@@ -1208,9 +1441,12 @@ export class WorldScene implements WorldRenderSurface {
     const state = sunState(hour, this.litBrightness);
     this.sunDirection.set(state.direction.x, state.direction.y, state.direction.z);
     this.repositionSun();
-    this.sun.intensity = state.sunIntensity / 1000;
+    this.sun.intensity = state.sunIntensity;
     this.sun.color.setRGB(state.sunColor.r, state.sunColor.g, state.sunColor.b);
-    this.ambient.intensity = state.ambientIntensity / 1000;
+    this.fill.intensity = state.hemisphereIntensity;
+    this.fill.color.setRGB(state.skyColor.r, state.skyColor.g, state.skyColor.b);
+    this.fill.groundColor.setRGB(state.groundColor.r, state.groundColor.g, state.groundColor.b);
+    (this.scene.background as THREE.Color).setRGB(state.backdropColor.r, state.backdropColor.g, state.backdropColor.b);
   }
 
   private focusCamera(focus: THREE.Vector3): void {
@@ -1230,10 +1466,7 @@ export class WorldScene implements WorldRenderSurface {
     this.repositionSun();
   }
 
-  /**
-   * The drawn node of a placement, so a live drag can move and turn the real mesh. Floor
-   * patches have no counterpart: their texture phase is baked into their geometry.
-   */
+  /** The drawn node of a placement, so a live drag can move and turn the real mesh. */
   placementNode(sectorName: string, placementId: string): THREE.Object3D | undefined {
     return this.sectors.get(sectorName)?.placements.find((placed) => placed.placement.id === placementId)?.node;
   }
@@ -1331,8 +1564,11 @@ const HEAD_SHARE = 0.4;
 const PLAQUE_ORDER = { rest: 1, own: 2, hurt: 3, tended: 8, hovered: 9 } as const;
 /** How high over a doorway outdoors a voice through it hangs its bubble: on the building, above the door. */
 const DOORWAY_VOICE_HEIGHT = 2.2;
-/** How high a room's walls are taken to be drawn, so a bubble past one clears its top. */
-const ROOM_WALL_HEIGHT = 2.5;
+/**
+ * How high a room's full walls stand (`WALL_HEIGHT` in somnio-assets' `Pipeline/build_room_walls.py`),
+ * so a bubble past any of its walls, the low front ones too, clears the top.
+ */
+const ROOM_WALL_HEIGHT = 1.728;
 /** The gap on screen, in metres, between a room's wall and a bubble past it. */
 const BEYOND_WALL_GAP = 0.3;
 /** How long the word over a missed entity stays up. */
@@ -1366,6 +1602,8 @@ const PLAQUE_FLOOR_CLEARANCE = 0.15;
  */
 const OWNS_GEOMETRY = 'somnioOwnsGeometry';
 const OWNS_MATERIAL = 'somnioOwnsMaterial';
+/** On a material's `userData`: textures it binds as uniforms rather than as its `map`, which it owns. */
+const OWNED_TEXTURES = 'somnioOwnedTextures';
 
 /** Marks a mesh's allocations as this file's to release. */
 function markOwned(mesh: THREE.Mesh, options: { geometry: boolean; material: boolean }): void {
@@ -1399,16 +1637,16 @@ function disposeSubtree(root: THREE.Object3D | undefined): void {
   root.traverse((object) => {
     const skinned = object as THREE.SkinnedMesh;
     if (skinned.isSkinnedMesh) skinned.skeleton?.dispose();
+    // Frees the instance matrix and colour buffers, which belong to the mesh and not to its geometry.
+    if ((object as THREE.InstancedMesh).isInstancedMesh) (object as THREE.InstancedMesh).dispose();
     const mesh = object as THREE.Mesh;
     if (mesh.userData[OWNS_GEOMETRY] === true) mesh.geometry.dispose();
     if (mesh.userData[OWNS_MATERIAL] !== true) return;
     for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-      // Safe to take the map with the material because every owned material holds a texture this
-      // file minted: the floor and its patches clone their cached entry, and each overlay rasterizes
-      // a fresh `CanvasTexture`. Disposing a cache entry directly would corrupt nothing, but
-      // `WebGLTextures` clears its `__version` unconditionally, so the next quad using that
-      // material would pay a full re-upload and mipmap regeneration on its first drawn frame.
+      // Safe to take the map with the material because every owned material's map is a texture this
+      // file minted: each overlay rasterizes a fresh `CanvasTexture`.
       (material as THREE.MeshBasicMaterial).map?.dispose();
+      for (const texture of (material.userData[OWNED_TEXTURES] as THREE.Texture[] | undefined) ?? []) texture.dispose();
       material.dispose();
     }
   });
@@ -1430,7 +1668,8 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.
   container.quaternion.copy(OVERLAY_ORIENTATION);
   const texture = new THREE.CanvasTexture(art.canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+  // Not tone-mapped, so the plaque's painted colours stay exactly as rasterized.
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false });
   const size = new THREE.Vector2(art.widthPixels * OVERLAY_METRES_PER_PIXEL, art.heightPixels * OVERLAY_METRES_PER_PIXEL);
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), material);
   // Every overlay quad allocates its own canvas texture, material, and geometry.
@@ -1467,10 +1706,127 @@ function missQuad(): THREE.Object3D {
 /** A flat ring just above the ground round an entity's feet. */
 function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   const geometry = new THREE.RingGeometry(innerRadius, innerRadius + 0.08, RING_SEGMENTS, 1);
-  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: RING_OPACITY, depthWrite: false });
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: RING_OPACITY,
+    depthWrite: false,
+    toneMapped: false,
+  });
   const mesh = new THREE.Mesh(geometry, material);
   markOwned(mesh, { geometry: true, material: true });
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.03;
   return mesh;
 }
+
+/** The flat background a sector draws on until its first field arrives: one texel of its own background. */
+function flatGroundWeights(sector: SectorView): [Uint8Array, Uint8Array] {
+  // A background with no recipe draws the first, as the field does.
+  const material = groundMaterialChannel(sector.ground.backgroundMaterialId) ?? 0;
+  const weights: [Uint8Array, Uint8Array] = [new Uint8Array(4), new Uint8Array(4)];
+  weights[material < 4 ? 0 : 1][material % 4] = 255;
+  return weights;
+}
+
+/** A scatter mesh joins its group owning its cloned geometry, never its shared material, and takes shadows. */
+function addScatterMesh(group: THREE.Group, mesh: THREE.InstancedMesh): THREE.InstancedMesh {
+  markOwned(mesh, { geometry: true, material: false });
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+
+const GROUND_PALETTE = GROUND_MATERIAL_IDS.flatMap((id) => GROUND_RECIPES[id].palette.map((hex) => new THREE.Color(hex)));
+const GROUND_FRAGMENT = groundFragmentChunks();
+
+/**
+ * One plane over the sector's rect, painted by the floor recipes from the weight textures, which
+ * cover the sector's padded raster. Every sector's ground shares one shader program.
+ */
+function groundMesh(sector: SectorView, size: { columns: number; rows: number }, weights: readonly [Uint8Array, Uint8Array]): THREE.Mesh {
+  const textures = weights.map((bytes) => {
+    const texture = new THREE.DataTexture(bytes, size.columns, size.rows, THREE.RGBAFormat, THREE.UnsignedByteType);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return texture;
+  });
+  const padded = paddedRasterRect(sector);
+  const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+  material.userData[OWNED_TEXTURES] = textures;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms['uGroundWeights0'] = { value: textures[0] };
+    shader.uniforms['uGroundWeights1'] = { value: textures[1] };
+    shader.uniforms['uGroundOrigin'] = { value: new THREE.Vector2(padded.x, padded.z) };
+    shader.uniforms['uGroundSize'] = { value: new THREE.Vector2(padded.width, padded.depth) };
+    shader.uniforms['uGroundPalette'] = { value: GROUND_PALETTE };
+    shader.vertexShader = `varying vec3 vGroundPosition;\n${shader.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\nvGroundPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+    )}`;
+    shader.fragmentShader = `${GROUND_FRAGMENT.declarations}\n${shader.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', GROUND_FRAGMENT.colour)}`;
+  };
+  material.customProgramCacheKey = () => GROUND_NAME;
+  const rect = sectorRect(sector);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rect.width, rect.depth), material);
+  markOwned(mesh, { geometry: true, material: true });
+  mesh.name = GROUND_NAME;
+  // Receives but does not cast: a ground plane casting into its own depth comparison is the
+  // classic source of shadow acne, and there is nothing below it to catch a shadow anyway.
+  mesh.receiveShadow = true;
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(rect.x + rect.width / 2, 0, rect.z + rect.depth / 2);
+  return mesh;
+}
+
+/** The name every sector's ground mesh carries, and its shader program's cache key. */
+const GROUND_NAME = 'somnio-ground';
+/** The name of each sector's scatter group, and the stem of its bending programs' cache keys. */
+const SCATTER_NAME = 'somnio-scatter';
+
+const UP = new THREE.Vector3(0, 1, 0);
+const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
+/** A flower head's radius, which is also how far a body reaches it to bend the flower. */
+const FLOWER_HEAD_RADIUS = 0.03;
+const FLOWER_HEAD_MATERIAL = new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true });
+const FLOWER_STEM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x5f8f3a, roughness: 1 });
+
+/**
+ * The bones that brush grass, as `GLTFLoader` names them: it strips the dots from node names, so
+ * the rig's `foot.l` is `footl`. A model without them, as the ghost is, bends nothing.
+ */
+const GRASS_BONES = [
+  { name: 'footl', foot: true },
+  { name: 'footr', foot: true },
+  { name: 'toesl', foot: true },
+  { name: 'toesr', foot: true },
+  { name: 'lowerlegl', foot: false },
+  { name: 'lowerlegr', foot: false },
+] as const;
+/** A foot or toe touches grass only this near the ground. */
+const GRASS_FOOT_CONTACT_HEIGHT = 0.1;
+const GRASS_FOOT_RADIUS = 0.06;
+const GRASS_LEG_RADIUS = 0.05;
+
+/**
+ * Tilts a vertex about its instance's root by the instance's tilt and a light wind, rather than
+ * shearing it, so a blade keeps its length. The ground is at height 0 wherever scatter grows.
+ */
+const BEND_VERTEX = /* glsl */ `
+vec4 mvPosition = vec4( transformed, 1.0 );
+#ifdef USE_INSTANCING
+mvPosition = instanceMatrix * mvPosition;
+#endif
+vec4 bendWorld = modelMatrix * mvPosition;
+float bendHeight = max(bendWorld.y, 0.0);
+vec2 wind = vec2(sin(uWindTime * 1.6 + bendWorld.x * 0.9 + bendWorld.z * 0.4), cos(uWindTime * 1.2 + bendWorld.z * 0.8)) * 0.06;
+vec2 tilt = aTilt + wind;
+float angle = min(length(tilt), 1.05);
+vec2 tiltDirection = angle > 0.0001 ? tilt / length(tilt) : vec2(0.0);
+bendWorld.xz += tiltDirection * bendHeight * sin(angle);
+bendWorld.y = bendHeight * cos(angle);
+mvPosition = viewMatrix * bendWorld;
+gl_Position = projectionMatrix * mvPosition;
+`;

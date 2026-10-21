@@ -21,6 +21,7 @@ export type SplashSurface = Pick<
   | 'showSpeechBubble'
   | 'setClock'
   | 'frameShot'
+  | 'isSettled'
 >;
 
 export interface SplashDirectorOptions {
@@ -41,10 +42,14 @@ interface ActorState {
   condition: Condition;
 }
 
+/** The longest a newly staged world is held in the dark waiting to settle, so a field that never arrives cannot stop the reel. */
+const SETTLE_LIMIT_SECONDS = 3;
+
 /**
  * Plays the splash reel on the scene behind the pre-login screens: each shot staged from the
  * committed sectors, its figures walked along their paths and its beats fired on time, joined to
- * the next by a dip to dark.
+ * the next by a dip to dark. A world staged afresh stays in the dark, its shot waiting, until the
+ * scene has painted its ground and grown its scatter, so it never builds up on screen.
  *
  * `waiting` wants a start and `running` plays. `halted` follows an attached session or any throw,
  * and stays still until `restart`. A splash failure must never stand between a player and the
@@ -65,6 +70,8 @@ export class SplashDirector {
   private dip = 0;
   /** `rising` toward the cut at the shot's end, `falling` after it. */
   private dipPhase: 'rising' | 'falling' | undefined;
+  /** How long the world staged afresh has waited to settle, or `undefined` once it has. */
+  private settling: number | undefined;
   private space: string | undefined;
   private readonly actors = new Map<string, ActorState>();
   private viewport: Viewport = { width: 1, height: 1 };
@@ -127,7 +134,8 @@ export class SplashDirector {
       for (const target of raised) this.surface.showRaising(target, undefined);
       this.seconds = 0;
       this.firedBeats = 0;
-      this.dip = this.reducedMotion ? 0 : 1;
+      // A world still settling stays dark under reduced motion too, until `tick` finds it settled.
+      this.dip = this.reducedMotion && this.settling === undefined ? 0 : 1;
       this.dipPhase = this.reducedMotion ? undefined : 'falling';
       this.direct(shot);
     });
@@ -164,6 +172,12 @@ export class SplashDirector {
     this.actors.clear();
     this.state = 'running';
     this.stage(0);
+    if (this.settling !== undefined && !this.surface.isSettled()) {
+      this.dip = 1;
+      this.dipPhase = this.reducedMotion ? undefined : 'falling';
+    } else {
+      this.settling = undefined;
+    }
   }
 
   private stage(index: number): void {
@@ -175,6 +189,7 @@ export class SplashDirector {
       this.surface.showSplash();
       for (const sector of shot.sectors) this.surface.addSector(sectorView(sector));
       this.space = shot.space;
+      this.settling = 0;
       this.actors.clear();
     } else {
       for (const id of [...this.actors.keys()]) {
@@ -208,6 +223,15 @@ export class SplashDirector {
 
   private tick(delta: number): void {
     const shot = this.shots[this.index]!;
+    if (this.settling !== undefined) {
+      this.settling += delta;
+      if (!this.surface.isSettled() && this.settling < SETTLE_LIMIT_SECONDS) {
+        this.direct(shot);
+        return;
+      }
+      this.settling = undefined;
+      if (this.reducedMotion) this.dip = 0;
+    }
     this.seconds += delta;
     this.fireBeats(shot);
     this.walk(shot);

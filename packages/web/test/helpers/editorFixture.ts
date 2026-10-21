@@ -8,7 +8,7 @@ import { applyFramingToCamera, editorFramingFittingBounds } from '@/editor/frami
 import type { ViewportSize } from '@/editor/picking';
 import { TEST_REGISTRY, outdoorSector } from '../../../core/test/support/worldFixture.ts';
 
-/** A 20 m outdoor sector at the origin of its space, on a floor the bundled registry maps. */
+/** A 20 m outdoor sector at the origin of its space, on a ground material the recipes draw. */
 export const SETTINGS: SectorSettings = {
   name: 'Test',
   kind: 'outdoor',
@@ -17,12 +17,12 @@ export const SETTINGS: SectorSettings = {
   originX: 0,
   originZ: 0,
   brightness: 100,
-  floorMaterialId: 'grass-meadow',
+  backgroundMaterialId: 'grass-meadow',
 };
 
 export const VIEWPORT: ViewportSize = { width: 640, height: 480 };
 
-/** The sector `SETTINGS` names, with no content, over the test registry's floor. */
+/** The sector `SETTINGS` names, with no content. */
 export function emptySector(overrides: Partial<Sector> = {}): Sector {
   return outdoorSector('Test', { x: 0, z: 0 }, overrides);
 }

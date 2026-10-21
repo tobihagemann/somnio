@@ -144,7 +144,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 13
+      "protocolVersion": 14
     },
     "tag": "hello"
   },
@@ -384,17 +384,52 @@
             }
           }
         ],
-        "floorMaterialId": "grass-meadow",
-        "floorPatches": [
-          {
-            "depth": 20,
-            "floorMaterialId": "cobble-town",
-            "id": "patch-1",
-            "width": 8.96,
-            "x": 16,
-            "z": 0
-          }
-        ],
+        "ground": {
+          "backgroundMaterialId": "grass-meadow",
+          "marks": [
+            {
+              "id": "plaza",
+              "materialId": "cobble-town",
+              "opacity": 1,
+              "shape": {
+                "kind": "polygon",
+                "points": [
+                  {
+                    "x": 16,
+                    "z": 0
+                  },
+                  {
+                    "x": 24.96,
+                    "z": 0
+                  },
+                  {
+                    "x": 24.96,
+                    "z": 20
+                  }
+                ]
+              }
+            },
+            {
+              "id": "road",
+              "materialId": "dirt-path",
+              "opacity": 0.8,
+              "shape": {
+                "kind": "stroke",
+                "points": [
+                  {
+                    "x": 2,
+                    "z": 20
+                  },
+                  {
+                    "x": 38.96,
+                    "z": 22
+                  }
+                ],
+                "radius": 1.6
+              }
+            }
+          ]
+        },
         "kind": "outdoor",
         "name": "EdariaSquare",
         "origin": {
@@ -435,8 +470,10 @@
             }
           }
         ],
-        "floorMaterialId": "wood-warm",
-        "floorPatches": [],
+        "ground": {
+          "backgroundMaterialId": "wood-warm",
+          "marks": []
+        },
         "kind": "interior",
         "name": "EdariaLibrary",
         "placements": [

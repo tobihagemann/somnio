@@ -224,7 +224,6 @@ export class Overlays {
           children: [
             element('p', { text: t('3D characters and props by KayKit.') }),
             element('p', { text: t('Ghost model by Quaternius.') }),
-            element('p', { text: t('Floor textures by ambientCG.') }),
             element('p', { text: t('UI borders by Kenney.') }),
           ],
         }),

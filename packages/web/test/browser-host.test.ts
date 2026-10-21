@@ -17,8 +17,8 @@ function emptyAssets(): ModelAssets {
     prewarm: async () => {},
     character: () => undefined,
     object: () => undefined,
-    floorTexture: () => undefined,
     clipsFor: () => [],
+    prototypeMeshes: () => undefined,
   };
 }
 

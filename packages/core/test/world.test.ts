@@ -160,6 +160,43 @@ describe('buildWorld', () => {
   });
 });
 
+/**
+ * A client blends a sector's ground only with the sectors touching it, so two that do not touch
+ * must stand clear of each other's blend: past the 4 m a background paints beyond its rect, plus the
+ * gutter its raster reaches beyond.
+ */
+describe('the spacing of outdoor sectors', () => {
+  it('reports two sectors standing 1 m apart under each of them, and still loads the world', () => {
+    const west = outdoorSector('West', { x: 0, z: 0 });
+    const east = outdoorSector('East', { x: 21, z: 0 });
+    const world = buildWorld([west, east], TEST_REGISTRY);
+    expect(world.issues).toEqual([
+      { sector: 'West', record: 'sector', id: 'East', message: expect.stringContaining('0.64 m from East without touching it') },
+      { sector: 'East', record: 'sector', id: 'West', message: expect.stringContaining('from West') },
+    ]);
+    expect(world.spaces.get(OUTDOOR_SPACE_ID)?.sectors).toHaveLength(2);
+  });
+
+  /** A flat 4.5 m rule would pass this layout: A's 2.56 m gutter at 0.64 m texels reaches within 1.95 m of C, and C's within 1.92 m of A, where B blends C in and A does not. */
+  it('counts the gutter of a coarse raster', () => {
+    const size = { width: 512, depth: 512 };
+    const a = outdoorSector('A', { x: 0, z: 0 }, { size });
+    const b = outdoorSector('B', { x: 512, z: 128 }, { size });
+    const c = outdoorSector('C', { x: 0, z: 516.51 }, { size });
+    const issues = buildWorld([a, b, c], TEST_REGISTRY).issues;
+    expect(issues.map((issue) => `${issue.sector}/${issue.id}`)).toEqual(['A/C', 'C/A']);
+    expect(issues[0]!.message).toContain('1.92 m');
+  });
+
+  it('reports nothing for sectors that touch, or that stand far enough apart', () => {
+    const issues = buildWorld(
+      [outdoorSector('A', { x: 0, z: 0 }), outdoorSector('B', { x: 20, z: 0 }), outdoorSector('C', { x: 44.33, z: 0 })],
+      TEST_REGISTRY,
+    ).issues;
+    expect(issues).toEqual([]);
+  });
+});
+
 describe('adjacency', () => {
   // The committed outdoor layout, whose origins and sizes are decimal metres that do not sum exactly, plus a sector touching only at a corner.
   const town = outdoorSector('Town', { x: 0, z: 0 }, { size: { width: 40.96, depth: 40.96 } });

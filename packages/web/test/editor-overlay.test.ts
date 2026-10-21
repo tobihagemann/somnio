@@ -45,7 +45,6 @@ function registryWith(objectModel: object): ModelRegistry {
   return parseModelRegistry({
     characterModels: [{ id: 'hero', model: { stem: 'Hero', expectedClips: ['Idle'] } }],
     playerModel: 'hero',
-    floorMaterials: [{ id: 'grass', stem: 'Grass' }],
     objectModels: [objectModel],
   });
 }
@@ -57,7 +56,24 @@ describe('AuthoringOverlay', () => {
   it('draws one gizmo per record that means something on the ground, rebuilt from scratch each update', () => {
     const overlay = new AuthoringOverlay();
     const body = emptySector({
-      floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 12, width: 4, depth: 4 }],
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'mark-1',
+            materialId: 'dirt-path',
+            opacity: 1,
+            shape: {
+              kind: 'stroke',
+              radius: 1,
+              points: [
+                { x: 0, z: 12 },
+                { x: 4, z: 16 },
+              ],
+            },
+          },
+        ],
+      },
       blockers: [{ id: 'blocker-1', x: 0, z: 0, width: 2, depth: 1 }],
       placements: [
         { id: 'box-1', modelId: 'box', x: 6, z: 6, yaw: 0, elevation: 0 },
@@ -71,13 +87,23 @@ describe('AuthoringOverlay', () => {
     });
     const selection = [selectionFootprint({ kind: 'blocker', id: 'blocker-1' }, body, TEST_REGISTRY)!];
     overlay.update(input(body, { selection }));
-    // Patch, blocker, the box's collider, the door model's anchor, the door's trigger and
+    // Mark, blocker, the box's collider, the door model's anchor, the door's trigger and
     // arrival, the spawn area, the NPC, the spawn point, and the selection border. The rug
     // neither blocks nor carries nor takes a door, so it draws nothing.
     expect(overlay._childCount()).toBe(9);
 
     overlay.update(input(body));
     expect(overlay._childCount()).toBe(8);
+
+    overlay.update(
+      input(body, {
+        groundDraft: [
+          { x: 1, z: 1 },
+          { x: 3, z: 1 },
+        ],
+      }),
+    );
+    expect(overlay._childCount()).toBe(9);
   });
 
   it('stands at the sector origin, so records draw at their sector-relative positions', () => {

@@ -38,7 +38,37 @@ function body(): Sector {
       doors: [{ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } }],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 90, dialogScript: 'Hallo' }],
       monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
-      floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 12, z: 2, width: 3, depth: 2 }],
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'road',
+            materialId: 'dirt-path',
+            opacity: 1,
+            shape: {
+              kind: 'stroke',
+              radius: 1,
+              points: [
+                { x: 12, z: 2 },
+                { x: 16, z: 4 },
+              ],
+            },
+          },
+          {
+            id: 'plaza',
+            materialId: 'cobble-town',
+            opacity: 1,
+            shape: {
+              kind: 'polygon',
+              points: [
+                { x: 2, z: 15 },
+                { x: 5, z: 15 },
+                { x: 5, z: 18 },
+              ],
+            },
+          },
+        ],
+      },
       spawn: { x: 6, z: 12, facing: 0 },
     },
   );
@@ -186,16 +216,31 @@ describe('field commit', () => {
     h.select([{ kind: 'monsterSpawn', id: 'spawn-1' }]);
     h.type('Depth', '6');
     h.type('Max alive', '5');
-    h.select([{ kind: 'floorPatch', id: 'patch-1' }]);
-    h.type('Z', '3');
+    h.select([{ kind: 'mark', id: 'road' }]);
+    h.type('Opacity', '0.5');
+    h.type('Radius', '1.5');
     h.select([{ kind: 'spawn', id: 'spawn' }]);
     h.type('X', '7');
     const sector = h.document.sector;
     expect(sector.placements[0]?.elevation).toBe(0.75);
     expect(sector.npcs[0]?.name).toBe('Quieta');
     expect(sector.monsterSpawns[0]).toMatchObject({ depth: 6, maxAlive: 5 });
-    expect(sector.floorPatches[0]?.z).toBe(3);
+    expect(sector.ground.marks[0]).toMatchObject({ opacity: 0.5, shape: { radius: 1.5 } });
     expect(sector.spawn).toEqual({ x: 7, z: 12, facing: 0 });
+  });
+
+  /** Its points never move here, so a stroke's radius stops where its nearest point would leave the bound. */
+  it("caps a stroke's radius where its points still lie in bounds, and gives a polygon none", () => {
+    const h = harness();
+    h.select([{ kind: 'mark', id: 'road' }]);
+    // The road's points are 2 m from the north edge, which caps it at 2.825 m.
+    h.type('Radius', '6');
+    expect(h.document.sector.ground.marks[0]!.shape).toMatchObject({ radius: 2.825 });
+    expect(h.input('Radius').value).toBe('2.825');
+    h.type('Opacity', '1.7');
+    expect(h.document.sector.ground.marks[0]!.opacity).toBe(1);
+    h.select([{ kind: 'mark', id: 'plaza' }]);
+    expect(h.panel.root.textContent).not.toContain('Radius');
   });
 
   it('commits a dialog script on Return and keeps the newline of Shift-Return', () => {

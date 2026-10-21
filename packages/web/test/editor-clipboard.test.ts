@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { captureClipboard, insertClipboard, isClipboardEmpty } from '@/editor/clipboard';
+import { EditorDocument } from '@/editor/document';
 import { emptySector } from './helpers/editorFixture';
 
 /**
@@ -34,21 +35,97 @@ describe('paste placement', () => {
     const body = emptySector({
       npcs: [{ id: 'npc-1', name: 'Libus', characterModelId: 'libus', x: 5.12, z: 5.12, facing: 90, dialogScript: 'Hallo' }],
       monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }],
-      floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 10, width: 2, depth: 2 }],
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'mark-1',
+            materialId: 'dirt-path',
+            opacity: 1,
+            shape: {
+              kind: 'stroke',
+              radius: 1,
+              points: [
+                { x: 3, z: 10 },
+                { x: 6, z: 12 },
+              ],
+            },
+          },
+        ],
+      },
     });
     const selection = [
       { kind: 'npc', id: 'npc-1' },
       { kind: 'monsterSpawn', id: 'spawn-1' },
-      { kind: 'floorPatch', id: 'patch-1' },
+      { kind: 'mark', id: 'mark-1' },
     ] as const;
     expect(insertClipboard(captureClipboard(selection, body), body, undefined, 0.1)).toEqual([
       { kind: 'npc', id: 'npc-2' },
       { kind: 'monsterSpawn', id: 'spawn-2' },
-      { kind: 'floorPatch', id: 'patch-2' },
+      { kind: 'mark', id: 'mark-2' },
     ]);
     expect(body.npcs[1]).toEqual({ ...body.npcs[0], id: 'npc-2', x: 5.22, z: 5.22 });
     expect(body.monsterSpawns[1]).toEqual({ ...body.monsterSpawns[0], id: 'spawn-2', x: 1.1, z: 1.1 });
-    expect(body.floorPatches[1]).toEqual({ ...body.floorPatches[0], id: 'patch-2', x: 0.1, z: 10.1 });
+    expect(body.ground.marks[1]).toEqual({
+      ...body.ground.marks[0],
+      id: 'mark-2',
+      shape: {
+        kind: 'stroke',
+        radius: 1,
+        points: [
+          { x: 3.1, z: 10.1 },
+          { x: 6.1, z: 12.1 },
+        ],
+      },
+    });
+  });
+
+  /** A mark moves whole: pasted against the sector's edge, it stops where the codec bounds its points, its shape intact. */
+  it('stops a pasted mark at the edge of where its points may lie', () => {
+    const body = emptySector({
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'mark-1',
+            materialId: 'dirt-path',
+            opacity: 1,
+            shape: {
+              kind: 'stroke',
+              radius: 1,
+              points: [
+                { x: 3, z: 10 },
+                { x: 6, z: 12 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    insertClipboard(captureClipboard([{ kind: 'mark', id: 'mark-1' }], body), body, { x: 19, z: 10 }, 0.1);
+    // A 1 m stroke's points stay 0.175 m inside the 20 m sector.
+    expect(body.ground.marks[1]!.shape.points).toEqual([
+      { x: 16.825, z: 10 },
+      { x: 19.825, z: 12 },
+    ]);
+  });
+
+  it('narrows a stroke pasted into a sector too small for its width, keeping the rest of the paste', () => {
+    const wide = { id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke' as const, radius: 8, points: [{ x: 20, z: 20 }] } };
+    const source = emptySector({ size: { width: 40, depth: 40 }, ground: { backgroundMaterialId: 'grass-meadow', marks: [wide] }, placements: [house] });
+    const clipboard = captureClipboard(
+      [
+        { kind: 'placement', id: 'house-1' },
+        { kind: 'mark', id: 'mark-1' },
+      ],
+      source,
+    );
+    const target = emptySector({ size: { width: 3.6, depth: 3.6 } });
+
+    insertClipboard(clipboard, target, { x: 1, z: 1 }, 0.5);
+
+    expect(target.ground.marks[0]!.shape).toMatchObject({ kind: 'stroke', radius: 2.625 });
+    expect(new EditorDocument().commit('Paste', target)).toEqual({ accepted: true });
   });
 
   it('attaches a pasted door to the pasted placement', () => {
@@ -90,7 +167,7 @@ describe('capture', () => {
       ],
       source,
     );
-    expect(clipboard).toEqual({ placements: [], blockers, doors: [], npcs: [], monsterSpawns: [], floorPatches: [] });
+    expect(clipboard).toEqual({ placements: [], blockers, doors: [], npcs: [], monsterSpawns: [], marks: [] });
   });
 
   it('preserves source-array order so pasted stacking cannot shuffle, and copies rather than aliases', () => {

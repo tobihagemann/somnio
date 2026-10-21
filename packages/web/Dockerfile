@@ -11,8 +11,8 @@
 #
 # The context must also contain an `assets/` directory (the operator-supplied pack; empty is
 # fine). CI checks the private somnio-assets repo out to that path; a local build without a
-# pack runs `mkdir -p assets` first and gets placeholder models, an untextured floor, and
-# unstyled panels. `assets/` is gitignored, so creating it is free.
+# pack runs `mkdir -p assets` first and gets placeholder models and unstyled panels.
+# `assets/` is gitignored, so creating it is free.
 #
 # Build with:
 #   mkdir -p assets
@@ -68,8 +68,8 @@ RUN if ! grep -q "somnio-web ${BUILD_VERSION}" packages/web/dist/bundle/*.js; th
     fi
 
 # Compose the served `/assets` root from the pack. Reuses the same script the local build
-# loop uses, so the hard/soft failure split (UI and branding required, models and floors
-# warn-only) and the external-buffer check are identical in CI and on a developer machine.
+# loop uses, so the hard/soft failure split (UI and branding required, models warn-only)
+# and the external buffer and image check are identical in CI and on a developer machine.
 COPY Scripts/glb-buffer-uris.mjs Scripts/bundle-web-assets.sh Scripts/
 RUN if [ -z "${SOMNIO_ASSET_PACK}" ]; then \
       echo "ERROR: --build-arg SOMNIO_ASSET_PACK must not be empty; point it at an empty directory to build without a pack" >&2; \

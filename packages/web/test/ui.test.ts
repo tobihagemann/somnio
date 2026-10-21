@@ -734,7 +734,6 @@ describe('overlays', () => {
     expect([...(about?.querySelectorAll('.about-credits p') ?? [])].map((node) => node.textContent)).toEqual([
       '3D characters and props by KayKit.',
       'Ghost model by Quaternius.',
-      'Floor textures by ambientCG.',
       'UI borders by Kenney.',
     ]);
   });

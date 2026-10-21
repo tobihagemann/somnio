@@ -1,5 +1,6 @@
 import { SOMNIO_CONSTANTS } from '@somnio/core';
 import { SECTOR_KINDS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
 import { element, field, select, setHidden } from '@/ui/dom';
 import type { SectorSettings } from '../document';
 import { isValidSectorName } from '../sectorName';
@@ -7,7 +8,7 @@ import { numberField, setSelectValue } from './editorDom';
 
 /**
  * The sector form, shared by New Map and Sector Settings: name, kind, size in metres, the
- * origin of an outdoor sector, the brightness of an interior, and the floor-material picker,
+ * origin of an outdoor sector, the brightness of an interior, and the ground's background material,
  * plus the inline validation line gating OK/Apply.
  */
 
@@ -40,12 +41,12 @@ export class SectorForm {
   private readonly originXInput: HTMLInputElement;
   private readonly originZInput: HTMLInputElement;
   private readonly brightnessInput: HTMLInputElement;
-  private readonly floorMaterialInput: HTMLSelectElement;
+  private readonly backgroundMaterialInput: HTMLSelectElement;
   private readonly outdoorRows: HTMLElement[];
   private readonly interiorRows: HTMLElement[];
   private readonly validationLine: HTMLElement;
 
-  constructor(floorMaterialIds: readonly string[], onChanged: () => void) {
+  constructor(onChanged: () => void) {
     const extent = { min: 0, max: SOMNIO_PROTOCOL_CONSTANTS.maxSectorExtentMetres, step: 0.01 };
     const coordinate = { min: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres, max: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres, step: 0.01, value: 0 };
     const name = field('Sector name');
@@ -58,9 +59,9 @@ export class SectorForm {
     const originX = numberField('Origin X (m)', coordinate);
     const originZ = numberField('Origin Z (m)', coordinate);
     const brightness = numberField('Light', { min: 0, max: 100, step: 1, value: 100 });
-    const floorMaterial = select(
-      'Floor material',
-      floorMaterialIds.map((id) => ({ value: id, label: id })),
+    const backgroundMaterial = select(
+      'Ground material',
+      GROUND_MATERIAL_IDS.map((id) => ({ value: id, label: id })),
     );
     this.nameInput = name.input;
     this.kindInput = kind.input;
@@ -69,12 +70,12 @@ export class SectorForm {
     this.originXInput = originX.input;
     this.originZInput = originZ.input;
     this.brightnessInput = brightness.input;
-    this.floorMaterialInput = floorMaterial.input;
+    this.backgroundMaterialInput = backgroundMaterial.input;
     this.outdoorRows = [originX.row, originZ.row];
     this.interiorRows = [brightness.row];
     this.validationLine = element('p', { className: 'form-error hidden' });
     this.root = element('div', {
-      children: [name.row, kind.row, width.row, depth.row, originX.row, originZ.row, brightness.row, floorMaterial.row, this.validationLine],
+      children: [name.row, kind.row, width.row, depth.row, originX.row, originZ.row, brightness.row, backgroundMaterial.row, this.validationLine],
     });
     for (const input of [this.nameInput, this.widthInput, this.depthInput, this.originXInput, this.originZInput, this.brightnessInput]) {
       input.addEventListener('input', onChanged);
@@ -83,7 +84,7 @@ export class SectorForm {
       this.showKindRows();
       onChanged();
     });
-    this.floorMaterialInput.addEventListener('change', onChanged);
+    this.backgroundMaterialInput.addEventListener('change', onChanged);
     this.showKindRows();
   }
 
@@ -95,7 +96,7 @@ export class SectorForm {
     this.originXInput.value = String(values.originX);
     this.originZInput.value = String(values.originZ);
     this.brightnessInput.value = String(values.brightness);
-    setSelectValue(this.floorMaterialInput, values.floorMaterialId);
+    setSelectValue(this.backgroundMaterialInput, values.backgroundMaterialId);
     this.showKindRows();
   }
 
@@ -108,7 +109,7 @@ export class SectorForm {
       originX: Number(this.originXInput.value),
       originZ: Number(this.originZInput.value),
       brightness: clampBrightness(Number(this.brightnessInput.value)),
-      floorMaterialId: this.floorMaterialInput.value,
+      backgroundMaterialId: this.backgroundMaterialInput.value,
     };
   }
 

@@ -26,7 +26,10 @@ function recordingSurface(): {
   calls: Call[];
   watch: (director: SplashDirector) => void;
   fail: (name: keyof SplashSurface, when: (call: Call) => boolean) => void;
+  /** Whether the scene reports what it draws as settled; it does unless a test says otherwise. */
+  scene: { settled: boolean };
 } {
+  const scene = { settled: true };
   const calls: Call[] = [];
   let director: SplashDirector | undefined;
   let failing: { name: keyof SplashSurface; when: (call: Call) => boolean } | undefined;
@@ -51,10 +54,11 @@ function recordingSurface(): {
     'setClock',
     'frameShot',
   ];
-  const surface = Object.fromEntries(names.map((name) => [name, record(name)])) as unknown as SplashSurface;
+  const surface = { ...Object.fromEntries(names.map((name) => [name, record(name)])), isSettled: () => scene.settled } as unknown as SplashSurface;
   return {
     surface,
     calls,
+    scene,
     watch: (watched) => {
       director = watched;
     },
@@ -206,6 +210,43 @@ describe('the splash director', () => {
     expect(staging.every((call) => call.dip === 1)).toBe(true);
   });
 
+  it('holds a world staged afresh in the dark, its shot waiting, until the scene settles, then fades it in', () => {
+    const d = directing(REEL);
+    d.scene.settled = false;
+    d.step(1);
+    expect(d.director.dipOpacity).toBe(1);
+    expect(d.named('updatePosition')).toEqual([]);
+
+    d.scene.settled = true;
+    d.director.update(FRAME);
+    expect(d.director.dipOpacity).toBeGreaterThan(0);
+    d.step(0.3);
+    expect(d.director.dipOpacity).toBe(0);
+    expect(d.named('updatePosition').length).toBeGreaterThan(0);
+  });
+
+  it('holds the cut to another space in the dark until the scene settles', () => {
+    const d = directing(REEL);
+    while (d.director.currentShotId !== 'indoors') d.director.update(FRAME);
+    d.scene.settled = false;
+    d.director.update(FRAME);
+    d.step(1);
+    expect(d.director.dipOpacity).toBe(1);
+
+    d.scene.settled = true;
+    d.step(0.3);
+    expect(d.director.dipOpacity).toBe(0);
+  });
+
+  it('plays a world that never settles after three seconds in the dark', () => {
+    const d = directing(REEL);
+    d.scene.settled = false;
+    d.step(2.9);
+    expect(d.director.dipOpacity).toBe(1);
+    d.step(0.4);
+    expect(d.director.dipOpacity).toBe(0);
+  });
+
   it('plays the reel from its first shot again after its last', () => {
     const d = directing(REEL);
     const seen: (string | undefined)[] = [];
@@ -345,6 +386,29 @@ describe('the splash director', () => {
     d.director.replayShot();
 
     expect(d.named('updateCondition').map((call) => call.args)).toEqual([[WALKER, 'fallen']]);
+  });
+
+  it('shows the first shot without a fade under reduced motion once the scene settles', () => {
+    const d = directing(REEL, true);
+    d.scene.settled = false;
+    d.step(1);
+    expect(d.director.dipOpacity).toBe(1);
+
+    d.scene.settled = true;
+    d.director.update(FRAME);
+    expect(d.director.dipOpacity).toBe(0);
+  });
+
+  it('keeps a reduced-motion world dark through a replay while it settles', () => {
+    const d = directing(REEL, true);
+    d.scene.settled = false;
+    d.step(1);
+    d.director.replayShot();
+    expect(d.director.dipOpacity).toBe(1);
+
+    d.scene.settled = true;
+    d.director.update(FRAME);
+    expect(d.director.dipOpacity).toBe(0);
   });
 
   it('plays the shot again without a dip under reduced motion', () => {

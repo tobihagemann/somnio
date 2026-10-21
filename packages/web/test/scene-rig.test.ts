@@ -13,7 +13,7 @@ import {
   worldMovement,
 } from '@/scene/cameraRig';
 import { yawStep } from '@/scene/yawSlew';
-import { CHARACTER_SCALE, easedHeight, floorUVRect, placeholderFootprint, placementElevation } from '@/scene/placement';
+import { CHARACTER_SCALE, easedHeight, placeholderFootprint, placementElevation } from '@/scene/placement';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
 
 describe('orthographic scale is a HALF-height', () => {
@@ -190,39 +190,6 @@ describe('eased height', () => {
 
   it('stays put on a frame with no time in it', () => {
     expect(easedHeight(0.5, 1, 0)).toBe(0.5);
-  });
-});
-
-describe('floor UVs are in space coordinates', () => {
-  it.each([
-    [0, 0, 1.6, 1.6, 1, 0, 0, 1, 1],
-    [1.6, 0, 3.2, 1.6, 1, 1, 0, 2, 1],
-    [8, -4.8, 1.6, 3.2, 1, 5, -3, 1, 2],
-  ])('rect (%s, %s, %s, %s) at aspect %s', (x, z, width, depth, aspect, originX, originY, spanX, spanY) => {
-    const uv = floorUVRect({ x, z, width, depth }, aspect);
-    expect(uv.origin.x).toBeCloseTo(originX, 12);
-    expect(uv.origin.y).toBeCloseTo(originY, 12);
-    expect(uv.span.x).toBeCloseTo(spanX, 12);
-    expect(uv.span.y).toBeCloseTo(spanY, 12);
-  });
-
-  /**
-   * The continuity contract, asserted directly: abutting same-material rects must share their
-   * edge UVs, or the texture phase resets at every seam and a cobbled street visibly tile-breaks
-   * at each rect boundary. It holds across a sector border too, because the rects are in space
-   * coordinates: these two are a sector's east edge and its neighbour's west edge.
-   */
-  it('makes one rect end where its neighbour begins', () => {
-    const left = floorUVRect({ x: 0, z: 0, width: 40.96, depth: 40.96 }, 1);
-    const right = floorUVRect({ x: 40.96, z: 0, width: 30.72, depth: 30.72 }, 1);
-    expect(left.origin.x + left.span.x).toBeCloseTo(right.origin.x, 12);
-  });
-
-  it('shrinks the V repeat for a non-square texture', () => {
-    const square = floorUVRect({ x: 0, z: 0, width: 2.56, depth: 2.56 }, 1);
-    const strip = floorUVRect({ x: 0, z: 0, width: 2.56, depth: 2.56 }, 0.5);
-    expect(strip.span.y).toBeCloseTo(square.span.y * 2, 12);
-    expect(strip.span.x).toBe(square.span.x);
   });
 });
 

@@ -83,12 +83,15 @@ describe('golden frames', () => {
     expect((requesting.payload as { requestSessionToken: boolean }).requestSessionToken).toBe(true);
   });
 
-  /** The nested sector fixture is what gives every record shape, and a non-default `yaw` and `elevation`, cover. */
+  /** The nested sector fixture is what gives every record shape, both mark shapes, and a non-default `yaw` and `elevation`, cover. */
   it('carries a fully populated nested sector', () => {
-    const sector = (committed['sector']!.payload as { sector: Record<string, Record<string, unknown>[]> }).sector;
-    for (const key of ['floorPatches', 'placements', 'blockers', 'doors']) {
+    const sector = (
+      committed['sector']!.payload as { sector: Record<string, Record<string, unknown>[]> & { ground: { marks: { shape: { kind: string } }[] } } }
+    ).sector;
+    for (const key of ['placements', 'blockers', 'doors']) {
       expect(sector[key]!.length).toBeGreaterThan(0);
     }
+    expect(sector.ground.marks.map((mark) => mark.shape.kind).sort()).toEqual(['polygon', 'stroke']);
     expect(sector['placements']![0]!['yaw']).not.toBe(0);
     expect(sector['placements']![0]!['elevation']).not.toBe(0);
   });

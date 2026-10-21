@@ -4,7 +4,6 @@ import {
   PLACEHOLDER_REGISTRY,
   allModelEntries,
   bundledModelRegistry,
-  floorMaterialStem,
   missingClips,
   modelForCharacter,
   modelForObjectId,
@@ -46,12 +45,10 @@ describe('the committed registry parses', () => {
     expect(modelForCharacter(registry, 'not-a-character')).toBeUndefined();
   });
 
-  it('resolves object ids and floor materials', () => {
+  it('resolves object ids', () => {
     expect(modelForObjectId(registry, 'door')?.stem).toBe('Door');
     expect(modelForObjectId(registry, 'stone-wall-corner')?.stem).toBe('StoneWallCorner');
     expect(modelForObjectId(registry, 'not-a-prop')).toBeUndefined();
-    expect(floorMaterialStem(registry, 'cobble-town')).toBe('CobbleTown');
-    expect(floorMaterialStem(registry, 'not-a-floor')).toBeUndefined();
   });
 
   /**
@@ -59,13 +56,9 @@ describe('the committed registry parses', () => {
    * detector for a registry edit that orphans an id a committed sector or a monster kind
    * references.
    */
-  it('resolves every model and floor id the committed sectors and the monster kinds reference', () => {
+  it('resolves every model id the committed sectors and the monster kinds reference', () => {
     const unresolved: string[] = [];
     for (const sector of loadSectorFixtures()) {
-      const floorIds = [sector.floorMaterialId, ...sector.floorPatches.map((patch) => patch.floorMaterialId)];
-      for (const id of floorIds) {
-        if (floorMaterialStem(registry, id) === undefined) unresolved.push(`${sector.name}: floor ${id}`);
-      }
       for (const placement of sector.placements) {
         if (objectModel(registry, placement.modelId) === undefined) unresolved.push(`${sector.name}: placement ${placement.modelId}`);
       }
@@ -129,7 +122,6 @@ describe('structural invariants the JSON shape cannot express', () => {
         doors: [{ id: 'main', x: 1, z: 0, facing: 90, width: 1 }],
       },
     ],
-    floorMaterials: [{ id: 'grass', stem: 'Grass' }],
   };
 
   function broken(mutate: (registry: typeof valid) => void): typeof valid {
@@ -147,9 +139,6 @@ describe('structural invariants the JSON shape cannot express', () => {
     ['an empty object id', (registry: typeof valid) => (registry.objectModels[0]!.id = ''), /non-empty string/],
     ['a duplicate object id', (registry: typeof valid) => registry.objectModels.push(registry.objectModels[0]!), /duplicate id "house"/],
     ['an empty clip name', (registry: typeof valid) => (registry.characterModels[0]!.model.expectedClips = ['Idle', '']), /non-empty string/],
-    ['an empty floor id', (registry: typeof valid) => (registry.floorMaterials[0]!.id = ''), /non-empty string/],
-    ['an empty floor stem', (registry: typeof valid) => (registry.floorMaterials[0]!.stem = ''), /non-empty string/],
-    ['a duplicate floor id', (registry: typeof valid) => registry.floorMaterials.push({ id: 'grass', stem: 'Other' }), /duplicate id "grass"/],
     ['a duplicate character id', (registry: typeof valid) => registry.characterModels.push(registry.characterModels[0]!), /duplicate id "hero"/],
     // A character model with no expected clips would pass the pipeline's clip-presence gate
     // vacuously — the exact failure that gate exists to catch.

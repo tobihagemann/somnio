@@ -15,11 +15,20 @@
   height: 100%;
 }
 
-/* One icon button per tool in a vertical stack, the active one outlined in selection yellow. */
+/* One icon button per tool in a vertical stack, the active one outlined in selection yellow, and the ground tool's brush beside it. */
 .editor-tool-palette {
+  display: flex;
+  gap: 8px;
+}
+
+.editor-tool-buttons {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.editor-brush {
+  width: 200px;
 }
 
 .editor-tool--active {

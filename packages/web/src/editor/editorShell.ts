@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MONSTER_KIND_IDS, bundledModelRegistry, sectorOrigin } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
@@ -15,13 +16,22 @@ import { handleEditorKeydown } from './commands';
 import type { EditorCommandTarget } from './commands';
 import { EditorDocument, applySectorSettings, listSectors, loadSector, sectorSettings } from './document';
 import type { CommitResult, SectorSettings } from './document';
-import { FACING_CLEARANCE_PT, HANDLE_DRAW_EXTENT_PT, facingHandlePoint, handleCenters, metresPerViewportPoint } from './drag/geometry';
+import {
+  FACING_CLEARANCE_PT,
+  HANDLE_DRAW_EXTENT_PT,
+  TAP_TRANSLATION_THRESHOLD_PT,
+  facingHandlePoint,
+  handleCenters,
+  metresPerViewportPoint,
+} from './drag/geometry';
 import type { DragContext } from './drag/geometry';
 import { applyMove, origins, turnable } from './drag/mutations';
 import type { PlacementDefaults } from './drag/mutations';
-import { beginSession, endSession, preview } from './drag/session';
+import { beginSession, endSession, paintMark, preview } from './drag/session';
 import type { DragSession } from './drag/session';
 import { EditorCamera, scrollIntent } from './framing';
+import { DEFAULT_GROUND_BRUSH, widestStroke } from './groundMarks';
+import type { GroundBrush } from './groundMarks';
 import { currentGridSnap, persistGridSnap, stepOrFine } from './preferences';
 import { isValidSectorName } from './sectorName';
 import {
@@ -102,6 +112,15 @@ export class EditorShell implements EditorCommandTarget {
   private readonly drawnNeighbours = new Set<string>();
   /** The model the placement tool stamps: that of the placement selected last. */
   private placementModelId: string;
+  /** What the ground tool paints with. */
+  private brush: GroundBrush = { ...DEFAULT_GROUND_BRUSH };
+  /**
+   * The vertices of the polygon the ground tool is drawing, kept here because the drag layer is
+   * stateless. A reconcile keeps them; Escape, another tool, or another document drops them.
+   */
+  private groundPolygon: Point[] | undefined;
+  /** The last tap that added a vertex: a double-click's first tap does, before it is known to be one, and the double-click takes it back. */
+  private lastVertexTap: { atMs: number; at: { x: number; y: number } } | undefined;
 
   private clipboard: EditorClipboard = emptyClipboard();
   private dragSession: DragSession | undefined;
@@ -115,7 +134,6 @@ export class EditorShell implements EditorCommandTarget {
     this.container = options.container;
     this.registry = bundledModelRegistry();
     this.placementModelId = this.registry.objectModels[0]?.id ?? '';
-    const floorMaterialIds = this.registry.floorMaterials.map((entry) => entry.id);
 
     this.canvas = element('canvas', { attributes: { id: 'somnio-editor-canvas' } });
     this.marqueeNode = element('div', { className: 'editor-marquee hidden' });
@@ -123,10 +141,17 @@ export class EditorShell implements EditorCommandTarget {
     this.scene.scene.add(this.authoringOverlay.root);
     this.camera = new EditorCamera(this.scene.camera, (focus) => this.scene.anchorSunShadow(focus));
 
-    this.palette = new ToolPalette((tool) => {
-      this.tool = tool;
-      this.palette.render(tool);
-    });
+    this.palette = new ToolPalette(
+      (tool) => {
+        if (tool !== this.tool) this.discardGroundPolygon();
+        this.tool = tool;
+        this.renderUI();
+      },
+      (brush) => {
+        this.brush = { ...this.brush, ...brush };
+        this.renderUI();
+      },
+    );
     this.inspector = new InspectorPanel(
       {
         mutate: (actionName, change) => this.mutate(actionName, change),
@@ -141,7 +166,7 @@ export class EditorShell implements EditorCommandTarget {
       this.registry,
     );
     this.readout = new CursorReadout();
-    this.overlays = new EditorOverlays(this.overlayCallbacks(), floorMaterialIds);
+    this.overlays = new EditorOverlays(this.overlayCallbacks());
 
     this.container.append(
       this.canvas,
@@ -188,6 +213,7 @@ export class EditorShell implements EditorCommandTarget {
       onCommitNewMap: (values) => {
         if (!this.confirmDiscardIfDirty()) return;
         const result = this.document.create(values);
+        this.discardGroundPolygon();
         if (!result.accepted) {
           this.overlays.showError(result.message);
           return;
@@ -210,6 +236,7 @@ export class EditorShell implements EditorCommandTarget {
           .load(name)
           .then(() => {
             this.selection = [];
+            this.discardGroundPolygon();
             this.present(undefined);
             return this.loadOthers();
           })
@@ -237,9 +264,9 @@ export class EditorShell implements EditorCommandTarget {
 
   /**
    * The Esc state machine: overlays back out one
-   * level toward the game menu, a live selection clears, live editing opens the menu. The
-   * picker/new-map over an uninitialized document is the floor — nothing is behind it, so
-   * Esc there is a consumed no-op.
+   * level toward the game menu, a polygon being drawn is dropped, a live selection clears, live
+   * editing opens the menu. The picker/new-map over an uninitialized document is the floor —
+   * nothing is behind it, so Esc there is a consumed no-op.
    */
   handleEscape(): void {
     switch (this.presentedOverlay) {
@@ -257,7 +284,9 @@ export class EditorShell implements EditorCommandTarget {
         this.present(undefined);
         break;
       case undefined:
-        if (this.selection.length > 0) {
+        if (this.groundPolygon !== undefined) {
+          this.discardGroundPolygon();
+        } else if (this.selection.length > 0) {
           this.select([]);
         } else {
           this.present('gameMenu');
@@ -268,6 +297,47 @@ export class EditorShell implements EditorCommandTarget {
 
   isOverlayPresented(): boolean {
     return this.presentedOverlay !== undefined;
+  }
+
+  /**
+   * Enter, or a double-click: the polygon being drawn becomes one mark, as one undo step, or is
+   * dropped with fewer than three vertices. `false` when none is being drawn.
+   */
+  closeGroundPolygon(): boolean {
+    const vertices = this.groundPolygon;
+    if (vertices === undefined) return false;
+    this.discardGroundPolygon();
+    if (vertices.length < 3) return true;
+    let painted: EditorSelection | undefined;
+    const { accepted } = this.mutate('Paint ground', (sector) => {
+      painted = paintMark({ kind: 'polygon', points: vertices }, sector, this.brush);
+    });
+    if (accepted && painted !== undefined) this.select([painted]);
+    return true;
+  }
+
+  /**
+   * A tap is a polygon vertex, unless it lands on the tap before within a double-click's time: that
+   * is the double-click's second click, which adds nothing, and the double-click closes the polygon.
+   */
+  private addGroundVertex(at: { x: number; y: number }): void {
+    const nowMs = performance.now();
+    const previous = this.lastVertexTap;
+    if (
+      previous !== undefined &&
+      nowMs - previous.atMs < DOUBLE_CLICK_MS &&
+      Math.hypot(at.x - previous.at.x, at.y - previous.at.y) < TAP_TRANSLATION_THRESHOLD_PT
+    )
+      return;
+    (this.groundPolygon ??= []).push(gridPoint(this.dragContext(), at));
+    this.lastVertexTap = { atMs: nowMs, at };
+  }
+
+  private discardGroundPolygon(): void {
+    if (this.groundPolygon === undefined) return;
+    this.groundPolygon = undefined;
+    this.lastVertexTap = undefined;
+    this.refreshOverlay();
   }
 
   save(): void {
@@ -480,6 +550,7 @@ export class EditorShell implements EditorCommandTarget {
       facingHandle,
       showGrid: this.showGridOverlay,
       gridStep: currentGridSnap(),
+      groundDraft: this.groundPolygon,
     });
     this.labels.render(overlayLabels(shown, this.registry, this.issues.records), (point) => screenPoint(context, point));
   }
@@ -500,7 +571,11 @@ export class EditorShell implements EditorCommandTarget {
   }
 
   private renderUI(): void {
-    this.palette.render(this.tool);
+    this.palette.render(
+      this.tool,
+      this.brush,
+      this.document.isUninitialized ? SOMNIO_PROTOCOL_CONSTANTS.maxMarkStrokeRadiusMetres : widestStroke(this.document.sector.size),
+    );
     this.inspector.render(this.document.sector, this.selection, this.document.isUninitialized);
     this.readout.render(this.document.sector.name);
   }
@@ -520,6 +595,12 @@ export class EditorShell implements EditorCommandTarget {
     this.canvas.addEventListener('pointerdown', (event) => this.handlePointerDown(event));
     this.canvas.addEventListener('pointermove', (event) => this.handlePointerMove(event));
     this.canvas.addEventListener('pointerup', (event) => this.handlePointerUp(event));
+    this.canvas.addEventListener('dblclick', () => {
+      if (this.groundPolygon === undefined) return;
+      // A double click's taps add no vertex, and its first tap laid one.
+      this.groundPolygon.pop();
+      this.closeGroundPolygon();
+    });
     // A cancelled pointer (palm rejection, app switch, capture loss) fires no `pointerup`, so
     // without this the drag session survives the gesture and the next move resumes it.
     this.canvas.addEventListener('pointercancel', () => this.cancelDragState());
@@ -575,9 +656,9 @@ export class EditorShell implements EditorCommandTarget {
   private placementDefaults(): PlacementDefaults {
     return {
       modelId: this.placementModelId,
-      floorMaterialId: this.registry.floorMaterials[0]?.id ?? '',
       characterModelId: this.registry.characterModels[0]?.id ?? '',
       monsterKind: MONSTER_KIND_IDS[0]!,
+      brush: this.brush,
     };
   }
 
@@ -598,7 +679,15 @@ export class EditorShell implements EditorCommandTarget {
     this.resetDragState();
     const location = this.canvasPoint(event);
     this.dragAdditive = event.shiftKey;
-    const begun = beginSession(location, this.tool, this.dragAdditive, this.document.sector, this.selection, this.dragContext());
+    const begun = beginSession(
+      location,
+      this.tool,
+      this.dragAdditive,
+      this.document.sector,
+      this.selection,
+      this.dragContext(),
+      this.groundPolygon !== undefined,
+    );
     this.dragSession = begun.session;
     this.dragStart = location;
     if (!selectionsEqual(begun.selection, this.selection)) this.select(begun.selection);
@@ -635,11 +724,18 @@ export class EditorShell implements EditorCommandTarget {
       this.refreshOverlay();
       return;
     }
+    const end = this.canvasPoint(event);
+    const tap = Math.hypot(end.x - start.x, end.y - start.y) < TAP_TRANSLATION_THRESHOLD_PT;
+    if (session.kind === 'groundPolygon' || (session.kind === 'groundStroke' && tap)) {
+      if (tap) this.addGroundVertex(end);
+      this.refreshOverlay();
+      return;
+    }
     const before = this.document.undoDepth;
     const committed = endSession(
       session,
       start,
-      this.canvasPoint(event),
+      end,
       additive,
       { mutate: (actionName, change) => this.mutate(actionName, change) },
       this.document.sector,
@@ -660,8 +756,7 @@ export class EditorShell implements EditorCommandTarget {
 
   /**
    * The live-mesh half of a move or a turn: each selected placement's own node follows the
-   * preview. Placements only — floor patches bake their texture coordinates into their
-   * geometry, so their gizmo rect previews while the mesh rebuilds on commit.
+   * preview. Placements only — a mark's outline previews while its ground repaints on commit.
    */
   private applyLivePreview(previewSector: Sector): void {
     // Snapshot the nodes and where they stood once: neither changes for the duration of the
@@ -754,10 +849,13 @@ export class EditorShell implements EditorCommandTarget {
       doors: sector.doors.length,
       npcs: sector.npcs.length,
       monsterSpawns: sector.monsterSpawns.length,
-      floorPatches: sector.floorPatches.length,
+      marks: sector.ground.marks.length,
     };
   }
 }
+
+/** How soon a second click must follow the first to make a double-click. */
+const DOUBLE_CLICK_MS = 500;
 
 function restoreNodes(nodes: readonly { node: THREE.Object3D; position: THREE.Vector3; yaw: number }[]): void {
   for (const { node, position, yaw } of nodes) {

@@ -20,14 +20,43 @@ const NPC_ID = 'npc:EdariaLibrary/libus';
 const MASTER_ID = 'npc:EdariaFighterHall/pugnax';
 const SHOPKEEPER_ID = 'npc:EdariaShop/mercus';
 
-/** Every record array populated at once, with a placement that carries a non-zero `yaw` and `elevation`. */
+/** Every record array populated at once, both ground mark shapes, and a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
   name: 'EdariaSquare',
   kind: 'outdoor',
   origin: { x: 0, z: 0 },
   size: { width: 40.96, depth: 40.96 },
-  floorMaterialId: 'grass-meadow',
-  floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble-town', x: 16, z: 0, width: 8.96, depth: 20 }],
+  ground: {
+    backgroundMaterialId: 'grass-meadow',
+    marks: [
+      {
+        id: 'plaza',
+        materialId: 'cobble-town',
+        opacity: 1,
+        shape: {
+          kind: 'polygon',
+          points: [
+            { x: 16, z: 0 },
+            { x: 24.96, z: 0 },
+            { x: 24.96, z: 20 },
+          ],
+        },
+      },
+      {
+        id: 'road',
+        materialId: 'dirt-path',
+        opacity: 0.8,
+        shape: {
+          kind: 'stroke',
+          radius: 1.6,
+          points: [
+            { x: 2, z: 20 },
+            { x: 38.96, z: 22 },
+          ],
+        },
+      },
+    ],
+  },
   placements: [{ id: 'townhall', modelId: 'building-townhall', x: 36.8, z: 4.48, yaw: 270, elevation: 0.75 }],
   blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
   doors: [{ id: 'to-edarialibrary', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }],
@@ -38,8 +67,7 @@ const interiorSector: SectorView = {
   kind: 'interior',
   brightness: 75,
   size: { width: 10.24, depth: 7.68 },
-  floorMaterialId: 'wood-warm',
-  floorPatches: [],
+  ground: { backgroundMaterialId: 'wood-warm', marks: [] },
   placements: [{ id: 'door-1', modelId: 'door', x: 5.12, z: 7.36, yaw: 0, elevation: 0 }],
   blockers: [],
   doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaSquare', door: 'to-edarialibrary' } }],

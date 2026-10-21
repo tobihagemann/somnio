@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { setSelectValue } from '@/editor/ui/editorDom';
 import { MAX_SECTOR_NAME_BYTES, isValidSectorName } from '@/editor/sectorName';
 import { SectorForm, validationMessage } from '@/editor/ui/sectorForm';
+import { ToolPalette } from '@/editor/ui/toolPalette';
 
 /**
  * Form and select integrity for the editor's New Map / Sector Settings surfaces: the sector-name
@@ -28,7 +29,7 @@ describe('isValidSectorName', () => {
 });
 
 describe('validationMessage', () => {
-  const base = { name: 'Room', kind: 'outdoor', width: 20, depth: 20, originX: 0, originZ: 0, brightness: 100, floorMaterialId: 'grass' } as const;
+  const base = { name: 'Room', kind: 'outdoor', width: 20, depth: 20, originX: 0, originZ: 0, brightness: 100, backgroundMaterialId: 'grass' } as const;
 
   it.each([
     ['a valid outdoor sector', {}, undefined],
@@ -54,7 +55,7 @@ describe('SectorForm', () => {
   }
 
   it('reads back the values it was given', () => {
-    const form = new SectorForm(['grass', 'cobble'], () => {});
+    const form = new SectorForm(() => {});
     const values = {
       name: 'NorthMeadow',
       kind: 'outdoor',
@@ -63,14 +64,14 @@ describe('SectorForm', () => {
       originX: 5.12,
       originZ: -30.72,
       brightness: 100,
-      floorMaterialId: 'cobble',
+      backgroundMaterialId: 'cobble-town',
     } as const;
     form.setValues(values);
     expect(form.values()).toEqual(values);
   });
 
   it('asks for an origin outdoors and a brightness in an interior, following the kind picker', () => {
-    const form = new SectorForm(['grass'], () => {});
+    const form = new SectorForm(() => {});
     const hidden = (label: string): boolean => rowOf(form, label).classList.contains('hidden');
     expect([hidden('Origin X (m)'), hidden('Origin Z (m)'), hidden('Light')]).toEqual([false, false, true]);
     const kind = rowOf(form, 'Kind').querySelector('select')!;
@@ -81,7 +82,7 @@ describe('SectorForm', () => {
   });
 
   it('clamps a hand-typed brightness to a whole percentage', () => {
-    const form = new SectorForm(['grass'], () => {});
+    const form = new SectorForm(() => {});
     const light = rowOf(form, 'Light').querySelector('input')!;
     for (const [typed, expected] of [
       ['140', 100],
@@ -92,6 +93,29 @@ describe('SectorForm', () => {
       light.value = typed;
       expect(form.values().brightness).toBe(expected);
     }
+  });
+});
+
+describe('ToolPalette', () => {
+  it('reverts an emptied stroke radius rather than painting 0 m wide', () => {
+    const changes: unknown[] = [];
+    const palette = new ToolPalette(
+      () => {},
+      (brush) => changes.push(brush),
+    );
+    palette.render('ground', { materialId: 'dirt-path', radius: 0.8 }, 10);
+    const radius = [...palette.root.querySelectorAll('label')]
+      .find((label) => label.textContent === 'Stroke radius (m)')!
+      .parentElement!.querySelector('input')!;
+
+    radius.value = '';
+    radius.dispatchEvent(new Event('change'));
+    expect(changes).toEqual([]);
+    expect(radius.value).toBe('0.8');
+
+    radius.value = '1.25';
+    radius.dispatchEvent(new Event('change'));
+    expect(changes).toEqual([{ radius: 1.25 }]);
   });
 });
 

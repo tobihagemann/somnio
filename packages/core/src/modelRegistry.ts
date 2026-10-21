@@ -4,9 +4,9 @@ import type { Rect, Size } from './geometry.ts';
 
 /**
  * The model registry: character model ids to character model stems (each with its clip-presence
- * contract), semantic object ids to prop stems with their collision geometry, and semantic floor
- * ids to floor-texture stems. It references only filename stems, so one file describes the pack
- * for the browser, the editor, the server's collision, and the asset pipeline's gates.
+ * contract), and semantic object ids to prop stems with their collision geometry. It references
+ * only filename stems, so one file describes the pack for the browser, the editor, the server's
+ * collision, and the asset pipeline's gates.
  *
  * Object geometry is in model space: metres, the model's origin at its ground-footprint centre,
  * +X east and +Z south at yaw 0.
@@ -48,17 +48,11 @@ export interface ObjectModelRule {
   doors: DoorAnchor[];
 }
 
-export interface FloorMaterialRule {
-  id: string;
-  stem: string;
-}
-
 export interface ModelRegistry {
   characterModels: CharacterModelRule[];
   /** The character model every player uses. */
   playerModel: string;
   objectModels: ObjectModelRule[];
-  floorMaterials: FloorMaterialRule[];
 }
 
 /** Empty registry: every lookup resolves `undefined`, so the loader renders placeholders. */
@@ -66,7 +60,6 @@ export const PLACEHOLDER_REGISTRY: ModelRegistry = {
   characterModels: [],
   playerModel: '',
   objectModels: [],
-  floorMaterials: [],
 };
 
 /**
@@ -120,20 +113,7 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.objectModels',
   );
 
-  const floorMaterials = requireArray(root['floorMaterials'], 'registry.floorMaterials').map((element, index) => {
-    const path = `registry.floorMaterials[${index}]`;
-    const record = requireRecord(element, path);
-    return {
-      id: requireNonEmptyString(record['id'], `${path}.id`),
-      stem: requireNonEmptyString(record['stem'], `${path}.stem`),
-    };
-  });
-  requireUniqueIds(
-    floorMaterials.map((rule) => rule.id),
-    'registry.floorMaterials',
-  );
-
-  return { characterModels, playerModel, objectModels, floorMaterials };
+  return { characterModels, playerModel, objectModels };
 }
 
 export function modelForCharacter(registry: ModelRegistry, id: string): ModelEntry | undefined {
@@ -146,10 +126,6 @@ export function objectModel(registry: ModelRegistry, id: string): ObjectModelRul
 
 export function modelForObjectId(registry: ModelRegistry, id: string): ModelEntry | undefined {
   return objectModel(registry, id)?.model;
-}
-
-export function floorMaterialStem(registry: ModelRegistry, id: string): string | undefined {
-  return registry.floorMaterials.find((rule) => rule.id === id)?.stem;
 }
 
 /** Every entry, character models first, dropping duplicate stems. */

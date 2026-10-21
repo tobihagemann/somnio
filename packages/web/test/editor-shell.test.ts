@@ -180,14 +180,14 @@ describe('issues', () => {
     const debug = (window as unknown as { somnioEditor: { issues(): string[]; body(): Record<string, number>; selection(): unknown[] } }).somnioEditor;
     await open(shell, 'EdariaSquare');
     expect(debug.issues()).toEqual([]);
-    const { doors, placements, npcs, monsterSpawns, floorPatches, blockers } = square();
+    const { doors, placements, npcs, monsterSpawns, ground, blockers } = square();
     expect(debug.body()).toEqual({
       placements: placements.length,
       blockers: blockers.length,
       doors: doors.length,
       npcs: npcs.length,
       monsterSpawns: monsterSpawns.length,
-      floorPatches: floorPatches.length,
+      marks: ground.marks.length,
     });
     shell.document.mutate('Break door', (sector) => {
       sector.doors[0]!.anchor = 'cellar';
@@ -343,7 +343,7 @@ describe('commands', () => {
       sector.placements.push({ id: 'door-1', modelId: 'door', x: 10, z: 19, yaw: 0, elevation: 0 });
       sector.doors.push({ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } });
       sector.blockers.push({ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 });
-      sector.floorPatches.push({ id: 'patch-1', floorMaterialId: 'cobble-town', x: 4, z: 4, width: 2, depth: 2 });
+      sector.ground.marks.push({ id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: 4, z: 4 }] } });
       sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'fighter-master', x: 14, z: 6, facing: 0, dialogScript: '' });
       sector.monsterSpawns.push({ id: 'spawn-1', kind: 'ghost', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2 });
       sector.spawn = { x: 8, z: 8, facing: 0 };
@@ -384,16 +384,19 @@ describe('commands', () => {
 
   it('refuses a duplicate the document does not take, through the same path as a paste', () => {
     const shell = withRecords();
-    shell.selection = [{ kind: 'floorPatch', id: 'patch-1' }];
+    shell.document.mutate('Move to the edge', (sector) => {
+      sector.npcs[0]!.x = 19.8;
+    });
+    shell.selection = [{ kind: 'npc', id: 'npc-1' }];
     const depth = shell.document.undoDepth;
     shell.duplicateSelection();
     shell.copySelection();
-    shell.lastHoveredGrid = { x: 5, z: 5 };
+    shell.lastHoveredGrid = { x: 25, z: 5 };
     shell.paste();
-    expect(shell.document.sector.floorPatches.length).toBe(1);
+    expect(shell.document.sector.npcs.length).toBe(1);
     expect(shell.document.undoDepth).toBe(depth);
-    expect(shell.selection).toEqual([{ kind: 'floorPatch', id: 'patch-1' }]);
-    expect(document.querySelector('.editor-error-banner')?.textContent).toBe('Floor patches must not overlap.');
+    expect(shell.selection).toEqual([{ kind: 'npc', id: 'npc-1' }]);
+    expect(document.querySelector('.editor-error-banner')?.textContent).toContain('stands outside the sector');
   });
 
   it('selects every record, the spawn point included, and deletes them with their doors', () => {
@@ -403,7 +406,7 @@ describe('commands', () => {
       { kind: 'placement', id: 'door-1' },
       { kind: 'door', id: 'to-shop' },
       { kind: 'blocker', id: 'blocker-1' },
-      { kind: 'floorPatch', id: 'patch-1' },
+      { kind: 'mark', id: 'mark-1' },
       { kind: 'npc', id: 'npc-1' },
       { kind: 'monsterSpawn', id: 'spawn-1' },
       { kind: 'spawn', id: 'spawn' },

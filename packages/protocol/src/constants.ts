@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 13,
+  helloVersion: 14,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `nickname` and `email` on login/registration, for item ids, and for the record ids inside a sector. */
@@ -40,7 +40,18 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxSectorPlacements: 4096,
   maxSectorBlockers: 4096,
   maxSectorDoors: 4096,
-  maxSectorFloorPatches: 4096,
+  /** The ground marks of one sector, and the points of all of them together, both capped before any mark is decoded. */
+  maxSectorGroundMarks: 512,
+  maxSectorGroundPoints: 8192,
+  /**
+   * How wide every ground mark's edge fades, centred on the edge. One constant rather than a value
+   * per mark, so no mark can be painted with a hard edge.
+   */
+  markFeatherMetres: 0.6,
+  /** The most the noise that breaks a mark's edge moves it, past the feather. */
+  markEdgeNoiseMetres: 0.375,
+  /** The widest a stroke mark may be painted, either side of its line; a small sector caps it lower. */
+  maxMarkStrokeRadiusMetres: 10,
   /** The most Healers who hold one raise at once, which bounds the list a `raising` frame names. */
   maxRaiseHealers: 32,
   /** The most rows an `inventory` frame carries, generous over the handful of items a dreamer holds. */

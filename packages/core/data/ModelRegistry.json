@@ -64,28 +64,6 @@
       }
     }
   ],
-  "floorMaterials": [
-    {
-      "id": "grass-meadow",
-      "stem": "GrassMeadow"
-    },
-    {
-      "id": "stone-arena",
-      "stem": "StoneArena"
-    },
-    {
-      "id": "wood-warm",
-      "stem": "WoodWarm"
-    },
-    {
-      "id": "forest-floor",
-      "stem": "ForestFloor"
-    },
-    {
-      "id": "cobble-town",
-      "stem": "CobbleTown"
-    }
-  ],
   "objectModels": [
     {
       "footprint": {
@@ -232,15 +210,15 @@
     {
       "colliders": [
         {
-          "depth": 0.54,
-          "width": 0.53,
-          "x": -0.31,
-          "z": -0.06
+          "depth": 0.23,
+          "width": 0.23,
+          "x": -0.133,
+          "z": -0.024
         }
       ],
       "footprint": {
-        "depth": 2.26,
-        "width": 2.56
+        "depth": 0.981,
+        "width": 1.112
       },
       "id": "pine-tree",
       "model": {
@@ -850,6 +828,557 @@
       "model": {
         "expectedClips": [],
         "stem": "BerryBasket"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.375,
+          "width": 0.378,
+          "x": -0.188,
+          "z": -0.338
+        }
+      ],
+      "footprint": {
+        "depth": 1.374,
+        "width": 1.405
+      },
+      "id": "tree-1-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree1A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.396,
+          "width": 0.388,
+          "x": -0.284,
+          "z": -0.197
+        }
+      ],
+      "footprint": {
+        "depth": 1.489,
+        "width": 1.731
+      },
+      "id": "tree-1-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree1B"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.495,
+          "width": 0.499,
+          "x": -0.522,
+          "z": -0.248
+        }
+      ],
+      "footprint": {
+        "depth": 2.486,
+        "width": 2.891
+      },
+      "id": "tree-1-c",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree1C"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.2,
+          "width": 0.2,
+          "x": -0.203,
+          "z": -0.242
+        }
+      ],
+      "footprint": {
+        "depth": 0.907,
+        "width": 1.599
+      },
+      "id": "tree-2-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree2B"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.264,
+          "width": 0.261,
+          "x": -0.045,
+          "z": -0.05
+        }
+      ],
+      "footprint": {
+        "depth": 1.469,
+        "width": 1.987
+      },
+      "id": "tree-2-c",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree2C"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.378,
+          "width": 0.375,
+          "x": -0.187,
+          "z": -0.19
+        }
+      ],
+      "footprint": {
+        "depth": 1.336,
+        "width": 1.336
+      },
+      "id": "tree-3-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree3A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.396,
+          "width": 0.388,
+          "x": -0.184,
+          "z": -0.198
+        }
+      ],
+      "footprint": {
+        "depth": 1.784,
+        "width": 1.784
+      },
+      "id": "tree-3-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree3B"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.211,
+          "width": 0.216,
+          "x": -0.108,
+          "z": -0.148
+        }
+      ],
+      "footprint": {
+        "depth": 0.916,
+        "width": 1.026
+      },
+      "id": "tree-5-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree5A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.187,
+          "width": 0.185,
+          "x": 0.02,
+          "z": -0.145
+        }
+      ],
+      "footprint": {
+        "depth": 0.734,
+        "width": 0.904
+      },
+      "id": "tree-6-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree6A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.212,
+          "width": 0.211,
+          "x": -0.181,
+          "z": -0.112
+        }
+      ],
+      "footprint": {
+        "depth": 1.25,
+        "width": 1.358
+      },
+      "id": "tree-7-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Tree7A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.378,
+          "width": 0.375,
+          "x": -0.208,
+          "z": -0.154
+        }
+      ],
+      "footprint": {
+        "depth": 0.447,
+        "width": 0.488
+      },
+      "id": "tree-bare-1-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "TreeBare1A"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.396,
+          "width": 0.388,
+          "x": -0.424,
+          "z": -0.082
+        }
+      ],
+      "footprint": {
+        "depth": 0.627,
+        "width": 0.849
+      },
+      "id": "tree-bare-1-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "TreeBare1B"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.351,
+          "width": 0.351,
+          "x": -0.183,
+          "z": -0.176
+        }
+      ],
+      "footprint": {
+        "depth": 1.795,
+        "width": 2.056
+      },
+      "id": "autumn-pine-orange-large",
+      "model": {
+        "expectedClips": [],
+        "stem": "AutumnPineOrangeLarge"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.304,
+          "width": 0.304,
+          "x": -0.147,
+          "z": -0.241
+        }
+      ],
+      "footprint": {
+        "depth": 1.348,
+        "width": 1.439
+      },
+      "id": "autumn-pine-orange-medium",
+      "model": {
+        "expectedClips": [],
+        "stem": "AutumnPineOrangeMedium"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.351,
+          "width": 0.351,
+          "x": -0.183,
+          "z": -0.176
+        }
+      ],
+      "footprint": {
+        "depth": 1.795,
+        "width": 2.056
+      },
+      "id": "autumn-pine-yellow-large",
+      "model": {
+        "expectedClips": [],
+        "stem": "AutumnPineYellowLarge"
+      }
+    },
+    {
+      "colliders": [
+        {
+          "depth": 0.304,
+          "width": 0.304,
+          "x": -0.147,
+          "z": -0.241
+        }
+      ],
+      "footprint": {
+        "depth": 1.348,
+        "width": 1.439
+      },
+      "id": "autumn-pine-yellow-medium",
+      "model": {
+        "expectedClips": [],
+        "stem": "AutumnPineYellowMedium"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.371,
+        "width": 0.371
+      },
+      "id": "bush-2-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bush2B"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.44,
+        "width": 0.679
+      },
+      "id": "bush-2-d",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bush2D"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.446,
+        "width": 0.446
+      },
+      "id": "bush-3-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bush3A"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.249,
+        "width": 0.249
+      },
+      "id": "bush-4-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bush4A"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.25,
+        "width": 0.263
+      },
+      "id": "rock-1-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Rock1A"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.401,
+        "width": 0.5
+      },
+      "id": "rock-1-d",
+      "model": {
+        "expectedClips": [],
+        "stem": "Rock1D"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.349,
+        "width": 0.413
+      },
+      "id": "rock-3-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Rock3A"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.432,
+        "width": 1.28
+      },
+      "id": "stone-room-wall",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomWall"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.432,
+        "width": 1.28
+      },
+      "id": "stone-room-window-wall",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomWindowWall"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.432,
+        "width": 1.28
+      },
+      "id": "stone-room-wall-low",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomWallLow"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.648,
+        "width": 0.648
+      },
+      "id": "stone-room-pillar",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomPillar"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.648,
+        "width": 0.648
+      },
+      "id": "stone-room-pillar-low",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomPillarLow"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.2,
+        "width": 1.28
+      },
+      "id": "timber-room-wall",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomWall"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.24,
+        "width": 1.28
+      },
+      "id": "timber-room-window-wall",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomWindowWall"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.24,
+        "width": 1.28
+      },
+      "id": "timber-room-wall-low",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomWallLow"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.28,
+        "width": 0.28
+      },
+      "id": "timber-room-post",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomPost"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.28,
+        "width": 0.28
+      },
+      "id": "timber-room-post-low",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomPostLow"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.066,
+        "width": 0.147
+      },
+      "id": "grass-1-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Grass1A"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.218,
+        "width": 0.24
+      },
+      "id": "grass-1-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Grass1B"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.067,
+        "width": 0.11
+      },
+      "id": "grass-2-a",
+      "model": {
+        "expectedClips": [],
+        "stem": "Grass2A"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.172,
+        "width": 0.174
+      },
+      "id": "grass-2-b",
+      "model": {
+        "expectedClips": [],
+        "stem": "Grass2B"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.082,
+        "width": 0.082
+      },
+      "id": "pebble",
+      "model": {
+        "expectedClips": [],
+        "stem": "Pebble"
       }
     }
   ],

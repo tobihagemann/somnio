@@ -78,9 +78,13 @@ describe('glb-buffer-uris', () => {
       expect(
         externalResourcePaths({
           buffers: [{ uri: 'data:application/octet-stream;base64,AAAA' }],
-          images: [{ uri: 'data:image/png;base64,AAAA' }],
+          images: [{ uri: 'data:image/png;base64,AAAA' }, { uri: 'DATA:image/png,AAAA' }],
         }),
       ).toEqual([]);
+    });
+
+    it('reports a data: URI with no comma, which three.js fetches as a file next to the model', () => {
+      expect(externalResourcePaths({ buffers: [{ uri: 'data:/../geo.bin' }] })).toEqual(['data:/../geo.bin']);
     });
 
     it('reports images as well as buffers', () => {

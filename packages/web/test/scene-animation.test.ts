@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
@@ -81,46 +82,76 @@ describe('one-shot clips', () => {
   });
 });
 
-/** `fullAmbientIntensity` and `fullSunIntensity`, the levels a fully lit outdoor scene reaches. */
-const FULL_AMBIENT = 1200;
-const FULL_SUN = 6000;
+/** The plan of the outdoor light: each value's anchors by hour, read with linear interpolation between them. */
+const SUN_ANCHORS = [
+  [0, 0.9],
+  [5, 0.9],
+  [7, 1.8],
+  [10, 3],
+  [18, 3],
+  [19, 1.8],
+  [22, 0.9],
+  [24, 0.9],
+] as const;
+const HEMISPHERE_ANCHORS = [
+  [0, 0.8],
+  [5, 0.8],
+  [7, 0.7],
+  [10, 0.9],
+  [18, 0.9],
+  [19, 0.7],
+  [22, 0.8],
+  [24, 0.8],
+] as const;
 
-describe('outdoor ambient', () => {
-  it('holds full brightness from mid-morning to early evening', () => {
-    for (const hour of [10, 12.5, 17.99, 18]) expect(sunState(hour, undefined).ambientIntensity).toBeCloseTo(FULL_AMBIENT, 9);
-  });
+function anchored(anchors: readonly (readonly [number, number])[], hour: number): number {
+  const next = anchors.findIndex(([at]) => at > hour);
+  const [fromHour, from] = anchors[next - 1]!;
+  const [toHour, to] = anchors[next]!;
+  return from + ((to - from) * (hour - fromHour)) / (toHour - fromHour);
+}
 
-  /** Night floors dim rather than black: the ramp is pulled a quarter of the way toward full. */
-  it('floors the night at just over a quarter', () => {
-    for (const hour of [0, 3, 5.99, 22, 23.99]) expect(sunState(hour, undefined).ambientIntensity).toBeCloseTo(0.2575 * FULL_AMBIENT, 6);
-  });
+/** An sRGB hex colour as three.js reads it into its linear working space. */
+function linear(hex: number): { r: number; g: number; b: number } {
+  const { r, g, b } = new THREE.Color(hex);
+  return { r, g, b };
+}
 
+function expectColor(actual: { r: number; g: number; b: number }, expected: { r: number; g: number; b: number }): void {
+  expect(actual.r).toBeCloseTo(expected.r, 6);
+  expect(actual.g).toBeCloseTo(expected.g, 6);
+  expect(actual.b).toBeCloseTo(expected.b, 6);
+}
+
+describe('outdoor light', () => {
   it.each([
-    [7, 0.4375],
-    [8, 0.625],
-    [9, 0.8125],
-    [19, 0.8125],
-    [20, 0.625],
-    [21, 0.4375],
-  ])('passes through the anchor at %s:00', (hour, level) => {
-    expect(sunState(hour, undefined).ambientIntensity).toBeCloseTo(level * FULL_AMBIENT, 9);
+    ['noon', [10, 12.5, 17.99, 18], 0xfff4e0, 0xdce9ff, 0x74654b, 0x7a8a79],
+    ['night', [0, 3, 5, 22.5, 23.99], 0xa9bcff, 0x5a70b0, 0x2c2c3c, 0x1b2233],
+    ['dawn', [7], 0xffa860, 0xffc9a0, 0x5a4636, 0x6b5a58],
+    ['dusk', [19], 0xffa860, 0xffc9a0, 0x5a4636, 0x6b5a58],
+  ])('holds the %s colours at their anchor hours', (_name, hours, sunColor, sky, ground, backdrop) => {
+    for (const hour of hours) {
+      const state = sunState(hour, undefined);
+      expectColor(state.sunColor, linear(sunColor));
+      expectColor(state.skyColor, linear(sky));
+      expectColor(state.groundColor, linear(ground));
+      expectColor(state.backdropColor, linear(backdrop));
+    }
   });
 
   /** A ramp, not a staircase: any minute sits on the straight line between its hour's two anchors. */
-  it('interpolates linearly between two anchors, with no steps inside the hour', () => {
-    const at = (hour: number): number => sunState(hour, undefined).ambientIntensity;
-
-    for (const minute of [1, 11, 12, 30, 47, 59]) {
-      const fraction = minute / 60;
-      expect(at(7 + fraction)).toBeCloseTo(at(7) + (at(8) - at(7)) * fraction, 9);
-      expect(at(19 + fraction)).toBeCloseTo(at(19) + (at(20) - at(19)) * fraction, 9);
+  it('reads every intensity from the one table, interpolating linearly between anchors', () => {
+    for (let hour = 0; hour < 24; hour += 0.1) {
+      const state = sunState(hour, undefined);
+      expect(state.hemisphereIntensity).toBeCloseTo(anchored(HEMISPHERE_ANCHORS, hour), 9);
+      if (Math.min(Math.abs(hour - 6), Math.abs(hour - 22)) >= 0.5) expect(state.sunIntensity).toBeCloseTo(anchored(SUN_ANCHORS, hour), 9);
     }
   });
 
-  it('mirrors the morning rise in the evening fall', () => {
-    for (const hours of [0.25, 1, 2.6, 3.9]) {
-      expect(sunState(22 - hours, undefined).ambientIntensity).toBeCloseTo(sunState(6 + hours, undefined).ambientIntensity, 9);
-    }
+  it('mixes the colours in linear space between anchors', () => {
+    const noon = linear(0xdce9ff);
+    const dusk = linear(0xffc9a0);
+    expectColor(sunState(18.5, undefined).skyColor, { r: (noon.r + dusk.r) / 2, g: (noon.g + dusk.g) / 2, b: (noon.b + dusk.b) / 2 });
   });
 });
 
@@ -129,17 +160,20 @@ describe('sun state', () => {
     const interior = sunState(12, 100);
     const midnightInterior = sunState(0, 100);
     expect(interior).toEqual(midnightInterior);
-    expect(interior.sunColor).toEqual({ r: 1, g: 1, b: 1 });
+    expectColor(interior.sunColor, linear(0xffe6c4));
+    expectColor(interior.skyColor, linear(0xf3dfc6));
+    expectColor(interior.groundColor, linear(0x645143));
+    expectColor(interior.backdropColor, linear(0x24282c));
   });
 
   it('scales interior intensity by the authored brightness', () => {
     const bright = sunState(12, 100);
     const dim = sunState(12, 50);
+    expect(bright.sunIntensity).toBeCloseTo(3, 9);
+    expect(bright.hemisphereIntensity).toBeCloseTo(1.1, 9);
     expect(dim.sunIntensity).toBeCloseTo(bright.sunIntensity / 2, 9);
-    expect(dim.ambientIntensity).toBeCloseTo(bright.ambientIntensity / 2, 9);
-    // Half of the interior's share of each full level: 0.8 of the sun, 0.65 of the ambient.
-    expect(dim.sunIntensity).toBeCloseTo(0.5 * 0.8 * FULL_SUN, 9);
-    expect(dim.ambientIntensity).toBeCloseTo(0.5 * 0.65 * FULL_AMBIENT, 9);
+    expect(dim.hemisphereIntensity).toBeCloseTo(bright.hemisphereIntensity / 2, 9);
+    expect(dim.backdropColor).toEqual(bright.backdropColor);
   });
 
   it('holds the sun on or above the horizon through the whole day arc', () => {
@@ -158,32 +192,36 @@ describe('sun state', () => {
     }
   });
 
-  it('rises east of south and sets west of it', () => {
-    for (const hour of [7, 20]) expect(sunState(hour, undefined).direction.z).toBeGreaterThan(0);
-    expect(sunState(7, undefined).direction.x).toBeGreaterThan(0);
-    expect(sunState(20, undefined).direction.x).toBeLessThan(0);
+  /** The sun goes round the world: its bearing turns at an even pace, so the shadows it throws wheel round their casters all day. */
+  it('turns the sun round the world at an even pace through the day', () => {
+    const bearing = (hour: number): number => {
+      const { direction } = sunState(hour, undefined);
+      return (Math.atan2(direction.z, direction.x) * 180) / Math.PI;
+    };
+    const turned = (from: number, to: number): number => (((bearing(to) - bearing(from)) % 360) + 360) % 360;
+    for (let hour = 7; hour < 21; hour += 1) expect(turned(hour, hour + 1)).toBeCloseTo(15, 9);
+    // The daylight part of the splash reel's time-lapse shot, from four to the day's end.
+    expect(turned(16, 21.75)).toBeGreaterThan(80);
   });
 
-  /**
-   * The camera hides the ground behind a caster for as far as the caster is tall, so a shadow that
-   * falls straight away from the camera is cast and never seen. What shows is how far the shadow
-   * lands to one side, across the screen; the interior key throws it 0.49 of the caster's height.
-   */
-  it('throws every daylight shadow to one side of its caster as the camera sees it', () => {
-    const right = worldMovement(1, 0);
-    for (let hour = 6.5; hour <= 21.5; hour += 0.25) {
+  /** Where the camera stands, the ground behind a caster is hidden for as far as the caster is tall. */
+  it('keeps the high sun off the camera side, where its short shadows would fall out of sight', () => {
+    const toCamera = worldMovement(0, 1);
+    for (let hour = 6.25; hour < 22; hour += 0.25) {
       const { direction } = sunState(hour, undefined);
-      const sideways = Math.abs(direction.x * right.dx + direction.z * right.dz) / direction.y;
-      expect(sideways).toBeGreaterThan(0.4);
+      if (direction.y < Math.sin((30 * Math.PI) / 180)) continue;
+      const along = (direction.x * toCamera.dx + direction.z * toCamera.dz) / Math.hypot(direction.x, direction.z);
+      expect(along).toBeLessThan(Math.cos((40 * Math.PI) / 180));
     }
   });
 
-  it('tints warm near the horizon and neutral at height', () => {
-    expect(sunState(6, undefined).sunColor.b).toBeLessThan(sunState(14, undefined).sunColor.b);
-  });
-
-  it('switches to the cool night light outside the arc', () => {
-    expect(sunState(23, undefined).sunColor).toEqual({ r: 0.7, g: 0.8, b: 1 });
+  /** At its highest the sun stands to the camera's left, so round midday shadows fall across the screen. */
+  it('throws the shadows round midday to one side of their casters as the camera sees them', () => {
+    const right = worldMovement(1, 0);
+    for (let hour = 13; hour <= 15; hour += 0.25) {
+      const { direction } = sunState(hour, undefined);
+      expect(Math.abs(direction.x * right.dx + direction.z * right.dz) / direction.y).toBeGreaterThan(0.4);
+    }
   });
 
   it('moves the sun continuously through the day, with no hourly step', () => {
@@ -202,25 +240,24 @@ describe('the day/night switches', () => {
   const SECOND = 1 / 3600;
 
   /**
-   * Direction and colour jump at 06:00 and 22:00: the moon stands high and cool, the sun low and
-   * warm. The directional light is faded out across the switch so the jump happens while it
-   * contributes nothing, and the ambient, which has no jump, carries the scene.
+   * Direction jumps at 06:00 and 22:00: the moon stands high, the sun low. The directional light is
+   * faded out across the switch so the jump happens while it contributes nothing, and the
+   * hemisphere fill, which has no jump, carries the scene.
    */
   it.each([
     ['dawn', 6],
     ['dusk', 22],
-  ])('has the directional light off on both sides of %s, where its direction and colour jump', (_name, hour) => {
+  ])('has the directional light off on both sides of %s, where its direction jumps', (_name, hour) => {
     const before = sunState(hour - SECOND, undefined);
     const after = sunState(hour + SECOND, undefined);
 
     // The jump is real, which is what makes the fade necessary.
     expect(Math.abs(after.direction.y - before.direction.y)).toBeGreaterThan(0.5);
-    expect(after.sunColor).not.toEqual(before.sunColor);
-    // A thousandth of full, where an unfaded night light alone would be a quarter of it.
-    expect(before.sunIntensity).toBeLessThan(FULL_SUN / 1000);
-    expect(after.sunIntensity).toBeLessThan(FULL_SUN / 1000);
+    expect(before.sunIntensity).toBeLessThan(0.01);
+    expect(after.sunIntensity).toBeLessThan(0.01);
     expect(sunState(hour, undefined).sunIntensity).toBe(0);
-    expect(after.ambientIntensity).toBeCloseTo(before.ambientIntensity, 0);
+    expect(after.hemisphereIntensity).toBeCloseTo(before.hemisphereIntensity, 3);
+    expect(after.backdropColor.b).toBeCloseTo(before.backdropColor.b, 3);
   });
 
   it.each([
@@ -233,17 +270,7 @@ describe('the day/night switches', () => {
     [22.25, 0.5],
     [22.5, 1],
   ])('fades the directional light linearly over the half hour either side: %s is at %s', (hour, factor) => {
-    const state = sunState(hour, undefined);
-
-    // The unfaded light is the ambient level times the full sun, so the ratio isolates the fade.
-    expect(state.sunIntensity).toBeCloseTo((state.ambientIntensity / FULL_AMBIENT) * FULL_SUN * factor, 6);
-  });
-
-  it('leaves the light alone outside the two half hours', () => {
-    for (const hour of [0, 3, 5.4, 6.6, 12, 21.4, 22.6]) {
-      const state = sunState(hour, undefined);
-      expect(state.sunIntensity).toBeCloseTo((state.ambientIntensity / FULL_AMBIENT) * FULL_SUN, 6);
-    }
+    expect(sunState(hour, undefined).sunIntensity).toBeCloseTo(anchored(SUN_ANCHORS, hour) * factor, 6);
   });
 });
 

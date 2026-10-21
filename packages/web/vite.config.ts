@@ -60,7 +60,7 @@ export default defineConfig({
     // after every build and asserts this, so the omission is machine-enforced, not remembered.
     outDir: 'dist',
     // Vite's hashed bundles go in `bundle/`, not the default `assets/`, because the operator-supplied
-    // asset pack owns `dist/assets/` (`Models/`, `FloorMaterials/`, `UI/`, referenced by absolute
+    // asset pack owns `dist/assets/` (`Models/`, `Branding/`, `UI/`, referenced by absolute
     // `/assets/...` URLs). Leaving both in one directory works only by filename luck.
     assetsDir: 'bundle',
     sourcemap: true,

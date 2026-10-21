@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bundledModelRegistry } from '../src/modelRegistry.ts';
 import type { Sector } from '../src/sector.ts';
-import { OUTDOOR_SPACE_ID, buildWorld, neighbourSectors } from '../src/world.ts';
+import { OUTDOOR_SPACE_ID, buildWorld, neighbourSectors, resolveDoor } from '../src/world.ts';
 import { loadSectorFixtures } from './support/sectorFixture.ts';
 
 /**
@@ -19,14 +19,14 @@ function contents(sector: Sector): object {
     size: sector.size,
     origin: sector.origin,
     brightness: sector.brightness,
-    floorMaterialId: sector.floorMaterialId,
+    backgroundMaterialId: sector.ground.backgroundMaterialId,
     counts: {
       placements: sector.placements.length,
       blockers: sector.blockers.length,
       doors: sector.doors.length,
       npcs: sector.npcs.length,
       monsterSpawns: sector.monsterSpawns.length,
-      floorPatches: sector.floorPatches.length,
+      marks: sector.ground.marks.length,
     },
     doors: Object.fromEntries(sector.doors.map((door) => [door.id, `${door.target.sector}/${door.target.door}`])),
     npcs: Object.fromEntries(sector.npcs.map((npc) => [npc.id, npc.characterModelId])),
@@ -40,8 +40,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 40.96, z: 0 },
-        floorMaterialId: 'forest-floor',
-        counts: { placements: 70, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 2, floorPatches: 0 },
+        backgroundMaterialId: 'forest-floor',
+        counts: { placements: 193, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 2, marks: 4 },
         doors: {},
         npcs: {},
       },
@@ -49,8 +49,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 10.24, depth: 10.24 },
         brightness: 75,
-        floorMaterialId: 'stone-arena',
-        counts: { placements: 1, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, floorPatches: 1 },
+        backgroundMaterialId: 'stone-arena',
+        counts: { placements: 37, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, marks: 1 },
         doors: { exit: 'EdariaSquare/to-edariaarena' },
         npcs: {},
       },
@@ -58,8 +58,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 10.24, depth: 10.24 },
         brightness: 85,
-        floorMaterialId: 'stone-arena',
-        counts: { placements: 18, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        backgroundMaterialId: 'stone-arena',
+        counts: { placements: 54, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariafighterhall' },
         npcs: { pugnax: 'fighter-master' },
       },
@@ -67,8 +67,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 7.68, depth: 7.68 },
         brightness: 100,
-        floorMaterialId: 'wood-warm',
-        counts: { placements: 10, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        backgroundMaterialId: 'wood-warm',
+        counts: { placements: 38, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariahealerhall' },
         npcs: { sana: 'merchant' },
       },
@@ -76,8 +76,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 5.12, depth: 5.12 },
         brightness: 100,
-        floorMaterialId: 'wood-warm',
-        counts: { placements: 18, blockers: 3, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        backgroundMaterialId: 'wood-warm',
+        counts: { placements: 38, blockers: 3, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariainn' },
         npcs: { quieta: 'merchant' },
       },
@@ -85,8 +85,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 10.24, depth: 10.24 },
         brightness: 100,
-        floorMaterialId: 'wood-warm',
-        counts: { placements: 33, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        backgroundMaterialId: 'wood-warm',
+        counts: { placements: 69, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edarialibrary' },
         npcs: { libus: 'libus' },
       },
@@ -94,8 +94,8 @@ describe('the committed world', () => {
         kind: 'interior',
         size: { width: 5.12, depth: 5.12 },
         brightness: 100,
-        floorMaterialId: 'wood-warm',
-        counts: { placements: 22, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, floorPatches: 0 },
+        backgroundMaterialId: 'wood-warm',
+        counts: { placements: 42, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariashop' },
         npcs: { mercus: 'merchant' },
       },
@@ -103,8 +103,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 0, z: 0 },
-        floorMaterialId: 'grass-meadow',
-        counts: { placements: 94, blockers: 0, doors: 6, npcs: 0, monsterSpawns: 0, floorPatches: 3 },
+        backgroundMaterialId: 'grass-meadow',
+        counts: { placements: 150, blockers: 0, doors: 6, npcs: 0, monsterSpawns: 0, marks: 16 },
         doors: {
           'to-edarialibrary': 'EdariaLibrary/exit',
           'to-edariaarena': 'EdariaArena/exit',
@@ -119,8 +119,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -30.72 },
-        floorMaterialId: 'grass-meadow',
-        counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
+        backgroundMaterialId: 'grass-meadow',
+        counts: { placements: 61, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 4 },
         doors: {},
         npcs: {},
       },
@@ -128,8 +128,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -61.44 },
-        floorMaterialId: 'forest-floor',
-        counts: { placements: 32, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, floorPatches: 0 },
+        backgroundMaterialId: 'forest-floor',
+        counts: { placements: 148, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -137,8 +137,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: 40.96 },
-        floorMaterialId: 'grass-meadow',
-        counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
+        backgroundMaterialId: 'grass-meadow',
+        counts: { placements: 71, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -146,8 +146,8 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 30.72, depth: 30.72 },
         origin: { x: -30.72, z: 5.12 },
-        floorMaterialId: 'grass-meadow',
-        counts: { placements: 6, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 1 },
+        backgroundMaterialId: 'grass-meadow',
+        counts: { placements: 62, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -183,6 +183,51 @@ describe('the committed world', () => {
     expect(byName.get('SouthMeadow')).toMatchObject({ origin: { x: 5.12, z: 40.96 }, size: { width: 30.72, depth: 30.72 } });
     expect(byName.get('AutumnWood')).toMatchObject({ origin: { x: 40.96, z: 0 }, size: { width: 40.96, depth: 40.96 } });
   });
+
+  /** No land is a lattice of one model: each mixes trees, bushes, and rocks, turned more than one way. */
+  it.each(['NorthMeadow', 'SouthMeadow', 'WestMeadow', 'NorthWood', 'AutumnWood'])('dresses %s with a mix of trees, bushes, and rocks', (name) => {
+    const placements = byName.get(name)!.placements;
+    const models = new Set(placements.map((placement) => placement.modelId));
+    const of = (kind: string): string[] =>
+      [...models].filter((model) => (kind === 'tree' ? model.includes('tree') || model.includes('pine') : model.startsWith(kind)));
+    expect(of('tree').length).toBeGreaterThanOrEqual(3);
+    expect(of('bush').length).toBeGreaterThanOrEqual(1);
+    expect(of('rock').length).toBeGreaterThanOrEqual(1);
+    expect(new Set(placements.map((placement) => placement.yaw)).size).toBeGreaterThan(1);
+  });
+
+  it('places every nature model the registry holds somewhere', () => {
+    const placed = new Set(sectors.flatMap((sector) => sector.placements.map((placement) => placement.modelId)));
+    const nature = bundledModelRegistry()
+      .objectModels.map((rule) => rule.id)
+      .filter((id) => /^(tree-|autumn-pine-|pine-tree|bush-|rock-)/.test(id));
+    expect(nature.filter((id) => !placed.has(id))).toEqual([]);
+  });
+
+  /** The camera looks in over the low front walls, and the door stands in a gap in them. */
+  it.each(['EdariaArena', 'EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaShop'])(
+    'walls %s on all four sides with a gap at its door',
+    (name) => {
+      const room = byName.get(name)!;
+      const { width, depth } = room.size;
+      const walls = room.placements.filter((placement) => placement.modelId.includes('-room-'));
+      const side = (test: (x: number, z: number) => boolean): string[] => walls.filter((wall) => test(wall.x, wall.z)).map((wall) => wall.modelId);
+      const north = side((x, z) => z < 0 && x > 0 && x < width);
+      const west = side((x, z) => x < 0 && z > 0 && z < depth);
+      const south = side((x, z) => z > depth && x > 0 && x < width);
+      const east = side((x, z) => x > width && z > 0 && z < depth);
+      for (const full of [north, west]) {
+        expect(full.length).toBeGreaterThan(0);
+        for (const model of full) expect(model).not.toMatch(/-low$/);
+      }
+      for (const low of [south, east]) {
+        expect(low.length).toBeGreaterThan(0);
+        for (const model of low) expect(model).toMatch(/-low$/);
+      }
+      const doorway = resolveDoor(room, room.doors[0]!, bundledModelRegistry())!.doorway;
+      expect(walls.filter((wall) => Math.hypot(wall.x - doorway.x, wall.z - doorway.z) < 1.2)).toEqual([]);
+    },
+  );
 
   it('builds with every door live, no collision issue, and a clear starter spawn', () => {
     const world = buildWorld(sectors, bundledModelRegistry());

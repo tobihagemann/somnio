@@ -1,10 +1,12 @@
 import { angularDistance } from '@somnio/core';
 import type { Point, Rect, Sector } from '@somnio/core';
+import type { GroundShape } from '@somnio/protocol';
 import { gridPoint, selectRecord } from '../canvasController';
-import type { EditorTool } from '../canvasController';
+import type { EditorTool, PlacingTool } from '../canvasController';
+import { appendSample, boundedShape } from '../groundMarks';
 import type { ScreenPoint } from '../picking';
 import { quantize, stepOrFine } from '../preferences';
-import { containsSelection, rectRecord, toggleSelection } from '../selection';
+import { ID_PREFIX, containsSelection, nextFreeId, rectRecord, toggleSelection } from '../selection';
 import type { EditorSelection } from '../selection';
 import {
   FACING_CLEARANCE_PT,
@@ -24,7 +26,9 @@ import type { PlacementDefaults } from './mutations';
 
 /**
  * The stateless drag interaction layer: session classification in fixed precedence (facing handle → resize
- * handles → Shift-toggle → marquee/move), live previews, and committed record mutations.
+ * handles → Shift-toggle → marquee/move), live previews, and committed record mutations. The ground
+ * tool's gestures are sessions of their own: a drag paints a stroke, and while a polygon is being
+ * drawn every press belongs to it.
  */
 
 /**
@@ -33,11 +37,15 @@ import type { PlacementDefaults } from './mutations';
  * geometry; resize snapshots the grabbed record's rect for the same reason.
  */
 export type DragSession =
-  | { kind: 'placement'; tool: EditorTool; anchor: Point }
+  | { kind: 'placement'; tool: PlacingTool; anchor: Point }
   | { kind: 'move'; originals: { selection: EditorSelection; origin: Point }[] }
   | { kind: 'resize'; selection: EditorSelection; handle: ResizeHandle; rect: Rect }
   | { kind: 'rotate'; selection: EditorSelection }
-  | { kind: 'marquee' };
+  | { kind: 'marquee' }
+  /** The drag's ground points, sampled as it goes. A press that never travels is a tap, which the shell takes as a polygon vertex. */
+  | { kind: 'groundStroke'; samples: Point[] }
+  /** A press while a polygon is being drawn: a tap adds a vertex, and a drag adds nothing. */
+  | { kind: 'groundPolygon' };
 
 /**
  * Classifies a gesture's first change into a session, possibly retargeting the selection.
@@ -50,8 +58,12 @@ export function beginSession(
   sector: Sector,
   selection: readonly EditorSelection[],
   context: DragContext,
+  drawingPolygon = false,
 ): { session: DragSession | undefined; selection: EditorSelection[] } {
   const point = gridPoint(context, location);
+  if (tool === 'ground') {
+    return { session: drawingPolygon ? { kind: 'groundPolygon' } : { kind: 'groundStroke', samples: [point] }, selection: [...selection] };
+  }
   if (tool !== 'select') {
     const anchor = { x: quantize(point.x, context.gridStep), z: quantize(point.z, context.gridStep) };
     return { session: { kind: 'placement', tool, anchor }, selection: [...selection] };
@@ -125,9 +137,27 @@ export function preview(
       applyFacing(session.selection, headingFromDrag(current, turned.center, turned.facing, context), transient);
       return transient;
     }
+    case 'groundStroke': {
+      appendSample(session.samples, gridPoint(context, current));
+      const transient = structuredClone(sector);
+      paintMark(strokeOf(session.samples, defaults), transient, defaults.brush);
+      return transient;
+    }
     case 'marquee':
+    case 'groundPolygon':
       return undefined;
   }
+}
+
+function strokeOf(samples: readonly Point[], defaults: PlacementDefaults): GroundShape {
+  return { kind: 'stroke', radius: defaults.brush.radius, points: [...samples] };
+}
+
+/** Appends a mark of the brush's material in the shape, kept where the codec accepts it, and returns its selection. */
+export function paintMark(shape: GroundShape, sector: Sector, brush: PlacementDefaults['brush']): EditorSelection {
+  const id = nextFreeId(ID_PREFIX.mark, sector.ground.marks);
+  sector.ground.marks.push({ id, materialId: brush.materialId, opacity: 1, shape: boundedShape(sector.size, shape) });
+  return { kind: 'mark', id };
 }
 
 export interface DragCommitTarget {
@@ -201,6 +231,16 @@ export function endSession(
       }
       return merged;
     }
+    case 'groundStroke': {
+      appendSample(session.samples, gridPoint(context, end));
+      let painted: EditorSelection | undefined;
+      const { accepted } = document.mutate('Paint ground', (draft) => {
+        painted = paintMark(strokeOf(session.samples, defaults), draft, defaults.brush);
+      });
+      return accepted && painted !== undefined ? [painted] : [...selection];
+    }
+    case 'groundPolygon':
+      return [...selection];
   }
 }
 
@@ -218,9 +258,8 @@ function commitRotation(selection: EditorSelection, end: ScreenPoint, document: 
   });
 }
 
-function placementDescription(tool: EditorTool): string {
+function placementDescription(tool: PlacingTool): string {
   switch (tool) {
-    case 'select':
     case 'placement':
       return 'Place model';
     case 'blocker':
@@ -229,8 +268,6 @@ function placementDescription(tool: EditorTool): string {
       return 'Place NPC';
     case 'monsterSpawn':
       return 'Place monster spawn';
-    case 'floorPatch':
-      return 'Place floor patch';
     case 'spawn':
       return 'Place spawn point';
   }

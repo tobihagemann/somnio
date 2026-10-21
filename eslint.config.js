@@ -36,7 +36,7 @@ export default tseslint.config(
   // Only the npm workspace is linted. The standalone `.mjs` scripts sit outside every tsconfig,
   // so the type-checked preset cannot resolve them; skills and docs carry no source.
   {
-    ignores: ['**/dist', '**/node_modules', 'coverage', 'packages/web/public', 'packages/*/scripts', 'Scripts', '.husky', 'Skills', 'Docs'],
+    ignores: ['**/dist', '**/node_modules', 'coverage', 'packages/web/public', 'packages/*/scripts/*.mjs', 'Scripts', '.husky', 'Skills', 'Docs'],
   },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

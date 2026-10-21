@@ -1,6 +1,6 @@
 import { SOMNIO_CONSTANTS, modelToWorld, objectModel, rectContains, resolveDoor, worldToModel } from '@somnio/core';
 import type { ModelRegistry, Point, Rect, Sector, Size, Transform } from '@somnio/core';
-import { requireId } from '@somnio/protocol';
+import { markShapeBounds, requireId } from '@somnio/protocol';
 import { placeholderFootprint } from '@/scene/placement';
 
 /**
@@ -9,7 +9,7 @@ import { placeholderFootprint } from '@/scene/placement';
  * keyed by `selectionKey`.
  */
 
-type SelectionKind = 'placement' | 'blocker' | 'door' | 'npc' | 'monsterSpawn' | 'floorPatch' | 'spawn';
+type SelectionKind = 'placement' | 'blocker' | 'door' | 'npc' | 'monsterSpawn' | 'mark' | 'spawn';
 
 export interface EditorSelection {
   kind: SelectionKind;
@@ -51,8 +51,8 @@ function recordList(kind: Exclude<SelectionKind, 'spawn'>, sector: Sector): { id
       return sector.npcs;
     case 'monsterSpawn':
       return sector.monsterSpawns;
-    case 'floorPatch':
-      return sector.floorPatches;
+    case 'mark':
+      return sector.ground.marks;
   }
 }
 
@@ -64,7 +64,10 @@ export function isValidSelection(selection: EditorSelection, sector: Sector): bo
   return selection.kind === 'spawn' ? sector.spawn !== undefined : byId(recordList(selection.kind, sector), selection.id) !== undefined;
 }
 
-/** The selected record's own position, or `undefined` for a door, which stands where its placement does. */
+/**
+ * The selected record's own position, or `undefined` for a door, which stands where its placement
+ * does. A ground mark's is its first point, which the rest move with.
+ */
 export function positionedRecord(selection: EditorSelection, sector: Sector): Point | undefined {
   switch (selection.kind) {
     case 'placement':
@@ -75,8 +78,9 @@ export function positionedRecord(selection: EditorSelection, sector: Sector): Po
       return sector.spawn;
     case 'blocker':
     case 'monsterSpawn':
-    case 'floorPatch':
       return rectRecord(selection, sector);
+    case 'mark':
+      return byId(sector.ground.marks, selection.id)?.shape.points[0];
     case 'door':
       return undefined;
   }
@@ -89,8 +93,7 @@ export function rectRecord(selection: EditorSelection, sector: Sector): Rect | u
       return byId(sector.blockers, selection.id);
     case 'monsterSpawn':
       return byId(sector.monsterSpawns, selection.id);
-    case 'floorPatch':
-      return byId(sector.floorPatches, selection.id);
+    case 'mark':
     case 'placement':
     case 'door':
     case 'npc':
@@ -131,8 +134,9 @@ export function rectCorners(rect: Rect): Point[] {
 /**
  * What the canvas hit-tester, the marquee, and the selection highlight treat as the record: a
  * placement's registry footprint turned by its yaw, a door's trigger, a body-sized square for an
- * NPC or the spawn point, and the rect itself for the rest. `undefined` once the record is gone,
- * and for a door its placement's model has no anchor for.
+ * NPC or the spawn point, the ground a mark's shape spans (the hit-tester tests a mark on its
+ * shape instead), and the rect itself for the rest. `undefined` once the record is gone, and for
+ * a door its placement's model has no anchor for.
  */
 export function selectionFootprint(selection: EditorSelection, sector: Sector, registry: ModelRegistry): Footprint | undefined {
   switch (selection.kind) {
@@ -153,9 +157,12 @@ export function selectionFootprint(selection: EditorSelection, sector: Sector, r
     }
     case 'spawn':
       return sector.spawn === undefined ? undefined : { transform: UNTURNED, rect: squareAround(sector.spawn, SOMNIO_CONSTANTS.playerRadius) };
+    case 'mark': {
+      const mark = byId(sector.ground.marks, selection.id);
+      return mark === undefined ? undefined : { transform: UNTURNED, rect: markShapeBounds(mark.shape) };
+    }
     case 'blocker':
-    case 'monsterSpawn':
-    case 'floorPatch': {
+    case 'monsterSpawn': {
       const rect = rectRecord(selection, sector);
       return rect === undefined ? undefined : { transform: UNTURNED, rect };
     }
@@ -219,7 +226,7 @@ export function isValidId(value: string): boolean {
 }
 
 /** What a generated id starts with. A placement's starts with its model id and a door's is `nextDoorId`. */
-export const ID_PREFIX = { blocker: 'blocker', npc: 'npc', monsterSpawn: 'spawn', floorPatch: 'patch' } as const;
+export const ID_PREFIX = { blocker: 'blocker', npc: 'npc', monsterSpawn: 'spawn', mark: 'mark' } as const;
 
 /** The first `<prefix>-<n>` no record in `taken` carries. */
 export function nextFreeId(prefix: string, taken: readonly { id: string }[]): string {

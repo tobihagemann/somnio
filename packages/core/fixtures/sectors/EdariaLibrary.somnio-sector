@@ -4,14 +4,14 @@
       "depth": 0.6,
       "id": "blocker-4",
       "width": 0.12,
-      "x": 0.96,
+      "x": 0.64,
       "z": 9.64
     },
     {
       "depth": 0.6,
       "id": "blocker-5",
       "width": 0.12,
-      "x": 4.68,
+      "x": 4.36,
       "z": 9.64
     }
   ],
@@ -27,7 +27,9 @@
       }
     }
   ],
-  "floorMaterialId": "wood-warm",
+  "ground": {
+    "backgroundMaterialId": "wood-warm"
+  },
   "kind": "interior",
   "npcs": [
     {
@@ -134,7 +136,7 @@
     {
       "id": "door-1",
       "modelId": "door",
-      "x": 2.88,
+      "x": 2.56,
       "z": 10.145
     },
     {
@@ -238,6 +240,238 @@
       "modelId": "chair",
       "x": 7.36,
       "z": 6.215
+    },
+    {
+      "id": "wall-north-1",
+      "modelId": "timber-room-wall",
+      "x": 0.64,
+      "z": -0.1
+    },
+    {
+      "id": "wall-south-1",
+      "modelId": "timber-room-wall-low",
+      "x": 0.64,
+      "z": 10.36
+    },
+    {
+      "id": "wall-north-2",
+      "modelId": "timber-room-window-wall",
+      "x": 1.92,
+      "z": -0.12
+    },
+    {
+      "id": "wall-north-3",
+      "modelId": "timber-room-wall",
+      "x": 3.2,
+      "z": -0.1
+    },
+    {
+      "id": "wall-north-4",
+      "modelId": "timber-room-window-wall",
+      "x": 4.48,
+      "z": -0.12
+    },
+    {
+      "id": "wall-south-4",
+      "modelId": "timber-room-wall-low",
+      "x": 4.48,
+      "z": 10.36
+    },
+    {
+      "id": "wall-north-5",
+      "modelId": "timber-room-wall",
+      "x": 5.76,
+      "z": -0.1
+    },
+    {
+      "id": "wall-south-5",
+      "modelId": "timber-room-wall-low",
+      "x": 5.76,
+      "z": 10.36
+    },
+    {
+      "id": "wall-north-6",
+      "modelId": "timber-room-window-wall",
+      "x": 7.04,
+      "z": -0.12
+    },
+    {
+      "id": "wall-south-6",
+      "modelId": "timber-room-wall-low",
+      "x": 7.04,
+      "z": 10.36
+    },
+    {
+      "id": "wall-north-7",
+      "modelId": "timber-room-wall",
+      "x": 8.32,
+      "z": -0.1
+    },
+    {
+      "id": "wall-south-7",
+      "modelId": "timber-room-wall-low",
+      "x": 8.32,
+      "z": 10.36
+    },
+    {
+      "id": "wall-north-8",
+      "modelId": "timber-room-window-wall",
+      "x": 9.6,
+      "z": -0.12
+    },
+    {
+      "id": "wall-south-8",
+      "modelId": "timber-room-wall-low",
+      "x": 9.6,
+      "z": 10.36
+    },
+    {
+      "id": "wall-west-1",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-east-1",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-west-2",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-east-2",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-west-3",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-east-3",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-west-4",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "id": "wall-east-4",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "id": "wall-west-5",
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
+      "yaw": 90,
+      "z": 5.76
+    },
+    {
+      "id": "wall-east-5",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 5.76
+    },
+    {
+      "id": "wall-west-6",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 7.04
+    },
+    {
+      "id": "wall-east-6",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 7.04
+    },
+    {
+      "id": "wall-west-7",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 8.32
+    },
+    {
+      "id": "wall-east-7",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 8.32
+    },
+    {
+      "id": "wall-west-8",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 9.6
+    },
+    {
+      "id": "wall-east-8",
+      "modelId": "timber-room-wall-low",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 9.6
+    },
+    {
+      "id": "post-north-west",
+      "modelId": "timber-room-post",
+      "x": -0.14,
+      "z": -0.14
+    },
+    {
+      "id": "post-north-east",
+      "modelId": "timber-room-post",
+      "x": 10.38,
+      "z": -0.14
+    },
+    {
+      "id": "post-south-west",
+      "modelId": "timber-room-post",
+      "x": -0.14,
+      "z": 10.38
+    },
+    {
+      "id": "post-south-east",
+      "modelId": "timber-room-post-low",
+      "x": 10.38,
+      "z": 10.38
+    },
+    {
+      "id": "post-door-1",
+      "modelId": "timber-room-post-low",
+      "x": 1.28,
+      "z": 10.38
+    },
+    {
+      "id": "post-door-2",
+      "modelId": "timber-room-post-low",
+      "x": 3.84,
+      "z": 10.38
     }
   ],
   "size": {

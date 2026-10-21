@@ -15,6 +15,7 @@ import {
   toggleSelection,
 } from '@/editor/selection';
 import type { EditorSelection } from '@/editor/selection';
+import { emptySector } from './helpers/editorFixture';
 import { CursorReadout } from '@/editor/ui/cursorReadout';
 import { TEST_REGISTRY, interiorSector } from '../../core/test/support/worldFixture.ts';
 
@@ -31,7 +32,24 @@ function populatedSector(overrides: Partial<Sector> = {}): Sector {
     ],
     blockers: [{ id: 'blocker-1', x: 0, z: 0, width: 2, depth: 1 }],
     doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Other', door: 'in' } }],
-    floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 12, z: 2, width: 3, depth: 2 }],
+    ground: {
+      backgroundMaterialId: 'grass-meadow',
+      marks: [
+        {
+          id: 'road',
+          materialId: 'dirt-path',
+          opacity: 1,
+          shape: {
+            kind: 'stroke',
+            radius: 1,
+            points: [
+              { x: 12, z: 2 },
+              { x: 15, z: 4 },
+            ],
+          },
+        },
+      ],
+    },
     spawn: { x: 6, z: 12, facing: 0 },
     npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 0, dialogScript: '' }],
     monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
@@ -45,7 +63,7 @@ const ALL: EditorSelection[] = [
   { kind: 'door', id: 'exit' },
   { kind: 'npc', id: 'libus' },
   { kind: 'monsterSpawn', id: 'spawn-1' },
-  { kind: 'floorPatch', id: 'patch-1' },
+  { kind: 'mark', id: 'road' },
   { kind: 'spawn', id: 'spawn' },
 ];
 
@@ -125,7 +143,7 @@ describe('removeAllSelections', () => {
   it('covers every kind', () => {
     const body = populatedSector();
     removeAllSelections([...ALL, { kind: 'placement', id: 'door-1' }], body);
-    expect(body).toMatchObject({ placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], floorPatches: [] });
+    expect(body).toMatchObject({ placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], ground: { marks: [] } });
     expect(body.spawn).toBeUndefined();
   });
 
@@ -201,7 +219,7 @@ describe('set helpers', () => {
 describe('pick ordering', () => {
   it('orders the markers and door triggers before placements, and placements before every authored rect', () => {
     const kinds = candidateSelections(populatedSector()).map((selection) => selection.kind);
-    expect(kinds).toEqual(['npc', 'spawn', 'door', 'placement', 'placement', 'blocker', 'monsterSpawn', 'floorPatch']);
+    expect(kinds).toEqual(['npc', 'spawn', 'door', 'placement', 'placement', 'blocker', 'monsterSpawn', 'mark']);
   });
 
   it('picks what stands on top at a point, and the latest record within a kind', () => {
@@ -214,7 +232,25 @@ describe('pick ordering', () => {
       blockers: [{ id: 'blocker-1', x: 0, z: 0, width: 10, depth: 10 }],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 4.5, z: 5, facing: 0, dialogScript: '' }],
       monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 0, z: 0, width: 12, depth: 12, maxAlive: 3 }],
-      floorPatches: [{ id: 'patch-1', floorMaterialId: 'cobble', x: 0, z: 0, width: 14, depth: 14 }],
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'plaza',
+            materialId: 'cobble-town',
+            opacity: 1,
+            shape: {
+              kind: 'polygon',
+              points: [
+                { x: 0, z: 0 },
+                { x: 14, z: 0 },
+                { x: 14, z: 14 },
+                { x: 0, z: 14 },
+              ],
+            },
+          },
+        ],
+      },
     });
     const pick = (x: number, z: number): EditorSelection | undefined => selectRecord({ x, z }, overlap, TEST_REGISTRY);
     // On the NPC, which stands on the first rug.
@@ -223,8 +259,67 @@ describe('pick ordering', () => {
     expect(pick(5.2, 5.4)).toEqual({ kind: 'placement', id: 'rug-2' });
     expect(pick(8, 8)).toEqual({ kind: 'blocker', id: 'blocker-1' });
     expect(pick(11, 11)).toEqual({ kind: 'monsterSpawn', id: 'spawn-1' });
-    expect(pick(13, 13)).toEqual({ kind: 'floorPatch', id: 'patch-1' });
+    expect(pick(13, 13)).toEqual({ kind: 'mark', id: 'plaza' });
     expect(pick(15, 15)).toBeUndefined();
+  });
+
+  /** A diagonal road's points span most of a sector; only the road itself picks it. */
+  it('picks a mark on its shape, not on the ground its points span', () => {
+    const body = populatedSector({
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          {
+            id: 'road',
+            materialId: 'dirt-path',
+            opacity: 1,
+            shape: {
+              kind: 'stroke',
+              radius: 1,
+              points: [
+                { x: 1, z: 1 },
+                { x: 19, z: 19 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(selectRecord({ x: 9.5, z: 10.2 }, body, TEST_REGISTRY)).toEqual({ kind: 'mark', id: 'road' });
+    expect(selectRecord({ x: 16, z: 6 }, body, TEST_REGISTRY)).toBeUndefined();
+  });
+
+  it('picks a one-point dab within its radius, and a polygon inside its edge only', () => {
+    const body = emptySector({
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          { id: 'dab', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: 4, z: 4 }] } },
+          {
+            id: 'ell',
+            materialId: 'cobble-town',
+            opacity: 1,
+            shape: {
+              kind: 'polygon',
+              points: [
+                { x: 10, z: 10 },
+                { x: 14, z: 10 },
+                { x: 14, z: 14 },
+                { x: 12, z: 14 },
+                { x: 12, z: 12 },
+                { x: 10, z: 12 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(selectRecord({ x: 4.6, z: 4.6 }, body, TEST_REGISTRY)).toEqual({ kind: 'mark', id: 'dab' });
+    expect(selectRecord({ x: 5.2, z: 4 }, body, TEST_REGISTRY)).toBeUndefined();
+    expect(selectRecord({ x: 11, z: 11 }, body, TEST_REGISTRY)).toEqual({ kind: 'mark', id: 'ell' });
+    expect(selectRecord({ x: 13, z: 13 }, body, TEST_REGISTRY)).toEqual({ kind: 'mark', id: 'ell' });
+    // In the ell's notch, where a ray from the point crosses two of its edges, so even-odd counts it outside.
+    expect(selectRecord({ x: 11, z: 13 }, body, TEST_REGISTRY)).toBeUndefined();
   });
 
   it('picks a door by its trigger and its placement beside it', () => {
@@ -234,7 +329,7 @@ describe('pick ordering', () => {
   });
 
   it('pins the tools to their literals', () => {
-    expect([...EDITOR_TOOLS]).toEqual(['select', 'placement', 'blocker', 'npc', 'monsterSpawn', 'floorPatch', 'spawn']);
+    expect([...EDITOR_TOOLS]).toEqual(['select', 'placement', 'blocker', 'npc', 'monsterSpawn', 'ground', 'spawn']);
   });
 });
 

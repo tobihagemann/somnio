@@ -40,7 +40,9 @@ describe('the written form', () => {
       [
         '{',
         '  "brightness": 100,',
-        '  "floorMaterialId": "grass",',
+        '  "ground": {',
+        '    "backgroundMaterialId": "grass"',
+        '  },',
         '  "kind": "interior",',
         '  "size": {',
         '    "depth": 10,',
@@ -55,7 +57,7 @@ describe('the written form', () => {
   it('leaves out every default and reads it back', () => {
     const sector = outdoorSector('Town', { x: 0, z: 0 }, { placements: [{ id: 'box-1', modelId: 'box', x: 1, z: 2, yaw: 0, elevation: 0 }] });
     const text = writeSectorFile(sector);
-    for (const key of ['yaw', 'elevation', 'floorPatches', 'blockers', 'doors', 'npcs', 'monsterSpawns', 'spawn']) {
+    for (const key of ['yaw', 'elevation', 'marks', 'blockers', 'doors', 'npcs', 'monsterSpawns', 'spawn']) {
       expect(text).not.toContain(`"${key}"`);
     }
     expect(readSectorFile(text, 'Town')).toEqual(sector);
@@ -98,7 +100,7 @@ describe('reader validation', () => {
   });
 
   it.each([
-    ['a missing required field', '"floorMaterialId"', '"floorMaterial"', /sector\.floorMaterialId/],
+    ['a missing required field', '"backgroundMaterialId"', '"background"', /sector\.ground\.backgroundMaterialId/],
     ['a non-numeric coordinate', '"x": 10.145', '"x": "10.145"', /sector\.placements\[0\]\.x/],
     ['a coordinate out of range', '"x": 10.145', '"x": 1e9', /exceeds 10000 metres/],
     ['a size beyond the extent cap', '"width": 10.24', '"width": 600', /exceeds 512 metres/],

@@ -50,7 +50,7 @@ describe('placing', () => {
     // Snapped to the default half-metre grid.
     expect(placed).toMatchObject({ x: 6, z: 8, yaw: 0, elevation: 0 });
     expect(placed?.id).toBe(`${placed?.modelId}-1`);
-    expect(shell.recordCounts()).toEqual({ placements: 1, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, floorPatches: 0 });
+    expect(shell.recordCounts()).toEqual({ placements: 1, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 0 });
     expect(shell.selection).toEqual([{ kind: 'placement', id: placed?.id }]);
     expect(shell.document.undoDepth).toBe(depth + 1);
   });
@@ -84,15 +84,121 @@ describe('placing', () => {
 
   it('shows what the document refuses in the banner and places nothing', () => {
     const shell = shellWithDocument();
-    shell.tool = 'floorPatch';
+    shell.tool = 'npc';
     click(shell, { x: 2, z: 2 });
     const depth = shell.document.undoDepth;
-    click(shell, { x: 2.5, z: 2.5 });
-    expect(shell.document.sector.floorPatches.length).toBe(1);
+    click(shell, { x: 25, z: 2 });
+    expect(shell.document.sector.npcs.length).toBe(1);
     expect(shell.document.undoDepth).toBe(depth);
-    expect(shell.selection).toEqual([{ kind: 'floorPatch', id: 'patch-1' }]);
-    expect(banner().textContent).toBe('Floor patches must not overlap.');
+    expect(shell.selection).toEqual([{ kind: 'npc', id: 'npc-1' }]);
+    expect(banner().textContent).toContain('stands outside the sector');
     expect(banner().classList.contains('hidden')).toBe(false);
+  });
+});
+
+describe('painting ground', () => {
+  function key(name: string): void {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: name, cancelable: true }));
+  }
+
+  function dblclick(shell: EditorShell, at: Point): void {
+    click(shell, at);
+    click(shell, at);
+    pointer(shell, 'dblclick', at);
+  }
+
+  function groundShell(): EditorShell {
+    const shell = shellWithDocument();
+    document.querySelector<HTMLButtonElement>('button[title="Ground"]')!.click();
+    return shell;
+  }
+
+  it('paints a drag as one stroke mark, one undo step', () => {
+    const shell = groundShell();
+    const depth = shell.document.undoDepth;
+    drag(shell, { x: 4, z: 4 }, { x: 10, z: 6 });
+    expect(shell.document.sector.ground.marks).toEqual([
+      expect.objectContaining({ id: 'mark-1', materialId: 'dirt-path', shape: expect.objectContaining({ kind: 'stroke', radius: 0.8 }) }),
+    ]);
+    expect(shell.document.undoDepth).toBe(depth + 1);
+    expect(shell.selection).toEqual([{ kind: 'mark', id: 'mark-1' }]);
+  });
+
+  it('closes three taps into one polygon mark on Enter, one undo step', () => {
+    const shell = groundShell();
+    const depth = shell.document.undoDepth;
+    click(shell, { x: 2, z: 2 });
+    click(shell, { x: 8, z: 2 });
+    click(shell, { x: 8, z: 8 });
+    expect(shell.document.undoDepth).toBe(depth);
+    key('Enter');
+    expect(shell.document.sector.ground.marks.map((mark) => mark.shape)).toEqual([
+      {
+        kind: 'polygon',
+        points: [
+          { x: 2, z: 2 },
+          { x: 8, z: 2 },
+          { x: 8, z: 8 },
+        ],
+      },
+    ]);
+    expect(shell.document.undoDepth).toBe(depth + 1);
+  });
+
+  it('closes the polygon on a double-click whose own taps add no vertex', () => {
+    const shell = groundShell();
+    click(shell, { x: 2, z: 2 });
+    click(shell, { x: 8, z: 2 });
+    click(shell, { x: 8, z: 8 });
+    dblclick(shell, { x: 2, z: 8 });
+    expect(shell.document.sector.ground.marks[0]!.shape.points).toHaveLength(3);
+  });
+
+  it('drops a polygon in progress on Escape, on another tool, and keeps it through a reconcile', () => {
+    const shell = groundShell();
+    click(shell, { x: 2, z: 2 });
+    click(shell, { x: 8, z: 2 });
+    key('Escape');
+    click(shell, { x: 8, z: 8 });
+    key('Enter');
+    // One vertex alone after the Escape: nothing to close into a mark.
+    expect(shell.document.sector.ground.marks).toEqual([]);
+
+    click(shell, { x: 2, z: 2 });
+    click(shell, { x: 8, z: 2 });
+    shell.document.mutate('Elsewhere', (sector) => sector.blockers.push({ id: 'blocker-1', x: 15, z: 15, width: 1, depth: 1 }));
+    click(shell, { x: 8, z: 8 });
+    key('Enter');
+    expect(shell.document.sector.ground.marks).toHaveLength(1);
+
+    click(shell, { x: 2, z: 2 });
+    click(shell, { x: 8, z: 2 });
+    click(shell, { x: 8, z: 8 });
+    document.querySelector<HTMLButtonElement>('button[title="Select"]')!.click();
+    key('Enter');
+    expect(shell.document.sector.ground.marks).toHaveLength(1);
+  });
+
+  it('lets a drag while a polygon is drawn add nothing', () => {
+    const shell = groundShell();
+    click(shell, { x: 2, z: 2 });
+    drag(shell, { x: 4, z: 4 }, { x: 10, z: 6 });
+    click(shell, { x: 8, z: 2 });
+    click(shell, { x: 8, z: 8 });
+    key('Enter');
+    expect(shell.document.sector.ground.marks.map((mark) => mark.shape.kind)).toEqual(['polygon']);
+    expect(shell.document.sector.ground.marks[0]!.shape.points).toHaveLength(3);
+  });
+
+  /** In a 5.12 m room the widest stroke is about 3.39 m, and the brush is capped there. */
+  it("caps the brush's radius at the widest stroke the document takes", () => {
+    shellWithDocument({ ...SETTINGS, kind: 'interior', width: 5.12, depth: 5.12 });
+    document.querySelector<HTMLButtonElement>('button[title="Ground"]')!.click();
+    const radius = labelled(document.body, 'Stroke radius (m)');
+    expect(radius.max).toBe('3.385');
+    radius.value = '5';
+    radius.dispatchEvent(new Event('change'));
+    expect(Number(radius.value)).toBeCloseTo(3.385, 3);
   });
 });
 

@@ -2,7 +2,9 @@ import { MONSTER_KIND_IDS, heading, objectModel } from '@somnio/core';
 import type { ModelRegistry, Sector } from '@somnio/core';
 import { NPC_SERVICES } from '@somnio/protocol';
 import type { NPCService } from '@somnio/protocol';
+import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
 import { button, element, field, replaceChildren, select } from '@/ui/dom';
+import { maxStrokeRadius } from '../groundMarks';
 import { millimetres } from '../preferences';
 import { byId, isValidId, isValidSelection, selectionKey } from '../selection';
 import type { EditorSelection } from '../selection';
@@ -73,6 +75,8 @@ export class InspectorPanel {
   private readonly title: HTMLElement;
   private readonly body: HTMLElement;
   private fields: DraftField[] = [];
+  /** The document as last rendered, which a field's bounds are read from. */
+  private shown!: Sector;
   /** Selection identity of the currently built rows, so a reseed never hits foreign fields. */
   private renderedKey = '';
 
@@ -98,6 +102,7 @@ export class InspectorPanel {
   }
 
   render(sector: Sector, selection: readonly EditorSelection[], isUninitialized: boolean): void {
+    this.shown = sector;
     const key = selection.length === 0 ? 'sector' : selection.map(selectionKey).sort().join(',');
     if (key !== this.renderedKey || selection.length === 0) this.rebuild(sector, selection, isUninitialized, key);
     // Rows just built are seeded here too: nothing in them is focused, so the reseed rule fills
@@ -144,9 +149,9 @@ export class InspectorPanel {
         this.title.textContent = 'Monster spawn';
         this.renderMonsterSpawn(selected);
         break;
-      case 'floorPatch':
-        this.title.textContent = 'Floor patch';
-        this.renderFloorPatch(selected);
+      case 'mark':
+        this.title.textContent = 'Ground mark';
+        this.renderMark(selected);
         break;
       case 'spawn':
         this.title.textContent = 'Spawn point';
@@ -171,7 +176,7 @@ export class InspectorPanel {
       row('Kind', sector.kind),
       row('Size', `${sector.size.width} x ${sector.size.depth} m`),
       sector.origin === undefined ? row('Light', String(sector.brightness)) : row('Origin', `${sector.origin.x}, ${sector.origin.z}`),
-      row('Floor material', sector.floorMaterialId),
+      row('Ground material', sector.ground.backgroundMaterialId),
       ...issueMessages(this.callbacks.issues()).map(issueLine),
       settings,
     ]);
@@ -243,13 +248,29 @@ export class InspectorPanel {
     ]);
   }
 
-  private renderFloorPatch(selection: EditorSelection): void {
-    const actionName = 'Edit floor patch';
-    const patch: Find<Sector['floorPatches'][number]> = (s) => byId(s.floorPatches, selection.id);
+  /**
+   * A mark's material, opacity, and, for a stroke, its radius. Its shape is repainted rather than
+   * edited, and its points never move here, so a stroke's radius is capped where its points still
+   * lie inside the bound the codec holds them to.
+   */
+  private renderMark(selection: EditorSelection): void {
+    const actionName = 'Edit ground mark';
+    const mark: Find<Sector['ground']['marks'][number]> = (s) => byId(s.ground.marks, selection.id);
+    const stroke: Find<{ radius: number }> = (s) => {
+      const shape = mark(s)?.shape;
+      return shape?.kind === 'stroke' ? shape : undefined;
+    };
     this.setRows([
       this.idField(selection),
-      this.picker('Material', () => idOptions(this.registry.floorMaterials.map((rule) => rule.id)), patch, 'floorMaterialId', actionName),
-      ...this.numberFields(RECT_FIELDS, patch, actionName),
+      this.picker('Material', () => idOptions(GROUND_MATERIAL_IDS), mark, 'materialId', actionName),
+      this.numberField('Opacity', mark, 'opacity', actionName, (value) => Math.round(Math.min(Math.max(value, 0), 1) * 100) / 100),
+      ...(stroke(this.shown) === undefined
+        ? []
+        : [
+            this.numberField('Radius', stroke, 'radius', actionName, (value) =>
+              millimetres(Math.min(Math.max(value, 0), maxStrokeRadius(this.shown.size, mark(this.shown)?.shape.points ?? []))),
+            ),
+          ]),
     ]);
   }
 

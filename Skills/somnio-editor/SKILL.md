@@ -12,8 +12,9 @@ reach `dist/` or the shipped image (`npm run build` asserts this after every bun
 
 ## Step 1: Serve the editor
 
-Node 24.17.0+ (`.nvmrc`). For real models and floors, build the served asset root from the
-`somnio-assets` working tree first (placeholders otherwise — fine for most editor testing):
+Node 24.17.0+ (`.nvmrc`). For real models and styled panels, build the served asset root from
+the `somnio-assets` working tree first (placeholders and unstyled panels otherwise — fine for
+most editor testing):
 
 ```bash
 SOMNIO_ASSET_SOURCE="<asset-pack-root>" SOMNIO_WEB_ASSET_DEST=packages/web/public/assets Scripts/bundle-web-assets.sh
@@ -67,9 +68,9 @@ agent-browser eval 'window.somnioEditor.placeholderObjectCount()'   # 0 = real m
 | Call | Returns |
 |---|---|
 | `sectorName()` | loaded sector id, `''` before the first open |
-| `body()` | record counts per array (`placements`, `blockers`, `doors`, `npcs`, `monsterSpawns`, `floorPatches`) |
-| `selection()` | `[{ kind, id }]`; `kind` is `'placement' \| 'blocker' \| 'door' \| 'npc' \| 'monsterSpawn' \| 'floorPatch' \| 'spawn'`, `id` the record's id |
-| `tool()` | `'select' \| 'placement' \| 'blocker' \| 'npc' \| 'monsterSpawn' \| 'floorPatch' \| 'spawn'` |
+| `body()` | record counts per array (`placements`, `blockers`, `doors`, `npcs`, `monsterSpawns`, `marks`) |
+| `selection()` | `[{ kind, id }]`; `kind` is `'placement' \| 'blocker' \| 'door' \| 'npc' \| 'monsterSpawn' \| 'mark' \| 'spawn'`, `id` the record's id |
+| `tool()` | `'select' \| 'placement' \| 'blocker' \| 'npc' \| 'monsterSpawn' \| 'ground' \| 'spawn'` |
 | `issues()` | `string[]` of what `buildWorld` would report at the server's boot: one `<record> "<id>": <message>` line per record the overlay marks in red, preceded by the reason when the world would not load at all; `[]` for a clean sector |
 | `overlay()` | `'gameMenu' \| 'newMap' \| 'sectorSettings' \| 'about' \| 'preferences' \| 'sectorPicker' \| 'saveAs' \| undefined` |
 | `isDirty()` | unsaved changes against the last save/load checkpoint |
@@ -88,20 +89,26 @@ machine.
 **Verify via file (decisive).** After a save, read the sector JSON out of the sectors
 directory — screenshots can lie, the saved file cannot. An unedited open+save is byte-identical
 to the input (`cmp` against the fixture), so any diff is exactly your edit. Defaults are left
-out of the file (`yaw` and `elevation` at 0, empty arrays, an NPC's Service at None), so an
-absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
+out of the file (`yaw` and `elevation` at 0, a mark's `opacity` at 1, empty arrays, an NPC's
+Service at None), so an absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
 
 ## Notes
 
 - The sector's single spawn point is selected as `{ kind: 'spawn', id: 'spawn' }`. Placements
-  move and rotate but do not resize; blockers, floor patches, and monster-spawn areas resize.
+  move and rotate but do not resize; blockers and monster-spawn areas resize, and a ground mark
+  only moves.
   A single selected placement, NPC, or spawn point carries a facing handle; a placement's
   turns its `yaw`.
 - Collision comes from the registry: a placement blocks through its model's colliders, and the
   overlay shows them along with walk surfaces, ledges, door triggers, and arrival points. Add a
   blocker only for ground no model covers.
-- The overlay fills each floor patch in translucent purple, so a patched floor reads pink or
-  mauve in the editor and its screenshots. Judge a patch's colour in the browser client.
+- The ground tool paints marks with the brush its palette entry carries: a material, and a
+  stroke's radius, capped at the widest the sector takes. A drag paints one stroke. Taps lay a
+  polygon's vertices, and Enter or a double-click closes them into one mark (the double-click's
+  own taps add nothing). Esc or another tool drops the polygon. Every point is clamped to where
+  the codec accepts it, so a stroke dragged across the edge is kept, not refused. The scene
+  paints the mark with the game's feather once the worker answers. The overlay draws each mark's
+  outline in purple, and a polygon in progress in yellow.
 - The overlay marks in red what `buildWorld` would report at the server's boot, and `issues()`
   lists the same: a door that does not resolve, has no sound counterpart, or arrives on
   something solid (an NPC included). A door that arrives within a nightmare's reach of a monster
@@ -121,15 +128,16 @@ absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
   model of the placement selected last (the registry's first model until then); change it in
   the placed record's inspector.
 - Picking prefers NPCs > the spawn point > door triggers > placements > blockers > monster
-  spawns > floor patches, back-to-front within a kind. A placement is hit-tested on its
-  model's footprint at its yaw, so a click on a prop selects the prop and not a rect under
-  it; a door trigger lies inside its building's footprint, so it wins there.
+  spawns > ground marks, back-to-front within a kind. A mark is hit on its shape, not on the
+  ground its points span. A placement is hit-tested on its model's footprint at its yaw, so a
+  click on a prop selects the prop and not a rect under it; a door trigger lies inside its
+  building's footprint, so it wins there.
 - Inspector fields are metres (degrees for `yaw` and facing) and commit on Return or blur only.
   A press on the canvas, a selection change, or Esc blurs a focused field first, so its draft
   is committed. An unparseable draft reverts, and an equal value commits nothing. Each commit
   is one undo step.
-- Floor patches preview as gizmo rects during drags (their meshes bake space-coordinate UVs)
-  and may never overlap: a commit that would introduce an overlap is refused with a message.
+- A dragged mark previews as its outline and repaints on commit. Marks paint in array order, so
+  a later mark covers an earlier one.
 - Grid snap lives in Preferences (game menu), persisted under `somnio.editor.gridSnap`:
   1, 0.5, 0.25, or 0.1 m, or free (stored as `0`). An absent key means 0.5 m, not free.
   Snapping rounds to the nearest step, and every authored value is rounded to the millimetre.

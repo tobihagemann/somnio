@@ -2,7 +2,7 @@
  * The editor's keyboard command surface, a menu-bar stand-in: `⌘S` Save, `⇧⌘S` Save As (a
  * prompt overlay collects the name; there is no native File menu), `⌘Z`/`⇧⌘Z` Undo/Redo,
  * `⌘D` Duplicate Selection, `⌘G` Grid, `⌘C`/`⌘V` copy/paste, `⌘A` Select All,
- * Delete/Backspace, and the four arrow keys for nudge.
+ * Delete/Backspace, the four arrow keys for nudge, and Enter to close a ground polygon.
  *
  * Bound on `metaKey || ctrlKey` so the editor works on Linux. Escape is handled first and is
  * never suppressed (it backs out overlays and clears selection); every other binding is
@@ -23,6 +23,7 @@ export interface EditorCommandTarget {
   selectAll(): void;
   deleteSelection(): void;
   nudgeSelection(key: string, shiftHeld: boolean): boolean;
+  closeGroundPolygon(): boolean;
 }
 
 export function handleEditorKeydown(target: EditorCommandTarget, event: KeyboardEvent): void {
@@ -79,6 +80,10 @@ export function handleEditorKeydown(target: EditorCommandTarget, event: Keyboard
   }
 
   if (target.isOverlayPresented()) return;
+  if (event.key === 'Enter') {
+    if (target.closeGroundPolygon()) event.preventDefault();
+    return;
+  }
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault();
     target.deleteSelection();

@@ -1,5 +1,6 @@
 import type { MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
-import type { Blocker, Door, FloorPatch, Placement } from '@somnio/protocol';
+import type { Blocker, Door, GroundMark, Placement } from '@somnio/protocol';
+import { translateMark } from './groundMarks';
 import { millimetres } from './preferences';
 import { ID_PREFIX, containsSelection, nextDoorId, nextFreeId } from './selection';
 import type { EditorSelection } from './selection';
@@ -15,11 +16,11 @@ export interface EditorClipboard {
   doors: Door[];
   npcs: SectorNPC[];
   monsterSpawns: MonsterSpawn[];
-  floorPatches: FloorPatch[];
+  marks: GroundMark[];
 }
 
 export function emptyClipboard(): EditorClipboard {
-  return { placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], floorPatches: [] };
+  return { placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], marks: [] };
 }
 
 export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
@@ -42,7 +43,7 @@ export function captureClipboard(selections: readonly EditorSelection[], sector:
     doors: selected('door', sector.doors).filter((door) => placements.some((placement) => placement.id === door.placement)),
     npcs: selected('npc', sector.npcs),
     monsterSpawns: selected('monsterSpawn', sector.monsterSpawns),
-    floorPatches: selected('floorPatch', sector.floorPatches),
+    marks: selected('mark', sector.ground.marks),
   };
 }
 
@@ -50,7 +51,8 @@ export function captureClipboard(selections: readonly EditorSelection[], sector:
  * Appends clones of every carried record under fresh ids, shifted as a group: with an `anchor`
  * the payload's north-west bounding corner lands there (paste-at-cursor); without one every
  * position shifts by `fallbackOffset` on both axes (duplicate). A carried door is attached to the
- * clone of its placement. Returns the clones' selections.
+ * clone of its placement, and a mark moves whole, stopping where the codec bounds its points.
+ * Returns the clones' selections.
  */
 export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anchor: Point | undefined, fallbackOffset: number): EditorSelection[] {
   const minOrigin = boundingOrigin(clipboard);
@@ -76,7 +78,13 @@ export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anch
   insert('blocker', clipboard.blockers, sector.blockers, () => ID_PREFIX.blocker);
   insert('npc', clipboard.npcs, sector.npcs, () => ID_PREFIX.npc);
   insert('monsterSpawn', clipboard.monsterSpawns, sector.monsterSpawns, () => ID_PREFIX.monsterSpawn);
-  insert('floorPatch', clipboard.floorPatches, sector.floorPatches, () => ID_PREFIX.floorPatch);
+  for (const mark of clipboard.marks) {
+    const id = nextFreeId(ID_PREFIX.mark, sector.ground.marks);
+    const clone = { ...structuredClone(mark), id };
+    translateMark(clone, shift.dx, shift.dz, sector.size);
+    sector.ground.marks.push(clone);
+    inserted.push({ kind: 'mark', id });
+  }
   for (const door of clipboard.doors) {
     const id = nextDoorId(door.target.sector, sector.doors);
     sector.doors.push({ ...structuredClone(door), id, placement: placementIds.get(door.placement)! });
@@ -87,7 +95,13 @@ export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anch
 
 /** North-west corner of the payload's bounding box, or `undefined` for an empty payload. */
 function boundingOrigin(clipboard: EditorClipboard): Point | undefined {
-  const positions: Point[] = [...clipboard.placements, ...clipboard.blockers, ...clipboard.npcs, ...clipboard.monsterSpawns, ...clipboard.floorPatches];
+  const positions: Point[] = [
+    ...clipboard.placements,
+    ...clipboard.blockers,
+    ...clipboard.npcs,
+    ...clipboard.monsterSpawns,
+    ...clipboard.marks.flatMap((mark) => mark.shape.points),
+  ];
   if (positions.length === 0) return undefined;
   return { x: Math.min(...positions.map((position) => position.x)), z: Math.min(...positions.map((position) => position.z)) };
 }

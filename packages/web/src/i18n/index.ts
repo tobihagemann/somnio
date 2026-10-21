@@ -269,7 +269,6 @@ export const RENDERED_KEYS: readonly string[] = [
   'Thanks paragraph',
   'UI borders by Kenney.',
   '3D characters and props by KayKit.',
-  'Floor textures by ambientCG.',
   'Ghost model by Quaternius.',
 
   // Browser-only surfaces

@@ -56,7 +56,7 @@ export class EditorOverlays {
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
   private presentedKind: EditorOverlayKind | undefined;
 
-  constructor(callbacks: EditorOverlayCallbacks, floorMaterialIds: readonly string[]) {
+  constructor(callbacks: EditorOverlayCallbacks) {
     this.callbacks = callbacks;
 
     // Game menu — with the browser's own file affordances.
@@ -80,7 +80,7 @@ export class EditorOverlays {
     });
 
     // New map / sector settings — the shared sector form, two commit semantics.
-    this.newMapForm = new SectorForm(floorMaterialIds, () => this.newMapForm.renderValidation());
+    this.newMapForm = new SectorForm(() => this.newMapForm.renderValidation());
     const newMapOK = button('OK', () => {
       if (!this.newMapForm.renderValidation()) return;
       callbacks.onCommitNewMap(this.newMapForm.values());
@@ -95,7 +95,7 @@ export class EditorOverlays {
       ],
     });
 
-    this.settingsForm = new SectorForm(floorMaterialIds, () => this.settingsForm.renderValidation());
+    this.settingsForm = new SectorForm(() => this.settingsForm.renderValidation());
     const settingsApply = button('Apply', () => {
       if (!this.settingsForm.renderValidation()) return;
       callbacks.onApplySectorSettings(this.settingsForm.values());
@@ -197,7 +197,7 @@ export class EditorOverlays {
       saveAs: scrim(card('Save As', [saveAs])),
     };
     // A live-region toast rather than a native `alert()`: canvas-context failures (a refused
-    // patch overlap, a failed save) must show in a real element so the editor's DOM UI stays
+    // commit, a failed save) must show in a real element so the editor's DOM UI stays
     // inspectable by `agent-browser` and screen readers, per the reason the editor uses DOM at all.
     this.errorBanner = element('div', {
       className: 'editor-error-banner hidden',

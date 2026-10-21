@@ -20,7 +20,7 @@ import {
 import type { DragContext } from '@/editor/drag/geometry';
 import { applyBounds, applyFacing, applyMove, marqueeSelections, origins, placeRecord, turnable } from '@/editor/drag/mutations';
 import type { PlacementDefaults } from '@/editor/drag/mutations';
-import { beginSession, endSession, preview } from '@/editor/drag/session';
+import { beginSession, endSession, paintMark, preview } from '@/editor/drag/session';
 import type { DragSession } from '@/editor/drag/session';
 import type { ScreenPoint } from '@/editor/picking';
 import { footprintCorners, selectionFootprint } from '@/editor/selection';
@@ -34,7 +34,7 @@ import { dragContext, emptySector } from './helpers/editorFixture';
  * gesture commits.
  */
 
-const DEFAULTS: PlacementDefaults = { modelId: 'box', floorMaterialId: 'cobble', characterModelId: 'hero', monsterKind: 'ghost' };
+const DEFAULTS: PlacementDefaults = { modelId: 'box', characterModelId: 'hero', monsterKind: 'ghost', brush: { materialId: 'dirt-path', radius: 0.8 } };
 
 /** The press/drag location a user aiming at a sector-relative ground point would produce. */
 function viewportPoint(point: Point, ctx: DragContext): ScreenPoint {
@@ -101,6 +101,90 @@ describe('move', () => {
   });
 });
 
+describe('ground marks', () => {
+  const road = (points: Point[], radius = 1): Sector['ground']['marks'][number] => ({
+    id: 'road',
+    materialId: 'dirt-path',
+    opacity: 1,
+    shape: { kind: 'stroke', radius, points },
+  });
+
+  it('moves every point of a selected mark by the drag', () => {
+    const body = emptySector({
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          road([
+            { x: 4, z: 4 },
+            { x: 8, z: 6 },
+          ]),
+        ],
+      },
+    });
+    applyMove(origins([{ kind: 'mark', id: 'road' }], body), 1.5, -0.5, body);
+    expect(body.ground.marks[0]!.shape.points).toEqual([
+      { x: 5.5, z: 3.5 },
+      { x: 9.5, z: 5.5 },
+    ]);
+  });
+
+  /** A 1 m stroke's points stay 0.175 m inside a 20 m sector; dragged into the edge, the mark stops there whole. */
+  it('stops a mark dragged into the edge with its shape intact', () => {
+    const body = emptySector({
+      ground: {
+        backgroundMaterialId: 'grass-meadow',
+        marks: [
+          road([
+            { x: 4, z: 4 },
+            { x: 8, z: 6 },
+          ]),
+        ],
+      },
+    });
+    applyMove(origins([{ kind: 'mark', id: 'road' }], body), 20, 0, body);
+    expect(body.ground.marks[0]!.shape.points).toEqual([
+      { x: 15.825, z: 4 },
+      { x: 19.825, z: 6 },
+    ]);
+    expect(new EditorDocument().commit('Move', body)).toEqual({ accepted: true });
+  });
+
+  it('commits a drag with the ground tool as one stroke of the brush, one undo step, and selects it', () => {
+    const ctx = dragContext(0);
+    const document = documentWith(emptySector());
+    const before = document.undoDepth;
+    const begun = beginSession(viewportPoint({ x: 2, z: 5 }, ctx), 'ground', false, document.sector, [], ctx);
+    expect(begun.session).toEqual({ kind: 'groundStroke', samples: [{ x: 2, z: 5 }] });
+    const start = viewportPoint({ x: 2, z: 5 }, ctx);
+    for (const x of [2.05, 3, 4, 6]) preview(begun.session!, start, viewportPoint({ x, z: 5 }, ctx), document.sector, ctx, DEFAULTS);
+    const selection = endSession(begun.session!, start, viewportPoint({ x: 8, z: 5 }, ctx), false, document, document.sector, [], ctx, DEFAULTS);
+    expect(selection).toEqual([{ kind: 'mark', id: 'mark-1' }]);
+    expect(document.undoDepth).toBe(before + 1);
+    const mark = document.sector.ground.marks[0]!;
+    expect(mark).toMatchObject({ id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 0.8 } });
+    // The sample 5 cm on is dropped: samples are kept 0.15 m apart.
+    expect(mark.shape.points.map((point) => point.x)).toEqual([2, 3, 4, 6, 8]);
+  });
+
+  /** A stroke dragged across the edge, as a road is touched up at a border, is clamped rather than refused. */
+  it('clamps a stroke dragged across the sector edge into where its points may lie', () => {
+    const ctx = dragContext(0);
+    const document = documentWith(emptySector());
+    const begun = beginSession(viewportPoint({ x: 15, z: 5 }, ctx), 'ground', false, document.sector, [], ctx);
+    endSession(begun.session!, viewportPoint({ x: 15, z: 5 }, ctx), viewportPoint({ x: 21, z: 5 }, ctx), false, document, document.sector, [], ctx, DEFAULTS);
+    // A 0.8 m stroke's points stay 0.025 m outside the 20 m sector.
+    expect(document.sector.ground.marks[0]!.shape.points).toEqual([
+      { x: 15, z: 5 },
+      { x: 20.025, z: 5 },
+    ]);
+  });
+
+  it('gives every press to the polygon being drawn, starting no stroke', () => {
+    const ctx = dragContext();
+    expect(beginSession(viewportPoint({ x: 2, z: 5 }, ctx), 'ground', false, emptySector(), [], ctx, true).session).toEqual({ kind: 'groundPolygon' });
+  });
+});
+
 describe('resize', () => {
   const rect = { x: 2, z: 2, width: 3, depth: 3 };
 
@@ -156,7 +240,6 @@ describe('placement', () => {
     ['blocker', { kind: 'blocker', id: 'blocker-1' }],
     ['npc', { kind: 'npc', id: 'npc-1' }],
     ['monsterSpawn', { kind: 'monsterSpawn', id: 'spawn-1' }],
-    ['floorPatch', { kind: 'floorPatch', id: 'patch-1' }],
     ['spawn', { kind: 'spawn', id: 'spawn' }],
   ] as const)('direct %s placement appends the default record under the next free id and selects it', (tool, expected) => {
     const body = emptySector({ placements: [box('box-1', 15, 15)] });
@@ -167,12 +250,11 @@ describe('placement', () => {
 
   it('seeds each record from the defaults', () => {
     const body = emptySector();
-    for (const tool of ['placement', 'blocker', 'npc', 'monsterSpawn', 'floorPatch'] as const) placeRecord(tool, { x: 3, z: 4, ...TAP_SIZE }, body, DEFAULTS);
+    for (const tool of ['placement', 'blocker', 'npc', 'monsterSpawn'] as const) placeRecord(tool, { x: 3, z: 4, ...TAP_SIZE }, body, DEFAULTS);
     expect(body.placements).toEqual([{ id: 'box-1', modelId: 'box', x: 3, z: 4, yaw: 0, elevation: 0 }]);
     expect(body.blockers).toEqual([{ id: 'blocker-1', x: 3, z: 4, width: 1, depth: 1 }]);
     expect(body.npcs).toEqual([{ id: 'npc-1', name: '', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialogScript: '' }]);
     expect(body.monsterSpawns).toEqual([{ id: 'spawn-1', kind: 'ghost', x: 3, z: 4, width: 1, depth: 1, maxAlive: 1 }]);
-    expect(body.floorPatches).toEqual([{ id: 'patch-1', floorMaterialId: 'cobble', x: 3, z: 4, width: 1, depth: 1 }]);
   });
 
   it('moves the one spawn point instead of adding a second, keeping its facing', () => {
@@ -267,6 +349,30 @@ describe('marquee', () => {
       { kind: 'placement', id: 'box-1' },
     ]);
     expect(marqueeSelections(body, { x: -50, y: -50, width: 10, height: 10 }, ctx)).toEqual([]);
+  });
+
+  it('selects a stroke mark by the ground its radius covers', () => {
+    const ctx = dragContext();
+    const road = {
+      id: 'road',
+      materialId: 'dirt-path',
+      opacity: 1,
+      shape: {
+        kind: 'stroke' as const,
+        radius: 1,
+        points: [
+          { x: 5, z: 5 },
+          { x: 7, z: 5 },
+        ],
+      },
+    };
+    const body = emptySector({ ground: { backgroundMaterialId: 'grass-meadow', marks: [road] } });
+    const around = (x: number, z: number) => {
+      const at = viewportPoint({ x, z }, ctx);
+      return { x: at.x - 1, y: at.y - 1, width: 2, height: 2 };
+    };
+    expect(marqueeSelections(body, around(6, 5.8), ctx)).toEqual([{ kind: 'mark', id: 'road' }]);
+    expect(marqueeSelections(body, around(6, 6.4), ctx)).toEqual([]);
   });
 
   it('selects nothing inside the projected bounding box but outside the quad', () => {
@@ -432,13 +538,13 @@ describe('commit guards', () => {
 
   it('keeps the selection when the document refuses the placement', () => {
     const ctx = dragContext();
-    const patch = { id: 'patch-1', floorMaterialId: 'cobble', x: 2, z: 2, width: 2, depth: 2 };
-    const document = documentWith(emptySector({ floorPatches: [patch] }));
+    const document = documentWith(emptySector({ blockers: [blocker('a', 2, 2)] }));
     const before = document.undoDepth;
-    const press = viewportPoint({ x: 3, z: 3 }, ctx);
-    const kept: EditorSelection[] = [{ kind: 'floorPatch', id: 'patch-1' }];
+    const press = viewportPoint({ x: 25, z: 3 }, ctx);
+    const kept: EditorSelection[] = [{ kind: 'blocker', id: 'a' }];
+    // An NPC outside its sector's rect is one the codec refuses.
     const selection = endSession(
-      { kind: 'placement', tool: 'floorPatch', anchor: { x: 3, z: 3 } },
+      { kind: 'placement', tool: 'npc', anchor: { x: 25, z: 3 } },
       press,
       press,
       false,
@@ -449,7 +555,7 @@ describe('commit guards', () => {
       DEFAULTS,
     );
     expect(selection).toEqual(kept);
-    expect(document.sector.floorPatches).toEqual([patch]);
+    expect(document.sector.npcs).toEqual([]);
     expect(document.undoDepth).toBe(before);
   });
 
@@ -550,5 +656,14 @@ describe('preview against the commit', () => {
     const ctx = dragContext();
     const point = viewportPoint({ x: 1, z: 1 }, ctx);
     expect(preview({ kind: 'marquee' }, point, point, body, ctx, DEFAULTS)).toBeUndefined();
+  });
+});
+
+describe('painting a mark', () => {
+  /** A side an odd number of millimetres long halves to half a millimetre, where the widest stroke's point bound would collapse between two millimetres. */
+  it('commits a stroke at the widest radius on a sector an odd number of millimetres across', () => {
+    const body = emptySector({ size: { width: 5.289, depth: 8 } });
+    paintMark({ kind: 'stroke', radius: 10, points: [{ x: 2, z: 3 }] }, body, { materialId: 'dirt-path', radius: 10 });
+    expect(new EditorDocument().commit('Paint ground', body)).toEqual({ accepted: true });
   });
 });

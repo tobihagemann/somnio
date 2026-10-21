@@ -19,10 +19,11 @@ import { byId, centeredRect, rectCorners, squareAround } from './selection';
 import type { Footprint } from './selection';
 
 /**
- * Flat unlit shapes for what the sector's records mean on the ground: the authored rects, each
- * placement's derived colliders, walk surfaces, ledges and door anchors, the door triggers and
- * arrival points, and the markers of NPCs and the spawn point. Over them come a border per
- * selected record, the resize/facing handles for a single selection, and the optional grid.
+ * Flat unlit shapes for what the sector's records mean on the ground: the outlines of the ground
+ * marks and of a polygon being drawn, the authored rects, each placement's derived colliders, walk
+ * surfaces, ledges and door anchors, the door triggers and arrival points, and the markers of NPCs
+ * and the spawn point. Over them come a border per selected record, the resize/facing handles for
+ * a single selection, and the optional grid.
  *
  * Rebuilt from scratch on every update: the per-refresh cost is negligible at editor scale, and
  * diffing would couple the overlay to the sector's shape.
@@ -37,7 +38,7 @@ import type { Footprint } from './selection';
  */
 
 const LAYER = {
-  floorPatches: 1,
+  marks: 1,
   colliders: 2,
   walkSurfaces: 3,
   ledges: 4,
@@ -57,6 +58,8 @@ const GRID_LINE_OPACITY = 0.35;
 const MAX_GRID_LINES = 512;
 /** Half the side of the square marking a door's arrival point. */
 const ARRIVAL_MARKER_REACH = 0.1;
+/** Half the side of the square marking a ground mark's point. */
+const MARK_POINT_REACH = 0.08;
 /** How far a door anchor's marker points out of the wall. */
 const ANCHOR_MARKER_REACH = 0.3;
 
@@ -70,7 +73,7 @@ const COLOR = {
   npc: 0x00ff00,
   spawnPoint: 0xffffff,
   monsterSpawn: 0xff8000,
-  floorPatch: 0xc060ff,
+  mark: 0xc060ff,
   selection: 0xffff00,
   facing: 0x00ffff,
   grid: 0xffffff,
@@ -97,6 +100,8 @@ export interface AuthoringOverlayInput {
   facingHandle?: AuthoringFacingHandle | undefined;
   showGrid: boolean;
   gridStep: number;
+  /** The vertices of a polygon the ground tool is drawing, sector-relative. */
+  groundDraft?: readonly Point[] | undefined;
 }
 
 /** Text the canvas shows beside a record, at a sector-relative point. */
@@ -121,7 +126,9 @@ export class AuthoringOverlay {
     const origin = sectorOrigin(sector);
     this.root.position.set(origin.x, 0, origin.z);
 
-    for (const patch of sector.floorPatches) this.root.add(filledRect(patch, COLOR.floorPatch, 0.2, LAYER.floorPatches));
+    for (const mark of sector.ground.marks)
+      this.root.add(markOutline(mark.shape.kind === 'stroke' ? mark.shape.points : [...mark.shape.points, mark.shape.points[0]!]));
+    if (input.groundDraft !== undefined && input.groundDraft.length > 0) this.root.add(markOutline(input.groundDraft, COLOR.selection));
     for (const blocker of sector.blockers) this.root.add(filledRect(blocker, COLOR.blocking, 0.3, LAYER.colliders));
     for (const placement of sector.placements) {
       const gizmo = placementGizmo(placement, objectModel(registry, placement.modelId), hasIssue(issues, 'placement', placement.id));
@@ -305,6 +312,18 @@ function filledRect(rect: Rect, color: number, opacity: number, layer: number, h
 function strip(a: Point, b: Point, color: number, layer: number, height = 0): THREE.Object3D {
   const node = floorPlane({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, { width: LINE_THICKNESS, depth: distance(a, b) }, color, 1, layer, height);
   node.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+  return node;
+}
+
+/**
+ * A strip between each pair of consecutive points (a caller closes a polygon by repeating its first
+ * point) and a square at each point, so a single dab shows too. The painted ground under it shows
+ * the mark's width and its feathered edge as the game draws them.
+ */
+function markOutline(points: readonly Point[], color: number = COLOR.mark): THREE.Object3D {
+  const node = new THREE.Group();
+  points.slice(1).forEach((to, index) => node.add(strip(points[index]!, to, color, LAYER.marks)));
+  for (const point of points) node.add(filledRect(squareAround(point, MARK_POINT_REACH), color, 1, LAYER.marks));
   return node;
 }
 

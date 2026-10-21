@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { headingFromVector, headingRadians } from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Rect, Size } from '@somnio/core';
 import { gridPoint, screenPoint } from '../canvasController';
-import type { EditorTool } from '../canvasController';
+import type { PlacingTool } from '../canvasController';
 import { floorPointAtScreen } from '../picking';
 import type { ScreenPoint, ViewportSize } from '../picking';
 import { millimetres, quantize, stepOrFine } from '../preferences';
@@ -75,17 +75,15 @@ export function gridDelta(start: ScreenPoint, end: ScreenPoint, context: DragCon
  * drops the tap size at the anchor; a rubber-band drag spans anchor→end, at least one snap step
  * per axis.
  */
-export function placementBounds(tool: EditorTool, anchor: Point, start: ScreenPoint, end: ScreenPoint, context: DragContext): Rect {
+export function placementBounds(tool: PlacingTool, anchor: Point, start: ScreenPoint, end: ScreenPoint, context: DragContext): Rect {
   const translation = Math.hypot(end.x - start.x, end.y - start.y);
   switch (tool) {
-    case 'select':
     case 'placement':
     case 'npc':
     case 'spawn':
       return { ...anchor, ...TAP_SIZE };
     case 'blocker':
-    case 'monsterSpawn':
-    case 'floorPatch': {
+    case 'monsterSpawn': {
       if (translation < TAP_TRANSLATION_THRESHOLD_PT) return { ...anchor, ...TAP_SIZE };
       const grid = gridPoint(context, end);
       const far = { x: quantize(grid.x, context.gridStep), z: quantize(grid.z, context.gridStep) };

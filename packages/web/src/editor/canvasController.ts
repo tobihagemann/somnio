@@ -3,15 +3,18 @@ import type { DragContext } from './drag/geometry';
 import { floorPointAtScreen, screenAtFloorPoint } from './picking';
 import type { ScreenPoint } from './picking';
 import { FINE_STEP, millimetres, stepOrFine } from './preferences';
-import { SPAWN_ID, footprintContains, selectionFootprint } from './selection';
+import { markContains } from './groundMarks';
+import { SPAWN_ID, byId, footprintContains, selectionFootprint } from './selection';
 import type { EditorSelection } from './selection';
 
 /**
  * Stateless canvas geometry and pick dispatch.
  */
 
-export const EDITOR_TOOLS = ['select', 'placement', 'blocker', 'npc', 'monsterSpawn', 'floorPatch', 'spawn'] as const;
+export const EDITOR_TOOLS = ['select', 'placement', 'blocker', 'npc', 'monsterSpawn', 'ground', 'spawn'] as const;
 export type EditorTool = (typeof EDITOR_TOOLS)[number];
+/** The tools that place a record where the pointer lands. */
+export type PlacingTool = Exclude<EditorTool, 'select' | 'ground'>;
 
 /**
  * Converts a top-left viewport point to the ground point under it, relative to the document's
@@ -50,8 +53,9 @@ export function nudgeDelta(key: string, shiftHeld: boolean, gridStep: number): {
 /**
  * Pick candidates in preference order, back-to-front within each kind so the most-recently-
  * placed record wins overlaps. The body-sized markers and door triggers come first so they stay
- * reachable on top of the placement they stand on; placements come before every authored rect,
- * so a click on a prop selects the prop and not the blocker, spawn area, or floor patch under it.
+ * reachable on top of the placement they stand on; placements come before every authored rect and
+ * mark, so a click on a prop selects the prop and not the blocker, spawn area, or ground mark under
+ * it.
  */
 export function candidateSelections(sector: Sector): EditorSelection[] {
   const reversed = (kind: EditorSelection['kind'], records: readonly { id: string }[]): EditorSelection[] =>
@@ -63,12 +67,17 @@ export function candidateSelections(sector: Sector): EditorSelection[] {
     ...reversed('placement', sector.placements),
     ...reversed('blocker', sector.blockers),
     ...reversed('monsterSpawn', sector.monsterSpawns),
-    ...reversed('floorPatch', sector.floorPatches),
+    ...reversed('mark', sector.ground.marks),
   ];
 }
 
+/** A mark is hit on its shape, not on the rect it spans: a diagonal road's rect covers most of a sector. */
 export function selectRecord(point: Point, sector: Sector, registry: ModelRegistry): EditorSelection | undefined {
   return candidateSelections(sector).find((candidate) => {
+    if (candidate.kind === 'mark') {
+      const mark = byId(sector.ground.marks, candidate.id);
+      return mark !== undefined && markContains(mark, point);
+    }
     const footprint = selectionFootprint(candidate, sector, registry);
     return footprint !== undefined && footprintContains(footprint, point);
   });

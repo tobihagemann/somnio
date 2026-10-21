@@ -2,7 +2,9 @@ import { SOMNIO_CONSTANTS, heading, objectModel } from '@somnio/core';
 import type { Heading, MonsterKindId, Point, Rect, Sector } from '@somnio/core';
 import { placeholderFootprint } from '@/scene/placement';
 import { candidateSelections } from '../canvasController';
-import type { EditorTool } from '../canvasController';
+import { translateMark } from '../groundMarks';
+import type { GroundBrush } from '../groundMarks';
+import type { PlacingTool } from '../canvasController';
 import { millimetres } from '../preferences';
 import { ID_PREFIX, SPAWN_ID, byId, footprintCorners, nextFreeId, positionedRecord, rectRecord, selectionFootprint } from '../selection';
 import type { EditorSelection } from '../selection';
@@ -16,9 +18,10 @@ import type { DragContext } from './geometry';
 /** Per-kind seeds for direct placement; ids come from the committed registry. */
 export interface PlacementDefaults {
   modelId: string;
-  floorMaterialId: string;
   characterModelId: string;
   monsterKind: MonsterKindId;
+  /** What the ground tool paints with. */
+  brush: GroundBrush;
 }
 
 /** Position snapshot of every selected record that has one of its own, taken at press time. */
@@ -33,6 +36,12 @@ export function origins(selections: readonly EditorSelection[], sector: Sector):
 
 export function applyMove(originals: readonly { selection: EditorSelection; origin: Point }[], dx: number, dz: number, sector: Sector): void {
   for (const { selection, origin } of originals) {
+    if (selection.kind === 'mark') {
+      const mark = byId(sector.ground.marks, selection.id);
+      const first = mark?.shape.points[0];
+      if (mark !== undefined && first !== undefined) translateMark(mark, origin.x + dx - first.x, origin.z + dz - first.z, sector.size);
+      continue;
+    }
     const record = positionedRecord(selection, sector);
     if (record === undefined) continue;
     record.x = millimetres(origin.x + dx);
@@ -73,7 +82,7 @@ export function turnable(selection: EditorSelection, sector: Sector, context: Dr
     case 'blocker':
     case 'door':
     case 'monsterSpawn':
-    case 'floorPatch':
+    case 'mark':
       return undefined;
   }
 }
@@ -97,7 +106,7 @@ export function applyFacing(selection: EditorSelection, facing: Heading, sector:
     case 'blocker':
     case 'door':
     case 'monsterSpawn':
-    case 'floorPatch':
+    case 'mark':
       break;
   }
 }
@@ -107,11 +116,9 @@ export function applyFacing(selection: EditorSelection, facing: Heading, sector:
  * (the inspector then refines the fields in place). A sector has one spawn point, so placing it
  * again moves it.
  */
-export function placeRecord(tool: EditorTool, bounds: Rect, sector: Sector, defaults: PlacementDefaults): EditorSelection | undefined {
+export function placeRecord(tool: PlacingTool, bounds: Rect, sector: Sector, defaults: PlacementDefaults): EditorSelection {
   const at = { x: bounds.x, z: bounds.z };
   switch (tool) {
-    case 'select':
-      return undefined;
     case 'placement': {
       const id = nextFreeId(defaults.modelId, sector.placements);
       sector.placements.push({ id, modelId: defaults.modelId, ...at, yaw: 0, elevation: 0 });
@@ -131,11 +138,6 @@ export function placeRecord(tool: EditorTool, bounds: Rect, sector: Sector, defa
       const id = nextFreeId(ID_PREFIX.monsterSpawn, sector.monsterSpawns);
       sector.monsterSpawns.push({ id, kind: defaults.monsterKind, ...bounds, maxAlive: 1 });
       return { kind: 'monsterSpawn', id };
-    }
-    case 'floorPatch': {
-      const id = nextFreeId(ID_PREFIX.floorPatch, sector.floorPatches);
-      sector.floorPatches.push({ id, floorMaterialId: defaults.floorMaterialId, ...bounds });
-      return { kind: 'floorPatch', id };
     }
     case 'spawn':
       sector.spawn = { ...at, facing: sector.spawn?.facing ?? 0 };

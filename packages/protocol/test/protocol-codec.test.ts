@@ -3,6 +3,7 @@ import {
   CONDITIONS,
   ENTITY_KINDS,
   GAITS,
+  GROUND_SHAPE_KINDS,
   HANDS,
   LOCALES,
   LOGIN_RESULTS,
@@ -406,6 +407,10 @@ describe('string literal sets', () => {
     expect(GAITS).toEqual(['walk', 'jog', 'run']);
   });
 
+  it('pins GroundShapeKind', () => {
+    expect(GROUND_SHAPE_KINDS).toEqual(['stroke', 'polygon']);
+  });
+
   it('pins Hand', () => {
     expect(HANDS).toEqual(['left', 'right']);
   });
@@ -457,7 +462,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(13);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(14);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -479,7 +484,11 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorPlacements).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors).toBe(4096);
-    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFloorPatches).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorGroundMarks).toBe(512);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorGroundPoints).toBe(8192);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.markFeatherMetres).toBe(0.6);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.markEdgeNoiseMetres).toBe(0.375);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxMarkStrokeRadiusMetres).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);

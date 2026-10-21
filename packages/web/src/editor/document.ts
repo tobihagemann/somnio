@@ -1,4 +1,4 @@
-import { SectorFileError, readSectorFile, rectsOverlap, writeSectorFile } from '@somnio/core';
+import { SectorFileError, readSectorFile, writeSectorFile } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import type { SectorKind } from '@somnio/protocol';
 import { SECTOR_API_PREFIX } from './sectorName';
@@ -43,7 +43,7 @@ export interface SectorSettings {
   originZ: number;
   /** Interior only. */
   brightness: number;
-  floorMaterialId: string;
+  backgroundMaterialId: string;
 }
 
 function uninitializedSector(): Sector {
@@ -52,8 +52,7 @@ function uninitializedSector(): Sector {
     kind: 'outdoor',
     origin: { x: 0, z: 0 },
     size: { width: 0, depth: 0 },
-    floorMaterialId: '',
-    floorPatches: [],
+    ground: { backgroundMaterialId: '', marks: [] },
     placements: [],
     blockers: [],
     doors: [],
@@ -71,7 +70,7 @@ export function sectorSettings(sector: Sector): SectorSettings {
     originX: sector.origin?.x ?? 0,
     originZ: sector.origin?.z ?? 0,
     brightness: sector.brightness ?? 100,
-    floorMaterialId: sector.floorMaterialId,
+    backgroundMaterialId: sector.ground.backgroundMaterialId,
   };
 }
 
@@ -80,7 +79,7 @@ export function applySectorSettings(sector: Sector, settings: SectorSettings): v
   sector.name = settings.name;
   sector.kind = settings.kind;
   sector.size = { width: settings.width, depth: settings.depth };
-  sector.floorMaterialId = settings.floorMaterialId;
+  sector.ground.backgroundMaterialId = settings.backgroundMaterialId;
   delete sector.origin;
   delete sector.brightness;
   if (settings.kind === 'outdoor') sector.origin = { x: settings.originX, z: settings.originZ };
@@ -136,11 +135,9 @@ export class EditorDocument {
 
   /**
    * The single mutation API: `next` replaces the document as one undo step, unless the sector
-   * codec would refuse to save it or it introduces overlapping floor patches (coplanar quads
-   * z-fight). A file that already carries an overlap still edits elsewhere; only a commit that
-   * adds one is refused. A commit that changes nothing is accepted and is not an undo step: it
-   * leaves both stacks as they are and notifies no one. Every other accepted commit clears the
-   * redo stack.
+   * codec would refuse to save it. A commit that changes nothing is accepted and is not an undo
+   * step: it leaves both stacks as they are and notifies no one. Every other accepted commit clears
+   * the redo stack.
    *
    * `rename` names an id change `next` already carries. It is not applied or checked here, only
    * kept on the undo step and passed to `onChanged`.
@@ -151,10 +148,6 @@ export class EditorDocument {
     } catch (error) {
       if (!(error instanceof SectorFileError)) throw error;
       return { accepted: false, message: error.reason };
-    }
-    const before = overlappingPatchPairs(this.sector);
-    if ([...overlappingPatchPairs(next)].some((pair) => !before.has(pair))) {
-      return { accepted: false, message: 'Floor patches must not overlap.' };
     }
     if (deepEqual(next, this.sector)) return { accepted: true };
     this.undoStack.push({ actionName, sector: this.sector, rename });
@@ -236,22 +229,6 @@ export class EditorDocument {
     applySectorSettings(sector, settings);
     return this.commit('Create new map', sector);
   }
-}
-
-/**
- * The overlapping floor-patch pairs, each keyed by the two rects themselves, so a pair survives a
- * rename and a deletion elsewhere and only a move or resize makes it a new one. Rects that only
- * touch do not overlap.
- */
-function overlappingPatchPairs(sector: Sector): Set<string> {
-  const patches = sector.floorPatches;
-  const pairs = new Set<string>();
-  patches.forEach((first, index) => {
-    for (const second of patches.slice(index + 1)) {
-      if (rectsOverlap(first, second)) pairs.add(JSON.stringify([first, second].map((patch) => [patch.x, patch.z, patch.width, patch.depth])));
-    }
-  });
-  return pairs;
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {

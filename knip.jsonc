@@ -5,6 +5,10 @@
       // The standalone helper is run by hand and by the web test suite, never imported by src.
       "entry": ["Scripts/glb-buffer-uris.mjs"],
     },
+    "packages/core": {
+      // Composes the committed outdoor lands; run by hand, imported by nothing.
+      "entry": ["scripts/compose/main.ts"],
+    },
     "packages/data": {
       // Regenerates the committed Unicode tables; run by hand, imported by nothing.
       "entry": ["scripts/generate-name-policy-data.mjs"],

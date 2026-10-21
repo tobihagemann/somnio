@@ -1,5 +1,243 @@
 {
-  "floorMaterialId": "forest-floor",
+  "ground": {
+    "backgroundMaterialId": "forest-floor",
+    "marks": [
+      {
+        "id": "gen-road-east",
+        "materialId": "dirt-path",
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 0.776,
+              "z": 20.48
+            },
+            {
+              "x": 0.92,
+              "z": 20.448
+            },
+            {
+              "x": 1.84,
+              "z": 20.417
+            },
+            {
+              "x": 2.76,
+              "z": 20.385
+            },
+            {
+              "x": 3.68,
+              "z": 20.353
+            },
+            {
+              "x": 4.6,
+              "z": 20.322
+            },
+            {
+              "x": 5.52,
+              "z": 20.29
+            },
+            {
+              "x": 6.44,
+              "z": 20.258
+            },
+            {
+              "x": 7.36,
+              "z": 20.227
+            },
+            {
+              "x": 8.28,
+              "z": 20.195
+            },
+            {
+              "x": 9.2,
+              "z": 20.163
+            },
+            {
+              "x": 10.12,
+              "z": 20.132
+            },
+            {
+              "x": 11.04,
+              "z": 20.1
+            },
+            {
+              "x": 11.957,
+              "z": 20.175
+            },
+            {
+              "x": 12.873,
+              "z": 20.25
+            },
+            {
+              "x": 13.79,
+              "z": 20.325
+            },
+            {
+              "x": 14.707,
+              "z": 20.4
+            },
+            {
+              "x": 15.623,
+              "z": 20.475
+            },
+            {
+              "x": 16.54,
+              "z": 20.55
+            },
+            {
+              "x": 17.457,
+              "z": 20.625
+            },
+            {
+              "x": 18.373,
+              "z": 20.7
+            },
+            {
+              "x": 19.29,
+              "z": 20.775
+            },
+            {
+              "x": 20.207,
+              "z": 20.85
+            },
+            {
+              "x": 21.123,
+              "z": 20.925
+            },
+            {
+              "x": 22.04,
+              "z": 21
+            },
+            {
+              "x": 22.957,
+              "z": 20.942
+            },
+            {
+              "x": 23.873,
+              "z": 20.883
+            },
+            {
+              "x": 24.79,
+              "z": 20.825
+            },
+            {
+              "x": 25.707,
+              "z": 20.767
+            },
+            {
+              "x": 26.623,
+              "z": 20.708
+            },
+            {
+              "x": 27.54,
+              "z": 20.65
+            },
+            {
+              "x": 28.457,
+              "z": 20.592
+            },
+            {
+              "x": 29.373,
+              "z": 20.533
+            },
+            {
+              "x": 30.29,
+              "z": 20.475
+            },
+            {
+              "x": 31.207,
+              "z": 20.417
+            },
+            {
+              "x": 32.123,
+              "z": 20.358
+            },
+            {
+              "x": 33.04,
+              "z": 20.3
+            },
+            {
+              "x": 34.03,
+              "z": 20.338
+            },
+            {
+              "x": 35.02,
+              "z": 20.375
+            },
+            {
+              "x": 36.01,
+              "z": 20.413
+            },
+            {
+              "x": 37,
+              "z": 20.45
+            },
+            {
+              "x": 37.99,
+              "z": 20.488
+            },
+            {
+              "x": 38.98,
+              "z": 20.525
+            },
+            {
+              "x": 39.97,
+              "z": 20.563
+            },
+            {
+              "x": 40.184,
+              "z": 20.6
+            }
+          ],
+          "radius": 1.6
+        }
+      },
+      {
+        "id": "gen-street-west-east",
+        "materialId": "cobble-town",
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 0.776,
+              "z": 20.48
+            }
+          ],
+          "radius": 1.6
+        }
+      },
+      {
+        "id": "gen-worn-1",
+        "materialId": "dirt-path",
+        "opacity": 0.5,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 16.04,
+              "z": 24
+            }
+          ],
+          "radius": 1.4
+        }
+      },
+      {
+        "id": "gen-worn-2",
+        "materialId": "dirt-path",
+        "opacity": 0.5,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 27.04,
+              "z": 17.5
+            }
+          ],
+          "radius": 1.1
+        }
+      }
+    ]
+  },
   "kind": "outdoor",
   "monsterSpawns": [
     {
@@ -27,424 +265,1354 @@
   },
   "placements": [
     {
-      "id": "pine-tree-1",
-      "modelId": "pine-tree",
-      "x": 1.6,
-      "z": 1.6
+      "id": "gen-tree-bare-1-b-1",
+      "modelId": "tree-bare-1-b",
+      "x": 9.184,
+      "yaw": 172,
+      "z": 38.611
     },
     {
-      "id": "pine-tree-2",
-      "modelId": "pine-tree",
-      "x": 5.44,
-      "z": 1.6
+      "id": "gen-autumn-pine-yellow-medium-1",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 10.667,
+      "yaw": 42,
+      "z": 36.4
     },
     {
-      "id": "pine-tree-3",
-      "modelId": "pine-tree",
-      "x": 9.28,
-      "z": 1.6
+      "id": "gen-bush-2-d-1",
+      "modelId": "bush-2-d",
+      "x": 12.734,
+      "yaw": 98,
+      "z": 38.851
     },
     {
-      "id": "pine-tree-4",
+      "id": "gen-bush-2-d-2",
+      "modelId": "bush-2-d",
+      "x": 6.923,
+      "yaw": 216,
+      "z": 38.472
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-1",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 31.821,
+      "yaw": 56,
+      "z": 1.857
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-2",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 33.743,
+      "yaw": 350,
+      "z": 0.378
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-1",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 34.654,
+      "yaw": 104,
+      "z": 1.632
+    },
+    {
+      "id": "gen-tree-bare-1-b-2",
+      "modelId": "tree-bare-1-b",
+      "x": 39.128,
+      "yaw": 64,
+      "z": 14.251
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-2",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 39.829,
+      "yaw": 310,
+      "z": 15.542
+    },
+    {
+      "id": "gen-tree-bare-1-a-1",
+      "modelId": "tree-bare-1-a",
+      "x": 39.701,
+      "yaw": 20,
+      "z": 17.091
+    },
+    {
+      "id": "gen-bush-2-d-3",
+      "modelId": "bush-2-d",
+      "x": 34.637,
+      "yaw": 103,
+      "z": 15.219
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-1",
+      "modelId": "autumn-pine-orange-large",
+      "x": 34.842,
+      "yaw": 156,
+      "z": 27.613
+    },
+    {
+      "id": "gen-tree-bare-1-a-2",
+      "modelId": "tree-bare-1-a",
+      "x": 34.715,
+      "yaw": 110,
+      "z": 25.443
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-2",
+      "modelId": "autumn-pine-orange-large",
+      "x": 36.284,
+      "yaw": 278,
+      "z": 24.654
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-3",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 34.451,
+      "yaw": 64,
+      "z": 23.784
+    },
+    {
+      "id": "gen-bush-2-d-4",
+      "modelId": "bush-2-d",
+      "x": 37.652,
+      "yaw": 198,
+      "z": 23.999
+    },
+    {
+      "id": "gen-bush-2-d-5",
+      "modelId": "bush-2-d",
+      "x": 32.478,
+      "yaw": 215,
+      "z": 26.554
+    },
+    {
+      "id": "gen-pine-tree-1",
+      "modelId": "pine-tree",
+      "x": 15.454,
+      "yaw": 350,
+      "z": 38.037
+    },
+    {
+      "id": "gen-pine-tree-2",
+      "modelId": "pine-tree",
+      "x": 14.5,
+      "yaw": 223,
+      "z": 40.222
+    },
+    {
+      "id": "gen-tree-bare-1-b-3",
+      "modelId": "tree-bare-1-b",
+      "x": 16.536,
+      "yaw": 336,
+      "z": 39.727
+    },
+    {
+      "id": "gen-bush-2-d-6",
+      "modelId": "bush-2-d",
+      "x": 11.981,
+      "yaw": 136,
+      "z": 40.473
+    },
+    {
+      "id": "gen-tree-bare-1-a-3",
+      "modelId": "tree-bare-1-a",
+      "x": 40.033,
+      "yaw": 28,
+      "z": 25.393
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-3",
+      "modelId": "autumn-pine-orange-large",
+      "x": 37.472,
+      "yaw": 282,
+      "z": 25.478
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-4",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 6.697,
+      "yaw": 152,
+      "z": 24.334
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-2",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 4.281,
+      "yaw": 79,
+      "z": 24.817
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-4",
+      "modelId": "autumn-pine-orange-large",
+      "x": 8.596,
+      "yaw": 97,
+      "z": 23.855
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-5",
+      "modelId": "autumn-pine-orange-large",
+      "x": 6.611,
+      "yaw": 333,
+      "z": 13.221
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-6",
+      "modelId": "autumn-pine-orange-large",
+      "x": 7.051,
+      "yaw": 239,
+      "z": 14.791
+    },
+    {
+      "id": "gen-bush-2-d-7",
+      "modelId": "bush-2-d",
+      "x": 9.219,
+      "yaw": 129,
+      "z": 13.758
+    },
+    {
+      "id": "gen-bush-2-d-8",
+      "modelId": "bush-2-d",
+      "x": 6.137,
+      "yaw": 168,
+      "z": 11.683
+    },
+    {
+      "id": "gen-tree-bare-1-b-4",
+      "modelId": "tree-bare-1-b",
+      "x": 4.005,
+      "yaw": 118,
+      "z": 12.319
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-3",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 1.951,
+      "yaw": 162,
+      "z": 13.211
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-4",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 3.219,
+      "yaw": 301,
+      "z": 14.845
+    },
+    {
+      "id": "gen-bush-2-d-9",
+      "modelId": "bush-2-d",
+      "x": 2.672,
+      "yaw": 306,
+      "z": 10.213
+    },
+    {
+      "id": "gen-bush-2-d-10",
+      "modelId": "bush-2-d",
+      "x": 7.682,
+      "yaw": 3,
+      "z": 12.395
+    },
+    {
+      "id": "gen-bush-2-d-11",
+      "modelId": "bush-2-d",
+      "x": 2.998,
+      "yaw": 35,
+      "z": 11.411
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-5",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 32.051,
+      "yaw": 296,
+      "z": 3.221
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-6",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 35.726,
+      "yaw": 347,
+      "z": 3.194
+    },
+    {
+      "id": "gen-pine-tree-3",
+      "modelId": "pine-tree",
+      "x": 36.065,
+      "yaw": 183,
+      "z": 1.422
+    },
+    {
+      "id": "gen-pine-tree-4",
+      "modelId": "pine-tree",
+      "x": 34.055,
+      "yaw": 74,
+      "z": 3.4
+    },
+    {
+      "id": "gen-bush-2-d-12",
+      "modelId": "bush-2-d",
+      "x": 37.327,
+      "yaw": 299,
+      "z": 0.574
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-3",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 39.038,
+      "yaw": 312,
+      "z": 24.517
+    },
+    {
+      "id": "gen-tree-bare-1-a-4",
+      "modelId": "tree-bare-1-a",
+      "x": 39.07,
+      "yaw": 199,
+      "z": 27.514
+    },
+    {
+      "id": "gen-pine-tree-5",
+      "modelId": "pine-tree",
+      "x": 1.181,
+      "yaw": 137,
+      "z": 12.077
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-7",
+      "modelId": "autumn-pine-orange-large",
+      "x": 1.235,
+      "yaw": 321,
+      "z": 10.151
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-7",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 11.222,
+      "yaw": 190,
+      "z": 39.05
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-8",
+      "modelId": "autumn-pine-orange-large",
+      "x": 9.816,
+      "yaw": 123,
+      "z": 40.602
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-4",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 7.758,
+      "yaw": 211,
+      "z": 40.192
+    },
+    {
+      "id": "gen-pine-tree-6",
+      "modelId": "pine-tree",
+      "x": 20.652,
+      "yaw": 187,
+      "z": 8.586
+    },
+    {
+      "id": "gen-pine-tree-7",
+      "modelId": "pine-tree",
+      "x": 23.187,
+      "yaw": 47,
+      "z": 7.055
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-9",
+      "modelId": "autumn-pine-orange-large",
+      "x": 22.356,
+      "yaw": 52,
+      "z": 8.309
+    },
+    {
+      "id": "gen-tree-bare-1-b-5",
+      "modelId": "tree-bare-1-b",
+      "x": 2.581,
+      "yaw": 222,
+      "z": 29.484
+    },
+    {
+      "id": "gen-tree-bare-1-b-6",
+      "modelId": "tree-bare-1-b",
+      "x": 1.871,
+      "yaw": 136,
+      "z": 27.225
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-10",
+      "modelId": "autumn-pine-orange-large",
+      "x": 0.472,
+      "yaw": 304,
+      "z": 28.978
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-5",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 4.888,
+      "yaw": 160,
+      "z": 28.252
+    },
+    {
+      "id": "gen-bush-2-d-13",
+      "modelId": "bush-2-d",
+      "x": 3.48,
+      "yaw": 21,
+      "z": 27.213
+    },
+    {
+      "id": "gen-bush-2-d-14",
+      "modelId": "bush-2-d",
+      "x": 2.534,
+      "yaw": 154,
+      "z": 32.427
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-6",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 19.159,
+      "yaw": 296,
+      "z": 0.7
+    },
+    {
+      "id": "gen-pine-tree-8",
+      "modelId": "pine-tree",
+      "x": 17.303,
+      "yaw": 157,
+      "z": 2.01
+    },
+    {
+      "id": "gen-tree-bare-1-b-7",
+      "modelId": "tree-bare-1-b",
+      "x": 17.289,
+      "yaw": 32,
+      "z": 4.522
+    },
+    {
+      "id": "gen-bush-2-d-15",
+      "modelId": "bush-2-d",
+      "x": 21.074,
+      "yaw": 129,
+      "z": 2.996
+    },
+    {
+      "id": "gen-bush-2-d-16",
+      "modelId": "bush-2-d",
+      "x": 20.019,
+      "yaw": 181,
+      "z": 3.963
+    },
+    {
+      "id": "gen-tree-bare-1-b-8",
+      "modelId": "tree-bare-1-b",
+      "x": 6.78,
+      "yaw": 12,
+      "z": 32.289
+    },
+    {
+      "id": "gen-tree-bare-1-b-9",
+      "modelId": "tree-bare-1-b",
+      "x": 8.622,
+      "yaw": 87,
+      "z": 31.396
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-8",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 7.86,
+      "yaw": 114,
+      "z": 29.237
+    },
+    {
+      "id": "gen-bush-2-d-17",
+      "modelId": "bush-2-d",
+      "x": 10.588,
+      "yaw": 249,
+      "z": 31.508
+    },
+    {
+      "id": "gen-tree-bare-1-a-5",
+      "modelId": "tree-bare-1-a",
+      "x": 19.649,
+      "yaw": 102,
+      "z": 24.661
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-9",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 23.141,
+      "yaw": 292,
+      "z": 25.512
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-7",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 20.974,
+      "yaw": 61,
+      "z": 27.963
+    },
+    {
+      "id": "gen-tree-bare-1-a-6",
+      "modelId": "tree-bare-1-a",
+      "x": 18.822,
+      "yaw": 197,
+      "z": 25.871
+    },
+    {
+      "id": "gen-pine-tree-9",
+      "modelId": "pine-tree",
+      "x": 17.935,
+      "yaw": 61,
+      "z": 3.312
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-5",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 21.064,
+      "yaw": 45,
+      "z": 5.974
+    },
+    {
+      "id": "gen-tree-bare-1-a-7",
+      "modelId": "tree-bare-1-a",
+      "x": 19.741,
+      "yaw": 309,
+      "z": 6.168
+    },
+    {
+      "id": "gen-bush-2-d-18",
+      "modelId": "bush-2-d",
+      "x": 17.388,
+      "yaw": 103,
+      "z": 7.998
+    },
+    {
+      "id": "gen-bush-2-d-19",
+      "modelId": "bush-2-d",
+      "x": 19.507,
+      "yaw": 278,
+      "z": 2.519
+    },
+    {
+      "id": "gen-bush-2-d-20",
+      "modelId": "bush-2-d",
+      "x": 15.992,
+      "yaw": 261,
+      "z": 5.014
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-11",
+      "modelId": "autumn-pine-orange-large",
+      "x": 9.564,
+      "yaw": 20,
+      "z": 35.201
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-8",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 6.929,
+      "yaw": 78,
+      "z": 36.041
+    },
+    {
+      "id": "gen-pine-tree-10",
+      "modelId": "pine-tree",
+      "x": 8.469,
+      "yaw": 45,
+      "z": 33.722
+    },
+    {
+      "id": "gen-pine-tree-11",
+      "modelId": "pine-tree",
+      "x": 5.706,
+      "yaw": 149,
+      "z": 33.169
+    },
+    {
+      "id": "gen-bush-2-d-21",
+      "modelId": "bush-2-d",
+      "x": 5.379,
+      "yaw": 253,
+      "z": 36.142
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-9",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 38.248,
+      "yaw": 130,
+      "z": 3.388
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-12",
+      "modelId": "autumn-pine-orange-large",
+      "x": 38.45,
+      "yaw": 210,
+      "z": 6.633
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-13",
+      "modelId": "autumn-pine-orange-large",
+      "x": 36.933,
+      "yaw": 296,
+      "z": 4.988
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-14",
+      "modelId": "autumn-pine-orange-large",
+      "x": 39.555,
+      "yaw": 123,
+      "z": 3.318
+    },
+    {
+      "id": "gen-bush-2-d-22",
+      "modelId": "bush-2-d",
+      "x": 36.895,
+      "yaw": 151,
+      "z": 7.311
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-10",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 35.56,
+      "yaw": 291,
+      "z": 40.235
+    },
+    {
+      "id": "gen-pine-tree-12",
+      "modelId": "pine-tree",
+      "x": 34.955,
+      "yaw": 96,
+      "z": 37.258
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-15",
+      "modelId": "autumn-pine-orange-large",
+      "x": 36.885,
+      "yaw": 351,
+      "z": 39.39
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-6",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 38.209,
+      "yaw": 248,
+      "z": 37.768
+    },
+    {
+      "id": "gen-bush-2-d-23",
+      "modelId": "bush-2-d",
+      "x": 36.626,
+      "yaw": 281,
+      "z": 35.541
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-11",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 15.366,
+      "yaw": 238,
+      "z": 10.216
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-10",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 14.425,
+      "yaw": 343,
+      "z": 11.442
+    },
+    {
+      "id": "gen-bush-2-d-24",
+      "modelId": "bush-2-d",
+      "x": 14.728,
+      "yaw": 335,
+      "z": 7.024
+    },
+    {
+      "id": "gen-tree-bare-1-b-10",
+      "modelId": "tree-bare-1-b",
+      "x": 11.259,
+      "yaw": 193,
+      "z": 1.582
+    },
+    {
+      "id": "gen-pine-tree-13",
+      "modelId": "pine-tree",
+      "x": 14.287,
+      "z": 1.197
+    },
+    {
+      "id": "gen-pine-tree-14",
       "modelId": "pine-tree",
       "x": 13.12,
-      "z": 1.6
+      "yaw": 190,
+      "z": 2.294
     },
     {
-      "id": "pine-tree-5",
-      "modelId": "pine-tree",
-      "x": 16.96,
-      "z": 1.6
+      "id": "gen-bush-2-d-25",
+      "modelId": "bush-2-d",
+      "x": 10.125,
+      "yaw": 329,
+      "z": 3
     },
     {
-      "id": "pine-tree-6",
+      "id": "gen-autumn-pine-yellow-medium-7",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 0.36,
+      "yaw": 301,
+      "z": 8.979
+    },
+    {
+      "id": "gen-bush-2-d-26",
+      "modelId": "bush-2-d",
+      "x": 0.652,
+      "yaw": 243,
+      "z": 13.561
+    },
+    {
+      "id": "gen-tree-bare-1-b-11",
+      "modelId": "tree-bare-1-b",
+      "x": 36.876,
+      "yaw": 247,
+      "z": 27.964
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-8",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 35.959,
+      "yaw": 207,
+      "z": 26.604
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-11",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 14.004,
+      "yaw": 15,
+      "z": 26.744
+    },
+    {
+      "id": "gen-tree-bare-1-b-12",
+      "modelId": "tree-bare-1-b",
+      "x": 16.963,
+      "yaw": 155,
+      "z": 26.566
+    },
+    {
+      "id": "gen-bush-2-d-27",
+      "modelId": "bush-2-d",
+      "x": 14.421,
+      "yaw": 320,
+      "z": 24.387
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-9",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 22.803,
+      "yaw": 178,
+      "z": 3.934
+    },
+    {
+      "id": "gen-tree-bare-1-b-13",
+      "modelId": "tree-bare-1-b",
+      "x": 21.292,
+      "yaw": 260,
+      "z": 1.526
+    },
+    {
+      "id": "gen-tree-bare-1-a-8",
+      "modelId": "tree-bare-1-a",
+      "x": 20.426,
+      "yaw": 125,
+      "z": 10.124
+    },
+    {
+      "id": "gen-tree-bare-1-a-9",
+      "modelId": "tree-bare-1-a",
+      "x": 18.82,
+      "yaw": 319,
+      "z": 7.426
+    },
+    {
+      "id": "gen-tree-bare-1-b-14",
+      "modelId": "tree-bare-1-b",
+      "x": 19.281,
+      "yaw": 131,
+      "z": 9.129
+    },
+    {
+      "id": "gen-tree-bare-1-a-10",
+      "modelId": "tree-bare-1-a",
+      "x": 20.601,
+      "yaw": 297,
+      "z": 7.231
+    },
+    {
+      "id": "gen-bush-2-d-28",
+      "modelId": "bush-2-d",
+      "x": 17.23,
+      "yaw": 229,
+      "z": 9.271
+    },
+    {
+      "id": "gen-bush-2-d-29",
+      "modelId": "bush-2-d",
+      "x": 22.722,
+      "yaw": 327,
+      "z": 5.486
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-12",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 1.181,
+      "yaw": 308,
+      "z": 24.972
+    },
+    {
+      "id": "gen-tree-bare-1-b-15",
+      "modelId": "tree-bare-1-b",
+      "x": 3.012,
+      "yaw": 251,
+      "z": 25.945
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-13",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 0.344,
+      "yaw": 100,
+      "z": 26.674
+    },
+    {
+      "id": "gen-bush-2-d-30",
+      "modelId": "bush-2-d",
+      "x": 3.67,
+      "yaw": 168,
+      "z": 28.74
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-16",
+      "modelId": "autumn-pine-orange-large",
+      "x": 36.355,
+      "yaw": 202,
+      "z": 38.169
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-12",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 38.859,
+      "yaw": 94,
+      "z": 36.478
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-14",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 38.493,
+      "yaw": 118,
+      "z": 39.719
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-13",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 37.201,
+      "yaw": 338,
+      "z": 36.906
+    },
+    {
+      "id": "gen-pine-tree-15",
       "modelId": "pine-tree",
+      "x": 35.456,
+      "yaw": 290,
+      "z": 16.873
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-17",
+      "modelId": "autumn-pine-orange-large",
+      "x": 33.356,
+      "yaw": 139,
+      "z": 14.066
+    },
+    {
+      "id": "gen-bush-2-d-31",
+      "modelId": "bush-2-d",
+      "x": 37.649,
+      "yaw": 21,
+      "z": 14.876
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-15",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 40.321,
+      "yaw": 285,
+      "z": 36.419
+    },
+    {
+      "id": "gen-pine-tree-16",
+      "modelId": "pine-tree",
+      "x": 39.412,
+      "yaw": 302,
+      "z": 35.142
+    },
+    {
+      "id": "gen-bush-2-d-32",
+      "modelId": "bush-2-d",
+      "x": 38.476,
+      "yaw": 235,
+      "z": 33.495
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-16",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 12.36,
+      "yaw": 164,
+      "z": 28.911
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-14",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 15.914,
+      "yaw": 106,
+      "z": 28.967
+    },
+    {
+      "id": "gen-bush-2-d-33",
+      "modelId": "bush-2-d",
+      "x": 15.448,
+      "yaw": 73,
+      "z": 25.176
+    },
+    {
+      "id": "gen-bush-2-d-34",
+      "modelId": "bush-2-d",
+      "x": 11.179,
+      "yaw": 359,
+      "z": 27.914
+    },
+    {
+      "id": "gen-tree-bare-1-b-16",
+      "modelId": "tree-bare-1-b",
+      "x": 15.519,
+      "yaw": 17,
+      "z": 2.468
+    },
+    {
+      "id": "gen-tree-bare-1-b-17",
+      "modelId": "tree-bare-1-b",
+      "x": 16.213,
+      "yaw": 342,
+      "z": 0.721
+    },
+    {
+      "id": "gen-tree-bare-1-a-11",
+      "modelId": "tree-bare-1-a",
+      "x": 23.47,
+      "yaw": 265,
+      "z": 14.357
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-15",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 23.795,
+      "yaw": 181,
+      "z": 16.473
+    },
+    {
+      "id": "gen-bush-2-d-35",
+      "modelId": "bush-2-d",
+      "x": 27.063,
+      "yaw": 255,
+      "z": 16.324
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-18",
+      "modelId": "autumn-pine-orange-large",
+      "x": 36.133,
+      "yaw": 32,
+      "z": 14.147
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-10",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 36.763,
+      "yaw": 99,
+      "z": 12.968
+    },
+    {
+      "id": "gen-bush-2-d-36",
+      "modelId": "bush-2-d",
+      "x": 37.826,
+      "yaw": 170,
+      "z": 11.913
+    },
+    {
+      "id": "gen-tree-bare-1-a-12",
+      "modelId": "tree-bare-1-a",
+      "x": 9.85,
+      "yaw": 99,
+      "z": 0.849
+    },
+    {
+      "id": "gen-autumn-pine-orange-large-19",
+      "modelId": "autumn-pine-orange-large",
+      "x": 6.601,
+      "yaw": 13,
+      "z": 0.515
+    },
+    {
+      "id": "gen-tree-bare-1-b-18",
+      "modelId": "tree-bare-1-b",
+      "x": 7.231,
+      "yaw": 294,
+      "z": 2
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-17",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 5.863,
+      "yaw": 3,
+      "z": 1.98
+    },
+    {
+      "id": "gen-tree-bare-1-b-19",
+      "modelId": "tree-bare-1-b",
+      "x": 19.202,
+      "yaw": 103,
+      "z": 13.198
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-11",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 20.86,
+      "yaw": 112,
+      "z": 11.531
+    },
+    {
+      "id": "gen-bush-2-d-37",
+      "modelId": "bush-2-d",
+      "x": 16.909,
+      "yaw": 95,
+      "z": 10.434
+    },
+    {
+      "id": "gen-tree-bare-1-b-20",
+      "modelId": "tree-bare-1-b",
+      "x": 26.696,
+      "yaw": 284,
+      "z": 38.083
+    },
+    {
+      "id": "gen-tree-bare-1-a-13",
+      "modelId": "tree-bare-1-a",
+      "x": 30.544,
+      "yaw": 329,
+      "z": 37.955
+    },
+    {
+      "id": "gen-bush-2-d-38",
+      "modelId": "bush-2-d",
+      "x": 26.448,
+      "yaw": 326,
+      "z": 40.015
+    },
+    {
+      "id": "gen-tree-bare-1-b-21",
+      "modelId": "tree-bare-1-b",
+      "x": 8.204,
+      "yaw": 277,
+      "z": 15.571
+    },
+    {
+      "id": "gen-autumn-pine-yellow-medium-12",
+      "modelId": "autumn-pine-yellow-medium",
+      "x": 4.539,
+      "yaw": 317,
+      "z": 13.69
+    },
+    {
+      "id": "gen-pine-tree-17",
+      "modelId": "pine-tree",
+      "x": 24.194,
+      "yaw": 215,
+      "z": 40.386
+    },
+    {
+      "id": "gen-autumn-pine-yellow-large-16",
+      "modelId": "autumn-pine-yellow-large",
+      "x": 23.886,
+      "yaw": 163,
+      "z": 39.094
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-18",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 25.16,
+      "yaw": 111,
+      "z": 37.632
+    },
+    {
+      "id": "gen-bush-2-d-39",
+      "modelId": "bush-2-d",
+      "x": 22.019,
+      "yaw": 256,
+      "z": 39.06
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-19",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 39.354,
+      "yaw": 71,
+      "z": 1.07
+    },
+    {
+      "id": "gen-bush-2-d-40",
+      "modelId": "bush-2-d",
+      "x": 37.619,
+      "yaw": 217,
+      "z": 1.464
+    },
+    {
+      "id": "gen-autumn-pine-orange-medium-20",
+      "modelId": "autumn-pine-orange-medium",
+      "x": 39.863,
+      "yaw": 301,
+      "z": 38.54
+    },
+    {
+      "id": "gen-rock-1-d-1",
+      "modelId": "rock-1-d",
+      "x": 15.305,
+      "yaw": 252,
+      "z": 14.509
+    },
+    {
+      "id": "gen-bush-2-d-41",
+      "modelId": "bush-2-d",
       "x": 20.8,
-      "z": 1.6
+      "yaw": 356,
+      "z": 29.386
     },
     {
-      "id": "pine-tree-7",
-      "modelId": "pine-tree",
-      "x": 24.64,
-      "z": 1.6
+      "id": "gen-rock-1-d-2",
+      "modelId": "rock-1-d",
+      "x": 18.736,
+      "yaw": 101,
+      "z": 30.148
     },
     {
-      "id": "pine-tree-8",
-      "modelId": "pine-tree",
-      "x": 28.48,
-      "z": 1.6
+      "id": "gen-rock-1-d-3",
+      "modelId": "rock-1-d",
+      "x": 40.45,
+      "yaw": 125,
+      "z": 10.021
     },
     {
-      "id": "pine-tree-9",
-      "modelId": "pine-tree",
-      "x": 32.32,
-      "z": 1.6
+      "id": "gen-rock-3-a-1",
+      "modelId": "rock-3-a",
+      "x": 4.735,
+      "yaw": 37,
+      "z": 3.845
     },
     {
-      "id": "pine-tree-10",
-      "modelId": "pine-tree",
-      "x": 36.16,
-      "z": 1.6
+      "id": "gen-rock-3-a-2",
+      "modelId": "rock-3-a",
+      "x": 22.585,
+      "yaw": 220,
+      "z": 13.202
     },
     {
-      "id": "pine-tree-11",
-      "modelId": "pine-tree",
-      "x": 3.52,
-      "z": 5.38
+      "id": "gen-bush-2-d-42",
+      "modelId": "bush-2-d",
+      "x": 13.268,
+      "yaw": 343,
+      "z": 13.218
     },
     {
-      "id": "pine-tree-12",
-      "modelId": "pine-tree",
-      "x": 7.36,
-      "z": 5.38
+      "id": "gen-rock-1-d-4",
+      "modelId": "rock-1-d",
+      "x": 3.781,
+      "yaw": 313,
+      "z": 32.164
     },
     {
-      "id": "pine-tree-13",
-      "modelId": "pine-tree",
-      "x": 11.2,
-      "z": 5.38
+      "id": "gen-rock-1-d-5",
+      "modelId": "rock-1-d",
+      "x": 25.948,
+      "yaw": 121,
+      "z": 0.427
     },
     {
-      "id": "pine-tree-14",
-      "modelId": "pine-tree",
-      "x": 15.04,
-      "z": 5.38
+      "id": "gen-rock-3-a-3",
+      "modelId": "rock-3-a",
+      "x": 17.541,
+      "yaw": 67,
+      "z": 6.031
     },
     {
-      "id": "pine-tree-15",
-      "modelId": "pine-tree",
-      "x": 18.88,
-      "z": 5.38
+      "id": "gen-rock-3-a-4",
+      "modelId": "rock-3-a",
+      "x": 21.006,
+      "yaw": 208,
+      "z": 33.762
     },
     {
-      "id": "pine-tree-16",
-      "modelId": "pine-tree",
-      "x": 22.72,
-      "z": 5.38
+      "id": "gen-bush-2-d-43",
+      "modelId": "bush-2-d",
+      "x": 31.54,
+      "yaw": 3,
+      "z": 26.841
     },
     {
-      "id": "pine-tree-17",
-      "modelId": "pine-tree",
-      "x": 38.08,
-      "z": 5.38
+      "id": "gen-bush-2-d-44",
+      "modelId": "bush-2-d",
+      "x": 30.725,
+      "yaw": 109,
+      "z": 16.321
     },
     {
-      "id": "pine-tree-18",
-      "modelId": "pine-tree",
-      "x": 1.6,
-      "z": 9.16
+      "id": "gen-rock-3-a-5",
+      "modelId": "rock-3-a",
+      "x": 38.952,
+      "yaw": 353,
+      "z": 29.833
     },
     {
-      "id": "pine-tree-19",
-      "modelId": "pine-tree",
-      "x": 5.44,
-      "z": 9.16
+      "id": "gen-rock-3-a-6",
+      "modelId": "rock-3-a",
+      "x": 36.413,
+      "yaw": 149,
+      "z": 30.315
     },
     {
-      "id": "pine-tree-20",
-      "modelId": "pine-tree",
-      "x": 9.28,
-      "z": 9.16
+      "id": "gen-rock-3-a-7",
+      "modelId": "rock-3-a",
+      "x": 38.042,
+      "yaw": 233,
+      "z": 9.12
     },
     {
-      "id": "pine-tree-21",
-      "modelId": "pine-tree",
-      "x": 13.12,
-      "z": 9.16
+      "id": "gen-bush-2-d-45",
+      "modelId": "bush-2-d",
+      "x": 16.297,
+      "yaw": 217,
+      "z": 14.836
     },
     {
-      "id": "pine-tree-22",
-      "modelId": "pine-tree",
-      "x": 16.96,
-      "z": 9.16
+      "id": "gen-rock-3-a-8",
+      "modelId": "rock-3-a",
+      "x": 27.838,
+      "yaw": 257,
+      "z": 39.915
     },
     {
-      "id": "pine-tree-23",
-      "modelId": "pine-tree",
-      "x": 20.8,
-      "z": 9.16
+      "id": "gen-bush-2-d-46",
+      "modelId": "bush-2-d",
+      "x": 23.317,
+      "yaw": 240,
+      "z": 2.448
     },
     {
-      "id": "pine-tree-24",
-      "modelId": "pine-tree",
-      "x": 3.52,
-      "z": 12.94
+      "id": "gen-rock-3-a-9",
+      "modelId": "rock-3-a",
+      "x": 20.928,
+      "yaw": 244,
+      "z": 35.954
     },
     {
-      "id": "pine-tree-25",
-      "modelId": "pine-tree",
-      "x": 7.36,
-      "z": 12.94
+      "id": "gen-bush-2-d-47",
+      "modelId": "bush-2-d",
+      "x": 31.215,
+      "yaw": 328,
+      "z": 39.999
     },
     {
-      "id": "pine-tree-26",
-      "modelId": "pine-tree",
-      "x": 11.2,
-      "z": 12.94
+      "id": "gen-bush-2-d-48",
+      "modelId": "bush-2-d",
+      "x": 10.99,
+      "yaw": 147,
+      "z": 34.498
     },
     {
-      "id": "pine-tree-27",
-      "modelId": "pine-tree",
-      "x": 15.04,
-      "z": 12.94
+      "id": "gen-bush-2-d-49",
+      "modelId": "bush-2-d",
+      "x": 33.315,
+      "yaw": 329,
+      "z": 15.733
     },
     {
-      "id": "pine-tree-28",
-      "modelId": "pine-tree",
-      "x": 18.88,
-      "z": 12.94
+      "id": "gen-rock-3-a-10",
+      "modelId": "rock-3-a",
+      "x": 21.333,
+      "yaw": 75,
+      "z": 38.073
     },
     {
-      "id": "pine-tree-29",
-      "modelId": "pine-tree",
-      "x": 22.72,
-      "z": 12.94
+      "id": "gen-rock-3-a-11",
+      "modelId": "rock-3-a",
+      "x": 27.431,
+      "yaw": 172,
+      "z": 1.156
     },
     {
-      "id": "pine-tree-30",
-      "modelId": "pine-tree",
-      "x": 38.08,
-      "z": 12.94
+      "id": "gen-bush-2-d-50",
+      "modelId": "bush-2-d",
+      "x": 21.505,
+      "yaw": 205,
+      "z": 34.56
     },
     {
-      "id": "pine-tree-31",
-      "modelId": "pine-tree",
-      "x": 28.48,
-      "z": 16.72
+      "id": "gen-bush-2-d-51",
+      "modelId": "bush-2-d",
+      "x": 28.16,
+      "yaw": 358,
+      "z": 24.368
     },
     {
-      "id": "pine-tree-32",
-      "modelId": "pine-tree",
-      "x": 32.32,
-      "z": 16.72
+      "id": "gen-bush-2-d-52",
+      "modelId": "bush-2-d",
+      "x": 10.3,
+      "yaw": 107,
+      "z": 24.595
     },
     {
-      "id": "pine-tree-33",
-      "modelId": "pine-tree",
-      "x": 36.16,
-      "z": 16.72
+      "id": "gen-bush-2-d-53",
+      "modelId": "bush-2-d",
+      "x": 2.735,
+      "yaw": 324,
+      "z": 2.362
     },
     {
-      "id": "pine-tree-34",
-      "modelId": "pine-tree",
-      "x": 26.56,
-      "z": 20.5
+      "id": "gen-bush-2-d-54",
+      "modelId": "bush-2-d",
+      "x": 5.64,
+      "yaw": 215,
+      "z": 4.373
     },
     {
-      "id": "pine-tree-35",
-      "modelId": "pine-tree",
-      "x": 30.4,
-      "z": 20.5
+      "id": "gen-rock-3-a-12",
+      "modelId": "rock-3-a",
+      "x": 30.015,
+      "yaw": 169,
+      "z": 14.641
     },
     {
-      "id": "pine-tree-36",
-      "modelId": "pine-tree",
-      "x": 34.24,
-      "z": 20.5
+      "id": "gen-rock-1-d-6",
+      "modelId": "rock-1-d",
+      "x": 25.769,
+      "yaw": 135,
+      "z": 1.729
     },
     {
-      "id": "pine-tree-37",
-      "modelId": "pine-tree",
-      "x": 38.08,
-      "z": 20.5
+      "id": "gen-rock-3-a-13",
+      "modelId": "rock-3-a",
+      "x": 0.553,
+      "yaw": 272,
+      "z": 40.559
     },
     {
-      "id": "pine-tree-38",
-      "modelId": "pine-tree",
-      "x": 28.48,
-      "z": 24.28
+      "id": "gen-rock-3-a-14",
+      "modelId": "rock-3-a",
+      "x": 30.262,
+      "yaw": 279,
+      "z": 27.368
     },
     {
-      "id": "pine-tree-39",
-      "modelId": "pine-tree",
-      "x": 32.32,
-      "z": 24.28
-    },
-    {
-      "id": "pine-tree-40",
-      "modelId": "pine-tree",
-      "x": 36.16,
-      "z": 24.28
-    },
-    {
-      "id": "pine-tree-41",
-      "modelId": "pine-tree",
-      "x": 3.52,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-42",
-      "modelId": "pine-tree",
-      "x": 7.36,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-43",
-      "modelId": "pine-tree",
-      "x": 11.2,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-44",
-      "modelId": "pine-tree",
-      "x": 15.04,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-45",
-      "modelId": "pine-tree",
-      "x": 18.88,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-46",
-      "modelId": "pine-tree",
-      "x": 22.72,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-47",
-      "modelId": "pine-tree",
-      "x": 38.08,
-      "z": 28.06
-    },
-    {
-      "id": "pine-tree-48",
-      "modelId": "pine-tree",
-      "x": 1.6,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-49",
-      "modelId": "pine-tree",
-      "x": 5.44,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-50",
-      "modelId": "pine-tree",
-      "x": 9.28,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-51",
-      "modelId": "pine-tree",
-      "x": 13.12,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-52",
-      "modelId": "pine-tree",
-      "x": 16.96,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-53",
-      "modelId": "pine-tree",
-      "x": 20.8,
-      "z": 31.84
-    },
-    {
-      "id": "pine-tree-54",
-      "modelId": "pine-tree",
-      "x": 3.52,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-55",
-      "modelId": "pine-tree",
-      "x": 7.36,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-56",
-      "modelId": "pine-tree",
-      "x": 11.2,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-57",
-      "modelId": "pine-tree",
-      "x": 15.04,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-58",
-      "modelId": "pine-tree",
-      "x": 18.88,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-59",
-      "modelId": "pine-tree",
-      "x": 22.72,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-60",
-      "modelId": "pine-tree",
-      "x": 38.08,
-      "z": 35.62
-    },
-    {
-      "id": "pine-tree-61",
-      "modelId": "pine-tree",
-      "x": 1.6,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-62",
-      "modelId": "pine-tree",
-      "x": 5.44,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-63",
-      "modelId": "pine-tree",
-      "x": 9.28,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-64",
-      "modelId": "pine-tree",
-      "x": 13.12,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-65",
-      "modelId": "pine-tree",
-      "x": 16.96,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-66",
-      "modelId": "pine-tree",
-      "x": 20.8,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-67",
-      "modelId": "pine-tree",
-      "x": 24.64,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-68",
-      "modelId": "pine-tree",
-      "x": 28.48,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-69",
-      "modelId": "pine-tree",
-      "x": 32.32,
-      "z": 39.4
-    },
-    {
-      "id": "pine-tree-70",
-      "modelId": "pine-tree",
-      "x": 36.16,
-      "z": 39.4
+      "id": "gen-bush-2-d-55",
+      "modelId": "bush-2-d",
+      "x": 14.175,
+      "yaw": 12,
+      "z": 13.539
     }
   ],
   "size": {

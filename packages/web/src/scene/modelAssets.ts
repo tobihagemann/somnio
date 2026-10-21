@@ -1,7 +1,7 @@
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { allModelEntries, floorMaterialStem, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
+import { allModelEntries, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
 import type { ModelRegistry } from '@somnio/core';
 
 /**
@@ -17,8 +17,20 @@ export interface ModelAssets {
   prewarm(): Promise<void>;
   character(id: string): THREE.Object3D | undefined;
   object(id: string): THREE.Object3D | undefined;
-  floorTexture(id: string): THREE.Texture | undefined;
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[];
+  /**
+   * The single-material meshes of an object model's cached prototype, each with its transform
+   * relative to the model's root, for drawing the model instanced. `undefined` for an unmapped id or
+   * until the prototype is cached. The geometry and material are the cache's own, so a caller
+   * clones what it changes.
+   */
+  prototypeMeshes(id: string): PrototypeMesh[] | undefined;
+}
+
+export interface PrototypeMesh {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  matrix: THREE.Matrix4;
 }
 
 interface Prototype {
@@ -30,9 +42,7 @@ export class HttpModelAssets implements ModelAssets {
   private readonly registry: ModelRegistry;
   private readonly baseURL: string;
   private readonly loader = new GLTFLoader();
-  private readonly textureLoader = new THREE.TextureLoader();
   private readonly prototypes = new Map<string, Prototype>();
-  private readonly textures = new Map<string, THREE.Texture>();
   /** Negative cache: a stem whose fetch already failed is not retried on the next prewarm. */
   private readonly misses = new Set<string>();
   private readonly clipsByRoot = new WeakMap<THREE.Object3D, THREE.AnimationClip[]>();
@@ -43,14 +53,11 @@ export class HttpModelAssets implements ModelAssets {
   }
 
   async prewarm(): Promise<void> {
-    await Promise.all([
-      ...allModelEntries(this.registry)
+    await Promise.all(
+      allModelEntries(this.registry)
         .filter((entry) => !this.prototypes.has(entry.stem) && !this.misses.has(entry.stem))
         .map((entry) => this.loadPrototype(entry.stem, entry.expectedClips)),
-      ...this.registry.floorMaterials
-        .filter((rule) => !this.textures.has(rule.stem) && !this.misses.has(rule.stem))
-        .map((rule) => this.loadFloorTexture(rule.stem)),
-    ]);
+    );
   }
 
   character(id: string): THREE.Object3D | undefined {
@@ -63,13 +70,14 @@ export class HttpModelAssets implements ModelAssets {
     return entry === undefined ? undefined : this.instantiate(entry.stem);
   }
 
-  floorTexture(id: string): THREE.Texture | undefined {
-    const stem = floorMaterialStem(this.registry, id);
-    return stem === undefined ? undefined : this.textures.get(stem);
-  }
-
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[] {
     return this.clipsByRoot.get(root) ?? [];
+  }
+
+  prototypeMeshes(id: string): PrototypeMesh[] | undefined {
+    const entry = modelForObjectId(this.registry, id);
+    const prototype = entry === undefined ? undefined : this.prototypes.get(entry.stem);
+    return prototype === undefined ? undefined : prototypeMeshesOf(prototype.scene);
   }
 
   /**
@@ -107,23 +115,17 @@ export class HttpModelAssets implements ModelAssets {
       console.warn(`model "${stem}" unavailable; rendering a placeholder`);
     }
   }
+}
 
-  private async loadFloorTexture(stem: string): Promise<void> {
-    try {
-      const texture = await this.textureLoader.loadAsync(`${this.baseURL}/FloorMaterials/${stem}.png`);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      // The material tiles across a whole sector floor; un-mipped minification shimmers badly
-      // under the tilted camera, and anisotropy is what keeps it from sparkling at grazing angles.
-      texture.generateMipmaps = true;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.anisotropy = 8;
-      this.textures.set(stem, texture);
-    } catch {
-      this.misses.add(stem);
-      console.warn(`floor material "${stem}" unavailable; rendering the untextured floor`);
-    }
-  }
+/** A model's meshes with their transforms relative to its root, the pipeline's normalizing parent included. */
+export function prototypeMeshesOf(root: THREE.Object3D): PrototypeMesh[] {
+  root.updateMatrixWorld(true);
+  const toRoot = root.matrixWorld.clone().invert();
+  const meshes: PrototypeMesh[] = [];
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    meshes.push({ geometry: mesh.geometry, material: mesh.material, matrix: toRoot.clone().multiply(mesh.matrixWorld) });
+  });
+  return meshes;
 }

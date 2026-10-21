@@ -4,6 +4,7 @@ import { reachDistance } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { EDGE_TOLERANCE, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
 import type { Point, Rect, Transform } from './geometry.ts';
+import { SECTOR_BORDER_SUPPORT_METRES, paddedRasterRect } from './ground.ts';
 import { heading, headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
 import { objectModel } from './modelRegistry.ts';
@@ -31,7 +32,7 @@ export interface Space<S extends SectorView = SectorView> {
 /** A content mistake that leaves the world loadable, pinned to the record that carries it. */
 export interface WorldIssue {
   sector: string;
-  record: 'placement' | 'door';
+  record: 'placement' | 'door' | 'sector';
   id: string;
   message: string;
 }
@@ -63,8 +64,9 @@ export class WorldError extends Error {
  * pair: both doors resolve, point at each other, and have an arrival point a body can stand on.
  * Any other door is reported and dropped from its sector. A live door whose arrival point lies
  * within a nightmare's reach of a monster spawn's area in its space is reported and kept. The
- * collision issues of each space are reported too. Standing means clear of colliders, blockers,
- * ledges, and the space's NPCs.
+ * collision issues of each space are reported too, and so is every pair of outdoor sectors that
+ * stand too close to blend their grounds evenly without touching. Standing means clear of
+ * colliders, blockers, ledges, and the space's NPCs.
  */
 export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry): World {
   const outdoor = sectors.filter((sector) => sector.kind === 'outdoor');
@@ -79,12 +81,13 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
     if (overlapped !== undefined) throw new WorldError(`outdoor sectors ${sector.name} and ${overlapped.name} overlap`);
   });
 
+  const issues: WorldIssue[] = spacingIssues(outdoor);
+
   const groups: Space<Sector>[] = [
     ...(outdoor.length === 0 ? [] : [{ id: OUTDOOR_SPACE_ID, sectors: outdoor }]),
     ...sectors.filter((sector) => sector.kind === 'interior').map((sector) => ({ id: sector.name, sectors: [sector] })),
   ];
   const standsIn = new Map<string, (point: Point) => boolean>();
-  const issues: WorldIssue[] = [];
   for (const space of groups) {
     const collision = buildSpaceCollision(space, registry);
     // Not a spread: a space's issues can outnumber the arguments one call may take.
@@ -162,6 +165,40 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
     for (const sector of space.sectors) sectorSpace.set(sector.name, space.id);
   }
   return { spaces, sectorSpace, issues };
+}
+
+/**
+ * A client is sent only the sectors touching the player's, so it can blend a sector's ground only
+ * with those. A sector that does not touch must therefore stand clear of everything the blend
+ * computes for the other: its background paints `SECTOR_BORDER_SUPPORT_METRES` past its rect, and
+ * the other's raster reaches past its rect by the gutter. A pair too close is reported under each
+ * of the two; the world still loads, and only its seam is uneven.
+ */
+function spacingIssues(outdoor: Sector[]): WorldIssue[] {
+  const issues: WorldIssue[] = [];
+  const space = { id: OUTDOOR_SPACE_ID, sectors: outdoor };
+  for (const sector of outdoor) {
+    const touching = new Set(neighbourSectors(space, sector.name));
+    const raster = paddedRasterRect(sector);
+    for (const other of outdoor) {
+      if (other === sector || touching.has(other)) continue;
+      const gap = Math.min(rectDistance(raster, sectorRect(other)), rectDistance(sectorRect(sector), paddedRasterRect(other)));
+      if (gap >= SECTOR_BORDER_SUPPORT_METRES) continue;
+      issues.push({
+        sector: sector.name,
+        record: 'sector',
+        id: other.name,
+        message: `stands ${gap.toFixed(2)} m from ${other.name} without touching it, closer than the ${SECTOR_BORDER_SUPPORT_METRES} m their grounds blend over`,
+      });
+    }
+  }
+  return issues;
+}
+
+function rectDistance(a: Rect, b: Rect): number {
+  const dx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
+  const dz = Math.max(0, a.z - (b.z + b.depth), b.z - (a.z + a.depth));
+  return Math.hypot(dx, dz);
 }
 
 /** The sector whose ground holds the point, in the space's coordinates. */
