@@ -54,6 +54,8 @@ RUN test -n "${BUILD_VERSION}" \
         || (echo "ERROR: --build-arg BUILD_VERSION=<id> is required" >&2; exit 1)
 # curl for the docker-compose HEALTHCHECK.
 RUN apk add --no-cache curl
+# The base image's CA bundle can trail a distrusted CA, so take the newest at build time.
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 
 WORKDIR /opt/somnio
 
