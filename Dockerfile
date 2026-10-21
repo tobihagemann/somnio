@@ -52,10 +52,10 @@ FROM node:24-alpine
 ARG BUILD_VERSION
 RUN test -n "${BUILD_VERSION}" \
         || (echo "ERROR: --build-arg BUILD_VERSION=<id> is required" >&2; exit 1)
-# curl for the docker-compose HEALTHCHECK.
-RUN apk add --no-cache curl
-# The base image's CA bundle can trail a distrusted CA, so take the newest at build time.
-RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
+# curl for the docker-compose HEALTHCHECK, and the newest CA bundle, since the base image's can
+# trail a distrusted CA. Standing after `ARG BUILD_VERSION`, which changes every commit, this
+# step never comes from the build cache.
+RUN apk add --no-cache --upgrade curl ca-certificates-bundle
 
 WORKDIR /opt/somnio
 
@@ -82,13 +82,15 @@ USER somnio
 
 EXPOSE 8080
 # No SOMNIO_DEV_DEFAULTS: the image refuses to boot without an admin token and a database URL.
+# Node verifies TLS, here the Postgres connection, against its own bundled CA list.
+# `--use-openssl-ca` replaces that list with the system store upgraded above, and as an
+# environment setting it survives a deployment that overrides the command. `--use-system-ca`
+# would only add the system store to the bundled list, keeping a distrusted CA.
 ENV NODE_ENV=production \
+    NODE_OPTIONS=--use-openssl-ca \
     SOMNIO_HTTP_HOST=0.0.0.0 \
     SOMNIO_HTTP_PORT=8080 \
     SOMNIO_SECTORS_DIR=/opt/somnio/sectors \
     SOMNIO_SERVER_VERSION=${BUILD_VERSION}
 
-# Node verifies TLS (the Postgres connection included) against its own bundled CA list unless
-# told otherwise. `--use-openssl-ca` replaces that list with the system store the build keeps
-# current; `--use-system-ca` would only add the system store to it, keeping a distrusted CA.
-CMD ["node", "--use-openssl-ca", "packages/server/src/main.ts"]
+CMD ["node", "packages/server/src/main.ts"]

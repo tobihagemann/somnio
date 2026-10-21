@@ -89,12 +89,6 @@ RUN if [ -n "$(ls -A assets 2>/dev/null)" ]; then \
 # container drop root without a writable-cache workaround.
 FROM nginxinc/nginx-unprivileged:1.29-alpine
 
-# The base image's CA bundle can trail a distrusted CA, so take the newest at build time. apk
-# needs root; 101 is the base image's own user.
-USER root
-RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
-USER 101
-
 COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY packages/web/nginx-security-headers.conf /etc/nginx/somnio-security-headers.conf
 COPY --from=build /src/packages/web/dist /usr/share/nginx/html

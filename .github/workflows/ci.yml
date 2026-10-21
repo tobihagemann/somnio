@@ -132,6 +132,11 @@ jobs:
             -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' \
             http://127.0.0.1:17669/ws || true)
           test "$status" = "101" || (echo "expected 101 from /ws, got $status" >&2; exit 1)
+          # The server's Postgres TLS trusts the image's upgraded CA store only under this
+          # setting, and CI's Postgres runs without TLS, so nothing else would notice it gone.
+          docker compose -f docker-compose.example.yml exec -T server \
+            sh -c 'tr "\0" "\n" < /proc/1/environ | grep -qx NODE_OPTIONS=--use-openssl-ca' \
+            || (echo "the server does not run with NODE_OPTIONS=--use-openssl-ca" >&2; exit 1)
       - name: Dump logs on failure
         if: failure()
         run: |
