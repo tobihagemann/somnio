@@ -88,4 +88,7 @@ ENV NODE_ENV=production \
     SOMNIO_SECTORS_DIR=/opt/somnio/sectors \
     SOMNIO_SERVER_VERSION=${BUILD_VERSION}
 
-CMD ["node", "packages/server/src/main.ts"]
+# Node verifies TLS (the Postgres connection included) against its own bundled CA list unless
+# told otherwise. `--use-openssl-ca` replaces that list with the system store the build keeps
+# current; `--use-system-ca` would only add the system store to it, keeping a distrusted CA.
+CMD ["node", "--use-openssl-ca", "packages/server/src/main.ts"]

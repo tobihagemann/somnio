@@ -166,6 +166,8 @@ The schema is a fresh one (`packages/data/src/migrations/0001_metric_world.ts`) 
 
 The root `Dockerfile` is a `node:24-alpine` multi-stage build: a `deps` stage runs `npm ci --omit=dev --workspace packages/server` over the workspace manifests, and the runtime stage copies that install tree whole (so the `node_modules/@somnio/*` symlinks keep resolving into `packages/*`) plus the four server-side packages' sources and the committed sector fixtures at `/opt/somnio/sectors` (the `SOMNIO_SECTORS_SOURCE` build-arg, default `packages/core/fixtures/sectors`, guarded so an empty or sector-less source fails the build rather than the first boot), so the image carries the world it serves. It takes a **required** `BUILD_VERSION` build-arg (no default; the build fails without it), exposed as `ENV SOMNIO_SERVER_VERSION`, which the admin `version` verb reports.
 
+Both images upgrade the system CA bundle at build time, so a rebuild picks up a distrusted CA's removal without waiting for a new base image. The server runs as `node --use-openssl-ca`, because Node otherwise verifies TLS, the Postgres connection included, against its own bundled CA list, which only a Node release updates. `--use-system-ca` would not do: it adds the system store to the bundled list rather than replacing it.
+
 ## Lint & Format
 
 ```
