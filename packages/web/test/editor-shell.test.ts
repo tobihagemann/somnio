@@ -340,7 +340,7 @@ describe('commands', () => {
   function withRecords(): EditorShell {
     const shell = shellWithDocument();
     shell.document.mutate('Seed', (sector) => {
-      sector.placements.push({ id: 'door-1', modelId: 'door', x: 10, z: 19, yaw: 0, elevation: 0 });
+      sector.placements.push({ id: 'door-1', modelId: 'timber-room-threshold', x: 10, z: 19, yaw: 0, elevation: 0 });
       sector.doors.push({ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } });
       sector.blockers.push({ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 });
       sector.ground.marks.push({ id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: 4, z: 4 }] } });
@@ -361,11 +361,11 @@ describe('commands', () => {
     const depth = shell.document.undoDepth;
     shell.duplicateSelection();
     const sector = shell.document.sector;
-    expect(sector.placements[1]).toMatchObject({ id: 'door-2', x: 10.5, z: 19.5 });
-    expect(sector.doors[1]).toMatchObject({ id: 'to-shop-1', placement: 'door-2' });
+    expect(sector.placements[1]).toMatchObject({ id: 'timber-room-threshold-1', x: 10.5, z: 19.5 });
+    expect(sector.doors[1]).toMatchObject({ id: 'to-shop-1', placement: 'timber-room-threshold-1' });
     expect(sector.blockers[1]).toMatchObject({ id: 'blocker-2', x: 2.5, z: 2.5 });
     expect(shell.selection).toEqual([
-      { kind: 'placement', id: 'door-2' },
+      { kind: 'placement', id: 'timber-room-threshold-1' },
       { kind: 'blocker', id: 'blocker-2' },
       { kind: 'door', id: 'to-shop-1' },
     ]);
@@ -495,7 +495,7 @@ describe('commands', () => {
   it('adds a door from the inspector and selects it', () => {
     const shell = shellWithDocument();
     shell.document.mutate('Seed', (sector) => {
-      sector.placements.push({ id: 'door-1', modelId: 'door', x: 10, z: 19, yaw: 0, elevation: 0 });
+      sector.placements.push({ id: 'door-1', modelId: 'timber-room-threshold', x: 10, z: 19, yaw: 0, elevation: 0 });
     });
     shell.selection = [{ kind: 'placement', id: 'door-1' }];
     shell.inspector.render(shell.document.sector, shell.selection, false);

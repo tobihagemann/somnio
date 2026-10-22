@@ -295,7 +295,7 @@ describe('scroll zoom', () => {
 
 describe('the resize invariant', () => {
   it('holds the vertical world extent constant and lets aspect drive width', () => {
-    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1);
+    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1, false);
     const tallTop = scene.camera.top;
     const tallHeight = scene.camera.top - scene.camera.bottom;
 
@@ -310,7 +310,7 @@ describe('the resize invariant', () => {
   });
 
   it('keeps the camera scale untouched by a resize', () => {
-    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1);
+    const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1, false);
     const before = scene._cameraScale();
 
     scene.setViewportAspect(0.4);

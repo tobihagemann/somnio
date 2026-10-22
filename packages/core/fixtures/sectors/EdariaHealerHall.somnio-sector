@@ -1,20 +1,4 @@
 {
-  "blockers": [
-    {
-      "depth": 0.6,
-      "id": "blocker-1",
-      "width": 0.12,
-      "x": 2.76,
-      "z": 7.08
-    },
-    {
-      "depth": 0.6,
-      "id": "blocker-2",
-      "width": 0.12,
-      "x": 4.8,
-      "z": 7.08
-    }
-  ],
   "brightness": 100,
   "doors": [
     {
@@ -40,76 +24,207 @@
       "name": "Sana",
       "service": "healerMaster",
       "x": 3.84,
-      "z": 2
+      "z": 1.3
     }
   ],
   "placements": [
     {
       "id": "bed-1",
       "modelId": "bed",
-      "x": 0.5,
-      "yaw": 90,
-      "z": 2
+      "x": 0.648,
+      "z": 1.6
     },
     {
       "id": "bed-2",
       "modelId": "bed",
-      "x": 0.5,
-      "yaw": 90,
-      "z": 3.6
+      "x": 0.648,
+      "z": 3.5
     },
     {
       "id": "bed-3",
       "modelId": "bed",
-      "x": 7.18,
-      "yaw": 270,
-      "z": 2
+      "x": 0.648,
+      "z": 5.4
+    },
+    {
+      "id": "stool-1",
+      "modelId": "stool",
+      "x": 0.2,
+      "z": 2.35
+    },
+    {
+      "id": "stool-2",
+      "modelId": "stool",
+      "x": 0.2,
+      "z": 4.25
+    },
+    {
+      "id": "stool-3",
+      "modelId": "stool",
+      "x": 0.2,
+      "z": 6.15
+    },
+    {
+      "elevation": 0.216,
+      "id": "candle-1",
+      "modelId": "candle",
+      "x": 0.2,
+      "z": 2.35
+    },
+    {
+      "elevation": 0.216,
+      "id": "candle-2",
+      "modelId": "candle",
+      "x": 0.2,
+      "z": 4.25
+    },
+    {
+      "elevation": 0.216,
+      "id": "candle-3",
+      "modelId": "candle",
+      "x": 0.2,
+      "z": 6.15
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-2",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 6.9
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 0.7,
+      "z": 0.133
+    },
+    {
+      "id": "long-table-1",
+      "modelId": "long-table",
+      "x": 3.84,
+      "z": 0.432
+    },
+    {
+      "elevation": 0.432,
+      "id": "lantern-1",
+      "modelId": "lantern",
+      "x": 4.35,
+      "z": 0.43
+    },
+    {
+      "elevation": 0.432,
+      "id": "bottles-1",
+      "modelId": "bottles",
+      "x": 3.3,
+      "z": 0.3
+    },
+    {
+      "elevation": 0.432,
+      "id": "bottles-2",
+      "modelId": "bottles",
+      "x": 3.55,
+      "z": 0.5
+    },
+    {
+      "id": "potted-plant-1",
+      "modelId": "potted-plant",
+      "x": 5.02,
+      "z": 0.25
+    },
+    {
+      "id": "jar-shelf-1",
+      "modelId": "jar-shelf",
+      "x": 5.76,
+      "z": 0.108
+    },
+    {
+      "elevation": 0.194,
+      "id": "bottles-3",
+      "modelId": "bottles",
+      "x": 5.5,
+      "z": 0.108
+    },
+    {
+      "elevation": 0.194,
+      "id": "bottles-4",
+      "modelId": "bottles",
+      "x": 6,
+      "z": 0.108
+    },
+    {
+      "elevation": 0.843,
+      "id": "bottles-5",
+      "modelId": "bottles",
+      "x": 5.76,
+      "z": 0.108
     },
     {
       "id": "bed-4",
       "modelId": "bed",
-      "x": 7.18,
+      "x": 7.032,
+      "yaw": 180,
+      "z": 2.2
+    },
+    {
+      "id": "bed-5",
+      "modelId": "bed",
+      "x": 7.032,
+      "yaw": 180,
+      "z": 4.1
+    },
+    {
+      "id": "stool-4",
+      "modelId": "stool",
+      "x": 7.48,
+      "z": 2.95
+    },
+    {
+      "elevation": 0.216,
+      "id": "candle-4",
+      "modelId": "candle",
+      "x": 7.48,
+      "z": 2.95
+    },
+    {
+      "id": "stool-5",
+      "modelId": "stool",
+      "x": 7.48,
+      "z": 4.85
+    },
+    {
+      "elevation": 0.216,
+      "id": "candle-5",
+      "modelId": "candle",
+      "x": 7.48,
+      "z": 4.85
+    },
+    {
+      "id": "chest-1",
+      "modelId": "chest",
+      "x": 7.2,
       "yaw": 270,
-      "z": 3.6
-    },
-    {
-      "id": "round-table-1",
-      "modelId": "round-table",
-      "x": 0.6,
-      "z": 5.4
-    },
-    {
-      "id": "round-table-2",
-      "modelId": "round-table",
-      "x": 7.08,
-      "z": 5.4
-    },
-    {
-      "elevation": 0.432,
-      "id": "candle-1",
-      "modelId": "candle",
-      "x": 0.6,
-      "z": 5.4
-    },
-    {
-      "elevation": 0.432,
-      "id": "candle-2",
-      "modelId": "candle",
-      "x": 7.08,
-      "z": 5.4
+      "z": 6.9
     },
     {
       "id": "rug-1",
       "modelId": "rug",
       "x": 3.84,
       "yaw": 90,
-      "z": 3.4
+      "z": 3.6
     },
     {
       "id": "door-1",
-      "modelId": "door",
+      "modelId": "timber-room-threshold",
       "x": 3.84,
-      "z": 7.585
+      "z": 7.8
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 3.84,
+      "z": 6.93
     },
     {
       "id": "wall-north-1",
@@ -143,9 +258,9 @@
     },
     {
       "id": "wall-north-4",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 4.48,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-north-5",
@@ -187,8 +302,8 @@
     },
     {
       "id": "wall-west-2",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
       "yaw": 90,
       "z": 1.92
     },

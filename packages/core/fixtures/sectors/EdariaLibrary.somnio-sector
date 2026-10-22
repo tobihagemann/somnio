@@ -1,20 +1,4 @@
 {
-  "blockers": [
-    {
-      "depth": 0.6,
-      "id": "blocker-4",
-      "width": 0.12,
-      "x": 0.64,
-      "z": 9.64
-    },
-    {
-      "depth": 0.6,
-      "id": "blocker-5",
-      "width": 0.12,
-      "x": 4.36,
-      "z": 9.64
-    }
-  ],
   "brightness": 100,
   "doors": [
     {
@@ -35,11 +19,11 @@
     {
       "characterModelId": "libus",
       "dialogScript": "Greetings, $name!---This library is still a work in progress.---And running is forbidden in here!",
-      "facing": 270,
+      "facing": 0,
       "id": "libus",
       "name": "Libus",
-      "x": 7.36,
-      "z": 8.48
+      "x": 5.3,
+      "z": 4.98
     }
   ],
   "placements": [
@@ -47,199 +31,146 @@
       "id": "bookshelf-ornate-1",
       "modelId": "bookshelf-ornate",
       "x": 0.64,
-      "z": 0.23
-    },
-    {
-      "id": "bookshelf-ornate-2",
-      "modelId": "bookshelf-ornate",
-      "x": 1.92,
-      "z": 0.23
-    },
-    {
-      "id": "bookshelf-ornate-3",
-      "modelId": "bookshelf-ornate",
-      "x": 3.2,
-      "z": 0.23
-    },
-    {
-      "id": "bookshelf-ornate-4",
-      "modelId": "bookshelf-ornate",
-      "x": 4.48,
-      "z": 0.23
-    },
-    {
-      "id": "bookshelf-1",
-      "modelId": "bookshelf",
-      "x": 0.64,
-      "z": 3.665
-    },
-    {
-      "id": "bookshelf-2",
-      "modelId": "bookshelf",
-      "x": 1.92,
-      "z": 3.665
-    },
-    {
-      "id": "bookshelf-3",
-      "modelId": "bookshelf",
-      "x": 3.2,
-      "z": 3.665
-    },
-    {
-      "id": "bookshelf-4",
-      "modelId": "bookshelf",
-      "x": 4.48,
-      "z": 3.665
-    },
-    {
-      "id": "bookshelf-5",
-      "modelId": "bookshelf",
-      "x": 0.64,
-      "z": 6.865
-    },
-    {
-      "id": "bookshelf-6",
-      "modelId": "bookshelf",
-      "x": 1.92,
-      "z": 6.865
-    },
-    {
-      "id": "bookshelf-7",
-      "modelId": "bookshelf",
-      "x": 3.2,
-      "z": 6.865
-    },
-    {
-      "id": "bookshelf-8",
-      "modelId": "bookshelf",
-      "x": 4.48,
-      "z": 6.865
-    },
-    {
-      "id": "potted-plant-1",
-      "modelId": "potted-plant",
-      "x": 5.44,
-      "z": 6.86
-    },
-    {
-      "id": "study-table-1",
-      "modelId": "study-table",
-      "x": 5.44,
-      "z": 3.66
-    },
-    {
-      "id": "bust-1",
-      "modelId": "bust",
-      "x": 5.44,
-      "z": 0.245
-    },
-    {
-      "id": "door-1",
-      "modelId": "door",
-      "x": 2.56,
-      "z": 10.145
+      "z": 0.21
     },
     {
       "id": "grand-bookcase-1",
       "modelId": "grand-bookcase",
-      "x": 8,
-      "z": 0.265
+      "x": 2.56,
+      "z": 0.175
     },
     {
-      "id": "couch-1",
-      "modelId": "couch",
-      "x": 6.72,
-      "z": 1.45
+      "id": "bookshelf-ornate-2",
+      "modelId": "bookshelf-ornate",
+      "x": 4.48,
+      "z": 0.21
     },
     {
-      "id": "couch-2",
-      "modelId": "couch",
-      "x": 7.36,
-      "z": 2.41
+      "id": "bookshelf-1",
+      "modelId": "bookshelf",
+      "x": 0.175,
+      "yaw": 90,
+      "z": 1.92
     },
     {
-      "id": "couch-3",
-      "modelId": "couch",
-      "x": 8.64,
-      "z": 2.41
+      "id": "bookshelf-2",
+      "modelId": "bookshelf",
+      "x": 0.175,
+      "yaw": 90,
+      "z": 3.2
     },
     {
-      "id": "couch-4",
-      "modelId": "couch",
-      "x": 9.28,
-      "z": 1.45
+      "id": "bookshelf-3",
+      "modelId": "bookshelf",
+      "x": 0.175,
+      "yaw": 90,
+      "z": 5.76
     },
     {
-      "id": "floor-lamp-1",
-      "modelId": "floor-lamp",
-      "x": 9.92,
-      "z": 4.265
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 6.9
     },
     {
-      "id": "floor-lamp-2",
-      "modelId": "floor-lamp",
-      "x": 8,
-      "z": 4.265
-    },
-    {
-      "id": "floor-lamp-3",
-      "modelId": "floor-lamp",
-      "x": 9.92,
-      "z": 6.825
-    },
-    {
-      "id": "floor-lamp-4",
-      "modelId": "floor-lamp",
-      "x": 8,
-      "z": 6.825
-    },
-    {
-      "id": "side-table-1",
-      "modelId": "side-table",
-      "x": 9.28,
-      "z": 4.155
-    },
-    {
-      "id": "side-table-2",
-      "modelId": "side-table",
-      "x": 7.36,
-      "z": 4.155
-    },
-    {
-      "id": "side-table-3",
-      "modelId": "side-table",
-      "x": 9.28,
-      "z": 6.715
-    },
-    {
-      "id": "side-table-4",
-      "modelId": "side-table",
-      "x": 7.36,
-      "z": 6.715
+      "id": "study-table-1",
+      "modelId": "study-table",
+      "x": 1.5,
+      "z": 4.4
     },
     {
       "id": "chair-1",
       "modelId": "chair",
-      "x": 9.28,
-      "z": 3.655
+      "x": 1.93,
+      "yaw": 270,
+      "z": 4.4
     },
     {
-      "id": "chair-2",
-      "modelId": "chair",
-      "x": 7.36,
-      "z": 3.655
+      "id": "oval-rug-1",
+      "modelId": "oval-rug",
+      "x": 5.65,
+      "z": 1.75
     },
     {
-      "id": "chair-3",
-      "modelId": "chair",
-      "x": 9.28,
-      "z": 6.215
+      "id": "armchair-1",
+      "modelId": "armchair",
+      "x": 4.58,
+      "yaw": 90,
+      "z": 1.75
     },
     {
-      "id": "chair-4",
-      "modelId": "chair",
-      "x": 7.36,
-      "z": 6.215
+      "id": "armchair-2",
+      "modelId": "armchair",
+      "x": 6.72,
+      "yaw": 270,
+      "z": 1.75
+    },
+    {
+      "id": "low-table-1",
+      "modelId": "low-table",
+      "x": 5.65,
+      "yaw": 90,
+      "z": 1.75
+    },
+    {
+      "id": "floor-lamp-1",
+      "modelId": "floor-lamp",
+      "x": 7.45,
+      "z": 1.75
+    },
+    {
+      "id": "floor-lamp-2",
+      "modelId": "floor-lamp",
+      "x": 3.75,
+      "z": 1.75
+    },
+    {
+      "id": "potted-plant-1",
+      "modelId": "potted-plant",
+      "x": 7.3,
+      "z": 3.4
+    },
+    {
+      "id": "desk-1",
+      "modelId": "desk",
+      "x": 5.3,
+      "yaw": 180,
+      "z": 5.75
+    },
+    {
+      "elevation": 0.432,
+      "id": "open-book-1",
+      "modelId": "open-book",
+      "x": 5.1,
+      "yaw": 180,
+      "z": 5.75
+    },
+    {
+      "elevation": 0.432,
+      "id": "candle-1",
+      "modelId": "candle",
+      "x": 5.6,
+      "z": 5.6
+    },
+    {
+      "id": "potted-plant-2",
+      "modelId": "potted-plant",
+      "x": 7.25,
+      "z": 7.25
+    },
+    {
+      "id": "door-1",
+      "modelId": "timber-room-threshold",
+      "x": 2.56,
+      "z": 7.8
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 2.56,
+      "z": 6.93
     },
     {
       "id": "wall-north-1",
@@ -251,13 +182,13 @@
       "id": "wall-south-1",
       "modelId": "timber-room-wall-low",
       "x": 0.64,
-      "z": 10.36
+      "z": 7.8
     },
     {
       "id": "wall-north-2",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 1.92,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-north-3",
@@ -267,27 +198,27 @@
     },
     {
       "id": "wall-north-4",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 4.48,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-south-4",
       "modelId": "timber-room-wall-low",
       "x": 4.48,
-      "z": 10.36
+      "z": 7.8
     },
     {
       "id": "wall-north-5",
-      "modelId": "timber-room-wall",
+      "modelId": "timber-room-window-wall",
       "x": 5.76,
-      "z": -0.1
+      "z": -0.12
     },
     {
       "id": "wall-south-5",
       "modelId": "timber-room-wall-low",
       "x": 5.76,
-      "z": 10.36
+      "z": 7.8
     },
     {
       "id": "wall-north-6",
@@ -299,31 +230,7 @@
       "id": "wall-south-6",
       "modelId": "timber-room-wall-low",
       "x": 7.04,
-      "z": 10.36
-    },
-    {
-      "id": "wall-north-7",
-      "modelId": "timber-room-wall",
-      "x": 8.32,
-      "z": -0.1
-    },
-    {
-      "id": "wall-south-7",
-      "modelId": "timber-room-wall-low",
-      "x": 8.32,
-      "z": 10.36
-    },
-    {
-      "id": "wall-north-8",
-      "modelId": "timber-room-window-wall",
-      "x": 9.6,
-      "z": -0.12
-    },
-    {
-      "id": "wall-south-8",
-      "modelId": "timber-room-wall-low",
-      "x": 9.6,
-      "z": 10.36
+      "z": 7.8
     },
     {
       "id": "wall-west-1",
@@ -335,7 +242,7 @@
     {
       "id": "wall-east-1",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 0.64
     },
@@ -349,7 +256,7 @@
     {
       "id": "wall-east-2",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 1.92
     },
@@ -363,35 +270,35 @@
     {
       "id": "wall-east-3",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 3.2
     },
     {
       "id": "wall-west-4",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
       "yaw": 90,
       "z": 4.48
     },
     {
       "id": "wall-east-4",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 4.48
     },
     {
       "id": "wall-west-5",
-      "modelId": "timber-room-window-wall",
-      "x": -0.12,
+      "modelId": "timber-room-wall",
+      "x": -0.1,
       "yaw": 90,
       "z": 5.76
     },
     {
       "id": "wall-east-5",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 5.76
     },
@@ -405,37 +312,9 @@
     {
       "id": "wall-east-6",
       "modelId": "timber-room-wall-low",
-      "x": 10.36,
+      "x": 7.8,
       "yaw": 90,
       "z": 7.04
-    },
-    {
-      "id": "wall-west-7",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
-      "yaw": 90,
-      "z": 8.32
-    },
-    {
-      "id": "wall-east-7",
-      "modelId": "timber-room-wall-low",
-      "x": 10.36,
-      "yaw": 90,
-      "z": 8.32
-    },
-    {
-      "id": "wall-west-8",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
-      "yaw": 90,
-      "z": 9.6
-    },
-    {
-      "id": "wall-east-8",
-      "modelId": "timber-room-wall-low",
-      "x": 10.36,
-      "yaw": 90,
-      "z": 9.6
     },
     {
       "id": "post-north-west",
@@ -446,41 +325,41 @@
     {
       "id": "post-north-east",
       "modelId": "timber-room-post",
-      "x": 10.38,
+      "x": 7.82,
       "z": -0.14
     },
     {
       "id": "post-south-west",
       "modelId": "timber-room-post",
       "x": -0.14,
-      "z": 10.38
+      "z": 7.82
     },
     {
       "id": "post-south-east",
       "modelId": "timber-room-post-low",
-      "x": 10.38,
-      "z": 10.38
+      "x": 7.82,
+      "z": 7.82
     },
     {
       "id": "post-door-1",
       "modelId": "timber-room-post-low",
       "x": 1.28,
-      "z": 10.38
+      "z": 7.82
     },
     {
       "id": "post-door-2",
       "modelId": "timber-room-post-low",
       "x": 3.84,
-      "z": 10.38
+      "z": 7.82
     }
   ],
   "size": {
-    "depth": 10.24,
-    "width": 10.24
+    "depth": 7.68,
+    "width": 7.68
   },
   "spawn": {
     "facing": 0,
-    "x": 2.88,
-    "z": 4.32
+    "x": 2.7,
+    "z": 4.4
   }
 }

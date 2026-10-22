@@ -18,7 +18,7 @@ import { GamePanels } from './panels';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
 import { screenOccluders, viewportPoint } from './occluders';
-import { element, setHidden } from './dom';
+import { element, prefersReducedMotion, setHidden } from './dom';
 
 /**
  * Composition root: canvas, DOM overlays, controller, session, and every browser-host concern.
@@ -145,12 +145,14 @@ export class AppShell {
     // controller falls back to the no-op surface — so the blocking notice below is the only thing
     // the player sees, instead of a WebGL error thrown from a constructor.
     const registry = bundledModelRegistry();
-    this.scene = capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect()) : undefined;
+    const reducedMotion = prefersReducedMotion();
+    this.scene =
+      capabilities.hasWebGL && capabilities.isDesktop ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect(), reducedMotion) : undefined;
     this.splash =
       this.scene === undefined
         ? undefined
         : new SplashDirector(this.scene, registry, canvasWidthMeasurer(), {
-            reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+            reducedMotion,
             attached: () => this.controller.connectionState === 'attached',
           });
 

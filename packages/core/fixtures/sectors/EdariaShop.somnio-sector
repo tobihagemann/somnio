@@ -1,20 +1,4 @@
 {
-  "blockers": [
-    {
-      "depth": 0.6,
-      "id": "blocker-2",
-      "width": 0.12,
-      "x": 1.48,
-      "z": 4.52
-    },
-    {
-      "depth": 0.6,
-      "id": "blocker-3",
-      "width": 0.12,
-      "x": 3.52,
-      "z": 4.52
-    }
-  ],
   "brightness": 100,
   "doors": [
     {
@@ -48,138 +32,115 @@
       "id": "goods-shelf-1",
       "modelId": "goods-shelf",
       "x": 0.64,
-      "z": 0.315
+      "z": 0.165
     },
     {
       "id": "goods-shelf-2",
       "modelId": "goods-shelf",
-      "x": 1.6,
-      "z": 0.315
+      "x": 4.48,
+      "z": 0.165
     },
     {
       "id": "goods-shelf-3",
       "modelId": "goods-shelf",
+      "x": 0.165,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-2",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 0.7
+    },
+    {
+      "id": "bench-1",
+      "modelId": "bench",
+      "x": 0.19,
+      "yaw": 90,
+      "z": 2.95
+    },
+    {
+      "elevation": 0.7,
+      "id": "sword-shield-display-3",
+      "modelId": "sword-shield-display",
+      "x": 0.073,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "elevation": 0.7,
+      "id": "sword-shield-display-1",
+      "modelId": "sword-shield-display",
+      "x": 1.92,
+      "z": 0.073
+    },
+    {
+      "elevation": 0.7,
+      "id": "sword-shield-display-2",
+      "modelId": "sword-shield-display",
+      "x": 3.2,
+      "z": 0.073
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
       "x": 2.56,
-      "z": 0.315
-    },
-    {
-      "id": "goods-shelf-4",
-      "modelId": "goods-shelf",
-      "x": 3.52,
-      "z": 0.315
-    },
-    {
-      "id": "goods-shelf-5",
-      "modelId": "goods-shelf",
-      "x": 4.48,
-      "z": 0.315
-    },
-    {
-      "id": "goods-shelf-6",
-      "modelId": "goods-shelf",
-      "x": 0.28,
-      "yaw": 90,
-      "z": 1.315
-    },
-    {
-      "id": "goods-shelf-7",
-      "modelId": "goods-shelf",
-      "x": 0.28,
-      "yaw": 90,
-      "z": 2.515
-    },
-    {
-      "id": "cloth-bolts-1",
-      "modelId": "cloth-bolts",
-      "x": 0.36,
-      "z": 3.725
-    },
-    {
-      "id": "barrel-1",
-      "modelId": "barrel",
-      "x": 0.58,
-      "yaw": 90,
-      "z": 4.5
+      "z": 0.133
     },
     {
       "id": "counter-1",
       "modelId": "counter",
-      "x": 1.64,
+      "x": 1.68,
       "z": 2.54
     },
     {
       "id": "counter-2",
       "modelId": "counter",
-      "x": 2.52,
+      "x": 2.56,
       "z": 2.54
     },
     {
       "id": "counter-3",
       "modelId": "counter",
-      "x": 3.4,
+      "x": 3.44,
       "z": 2.54
     },
     {
       "elevation": 0.432,
-      "id": "candle-1",
-      "modelId": "candle",
-      "x": 3.7,
-      "z": 2.435
-    },
-    {
-      "id": "crate-stack-1",
-      "modelId": "crate-stack",
-      "x": 4.54,
-      "z": 1.11
-    },
-    {
-      "id": "barrel-stack-1",
-      "modelId": "barrel-stack",
-      "x": 4.64,
-      "z": 1.985
-    },
-    {
-      "id": "fish-barrel-1",
-      "modelId": "fish-barrel",
-      "x": 4.76,
-      "z": 2.65
+      "id": "lantern-1",
+      "modelId": "lantern",
+      "x": 3.5,
+      "z": 2.54
     },
     {
       "id": "chest-1",
       "modelId": "chest",
-      "x": 4.68,
+      "x": 0.31,
+      "yaw": 90,
+      "z": 4
+    },
+    {
+      "id": "crate-stack-1",
+      "modelId": "crate-stack",
+      "x": 4.55,
       "yaw": 270,
-      "z": 3.395
-    },
-    {
-      "id": "flour-sacks-1",
-      "modelId": "flour-sacks",
-      "x": 4.88,
-      "z": 3.985
-    },
-    {
-      "id": "berry-basket-1",
-      "modelId": "berry-basket",
-      "x": 4.84,
-      "z": 4.5
-    },
-    {
-      "id": "apple-crate-1",
-      "modelId": "apple-crate",
-      "x": 4,
-      "z": 4.475
-    },
-    {
-      "id": "rug-1",
-      "modelId": "rug",
-      "x": 2.56,
-      "z": 3.65
+      "z": 4.55
     },
     {
       "id": "door-1",
-      "modelId": "door",
+      "modelId": "timber-room-threshold",
       "x": 2.56,
-      "z": 5.025
+      "z": 5.24
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 2.56,
+      "z": 4.37
     },
     {
       "id": "wall-north-1",
@@ -195,9 +156,9 @@
     },
     {
       "id": "wall-north-2",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 1.92,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-north-3",
@@ -207,9 +168,9 @@
     },
     {
       "id": "wall-north-4",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 4.48,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-south-4",

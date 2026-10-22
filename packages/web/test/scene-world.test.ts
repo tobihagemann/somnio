@@ -4,7 +4,8 @@ import { WorldScene, configureWorldRenderer, watchViewport } from '@/scene/world
 import { HttpModelAssets, prototypeMeshesOf } from '@/scene/modelAssets';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { ORTHO_RIG, cameraPosition, scaleForZoomFactor } from '@/scene/cameraRig';
-import { SUN_SHADOW, sunState } from '@/scene/dayNightSun';
+import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
+import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { rasterizeGround } from '@/scene/groundField';
@@ -25,6 +26,7 @@ import { paintBubbles } from '@/scene/bubbleLayer';
 import type { PlacedBubble } from '@/scene/bubbleLayer';
 import { tailTip } from '@/scene/bubbleLayout';
 import type { ScreenPoint } from '@/scene/bubbleLayout';
+import { parseModelRegistry } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import type { SectorView, SpeechKind } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
@@ -60,7 +62,7 @@ function resolvingAssets(): ModelAssets {
 }
 
 function makeScene(assets: ModelAssets = emptyAssets(), now?: () => number, rasterizer?: GroundRasterizer): WorldScene {
-  return new WorldScene(assets, TEST_REGISTRY, 1, now, rasterizer);
+  return new WorldScene(assets, TEST_REGISTRY, 1, false, now, rasterizer);
 }
 
 /** A rasterizer that holds every field asked of it until the test releases it, as a worker would answer later. */
@@ -789,14 +791,13 @@ describe('the world clock', () => {
     expect(scene.scene.background).toEqual(linearColor(interior.backdropColor));
   });
 
-  /** One sky-and-ground fill keyed to the clock, and the backdrop as the scene's background rather than a mesh. */
-  it('fills with the hemisphere alone and paints the backdrop by the clock', () => {
+  /** One sky-and-ground fill keyed to the clock, beside the sun and the rooms' fixed pool and door light. The backdrop is the scene's background rather than a mesh. */
+  it('fills with the hemisphere and paints the backdrop by the clock', () => {
     let nowMs = 0;
     const scene = makeScene(emptyAssets(), () => nowMs);
     scene.addSector(sector());
 
-    const lights = scene.scene.children.filter((child) => (child as THREE.Light).isLight);
-    expect(lights.map((light) => light.type).sort()).toEqual(['DirectionalLight', 'HemisphereLight']);
+    expect(lightTypes(scene)).toEqual(FIXED_LIGHTS);
     expect(scene.scene.children.some((child) => (child as THREE.Mesh).isMesh)).toBe(false);
 
     scene.setClock(at(12));
@@ -805,6 +806,257 @@ describe('the world clock', () => {
     scene.tick(0.016);
     expect(scene.scene.background).toEqual(linearColor(sunState(22, undefined).backdropColor));
     expect(scene.scene.background).not.toEqual(noon);
+  });
+});
+
+/** The scene's lights, which never change in number or kind: a change would compile every program again. */
+const FIXED_LIGHTS = ['DirectionalLight', 'HemisphereLight', ...Array<string>(PROP_LIGHT_POOL_SIZE).fill('PointLight'), 'SpotLight'].sort();
+
+function lightTypes(scene: WorldScene): string[] {
+  return scene.scene.children
+    .filter((child) => (child as THREE.Light).isLight)
+    .map((light) => light.type)
+    .sort();
+}
+
+describe('room lights', () => {
+  const prop = (stem: string) => ({ stem, expectedClips: [] });
+  /** A candle, a lamp, and a torch, and a threshold whose door opens into the room it stands in. */
+  const registry = parseModelRegistry({
+    characterModels: [{ id: 'hero', model: { stem: 'Hero', expectedClips: ['Idle'] } }],
+    playerModel: 'hero',
+    objectModels: [
+      { id: 'candle', model: prop('Candle'), footprint: { width: 0.2, depth: 0.2 }, colliders: [], light: { x: 0.05, y: 0.4, z: 0, kind: 'candle' } },
+      { id: 'lamp', model: prop('Lamp'), footprint: { width: 0.4, depth: 0.4 }, light: { x: 0, y: 0.9, z: 0, kind: 'lamp' } },
+      { id: 'torch', model: prop('Torch'), footprint: { width: 0.2, depth: 0.3 }, colliders: [], light: { x: 0, y: 0.4, z: 0.1, kind: 'torch' } },
+      {
+        id: 'threshold',
+        model: prop('Threshold'),
+        footprint: { width: 2.28, depth: 0.24 },
+        colliders: [],
+        doors: [{ id: 'main', x: 0, z: -0.12, facing: 180, width: 2 }],
+      },
+    ],
+  });
+
+  function litScene(options: { assets?: ModelAssets; now?: () => number; reducedMotion?: boolean } = {}): WorldScene {
+    return new WorldScene(options.assets ?? emptyAssets(), registry, 1, options.reducedMotion ?? false, options.now);
+  }
+
+  /** A 10 m room lit by a candle, a lamp, and a torch, whose door gap is on the south wall at x 5. */
+  function room(name: string, overrides: Partial<SectorView> = {}): SectorView {
+    return interiorSector(name, {
+      placements: [
+        placement('candle-1', 'candle', { x: 2, z: 2 }),
+        placement('lamp-1', 'lamp', { x: 5, z: 3 }),
+        placement('torch-1', 'torch', { x: 8, z: 0.15 }),
+        placement('door-1', 'threshold', { x: 5, z: 10.12 }),
+      ],
+      doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaSquare', door: 'to-room' } }],
+      ...overrides,
+    });
+  }
+
+  function pool(scene: WorldScene): THREE.PointLight[] {
+    return scene.scene.children.filter((child): child is THREE.PointLight => (child as THREE.PointLight).isPointLight === true);
+  }
+
+  function lit(scene: WorldScene): THREE.PointLight[] {
+    return pool(scene).filter((light) => light.intensity > 0);
+  }
+
+  function spill(scene: WorldScene): THREE.SpotLight {
+    return scene.scene.getObjectByProperty('isSpotLight', true) as THREE.SpotLight;
+  }
+
+  function halos(scene: WorldScene): THREE.Sprite[] {
+    const found: THREE.Sprite[] = [];
+    scene.scene.traverse((object) => {
+      if ((object as THREE.Sprite).isSprite) found.push(object as THREE.Sprite);
+    });
+    return found;
+  }
+
+  it('keeps the same lights outdoors and in every room', () => {
+    const scene = litScene();
+    scene.addSector(sector({ placements: [placement('candle-1', 'candle')] }));
+    expect(lightTypes(scene)).toEqual(FIXED_LIGHTS);
+    for (const name of ['EdariaInn', 'EdariaShop']) {
+      scene.enterSpace(world(name));
+      scene.addSector(room(name));
+      scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+      expect(lightTypes(scene)).toEqual(FIXED_LIGHTS);
+    }
+  });
+
+  it('lights every flame of a room and draws its halo, and leaves a flame outdoors unlit with none', () => {
+    const outdoors = litScene();
+    outdoors.addSector(sector({ placements: [placement('candle-1', 'candle'), placement('lamp-1', 'lamp', { x: 8 })] }));
+    outdoors.tick(0.016);
+    expect(halos(outdoors)).toEqual([]);
+    expect(lit(outdoors)).toEqual([]);
+
+    const inside = litScene({ reducedMotion: true });
+    inside.addSector(room('EdariaInn'));
+    expect(halos(inside)).toHaveLength(3);
+    expect(lit(inside).map((light) => light.intensity)).toEqual([
+      PROP_LIGHT_PRESETS.candle.intensity,
+      PROP_LIGHT_PRESETS.lamp.intensity,
+      PROP_LIGHT_PRESETS.torch.intensity,
+    ]);
+    const lamp = inside.placementNode('EdariaInn', 'lamp-1')!;
+    expect(lit(inside).some((light) => light.position.distanceTo(lamp.localToWorld(new THREE.Vector3(0, 0.9, 0))) < 1e-9)).toBe(true);
+  });
+
+  it('flickers its flames, and holds them steady for reduced motion', () => {
+    const intensities = (reducedMotion: boolean): number[] => {
+      const scene = litScene({ reducedMotion });
+      scene.addSector(room('EdariaInn'));
+      return [0.2, 0.2, 0.2].map((dt) => {
+        scene.tick(dt);
+        return lit(scene)[0]!.intensity;
+      });
+    };
+    expect(new Set(intensities(false)).size).toBe(3);
+    expect(intensities(true)).toEqual(Array<number>(3).fill(PROP_LIGHT_PRESETS.candle.intensity));
+  });
+
+  it('flickers each flame on a beat of its own', () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn', { placements: [placement('candle-1', 'candle', { x: 2, z: 5 }), placement('candle-2', 'candle', { x: 2, z: 5 })] }));
+    scene.tick(0.2);
+    const [first, second] = lit(scene).map((light) => light.intensity);
+    expect(first).not.toBe(second);
+  });
+
+  it('keeps the halo of a placement drawn as a placeholder once its model resolves', async () => {
+    const assets = emptyAssets();
+    const scene = litScene({ assets });
+    scene.addSector(room('EdariaInn'));
+    const halo = halos(scene).find((sprite) => sprite.parent === scene.placementNode('EdariaInn', 'lamp-1'))!;
+
+    const warm = resolvingAssets();
+    assets.object = (id) => warm.object(id);
+    await scene.prewarm();
+
+    expect(scene._placeholderObjectCount()).toBe(0);
+    expect(halo.parent).toBe(scene.placementNode('EdariaInn', 'lamp-1'));
+  });
+
+  it("takes a moved lamp's halo along, and its pool on the next tick", () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn'));
+    const lamp = scene.placementNode('EdariaInn', 'lamp-1')!;
+    const halo = halos(scene).find((sprite) => sprite.parent === lamp)!;
+
+    lamp.position.set(7, 0, 6);
+    expect(halo.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(7, 0.9, 6));
+    scene.tick(0.016);
+    expect(lit(scene).some((light) => light.position.equals(new THREE.Vector3(7, 0.9, 6)))).toBe(true);
+  });
+
+  it('draws every halo with one material, which leaving a room for another does not free', () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn'));
+    const material = halos(scene)[0]!.material;
+    const dispose = vi.spyOn(material, 'dispose');
+    expect(new Set(halos(scene).map((halo) => halo.material))).toEqual(new Set([material]));
+
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    scene.enterSpace(world());
+    scene.addSector(sector());
+    scene.placeEntity(player());
+    scene.enterSpace(world('EdariaShop'));
+    scene.addSector(room('EdariaShop'));
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(halos(scene).every((halo) => halo.material === material)).toBe(true);
+  });
+
+  it('lets the light of the hour in through the door, and draws its shadow only in a room', () => {
+    const scene = litScene({ now: () => 0 });
+    // A door outdoors resolves as well as a room's, and still lets no light in.
+    scene.addSector(
+      sector({
+        placements: [placement('door-1', 'threshold', { x: 5, z: 10 })],
+        doors: [{ id: 'to-room', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaInn', door: 'exit' } }],
+      }),
+    );
+    scene.setClock(12 * 3600);
+    expect(spill(scene).intensity).toBe(0);
+    expect(spill(scene).shadow.autoUpdate).toBe(false);
+    // Drawn once all the same, so every lit material has its map to bind. Without it a scene opening outdoors draws nothing lit.
+    expect(spill(scene).shadow.needsUpdate).toBe(true);
+
+    scene.enterSpace(world('EdariaInn'));
+    scene.addSector(room('EdariaInn'));
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    expect(spill(scene).intensity).toBe(doorLightState(12).intensity);
+    expect(spill(scene).color).toEqual(linearColor(doorLightState(12).color));
+    expect(spill(scene).shadow.autoUpdate).toBe(true);
+    // Lifted off the surfaces it grazes, so they do not self-shadow into stripes.
+    expect(spill(scene).shadow.normalBias).toBeGreaterThan(0);
+    // From outside the gap and up, down onto the floor inside it.
+    expect(spill(scene).position).toEqual(new THREE.Vector3(5, 2.6, 12.4));
+    expect(spill(scene).target.position).toEqual(new THREE.Vector3(5, 0, 8.4));
+
+    scene.setClock(0);
+    expect(spill(scene).intensity).toBe(doorLightState(0).intensity);
+  });
+
+  it('aims the light through a door on the east wall west into the room', () => {
+    const scene = litScene();
+    scene.addSector(
+      room('EdariaInn', {
+        placements: [placement('door-1', 'threshold', { x: 10.12, z: 5, yaw: 90 })],
+      }),
+    );
+    const { position, target } = spill(scene);
+    expect([position.x, position.y, position.z]).toEqual([expect.closeTo(12.4, 9), 2.6, expect.closeTo(5, 9)]);
+    expect([target.position.x, target.position.y, target.position.z]).toEqual([expect.closeTo(8.4, 9), 0, expect.closeTo(5, 9)]);
+  });
+
+  it('leaves the door dark in a room with no door that resolves, whatever room came before', () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn'));
+    expect(spill(scene).intensity).toBeGreaterThan(0);
+
+    scene.removeSector('EdariaInn');
+    scene.addSector(room('EdariaInn', { doors: [] }));
+    expect(spill(scene).intensity).toBe(0);
+    expect(spill(scene).shadow.autoUpdate).toBe(false);
+
+    scene.addSector(room('EdariaInn', { doors: [{ id: 'exit', placement: 'door-1', anchor: 'side', target: { sector: 'EdariaSquare', door: 'to-room' } }] }));
+    expect(spill(scene).intensity).toBe(0);
+  });
+
+  it('lights a room drawn with no swap at once, and puts every light out when the splash comes back', () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn'));
+    expect(lit(scene)).toHaveLength(3);
+
+    scene.showSplash();
+    expect(lit(scene)).toEqual([]);
+    expect(spill(scene).intensity).toBe(0);
+    scene.addSector(sector());
+    scene.tick(0.016);
+    expect(lit(scene)).toEqual([]);
+  });
+
+  it("keeps the held room's flames lit until the reveal, and lights the next room's with it", () => {
+    const scene = litScene();
+    scene.addSector(room('EdariaInn', { placements: room('EdariaInn').placements.filter((each) => each.id === 'candle-1' || each.id === 'door-1') }));
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    expect(lit(scene)).toHaveLength(1);
+
+    scene.enterSpace(world('EdariaShop'));
+    scene.addSector(room('EdariaShop'));
+    scene.tick(0.016);
+    expect(lit(scene)).toHaveLength(1);
+
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    expect(lit(scene)).toHaveLength(3);
   });
 });
 
@@ -2418,7 +2670,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
 
   /** The player at (10, 10), and a peer `x` metres along. */
   function sceneWithPeer(x: number, aspect = 1, now?: () => number): WorldScene {
-    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect, now);
+    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect, false, now);
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x, z: 10 } }));
     return scene;
@@ -2580,7 +2832,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
   describe('in a room', () => {
     /** The player in the middle of a 10 x 10 m room, zoomed by `zoom`, in a window `aspect` times as wide as it is tall. */
     function roomScene(zoom: number, aspect = 1): WorldScene {
-      const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect);
+      const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, aspect, false);
       const entered = world('Hall');
       scene.enterSpace(entered);
       const room = interiorSector('Hall');

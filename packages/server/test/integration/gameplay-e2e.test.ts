@@ -1,5 +1,19 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, WORLD_TIME_RATE, dialogLine, dialogSteps, distance, headingFromCardinal, resolveDoor } from '@somnio/core';
+import {
+  OUTDOOR_SPACE_ID,
+  SOMNIO_CONSTANTS,
+  SPEECH,
+  WORLD_TIME_RATE,
+  buildSpaceCollision,
+  dialogLine,
+  dialogSteps,
+  distance,
+  doorContains,
+  headingFromCardinal,
+  isLegalMove,
+  npcBodies,
+  resolveDoor,
+} from '@somnio/core';
 import type { Point } from '@somnio/core';
 import { PostgresCharacterRepository, PostgresWorldClockRepository, STARTER_SECTOR } from '@somnio/data';
 import { CLOSE_GOING_AWAY } from '../../src/connection/connectionActor.ts';
@@ -122,20 +136,30 @@ describe('gameplay end to end', () => {
     await stayer.client.close();
   });
 
-  it('a move across the room and a door used from afar are both refused', async () => {
-    const cheat = await joinFreshPlayer(server.url, 'cheat');
-    const spawn = selfPosition(cheat);
-    // The far corner is more than the 7.5 m a full movement allowance covers, whatever stands in between.
-    const corner = { x: librarySector.size.width - SOMNIO_CONSTANTS.playerRadius, z: librarySector.size.depth - SOMNIO_CONSTANTS.playerRadius };
-    expect(distance(spawn, corner)).toBeGreaterThan(7.5);
-    cheat.client.send(frame({ tag: 'move', payload: { ...corner, facing: 0, gait: 'run' } }));
-    cheat.client.send(frame({ tag: 'useDoor', payload: { sector: STARTER_SECTOR, doorId: 'exit' } }));
-    const answers = await drainFrames(cheat.client);
+  /**
+   * On the square's main street, because no furnished room has a legal straight run longer than the
+   * 7.5 m a full movement allowance covers. So the move is refused for its length alone, and the
+   * townhall door is used from outside its trigger.
+   */
+  it('a move further than the allowance and a door used from afar are both refused', async () => {
+    const outdoors = server.server.worldRouter.space(OUTDOOR_SPACE_ID)!;
+    const space = world.spaces.get(OUTDOOR_SPACE_ID)!;
+    const start = standableNear(outdoors, { x: 22.5, z: 19 }, 1);
+    const target = standableNear(outdoors, { x: 22.5, z: 9.3 }, 1);
+    expect(distance(start, target)).toBeGreaterThan(7.5);
+    expect(isLegalMove(buildSpaceCollision(space, world.registry), start, target, SOMNIO_CONSTANTS.playerRadius, npcBodies(space))).toBe(true);
+    expect(doorContains(townhallDoor, start, SOMNIO_CONSTANTS.doorUseSlack)).toBe(false);
+    const cheat = await joinFreshPlayerAt(server, 'cheat', { space: OUTDOOR_SPACE_ID, position: start });
+    expect(selfPosition(cheat)).toEqual(start);
+    cheat.client.send(frame({ tag: 'move', payload: { ...target, facing: 0, gait: 'run' } }));
+    cheat.client.send(frame({ tag: 'useDoor', payload: { sector: 'EdariaSquare', doorId: 'to-edarialibrary' } }));
+    // Nightmares moving in the Autumn Wood next door are in view too, so only the answers to the two requests are read.
+    const answers = (await drainFrames(cheat.client)).filter((message) => message.tag === 'correction' || message.tag === 'doorRefused');
     expect(answers).toEqual([
-      { tag: 'correction', payload: spawn },
-      { tag: 'doorRefused', payload: { sector: STARTER_SECTOR, doorId: 'exit' } },
+      { tag: 'correction', payload: start },
+      { tag: 'doorRefused', payload: { sector: 'EdariaSquare', doorId: 'to-edarialibrary' } },
     ]);
-    expect(library().snapshotForPlayer(cheat.entityId)?.character.position).toEqual(spawn);
+    expect(outdoors.snapshotForPlayer(cheat.entityId)?.character.position).toEqual(start);
     await cheat.client.close();
   });
 
@@ -156,14 +180,19 @@ describe('gameplay end to end', () => {
       },
     });
     expect((await talker.client.until('serverSay')).target).toEqual(line(0));
-    const afar = await joinFreshPlayer(server.url, 'afar');
-    expect(distance(selfPosition(afar), libus)).toBeGreaterThan(SOMNIO_CONSTANTS.npcInteractionRadius);
+    const corners = [0, librarySector.size.width].flatMap((x) => [0, librarySector.size.depth].map((z) => ({ x, z })));
+    const furthest = corners.reduce((best, corner) => (distance(corner, libus) > distance(best, libus) ? corner : best));
+    const listening = standableNear(library(), furthest, 1);
+    const afar = await joinFreshPlayerAt(server, 'afar', { space: STARTER_SECTOR, position: listening });
+    expect(selfPosition(afar)).toEqual(listening);
+    expect(distance(listening, libus)).toBeGreaterThan(SPEECH.say.clearMetres);
+    expect(distance(listening, libus)).toBeLessThan(SPEECH.say.reachMetres);
     afar.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
     // The drain is answered behind the `talk`, so the one from afar is handled before the one from beside.
     expect(await drainFrames(afar.client)).toEqual([]);
     talker.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
     expect((await talker.client.until('serverSay')).target).toEqual(line(1));
-    // The spawn is a little past the clear radius of Libus's lines, so the one from afar hears the line crumbled, and nothing else since the `talk`.
+    // The one from afar stands past the clear radius of Libus's lines, so they hear the line crumbled, and nothing else since the `talk`.
     const overheard = await drainFrames(afar.client);
     expect(overheard).toMatchObject([{ tag: 'serverSay', payload: { entityId: LIBUS, kind: 'say' } }]);
     const [said] = overheard;

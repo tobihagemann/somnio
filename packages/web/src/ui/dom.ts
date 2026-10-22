@@ -232,3 +232,8 @@ export function toggleHidden(node: HTMLElement): void {
 export function replaceChildren(node: HTMLElement, children: readonly Node[]): void {
   node.replaceChildren(...children);
 }
+
+/** Whether the player asked their system for reduced motion. */
+export function prefersReducedMotion(): boolean {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}

@@ -16,18 +16,19 @@ import {
   objectModel,
   paddedRasterRect,
   relativeDirection,
+  resolveDoor,
   sectorAt,
   sectorOrigin,
   sectorRect,
 } from '@somnio/core';
-import type { Heading, ModelRegistry, Point, Rect, Size, SpaceCollision } from '@somnio/core';
+import type { Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision } from '@somnio/core';
 import { CONDITIONS } from '@somnio/protocol';
 import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { SUN_SHADOW, sunState } from './dayNightSun';
+import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
 import { GROUND_MATERIAL_IDS, GROUND_RECIPES, groundFragmentChunks, groundMaterialChannel } from './groundMaterials';
@@ -43,6 +44,7 @@ import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
 import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
 import type { RasterArt } from './overlayArt';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
+import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS, flameFlicker, flamePhase } from './propLights';
 import type { ModelAssets, PrototypeMesh } from './modelAssets';
 import { yawStep } from './yawSlew';
 
@@ -130,6 +132,16 @@ interface PlacedModel {
   node: THREE.Object3D;
   placement: Placement;
   isPlaceholder: boolean;
+  /** The flame it carries in a room; `undefined` for a model with none, and for every placement outdoors. */
+  emitter: Emitter | undefined;
+}
+
+/** A flame a room's placement carries. Its halo hangs on the placement's node, where the flame burns, so it moves and turns with it. */
+interface Emitter {
+  kind: LightKind;
+  halo: THREE.Sprite;
+  /** Where in its flicker it is, spread over the room's flames when the room is added. */
+  phase: number;
 }
 
 interface DrawnSector {
@@ -243,6 +255,27 @@ export class WorldScene implements WorldRenderSurface {
   private readonly sun = new THREE.DirectionalLight(0xffffff, 1);
   /** The sky above and the ground's bounce below, so no side of anything drops to black. */
   private readonly fill = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
+  /**
+   * The pools of a room's flames: a fixed set, so the scene's light count, and with it every shader
+   * program, never changes from room to room. The ones without a flame to light stand at 0.
+   */
+  private readonly propLights = Array.from(
+    { length: PROP_LIGHT_POOL_SIZE },
+    () => new THREE.PointLight(PROP_LIGHT_COLOR, 0, PROP_LIGHT_DISTANCE, PROP_LIGHT_DECAY),
+  );
+  /** The light falling in through a room's door, by the clock. */
+  private readonly doorSpill = new THREE.SpotLight(0xffffff, 0, DOOR_SPILL.distance, DOOR_SPILL.angle, DOOR_SPILL.penumbra, DOOR_SPILL.decay);
+  /**
+   * Every halo is drawn with this one material, made with the first, and never freed: leaving a room
+   * releases no program that the next one compiles again.
+   */
+  private haloMaterial: THREE.SpriteMaterial | undefined;
+  /** The flames the pool lights, which during a held swap are still the outgoing space's. */
+  private litEmitters: Emitter[] = [];
+  /** Whether the space on screen has a door its light falls in through. */
+  private litDoor = false;
+  /** Holds the flames steady. */
+  private readonly reducedMotion: boolean;
   /** Retained so `repositionSun` can re-anchor the light without recomputing the day/night state. */
   private readonly sunDirection = new THREE.Vector3(0, 1, 0);
   /** Holds every sector group and entity of the space on screen. */
@@ -310,21 +343,24 @@ export class WorldScene implements WorldRenderSurface {
   constructor(
     assets: ModelAssets,
     registry: ModelRegistry,
-    aspect = 1,
+    aspect: number,
+    reducedMotion: boolean,
     now: () => number = () => performance.now(),
     groundRasterizer: GroundRasterizer = defaultGroundRasterizer(),
   ) {
     this.assets = assets;
     this.registry = registry;
+    this.reducedMotion = reducedMotion;
     this.now = now;
     this.groundRasterizer = groundRasterizer;
     this.aspect = aspect;
     const bounds = frustumBounds(ORTHO_RIG.defaultScale, aspect);
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
     this.configureSunShadow();
-    // The target's world matrix is what gives a directional light its direction, and an object
-    // outside the graph never gets one updated.
-    this.scene.add(this.sun, this.sun.target, this.fill, this.spaceRoot);
+    this.configureDoorSpill();
+    // The target's world matrix is what gives a directional or a spot light its direction, and an
+    // object outside the graph never gets one updated.
+    this.scene.add(this.sun, this.sun.target, this.fill, ...this.propLights, this.doorSpill, this.doorSpill.target, this.spaceRoot);
     // What shows past the world's edge, tinted with the light by `relight`.
     this.scene.background = new THREE.Color();
     this.relight();
@@ -417,6 +453,9 @@ export class WorldScene implements WorldRenderSurface {
     this.spaceRoot.visible = !hold;
     this.scene.add(this.spaceRoot);
     this.pendingPlayerReveal = hold;
+    // The lights hang on the scene rather than the space root, so they outlive the space and are
+    // given to the new one here. A held space keeps the old one's light until the reveal.
+    if (!hold) this.lightDrawnSpace();
   }
 
   /**
@@ -437,6 +476,7 @@ export class WorldScene implements WorldRenderSurface {
     // Applied in the same frame the new space becomes visible, so the light change and the geometry
     // change land together rather than one flashing ahead of the other.
     this.litBrightness = this.spaceBrightness;
+    this.lightDrawnSpace();
     this.relight();
   }
 
@@ -449,7 +489,9 @@ export class WorldScene implements WorldRenderSurface {
     const origin = sectorOrigin(sector);
     const group = new THREE.Object3D();
     group.position.set(origin.x, 0, origin.z);
-    const placements = sector.placements.map((placement) => this.buildPlacement(placement));
+    const placements = sector.placements.map((placement) => this.buildPlacement(placement, sector.kind));
+    const emitters = placements.flatMap((placed) => placed.emitter ?? []);
+    for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
     group.add(...placements.map((placed) => placed.node));
     this.spaceRoot.add(group);
     this.sectors.set(sector.name, { view: sector, group, placements });
@@ -465,6 +507,7 @@ export class WorldScene implements WorldRenderSurface {
     // relight the still-visible outgoing space, which is the flash the hold exists to prevent.
     if (!this.pendingPlayerReveal) {
       this.litBrightness = sector.brightness;
+      this.lightDrawnSpace();
       this.relight();
     }
   }
@@ -479,6 +522,7 @@ export class WorldScene implements WorldRenderSurface {
     this.grounds.delete(name);
     this.dirtyGrounds.delete(name);
     for (const neighbour of touching) this.dirtyGrounds.add(neighbour);
+    if (!this.pendingPlayerReveal) this.lightDrawnSpace();
   }
 
   /** Whether every drawn sector's ground is painted for its current inputs and its scatter placed, so nothing drawn is still to change. */
@@ -1124,6 +1168,7 @@ export class WorldScene implements WorldRenderSurface {
     const dt = Math.min(deltaTimeSeconds, MAX_TICK_DELTA);
     this.sceneClock += dt;
     this.relight();
+    this.updatePropLights();
 
     for (const [id, state] of this.entityStates) {
       // The simulation's height is discrete, a tread at a time; the rendered one eases after it.
@@ -1350,8 +1395,12 @@ export class WorldScene implements WorldRenderSurface {
     if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
   }
 
-  /** A placement stands at its record's position and yaw; the model's own origin is its ground-footprint centre. */
-  private buildPlacement(placement: Placement): PlacedModel {
+  /**
+   * A placement stands at its record's position and yaw; the model's own origin is its
+   * ground-footprint centre. In a room, a model that carries a flame hangs its halo where the flame
+   * burns. Outdoors it stands unlit.
+   */
+  private buildPlacement(placement: Placement, kind: SectorView['kind']): PlacedModel {
     const rule = objectModel(this.registry, placement.modelId);
     const model = this.assets.object(placement.modelId);
     const node = new THREE.Object3D();
@@ -1359,7 +1408,14 @@ export class WorldScene implements WorldRenderSurface {
     enableShadows(node);
     node.position.set(placement.x, placementElevation(placement, rule), placement.z);
     node.rotation.y = THREE.MathUtils.degToRad(placement.yaw);
-    return { node, placement, isPlaceholder: model === undefined };
+    const light = kind === 'interior' ? rule?.light : undefined;
+    if (light === undefined) return { node, placement, isPlaceholder: model === undefined, emitter: undefined };
+    this.haloMaterial ??= new THREE.SpriteMaterial({ map: flameHaloTexture(), blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const halo = new THREE.Sprite(this.haloMaterial);
+    halo.position.set(light.x, light.y, light.z);
+    halo.scale.setScalar(PROP_LIGHT_PRESETS[light.kind].halo);
+    node.add(halo);
+    return { node, placement, isPlaceholder: model === undefined, emitter: { kind: light.kind, halo, phase: 0 } };
   }
 
   /**
@@ -1372,8 +1428,8 @@ export class WorldScene implements WorldRenderSurface {
         if (!placed.isPlaceholder) continue;
         const model = this.assets.object(placed.placement.modelId);
         if (model === undefined) continue;
-        // The placeholder owns its `BoxGeometry`, so it is disposed rather than just unparented.
-        for (const child of [...placed.node.children]) disposeSubtree(child);
+        // The placeholder owns its `BoxGeometry`, so it is disposed rather than just unparented. The halo stays.
+        for (const child of [...placed.node.children]) if (child !== placed.emitter?.halo) disposeSubtree(child);
         placed.node.add(model);
         enableShadows(model);
         placed.isPlaceholder = false;
@@ -1398,6 +1454,65 @@ export class WorldScene implements WorldRenderSurface {
     shadowCamera.top = SUN_SHADOW.orthographicScale;
     shadowCamera.bottom = -SUN_SHADOW.orthographicScale;
     shadowCamera.updateProjectionMatrix();
+  }
+
+  private configureDoorSpill(): void {
+    this.doorSpill.castShadow = true;
+    this.doorSpill.shadow.mapSize.set(DOOR_SPILL.shadowMapSize, DOOR_SPILL.shadowMapSize);
+    this.doorSpill.shadow.normalBias = DOOR_SPILL.normalBias;
+    // Drawn once even where it stays dark. three.js binds a casting light's shadow map to every lit
+    // material. For a map never drawn it binds a stand-in that spot shadows cannot compare against,
+    // so a scene that opens outdoors would draw nothing lit.
+    this.doorSpill.shadow.needsUpdate = true;
+  }
+
+  /**
+   * Gives the pool to the flames of the space on screen, and aims the door's light through the
+   * first of its doors that resolves. Outdoors, or in a room with no such door, the door's light
+   * stays dark, and its shadow map is not drawn: three.js draws one for every light that casts,
+   * whatever its intensity, unless told not to.
+   */
+  private lightDrawnSpace(): void {
+    const drawn = [...this.sectors.values()];
+    this.litEmitters = drawn.flatMap((sector) => sector.placements.flatMap((placed) => placed.emitter ?? [])).slice(0, PROP_LIGHT_POOL_SIZE);
+    const door = this.spillDoor(drawn.map((sector) => sector.view));
+    this.litDoor = door !== undefined;
+    this.doorSpill.shadow.autoUpdate = this.litDoor;
+    if (door !== undefined) {
+      // The door's facing is the heading an arriving body faces: into the room.
+      const inward = headingRadians(door.facing);
+      const along = { x: Math.sin(inward), z: Math.cos(inward) };
+      this.doorSpill.position.set(door.doorway.x - along.x * DOOR_SPILL.outside, DOOR_SPILL.height, door.doorway.z - along.z * DOOR_SPILL.outside);
+      this.doorSpill.target.position.set(door.doorway.x + along.x * DOOR_SPILL.reach, 0, door.doorway.z + along.z * DOOR_SPILL.reach);
+    }
+    this.updatePropLights();
+  }
+
+  private spillDoor(views: readonly SectorView[]): ResolvedDoor | undefined {
+    for (const view of views) {
+      if (view.kind !== 'interior') continue;
+      for (const door of view.doors) {
+        const resolved = resolveDoor(view, door, this.registry);
+        if (resolved !== undefined) return resolved;
+      }
+    }
+    return undefined;
+  }
+
+  /** Each lit flame's pool stands where its halo is drawn, so a moved lamp takes its light along, and both flicker together. */
+  private updatePropLights(): void {
+    this.propLights.forEach((light, index) => {
+      const emitter = this.litEmitters[index];
+      if (emitter === undefined) {
+        light.intensity = 0;
+        return;
+      }
+      const preset = PROP_LIGHT_PRESETS[emitter.kind];
+      const flicker = this.reducedMotion ? 1 : flameFlicker(this.sceneClock, emitter.phase);
+      emitter.halo.getWorldPosition(light.position);
+      light.intensity = preset.intensity * flicker;
+      emitter.halo.scale.setScalar(preset.halo * flicker);
+    });
   }
 
   /**
@@ -1446,6 +1561,9 @@ export class WorldScene implements WorldRenderSurface {
     this.fill.intensity = state.hemisphereIntensity;
     this.fill.color.setRGB(state.skyColor.r, state.skyColor.g, state.skyColor.b);
     this.fill.groundColor.setRGB(state.groundColor.r, state.groundColor.g, state.groundColor.b);
+    const door = doorLightState(hour);
+    this.doorSpill.intensity = this.litDoor ? door.intensity : 0;
+    this.doorSpill.color.setRGB(door.color.r, door.color.g, door.color.b);
     (this.scene.background as THREE.Color).setRGB(state.backdropColor.r, state.backdropColor.g, state.backdropColor.b);
   }
 
@@ -1569,6 +1687,23 @@ const DOORWAY_VOICE_HEIGHT = 2.2;
  * so a bubble past any of its walls, the low front ones too, clears the top.
  */
 const ROOM_WALL_HEIGHT = 1.728;
+/**
+ * The cone the light through a room's door falls in: shadowed, and narrow enough to make a wedge
+ * through the gap rather than a wash over the low walls. It shines from `outside` metres beyond the
+ * doorway and `height` up, at the floor `reach` metres inside. It shares the sun's `normalBias`, so
+ * the walls it grazes do not self-shadow into stripes either.
+ */
+const DOOR_SPILL = {
+  distance: 7,
+  angle: 0.42,
+  penumbra: 0.75,
+  decay: 1.2,
+  shadowMapSize: 1024,
+  normalBias: SUN_SHADOW.normalBias,
+  outside: 2.4,
+  height: 2.6,
+  reach: 1.6,
+} as const;
 /** The gap on screen, in metres, between a room's wall and a bubble past it. */
 const BEYOND_WALL_GAP = 0.3;
 /** How long the word over a missed entity stays up. */
@@ -1719,6 +1854,24 @@ function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.03;
   return mesh;
+}
+
+function flameHaloTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (context !== null) {
+    const glow = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    glow.addColorStop(0, 'rgba(255, 220, 150, 1)');
+    glow.addColorStop(0.35, 'rgba(255, 170, 80, 0.55)');
+    glow.addColorStop(1, 'rgba(255, 140, 40, 0)');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, 64, 64);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 /** The flat background a sector draws on until its first field arrives: one texel of its own background. */

@@ -5,7 +5,7 @@ import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
-import { element, floating, floatingStack } from '@/ui/dom';
+import { element, floating, floatingStack, prefersReducedMotion } from '@/ui/dom';
 import { AuthoringOverlay, overlayLabels } from './authoringOverlay';
 import type { AuthoringFacingHandle, AuthoringHandleSet } from './authoringOverlay';
 import { candidateSelections, gridPoint, nudgeDelta, screenPoint } from './canvasController';
@@ -137,7 +137,7 @@ export class EditorShell implements EditorCommandTarget {
 
     this.canvas = element('canvas', { attributes: { id: 'somnio-editor-canvas' } });
     this.marqueeNode = element('div', { className: 'editor-marquee hidden' });
-    this.scene = new WorldScene(new HttpModelAssets(this.registry), this.registry, this.aspect());
+    this.scene = new WorldScene(new HttpModelAssets(this.registry), this.registry, this.aspect(), prefersReducedMotion());
     this.scene.scene.add(this.authoringOverlay.root);
     this.camera = new EditorCamera(this.scene.camera, (focus) => this.scene.anchorSunShadow(focus));
 

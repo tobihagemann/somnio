@@ -91,6 +91,9 @@ describe('the written form', () => {
 });
 
 describe('reader validation', () => {
+  /** The x and z of the Arena's first placement, the refuge's north-west floor tile. No other record stands at this point. */
+  const FIRST_PLACEMENT_X = '"x": 8.32,\n      "z": 0.64';
+
   it('rejects invalid JSON', () => {
     expect(() => readSectorFile('not json', 'X')).toThrow(SectorFileError);
   });
@@ -101,14 +104,14 @@ describe('reader validation', () => {
 
   it.each([
     ['a missing required field', '"backgroundMaterialId"', '"background"', /sector\.ground\.backgroundMaterialId/],
-    ['a non-numeric coordinate', '"x": 10.145', '"x": "10.145"', /sector\.placements\[0\]\.x/],
-    ['a coordinate out of range', '"x": 10.145', '"x": 1e9', /exceeds 10000 metres/],
+    ['a non-numeric coordinate', FIRST_PLACEMENT_X, FIRST_PLACEMENT_X.replace('8.32', '"8.32"'), /sector\.placements\[0\]\.x/],
+    ['a coordinate out of range', FIRST_PLACEMENT_X, FIRST_PLACEMENT_X.replace('8.32', '1e9'), /exceeds 10000 metres/],
     ['a size beyond the extent cap', '"width": 10.24', '"width": 600', /exceeds 512 metres/],
     ['an unknown kind', '"kind": "interior"', '"kind": "indoor"', /sector\.kind/],
     ['an origin on an interior', '"kind": "interior"', '"kind": "interior", "origin": { "x": 0, "z": 0 }', /origin: not allowed on an interior sector/],
     ['an interior without brightness', '"brightness": 75,', '', /sector\.brightness/],
-    ['a duplicate record id', '"id": "blocker-2"', '"id": "blocker-1"', /duplicate id "blocker-1"/],
-    ['an id outside the id alphabet', '"id": "blocker-1"', '"id": "Blocker 1"', /lowercase letters, digits, and hyphens/],
+    ['a duplicate record id', '"id": "floor-boards-2"', '"id": "floor-boards-1"', /duplicate id "floor-boards-1"/],
+    ['an id outside the id alphabet', '"id": "bench-1"', '"id": "Bench 1"', /lowercase letters, digits, and hyphens/],
     ['a door on a placement the sector lacks', '"placement": "door-1"', '"placement": "door-9"', /no placement "door-9"/],
     ['an unknown monster kind', '"kind": "ghost"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
     ['a spawn that keeps nothing alive', '"maxAlive": 3', '"maxAlive": 0', /maxAlive: expected 1 to 16/],
@@ -130,7 +133,8 @@ describe('reader validation', () => {
   });
 
   it('normalizes an out-of-range facing rather than rejecting it', () => {
-    const sector = readSectorFile(edited('EdariaLibrary', '"facing": 270', '"facing": 450'), 'EdariaLibrary');
+    const libus = '"facing": 0,\n      "id": "libus"';
+    const sector = readSectorFile(edited('EdariaLibrary', libus, libus.replace('0', '450')), 'EdariaLibrary');
     expect(sector.npcs[0]?.facing).toBe(90);
   });
 });

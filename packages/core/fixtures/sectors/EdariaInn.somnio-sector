@@ -1,27 +1,4 @@
 {
-  "blockers": [
-    {
-      "depth": 0.48,
-      "id": "blocker-1",
-      "width": 5.12,
-      "x": 0,
-      "z": 0
-    },
-    {
-      "depth": 0.12,
-      "id": "blocker-2",
-      "width": 0.6,
-      "x": 4.52,
-      "z": 1.48
-    },
-    {
-      "depth": 0.12,
-      "id": "blocker-3",
-      "width": 0.6,
-      "x": 4.52,
-      "z": 3.52
-    }
-  ],
   "brightness": 100,
   "doors": [
     {
@@ -45,127 +22,256 @@
       "facing": 90,
       "id": "quieta",
       "name": "Quieta",
-      "x": 1.52,
-      "z": 2.56
+      "x": 1.15,
+      "z": 3.86
     }
   ],
   "placements": [
     {
-      "id": "barrel-stack-1",
-      "modelId": "barrel-stack",
-      "x": 0.56,
-      "z": 0.825
-    },
-    {
-      "id": "goods-shelf-1",
-      "modelId": "goods-shelf",
-      "x": 1.52,
-      "z": 0.315
-    },
-    {
-      "id": "counter-1",
-      "modelId": "counter",
-      "x": 2.2,
-      "yaw": 90,
-      "z": 1.73
-    },
-    {
-      "id": "counter-2",
-      "modelId": "counter",
-      "x": 2.2,
-      "yaw": 90,
-      "z": 2.61
-    },
-    {
-      "id": "keg-1",
-      "modelId": "keg",
-      "x": 0.94,
-      "z": 4.19
-    },
-    {
-      "elevation": 0.432,
-      "id": "candle-1",
-      "modelId": "candle",
-      "x": 2.2,
-      "z": 4.12
-    },
-    {
-      "id": "chest-1",
-      "modelId": "chest",
-      "x": 2.14,
-      "z": 0.97
-    },
-    {
-      "id": "bed-1",
-      "modelId": "bed",
-      "x": 3,
-      "yaw": 270,
-      "z": 1.23
-    },
-    {
-      "id": "bed-2",
-      "modelId": "bed",
-      "x": 4.04,
-      "yaw": 270,
-      "z": 1.23
+      "id": "stone-hearth-1",
+      "modelId": "stone-hearth",
+      "x": 2.56,
+      "z": 0.435
     },
     {
       "id": "rug-1",
       "modelId": "rug",
-      "x": 3.84,
-      "yaw": 90,
-      "z": 2.67
-    },
-    {
-      "id": "stool-1",
-      "modelId": "stool",
-      "x": 1,
-      "z": 3.08
-    },
-    {
-      "id": "round-table-1",
-      "modelId": "round-table",
-      "x": 2.36,
-      "z": 4.205
-    },
-    {
-      "id": "stool-2",
-      "modelId": "stool",
-      "x": 3.14,
-      "z": 3.8
-    },
-    {
-      "id": "stool-3",
-      "modelId": "stool",
-      "x": 2.3,
-      "z": 4.8
+      "x": 2.56,
+      "z": 1.5
     },
     {
       "id": "bench-1",
       "modelId": "bench",
-      "x": 3.8,
-      "z": 4.96
+      "x": 2.56,
+      "z": 2.2
     },
     {
-      "id": "barrel-1",
-      "modelId": "barrel",
-      "x": 4.66,
+      "id": "stool-1",
+      "modelId": "stool",
+      "x": 1.6,
+      "z": 1.6
+    },
+    {
+      "id": "stool-2",
+      "modelId": "stool",
+      "x": 3.52,
+      "z": 1.6
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 4.48,
+      "z": 0.133
+    },
+    {
+      "id": "bed-1",
+      "modelId": "bed",
+      "x": 5.2,
       "yaw": 270,
-      "z": 4.26
+      "z": 0.648
+    },
+    {
+      "id": "bed-2",
+      "modelId": "bed",
+      "x": 6.98,
+      "yaw": 270,
+      "z": 0.648
+    },
+    {
+      "id": "stool-3",
+      "modelId": "stool",
+      "x": 6.09,
+      "z": 0.2
     },
     {
       "elevation": 0.216,
+      "id": "candle-1",
+      "modelId": "candle",
+      "x": 6.09,
+      "z": 0.2
+    },
+    {
+      "id": "counter-1",
+      "modelId": "counter",
+      "x": 1.9,
+      "yaw": 90,
+      "z": 3
+    },
+    {
+      "id": "counter-2",
+      "modelId": "counter",
+      "x": 1.9,
+      "yaw": 90,
+      "z": 3.86
+    },
+    {
+      "id": "counter-3",
+      "modelId": "counter",
+      "x": 1.9,
+      "yaw": 90,
+      "z": 4.72
+    },
+    {
+      "elevation": 0.432,
+      "id": "lantern-1",
+      "modelId": "lantern",
+      "x": 1.9,
+      "z": 4.75
+    },
+    {
+      "elevation": 0.432,
+      "id": "mug-1",
+      "modelId": "mug",
+      "x": 1.85,
+      "z": 3.1
+    },
+    {
+      "elevation": 0.432,
+      "id": "mug-2",
+      "modelId": "mug",
+      "x": 1.95,
+      "yaw": 30,
+      "z": 3.6
+    },
+    {
+      "id": "stool-4",
+      "modelId": "stool",
+      "x": 2.5,
+      "z": 3.2
+    },
+    {
+      "id": "stool-5",
+      "modelId": "stool",
+      "x": 2.5,
+      "z": 4.5
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-shelf-1",
+      "modelId": "wall-shelf",
+      "x": 0.108,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-shelf-2",
+      "modelId": "wall-shelf",
+      "x": 0.108,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "elevation": 1.144,
+      "id": "bottles-1",
+      "modelId": "bottles",
+      "x": 0.108,
+      "z": 2.95
+    },
+    {
+      "elevation": 1.144,
+      "id": "bottles-2",
+      "modelId": "bottles",
+      "x": 0.108,
+      "z": 3.4
+    },
+    {
+      "elevation": 1.144,
+      "id": "bottles-3",
+      "modelId": "bottles",
+      "x": 0.108,
+      "z": 4.3
+    },
+    {
+      "elevation": 1.144,
+      "id": "bottles-4",
+      "modelId": "bottles",
+      "x": 0.108,
+      "z": 4.7
+    },
+    {
+      "id": "barrel-stack-1",
+      "modelId": "barrel-stack",
+      "x": 0.215,
+      "yaw": 90,
+      "z": 3.4
+    },
+    {
+      "id": "barrel-stack-2",
+      "modelId": "barrel-stack",
+      "x": 0.215,
+      "yaw": 90,
+      "z": 4.4
+    },
+    {
+      "id": "keg-1",
+      "modelId": "keg",
+      "x": 0.43,
+      "yaw": 90,
+      "z": 6.6
+    },
+    {
+      "id": "long-table-1",
+      "modelId": "long-table",
+      "x": 4.2,
+      "z": 5.8
+    },
+    {
+      "elevation": 0.432,
       "id": "candle-2",
       "modelId": "candle",
-      "x": 3.92,
-      "z": 4.9
+      "x": 4.6,
+      "z": 5.8
+    },
+    {
+      "elevation": 0.432,
+      "id": "mug-3",
+      "modelId": "mug",
+      "x": 3.7,
+      "yaw": 200,
+      "z": 5.65
+    },
+    {
+      "elevation": 0.432,
+      "id": "mug-4",
+      "modelId": "mug",
+      "x": 3.95,
+      "yaw": 60,
+      "z": 6
+    },
+    {
+      "id": "bench-2",
+      "modelId": "bench",
+      "x": 4.4,
+      "z": 5.05
+    },
+    {
+      "id": "bench-3",
+      "modelId": "bench",
+      "x": 4.55,
+      "z": 6.55
+    },
+    {
+      "id": "chest-1",
+      "modelId": "chest",
+      "x": 7.15,
+      "yaw": 180,
+      "z": 7.25
     },
     {
       "id": "door-1",
-      "modelId": "door",
-      "x": 5.025,
+      "modelId": "timber-room-threshold",
+      "x": 7.8,
       "yaw": 90,
-      "z": 2.56
+      "z": 3.84
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 6.93,
+      "yaw": 90,
+      "z": 3.84
     },
     {
       "id": "wall-north-1",
@@ -177,19 +283,19 @@
       "id": "wall-south-1",
       "modelId": "timber-room-wall-low",
       "x": 0.64,
-      "z": 5.24
+      "z": 7.8
     },
     {
       "id": "wall-north-2",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 1.92,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-south-2",
       "modelId": "timber-room-wall-low",
       "x": 1.92,
-      "z": 5.24
+      "z": 7.8
     },
     {
       "id": "wall-north-3",
@@ -201,19 +307,43 @@
       "id": "wall-south-3",
       "modelId": "timber-room-wall-low",
       "x": 3.2,
-      "z": 5.24
+      "z": 7.8
     },
     {
       "id": "wall-north-4",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 4.48,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-south-4",
       "modelId": "timber-room-wall-low",
       "x": 4.48,
-      "z": 5.24
+      "z": 7.8
+    },
+    {
+      "id": "wall-north-5",
+      "modelId": "timber-room-window-wall",
+      "x": 5.76,
+      "z": -0.12
+    },
+    {
+      "id": "wall-south-5",
+      "modelId": "timber-room-wall-low",
+      "x": 5.76,
+      "z": 7.8
+    },
+    {
+      "id": "wall-north-6",
+      "modelId": "timber-room-window-wall",
+      "x": 7.04,
+      "z": -0.12
+    },
+    {
+      "id": "wall-south-6",
+      "modelId": "timber-room-wall-low",
+      "x": 7.04,
+      "z": 7.8
     },
     {
       "id": "wall-west-1",
@@ -225,21 +355,28 @@
     {
       "id": "wall-east-1",
       "modelId": "timber-room-wall-low",
-      "x": 5.24,
+      "x": 7.8,
       "yaw": 90,
       "z": 0.64
     },
     {
       "id": "wall-west-2",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-east-2",
+      "modelId": "timber-room-wall-low",
+      "x": 7.8,
       "yaw": 90,
       "z": 1.92
     },
     {
       "id": "wall-west-3",
-      "modelId": "timber-room-window-wall",
-      "x": -0.12,
+      "modelId": "timber-room-wall",
+      "x": -0.1,
       "yaw": 90,
       "z": 3.2
     },
@@ -251,11 +388,32 @@
       "z": 4.48
     },
     {
-      "id": "wall-east-4",
-      "modelId": "timber-room-wall-low",
-      "x": 5.24,
+      "id": "wall-west-5",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
       "yaw": 90,
-      "z": 4.48
+      "z": 5.76
+    },
+    {
+      "id": "wall-east-5",
+      "modelId": "timber-room-wall-low",
+      "x": 7.8,
+      "yaw": 90,
+      "z": 5.76
+    },
+    {
+      "id": "wall-west-6",
+      "modelId": "timber-room-wall",
+      "x": -0.1,
+      "yaw": 90,
+      "z": 7.04
+    },
+    {
+      "id": "wall-east-6",
+      "modelId": "timber-room-wall-low",
+      "x": 7.8,
+      "yaw": 90,
+      "z": 7.04
     },
     {
       "id": "post-north-west",
@@ -266,41 +424,41 @@
     {
       "id": "post-north-east",
       "modelId": "timber-room-post",
-      "x": 5.26,
+      "x": 7.82,
       "z": -0.14
     },
     {
       "id": "post-south-west",
       "modelId": "timber-room-post",
       "x": -0.14,
-      "z": 5.26
+      "z": 7.82
     },
     {
       "id": "post-south-east",
       "modelId": "timber-room-post-low",
-      "x": 5.26,
-      "z": 5.26
+      "x": 7.82,
+      "z": 7.82
     },
     {
       "id": "post-door-1",
       "modelId": "timber-room-post-low",
-      "x": 5.26,
-      "z": 1.28
+      "x": 7.82,
+      "z": 2.56
     },
     {
       "id": "post-door-2",
       "modelId": "timber-room-post-low",
-      "x": 5.26,
-      "z": 3.84
+      "x": 7.82,
+      "z": 5.12
     }
   ],
   "size": {
-    "depth": 5.12,
-    "width": 5.12
+    "depth": 7.68,
+    "width": 7.68
   },
   "spawn": {
     "facing": 0,
-    "x": 3.52,
-    "z": 2.3
+    "x": 6.4,
+    "z": 2
   }
 }

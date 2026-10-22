@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
-import { sunState } from '@/scene/dayNightSun';
+import { doorLightState, sunState } from '@/scene/dayNightSun';
 import { BUBBLE_TEXT_WIDTH, bubbleLifetimeMs, wrapSpeech } from '@/scene/speechBubbleText';
 
 describe('movementPose', () => {
@@ -160,7 +160,7 @@ describe('sun state', () => {
     const interior = sunState(12, 100);
     const midnightInterior = sunState(0, 100);
     expect(interior).toEqual(midnightInterior);
-    expectColor(interior.sunColor, linear(0xffe6c4));
+    expectColor(interior.sunColor, linear(0xffdfba));
     expectColor(interior.skyColor, linear(0xf3dfc6));
     expectColor(interior.groundColor, linear(0x645143));
     expectColor(interior.backdropColor, linear(0x24282c));
@@ -169,11 +169,22 @@ describe('sun state', () => {
   it('scales interior intensity by the authored brightness', () => {
     const bright = sunState(12, 100);
     const dim = sunState(12, 50);
-    expect(bright.sunIntensity).toBeCloseTo(3, 9);
-    expect(bright.hemisphereIntensity).toBeCloseTo(1.1, 9);
+    expect(bright.sunIntensity).toBeCloseTo(1.26, 9);
+    expect(bright.hemisphereIntensity).toBeCloseTo(0.55, 9);
     expect(dim.sunIntensity).toBeCloseTo(bright.sunIntensity / 2, 9);
     expect(dim.hemisphereIntensity).toBeCloseTo(bright.hemisphereIntensity / 2, 9);
     expect(dim.backdropColor).toEqual(bright.backdropColor);
+  });
+
+  it('lets warm daylight in through a room door at noon and a faint cool light at midnight, passing between them at dusk', () => {
+    const noon = doorLightState(12);
+    const midnight = doorLightState(0);
+    expect(noon.intensity).toBe(14);
+    expectColor(noon.color, linear(0xfff1d6));
+    expect(midnight.intensity).toBe(2);
+    expectColor(midnight.color, linear(0x8fa6e0));
+    expect(doorLightState(19).intensity).toBe(6);
+    expect(doorLightState(20.5).intensity).toBeCloseTo(4, 9);
   });
 
   it('holds the sun on or above the horizon through the whole day arc', () => {

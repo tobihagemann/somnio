@@ -37,6 +37,18 @@ export interface DoorAnchor {
   width: number;
 }
 
+/** The kinds of flame a prop carries, which the client lights each by its own values. */
+export const LIGHT_KINDS = ['candle', 'hearth', 'lamp', 'torch'] as const;
+export type LightKind = (typeof LIGHT_KINDS)[number];
+
+/** Where a prop's flame burns, in model space, `y` above the model's ground. */
+export interface PropLight {
+  x: number;
+  y: number;
+  z: number;
+  kind: LightKind;
+}
+
 export interface ObjectModelRule {
   id: string;
   model: ModelEntry;
@@ -46,6 +58,8 @@ export interface ObjectModelRule {
   colliders: Rect[];
   walkSurfaces: WalkSurface[];
   doors: DoorAnchor[];
+  /** The flame the model carries, which lights a room it stands in; every placement of the model carries it. */
+  light?: PropLight;
 }
 
 export interface ModelRegistry {
@@ -65,8 +79,8 @@ export const PLACEHOLDER_REGISTRY: ModelRegistry = {
 /**
  * Validates the structural invariants the JSON shape cannot express: non-empty stems and ids, no
  * duplicate ids, characters expecting at least one clip, a player model that is a character
- * model, positive sizes, cardinal door facings, and walk surfaces of one model that do not
- * overlap.
+ * model, positive sizes, cardinal door facings, walk surfaces of one model that do not overlap,
+ * and lights of a known kind not below the ground.
  */
 export function parseModelRegistry(raw: unknown): ModelRegistry {
   const root = requireRecord(raw, 'registry');
@@ -106,6 +120,7 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
           : requireArray(record['colliders'], `${path}.colliders`).map((rect, rectIndex) => parseRect(rect, `${path}.colliders[${rectIndex}]`)),
       walkSurfaces: parseWalkSurfaces(record['walkSurfaces'], `${path}.walkSurfaces`),
       doors: parseDoorAnchors(record['doors'], `${path}.doors`),
+      ...(record['light'] === undefined ? {} : { light: parsePropLight(record['light'], `${path}.light`) }),
     };
   });
   requireUniqueIds(
@@ -206,6 +221,17 @@ function parseDoorAnchors(raw: unknown, path: string): DoorAnchor[] {
     path,
   );
   return doors;
+}
+
+function parsePropLight(raw: unknown, path: string): PropLight {
+  const record = requireRecord(raw, path);
+  const kind = record['kind'];
+  if (!LIGHT_KINDS.includes(kind as LightKind)) {
+    throw new ModelRegistryError(`${path}.kind: expected one of ${LIGHT_KINDS.join(', ')}`);
+  }
+  const y = requireNumber(record['y'], `${path}.y`);
+  if (y < 0) throw new ModelRegistryError(`${path}.y: expected a number not below the ground`);
+  return { x: requireNumber(record['x'], `${path}.x`), y, z: requireNumber(record['z'], `${path}.z`), kind: kind as LightKind };
 }
 
 function parseModelEntry(raw: unknown, path: string, requireClips: boolean): ModelEntry {

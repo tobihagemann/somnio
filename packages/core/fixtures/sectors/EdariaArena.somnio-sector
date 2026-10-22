@@ -1,20 +1,4 @@
 {
-  "blockers": [
-    {
-      "depth": 0.12,
-      "id": "blocker-1",
-      "width": 0.6,
-      "x": 9.64,
-      "z": 3.08
-    },
-    {
-      "depth": 0.12,
-      "id": "blocker-2",
-      "width": 0.6,
-      "x": 9.64,
-      "z": 6.92
-    }
-  ],
   "brightness": 75,
   "doors": [
     {
@@ -28,34 +12,7 @@
     }
   ],
   "ground": {
-    "backgroundMaterialId": "stone-arena",
-    "marks": [
-      {
-        "id": "refuge",
-        "materialId": "cobble-town",
-        "shape": {
-          "kind": "polygon",
-          "points": [
-            {
-              "x": 7.36,
-              "z": 0
-            },
-            {
-              "x": 10.24,
-              "z": 0
-            },
-            {
-              "x": 10.24,
-              "z": 10.24
-            },
-            {
-              "x": 7.36,
-              "z": 10.24
-            }
-          ]
-        }
-      }
-    ]
+    "backgroundMaterialId": "stone-arena"
   },
   "kind": "interior",
   "monsterSpawns": [
@@ -71,9 +28,166 @@
   ],
   "placements": [
     {
+      "id": "floor-boards-1",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 0.64
+    },
+    {
+      "id": "floor-boards-2",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 0.64
+    },
+    {
+      "id": "floor-boards-3",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 1.92
+    },
+    {
+      "id": "floor-boards-4",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 1.92
+    },
+    {
+      "id": "floor-boards-5",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 3.2
+    },
+    {
+      "id": "floor-boards-6",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 3.2
+    },
+    {
+      "id": "floor-boards-7",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 4.48
+    },
+    {
+      "id": "floor-boards-8",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 4.48
+    },
+    {
+      "id": "floor-boards-9",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 5.76
+    },
+    {
+      "id": "floor-boards-10",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 5.76
+    },
+    {
+      "id": "floor-boards-11",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 7.04
+    },
+    {
+      "id": "floor-boards-12",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 7.04
+    },
+    {
+      "id": "floor-boards-13",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 8.32
+    },
+    {
+      "id": "floor-boards-14",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 8.32
+    },
+    {
+      "id": "floor-boards-15",
+      "modelId": "floor-boards",
+      "x": 8.32,
+      "z": 9.6
+    },
+    {
+      "id": "floor-boards-16",
+      "modelId": "floor-boards",
+      "x": 9.6,
+      "z": 9.6
+    },
+    {
+      "elevation": 0.2,
+      "id": "pattern-banner-1",
+      "modelId": "pattern-banner",
+      "x": 8,
+      "z": 0.068
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 8.56,
+      "z": 0.133
+    },
+    {
+      "elevation": 0.2,
+      "id": "pattern-banner-2",
+      "modelId": "pattern-banner",
+      "x": 9.06,
+      "z": 0.068
+    },
+    {
+      "id": "barrel-1",
+      "modelId": "barrel",
+      "x": 9.82,
+      "z": 0.42
+    },
+    {
+      "id": "bench-1",
+      "modelId": "bench",
+      "x": 8.8,
+      "yaw": 270,
+      "z": 2.3
+    },
+    {
+      "id": "bench-2",
+      "modelId": "bench",
+      "x": 8.8,
+      "yaw": 270,
+      "z": 8
+    },
+    {
+      "id": "standing-torch-1",
+      "modelId": "standing-torch",
+      "x": 9.95,
+      "z": 3.45
+    },
+    {
+      "id": "standing-torch-2",
+      "modelId": "standing-torch",
+      "x": 9.95,
+      "z": 6.79
+    },
+    {
       "id": "door-1",
-      "modelId": "door",
-      "x": 10.145,
+      "modelId": "timber-room-threshold",
+      "x": 10.36,
+      "yaw": 90,
+      "z": 5.12
+    },
+    {
+      "elevation": 0.02,
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 9.49,
       "yaw": 90,
       "z": 5.12
     },
@@ -163,9 +277,9 @@
     },
     {
       "id": "wall-north-8",
-      "modelId": "timber-room-window-wall",
+      "modelId": "timber-room-wall",
       "x": 9.6,
-      "z": -0.12
+      "z": -0.1
     },
     {
       "id": "wall-south-8",
@@ -203,8 +317,8 @@
     },
     {
       "id": "wall-west-3",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
       "yaw": 90,
       "z": 3.2
     },
@@ -224,15 +338,15 @@
     },
     {
       "id": "wall-west-5",
-      "modelId": "timber-room-window-wall",
-      "x": -0.12,
+      "modelId": "timber-room-wall",
+      "x": -0.1,
       "yaw": 90,
       "z": 5.76
     },
     {
       "id": "wall-west-6",
-      "modelId": "timber-room-wall",
-      "x": -0.1,
+      "modelId": "timber-room-window-wall",
+      "x": -0.12,
       "yaw": 90,
       "z": 7.04
     },

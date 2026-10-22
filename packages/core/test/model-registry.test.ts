@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LIGHT_KINDS,
   ModelRegistryError,
   PLACEHOLDER_REGISTRY,
   allModelEntries,
@@ -46,7 +47,7 @@ describe('the committed registry parses', () => {
   });
 
   it('resolves object ids', () => {
-    expect(modelForObjectId(registry, 'door')?.stem).toBe('Door');
+    expect(modelForObjectId(registry, 'timber-room-threshold')?.stem).toBe('TimberRoomThreshold');
     expect(modelForObjectId(registry, 'stone-wall-corner')?.stem).toBe('StoneWallCorner');
     expect(modelForObjectId(registry, 'not-a-prop')).toBeUndefined();
   });
@@ -95,13 +96,34 @@ describe('the committed registry parses', () => {
   it('blocks by the footprint unless the model says otherwise', () => {
     const wall = objectModel(registry, 'stone-wall')!;
     expect(wall.colliders).toEqual([{ x: -wall.footprint.width / 2, z: -wall.footprint.depth / 2, ...wall.footprint }]);
-    for (const id of ['rug', 'candle', 'door']) expect(objectModel(registry, id)?.colliders).toEqual([]);
+    for (const id of ['rug', 'candle', 'door-mat']) expect(objectModel(registry, id)?.colliders).toEqual([]);
     expect(objectModel(registry, 'stone-wall-corner')?.colliders).toHaveLength(2);
   });
 
-  it('gives a door anchor to the door and to the five buildings with an interior', () => {
+  it('gives a door anchor to the five buildings with an interior and to the two room thresholds', () => {
     const anchored = registry.objectModels.filter((rule) => rule.doors.length > 0).map((rule) => rule.id);
-    expect(anchored.sort()).toEqual(['building-barracks', 'building-chapel', 'building-house', 'building-tavern', 'building-townhall', 'door']);
+    expect(anchored.sort()).toEqual([
+      'building-barracks',
+      'building-chapel',
+      'building-house',
+      'building-tavern',
+      'building-townhall',
+      'stone-room-threshold',
+      'timber-room-threshold',
+    ]);
+  });
+
+  it('lights the hearth, the lamps, the candles, and the torches, each by its kind', () => {
+    expect(LIGHT_KINDS).toEqual(['candle', 'hearth', 'lamp', 'torch']);
+    const lit = registry.objectModels.flatMap((rule) => (rule.light === undefined ? [] : [[rule.id, rule.light.kind]]));
+    expect(Object.fromEntries(lit)).toEqual({
+      candle: 'candle',
+      'floor-lamp': 'lamp',
+      'wall-torch': 'torch',
+      'standing-torch': 'torch',
+      lantern: 'candle',
+      'stone-hearth': 'hearth',
+    });
   });
 });
 
@@ -120,6 +142,7 @@ describe('structural invariants the JSON shape cannot express', () => {
           { x: 1.5, z: -0.5, width: 0.5, depth: 1, height: 0.25 },
         ],
         doors: [{ id: 'main', x: 1, z: 0, facing: 90, width: 1 }],
+        light: { x: 0, y: 1.2, z: 0, kind: 'torch' },
       },
     ],
   };
@@ -160,6 +183,12 @@ describe('structural invariants the JSON shape cannot express', () => {
     ['a door facing off the axes', (registry: typeof valid) => (registry.objectModels[0]!.doors[0]!.facing = 45), /facing: expected 0, 90, 180, or 270/],
     ['a door without width', (registry: typeof valid) => (registry.objectModels[0]!.doors[0]!.width = 0), /doors\[0\]\.width/],
     ['a duplicate door id', (registry: typeof valid) => registry.objectModels[0]!.doors.push(registry.objectModels[0]!.doors[0]!), /duplicate id "main"/],
+    [
+      'a light of a kind no client lights',
+      (registry: typeof valid) => (registry.objectModels[0]!.light.kind = 'sun'),
+      /light\.kind: expected one of candle, hearth, lamp, torch/,
+    ],
+    ['a light below the ground', (registry: typeof valid) => (registry.objectModels[0]!.light.y = -0.1), /light\.y: expected a number not below the ground/],
   ])('rejects %s', (_name, mutate, message) => {
     expect(() => parseModelRegistry(broken(mutate))).toThrow(message);
   });

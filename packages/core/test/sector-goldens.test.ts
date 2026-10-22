@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bundledModelRegistry } from '../src/modelRegistry.ts';
+import { buildSpaceCollision, canStand, isLegalMove, npcBodies } from '../src/collision.ts';
+import { reachDistance } from '../src/combat.ts';
+import { SOMNIO_CONSTANTS } from '../src/constants.ts';
+import type { Point } from '../src/geometry.ts';
+import { bundledModelRegistry, objectModel } from '../src/modelRegistry.ts';
+import { monsterKind } from '../src/monsterKinds.ts';
+import { spawnArea } from '../src/sector.ts';
 import type { Sector } from '../src/sector.ts';
 import { OUTDOOR_SPACE_ID, buildWorld, neighbourSectors, resolveDoor } from '../src/world.ts';
 import { loadSectorFixtures } from './support/sectorFixture.ts';
@@ -50,16 +56,16 @@ describe('the committed world', () => {
         size: { width: 10.24, depth: 10.24 },
         brightness: 75,
         backgroundMaterialId: 'stone-arena',
-        counts: { placements: 37, blockers: 2, doors: 1, npcs: 0, monsterSpawns: 1, marks: 1 },
+        counts: { placements: 62, blockers: 0, doors: 1, npcs: 0, monsterSpawns: 1, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariaarena' },
         npcs: {},
       },
       EdariaFighterHall: {
         kind: 'interior',
-        size: { width: 10.24, depth: 10.24 },
+        size: { width: 7.68, depth: 7.68 },
         brightness: 85,
         backgroundMaterialId: 'stone-arena',
-        counts: { placements: 54, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        counts: { placements: 57, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariafighterhall' },
         npcs: { pugnax: 'fighter-master' },
       },
@@ -68,25 +74,25 @@ describe('the committed world', () => {
         size: { width: 7.68, depth: 7.68 },
         brightness: 100,
         backgroundMaterialId: 'wood-warm',
-        counts: { placements: 38, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        counts: { placements: 58, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariahealerhall' },
         npcs: { sana: 'merchant' },
       },
       EdariaInn: {
         kind: 'interior',
-        size: { width: 5.12, depth: 5.12 },
+        size: { width: 7.68, depth: 7.68 },
         brightness: 100,
         backgroundMaterialId: 'wood-warm',
-        counts: { placements: 38, blockers: 3, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        counts: { placements: 64, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariainn' },
         npcs: { quieta: 'merchant' },
       },
       EdariaLibrary: {
         kind: 'interior',
-        size: { width: 10.24, depth: 10.24 },
+        size: { width: 7.68, depth: 7.68 },
         brightness: 100,
         backgroundMaterialId: 'wood-warm',
-        counts: { placements: 69, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        counts: { placements: 50, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edarialibrary' },
         npcs: { libus: 'libus' },
       },
@@ -95,7 +101,7 @@ describe('the committed world', () => {
         size: { width: 5.12, depth: 5.12 },
         brightness: 100,
         backgroundMaterialId: 'wood-warm',
-        counts: { placements: 42, blockers: 2, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        counts: { placements: 37, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariashop' },
         npcs: { mercus: 'merchant' },
       },
@@ -204,13 +210,15 @@ describe('the committed world', () => {
     expect(nature.filter((id) => !placed.has(id))).toEqual([]);
   });
 
-  /** The camera looks in over the low front walls, and the door stands in a gap in them. */
+  /** The camera looks in over the low front walls, and the door is a threshold of the room's wall set in a gap in them. */
   it.each(['EdariaArena', 'EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaShop'])(
     'walls %s on all four sides with a gap at its door',
     (name) => {
       const room = byName.get(name)!;
       const { width, depth } = room.size;
-      const walls = room.placements.filter((placement) => placement.modelId.includes('-room-'));
+      const door = room.placements.find((placement) => placement.id === room.doors[0]!.placement)!;
+      expect(door.modelId).toBe(name === 'EdariaFighterHall' ? 'stone-room-threshold' : 'timber-room-threshold');
+      const walls = room.placements.filter((placement) => placement.modelId.includes('-room-') && !placement.modelId.endsWith('-threshold'));
       const side = (test: (x: number, z: number) => boolean): string[] => walls.filter((wall) => test(wall.x, wall.z)).map((wall) => wall.modelId);
       const north = side((x, z) => z < 0 && x > 0 && x < width);
       const west = side((x, z) => x < 0 && z > 0 && z < depth);
@@ -228,6 +236,61 @@ describe('the committed world', () => {
       expect(walls.filter((wall) => Math.hypot(wall.x - doorway.x, wall.z - doorway.z) < 1.2)).toEqual([]);
     },
   );
+
+  /** Collision comes from the registry's colliders, which the game never draws, so a room whose furniture walls its keeper off would still look fine. */
+  it.each(['EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaShop'])(
+    'lets a dreamer walk from the door of %s to its keeper',
+    (name) => {
+      const registry = bundledModelRegistry();
+      const space = buildWorld(sectors, registry).spaces.get(name)!;
+      const room = space.sectors[0]!;
+      const keeper = room.npcs[0]!;
+      const collision = buildSpaceCollision(space, registry);
+      const npcs = npcBodies(space);
+      const reachesKeeper = (start: Point): boolean => {
+        const step = 0.1;
+        const key = (point: Point): string => `${Math.round(point.x / step)},${Math.round(point.z / step)}`;
+        const seen = new Set([key(start)]);
+        const queue = [start];
+        for (let at = queue.shift(); at !== undefined; at = queue.shift()) {
+          if (Math.hypot(at.x - keeper.x, at.z - keeper.z) <= SOMNIO_CONSTANTS.npcInteractionRadius) return true;
+          for (const [dx, dz] of [
+            [step, 0],
+            [-step, 0],
+            [0, step],
+            [0, -step],
+          ] as const) {
+            const next = { x: at.x + dx, z: at.z + dz };
+            if (seen.has(key(next))) continue;
+            seen.add(key(next));
+            if (canStand(collision, next, npcs) && isLegalMove(collision, at, next, SOMNIO_CONSTANTS.playerRadius, npcs)) queue.push(next);
+          }
+        }
+        return false;
+      };
+      expect(reachesKeeper(resolveDoor(room, room.doors[0]!, registry)!.arrival)).toBe(true);
+      if (room.spawn !== undefined) expect(reachesKeeper(room.spawn)).toBe(true);
+    },
+  );
+
+  /** A new dreamer joins at the starter spawn, so with the spawn within Libus's speaking distance, Libus would greet every one as they arrive. */
+  it('starts a fresh dreamer beyond the speaking distance of Libus', () => {
+    const library = byName.get('EdariaLibrary')!;
+    const libus = library.npcs.find((npc) => npc.id === 'libus')!;
+    expect(Math.hypot(library.spawn!.x - libus.x, library.spawn!.z - libus.z)).toBeGreaterThan(SOMNIO_CONSTANTS.npcInteractionRadius);
+  });
+
+  /** The ghosts never leave their spawn area, so a dreamer anywhere on the boarded refuge stands beyond any ghost's reach. */
+  it("keeps the Arena's boarded refuge out of every ghost's reach", () => {
+    const arena = byName.get('EdariaArena')!;
+    const boards = arena.placements.filter((placement) => placement.modelId === 'floor-boards');
+    const refugeEdge = Math.min(...boards.map((board) => board.x - objectModel(bundledModelRegistry(), board.modelId)!.footprint.width / 2));
+    expect(refugeEdge).toBeCloseTo(7.68, 9);
+    for (const spawn of arena.monsterSpawns) {
+      const area = spawnArea(arena, spawn);
+      expect(refugeEdge - SOMNIO_CONSTANTS.playerRadius - (area.x + area.width)).toBeGreaterThan(reachDistance(monsterKind(spawn.kind).radius));
+    }
+  });
 
   it('builds with every door live, no collision issue, and a clear starter spawn', () => {
     const world = buildWorld(sectors, bundledModelRegistry());

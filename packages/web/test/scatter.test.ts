@@ -53,7 +53,7 @@ const meadow = (): SectorView =>
         { id: 'house', modelId: 'building-house', x: 15.9, z: 5.9, yaw: 270, elevation: 0 },
         { id: 'oak', modelId: 'tree-1-b', x: 5, z: 16, yaw: 30, elevation: 0 },
         // Blocks nothing, so only the door scan keeps the grass off its trigger, which crosses a bucket's edge.
-        { id: 'cellar', modelId: 'door', x: 9.9, z: 15.9, yaw: 0, elevation: 0 },
+        { id: 'cellar', modelId: 'timber-room-threshold', x: 9.9, z: 15.9, yaw: 0, elevation: 0 },
       ],
       doors: [
         { id: 'to-shop', placement: 'house', anchor: 'main', target: { sector: 'Shop', door: 'exit' } },

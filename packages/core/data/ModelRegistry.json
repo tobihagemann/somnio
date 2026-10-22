@@ -121,27 +121,6 @@
       }
     },
     {
-      "colliders": [],
-      "doors": [
-        {
-          "facing": 180,
-          "id": "main",
-          "width": 1.54,
-          "x": 0,
-          "z": 0
-        }
-      ],
-      "footprint": {
-        "depth": 0.19,
-        "width": 1.92
-      },
-      "id": "door",
-      "model": {
-        "expectedClips": [],
-        "stem": "Door"
-      }
-    },
-    {
       "footprint": {
         "depth": 0.35,
         "width": 2.56
@@ -169,6 +148,12 @@
         "width": 0.43
       },
       "id": "floor-lamp",
+      "light": {
+        "kind": "lamp",
+        "x": 0,
+        "y": 0.93,
+        "z": 0
+      },
       "model": {
         "expectedClips": [],
         "stem": "FloorLamp"
@@ -758,6 +743,12 @@
         "width": 0.22
       },
       "id": "candle",
+      "light": {
+        "kind": "candle",
+        "x": 0.05,
+        "y": 0.38,
+        "z": -0.03
+      },
       "model": {
         "expectedClips": [],
         "stem": "Candle"
@@ -828,6 +819,222 @@
       "model": {
         "expectedClips": [],
         "stem": "BerryBasket"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.864,
+        "width": 1.296
+      },
+      "id": "door-mat",
+      "model": {
+        "expectedClips": [],
+        "stem": "DoorMat"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.266,
+        "width": 0.238
+      },
+      "id": "wall-torch",
+      "light": {
+        "kind": "torch",
+        "x": 0,
+        "y": 0.41,
+        "z": 0
+      },
+      "model": {
+        "expectedClips": [],
+        "stem": "WallTorch"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.238,
+        "width": 0.238
+      },
+      "id": "standing-torch",
+      "light": {
+        "kind": "torch",
+        "x": 0,
+        "y": 0.44,
+        "z": 0
+      },
+      "model": {
+        "expectedClips": [],
+        "stem": "StandingTorch"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.325,
+        "width": 0.325
+      },
+      "id": "lantern",
+      "light": {
+        "kind": "candle",
+        "x": 0,
+        "y": 0.22,
+        "z": 0
+      },
+      "model": {
+        "expectedClips": [],
+        "stem": "Lantern"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.162,
+        "width": 0.964
+      },
+      "id": "shield-banner",
+      "model": {
+        "expectedClips": [],
+        "stem": "ShieldBanner"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.135,
+        "width": 0.648
+      },
+      "id": "pattern-banner",
+      "model": {
+        "expectedClips": [],
+        "stem": "PatternBanner"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.145,
+        "width": 0.964
+      },
+      "id": "sword-shield-display",
+      "model": {
+        "expectedClips": [],
+        "stem": "SwordShieldDisplay"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.471,
+        "width": 0.793
+      },
+      "id": "archery-target",
+      "model": {
+        "expectedClips": [],
+        "stem": "ArcheryTarget"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.691,
+        "width": 0.778
+      },
+      "id": "armchair",
+      "model": {
+        "expectedClips": [],
+        "stem": "Armchair"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.648,
+        "width": 1.037
+      },
+      "id": "low-table",
+      "model": {
+        "expectedClips": [],
+        "stem": "LowTable"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.864,
+        "width": 1.296
+      },
+      "id": "oval-rug",
+      "model": {
+        "expectedClips": [],
+        "stem": "OvalRug"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.864,
+        "width": 0.864
+      },
+      "id": "desk",
+      "model": {
+        "expectedClips": [],
+        "stem": "Desk"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.149,
+        "width": 0.406
+      },
+      "id": "open-book",
+      "model": {
+        "expectedClips": [],
+        "stem": "OpenBook"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.159,
+        "width": 0.159
+      },
+      "id": "bottles",
+      "model": {
+        "expectedClips": [],
+        "stem": "Bottles"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.216,
+        "width": 0.864
+      },
+      "id": "jar-shelf",
+      "model": {
+        "expectedClips": [],
+        "stem": "JarShelf"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.216,
+        "width": 0.864
+      },
+      "id": "wall-shelf",
+      "model": {
+        "expectedClips": [],
+        "stem": "WallShelf"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 0.159,
+        "width": 0.203
+      },
+      "id": "mug",
+      "model": {
+        "expectedClips": [],
+        "stem": "Mug"
       }
     },
     {
@@ -1319,6 +1526,77 @@
       "model": {
         "expectedClips": [],
         "stem": "TimberRoomPostLow"
+      }
+    },
+    {
+      "colliders": [],
+      "doors": [
+        {
+          "facing": 180,
+          "id": "main",
+          "width": 2.0,
+          "x": 0,
+          "z": -0.12
+        }
+      ],
+      "footprint": {
+        "depth": 0.24,
+        "width": 2.28
+      },
+      "id": "timber-room-threshold",
+      "model": {
+        "expectedClips": [],
+        "stem": "TimberRoomThreshold"
+      }
+    },
+    {
+      "colliders": [],
+      "doors": [
+        {
+          "facing": 180,
+          "id": "main",
+          "width": 1.6,
+          "x": 0,
+          "z": -0.216
+        }
+      ],
+      "footprint": {
+        "depth": 0.672,
+        "width": 1.912
+      },
+      "id": "stone-room-threshold",
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneRoomThreshold"
+      }
+    },
+    {
+      "colliders": [],
+      "footprint": {
+        "depth": 1.28,
+        "width": 1.28
+      },
+      "id": "floor-boards",
+      "model": {
+        "expectedClips": [],
+        "stem": "FloorBoards"
+      }
+    },
+    {
+      "footprint": {
+        "depth": 0.87,
+        "width": 1.8
+      },
+      "id": "stone-hearth",
+      "light": {
+        "kind": "hearth",
+        "x": 0,
+        "y": 0.25,
+        "z": -0.055
+      },
+      "model": {
+        "expectedClips": [],
+        "stem": "StoneHearth"
       }
     },
     {

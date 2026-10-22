@@ -83,25 +83,51 @@ const TWILIGHT: LightAnchor = { sun: 1.8, sunColor: 0xffa860, sky: 0xffc9a0, gro
 const NIGHT: LightAnchor = { sun: 0.9, sunColor: 0xa9bcff, sky: 0x5a70b0, ground: 0x2c2c3c, hemisphere: 0.8, backdrop: 0x1b2233 };
 /**
  * A room's warm, steady light, whatever the hour; its two intensities scale with the room's
- * brightness. The backdrop stays near-black, because a voice from a room's door is shown in the
- * dark just past its wall.
+ * brightness. It is dim enough to let the room's own flames show. The backdrop stays near-black,
+ * because a voice from a room's door is shown in the dark just past its wall.
  */
-const INTERIOR: LightAnchor = { sun: 3, sunColor: 0xffe6c4, sky: 0xf3dfc6, ground: 0x645143, hemisphere: 1.1, backdrop: 0x24282c };
+const INTERIOR: LightAnchor = { sun: 1.26, sunColor: 0xffdfba, sky: 0xf3dfc6, ground: 0x645143, hemisphere: 0.55, backdrop: 0x24282c };
+
+/** Keys the hour table, so the outdoor light and the light through a room's door each give the day's three lights values of their own. */
+type DayLight = 'night' | 'twilight' | 'noon';
 
 /**
- * The outdoor light by hour: night held flat to 5, dawn at 7, full day from 10 to 18, dusk at 19,
- * and night again from 22. Every value is interpolated linearly between neighbouring anchors.
+ * The hours of the day's lights: night held flat to 5, dawn at 7, full day from 10 to 18, dusk at
+ * 19, and night again from 22. Every value is interpolated linearly between neighbouring hours.
  */
-const OUTDOOR_ANCHORS: readonly (readonly [hour: number, light: LightAnchor])[] = [
-  [0, NIGHT],
-  [5, NIGHT],
-  [7, TWILIGHT],
-  [10, NOON],
-  [18, NOON],
-  [19, TWILIGHT],
-  [22, NIGHT],
-  [24, NIGHT],
+const DAY_HOURS: readonly (readonly [hour: number, light: DayLight])[] = [
+  [0, 'night'],
+  [5, 'night'],
+  [7, 'twilight'],
+  [10, 'noon'],
+  [18, 'noon'],
+  [19, 'twilight'],
+  [22, 'night'],
+  [24, 'night'],
 ];
+
+const OUTDOOR_LIGHT: Record<DayLight, LightAnchor> = { night: NIGHT, twilight: TWILIGHT, noon: NOON };
+const OUTDOOR_ANCHORS = DAY_HOURS.map(([hour, light]) => [hour, OUTDOOR_LIGHT[light]] as const);
+
+/** The light that falls through a room's door: the day's, warm, and a faint cool one at night. */
+export interface DoorLightState {
+  color: LinearColor;
+  /** In three.js units, as the scene applies it. */
+  intensity: number;
+}
+
+const DOOR_LIGHT: Record<DayLight, { intensity: number; color: number }> = {
+  night: { intensity: 2, color: 0x8fa6e0 },
+  twilight: { intensity: 6, color: 0xffc9a0 },
+  noon: { intensity: 14, color: 0xfff1d6 },
+};
+const DOOR_ANCHORS = DAY_HOURS.map(([hour, light]) => [hour, DOOR_LIGHT[light]] as const);
+
+/** The light through a room's door at a fractional hour of the day in `[0, 24)`. */
+export function doorLightState(hourOfDay: number): DoorLightState {
+  const { from, to, amount } = anchorsAround(DOOR_ANCHORS, hourOfDay);
+  return { color: mixColor(linearColor(from.color), linearColor(to.color), amount), intensity: mix(from.intensity, to.intensity, amount) };
+}
 
 /**
  * How much of the directional light is on: it falls to nothing over the half hour before each
@@ -157,10 +183,7 @@ export function sunState(hourOfDay: number, brightness: number | undefined): Sun
 
 /** The outdoor table read at an hour, before the sun's fade across the day/night switch. */
 function outdoorLight(hourOfDay: number): Omit<SunState, 'direction'> {
-  const next = OUTDOOR_ANCHORS.findIndex(([hour]) => hour > hourOfDay);
-  const [fromHour, from] = OUTDOOR_ANCHORS[next - 1]!;
-  const [toHour, to] = OUTDOOR_ANCHORS[next]!;
-  const amount = (hourOfDay - fromHour) / (toHour - fromHour);
+  const { from, to, amount } = anchorsAround(OUTDOOR_ANCHORS, hourOfDay);
   const start = lightOf(from);
   const end = lightOf(to);
   return {
@@ -171,6 +194,14 @@ function outdoorLight(hourOfDay: number): Omit<SunState, 'direction'> {
     hemisphereIntensity: mix(start.hemisphereIntensity, end.hemisphereIntensity, amount),
     backdropColor: mixColor(start.backdropColor, end.backdropColor, amount),
   };
+}
+
+/** The two anchors of a table either side of an hour, and how far the hour lies from the first toward the second. */
+function anchorsAround<T>(anchors: readonly (readonly [hour: number, light: T])[], hourOfDay: number): { from: T; to: T; amount: number } {
+  const next = anchors.findIndex(([hour]) => hour > hourOfDay);
+  const [fromHour, from] = anchors[next - 1]!;
+  const [toHour, to] = anchors[next]!;
+  return { from, to, amount: (hourOfDay - fromHour) / (toHour - fromHour) };
 }
 
 function lightOf(anchor: LightAnchor): Omit<SunState, 'direction'> {

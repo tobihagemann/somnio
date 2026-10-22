@@ -144,7 +144,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 14
+      "protocolVersion": 15
     },
     "tag": "hello"
   },
@@ -480,7 +480,7 @@
           {
             "elevation": 0,
             "id": "door-1",
-            "modelId": "door",
+            "modelId": "timber-room-threshold",
             "x": 5.12,
             "yaw": 0,
             "z": 7.36

@@ -302,19 +302,21 @@ After logging in, `window.somnio.lucidity().role` on the healer reads `'healer'`
 docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id, world_seconds) VALUES (TRUE, 14515225200) ON CONFLICT (id) DO UPDATE SET world_seconds = EXCLUDED.world_seconds;"
 ```
 
-`14515225200` is 07:00 on the first day of year 500; add 3600 per hour. World time runs at four times wall time, so an hour passes in 15 minutes. Outdoor light follows the clock; an interior is lit by its own `brightness`.
+`14515225200` is 07:00 on the first day of year 500; add 3600 per hour. World time runs at four times wall time, so an hour passes in 15 minutes. Outdoor light follows the clock. An interior is lit by its `brightness` and its flames, whatever the hour, and only the light through its first door follows the clock. `world_seconds` is double precision, so cast it before `%` in SQL: `world_seconds::bigint % 86400`.
 
 **Render a staged scene without a server.** To screenshot any sector with figures placed by hand, such as stills for a prototype, draw it from an `eval` on the dev page. It needs no gameplay server and no login. Wait for Step 4's prewarm gate first, then run an async IIFE from a script in the session scratchpad with `agent-browser eval --stdin`. The working tree stays untouched.
 
 - **Modules.** Import `/src/scene/worldScene.ts`, `/src/scene/modelAssets.ts`, and `/src/scene/cameraRig.ts`. `@somnio/core` alone has no fixed dev URL, because Vite serves it from a machine-specific `/@fs/<absolute path>/packages/core/src/index.ts`: fetch `/src/scene/worldScene.ts` as text, take the import URL that ends in `packages/core/src/index.ts`, and import that.
 - **Sectors.** Fixtures load from core's `/@fs` URL with `src/index.ts` replaced by `fixtures/sectors/<Name>.somnio-sector`. Read each with `core.readSectorFile(text, name)` and draw it with `scene.addSector(core.sectorView(sector))`.
-- **Scene and renderer.** Build `new WorldScene(new HttpModelAssets(registry), registry, innerWidth / innerHeight)` with `registry = core.bundledModelRegistry()`, and `await scene.prewarm()`. Draw through `createWorldRenderer(canvas)` and `sizeWorldRenderer` onto a fixed, full-window canvas above the page.
+- **Scene and renderer.** Build `new WorldScene(new HttpModelAssets(registry), registry, innerWidth / innerHeight, false)` (the last argument is reduced motion) with `registry = core.bundledModelRegistry()`, and `await scene.prewarm()`. Draw through `createWorldRenderer(canvas)` and `sizeWorldRenderer` onto a fixed, full-window canvas above the page.
 - **Figures.** Call `scene.placeEntity({ id, kind, characterModelId, name, position: { x, z }, facing, gait: 'walk', radius: 0.3, condition: 'hale', service: undefined })`. Stage dreamers as `'peer'`: the camera follows a `'player'` every tick and overrides the framing. With no `enterSpace` the scene has no walk surfaces, so every figure stands at height 0, even on stairs or a plinth.
 - **Framing.** Set `scene.camera`'s `left`/`right`/`top`/`bottom` from the rig's `frustumBounds(scale, aspect)`, its position from `cameraPosition({ x, y: 0, z })`, then `lookAt`, `updateProjectionMatrix`, and `scene.anchorSunShadow({ x, z })`.
 - **Light.** Call `scene.setClock(worldSeconds)`, counting from the 07:00 value in the recipe above: subtract or add 3600 per hour.
 - **Capture.** Call `scene.tick(dt)` and `renderer.render(scene.scene, scene.camera)` once per `requestAnimationFrame` until `scene.isSettled()` is true, then for about 30 frames more, before the screenshot. The ground is painted in a worker, which answers between frames, and the grass grows one sector a tick, so a fixed run of frames in one turn of the event loop captures flat ground. The extra frames let models resolve and pose.
 
 **Verify the asset pack resolved.** `agent-browser eval 'window.somnio.placeholderObjectCount()'` — non-zero means models are missing or a registry id has no matching stem. Read it only once Step 4's gate has passed: with no scene it returns `0`, which is indistinguishable from success.
+
+A `0` proves only that the models resolved, not that anything drew. A lit material whose shadow map is missing draws nothing, with no console error. Judge what draws from a screenshot. Include a fresh page whose first view is outdoors, such as the splash's first shots, because a run that starts in a room can miss a fault that only shows outside.
 
 ## Notes
 

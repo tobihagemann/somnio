@@ -68,7 +68,7 @@ const interiorSector: SectorView = {
   brightness: 75,
   size: { width: 10.24, depth: 7.68 },
   ground: { backgroundMaterialId: 'wood-warm', marks: [] },
-  placements: [{ id: 'door-1', modelId: 'door', x: 5.12, z: 7.36, yaw: 0, elevation: 0 }],
+  placements: [{ id: 'door-1', modelId: 'timber-room-threshold', x: 5.12, z: 7.36, yaw: 0, elevation: 0 }],
   blockers: [],
   doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaSquare', door: 'to-edarialibrary' } }],
 };

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
 import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
 import { catalogTables, setLocale } from '@/i18n';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
@@ -12,7 +13,7 @@ import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } f
 import type { InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
-import { outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
 import type { ChatLine, ClientEntity } from '@/client';
 
@@ -1221,6 +1222,41 @@ describe('desktop detection', () => {
 
     expect(window.matchMedia('(pointer: coarse)').matches).toBe(false);
     expect(detectDesktop()).toBe(true);
+  });
+});
+
+describe("the world's flames", () => {
+  const native = window.matchMedia.bind(window);
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  /** How bright a candle in a room burns over three ticks of the shell's scene, for a player who does or does not ask for reduced motion. */
+  function candle(reduceMotion: boolean): number[] {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const list = native(query);
+      if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(list, 'matches', { value: reduceMotion });
+      return list;
+    });
+    const scene = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false }).scene!;
+    scene.addSector(interiorSector('EdariaInn', { placements: [{ id: 'candle-1', modelId: 'candle', x: 2, z: 2, yaw: 0, elevation: 0 }] }));
+    return [0.2, 0.2, 0.2].map((dt) => {
+      scene.tick(dt);
+      return scene.scene.children.find((child): child is THREE.PointLight => child instanceof THREE.PointLight && child.intensity > 0)!.intensity;
+    });
+  }
+
+  it('flicker, and hold steady for a player who asks for reduced motion', () => {
+    expect(new Set(candle(false)).size).toBe(3);
+    expect(new Set(candle(true)).size).toBe(1);
   });
 });
 
