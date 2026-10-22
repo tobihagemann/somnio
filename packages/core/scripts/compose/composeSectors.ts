@@ -3,7 +3,7 @@ import type { GroundMark, Placement } from '@somnio/protocol';
 import { buildSpaceCollision, isClear, npcBodies } from '../../src/collision.ts';
 import type { Body, SpaceCollision } from '../../src/collision.ts';
 import { SOMNIO_CONSTANTS } from '../../src/constants.ts';
-import { clamp, distance, rectContains } from '../../src/geometry.ts';
+import { clamp, closestOnSegment, distance, rectContains } from '../../src/geometry.ts';
 import type { Point } from '../../src/geometry.ts';
 import { seededSequence } from '../../src/hash.ts';
 import { objectModel } from '../../src/modelRegistry.ts';
@@ -397,12 +397,7 @@ function nearestOnLine(points: readonly Point[], point: Point): Point {
   if (points.length === 1) return points[0]!;
   let best = points[0]!;
   points.slice(1).forEach((to, index) => {
-    const from = points[index]!;
-    const dx = to.x - from.x;
-    const dz = to.z - from.z;
-    const length = dx * dx + dz * dz;
-    const along = length === 0 ? 0 : clamp(((point.x - from.x) * dx + (point.z - from.z) * dz) / length, 0, 1);
-    const candidate = { x: from.x + along * dx, z: from.z + along * dz };
+    const candidate = closestOnSegment(point, { a: points[index]!, b: to });
     if (distance(candidate, point) < distance(best, point)) best = candidate;
   });
   return best;

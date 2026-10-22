@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { composeSectors } from '../scripts/compose/composeSectors.ts';
 import { LANDS, ROADS } from '../scripts/compose/rules.ts';
 import { buildSpaceCollision, canStand, npcBodies } from '../src/collision.ts';
-import { distance } from '../src/geometry.ts';
+import { closestOnSegment, distance } from '../src/geometry.ts';
 import type { Point } from '../src/geometry.ts';
 import { bundledModelRegistry } from '../src/modelRegistry.ts';
 import { sectorPointInSpace } from '../src/sector.ts';
@@ -18,15 +18,7 @@ const compose = (sectors: readonly Sector[], lands = LANDS): Sector[] => compose
 const files = (sectors: readonly Sector[]): Record<string, string> => Object.fromEntries(sectors.map((sector) => [sector.name, writeSectorFile(sector)]));
 
 function nearestOnLine(points: readonly Point[], point: Point): number {
-  return Math.min(
-    ...points.slice(1).map((to, index) => {
-      const from = points[index]!;
-      const dx = to.x - from.x;
-      const dz = to.z - from.z;
-      const along = Math.min(1, Math.max(0, ((point.x - from.x) * dx + (point.z - from.z) * dz) / (dx * dx + dz * dz)));
-      return distance(point, { x: from.x + along * dx, z: from.z + along * dz });
-    }),
-  );
+  return Math.min(...points.slice(1).map((to, index) => distance(point, closestOnSegment(point, { a: points[index]!, b: to }))));
 }
 
 /** Every composed door path stands clear of what blocks once 1.5 m past its arrival point, and ends on the edge of the nearest street. */

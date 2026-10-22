@@ -7,6 +7,7 @@ import type { RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/c
 import {
   WORLD_TIME_RATE,
   clamp,
+  closestOnRect,
   distance,
   distanceToRect,
   groundHeightAt,
@@ -1062,7 +1063,7 @@ export class WorldScene implements WorldRenderSurface {
     size: ScreenSize,
     toScreen: (point: THREE.Vector3) => ScreenPoint,
   ): { centre: ScreenPoint; wall: ScreenPoint } | undefined {
-    const inside = { x: clamp(source.x, room.x, room.x + room.width), z: clamp(source.z, room.z, room.z + room.depth) };
+    const inside = closestOnRect(source, room);
     const walls = [
       { x: room.x, z: inside.z },
       { x: room.x + room.width, z: inside.z },

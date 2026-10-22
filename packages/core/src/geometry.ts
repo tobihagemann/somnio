@@ -44,6 +44,29 @@ export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
+/** The point of the rect nearest the given one: the point itself on or inside it. */
+export function closestOnRect(point: Point, rect: Rect): Point {
+  return { x: clamp(point.x, rect.x, rect.x + rect.width), z: clamp(point.z, rect.z, rect.z + rect.depth) };
+}
+
+/** How far the point lies from the rect: 0 on or inside it. */
+export function distanceToRect(point: Point, rect: Rect): number {
+  return distance(point, closestOnRect(point, rect));
+}
+
+/**
+ * The point of the segment nearest the given one. An axis-aligned segment is clamped like a rect,
+ * so a point beside it keeps its coordinate along the segment exactly.
+ */
+export function closestOnSegment(point: Point, segment: Segment): Point {
+  const { a, b } = segment;
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  if (dx === 0 || dz === 0) return { x: clamp(point.x, Math.min(a.x, b.x), Math.max(a.x, b.x)), z: clamp(point.z, Math.min(a.z, b.z), Math.max(a.z, b.z)) };
+  const along = clamp(((point.x - a.x) * dx + (point.z - a.z) * dz) / (dx * dx + dz * dz), 0, 1);
+  return { x: a.x + dx * along, z: a.z + dz * along };
+}
+
 /** Edges are inclusive; `slack` widens the rect on every side. */
 export function rectContains(rect: Rect, point: Point, slack = 0): boolean {
   return point.x >= rect.x - slack && point.x <= rect.x + rect.width + slack && point.z >= rect.z - slack && point.z <= rect.z + rect.depth + slack;

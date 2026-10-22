@@ -1,5 +1,5 @@
 import { SOMNIO_CONSTANTS } from './constants.ts';
-import { EDGE_TOLERANCE, clamp, distance, modelToWorld, rectContains, worldToModel } from './geometry.ts';
+import { EDGE_TOLERANCE, clamp, closestOnRect, closestOnSegment, distance, distanceToRect, modelToWorld, rectContains, worldToModel } from './geometry.ts';
 import type { Point, Rect, Segment, Transform } from './geometry.ts';
 import { objectModel } from './modelRegistry.ts';
 import type { ModelRegistry, ObjectModelRule, WalkSurface } from './modelRegistry.ts';
@@ -23,6 +23,15 @@ export const MOVE_SUBSTEP = 0.05;
 
 /** A distance this close to a radius is contact, and contact is clear, so a slide along a wall does not stick. */
 const CONTACT_TOLERANCE = 1e-6;
+
+/** How far a glide may still lean into a face that refused its step: rounding residue, not a push into a wedge. */
+const WEDGE_TOLERANCE = 1e-9;
+
+/** A glide shorter than this is what clipping leaves of a head-on step, and would only creep. */
+const NEGLIGIBLE_GLIDE = 1e-4;
+
+/** Rounding in a sum or a turn, per metre from the origin: how far a point or a face may miss a face's line and still lie on it. */
+const FACE_ROUNDOFF = 128 * Number.EPSILON;
 
 /** Something round that stands in the way: an NPC, a player, or a monster. */
 export interface Body extends Point {
@@ -224,32 +233,90 @@ function quadsOverlap(a: readonly Point[], b: readonly Point[]): boolean {
   return true;
 }
 
-/** How far the point lies from the rect: 0 on or inside it. */
-export function distanceToRect(point: Point, rect: Rect): number {
-  return distance(point, { x: clamp(point.x, rect.x, rect.x + rect.width), z: clamp(point.z, rect.z, rect.z + rect.depth) });
+function distanceToSegment(point: Point, segment: Segment): number {
+  return distance(point, closestOnSegment(point, segment));
 }
 
-function distanceToSegment(point: Point, segment: Segment): number {
-  const dx = segment.b.x - segment.a.x;
-  const dz = segment.b.z - segment.a.z;
-  const lengthSquared = dx * dx + dz * dz;
-  const along = lengthSquared === 0 ? 0 : clamp(((point.x - segment.a.x) * dx + (point.z - segment.a.z) * dz) / lengthSquared, 0, 1);
-  return distance(point, { x: segment.a.x + dx * along, z: segment.a.z + dz * along });
+/** A stretch of a feature's boundary and the unit normal out of it. */
+interface Face extends Segment {
+  normal: Point;
+}
+
+/** A feature as the glide sees it: where it lies nearest a point, and the faces of its boundary, both in the coordinates the feature is given in. */
+interface Feature {
+  nearest: (point: Point) => Point;
+  faces: () => Face[];
+}
+
+function rectFeature(rect: Rect): Feature {
+  return {
+    nearest: (to) => closestOnRect(to, rect),
+    faces: () => {
+      const [nw, ne, se, sw] = corners(rect) as [Point, Point, Point, Point];
+      return [
+        { a: nw, b: ne, normal: { x: 0, z: -1 } },
+        { a: ne, b: se, normal: { x: 1, z: 0 } },
+        { a: se, b: sw, normal: { x: 0, z: 1 } },
+        { a: sw, b: nw, normal: { x: -1, z: 0 } },
+      ];
+    },
+  };
+}
+
+/** A segment has a face on each side. */
+function segmentFeature(segment: Segment): Feature {
+  return {
+    nearest: (to) => closestOnSegment(to, segment),
+    faces: () => {
+      const length = distance(segment.a, segment.b);
+      if (length === 0) return [];
+      const normal = { x: (segment.a.z - segment.b.z) / length, z: (segment.b.x - segment.a.x) / length };
+      return [
+        { ...segment, normal },
+        { ...segment, normal: { x: -normal.x, z: -normal.z } },
+      ];
+    },
+  };
+}
+
+/** A model-space feature taken in the space the model stands in. */
+function inModel(transform: Transform, feature: Feature): Feature {
+  const turn = { x: 0, z: 0, yaw: transform.yaw };
+  return {
+    nearest: (to) => modelToWorld(transform, feature.nearest(worldToModel(transform, to))),
+    faces: () =>
+      feature.faces().map((face) => ({ a: modelToWorld(transform, face.a), b: modelToWorld(transform, face.b), normal: modelToWorld(turn, face.normal) })),
+  };
+}
+
+/**
+ * Whether `visit` accepts one of the edges, blockers, colliders, and ledges that a circle of
+ * `radius` centred on the point touches. The walk stops at the first it accepts.
+ */
+function someFeatureTouched(collision: SpaceCollision, point: Point, radius: number, visit: (feature: Feature) => boolean): boolean {
+  const reach = radius - CONTACT_TOLERANCE;
+  for (const edge of collision.edges) {
+    if (distanceToSegment(point, edge) < reach && visit(segmentFeature(edge))) return true;
+  }
+  for (const rect of collision.blockers) {
+    if (distanceToRect(point, rect) < reach && visit(rectFeature(rect))) return true;
+  }
+  for (const model of collision.models) {
+    if (distance(point, model.transform) > model.reach + radius) continue;
+    const local = worldToModel(model.transform, point);
+    for (const rect of model.colliders) {
+      if (distanceToRect(local, rect) < reach && visit(inModel(model.transform, rectFeature(rect)))) return true;
+    }
+    for (const ledge of model.ledges) {
+      if (distanceToSegment(local, ledge) < reach && visit(inModel(model.transform, segmentFeature(ledge)))) return true;
+    }
+  }
+  return false;
 }
 
 /** True when a circle of `radius` centred on the point lies inside the space and touches no blocker, collider, or ledge. */
 export function isClear(collision: SpaceCollision, point: Point, radius: number): boolean {
-  if (!collision.sectors.some((rect) => rectContains(rect, point, EDGE_TOLERANCE))) return false;
-  const reach = radius - CONTACT_TOLERANCE;
-  if (collision.edges.some((edge) => distanceToSegment(point, edge) < reach)) return false;
-  if (collision.blockers.some((rect) => distanceToRect(point, rect) < reach)) return false;
-  for (const model of collision.models) {
-    if (distance(point, model.transform) > model.reach + radius) continue;
-    const local = worldToModel(model.transform, point);
-    if (model.colliders.some((rect) => distanceToRect(local, rect) < reach)) return false;
-    if (model.ledges.some((ledge) => distanceToSegment(local, ledge) < reach)) return false;
-  }
-  return true;
+  return collision.sectors.some((rect) => rectContains(rect, point, EDGE_TOLERANCE)) && !someFeatureTouched(collision, point, radius, () => true);
 }
 
 /**
@@ -318,35 +385,169 @@ export function canStand(collision: SpaceCollision, point: Point, npcs: readonly
 
 export interface ResolvedMove {
   position: Point;
-  /** The move was cut short or turned into a slide. */
+  /** The move was cut short or turned aside. */
   blocked: boolean;
 }
 
 /**
  * The client's step from `from` toward `to`, in substeps of at most `MOVE_SUBSTEP`: the full
- * substep where it is legal, else a slide along one axis, else a stop. `bodies` are the other
- * players and monsters at the positions the client draws them.
+ * substep where it is legal, else a glide along what refused it, else a slide along one axis,
+ * else a stop. `bodies` are the other players and monsters at the positions the client draws them.
+ *
+ * The glide removes from the substep the part that pushes into each face refusing it, so a body
+ * follows a face at any yaw and rounds a corner or a round body. It never leans into any of
+ * those faces, so in a corner there is no glide unless the step runs along one face away from the
+ * other. A face first counts as the run it makes with the faces in line with it, which keeps a body
+ * flush along a wall of pieces. Where that glide is refused, each feature counts as it lies.
  */
 export function resolveMove(collision: SpaceCollision, from: Point, to: Point, radius: number, npcs: readonly Body[], bodies: readonly Body[]): ResolvedMove {
   const substeps = Math.max(1, Math.ceil(distance(from, to) / MOVE_SUBSTEP));
-  const stepX = (to.x - from.x) / substeps;
-  const stepZ = (to.z - from.z) / substeps;
+  const step = { x: (to.x - from.x) / substeps, z: (to.z - from.z) / substeps };
   let position = from;
   let blocked = false;
   const legal = (next: Point): boolean =>
     isLegalMove(collision, position, next, radius, npcs) && !bodies.some((body) => bodyBlocks(position, next, radius, body));
   for (let index = 0; index < substeps; index += 1) {
-    const full = { x: position.x + stepX, z: position.z + stepZ };
-    const alongX = { x: position.x + stepX, z: position.z };
-    const alongZ = { x: position.x, z: position.z + stepZ };
+    const full = { x: position.x + step.x, z: position.z + step.z };
     if (legal(full)) {
       position = full;
       continue;
     }
     blocked = true;
-    if (stepX !== 0 && legal(alongX)) position = alongX;
-    else if (stepZ !== 0 && legal(alongZ)) position = alongZ;
-    else break;
+    const { runs, own } = contactNormals(collision, position, full, radius, npcs, bodies);
+    const glided = (normals: readonly Point[]): Point | undefined => {
+      const glide = glideAlong(step, normals);
+      return glide === undefined ? undefined : { x: position.x + glide.x, z: position.z + glide.z };
+    };
+    const alongX = step.x === 0 ? undefined : { x: position.x + step.x, z: position.z };
+    const alongZ = step.z === 0 ? undefined : { x: position.x, z: position.z + step.z };
+    const next = [glided(runs), glided(own), alongX, alongZ].find((candidate) => candidate !== undefined && legal(candidate));
+    if (next === undefined) break;
+    position = next;
   }
   return { position, blocked };
+}
+
+/**
+ * The step less its push into each normal, or `undefined` where what is left still leans into
+ * one of them (a wedge), turns back against the step, or is too short to count.
+ */
+function glideAlong(step: Point, normals: readonly Point[]): Point | undefined {
+  let glide = step;
+  for (const normal of normals) {
+    const push = Math.min(dot(glide, normal), 0);
+    glide = { x: glide.x - push * normal.x, z: glide.z - push * normal.z };
+  }
+  if (normals.some((normal) => dot(glide, normal) < -WEDGE_TOLERANCE)) return undefined;
+  if (dot(glide, step) <= 0 || Math.hypot(glide.x, glide.z) < NEGLIGIBLE_GLIDE) return undefined;
+  return glide;
+}
+
+/**
+ * For every feature that refuses a step from `at` to `probe`, the unit vector out to `at` from
+ * where the feature lies nearest it: `own` as each feature lies, and `runs` with a joint taken as
+ * the run it lies in. The static world refuses as `isClear` judges it, an NPC the probe overlaps,
+ * and another body only where it stops the step, so an overlapping pair can still separate.
+ */
+function contactNormals(
+  collision: SpaceCollision,
+  at: Point,
+  probe: Point,
+  radius: number,
+  npcs: readonly Body[],
+  bodies: readonly Body[],
+): { runs: Point[]; own: Point[] } {
+  // Only the stretch of a run between a refusing feature's nearest point and `at`'s foot on its line
+  // decides the normal, and every face there lies this near `at`, whether or not it refuses the step itself.
+  const nearby: Face[] = [];
+  someFeatureTouched(collision, at, radius + distance(at, probe) + EDGE_TOLERANCE, (feature) => {
+    nearby.push(...feature.faces());
+    return false;
+  });
+  const roundoff = FACE_ROUNDOFF * Math.max(1, Math.abs(at.x), Math.abs(at.z));
+  const runs: Point[] = [];
+  const own: Point[] = [];
+  someFeatureTouched(collision, probe, radius, (feature) => {
+    const point = feature.nearest(at);
+    const normal = outFrom(point, at);
+    const run = runNormal(point, at, feature.faces(), nearby, roundoff);
+    own.push(...normal);
+    runs.push(...(run === undefined ? normal : [run]));
+    return false;
+  });
+  const centres = [...npcs.filter((npc) => touches(probe, radius, [npc])), ...bodies.filter((body) => bodyBlocks(at, probe, radius, body))];
+  const fromCentres = centres.flatMap((centre) => outFrom(centre, at));
+  return { runs: [...runs, ...fromCentres], own: [...own, ...fromCentres] };
+}
+
+/**
+ * The normal at `at` of the run through the point where a feature lies nearest `at`, such as two
+ * wall pieces or two sectors' edges in a line. Beside the run it is the run's own normal, and past
+ * it the vector out from the run's end, so a joint inside a run is no corner and the run's end still
+ * is. Where several of the feature's faces run through the point, as at a corner, the run nearest
+ * `at` counts. `undefined` where none runs through it with `at` in front.
+ */
+function runNormal(point: Point, at: Point, faces: readonly Face[], nearby: readonly Face[], roundoff: number): Point | undefined {
+  let best: { normal: Point; length: number } | undefined;
+  for (const face of faces) {
+    if (distance(point, closestOnSegment(point, face)) > roundoff || offset(at, face, face.normal) < -roundoff) continue;
+    const tangent = tangentOf(face);
+    const [low, high] = runOf(face, nearby, roundoff);
+    const beside = offset(at, face, tangent);
+    const end = clamp(beside, low, high);
+    const source = { x: face.a.x + tangent.x * end, z: face.a.z + tangent.z * end };
+    const length = end === beside ? offset(at, face, face.normal) : distance(source, at);
+    if (length <= 0 || (best !== undefined && length >= best.length)) continue;
+    best = { normal: end === beside ? face.normal : outFrom(source, at)[0]!, length };
+  }
+  return best?.normal;
+}
+
+/**
+ * Where the run the face lies in starts and ends along the face's line, measured from the face's
+ * start. The run is the face and the nearby faces on its line, out the same way, that chain to it
+ * with gaps of at most `EDGE_TOLERANCE`.
+ */
+function runOf(face: Face, nearby: readonly Face[], roundoff: number): [number, number] {
+  const tangent = tangentOf(face);
+  const stretch = (other: Face): [number, number] => {
+    const a = offset(other.a, face, tangent);
+    const b = offset(other.b, face, tangent);
+    return [Math.min(a, b), Math.max(a, b)];
+  };
+  const own = stretch(face);
+  const stretches = [own, ...nearby.filter((other) => inLine(face, other, roundoff)).map(stretch)].sort((one, other) => one[0] - other[0]);
+  let [low, high] = stretches[0]!;
+  for (const [from, to] of stretches) {
+    if (from > high + EDGE_TOLERANCE) {
+      if (high >= own[0]) break;
+      low = from;
+    }
+    high = Math.max(high, to);
+  }
+  return [low, high];
+}
+
+/** Whether the other face lies on the face's line, out the same way. */
+function inLine(face: Face, other: Face, roundoff: number): boolean {
+  return dot(face.normal, other.normal) > 0 && [other.a, other.b].every((end) => Math.abs(offset(end, face, face.normal)) <= roundoff);
+}
+
+/** How far the point lies from the face's start in the direction. */
+function offset(point: Point, face: Face, direction: Point): number {
+  return dot({ x: point.x - face.a.x, z: point.z - face.a.z }, direction);
+}
+
+function tangentOf(face: Face): Point {
+  return { x: face.normal.z, z: -face.normal.x };
+}
+
+/** The unit vector out to `at` from the source, none where the two coincide. */
+function outFrom(source: Point, at: Point): Point[] {
+  const length = distance(source, at);
+  return length === 0 ? [] : [{ x: (at.x - source.x) / length, z: (at.z - source.z) / length }];
+}
+
+function dot(a: Point, b: Point): number {
+  return a.x * b.x + a.z * b.z;
 }

@@ -1,8 +1,8 @@
 import type { Door, SectorView } from '@somnio/protocol';
-import { buildSpaceCollision, canStand, distanceToRect, npcBodies } from './collision.ts';
+import { buildSpaceCollision, canStand, npcBodies } from './collision.ts';
 import { reachDistance } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
-import { EDGE_TOLERANCE, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
+import { EDGE_TOLERANCE, distance, distanceToRect, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
 import type { Point, Rect, Transform } from './geometry.ts';
 import { SECTOR_BORDER_SUPPORT_METRES, paddedRasterRect } from './ground.ts';
 import { heading, headingRadians } from './heading.ts';

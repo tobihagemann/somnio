@@ -522,7 +522,7 @@ describe('waypoints', () => {
    * player glides west under the box's south face and turns north once past the corner.
    */
   const box = { id: 'box', x: 9, z: 8, width: 3, depth: 1 };
-  const start = { x: 9.6, z: 9.3 };
+  const start = { x: 9.4, z: 9.3 };
 
   function slideRoundCorner(frameMs: number): { rig: Rig; reports: Point[] } {
     const rig = makeRig({ sector: { blockers: [box] }, held: { ...HELD_W, leftShift: true }, entities: [self({ position: start })] });
