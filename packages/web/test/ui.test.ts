@@ -160,7 +160,10 @@ describe('panel chrome metrics', () => {
     const band = /\n\.splash-wordmark\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(band).toContain(`top: ${WORDMARK_BAND_INSET}px`);
     expect(band).toContain(`bottom: calc(50% + var(--somnio-splash-card-half) + ${WORDMARK_BAND_INSET}px)`);
-    expect(/\.splash-wordmark__image\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('width: min(440px, calc(100vw - 48px))');
+    const wordmark = /\.splash-wordmark__image\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(wordmark).toContain('width: min(440px, calc(100vw - 48px))');
+    // The reel frames its figures clear of the card's column alone, which covers the wordmark only while it is the narrower.
+    expect(Number(/width: min\((\d+)px/.exec(wordmark ?? '')?.[1])).toBeLessThan(PRE_LOGIN_CARD.width);
     // The in-game menus keep their own scrim.
     expect(/\n\.overlay-scrim\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.55)');
   });

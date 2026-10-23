@@ -15,6 +15,8 @@ The client needs a running backend. Stand up the local server on port 17662 firs
 
 Node 24.17.0 or newer (the root `package.json` pins `engines`, `.nvmrc` carries the version).
 
+Start Vite with the sandbox disabled, and restart one that was started sandboxed. A Vite inside the command sandbox misses file-change events and keeps serving its first transform of an edited module, so a reload shows stale code with no error. Before judging a change in the browser, confirm the served module carries a runtime identifier or string literal the change adds, since types and most comments are stripped: `curl -s http://localhost:17669/src/<path>.ts | grep -c '<identifier>'`. A core or protocol module is served under `/@fs/<absolute path>/packages/<pkg>/src/<path>.ts` instead.
+
 Without an asset pack the page loads and plays with placeholder models, unstyled panels, and no wordmark or favicon. To render the real world, build the served asset root from the `somnio-assets` working tree **before** starting Vite; a pack added afterwards is not served until restart:
 
 ```bash

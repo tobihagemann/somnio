@@ -19,7 +19,7 @@ export interface Circle extends Point {
   radius: number;
 }
 
-/** A line a figure walks, kept clear of anything that blocks for `radius` either side. */
+/** A line the generator keeps every placement's crown off, for `radius` either side. It is a route widened by `CORRIDOR`, or a line a splash figure walks. */
 export interface KeepOut {
   points: Point[];
   radius: number;
@@ -128,8 +128,42 @@ export const ROADS: Road[] = [
   },
 ];
 
-/** How each outdoor door's path to the nearest street is painted; its points are routed from the door itself. */
+/** The town's cobbled streets. */
+export const STREETS = ROADS.filter((road) => road.materialId === 'cobble-town');
+
+/** How far past its own width every route keeps the crowns of generated placements. */
+export const CORRIDOR = 1.5;
+
+/** How a door path, an opening path, and a link are painted; their points are routed. */
 export const DOOR_PATH = { materialId: 'dirt-path', radius: 0.8, opacity: 0.9 } as const;
+
+export interface Opening {
+  id: string;
+  inside: Point;
+  /** Whether the path runs on from `inside` to the nearest door path in the yard. */
+  join: boolean;
+}
+
+/** The town's compound openings no door path runs through, each with a point just inside its yard. */
+export const OPENINGS: Opening[] = [
+  { id: 'gen-opening-nw-south', inside: { x: 9.28, z: 13.4 }, join: true },
+  { id: 'gen-opening-sw-north', inside: { x: 9.28, z: 27.6 }, join: false },
+  { id: 'gen-opening-sw-east', inside: { x: 13.4, z: 31.68 }, join: false },
+];
+
+export interface Link {
+  id: string;
+  /** The door whose arrival point the path starts at. */
+  from: string;
+  /** The door whose path it ends on. */
+  to: string;
+}
+
+/** The town's compounds whose two door paths do not meet. */
+export const LINKS: Link[] = [
+  { id: 'gen-link-ne', from: 'to-edariashop', to: 'to-edarialibrary' },
+  { id: 'gen-link-se', from: 'to-edariaarena', to: 'to-edariafighterhall' },
+];
 
 /** The square round the well, paved. */
 export const PLAZA = { id: 'gen-plaza', materialId: 'cobble-town', centre: { x: 20.48, z: 20.48 }, radius: 3.6 } as const;
@@ -145,21 +179,26 @@ export const SPLASH_KEEP_OUTS: KeepOut[] = [
     points: [
       { x: 9, z: 20.5 },
       { x: 16, z: 20.5 },
+      { x: 17.6, z: 23 },
+      { x: 17.6, z: 27 },
     ],
   },
   {
     radius: 1,
     points: [
-      { x: 23.5, z: 9 },
+      { x: 23.5, z: 14 },
       { x: 23.5, z: 17 },
       { x: 26, z: 18.5 },
+      { x: 31, z: 18.5 },
     ],
   },
   {
     radius: 1,
     points: [
-      { x: 31, z: 22 },
-      { x: 24.5, z: 22 },
+      { x: 29.5, z: 22.6 },
+      { x: 23, z: 22.6 },
+      { x: 18, z: 22.6 },
+      { x: 13, z: 21 },
     ],
   },
   {
@@ -177,7 +216,7 @@ export const SPLASH_KEEP_OUTS: KeepOut[] = [
       { x: 18.5, z: -50.3 },
       { x: 23, z: -50 },
       { x: 19.77, z: -46.29 },
-      { x: 22.5, z: -48.5 },
+      { x: 17.5, z: -48.5 },
     ],
   },
   { radius: 1.2, points: [{ x: 19, z: -46.6 }] },
@@ -236,6 +275,8 @@ export const LANDS: LandRules[] = [
       { x: 18.2, z: 8, radius: 1.2 },
       { x: 23, z: 32.5, radius: 1.3 },
       { x: 8, z: 22.5, radius: 1 },
+      // The yard end of each opening path that stops there.
+      ...OPENINGS.filter((opening) => !opening.join).map((opening) => ({ ...opening.inside, radius: 1.1 })),
     ],
     clustersPerWindow: 2,
     clusterTrees: [1, 2],

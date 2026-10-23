@@ -42,7 +42,7 @@ import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
-import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
+import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, PLAQUE_FEET_GAP, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
 import type { RasterArt } from './overlayArt';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
 import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS, flameFlicker, flamePhase } from './propLights';
@@ -1724,8 +1724,6 @@ const MEND_PULSE_COLOR = 0xd8e6ff;
 const SELECTION_RING_COLOR = 0x8ef0b0;
 /** How much wider than its body an entity is to the cursor. */
 const PICK_RADII = 1.5;
-/** Gap between the feet anchor and the top of the name plaque. */
-const PLAQUE_FEET_GAP = 0.15;
 /** Advance past the point where the below-the-feet quad clears the floor plane. */
 const PLAQUE_FLOOR_CLEARANCE = 0.15;
 

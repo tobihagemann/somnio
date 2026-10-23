@@ -4,6 +4,7 @@ import {
   EDGE_TOLERANCE,
   MOVE_SUBSTEP,
   OUTDOOR_SPACE_ID,
+  SOMNIO_CONSTANTS,
   buildSpaceCollision,
   buildWorld,
   bundledModelRegistry,
@@ -17,10 +18,11 @@ import {
   spawnArea,
 } from '@somnio/core';
 import type { Point, Rect } from '@somnio/core';
-import { ORTHO_RIG, worldMovement } from '@/scene/cameraRig';
+import { ORTHO_RIG, clampedScale, worldMovement } from '@/scene/cameraRig';
+import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, PLAQUE_FEET_GAP, renderNamePlaque } from '@/scene/overlayArt';
 import { splashSectors } from '@/splash/sectors';
 import { DIP_SECONDS, PRE_LOGIN_CARD, SPLASH_REEL, WORDMARK_BAND_INSET, pathPoint, pathSeconds, shotFraming, stageReel } from '@/splash/reel';
-import type { StagedShot, Viewport } from '@/splash/reel';
+import type { StagedActor, StagedShot, Viewport } from '@/splash/reel';
 import { SECTOR_FIXTURES_DIRECTORY } from '../../core/test/support/sectorFixture.ts';
 
 /**
@@ -137,16 +139,67 @@ function namedFigures(shot: StagedShot): string[] {
   return [...named];
 }
 
-/** Whether a point lies under the login card or the wordmark band, where no figure a shot is about may be drawn. */
-function covered(point: { x: number; y: number }, viewport: Viewport): boolean {
-  const middle = { x: viewport.width / 2, y: viewport.height / 2 };
-  const underCard = Math.abs(point.x - middle.x) < PRE_LOGIN_CARD.width / 2 && Math.abs(point.y - middle.y) < PRE_LOGIN_CARD.height / 2;
-  const bandBottom = middle.y - PRE_LOGIN_CARD.height / 2 - WORDMARK_BAND_INSET;
-  return underCard || (point.y > WORDMARK_BAND_INSET && point.y < bandBottom);
+/** Each dreamer a shot's NPC greets, from the moment the greeting is said. */
+function greeted(shot: StagedShot): { listener: StagedActor; npc: StagedActor; at: number }[] {
+  return SPLASH_REEL.find((each) => each.id === shot.id)!.beats.flatMap((beat) =>
+    beat.kind === 'greeting'
+      ? [
+          {
+            listener: shot.actors.find((actor) => actor.kind === 'peer' && actor.name === beat.listener)!,
+            npc: shot.actors.find((actor) => actor.id === beat.npc)!,
+            at: beat.at,
+          },
+        ]
+      : [],
+  );
 }
 
 /** How tall a figure is taken to stand, for its head to clear what covers the screen too. */
 const FIGURE_HEIGHT = 1.6;
+
+interface Box {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Where a figure is drawn, in CSS pixels: as wide as its body or the name plate under its feet,
+ * whichever is wider, from its head down to the plate's foot. The plate hangs in the screen's plane,
+ * sized in metres like every overlay.
+ */
+function drawnBox(actor: StagedActor, seconds: number, focus: Point, scale: number, viewport: Viewport): Box {
+  const plate = renderNamePlaque(actor.name, actor.kind === 'npc' ? NAME_PLAQUE.npcBackground : NAME_PLAQUE.playerBackground, false);
+  const pixelsPerMetre = viewport.height / 2 / scale;
+  const halfWidth = Math.max(actor.radius, (plate.widthPixels * OVERLAY_METRES_PER_PIXEL) / 2) * pixelsPerMetre;
+  const feet = drawnAt(pathPoint(actor, seconds), 0, focus, scale, viewport);
+  const head = drawnAt(pathPoint(actor, seconds), FIGURE_HEIGHT, focus, scale, viewport);
+  return {
+    left: feet.x - halfWidth,
+    right: feet.x + halfWidth,
+    top: head.y,
+    bottom: feet.y + (plate.heightPixels * OVERLAY_METRES_PER_PIXEL + PLAQUE_FEET_GAP) * pixelsPerMetre,
+  };
+}
+
+function onScreen(box: Box, viewport: Viewport): boolean {
+  return box.left >= 0 && box.right <= viewport.width && box.top >= 0 && box.bottom <= viewport.height;
+}
+
+/**
+ * Whether a box reaches into the card's column, from the top of the wordmark band down to the card's
+ * foot, where no framed figure may be drawn. The wordmark is narrower than the card.
+ */
+function covered(box: Box, viewport: Viewport): boolean {
+  const middle = { x: viewport.width / 2, y: viewport.height / 2 };
+  return (
+    box.right > middle.x - PRE_LOGIN_CARD.width / 2 &&
+    box.left < middle.x + PRE_LOGIN_CARD.width / 2 &&
+    box.bottom > WORDMARK_BAND_INSET &&
+    box.top < middle.y + PRE_LOGIN_CARD.height / 2
+  );
+}
 
 describe('the splash reel', () => {
   it('plays its shots in the fixed order', () => {
@@ -252,22 +305,101 @@ describe('the splash reel', () => {
     },
   );
 
-  it.each(reel.map((shot) => [shot.id, shot] as const))('draws every figure %s is about on screen, beside the card and below the wordmark', (_id, shot) => {
-    const figures = namedFigures(shot);
-    for (const viewport of VIEWPORTS) {
-      for (const seconds of moments(shot)) {
-        const { focus, scale } = shotFraming(shot, seconds, viewport);
-        for (const id of figures) {
-          const actor = shot.actors.find((candidate) => candidate.id === id)!;
-          const feet = pathPoint(actor, seconds);
-          for (const height of [0, FIGURE_HEIGHT]) {
-            const drawn = drawnAt(feet, height, focus, scale, viewport);
-            const where = `${id} at ${height} m in ${viewport.width}x${viewport.height} at ${seconds}s`;
-            expect(drawn.x >= 0 && drawn.x <= viewport.width && drawn.y >= 0 && drawn.y <= viewport.height, `${where} is on screen`).toBe(true);
-            expect(covered(drawn, viewport), where).toBe(false);
+  it.each(reel.map((shot) => [shot.id, shot] as const))(
+    'draws every figure %s is about, and every figure standing in a followed shot, whole on screen, its plate included, clear of the card and the wordmark',
+    (_id, shot) => {
+      const named = namedFigures(shot);
+      for (const viewport of VIEWPORTS) {
+        for (const seconds of moments(shot)) {
+          const { focus, scale } = shotFraming(shot, seconds, viewport);
+          // A shot that follows a subject also frames every figure once it stands, the dreamer an NPC greets among them.
+          const standing = shot.camera.kind === 'subject' ? shot.actors.filter((actor) => seconds >= pathSeconds(actor)).map((actor) => actor.id) : [];
+          const figures = [...new Set([...named, ...standing])];
+          for (const id of figures) {
+            const box = drawnBox(
+              shot.actors.find((candidate) => candidate.id === id)!,
+              seconds,
+              focus,
+              scale,
+              viewport,
+            );
+            const where = `${id} in ${viewport.width}x${viewport.height} at ${seconds}s`;
+            expect(onScreen(box, viewport), `${where} is on screen`).toBe(true);
+            expect(covered(box, viewport), where).toBe(false);
+          }
+        }
+      }
+    },
+  );
+
+  /** A window too narrow to hold a shot beside the card still frames it, at a scale the scene draws at, so the subject lands where the framing puts it. */
+  it.each(reel.map((shot) => [shot.id, shot] as const))('frames %s finitely on a window narrower than every tested viewport', (_id, shot) => {
+    for (const width of [400, 559, 560, 561, 600, 700, 899]) {
+      for (const height of [640, 900]) {
+        for (const seconds of moments(shot)) {
+          const { focus, scale } = shotFraming(shot, seconds, { width, height });
+          const where = `${width}x${height} at ${seconds}s`;
+          expect([focus.x, focus.z, scale].every(Number.isFinite), where).toBe(true);
+          expect(scale, where).toBe(clampedScale(scale));
+          if (shot.camera.kind === 'subject' && width <= PRE_LOGIN_CARD.width) expect(scale, `${where} pulls back as far as it goes`).toBe(ORTHO_RIG.maxScale);
+          if (shot.camera.kind === 'subject') {
+            const camera = shot.camera;
+            const subject =
+              typeof camera.subject === 'string'
+                ? pathPoint(
+                    shot.actors.find((actor) => actor.id === camera.subject)!,
+                    seconds,
+                  )
+                : camera.subject;
+            const at = drawnAt(subject, 0, focus, scale, { width, height });
+            const across = (PRE_LOGIN_CARD.width / 2 + width / 2) / 2;
+            expect(at.x, `${where} draws the subject beside the card`).toBeCloseTo(width / 2 + (camera.side === 'right' ? across : -across), 3);
+            expect(at.y, `${where} draws the subject at its drop`).toBeCloseTo(height / 2 + (camera.drop * height) / 2, 3);
           }
         }
       }
     }
+  });
+
+  it('moves no scripted dreamer at the walk gait', () => {
+    for (const shot of reel) {
+      for (const actor of shot.actors.filter((candidate) => candidate.kind === 'peer')) expect(actor.gait, `${shot.id}: ${actor.id}`).not.toBe('walk');
+    }
+  });
+
+  it('greets each dreamer once they stop within speaking distance', () => {
+    for (const shot of reel) {
+      for (const { listener, npc, at } of greeted(shot)) {
+        expect(pathSeconds(listener), `${shot.id}: ${listener.id} stops first`).toBeLessThanOrEqual(at);
+        expect(at, `${shot.id}: the greeting comes before the dip`).toBeLessThan(shot.seconds - DIP_SECONDS);
+        expect(distance(pathPoint(listener, at), npc.start), `${shot.id}: ${listener.id} stands near ${npc.id}`).toBeLessThanOrEqual(
+          SOMNIO_CONSTANTS.npcInteractionRadius,
+        );
+      }
+    }
+    for (const id of ['inn', 'library']) expect(greeted(reel.find((shot) => shot.id === id)!), id).toHaveLength(1);
+  });
+
+  it.each(reel.filter((shot) => shot.camera.kind === 'area').map((shot) => [shot.id, shot] as const))(
+    'keeps every mover of %s on screen while it moves',
+    (_id, shot) => {
+      const movers = shot.actors.filter((actor) => actor.kind !== 'npc' && actor.path.length > 0);
+      for (const viewport of VIEWPORTS) {
+        for (const seconds of moments(shot)) {
+          const { focus, scale } = shotFraming(shot, seconds, viewport);
+          for (const actor of movers.filter((mover) => seconds < pathSeconds(mover))) {
+            const where = `${actor.id} in ${viewport.width}x${viewport.height} at ${seconds}s`;
+            expect(onScreen(drawnBox(actor, seconds, focus, scale, viewport), viewport), `${where} is on screen`).toBe(true);
+          }
+        }
+      }
+    },
+  );
+
+  it("keeps the town's dreamers moving for most of the shot, Odo at a run", () => {
+    const town = reel.find((shot) => shot.id === 'town')!;
+    const dreamers = town.actors.filter((actor) => actor.kind === 'peer');
+    for (const actor of dreamers) expect(pathSeconds(actor), actor.id).toBeGreaterThan(town.seconds / 2);
+    expect(dreamers.find((actor) => actor.name === 'Odo')?.gait).toBe('run');
   });
 });

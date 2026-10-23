@@ -13,7 +13,7 @@ import type { Heading, ModelRegistry, Point, Sector } from '@somnio/core';
 import type { Condition, Gait, SpeechKind } from '@somnio/protocol';
 import type { RaiseProgress } from '@/client/renderSurface';
 import { currentLocale, t } from '@/i18n';
-import { ORTHO_RIG, worldMovement } from '@/scene/cameraRig';
+import { ORTHO_RIG, clampedScale, worldMovement } from '@/scene/cameraRig';
 
 /**
  * The splash reel: a fixed sequence of short shots of the committed world, staged in the browser
@@ -27,7 +27,11 @@ export const DIP_SECONDS = 0.5;
 /** The widest pre-login card (Sign Up) and the tallest, in CSS pixels; every one is centred. */
 export const PRE_LOGIN_CARD = { width: 560, height: 294 } as const;
 
-/** Where the wordmark band runs: from this far below the top edge to this far above the tallest card. */
+/**
+ * Where the wordmark band runs: from this far below the top edge to this far above the tallest card.
+ * The wordmark drawn in it (`.splash-wordmark__image` in `chrome.css`) is narrower than the card, so
+ * beside the card's column the world shows from the top edge down.
+ */
 export const WORDMARK_BAND_INSET = 24;
 
 export interface Viewport {
@@ -85,8 +89,12 @@ type SplashBeat =
   | { at: number; kind: 'greeting'; npc: string; listener: string };
 
 type SplashCamera =
-  /** Keeps `subject`, an actor id or a fixed point, beside the card on `side`, `drop` half-heights below the middle. */
-  | { kind: 'subject'; subject: string | Point; side: 'left' | 'right'; drop: number; scale: { from: number; to: number } }
+  /**
+   * Keeps `subject`, an actor id or a fixed point, beside the card on `side`, `drop` half-heights
+   * below the middle. On a window whose strip beside the card holds less than `span` metres of ground
+   * across at `scale`, the camera pulls back, as far as the scene draws.
+   */
+  | { kind: 'subject'; subject: string | Point; side: 'left' | 'right'; drop: number; scale: { from: number; to: number }; span: number }
   /** A pan with no subject. */
   | { kind: 'area'; from: { point: Point; scale: number }; to: { point: Point; scale: number } };
 
@@ -136,6 +144,7 @@ const LINNEA = 'splash:linnea';
 const ODO = 'splash:odo';
 const PUGNAX = 'npc:EdariaFighterHall/pugnax';
 const LIBUS = 'npc:EdariaLibrary/libus';
+const QUIETA = 'npc:EdariaInn/quieta';
 const GHOST = 'monster:splash-1';
 const NORTH_WOOD_SPAWN = { sector: 'NorthWood', id: 'spawn-1' };
 
@@ -146,22 +155,47 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 10,
-    camera: { kind: 'area', from: { point: { x: 18.5, z: 20.8 }, scale: 6.2 }, to: { point: { x: 22.5, z: 19.6 }, scale: 6.2 } },
+    camera: { kind: 'area', from: { point: { x: 18.5, z: 20.8 }, scale: 6.35 }, to: { point: { x: 22.5, z: 19.6 }, scale: 6.35 } },
     actors: [
-      { kind: 'peer', id: TAMO, name: 'Tamo', at: { x: 9, z: 20.5 }, facing: 90, gait: 'walk', path: [{ x: 16, z: 20.5 }] },
+      {
+        kind: 'peer',
+        id: TAMO,
+        name: 'Tamo',
+        at: { x: 9, z: 20.5 },
+        facing: 90,
+        gait: 'jog',
+        path: [
+          { x: 16, z: 20.5 },
+          { x: 17.6, z: 23 },
+          { x: 17.6, z: 27 },
+        ],
+      },
       {
         kind: 'peer',
         id: LINNEA,
         name: 'Linnea',
-        at: { x: 23.5, z: 9 },
+        at: { x: 23.5, z: 14 },
         facing: 0,
         gait: 'jog',
         path: [
           { x: 23.5, z: 17 },
           { x: 26, z: 18.5 },
+          { x: 31, z: 18.5 },
         ],
       },
-      { kind: 'peer', id: ODO, name: 'Odo', at: { x: 31, z: 22 }, facing: 270, gait: 'walk', path: [{ x: 24.5, z: 22 }] },
+      {
+        kind: 'peer',
+        id: ODO,
+        name: 'Odo',
+        at: { x: 29.5, z: 22.6 },
+        facing: 270,
+        gait: 'run',
+        path: [
+          { x: 23, z: 22.6 },
+          { x: 18, z: 22.6 },
+          { x: 13, z: 21 },
+        ],
+      },
     ],
     beats: [],
   },
@@ -170,7 +204,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 11,
-    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: 0.35, scale: { from: 2.5, to: 2.5 } },
+    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: 0.2, scale: { from: 2.5, to: 2.5 }, span: 1.25 },
     actors: [
       {
         kind: 'peer',
@@ -192,23 +226,23 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: 'EdariaFighterHall',
     seconds: 7,
     hour: 12,
-    camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.5, scale: { from: 2.2, to: 2.2 } },
+    camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.05, scale: { from: 2.6, to: 2.6 }, span: 2 },
     actors: [
       { kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' },
-      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 3.84, z: 6.88 }, facing: 180, gait: 'walk', path: [{ x: 3.4, z: 2.9 }], faces: PUGNAX },
+      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 3.84, z: 6.88 }, facing: 180, gait: 'jog', path: [{ x: 3.4, z: 2.9 }], faces: PUGNAX },
     ],
-    beats: [{ at: 4.4, kind: 'greeting', npc: PUGNAX, listener: 'Mira' }],
+    beats: [{ at: 2.1, kind: 'greeting', npc: PUGNAX, listener: 'Mira' }],
   },
   {
     id: 'speech',
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 14,
-    camera: { kind: 'subject', subject: { x: 21.8, z: 22.6 }, side: 'left', drop: 0.35, scale: { from: 2.8, to: 2.6 } },
+    camera: { kind: 'subject', subject: { x: 21.8, z: 22.6 }, side: 'left', drop: 0.1, scale: { from: 2.8, to: 2.6 }, span: 1.5 },
     actors: [
-      { kind: 'peer', id: TAMO, name: 'Tamo', at: { x: 21.55, z: 22.77 }, facing: 120, gait: 'walk', path: [] },
-      { kind: 'peer', id: LINNEA, name: 'Linnea', at: { x: 22.05, z: 22.43 }, facing: 300, gait: 'walk', path: [] },
-      { kind: 'peer', id: ODO, name: 'Odo', at: { x: 22.32, z: 23.34 }, facing: 180, gait: 'walk', path: [] },
+      { kind: 'peer', id: TAMO, name: 'Tamo', at: { x: 21.55, z: 22.77 }, facing: 120, gait: 'jog', path: [] },
+      { kind: 'peer', id: LINNEA, name: 'Linnea', at: { x: 22.05, z: 22.43 }, facing: 300, gait: 'jog', path: [] },
+      { kind: 'peer', id: ODO, name: 'Odo', at: { x: 22.32, z: 23.34 }, facing: 180, gait: 'jog', path: [] },
     ],
     beats: [
       { at: 0.6, kind: 'speech', speaker: TAMO, speech: 'say', text: () => t('Anyone up for the North Wood?') },
@@ -221,7 +255,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 6,
     hour: 13,
-    camera: { kind: 'subject', subject: GHOST, side: 'left', drop: 0.4, scale: { from: 2.6, to: 2.6 } },
+    camera: { kind: 'subject', subject: GHOST, side: 'left', drop: 0.2, scale: { from: 2.6, to: 2.6 }, span: 1.25 },
     actors: [
       {
         kind: 'monster',
@@ -242,9 +276,9 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 8,
     hour: 13,
-    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.4, scale: { from: 2.6, to: 2.4 } },
+    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.15, scale: { from: 2.6, to: 2.4 }, span: 1.75 },
     actors: [
-      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 19, z: -46.6 }, facing: 35, gait: 'walk', path: [], faces: GHOST },
+      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 19, z: -46.6 }, facing: 35, gait: 'jog', path: [], faces: GHOST },
       { kind: 'carried', id: GHOST, path: [], faces: AUREL },
     ],
     beats: [
@@ -272,10 +306,10 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 8,
     hour: 13,
-    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.4, scale: { from: 2.4, to: 2.4 } },
+    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.3, scale: { from: 2.4, to: 2.4 }, span: 1.75 },
     actors: [
       { kind: 'carried', id: AUREL, path: [] },
-      { kind: 'carried', id: GHOST, path: [{ x: 22.5, z: -48.5 }] },
+      { kind: 'carried', id: GHOST, path: [{ x: 17.5, z: -48.5 }] },
       { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 16.5, z: -43.5 }, facing: 120, gait: 'jog', path: [{ x: 19.65, z: -46.63 }], faces: AUREL },
     ],
     beats: [
@@ -289,19 +323,31 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: 'EdariaInn',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'subject', subject: ODO, side: 'right', drop: 0.45, scale: { from: 2.4, to: 2 } },
+    camera: { kind: 'subject', subject: QUIETA, side: 'left', drop: -0.05, scale: { from: 2.6, to: 2.6 }, span: 2 },
     actors: [
       { kind: 'npc', sector: 'EdariaInn', npc: 'quieta' },
-      { kind: 'peer', id: ODO, name: 'Odo', at: { x: 6.88, z: 3.84 }, facing: 270, gait: 'walk', path: [{ x: 2.75, z: 3.86 }], faces: 'npc:EdariaInn/quieta' },
+      {
+        kind: 'peer',
+        id: ODO,
+        name: 'Odo',
+        at: { x: 5.2, z: 7.1 },
+        facing: 270,
+        gait: 'jog',
+        path: [
+          { x: 2.1, z: 7.1 },
+          { x: 1.7, z: 5.7 },
+        ],
+        faces: QUIETA,
+      },
     ],
-    beats: [],
+    beats: [{ at: 2.4, kind: 'greeting', npc: QUIETA, listener: 'Odo' }],
   },
   {
     id: 'library',
     space: 'EdariaLibrary',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'subject', subject: LIBUS, side: 'right', drop: 0.4, scale: { from: 3, to: 2.6 } },
+    camera: { kind: 'subject', subject: LIBUS, side: 'right', drop: 0.2, scale: { from: 3.3, to: 3.3 }, span: 2.5 },
     actors: [
       { kind: 'npc', sector: 'EdariaLibrary', npc: 'libus' },
       {
@@ -310,12 +356,12 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         name: 'Linnea',
         at: { x: 2.56, z: 6.88 },
         facing: 180,
-        gait: 'walk',
+        gait: 'jog',
         path: [{ x: 4.3, z: 5.0 }],
         faces: LIBUS,
       },
     ],
-    beats: [],
+    beats: [{ at: 1.4, kind: 'greeting', npc: LIBUS, listener: 'Linnea' }],
   },
   {
     id: 'time-lapse',
@@ -499,7 +545,7 @@ export function shotFocus(subject: Point, side: 'left' | 'right', drop: number, 
   return { x: subject.x - offset.dx, z: subject.z - offset.dz };
 }
 
-/** Where the camera looks and at what scale, `seconds` into a shot. */
+/** Where the camera looks and at what scale, `seconds` into a shot. Its scale is clamped as the scene clamps it, so the focus puts the subject where the scene draws it. */
 export function shotFraming(shot: StagedShot, seconds: number, viewport: Viewport): { focus: Point; scale: number } {
   const share = eased(seconds / shot.seconds);
   const camera = shot.camera;
@@ -507,10 +553,13 @@ export function shotFraming(shot: StagedShot, seconds: number, viewport: Viewpor
     const lerp = (from: number, to: number): number => from + (to - from) * share;
     return {
       focus: { x: lerp(camera.from.point.x, camera.to.point.x), z: lerp(camera.from.point.z, camera.to.point.z) },
-      scale: lerp(camera.from.scale, camera.to.scale),
+      scale: clampedScale(lerp(camera.from.scale, camera.to.scale)),
     };
   }
-  const scale = camera.scale.from + (camera.scale.to - camera.scale.from) * share;
+  // Beside a card at least as wide as the window there is no strip, so the camera pulls back as far as it goes.
+  const strip = (viewport.width - PRE_LOGIN_CARD.width) / 2;
+  const floor = strip > 0 ? (camera.span * viewport.height) / (2 * strip) : ORTHO_RIG.maxScale;
+  const scale = clampedScale(Math.max(camera.scale.from + (camera.scale.to - camera.scale.from) * share, floor));
   return { focus: shotFocus(subjectPoint(shot, camera.subject, seconds), camera.side, camera.drop, scale, viewport), scale };
 }
 

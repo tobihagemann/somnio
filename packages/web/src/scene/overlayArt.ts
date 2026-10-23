@@ -20,6 +20,9 @@ const OVERLAY_RASTER_SCALE = 8;
 /** World metres per pixel of overlay artwork. */
 export const OVERLAY_METRES_PER_PIXEL = 0.016;
 
+/** Gap between the feet anchor and the top of the name plaque, in metres. */
+export const PLAQUE_FEET_GAP = 0.15;
+
 const SPEECH_BUBBLE = {
   widthPixels: SOMNIO_CONSTANTS.speechBubbleWidthPixels,
   fontSize: SOMNIO_CONSTANTS.speechBubbleFontSize,

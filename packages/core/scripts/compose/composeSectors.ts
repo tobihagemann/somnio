@@ -11,7 +11,7 @@ import type { ModelRegistry } from '../../src/modelRegistry.ts';
 import { sectorPointInSpace, sectorRect, spawnArea } from '../../src/sector.ts';
 import type { Sector } from '../../src/sector.ts';
 import { OUTDOOR_SPACE_ID, resolveDoor } from '../../src/world.ts';
-import { DOOR_PATH, PLAZA, ROADS, SPLASH_KEEP_OUTS } from './rules.ts';
+import { CORRIDOR, DOOR_PATH, LINKS, OPENINGS, PLAZA, ROADS, SPLASH_KEEP_OUTS, STREETS } from './rules.ts';
 import type { Circle, KeepOut, LandRules, Road } from './rules.ts';
 
 /**
@@ -27,8 +27,8 @@ import type { Circle, KeepOut, LandRules, Road } from './rules.ts';
  */
 
 const GENERATED = 'gen-';
-/** What every route keeps clear either side of its own width. */
-const CORRIDOR = 1.5;
+/** How far past a keep-out's edge the dressing thins, from none at the edge to full at the band's far side. */
+const THIN_BAND = 3;
 /** How far a placement keeps from a door's doorway and arrival point, the spawn, and an NPC. */
 const DOORWAY_CLEARANCE = 2;
 /** The dressed window the density targets count per. */
@@ -38,30 +38,46 @@ const TREE_SPACING = 1.3;
 const PROP_SPACING = 0.9;
 /** The spacing of the samples a road is cut into per sector. */
 const ROAD_SAMPLE = 1;
-/** The grid a door path is routed on, how far from its door it may look for a street, and how far it keeps from what blocks. */
+/** The grid a path is routed on, how far from its start it may look for a goal, and how far it keeps from what blocks. */
 const PATH_CELL = 0.32;
 const PATH_SEARCH = 30;
 const PATH_CLEARANCE = SOMNIO_CONSTANTS.playerRadius + 0.3;
-/** Within this distance of the arrival point a path needs only a body's clearance from what blocks, since the arrival point stands just before the building. */
+/** Within this distance of a route's start it needs only a body's clearance from what blocks, since a door or link route starts at an arrival point just before a building. */
 const PATH_DOORWAY = 1.5;
 /** The clearance past which a path no longer cares how far it is from what blocks, and how much dearer a step at none is. */
 const PATH_OPEN = 2;
 const PATH_CENTRING = 4;
 
+/** The way on foot from a point to the edge of the nearest of `goals`, across the outdoor space being composed. */
+type Route = (start: Point, goals: readonly Road[]) => Point[] | undefined;
+
 export function composeSectors(sectors: readonly Sector[], lands: readonly LandRules[], registry: ModelRegistry): Sector[] {
   const composed = sectors.map((sector) => (sector.kind === 'outdoor' ? strip(sector) : structuredClone(sector)));
   const outdoor = composed.filter((sector) => sector.kind === 'outdoor').toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const placed: Circle[] = [];
-  const roads = [...doorPaths(outdoor, registry), ...ROADS];
-  for (const sector of outdoor) {
+  const space = { id: OUTDOOR_SPACE_ID, sectors: outdoor };
+  const collision = buildSpaceCollision(space, registry);
+  const npcs = npcBodies(space);
+  const route: Route = (start, goals) => routeToRoad(collision, npcs, start, goals);
+  const doors = doorPaths(outdoor, registry, route);
+  const roads = [...doors, ...openingPaths(route, doors), ...linkPaths(route, doors), ...ROADS];
+  const painted = new Map(outdoor.map((sector) => [sector, roadMarks(sector, roads)]));
+  const keepOuts: KeepOut[] = [
+    ...SPLASH_KEEP_OUTS,
+    ...roads.map((road) => ({ points: road.points, radius: road.radius + CORRIDOR })),
+    // A painted stroke is clamped into the bounds the codec accepts, so it can lie off its road's line.
+    ...[...painted].flatMap(([sector, marks]) =>
+      marks.flatMap((mark) =>
+        mark.shape.kind === 'stroke'
+          ? [{ points: mark.shape.points.map((point) => sectorPointInSpace(sector, point)), radius: mark.shape.radius + CORRIDOR }]
+          : [],
+      ),
+    ),
+  ];
+  for (const [sector, marks] of painted) {
     const rules = lands.find((land) => land.sector === sector.name);
-    sector.ground.marks = [
-      ...roadMarks(sector, roads),
-      ...plazaMarks(sector),
-      ...(rules === undefined ? [] : wornMarks(sector, rules)),
-      ...sector.ground.marks,
-    ];
-    if (rules !== undefined) dress(sector, rules, outdoor, roads, placed, registry);
+    sector.ground.marks = [...marks, ...plazaMarks(sector), ...(rules === undefined ? [] : wornMarks(sector, rules)), ...sector.ground.marks];
+    if (rules !== undefined) dress(sector, rules, outdoor, keepOuts, placed, registry);
   }
   return composed;
 }
@@ -78,35 +94,64 @@ function strip(sector: Sector): Sector {
  * streets, routed round whatever blocks the way, an NPC included, since a path through a wall would
  * read as a way through it. The paths come before the roads, so a street paints over where one meets it.
  */
-function doorPaths(sectors: readonly Sector[], registry: ModelRegistry): Road[] {
-  const space = { id: OUTDOOR_SPACE_ID, sectors: [...sectors] };
-  const collision = buildSpaceCollision(space, registry);
-  const npcs = npcBodies(space);
-  const streets = ROADS.filter((road) => road.materialId === 'cobble-town');
+function doorPaths(sectors: readonly Sector[], registry: ModelRegistry, route: Route): Road[] {
   return sectors.flatMap((sector) =>
     sector.doors.flatMap((door) => {
       const resolved = resolveDoor(sector, door, registry);
-      const points = resolved === undefined ? undefined : routeToStreet(collision, npcs, resolved.arrival, streets);
-      return resolved === undefined || points === undefined ? [] : [{ id: `${GENERATED}path-${door.id}`, ...DOOR_PATH, points: [resolved.doorway, ...points] }];
+      const points = resolved === undefined ? undefined : route(resolved.arrival, STREETS);
+      return resolved === undefined || points === undefined ? [] : [{ id: doorPathId(door.id), ...DOOR_PATH, points: [resolved.doorway, ...points] }];
     }),
   );
 }
 
+function doorPathId(doorId: string): string {
+  return `${GENERATED}path-${doorId}`;
+}
+
 /**
- * The way on foot from `start` to the edge of a street, found on a grid where a step costs more
- * the nearer it passes what blocks, so a path keeps to the middle of a gap in a wall. It is then
- * pulled straight wherever a straight line keeps as clear as the stretch of the route it replaces.
- * `undefined` when no street is within reach or `start` already stands on one.
+ * A dirt path through each compound opening no door path runs through, from just inside its yard
+ * to the edge of the nearest street, and for an opening that joins, on into the yard to the edge
+ * of the nearest door path. It comes after the door paths, so it paints over the one it joins.
  */
-function routeToStreet(collision: SpaceCollision, npcs: readonly Body[], start: Point, streets: readonly Road[]): Point[] | undefined {
-  const onStreet = (point: Point): { centre: Point; radius: number } | undefined => {
-    for (const street of streets) {
-      const centre = nearestOnLine(street.points, point);
-      if (distance(centre, point) <= street.radius) return { centre, radius: street.radius };
+function openingPaths(route: Route, doors: readonly Road[]): Road[] {
+  return OPENINGS.flatMap((opening) => {
+    const outward = route(opening.inside, STREETS);
+    if (outward === undefined) return [];
+    if (!opening.join) return [{ id: opening.id, ...DOOR_PATH, points: outward }];
+    const inward = route(opening.inside, doors);
+    return inward === undefined ? [] : [{ id: opening.id, ...DOOR_PATH, points: [...inward.toReversed(), ...outward.slice(1)] }];
+  });
+}
+
+/** A dirt path joining two doors of a compound whose paths do not meet, from the arrival point of one to the edge of the other's path. */
+function linkPaths(route: Route, doors: readonly Road[]): Road[] {
+  return LINKS.flatMap((link) => {
+    // A door path's second point is its arrival point, after the doorway.
+    const start = doors.find((road) => road.id === doorPathId(link.from))?.points[1];
+    if (start === undefined) return [];
+    const points = route(
+      start,
+      doors.filter((road) => road.id === doorPathId(link.to)),
+    );
+    return points === undefined ? [] : [{ id: link.id, ...DOOR_PATH, points }];
+  });
+}
+
+/**
+ * The way on foot from `start` to the edge of the nearest of `goals`, found on a grid where a step
+ * costs more the nearer it passes what blocks, so a path keeps to the middle of a gap in a wall. It
+ * is then pulled straight wherever a straight line keeps as clear as the stretch of the route it
+ * replaces. `undefined` when no goal is within reach or `start` already stands on one.
+ */
+function routeToRoad(collision: SpaceCollision, npcs: readonly Body[], start: Point, goals: readonly Road[]): Point[] | undefined {
+  const onRoad = (point: Point): { centre: Point; radius: number } | undefined => {
+    for (const road of goals) {
+      const centre = nearestOnLine(road.points, point);
+      if (distance(centre, point) <= road.radius) return { centre, radius: road.radius };
     }
     return undefined;
   };
-  if (onStreet(start) !== undefined) return undefined;
+  if (onRoad(start) !== undefined) return undefined;
   const nearDoorway = (point: Point): boolean => distance(point, start) < PATH_DOORWAY;
   const clearances = new Map<string, number>();
   /** How far `point` stands from what blocks, at most `PATH_OPEN`: to a tenth of a metre from the collision, exactly from an NPC. */
@@ -143,7 +188,7 @@ function routeToStreet(collision: SpaceCollision, npcs: readonly Body[], start: 
   while (goal === undefined) {
     const cell = queue.pop();
     if (cell === undefined) return undefined;
-    if (cell !== first && onStreet(cellPoint(cell)) !== undefined) goal = cell;
+    if (cell !== first && onRoad(cellPoint(cell)) !== undefined) goal = cell;
     const i = cell % side;
     const j = Math.floor(cell / side);
     for (const [di, dj] of NEIGHBOURS) {
@@ -162,15 +207,15 @@ function routeToStreet(collision: SpaceCollision, npcs: readonly Body[], start: 
   }
   const cells = [goal];
   while (cells[0] !== first) cells.unshift(from.get(cells[0]!)!);
-  const street = onStreet(cellPoint(goal))!;
+  const road = onRoad(cellPoint(goal))!;
   const last = cellPoint(goal);
-  const across = distance(street.centre, last);
+  const across = distance(road.centre, last);
   const edge =
     across === 0
       ? last
       : {
-          x: street.centre.x + ((last.x - street.centre.x) * street.radius) / across,
-          z: street.centre.z + ((last.z - street.centre.z) * street.radius) / across,
+          x: road.centre.x + ((last.x - road.centre.x) * road.radius) / across,
+          z: road.centre.z + ((last.z - road.centre.z) * road.radius) / across,
         };
   const route = [start, ...cells.slice(1, -1).map(cellPoint), edge];
   // A straight line may stand in for the route between two of its points where it keeps at least
@@ -298,10 +343,11 @@ function wornMarks(sector: Sector, rules: LandRules): GroundMark[] {
 
 /**
  * Clusters of trees with bushes at their rims, then loose bushes and rocks, each drawn at a random
- * spot and yaw and kept only where nothing blocks it and it keeps clear of every road, clearing,
- * doorway, splash path, and monster spawn area.
+ * spot and yaw and kept only where nothing blocks its trunk and its crown keeps clear of every road
+ * as painted, clearing, doorway, splash path, and monster spawn area. Within `THIN_BAND` of a
+ * keep-out, a draw is kept with a chance that grows with how far its crown stands from it.
  */
-function dress(sector: Sector, rules: LandRules, outdoor: readonly Sector[], roads: readonly Road[], placed: Circle[], registry: ModelRegistry): void {
+function dress(sector: Sector, rules: LandRules, outdoor: readonly Sector[], keepOuts: readonly KeepOut[], placed: Circle[], registry: ModelRegistry): void {
   const random = seededSequence(rules.seed);
   const rect = sectorRect(sector);
   const collision = buildSpaceCollision({ id: OUTDOOR_SPACE_ID, sectors: [...outdoor] }, registry);
@@ -314,7 +360,6 @@ function dress(sector: Sector, rules: LandRules, outdoor: readonly Sector[], roa
     ...each.npcs.map((npc) => sectorPointInSpace(each, npc)),
   ]);
   const spawnAreas = outdoor.flatMap((each) => each.monsterSpawns.map((spawn) => spawnArea(each, spawn)));
-  const keepOuts: KeepOut[] = [...SPLASH_KEEP_OUTS, ...roads.map((road) => ({ points: road.points, radius: road.radius + CORRIDOR }))];
   const open = (point: Point, reach: number): boolean =>
     rectContains(rect, point) &&
     !rules.clearings.some((clearing) => distance(point, clearing) < clearing.radius + reach) &&
@@ -337,7 +382,10 @@ function dress(sector: Sector, rules: LandRules, outdoor: readonly Sector[], roa
       ),
       0.1,
     );
-    if (!open(point, reach) || !isClear(collision, point, reach + 0.05) || placed.some((other) => distance(point, other) < Math.max(spacing, other.radius)))
+    const crown = Math.max(reach, Math.hypot(rule.footprint.width, rule.footprint.depth) / 2);
+    const margin = Math.min(...keepOuts.map((keepOut) => distance(point, nearestOnLine(keepOut.points, point)) - keepOut.radius)) - crown;
+    if (margin >= 0 && margin < THIN_BAND && random() * THIN_BAND > margin) return false;
+    if (!open(point, crown) || !isClear(collision, point, reach + 0.05) || placed.some((other) => distance(point, other) < Math.max(spacing, other.radius)))
       return false;
     const count = (counter.get(modelId) ?? 0) + 1;
     counter.set(modelId, count);
