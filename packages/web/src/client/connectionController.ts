@@ -1,5 +1,16 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, assertNever, isClientOnlyMessage } from '@somnio/protocol';
-import type { Condition, EnterSpaceMessage, EntityKind, Locale, LoginResult, RegisterResult, SectorView, SomnioMessage } from '@somnio/protocol';
+import type {
+  CharacterResult,
+  CharacterSummaryMessage,
+  Condition,
+  EnterSpaceMessage,
+  EntityKind,
+  Locale,
+  LoginResult,
+  RegisterResult,
+  SectorView,
+  SomnioMessage,
+} from '@somnio/protocol';
 import { bundledModelRegistry, heading } from '@somnio/core';
 import type { ModelRegistry, People, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
@@ -42,6 +53,9 @@ export type VersionSkew = 'clientOutdated' | 'serverOutdated';
 export type OverlayKind =
   | { kind: 'login' }
   | { kind: 'registration' }
+  | { kind: 'characters' }
+  | { kind: 'newCharacter' }
+  | { kind: 'deleteCharacter'; character: CharacterSummaryMessage }
   | { kind: 'about' }
   | { kind: 'updateRequired'; skew: VersionSkew }
   | { kind: 'options' }
@@ -49,7 +63,7 @@ export type OverlayKind =
   | { kind: 'logOutOtherBrowsers' };
 
 export interface LoginCredentials {
-  nickname: string;
+  email: string;
   password: string;
   /** The login form's "Remember password" box; gates session-token issuance. */
   rememberMe: boolean;
@@ -57,12 +71,13 @@ export interface LoginCredentials {
 
 /** The registration form's fields, in `RegisterMessage` shape. */
 export interface RegistrationForm {
-  nickname: string;
+  email: string;
   password: string;
   passwordRepeat: string;
-  people: People;
-  email: string;
 }
+
+/** What the character card last asked of the server: answered by a `characterResult`, or by `enterSpace` for a select that joins. */
+export type CharacterRequest = 'create' | 'select' | 'delete';
 
 /**
  * How a connection attempt intends to authenticate.
@@ -136,6 +151,8 @@ export class ConnectionController {
    * no refresh, and a 0 can hide Log Out Other Browsers for the rest of the session.
    */
   otherSessionCount = 0;
+  /** The account's characters while the player chooses one on the card, the one played last first; unset off the card. */
+  characters: readonly CharacterSummaryMessage[] | undefined;
 
   private status: ChatLine | undefined;
 
@@ -170,6 +187,11 @@ export class ConnectionController {
   /** Set while a `redeemSession` is in flight, so `alreadyLoggedIn` can be retried. */
   private resumingWithToken: string | undefined;
   private resumeAttempts = 0;
+  /**
+   * The card's request in flight. One at a time: a second `selectCharacter` reaching a player already
+   * in the world is a frame the server closes on, so a double click on Play would end the session.
+   */
+  private characterRequest: CharacterRequest | undefined;
   /** Bumped by every explicit authentication, so a resume scheduled before it cannot still fire. */
   private authGeneration = 0;
   private chatLines: ChatLine[] = [];
@@ -212,9 +234,9 @@ export class ConnectionController {
    * server's immediate `hello` cannot race the assignment.
    *
    * The precedence matters and is not cosmetic. Preferring the token would mean that on a shared
-   * browser, someone typing *their own* nickname and password gets signed into whoever last ticked
-   * "Remember password" — their credentials never reach the wire, and the players panel would label
-   * the hijacked character with the typed name. So an explicit login also clears the store: the
+   * browser, someone typing *their own* email and password gets signed into whoever last ticked
+   * "Remember password" — their credentials never reach the wire, and the card they land on lists
+   * the other account's characters. So an explicit login also clears the store: the
    * user just told us which account they want, and leaving a foreign token behind would hijack the
    * next login too.
    *
@@ -253,8 +275,7 @@ export class ConnectionController {
       if (this.connectionState !== 'disconnected') this.teardown();
       // Derived here rather than by the caller, so a registration cannot reach the wire without the
       // credentials it authenticates with — the two travel as one intent or not at all.
-      this.credentials =
-        intent.kind === 'register' ? { nickname: intent.form.nickname, password: intent.form.password, rememberMe: false } : intent.credentials;
+      this.credentials = intent.kind === 'register' ? { email: intent.form.email, password: intent.form.password, rememberMe: false } : intent.credentials;
       this.pendingRegistration = intent.kind === 'register' ? intent.form : undefined;
       this.sessionStore.clear();
       this.resumingWithToken = undefined;
@@ -358,9 +379,40 @@ export class ConnectionController {
     this.presentedOverlay = { kind: 'login' };
   }
 
+  /** Whether the card waits for the server's answer to a request, so its buttons hold still. */
+  get awaitingCharacterAnswer(): boolean {
+    return this.characterRequest !== undefined;
+  }
+
+  createCharacter(name: string, people: People): void {
+    this.sendCharacterRequest('create', { tag: 'createCharacter', payload: { name, people } });
+  }
+
+  selectCharacter(characterId: string): void {
+    this.sendCharacterRequest('select', { tag: 'selectCharacter', payload: { characterId } });
+  }
+
+  deleteCharacter(characterId: string): void {
+    this.sendCharacterRequest('delete', { tag: 'deleteCharacter', payload: { characterId } });
+  }
+
+  /** Sent only from the card, the one state the server accepts the verbs in, and one at a time. */
+  private sendCharacterRequest(request: CharacterRequest, message: SomnioMessage): void {
+    if (this.characters === undefined || this.characterRequest !== undefined) return;
+    this.characterRequest = request;
+    this.transport.send(message);
+    this.onCharacterRequestSent?.();
+  }
+
+  /** Fires when the card's request goes out, so its buttons hold still until the answer. */
+  onCharacterRequestSent: (() => void) | undefined;
+
+  /** Reports the server's answer to the card's request, for the card or the New Dreamer form to say. */
+  onCharacterOutcome: ((request: CharacterRequest, result: CharacterResult) => void) | undefined;
+
   /**
    * Ends every other browser's remembered session; the server spares the one this connection holds.
-   * Sent only while attached, because the server closes on the tag before login.
+   * Sent only while attached, the one place the game menu offers it.
    */
   logOutOtherBrowsers(): void {
     if (this.connectionState !== 'attached') return;
@@ -434,6 +486,12 @@ export class ConnectionController {
         return;
       case 'registerResult':
         this.handleRegisterResult(message.payload.result);
+        return;
+      case 'characters':
+        this.handleCharacters(message.payload.characters);
+        return;
+      case 'characterResult':
+        this.handleCharacterResult(message.payload.result);
         return;
       case 'sessionToken':
         // Only stored when this client asked for one. Saving whatever arrives would let a future
@@ -544,7 +602,7 @@ export class ConnectionController {
     this.transport.send({
       tag: 'login',
       payload: {
-        nickname: credentials.nickname,
+        email: credentials.email,
         password: credentials.password,
         // Request-gated: omitted entirely unless the user opted in, which is what keeps the
         // server from volunteering a new tag to a client that never asked for one.
@@ -557,7 +615,6 @@ export class ConnectionController {
   private handleLoginResult(result: LoginResult): void {
     switch (result) {
       case 'ok':
-        this.selfDisplayName = this.credentials?.nickname ?? this.selfDisplayName;
         this.connectionState = 'awaitingEnterSpace';
         return;
       case 'alreadyLoggedIn':
@@ -605,8 +662,7 @@ export class ConnectionController {
       case 'ok':
         this.presentedOverlay = { kind: 'login' };
         break;
-      case 'nicknameExists':
-      case 'nameNotAllowed':
+      case 'emailExists':
       case 'failure':
       case 'throttled':
         break;
@@ -614,6 +670,24 @@ export class ConnectionController {
         assertNever(result, 'register result');
     }
     this.onRegistrationOutcome?.(result);
+  }
+
+  /**
+   * Shows the card. The list arrives after a password login, after a resume that joined no character,
+   * and ahead of the `ok` of a create or a delete. Presenting the card closes the form or
+   * confirmation the request came from.
+   */
+  private handleCharacters(characters: readonly CharacterSummaryMessage[]): void {
+    this.characters = characters;
+    this.presentedOverlay = { kind: 'characters' };
+  }
+
+  /** A chosen character answers with its `enterSpace` instead, so a select is answered here only when it failed. */
+  private handleCharacterResult(result: CharacterResult): void {
+    const request = this.characterRequest;
+    if (request === undefined) return;
+    this.characterRequest = undefined;
+    this.onCharacterOutcome?.(request, result);
   }
 
   /**
@@ -671,6 +745,8 @@ export class ConnectionController {
     this.renderSurface.enterSpace(this.world);
     this.renderSurface.setClock(payload.worldSeconds);
     this.connectionState = 'attached';
+    this.characters = undefined;
+    this.characterRequest = undefined;
     this.sessionStatus = undefined;
     this.presentedOverlay = undefined;
     this.onSpaceEntered?.();
@@ -709,10 +785,9 @@ export class ConnectionController {
   private handleEntity(message: Extract<SomnioMessage, { tag: 'entity' }>): void {
     const payload = message.payload;
     const kind = entityKind(payload.kind, payload.id === this.selfId);
-    // A token resume has no typed credentials, so `handleLoginResult` had no name to record. The
-    // self entity carries the authoritative one — without this, a resumed player's own chat lines
+    // The player's own name arrives only on their own `entity` frame; without it their chat lines
     // render with an empty sender.
-    if (kind === 'player' && this.selfDisplayName === '') this.selfDisplayName = payload.name;
+    if (kind === 'player') this.selfDisplayName = payload.name;
     const entity: ClientEntity = {
       id: payload.id,
       kind,
@@ -837,11 +912,13 @@ export class ConnectionController {
     this.players = [];
     this.selfId = undefined;
     this.world = undefined;
+    this.characters = undefined;
+    this.characterRequest = undefined;
     this.resumingWithToken = undefined;
     // Cleared here, not only on `connect`'s early-return branch — that branch runs only when a
     // socket was already open, i.e. never after a teardown. Left set, a registration submitted
     // against an unreachable server survives to the next login and re-issues `register` instead,
-    // answering `nicknameExists` for an account the player already has.
+    // answering `emailExists` for an account the player already has.
     //
     // The credentials go with it — for a login as much as a registration. On a `register` intent
     // both are derived from one form by `connect` and only mean anything together, so dropping the

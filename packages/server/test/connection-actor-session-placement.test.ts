@@ -15,12 +15,14 @@ describe('session tag placement', () => {
     });
   });
 
-  it('revokeSession is accepted after attach', async () => {
+  it.each(['authenticated', 'attached'] as const)('revokeSession and revokeOtherSessions are accepted once %s', async (state) => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
-    expect(await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } })).toEqual({
-      kind: 'keepOpen',
-    });
+    const accountId = crypto.randomUUID();
+    if (state === 'authenticated') connection.markAuthenticated(accountId);
+    else connection.markAttached('player', 'EdariaLibrary', accountId);
+    expect(await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } })).toEqual({ kind: 'keepOpen' });
+    expect(await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} })).toEqual({ kind: 'keepOpen' });
+    expect(await collectTags(connection.outbox)).toEqual(['sessionRevoked', 'otherSessionsRevoked']);
   });
 
   it('an unresolvable token answers badCredentials without closing', async () => {

@@ -3,7 +3,12 @@ import { WebSocket } from 'ws';
 import type { ClientOptions, RawData } from 'ws';
 import { MAX_WIRE_FRAME_SIZE, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { LoginResult, SomnioMessage } from '@somnio/protocol';
-import { DEFAULT_PRELOGIN_SOCKETS, DEFAULT_PRELOGIN_SOCKETS_PER_ADDRESS } from '../../src/config.ts';
+import {
+  DEFAULT_AUTHENTICATED_SOCKETS,
+  DEFAULT_AUTHENTICATED_SOCKETS_PER_ADDRESS,
+  DEFAULT_PRELOGIN_SOCKETS,
+  DEFAULT_PRELOGIN_SOCKETS_PER_ADDRESS,
+} from '../../src/config.ts';
 import { rawDataToBuffer } from '../../src/connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import { SocketAdmission } from '../../src/connection/socketAdmission.ts';
@@ -47,6 +52,8 @@ export async function withLiveServer<T>(options: LiveServerOptions, body: (serve
         perAddressEnabled: false,
         perAddress: DEFAULT_PRELOGIN_SOCKETS_PER_ADDRESS,
         total: DEFAULT_PRELOGIN_SOCKETS,
+        authenticatedPerAddress: DEFAULT_AUTHENTICATED_SOCKETS_PER_ADDRESS,
+        authenticated: DEFAULT_AUTHENTICATED_SOCKETS,
         logger: testLogger(),
       }),
     adminDependencies,
@@ -178,12 +185,12 @@ export function forwardedFor(addresses: string): ClientOptions {
   return { headers: { 'x-forwarded-for': addresses } };
 }
 
-export const FAILED_LOGIN_FRAME = encodeSomnioMessage({ tag: 'login', payload: { nickname: 'nobody', password: 'wrong-password' } });
+export const FAILED_LOGIN_FRAME = encodeSomnioMessage({ tag: 'login', payload: { email: 'nobody@example.invalid', password: 'wrong-password' } });
 
 /** One failed login on a socket of its own, as the browser client makes them. */
-export async function failedLogin(url: string, options: ClientOptions = {}, nickname = 'nobody'): Promise<LoginResult> {
+export async function failedLogin(url: string, options: ClientOptions = {}, email = 'nobody@example.invalid'): Promise<LoginResult> {
   const client = await TestClient.open(url, options);
-  client.send(encodeSomnioMessage({ tag: 'login', payload: { nickname, password: 'wrong-password' } }));
+  client.send(encodeSomnioMessage({ tag: 'login', payload: { email, password: 'wrong-password' } }));
   const { target } = await client.until('loginResult');
   await client.close();
   if (target.tag !== 'loginResult') throw new Error('expected a loginResult');

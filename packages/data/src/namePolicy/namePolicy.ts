@@ -1,10 +1,9 @@
 import { CONFUSABLES, isAllowed, nameShapeCategory, scriptId, scriptSet } from './tables.ts';
 
 /**
- * Confusable / script-mixing defense for account and character names. Two layers, applied to the
- * same value both name surfaces hold:
+ * Confusable / script-mixing defense for character names. Two layers, applied to the same value:
  *
- * 1. `validateForRegistration` — a TR39-derived profile: an Identifier_Status=Allowed gate
+ * 1. `validateCharacterName` — a TR39-derived profile: an Identifier_Status=Allowed gate
  *    narrowed to a name shape, plus a Moderately-Restrictive-style script-mixing rejection.
  * 2. `confusableSkeleton` — a TR39 skeleton stored in `name_skeleton` and deduplicated by a UNIQUE
  *    constraint, so an all-Cyrillic "АDMIN" cannot coexist with an all-Latin "ADMIN".
@@ -29,19 +28,19 @@ export const SKELETON_ALGORITHM_VERSION = 1;
 export type NamePolicyRejection = 'disallowedCharacter' | 'mixedScript' | 'emptyAfterNormalization';
 
 /**
- * The value `LOWER(NORMALIZE(name, NFKC))` gives every `name_normalized` column, so two names
- * share it exactly when they name one row. Under the database's libc collation Postgres lowercases
- * each character on its own, while JS lowercasing is full and context-sensitive. So `İ` becomes
- * `i` there but `i` + U+0307 in JS, and a word-final `Σ` becomes `σ` there but `ς` in JS. Both are
- * mapped first. Folding more, such as dropping every U+0307, would merge distinct accounts.
+ * The value `LOWER(NORMALIZE(value, NFKC))` gives every `*_normalized` column (a character's name,
+ * an account's email), so two values share it exactly when they name one row. Under the database's
+ * libc collation Postgres lowercases each character on its own, while JS lowercasing is full and
+ * context-sensitive. So `İ` becomes `i` there but `i` + U+0307 in JS, and a word-final `Σ` becomes
+ * `σ` there but `ς` in JS. Both are mapped first. Folding more, such as dropping every U+0307, would merge distinct rows.
  */
-export function postgresNameKey(name: string): string {
-  return name.normalize('NFKC').replaceAll('İ', 'i').replaceAll('Σ', 'σ').toLowerCase();
+export function postgresNormalizedKey(value: string): string {
+  return value.normalize('NFKC').replaceAll('İ', 'i').replaceAll('Σ', 'σ').toLowerCase();
 }
 
 /**
- * The base the skeleton and the registration check share. It differs from `postgresNameKey` on
- * `İ` and a word-final `Σ`. The skeleton builds on it, so a change to it is a
+ * The base the skeleton and the name check share. It differs from `postgresNormalizedKey`
+ * on `İ` and a word-final `Σ`. The skeleton builds on it, so a change to it is a
  * `SKELETON_ALGORITHM_VERSION` bump.
  */
 function normalizedName(name: string): string {
@@ -65,11 +64,11 @@ export function confusableSkeleton(name: string): string {
 }
 
 /**
- * Returns the reason a name is refused for registration, or `undefined` when it is accepted.
+ * Returns the reason a character name is refused, or `undefined` when it is accepted.
  * Validates the NFKC + lowercased form (the same base the skeleton uses) so width/case variants
  * resolve first.
  */
-export function validateForRegistration(name: string): NamePolicyRejection | undefined {
+export function validateCharacterName(name: string): NamePolicyRejection | undefined {
   const scalars = [...normalizedName(name)].map((character) => character.codePointAt(0)!);
   // Require a visible base character (letter or digit), not merely a non-empty string: a name of
   // only spaces, hyphens, underscores, or combining marks would otherwise pass and yield a blank

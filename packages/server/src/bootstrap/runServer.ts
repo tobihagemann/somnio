@@ -6,7 +6,6 @@ import {
   PostgresCharacterRepository,
   PostgresInventoryRepository,
   PostgresNPCDialogStateRepository,
-  PostgresRegistrationRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
   assertQueryable,
@@ -45,6 +44,7 @@ export interface BootOptions {
   worldClockIntervalMs?: number;
   simulationIntervalMs?: number;
   checkpointIntervalMs?: number;
+  loginDeadlineMs?: number;
 }
 
 export interface BootedServer {
@@ -97,7 +97,6 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const accounts = new PostgresAccountRepository(db);
   const characters = new PostgresCharacterRepository(db);
   const inventories = new PostgresInventoryRepository(db);
-  const registrations = new PostgresRegistrationRepository(db);
   const npcDialogStates = new PostgresNPCDialogStateRepository(db);
   const worldClocks = new PostgresWorldClockRepository(db);
   const sessions = new PostgresSessionRepository(db);
@@ -119,20 +118,20 @@ export async function bootServer(env: Record<string, string | undefined>, option
     accounts,
     characters,
     inventories,
-    registrations,
     npcDialogStates,
     sessions,
     worldRouter,
     worldClock,
     // An `/admin` attempt costs no hash, so new addresses can arrive fast enough to need a cap.
     attemptLimiter: new AttemptLimiter({ enabled: preloginLimitOn, logger: preloginLogger, maxKeys: configuration.addressLimitKeys }),
-    // Always on: it counts nicknames, not addresses. Each new key waits on an Argon2 hash or,
+    // Always on: it counts emails, not addresses. Each new key waits on an Argon2 hash or,
     // with control characters refused, a database error. During an outage those return fast, so
     // `maxKeys` caps the table. An entry with one attempt spent is evicted within about six
     // minutes: the one-minute refill plus the five-minute pass.
     accountLimiter: new AttemptLimiter({ enabled: true, logger: preloginLogger, logKey: false, maxKeys: configuration.accountLimitKeys }),
     outboxHighWatermark: configuration.outboxHighWatermark,
-    loginDeadlineMs: configuration.loginDeadlineMs,
+    loginDeadlineMs: options.loginDeadlineMs ?? configuration.loginDeadlineMs,
+    cardDeadlineMs: configuration.cardDeadlineMs,
     logger: connectionLogger,
   };
   const adminDependencies: AdminDependencies = {
@@ -156,6 +155,8 @@ export async function bootServer(env: Record<string, string | undefined>, option
         perAddressEnabled: preloginLimitOn,
         perAddress: configuration.preloginSocketsPerAddress,
         total: configuration.preloginSockets,
+        authenticatedPerAddress: configuration.authenticatedSocketsPerAddress,
+        authenticated: configuration.authenticatedSockets,
         logger: preloginLogger,
       }),
       adminDependencies,

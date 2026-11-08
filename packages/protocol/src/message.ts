@@ -3,10 +3,14 @@ import type {
   AskTaskMessage,
   BlowMessage,
   BuyMessage,
+  CharacterResultMessage,
+  CharactersMessage,
   ClientSayMessage,
   CompleteTaskMessage,
   ConditionMessage,
   CorrectionMessage,
+  CreateCharacterMessage,
+  DeleteCharacterMessage,
   DoorRefusedMessage,
   EmptyMessage,
   Energy,
@@ -31,6 +35,7 @@ import type {
   RevokeSessionMessage,
   SayMessage,
   SectorMessage,
+  SelectCharacterMessage,
   SellMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
@@ -51,6 +56,9 @@ import type { ClientToServerTag } from './tags.ts';
 export type SomnioMessage =
   | { tag: 'login'; payload: LoginMessage }
   | { tag: 'register'; payload: RegisterMessage }
+  | { tag: 'createCharacter'; payload: CreateCharacterMessage }
+  | { tag: 'selectCharacter'; payload: SelectCharacterMessage }
+  | { tag: 'deleteCharacter'; payload: DeleteCharacterMessage }
   | { tag: 'move'; payload: MoveMessage }
   | { tag: 'clientSay'; payload: ClientSayMessage }
   | { tag: 'equipToggle'; payload: EquipToggleMessage }
@@ -72,6 +80,8 @@ export type SomnioMessage =
   | { tag: 'hello'; payload: HelloMessage }
   | { tag: 'loginResult'; payload: LoginResultMessage }
   | { tag: 'registerResult'; payload: RegisterResultMessage }
+  | { tag: 'characters'; payload: CharactersMessage }
+  | { tag: 'characterResult'; payload: CharacterResultMessage }
   | { tag: 'enterSpace'; payload: EnterSpaceMessage }
   | { tag: 'sector'; payload: SectorMessage }
   | { tag: 'entity'; payload: EntityMessage }

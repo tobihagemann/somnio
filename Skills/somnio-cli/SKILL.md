@@ -36,10 +36,10 @@ Every subcommand takes the same `--server-url` (before or after the verb) and re
 
 ## Subcommands
 
-- `players` — number of logged-in players
+- `players` — number of players in the world (a player still choosing a character is not counted)
 - `say <message...>` — broadcast an admin message (an empty message is a no-op)
 - `time` — read the world clock
-- `kick <name>` — disconnect a player by character name
+- `kick <name>` — disconnect a player by character name; a player still on the character card cannot be kicked
 - `weblog` / `weblog rm` — read or delete the admin log
 - `log` / `log rm` — read or delete the gameplay log
 - `version` — server version

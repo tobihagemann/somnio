@@ -22,10 +22,10 @@ afterAll(async () => {
 /** Registers a player, lets them leave, and writes `changes` over their row as a later checkpoint would. */
 async function seeded(prefix: string, changes: Partial<Character>, inventory: InventoryRow[]): Promise<Character> {
   const fresh = await joinFreshPlayer(server.url, prefix);
-  const registered = (await characters.findByName(fresh.nickname))!;
+  const registered = (await characters.findByName(fresh.name))!;
   await closeAndAwaitCleanup(fresh, server);
   const left = await pollUntil(async () => {
-    const row = await characters.findByName(fresh.nickname);
+    const row = await characters.findByName(fresh.name);
     return row !== undefined && row.lastSeen.getTime() > registered.lastSeen.getTime() ? row : undefined;
   });
   const character = { ...left, ...changes, lastSeen: new Date(left.lastSeen.getTime() + 1) };

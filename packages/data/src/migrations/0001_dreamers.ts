@@ -4,28 +4,29 @@ import type { Kysely } from 'kysely';
 /**
  * The schema every later migration builds on.
  *
- * `name_normalized` is the UNIQUE-enforced column so case- and NFKC-confusable collisions
- * ("Admin" vs "admin" vs full-width) cannot coexist; `name_skeleton` (computed by the name policy
- * at insert) closes the cross-script lookalike gap NFKC leaves open. The constraint names are
- * load-bearing: `registration.ts` maps a 23505 on any of the four to `nicknameTaken`.
+ * An account is found by its email, so `email_normalized` is the UNIQUE-enforced column: case- and
+ * NFKC-variants of one address cannot hold two accounts. A character's `name_normalized` does the
+ * same for its name, and `name_skeleton` (computed by the name policy at insert) closes the
+ * cross-script lookalike gap NFKC leaves open. The constraint names are load-bearing:
+ * `accounts.ts` maps a 23505 on the accounts' key to `EmailTakenError`, and `characters.ts` one on
+ * the characters' pair to `CharacterNameTakenError`.
+ *
+ * The pools have a floor: they fall in play, and a negative one would read as fallen forever.
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
   await db.schema
     .createTable('accounts')
     .addColumn('id', 'uuid', (column) => column.primaryKey())
-    .addColumn('name', 'text', (column) => column.notNull())
-    .addColumn('name_normalized', 'text', (column) =>
-      column
-        .notNull()
-        .generatedAlwaysAs(sql`LOWER(NORMALIZE(name, NFKC))`)
-        .stored(),
-    )
     .addColumn('password_hash', 'text', (column) => column.notNull())
     .addColumn('email', 'text', (column) => column.notNull())
+    .addColumn('email_normalized', 'text', (column) =>
+      column
+        .notNull()
+        .generatedAlwaysAs(sql`LOWER(NORMALIZE(email, NFKC))`)
+        .stored(),
+    )
     .addColumn('created_at', 'timestamptz', (column) => column.notNull().defaultTo(sql`NOW()`))
-    .addColumn('name_skeleton', 'text', (column) => column.notNull())
-    .addUniqueConstraint('accounts_name_normalized_key', ['name_normalized'])
-    .addUniqueConstraint('accounts_name_skeleton_key', ['name_skeleton'])
+    .addUniqueConstraint('accounts_email_normalized_key', ['email_normalized'])
     .execute();
 
   await db.schema
@@ -52,11 +53,32 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('spirit_max', 'integer', (column) => column.notNull())
     .addColumn('last_seen', 'timestamptz', (column) => column.notNull())
     .addColumn('name_skeleton', 'text', (column) => column.notNull())
+    .addColumn('role', 'text')
+    .addColumn('study', 'text')
+    .addColumn('task_role', 'text')
+    .addColumn('task_teaching', 'text')
+    .addColumn('task_progress', 'double precision', (column) => column.notNull().defaultTo(0))
     .addCheckConstraint('characters_health_check', sql`health_current <= health_max`)
     .addCheckConstraint('characters_balance_check', sql`balance_current <= balance_max`)
     .addCheckConstraint('characters_spirit_check', sql`spirit_current <= spirit_max`)
+    .addCheckConstraint('characters_health_floor_check', sql`health_current >= 0`)
+    .addCheckConstraint('characters_balance_floor_check', sql`balance_current >= 0`)
+    .addCheckConstraint('characters_spirit_floor_check', sql`spirit_current >= 0`)
+    // `mystic` ahead of `ROLES`, so the Mystic role needs no constraint migration.
+    .addCheckConstraint('characters_role_check', sql`role IS NULL OR role IN ('fighter', 'healer', 'mystic')`)
     .addUniqueConstraint('characters_name_normalized_key', ['name_normalized'])
     .addUniqueConstraint('characters_name_skeleton_key', ['name_skeleton'])
+    .execute();
+
+  await db.schema
+    .createTable('character_ranks')
+    .addColumn('character_id', 'uuid', (column) => column.notNull().references('characters.id').onDelete('cascade'))
+    .addColumn('teaching_id', 'text', (column) => column.notNull())
+    .addColumn('rank', 'integer', (column) => column.notNull())
+    .addColumn('practice', 'double precision', (column) => column.notNull())
+    .addPrimaryKeyConstraint('character_ranks_pkey', ['character_id', 'teaching_id'])
+    .addCheckConstraint('character_ranks_rank_check', sql`rank >= 0`)
+    .addCheckConstraint('character_ranks_practice_check', sql`practice >= 0`)
     .execute();
 
   await db.schema
@@ -108,6 +130,7 @@ export async function down(db: Kysely<unknown>): Promise<void> {
   await db.schema.dropTable('npc_dialog_states').execute();
   await db.schema.dropTable('world_clock').execute();
   await db.schema.dropTable('inventory_rows').execute();
+  await db.schema.dropTable('character_ranks').execute();
   await db.schema.dropTable('characters').execute();
   await db.schema.dropTable('accounts').execute();
 }

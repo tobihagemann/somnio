@@ -1,139 +1,123 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { Locale, LoginMessage, LoginResult } from '@somnio/protocol';
-import { SESSION_POLICY, postgresNameKey, verifyAccountPassword } from '@somnio/data';
+import { SESSION_POLICY, hasBeenPlayed, postgresNormalizedKey, verifyAccountPassword } from '@somnio/data';
+import { holdsUnholdableCharacter } from '@somnio/core';
 import type { Character } from '@somnio/core';
-import type { ConnectionActor } from '../connection/connectionActor.ts';
+import type { CloseDecision, ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
-import type { LoadedWorld } from '../sectors/sectorCache.ts';
-import type { WorldRouter } from '../world/worldRouter.ts';
-
-/** Refused before either budget: no account holds one, and a NUL makes Postgres throw in the lookup. */
-const CONTROL_CHARACTER = /\p{Cc}/u;
+import { joinCharacter, sendCharacters } from './characters.ts';
 
 /**
- * Login: look up the account, verify the password (paying the Argon2id cost for an unknown
- * account too, so the two failures are indistinguishable by timing), then the shared join. A
- * nickname with a control character is answered `badCredentials` before anything is counted. An address past its budget of failed logins, or a nickname past
- * its account budget, is answered `throttled` before the lookup.
+ * Login: look up the account by its email, verify the password (paying the Argon2id cost for an
+ * unknown account too, so the two failures are indistinguishable by timing), then the shared
+ * authentication. An email with a character no account's email holds (a control character, a lone
+ * surrogate) is answered `badCredentials` before anything is counted. An address past its budget of
+ * failed logins, or an email past its account budget, is answered `throttled` before the lookup.
  */
-export async function handleLogin(message: LoginMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
+export async function handleLogin(message: LoginMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<CloseDecision> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   if (
     utf8ByteLength(message.password) > SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes ||
-    utf8ByteLength(message.nickname) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes ||
-    CONTROL_CHARACTER.test(message.nickname)
+    utf8ByteLength(message.email) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes ||
+    holdsUnholdableCharacter(message.email)
   ) {
     sendLoginResult(outbox, 'badCredentials', logger);
-    return;
+    return { kind: 'keepOpen' };
   }
   const limiter = dependencies.attemptLimiter;
   // The address first, so a throttled address cannot drain an account's budget.
   if (!limiter.admit('login', connection.clientAddress)) {
     sendLoginResult(outbox, 'throttled', logger);
-    return;
+    return { kind: 'keepOpen' };
   }
-  // Keyed as `findByName` matches, so every spelling of one account draws on one budget.
-  const nicknameKey = postgresNameKey(message.nickname);
-  if (!dependencies.accountLimiter.admit('account', nicknameKey)) {
+  // Keyed as `findByEmail` matches, so every spelling of one account draws on one budget.
+  const emailKey = postgresNormalizedKey(message.email);
+  if (!dependencies.accountLimiter.admit('account', emailKey)) {
     sendLoginResult(outbox, 'throttled', logger);
-    return;
+    return { kind: 'keepOpen' };
   }
   try {
-    const account = await dependencies.accounts.findByName(message.nickname);
+    const account = await dependencies.accounts.findByEmail(message.email);
     const verified = await verifyAccountPassword(message.password, account?.passwordHash);
     if (account === undefined || !verified) {
       // The operator's only signal of a guessing run: the wire answer is deliberately uniform.
-      // The submitted name is recorded only when it names an account: an unknown string may be
-      // a password typed into the wrong field, and the gameplay log is readable over `/admin`.
-      logger.warn(account === undefined ? { known_account: false } : { known_account: true, name: message.nickname }, 'login rejected: bad credentials');
+      // The submitted email is never logged: the gameplay log is readable over `/admin`, and an
+      // unknown string may be a password typed into the wrong field. A known account is named by
+      // its id.
+      logger.warn(account === undefined ? { known_account: false } : { known_account: true, account_id: account.id }, 'login rejected: bad credentials');
       sendLoginResult(outbox, 'badCredentials', logger);
-      return;
+      return { kind: 'keepOpen' };
     }
     // Only a verified login gets its attempts back. A lookup that throws keeps them spent, so
     // attempts are not free while the database is failing.
     limiter.refund('login', connection.clientAddress);
-    dependencies.accountLimiter.refund('account', nicknameKey);
+    dependencies.accountLimiter.refund('account', emailKey);
     // Strictly request-gated: a client that never asked receives no `sessionToken` frame at all.
-    await completeAuthenticatedJoin(account.id, connection, dependencies, message.requestSessionToken === true, message.locale ?? 'en');
+    return await completeAuthentication(account.id, connection, dependencies, message.requestSessionToken === true, message.locale ?? 'en');
   } catch (error) {
     logger.error({ error: String(error) }, 'login failed');
     sendLoginResult(outbox, 'badCredentials', logger);
+    return { kind: 'keepOpen' };
   }
 }
 
 /**
- * The join shared by a password login and a redeemed session: router registration, character and
- * inventory lookup, `loginResult(ok)`, attach, the request-gated token, then the count of other
- * sessions. The account is registered before anything is read and released on every path that does
- * not attach. `locale` is what NPCs speak to the player in for the rest of the connection.
- * `redeemedToken` is the token a resume presented.
+ * The authentication shared by a password login and a redeemed session: router registration, the
+ * account's characters, `loginResult(ok)`, the request-gated token, the count of other sessions,
+ * then the character card. The account is registered before anything is read, and stays registered
+ * while the player chooses, so no second browser can sit on the same card. A resume, the call that
+ * carries `redeemedToken`, joins the character played last instead of showing the card, when there
+ * is one. `locale` is what NPCs speak to the player in for the rest of the connection.
  */
-export async function completeAuthenticatedJoin(
+export async function completeAuthentication(
   accountId: string,
   connection: ConnectionActor,
   dependencies: ConnectionDependencies,
   issueSessionToken: boolean,
   locale: Locale,
   redeemedToken?: string,
-): Promise<void> {
+): Promise<CloseDecision> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   if (!dependencies.worldRouter.register(connection, accountId)) {
     sendLoginResult(outbox, 'alreadyLoggedIn', logger);
-    return;
+    return { kind: 'keepOpen' };
   }
+  let characters: Character[];
   try {
-    const character = (await dependencies.characters.findByAccount(accountId))[0];
-    if (character === undefined) {
-      dependencies.worldRouter.unregister(accountId);
-      sendLoginResult(outbox, 'badCredentials', logger);
-      return;
-    }
-    const inventory = await dependencies.inventories.loadAll(character.id);
-    dependencies.worldRouter.nameRegistered(accountId, character.name);
-
-    let resolvedCharacter: Character = character;
-    const spawn = resolvedSpawn(character, dependencies.worldRouter);
-    if (spawn !== character) {
-      // Bump `lastSeen` so the snapshot's stale-write guard accepts the corrected row.
-      resolvedCharacter = { ...character, ...spawn, lastSeen: new Date() };
-      try {
-        await dependencies.characters.snapshot(resolvedCharacter);
-      } catch (error) {
-        logger.warn({ error: String(error), name: character.name, spawn: `${spawn.position.x},${spawn.position.z}` }, 'failed to persist resolved spawn point');
-      }
-    }
-
-    sendLoginResult(outbox, 'ok', logger);
-    connection.locale = locale;
-    try {
-      dependencies.worldRouter.space(spawn.space)!.attach(resolvedCharacter, [...inventory], outbox, dependencies.worldClock.currentWorldSeconds(), locale);
-      connection.markAttached(character.id, spawn.space, accountId);
-      logger.info({ name: character.name, space: spawn.space }, 'player joined');
-      connection.sessionToken = redeemedToken;
-      // Issued only once the player is in the world: a token minted before a join that then
-      // failed would outlive it for 30 days with nothing able to revoke it.
-      if (issueSessionToken) await issueToken(accountId, connection, dependencies);
-      // After the issue, so the count spares the row this browser is about to hold.
-      await sendOtherSessions(accountId, connection, dependencies);
-    } catch (error) {
-      logger.error({ error: String(error) }, 'failed to attach to space');
-      dependencies.worldRouter.unregister(accountId);
-      // A second `loginResult` after the `ok`: without it the client waits in `awaitingEnterSpace`
-      // forever. `badCredentials` is the terminal code the client acts on.
-      sendLoginResult(outbox, 'badCredentials', logger);
-    }
+    characters = await dependencies.characters.findByAccount(accountId);
   } catch (error) {
-    logger.error({ error: String(error) }, 'join failed');
+    logger.error({ error: String(error) }, 'character list failed');
     dependencies.worldRouter.unregister(accountId);
     sendLoginResult(outbox, 'badCredentials', logger);
+    return { kind: 'keepOpen' };
   }
+  const admitted = connection.markAuthenticated(accountId);
+  if (admitted.kind === 'close') {
+    dependencies.worldRouter.unregister(accountId);
+    return admitted;
+  }
+  sendLoginResult(outbox, 'ok', logger);
+  connection.locale = locale;
+  connection.sessionToken = redeemedToken;
+  if (issueSessionToken) await issueToken(accountId, connection, dependencies);
+  // After the issue, so the count spares the row this browser is about to hold.
+  await sendOtherSessions(accountId, connection, dependencies);
+  const lastPlayed = characters.find(hasBeenPlayed);
+  if (redeemedToken === undefined || lastPlayed === undefined || !(await joinCharacter(lastPlayed, accountId, connection, dependencies))) {
+    sendCharacters(outbox, characters, logger);
+  }
+  return { kind: 'keepOpen' };
 }
 
-/** A failure here is logged and swallowed: the player is already authenticated. */
+/**
+ * A failure here is logged and swallowed: the player is already authenticated. Issued only once the
+ * connection holds the account on the card, so no token is minted for an authentication the card
+ * refused. A revoke on the card or in the world can then end it.
+ */
 async function issueToken(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   try {
     const session = await dependencies.sessions.issue(accountId, SESSION_POLICY.defaultLifetimeSeconds);
@@ -153,16 +137,6 @@ async function sendOtherSessions(accountId: string, connection: ConnectionActor,
   } catch (error) {
     dependencies.logger.warn({ error: String(error) }, 'other sessions count failed');
   }
-}
-
-/**
- * Where the character joins: the saved place when a player can stand there, else the starter
- * sector's spawn. That heals the registration `(0, 0)` sentinel, a space the world no longer
- * has, and a row left inside geometry by a content change.
- */
-export function resolvedSpawn(character: Character, worldRouter: WorldRouter): LoadedWorld['starterSpawn'] {
-  if (worldRouter.space(character.space)?.canStand(character.position) === true) return character;
-  return worldRouter.world.starterSpawn;
 }
 
 export function sendLoginResult(outbox: ConnectionOutbox, result: LoginResult, logger: Logger): void {

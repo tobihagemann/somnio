@@ -12,8 +12,8 @@ describe('session repository', () => {
 
   async function makeAccount(name: string): Promise<string> {
     const id = crypto.randomUUID();
-    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
-      VALUES (${id}, ${name}, 'hash', ${`${name}@example.com`}, ${name})`.execute(harness.db);
+    await sql`INSERT INTO accounts (id, password_hash, email)
+      VALUES (${id}, 'hash', ${`${name}@example.com`})`.execute(harness.db);
     return id;
   }
 

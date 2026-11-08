@@ -44,8 +44,11 @@ export type Hand = (typeof HANDS)[number];
 export const LOGIN_RESULTS = ['ok', 'badCredentials', 'alreadyLoggedIn', 'throttled'] as const;
 export type LoginResult = (typeof LOGIN_RESULTS)[number];
 
-export const REGISTER_RESULTS = ['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const;
+export const REGISTER_RESULTS = ['ok', 'emailExists', 'failure', 'throttled'] as const;
 export type RegisterResult = (typeof REGISTER_RESULTS)[number];
+
+export const CHARACTER_RESULTS = ['ok', 'nameExists', 'nameNotAllowed', 'full', 'failure'] as const;
+export type CharacterResult = (typeof CHARACTER_RESULTS)[number];
 
 export const ROLES = ['fighter', 'healer'] as const;
 export type Role = (typeof ROLES)[number];
@@ -74,7 +77,7 @@ export const LOCALES = ['en', 'de'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 export interface LoginMessage {
-  nickname: string;
+  email: string;
   password: string;
   /** Request a resumable session token alongside a successful login. Omitting it must yield no `sessionToken` frame at all. */
   requestSessionToken?: boolean;
@@ -83,11 +86,23 @@ export interface LoginMessage {
 }
 
 export interface RegisterMessage {
-  nickname: string;
+  email: string;
   password: string;
   passwordRepeat: string;
+}
+
+export interface CreateCharacterMessage {
+  name: string;
   people: string;
-  email: string;
+}
+
+/** Joins the world as one of the account's characters. */
+export interface SelectCharacterMessage {
+  characterId: string;
+}
+
+export interface DeleteCharacterMessage {
+  characterId: string;
 }
 
 export interface MoveMessage {
@@ -186,6 +201,22 @@ export interface LoginResultMessage {
 
 export interface RegisterResultMessage {
   result: RegisterResult;
+}
+
+export interface CharacterSummaryMessage {
+  id: string;
+  name: string;
+  people: string;
+  role?: Role;
+}
+
+/** The account's characters, the one played last first. */
+export interface CharactersMessage {
+  characters: CharacterSummaryMessage[];
+}
+
+export interface CharacterResultMessage {
+  result: CharacterResult;
 }
 
 /**
@@ -379,7 +410,7 @@ export interface OtherSessionsRevokedMessage {
 
 export function decodeLoginMessage(container: Record<string, unknown>, path: string): LoginMessage {
   return {
-    nickname: requireString(container, 'nickname', path),
+    email: requireString(container, 'email', path),
     password: requireString(container, 'password', path),
     ...(isAbsent(container, 'requestSessionToken') ? {} : { requestSessionToken: requireBool(container, 'requestSessionToken', path) }),
     ...decodeOptionalLocale(container, path),
@@ -390,15 +421,28 @@ function decodeOptionalLocale(container: Record<string, unknown>, path: string):
   return isAbsent(container, 'locale') ? {} : { locale: requireStringEnum(container, 'locale', path, LOCALES) };
 }
 
-/** `people` decodes as a plain string: the list of peoples is the server's to check. */
 export function decodeRegisterMessage(container: Record<string, unknown>, path: string): RegisterMessage {
   return {
-    nickname: requireString(container, 'nickname', path),
+    email: requireString(container, 'email', path),
     password: requireString(container, 'password', path),
     passwordRepeat: requireString(container, 'passwordRepeat', path),
-    people: requireString(container, 'people', path),
-    email: requireString(container, 'email', path),
   };
+}
+
+/** Both decode as plain strings: the name's cap and policy and the list of peoples are the server's to check. */
+export function decodeCreateCharacterMessage(container: Record<string, unknown>, path: string): CreateCharacterMessage {
+  return {
+    name: requireString(container, 'name', path),
+    people: requireString(container, 'people', path),
+  };
+}
+
+export function decodeSelectCharacterMessage(container: Record<string, unknown>, path: string): SelectCharacterMessage {
+  return { characterId: requireEntityId(container, 'characterId', path) };
+}
+
+export function decodeDeleteCharacterMessage(container: Record<string, unknown>, path: string): DeleteCharacterMessage {
+  return { characterId: requireEntityId(container, 'characterId', path) };
 }
 
 export function decodeMoveMessage(container: Record<string, unknown>, path: string): MoveMessage {
@@ -513,6 +557,23 @@ export function decodeRegisterResultMessage(container: Record<string, unknown>, 
   return { result: requireStringEnum(container, 'result', path, REGISTER_RESULTS) };
 }
 
+function decodeCharacterSummaryMessage(container: Record<string, unknown>, path: string): CharacterSummaryMessage {
+  return {
+    id: requireEntityId(container, 'id', path),
+    name: requireBoundedString(container, 'name', path, PROTOCOL_BYTE_CAPS.identifier),
+    people: requireId(container, 'people', path),
+    ...(isAbsent(container, 'role') ? {} : { role: requireStringEnum(container, 'role', path, ROLES) }),
+  };
+}
+
+export function decodeCharactersMessage(container: Record<string, unknown>, path: string): CharactersMessage {
+  return { characters: mapArray(container, 'characters', path, SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount, decodeCharacterSummaryMessage) };
+}
+
+export function decodeCharacterResultMessage(container: Record<string, unknown>, path: string): CharacterResultMessage {
+  return { result: requireStringEnum(container, 'result', path, CHARACTER_RESULTS) };
+}
+
 export function decodeEnterSpaceMessage(container: Record<string, unknown>, path: string): EnterSpaceMessage {
   const worldSeconds = requireFloat(container, 'worldSeconds', path);
   if (worldSeconds < 0) {
@@ -535,8 +596,8 @@ export function decodeSectorMessage(container: Record<string, unknown>, path: st
  * re-runs a collating sort on every arrival), and in the `left` chat line when the peer departs.
  *
  * **Truncated, not rejected.** This field carries operator-authored NPC and monster names as well as
- * player nicknames, and only the nicknames are bounded: `maxIdentifierUTF8Bytes` is enforced by the
- * login and registration handlers, while the sector format bounds NPC and monster names nowhere.
+ * character names, and only the character names are bounded: `maxIdentifierUTF8Bytes` is enforced
+ * when a character is created, while the sector format bounds NPC and monster names nowhere.
  * Rejecting would therefore refuse a whole sector on nothing worse than a long authored label.
  * Truncating keeps the retention bound, and the plaque renderer clamps to the same constant at
  * raster time, so nothing visible is lost.

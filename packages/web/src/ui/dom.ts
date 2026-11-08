@@ -47,10 +47,10 @@ let controlSequence = 0;
 /**
  * A DOM id for a labelled control.
  *
- * The label text alone is not unique enough: slugifying drops punctuation, so "Password:" and
- * "Password (*):" collapse to the same slug — both `<label for>`s then point at the first input,
- * and the second field is left with no accessible name at all. A counter keeps the slug readable
- * while guaranteeing the pairing is one-to-one.
+ * The label text alone is not unique enough: slugifying drops punctuation, so "Email" on the login
+ * card and "Email:" on Sign Up collapse to the same slug — both `<label for>`s then point at the
+ * first input, and the second field is left with no accessible name at all. A counter keeps the
+ * slug readable while guaranteeing the pairing is one-to-one.
  */
 function controlIdentifier(kind: string, labelText: string): string {
   controlSequence += 1;
@@ -180,16 +180,11 @@ export function select(labelText: string, options: readonly { value: string; lab
 
 /**
  * Overlay dialog card. Takes the localized title; `width` picks the panel's frame (the game
- * menu is a narrow column, forms are wide). `heading` covers panels that author their own
+ * menu is a narrow column). `heading` covers panels that author their own
  * oversized title in the body — the title still reaches `aria-label`, so the dialog keeps an
  * accessible name either way.
  */
-export function card(
-  title: string,
-  body: readonly Node[],
-  width: 'default' | 'wide' | 'menu' = 'default',
-  heading: 'shown' | 'accessibleOnly' = 'shown',
-): HTMLElement {
+export function card(title: string, body: readonly Node[], width: 'default' | 'menu' = 'default', heading: 'shown' | 'accessibleOnly' = 'shown'): HTMLElement {
   const modifier = width === 'default' ? '' : ` overlay-card--${width}`;
   const titleNodes = heading === 'shown' ? [element('h1', { className: 'overlay-title', text: title })] : [];
   return element('div', {

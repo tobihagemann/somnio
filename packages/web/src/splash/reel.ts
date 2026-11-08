@@ -24,8 +24,8 @@ import { ORTHO_RIG, clampedScale, worldMovement } from '@/scene/cameraRig';
 /** How long the dip to dark between two shots takes, half of it falling and half rising. */
 export const DIP_SECONDS = 0.5;
 
-/** The widest pre-login card (Sign Up) and the tallest, in CSS pixels; every one is centred. */
-export const PRE_LOGIN_CARD = { width: 560, height: 294 } as const;
+/** The widest pre-login card and the tallest, in CSS pixels; every one is centred. */
+export const PRE_LOGIN_CARD = { width: 440, height: 294 } as const;
 
 /**
  * Where the wordmark band runs: from this far below the top edge to this far above the tallest card.

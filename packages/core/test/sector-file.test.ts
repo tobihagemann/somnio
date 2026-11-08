@@ -165,7 +165,7 @@ describe('writer guards', () => {
     expect(readSectorFile(writeSectorFile(field(npcs)), 'Field').npcs).toEqual(npcs);
   });
 
-  it('rejects a dialog step that could exceed the say cap once it names the longest nickname', () => {
+  it('rejects a dialog step that could exceed the say cap once it names the longest character name', () => {
     const atCap = `${'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes - SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes)}$name`;
     const room = (dialogScript: string) => interiorSector('Room', { npcs: [npc({ dialogScript })] });
     expect(readSectorFile(writeSectorFile(room(`Hello.\n---\n${atCap}`)), 'Room').npcs[0]?.dialogScript).toBe(`Hello.\n---\n${atCap}`);

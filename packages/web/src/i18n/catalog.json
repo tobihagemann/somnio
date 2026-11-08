@@ -111,13 +111,13 @@
     "en": "%@ teaches its first rank for a task.",
     "de": "%@ lehrt den ersten Rang für eine Aufgabe."
   },
+  "%@ will be gone for good, with every rank and everything they carry.": {
+    "en": "%@ will be gone for good, with every rank and everything they carry.",
+    "de": "%@ ist dann für immer fort, mit allen Rängen und aller Habe."
+  },
   "%@c": {
     "en": "%@c",
     "de": "%@c"
-  },
-  "*: repeat": {
-    "en": "*: repeat",
-    "de": "*: wiederholen"
   },
   "3D characters and props by KayKit.": {
     "en": "3D characters and props by KayKit.",
@@ -134,6 +134,14 @@
   "Already logged in.": {
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
+  },
+  "Another account already uses that email.": {
+    "en": "Another account already uses that email.",
+    "de": "Ein anderer Account nutzt diese E-Mail-Adresse bereits."
+  },
+  "Another dreamer already has that name.": {
+    "en": "Another dreamer already has that name.",
+    "de": "Ein anderer Träumer trägt diesen Namen bereits."
   },
   "Anyone up for the North Wood?": {
     "en": "Anyone up for the North Wood?",
@@ -183,9 +191,37 @@
     "en": "© Copyright 2026 Tobias Hagemann",
     "de": "© Copyright 2026 Tobias Hagemann"
   },
+  "Could not create the dreamer. Try again.": {
+    "en": "Could not create the dreamer. Try again.",
+    "de": "Der Träumer konnte nicht erstellt werden. Versuche es erneut."
+  },
+  "Could not delete the dreamer. Try again.": {
+    "en": "Could not delete the dreamer. Try again.",
+    "de": "Der Träumer konnte nicht gelöscht werden. Versuche es erneut."
+  },
+  "Could not enter the world. Try again.": {
+    "en": "Could not enter the world. Try again.",
+    "de": "Die Welt konnte nicht betreten werden. Versuche es erneut."
+  },
   "Could not log out other browsers. Try again.": {
     "en": "Could not log out other browsers. Try again.",
     "de": "Andere Browser konnten nicht abgemeldet werden. Versuche es erneut."
+  },
+  "Create": {
+    "en": "Create",
+    "de": "Erstellen"
+  },
+  "Delete": {
+    "en": "Delete",
+    "de": "Löschen"
+  },
+  "Delete Dreamer": {
+    "en": "Delete Dreamer",
+    "de": "Träumer löschen"
+  },
+  "Delete a dreamer to make room for a new one.": {
+    "en": "Delete a dreamer to make room for a new one.",
+    "de": "Lösche einen Träumer, um Platz für einen neuen zu schaffen."
   },
   "Drive off %@ nightmares.": {
     "en": "Drive off %@ nightmares.",
@@ -227,9 +263,17 @@
     "en": "Earned by a task",
     "de": "Durch eine Aufgabe verdient"
   },
+  "Email": {
+    "en": "Email",
+    "de": "E-Mail"
+  },
   "Email:": {
     "en": "Email:",
     "de": "E-Mail:"
+  },
+  "Enter a valid email address.": {
+    "en": "Enter a valid email address.",
+    "de": "Gib eine gültige E-Mail-Adresse ein."
   },
   "Error %@ occurred.": {
     "en": "Error %@ occurred.",
@@ -319,6 +363,10 @@
     "en": "Log In",
     "de": "Anmelden"
   },
+  "Log Out": {
+    "en": "Log Out",
+    "de": "Abmelden"
+  },
   "Log Out Other Browsers": {
     "en": "Log Out Other Browsers",
     "de": "Andere Browser abmelden"
@@ -355,21 +403,21 @@
     "en": "Mend %@ health on other dreamers.",
     "de": "Heile %@ Gestalt bei anderen Träumern."
   },
+  "Name:": {
+    "en": "Name:",
+    "de": "Name:"
+  },
   "Needs %1$@ at rank %2$@": {
     "en": "Needs %1$@ at rank %2$@",
     "de": "Braucht %1$@ auf Rang %2$@"
   },
-  "Nickname": {
-    "en": "Nickname",
-    "de": "Nickname"
+  "New Dreamer": {
+    "en": "New Dreamer",
+    "de": "Neuer Träumer"
   },
-  "Nickname already exists.": {
-    "en": "Nickname already exists.",
-    "de": "Der Nickname ist bereits vergeben."
-  },
-  "Nickname:": {
-    "en": "Nickname:",
-    "de": "Nickname:"
+  "No dreamers yet. Create one to enter the world.": {
+    "en": "No dreamers yet. Create one to enter the world.",
+    "de": "Noch keine Träumer. Erstelle einen, um die Welt zu betreten."
   },
   "No other browser remembers your password.": {
     "en": "No other browser remembers your password.",
@@ -395,10 +443,6 @@
     "en": "Password",
     "de": "Passwort"
   },
-  "Password (*):": {
-    "en": "Password (*):",
-    "de": "Passwort (*):"
-  },
   "Password:": {
     "en": "Password:",
     "de": "Passwort:"
@@ -406,6 +450,10 @@
   "People:": {
     "en": "People:",
     "de": "Volk:"
+  },
+  "Play": {
+    "en": "Play",
+    "de": "Spielen"
   },
   "Players": {
     "en": "Players",
@@ -430,6 +478,10 @@
   "Remember password": {
     "en": "Remember password",
     "de": "Passwort merken"
+  },
+  "Repeat password:": {
+    "en": "Repeat password:",
+    "de": "Passwort wiederholen:"
   },
   "Resume": {
     "en": "Resume",
@@ -642,6 +694,10 @@
   "Your %1$@ deepens: rank %2$@.": {
     "en": "Your %1$@ deepens: rank %2$@.",
     "de": "Deine Lehre %1$@ vertieft sich: Rang %2$@."
+  },
+  "Your Dreamers": {
+    "en": "Your Dreamers",
+    "de": "Deine Träumer"
   },
   "Your health gives out. You fall.": {
     "en": "Your health gives out. You fall.",

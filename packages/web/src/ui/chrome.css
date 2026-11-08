@@ -452,6 +452,38 @@ body {
   margin-top: 6px;
 }
 
+/* A dreamer on the character card: the name over its people and role, then Play and Delete. */
+.character-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.character-row + .character-row {
+  border-top: 1px solid rgb(255 255 255 / 0.2);
+}
+
+.character-row__who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.character-row__who strong {
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-row__traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  color: var(--somnio-ink-dim);
+}
+
 /* At the top edge, clear of the fallen body at the screen's centre and of whoever comes to raise it.
    In a narrow window it gives up width to keep the stacks' gap from the Players panel's outer edge.
    It narrows on both sides alike, so the narrower HUD stays clear too, until its widest row no longer fits. */
@@ -602,10 +634,6 @@ body {
   width: min(440px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   overflow-y: auto;
-}
-
-.overlay-card--wide {
-  width: min(560px, calc(100vw - 48px));
 }
 
 /* The 280px game menu. */

@@ -1,10 +1,10 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { RedeemSessionMessage, RevokeSessionMessage } from '@somnio/protocol';
-import type { ConnectionActor } from '../connection/connectionActor.ts';
+import type { CloseDecision, ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
-import { completeAuthenticatedJoin, sendLoginResult } from './login.ts';
+import { completeAuthentication, sendLoginResult } from './login.ts';
 
 /**
  * Redeeming a token in place of a password login. Every failure — unknown, expired, revoked —
@@ -13,25 +13,26 @@ import { completeAuthenticatedJoin, sendLoginResult } from './login.ts';
  * unbounded digest. A redeem is outside the pre-login limit: a 256-bit token cannot be guessed,
  * and a spent address budget must not refuse a valid resume.
  */
-export async function handleRedeem(message: RedeemSessionMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
+export async function handleRedeem(message: RedeemSessionMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<CloseDecision> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   if (utf8ByteLength(message.token) > SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes) {
     sendLoginResult(outbox, 'badCredentials', logger);
-    return;
+    return { kind: 'keepOpen' };
   }
   try {
     const resolved = await dependencies.sessions.redeem(message.token);
     if (resolved === undefined) {
       sendLoginResult(outbox, 'badCredentials', logger);
-      return;
+      return { kind: 'keepOpen' };
     }
     // No rotation on redemption: rotating before `worldRouter.register` succeeds would invalidate the
     // credential on the first `alreadyLoggedIn` answer and break the client's bounded retry.
-    await completeAuthenticatedJoin(resolved.accountId, connection, dependencies, false, message.locale ?? 'en', message.token);
+    return await completeAuthentication(resolved.accountId, connection, dependencies, false, message.locale ?? 'en', message.token);
   } catch (error) {
     logger.error({ error: String(error) }, 'session redemption failed');
     sendLoginResult(outbox, 'badCredentials', logger);
+    return { kind: 'keepOpen' };
   }
 }
 

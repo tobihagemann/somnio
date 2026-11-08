@@ -481,7 +481,7 @@ export class InspectorPanel {
         textarea,
         element('p', {
           className: 'editor-caption',
-          text: "Script syntax: --- separates dialog steps; $name substitutes the player's nickname at runtime.",
+          text: "Script syntax: --- separates dialog steps; $name substitutes the dreamer's name at runtime.",
         }),
       ],
     });

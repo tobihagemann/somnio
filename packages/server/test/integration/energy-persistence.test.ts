@@ -25,15 +25,15 @@ it('baseline energy pairs are persisted by the close checkpoint and surface on r
   const characters = new PostgresCharacterRepository(harness.db);
   const first = await joinFreshPlayer(server.url, 'energy');
   const baseline = energyOf(first);
-  const registeredLastSeen = (await characters.findByName(first.nickname))!.lastSeen;
+  const registeredLastSeen = (await characters.findByName(first.name))!.lastSeen;
   await closeAndAwaitCleanup(first, server);
   // The strict advance is what proves the close checkpoint ran; the energy values match regardless.
   const persisted = await pollUntil(async () => {
-    const row = await characters.findByName(first.nickname);
+    const row = await characters.findByName(first.name);
     return row !== undefined && row.lastSeen.getTime() > registeredLastSeen.getTime() ? row : undefined;
   });
   expect(persisted.energy).toEqual(baseline);
-  const second = await loginOverWire(server.url, first.nickname);
+  const second = await loginOverWire(server.url, first.name);
   expect(energyOf(second)).toEqual(baseline);
   await second.client.close();
 });

@@ -1,8 +1,8 @@
 import { connect } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { encodeSomnioMessage } from '@somnio/protocol';
 import { SocketAdmission } from '../../src/connection/socketAdmission.ts';
 import type { RunningServer } from '../../src/http/server.ts';
+import { redeemToCard, sendRedeem } from '../support/characterCard.ts';
 import { TestClient, attemptUpgrade, forwardedFor, gameplayURL, withLiveServer } from '../support/liveServer.ts';
 import { testLogger } from '../support/logger.ts';
 import { makeOneSectorWorld } from '../support/oneSectorWorld.ts';
@@ -48,7 +48,7 @@ describe('upgrade guards', () => {
       // open: exactly the window a late upgrade lands in.
       const held = await TestClient.open(gameplayURL(server));
       await held.next();
-      held.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token: 'held' } }));
+      sendRedeem(held, 'held');
       await sessions.reached;
       const closing = server.close();
       const response = await rawUpgrade(server.port, '/ws');
@@ -63,7 +63,13 @@ describe('upgrade guards', () => {
 
 describe('the cap on sockets awaiting login', () => {
   function admission(perAddressEnabled: boolean, perAddress = 2, total = 3): SocketAdmission {
-    return new SocketAdmission({ perAddressEnabled, perAddress, total, logger: testLogger() });
+    return new SocketAdmission({ perAddressEnabled, perAddress, total, authenticatedPerAddress: total, authenticated: total, logger: testLogger() });
+  }
+
+  async function redeemOn(server: RunningServer, token: string): Promise<TestClient> {
+    const client = await TestClient.open(gameplayURL(server));
+    sendRedeem(client, token);
+    return client;
   }
 
   function openFrom(server: RunningServer, address: string): Promise<TestClient> {
@@ -91,16 +97,43 @@ describe('the cap on sockets awaiting login', () => {
     });
   });
 
+  /** One slot of each kind: the second account's upgrade needs the first socket's pre-login slot, and its login the slot the first held on the card. */
   it('stops counting a socket once its player is in the world', async () => {
     const sessions = new StubSessionRepository();
     const world = await makeOneSectorWorld({ sessions });
-    const issued = await sessions.issue(world.accountId, 3600);
+    const played = await sessions.issue(world.accountId, 3600);
+    const other = await sessions.issue(crypto.randomUUID(), 3600);
     await withLiveServer({ dependencies: world.dependencies, socketAdmission: admission(true, 1, 1) }, async (server) => {
-      const player = await TestClient.open(gameplayURL(server));
-      player.send(encodeSomnioMessage({ tag: 'redeemSession', payload: { token: issued.token } }));
-      expect((await player.until('loginResult')).target).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
-      expect(await attemptUpgrade(gameplayURL(server))).toBe('opened');
+      const player = await redeemOn(server, played.token);
+      await player.until('enterSpace');
+      const second = await redeemOn(server, other.token);
+      expect((await second.until('loginResult')).target).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
+      await second.close();
       await player.close();
+    });
+  });
+
+  it('frees the slot on the card of a socket that closes there', async () => {
+    const sessions = new StubSessionRepository();
+    const first = await sessions.issue(crypto.randomUUID(), 3600);
+    const second = await sessions.issue(crypto.randomUUID(), 3600);
+    const dependencies = await makeStubConnectionDependencies({ sessions });
+    await withLiveServer({ dependencies, socketAdmission: admission(false, 1, 1) }, async (server) => {
+      const idle = await TestClient.open(gameplayURL(server));
+      await redeemToCard(idle, first.token);
+      await idle.close();
+      // The server frees a slot after the exit path, which can trail the client's own close.
+      await vi.waitFor(
+        async () => {
+          const client = await redeemOn(server, second.token);
+          expect(await Promise.race([client.until('loginResult').then(({ target }) => target), client.closed])).toEqual({
+            tag: 'loginResult',
+            payload: { result: 'ok' },
+          });
+          await client.close();
+        },
+        { timeout: 2000 },
+      );
     });
   });
 

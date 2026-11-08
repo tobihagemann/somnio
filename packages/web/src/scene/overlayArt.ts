@@ -283,11 +283,11 @@ export function paintSpeechBubble(context: CanvasRenderingContext2D, lines: read
  * The name label under a player or NPC: black text on a filled box with a 1px black border.
  *
  * The name is byte-clamped before measuring, so a hostile server cannot drive an enormous
- * supersampled bitmap off a pathological nickname.
+ * supersampled bitmap off a pathological name.
  */
 export function renderNamePlaque(name: string, background: string, bold: boolean, ink: string = NAME_PLAQUE.ink): RasterArt {
   // `maxRenderedNameUTF8Bytes` is the protocol's identifier cap, which honest servers already
-  // enforce at registration; the clamp is what stops a hostile one driving a giant bitmap.
+  // enforce on a character's name; the clamp is what stops a hostile one driving a giant bitmap.
   const clamped = truncateToUTF8Bytes(name, PROTOCOL_BYTE_CAPS.identifier);
   const font = `${bold ? 'bold ' : ''}${NAME_PLAQUE.fontSize}px system-ui, sans-serif`;
   const textWidth = measureTextWidth(clamped, font);

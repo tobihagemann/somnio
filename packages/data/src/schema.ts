@@ -1,17 +1,15 @@
 import type { Generated } from 'kysely';
 
 // The Postgres schema, as the migrations create it. `Generated<>` marks columns Postgres fills
-// (defaults and the generated `name_normalized`), so inserts may omit them. Positions are metres
+// (defaults and the generated `*_normalized` columns), so inserts may omit them. Positions are metres
 // in the character's space; facing is degrees, 0 = south, 90 = east.
 
 export interface AccountsTable {
   id: string;
-  name: string;
-  name_normalized: Generated<string>;
   password_hash: string;
   email: string;
+  email_normalized: Generated<string>;
   created_at: Generated<Date>;
-  name_skeleton: string;
 }
 
 export interface CharactersTable {

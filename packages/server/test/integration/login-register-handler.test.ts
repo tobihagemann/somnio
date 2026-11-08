@@ -7,7 +7,7 @@ import type { ConnectionDependencies } from '../../src/connection/dependencies.t
 import { handleLogin } from '../../src/handlers/login.ts';
 import { handleRegister } from '../../src/handlers/register.ts';
 import { collectMessages, loginResults, registerResults } from '../support/frames.ts';
-import { TEST_PASSWORD, makeDatabaseDependencies, startDatabase, uniqueNickname } from './support/harness.ts';
+import { TEST_PASSWORD, emailFor, makeDatabaseDependencies, startDatabase, uniqueName } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
 const SEEDED_WORLD_SECONDS = 16_000_000_000.5;
@@ -17,7 +17,7 @@ let dependencies: ConnectionDependencies;
 
 beforeAll(async () => {
   harness = await startDatabase();
-  // A non-default clock so the per-login `enterSpace` assertion catches a regression to the boot default.
+  // A non-default clock so the per-join `enterSpace` assertion catches a regression to the boot default.
   await new PostgresWorldClockRepository(harness.db).save(SEEDED_WORLD_SECONDS);
   dependencies = await makeDatabaseDependencies(harness.db);
 });
@@ -25,15 +25,8 @@ afterAll(async () => {
   await harness.stop();
 });
 
-function registerMessage(nickname: string, overrides: Partial<RegisterMessage> = {}): RegisterMessage {
-  return {
-    nickname,
-    password: TEST_PASSWORD,
-    passwordRepeat: TEST_PASSWORD,
-    people: 'lumina',
-    email: `${nickname}@example.invalid`,
-    ...overrides,
-  };
+function registerMessage(email: string, overrides: Partial<RegisterMessage> = {}): RegisterMessage {
+  return { email, password: TEST_PASSWORD, passwordRepeat: TEST_PASSWORD, ...overrides };
 }
 
 async function register(message: RegisterMessage) {
@@ -42,74 +35,89 @@ async function register(message: RegisterMessage) {
   return registerResults(await collectMessages(connection.outbox));
 }
 
-async function login(nickname: string, password = TEST_PASSWORD) {
+async function login(email: string, password = TEST_PASSWORD) {
   const connection = new ConnectionActor(dependencies);
-  await handleLogin({ nickname, password }, connection, dependencies);
+  await handleLogin({ email, password }, connection, dependencies);
+  return { connection, messages: await collectMessages(connection.outbox) };
+}
+
+/** Logs in as the account of the player named `name`, creates their character, and joins as it. */
+async function play(name: string, own = dependencies) {
+  const connection = new ConnectionActor(own);
+  await handleLogin({ email: emailFor(name), password: TEST_PASSWORD }, connection, own);
+  if (connection.state.kind !== 'authenticated') throw new Error(`${name} did not log in`);
+  await connection.dispatch({ tag: 'createCharacter', payload: { name, people: 'lumina' } });
+  const [character] = await own.characters.findByAccount(connection.state.accountId);
+  await connection.dispatch({ tag: 'selectCharacter', payload: { characterId: character!.id } });
   return { connection, messages: await collectMessages(connection.outbox) };
 }
 
 describe('register handler over Postgres', () => {
   it('success enqueues registerResult ok', async () => {
-    expect(await register(registerMessage(uniqueNickname('newcomer')))).toEqual(['ok']);
+    expect(await register(registerMessage(emailFor(uniqueName('newcomer'))))).toEqual(['ok']);
   });
 
   it('fails when the password repeat does not match', async () => {
-    expect(await register(registerMessage(uniqueNickname('alice'), { passwordRepeat: 'passwordB' }))).toEqual(['failure']);
+    expect(await register(registerMessage(emailFor(uniqueName('alice')), { passwordRepeat: 'passwordB' }))).toEqual(['failure']);
   });
 
   it('fails when the password is shorter than the minimum', async () => {
-    expect(await register(registerMessage(uniqueNickname('shorty'), { password: 'abc', passwordRepeat: 'abc' }))).toEqual(['failure']);
+    expect(await register(registerMessage(emailFor(uniqueName('shorty')), { password: 'abc', passwordRepeat: 'abc' }))).toEqual(['failure']);
   });
 
-  it('a duplicate nickname maps to nicknameExists', async () => {
-    const nickname = uniqueNickname('duplicate');
-    expect(await register(registerMessage(nickname))).toEqual(['ok']);
-    expect(await register(registerMessage(nickname.toUpperCase()))).toEqual(['nicknameExists']);
-  });
-
-  it('fails when the nickname exceeds the identifier length cap', async () => {
-    expect(await register(registerMessage('n'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes + 1)))).toEqual(['failure']);
+  it('a duplicate email in another case maps to emailExists', async () => {
+    const email = emailFor(uniqueName('duplicate'));
+    expect(await register(registerMessage(email))).toEqual(['ok']);
+    expect(await register(registerMessage(email.toUpperCase()))).toEqual(['emailExists']);
   });
 
   it('fails when the email exceeds the identifier length cap', async () => {
     const email = `${'e'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes)}@x.invalid`;
-    expect(await register(registerMessage(uniqueNickname('mail'), { email }))).toEqual(['failure']);
+    expect(await register(registerMessage(email))).toEqual(['failure']);
   });
 
-  it('a mixed-script name returns nameNotAllowed', async () => {
-    expect(await register(registerMessage('Sаibot'))).toEqual(['nameNotAllowed']);
-  });
-
-  it('an unknown people returns failure', async () => {
-    expect(await register(registerMessage(uniqueNickname('ppl'), { people: 'elves' }))).toEqual(['failure']);
+  it('fails when the email is not an address', async () => {
+    expect(await register(registerMessage(uniqueName('nodomain')))).toEqual(['failure']);
   });
 });
 
 describe('login handler over Postgres', () => {
-  it('success streams the join sequence starting with the seeded world clock', async () => {
-    const nickname = uniqueNickname('loginuser');
-    await register(registerMessage(nickname));
-    const { connection, messages } = await login(nickname);
-    const tags = messages.map((message) => message.tag);
-    expect(loginResults(messages)).toEqual(['ok']);
-    expect(tags).toContain('sector');
-    expect(tags).toContain('inventory');
-    expect(tags).toContain('energy');
+  it('success answers ok and the account with no character yet', async () => {
+    const email = emailFor(uniqueName('loginuser'));
+    await register(registerMessage(email));
+    const { connection, messages } = await login(email);
+    expect(messages).toEqual([
+      { tag: 'loginResult', payload: { result: 'ok' } },
+      { tag: 'otherSessions', payload: { count: 0 } },
+      { tag: 'characters', payload: { characters: [] } },
+    ]);
+    if (connection.state.kind === 'authenticated') dependencies.worldRouter.unregister(connection.state.accountId);
+  });
+
+  it('a character joins with the seeded world clock', async () => {
+    const name = uniqueName('joiner');
+    await register(registerMessage(emailFor(name)));
+    const { connection, messages } = await play(name);
     // The service has not ticked, so the clock is exactly what the database held.
-    expect(messages[1]).toMatchObject({ tag: 'enterSpace', payload: { spaceId: STARTER_SECTOR, worldSeconds: SEEDED_WORLD_SECONDS } });
+    expect(messages).toContainEqual({
+      tag: 'enterSpace',
+      payload: { spaceId: STARTER_SECTOR, selfId: expect.any(String), worldSeconds: SEEDED_WORLD_SECONDS },
+    });
     if (connection.state.kind === 'attached') dependencies.worldRouter.unregister(connection.state.accountId);
   });
 
-  it('a fresh login into EdariaLibrary streams the exact join frame order', async () => {
+  it('a fresh character joining EdariaLibrary streams the exact frame order', async () => {
     // A private router, so no player another case left attached adds an entity frame.
     const own = await makeDatabaseDependencies(harness.db);
-    const nickname = uniqueNickname('order');
-    await register(registerMessage(nickname));
-    const connection = new ConnectionActor(own);
-    await handleLogin({ nickname, password: TEST_PASSWORD }, connection, own);
-    const messages = await collectMessages(connection.outbox);
+    const name = uniqueName('order');
+    await register(registerMessage(emailFor(name)));
+    const { messages } = await play(name, own);
     expect(messages.map((message) => message.tag)).toEqual([
       'loginResult',
+      'otherSessions',
+      'characters',
+      'characters',
+      'characterResult',
       'enterSpace',
       'sector',
       'entity',
@@ -117,36 +125,35 @@ describe('login handler over Postgres', () => {
       'energy',
       'lucidity',
       'entity',
-      'otherSessions',
     ]);
   });
 
-  it('an unknown nickname returns badCredentials', async () => {
-    expect(loginResults((await login(uniqueNickname('ghost'))).messages)).toEqual(['badCredentials']);
+  it('an unknown email returns badCredentials', async () => {
+    expect(loginResults((await login(emailFor(uniqueName('ghost')))).messages)).toEqual(['badCredentials']);
   });
 
   it('a wrong password for an existing account returns badCredentials', async () => {
-    const nickname = uniqueNickname('wrongpw');
-    await register(registerMessage(nickname));
-    expect(loginResults((await login(nickname, 'not-the-password')).messages)).toEqual(['badCredentials']);
+    const email = emailFor(uniqueName('wrongpw'));
+    await register(registerMessage(email));
+    expect(loginResults((await login(email, 'not-the-password')).messages)).toEqual(['badCredentials']);
   });
 
   it('a second login for the same account returns alreadyLoggedIn', async () => {
-    const nickname = uniqueNickname('twice');
-    await register(registerMessage(nickname));
-    const first = await login(nickname);
+    const email = emailFor(uniqueName('twice'));
+    await register(registerMessage(email));
+    const first = await login(email);
     expect(loginResults(first.messages)).toEqual(['ok']);
-    expect(loginResults((await login(nickname)).messages)).toEqual(['alreadyLoggedIn']);
-    if (first.connection.state.kind === 'attached') dependencies.worldRouter.unregister(first.connection.state.accountId);
+    expect(loginResults((await login(email)).messages)).toEqual(['alreadyLoggedIn']);
+    if (first.connection.state.kind === 'authenticated') dependencies.worldRouter.unregister(first.connection.state.accountId);
   });
 
   it('fails when the password exceeds the maximum length', async () => {
     const password = 'p'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes + 1);
-    expect(loginResults((await login(uniqueNickname('longpw'), password)).messages)).toEqual(['badCredentials']);
+    expect(loginResults((await login(emailFor(uniqueName('longpw')), password)).messages)).toEqual(['badCredentials']);
   });
 
-  it('fails when the nickname exceeds the maximum length', async () => {
-    const nickname = 'n'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes + 1);
-    expect(loginResults((await login(nickname)).messages)).toEqual(['badCredentials']);
+  it('fails when the email exceeds the maximum length', async () => {
+    const email = `${'e'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes)}@x.invalid`;
+    expect(loginResults((await login(email)).messages)).toEqual(['badCredentials']);
   });
 });

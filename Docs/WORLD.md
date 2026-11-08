@@ -2,12 +2,17 @@
 
 The design bible for Somnio's world: its premise, peoples, classes, and the loop they live in. The source of truth for what the world *is* and why.
 
+Somnio plays from Diablo's fixed overhead view, by tap and click, with an MMO's structure (an ability bar, threat, a target frame, quests, several characters) and an engine that keeps making play (random gear, elite nightmares, repeatable bounties). Clan Lord's role play fills the rest: speech by distance, falling and being raised by Healers, peoples, masters, and an open world gated only by its nightmares. One person builds the world, so systems that keep producing play win over hand-made content.
+
+A part marked *(being built)* is designed but not yet in the world.
+
 ## Design ethos
 
 Somnio is **cooperative and community-first** — the world pushes players together, not against each other:
 
 - **Support roles matter.** Healer and Mystic cannot go it alone; they exist to keep a group alive and aware. That interdependence is the point — you *need* other people.
-- **The threat is the world, not each other.** Near-zero player-versus-player conflict.
+- **The threat is the world, not each other.** No player-versus-player harm: nothing a dreamer does hurts another.
+- **No party, no instance.** Dreamers group by standing together. Every standing dreamer nearby shares the credit and the coins for a nightmare driven off, and every place, the lairs included, belongs to whoever walks in.
 - **Progression is shared purpose.** Everyone is defending the same dream.
 
 ## Premise — the dream of a restless Sleeper
@@ -36,13 +41,32 @@ This single mechanism explains everything else:
 
 A dreamer wakes into the Library, finds their feet in Edaria, then ventures outward to where the dream frays. They face nightmares, grow in lucidity, and return to Edaria's masters and shops before going deeper — always holding the line against the unraveling, always needing others to do it.
 
-## The trinity — three classes that need each other
+Between the masters' trials and teachings, the work never runs out. Quest givers send a dreamer on errands and chains, the bounty board on the square posts fresh bounties every world day, nightmares drop gear rolled stronger the further out they fall, and elites and lairs wait for dreamers who come together. *(being built)*
 
-Three roles in tension, where support classes *cannot* go it alone:
+## Moving and acting
 
-- **Fighter** — the front line. Faces nightmares and swings. Trains the most martial ranks. The only truly self-sufficient role — but bring friends.
-- **Healer** — carries the **Moonstone**: heals the ally they tend, from close by, draining their own strength to do it. Can barely fight. Exists to keep the group breathing. Precious and rare.
-- **Mystic** — *deliberately secretive* support, not a fireball-wizard. Buffs allies, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen.
+The view looks down from a fixed angle at about fourteen metres of ground, top to bottom. Desktop and landscape phone share one way to play, and an upright phone asks to be turned. *(being built)*
+
+- **Walking.** A tap or click on the ground walks the dreamer there, along a path round walls, props, and whoever stands in the way. Holding steers toward the pointer, and letting go walks on to where it was let go. A tap on the dreamer's own body stops them. Where the tapped spot cannot be reached, the dreamer walks to the nearest point toward it. *(being built)*
+- **Facing.** On a desktop the dreamer always faces the cursor, so they can back away from a nightmare while still facing it, slower sideways and slower still backwards. A phone has no cursor, so there the dreamer faces their target, or the way they walk without one. *(being built)*
+- **Pace.** A dreamer jogs. The Run toggle, on the bar or Shift on a desktop, makes them run, which drains Balance. A winded dreamer walks. *(being built)*
+- **Targets.** A tap on anyone or anything alive makes it the dreamer's target and never walks them. A frame shows the target's name, its tint, and a bar of its health. A Healer also gets a frame for the dreamer they tend, so they can watch one while acting on another. There are no damage numbers. *(being built)*
+- **Attack.** Attack is a toggle like Run. It switches on only with a target, swings on the swing rhythm at that target alone while it stands in reach in front of the dreamer, and switches off when the target is lost. *(being built)*
+- **Abilities.** The bar holds six buttons, keys 1 to 6 on a desktop: Attack, then the abilities the dreamer's teachings have given them. Most act at once; a few are short channels that break when the dreamer moves. *(being built)*
+- **People.** Someone a dreamer comes near greets them unasked. A tap from within speaking distance asks them to go on and opens a master's or the shopkeeper's offer. A quest giver shows a marker over their head *(being built)*.
+- **Speech.** Words carry by distance. A whisper reaches only those close by, a plain line a little further, and a yell far, even one door into the next room. Further off, a line arrives in pieces.
+
+Walking into someone only stops a dreamer.
+
+## The classes — three roles that need each other
+
+Three roles in tension, where support classes *cannot* go it alone. A class is earned by passing its master's trial and is kept for good.
+
+- **Fighter** (Balance) — the front line. Holds nightmares on themselves and strikes them down. The only truly self-sufficient role — but bring friends. Abilities: **Cleave** strikes every nightmare in front, **Challenge** turns every nightmare near the Fighter on them, **Brace** halves the harm they take at the cost of running, **Lunge** leaps to the target, and **Rally** gives Balance back to the dreamers in earshot. *(being built)*
+- **Healer** (Spirit) — carries the **Moonstone**: heals the ally they tend, from close by, draining their own Spirit to do it. Can barely fight. Exists to keep the group breathing. Precious and rare. **Touch** and **Drawing back** happen while the Healer tends: the Moonstone mends the dreamer tended, or draws them back when they have fallen. A Healer tends by tapping a dreamer's body or their name in the Players list *(being built)*. Abilities: **Deep mend** mends deeply in a short channel, **Renewal** mends over time, **Radiance** mends every dreamer close by a little, and **Calm** makes nightmares forget the Healer for a while. *(being built)*
+- **Mystic** (Spirit) — *deliberately secretive* support, not a fireball-wizard. Wards allies, weakens and binds nightmares, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen. Abilities: **Ward** absorbs the next harm, **Weaken** softens a nightmare's strikes, **Bind** holds a nightmare in place, **Dream-bolt** is a modest strike from afar, and **Veil** hides the dreamers near the Mystic from every nightmare for a few breaths. **Sense the fallen** needs no button: a Mystic who has learned it always sees the way to the fallen in the land. *(being built)*
+
+**Threat.** A nightmare attacks the dreamer it holds the most threat against: harm done to it, and mending done to the dreamers it fights. A Fighter's Challenge puts them on top, a Healer's Calm brings them down, and a Mystic's Veil takes a group off the table. *(being built)*
 
 ## The peoples — kinds of dreamers
 
@@ -57,16 +81,23 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 ## Naming convention
 
-- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Vigils*, *Sopors*, *Umbrae*, *Lumina*), primordial sites, and Edaria's old souls (*Libus*, *Pugnax*, *Sana*, *Mercus*, *Quieta*). Names from before the common tongue.
-- **English** for everything dreamers say — roles and items (*Fighter*, *Healer*, *Mystic*, *Moonstone*), the nightmares (*Ghost*), *and the lands dreamers themselves named and walk* (*North Wood*, *the Swamp*, *Troll Village*).
+- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Vigils*, *Sopors*, *Umbrae*, *Lumina*), primordial sites, and Edaria's old souls (*Libus*, *Pugnax*, *Sana*, *Tacita*, *Mercus*, *Quieta*). Names from before the common tongue.
+- **English** for everything dreamers say — roles, abilities, and items (*Fighter*, *Healer*, *Mystic*, *Cleave*, *Ward*, *Moonstone*), the nightmares (*Ghost*, *Necromancer*), *and the lands dreamers themselves named and walk* (*North Wood*, *the Swamp*, *Troll Village*).
 - In-world logic: Latin is the old dream-tongue, spoken by the world's bones; English is the common tongue the dreamers brought with them. The contrast is itself lore. (*Edaria* is the inherited name of the heart — older than either.)
 - The game reads in English and in German. German translates the common tongue (Fighter is *Kämpfer*, the Moonstone the *Mondstein*, the North Wood the *Nordwald*) and leaves the Latin as it is.
 
 ## Progression, death, economy
 
-- **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush.
+- **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush. Gear is the other half of a dreamer's strength *(being built)*.
 - **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Healer** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
-- **Economy** runs through Edaria's shops. A new dreamer starts with little more than a purse of coins and a humble cudgel, and nightmares pay a bounty to the dreamers who drive them off together. Mercus sells four weapons (a dagger, a cudgel, a short sword, and a mace), and the harder each strikes, the more Balance its swing spends. A dreamer carries one of each at most, and he buys them back at half price. The **Moonstone** is the Healer's tool.
+- **Economy** runs through Edaria's shops and the nightmares. A new dreamer starts with little more than a purse of coins and a humble cudgel, and every nightmare driven off pays coins to the dreamers who stood by. The **Moonstone** is the Healer's tool, given by Sana with the role, and never sold or bought.
+
+### Gear *(being built)*
+
+- **Rarity.** A piece of gear is plain, magic (one or two stats), or rare (three or four). The stats are drawn from the triad: more Health, Balance, or Spirit, harder hits, Guard, a faster swing, quicker recovery, deeper mends, stronger wards. Gear dropped further from Edaria rolls higher.
+- **Seven slots.** Main hand, off hand, head, body, hands, feet, and a charm. Only what is in the hands shows on the character. The Moonstone sits in the Healer's off hand.
+- **Drops are personal.** When a nightmare is driven off, each standing dreamer nearby may see a drop of their own on the ground, visible only to them, and picks it up with a tap.
+- **Mercus** sells plain gear and buys anything a dreamer brings him.
 
 ## Progression — Lucidity (in detail)
 
@@ -76,45 +107,57 @@ Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no le
 
 Three trained pools, carried from the game's legacy heritage (in German Gestalt, Gleichgewicht, and Geist):
 
-- **Health** — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, never as a number. When Health gives out, the dreamer falls (see *Death* below).
-- **Balance** — the combat resource: footing, timing, poise. Every swing spends it, whether it meets a nightmare or the air, and so do running and being struck. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Balance runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Fighter's primary pool.
+- **Health** — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, and the target frame as a bar *(being built)*, never as a number. When Health gives out, the dreamer falls (see *Death* below).
+- **Balance** — the combat resource: footing, timing, poise. Every swing spends it, and so do running, being struck, and the Fighter's abilities *(being built)*. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Balance runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Fighter's primary pool.
 - **Spirit** — the support resource: the reach of a Healer's Moonstone and the depth of a Mystic's senses. Support acts drain Spirit; an empty Spirit is why neither can go it alone.
 
-### Acting
+### Masters and teachings
 
-A dreamer acts on what they point at. A swing goes the way they face, meets the nearest nightmare in reach in front of them, and slows them for a breath. Someone a dreamer comes near greets them unasked; asking brings out the rest of what they have to say, and a master's offer with it. A Healer chooses the dreamer they **tend**, and the Moonstone mends that dreamer, or draws them back when they have fallen, for as long as the Healer holds it and stays close. Walking into someone only stops a dreamer; nothing a dreamer does harms another.
+A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets. No experience bar and no rank for sale: depth over rush.
 
-### Training
+**Abilities are teachings.** Learning a teaching's first rank puts its ability on the bar, and each further rank deepens it. *(being built)*
 
-A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets, and a dreamer holds one trial or task at a time. No experience bar and no rank for sale: depth over rush.
-
-The two trials:
+The three trials:
 
 - **Pugnax's trial** — drive off a nightmare. He sends a dreamer to the Arena to find one, and one driven off anywhere counts.
-- **Sana's trial** — walk to the North Wood and return without striking anything. A dreamer holding it cannot swing.
+- **Sana's trial** — walk to the North Wood and return without striking anything. A dreamer holding it cannot strike.
+- **Tacita's trial** — find three hidden places she only hints at, stand in each, and return to her. *(being built)*
 
 A rank's mechanical effect is a **combat or support capability** — hit harder, recover Balance faster, heal deeper, sense further.
 
-### Starter teachings (the first list each master teaches)
+### What each master teaches
 
-- **Fighter** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Balance recovery, and Toughening.
-- **Healer** — Touch (the Moonstone mends the dreamer tended), Depth (each touch mends more), Drawing back (raising the fallen; its task is Health mended on other dreamers), and Spirit deepening.
-- **The Mystic** — locating the fallen, buffs and wards for a group walking into the fray, plus Spirit deepening. Taught obliquely; half the lesson is finding the hall open. Not in the world yet.
+- **Fighter** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Balance recovery, and Toughening. Then the Fighter's abilities (see *The classes*) *(being built)*.
+- **Healer** — Touch (the Moonstone mends the dreamer tended), Depth (each touch mends more), Drawing back (raising the fallen; its task is Health mended on other dreamers), and Spirit deepening. Then the Healer's abilities (see *The classes*) *(being built)*.
+- **Mystic** — the Mystic's abilities (see *The classes*), Sense the fallen, and Spirit deepening. Taught obliquely; half the lesson is finding the tower open. *(being built)*
 
 A Healer can mend themselves with the Moonstone, for half the practice, so a Healer alone still grows.
+
+### Quests and bounties *(being built)*
+
+- **The quest log.** The masters' trials are quests in a quest log, beside every errand a dreamer takes on. A dreamer who can take or hand in a quest sees a marker over the giver's head.
+- **The first quests.** Libus gives a newcomer's errand: visit Mercus, then read the bounty board. The priest at the Graveyard's church gives a chain of three: see what stirs among the graves, gather what the skeletons drop, then go down into the crypt and still the Necromancer.
+- **The bounty board** stands on Edaria's square and posts new bounties every world day, made from the nightmares of each land: drive off so many of a kind there, or bring back so many of what they drop. A finished bounty pays coins and a piece of gear, and a bounty taken before the board changes can still be finished and paid after.
+
+### Group content *(being built)*
+
+- **Elites.** Stronger nightmares roam the lands among their kin, each with a trait in its name: a *Stony* one shrugs off part of every blow, a *Warded* one sits behind a ward that keeps renewing. They hit harder to bring down and drop better gear.
+- **Lairs.** The first lair is the crypt under the Graveyard, full of skeletons that strike up close, with elites among the packs. At its end waits the **Necromancer**. He wails, and the ground round him marks where the wail will land, so a dreamer still inside when it ends is struck; and he raises minions to fight beside him.
 
 ### Death as a social event (never permanent)
 
 Faithful to the heritage: when a dreamer's Health gives out they **fall** — a helpless, briefly "waking" body lying where it dropped, still in the world and still in the way, able to speak and to do nothing else. A yell carries far, which is how the fallen call for help. Nightmares leave the fallen alone. Two ways back:
 
-- **Raised in the field by a Healer**, and by nobody else. Drawing a dreamer back takes time and a good part of a Healer's Spirit, and the Healer has to stay with them. Several Healers can draw a dreamer back together, sooner and sharing the Spirit it costs. It breaks off and starts over only when the last of them parts. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystic locating the fallen is how a rescue party will find them.
+- **Raised in the field by a Healer**, and by nobody else. Drawing a dreamer back takes time and a good part of a Healer's Spirit, and the Healer has to stay with them. Several Healers can draw a dreamer back together, sooner and sharing the Spirit it costs. It breaks off and starts over only when the last of them parts. The raised dreamer stands up frail, and nightmares leave them be for a few breaths. Falling pulls the community together; a Mystic who senses the fallen is how a rescue party finds them *(being built)*.
 - **Giving up** — the dreamer lets go of the venture and wakes at the inn in Edaria, weakened in all three pools and no poorer.
 
 No permadeath, ever.
 
-### Class and registration
+### Characters
 
-Registration chooses a people, not a class. A dreamer grows into the Fighter or the Healer by passing that master's trial and accepting, and the other master then has nothing to teach them.
+An account holds several characters, each with a name and a people of its own, chosen on a character card after login. An account is an email and a password, and has no name of its own: what the world shows is the dreamer's. A remembered session resumes the character played last.
+
+A character chooses a people, not a class. A dreamer grows into a class by passing that master's trial and accepting, and the other masters then have nothing to teach them.
 
 ## Edaria — the lucid heart
 
@@ -122,8 +165,9 @@ Edaria is Somnio's central town: where every stranger arrives, the calmest place
 
 - **The central well** — the heart of the heart, a fountain at the crossing of every path.
 - **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Greetings! This library is still a work in progress. And running is forbidden in here!"*
-- **The three halls** — where the Fighter, Healer, and Mystic masters keep their doors. Pugnax teaches in the Fighters' hall, the old barracks in the south-east quarter. Sana teaches in the Healers' hall, the chapel beside the inn. The Mystic's hall has not opened.
+- **The three halls** — where the Fighter, Healer, and Mystic masters keep their doors. Pugnax teaches in the Fighters' hall, the old barracks in the south-east quarter. Sana teaches in the Healers' hall, the chapel beside the inn. Tacita teaches in a tower whose door opens only at night *(being built)*. The night is its only lock: the tower opens to every dreamer once it is dark, whatever their ranks.
 - **The shop & the inn** — a shop to outfit a dreamer; an inn that is the **wake-point**: a dreamer who gives up wakes here.
+- **The bounty board** — on the square, where each world day's bounties are posted. *(being built)*
 - **The sealed door** — the door of the keep in the south-west quarter, which no living dreamer has opened, and none can say what lies behind it. (The deepest mystery; tied to the Sleeper.)
 
 ## The lands of Somnio — a gazetteer
@@ -142,7 +186,7 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 **The mire & the dead** (west, where the dream rots — *Tier 3*)
 - **The Swamp** — a wide swamp of pools and reeds, with a **lake** and a **cave** sunk beneath it. The dream waterlogged and sour.
-- **Church & Graveyard** — a church and graveyard at the swamp's edge, a *thin place* where the dead don't rest and nightmares pool thickest.
+- **Church & Graveyard** — a church and graveyard beyond the West Meadow, a *thin place* where the dead don't rest and nightmares pool thickest. Beneath it lies the **crypt**, Somnio's first lair. *(being built)*
 
 **The wilds** (organized danger — *Tier 4*)
 - **Troll Village** — a troll settlement east beyond the Autumn Wood; a warband of nightmares with a camp of their own.
@@ -158,13 +202,13 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 ## People of Edaria
 
-- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
+- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers, and the giver of a newcomer's first errand *(being built)*. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
 - **Pugnax, the Fighter master** — master of the Fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
 - **Sana, the Healer master** (*sanare*, to heal) — mistress of the Healers' hall; keeper of the Moonstone lore, gentle and exacting.
-- **The Mystic** — barely seen; teaches the secretive craft from a shadowed hall, answers questions with questions.
-- **Mercus, the shopkeeper** (*merx*, wares) — deals in weapons, from the dagger a newcomer can afford to the mace a seasoned dreamer saves for.
+- **Tacita, the Mystic master** (*tacita*, the silent) — barely seen; teaches the secretive craft, answers questions with questions, and sets her trial in hints. *(being built)*
+- **Mercus, the shopkeeper** (*merx*, wares) — deals in gear, from the plain pieces he sells a newcomer to whatever a seasoned dreamer brings back from the edge *(being built)*.
 - **Quieta, the innkeeper** (*quies*, rest) — keeps the wake-point; knows every regular by their falling.
-- **The priest at the church** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless.
+- **The priest at the church** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless, down into the crypt. *(being built)*
 - **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper, and a master for those who venture past the gentle rings.
 
 ## The nightmares — a bestiary by tier
@@ -173,6 +217,8 @@ Monsters are the dream fraying, and they grow with distance from Edaria — the 
 
 - **Tier 1 — the Shallows** (Arena, near meadows): the **Ghost** a dreamer first meets in the Arena; faint wisps and drifting dreads.
 - **Tier 2 — the Forests**: beasts the dream shaped wrong — wolves, boars, a forest bogey.
-- **Tier 3 — the Mire & the Dead** (the Swamp, the Graveyard): swamp-things (a giant ant, a swamp-mushroom horror) and restless undead — skeletons and stronger Ghosts where the dead won't lie still.
+- **Tier 3 — the Mire & the Dead** (the Swamp, the Graveyard): swamp-things (a giant ant, a swamp-mushroom horror) and restless undead — skeleton warriors and their minions, stronger Ghosts where the dead won't lie still, and the **Necromancer** in the crypt *(being built)*.
 - **Tier 4 — the Wilds** (Troll Village, caves, jungle): bigger, organized threats — **trolls**, a cave **bear**, jungle predators.
 - **Tier 5 — the Frayed Edge** (the Wastes, the Desert, Pirate Shore): the harshest — desert horrors, **pirates** raiding from beyond the rim, and whatever leaks straight from the waking void where the dream gives out.
+
+Any kind may come as an **elite**, and a lair ends at a boss. *(being built)*

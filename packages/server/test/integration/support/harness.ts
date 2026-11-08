@@ -8,7 +8,6 @@ import {
   PostgresCharacterRepository,
   PostgresInventoryRepository,
   PostgresNPCDialogStateRepository,
-  PostgresRegistrationRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
 } from '@somnio/data';
@@ -17,20 +16,22 @@ import { startDatabase } from '../../../../data/test/integration/support/harness
 import type { DatabaseHarness } from '../../../../data/test/integration/support/harness.ts';
 import { bootServer } from '../../../src/bootstrap/runServer.ts';
 import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer.ts';
-import { DEFAULT_LOGIN_DEADLINE_MS, DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
+import { DEFAULT_CARD_DEADLINE_MS, DEFAULT_LOGIN_DEADLINE_MS, DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
 import { AttemptLimiter } from '../../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
+import { STARTER_INVENTORY } from '../../../src/handlers/starterInventory.ts';
 import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
 import type { LoadedWorld } from '../../../src/sectors/sectorCache.ts';
 import { WorldClockService } from '../../../src/services/worldClockService.ts';
 import type { SpaceActor } from '../../../src/world/spaceActor.ts';
 import { WorldRouter } from '../../../src/world/worldRouter.ts';
+import { chooseOnCard, emailFor, loginToCard } from '../../support/characterCard.ts';
 import { TestClient } from '../../support/liveServer.ts';
 import { testLogger } from '../../support/logger.ts';
 import { tempLogging } from '../../support/tempLogging.ts';
 import type { TempLogging } from '../../support/tempLogging.ts';
 
-export { startDatabase };
+export { emailFor, startDatabase };
 export type { DatabaseHarness };
 
 export const TEST_ADMIN_TOKEN = 'secret';
@@ -91,7 +92,6 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     accounts: new PostgresAccountRepository(db),
     characters,
     inventories: new PostgresInventoryRepository(db),
-    registrations: new PostgresRegistrationRepository(db),
     npcDialogStates,
     sessions: new PostgresSessionRepository(db),
     worldRouter,
@@ -100,6 +100,7 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     accountLimiter: new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: 1024,
     loginDeadlineMs: DEFAULT_LOGIN_DEADLINE_MS,
+    cardDeadlineMs: DEFAULT_CARD_DEADLINE_MS,
     logger,
   };
 }
@@ -109,7 +110,7 @@ export function fixtureWorld(): LoadedWorld {
   return loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
 }
 
-export function uniqueNickname(prefix: string): string {
+export function uniqueName(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 6)}`;
 }
 
@@ -117,66 +118,62 @@ export function frame(message: SomnioMessage): string {
   return encodeSomnioMessage(message);
 }
 
-export function registerFrame(nickname: string, password = TEST_PASSWORD): string {
-  return frame({
-    tag: 'register',
-    payload: {
-      nickname,
-      password,
-      passwordRepeat: password,
-      people: 'vigils',
-      email: `${nickname}@example.invalid`,
-    },
-  });
+export function registerFrame(email: string, password = TEST_PASSWORD): string {
+  return frame({ tag: 'register', payload: { email, password, passwordRepeat: password } });
+}
+
+/** Accounts with remembered sessions, written straight to the database so no Argon2 hash races a deadline. */
+export async function accountsWithSessions(server: TestServer, count: number): Promise<string[]> {
+  const accounts = new PostgresAccountRepository(server.server.db);
+  const sessions = new PostgresSessionRepository(server.server.db);
+  const tokens: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const account = await accounts.create(emailFor(uniqueName(`bulk${index}`)), 'unused-hash');
+    tokens.push((await sessions.issue(account.id, 3600)).token);
+  }
+  return tokens;
 }
 
 /** Registers over the wire on a throwaway socket. */
-async function registerOverWire(url: string, nickname: string, password = TEST_PASSWORD): Promise<void> {
+async function registerOverWire(url: string, email: string, password = TEST_PASSWORD): Promise<void> {
   const client = await TestClient.open(url);
   await client.next();
-  client.send(registerFrame(nickname, password));
+  client.send(registerFrame(email, password));
   const { target } = await client.until('registerResult');
   if (target.tag !== 'registerResult' || target.payload.result !== 'ok') {
-    throw new Error(`registration of ${nickname} failed: ${JSON.stringify(target)}`);
+    throw new Error(`registration of ${email} failed: ${JSON.stringify(target)}`);
   }
   await client.close();
 }
 
 export interface JoinedClient {
   client: TestClient;
-  /** `loginResult` and every frame of the join after it, in order. */
+  /** `loginResult` and every frame after it, through the character card and the join, in order. */
   join: SomnioMessage[];
   entityId: string;
   spaceId: string;
 }
 
 /**
- * Logs in over the wire and drains the join sequence. The join has no closing frame, so a
- * `revokeSession` for a token nobody holds is sent behind the login: its answer marks the end.
+ * Logs in over the wire as the account of the player named `name`, joins as its first listed
+ * character (created under that name when it has none), and drains the join sequence. The join has
+ * no closing frame, so a `revokeSession` for a token nobody holds is sent behind it: its answer
+ * marks the end.
  */
-export async function loginOverWire(url: string, nickname: string, options: { password?: string; requestSessionToken?: boolean } = {}): Promise<JoinedClient> {
+export async function loginOverWire(url: string, name: string, options: { password?: string; requestSessionToken?: boolean } = {}): Promise<JoinedClient> {
   const client = await TestClient.open(url);
   await client.next();
-  client.send(
-    frame({
-      tag: 'login',
-      payload:
-        options.requestSessionToken === undefined
-          ? { nickname, password: options.password ?? TEST_PASSWORD }
-          : {
-              nickname,
-              password: options.password ?? TEST_PASSWORD,
-              requestSessionToken: options.requestSessionToken,
-            },
-    }),
+  const password = options.password ?? TEST_PASSWORD;
+  const card = await loginToCard(
+    client,
+    options.requestSessionToken === undefined
+      ? { email: emailFor(name), password }
+      : { email: emailFor(name), password, requestSessionToken: options.requestSessionToken },
   );
-  const login = await client.until('loginResult');
-  if (login.target.tag !== 'loginResult' || login.target.payload.result !== 'ok') {
-    throw new Error(`login of ${nickname} failed: ${JSON.stringify(login.target)}`);
-  }
-  const join = [login.target, ...(await drainFrames(client))];
-  const enter = join[1];
-  if (enter?.tag !== 'enterSpace') throw new Error('the join did not start with enterSpace');
+  const chosen = await chooseOnCard(client, card, name);
+  const join = [...card.frames, ...chosen, ...(await drainFrames(client))];
+  const enter = join.find((message) => message.tag === 'enterSpace');
+  if (enter?.tag !== 'enterSpace') throw new Error(`the join of ${name} carried no enterSpace`);
   return { client, join, entityId: enter.payload.selfId, spaceId: enter.payload.spaceId };
 }
 
@@ -186,31 +183,34 @@ export async function drainFrames(client: TestClient): Promise<SomnioMessage[]> 
   return (await client.until('sessionRevoked')).before;
 }
 
+/** Registers the account of a fresh player and returns the player's name. */
 async function registerFreshPlayer(url: string, prefix: string): Promise<string> {
-  const nickname = uniqueNickname(prefix);
-  await registerOverWire(url, nickname);
-  return nickname;
+  const name = uniqueName(prefix);
+  await registerOverWire(url, emailFor(name));
+  return name;
 }
 
 /** Registers and logs in a fresh player. */
-export async function joinFreshPlayer(url: string, prefix: string): Promise<JoinedClient & { nickname: string }> {
-  const nickname = await registerFreshPlayer(url, prefix);
-  return { nickname, ...(await loginOverWire(url, nickname)) };
+export async function joinFreshPlayer(url: string, prefix: string): Promise<JoinedClient & { name: string }> {
+  const name = await registerFreshPlayer(url, prefix);
+  return { name, ...(await loginOverWire(url, name)) };
 }
 
-/** Registers a fresh player, saves them at `place`, and logs them in there. */
+/** Registers a fresh player, creates their character saved at `place`, and logs them in there. */
 export async function joinFreshPlayerAt(
   server: TestServer,
   prefix: string,
   place: Pick<Character, 'space' | 'position'>,
-): Promise<JoinedClient & { nickname: string }> {
-  const nickname = await registerFreshPlayer(server.url, prefix);
+): Promise<JoinedClient & { name: string }> {
+  const name = await registerFreshPlayer(server.url, prefix);
+  const account = await new PostgresAccountRepository(server.server.db).findByEmail(emailFor(name));
+  const character = await new PostgresCharacterRepository(server.server.db).create(account!.id, name, 'vigils', STARTER_INVENTORY);
   await server.server.db
     .updateTable('characters')
     .set({ space: place.space, position_x: place.position.x, position_z: place.position.z })
-    .where('name', '=', nickname)
+    .where('id', '=', character.id)
     .execute();
-  return { nickname, ...(await loginOverWire(server.url, nickname)) };
+  return { name, ...(await loginOverWire(server.url, name)) };
 }
 
 /** The player's own position from its join sequence. */

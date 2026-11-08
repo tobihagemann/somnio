@@ -75,28 +75,29 @@ const interiorSector: SectorView = {
 
 /** Every tag must appear, so a new message cannot ship without a fixture. */
 export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
-  { name: 'login', message: { tag: 'login', payload: { nickname: 'Saibot', password: 'hunter2' } } },
+  { name: 'login', message: { tag: 'login', payload: { email: 'info@example.com', password: 'hunter2' } } },
   {
     name: 'login-with-session-request',
     message: {
       tag: 'login',
-      payload: { nickname: 'Saibot', password: 'hunter2', requestSessionToken: true },
+      payload: { email: 'info@example.com', password: 'hunter2', requestSessionToken: true },
     },
   },
-  { name: 'login-with-locale', message: { tag: 'login', payload: { nickname: 'Saibot', password: 'hunter2', locale: 'de' } } },
+  { name: 'login-with-locale', message: { tag: 'login', payload: { email: 'info@example.com', password: 'hunter2', locale: 'de' } } },
   {
     name: 'register',
     message: {
       tag: 'register',
       payload: {
-        nickname: 'Saibot',
+        email: 'info@example.com',
         password: 'passw0rd',
         passwordRepeat: 'passw0rd',
-        people: 'vigils',
-        email: 'info@example.com',
       },
     },
   },
+  { name: 'createCharacter', message: { tag: 'createCharacter', payload: { name: 'Saibot', people: 'vigils' } } },
+  { name: 'selectCharacter', message: { tag: 'selectCharacter', payload: { characterId: PLAYER_ID } } },
+  { name: 'deleteCharacter', message: { tag: 'deleteCharacter', payload: { characterId: OTHER_PLAYER_ID } } },
   { name: 'move', message: { tag: 'move', payload: { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' } } },
   { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } } },
   { name: 'clientSay-yell', message: { tag: 'clientSay', payload: { text: 'Hilfe!', kind: 'yell' } } },
@@ -125,7 +126,20 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: { tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } },
   },
   { name: 'loginResult', message: { tag: 'loginResult', payload: { result: 'ok' } } },
-  { name: 'registerResult', message: { tag: 'registerResult', payload: { result: 'nameNotAllowed' } } },
+  { name: 'registerResult', message: { tag: 'registerResult', payload: { result: 'emailExists' } } },
+  {
+    name: 'characters',
+    message: {
+      tag: 'characters',
+      payload: {
+        characters: [
+          { id: PLAYER_ID, name: 'Saibot', people: 'vigils', role: 'healer' },
+          { id: OTHER_PLAYER_ID, name: 'Ida', people: 'umbrae' },
+        ],
+      },
+    },
+  },
+  { name: 'characterResult', message: { tag: 'characterResult', payload: { result: 'nameExists' } } },
   {
     name: 'enterSpace',
     message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: PLAYER_ID, worldSeconds: 14_515_243_200.5 } },

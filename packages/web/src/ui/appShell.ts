@@ -1,8 +1,8 @@
 import { bundledModelRegistry, clamp } from '@somnio/core';
 import { ConnectionController, GameplaySession, KeyboardSampler } from '@/client';
-import type { OverlayKind } from '@/client';
+import type { CharacterRequest, OverlayKind } from '@/client';
 import { assertNever } from '@somnio/protocol';
-import type { RegisterResult } from '@somnio/protocol';
+import type { CharacterResult, CharacterSummaryMessage, RegisterResult } from '@somnio/protocol';
 import { GameplayTransport, browserSocketFactory, resolveGameplayURL } from '@/transport';
 import type { GameplaySocketFactory } from '@/transport';
 import type * as THREE from 'three';
@@ -84,10 +84,26 @@ export function detectDesktop(): boolean {
  * the catalog test's source scan can find.
  */
 const REGISTRATION_ERROR_TEXT: Record<Exclude<RegisterResult, 'ok'>, () => string> = {
-  nicknameExists: () => t('Nickname already exists.'),
-  nameNotAllowed: () => t('That name uses characters Somnio does not allow.'),
+  emailExists: () => t('Another account already uses that email.'),
   failure: () => t('Registration failed.'),
   throttled: () => t('Too many attempts. Wait a little before trying again.'),
+};
+
+/** The card off screen, one array so a repaint finds it unchanged. */
+const NO_CHARACTERS: readonly CharacterSummaryMessage[] = [];
+
+/** What the New Dreamer form says for each failing result of a create. */
+const NEW_CHARACTER_ERROR_TEXT: Record<Exclude<CharacterResult, 'ok'>, () => string> = {
+  nameExists: () => t('Another dreamer already has that name.'),
+  nameNotAllowed: () => t('That name uses characters Somnio does not allow.'),
+  full: () => t('Delete a dreamer to make room for a new one.'),
+  failure: () => t('Could not create the dreamer. Try again.'),
+};
+
+/** What the card says when a dreamer could not be played or deleted. */
+const CHARACTER_ERROR_TEXT: Record<Exclude<CharacterRequest, 'create'>, () => string> = {
+  select: () => t('Could not enter the world. Try again.'),
+  delete: () => t('Could not delete the dreamer. Try again.'),
 };
 
 export class AppShell {
@@ -222,6 +238,18 @@ export class AppShell {
       // splash, and presents login as its last statement. Presenting again here would fire
       // `onOverlayChanged` twice for one click, running `clearHeldKeys` and a full `render()` twice.
       onLeaveGame: () => this.controller.leaveGame(),
+      onPlay: (characterId) => {
+        this.overlays.showCharacterError(undefined);
+        this.controller.selectCharacter(characterId);
+      },
+      onCreateCharacter: (name, people) => this.controller.createCharacter(name, people),
+      onCancelNewCharacter: () => this.cancelNewCharacter(),
+      // Back on the card at once; the list without the dreamer, or the reason it stayed, follows.
+      onDeleteCharacter: (characterId) => {
+        this.overlays.showCharacterError(undefined);
+        this.controller.deleteCharacter(characterId);
+        this.present({ kind: 'characters' });
+      },
       // Closes the menu, so the chat line that answers is in view.
       onLogOutOtherBrowsers: () => {
         this.controller.logOutOtherBrowsers();
@@ -278,6 +306,17 @@ export class AppShell {
     // registration overlay up carrying the reason.
     this.controller.onRegistrationOutcome = (result) => {
       this.overlays.showRegistrationError(result === 'ok' ? undefined : REGISTRATION_ERROR_TEXT[result]());
+      this.render();
+    };
+    this.controller.onCharacterRequestSent = () => this.render();
+    // A created dreamer's list has already brought the card back, so the form only has to be emptied.
+    this.controller.onCharacterOutcome = (request, result) => {
+      if (request === 'create') {
+        if (result === 'ok') this.overlays.clearNewCharacterForm();
+        else this.overlays.showNewCharacterError(NEW_CHARACTER_ERROR_TEXT[result]());
+      } else if (result !== 'ok') {
+        this.overlays.showCharacterError(CHARACTER_ERROR_TEXT[request]());
+      }
       this.render();
     };
 
@@ -438,9 +477,16 @@ export class AppShell {
     }
     switch (overlay.kind) {
       case 'login':
+      case 'characters':
         return;
       case 'registration':
         this.cancelRegistration();
+        return;
+      case 'newCharacter':
+        this.cancelNewCharacter();
+        return;
+      case 'deleteCharacter':
+        this.present({ kind: 'characters' });
         return;
       case 'updateRequired':
         this.present({ kind: 'login' });
@@ -462,6 +508,12 @@ export class AppShell {
   private cancelRegistration(): void {
     this.overlays.showRegistrationError(undefined);
     this.present({ kind: 'login' });
+  }
+
+  /** Back out to the card, dropping the inline error so a reopened form is clean. */
+  private cancelNewCharacter(): void {
+    this.overlays.showNewCharacterError(undefined);
+    this.present({ kind: 'characters' });
   }
 
   /**
@@ -568,6 +620,7 @@ export class AppShell {
   render(): void {
     const overlay = this.controller.presentedOverlay;
     this.overlays.present(overlay);
+    this.overlays.renderCharacters(this.controller.characters ?? NO_CHARACTERS, this.controller.awaitingCharacterAnswer);
     // Everything pre-login gives way in the frame the player's own body first appears, not at
     // `enterSpace`, which comes a little before it and on every later join as well.
     const inWorld = this.controller.inWorld;

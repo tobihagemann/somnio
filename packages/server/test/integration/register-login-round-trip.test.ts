@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { OUTDOOR_SPACE_ID, heading } from '@somnio/core';
-import { PostgresCharacterRepository, PostgresInventoryRepository, PostgresRegistrationRepository, hashPassword } from '@somnio/data';
+import { PostgresAccountRepository, PostgresCharacterRepository, PostgresInventoryRepository, hashPassword } from '@somnio/data';
 import { STARTER_INVENTORY } from '../../src/handlers/starterInventory.ts';
-import { TEST_PASSWORD, startDatabase, uniqueNickname } from './support/harness.ts';
+import { TEST_PASSWORD, emailFor, startDatabase, uniqueName } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
 let harness: DatabaseHarness;
@@ -15,15 +15,10 @@ afterAll(async () => {
 });
 
 it('register then logout snapshot then load reproduces the character state', async () => {
-  const name = uniqueNickname('roundtrip');
-  const { character } = await new PostgresRegistrationRepository(harness.db).register({
-    name,
-    passwordHash: await hashPassword(TEST_PASSWORD),
-    email: `${name}@example.invalid`,
-    people: 'umbrae',
-    starterInventory: STARTER_INVENTORY,
-  });
+  const name = uniqueName('roundtrip');
+  const account = await new PostgresAccountRepository(harness.db).create(emailFor(name), await hashPassword(TEST_PASSWORD));
   const characters = new PostgresCharacterRepository(harness.db);
+  const character = await characters.create(account.id, name, 'umbrae', STARTER_INVENTORY);
   // Fractional values pin the double precision round-trip; `lastSeen` is bumped so the stale guard accepts the write.
   const snapshot = {
     ...character,

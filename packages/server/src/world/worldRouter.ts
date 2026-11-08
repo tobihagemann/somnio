@@ -1,6 +1,6 @@
 import type { ClientSayMessage, SomnioMessage } from '@somnio/protocol';
 import type { NPCDialogState } from '@somnio/core';
-import { postgresNameKey } from '@somnio/data';
+import { postgresNormalizedKey } from '@somnio/data';
 import type { CharacterRepository, NPCDialogStateRepository } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
@@ -19,7 +19,7 @@ export interface AdminWorldRouter {
 
 interface LoggedInEntry {
   actor: ConnectionActor;
-  /** The `postgresNameKey` of the character's name; absent between the account's registration and its character being loaded. */
+  /** The `postgresNormalizedKey` of the character's name; absent while the account is on the character card, until a character joins. */
   nameKey: string | undefined;
 }
 
@@ -81,10 +81,10 @@ export class WorldRouter implements AdminWorldRouter {
     return true;
   }
 
-  /** Supplies the name `kickByCharacterName` matches, once the character is loaded. Until then the entry matches no kick. */
+  /** Supplies the name `kickByCharacterName` matches, once a character joins. Until then the entry matches no kick. */
   nameRegistered(accountId: string, characterName: string): void {
     const entry = this.loggedIn.get(accountId);
-    if (entry !== undefined) entry.nameKey = postgresNameKey(characterName);
+    if (entry !== undefined) entry.nameKey = postgresNormalizedKey(characterName);
   }
 
   unregister(accountId: string): void {
@@ -102,7 +102,7 @@ export class WorldRouter implements AdminWorldRouter {
 
   /** Disconnects every logged-in connection whose cached name matches; the connection's own exit path unregisters it. */
   kickByCharacterName(name: string): boolean {
-    const needle = postgresNameKey(name);
+    const needle = postgresNormalizedKey(name);
     let kicked = false;
     for (const entry of [...this.loggedIn.values()]) {
       if (entry.nameKey !== needle) continue;

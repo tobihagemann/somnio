@@ -17,8 +17,8 @@ describe('inventory repository', () => {
 
   async function newCharacterId(): Promise<string> {
     counter += 1;
-    const account = await accounts.create(`inv-owner-${counter}`, 'h', `${counter}@example.com`);
-    return (await characters.create(account.id, `Inv ${counter}`, 'vigils')).id;
+    const account = await accounts.create(`inv-owner-${counter}@example.com`, 'h');
+    return (await characters.create(account.id, `Inv ${counter}`, 'vigils', [])).id;
   }
 
   beforeAll(async () => {

@@ -67,7 +67,7 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name in the items panel, every people's name in the registration form, every role's and
+ * item's name in the items panel, every people's name on the character card, every role's and
  * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, and every
  * place a trial sends a dreamer to.
  */
@@ -233,22 +233,38 @@ export const RENDERED_KEYS: readonly string[] = [
 
   // Login and registration
   'Somnio',
-  'Nickname',
+  'Email',
   'Password',
   'Remember password',
   "If you don't have an account, click here!",
   'Log In',
   'Sign Up',
-  'Nickname:',
-  'Password:',
-  'Password (*):',
-  '*: repeat',
   'Email:',
-  'People:',
+  'Password:',
+  'Repeat password:',
   'Cancel',
-  'That name uses characters Somnio does not allow.',
-  'Nickname already exists.',
+  'Enter a valid email address.',
+  'Another account already uses that email.',
   'Registration failed.',
+
+  // The character card
+  'Your Dreamers',
+  'Play',
+  'Delete',
+  'No dreamers yet. Create one to enter the world.',
+  'Delete a dreamer to make room for a new one.',
+  'New Dreamer',
+  'Log Out',
+  'Name:',
+  'People:',
+  'Create',
+  'That name uses characters Somnio does not allow.',
+  'Another dreamer already has that name.',
+  'Could not create the dreamer. Try again.',
+  'Could not enter the world. Try again.',
+  'Could not delete the dreamer. Try again.',
+  'Delete Dreamer',
+  '%@ will be gone for good, with every rank and everything they carry.',
 
   // Game menu, about, and the version gate
   'Resume',

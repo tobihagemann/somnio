@@ -22,8 +22,8 @@ function inventoryRows(joined: JoinedClient): InventoryRowMessage[] {
   return inventory.payload.rows;
 }
 
-async function persistedCudgelHand(nickname: string) {
-  const character = await new PostgresCharacterRepository(harness.db).findByName(nickname);
+async function persistedCudgelHand(name: string) {
+  const character = await new PostgresCharacterRepository(harness.db).findByName(name);
   const rows = await new PostgresInventoryRepository(harness.db).loadAll(character!.id);
   return rows.find((row) => row.slot === 1)!.equippedHand;
 }
@@ -67,16 +67,16 @@ describe('inventory round trip', () => {
     joined.client.send(frame({ tag: 'equipToggle', payload: { slot: 1, hand: 'right' } }));
     await joined.client.until('inventory');
     await closeAndAwaitCleanup(joined, server);
-    expect(await pollUntil(async () => ((await persistedCudgelHand(joined.nickname)) === 'right' ? true : undefined))).toBe(true);
+    expect(await pollUntil(async () => ((await persistedCudgelHand(joined.name)) === 'right' ? true : undefined))).toBe(true);
 
-    const second = await loginOverWire(server.url, joined.nickname);
+    const second = await loginOverWire(server.url, joined.name);
     expect(inventoryRows(second).find((row) => row.slot === 1)?.equippedHand).toBe('right');
     second.client.send(frame({ tag: 'equipToggle', payload: { slot: 1 } }));
     await second.client.until('inventory');
     await closeAndAwaitCleanup(second, server);
-    expect(await pollUntil(async () => ((await persistedCudgelHand(joined.nickname)) === undefined ? true : undefined))).toBe(true);
+    expect(await pollUntil(async () => ((await persistedCudgelHand(joined.name)) === undefined ? true : undefined))).toBe(true);
 
-    const third = await loginOverWire(server.url, joined.nickname);
+    const third = await loginOverWire(server.url, joined.name);
     expect(inventoryRows(third).find((row) => row.slot === 1)?.equippedHand).toBeUndefined();
     await third.client.close();
   });

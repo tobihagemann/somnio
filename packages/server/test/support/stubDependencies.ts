@@ -1,7 +1,7 @@
 import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
-import { DEFAULT_LOGIN_DEADLINE_MS } from '../../src/config.ts';
+import { DEFAULT_CARD_DEADLINE_MS, DEFAULT_LOGIN_DEADLINE_MS } from '../../src/config.ts';
 import { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
 import type { Logger } from '../../src/logging.ts';
@@ -14,7 +14,6 @@ import {
   StubCharacterRepository,
   StubInventoryRepository,
   StubNPCDialogStateRepository,
-  StubRegistrationRepository,
   StubSessionRepository,
   StubWorldClockRepository,
 } from './stubRepositories.ts';
@@ -37,6 +36,7 @@ export interface StubDependencyOptions {
   /** Defaults to a disabled limiter, like `attemptLimiter`. */
   accountLimiter?: AttemptLimiter;
   loginDeadlineMs?: number;
+  cardDeadlineMs?: number;
 }
 
 /**
@@ -52,7 +52,6 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     accounts: options.accounts ?? new StubAccountRepository(),
     characters,
     inventories: new StubInventoryRepository(),
-    registrations: new StubRegistrationRepository(),
     npcDialogStates: new StubNPCDialogStateRepository(),
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,
@@ -61,6 +60,7 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     accountLimiter: options.accountLimiter ?? new AttemptLimiter({ enabled: false, logger }),
     outboxHighWatermark: options.outboxHighWatermark ?? 1024,
     loginDeadlineMs: options.loginDeadlineMs ?? DEFAULT_LOGIN_DEADLINE_MS,
+    cardDeadlineMs: options.cardDeadlineMs ?? DEFAULT_CARD_DEADLINE_MS,
     logger,
   };
 }

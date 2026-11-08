@@ -1,61 +1,82 @@
+import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
+import { postgresNormalizedKey } from '../../src/namePolicy/namePolicy.ts';
+import { EmailTakenError, PostgresAccountRepository } from '../../src/repositories/accounts.ts';
+import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
 describe('account repository', () => {
   let harness: DatabaseHarness;
   let accounts: PostgresAccountRepository;
+  let characters: PostgresCharacterRepository;
 
   beforeAll(async () => {
     harness = await startDatabase();
     accounts = new PostgresAccountRepository(harness.db);
+    characters = new PostgresCharacterRepository(harness.db);
   });
 
   afterAll(async () => {
     await harness.stop();
   });
 
-  it('round-trips create and findByName', async () => {
-    const created = await accounts.create('alice', 'hash', 'alice@example.com');
-    const fetched = await accounts.findByName('alice');
+  it('round-trips create and findByEmail', async () => {
+    const created = await accounts.create('alice@example.com', 'hash');
+    const fetched = await accounts.findByEmail('alice@example.com');
     expect(fetched?.id).toBe(created.id);
     expect(fetched?.passwordHash).toBe('hash');
     expect(fetched?.email).toBe('alice@example.com');
   });
 
-  it('rejects a duplicate name', async () => {
-    await expect(accounts.create('alice', 'other', 'other@example.com')).rejects.toThrow();
+  it('creates the account alone, with no character', async () => {
+    const account = await accounts.create('fighter-one@example.com', 'argon2-hash-stub');
+    expect(await characters.findByAccount(account.id)).toEqual([]);
+  });
+
+  it('surfaces a duplicate email in another case as EmailTakenError', async () => {
+    await expect(accounts.create('Alice@Example.com', 'other')).rejects.toThrow(EmailTakenError);
   });
 
   it('round-trips findById', async () => {
-    const created = await accounts.create('bob', 'hash', 'bob@example.com');
+    const created = await accounts.create('bob@example.com', 'hash');
     const fetched = await accounts.findById(created.id);
     expect(fetched?.id).toBe(created.id);
-    expect(fetched?.name).toBe('bob');
+    expect(fetched?.email).toBe('bob@example.com');
   });
 
   it('resolves nothing for an unknown id', async () => {
     expect(await accounts.findById(crypto.randomUUID())).toBeUndefined();
   });
 
-  it('finds by name case-insensitively via name_normalized', async () => {
-    await accounts.create('Carol', 'hash', 'carol@example.com');
-    const lower = await accounts.findByName('carol');
-    const upper = await accounts.findByName('CAROL');
-    expect(lower?.name).toBe('Carol');
+  it('finds by email case-insensitively via email_normalized', async () => {
+    await accounts.create('Carol@Example.com', 'hash');
+    const lower = await accounts.findByEmail('carol@example.com');
+    const upper = await accounts.findByEmail('CAROL@EXAMPLE.COM');
+    expect(lower?.email).toBe('Carol@Example.com');
     expect(upper?.id).toBe(lower?.id);
   });
 
-  it('collides a confusable name via the skeleton constraint', async () => {
-    await accounts.create('ADMIN', 'hash', 'admin@example.com');
-    // Cyrillic "АDMIN" (U+0410) is not NFKC-equivalent to Latin "ADMIN" but shares its skeleton.
-    await expect(accounts.create('АDMIN', 'hash2', 'evil@example.com')).rejects.toThrow();
+  it('collides an NFKC-equivalent email with the existing one', async () => {
+    await accounts.create('dave@example.com', 'hash');
+    // Full-width "ｄａｖｅ" NFKC-normalizes to ASCII "dave".
+    await expect(accounts.create('ｄａｖｅ@example.com', 'hash2')).rejects.toThrow(EmailTakenError);
   });
 
-  it('collides an NFKC-equivalent name with the existing one', async () => {
-    await accounts.create('dave', 'hash', 'dave@example.com');
-    // Full-width "ｄａｖｅ" NFKC-normalizes to ASCII "dave".
-    await expect(accounts.create('ｄａｖｅ', 'hash2', 'evil@example.com')).rejects.toThrow();
-  });
+  /**
+   * Guards against ICU version skew between Node and postgres:16: the login's account budget is
+   * keyed by `postgresNormalizedKey`, so it must agree with the column `findByEmail` matches.
+   * Full-width letters exercise compatibility folding; the dotted capital I and the final sigma
+   * are where JavaScript's lowercasing and Postgres's differ.
+   */
+  it.each(['Ｍｅｒｃｕｓ@example.com', 'TOBİAS@example.invalid', 'ΟΔΥΣΣΕΥΣ@example.invalid', 'Ïda@example.invalid'])(
+    'stores the key the account budget counts for %s',
+    async (email) => {
+      await accounts.create(email, 'nfkc');
+      const stored = await sql<{
+        email_normalized: string;
+      }>`SELECT email_normalized FROM accounts WHERE email = ${email}`.execute(harness.db);
+      expect(stored.rows[0]?.email_normalized).toBe(postgresNormalizedKey(email));
+    },
+  );
 });

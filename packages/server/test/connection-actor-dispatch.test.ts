@@ -3,6 +3,7 @@ import { NO_LUCIDITY, OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { Character, InventoryRow, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
+import type { ConnectionState } from '../src/connection/connectionActor.ts';
 import { CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, PURSE, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector } from './support/sectorFactory.ts';
@@ -24,108 +25,126 @@ const entity = {
   condition: 'hale',
 } as const;
 const register = {
-  nickname: 'Saibot',
+  email: 'info@example.com',
   password: 'p',
   passwordRepeat: 'p',
-  people: 'vigils',
-  email: 'info@example.com',
 };
+const characterId = crypto.randomUUID();
 const sessionToken = { token: 'tok', expiresInSeconds: 2_592_000 };
 
-const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] = [
-  { label: 'pre-login moves', message: { tag: 'moves', payload: moves }, attachFirst: false },
-  { label: 'pre-login entity', message: { tag: 'entity', payload: entity }, attachFirst: false },
+const cases: { label: string; message: SomnioMessage; state: ConnectionState['kind'] }[] = [
+  { label: 'pre-login moves', message: { tag: 'moves', payload: moves }, state: 'awaitingLogin' },
+  { label: 'pre-login entity', message: { tag: 'entity', payload: entity }, state: 'awaitingLogin' },
   {
     label: 'pre-login hello',
     message: { tag: 'hello', payload: { protocolVersion: 1 } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
-  { label: 'pre-login leave', message: { tag: 'leave', payload: leave }, attachFirst: false },
-  { label: 'pre-login move', message: { tag: 'move', payload: move }, attachFirst: false },
-  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, attachFirst: false },
+  { label: 'pre-login leave', message: { tag: 'leave', payload: leave }, state: 'awaitingLogin' },
+  { label: 'pre-login move', message: { tag: 'move', payload: move }, state: 'awaitingLogin' },
+  { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, state: 'awaitingLogin' },
   {
     label: 'pre-login equipToggle',
     message: { tag: 'equipToggle', payload: { slot: 1, hand: 'left' } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
-  { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, attachFirst: false },
-  { label: 'pre-login swing', message: { tag: 'swing', payload: { targetId: entity.id } }, attachFirst: false },
-  { label: 'pre-login tend', message: { tag: 'tend', payload: { targetId: entity.id } }, attachFirst: false },
+  { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login swing', message: { tag: 'swing', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login tend', message: { tag: 'tend', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
   {
     label: 'pre-login useDoor',
     message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
-  { label: 'pre-login askTask', message: { tag: 'askTask', payload: { npcId: entity.id } }, attachFirst: false },
-  { label: 'pre-login completeTask', message: { tag: 'completeTask', payload: { npcId: entity.id } }, attachFirst: false },
-  { label: 'pre-login abandonTask', message: { tag: 'abandonTask', payload: {} }, attachFirst: false },
-  { label: 'pre-login study', message: { tag: 'study', payload: { npcId: entity.id, teachingId: 'strike' } }, attachFirst: false },
-  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, itemId: 'dagger' } }, attachFirst: false },
-  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: 'cudgel' } }, attachFirst: false },
-  { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, attachFirst: false },
-  { label: 'pre-login useItem', message: { tag: 'useItem', payload: { slot: 1 } }, attachFirst: false },
+  { label: 'pre-login askTask', message: { tag: 'askTask', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login completeTask', message: { tag: 'completeTask', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login abandonTask', message: { tag: 'abandonTask', payload: {} }, state: 'awaitingLogin' },
+  { label: 'pre-login study', message: { tag: 'study', payload: { npcId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
+  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, itemId: 'dagger' } }, state: 'awaitingLogin' },
+  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: 'cudgel' } }, state: 'awaitingLogin' },
+  { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, state: 'awaitingLogin' },
+  { label: 'pre-login useItem', message: { tag: 'useItem', payload: { slot: 1 } }, state: 'awaitingLogin' },
   {
     label: 'post-attach login',
-    message: { tag: 'login', payload: { nickname: 'n', password: 'p' } },
-    attachFirst: true,
+    message: { tag: 'login', payload: { email: 'n', password: 'p' } },
+    state: 'attached',
   },
-  { label: 'post-attach register', message: { tag: 'register', payload: register }, attachFirst: true },
-  { label: 'post-attach moves', message: { tag: 'moves', payload: moves }, attachFirst: true },
-  { label: 'post-attach entity', message: { tag: 'entity', payload: entity }, attachFirst: true },
-  { label: 'post-attach leave', message: { tag: 'leave', payload: leave }, attachFirst: true },
-  { label: 'pre-login lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, attachFirst: false },
-  { label: 'post-attach lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, attachFirst: true },
-  { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, attachFirst: true },
-  { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, attachFirst: true },
+  { label: 'post-attach register', message: { tag: 'register', payload: register }, state: 'attached' },
+  { label: 'post-attach moves', message: { tag: 'moves', payload: moves }, state: 'attached' },
+  { label: 'post-attach entity', message: { tag: 'entity', payload: entity }, state: 'attached' },
+  { label: 'post-attach leave', message: { tag: 'leave', payload: leave }, state: 'attached' },
+  { label: 'pre-login lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'awaitingLogin' },
+  { label: 'post-attach lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'attached' },
+  { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, state: 'attached' },
+  { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, state: 'attached' },
   {
     label: 'post-attach raising',
     message: { tag: 'raising', payload: { targetId: 'player', healerIds: ['peer'], state: 'holding', progress: 0, seconds: 6 } },
-    attachFirst: true,
+    state: 'attached',
   },
-  { label: 'post-attach mend', message: { tag: 'mend', payload: { targetId: 'player' } }, attachFirst: true },
+  { label: 'post-attach mend', message: { tag: 'mend', payload: { targetId: 'player' } }, state: 'attached' },
   {
     label: 'pre-login revokeSession',
     message: { tag: 'revokeSession', payload: { token: 'tok' } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
-  { label: 'pre-login revokeOtherSessions', message: { tag: 'revokeOtherSessions', payload: {} }, attachFirst: false },
+  { label: 'pre-login revokeOtherSessions', message: { tag: 'revokeOtherSessions', payload: {} }, state: 'awaitingLogin' },
   {
     label: 'post-attach redeemSession',
     message: { tag: 'redeemSession', payload: { token: 'tok' } },
-    attachFirst: true,
+    state: 'attached',
   },
   {
     label: 'pre-login sessionToken',
     message: { tag: 'sessionToken', payload: sessionToken },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
   {
     label: 'post-attach sessionToken',
     message: { tag: 'sessionToken', payload: sessionToken },
-    attachFirst: true,
+    state: 'attached',
   },
   {
     label: 'pre-login sessionRevoked',
     message: { tag: 'sessionRevoked', payload: { revoked: true } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
   {
     label: 'post-attach sessionRevoked',
     message: { tag: 'sessionRevoked', payload: { revoked: true } },
-    attachFirst: true,
+    state: 'attached',
   },
-  { label: 'pre-login otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, attachFirst: false },
-  { label: 'post-attach otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, attachFirst: true },
+  { label: 'pre-login otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, state: 'awaitingLogin' },
+  { label: 'post-attach otherSessions', message: { tag: 'otherSessions', payload: { count: 1 } }, state: 'attached' },
   {
     label: 'pre-login otherSessionsRevoked',
     message: { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } },
-    attachFirst: false,
+    state: 'awaitingLogin',
   },
   {
     label: 'post-attach otherSessionsRevoked',
     message: { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } },
-    attachFirst: true,
+    state: 'attached',
   },
+  { label: 'pre-login createCharacter', message: { tag: 'createCharacter', payload: { name: 'Ida', people: 'vigils' } }, state: 'awaitingLogin' },
+  { label: 'pre-login selectCharacter', message: { tag: 'selectCharacter', payload: { characterId } }, state: 'awaitingLogin' },
+  { label: 'pre-login deleteCharacter', message: { tag: 'deleteCharacter', payload: { characterId } }, state: 'awaitingLogin' },
+  { label: 'post-attach createCharacter', message: { tag: 'createCharacter', payload: { name: 'Ida', people: 'vigils' } }, state: 'attached' },
+  { label: 'post-attach selectCharacter', message: { tag: 'selectCharacter', payload: { characterId } }, state: 'attached' },
+  { label: 'post-attach deleteCharacter', message: { tag: 'deleteCharacter', payload: { characterId } }, state: 'attached' },
+  { label: 'pre-login characters', message: { tag: 'characters', payload: { characters: [] } }, state: 'awaitingLogin' },
+  { label: 'post-attach characterResult', message: { tag: 'characterResult', payload: { result: 'ok' } }, state: 'attached' },
+  { label: 'choosing login', message: { tag: 'login', payload: { email: 'n', password: 'p' } }, state: 'authenticated' },
+  { label: 'choosing register', message: { tag: 'register', payload: register }, state: 'authenticated' },
+  { label: 'choosing redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok' } }, state: 'authenticated' },
+  { label: 'choosing move', message: { tag: 'move', payload: move }, state: 'authenticated' },
+  { label: 'choosing clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, state: 'authenticated' },
+  { label: 'choosing swing', message: { tag: 'swing', payload: {} }, state: 'authenticated' },
+  { label: 'choosing useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } }, state: 'authenticated' },
+  { label: 'choosing wake', message: { tag: 'wake', payload: {} }, state: 'authenticated' },
+  { label: 'choosing characters', message: { tag: 'characters', payload: { characters: [] } }, state: 'authenticated' },
+  { label: 'choosing characterResult', message: { tag: 'characterResult', payload: { result: 'ok' } }, state: 'authenticated' },
+  { label: 'choosing enterSpace', message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'player', worldSeconds: 0 } }, state: 'authenticated' },
 ];
 
 /**
@@ -133,9 +152,10 @@ const cases: { label: string; message: SomnioMessage; attachFirst: boolean }[] =
  * 1002. The keep-open branches run the real handlers and are covered by their own suites.
  */
 describe('ConnectionActor.dispatch', () => {
-  it.each(cases)('closes with protocolError for $label', async ({ message, attachFirst }) => {
+  it.each(cases)('closes with protocolError for $label', async ({ message, state }) => {
     const connection = new ConnectionActor(await makeStubConnectionDependencies());
-    if (attachFirst) connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
+    if (state === 'authenticated') connection.markAuthenticated(crypto.randomUUID());
+    if (state === 'attached') connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     const decision = await connection.dispatch(message);
     expect(decision).toEqual({ kind: 'close', code: CLOSE_PROTOCOL_ERROR, reason: 'frame validation failed' });
   });

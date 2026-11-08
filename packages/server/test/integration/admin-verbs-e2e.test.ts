@@ -5,7 +5,7 @@ import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import { PostgresWorldClockRepository } from '@somnio/data';
 import { CLOSE_GOING_AWAY } from '../../src/connection/connectionActor.ts';
 import { TestClient, bearer } from '../support/liveServer.ts';
-import { TEST_ADMIN_TOKEN, TEST_SERVER_VERSION, bootTestServer, joinFreshPlayer, pollUntil, startDatabase, uniqueNickname } from './support/harness.ts';
+import { TEST_ADMIN_TOKEN, TEST_SERVER_VERSION, bootTestServer, joinFreshPlayer, pollUntil, startDatabase, uniqueName } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
 /** Year 500, the first day of the first month, 07:11:50: the boot default is noon of that day. */
@@ -100,9 +100,9 @@ describe('admin verbs end to end', () => {
     const alice = await joinFreshPlayer(server.url, 'alice');
     const bob = await joinFreshPlayer(server.url, 'bob');
     const client = await admin();
-    expect(await ask(client, { tag: 'kick', payload: alice.nickname })).toEqual({
+    expect(await ask(client, { tag: 'kick', payload: alice.name })).toEqual({
       tag: 'kickedPlayer',
-      payload: alice.nickname,
+      payload: alice.name,
     });
     expect((await bob.client.until('leave')).target).toEqual({
       tag: 'leave',
@@ -121,7 +121,7 @@ describe('admin verbs end to end', () => {
 
   it('kick reports not-found for a name with no logged-in player', async () => {
     const client = await admin();
-    const absent = uniqueNickname('absent');
+    const absent = uniqueName('absent');
     expect(await ask(client, { tag: 'kick', payload: absent })).toEqual({
       tag: 'kickedPlayerNotFound',
       payload: absent,

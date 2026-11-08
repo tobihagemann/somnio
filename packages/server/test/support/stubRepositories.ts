@@ -1,13 +1,11 @@
 import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
-import type { Account, Character, InventoryRow, NPCDialogState } from '@somnio/core';
+import type { Account, Character, InventoryRow, NPCDialogState, People } from '@somnio/core';
 import type {
   AccountRepository,
   CharacterRepository,
   InventoryRepository,
   IssuedSession,
   NPCDialogStateRepository,
-  RegistrationRepository,
-  RegistrationRequest,
   ResolvedSession,
   SessionRepository,
   WorldClockRepository,
@@ -24,20 +22,20 @@ export class StubAccountRepository implements AccountRepository {
    * Deliberately not reimplemented: a second copy of the rule could agree with itself while
    * disagreeing with the column. The integration suite covers the predicate.
    */
-  private readonly accountsByName: ReadonlyMap<string, Account>;
-  findByNameCallCount = 0;
+  private readonly accountsByEmail: ReadonlyMap<string, Account>;
+  findByEmailCallCount = 0;
 
-  constructor(accountsByName: ReadonlyMap<string, Account> = new Map()) {
-    this.accountsByName = accountsByName;
+  constructor(accountsByEmail: ReadonlyMap<string, Account> = new Map()) {
+    this.accountsByEmail = accountsByEmail;
   }
 
-  create(): Promise<Account> {
-    throw new Error('StubAccountRepository: create is not used by these tests');
+  create(_email: string, _passwordHash: string): Promise<Account> {
+    return Promise.reject(new Error('StubAccountRepository: create is not used by these tests'));
   }
 
-  findByName(name: string): Promise<Account | undefined> {
-    this.findByNameCallCount += 1;
-    return Promise.resolve(this.accountsByName.get(name));
+  findByEmail(email: string): Promise<Account | undefined> {
+    this.findByEmailCallCount += 1;
+    return Promise.resolve(this.accountsByEmail.get(email));
   }
 
   findById(): Promise<Account | undefined> {
@@ -52,7 +50,7 @@ export class StubCharacterRepository implements CharacterRepository {
     this.charactersByAccount = charactersByAccount;
   }
 
-  create(): Promise<Character> {
+  create(_accountId: string, _name: string, _people: People, _starterInventory: readonly InventoryRow[]): Promise<Character> {
     throw new Error('StubCharacterRepository: create is not used by these tests');
   }
 
@@ -71,6 +69,10 @@ export class StubCharacterRepository implements CharacterRepository {
   persistCheckpoint(): Promise<boolean> {
     return Promise.resolve(false);
   }
+
+  delete(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
 }
 
 export class StubInventoryRepository implements InventoryRepository {
@@ -80,12 +82,6 @@ export class StubInventoryRepository implements InventoryRepository {
 
   replaceAll(): Promise<void> {
     return Promise.resolve();
-  }
-}
-
-export class StubRegistrationRepository implements RegistrationRepository {
-  register(_request: RegistrationRequest): Promise<{ account: Account; character: Character }> {
-    return Promise.reject(new Error('StubRegistrationRepository: register is not used by these tests'));
   }
 }
 
@@ -242,7 +238,6 @@ export const failingSessionRepository: SessionRepository = {
 export function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
     id: crypto.randomUUID(),
-    name: 'tester',
     passwordHash: '',
     email: 'tester@example.invalid',
     createdAt: new Date(),

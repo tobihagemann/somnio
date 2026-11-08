@@ -1,15 +1,25 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { NO_LUCIDITY, PEOPLES, fullPools, headingFromCardinal, isRole, isSoundTask, isTeachingId } from '@somnio/core';
+import { NO_LUCIDITY, fullPools, headingFromCardinal, isPeople, isRole, isSoundTask, isTeachingId } from '@somnio/core';
 import type { Character, InventoryRow, Lucidity, People, TeachingRank } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import type { Database } from '../schema.ts';
-import { RepositoryDecodingError } from './errors.ts';
+import { RepositoryDecodingError, isUniqueViolation } from './errors.ts';
 import { insertInventoryRows } from './inventoryRows.ts';
 
+/** Surfaced from the unique-name constraint race, so the handler answers `nameExists`. */
+export class CharacterNameTakenError extends Error {
+  constructor() {
+    super('character name taken');
+    this.name = 'CharacterNameTakenError';
+  }
+}
+
 export interface CharacterRepository {
-  create(accountId: string, name: string, people: People): Promise<Character>;
+  /** Provisions the character and its starter rows in one transaction, never played. */
+  create(accountId: string, name: string, people: People, starterInventory: readonly InventoryRow[]): Promise<Character>;
+  /** The account's characters in `compareCharacters` order. */
   findByAccount(accountId: string): Promise<Character[]>;
   findByName(name: string): Promise<Character | undefined>;
   /**
@@ -24,9 +34,17 @@ export interface CharacterRepository {
    * neither) when the character update was skipped as stale.
    */
   persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean>;
+  /** Deletes one of the account's characters with its rank and inventory rows; `false` when the account has no such character. */
+  delete(accountId: string, characterId: string): Promise<boolean>;
 }
 
 export const STARTER_SECTOR = 'EdariaLibrary';
+
+/** The `last_seen` of a character created but never played: it sorts last, and any real snapshot is newer. */
+const NEVER_PLAYED_MS = 0;
+
+/** Both name constraints answer a taken name, whichever one the database reports first. */
+const CHARACTER_NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['characters_name_normalized_key', 'characters_name_skeleton_key']);
 
 const CHARACTER_COLUMNS = [
   'id',
@@ -79,8 +97,8 @@ type RankRow = {
   practice: number;
 };
 
-/** Spawn defaults: the starter sector's space, full energy, no role, and the `(0, 0)` sentinel the runtime re-resolves. */
-export function newCharacter(id: string, name: string, people: People, lastSeen: Date): Character {
+/** Spawn defaults: the starter sector's space, full energy, no role, the `(0, 0)` sentinel the runtime re-resolves, and never played. */
+export function newCharacter(id: string, name: string, people: People): Character {
   return {
     id,
     name,
@@ -90,8 +108,25 @@ export function newCharacter(id: string, name: string, people: People, lastSeen:
     facing: headingFromCardinal('south'),
     energy: fullPools(NO_LUCIDITY.ranks),
     lucidity: NO_LUCIDITY,
-    lastSeen,
+    lastSeen: new Date(NEVER_PLAYED_MS),
   };
+}
+
+export function hasBeenPlayed(character: Character): boolean {
+  return character.lastSeen.getTime() > NEVER_PLAYED_MS;
+}
+
+/**
+ * The order of an account's characters: most recently played first, so the never played, at the
+ * epoch, come last. Ties go by name in code-unit order, which no database collation can change,
+ * then by id.
+ */
+export function compareCharacters(a: Character, b: Character): number {
+  return b.lastSeen.getTime() - a.lastSeen.getTime() || compareCodeUnits(a.name, b.name) || compareCodeUnits(a.id, b.id);
+}
+
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function decodeRole(field: string, raw: string): NonNullable<Lucidity['role']> {
@@ -123,14 +158,11 @@ function decodeLucidity(row: CharacterRow, rankRows: readonly RankRow[]): Lucidi
 }
 
 function decodeCharacter(row: CharacterRow, rankRows: readonly RankRow[]): Character {
-  const people = PEOPLES.find((candidate) => candidate === row.people);
-  if (people === undefined) {
-    throw new RepositoryDecodingError('people', row.people);
-  }
+  if (!isPeople(row.people)) throw new RepositoryDecodingError('people', row.people);
   return {
     id: row.id,
     name: row.name,
-    people,
+    people: row.people,
     space: row.space,
     position: { x: row.position_x, z: row.position_z },
     facing: row.facing,
@@ -169,7 +201,7 @@ function characterColumns(character: Character) {
   };
 }
 
-export async function insertCharacter(db: Kysely<Database>, accountId: string, character: Character): Promise<void> {
+async function insertCharacter(db: Kysely<Database>, accountId: string, character: Character): Promise<void> {
   await db
     .insertInto('characters')
     .values({
@@ -204,18 +236,26 @@ export class PostgresCharacterRepository implements CharacterRepository {
     this.db = db;
   }
 
-  async create(accountId: string, name: string, people: People): Promise<Character> {
-    const character = newCharacter(crypto.randomUUID(), name, people, new Date());
-    await insertCharacter(this.db, accountId, character);
+  async create(accountId: string, name: string, people: People, starterInventory: readonly InventoryRow[]): Promise<Character> {
+    const character = newCharacter(crypto.randomUUID(), name, people);
+    try {
+      await this.db.transaction().execute(async (transaction) => {
+        await insertCharacter(transaction, accountId, character);
+        await insertInventoryRows(transaction, character.id, starterInventory);
+      });
+    } catch (error) {
+      if (isUniqueViolation(error, CHARACTER_NAME_CONSTRAINTS)) throw new CharacterNameTakenError();
+      throw error;
+    }
     return character;
   }
 
   async findByAccount(accountId: string): Promise<Character[]> {
-    const rows = await this.db.selectFrom('characters').select(CHARACTER_COLUMNS).where('account_id', '=', accountId).orderBy('name').execute();
-    return this.withRanks(rows);
+    const rows = await this.db.selectFrom('characters').select(CHARACTER_COLUMNS).where('account_id', '=', accountId).execute();
+    return (await this.withRanks(rows)).sort(compareCharacters);
   }
 
-  /** NFKC-only lookup through `name_normalized`, like the account repository's. */
+  /** NFKC-only lookup through `name_normalized`; cross-script confusables (`name_skeleton`) are not resolved here. */
   async findByName(name: string): Promise<Character | undefined> {
     const row = await this.db
       .selectFrom('characters')
@@ -256,5 +296,10 @@ export class PostgresCharacterRepository implements CharacterRepository {
       await insertInventoryRows(transaction, character.id, inventory);
       return true;
     });
+  }
+
+  async delete(accountId: string, characterId: string): Promise<boolean> {
+    const deleted = await this.db.deleteFrom('characters').where('id', '=', characterId).where('account_id', '=', accountId).returning('id').execute();
+    return deleted.length > 0;
   }
 }

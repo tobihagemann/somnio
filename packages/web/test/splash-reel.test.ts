@@ -334,7 +334,7 @@ describe('the splash reel', () => {
 
   /** A window too narrow to hold a shot beside the card still frames it, at a scale the scene draws at, so the subject lands where the framing puts it. */
   it.each(reel.map((shot) => [shot.id, shot] as const))('frames %s finitely on a window narrower than every tested viewport', (_id, shot) => {
-    for (const width of [400, 559, 560, 561, 600, 700, 899]) {
+    for (const width of [400, 439, 440, 441, 600, 700, 899]) {
       for (const height of [640, 900]) {
         for (const seconds of moments(shot)) {
           const { focus, scale } = shotFraming(shot, seconds, { width, height });

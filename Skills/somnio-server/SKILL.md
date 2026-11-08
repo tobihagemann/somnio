@@ -24,9 +24,9 @@ Run these container commands with the sandbox disabled. Sandboxed, they fail wit
 
 The container can exit silently between sessions (podman machine hiccups). A server started against the dead container fails at startup with a connection error from the readiness probe — that signature means "start the container", not a code bug and not a reason to re-create the container.
 
-The migrator refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or the previous TypeScript one, whose `kysely_migration` table holds a `0001_initial` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and character, so the next login shows "Bad credentials" until you register again.
+The migrator refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or an earlier TypeScript one, whose `kysely_migration` table holds a `0001_initial` or `0001_metric_world` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and its characters, so the next login shows "Bad credentials" until you register again.
 
-On teardown use `docker stop somnio-pg` — keep the container; `docker rm`-ing it drops the dev account/character the same way.
+On teardown use `docker stop somnio-pg` — keep the container; `docker rm`-ing it drops the dev account and its characters the same way.
 
 ## Step 2: Install
 

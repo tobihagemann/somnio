@@ -4,6 +4,7 @@ import { hashPassword } from '@somnio/data';
 import type { SessionRepository } from '@somnio/data';
 import type { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
 import type { Logger } from '../../src/logging.ts';
+import { emailFor } from './characterCard.ts';
 import { makeCharacter, makeSector } from './sectorFactory.ts';
 import { makeStubConnectionDependencies } from './stubDependencies.ts';
 import { StubAccountRepository, StubCharacterRepository, makeAccount } from './stubRepositories.ts';
@@ -43,9 +44,10 @@ type AuthenticatedWorldOptions = Pick<OneSectorWorldOptions, 'sessions' | 'npcs'
   password: string;
 };
 
-/** A one-sector world whose character belongs to an account a password login can reach. */
+/** A one-sector world whose character, `name`, belongs to an account a password login can reach as `emailFor(name)`. */
 export async function makeAuthenticatedWorld({ name, password, ...world }: AuthenticatedWorldOptions) {
   const accountId = crypto.randomUUID();
-  const account = makeAccount({ id: accountId, name, passwordHash: await hashPassword(password) });
-  return makeOneSectorWorld({ ...world, accountId, characterName: name, accounts: new StubAccountRepository(new Map([[name, account]])) });
+  const email = emailFor(name);
+  const account = makeAccount({ id: accountId, email, passwordHash: await hashPassword(password) });
+  return makeOneSectorWorld({ ...world, accountId, characterName: name, accounts: new StubAccountRepository(new Map([[email, account]])) });
 }

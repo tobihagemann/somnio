@@ -40,30 +40,55 @@ That topology serves a production build, so `?debug=1` is required — without i
 
 ## Step 3: Create an account
 
-Register through the UI: click "If you don't have an account, click here!", fill nickname, both password fields, and **email** (the server rejects an empty one), pick a people, then submit. A successful sign-up returns to the login overlay with the nickname and password already filled in. Fresh characters spawn in the `EdariaLibrary` starter sector.
+Register through the UI: click "If you don't have an account, click here!", fill the email and both password fields, then submit. The account's characters, each with a name and a people, are made on the character card after login (Step 4). The email must look like an address (one `@`, a dot in the domain), and `example.invalid` addresses do. A successful sign-up returns to the login overlay with the email and password already filled in.
 
 Re-snapshot after every overlay change — the refs are per-snapshot, and typing against stale refs from the previous overlay silently fills the wrong fields.
 
-To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"nickname":"...","password":"...","passwordRepeat":"...","people":"vigils","email":"..."}}` (password ≥ 8 UTF-8 bytes; `people` is one of `vigils`, `sopors`, `umbrae`, `lumina`; expect `{"tag":"registerResult","payload":{"result":"ok"}}`).
+To skip the UI entirely, register over the wire instead: open a WebSocket to `ws://127.0.0.1:17662/ws`, receive the hello frame, then send `{"tag":"register","payload":{"email":"...","password":"...","passwordRepeat":"..."}}` (password ≥ 8 UTF-8 bytes; expect `{"tag":"registerResult","payload":{"result":"ok"}}`, or `emailExists` for a taken email).
+
+To make a character, send `{"tag":"login","payload":{"email":"...","password":"..."}}` on the same socket, wait for the `characters` frame, then `{"tag":"createCharacter","payload":{"name":"...","people":"vigils"}}` (`people` is one of `vigils`, `sopors`, `umbrae`, `lumina`). A created character is answered with the new `characters` list, then `{"tag":"characterResult","payload":{"result":"ok"}}`. A character's name goes through the name policy and is unique among all characters, whatever their account. An account holds at most four.
 
 ## Step 4: Open the client and log in
 
 ```bash
 agent-browser open 'http://localhost:17669/'
 agent-browser wait --fn 'document.querySelector(".blocking-notice:not(.hidden)") === null && window.somnio?.overlay() === "login"'
-agent-browser snapshot -i          # nickname, password, Remember password, and Log In refs
-agent-browser type <nickname-ref> '<nickname>'
+agent-browser snapshot -i          # email, password, Remember password, and Log In refs
+agent-browser type <email-ref> '<email>'
 agent-browser type <password-ref> '<password>'
 agent-browser click <log-in-ref>
-agent-browser wait --fn 'window.somnio.connectionState() === "attached"'
-agent-browser wait --fn 'window.somnio.player() !== undefined'
+agent-browser wait --fn 'window.somnio.overlay() === "characters"'
+agent-browser snapshot -i          # the card: a Play and a Delete per dreamer, Log Out, New Dreamer
 ```
 
 That first predicate does two jobs, and both are load-bearing. The model prewarm shows a progress notice, so waiting it out is what keeps `snapshot` from running against a half-built page. And `overlay()` alone is not a readiness signal: it initializes to `login` before anything is presented, so on a host with no WebGL or a handheld viewport it answers `login` while the page actually shows a blocking notice and no form exists. Checking for a visible notice covers both.
 
+A password login always lands on the character card ("Your Dreamers"), whose `connectionState()` reads `awaitingEnterSpace`. A new account has no dreamers yet, so make one first; once the account holds four, New Dreamer gives way to a note:
+
+```bash
+agent-browser click <new-dreamer-ref>
+agent-browser wait --fn 'window.somnio.overlay() === "newCharacter"'
+agent-browser snapshot -i          # Name, People, Cancel, Create
+agent-browser type <name-ref> '<character>'
+agent-browser select <people-ref> vigils   # vigils, sopors, umbrae, or lumina
+agent-browser click <create-ref>
+agent-browser wait --fn 'window.somnio.overlay() === "characters"'
+```
+
+A refused name keeps the form up with the reason under the fields. Then play a dreamer from the card:
+
+```bash
+agent-browser snapshot -i
+agent-browser click <play-ref>     # the Play in the dreamer's row
+agent-browser wait --fn 'window.somnio.connectionState() === "attached"'
+agent-browser wait --fn 'window.somnio.player() !== undefined'
+```
+
+A new character starts at the starter spawn in `EdariaLibrary`. Delete in a row opens a confirmation of its own (`overlay()` reads `'deleteCharacter'`) with Delete and Cancel. Log Out on the card returns to the login card and revokes a remembered session, as Leave Game does.
+
 `attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick. That is a little before the world is on screen. The splash veil and the wordmark go, and the panels appear, only once the player's own body is placed, which is what the last wait checks.
 
-Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it and set it in the observing one. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
+Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. A resume skips the card and joins the dreamer played last; it shows the card only when none of the account's dreamers has been played yet, or joining the last one fails. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it and set it in the observing one. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
 
 To test that retry itself, keep the issuing session connected while the observing one resumes. The retry is bounded at three retries 250 ms apart, so "Verbindung wird wiederhergestellt..." / "Reconnecting..." shows under the wordmark for under a second before the login card returns. A later `eval` finds only the card, so have the init script record `.splash-wordmark__status` as it changes and read that record afterwards. The element does not exist yet when the script runs, so poll for it or observe the whole document.
 
@@ -78,7 +103,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | Call | Returns |
 |---|---|
 | `connectionState()` | `'disconnected'` \| `'awaitingHello'` \| `'awaitingLoginResult'` \| `'awaitingEnterSpace'` \| `'attached'` |
-| `player()` | `{ x, z, facing, gait, name }` (`gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
+| `player()` | `{ x, z, facing, gait, name }` (`name` is the character's name; `gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
 | `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
 | `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaSquare'` |
 | `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'` (full health), `'grazed'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
@@ -91,7 +116,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
 | `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
-| `overlay()` | `'login'` \| `'registration'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `'logOutOtherBrowsers'` \| `undefined` |
+| `overlay()` | `'login'` \| `'registration'` \| `'characters'` (the card) \| `'newCharacter'` \| `'deleteCharacter'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `'logOutOtherBrowsers'` \| `undefined` |
 | `zoomFactor()` | session zoom, 0.5–2.0 |
 | `splashShot()` | the id of the splash shot playing behind the pre-login screens (`'town'`, `'follow-dreamer'`, ... `'time-lapse'`), or `undefined` while none plays |
 
@@ -199,15 +224,22 @@ The client's own position is predicted, not authoritative. The server sends a `c
 **More players without more browsers.** When a case needs several bodies on screen at once (crowded plaques or bubbles), run each extra player as a small Node script beside one browser session. Node 24 has a global `WebSocket`. Register the accounts over the wire first (Step 3), then per player:
 
 ```js
-const [nickname, dx, dz, line] = process.argv.slice(2)
+const [name, dx, dz, line] = process.argv.slice(2)
 const ws = new WebSocket('ws://127.0.0.1:17662/ws')
 const send = (tag, payload) => ws.send(JSON.stringify({ tag, payload }))
 let selfId
 ws.onmessage = ({ data }) => {
   const { tag, payload } = JSON.parse(data)
-  if (tag === 'hello') send('login', { nickname, password: '<password>' })
+  // Each bot's account was registered as `<name>@example.invalid`.
+  if (tag === 'hello') send('login', { email: `${name}@example.invalid`, password: '<password>' })
+  // The card: make a character called `name` the first time, then play the first one.
+  if (tag === 'characters') {
+    const [first] = payload.characters
+    if (first === undefined) send('createCharacter', { name, people: 'vigils' })
+    else send('selectCharacter', { characterId: first.id })
+  }
   if (tag === 'enterSpace') selfId = payload.selfId
-  if (tag === 'correction') console.log(nickname, 'step refused, still at', payload.x, payload.z)
+  if (tag === 'correction') console.log(name, 'step refused, still at', payload.x, payload.z)
   if (tag === 'entity' && payload.id === selfId) {
     // A step under 7.5 m onto open floor stays inside the movement allowance.
     setTimeout(() => send('move', { x: payload.x + Number(dx), z: payload.z + Number(dz), facing: 0, gait: 'walk' }), 500)
@@ -217,12 +249,12 @@ ws.onmessage = ({ data }) => {
 ```
 
 ```bash
-node <dir>/bot.mjs <nickname> 0.7 0.3 'Hallo' & echo $!   # nickname, step east, step south, a line to repeat
+node <dir>/bot.mjs <name> 0.7 0.3 'Hallo' & echo $!   # character name, step east, step south, a line to repeat
 ```
 
-New accounts start at the starter spawn in `EdariaLibrary`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its character and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE name IN ('<nickname>', ...);"`.
+New characters start at the starter spawn in `EdariaLibrary`, so log the browser player in there too. Run the bots with the sandbox off, since they dial a local port. Keep the script in a fixed directory that both sandboxed and unsandboxed commands can read, not under `$TMPDIR`, which names a different directory inside and outside the sandbox. When done, stop the bots by the PIDs `echo $!` printed, then delete the accounts. Deleting an account removes its characters and sessions: `docker exec somnio-pg psql -U postgres -d somnio -c "DELETE FROM accounts WHERE email IN ('<name>@example.invalid', ...);"`.
 
-For a crowd of hundreds, hold every bot's socket in one Node process rather than one process per bot, and open them in batches that log in before the next batch dials. The server holds at most 128 sockets awaiting login, and 8 per address while `SOMNIO_TRUST_PROXY` is set (the compose topology sets it). It answers past those caps with 503 or 429, and closes a socket not logged in within 30 s. Register the accounts over the wire one after another first, give them a shared name prefix, and delete them afterwards with `DELETE FROM accounts WHERE name LIKE '<prefix>%'`. To count or size the frames the browser player receives, wrap the `onmessage` setter on `WebSocket.prototype` from an `eval` before logging in, so the game's socket reports each frame to the wrapper. A remembered session opens its socket at page load, before any `eval` runs, so log in without "Remember password" for this, or install the wrapper with `--init-script` as Step 4 describes.
+For a crowd of hundreds, hold every bot's socket in one Node process rather than one process per bot, and open them in batches that log in before the next batch dials. The server holds at most 128 sockets awaiting login, and 8 per address while `SOMNIO_TRUST_PROXY` is set (the compose topology sets it). It answers past those caps with 503 or 429, and closes a socket not logged in within 30 s. A logged-in socket is closed after 10 minutes on the card without a request there. At most 128 may sit there at once, and 8 per address while `SOMNIO_TRUST_PROXY` is set. A login past either is closed 1013, so have each bot pick its character as soon as `characters` arrives. Register the accounts over the wire one after another first, give their emails a shared prefix, and delete them afterwards with `DELETE FROM accounts WHERE email LIKE '<prefix>%'`. To count or size the frames the browser player receives, wrap the `onmessage` setter on `WebSocket.prototype` from an `eval` before logging in, so the game's socket reports each frame to the wrapper. A remembered session opens its socket at page load, before any `eval` runs, so log in without "Remember password" for this, or install the wrapper with `--init-script` as Step 4 describes.
 
 **Hide the tab.** Open the session `--headed` from its first command. There, a second tab in front fires `visibilitychange` on the game page and stops its `requestAnimationFrame`; switching back makes it visible again. Tab ids are the `t<n>` ids `tab list` prints, and positional integers are refused. An `eval` sent while the blank tab is in front runs in that tab, so switch back before reading `window.somnio`.
 
@@ -269,9 +301,9 @@ Relocate with the recipe below. Its `sectorName()` check cannot confirm a move w
 
 ```bash
 agent-browser close; sleep 8   # closes only the default session (--session a/b need their own close)
-docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-15 WHERE name='<nickname>';"
+docker exec somnio-pg psql -U postgres -d somnio -c "UPDATE characters SET space='outdoors', position_x=20, position_z=-15 WHERE name='<character>';"
 agent-browser open 'http://localhost:17669/'
-# log in, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'NorthMeadow'; the old sector
+# log in and play <character>, then: agent-browser eval 'window.somnio.sectorName()'  — expect 'NorthMeadow'; the old sector
 # here means the checkpoint won the race; close and repeat. A position inside geometry or outside
 # every sector self-heals to the starter spawn in EdariaLibrary with no error, so pick open ground.
 ```

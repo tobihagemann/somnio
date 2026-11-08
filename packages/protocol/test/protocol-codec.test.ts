@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHARACTER_RESULTS,
   CONDITIONS,
   ENTITY_KINDS,
   GAITS,
@@ -115,6 +116,7 @@ describe('runtime validation the erased types cannot do', () => {
   };
   const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
   const row = { slot: 0, itemId: 'purse', quantity: 100 };
+  const character = { id: 'c', name: 'Saibot', people: 'vigils' };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
   const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
 
@@ -144,6 +146,19 @@ describe('runtime validation the erased types cannot do', () => {
     ['a fractional value in an integer field', 'energy', { ...energy, spiritMax: 12.5 }, /fractional 12.5/],
     ['an unknown login result', 'loginResult', { result: 'locked' }, /unknown value "locked"/],
     ['a numeric register result', 'registerResult', { result: 0 }, /result: expected a string, got number/],
+    ['an unknown character result', 'characterResult', { result: 'taken' }, /unknown value "taken"/],
+    ['an empty character id', 'selectCharacter', { characterId: '' }, /characterId: expected a non-empty string/],
+    ['an over-cap character id', 'deleteCharacter', { characterId: overCapEntityId }, /characterId: exceeds 320 UTF-8 bytes/],
+    ['an over-cap character name', 'characters', { characters: [{ ...character, name: overCapId }] }, /name: exceeds 64 UTF-8 bytes/],
+    ['a people outside the id alphabet', 'characters', { characters: [{ ...character, people: 'Vigils' }] }, /people: expected an id/],
+    ['an unknown role on a character', 'characters', { characters: [{ ...character, role: 'bard' }] }, /role: unknown value "bard"/],
+    [
+      'more characters than an account holds',
+      'characters',
+      // The first character is no object, so only a count checked before the characters reports the cap.
+      { characters: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount }, (_, index) => ({ ...character, id: `c${index}` }))] },
+      /characters: exceeds 4 records \(got 5\)/,
+    ],
     ['an unknown gait', 'move', { ...move, gait: 'sprint' }, /unknown value "sprint"/],
     ['a coordinate past the metre cap', 'move', { ...move, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
     ['a negative coordinate past the metre cap', 'correction', { x: 0, z: -10_000.5 }, /z: exceeds 10000 metres/],
@@ -233,7 +248,7 @@ describe('runtime validation the erased types cannot do', () => {
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
-    ['an unknown locale on a login', 'login', { nickname: 'Saibot', password: 'hunter2', locale: 'fr' }, /locale: unknown value "fr"/],
+    ['an unknown locale on a login', 'login', { email: 'info@example.com', password: 'hunter2', locale: 'fr' }, /locale: unknown value "fr"/],
     ['an unknown locale on a redeemSession', 'redeemSession', { token: 'tok-abc', locale: 'en-GB' }, /locale: unknown value "en-GB"/],
     ['an unknown speech kind on a serverSay', 'serverSay', { ...say, kind: 'sing' }, /unknown value "sing"/],
     ['a clarity below 0', 'serverSay', { ...say, clarity: -0.1 }, /clarity: expected a number from 0 to 1, got -0.1/],
@@ -264,6 +279,12 @@ describe('runtime validation the erased types cannot do', () => {
     expect(() => decodeSomnioMessage(frame('lucidity', { ranks: atCapRanks }))).not.toThrow();
     const atCapHealers = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers }, (_, index) => `h${index}`);
     expect(() => decodeSomnioMessage(frame('raising', { targetId: 'b', healerIds: atCapHealers, state: 'holding', progress: 0, seconds: 0 }))).not.toThrow();
+    const atCapCharacters = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount }, (_, index) => ({
+      ...character,
+      id: `c${index}`,
+      name: atCapId,
+    }));
+    expect(() => decodeSomnioMessage(frame('characters', { characters: atCapCharacters }))).not.toThrow();
   });
 });
 
@@ -275,7 +296,7 @@ describe('round trips', () => {
   it('login round-trips without the optional token request', () => {
     const message: SomnioMessage = {
       tag: 'login',
-      payload: { nickname: 'Saibot', password: 'hunter2' },
+      payload: { email: 'info@example.com', password: 'hunter2' },
     };
     const decoded = roundTrip(message);
     expect(decoded).toEqual(message);
@@ -284,7 +305,7 @@ describe('round trips', () => {
 
   /** Without a locale the server speaks English, so the key must stay absent rather than decode to a default. */
   it.each(['login', 'redeemSession'] as const)('%s decodes without a locale, and with each locale', (tag) => {
-    const payload = tag === 'login' ? { nickname: 'Saibot', password: 'hunter2' } : { token: 'tok-abc' };
+    const payload = tag === 'login' ? { email: 'info@example.com', password: 'hunter2' } : { token: 'tok-abc' };
     expect('locale' in decodeSomnioMessage(frame(tag, payload)).payload).toBe(false);
     for (const locale of LOCALES) expect(decodeSomnioMessage(frame(tag, { ...payload, locale }))).toEqual({ tag, payload: { ...payload, locale } });
   });
@@ -423,8 +444,12 @@ describe('string literal sets', () => {
     expect(LOGIN_RESULTS).toEqual(['ok', 'badCredentials', 'alreadyLoggedIn', 'throttled']);
   });
 
+  it('pins CharacterResult', () => {
+    expect(CHARACTER_RESULTS).toEqual(['ok', 'nameExists', 'nameNotAllowed', 'full', 'failure']);
+  });
+
   it('pins RegisterResult', () => {
-    expect(REGISTER_RESULTS).toEqual(['ok', 'nicknameExists', 'failure', 'nameNotAllowed', 'throttled']);
+    expect(REGISTER_RESULTS).toEqual(['ok', 'emailExists', 'failure', 'throttled']);
   });
 
   it('pins Role', () => {
@@ -462,7 +487,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(15);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(16);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -492,6 +517,7 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount).toBe(4);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame).toBe(256);
   });
 });

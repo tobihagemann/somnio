@@ -38,8 +38,8 @@ export function localizedDialogLine(step: string, locale: Locale, targetName: st
 
 /**
  * Whether every line the step can become fits the say cap, which a client refuses a line past:
- * the worst case is each `$name` replaced by a name at the identifier cap, the longest nickname
- * the server accepts.
+ * the worst case is each `$name` replaced by a name at the identifier cap, the longest character
+ * name the server accepts.
  */
 export function dialogLineFits(step: string): boolean {
   const names = step.split(NAME_TOKEN).length - 1;

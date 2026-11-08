@@ -5,6 +5,11 @@
 const CLIENT_TO_SERVER_TAGS = [
   'login',
   'register',
+  // The character card, between login and the world. Accepted only once the account is
+  // authenticated and before a character is in the world.
+  'createCharacter',
+  'selectCharacter',
+  'deleteCharacter',
   'move',
   'clientSay',
   'equipToggle',
@@ -22,8 +27,9 @@ const CLIENT_TO_SERVER_TAGS = [
   'useItem',
   // Remembered sessions. `redeemSession` is accepted pre-login: it is an alternative to a password
   // login and reuses `loginResult` for its outcome. `revokeSession` and `revokeOtherSessions` are
-  // accepted only post-attach. The server sends their answers only on request. `otherSessions`,
-  // sent unasked at a login or resume, answers none of them.
+  // accepted once the account is authenticated, on the card and in the world. The server sends
+  // their answers only on request. `otherSessions`, sent unasked at a login or resume, answers none
+  // of them.
   'redeemSession',
   'revokeSession',
   'revokeOtherSessions',
@@ -33,6 +39,8 @@ const SERVER_TO_CLIENT_TAGS = [
   'hello',
   'loginResult',
   'registerResult',
+  'characters',
+  'characterResult',
   'enterSpace',
   'sector',
   'entity',

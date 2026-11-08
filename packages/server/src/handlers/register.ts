@@ -1,18 +1,13 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { RegisterMessage, RegisterResult } from '@somnio/protocol';
-import { PEOPLES } from '@somnio/core';
-import type { People } from '@somnio/core';
-import { RegistrationError, hashPassword, validateForRegistration } from '@somnio/data';
+import { isEmailAddress } from '@somnio/core';
+import { EmailTakenError, hashPassword } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
-import { STARTER_INVENTORY } from './starterInventory.ts';
 
-/**
- * Registration: validate the fields, hash the password, then the transactional
- * registration. The unique-constraint race maps to `nicknameExists`; there is no pre-check.
- */
+/** The unique-constraint race maps to `emailExists`; there is no pre-check. */
 export async function handleRegister(message: RegisterMessage, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
@@ -21,17 +16,10 @@ export async function handleRegister(message: RegisterMessage, connection: Conne
     message.password !== message.passwordRepeat ||
     passwordLength < SOMNIO_PROTOCOL_CONSTANTS.minPasswordUTF8Bytes ||
     passwordLength > SOMNIO_PROTOCOL_CONSTANTS.maxPasswordUTF8Bytes ||
-    message.email.length === 0 ||
     utf8ByteLength(message.email) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes ||
-    message.nickname.length === 0 ||
-    utf8ByteLength(message.nickname) > SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes ||
-    !isPeople(message.people)
+    !isEmailAddress(message.email)
   ) {
     sendRegisterResult(outbox, 'failure', logger);
-    return;
-  }
-  if (validateForRegistration(message.nickname) !== undefined) {
-    sendRegisterResult(outbox, 'nameNotAllowed', logger);
     return;
   }
   // Never refunded: every attempt that reaches the hash costs one, whatever it is answered.
@@ -48,26 +36,16 @@ export async function handleRegister(message: RegisterMessage, connection: Conne
     return;
   }
   try {
-    await dependencies.registrations.register({
-      name: message.nickname,
-      passwordHash,
-      email: message.email,
-      people: message.people,
-      starterInventory: STARTER_INVENTORY,
-    });
+    await dependencies.accounts.create(message.email, passwordHash);
     sendRegisterResult(outbox, 'ok', logger);
   } catch (error) {
-    if (error instanceof RegistrationError) {
-      sendRegisterResult(outbox, 'nicknameExists', logger);
+    if (error instanceof EmailTakenError) {
+      sendRegisterResult(outbox, 'emailExists', logger);
       return;
     }
     logger.error({ error: String(error) }, 'registration failed');
     sendRegisterResult(outbox, 'failure', logger);
   }
-}
-
-function isPeople(value: string): value is People {
-  return (PEOPLES as readonly string[]).includes(value);
 }
 
 function sendRegisterResult(outbox: ConnectionOutbox, result: RegisterResult, logger: Logger): void {

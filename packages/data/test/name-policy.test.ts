@@ -3,8 +3,8 @@ import {
   SKELETON_ALGORITHM_VERSION,
   UNICODE_DATA_VERSION,
   confusableSkeleton,
-  postgresNameKey,
-  validateForRegistration,
+  postgresNormalizedKey,
+  validateCharacterName,
 } from '../src/namePolicy/namePolicy.ts';
 import { UNICODE_DATA_VERSION_OF_TABLES } from '../src/namePolicy/tables.ts';
 
@@ -50,13 +50,13 @@ describe('confusable skeleton', () => {
   });
 });
 
-describe('registration validation', () => {
+describe('character name validation', () => {
   it.each(['Bjørn', 'ADMIN', 'Mary Jane', 'Иван', 'Ярослав'])('accepts the single-script name %j', (name) => {
-    expect(validateForRegistration(name)).toBeUndefined();
+    expect(validateCharacterName(name)).toBeUndefined();
   });
 
   it('rejects mixed Latin and Cyrillic', () => {
-    expect(validateForRegistration('Иван-Ivan')).toBe('mixedScript');
+    expect(validateCharacterName('Иван-Ivan')).toBe('mixedScript');
   });
 
   it.each([
@@ -65,7 +65,7 @@ describe('registration validation', () => {
     ['Latin plus Han', 'Ken-健'],
     ['a Japanese writing system', '健さん'],
   ])('accepts %s', (_label, name) => {
-    expect(validateForRegistration(name)).toBeUndefined();
+    expect(validateCharacterName(name)).toBeUndefined();
   });
 
   it.each([
@@ -73,27 +73,27 @@ describe('registration validation', () => {
     ['an apostrophe', "O'Brien"],
     ['an emoji', 'ab\u{1F600}'],
   ])('rejects %s', (_label, name) => {
-    expect(validateForRegistration(name)).toBe('disallowedCharacter');
+    expect(validateCharacterName(name)).toBe('disallowedCharacter');
   });
 
   it('rejects a restricted letter despite it being a letter', () => {
     // U+10330 GOTHIC LETTER AHSA is an L* letter but Gothic is an excluded historic script, so it
     // is Identifier_Status=Restricted. Proves the status gate is in force, not a bare L* allowlist.
-    expect(validateForRegistration('\u{10330}')).toBe('disallowedCharacter');
+    expect(validateCharacterName('\u{10330}')).toBe('disallowedCharacter');
   });
 
   it.each([' admin', 'admin ', 'admin-', '_admin', 'admin_'])('rejects the edge separator in %j', (name) => {
     // A leading or trailing separator survives the skeleton, so "admin " would dedup separately from "admin".
-    expect(validateForRegistration(name)).toBe('disallowedCharacter');
+    expect(validateCharacterName(name)).toBe('disallowedCharacter');
   });
 
   it.each(['', '   ', '---', '_-_', '́'])('rejects %j for having no visible base character', (name) => {
-    expect(validateForRegistration(name)).toBe('emptyAfterNormalization');
+    expect(validateCharacterName(name)).toBe('emptyAfterNormalization');
   });
 });
 
-/** Postgres lowercases each character on its own, after NFKC; a key finer than that splits one account, a coarser one merges two. */
-describe('postgres name key', () => {
+/** Postgres lowercases each character on its own, after NFKC; a key finer than that splits one row, a coarser one merges two. */
+describe('postgres normalized key', () => {
   it.each([
     ['TOBİAS', 'tobias'],
     ['TOBI\u0307AS', 'tobias'],
@@ -101,14 +101,14 @@ describe('postgres name key', () => {
     ['ΟΔΥΣΣΕΥϹ', 'οδυσσευσ'],
     ['Ｓａｉｂｏｔ', 'saibot'],
   ])('gives %s the key of %s', (name, key) => {
-    expect(postgresNameKey(name)).toBe(key);
+    expect(postgresNormalizedKey(name)).toBe(key);
   });
 
   it.each([
     ['tobi\u0307as', 'tobias'],
     ['οδυσσευς', 'οδυσσευσ'],
   ])('keeps %s and %s apart, as the column does', (first, second) => {
-    expect(postgresNameKey(first)).not.toBe(postgresNameKey(second));
+    expect(postgresNormalizedKey(first)).not.toBe(postgresNormalizedKey(second));
   });
 });
 

@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { decodeSomnioMessage, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Locale, SomnioMessage } from '@somnio/protocol';
 import type { RawData, WebSocket } from 'ws';
+import { handleCreateCharacter, handleDeleteCharacter, handleSelectCharacter } from '../handlers/characters.ts';
 import {
   TRANSFER_LOST,
   handleAbandonTask,
@@ -30,7 +31,8 @@ import type { ConnectionDependencies } from './dependencies.ts';
 import { ConnectionOutbox } from './outbox.ts';
 import type { SocketReservation } from './socketAdmission.ts';
 
-export type ConnectionState = { kind: 'awaitingLogin' } | { kind: 'attached'; entityId: string; spaceId: string; accountId: string };
+export type ConnectionState =
+  { kind: 'awaitingLogin' } | { kind: 'authenticated'; accountId: string } | { kind: 'attached'; entityId: string; spaceId: string; accountId: string };
 
 export type CloseDecision = { kind: 'keepOpen' } | { kind: 'close'; code: number; reason: string };
 
@@ -41,8 +43,11 @@ const SOCKET_CLOSE_GRACE_MS = 1000;
 /** How long a shutdown drain waits for one connection's exit path; the whole shutdown is capped at 15 s. */
 const SHUTDOWN_DRAIN_CAP_MS = 5000;
 export const CLOSE_POLICY_VIOLATION = 1008;
+export const CLOSE_TRY_AGAIN_LATER = 1013;
 export const FRAME_VALIDATION_FAILED = 'frame validation failed';
 export const LOGIN_TIMED_OUT = 'login timed out';
+export const CARD_TIMED_OUT = 'character card timed out';
+export const TOO_MANY_CHOOSING = 'too many players choosing a character';
 
 /** The narrow socket surface the actor drives, so tests can hand in a recording double. */
 export interface ConnectionSocket {
@@ -99,10 +104,11 @@ export function socketFromWebSocket(ws: WebSocket): ConnectionSocket {
 }
 
 /**
- * One connection's lifecycle: `awaitingLogin` (hello already on the wire) → `attached` once a
- * login succeeds. Inbound frames are handled strictly one at a time — the socket is paused while
- * a handler runs and resumed after — so a handler that awaits Postgres never interleaves with the
- * next frame, and a client cannot accumulate frames server-side beyond what one TCP chunk holds.
+ * One connection's lifecycle: `awaitingLogin` (hello already on the wire) → `authenticated` once a
+ * login or a resume succeeds, while the player chooses a character → `attached` once one joins.
+ * Inbound frames are handled strictly one at a time — the socket is paused while a handler runs and
+ * resumed after — so a handler that awaits Postgres never interleaves with the next frame, and a
+ * client cannot accumulate frames server-side beyond what one TCP chunk holds.
  */
 export class ConnectionActor {
   readonly outbox: ConnectionOutbox;
@@ -111,16 +117,19 @@ export class ConnectionActor {
   state: ConnectionState = { kind: 'awaitingLogin' };
   /**
    * The raw token this connection redeemed or was issued, the one `revokeOtherSessions` spares.
-   * Held here rather than in `state`, because issuance follows `markAttached`.
+   * Held here rather than in `state`, because it outlives the move from `authenticated` to `attached`.
    */
   sessionToken: string | undefined;
   /** The language NPCs speak to this player in, as their login or resume named it. */
   locale: Locale = 'en';
   private readonly dependencies: ConnectionDependencies;
   private readonly logger: Logger;
-  /** The slot among sockets not yet logged in, given up once the player is in the world or the connection has ended. */
+  /** The slot among sockets not yet in the world, given up once the player is in the world or the connection has ended. */
   private readonly reservation: SocketReservation | undefined;
-  private loginDeadline: NodeJS.Timeout | undefined;
+  /** The socket being driven, so a deadline can close the transport directly. */
+  private socket: ConnectionSocket | undefined;
+  /** The login deadline until authentication, then the card's until the player is in the world. */
+  private deadline: NodeJS.Timeout | undefined;
   private loopEnd: ((decision: CloseDecision | 'peerClosed') => void) | undefined;
   /** The drain running a handler right now; awaited before teardown so a close mid-login cannot outrun it. */
   private inflight: Promise<void> = Promise.resolve();
@@ -156,11 +165,12 @@ export class ConnectionActor {
     this.logger.info('connection opened');
     const writer = this.runWriter(socket);
     this.sendHello();
+    this.socket = socket;
     const loop = this.runInboundLoop(socket);
-    this.loginDeadline = this.startLoginDeadline(socket);
+    this.armDeadline(this.dependencies.loginDeadlineMs, LOGIN_TIMED_OUT);
     const ended = await loop;
-    clearTimeout(this.loginDeadline);
-    // A peer close resolves the loop while a handler may still be awaiting Postgres; a login that
+    clearTimeout(this.deadline);
+    // A peer close resolves the loop while a handler may still be awaiting Postgres; a join that
     // completed after cleanup would attach a phantom player nothing can detach.
     await this.inflight;
     const attachedAs = this.state.kind === 'attached' ? this.state.spaceId : undefined;
@@ -236,17 +246,20 @@ export class ConnectionActor {
   }
 
   /**
-   * Closes a socket still not logged in once the deadline passes, frames or not. The transport is
-   * closed directly, as on an outbox overflow, so the close does not wait behind a handler that
-   * is still running. Ending the loop then runs the exit path, which logs the reason.
+   * Closes the socket once `ms` pass, frames or not, replacing any deadline already set. The
+   * transport is closed directly, as on an outbox overflow, so the close does not wait behind a
+   * handler that is still running. Ending the loop then runs the exit path, which logs the reason.
+   * Nothing is set once the loop has ended, so a handler finishing after it leaves no timer behind.
    */
-  private startLoginDeadline(socket: ConnectionSocket): NodeJS.Timeout {
-    const timer = setTimeout(() => {
-      void socket.close(CLOSE_POLICY_VIOLATION, LOGIN_TIMED_OUT);
-      this.loopEnd?.({ kind: 'close', code: CLOSE_POLICY_VIOLATION, reason: LOGIN_TIMED_OUT });
-    }, this.dependencies.loginDeadlineMs);
-    timer.unref();
-    return timer;
+  private armDeadline(ms: number, reason: string): void {
+    clearTimeout(this.deadline);
+    const socket = this.socket;
+    if (socket === undefined || this.loopEnd === undefined) return;
+    this.deadline = setTimeout(() => {
+      void socket.close(CLOSE_POLICY_VIOLATION, reason);
+      this.loopEnd?.({ kind: 'close', code: CLOSE_POLICY_VIOLATION, reason });
+    }, ms);
+    this.deadline.unref();
   }
 
   /** An admin kick releases the loop; teardown belongs to `runConnection`'s exit path. */
@@ -302,15 +315,16 @@ export class ConnectionActor {
     if (state.kind === 'awaitingLogin') {
       switch (message.tag) {
         case 'login':
-          await handleLogin(message.payload, this, this.dependencies);
-          return { kind: 'keepOpen' };
+          return handleLogin(message.payload, this, this.dependencies);
         case 'register':
           await handleRegister(message.payload, this, this.dependencies);
           return { kind: 'keepOpen' };
         // Redemption is an alternative to a password login, so it is accepted only before login.
         case 'redeemSession':
-          await handleRedeem(message.payload, this, this.dependencies);
-          return { kind: 'keepOpen' };
+          return handleRedeem(message.payload, this, this.dependencies);
+        case 'createCharacter':
+        case 'selectCharacter':
+        case 'deleteCharacter':
         case 'move':
         case 'clientSay':
         case 'equipToggle':
@@ -331,6 +345,8 @@ export class ConnectionActor {
         case 'hello':
         case 'loginResult':
         case 'registerResult':
+        case 'characters':
+        case 'characterResult':
         case 'enterSpace':
         case 'sector':
         case 'entity':
@@ -352,6 +368,70 @@ export class ConnectionActor {
         case 'otherSessions':
         case 'otherSessionsRevoked':
           return this.protocolErrorClose('unexpected tag before login', 0);
+      }
+    }
+    if (state.kind === 'authenticated') {
+      this.armDeadline(this.dependencies.cardDeadlineMs, CARD_TIMED_OUT);
+      switch (message.tag) {
+        case 'createCharacter':
+          await handleCreateCharacter(message.payload, state.accountId, this, this.dependencies);
+          return { kind: 'keepOpen' };
+        case 'selectCharacter':
+          await handleSelectCharacter(message.payload, state.accountId, this, this.dependencies);
+          return { kind: 'keepOpen' };
+        case 'deleteCharacter':
+          await handleDeleteCharacter(message.payload, state.accountId, this, this.dependencies);
+          return { kind: 'keepOpen' };
+        case 'revokeSession':
+          await handleRevoke(message.payload, state.accountId, this, this.dependencies);
+          return { kind: 'keepOpen' };
+        case 'revokeOtherSessions':
+          await handleRevokeOthers(state.accountId, this, this.dependencies);
+          return { kind: 'keepOpen' };
+        case 'login':
+        case 'register':
+        case 'redeemSession':
+        case 'move':
+        case 'clientSay':
+        case 'equipToggle':
+        case 'talk':
+        case 'swing':
+        case 'tend':
+        case 'useDoor':
+        case 'askTask':
+        case 'completeTask':
+        case 'abandonTask':
+        case 'study':
+        case 'buy':
+        case 'sell':
+        case 'wake':
+        case 'useItem':
+        case 'hello':
+        case 'loginResult':
+        case 'registerResult':
+        case 'characters':
+        case 'characterResult':
+        case 'enterSpace':
+        case 'sector':
+        case 'entity':
+        case 'moves':
+        case 'correction':
+        case 'doorRefused':
+        case 'serverSay':
+        case 'energy':
+        case 'inventory':
+        case 'leave':
+        case 'lucidity':
+        case 'condition':
+        case 'blow':
+        case 'raising':
+        case 'mend':
+        case 'adminSay':
+        case 'sessionToken':
+        case 'sessionRevoked':
+        case 'otherSessions':
+        case 'otherSessionsRevoked':
+          return this.protocolErrorClose('unexpected tag while choosing a character', 0);
       }
     }
     switch (message.tag) {
@@ -398,7 +478,7 @@ export class ConnectionActor {
       case 'sell':
         handleSell(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      // Revocation is accepted only while attached; the connection's own account scopes the delete.
+      // Revocation is accepted only once authenticated; the connection's own account scopes the delete.
       case 'revokeSession':
         await handleRevoke(message.payload, state.accountId, this, this.dependencies);
         return { kind: 'keepOpen' };
@@ -408,10 +488,15 @@ export class ConnectionActor {
       case 'login':
       case 'register':
       case 'redeemSession':
-        return this.protocolErrorClose('login/register after attach', 0);
+      case 'createCharacter':
+      case 'selectCharacter':
+      case 'deleteCharacter':
+        return this.protocolErrorClose('login/register/character choice after attach', 0);
       case 'hello':
       case 'loginResult':
       case 'registerResult':
+      case 'characters':
+      case 'characterResult':
       case 'enterSpace':
       case 'sector':
       case 'entity':
@@ -436,10 +521,22 @@ export class ConnectionActor {
     }
   }
 
+  /**
+   * The login deadline gives way to the card's, which each request on the card starts again. The
+   * socket trades its place among those not yet logged in for one among those choosing. When those
+   * are full nothing changes, and the answer is the close the connection ends with.
+   */
+  markAuthenticated(accountId: string): CloseDecision {
+    if (this.reservation?.authenticate() === false) return { kind: 'close', code: CLOSE_TRY_AGAIN_LATER, reason: TOO_MANY_CHOOSING };
+    this.state = { kind: 'authenticated', accountId };
+    this.armDeadline(this.dependencies.cardDeadlineMs, CARD_TIMED_OUT);
+    return { kind: 'keepOpen' };
+  }
+
   /** A later fall back to `awaitingLogin` restarts no deadline: it happens only on the way out. */
   markAttached(entityId: string, spaceId: string, accountId: string): void {
     this.state = { kind: 'attached', entityId, spaceId, accountId };
-    clearTimeout(this.loginDeadline);
+    clearTimeout(this.deadline);
     this.reservation?.release();
   }
 
@@ -470,10 +567,15 @@ export class ConnectionActor {
    * The player leaves the space in the same turn their snapshot is taken, so nothing that happens
    * there during the write (a strike, a raise) is lost from it. The account stays registered until
    * the write has landed, so a login racing it is answered `alreadyLoggedIn` rather than reading
-   * the row from before.
+   * the row from before. A connection still choosing a character has nothing to write.
    */
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
     const state = this.state;
+    if (state.kind === 'authenticated') {
+      this.dependencies.worldRouter.unregister(state.accountId);
+      this.state = { kind: 'awaitingLogin' };
+      return;
+    }
     if (state.kind !== 'attached') return;
     const space = this.dependencies.worldRouter.space(state.spaceId);
     const snapshot = space?.snapshotForPlayer(state.entityId);

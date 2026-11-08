@@ -43,7 +43,7 @@ describe('outbox is live before the socket opens', () => {
     const { delegate } = collect();
     transport.connect('ws://test/ws', delegate);
 
-    transport.send({ tag: 'login', payload: { nickname: 'a', password: 'b' } });
+    transport.send({ tag: 'login', payload: { email: 'a@example.com', password: 'b' } });
     transport.send({ tag: 'clientSay', payload: { text: 'hi', kind: 'say' } });
     expect(latest().sent).toEqual([]);
 

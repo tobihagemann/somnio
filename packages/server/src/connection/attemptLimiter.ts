@@ -30,7 +30,7 @@ interface KeyEntry {
 export interface AttemptLimiterOptions {
   enabled: boolean;
   logger: Logger;
-  /** Whether a throttle record names the key. Off for a key the client typed, such as a nickname. */
+  /** Whether a throttle record names the key. Off for a key the client typed, such as an email. */
   logKey?: boolean;
   /** How many keys the table holds at most. Past it a new key is refused until idle entries are evicted. */
   maxKeys?: number;

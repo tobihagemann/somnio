@@ -7,10 +7,10 @@ const ADDRESS = '203.0.113.7';
 const OTHER = '203.0.113.8';
 const SECOND = 1000;
 
-function makeAdmission(perAddress = 2, total = 3) {
+function makeAdmission(perAddress = 2, total = 3, authenticated = 2, authenticatedPerAddress = total) {
   const clock = { ms: 0 };
   const { logger, records } = recordingLogger();
-  const admission = new SocketAdmission({ perAddressEnabled: true, perAddress, total, logger, now: () => clock.ms });
+  const admission = new SocketAdmission({ perAddressEnabled: true, perAddress, total, authenticatedPerAddress, authenticated, logger, now: () => clock.ms });
   return { admission, clock, records };
 }
 
@@ -53,16 +53,96 @@ describe('SocketAdmission slots', () => {
 
   it('counts only the total with per-address counting off', () => {
     const { logger } = recordingLogger();
-    const admission = new SocketAdmission({ perAddressEnabled: false, perAddress: 1, total: 2, logger });
+    const admission = new SocketAdmission({ perAddressEnabled: false, perAddress: 1, total: 2, authenticatedPerAddress: 1, authenticated: 2, logger });
     reserved(admission.reserve(ADDRESS));
     reserved(admission.reserve(ADDRESS));
     expect(admission.reserve(ADDRESS)).toBe('serverFull');
   });
 });
 
+describe('SocketAdmission slots of sockets choosing a character', () => {
+  it("trades a socket's slot among those not logged in for one among those choosing", () => {
+    const { admission } = makeAdmission(1, 2, 3);
+    const first = reserved(admission.reserve(ADDRESS));
+    expect(admission.reserve(ADDRESS)).toBe('addressFull');
+    reserved(admission.reserve(OTHER));
+    expect(admission.reserve('203.0.113.9')).toBe('serverFull');
+    expect(first.authenticate()).toBe(true);
+    reserved(admission.reserve(ADDRESS));
+    expect(admission.reserve('203.0.113.9')).toBe('serverFull');
+  });
+
+  it('refuses an authentication past the total, whatever the address, and keeps the slot held so far', () => {
+    const { admission, records } = makeAdmission(4, 8, 2);
+    const choosing = [reserved(admission.reserve(ADDRESS)), reserved(admission.reserve(OTHER))];
+    for (const reservation of choosing) expect(reservation.authenticate()).toBe(true);
+    const refused = reserved(admission.reserve(OTHER));
+    expect(refused.authenticate()).toBe(false);
+    expect(records.filter((record) => record['msg'] === 'gameplay socket refused')).toMatchObject([
+      { level: 40, reason: 'authenticatedFull', suppressed_since_last: 0 },
+    ]);
+    for (let attempt = 0; attempt < 3; attempt += 1) reserved(admission.reserve(OTHER));
+    expect(admission.reserve(OTHER)).toBe('addressFull');
+
+    choosing[0]!.release();
+    expect(refused.authenticate()).toBe(true);
+  });
+
+  /** A second release, or a release after the slot has changed count, frees nothing more. */
+  it('frees one slot among those choosing however often it is released', () => {
+    const { admission } = makeAdmission(4, 8, 1);
+    const first = reserved(admission.reserve(ADDRESS));
+    expect(first.authenticate()).toBe(true);
+    expect(first.authenticate()).toBe(true);
+    first.release();
+    first.release();
+    const second = reserved(admission.reserve(ADDRESS));
+    expect(second.authenticate()).toBe(true);
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(false);
+  });
+
+  it('refuses an address past its share of those choosing while another address is still admitted, and keeps the slot held so far', () => {
+    const { admission, records } = makeAdmission(4, 16, 8, 2);
+    const choosing = [reserved(admission.reserve(ADDRESS)), reserved(admission.reserve(ADDRESS))];
+    for (const reservation of choosing) expect(reservation.authenticate()).toBe(true);
+    const refused = reserved(admission.reserve(ADDRESS));
+    expect(refused.authenticate()).toBe(false);
+    expect(reserved(admission.reserve(OTHER)).authenticate()).toBe(true);
+    expect(records.filter((record) => record['msg'] === 'gameplay socket refused')).toMatchObject([
+      { level: 40, reason: 'authenticatedAddressFull', address: ADDRESS, suppressed_since_last: 0 },
+    ]);
+    for (let attempt = 0; attempt < 3; attempt += 1) reserved(admission.reserve(ADDRESS));
+    expect(admission.reserve(ADDRESS)).toBe('addressFull');
+
+    refused.release();
+    choosing[0]!.release();
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(true);
+  });
+
+  /** Joining the world and closing the connection both end with `release`. */
+  it('gives an address back its slot among those choosing when one is released', () => {
+    const { admission } = makeAdmission(4, 16, 8, 2);
+    const first = reserved(admission.reserve(ADDRESS));
+    expect(first.authenticate()).toBe(true);
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(true);
+    first.release();
+    first.release();
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(true);
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(false);
+  });
+
+  it('counts only the total of those choosing with per-address counting off', () => {
+    const { logger } = recordingLogger();
+    const admission = new SocketAdmission({ perAddressEnabled: false, perAddress: 4, total: 8, authenticatedPerAddress: 1, authenticated: 2, logger });
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(true);
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(true);
+    expect(reserved(admission.reserve(ADDRESS)).authenticate()).toBe(false);
+  });
+});
+
 describe('SocketAdmission refusal records', () => {
   function refusals(records: Record<string, unknown>[]) {
-    return records.filter((record) => record['msg'] === 'gameplay upgrade refused');
+    return records.filter((record) => record['msg'] === 'gameplay socket refused');
   }
 
   it('logs each reason at most once a minute, naming the address only for a full address', () => {

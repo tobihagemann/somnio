@@ -1,13 +1,6 @@
 import { sql } from 'kysely';
-import { Migrator } from 'kysely/migration';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NO_LUCIDITY } from '@somnio/core';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
-import { down as metricWorldDown, up as metricWorldUp } from '../../src/migrations/0001_metric_world.ts';
-import { down as lucidityDown, up as lucidityUp } from '../../src/migrations/0002_lucidity.ts';
-import { down as englishNamesDown, up as englishNamesUp } from '../../src/migrations/0003_english_names.ts';
-import { PostgresInventoryRepository } from '../../src/repositories/inventory.ts';
-import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
@@ -41,23 +34,21 @@ describe('migrations', () => {
     ]);
   });
 
-  it('creates the named constraints and drops the skeleton version column', async () => {
+  it('creates the named constraints, the skeleton column, and the session indexes', async () => {
     const constraints = await sql<{ constraint_name: string }>`
       SELECT constraint_name FROM information_schema.table_constraints
       WHERE table_name IN ('accounts', 'characters') AND constraint_type = 'UNIQUE'
       ORDER BY constraint_name
     `.execute(harness.db);
     expect(constraints.rows.map((row) => row.constraint_name)).toEqual([
-      'accounts_name_normalized_key',
-      'accounts_name_skeleton_key',
+      'accounts_email_normalized_key',
       'characters_name_normalized_key',
       'characters_name_skeleton_key',
     ]);
     const columns = await sql<{ column_name: string; is_nullable: string }>`
-      SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'accounts'
+      SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'characters'
     `.execute(harness.db);
     expect(columns.rows.find((row) => row.column_name === 'name_skeleton')?.is_nullable).toBe('NO');
-    expect(columns.rows.some((row) => row.column_name === 'name_skeleton_version')).toBe(false);
     const indexes = await sql<{ indexname: string }>`
       SELECT indexname FROM pg_indexes WHERE tablename = 'sessions' ORDER BY indexname
     `.execute(harness.db);
@@ -66,8 +57,8 @@ describe('migrations', () => {
 
   it('cascades sessions when their account is deleted', async () => {
     const accountId = crypto.randomUUID();
-    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
-      VALUES (${accountId}, 'cascade-user', 'h', 'c@example.com', 'cascade-user')`.execute(harness.db);
+    await sql`INSERT INTO accounts (id, password_hash, email)
+      VALUES (${accountId}, 'h', 'c@example.com')`.execute(harness.db);
     await sql`INSERT INTO sessions (token_digest, account_id, expires_at)
       VALUES ('deadbeef', ${accountId}, NOW() + INTERVAL '30 days')`.execute(harness.db);
     await sql`DELETE FROM accounts WHERE id = ${accountId}`.execute(harness.db);
@@ -75,141 +66,6 @@ describe('migrations', () => {
       count: string;
     }>`SELECT COUNT(*) AS count FROM sessions WHERE account_id = ${accountId}`.execute(harness.db);
     expect(Number(remaining.rows[0]?.count)).toBe(0);
-  });
-});
-
-describe('migrating a database that holds characters', () => {
-  let harness: DatabaseHarness;
-
-  beforeAll(async () => {
-    harness = await startDatabase({ migrate: false });
-  });
-
-  afterAll(async () => {
-    await harness.stop();
-  });
-
-  it('applies the lucidity migration in place and reads an existing character back with no role and no ranks', async () => {
-    const first = new Migrator({
-      db: harness.db,
-      provider: { getMigrations: () => Promise.resolve({ '0001_metric_world': { up: metricWorldUp, down: metricWorldDown } }) },
-    });
-    expect((await first.migrateToLatest()).error).toBeUndefined();
-    const accountId = crypto.randomUUID();
-    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
-      VALUES (${accountId}, 'veteran', 'h', 'v@example.com', 'veteran')`.execute(harness.db);
-    await sql`INSERT INTO characters (
-      id, account_id, name, people, space, position_x, position_z, facing,
-      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton
-    ) VALUES (
-      ${crypto.randomUUID()}, ${accountId}, 'Veteran', 'soporen', 'outdoors', 12.5, 20, 90,
-      100, 100, 100, 100, 100, 100, NOW(), 'veteran'
-    )`.execute(harness.db);
-
-    await migrateToLatest(harness.db);
-
-    const veteran = await new PostgresCharacterRepository(harness.db).findByName('Veteran');
-    expect(veteran).toMatchObject({
-      people: 'sopors',
-      space: 'outdoors',
-      position: { x: 12.5, z: 20 },
-      energy: { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 },
-      lucidity: NO_LUCIDITY,
-    });
-  });
-});
-
-describe('migrating a database that holds characters with the German names', () => {
-  let harness: DatabaseHarness;
-
-  beforeAll(async () => {
-    harness = await startDatabase({ migrate: false });
-  });
-
-  afterAll(async () => {
-    await harness.stop();
-  });
-
-  it('renames the role, the task, the people, the starter sector, and the stone, refuses the old role after, and renames them back down', async () => {
-    const before = new Migrator({
-      db: harness.db,
-      provider: {
-        getMigrations: () =>
-          Promise.resolve({
-            '0001_metric_world': { up: metricWorldUp, down: metricWorldDown },
-            '0002_lucidity': { up: lucidityUp, down: lucidityDown },
-          }),
-      },
-    });
-    expect((await before.migrateToLatest()).error).toBeUndefined();
-    const accountId = crypto.randomUUID();
-    const characterId = crypto.randomUUID();
-    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
-      VALUES (${accountId}, 'heilerin', 'h', 'h@example.com', 'heilerin')`.execute(harness.db);
-    await sql`INSERT INTO characters (
-      id, account_id, name, people, space, position_x, position_z, facing,
-      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton,
-      role, study, task_role, task_teaching, task_progress
-    ) VALUES (
-      ${characterId}, ${accountId}, 'Heilerin', 'wachen', 'EdariaBibliothek', 2.88, 4.32, 0,
-      100, 100, 100, 100, 100, 100, NOW(), 'heilerin',
-      'heiler', 'touch', 'heiler', 'drawing-back', 12
-    )`.execute(harness.db);
-    await sql`INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand)
-      VALUES (${characterId}, 0, 'purse', 40, NULL), (${characterId}, 1, 'mondstein', 1, 'right')`.execute(harness.db);
-    const fighterAccountId = crypto.randomUUID();
-    await sql`INSERT INTO accounts (id, name, password_hash, email, name_skeleton)
-      VALUES (${fighterAccountId}, 'kaempferin', 'h', 'k@example.com', 'kaempferin')`.execute(harness.db);
-    await sql`INSERT INTO characters (
-      id, account_id, name, people, space, position_x, position_z, facing,
-      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton,
-      role, task_role, task_teaching, task_progress
-    ) VALUES (
-      ${crypto.randomUUID()}, ${fighterAccountId}, 'Kaempferin', 'umbren', 'outdoors', 12.5, 20, 90,
-      100, 100, 100, 100, 100, 100, NOW(), 'kaempferin',
-      'kaempfer', 'kaempfer', 'follow-through', 1
-    )`.execute(harness.db);
-
-    await migrateToLatest(harness.db);
-
-    expect(await new PostgresCharacterRepository(harness.db).findByName('Heilerin')).toMatchObject({
-      people: 'vigils',
-      space: 'EdariaLibrary',
-      lucidity: { role: 'healer', study: 'touch', task: { role: 'healer', teachingId: 'drawing-back', progress: 12 } },
-    });
-    expect(await new PostgresInventoryRepository(harness.db).loadAll(characterId)).toEqual([
-      { slot: 0, itemId: 'purse', quantity: 40, equippedHand: undefined },
-      { slot: 1, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
-    ]);
-    expect(await new PostgresCharacterRepository(harness.db).findByName('Kaempferin')).toMatchObject({
-      people: 'umbrae',
-      lucidity: { role: 'fighter', task: { role: 'fighter', teachingId: 'follow-through', progress: 1 } },
-    });
-    await expect(sql`UPDATE characters SET role = 'heiler' WHERE id = ${characterId}`.execute(harness.db)).rejects.toThrow(/characters_role_check/);
-
-    const all = new Migrator({
-      db: harness.db,
-      provider: {
-        getMigrations: () =>
-          Promise.resolve({
-            '0001_metric_world': { up: metricWorldUp, down: metricWorldDown },
-            '0002_lucidity': { up: lucidityUp, down: lucidityDown },
-            '0003_english_names': { up: englishNamesUp, down: englishNamesDown },
-          }),
-      },
-    });
-    expect((await all.migrateDown()).error).toBeUndefined();
-
-    const rows = await sql<{ name: string; people: string; space: string; role: string; task_role: string }>`
-      SELECT name, people, space, role, task_role FROM characters ORDER BY name
-    `.execute(harness.db);
-    expect(rows.rows).toEqual([
-      { name: 'Heilerin', people: 'wachen', space: 'EdariaBibliothek', role: 'heiler', task_role: 'heiler' },
-      { name: 'Kaempferin', people: 'umbren', space: 'outdoors', role: 'kaempfer', task_role: 'kaempfer' },
-    ]);
-    const items = await sql<{ item_id: string }>`SELECT item_id FROM inventory_rows WHERE character_id = ${characterId} ORDER BY slot`.execute(harness.db);
-    expect(items.rows.map((row) => row.item_id)).toEqual(['purse', 'mondstein']);
-    await expect(sql`UPDATE characters SET role = 'healer' WHERE id = ${characterId}`.execute(harness.db)).rejects.toThrow(/characters_role_check/);
   });
 });
 
@@ -240,10 +96,11 @@ describe('migrating a database that is not fresh', () => {
     await expect(migrateToLatest(harness.db)).rejects.toThrow(MigrationError);
   });
 
-  it('refuses the previous TypeScript schema by naming the cutover', async () => {
-    // Kysely's own bookkeeping table, carrying the migration this server no longer registers.
+  it.each(['0001_initial', '0001_metric_world'])('refuses an earlier TypeScript schema, recorded as %s, by naming the cutover', async (name) => {
+    // Kysely's own bookkeeping table, carrying a migration this server no longer registers.
     await sql`CREATE TABLE IF NOT EXISTS kysely_migration (name VARCHAR(255) PRIMARY KEY, timestamp VARCHAR(255) NOT NULL)`.execute(harness.db);
-    await sql`INSERT INTO kysely_migration (name, timestamp) VALUES ('0001_initial', ${new Date().toISOString()})`.execute(harness.db);
+    await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${name}, ${new Date().toISOString()})`.execute(harness.db);
     await expect(migrateToLatest(harness.db)).rejects.toThrow(LegacyDatabaseError);
+    await sql`DELETE FROM kysely_migration WHERE name = ${name}`.execute(harness.db);
   });
 });

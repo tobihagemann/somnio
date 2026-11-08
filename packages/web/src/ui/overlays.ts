@@ -1,9 +1,10 @@
-import { PROTOCOL_BYTE_CAPS, utf8ByteLength } from '@somnio/protocol';
+import { PROTOCOL_BYTE_CAPS, SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
+import type { CharacterSummaryMessage } from '@somnio/protocol';
 import type { LoginCredentials, OverlayKind, RegistrationForm, VersionSkew } from '@/client';
-import { PEOPLES, peopleLabelKey } from '@somnio/core';
+import { PEOPLES, isEmailAddress, isPeople, peopleLabelKey, roleLabelKey } from '@somnio/core';
 import type { People } from '@somnio/core';
 import { t } from '@/i18n';
-import { button, card, checkbox, element, field, scrim, select, setHidden } from './dom';
+import { button, card, checkbox, element, field, replaceChildren, scrim, select, setHidden } from './dom';
 
 /**
  * The `OverlayKind` cases. A browser client updates by reloading, so the version-skew overlay
@@ -23,6 +24,11 @@ export interface OverlayCallbacks {
   /** Back out of the registration form to login, dropping its inline error. Bound to Esc and Cancel alike. */
   onCancelRegistration: () => void;
   onLeaveGame: () => void;
+  onPlay: (characterId: string) => void;
+  onCreateCharacter: (name: string, people: People) => void;
+  /** Back out of the New Dreamer form to the card, dropping its inline error. Bound to Esc and Cancel alike. */
+  onCancelNewCharacter: () => void;
+  onDeleteCharacter: (characterId: string) => void;
   onLogOutOtherBrowsers: () => void;
   onRetryConnection: () => void;
   onToggleFullscreen: () => void;
@@ -34,9 +40,14 @@ function peopleOptions(): { value: string; label: string }[] {
   return PEOPLES.map((people) => ({ value: people, label: t(peopleLabelKey(people)) }));
 }
 
+/** A people the client does not know shows as sent rather than not at all. */
+function peopleName(people: string): string {
+  return isPeople(people) ? t(peopleLabelKey(people)) : people;
+}
+
 export class Overlays {
   readonly root: HTMLElement;
-  readonly loginNickname: HTMLInputElement;
+  readonly loginEmail: HTMLInputElement;
 
   private readonly callbacks: OverlayCallbacks;
   /**
@@ -53,13 +64,25 @@ export class Overlays {
   private loginInvalid: string | undefined;
   private loginStatus: string | undefined;
   private readonly registration: {
-    nickname: HTMLInputElement;
+    email: HTMLInputElement;
     password: HTMLInputElement;
     passwordRepeat: HTMLInputElement;
-    people: HTMLSelectElement;
-    email: HTMLInputElement;
     error: HTMLElement;
   };
+  private readonly characterList: HTMLElement;
+  private readonly characterError: HTMLElement;
+  private readonly newCharacterButton: HTMLButtonElement;
+  private readonly charactersFull: HTMLElement;
+  /** What the card's rows were last built from, so a repaint that changed neither leaves the buttons standing. */
+  private shownCharacters: { characters: readonly CharacterSummaryMessage[]; locked: boolean } | undefined;
+  private readonly newCharacter: {
+    name: HTMLInputElement;
+    people: HTMLSelectElement;
+    submit: HTMLButtonElement;
+    error: HTMLElement;
+  };
+  private readonly deleteMessage: HTMLElement;
+  private deleteTarget: CharacterSummaryMessage | undefined;
   private readonly skewMessage: HTMLElement;
   private readonly logOutOtherBrowsers: HTMLButtonElement;
   private presentedKind: OverlayKind['kind'] | undefined;
@@ -69,7 +92,9 @@ export class Overlays {
 
     // Login. Real `type="password"` and standard autocomplete tokens, so a password manager
     // recognizes the form — the whole reason the overlay is DOM rather than something drawn in WebGL.
-    const nickname = field(t('Nickname'), {
+    // The email is the account's username, so the login form asks for it as one.
+    const email = field(t('Email'), {
+      type: 'email',
       autocomplete: 'username',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
     });
@@ -79,13 +104,13 @@ export class Overlays {
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
     });
     const remember = checkbox(t('Remember password'), false);
-    this.loginNickname = nickname.input;
+    this.loginEmail = email.input;
     this.loginPassword = password.input;
     this.loginRemember = remember.input;
     this.loginError = element('p', { className: 'form-error hidden' });
     const loginForm = element('form', {
       children: [
-        nickname.row,
+        email.row,
         password.row,
         remember.row,
         this.loginError,
@@ -107,12 +132,16 @@ export class Overlays {
         }),
       ],
     });
+    // The address check below and its localized line are the only gate: the browser's own refuses a
+    // non-ASCII local part and blocks the submit.
+    loginForm.noValidate = true;
     loginForm.addEventListener('submit', (event) => {
       event.preventDefault();
       this.submitLogin();
     });
 
-    const regNickname = field(t('Nickname:'), {
+    const regEmail = field(t('Email:'), {
+      type: 'email',
       autocomplete: 'username',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
     });
@@ -121,41 +150,31 @@ export class Overlays {
       autocomplete: 'new-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
     });
-    const regRepeat = field(t('Password (*):'), {
+    const regRepeat = field(t('Repeat password:'), {
       type: 'password',
       autocomplete: 'new-password',
       maxUTF8Bytes: PROTOCOL_BYTE_CAPS.password,
     });
-    const regPeople = select(t('People:'), peopleOptions());
-    const regEmail = field(t('Email:'), {
-      type: 'email',
-      autocomplete: 'email',
-      maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier,
-    });
     const regError = element('p', { className: 'form-error hidden' });
     this.registration = {
-      nickname: regNickname.input,
+      email: regEmail.input,
       password: regPassword.input,
       passwordRepeat: regRepeat.input,
-      people: regPeople.input,
-      email: regEmail.input,
       error: regError,
     };
     const registrationForm = element('form', {
       children: [
-        regNickname.row,
+        regEmail.row,
         regPassword.row,
         regRepeat.row,
-        regPeople.row,
-        regEmail.row,
-        element('p', { className: 'form-note', text: t('*: repeat') }),
         regError,
         element('div', {
           className: 'form-actions',
           children: [
             // Through the same callback Escape uses, not a direct `onShowOverlay`. `AppShell`
             // clears the inline error there, so backing out with the button rather than the key
-            // would carry the previous attempt's "That name is taken." into a reopened form.
+            // would carry the previous attempt's "Another account already uses that email." into a
+            // reopened form.
             button(t('Cancel'), () => this.callbacks.onCancelRegistration()),
             element('button', {
               className: 'fantasy-button',
@@ -166,9 +185,56 @@ export class Overlays {
         }),
       ],
     });
+    registrationForm.noValidate = true;
     registrationForm.addEventListener('submit', (event) => {
       event.preventDefault();
       this.submitRegistration();
+    });
+
+    // The character card: every dreamer of the account with Play and Delete, then a new one or out.
+    this.characterList = element('div', { attributes: { role: 'list', 'aria-label': t('Your Dreamers') } });
+    this.characterError = element('p', { className: 'form-error hidden' });
+    this.charactersFull = element('p', { className: 'form-note hidden', text: t('Delete a dreamer to make room for a new one.') });
+    this.newCharacterButton = button(t('New Dreamer'), () => this.callbacks.onShowOverlay({ kind: 'newCharacter' }));
+    const characters = element('div', {
+      children: [
+        this.characterList,
+        this.charactersFull,
+        this.characterError,
+        element('div', {
+          className: 'form-actions',
+          children: [button(t('Log Out'), () => this.callbacks.onLeaveGame()), this.newCharacterButton],
+        }),
+      ],
+    });
+
+    const newName = field(t('Name:'), { maxUTF8Bytes: PROTOCOL_BYTE_CAPS.identifier });
+    const newPeople = select(t('People:'), peopleOptions());
+    const newSubmit = element('button', { className: 'fantasy-button', text: t('Create'), attributes: { type: 'submit' } });
+    this.newCharacter = { name: newName.input, people: newPeople.input, submit: newSubmit, error: element('p', { className: 'form-error hidden' }) };
+    const newCharacterForm = element('form', {
+      children: [
+        newName.row,
+        newPeople.row,
+        this.newCharacter.error,
+        element('div', {
+          className: 'form-actions',
+          children: [button(t('Cancel'), () => this.callbacks.onCancelNewCharacter()), newSubmit],
+        }),
+      ],
+    });
+    newCharacterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      this.submitNewCharacter();
+    });
+
+    this.deleteMessage = element('p', { className: 'service-text' });
+    const confirmDelete = button(t('Delete'), () => {
+      if (this.deleteTarget !== undefined) this.callbacks.onDeleteCharacter(this.deleteTarget.id);
+    });
+    const keep = button(t('Cancel'), () => this.callbacks.onShowOverlay({ kind: 'characters' }));
+    const deleteCharacter = element('div', {
+      children: [this.deleteMessage, element('div', { className: 'menu-actions', children: [confirmDelete, keep] })],
     });
 
     // Game menu, options, about, version skew
@@ -248,7 +314,10 @@ export class Overlays {
     this.views = {
       // The wordmark above the card names the game, so the card shows no title of its own.
       login: scrim(card(t('Somnio'), [loginForm], 'default', 'accessibleOnly')),
-      registration: scrim(card(t('Sign Up'), [registrationForm], 'wide', 'accessibleOnly')),
+      registration: scrim(card(t('Sign Up'), [registrationForm], 'default', 'accessibleOnly')),
+      characters: scrim(card(t('Your Dreamers'), [characters], 'default', 'accessibleOnly')),
+      newCharacter: scrim(card(t('New Dreamer'), [newCharacterForm], 'default', 'accessibleOnly')),
+      deleteCharacter: scrim(card(t('Delete Dreamer'), [deleteCharacter], 'menu')),
       gameMenu: scrim(card(t('Somnio'), [gameMenu], 'menu')),
       logOutOtherBrowsers: scrim(card(t('Log Out Other Browsers'), [logOutOtherBrowsers], 'menu')),
       options: scrim(card(t('Options'), [options], 'menu')),
@@ -267,15 +336,72 @@ export class Overlays {
       setHidden(view, overlay?.kind !== kind);
     }
     if (overlay?.kind === 'updateRequired') this.renderSkew(overlay.skew);
+    if (overlay?.kind === 'deleteCharacter') this.renderDeleteCharacter(overlay.character);
     // Focus only on the transition into a credential form, never on a repaint of one already
     // showing. `AppShell.render` re-presents on every chat line, so focusing unconditionally moves
     // the caret to field one mid-keystroke: the rest of a password being typed lands in the
-    // plaintext nickname box and Return submits it as the nickname.
+    // plaintext email box and Return submits it as the email.
     const entered = overlay?.kind !== this.presentedKind;
     this.presentedKind = overlay?.kind;
     if (!entered) return;
-    if (overlay?.kind === 'login') this.loginNickname.focus();
-    if (overlay?.kind === 'registration') this.registration.nickname.focus();
+    if (overlay?.kind === 'login') this.loginEmail.focus();
+    if (overlay?.kind === 'registration') this.registration.email.focus();
+    if (overlay?.kind === 'newCharacter') this.newCharacter.name.focus();
+  }
+
+  /**
+   * The card's rows, one per dreamer. While the server answers, Play, Delete, New Dreamer, and the
+   * form's Create are locked, and Log Out is not. The shell repaints on every state change, and a row
+   * replaced between press and release loses its click.
+   */
+  renderCharacters(characters: readonly CharacterSummaryMessage[], locked: boolean): void {
+    const shown = this.shownCharacters;
+    if (shown?.characters === characters && shown.locked === locked) return;
+    this.shownCharacters = { characters, locked };
+    const full = characters.length >= SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount;
+    setHidden(this.newCharacterButton, full);
+    setHidden(this.charactersFull, !full);
+    this.newCharacterButton.disabled = locked;
+    this.newCharacter.submit.disabled = locked;
+    replaceChildren(
+      this.characterList,
+      characters.length === 0
+        ? [element('p', { className: 'form-note', text: t('No dreamers yet. Create one to enter the world.') })]
+        : characters.map((character) => this.characterRow(character, locked)),
+    );
+  }
+
+  private characterRow(character: CharacterSummaryMessage, locked: boolean): HTMLElement {
+    const play = button(t('Play'), () => this.callbacks.onPlay(character.id));
+    const remove = button(t('Delete'), () => this.callbacks.onShowOverlay({ kind: 'deleteCharacter', character }));
+    play.disabled = locked;
+    remove.disabled = locked;
+    return element('div', {
+      className: 'character-row',
+      attributes: { role: 'listitem' },
+      children: [
+        element('div', {
+          className: 'character-row__who',
+          children: [
+            element('strong', { text: character.name }),
+            element('span', {
+              className: 'character-row__traits',
+              children: [
+                element('span', { text: peopleName(character.people) }),
+                element('span', { text: character.role === undefined ? t('No role yet') : t(roleLabelKey(character.role)) }),
+              ],
+            }),
+          ],
+        }),
+        play,
+        remove,
+      ],
+    });
+  }
+
+  private renderDeleteCharacter(character: CharacterSummaryMessage): void {
+    this.deleteTarget = character;
+    this.deleteMessage.textContent = t('%@ will be gone for good, with every rank and everything they carry.', character.name);
   }
 
   setLogOutOtherBrowsersShown(shown: boolean): void {
@@ -289,18 +415,26 @@ export class Overlays {
    * the page unless something clears it. Bound to the controller's `onSessionIdentityEnded`, which
    * is what keeps a departing player's credentials from being handed to whoever opens the login card
    * next on a shared browser. The registration form counts: abandoning it leaves a plaintext
-   * password in the DOM that no later login touches, and it is reachable from the same card.
+   * password in the DOM that no later login touches, and it is reachable from the same card. The
+   * card's last error and a half-typed New Dreamer go too, since they belong to the departing account.
    */
   clearCredentialForms(): void {
-    this.loginNickname.value = '';
+    this.loginEmail.value = '';
     this.loginPassword.value = '';
     this.loginRemember.checked = false;
     this.showLoginError(undefined);
-    this.registration.nickname.value = '';
+    this.registration.email.value = '';
     this.registration.password.value = '';
     this.registration.passwordRepeat.value = '';
-    this.registration.email.value = '';
     this.showRegistrationError(undefined);
+    this.clearNewCharacterForm();
+    this.showCharacterError(undefined);
+  }
+
+  clearNewCharacterForm(): void {
+    this.newCharacter.name.value = '';
+    this.newCharacter.people.value = PEOPLES[0];
+    this.showNewCharacterError(undefined);
   }
 
   showLoginError(message: string | undefined): void {
@@ -325,6 +459,16 @@ export class Overlays {
     setHidden(this.registration.error, message === undefined);
   }
 
+  showCharacterError(message: string | undefined): void {
+    this.characterError.textContent = message ?? '';
+    setHidden(this.characterError, message === undefined);
+  }
+
+  showNewCharacterError(message: string | undefined): void {
+    this.newCharacter.error.textContent = message ?? '';
+    setHidden(this.newCharacter.error, message === undefined);
+  }
+
   /**
    * `clientOutdated` means the server advertises a newer version than this build understands;
    * `serverOutdated` means the deploy is mid-rollout. Different sentences, because the action the
@@ -343,10 +487,10 @@ export class Overlays {
    * before a round trip.
    */
   private submitLogin(): void {
-    const nickname = this.loginNickname.value.trim();
+    const email = this.loginEmail.value.trim();
     const password = this.loginPassword.value;
-    if (utf8ByteLength(nickname) === 0 || utf8ByteLength(nickname) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showLoginError(t('That name uses characters Somnio does not allow.'));
+    if (!isEmailAddress(email) || utf8ByteLength(email) > PROTOCOL_BYTE_CAPS.identifier) {
+      this.showLoginError(t('Enter a valid email address.'));
       return;
     }
     // Empty as well as over-cap: a blank password would ship a `login` frame on a round trip that
@@ -359,40 +503,40 @@ export class Overlays {
       return;
     }
     this.showLoginError(undefined);
-    this.callbacks.onLogin({ nickname, password, rememberMe: this.loginRemember.checked });
+    this.callbacks.onLogin({ email, password, rememberMe: this.loginRemember.checked });
   }
 
   private submitRegistration(): void {
-    const nickname = this.registration.nickname.value.trim();
+    // The handler answers an email that is not an address, or past the cap, with a bare `failure`,
+    // which would read as an unexplained rejection; the same check here says what is wrong.
+    const email = this.registration.email.value.trim();
     const password = this.registration.password.value;
     const passwordRepeat = this.registration.passwordRepeat.value;
-    if (utf8ByteLength(nickname) === 0 || utf8ByteLength(nickname) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showRegistrationError(t('That name uses characters Somnio does not allow.'));
+    if (!isEmailAddress(email) || utf8ByteLength(email) > PROTOCOL_BYTE_CAPS.identifier) {
+      this.showRegistrationError(t('Enter a valid email address.'));
       return;
     }
     if (utf8ByteLength(password) < PROTOCOL_BYTE_CAPS.minPassword || utf8ByteLength(password) > PROTOCOL_BYTE_CAPS.password || password !== passwordRepeat) {
       this.showRegistrationError(t('Registration failed.'));
       return;
     }
-    // `RegisterHandler` requires a non-empty, length-bounded email and answers `.failure` without
-    // it, which reads as an unexplained rejection. `isValid(form:)` gates on the same two bounds.
-    const email = this.registration.email.value.trim();
-    if (utf8ByteLength(email) === 0 || utf8ByteLength(email) > PROTOCOL_BYTE_CAPS.identifier) {
-      this.showRegistrationError(t('Registration failed.'));
-      return;
-    }
     this.showRegistrationError(undefined);
     // Pre-fill login from the same values before the request goes out, so the overlay a successful
     // registration returns to is already filled in — the ordering `submitRegistration` uses.
-    this.loginNickname.value = nickname;
+    this.loginEmail.value = email;
     this.loginPassword.value = password;
-    this.callbacks.onRegister({
-      nickname,
-      password,
-      passwordRepeat,
-      people: this.registration.people.value as People,
-      email,
-    });
+    this.callbacks.onRegister({ email, password, passwordRepeat });
+  }
+
+  /** The server holds a dreamer's name to the name policy; this only spares the round trip for an empty or over-long one. */
+  private submitNewCharacter(): void {
+    const name = this.newCharacter.name.value.trim();
+    if (utf8ByteLength(name) === 0 || utf8ByteLength(name) > PROTOCOL_BYTE_CAPS.identifier) {
+      this.showNewCharacterError(t('That name uses characters Somnio does not allow.'));
+      return;
+    }
+    this.showNewCharacterError(undefined);
+    this.callbacks.onCreateCharacter(name, this.newCharacter.people.value as People);
   }
 }
 

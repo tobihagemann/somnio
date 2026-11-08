@@ -22,6 +22,7 @@ import {
   bootTestServer,
   closeAndAwaitCleanup,
   drainFrames,
+  emailFor,
   fixtureWorld,
   frame,
   joinFreshPlayer,
@@ -32,7 +33,7 @@ import {
   selfPosition,
   standableNear,
   startDatabase,
-  uniqueNickname,
+  uniqueName,
 } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
@@ -82,22 +83,30 @@ afterAll(async () => {
 
 describe('gameplay end to end', () => {
   it('register then login flow surfaces success codes', async () => {
-    const nickname = uniqueNickname('alice');
+    const email = emailFor(uniqueName('alice'));
     const client = await TestClient.open(server.url);
     await client.next();
-    client.send(registerFrame(nickname));
+    client.send(registerFrame(email));
     expect(await client.next()).toEqual({ tag: 'registerResult', payload: { result: 'ok' } });
-    client.send(frame({ tag: 'login', payload: { nickname, password: 'secret-pass' } }));
+    client.send(frame({ tag: 'login', payload: { email, password: 'secret-pass' } }));
     expect(await client.next()).toEqual({ tag: 'loginResult', payload: { result: 'ok' } });
     await client.close();
   });
 
   it('a fresh player joins the starter sector at its spawn, with the world clock in enterSpace', async () => {
     const joined = await joinFreshPlayer(server.url, 'fresh');
-    expect(joined.join.map((message) => message.tag).slice(0, 7)).toEqual(['loginResult', 'enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
+    const tags = joined.join.map((message) => message.tag);
+    expect(tags.slice(tags.indexOf('enterSpace'), tags.indexOf('enterSpace') + 6)).toEqual([
+      'enterSpace',
+      'sector',
+      'entity',
+      'inventory',
+      'energy',
+      'lucidity',
+    ]);
     expect(joined.spaceId).toBe(STARTER_SECTOR);
     expect(selfPosition(joined)).toEqual({ x: librarySector.spawn!.x, z: librarySector.spawn!.z });
-    const enter = joined.join[1]!;
+    const enter = joined.join.find((message) => message.tag === 'enterSpace')!;
     const worldSeconds = enter.tag === 'enterSpace' ? enter.payload.worldSeconds : Number.NaN;
     // The clock was loaded from the database and has only run forward since the boot.
     expect(worldSeconds).toBeGreaterThanOrEqual(SEEDED_WORLD_SECONDS);
@@ -173,7 +182,7 @@ describe('gameplay end to end', () => {
         entityId: LIBUS,
         name: libus.name,
         kind: 'say',
-        text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.nickname),
+        text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.name),
         clarity: 1,
         x: libus.x,
         z: libus.z,
@@ -207,21 +216,15 @@ describe('gameplay end to end', () => {
     const local = await startDatabase();
     const own = await bootTestServer(local.url);
     try {
-      const nickname = uniqueNickname('drainer');
-      const client = await TestClient.open(own.url);
-      await client.next();
-      client.send(registerFrame(nickname));
-      await client.until('registerResult');
-      client.send(frame({ tag: 'login', payload: { nickname, password: 'secret-pass' } }));
-      await client.until('lucidity');
+      const { name, client } = await joinFreshPlayer(own.url, 'drainer');
       const characters = new PostgresCharacterRepository(local.db);
-      const beforeShutdown = (await characters.findByName(nickname))!.lastSeen;
+      const beforeShutdown = (await characters.findByName(name))!.lastSeen;
       const shutdown = own.server.shutdown();
       const closed = await client.closed;
       await shutdown;
       expect([CLOSE_GOING_AWAY, 1000]).toContain(closed.code);
       // The drain's snapshot landed: the shutdown checkpoint advanced the row, not only the close.
-      const afterShutdown = (await characters.findByName(nickname))!.lastSeen;
+      const afterShutdown = (await characters.findByName(name))!.lastSeen;
       expect(afterShutdown.getTime()).toBeGreaterThan(beforeShutdown.getTime());
     } finally {
       own.logging.cleanup();
@@ -230,13 +233,13 @@ describe('gameplay end to end', () => {
   });
 
   it('a login requesting a session token can resume without a password', async () => {
-    const nickname = uniqueNickname('resumer');
+    const name = uniqueName('resumer');
     const client = await TestClient.open(server.url);
     await client.next();
-    client.send(registerFrame(nickname));
+    client.send(registerFrame(emailFor(name)));
     await client.until('registerResult');
     await client.close();
-    const first = await loginOverWire(server.url, nickname, { requestSessionToken: true });
+    const first = await loginOverWire(server.url, name, { requestSessionToken: true });
     const token = first.join.find((message) => message.tag === 'sessionToken');
     expect(token?.tag).toBe('sessionToken');
     await closeAndAwaitCleanup(first, server);

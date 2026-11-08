@@ -10,7 +10,7 @@ import { mouseFacingHeading } from '@/client';
 import type { RegistrationForm } from '@/client';
 import { clamp, fullPools, headingRadians } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
-import type { InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
+import type { CharacterSummaryMessage, InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -45,6 +45,10 @@ function overlayCallbacks(): ConstructorParameters<typeof Overlays>[0] {
     onDismissOverlay: () => {},
     onCancelRegistration: () => {},
     onLeaveGame: () => {},
+    onPlay: () => {},
+    onCreateCharacter: () => {},
+    onCancelNewCharacter: () => {},
+    onDeleteCharacter: () => {},
     onLogOutOtherBrowsers: () => {},
     onRetryConnection: () => {},
     onToggleFullscreen: () => {},
@@ -156,14 +160,14 @@ describe('panel chrome metrics', () => {
   it('veils the world at half black and holds the wordmark in a band above the tallest card', () => {
     expect(/\n\.splash-veil\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.5)');
     expect(css).toContain(`--somnio-splash-card-half: ${PRE_LOGIN_CARD.height / 2}px`);
-    expect(/\n\.overlay-card--wide\s*\{([^}]*)\}/.exec(css)?.[1]).toContain(`width: min(${PRE_LOGIN_CARD.width}px,`);
+    expect(/\n\.overlay-card\s*\{([^}]*)\}/.exec(css)?.[1]).toContain(`width: min(${PRE_LOGIN_CARD.width}px,`);
     const band = /\n\.splash-wordmark\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(band).toContain(`top: ${WORDMARK_BAND_INSET}px`);
     expect(band).toContain(`bottom: calc(50% + var(--somnio-splash-card-half) + ${WORDMARK_BAND_INSET}px)`);
     const wordmark = /\.splash-wordmark__image\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(wordmark).toContain('width: min(440px, calc(100vw - 48px))');
-    // The reel frames its figures clear of the card's column alone, which covers the wordmark only while it is the narrower.
-    expect(Number(/width: min\((\d+)px/.exec(wordmark ?? '')?.[1])).toBeLessThan(PRE_LOGIN_CARD.width);
+    // The reel frames its figures clear of the card's column alone, which covers the wordmark only while it is no wider.
+    expect(Number(/width: min\((\d+)px/.exec(wordmark ?? '')?.[1])).toBeLessThanOrEqual(PRE_LOGIN_CARD.width);
     // The in-game menus keep their own scrim.
     expect(/\n\.overlay-scrim\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.55)');
   });
@@ -641,32 +645,47 @@ describe('overlays', () => {
     // be able to recognize and fill it.
     expect(password).not.toBeNull();
     expect(password?.getAttribute('autocomplete')).toBe('current-password');
-    expect(overlays.loginNickname.getAttribute('autocomplete')).toBe('username');
+    expect(overlays.loginEmail.getAttribute('autocomplete')).toBe('username');
+    expect(overlays.loginEmail.type).toBe('email');
+  });
+
+  /** Sign Up's email is the username its `new-password` fields pair with, as the login card's is for its password. */
+  it('asks for the email as the username on both credential forms', () => {
+    const overlays = new Overlays(overlayCallbacks());
+
+    const emails = [...overlays.root.querySelectorAll<HTMLInputElement>('input[type="email"]')];
+    expect(emails.map((input) => input.getAttribute('autocomplete'))).toEqual(['username', 'username']);
+  });
+
+  /** The browser's own check refuses a non-ASCII local part and blocks the submit, so the forms' own check and its line are the only gate. */
+  it('leaves the email to its own check on both credential forms', () => {
+    const overlays = new Overlays(overlayCallbacks());
+
+    const emails = [...overlays.root.querySelectorAll<HTMLInputElement>('input[type="email"]')];
+    expect(emails.map((input) => input.form?.noValidate)).toEqual([true, true]);
   });
 
   /**
-   * The login form's validation branches, as a table — the shape the registration form already had
-   * and this one did not. That asymmetry is what let the empty-password branch go missing: three
-   * one-off tests covered the nickname twice and the password not at all, so `submitLogin` capped
-   * the password from above only and a blank one shipped a `login` frame the server answered
-   * `badCredentials`. The player then read "Bad credentials." about a password they never typed.
+   * The login form's validation branches, as a table, so a branch such as the empty password cannot
+   * go untested.
    *
    * `onLogin` not firing is the assertion that matters; the visible error is what distinguishes a
    * refusal from a silent no-op.
    */
   it.each([
-    ['an empty nickname', { nickname: '', password: 'hunter22' }],
-    // 24 four-byte emoji is 96 UTF-8 bytes but only 48 UTF-16 code units, so a `.length` check
-    // against the 64-byte identifier cap would wave it through and the server would refuse it.
-    ['a nickname past the byte cap', { nickname: '\u{1F600}'.repeat(24), password: 'hunter22' }],
-    ['a nickname that is only whitespace', { nickname: '   ', password: 'hunter22' }],
-    ['an empty password', { nickname: 'Tester', password: '' }],
-    ['a password past the byte cap', { nickname: 'Tester', password: '\u{1F600}'.repeat(64) }],
-  ])('refuses to open a connection with %s', (_label, { nickname, password }) => {
+    ['an empty email', { email: '', password: 'hunter22' }],
+    // 14 four-byte emoji and the domain are 68 UTF-8 bytes but only 40 UTF-16 code units, so a
+    // `.length` check against the 64-byte identifier cap would wave it through and the server would refuse it.
+    ['an email past the byte cap', { email: `${'\u{1F600}'.repeat(14)}@example.com`, password: 'hunter22' }],
+    ['an email that is only whitespace', { email: '   ', password: 'hunter22' }],
+    ['an email that is not an address', { email: 'Tester', password: 'hunter22' }],
+    ['an empty password', { email: 'tester@example.com', password: '' }],
+    ['a password past the byte cap', { email: 'tester@example.com', password: '\u{1F600}'.repeat(64) }],
+  ])('refuses to open a connection with %s', (_label, { email, password }) => {
     let attempts = 0;
     const overlays = new Overlays({ ...overlayCallbacks(), onLogin: () => (attempts += 1) });
     overlays.present({ kind: 'login' });
-    overlays.loginNickname.value = nickname;
+    overlays.loginEmail.value = email;
     (overlays.root.querySelector('input[type="password"]') as HTMLInputElement).value = password;
 
     overlays.root.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -676,13 +695,13 @@ describe('overlays', () => {
   });
 
   it('passes a valid login through with the remember-me flag', () => {
-    const logins: { nickname: string; rememberMe: boolean }[] = [];
+    const logins: { email: string; rememberMe: boolean }[] = [];
     const overlays = new Overlays({
       ...overlayCallbacks(),
       onLogin: (credentials) => logins.push(credentials),
     });
     overlays.present({ kind: 'login' });
-    overlays.loginNickname.value = 'Tester';
+    overlays.loginEmail.value = 'tester@example.com';
     const password = overlays.root.querySelector('input[type="password"]') as HTMLInputElement;
     password.value = 'hunter22';
     const remember = overlays.root.querySelector('input[type="checkbox"]') as HTMLInputElement;
@@ -690,7 +709,7 @@ describe('overlays', () => {
 
     overlays.root.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
 
-    expect(logins).toEqual([{ nickname: 'Tester', password: 'hunter22', rememberMe: true }]);
+    expect(logins).toEqual([{ email: 'tester@example.com', password: 'hunter22', rememberMe: true }]);
   });
 
   it('words the version-skew message differently in each direction', () => {
@@ -755,7 +774,7 @@ describe('overlays', () => {
 
 describe('field helpers', () => {
   it('associates the label with its input', () => {
-    const { row, input } = field('Nickname');
+    const { row, input } = field('Email');
 
     const label = row.querySelector('label');
     expect(label?.getAttribute('for')).toBe(input.id);
@@ -763,13 +782,13 @@ describe('field helpers', () => {
   });
 
   /**
-   * Slugifying drops punctuation, so the registration form's "Password:" and "Password (*):"
-   * collapse to the same slug. Sharing an id points both labels at the first input and leaves the
-   * repeat field with no accessible name and no password-manager association at all.
+   * Slugifying drops punctuation, so labels such as the login card's "Email" and Sign Up's
+   * "Email:" collapse to the same slug. Sharing an id points both labels at the first input and
+   * leaves the second field with no accessible name and no password-manager association at all.
    */
   it('gives labels that slugify identically their own ids', () => {
-    const first = field('Password:');
-    const second = field('Password (*):');
+    const first = field('Email');
+    const second = field('Email:');
 
     expect(first.input.id).not.toBe(second.input.id);
     expect(first.row.querySelector('label')?.getAttribute('for')).toBe(first.input.id);
@@ -873,7 +892,7 @@ describe('the login overlay across an authentication attempt', () => {
   }
 
   function submitLogin(shell: AppShell, container: HTMLElement): void {
-    shell.overlays.loginNickname.value = 'Tester';
+    shell.overlays.loginEmail.value = 'tester@example.com';
     const password = container.querySelector('input[type="password"]') as HTMLInputElement;
     password.value = 'hunter22';
     container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -961,17 +980,17 @@ describe('the login overlay across an authentication attempt', () => {
     shell.render();
     expect(loginErrors()).toEqual(['Bad credentials.']);
 
-    shell.overlays.loginNickname.value = '';
+    shell.overlays.loginEmail.value = '';
     container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
     shell.render();
-    expect(loginErrors()).toEqual(['That name uses characters Somnio does not allow.']);
+    expect(loginErrors()).toEqual(['Enter a valid email address.']);
   });
 
   it("shows the server's reason for a corrected login, not the form's earlier check", () => {
     const { shell, socket } = loginShell();
-    shell.overlays.loginNickname.value = '';
+    shell.overlays.loginEmail.value = '';
     container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
-    expect(loginErrors()).toEqual(['That name uses characters Somnio does not allow.']);
+    expect(loginErrors()).toEqual(['Enter a valid email address.']);
 
     submitLogin(shell, container);
     socket().open();
@@ -1276,8 +1295,7 @@ describe('the registration form validates before it sends', () => {
   });
 
   interface RegistrationRig {
-    fields: Record<'nickname' | 'password' | 'repeat' | 'email', HTMLInputElement>;
-    people: HTMLSelectElement;
+    fields: Record<'email' | 'password' | 'repeat', HTMLInputElement>;
     lastForm: () => RegistrationForm | undefined;
     submit: () => void;
     forms: number;
@@ -1302,18 +1320,16 @@ describe('the registration form validates before it sends', () => {
       },
     } as unknown as RegistrationRig;
 
-    // The registration card is the second dialog; its form carries five rows where login has three.
+    // The registration card is the second dialog; its form asks for the password twice where login asks once.
     const forms = [...container.querySelectorAll('form')];
-    const form = forms.find((each) => each.querySelectorAll('input, select').length >= 5);
+    const form = forms.find((each) => each.querySelectorAll('input[type="password"]').length === 2);
     if (form === undefined) throw new Error('registration form not found');
     const inputs = [...form.querySelectorAll('input')];
     const passwords = inputs.filter((each) => each.type === 'password');
-    const texts = inputs.filter((each) => each.type !== 'password');
-    const nickname = texts[0];
-    const email = texts.at(-1);
+    const email = inputs.find((each) => each.type === 'email');
     const password = passwords[0];
     const repeat = passwords[1];
-    if (nickname === undefined || email === undefined || password === undefined || repeat === undefined) {
+    if (email === undefined || password === undefined || repeat === undefined) {
       throw new Error('registration fields not found');
     }
 
@@ -1322,13 +1338,8 @@ describe('the registration form validates before it sends', () => {
       lastForm = form;
     };
 
-    const selectList = form.querySelectorAll('select');
-    const people = selectList[0];
-    if (people === undefined || selectList.length !== 1) throw new Error('registration select not found');
-
     return Object.assign(rig, {
-      fields: { nickname, password, repeat, email },
-      people,
+      fields: { email, password, repeat },
       lastForm: () => lastForm,
       submit: () => form.dispatchEvent(new Event('submit', { cancelable: true })),
       error: () => form.parentElement?.querySelector('.form-error')?.textContent ?? '',
@@ -1336,10 +1347,9 @@ describe('the registration form validates before it sends', () => {
   }
 
   function fill(rig: RegistrationRig, overrides: Partial<Record<string, string>> = {}): void {
-    rig.fields.nickname.value = overrides['nickname'] ?? 'Tester';
+    rig.fields.email.value = overrides['email'] ?? 'tester@example.com';
     rig.fields.password.value = overrides['password'] ?? 'hunter22';
     rig.fields.repeat.value = overrides['repeat'] ?? 'hunter22';
-    rig.fields.email.value = overrides['email'] ?? 'tester@example.com';
   }
 
   it('sends when every field is valid', () => {
@@ -1349,45 +1359,27 @@ describe('the registration form validates before it sends', () => {
     expect(rig.forms).toBe(1);
   });
 
-  it('offers the four peoples under the People label', () => {
-    const rig = registrationRig(container);
-
-    expect([...rig.people.options].map((option) => [option.value, option.textContent])).toEqual([
-      ['vigils', 'Vigils'],
-      ['sopors', 'Sopors'],
-      ['umbrae', 'Umbrae'],
-      ['lumina', 'Lumina'],
-    ]);
-    expect(rig.people.labels[0]?.textContent).toBe('People:');
-  });
-
-  /**
-   * The people is the one choice a player can never correct afterwards, and it travels as a plain
-   * string the form's own validation does not look at, so a hard-coded value reaches the account
-   * silently. Asserting the call happened is not enough: it fires either way.
-   */
-  it('carries the chosen people through to the register call', () => {
+  /** Asserting the call happened is not enough: it fires whatever the form carries. */
+  it('carries the typed fields through to the register call', () => {
     const rig = registrationRig(container);
     fill(rig);
-    rig.people.value = 'umbrae';
     rig.submit();
 
-    expect(rig.lastForm()).toEqual({ nickname: 'Tester', password: 'hunter22', passwordRepeat: 'hunter22', people: 'umbrae', email: 'tester@example.com' });
+    expect(rig.lastForm()).toEqual({ email: 'tester@example.com', password: 'hunter22', passwordRepeat: 'hunter22' });
   });
 
   /**
-   * Four validation branches share three messages, so any one of them can be lost without changing
+   * Three validation branches share two messages, so any one of them can be lost without changing
    * what the other tests observe. `onRegister` *not* firing is the assertion that matters: a form
    * that validated nothing would send and let the server answer `.failure`, which renders as an
    * unexplained "Registration failed." the player cannot act on.
    */
   it.each([
-    ['an empty nickname', { nickname: '' }],
-    ['an over-cap nickname', { nickname: 'a'.repeat(65) }],
+    ['an empty email', { email: '' }],
+    ['an email that is not an address', { email: 'tester@example' }],
+    ['an over-cap email', { email: `${'a'.repeat(60)}@example.com` }],
     ['a short password', { password: 'short', repeat: 'short' }],
     ['mismatched passwords', { repeat: 'different' }],
-    ['an empty email', { email: '' }],
-    ['an over-cap email', { email: `${'a'.repeat(60)}@example.com` }],
   ])('refuses to send with %s', (_label, overrides) => {
     const rig = registrationRig(container);
     fill(rig, overrides);
@@ -1398,8 +1390,7 @@ describe('the registration form validates before it sends', () => {
 
   /** The reason has to reach the form the player is looking at, each result with its own sentence. */
   it.each([
-    ['nicknameExists', 'Nickname already exists.'],
-    ['nameNotAllowed', 'That name uses characters Somnio does not allow.'],
+    ['emailExists', 'Another account already uses that email.'],
     ['failure', 'Registration failed.'],
     ['throttled', 'Too many attempts. Wait a little before trying again.'],
   ] as const)('shows the reason for a %s result in the registration form', (result, reason) => {
@@ -1420,7 +1411,7 @@ describe('the registration form validates before it sends', () => {
     const rig = registrationRig(container);
     fill(rig);
     rig.submit();
-    expect(rig.shell.overlays.loginNickname.value).toBe('Tester');
+    expect(rig.shell.overlays.loginEmail.value).toBe('tester@example.com');
   });
 });
 
@@ -1490,7 +1481,7 @@ describe('leaving the game clears every credential surface', () => {
     const rig = credentialRig(container);
     rig.shell.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: false },
+      credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: false },
     });
     rig.socket().open();
     // A peer close with nothing user-initiated behind it — a server restart is enough.
@@ -1516,7 +1507,7 @@ describe("the game menu's Log Out Other Browsers", () => {
   function joined(placed: boolean, others = 1) {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
-    shell.controller.beginSession({ kind: 'login', credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: false } });
+    shell.controller.beginSession({ kind: 'login', credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: false } });
     const socket = latest();
     const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
     socket.open();
@@ -1594,6 +1585,169 @@ describe("the game menu's Log Out Other Browsers", () => {
   });
 });
 
+describe('the character card', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    setLocale('en');
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+  });
+
+  const saibot = { id: 'saibot', name: 'Saibot', people: 'vigils', role: 'fighter' } as const;
+  const ida = { id: 'ida', name: 'Ida', people: 'umbrae' };
+
+  /** A login answered up to the card, listing `characters`. */
+  function onCard(characters: CharacterSummaryMessage[]) {
+    const { factory, latest } = fakeSocketFactory();
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    shell.controller.beginSession({ kind: 'login', credentials: { email: 'saibot@example.com', password: 'hunter2-long', rememberMe: false } });
+    const socket = latest();
+    const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
+    socket.open();
+    deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+    deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    deliver({ tag: 'characters', payload: { characters } });
+    socket.sent.length = 0;
+    const presented = (): Element => container.querySelector('.overlay-scrim:not(.hidden)')!;
+    const visible = (): string[] =>
+      [...presented().querySelectorAll('button')].filter((node) => node.closest('.hidden') === null).map((node) => node.textContent ?? '');
+    const press = (label: string, index = 0): void => [...presented().querySelectorAll('button')].filter((node) => node.textContent === label)[index]!.click();
+    const rows = (): string[] =>
+      [...presented().querySelectorAll('.character-row__who')].map((node) =>
+        [...node.querySelectorAll('strong, span span')].map((part) => part.textContent).join(' | '),
+      );
+    const sent = (): SomnioMessage[] => socket.sent.map((text) => decodeSomnioMessage(text));
+    const error = (): string => [...presented().querySelectorAll('.form-error')].find((node) => !node.classList.contains('hidden'))?.textContent ?? '';
+    const escape = (): void => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    return { shell, deliver, presented, visible, press, rows, sent, error, escape };
+  }
+
+  it('lists each dreamer by name, people, and role, with Play and Delete', () => {
+    const card = onCard([saibot, ida, { id: 'odd', name: 'Odd', people: 'somnambuli' }]);
+
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+    expect(card.rows()).toEqual(['Saibot | Vigils | Fighter', 'Ida | Umbrae | No role yet', 'Odd | somnambuli | No role yet']);
+    expect(card.visible()).toEqual(['Play', 'Delete', 'Play', 'Delete', 'Play', 'Delete', 'Log Out', 'New Dreamer']);
+
+    card.press('Play', 1);
+    expect(card.sent()).toEqual([{ tag: 'selectCharacter', payload: { characterId: 'ida' } }]);
+  });
+
+  /** Until the answer, a second press would reach a player already in the world, which the server closes on. */
+  it('holds its buttons still while the server answers, and keeps its rows across a repaint', () => {
+    const card = onCard([saibot]);
+    const play = card.presented().querySelector('.character-row button')!;
+    card.shell.render();
+    expect(card.presented().querySelector('.character-row button')).toBe(play);
+
+    const locked = (): boolean[] => [...card.presented().querySelectorAll('button')].map((node) => node.disabled);
+    card.press('Play');
+
+    // Play, Delete, and New Dreamer wait; Log Out never has to.
+    expect(locked()).toEqual([true, true, false, true]);
+    card.deliver({ tag: 'characterResult', payload: { result: 'failure' } });
+    expect(card.error()).toBe('Could not enter the world. Try again.');
+    expect(locked()).toEqual([false, false, false, false]);
+  });
+
+  it('says on the card why a dreamer could not be played or deleted, until the next request', () => {
+    const card = onCard([saibot, ida]);
+    card.press('Play');
+    card.deliver({ tag: 'characterResult', payload: { result: 'failure' } });
+    expect(card.error()).toBe('Could not enter the world. Try again.');
+
+    card.press('Delete', 1);
+    card.press('Delete');
+    expect(card.error()).toBe('');
+    card.deliver({ tag: 'characterResult', payload: { result: 'failure' } });
+    expect(card.error()).toBe('Could not delete the dreamer. Try again.');
+
+    card.press('Play');
+    expect(card.error()).toBe('');
+  });
+
+  it('says what to do with no dreamer yet, and offers no new one once the account holds its most', () => {
+    expect(onCard([]).presented().textContent).toContain('No dreamers yet. Create one to enter the world.');
+    container.replaceChildren();
+
+    const full = onCard(Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount }, (_, index) => ({ ...ida, id: `ida-${index}` })));
+    expect(full.visible()).not.toContain('New Dreamer');
+    expect(full.presented().textContent).toContain('Delete a dreamer to make room for a new one.');
+  });
+
+  it('creates a dreamer of the chosen people, and comes back to the card with the form emptied', () => {
+    const card = onCard([]);
+    card.press('New Dreamer');
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('newCharacter');
+    const name = card.presented().querySelector('input')!;
+    const people = card.presented().querySelector('select')!;
+    expect([...people.options].map((option) => option.textContent)).toEqual(['Vigils', 'Sopors', 'Umbrae', 'Lumina']);
+    name.value = 'Ida';
+    people.value = 'umbrae';
+    card
+      .presented()
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(card.sent()).toEqual([{ tag: 'createCharacter', payload: { name: 'Ida', people: 'umbrae' } }]);
+
+    card.deliver({ tag: 'characters', payload: { characters: [ida] } });
+    card.deliver({ tag: 'characterResult', payload: { result: 'ok' } });
+
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+    expect(card.rows()).toEqual(['Ida | Umbrae | No role yet']);
+    expect(name.value).toBe('');
+  });
+
+  it("says on the form why the server refused the dreamer's name", () => {
+    const card = onCard([]);
+    card.press('New Dreamer');
+    card.presented().querySelector('input')!.value = 'Saibot';
+    card
+      .presented()
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { cancelable: true }));
+
+    card.deliver({ tag: 'characterResult', payload: { result: 'nameExists' } });
+
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('newCharacter');
+    expect(card.error()).toBe('Another dreamer already has that name.');
+    card.escape();
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+  });
+
+  it('asks before deleting, naming the dreamer, in a dialog of its own', () => {
+    const card = onCard([saibot, ida]);
+    card.press('Delete', 1);
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('deleteCharacter');
+    expect(card.presented().textContent).toContain('Ida will be gone for good, with every rank and everything they carry.');
+    expect(card.visible()).toEqual(['Delete', 'Cancel']);
+    card.press('Cancel');
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+    card.press('Delete', 1);
+    card.escape();
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+    expect(card.sent()).toEqual([]);
+
+    card.press('Delete', 1);
+    card.press('Delete');
+
+    expect(card.sent()).toEqual([{ tag: 'deleteCharacter', payload: { characterId: 'ida' } }]);
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('characters');
+  });
+
+  it('logs out to the login card', () => {
+    const card = onCard([saibot]);
+    card.press('Log Out');
+    expect(card.shell.controller.presentedOverlay?.kind).toBe('login');
+    expect(card.shell.controller.connectionState).toBe('disconnected');
+  });
+});
+
 describe('overlay focus moves on entry, not on every repaint', () => {
   let container: HTMLElement;
 
@@ -1609,7 +1763,7 @@ describe('overlay focus moves on entry, not on every repaint', () => {
   /**
    * `AppShell` wires `onChatLinesChanged` to `render()`, and `render()` re-presents the current
    * overlay, so focusing on every call moves the caret to field one mid-keystroke: the rest of a
-   * password being typed lands in the plaintext nickname box and Return submits it as the nickname.
+   * password being typed lands in the plaintext email box and Return submits it as the email.
    *
    * One `Overlays` across the whole case on purpose — each overlay is built once and shown or
    * hidden, so a fresh instance per assertion would prove nothing about a repaint.
@@ -1632,10 +1786,10 @@ describe('overlay focus moves on entry, not on every repaint', () => {
     const shell = new AppShell({ container, startRendering: false });
 
     shell.overlays.present({ kind: 'login' });
-    expect(document.activeElement).toBe(shell.overlays.loginNickname);
+    expect(document.activeElement).toBe(shell.overlays.loginEmail);
 
     shell.overlays.present({ kind: 'registration' });
-    expect(document.activeElement).not.toBe(shell.overlays.loginNickname);
+    expect(document.activeElement).not.toBe(shell.overlays.loginEmail);
     expect((document.activeElement as HTMLInputElement | null)?.tagName).toBe('INPUT');
   });
 });
@@ -2046,7 +2200,7 @@ describe('the play field and the panels through the shell', () => {
   function playing() {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
-    shell.overlays.loginNickname.value = 'Tester';
+    shell.overlays.loginEmail.value = 'tester@example.com';
     (container.querySelector('input[type="password"]') as HTMLInputElement).value = 'hunter22';
     container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
     const socket = latest();

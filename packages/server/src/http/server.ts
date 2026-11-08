@@ -22,7 +22,7 @@ export interface ServerOptions {
   /** Whether a gameplay client's address is the last `X-Forwarded-For` entry rather than the socket's. */
   trustProxy: boolean;
   dependencies: ConnectionDependencies;
-  /** The slots of gameplay sockets that have not logged in. */
+  /** The slots of gameplay sockets not yet in the world. */
   socketAdmission: SocketAdmission;
   adminDependencies: AdminDependencies;
   logger: Logger;
@@ -105,7 +105,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
           return;
         }
         // `ws` aborts a bad handshake without calling back; the slot is then freed with the socket.
-        // Once accepted, the actor holds it until the player logs in or its exit path has finished.
+        // Once accepted, the actor holds it until the player is in the world or its exit path has finished.
         let accepted = false;
         socket.once('close', () => {
           if (!accepted) reservation.release();

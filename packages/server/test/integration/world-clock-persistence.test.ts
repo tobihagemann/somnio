@@ -16,7 +16,7 @@ afterAll(async () => {
 });
 
 function joinedWorldSeconds(joined: JoinedClient): number {
-  const enter = joined.join[1];
+  const enter = joined.join.find((message) => message.tag === 'enterSpace');
   if (enter?.tag !== 'enterSpace') throw new Error('join carried no enterSpace');
   return enter.payload.worldSeconds;
 }

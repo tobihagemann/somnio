@@ -44,6 +44,30 @@
     },
     "tag": "buy"
   },
+  "characterResult": {
+    "payload": {
+      "result": "nameExists"
+    },
+    "tag": "characterResult"
+  },
+  "characters": {
+    "payload": {
+      "characters": [
+        {
+          "id": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+          "name": "Saibot",
+          "people": "vigils",
+          "role": "healer"
+        },
+        {
+          "id": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+          "name": "Ida",
+          "people": "umbrae"
+        }
+      ]
+    },
+    "tag": "characters"
+  },
   "clientSay": {
     "payload": {
       "kind": "say",
@@ -77,6 +101,19 @@
       "z": 20.5
     },
     "tag": "correction"
+  },
+  "createCharacter": {
+    "payload": {
+      "name": "Saibot",
+      "people": "vigils"
+    },
+    "tag": "createCharacter"
+  },
+  "deleteCharacter": {
+    "payload": {
+      "characterId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+    },
+    "tag": "deleteCharacter"
   },
   "doorRefused": {
     "payload": {
@@ -144,7 +181,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 15
+      "protocolVersion": 16
     },
     "tag": "hello"
   },
@@ -203,22 +240,22 @@
   },
   "login": {
     "payload": {
-      "nickname": "Saibot",
+      "email": "info@example.com",
       "password": "hunter2"
     },
     "tag": "login"
   },
   "login-with-locale": {
     "payload": {
+      "email": "info@example.com",
       "locale": "de",
-      "nickname": "Saibot",
       "password": "hunter2"
     },
     "tag": "login"
   },
   "login-with-session-request": {
     "payload": {
-      "nickname": "Saibot",
+      "email": "info@example.com",
       "password": "hunter2",
       "requestSessionToken": true
     },
@@ -338,16 +375,14 @@
   "register": {
     "payload": {
       "email": "info@example.com",
-      "nickname": "Saibot",
       "password": "passw0rd",
-      "passwordRepeat": "passw0rd",
-      "people": "vigils"
+      "passwordRepeat": "passw0rd"
     },
     "tag": "register"
   },
   "registerResult": {
     "payload": {
-      "result": "nameNotAllowed"
+      "result": "emailExists"
     },
     "tag": "registerResult"
   },
@@ -493,6 +528,12 @@
       }
     },
     "tag": "sector"
+  },
+  "selectCharacter": {
+    "payload": {
+      "characterId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c"
+    },
+    "tag": "selectCharacter"
   },
   "sell": {
     "payload": {

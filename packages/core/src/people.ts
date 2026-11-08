@@ -2,6 +2,10 @@
 export const PEOPLES = ['vigils', 'sopors', 'umbrae', 'lumina'] as const;
 export type People = (typeof PEOPLES)[number];
 
+export function isPeople(value: string): value is People {
+  return (PEOPLES as readonly string[]).includes(value);
+}
+
 const LABEL_KEYS: Record<People, string> = { vigils: 'Vigils', sopors: 'Sopors', umbrae: 'Umbrae', lumina: 'Lumina' };
 
 /** The catalog key of a people's display name, which the consumer resolves in its locale. */

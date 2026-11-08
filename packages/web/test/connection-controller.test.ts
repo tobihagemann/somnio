@@ -102,7 +102,7 @@ describe('connection state machine', () => {
 
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Saibot', password: 'hunter2', rememberMe: false },
+      credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false },
     });
     expect(rig.controller.connectionState).toBe('awaitingHello');
 
@@ -126,7 +126,7 @@ describe('connection state machine', () => {
   it('attaches on enterSpace, not on a sector that precedes it', () => {
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -147,7 +147,7 @@ describe('connection state machine', () => {
   it('clears the old space on a door transfer and stays attached', () => {
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -168,6 +168,128 @@ describe('connection state machine', () => {
   });
 });
 
+/** Between authentication and the world, the player chooses on the card. */
+describe('the character card', () => {
+  const ida = { id: 'ida', name: 'Ida', people: 'umbrae' };
+  const saibot = { id: 'saibot', name: 'Saibot', people: 'vigils', role: 'fighter' } as const;
+  let rig: Rig;
+  let outcomes: string[];
+
+  beforeEach(() => {
+    rig = makeRig();
+    outcomes = [];
+    rig.controller.onCharacterOutcome = (request, result) => void outcomes.push(`${request} ${result}`);
+    rig.controller.connect({ kind: 'login', credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+  });
+
+  it("shows the account's characters and chooses none of them itself", () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+
+    expect(rig.controller.presentedOverlay).toEqual({ kind: 'characters' });
+    expect(rig.controller.characters).toEqual([saibot, ida]);
+    expect(rig.sentTags().at(-1)).toBe('login');
+  });
+
+  it('joins as the character played, and leaves the card behind at the join', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+
+    rig.controller.selectCharacter('ida');
+    expect(lastSentEnvelope(rig)).toEqual({ tag: 'selectCharacter', payload: { characterId: 'ida' } });
+    expect(rig.controller.awaitingCharacterAnswer).toBe(true);
+
+    rig.deliver(enterSpaceFrame());
+    expect(rig.controller.presentedOverlay).toBeUndefined();
+    expect(rig.controller.characters).toBeUndefined();
+    expect(rig.controller.awaitingCharacterAnswer).toBe(false);
+  });
+
+  /** A second select reaching a player already in the world is a frame the server closes on. */
+  it('sends one request at a time, and none off the card', () => {
+    rig.controller.selectCharacter('ida');
+    expect(rig.sentTags().at(-1)).toBe('login');
+
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+    rig.controller.selectCharacter('ida');
+    rig.controller.selectCharacter('ida');
+    rig.controller.deleteCharacter('saibot');
+    expect(rig.sentTags().filter((tag) => tag !== 'login')).toEqual(['selectCharacter']);
+
+    rig.deliver(enterSpaceFrame());
+    rig.controller.selectCharacter('saibot');
+    expect(rig.sentTags().filter((tag) => tag !== 'login')).toEqual(['selectCharacter']);
+  });
+
+  it('keeps the player on the card when a choice fails, free to choose again', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot] } });
+    rig.controller.selectCharacter('saibot');
+
+    rig.deliver({ tag: 'characterResult', payload: { result: 'failure' } });
+
+    expect(outcomes).toEqual(['select failure']);
+    expect(rig.controller.connectionState).toBe('awaitingEnterSpace');
+    expect(rig.controller.presentedOverlay).toEqual({ kind: 'characters' });
+    rig.controller.selectCharacter('saibot');
+    expect(rig.sentTags().filter((tag) => tag === 'selectCharacter')).toHaveLength(2);
+  });
+
+  /** A request the socket closed under would otherwise hold the next card's buttons for good. */
+  it('forgets a request whose socket closed, so the card of the next login asks again', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+    rig.controller.selectCharacter('ida');
+    rig.socket().deliverClose();
+
+    rig.controller.connect({ kind: 'login', credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+    expect(rig.controller.awaitingCharacterAnswer).toBe(false);
+
+    rig.controller.selectCharacter('ida');
+    expect(rig.sentTags()).toEqual(['login', 'selectCharacter']);
+  });
+
+  it('creates a character and returns to the card listing it', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [] } });
+    rig.controller.presentedOverlay = { kind: 'newCharacter' };
+
+    rig.controller.createCharacter('Ida', 'umbrae');
+    expect(lastSentEnvelope(rig)).toEqual({ tag: 'createCharacter', payload: { name: 'Ida', people: 'umbrae' } });
+
+    rig.deliver({ tag: 'characters', payload: { characters: [ida] } });
+    rig.deliver({ tag: 'characterResult', payload: { result: 'ok' } });
+    expect(outcomes).toEqual(['create ok']);
+    expect(rig.controller.presentedOverlay).toEqual({ kind: 'characters' });
+    expect(rig.controller.characters).toEqual([ida]);
+  });
+
+  it('leaves the New Dreamer form up when the server refuses the name', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [] } });
+    rig.controller.presentedOverlay = { kind: 'newCharacter' };
+    rig.controller.createCharacter('Saibot', 'vigils');
+
+    rig.deliver({ tag: 'characterResult', payload: { result: 'nameExists' } });
+
+    expect(outcomes).toEqual(['create nameExists']);
+    expect(rig.controller.presentedOverlay).toEqual({ kind: 'newCharacter' });
+  });
+
+  it('deletes a character', () => {
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+
+    rig.controller.deleteCharacter('ida');
+    expect(lastSentEnvelope(rig)).toEqual({ tag: 'deleteCharacter', payload: { characterId: 'ida' } });
+
+    rig.deliver({ tag: 'characters', payload: { characters: [saibot] } });
+    rig.deliver({ tag: 'characterResult', payload: { result: 'ok' } });
+    expect(outcomes).toEqual(['delete ok']);
+    expect(rig.controller.characters).toEqual([saibot]);
+  });
+});
+
 describe('the render surface during a join', () => {
   function joined(): { rig: Rig; calls: string[] } {
     const calls: string[] = [];
@@ -181,7 +303,7 @@ describe('the render surface during a join', () => {
         placeEntity: (placed) => calls.push(`placeEntity:${placed.id}`),
       },
     });
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -229,7 +351,7 @@ describe('version gate is strict equality', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
 
@@ -243,7 +365,7 @@ describe('version gate is strict equality', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -265,7 +387,7 @@ describe('tick gating lifecycle', () => {
     const rig = makeRig();
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -290,7 +412,7 @@ describe('session-token request gating', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -302,7 +424,7 @@ describe('session-token request gating', () => {
 
   it('sets requestSessionToken when the user opted in', () => {
     const rig = makeRig();
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: true } });
     rig.socket().open();
     rig.deliver(hello());
 
@@ -315,7 +437,7 @@ describe('session-token request gating', () => {
     const first = makeRig({ storage });
     first.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: true },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: true },
     });
     first.socket().open();
     first.deliver(hello());
@@ -336,7 +458,7 @@ describe('session-token request gating', () => {
   it("names the page's language on a login and on a resume, and English when it was given none", () => {
     const storage = new MemoryStorage();
     const login = makeRig({ storage, locale: 'de' });
-    login.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    login.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: true } });
     login.socket().open();
     login.deliver(hello());
     expect(lastSentEnvelope(login)).toMatchObject({ tag: 'login', payload: { locale: 'de' } });
@@ -350,7 +472,7 @@ describe('session-token request gating', () => {
     expect(lastSentEnvelope(resumed)).toMatchObject({ tag: 'redeemSession', payload: { token: 'tok-abc', locale: 'de' } });
 
     const unset = makeRig();
-    unset.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    unset.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     unset.socket().open();
     unset.deliver(hello());
     expect(lastSentEnvelope(unset).payload.locale).toBe('en');
@@ -395,7 +517,7 @@ describe('token failure and revocation', () => {
     const rig = makeRig({ storage });
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'wrong', rememberMe: true },
+      credentials: { email: 'a@example.com', password: 'wrong', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -417,7 +539,7 @@ describe('token failure and revocation', () => {
     const rig = makeRig({ storage });
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'bob', password: 'correct-horse', rememberMe: true },
+      credentials: { email: 'bob@example.com', password: 'correct-horse', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -437,14 +559,14 @@ describe('token failure and revocation', () => {
     const rig = makeRig({ storage });
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'bob', password: 'bobpass', rememberMe: false },
+      credentials: { email: 'bob@example.com', password: 'bobpass', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
 
     const frame = lastSentEnvelope(rig);
     expect(frame.tag).toBe('login');
-    expect(frame.payload.nickname).toBe('bob');
+    expect(frame.payload.email).toBe('bob@example.com');
     // `rememberMe: false` also has to remove a credential a previous session left behind.
     expect(storage.getItem('somnio.sessionToken')).toBeNull();
   });
@@ -455,7 +577,7 @@ describe('token failure and revocation', () => {
     const rig = makeRig({ storage });
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -471,7 +593,7 @@ describe('token failure and revocation', () => {
   it('sends revokeSession on leaveGame and clears storage regardless', () => {
     const storage = new MemoryStorage();
     const rig = makeRig({ storage });
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: true } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -486,7 +608,7 @@ describe('token failure and revocation', () => {
 
   it('sends revokeOtherSessions on logOutOtherBrowsers while attached', () => {
     const rig = makeRig();
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.controller.logOutOtherBrowsers();
@@ -502,7 +624,7 @@ describe('token failure and revocation', () => {
   it('reports otherSessionsRevoked in chat and keeps the session', () => {
     const storage = new MemoryStorage();
     const rig = makeRig({ storage });
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: true } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: true } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -522,7 +644,7 @@ describe('token failure and revocation', () => {
   /** Nothing can add to the count while attached, so only a revoke or the end of the session changes it. */
   it('keeps the count of other sessions through a door and drops it with the session', () => {
     const rig = makeRig();
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -537,7 +659,7 @@ describe('token failure and revocation', () => {
 
   it('keeps the count when the revoke fails', () => {
     const rig = makeRig();
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -549,7 +671,7 @@ describe('token failure and revocation', () => {
 
   it('reports a failed otherSessionsRevoked as its own chat line', () => {
     const rig = makeRig();
-    rig.controller.connect({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -586,7 +708,7 @@ describe('a storage backend that rejects writes', () => {
     const rig = makeRig({ storage: new WriteRejectingStorage() });
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: true },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -606,7 +728,7 @@ describe('a storage backend that rejects writes', () => {
     const rig = makeRig({ storage: new WriteRejectingStorage() });
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -624,7 +746,7 @@ describe('a storage backend that rejects writes', () => {
     expect(() =>
       rig.controller.connect({
         kind: 'login',
-        credentials: { nickname: 'a', password: 'b', rememberMe: true },
+        credentials: { email: 'a@example.com', password: 'b', rememberMe: true },
       }),
     ).not.toThrow();
     expect(rig.controller.connectionState).toBe('awaitingHello');
@@ -746,7 +868,7 @@ describe('duplicate-login race on refresh', () => {
 
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Bob', password: 'hunter2', rememberMe: true },
+      credentials: { email: 'bob@example.com', password: 'hunter2', rememberMe: true },
     });
 
     // The foreign token is gone and the typed credentials are what reach the wire.
@@ -762,7 +884,7 @@ describe('duplicate-login race on refresh', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Saibot', password: 'hunter2', rememberMe: false },
+      credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false },
     });
     const socketBefore = rig.socket();
 
@@ -779,11 +901,9 @@ describe('duplicate-login race on refresh', () => {
     rig.socket().open();
 
     rig.controller.register({
-      nickname: 'Newcomer',
+      email: 'new@example.com',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'vigils',
-      email: 'new@example.com',
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -797,17 +917,15 @@ describe('duplicate-login race on refresh', () => {
    * `sendAuth` reads `pendingRegistration` before both other credentials, and cancelling the
    * registration overlay returns to the login card without ending the socket — so a form left
    * behind by an abandoned Sign Up is still live when the next login is typed. On a shared browser
-   * that form carries the previous person's nickname and password, so the wire would carry an
+   * that form carries the previous person's email and password, so the wire would carry an
    * account-creation request the current user never made while leaving them unauthenticated.
    */
   it('sends the typed login rather than an abandoned registration form', () => {
     const rig = makeRig();
     rig.controller.register({
-      nickname: 'Abandoned',
+      email: 'abandoned@example.com',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'vigils',
-      email: 'abandoned@example.com',
     });
     rig.socket().open();
     // The overlay is cancelled, which returns to the login card but leaves the socket open — so the
@@ -816,7 +934,7 @@ describe('duplicate-login race on refresh', () => {
 
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Bob', password: 'correct-horse', rememberMe: false },
+      credentials: { email: 'bob@example.com', password: 'correct-horse', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -828,7 +946,7 @@ describe('duplicate-login race on refresh', () => {
       .sent.map((frame) => JSON.parse(frame) as SomnioMessage)
       .at(-1);
     if (login?.tag !== 'login') throw new Error('expected a login frame');
-    expect(login.payload.nickname).toBe('Bob');
+    expect(login.payload.email).toBe('bob@example.com');
   });
 
   /**
@@ -839,18 +957,16 @@ describe('duplicate-login race on refresh', () => {
   it('drops a queued registration when the connection fails before the result arrives', () => {
     const rig = makeRig();
     rig.controller.register({
-      nickname: 'Interrupted',
+      email: 'interrupted@example.com',
       password: 'hunter2',
       passwordRepeat: 'hunter2',
-      people: 'vigils',
-      email: 'interrupted@example.com',
     });
     rig.socket().open();
     rig.socket().deliverClose();
 
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Bob', password: 'correct-horse', rememberMe: false },
+      credentials: { email: 'bob@example.com', password: 'correct-horse', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -866,7 +982,7 @@ describe('a throttled login', () => {
     const rig = makeRig();
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'right', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'right', rememberMe: false },
     });
     // Cleared so the assertion below sees the handler present the overlay, not the initial one.
     rig.controller.presentedOverlay = undefined;
@@ -886,7 +1002,7 @@ describe('inbound direction check', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -903,7 +1019,7 @@ describe('leave removes a departed peer', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -959,11 +1075,9 @@ describe('registration', () => {
 
   function register(): void {
     rig.controller.register({
-      nickname: 'Wanda',
+      email: 'wanda@example.invalid',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      people: 'vigils',
-      email: 'wanda@example.invalid',
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -974,11 +1088,9 @@ describe('registration', () => {
     expect(rig.sentTags()).toEqual(['register']);
     const sent = JSON.parse(rig.socket().sent[0]!) as { payload: Record<string, unknown> };
     expect(sent.payload).toEqual({
-      nickname: 'Wanda',
+      email: 'wanda@example.invalid',
       password: 'hunter22',
       passwordRepeat: 'hunter22',
-      people: 'vigils',
-      email: 'wanda@example.invalid',
     });
   });
 
@@ -1006,7 +1118,7 @@ describe('registration', () => {
     expect(rig.controller.connectionState).toBe('disconnected');
   });
 
-  it.each(['nicknameExists', 'failure', 'nameNotAllowed', 'throttled'] as const)('leaves the registration overlay up on result %s', (result) => {
+  it.each(['emailExists', 'failure', 'throttled'] as const)('leaves the registration overlay up on result %s', (result) => {
     const outcomes: string[] = [];
     rig.controller.onRegistrationOutcome = (outcome) => outcomes.push(outcome);
     rig.controller.presentedOverlay = { kind: 'registration' };
@@ -1026,7 +1138,7 @@ describe('registration', () => {
     rig.deliver({ tag: 'registerResult', payload: { result: 'ok' } });
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Wanda', password: 'hunter22', rememberMe: false },
+      credentials: { email: 'wanda@example.com', password: 'hunter22', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1043,7 +1155,7 @@ describe('roster changes notify the UI', () => {
   function attached(rig: Rig): void {
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Greta', password: 'hunter22', rememberMe: false },
+      credentials: { email: 'greta@example.com', password: 'hunter22', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1100,7 +1212,7 @@ describe('terminal transport failures present a recovery surface', () => {
   function attach(rig: Rig): void {
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'a', password: 'b', rememberMe: false },
+      credentials: { email: 'a@example.com', password: 'b', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1179,7 +1291,7 @@ describe('transport failures reach the recovery surface', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Saibot', password: 'hunter2', rememberMe: false },
+      credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false },
     });
 
     rig.socket().deliverError();
@@ -1193,7 +1305,7 @@ describe('transport failures reach the recovery surface', () => {
     const rig = makeRig();
     rig.controller.connect({
       kind: 'login',
-      credentials: { nickname: 'Saibot', password: 'hunter2', rememberMe: false },
+      credentials: { email: 'saibot@example.com', password: 'hunter2', rememberMe: false },
     });
     rig.socket().open();
 
@@ -1205,17 +1317,16 @@ describe('transport failures reach the recovery surface', () => {
   });
 });
 
-describe('a resumed session recovers its own display name', () => {
+describe('the player names themselves by their character', () => {
   /**
-   * A token resume carries no typed nickname, so `selfDisplayName` stays empty until the self
-   * `entity` frame arrives — which is the only authoritative source on that path. Without it every
-   * line the player sends renders with an empty sender for the whole session.
+   * The login's email names the account, not the dreamer, and a token resume has none at all, so
+   * the self `entity` frame is the one authoritative source. Without it every line the player sends
+   * renders with the wrong sender, or an empty one.
    */
   it('takes the display name from the self entity frame', () => {
     const storage = new MemoryStorage();
     storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
     const rig = makeRig({ storage });
-    // The credential-free resume path: no typed nickname exists for `handleLoginResult` to record.
     rig.controller.resumeStoredSession();
     rig.socket().open();
     rig.deliver(hello());
@@ -1289,14 +1400,16 @@ describe('end of session identity', () => {
     };
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Alice', password: 'alice-secret', rememberMe: true },
+      credentials: { email: 'alice@example.com', password: 'alice-secret', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'alice-token', expiresInSeconds: 60 } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame({ name: 'Alice' }));
 
-    // Set from the credentials on a successful login, so it names the departing player.
+    // Set from the player's own entity, so it names the departing player.
     expect(rig.controller.selfDisplayName).toBe('Alice');
 
     rig.controller.leaveGame();
@@ -1323,12 +1436,14 @@ describe('end of session identity', () => {
     };
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Bob', password: 'bob-secret', rememberMe: true },
+      credentials: { email: 'bob@example.com', password: 'bob-secret', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver({ tag: 'sessionToken', payload: { token: 'bob-token', expiresInSeconds: 60 } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame({ name: 'Bob' }));
 
     rig.deliver({ tag: 'sessionRevoked', payload: { revoked: true } });
 
@@ -1344,11 +1459,9 @@ describe('end of session identity', () => {
   it('drops a queued registration on teardown, with no later clear to mask it', () => {
     const rig = makeRig();
     rig.controller.register({
-      nickname: 'Carol',
+      email: 'carol@example.invalid',
       password: 'carol-secret',
       passwordRepeat: 'carol-secret',
-      people: 'vigils',
-      email: 'carol@example.invalid',
     });
     rig.socket().open();
     // A terminal transport event, so `teardown` is the only thing that can clear the form —
@@ -1371,11 +1484,9 @@ describe('end of session identity', () => {
     // defence for the `sessionRevoked` path, which ends the identity with the socket still live.
     const rig = makeRig();
     rig.controller.register({
-      nickname: 'Dora',
+      email: 'dora@example.invalid',
       password: 'dora-secret',
       passwordRepeat: 'dora-secret',
-      people: 'vigils',
-      email: 'dora@example.invalid',
     });
     rig.socket().open();
     rig.controller.leaveGame();
@@ -1424,7 +1535,7 @@ describe('end of session identity', () => {
 
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: true },
+      credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1450,7 +1561,7 @@ describe('end of session identity', () => {
 
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: false },
+      credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: false },
     });
     rig.socket().open();
     // Version skew tears the session down and presents the update card.
@@ -1472,7 +1583,7 @@ describe('end of session identity', () => {
     const rig = makeRig({ storage });
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Ivan', password: 'ivan-secret', rememberMe: true },
+      credentials: { email: 'ivan@example.com', password: 'ivan-secret', rememberMe: true },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1490,7 +1601,7 @@ describe('end of session identity', () => {
     const rig = makeRig();
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Frank', password: 'frank-secret', rememberMe: false },
+      credentials: { email: 'frank@example.com', password: 'frank-secret', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1551,11 +1662,9 @@ describe('an explicit authentication retires a resume already scheduled', () => 
     rig.deliver({ tag: 'loginResult', payload: { result: 'alreadyLoggedIn' } });
 
     rig.controller.register({
-      nickname: 'Grace',
+      email: 'grace@example.invalid',
       password: 'grace-secret',
       passwordRepeat: 'grace-secret',
-      people: 'vigils',
-      email: 'grace@example.invalid',
     });
     rig.socket().open();
 
@@ -1580,11 +1689,9 @@ describe('a torn-down registration does not become a login', () => {
   it('returns to the login card after a version-skewed sign-up rather than sending login', () => {
     const rig = makeRig();
     rig.controller.register({
-      nickname: 'Judy',
+      email: 'judy@example.invalid',
       password: 'judy-secret',
       passwordRepeat: 'judy-secret',
-      people: 'vigils',
-      email: 'judy@example.invalid',
     });
     rig.socket().open();
     // A server one protocol version behind, which is what tears the attempt down.
@@ -1610,7 +1717,7 @@ describe('the online roster is bounded', () => {
     const rig = makeRig();
     rig.controller.beginSession({
       kind: 'login',
-      credentials: { nickname: 'Heidi', password: 'heidi-secret', rememberMe: false },
+      credentials: { email: 'heidi@example.com', password: 'heidi-secret', rememberMe: false },
     });
     rig.socket().open();
     rig.deliver(hello());
@@ -1633,7 +1740,7 @@ describe('the online roster is bounded', () => {
  */
 describe('the status the login card and the splash say', () => {
   function login(rig: Rig): void {
-    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'Ida', password: 'hunter2-long', rememberMe: true } });
+    rig.controller.beginSession({ kind: 'login', credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: true } });
   }
 
   function answered(rig: Rig): void {
@@ -1698,7 +1805,7 @@ describe('the status the login card and the splash say', () => {
     expect(rig.controller.sessionStatus).toBeUndefined();
 
     failed();
-    rig.controller.register({ nickname: 'Ida', password: 'hunter2-long', passwordRepeat: 'hunter2-long', people: 'vigils', email: 'ida@example.com' });
+    rig.controller.register({ email: 'ida@example.com', password: 'hunter2-long', passwordRepeat: 'hunter2-long' });
     expect(rig.controller.sessionStatus).toBeUndefined();
 
     login(rig);
@@ -1724,7 +1831,7 @@ describe('the status the login card and the splash say', () => {
 
 describe('the splash and the world', () => {
   function attach(rig: Rig): void {
-    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.beginSession({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
@@ -1742,7 +1849,7 @@ describe('the splash and the world', () => {
     rig.controller.leaveGame();
     expect(shown).toBe(1);
 
-    rig.controller.beginSession({ kind: 'login', credentials: { nickname: 'a', password: 'b', rememberMe: false } });
+    rig.controller.beginSession({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().deliverError();
     expect(shown).toBe(2);
   });

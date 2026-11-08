@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { LoginResult } from '@somnio/protocol';
 import { PostgresAccountRepository } from '@somnio/data';
+import { CLOSE_TRY_AGAIN_LATER, TOO_MANY_CHOOSING } from '../../src/connection/connectionActor.ts';
+import { redeemToCard, sendRedeem } from '../support/characterCard.ts';
 import { TestClient, attemptUpgrade, failedLogin, forwardedFor } from '../support/liveServer.ts';
-import { bootTestServer, registerFrame, startDatabase } from './support/harness.ts';
+import { accountsWithSessions, bootTestServer, registerFrame, startDatabase } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
 const PRELOGIN_LABEL = 'de.tobiha.somnio.server.gameplay.prelogin';
@@ -40,16 +42,18 @@ function settingErrors(booted: TestServer): Record<string, unknown>[] {
   return stdoutRecords(booted).filter((record) => record['level'] === ERROR_LEVEL && String(record['msg']).includes('SOMNIO_TRUST_PROXY'));
 }
 
-/** Eleven failed logins. A nickname per attempt unless one is named, so only the address budget can throttle. */
+/** Eleven failed logins. An email per attempt unless one is named, so only the address budget can throttle. */
 async function failedLogins(
   booted: TestServer,
   forwarded: (attempt: number) => string | undefined,
-  nickname?: (attempt: number) => string,
+  email?: (attempt: number) => string,
 ): Promise<LoginResult[]> {
   const results: LoginResult[] = [];
   for (let attempt = 0; attempt < 11; attempt += 1) {
     const addresses = forwarded(attempt);
-    results.push(await failedLogin(booted.url, addresses === undefined ? {} : forwardedFor(addresses), nickname?.(attempt) ?? `nobody-${attempt}`));
+    results.push(
+      await failedLogin(booted.url, addresses === undefined ? {} : forwardedFor(addresses), email?.(attempt) ?? `nobody-${attempt}@example.invalid`),
+    );
   }
   return results;
 }
@@ -79,20 +83,20 @@ describe('the pre-login limit through the production boot', () => {
     const booted = await boot({ SOMNIO_TRUST_PROXY: '1' });
     expect(readyRecord(booted)).toMatchObject({ prelogin_limit: 'proxy' });
     expect(await failedLogins(booted, () => '203.0.113.7')).toEqual([...TEN_REJECTED, 'throttled']);
-    expect(await failedLogin(booted.url, forwardedFor('203.0.113.8'), 'nobody-11')).toBe('badCredentials');
+    expect(await failedLogin(booted.url, forwardedFor('203.0.113.8'), 'nobody-11@example.invalid')).toBe('badCredentials');
     expect(settingErrors(booted)).toEqual([]);
   });
 
-  it('SOMNIO_TRUST_PROXY=1 limits failed logins at one name across forwarded addresses', async () => {
+  it('SOMNIO_TRUST_PROXY=1 limits failed logins at one email across forwarded addresses', async () => {
     const booted = await boot({ SOMNIO_TRUST_PROXY: '1' });
     expect(
       await failedLogins(
         booted,
         (attempt) => `203.0.113.${attempt}`,
-        () => 'nobody',
+        () => 'nobody@example.invalid',
       ),
     ).toEqual([...TEN_REJECTED, 'throttled']);
-    // A typed name that names no account may be a password in the wrong field, so no record carries it.
+    // A typed email that names no account may be a password in the wrong field, so no record carries it.
     expect(JSON.stringify(stdoutRecords(booted))).not.toContain('nobody');
   });
 
@@ -104,6 +108,24 @@ describe('the pre-login limit through the production boot', () => {
   it('SOMNIO_TRUST_PROXY=1 answers 429 for a ninth socket awaiting login from one forwarded address', async () => {
     const booted = await boot({ SOMNIO_TRUST_PROXY: '1' });
     expect(await upgradeAfterIdleSockets(booted, 8)).toBe(429);
+  });
+
+  /** Sessions are redeemed, which no budget limits, so only the cap on the card can refuse the ninth. */
+  it('SOMNIO_TRUST_PROXY=1 closes a ninth authentication onto the card from one forwarded address with 1013', async () => {
+    const booted = await boot({ SOMNIO_TRUST_PROXY: '1' });
+    const tokens = await accountsWithSessions(booted, 10);
+    const choosing: TestClient[] = [];
+    for (const token of tokens.slice(0, 8)) {
+      const client = await TestClient.open(booted.url, forwardedFor('203.0.113.7'));
+      await redeemToCard(client, token);
+      choosing.push(client);
+    }
+    const refused = await TestClient.open(booted.url, forwardedFor('203.0.113.7'));
+    sendRedeem(refused, tokens[8]!);
+    expect(await refused.closed).toEqual({ code: CLOSE_TRY_AGAIN_LATER, reason: TOO_MANY_CHOOSING });
+    const other = await TestClient.open(booted.url, forwardedFor('203.0.113.8'));
+    expect((await redeemToCard(other, tokens[9]!)).frames[0]).toMatchObject({ tag: 'loginResult', payload: { result: 'ok' } });
+    await Promise.all([...choosing, other].map((client) => client.close()));
   });
 
   it('SOMNIO_TRUST_PROXY=0 limits the socket address and ignores the header', async () => {
@@ -122,28 +144,28 @@ describe('the pre-login limit through the production boot', () => {
     expect(await upgradeAfterIdleSockets(booted, 8)).toBe('opened');
   });
 
-  it('an unset SOMNIO_TRUST_PROXY still limits failed logins at one name', async () => {
+  it('an unset SOMNIO_TRUST_PROXY still limits failed logins at one email', async () => {
     const booted = await boot({});
     expect(
       await failedLogins(
         booted,
         () => undefined,
-        () => 'nobody',
+        () => 'nobody@example.invalid',
       ),
     ).toEqual([...TEN_REJECTED, 'throttled']);
   });
 
-  /** Pins the database half of the fold: Postgres finds `tobias` under `TOBİAS`, so the two must share a budget. */
+  /** Pins the database half of the fold: Postgres finds `tobias@example.invalid` under `TOBİAS@EXAMPLE.INVALID`, so the two must share a budget. */
   it('counts the spellings the database takes for one account against one budget', async () => {
     const booted = await boot({});
     const registrant = await TestClient.open(booted.url);
-    registrant.send(registerFrame('tobias'));
+    registrant.send(registerFrame('tobias@example.invalid'));
     expect((await registrant.until('registerResult')).target).toEqual({ tag: 'registerResult', payload: { result: 'ok' } });
     await registrant.close();
     const accounts = new PostgresAccountRepository(booted.server.db);
-    expect((await accounts.findByName('TOBİAS'))?.name).toBe('tobias');
-    expect((await accounts.findByName('TOBIAS'))?.name).toBe('tobias');
-    const spellings = ['tobias', 'TOBİAS', 'TOBIAS'];
+    expect((await accounts.findByEmail('TOBİAS@EXAMPLE.INVALID'))?.email).toBe('tobias@example.invalid');
+    expect((await accounts.findByEmail('TOBIAS@EXAMPLE.INVALID'))?.email).toBe('tobias@example.invalid');
+    const spellings = ['tobias@example.invalid', 'TOBİAS@EXAMPLE.INVALID', 'TOBIAS@EXAMPLE.INVALID'];
     expect(
       await failedLogins(
         booted,

@@ -1,5 +1,14 @@
 import { decodeSomnioMessage } from '@somnio/protocol';
-import type { EntityMessage, EntityMove, LoginResult, RegisterMessage, RegisterResult, SomnioMessage, SomnioMessageTag } from '@somnio/protocol';
+import type {
+  CharacterResult,
+  EntityMessage,
+  EntityMove,
+  LoginResult,
+  RegisterMessage,
+  RegisterResult,
+  SomnioMessage,
+  SomnioMessageTag,
+} from '@somnio/protocol';
 import { collectOutbox } from '../../src/connection/outbox.ts';
 import type { ConnectionOutbox } from '../../src/connection/outbox.ts';
 
@@ -34,11 +43,13 @@ export function registerResults(messages: readonly SomnioMessage[]): RegisterRes
   return messages.flatMap((message) => (message.tag === 'registerResult' ? [message.payload.result] : []));
 }
 
-/** A `register` payload that passes the handler's field and name validation. */
+export function characterResults(messages: readonly SomnioMessage[]): CharacterResult[] {
+  return messages.flatMap((message) => (message.tag === 'characterResult' ? [message.payload.result] : []));
+}
+
+/** A `register` payload that passes the handler's field validation. */
 export const VALID_REGISTER_MESSAGE: RegisterMessage = {
-  nickname: 'Saibot',
+  email: 'info@example.com',
   password: 'hunter2-long',
   passwordRepeat: 'hunter2-long',
-  people: 'sopors',
-  email: 'info@example.com',
 };
