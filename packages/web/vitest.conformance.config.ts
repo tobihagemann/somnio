@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import { repoAliases } from './vite.config';
+import { repoAliases } from './vite.config.ts';
 
 /**
  * Wire-conformance suite. Separate from the default config because these specs dial a live

@@ -27,18 +27,18 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@testcontainers/postgresql": "^12.1.0",
+    "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "26.2.0",
     "@typescript/native": "npm:typescript@7.0.2",
-    "concurrently": "^10.0.5",
-    "eslint": "10.8.1",
+    "concurrently": "^10.0.7",
+    "eslint": "10.14.0",
     "husky": "^9.1.7",
-    "knip": "^6.34.0",
-    "lint-staged": "^17.5.0",
-    "prettier": "3.9.6",
+    "knip": "^6.44.2",
+    "lint-staged": "^17.6.0",
+    "prettier": "3.9.10",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "8.67.0",
-    "vitest": "4.1.10"
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
   },
   "lint-staged": {
     "*.{ts,js,mjs}": [

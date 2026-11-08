@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@somnio/core": "0.0.0",
-    "argon2": "0.45.1",
-    "kysely": "0.29.5",
-    "pg": "8.23.0"
+    "argon2": "0.45.2",
+    "kysely": "0.29.8",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

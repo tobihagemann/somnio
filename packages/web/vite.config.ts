@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
-import { editorSectorFs } from './vite.editorFs';
+import { editorSectorFs } from './vite.editorFs.ts';
 
 const webRoot = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));

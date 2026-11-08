@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import { buildDefines, repoAliases } from './vite.config';
+import { buildDefines, repoAliases } from './vite.config.ts';
 
 /**
  * Headless logic suite: the transport, the predictor, the scene math, and the DOM layer against

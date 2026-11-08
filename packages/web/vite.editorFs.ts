@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import type { Plugin } from 'vite';
 import { SOMNIO_CONSTANTS } from '@somnio/core';
-import { SECTOR_API_PREFIX, isValidSectorName } from './src/editor/sectorName';
+import { SECTOR_API_PREFIX, isValidSectorName } from './src/editor/sectorName.ts';
 
 /**
  * The editor's localhost file API: list, read, and write `.somnio-sector` files under the

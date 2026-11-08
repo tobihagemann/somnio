@@ -13,11 +13,11 @@
   "dependencies": {
     "@somnio/core": "0.0.0",
     "@somnio/protocol": "0.0.0",
-    "commander": "15.0.0",
-    "ws": "8.21.3"
+    "commander": "15.1.0",
+    "ws": "8.22.1"
   },
   "devDependencies": {
-    "@types/ws": "8.18.1"
+    "@types/ws": "8.18.2"
   },
   "scripts": {
     "start": "node src/main.ts",

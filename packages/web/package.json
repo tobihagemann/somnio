@@ -19,13 +19,13 @@
   "dependencies": {
     "@somnio/core": "0.0.0",
     "@somnio/protocol": "0.0.0",
-    "three": "0.185.1"
+    "three": "0.187.0"
   },
   "devDependencies": {
-    "@types/three": "0.185.4",
-    "@types/ws": "8.18.1",
-    "happy-dom": "20.11.2",
-    "vite": "8.2.1",
-    "ws": "8.21.3"
+    "@types/three": "0.187.0",
+    "@types/ws": "8.18.2",
+    "happy-dom": "21.0.4",
+    "vite": "8.3.6",
+    "ws": "8.22.1"
   }
 }
