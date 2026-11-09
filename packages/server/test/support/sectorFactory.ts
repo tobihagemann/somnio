@@ -101,8 +101,8 @@ export interface AttachPlayerOptions {
   spaceId?: string;
   outbox?: ConnectionOutbox;
   worldSeconds?: number;
-  /** What the character differs in from a fresh one: its pools and what it has grown into. */
-  character?: Partial<Pick<Character, 'energy' | 'lucidity'>>;
+  /** What the character differs in from a fresh one: its people, its pools, and what it has grown into. */
+  character?: Partial<Pick<Character, 'people' | 'energy' | 'lucidity'>>;
   inventory?: InventoryRow[];
   /** The language NPCs speak to the player in; English unless given. */
   locale?: Locale;

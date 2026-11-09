@@ -541,14 +541,14 @@ export class Overlays {
 }
 
 /**
- * Full-page notices that replace the game rather than layering over it: no WebGL, a phone-sized
- * viewport, and the first-load asset progress.
+ * Full-page notices that replace the game rather than layering over it: no WebGL, a phone held
+ * upright, and the first-load asset progress.
  */
 export class BlockingNotices {
   readonly root: HTMLElement;
 
   private readonly webglView: HTMLElement;
-  private readonly mobileView: HTMLElement;
+  private readonly uprightView: HTMLElement;
   private readonly loadingView: HTMLElement;
 
   constructor() {
@@ -557,17 +557,17 @@ export class BlockingNotices {
       children: [
         card(t('This browser cannot render 3D graphics.'), [
           element('p', {
-            text: t('Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.'),
+            text: t('Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox.'),
           }),
         ]),
       ],
     });
-    this.mobileView = element('div', {
+    this.uprightView = element('div', {
       className: 'blocking-notice hidden',
       children: [
-        card(t('Somnio needs a desktop computer.'), [
+        card(t('Turn your phone sideways.'), [
           element('p', {
-            text: t('The game is played with a keyboard and a mouse. Come back from a laptop or desktop.'),
+            text: t('Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.'),
           }),
         ]),
       ],
@@ -577,7 +577,7 @@ export class BlockingNotices {
       children: [card(t('Loading the world...'), [])],
     });
     this.root = element('div', {
-      children: [this.loadingView, this.mobileView, this.webglView],
+      children: [this.loadingView, this.uprightView, this.webglView],
     });
   }
 
@@ -585,8 +585,9 @@ export class BlockingNotices {
     setHidden(this.webglView, false);
   }
 
-  showMobileNotice(): void {
-    setHidden(this.mobileView, false);
+  /** Over everything while the phone is upright, gone once it is turned. */
+  setUpright(upright: boolean): void {
+    setHidden(this.uprightView, !upright);
   }
 
   /**

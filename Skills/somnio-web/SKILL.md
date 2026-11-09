@@ -61,7 +61,7 @@ agent-browser wait --fn 'window.somnio.overlay() === "characters"'
 agent-browser snapshot -i          # the card: a Play and a Delete per dreamer, Log Out, New Dreamer
 ```
 
-That first predicate does two jobs, and both are load-bearing. The model prewarm shows a progress notice, so waiting it out is what keeps `snapshot` from running against a half-built page. And `overlay()` alone is not a readiness signal: it initializes to `login` before anything is presented, so on a host with no WebGL or a handheld viewport it answers `login` while the page actually shows a blocking notice and no form exists. Checking for a visible notice covers both.
+That first predicate does two jobs, and both are load-bearing. The model prewarm shows a progress notice, so waiting it out is what keeps `snapshot` from running against a half-built page. And `overlay()` alone is not a readiness signal: it initializes to `login` before anything is presented, so on a host with no WebGL, or in a coarse-pointer session at an upright phone viewport, it answers `login` while the page actually shows a blocking notice in front of everything. Checking for a visible notice covers both.
 
 A password login always lands on the character card ("Your Dreamers"), whose `connectionState()` reads `awaitingEnterSpace`. A new account has no dreamers yet, so make one first; once the account holds four, New Dreamer gives way to a note:
 
@@ -86,7 +86,7 @@ agent-browser wait --fn 'window.somnio.player() !== undefined'
 
 A new character starts at the starter spawn in `EdariaLibrary`. Delete in a row opens a confirmation of its own (`overlay()` reads `'deleteCharacter'`) with Delete and Cancel. Log Out on the card returns to the login card and revokes a remembered session, as Leave Game does.
 
-`attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick. That is a little before the world is on screen. The splash veil and the wordmark go, and the panels appear, only once the player's own body is placed, which is what the last wait checks.
+`attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick. That is a little before the world is on screen. The splash veil and the wordmark go, and the HUD appears, only once the player's own body is placed, which is what the last wait checks.
 
 Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. A resume skips the card and joins the dreamer played last; it shows the card only when none of the account's dreamers has been played yet, or joining the last one fails. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it and set it in the observing one. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
 
@@ -104,48 +104,84 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 |---|---|
 | `connectionState()` | `'disconnected'` \| `'awaitingHello'` \| `'awaitingLoginResult'` \| `'awaitingEnterSpace'` \| `'attached'` |
 | `player()` | `{ x, z, facing, gait, name }` (`name` is the character's name; `gait` is `'walk'` \| `'jog'` \| `'run'`), or `undefined` before placement |
+| `walk()` | the walk under way: `{ kind: 'path', destination: { x, z }, waypoints: [{ x, z }] }` (the waypoints left, the next first; empty until the path's search has run) or `{ kind: 'steer', toward: { x, z } }` while a held press steers, or `undefined` while the player stands, and from a door until the player is placed in the space it leads to |
 | `spaceId()` | `'outdoors'` for every outdoor sector, an interior's sector name otherwise; `undefined` before the first join |
 | `sectorName()` | the sector the predicted position stands in, e.g. `'EdariaSquare'` |
 | `entities()` | `[{ id, kind, name, x, z, condition }]`; `kind` is `'player'` (self), `'peer'`, `'npc'`, or `'monster'`, `id` is a string (a character id, `npc:<sector>/<id>`, `monster:<n>`), and `condition` is `'hale'` (full health), `'grazed'`, `'wounded'`, `'hurt'`, `'failing'`, or `'fallen'` |
 | `energy()` | the player's own pools as last sent: `{ healthCurrent, healthMax, balanceCurrent, balanceMax, spiritCurrent, spiritMax }` |
 | `lucidity()` | `{ role?, ranks: [{ teachingId, rank, practice }], study?, task? }` as last sent |
 | `winded()` | whether the player's balance gave out, which holds them to `walk` |
+| `running()` | whether Run is on |
+| `engaged()` | whether slot 1 is on |
+| `engageAction()` | what slot 1 does at the target: `'attack'` or `'mend'` (also at a fallen dreamer, where the slot reads Raise), or `undefined` while it cannot be switched on |
 | `servicePanel()` | the id of the master or the shopkeeper whose panel is open, or `undefined` |
-| `tending()` | the id of the dreamer the player tends, or `undefined` |
+| `target()` | the id of the entity the player has targeted, the player's own id included, or `undefined` |
+| `gazeLocked()` | whether the player's facing is locked on the target |
+| `vitals(entityId)` | the share of the target's health (0–1): as the server last sent it (two decimals), or from the player's own pools when they are their own target. `undefined` before the first `vitals` frame and for anyone but the target |
 | `screenPoint(entityId)` | `{ x, y }` in CSS pixels where that entity's body is drawn on the page (a fallen body where it lies), or `undefined` |
-| `chatHistory()` | the session's chat lines as localized strings; the greeting the panel shows above them is not included, so the result is `[]` until the first line arrives |
+| `groundScreenPoint(x, z)` | `{ x, y }` in CSS pixels where that point of the space is drawn on the ground a body there would stand on (a walk surface's top, else the floor), or `undefined` before the first join. A point outside the canvas's rect is off screen |
+| `chatHistory()` | the session's chat lines as localized strings; the greeting the chat shows above them is not included, so the result is `[]` until the first line arrives |
 | `placeholderObjectCount()` | objects still rendering a placeholder model; `0` when there is no scene at all |
-| `cameraScale()` | vertical half-height of the orthographic frustum, or `undefined` with no scene |
+| `cameraScale()` | vertical half-height of the orthographic frustum (7 at the default zoom, 14 m shown top to bottom), or `undefined` with no scene |
 | `overlay()` | `'login'` \| `'registration'` \| `'characters'` (the card) \| `'newCharacter'` \| `'deleteCharacter'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `'logOutOtherBrowsers'` \| `undefined` |
-| `zoomFactor()` | session zoom, 0.5–2.0 |
+| `zoomFactor()` | session zoom, 0.78–1.4; the camera's half-height is 7 divided by it |
 | `splashShot()` | the id of the splash shot playing behind the pre-login screens (`'town'`, `'follow-dreamer'`, ... `'time-lapse'`), or `undefined` while none plays |
 
 `<html data-somnio-build>` carries the build stamp (`somnio-web <version>`) with no `?debug=1` gate, so any loaded page identifies its build. It is set by `main.ts` once the bundle runs, not baked into the served HTML — read it with `agent-browser eval 'document.documentElement.dataset.somnioBuild'`, since `curl` of the same URL returns a bare `<html lang="en">`.
 
 ## Recipes
 
-**Walk.** Movement is sampled from held keys by the frame loop, so hold the key across real time rather than tapping it. `agent-browser press` sends a keydown/keyup pair, which advances one frame's worth of distance (a few centimetres) — enough to prove input is wired, not enough to travel.
+**Walk.** A press on the ground walks the player: a tap walks along a path to where it landed, and a press held past 180 ms or moved more than 12 px steers. Drive it with pointer events at a page point: `groundScreenPoint(x, z)` is where a point of the space is drawn, the inverse of the pick the client runs on a press. Send the `pointerdown` to the canvas and the `pointerup` to `window`, both with the point's `clientX`/`clientY`, and give them `pointerId: 1` and `isPrimary: true`. A constructed event defaults to `isPrimary: false`, and the client clears a press whose `pointerup` it never saw only on a primary `pointerdown`; without it, one stray press left down turns the next into a pinch, which walks nowhere. `agent-browser click` takes a selector, not coordinates, so it cannot be aimed at the ground.
+
+A tap is the down and the up in one `eval`, so no frame runs between them to make it a hold. The path is searched on the next frame, so `walk()` reads a path with no waypoints until then, and `undefined` again once the player stands, at the goal or at the nearest point toward it they can reach:
 
 ```bash
 agent-browser eval --stdin <<'JS'
 (async () => {
-  const before = window.somnio.player()
-  window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))
-  await new Promise((resolve) => setTimeout(resolve, 1000))
-  window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
+  const goal = { x: 12, z: 6 }   // in the space's coordinates, on screen
+  const canvas = document.querySelector('canvas')
+  const at = window.somnio.groundScreenPoint(goal.x, goal.z)
+  const rect = canvas.getBoundingClientRect()
+  if (at === undefined || at.x < rect.left || at.x > rect.right || at.y < rect.top || at.y > rect.bottom) return { offScreen: at }
+  const init = { clientX: at.x, clientY: at.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, bubbles: true }
+  canvas.dispatchEvent(new PointerEvent('pointerdown', init))
+  window.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }))
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  await sleep(100)
+  const planned = window.somnio.walk()
+  for (let waited = 0; window.somnio.walk() !== undefined && waited < 10000; waited += 100) await sleep(100)
   const after = window.somnio.player()
-  return { before, after, moved: before.x !== after.x || before.z !== after.z }
+  return { planned, walk: window.somnio.walk(), after, away: Math.hypot(after.x - goal.x, after.z - goal.z) }
 })()
 JS
 ```
 
-The default gait is a jog at 2 m/s. Hold `ShiftLeft` to run (3 m/s) and `AltLeft` to walk (1 m/s); the gait rule is left-side keys only. Arrow keys drive the same four direction bits as WASD.
+A `pointerdown` dispatched on the canvas reaches it even where a panel covers that point, which a real press could not; check `document.elementFromPoint(at.x, at.y)` is the canvas when the case is about what a player can reach. The view shows 14 m of ground top to bottom at the default zoom, so walk further in several taps, each at a point still on screen. A tap on a body selects it instead of walking (see the next recipe), so aim beside one. A press on the ground drops a green ring there, which follows a held press and stays at the walk's destination after the up, lifting away when that walk ends or the next press lands; only a screenshot shows it.
 
-The keys move in screen directions, which the camera's fixed 35° yaw turns on the ground. `KeyA` moves about (−0.82, +0.57) in world x/z and `KeyW` about (−0.57, −0.82). `KeyW`+`KeyA` heads about 10° north of west and `KeyS`+`KeyD` about 10° south of east. Read `player()` after each hold and correct.
+The gait is a jog at 2 m/s. Run (3 m/s) is a toggle, and `running()` reports it. Switch it with the Run button at the end of the belt (`.hud-slot--run`, or `.hud-orb--run` at the end of the thumb's arc on a phone layout), or with a Shift keydown while no overlay is up and the chat field is not focused. A winded player walks at 1 m/s whatever it says. Facing follows the cursor on a fine pointer, unless the gaze is locked (next recipe): the press and every `pointermove` over the canvas set it, at body height. The cursor stays where it last was on the page while the camera follows the player, so a path that turns is walked partly sideways or backwards, and slower. Send a `pointermove` (with `buttons: 0`, and no press down) toward where the player should face.
 
-A loop that steers toward a point has to release its keys as soon as `spaceId()` changes. Otherwise a door's trigger takes the player through, and the loop goes on steering by the old space's coordinates and can walk straight back out. `player()` reads `undefined` during that join, so guard every read. Walk into a door head-on: a building's door posts can stop a player sliding sideways along its front short of the trigger.
+To steer, keep the press down. The camera follows the player, so the ground under a still pointer moves on ahead of them, and they walk on in that direction for as long as it is held, like a stick. On the `pointerup` they walk on along a path to the ground under the pointer then. A `pointermove` while the press is down needs `buttons: 1` and the press's `pointerId`: a constructed event defaults to `buttons: 0`, which reads as the press having come up.
 
-**Click an entity.** A left click on the play field acts on what it points at: an NPC within speaking distance (2 m) is asked to go on past its greeting, and one further away ignores the click. A Healer's click on another player tends them, and anything else is a swing toward the cursor. `screenPoint(id)` is where an entity's body is drawn on the page, a fallen body where it lies, so a click can be aimed at it. The character faces the cursor. A swing aims where the `pointerdown` lands, so it needs no `pointermove` or frame's wait before it.
+```bash
+agent-browser eval --stdin <<'JS'
+(async () => {
+  const self = window.somnio.player()
+  const at = window.somnio.groundScreenPoint(self.x + 3, self.z)   // 3 m east of the player
+  const init = { clientX: at.x, clientY: at.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, bubbles: true }
+  document.querySelector('canvas').dispatchEvent(new PointerEvent('pointerdown', init))
+  await new Promise((resolve) => setTimeout(resolve, 2000))
+  const steering = window.somnio.walk()   // { kind: 'steer', toward }
+  window.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }))
+  return { steering, after: window.somnio.walk(), moved: window.somnio.player().x - self.x }
+})()
+JS
+```
+
+A press on the player's own body stops a walk. A walk also ends at a fall, a correction, and an overlay, but not at chat focus. A tapped path that ends at a door takes it, and one that only passes a door walks on through its trigger. A press held through a door steers on: `walk()` reads `undefined` from the door until the player is placed in the new space, then `steer` again toward the ground under the pointer there. A loop that walks toward a point has to stop tapping as soon as `spaceId()` changes. Otherwise a path that ends at a door, or a steer into its trigger, takes the player through, and the loop goes on tapping by the old space's coordinates and can walk straight back out. `player()` reads `undefined` during that join, so guard every read.
+
+**Select, and slot 1.** A press on a body never walks the player. It makes the entity the target (`target()`): a ring marks it, its plaque draws over every other and through the world, and the target frame at the top centre (`.hud-unit--target`) shows its portrait, its name, and a bar of its health, from `vitals(id)`, with its condition only in the frame's `aria-label` ("Target, wounded"). An NPC within speaking distance (2 m) is also asked to go on past its greeting, and opens a master's or the shopkeeper's panel; one further away is only selected. A press on a dreamer's name in the Players window (`.hud-list__select`) targets them while they are in view. A press on the player's own frame (`.hud-unit--self`, top left) or their own name there makes them their own target. A press on the ground keeps the target.
+
+Bodies are picked by shape, before the ground, within the radius they are drawn with (at least 0.6 m on a phone layout), so aim at `screenPoint(id)`, where the body is drawn, a fallen body where it lies:
 
 ```bash
 agent-browser eval --stdin <<'JS'
@@ -153,21 +189,29 @@ agent-browser eval --stdin <<'JS'
   const canvas = document.querySelector('canvas')
   const npc = window.somnio.entities().find((e) => e.kind === 'npc')
   const at = window.somnio.screenPoint(npc.id)
-  const init = { clientX: at.x, clientY: at.y, button: 0, bubbles: true }
+  const init = { clientX: at.x, clientY: at.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, bubbles: true }
   canvas.dispatchEvent(new PointerEvent('pointerdown', init))
-  window.dispatchEvent(new PointerEvent('pointerup', init))
-  return { npc: npc.id, at }
+  window.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }))
+  return { npc: npc.id, target: window.somnio.target() }
 })()
 JS
 ```
 
-A swing repeats at the swing rhythm for as long as the button is down, so send the `pointerup` when one swing is all the step needs. To keep one held, withhold the `pointerup` and give every `pointermove` sent meanwhile `buttons: 1`: a constructed event defaults to `buttons: 0`, which reads as the left button having come up and ends the hold. `agent-browser click` takes a selector, not coordinates, so it cannot be aimed at an entity.
+The ✕ on the target frame (tooltip "Clear target") clears the target; a press on the frame itself does not. Escape clears it once nothing the HUD has open is left to close (see Notes).
 
-**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its first line, unasked: once per approach, and not again within 30 s. Clicking it as above brings its remaining lines, a few seconds apart, and opens a master's or the shopkeeper's panel (`window.somnio.servicePanel()`).
+A right press locks the gaze: a `pointerdown` on the canvas at `screenPoint(id)` with `button: 2, buttons: 2, pointerType: 'mouse'` (no `pointerup` needed) targets that body and has the player face it whatever the cursor does. `gazeLocked()` reads `true`, the target's green ring becomes a gold reticle with four ticks pointing in, and the target frame's `aria-label` ends "facing locked". A second right press on the target, or one on the ground, unlocks and keeps the target, one on the player's own body does nothing, and one without `pointerType: 'mouse'` is ignored. A right press made while the left button is held, as during a steer, fires no `pointerdown`: send a canvas `pointermove` at `screenPoint(id)` with `button: 2, buttons: 3, pointerType: 'mouse'` and the held press's `pointerId` instead, and its release while the left stays down as a `pointermove` with `button: 2, buttons: 1, pointerType: 'mouse'`. The steer recipe's `init` carries no `pointerType`, so add it. The lock also ends with the target: cleared, changed, out of view, driven off, or left in another space.
+
+Slot 1 acts on the target: the first slot of the belt (`.hud-slot--act`; the big `.hud-orb--act` under the right thumb on a phone layout), or a `Digit1` keydown on `window` under the same conditions as Shift: `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', key: '1' }))`. `engaged()` reads whether it is on, and `engageAction()` what it does. The button's `data-look` (`attack`, `mend`, `raise`) and its localized `aria-label` name it: Attack at a nightmare not yet driven off, bare-handed or with a weapon in hand; Mend at a dreamer, the player included, for a Healer with the Moonstone in hand; Raise at a fallen dreamer, where `engageAction()` still reads `'mend'`. It is disabled at anything else, a Healer holding the Moonstone at a nightmare included. The client never walks the player toward the target.
+
+With Attack on, the server swings at the target alone, at the swing rhythm, while it stands in reach (0.85 m centre to centre for a Ghost) inside 120° of where the player faces, and every swing it makes arrives as a `blow`. Tap the ground beside the nightmare to close in, and keep it in front: lock the gaze on it, or keep the cursor on it, since on a fine pointer the player faces the cursor. Watch `vitals(id)` fall and the target's `condition` in `entities()`. Mend and Raise have a recipe of their own below.
+
+Slot 1 stays on when the target changes to another it can act on, and goes off at any other target, at no target, at the target driven off or out of view, at the Moonstone put away while it mends or taken in hand while it attacks, at a fall, and in a new space. A dreamer it mends who falls keeps it on, since Mend raises them.
+
+**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its first line, unasked: once per approach, and not again within 30 s. A press on it as above brings its remaining lines, a few seconds apart, and opens a master's or the shopkeeper's panel (`window.somnio.servicePanel()`).
 
 ```bash
 agent-browser eval 'window.somnio.entities().filter((e) => e.kind === "npc")'
-# hold the direction key until the player is within 2 m, then:
+# tap the ground beside the NPC (the Walk recipe) until the player is within 2 m, then:
 agent-browser wait --fn 'window.somnio.chatHistory().length > 0'
 agent-browser eval 'window.somnio.chatHistory().at(-1)'
 ```
@@ -176,7 +220,16 @@ agent-browser eval 'window.somnio.chatHistory().at(-1)'
 
 **Screenshot.** `agent-browser screenshot --full <path>` captures the WebGL world and the DOM panels over it in one image. A capture is at 1x device scale unless the viewport says otherwise. Judge fine detail, such as where two outlines join, at 2x: `agent-browser set viewport <width> <height> 2`. Set it before opening the page. On an open page, change the size along with the scale, or reload. The client follows a real zoom or a move to another display, but a `set viewport` that changes only the scale fires neither `resize` nor the media-query change the client watches, so the world stays drawn at the old scale. Confirm with `document.querySelector('canvas').width`, which reads twice the canvas's `clientWidth` at 2x; `window.devicePixelRatio` reads `2` even while the world is still drawn at 1x. Enlarged, a 1x capture shows lines as joined that are visibly broken on a 2x display.
 
-**Check a layout across window widths.** A `set viewport <width> <height>` on an open page resizes it and the client lays out again, so one session can judge a panel at several widths without reloading. jsdom does no layout, so measure a width rule here: compare rects in pixels rather than judging from a screenshot alone. The corner panels are `.floating-stack--leading > .floating .fantasy-panel` (the HUD, then the chat) and `.floating-stack--trailing > .floating .fantasy-panel` (Players, then Items), and `querySelector` returns the top one. Keep the Players panel open: collapsed, its rect reads zero. A surface shown in one game state only needs that state before the loop: the fallen notice needs a fallen player, which the "Give a character a role, ranks, or pools" recipe below sets up.
+**Check a layout across window widths.** A `set viewport <width> <height>` on an open page resizes it and the client lays out again, so one session can judge a panel at several widths without reloading. jsdom does no layout, so measure a width rule here: compare rects in pixels rather than judging from a screenshot alone. The HUD's parts are:
+
+- `.hud-unit--self`, the player's own frame, top left
+- `.hud-unit--target`, the target frame, top centre
+- `.hud-clock`, the time and the place name, top right
+- `.hud-belt`, bottom centre: the `.hud-globe--health` and `.hud-globe--spirit` globes, `.hud-belt__panel` with the Balance arc, the `.hud-slots`, and the study line, and the `.hud-menu` of Players, Bag, and Settings right of the Spirit globe
+- `.hud-chat`, the chat, bottom left
+- `.hud-window--players` and `.hud-window--bag`, the windows
+
+A hidden part's rect reads zero: open a window from the menu first, and give the player a target for the target frame. A surface shown in one game state only needs that state before the loop: the fallen notice, which takes the target frame's place, needs a fallen player, which the "Give a character a role, ranks, or pools" recipe below sets up.
 
 ```bash
 for w in 1280 760 700; do
@@ -185,9 +238,9 @@ for w in 1280 760 700; do
 (() => {
   const rect = (selector) => document.querySelector(selector).getBoundingClientRect()
   const box = rect('.fallen-notice')
-  const hud = rect('.floating-stack--leading > .floating .fantasy-panel')
-  const players = rect('.floating-stack--trailing > .floating .fantasy-panel')
-  return { width: innerWidth, boxWidth: box.width, gapLeft: box.left - hud.right, gapRight: players.left - box.right }
+  const self = rect('.hud-unit--self')
+  const clock = rect('.hud-clock')
+  return { width: innerWidth, boxWidth: box.width, gapLeft: box.left - self.right, gapRight: clock.left - box.right }
 })()
 JS
 done
@@ -196,13 +249,25 @@ agent-browser set viewport 1280 720   # the other recipes assume a wide window
 
 A negative gap is an overlap.
 
-**Zoom.** Use real wheel input over the bare play field. The client ignores a wheel event while the pointer is over a panel, so a `WheelEvent` dispatched from `eval` after the pointer last rested on a panel zooms nothing. A negative delta zooms in, toward `zoomFactor()` 2.0:
+**Zoom.** Use real wheel input over the bare play field. The client ignores a wheel event while the pointer is over a panel, so a `WheelEvent` dispatched from `eval` after the pointer last rested on a panel zooms nothing. A negative delta zooms in, toward `zoomFactor()` 1.4:
 
 ```bash
 agent-browser mouse move 700 450   # a point on the canvas, clear of the panels
 agent-browser mouse wheel -200
 agent-browser eval 'window.somnio.zoomFactor()'
 ```
+
+A pinch is two pointers down on the canvas, the second with another `pointerId` and `isPrimary: false`, then `pointermove`s with `buttons: 1` that spread them (zoom in) or close them (zoom out), then a `pointerup` for each. The pinch zooms by the ratio of the pointers' spans and walks nowhere until both are up.
+
+**Phone layout.** The client reads `(pointer: coarse)` once at startup, so launch the session with a coarse primary pointer, then size it as a phone on its side. `--args` splits on commas, so pass the one setting alone:
+
+```bash
+agent-browser --session phone --args "--blink-settings=primaryPointerType=2" open 'http://localhost:17669/'
+agent-browser --session phone set viewport 844 390
+agent-browser --session phone eval 'matchMedia("(pointer: coarse)").matches'   # expect true
+```
+
+There one strip runs along the top (`.hud-strip`): the own frame with small Health and Spirit bars, the target frame, the clock, and ≡ (`.hud-sheet-toggle`), which opens a sheet (`.hud-sheet`) with Players, Bag, Settings, and the study line. Slot 1 is the big orb under the right thumb (`.hud-orb--act`), with the empty slots 2–6 (`.hud-orb--empty`) on an arc round it and Run at the arc's end. Balance is a thin bar at the bottom centre. The chat is an icon bottom left (`.hud-chat-toggle`) with its newest lines peeking above it (`.hud-chat-peek`), and opens as a panel. The chat, the sheet, and the windows start closed, and one window opens at a time, down the right edge, covering the clock and the thumb while open. Bodies pick from at least 0.6 m round them, and the player faces their target, or the way they walk without one, instead of the cursor; a gaze lock needs a mouse. `set viewport 390 844` shows the "Turn your phone sideways." card over everything, and turning back to 844 by 390 takes it away with the game as it was. The browser here has no touch input of its own (`navigator.maxTouchPoints` reads `0`), so drive it with the pointer events of the recipes above. Touch on a real phone is not covered.
 
 **German UI.** Open a session with the browser's accepted language set; `--lang` alone is ignored. `--args` applies only when the session's browser launches, and splits on commas. `agent-browser --session de --args "--accept-lang=de-DE" open 'http://localhost:17669/'`, then confirm `agent-browser --session de eval 'navigator.languages'` reads `["de-DE"]`.
 
@@ -265,7 +330,7 @@ agent-browser --session a tab new about:blank   # the game tab is now hidden
 agent-browser --session a tab t1                # t1 in a fresh session; otherwise the game's id from `tab list`
 ```
 
-Hiding clears held keys, so dispatch a held key again after switching back. Peers, speech bubbles, and raise rings follow the clock, so on return they show where things stand now. To see what the first frames back draw, install a `visibilitychange` listener before hiding that, on `visible`, records a sample (say a peer's `entities()` position) on each `requestAnimationFrame` for a few hundred milliseconds, and read the samples after switching back.
+Hiding forgets every pointer down and ends a steer, so press again after switching back; a walk along a path goes on once frames run again. Peers, speech bubbles, and raise rings follow the clock, so on return they show where things stand now. To see what the first frames back draw, install a `visibilitychange` listener before hiding that, on `visible`, records a sample (say a peer's `entities()` position) on each `requestAnimationFrame` for a few hundred milliseconds, and read the samples after switching back.
 
 Headless, hold the frames instead: a hidden tab is a page whose `requestAnimationFrame` stops while its socket keeps delivering, so a login can complete there. Dispatching `visibilitychange` alone is no substitute, because the frame loop keeps running and catches up before anything is read.
 
@@ -288,14 +353,16 @@ JS
 
 What the frame loop writes to the page, such as the splash dip's opacity, changes only on a frame, so read it inside a `requestAnimationFrame` callback scheduled after the restore, not straight after the return. `splashShot()` is current at once, because the return itself halts a reel whose session has attached.
 
-**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker type `/y <text>` into the chat field and press Enter. Both new characters start inside `EdariaLibrary`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
+**Speech bubbles.** Log two players in as above, put them where the case needs, and have the speaker press Enter to open the chat, type `/y <text>` into its field (a fresh `snapshot -i` finds it), and press Enter, which sends the line and closes the chat. Both new characters start inside `EdariaLibrary`, where each draws the other and the bubble hangs over the speaker's head. With several speakers together, each bubble takes the nearest spot round its speaker's head that is clear of heads, other bubbles, and panels, and glides back over the head once that is free. The bubbles are painted on their own canvas (`#somnio-bubbles`) over the world and under the panels. Only a screenshot shows them: `snapshot` finds no element for them, and `window.somnio` has no call that reports them.
 
-To read what the scene computed, such as where each bubble was placed and in which mode, wrap a scene method from an `eval` on the dev server. Inside an async IIFE, `const { WorldScene } = await import('/src/scene/worldScene.ts')` returns the module the page runs, so replacing `WorldScene.prototype.placedBubbles` with a wrapper that stores its result on `window` records every frame's placements. The working tree stays untouched, and a page reload removes the wrapper. Restart Vite first when `worldScene.ts` or anything it imports was edited since Vite started: the page then loads the module under a `?t=` URL, the plain import returns a second copy, and the wrapper on it never runs.
+To read what the scene computed, such as where each bubble was placed and in which mode, wrap a scene method from an `eval` on the dev server. Inside an async IIFE, `const { WorldScene } = await import('/src/scene/worldScene.ts')` returns the module the page runs, so replacing `WorldScene.prototype.placedBubbles` with a wrapper that stores its result on `window` records every frame's placements. The working tree stays untouched, and a page reload removes the wrapper. Restart Vite first when `worldScene.ts` or anything it imports was edited since Vite started: the page then loads the module under a `?t=` URL, the plain import returns a second copy, and the wrapper on it never runs. Without a restart, import the URL the page loaded instead: `performance.getEntriesByType('resource').map((entry) => entry.name).filter((name) => name.includes('/src/scene/worldScene.ts')).at(-1)`.
 
-- **Pinned at the edge.** Put both outdoors, further apart than the screen shows (12 m is enough at the default zoom) and within a yell's 80 m. The bubble pins on the line toward the speaker, as near the screen's edge as is clear of heads, other bubbles, and panels. The listener's chat line names a compass direction.
-- **Past a room's wall.** Keep the listener in the room and put the speaker outdoors within about 30 m of that room's door. Collapse the listener's chat panel first with its toggle button: while it is open it covers the spot past the starter room's wall for all but the shortest lines, so the bubble pins at the edge and the chat line names a direction. The listener has to stand just inside the door: walking in through the door lands them on its arrival point, 0.8 m in. Further in, at the default zoom, the spot past the wall no longer fits on screen and the bubble falls back to the edge pin. A voice placed by the door names no direction in chat, which tells the two placements apart, and it always arrives crumbled.
+- **Pinned at the edge.** Put both outdoors, further apart than the screen shows, and within a yell's 80 m. At the default zoom in a 1280×720 window the view reaches about 12 m to either side of the listener and about 10 m of ground up and down the screen, and zoomed fully out about 16 m and 13 m, so 20 m apart is enough in any direction at any zoom. The bubble pins on the line toward the speaker, as near the screen's edge as is clear of heads, other bubbles, and panels. The listener's chat line names a compass direction.
+- **Past a room's wall.** Keep the listener in the room and put the speaker outdoors within about 30 m of that room's door. The starter room is 7.68 m square, so at the default zoom all of it and the spot past its wall are on screen wherever the listener stands in it. Where a panel covers that spot the bubble pins at the edge and the chat line names a direction. The chat's lines bottom left count as a panel while they show, and every arriving line, the voice's own included, keeps them shown for another 8 s. Move the listener until the spot lies clear of them. A voice placed by the door names no direction in chat, which tells the two placements apart, and it always arrives crumbled.
 
 Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
+
+**Portraits.** The HUD frames' portraits are drawn on the world canvas, in the circles the frames leave open (`.hud-portrait`, `GameHUD.portraits`), so only a screenshot shows them. To time the pass, wrap `WorldScene.prototype.drawPortraits` as the bubble recipe wraps `placedBubbles`, and repeat the pass inside the wrapper until frames slow. On Apple's ANGLE Metal renderer, `EXT_disjoint_timer_query_webgl2` overstates the pass many times over, so do not time it that way.
 
 **Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." on the login card. When a re-login still fails that way after the wait, restart Vite: its proxy can keep the old upstream socket open. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
@@ -310,7 +377,7 @@ agent-browser open 'http://localhost:17669/'
 
 `space` and `position_x`/`position_z` hold what `spaceId()` and `player()` report: a space id, and metres in that space's coordinates. `(20, -15)` is open ground in the North Meadow, whose origin is `(5.12, -30.72)`. The North Wood north of it, at origin `(5.12, -61.44)`, holds a nightmare spawn area: a player placed inside it, as at `(20, -46)`, is struck and falls within half a minute. An interior's positions run from its own north-west corner.
 
-**Give a character a role, ranks, or pools.** Write under the same rule as relocating: close both players' sessions (and stop any bot) and wait for the checkpoint first, or it overwrites the row. Several statements go in one heredoc, and `docker exec` needs `-i` for it: without `-i` the heredoc never reaches psql, which prints nothing and applies nothing. This makes `<healer>` a Healer with `touch` at rank 2 and `drawing-back` at rank 1 (the ranks the game requires for raising) and the Moonstone in the right hand, in inventory slot 2. It also lays `<dreamer>` down fallen (a partial `health_current` gives a mend something to do instead). The upserts make the block safe to run again:
+**Give a character a role, ranks, or pools.** Write under the same rule as relocating: close both players' sessions (and stop any bot) and wait for the checkpoint first, or it overwrites the row. Several statements go in one heredoc, and `docker exec` needs `-i` for it: without `-i` the heredoc never reaches psql, which prints nothing and applies nothing. This makes `<healer>` a Healer with `touch` at rank 2 and `drawing-back` at rank 1 (a raise needs Drawing back, which needs Touch 2) and the Moonstone in the right hand, in inventory slot 2, which slot 1 needs to mend or raise. It also lays `<dreamer>` down fallen (a partial `health_current`, such as 40, gives a mend something to do instead). The upserts make the block safe to run again:
 
 ```bash
 docker exec -i somnio-pg psql -U postgres -d somnio -v ON_ERROR_STOP=1 <<'SQL'
@@ -329,6 +396,40 @@ SQL
 ```
 
 After logging in, `window.somnio.lucidity().role` on the healer reads `'healer'` and `window.somnio.energy().healthCurrent` on the dreamer reads `0`. Anything else means a checkpoint won the race, so close and repeat. A raised dreamer stands again, and one who wakes is also moved to the inn, so a retry re-runs the block, plus the relocation recipe after a wake.
+
+**Mend and raise.** With Mend on, a Healer mends a standing dreamer within 3 m, centre to centre, once a second: +10 health for 8 spirit. It waits, still on, while the dreamer is at full health or the Healer is short of spirit. With the player as their own target it mends them. At a fallen dreamer it raises them instead, only within touch (0.85 m) and with Drawing back held. The raise takes 6 s and 40 spirit, then the dreamer stands and Mend goes on mending them.
+
+Play the Healer in the browser and the dreamer as a bot from "More players without more browsers", run with no step and no line (`node <dir>/bot.mjs <dreamer> 0 0`). Run the bot once so it makes its character, stop it, and run the block above with both sessions closed. Start the bot again and log the Healer in; both stand on the `EdariaLibrary` spawn at (2.7, 4.4). Then step off the dreamer, target them, and switch slot 1 on in one eval:
+
+```bash
+agent-browser eval --stdin <<'JS'
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const canvas = document.querySelector('canvas')
+  const press = (at) => {
+    const init = { clientX: at.x, clientY: at.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, bubbles: true }
+    canvas.dispatchEvent(new PointerEvent('pointerdown', init))
+    window.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }))
+  }
+  const dreamer = window.somnio.entities().find((e) => e.kind === 'peer')
+  press(window.somnio.groundScreenPoint(dreamer.x + 0.7, dreamer.z))   // within touch, beside the body
+  for (let waited = 0; window.somnio.walk() !== undefined && waited < 4000; waited += 100) await sleep(100)
+  press(window.somnio.screenPoint(dreamer.id))
+  const look = document.querySelector('.hud-slot--act').dataset.look   // 'raise' at a fallen dreamer, else 'mend'
+  window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', key: '1' }))
+  const self = window.somnio.player()
+  const samples = []
+  for (let second = 0; second < 7; second += 1) {
+    await sleep(1000)
+    const condition = window.somnio.entities().find((e) => e.id === dreamer.id)?.condition
+    samples.push({ vitals: window.somnio.vitals(dreamer.id), spirit: window.somnio.energy().spiritCurrent, condition })
+  }
+  return { target: window.somnio.target(), look, engaged: window.somnio.engaged(), away: Math.hypot(self.x - dreamer.x, self.z - dreamer.z), samples }
+})()
+JS
+```
+
+`target` must be the dreamer's id and `engaged` `true`. A mend shows `vitals` rising about 0.1 a second and `spirit` falling 8 a mend until the dreamer is whole. A raise shows `condition` at `fallen` for about 6 s, then a standing band, and needs `away` under 0.85. To see the reaches hold, stand the Healer about 2 m off instead: a mend still lands there, and a raise never begins.
 
 **Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
 
@@ -355,22 +456,21 @@ A `0` proves only that the models resolved, not that anything drew. A lit materi
 ## Notes
 
 - Wrap any `eval --stdin` script that awaits in an async IIFE. `eval` runs a script body, not a module, so top-level `await` and top-level `return` both throw a `SyntaxError`.
-- An `eval` whose promise awaits longer than about 25 s never returns, and its `agent-browser` process hangs. Keep each eval's awaits to 12 s or less, and run several evals from the shell for a longer hold. A key held down stays held across evals.
+- An `eval` whose promise awaits longer than about 25 s never returns, and its `agent-browser` process hangs. Keep each eval's awaits to 12 s or less, and run several evals from the shell for a longer hold. A press held down stays held across evals, until its `pointerup` or a hidden tab.
 - Gate every wait on a predicate over `window.somnio`, not a sleep. Model prewarm makes first-load timing variable.
-- A walk that silently does nothing is usually the input gate, not broken input. The frame loop requires `attached && no overlay && chat not focused`; check `window.somnio.overlay()` first. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes the player's walk without teleporting.
-- A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever key is held.
-- Focusing the chat input closes the gate and clears held keys, so a movement key held across the focus change stops the character.
-- Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an inventory row (a single click does nothing to a row). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. `agent-browser dblclick` sends one click with `detail: 2`, not two clicks, so a double click on a button (a trade the lock should let through once) needs `mouse move` to the button's centre, then `mouse down` and `mouse up` twice, in one `agent-browser batch`.
-- Test a panel while balance is recovering, when `energy` frames arrive several times a second. With bare hands or a dagger, standing recovery outpaces a held swing, and one run drains little. Drain with repeated short runs back and forth within 2 m of the NPC, holding a swing, then open the panel with a click at the NPC and press its button in the very next call: balance is back to full in about eight seconds.
-- A master's or the shopkeeper's panel covers the Players and Items lists, so a double-click on an Items row lands on the panel. Close the panel first. When the test needs the panel open, dispatch the event on the row element from an `eval`, which gives up the real-gesture check above. The panel's body scrolls and keeps its offset across rebuilds, so in a short window its first lines can be scrolled out of view; that is not a defect.
+- A tap that silently walks nowhere is usually the input gate, not broken input. The frame loop requires `attached` and no overlay; check `window.somnio.overlay()` first. Then read `walk()`: `undefined` straight after the tap means the press never reached the ground (it landed on a body, which selects instead, or before the first join), and a path that stays empty means no way was found, often just after `enterSpace` while the sector's walk raster is still being computed. Each frame's elapsed time is clamped to 100 ms, so a stalled tab resumes the player's walk without teleporting.
+- A fallen player does not move at all (their own entry in `entities()` has `condition: 'fallen'`), and a winded one (`winded()`) is held to `walk` whatever Run says.
+- Enter, while the world has the keyboard and no focused control takes it, opens the chat with its field focused; Enter there sends the line and closes it, and so does Escape without sending. The open chat leaves the gate open, so a walk goes on while the player types. Shift and `Digit1` type into the field then instead of toggling Run and slot 1.
+- Activate a DOM control with a real pointer gesture on a ref from a snapshot: `agent-browser click @ref` for a panel button, `agent-browser dblclick @ref` for an item row in the Bag window, opened from the Bag button right of the Spirit globe (a single click does nothing to a row; Enter on a focused row uses it too). A control replaced by a re-render between press and release never gets its click. A real gesture shows that, and `element.click()` in an `eval` hides it, because it lands in one tick. `agent-browser dblclick` sends one click with `detail: 2`, not two clicks, so a double click on a button (a trade the lock should let through once) needs `mouse move` to the button's centre, then `mouse down` and `mouse up` twice, in one `agent-browser batch`.
+- Test a panel while balance is recovering, when `energy` frames arrive several times a second. Away from nightmares only running drains balance, and one run drains little. Drain with Run on and repeated short walks back and forth within 2 m of the NPC (taps on the ground either side of the player), then open the panel with a press at the NPC and press its button in the very next call: balance is back to full in about eight seconds.
+- A master's or the shopkeeper's panel covers the right edge, where the Players and Bag windows open, so a double-click on a Bag row lands on the panel. Close the panel first. When the test needs the panel open, dispatch the event on the row element from an `eval`, which gives up the real-gesture check above. The panel's body scrolls and keeps its offset across rebuilds, so in a short window its first lines can be scrolled out of view; that is not a defect.
 - `agent-browser mouse wheel` over the chat scrollback does not scroll it in a headless session: its `scrollTop` is unchanged even when read after a pause. To scroll it to a given offset, set its `scrollTop` from an `eval` (`document.querySelector('.chat-scrollback').scrollTop = 40`). The play field's zoom still takes the wheel.
 - Navigating the game tab to `about:blank` (`agent-browser open about:blank`) leaves its gameplay socket open, and the server keeps the player logged in. To log that player in again, close the session (`agent-browser --session <name> close`) and wait as in the relocation recipe.
-- Bodies standing on one spot (a bot on the spawn) overlap on screen, and a click at `screenPoint(id)` reaches the body nearer the camera. Aim a little beside it, on the side away from the other body, and confirm the click reached the intended entity: `tending()` for a tend, `servicePanel()` for a master or the shopkeeper.
-- A Moonstone reaches another player only within 0.85 m, centre to centre (`reachDistance` in `packages/core/src/combat.ts`). A Healer placed by coordinates further off still tends, but never mends or raises. Place them about 0.6 m from the dreamer, and confirm the distance from `entities()` before waiting for a mend or a raise.
+- Bodies standing on one spot (a bot on the spawn) overlap on screen, and a press at `screenPoint(id)` reaches the body nearer the camera. Aim a little beside it, on the side away from the other body, and confirm the press reached the intended entity: `target()` for a selection, `servicePanel()` for a master or the shopkeeper. A press at another body's `screenPoint` never picks the player's own, which is left out of the pick.
 - Separate `agent-browser` calls are slow enough to miss a short server window, such as letting go before a 6 s raise finishes. Do the timed steps inside one `eval`, within the 12 s limit on its awaits.
-- Esc opens the game menu during a session. While the player tends someone, the first Esc only lets go of them and the next opens the menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
+- Esc takes one thing away at a time during a session: the chat, a phone's menu sheet, the newest open window, then the target, and only then does it open the game menu. On the version-skew overlay it goes to the login overlay, and there it is inert — nothing is behind it to resume to.
 - `chatHistory()` returns localized text and the client picks German from `navigator.languages`. Assert on substrings unless the locale is pinned (the German UI recipe pins it).
 - Vite hot-reloads code changes. An edit to a `.ts` file made while a session is attached reloads the page: a client that did not check "Remember password" is back on the login overlay, the earlier snapshot's refs are dead, and the fields may still hold their text. After an asset-pack change, re-run `Scripts/bundle-web-assets.sh` and restart Vite — the served asset root is a copy, enumerated at startup.
-- When Step 4's gate times out, read the visible notice: `agent-browser eval 'document.querySelector(".blocking-notice:not(.hidden)")?.textContent'`. A WebGL or desktop-only notice means the browser cannot render the world — rerun with `agent-browser --headed`, which gets a hardware GPU context.
+- When Step 4's gate times out, read the visible notice: `agent-browser eval 'document.querySelector(".blocking-notice:not(.hidden)")?.textContent'`. The WebGL notice means the browser cannot render the world — rerun with `agent-browser --headed`, which gets a hardware GPU context. "Turn your phone sideways." means a coarse-pointer session at an upright viewport: widen it past its height.
 - A headless session renders on the hardware GPU or on software GL, depending on the host. Read the renderer before measuring frame times: `agent-browser eval '(() => { const gl = document.createElement("canvas").getContext("webgl2"); return gl.getParameter(gl.getExtension("WEBGL_debug_renderer_info").UNMASKED_RENDERER_WEBGL) })()'`. When it names the GPU, frame times measured headless are representative, so treat a spike that recurs at the same trigger as real and profile it (`agent-browser profiler start`, then `profiler stop <path>`) before attributing it. When it names SwiftShader or llvmpipe, rerun `--headed` before measuring.
-- On teardown, close the browser sessions (`agent-browser close`, plus `--session a` / `--session b` for the two-player recipe and `--session de` for the German UI) and stop Vite, but keep the Postgres container so the dev character persists (see `/somnio-server`).
+- On teardown, close the browser sessions (`agent-browser close`, plus `--session a` / `--session b` for the two-player recipe, `--session de` for the German UI, and `--session phone` for the phone layout) and stop Vite, but keep the Postgres container so the dev character persists (see `/somnio-server`).

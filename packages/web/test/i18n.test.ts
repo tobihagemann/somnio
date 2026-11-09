@@ -147,7 +147,7 @@ describe('the browser-owned catalog', () => {
   it('covers the browser-only surfaces', () => {
     const keys = Object.keys(webCatalog.en);
     expect(keys).toContain('This browser cannot render 3D graphics.');
-    expect(keys).toContain('Somnio needs a desktop computer.');
+    expect(keys).toContain('Turn your phone sideways.');
     expect(keys).toContain('Loading the world...');
     expect(keys).toContain('Fullscreen');
     expect(keys).toContain('Your session expired. Please log in again.');

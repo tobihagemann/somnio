@@ -147,13 +147,29 @@
     "en": "Anyone up for the North Wood?",
     "de": "Kommt jemand mit in den Nordwald?"
   },
+  "Arena": {
+    "en": "Arena",
+    "de": "Arena"
+  },
   "Ask for the trial": {
     "en": "Ask for the trial",
     "de": "Um die Prüfung bitten"
   },
+  "Attack": {
+    "en": "Attack",
+    "de": "Angreifen"
+  },
+  "Autumn Wood": {
+    "en": "Autumn Wood",
+    "de": "Herbstwald"
+  },
   "Bad credentials.": {
     "en": "Bad credentials.",
     "de": "Falsche Zugangsdaten."
+  },
+  "Bag": {
+    "en": "Bag",
+    "de": "Tasche"
   },
   "Balance": {
     "en": "Balance",
@@ -183,9 +199,17 @@
     "en": "Chat",
     "de": "Chat"
   },
+  "Clear target": {
+    "en": "Clear target",
+    "de": "Ziel aufheben"
+  },
   "Close": {
     "en": "Close",
     "de": "Schließen"
+  },
+  "Close %@": {
+    "en": "Close %@",
+    "de": "%@ schließen"
   },
   "Copyright": {
     "en": "© Copyright 2026 Tobias Hagemann",
@@ -263,6 +287,10 @@
     "en": "Earned by a task",
     "de": "Durch eine Aufgabe verdient"
   },
+  "Edaria Square": {
+    "en": "Edaria Square",
+    "de": "Edaria-Platz"
+  },
   "Email": {
     "en": "Email",
     "de": "E-Mail"
@@ -270,6 +298,10 @@
   "Email:": {
     "en": "Email:",
     "de": "E-Mail:"
+  },
+  "Empty slot": {
+    "en": "Empty slot",
+    "de": "Leeres Feld"
   },
   "Enter a valid email address.": {
     "en": "Enter a valid email address.",
@@ -286,6 +318,10 @@
   "Falling starts the count over.": {
     "en": "Falling starts the count over.",
     "de": "Fällst du, beginnt die Zählung von vorn."
+  },
+  "Fighter Hall": {
+    "en": "Fighter Hall",
+    "de": "Halle der Kämpfer"
   },
   "Finish your current task first.": {
     "en": "Finish your current task first.",
@@ -319,17 +355,21 @@
     "en": "Give up the trial",
     "de": "Prüfung aufgeben"
   },
+  "Healer Hall": {
+    "en": "Healer Hall",
+    "de": "Halle der Heiler"
+  },
   "Health": {
     "en": "Health",
     "de": "Gestalt"
   },
-  "Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.": {
-    "en": "Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.",
-    "de": "Klick mit dem Mondstein in der Hand einen Träumer an, um dich seiner anzunehmen. Dein Geist heilt ihn, solange du bei ihm bleibst."
+  "Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.": {
+    "en": "Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.",
+    "de": "Wähle mit dem Mondstein in der Hand einen Träumer oder dich selbst als Ziel und schalte Heilen ein. Dein Geist heilt ihn, solange er in der Nähe bleibt."
   },
-  "Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.": {
-    "en": "Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.",
-    "de": "Bleib mit dem Mondstein in der Hand bei einem gefallenen Träumer, dessen du dich annimmst, um ihn zurückzuholen."
+  "Holding the Moonstone, turn on Mend at a fallen dreamer and stay beside them to raise them.": {
+    "en": "Holding the Moonstone, turn on Mend at a fallen dreamer and stay beside them to raise them.",
+    "de": "Schalte mit dem Mondstein in der Hand Heilen bei einem gefallenen Träumer ein und bleib dicht bei ihm, um ihn zurückzuholen."
   },
   "If you don't have an account, click here!": {
     "en": "If you don't have an account, click here!",
@@ -339,9 +379,9 @@
     "en": "In hand",
     "de": "In der Hand"
   },
-  "Items": {
-    "en": "Items",
-    "de": "Gegenstände"
+  "Inn": {
+    "en": "Inn",
+    "de": "Gasthaus"
   },
   "Items: %@": {
     "en": "Items: %@",
@@ -354,6 +394,10 @@
   "Leave Game": {
     "en": "Leave Game",
     "de": "Spiel verlassen"
+  },
+  "Library": {
+    "en": "Library",
+    "de": "Bibliothek"
   },
   "Loading the world...": {
     "en": "Loading the world...",
@@ -399,9 +443,17 @@
     "en": "Meet me at the inn.",
     "de": "Wir treffen uns im Gasthaus."
   },
+  "Mend": {
+    "en": "Mend",
+    "de": "Heilen"
+  },
   "Mend %@ health on other dreamers.": {
     "en": "Mend %@ health on other dreamers.",
     "de": "Heile %@ Gestalt bei anderen Träumern."
+  },
+  "Menu": {
+    "en": "Menu",
+    "de": "Menü"
   },
   "Name:": {
     "en": "Name:",
@@ -426,6 +478,10 @@
   "No role yet": {
     "en": "No role yet",
     "de": "Noch keine Rolle"
+  },
+  "North Meadow": {
+    "en": "North Meadow",
+    "de": "Nordwiese"
   },
   "Not yet": {
     "en": "Not yet",
@@ -463,6 +519,10 @@
     "en": "Players: %@",
     "de": "Spieler: %@"
   },
+  "Raise": {
+    "en": "Raise",
+    "de": "Zurückholen"
+  },
   "Rank %1$@ of %2$@": {
     "en": "Rank %1$@ of %2$@",
     "de": "Rang %1$@ von %2$@"
@@ -487,6 +547,14 @@
     "en": "Resume",
     "de": "Fortsetzen"
   },
+  "Run": {
+    "en": "Run",
+    "de": "Rennen"
+  },
+  "Run (Shift)": {
+    "en": "Run (Shift)",
+    "de": "Rennen (Umschalt)"
+  },
   "Sell": {
     "en": "Sell",
     "de": "Verkaufen"
@@ -494,6 +562,14 @@
   "Sell for %@c": {
     "en": "Sell for %@c",
     "de": "Für %@c verkaufen"
+  },
+  "Settings": {
+    "en": "Settings",
+    "de": "Einstellungen"
+  },
+  "Shop": {
+    "en": "Shop",
+    "de": "Laden"
   },
   "Shopkeeper": {
     "en": "Shopkeeper",
@@ -507,13 +583,17 @@
     "en": "Somnio",
     "de": "Somnio"
   },
-  "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.": {
-    "en": "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.",
-    "de": "Somnio benötigt WebGL. Probiere eine aktuelle Version von Safari, Chrome oder Firefox auf einem Desktop-Rechner."
+  "Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.": {
+    "en": "Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.",
+    "de": "Somnio wird im Querformat gespielt. Tippe auf den Boden, um zu gehen, und auf einen Albtraum, um ihn als Ziel zu wählen."
   },
-  "Somnio needs a desktop computer.": {
-    "en": "Somnio needs a desktop computer.",
-    "de": "Somnio benötigt einen Desktop-Rechner."
+  "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox.": {
+    "en": "Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox.",
+    "de": "Somnio benötigt WebGL. Probiere eine aktuelle Version von Safari, Chrome oder Firefox."
+  },
+  "South Meadow": {
+    "en": "South Meadow",
+    "de": "Südwiese"
   },
   "Spirit": {
     "en": "Spirit",
@@ -527,9 +607,9 @@
     "en": "Study this",
     "de": "Das lernen"
   },
-  "Studying %1$@: %2$@ of %3$@": {
-    "en": "Studying %1$@: %2$@ of %3$@",
-    "de": "Du lernst %1$@: %2$@ von %3$@"
+  "Studying %1$@ · %2$@%%": {
+    "en": "Studying %1$@ · %2$@%%",
+    "de": "Du lernst %1$@ · %2$@ %%"
   },
   "Studying nothing": {
     "en": "Studying nothing",
@@ -542,6 +622,22 @@
   "Talk here. /w to whisper, /y to yell": {
     "en": "Talk here. /w to whisper, /y to yell",
     "de": "Hier reden. /w zum Flüstern, /y zum Schreien"
+  },
+  "Target": {
+    "en": "Target",
+    "de": "Ziel"
+  },
+  "Target yourself": {
+    "en": "Target yourself",
+    "de": "Dich selbst als Ziel wählen"
+  },
+  "Target, %@": {
+    "en": "Target, %@",
+    "de": "Ziel, %@"
+  },
+  "Target, %@, facing locked": {
+    "en": "Target, %@, facing locked",
+    "de": "Ziel, %@, Blick fixiert"
   },
   "Task: %@": {
     "en": "Task: %@",
@@ -558,10 +654,6 @@
   "The connection was lost.": {
     "en": "The connection was lost.",
     "de": "Die Verbindung wurde unterbrochen!"
-  },
-  "The game is played with a keyboard and a mouse. Come back from a laptop or desktop.": {
-    "en": "The game is played with a keyboard and a mouse. Come back from a laptop or desktop.",
-    "de": "Das Spiel wird mit Tastatur und Maus gespielt. Komm von einem Laptop oder Desktop-Rechner zurück."
   },
   "The server is being updated. Please try again in a few moments.": {
     "en": "The server is being updated. Please try again in a few moments.",
@@ -582,6 +674,10 @@
   "Try Again": {
     "en": "Try Again",
     "de": "Erneut versuchen"
+  },
+  "Turn your phone sideways.": {
+    "en": "Turn your phone sideways.",
+    "de": "Dreh dein Handy quer."
   },
   "UI borders by Kenney.": {
     "en": "UI borders by Kenney.",
@@ -610,6 +706,14 @@
   "Welcome to Somnio!": {
     "en": "Welcome to Somnio!",
     "de": "Willkommen zu Somnio!"
+  },
+  "West Meadow": {
+    "en": "West Meadow",
+    "de": "Westwiese"
+  },
+  "Winded": {
+    "en": "Winded",
+    "de": "Außer Atem"
   },
   "You are a %1$@. %2$@ has nothing to teach you.": {
     "en": "You are a %1$@. %2$@ has nothing to teach you.",
@@ -727,6 +831,26 @@
     "en": "east",
     "de": "Osten"
   },
+  "failing": {
+    "en": "failing",
+    "de": "am Ende"
+  },
+  "fallen": {
+    "en": "fallen",
+    "de": "gefallen"
+  },
+  "grazed": {
+    "en": "grazed",
+    "de": "angeschlagen"
+  },
+  "hale": {
+    "en": "hale",
+    "de": "unversehrt"
+  },
+  "hurt": {
+    "en": "hurt",
+    "de": "schwer verwundet"
+  },
   "miss": {
     "en": "miss",
     "de": "daneben"
@@ -762,5 +886,9 @@
   "winded": {
     "en": "winded",
     "de": "außer Atem"
+  },
+  "wounded": {
+    "en": "wounded",
+    "de": "verwundet"
   }
 }

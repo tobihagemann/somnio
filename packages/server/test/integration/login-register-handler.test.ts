@@ -101,7 +101,7 @@ describe('login handler over Postgres', () => {
     // The service has not ticked, so the clock is exactly what the database held.
     expect(messages).toContainEqual({
       tag: 'enterSpace',
-      payload: { spaceId: STARTER_SECTOR, selfId: expect.any(String), worldSeconds: SEEDED_WORLD_SECONDS },
+      payload: { spaceId: STARTER_SECTOR, selfId: expect.any(String), people: 'lumina', worldSeconds: SEEDED_WORLD_SECONDS },
     });
     if (connection.state.kind === 'attached') dependencies.worldRouter.unregister(connection.state.accountId);
   });

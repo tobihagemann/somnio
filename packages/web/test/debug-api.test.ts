@@ -30,7 +30,7 @@ describe('the debug API', () => {
   function shell(): AppShell {
     return new AppShell({
       container,
-      capabilities: { hasWebGL: true, isDesktop: true },
+      capabilities: { hasWebGL: true },
       startRendering: false,
     });
   }
@@ -44,6 +44,8 @@ describe('the debug API', () => {
     expect(api.sectorName()).toBeUndefined();
     expect(api.entities()).toEqual([]);
     expect(api.chatHistory()).toEqual([]);
+    expect(api.walk()).toBeUndefined();
+    expect(api.groundScreenPoint(0, 0)).toBeUndefined();
   });
 
   it('reports the local player once the entity stream has placed it', () => {
@@ -60,24 +62,74 @@ describe('the debug API', () => {
     ]);
   });
 
-  it("reports the player's own pools, lucidity, winded state, open service panel, and the dreamer they tend", () => {
+  it("reports the player's own pools, lucidity, winded state, and open service panel", () => {
     const app = shell();
     const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 0, balanceMax: 100, spiritCurrent: 70, spiritMax: 110 };
     const lucidity = { role: 'healer' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 2.5 }], study: 'touch' };
-    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', worldSeconds: 0 } });
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
     app.controller.dispatch({ tag: 'energy', payload: energy });
     app.controller.dispatch({ tag: 'lucidity', payload: lucidity });
     app.session.servicePanel = clientEntity({ id: 'npc:EdariaHealerHall/sana', kind: 'npc', service: 'healerMaster' });
-    app.session.tending = 'bren';
 
     const api = makeDebugAPI(app);
     expect(api.energy()).toEqual(energy);
     expect(api.lucidity()).toEqual(lucidity);
     expect(api.winded()).toBe(true);
     expect(api.servicePanel()).toBe('npc:EdariaHealerHall/sana');
-    expect(api.tending()).toBe('bren');
     // No scene draws anything in this shell, so there is nowhere to point.
     expect(api.screenPoint('bren')).toBeUndefined();
+  });
+
+  it('reports the target, its vitals, the gaze lock, Run, and slot 1 with its action', () => {
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost' }));
+    const api = makeDebugAPI(app);
+    expect(api.target()).toBeUndefined();
+    expect(api.gazeLocked()).toBe(false);
+    expect(api.engaged()).toBe(false);
+    expect(api.engageAction()).toBeUndefined();
+    expect(api.running()).toBe(false);
+
+    app.session.select('monster:1');
+    app.session.gazeLocked = true;
+    app.controller.dispatch({ tag: 'vitals', payload: { entityId: 'monster:1', health: 0.75 } });
+    app.session.toggleEngage();
+    app.session.toggleRun();
+
+    expect(api.target()).toBe('monster:1');
+    expect(api.vitals('monster:1')).toBe(0.75);
+    expect(api.gazeLocked()).toBe(true);
+    expect(api.engaged()).toBe(true);
+    expect(api.engageAction()).toBe('attack');
+    expect(api.running()).toBe(true);
+  });
+
+  it('reports the gaze lock as a second right press on the target lets go of it and a third takes it again', () => {
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    app.controller.entities.set('self', clientEntity());
+    app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
+    app.controller.presentedOverlay = undefined;
+    const api = makeDebugAPI(app);
+
+    app.session.toggleGazeOn('monster:1');
+    expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', true]);
+    app.session.toggleGazeOn('monster:1');
+    expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', false]);
+    app.session.toggleGazeOn('monster:1');
+    expect(api.gazeLocked()).toBe(true);
+  });
+
+  it('reports the walk under way as plain points', () => {
+    const app = shell();
+    const api = makeDebugAPI(app);
+
+    app.session.predictor.walkTo({ x: 4, z: 5 });
+    expect(api.walk()).toEqual({ kind: 'path', destination: { x: 4, z: 5 }, waypoints: [] });
+
+    app.session.predictor.steerToward({ x: 6, z: 7 });
+    expect(api.walk()).toEqual({ kind: 'steer', toward: { x: 6, z: 7 } });
   });
 
   it('reports the space, and the sector the predicted position stands in', () => {

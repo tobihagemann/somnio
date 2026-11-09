@@ -1,4 +1,5 @@
 import './ui/chrome.css';
+import './ui/hud.css';
 import { AppShell } from '@/ui/appShell';
 import { installDebugAPI } from '@/debugApi';
 import { SOMNIO_BUILD_STAMP, SOMNIO_WEB_VERSION } from '@/buildInfo';

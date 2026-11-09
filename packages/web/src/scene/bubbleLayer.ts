@@ -3,7 +3,7 @@ import type { BubbleMode, ScreenPoint, ScreenSize } from './bubbleLayout';
 import { OVERLAY_METRES_PER_PIXEL, paintSpeechBubble } from './overlayArt';
 import type { OverlayPoint } from './overlayArt';
 
-/** A speech bubble as the scene placed it, in metres on the screen, `x` right and `y` up from its middle. */
+/** A speech bubble as the scene placed it, in metres of overlay art on the screen, `x` right and `y` up from its middle. */
 export interface PlacedBubble {
   centre: ScreenPoint;
   size: ScreenSize;

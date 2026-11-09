@@ -112,7 +112,7 @@ describe('the character card', () => {
     expect(second.characters!.every((character) => character.role === undefined)).toBe(true);
 
     const chosen = second.characters![1]!;
-    expect(await select(card.client, chosen.id)).toMatchObject({ tag: 'enterSpace', payload: { selfId: chosen.id } });
+    expect(await select(card.client, chosen.id)).toMatchObject({ tag: 'enterSpace', payload: { selfId: chosen.id, people: chosen.people } });
     await card.client.close();
   });
 
@@ -187,7 +187,7 @@ describe('the character card', () => {
     const card = await registerAndLogin('resumer', true);
     const listed = (await create(card.client, uniqueName('first'))).characters!;
     const first = listed[0]!;
-    const last = (await create(card.client, uniqueName('last'))).characters!.find((character) => character.id !== first.id)!;
+    const last = (await create(card.client, uniqueName('last'), 'sopors')).characters!.find((character) => character.id !== first.id)!;
     expect(await select(card.client, first.id)).toMatchObject({ tag: 'enterSpace' });
     await card.client.close();
     await pollUntil(() => Promise.resolve(server.server.worldRouter.loggedInPlayerCount() === 0 ? true : undefined));
@@ -199,7 +199,8 @@ describe('the character card', () => {
     await pollUntil(() => Promise.resolve(server.server.worldRouter.loggedInPlayerCount() === 0 ? true : undefined));
 
     const resumed = await redeem(sessionTokenOf(card));
-    expect(await resumed.until('enterSpace')).toMatchObject({ target: { tag: 'enterSpace', payload: { selfId: last.id } } });
+    // The resume skips the card, so `enterSpace` is all that names the dreamer's people to the client.
+    expect(await resumed.until('enterSpace')).toMatchObject({ target: { tag: 'enterSpace', payload: { selfId: last.id, people: 'sopors' } } });
     await resumed.close();
   });
 

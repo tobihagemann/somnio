@@ -9,14 +9,14 @@ import {
   handleAskTask,
   handleBuy,
   handleCompleteTask,
+  handleEngage,
   handleEquipToggle,
   handleMove,
   handleSay,
   handleSell,
   handleStudy,
-  handleSwing,
   handleTalk,
-  handleTend,
+  handleTarget,
   handleUseDoor,
   handleUseItem,
   handleWake,
@@ -329,8 +329,8 @@ export class ConnectionActor {
         case 'clientSay':
         case 'equipToggle':
         case 'talk':
-        case 'swing':
-        case 'tend':
+        case 'target':
+        case 'engage':
         case 'useDoor':
         case 'askTask':
         case 'completeTask':
@@ -359,6 +359,7 @@ export class ConnectionActor {
         case 'leave':
         case 'lucidity':
         case 'condition':
+        case 'vitals':
         case 'blow':
         case 'raising':
         case 'mend':
@@ -395,8 +396,8 @@ export class ConnectionActor {
         case 'clientSay':
         case 'equipToggle':
         case 'talk':
-        case 'swing':
-        case 'tend':
+        case 'target':
+        case 'engage':
         case 'useDoor':
         case 'askTask':
         case 'completeTask':
@@ -423,6 +424,7 @@ export class ConnectionActor {
         case 'leave':
         case 'lucidity':
         case 'condition':
+        case 'vitals':
         case 'blow':
         case 'raising':
         case 'mend':
@@ -447,11 +449,11 @@ export class ConnectionActor {
       case 'talk':
         handleTalk(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'swing':
-        handleSwing(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'target':
+        handleTarget(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'tend':
-        handleTend(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'engage':
+        handleEngage(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'useDoor':
         return this.applyTransfer(handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies), state.accountId);
@@ -509,6 +511,7 @@ export class ConnectionActor {
       case 'leave':
       case 'lucidity':
       case 'condition':
+      case 'vitals':
       case 'blow':
       case 'raising':
       case 'mend':

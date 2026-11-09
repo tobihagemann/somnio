@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { WorldScene, configureWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { HttpModelAssets, prototypeMeshesOf } from '@/scene/modelAssets';
 import type { ModelAssets } from '@/scene/modelAssets';
-import { ORTHO_RIG, cameraPosition, scaleForZoomFactor } from '@/scene/cameraRig';
+import { ORTHO_RIG, PLAYER_ZOOM, cameraPosition, frustumBounds, offsetDirection, scaleForZoomFactor } from '@/scene/cameraRig';
 import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
 import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
@@ -14,10 +14,12 @@ import type { GroundRasterizer } from '@/scene/groundRasterizer';
 import {
   NAME_PLAQUE,
   OVERLAY_METRES_PER_PIXEL,
+  OVERLAY_MIN_SCREEN_PIXELS,
   baselineBelowBoxTop,
   baselineInCenteredBox,
   namePlaqueBackground,
   lineBoxHeight,
+  overlayMagnification,
   paintSpeechBubble,
   renderNamePlaque,
   speechBubbleFrameSize,
@@ -26,7 +28,7 @@ import { paintBubbles } from '@/scene/bubbleLayer';
 import type { PlacedBubble } from '@/scene/bubbleLayer';
 import { tailTip } from '@/scene/bubbleLayout';
 import type { ScreenPoint } from '@/scene/bubbleLayout';
-import { parseModelRegistry } from '@somnio/core';
+import { groundHeightAt, parseModelRegistry } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import type { SectorView, SpeechKind } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
@@ -163,7 +165,7 @@ function planeSize(mesh: THREE.Mesh): { width: number; height: number } {
   return { width, height };
 }
 
-/** The ground rings drawn round entities: the one tended, and each fallen body being raised. */
+/** Every ground ring in the scene: round the target, round a fallen body being raised, a mend's pulse, and a press's ring. */
 function rings(scene: WorldScene): THREE.Mesh[] {
   const found: THREE.Mesh[] = [];
   scene.scene.traverse((object) => {
@@ -258,7 +260,7 @@ describe('camera framing', () => {
     const verticalBefore = scene.camera.top - scene.camera.bottom;
     const widthBefore = scene.camera.right - scene.camera.left;
 
-    scene.setViewportAspect(2.5);
+    scene.setViewportSize(2500, 1000);
 
     expect(scene.camera.top - scene.camera.bottom).toBe(verticalBefore);
     expect(scene.camera.right - scene.camera.left).toBeGreaterThan(widthBefore);
@@ -266,8 +268,8 @@ describe('camera framing', () => {
 
   it('magnifies on zoom rather than revealing more world', () => {
     const scene = makeScene();
-    scene.applyZoomFactor(2);
-    expect(scene.camera.top).toBe(1.5);
+    scene.applyZoomFactor(1.4);
+    expect(scene.camera.top).toBe(5);
   });
 
   /**
@@ -299,19 +301,19 @@ describe('camera framing', () => {
   /** The first frame of the game is at the player's zoom, while the splash held on screen until then keeps its shot. */
   it('frames a splash shot at its own scale whatever the zoom, until the player lands', () => {
     const scene = makeScene();
-    scene.frameShot({ x: 12, z: 7 }, 5);
-    expect(scene.camera.top).toBe(5);
+    scene.frameShot({ x: 12, z: 7 }, 6);
+    expect(scene.camera.top).toBe(6);
     expect(cameraFocus(scene).x).toBeCloseTo(12, 9);
     expect(cameraFocus(scene).z).toBeCloseTo(7, 9);
-    scene.applyZoomFactor(2);
-    expect(scene.camera.top).toBe(5);
+    scene.applyZoomFactor(1.4);
+    expect(scene.camera.top).toBe(6);
 
     scene.enterSpace(world());
     scene.addSector(sector());
-    expect(scene._cameraScale()).toBe(5);
+    expect(scene._cameraScale()).toBe(6);
     scene.placeEntity(player());
 
-    expect(scene._cameraScale()).toBe(scaleForZoomFactor(2));
+    expect(scene._cameraScale()).toBe(scaleForZoomFactor(1.4));
   });
 
   it('does not follow anyone else', () => {
@@ -1157,6 +1159,145 @@ describe('ground height', () => {
   });
 });
 
+describe('the ground under a point of the viewport', () => {
+  const FOCUS = { x: 10, z: 10 };
+
+  /** A scene looking at `FOCUS` at the default scale over a world holding `view`. */
+  function framed(view: SectorView): { scene: WorldScene; entered: ClientWorld } {
+    const scene = makeScene();
+    const entered = world();
+    scene.enterSpace(entered);
+    entered.addSector(view);
+    scene.frameShot(FOCUS, ORTHO_RIG.defaultScale);
+    return { scene, entered };
+  }
+
+  function viewportOf(scene: WorldScene, x: number, y: number, z: number): THREE.Vector3 {
+    scene.camera.updateMatrixWorld();
+    return new THREE.Vector3(x, y, z).project(scene.camera);
+  }
+
+  /** Where the camera's line through a point `height` up comes down on the floor. */
+  function floorBehind(point: Point, height: number): Point {
+    const toCamera = offsetDirection();
+    return { x: point.x - (height * toCamera.x) / toCamera.y, z: point.z - (height * toCamera.z) / toCamera.y };
+  }
+
+  /** The hall's porch, 1.03 m up, runs x 11.42..12.42 and z 9.73..13.35. */
+  const hallSector = sector({ placements: [placement('hall-1', 'hall', { x: 10, z: 10 })] });
+
+  it('finds nothing before a space is entered', () => {
+    expect(makeScene().groundPointAt(0, 0)).toBeUndefined();
+  });
+
+  it('meets flat ground where the frustum puts it', () => {
+    const { scene } = framed(sector());
+    const bounds = frustumBounds(ORTHO_RIG.defaultScale, 1);
+    const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
+    const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
+
+    const centre = scene.groundPointAt(0, 0)!;
+    expect(centre.x).toBeCloseTo(FOCUS.x, 9);
+    expect(centre.z).toBeCloseTo(FOCUS.z, 9);
+    expect(centre.height).toBe(0);
+
+    // Up the screen runs away from the camera, stretched over the floor by the pitch.
+    const up = scene.groundPointAt(0, 0.5)!;
+    const away = (0.5 * bounds.top) / Math.sin(pitch);
+    expect(up.x).toBeCloseTo(FOCUS.x - away * Math.sin(yaw), 9);
+    expect(up.z).toBeCloseTo(FOCUS.z - away * Math.cos(yaw), 9);
+
+    const right = scene.groundPointAt(0.5, 0)!;
+    const across = 0.5 * bounds.right;
+    expect(right.x).toBeCloseTo(FOCUS.x + across * Math.cos(yaw), 9);
+    expect(right.z).toBeCloseTo(FOCUS.z - across * Math.sin(yaw), 9);
+  });
+
+  it('meets the top of a raised tread by its far edge, where the floor on the same line lies a metre beyond it', () => {
+    const { scene, entered } = framed(hallSector);
+    const onPorch = { x: 11.9, z: 9.8 };
+    const drawn = viewportOf(scene, onPorch.x, 1.03, onPorch.z);
+
+    const picked = scene.groundPointAt(drawn.x, drawn.y)!;
+
+    expect(picked.x).toBeCloseTo(onPorch.x, 9);
+    expect(picked.z).toBeCloseTo(onPorch.z, 9);
+    expect(picked.height).toBe(1.03);
+    const floor = floorBehind(onPorch, 1.03);
+    expect(Math.hypot(floor.x - onPorch.x, floor.z - onPorch.z)).toBeCloseTo(1.03, 9);
+    expect(groundHeightAt(entered.collision, floor)).toBe(0);
+  });
+
+  it('falls to the floor on a line passing just beyond the edge of the tread', () => {
+    const { scene } = framed(hallSector);
+    const pastEdge = { x: 11.9, z: 9.6 };
+    const drawn = viewportOf(scene, pastEdge.x, 1.03, pastEdge.z);
+
+    const picked = scene.groundPointAt(drawn.x, drawn.y)!;
+
+    const floor = floorBehind(pastEdge, 1.03);
+    expect(picked.x).toBeCloseTo(floor.x, 9);
+    expect(picked.z).toBeCloseTo(floor.z, 9);
+    expect(picked.height).toBe(0);
+  });
+
+  it('meets the surface nearest the camera where two lie on one line, whatever order they were placed in', () => {
+    const dais = placement('dais-1', 'dais', { x: 5, z: 5 });
+    const stage = placement('stage-1', 'stage', { x: 5, z: 5 });
+    for (const placements of [
+      [dais, stage],
+      [stage, dais],
+    ]) {
+      const { scene } = framed(sector({ placements }));
+      const drawn = viewportOf(scene, 5, 0.25, 5);
+
+      const picked = scene.groundPointAt(drawn.x, drawn.y)!;
+
+      expect(picked.x).toBeCloseTo(5, 9);
+      expect(picked.z).toBeCloseTo(5, 9);
+      expect(picked.height).toBe(0.25);
+    }
+  });
+
+  /** The cursor 0.8 m over a body's feet, once with both bodies on the floor and once with both up on the porch. */
+  it('aims at the body drawn under the cursor, at the height the player stands at', () => {
+    const pairs: [Point, Point][] = [
+      [FOCUS, { x: 12, z: 9 }],
+      [
+        { x: 11.9, z: 13 },
+        { x: 11.9, z: 10 },
+      ],
+    ];
+    for (const [own, other] of pairs) {
+      const { scene, entered } = framed(hallSector);
+      scene.placeEntity(player({ position: own }));
+      scene.placeEntity(player({ id: 'peer', kind: 'peer', position: other }));
+      const drawn = viewportOf(scene, other.x, groundHeightAt(entered.collision, other) + 0.8, other.z);
+
+      const aimed = scene.aimPointAt(drawn.x, drawn.y)!;
+
+      expect(aimed.x).toBeCloseTo(other.x, 9);
+      expect(aimed.z).toBeCloseTo(other.z, 9);
+    }
+  });
+
+  it('draws a point of the space where the pick finds it again, on the floor and on a raised tread', () => {
+    expect(makeScene()._viewportPointOfGround(FOCUS)).toBeUndefined();
+    const { scene } = framed(hallSector);
+    for (const point of [
+      { x: 8, z: 12 },
+      { x: 11.9, z: 9.8 },
+    ]) {
+      const drawn = scene._viewportPointOfGround(point)!;
+
+      const picked = scene.groundPointAt(drawn.x, drawn.y)!;
+
+      expect(picked.x).toBeCloseTo(point.x, 9);
+      expect(picked.z).toBeCloseTo(point.z, 9);
+    }
+  });
+});
+
 describe('post-prewarm self-heal', () => {
   /**
    * An arrival that wins the race against prewarm must not keep grey boxes for the session.
@@ -1284,7 +1425,7 @@ describe('overlay quads', () => {
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }));
-    scene.showSelection('peer-1');
+    scene.showSelection('peer-1', false);
     scene.showMend('peer-1');
 
     const materials = [...overlayPlates(scene), ...rings(scene)].map((mesh) => mesh.material as THREE.MeshBasicMaterial);
@@ -1413,7 +1554,7 @@ describe('overlay quads', () => {
       const upright = new THREE.Vector3(12, CHARACTER_SCALE / 2, 10).project(scene.camera);
 
       expect(scene.entityAt(point.x, point.y)).toBe('peer');
-      expect(Math.hypot(point.x - upright.x, point.y - upright.y)).toBeGreaterThan(0.1);
+      expect(Math.hypot(point.x - upright.x, point.y - upright.y)).toBeGreaterThan(0.04);
     });
   });
 });
@@ -1426,7 +1567,7 @@ function expectTailAt(scene: WorldScene, expected: ScreenPoint): void {
   expect(bubble!.tail!.y).toBeCloseTo(expected.y, 5);
 }
 
-describe('what the cursor is over, and the entity tended', () => {
+describe('what a pointer is over, and the target', () => {
   /** Where a point of the world lands in the viewport, in normalized device coordinates. */
   function viewportOf(scene: WorldScene, x: number, y: number, z: number): THREE.Vector3 {
     scene.camera.updateMatrixWorld();
@@ -1452,25 +1593,221 @@ describe('what the cursor is over, and the entity tended', () => {
     expect(scene.entityAt(ground.x, ground.y)).toBeUndefined();
   });
 
-  it('rings the one entity tended, and frees the ring when another is chosen, none is, or the entity leaves', () => {
+  /**
+   * A point beside a body's middle by `metres` across the screen, which lies that far from the
+   * capsule a body is picked by: the camera's right is level, so it crosses both the ray and the body.
+   */
+  function besideBody(scene: WorldScene, at: { x: number; z: number }, metres: number): THREE.Vector3 {
+    scene.camera.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(scene.camera.matrixWorld, 0);
+    return viewportOf(scene, at.x + right.x * metres, CHARACTER_SCALE / 2 + right.y * metres, at.z + right.z * metres);
+  }
+
+  /** A body is picked by the radius it is drawn with. A finger covers more than a body is wide, so under one it is picked from 0.6 m round it. */
+  it.each([
+    ['a mouse', false, 0.3],
+    ['a finger', true, 0.6],
+  ])("picks a body, and the player's own, from as far beside it as its pick radius under %s, and no further", (_label, coarse, radius) => {
+    const scene = makeScene();
+    scene.coarsePointer = coarse;
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 13, z: 10 } }));
+    for (const [side, inside] of [
+      [1, 0.98],
+      [-1, 0.98],
+      [1, 1.02],
+    ] as const) {
+      const besidePeer = besideBody(scene, { x: 13, z: 10 }, side * inside * radius);
+      const besideOwn = besideBody(scene, { x: 10, z: 10 }, side * inside * radius);
+      expect(scene.entityAt(besidePeer.x, besidePeer.y)).toBe(inside < 1 ? 'peer' : undefined);
+      expect(scene.playerAt(besideOwn.x, besideOwn.y)).toBe(inside < 1);
+    }
+  });
+
+  it('rings the target, and frees the ring when another is chosen, none is, or the entity leaves', () => {
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
     scene.placeEntity(player({ id: 'cara', kind: 'peer', position: { x: 8, z: 10 } }));
 
-    scene.showSelection('bren');
+    scene.showSelection('bren', false);
     expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([12]);
 
-    scene.showSelection('cara');
+    scene.showSelection('cara', false);
     expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([8]);
-    scene.showSelection(undefined);
+    scene.showSelection(undefined, false);
     expect(rings(scene)).toEqual([]);
 
-    scene.showSelection('nobody');
+    scene.showSelection('nobody', false);
     expect(rings(scene)).toEqual([]);
-    scene.showSelection('bren');
+    scene.showSelection('bren', false);
     scene.removeEntity('bren');
     expect(rings(scene)).toEqual([]);
+  });
+
+  it('draws the target of a locked gaze as a gold reticle with four ticks pointing in, and swaps it at once both ways', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
+    const colorOf = (mesh: THREE.Mesh): number => (mesh.material as THREE.MeshBasicMaterial).color.getHex();
+
+    scene.showSelection('bren', false);
+    const [plain] = rings(scene);
+    expect(plain!.children).toEqual([]);
+    scene.showSelection('bren', false);
+    expect(rings(scene)).toEqual([plain]);
+
+    const disposePlain = vi.spyOn(plain!.geometry, 'dispose');
+    scene.showSelection('bren', true);
+    const [reticle] = rings(scene);
+    expect(disposePlain).toHaveBeenCalled();
+    expect(reticle).not.toBe(plain);
+    expect(reticle!.parent?.position.x).toBe(12);
+    expect(colorOf(reticle!)).not.toBe(colorOf(plain!));
+    const [ticks] = reticle!.children as THREE.Mesh[];
+    expect(reticle!.children).toHaveLength(1);
+    expect(ticks!.material).toBe(reticle!.material);
+    expect(ticks!.geometry.getAttribute('position').count).toBe(12);
+    const ring = reticle!.geometry as THREE.RingGeometry;
+    const outer = ring.parameters.outerRadius;
+    const inner = ring.parameters.innerRadius;
+    const position = ticks!.geometry.getAttribute('position');
+    for (let tick = 0; tick < 4; tick += 1) {
+      const radius = (vertex: number): number => Math.hypot(position.getX(tick * 3 + vertex), position.getY(tick * 3 + vertex));
+      // The tip lies on the ring's band and the base outside it, so each tick points in.
+      expect(radius(0)).toBeGreaterThan(inner);
+      expect(radius(0)).toBeLessThan(outer);
+      expect(Math.min(radius(1), radius(2))).toBeGreaterThan(outer);
+    }
+
+    const disposeTicks = vi.spyOn(ticks!.geometry, 'dispose');
+    const disposeMaterial = vi.spyOn(reticle!.material as THREE.Material, 'dispose');
+    scene.showSelection('bren', false);
+    expect(rings(scene)).toHaveLength(1);
+    expect(rings(scene)[0]!.children).toEqual([]);
+    expect(colorOf(rings(scene)[0]!)).toBe(colorOf(plain!));
+    expect(disposeTicks).toHaveBeenCalled();
+    expect(disposeMaterial).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the ring a press on the ground drops', () => {
+  const ON_DAIS = { x: 5, z: 5 };
+  const ON_FLOOR = { x: 12, z: 12 };
+  const LIFT = 0.03;
+
+  /** A scene over `daisSector` on a clock the test moves, and its press rings. */
+  function pressing(reducedMotion = false): { scene: WorldScene; clock: { ms: number }; markers: () => THREE.Mesh[] } {
+    const clock = { ms: 0 };
+    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, 1, reducedMotion, () => clock.ms);
+    const entered = world();
+    scene.enterSpace(entered);
+    entered.addSector(daisSector);
+    scene.addSector(daisSector);
+    return { scene, clock, markers: () => rings(scene) };
+  }
+
+  function at(scene: WorldScene, clock: { ms: number }, ms: number): void {
+    clock.ms = ms;
+    scene.tick(0.016);
+  }
+
+  const opacityOf = (mesh: THREE.Mesh): number => (mesh.material as THREE.MeshBasicMaterial).opacity;
+
+  it('drops onto the ground a press holds, on the top of a walk surface, follows it, and lifts away', () => {
+    const { scene, clock, markers } = pressing();
+
+    scene.showPressMarker(ON_DAIS);
+    const [ring] = markers();
+    expect(markers()).toHaveLength(1);
+    expect(ring!.parent).toBe(scene.scene);
+    expect(ring!.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    expect(ring!.position.y).toBeGreaterThan(0.2 + LIFT + 0.4);
+    expect(opacityOf(ring!)).toBe(0);
+
+    at(scene, clock, 50);
+    const falling = ring!.position.y;
+    expect(falling).toBeGreaterThan(0.2 + LIFT);
+    expect(falling).toBeLessThan(0.2 + LIFT + 0.4);
+    expect(opacityOf(ring!)).toBeGreaterThan(0);
+    at(scene, clock, 150);
+    expect(ring!.position.toArray()).toEqual([5, 0.2 + LIFT, 5]);
+    expect(opacityOf(ring!)).toBe(0.9);
+
+    scene.showPressMarker(ON_FLOOR);
+    at(scene, clock, 200);
+    expect(markers()).toEqual([ring]);
+    expect(ring!.position.toArray()).toEqual([12, LIFT, 12]);
+
+    scene.liftPressMarker();
+    at(scene, clock, 275);
+    expect(ring!.position.x).toBe(12);
+    expect(ring!.position.y).toBeGreaterThan(LIFT);
+    expect(opacityOf(ring!)).toBeGreaterThan(0);
+    expect(opacityOf(ring!)).toBeLessThan(0.9);
+
+    const dispose = vi.spyOn(ring!.geometry, 'dispose');
+    at(scene, clock, 350);
+    expect(markers()).toEqual([]);
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  it('lands before it lifts when the press comes up at once, and lifts where it lies when let go of', () => {
+    const { scene, clock, markers } = pressing();
+    scene.showPressMarker(ON_FLOOR);
+
+    scene.liftPressMarker();
+    at(scene, clock, 100);
+    const [ring] = markers();
+    const landing = ring!.position.y;
+    at(scene, clock, 150);
+    expect(ring!.position.y).toBeLessThan(landing);
+    expect(ring!.position.toArray()).toEqual([12, LIFT, 12]);
+    at(scene, clock, 225);
+    expect(ring!.position.y).toBeGreaterThan(LIFT);
+    at(scene, clock, 300);
+    expect(markers()).toEqual([]);
+  });
+
+  it('drops a new ring for the next press while the last still lifts', () => {
+    const { scene, clock, markers } = pressing();
+    scene.showPressMarker(ON_FLOOR);
+    at(scene, clock, 150);
+    scene.liftPressMarker();
+
+    at(scene, clock, 200);
+    scene.showPressMarker(ON_DAIS);
+    expect(markers().map((ring) => ring.position.x)).toEqual([12, 5]);
+    at(scene, clock, 300);
+    expect(markers().map((ring) => ring.position.x)).toEqual([5]);
+  });
+
+  it('only fades under reduced motion', () => {
+    const { scene, clock, markers } = pressing(true);
+    scene.showPressMarker(ON_FLOOR);
+    const [ring] = markers();
+    const heights: number[] = [ring!.position.y];
+
+    for (const ms of [50, 150]) {
+      at(scene, clock, ms);
+      heights.push(ring!.position.y);
+    }
+    expect(opacityOf(ring!)).toBe(0.9);
+    scene.liftPressMarker();
+    at(scene, clock, 200);
+    heights.push(ring!.position.y);
+    expect(opacityOf(ring!)).toBeLessThan(0.9);
+
+    expect(heights).toEqual([LIFT, LIFT, LIFT, LIFT]);
+  });
+
+  it('goes with the splash', () => {
+    const { scene, markers } = pressing();
+    scene.showPressMarker(ON_FLOOR);
+
+    scene.showSplash();
+
+    expect(markers()).toEqual([]);
   });
 });
 
@@ -1643,9 +1980,9 @@ describe('blows, falls, and raises', () => {
   }
 
   function entityNode(scene: WorldScene, entityId: string): THREE.Object3D {
-    scene.showSelection(entityId);
+    scene.showSelection(entityId, false);
     const node = rings(scene)[0]!.parent!;
-    scene.showSelection(undefined);
+    scene.showSelection(undefined, false);
     return node;
   }
 
@@ -1656,7 +1993,7 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle']);
 
     const idle = last();
-    scene.showBlow('self', undefined, false);
+    scene.showBlow('self', 'monster:1', false);
     expect(started()).toEqual(['Idle', 'Interact']);
     expect(last().loop).toBe(THREE.LoopOnce);
     // Half-way through the fade the pose has given half its weight to the swing.
@@ -1733,7 +2070,7 @@ describe('blows, falls, and raises', () => {
     scene.placeEntity(player());
     scene.tick(0.016);
 
-    scene.showBlow('self', undefined, false);
+    scene.showBlow('self', 'monster:1', false);
     scene.updateCondition('self', 'fallen');
     run(scene, CLIP_SECONDS * 2);
 
@@ -1961,7 +2298,7 @@ describe('overlay artwork', () => {
     expect(namePlaqueBackground(kind, 'hale', false)).toBe(background);
   });
 
-  it('gives a hale monster a plaque only while it is hovered', () => {
+  it('gives a hale monster a plaque only while it is the target', () => {
     expect(namePlaqueBackground('monster', 'hale', false)).toBeUndefined();
     expect(namePlaqueBackground('monster', 'hale', true)).toBe(NAME_PLAQUE.playerBackground);
   });
@@ -2157,14 +2494,14 @@ describe('name plaques hang off the entity node', () => {
       return (plate.material as THREE.MeshBasicMaterial).depthTest;
     }
 
-    /** The player at 10, and peers at 8 (hale), 11 (tended), and 12 (hurt). */
+    /** The player at 10, and peers at 8 (hale), 11 (the target), and 12 (hurt). */
     function crowd(): WorldScene {
       const scene = makeScene();
       scene.placeEntity(player());
       scene.placeEntity(player({ id: 'hale', kind: 'peer', position: { x: 8, z: 10 } }));
-      scene.placeEntity(player({ id: 'tended', kind: 'peer', position: { x: 11, z: 10 } }));
+      scene.placeEntity(player({ id: 'target', kind: 'peer', position: { x: 11, z: 10 } }));
       scene.placeEntity(player({ id: 'hurt', kind: 'peer', condition: 'hurt', position: { x: 12, z: 10 } }));
-      scene.showSelection('tended');
+      scene.showSelection('target', false);
       scene.tick(0.016);
       return scene;
     }
@@ -2173,11 +2510,11 @@ describe('name plaques hang off the entity node', () => {
       return [11, 12, 10, 8].map((x) => plateAt(scene, x)!.renderOrder);
     }
 
-    it('draws the plaque tended over a hurt one, a hurt one over the own, and the own over the rest, none hidden by another', () => {
+    it("draws the target's plaque over a hurt one, a hurt one over the own, and the own over the rest, none hidden by another", () => {
       const scene = crowd();
 
-      const [tended, hurt, own, hale] = orders(scene);
-      expect(tended).toBeGreaterThan(hurt!);
+      const [target, hurt, own, hale] = orders(scene);
+      expect(target).toBeGreaterThan(hurt!);
       expect(hurt).toBeGreaterThan(own!);
       expect(own).toBeGreaterThan(hale!);
       for (const x of [8, 10, 11, 12]) expect((plateAt(scene, x)!.material as THREE.MeshBasicMaterial).depthWrite).toBe(false);
@@ -2194,7 +2531,7 @@ describe('name plaques hang off the entity node', () => {
       expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(plateAt(scene, 10)!.renderOrder);
     });
 
-    it('draws the plaque tended over even a fallen one', () => {
+    it("draws the target's plaque over even a fallen one", () => {
       const scene = crowd();
       scene.placeEntity(player({ id: 'down', kind: 'peer', condition: 'fallen', position: { x: 6, z: 10 } }));
       scene.tick(0.016);
@@ -2203,51 +2540,32 @@ describe('name plaques hang off the entity node', () => {
       expect(plateAt(scene, 6)!.renderOrder).toBeGreaterThan(plateAt(scene, 12)!.renderOrder);
     });
 
-    it('brings the hovered plaque over every other and through the world, and puts it back when the pointer leaves', () => {
+    it("shows only the target's plaque through the world, and the plaque of the one it was no longer", () => {
       const scene = crowd();
-      const before = orders(scene);
+      expect([8, 10, 11, 12].map((x) => depthTested(plateAt(scene, x)!))).toEqual([true, true, false, true]);
 
-      scene.setPointer(scene._viewportPointFor('hale'));
+      scene.showSelection('hale', false);
       scene.tick(0.016);
-      expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(Math.max(...before));
-      expect(depthTested(plateAt(scene, 8)!)).toBe(false);
-
-      scene.setPointer(undefined);
-      scene.tick(0.016);
-      expect(orders(scene)).toEqual(before);
-      expect(depthTested(plateAt(scene, 8)!)).toBe(true);
+      expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(plateAt(scene, 12)!.renderOrder);
+      expect([8, 10, 11, 12].map((x) => depthTested(plateAt(scene, x)!))).toEqual([false, true, true, true]);
+      expect(plateAt(scene, 11)!.renderOrder).toBeLessThan(plateAt(scene, 10)!.renderOrder);
     });
 
-    /** Hover picks what a click would reach, which is never the player. */
-    it("hovers nothing over the player's own body", () => {
-      const scene = crowd();
-      const before = orders(scene);
-
-      scene.setPointer(scene._viewportPointFor('self'));
-      scene.tick(0.016);
-
-      expect(orders(scene)).toEqual(before);
-      expect([8, 10, 11, 12].every((x) => depthTested(plateAt(scene, x)!))).toBe(true);
-    });
-
-    it('shows the name of a hale nightmare only while it is hovered', () => {
+    it('shows the name of a hale nightmare only while it is the target', () => {
       const scene = makeScene();
       scene.placeEntity(player());
       scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
       expect(plateAt(scene, 12)).toBeUndefined();
 
-      scene.setPointer(scene._viewportPointFor('monster:1'));
-      scene.tick(0.016);
+      scene.showSelection('monster:1', false);
       expect(plateAt(scene, 12)).toBeDefined();
 
-      // Struck and healed again under a resting pointer, it keeps its name.
+      // Struck and healed again while targeted, it keeps its name.
       scene.updateCondition('monster:1', 'grazed');
       scene.updateCondition('monster:1', 'hale');
-      scene.tick(0.016);
       expect(plateAt(scene, 12)).toBeDefined();
 
-      scene.setPointer(undefined);
-      scene.tick(0.016);
+      scene.showSelection(undefined, false);
       expect(plateAt(scene, 12)).toBeUndefined();
     });
   });
@@ -2260,6 +2578,48 @@ describe('name plaques hang off the entity node', () => {
  * assertion, which is why these spy on `dispose` directly — and why they assert both directions:
  * freeing what this file allocated, and *not* freeing what the asset cache lent it.
  */
+describe('overlay art keeps a readable size', () => {
+  /** A landscape phone. */
+  const PHONE = { width: 844, height: 390 };
+
+  /** How many times its size in metres the scene draws a plaque and a bubble. */
+  function magnifications(scene: WorldScene): { plaque: number; bubble: number } {
+    let plate: THREE.Object3D | undefined;
+    scene.scene.traverse((object) => {
+      const material = (object as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+      if ((object as THREE.Mesh).isMesh && material?.map?.image instanceof HTMLCanvasElement) plate = object;
+    });
+    return { plaque: plate!.parent!.scale.y, bubble: scene.camera.top / scene.placedBubbles().halfSize.y };
+  }
+
+  it('draws an overlay pixel across its smallest readable size on a phone at the farthest zoom', () => {
+    const scale = scaleForZoomFactor(PLAYER_ZOOM.minFactor);
+    const natural = (OVERLAY_METRES_PER_PIXEL * PHONE.height) / (2 * scale);
+
+    expect(natural).toBeLessThan(OVERLAY_MIN_SCREEN_PIXELS);
+    expect(natural * overlayMagnification(scale, PHONE.height)).toBeCloseTo(OVERLAY_MIN_SCREEN_PIXELS, 9);
+  });
+
+  it('draws overlay art at its size in metres where that is already readable', () => {
+    expect(overlayMagnification(scaleForZoomFactor(PLAYER_ZOOM.maxFactor), 1440)).toBe(1);
+  });
+
+  it('magnifies the plaques and the bubbles alike, following the zoom and the window', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.setViewportSize(PHONE.width, PHONE.height);
+    scene.applyZoomFactor(PLAYER_ZOOM.minFactor);
+    const far = overlayMagnification(scene.camera.top, PHONE.height);
+    expect(far).toBeGreaterThan(1);
+    expect(magnifications(scene).plaque).toBeCloseTo(far, 9);
+    expect(magnifications(scene).bubble).toBeCloseTo(far, 9);
+
+    scene.setViewportSize(2560, 1440);
+    scene.applyZoomFactor(PLAYER_ZOOM.maxFactor);
+    expect(magnifications(scene)).toEqual({ plaque: 1, bubble: 1 });
+  });
+});
+
 describe('scatter', () => {
   /** A tuft-shaped prop under a scaled, moved parent, as the pipeline's `SomnioNormalize` node stands over every prop `normalize_props.py` stages. */
   function tuftModel(): THREE.Object3D {
@@ -2736,22 +3096,11 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     expect(Math.atan2(pinned.y, pinned.x)).toBeCloseTo(Math.atan2(toward.y, toward.x), 6);
   });
 
-  /** Zoomed in all the way, the spot over the player's head where a doorway's bubble would hang is off screen. */
-  it("pins a voice on the player's own spot to the top", () => {
-    const scene = sceneWithPeer(11);
-    scene.applyZoomFactor(2);
-
-    expect(scene.showSpeechBubble(voiced('bren', ['Hallo'], { x: 10, z: 10 }))).toBe(true);
-
-    const pinned = bubbleSaying(scene, 'Hallo')!.centre;
-    expect(pinned.x).toBeCloseTo(0, 6);
-    expect(pinned.y).toBeGreaterThan(scene.placedBubbles().halfSize.y / 2);
-  });
-
-  /** Zoomed in all the way, four lines are taller than the screen above the player's head. */
+  /** Zoomed in all the way in a window 160 px tall, four lines held at their smallest readable size are taller than the screen above the player's head. */
   it("hangs the player's own bubble beside their head when the screen has no room above it", () => {
     const scene = sceneWithPeer(11);
-    scene.applyZoomFactor(2);
+    scene.applyZoomFactor(1.4);
+    scene.setViewportSize(160, 160);
 
     expect(scene.showSpeechBubble(said('self', ['one', 'two', 'three', 'four'], 3000))).toBe(false);
 
@@ -2760,10 +3109,10 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     expect(insideScreen(scene, bubble)).toBe(true);
   });
 
-  /** 2.7 m across the screen is drawn 0.9 of the way to its edge. */
+  /** 6.3 m across the screen is drawn 0.9 of the way to its edge. */
   it.each([1, -1])('slides the bubble of a speaker drawn near the screen edge on side %i inward', (side) => {
     const yaw = (ORTHO_RIG.yawDegrees * Math.PI) / 180;
-    const across = { x: 10 + side * 2.7 * Math.cos(yaw), z: 10 - side * 2.7 * Math.sin(yaw) };
+    const across = { x: 10 + side * 6.3 * Math.cos(yaw), z: 10 - side * 6.3 * Math.sin(yaw) };
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'peer', kind: 'peer', position: across }));
@@ -2777,9 +3126,9 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     expect(insideScreen(scene, bubble)).toBe(true);
   });
 
-  /** A 380 x 1000 window shows 2.28 m across, narrower than the 2.4 m of a full bubble. */
+  /** A 160 x 1000 window shows 2.24 m across, narrower than the 2.4 m of a full bubble. */
   it('keeps the bubble of a speaker beside the player overhead in a window narrower than a bubble', () => {
-    const scene = sceneWithPeer(10.5, 0.38);
+    const scene = sceneWithPeer(10.5, 0.16);
     expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
     expect(scene.showSpeechBubble(said('peer', [LONG], 3000))).toBe(false);
@@ -2844,7 +3193,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     }
 
     it('shows a voice from the door just past the wall, in the dark, with its tail toward the wall', () => {
-      const scene = roomScene(0.5);
+      const scene = roomScene(0.78);
 
       expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }, { kind: 'yell' }))).toBe(false);
 
@@ -2861,7 +3210,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
       [{ x: 0, z: 5 }, 'west'],
       [{ x: 5, z: 10 }, 'south'],
     ] as const)('points the tail of a voice from the door at %j back toward its %s wall', (source, _wall) => {
-      const scene = roomScene(0.5, 2);
+      const scene = roomScene(0.78, 2);
 
       expect(scene.showSpeechBubble(voiced('bren', ['Hilfe!'], source))).toBe(false);
 
@@ -2876,7 +3225,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
 
     /** Its spot past the wall is the one place it can go, and a bubble round a head can go anywhere round it, so it takes its spot first. */
     it('places a voice from the door before a bubble round a head that spoke earlier', () => {
-      const scene = roomScene(0.5);
+      const scene = roomScene(0.78);
       scene.placeEntity(player({ id: 'aya', kind: 'peer', position: { x: 5, z: 1 } }));
       scene.showSpeechBubble(voiced('aya', ['Hallo'], { x: 5, z: 1 }));
 
@@ -2890,7 +3239,7 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     });
 
     it('hangs it over the yeller once they come in through the door', () => {
-      const scene = roomScene(0.5);
+      const scene = roomScene(0.78);
       scene.showSpeechBubble(voiced('bren', ['Hilfe!'], { x: 5, z: 0 }, { kind: 'yell' }));
       expect(bubbleSaying(scene, 'Hilfe!')!.mode).toBe('fixed');
 
@@ -2901,17 +3250,17 @@ describe('speech bubbles hang round a head on screen and are pinned at the edge 
     });
 
     it('pins it at the edge of the screen when the wall is off screen', () => {
-      const scene = roomScene(2, 0.6);
+      const scene = roomScene(1.4, 0.2);
       expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
-      expect(scene.showSpeechBubble(voiced('bren', [LONG], { x: 5, z: 0 }))).toBe(true);
+      expect(scene.showSpeechBubble(voiced('bren', [LONG], { x: 0, z: 5 }))).toBe(true);
     });
   });
 
-  /** At the closest zoom a 600 x 1000 window shows 1.8 m across, less than the 2.4 m a full bubble is wide. */
+  /** At the closest zoom a 200 x 1000 window shows 2 m across, less than the 2.4 m a full bubble is wide. */
   it('centres a pinned bubble across a window too narrow for it', () => {
-    const scene = sceneWithPeer(40, 0.6);
-    scene.applyZoomFactor(2);
+    const scene = sceneWithPeer(40, 0.2);
+    scene.applyZoomFactor(1.4);
     expect(speechBubbleFrameSize([LONG], 'say').width * 0.016).toBeGreaterThan(2 * scene.placedBubbles().halfSize.x);
 
     expect(scene.showSpeechBubble(said('peer', [LONG], 3000))).toBe(true);

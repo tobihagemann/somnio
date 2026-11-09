@@ -43,14 +43,18 @@ export interface WorldRenderSurface {
   updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void;
   updateGait(entityId: string, gait: Gait): void;
   updateCondition(entityId: string, condition: Condition): void;
-  /** One swing or strike: the attacker lunges, and the target flinches or is missed. A swing at the air has no target. */
-  showBlow(attackerId: string, targetId: string | undefined, hit: boolean): void;
+  /** One swing or strike: the attacker lunges, and the target flinches or is missed. */
+  showBlow(attackerId: string, targetId: string, hit: boolean): void;
   /** A raise under way on a fallen entity; `undefined` ends it. */
   showRaising(targetId: string, raise: RaiseProgress | undefined): void;
   /** A mend landing on an entity: a ring swells from its feet and fades. */
   showMend(targetId: string): void;
-  /** Marks the one entity the player tends; `undefined` marks none. */
-  showSelection(entityId: string | undefined): void;
+  /** Marks the target, as a reticle while the player's facing is locked on it; `undefined` marks none. */
+  showSelection(entityId: string | undefined, locked: boolean): void;
+  /** A ring where a press holds the ground, or where the walk it let go of heads: it drops onto `point` the first time, and follows it after. */
+  showPressMarker(point: Point): void;
+  /** The ring rises away from where it lies, once it has landed. */
+  liftPressMarker(): void;
   /** The world clock at this moment; the renderer runs it forward by itself. */
   setClock(worldSeconds: number): void;
   /** Whether the bubble was pinned at the screen's edge rather than hung round a head or by the door its voice comes through. */
@@ -72,6 +76,8 @@ export const noopRenderSurface: WorldRenderSurface = {
   showRaising: () => {},
   showMend: () => {},
   showSelection: () => {},
+  showPressMarker: () => {},
+  liftPressMarker: () => {},
   setClock: () => {},
   showSpeechBubble: () => false,
   removeEntity: () => {},

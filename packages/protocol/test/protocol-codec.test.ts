@@ -165,8 +165,9 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown hand', 'equipToggle', { slot: 1, hand: 'both' }, /unknown value "both"/],
     ['an empty entity id', 'talk', { npcId: '' }, /npcId: expected a non-empty string/],
     ['an over-cap entity id', 'talk', { npcId: overCapEntityId }, /npcId: exceeds 320 UTF-8 bytes/],
-    ['an empty swing target', 'swing', { targetId: '' }, /targetId: expected a non-empty string/],
-    ['an over-cap tended dreamer', 'tend', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
+    ['an empty target', 'target', { targetId: '' }, /targetId: expected a non-empty string/],
+    ['an over-cap target', 'target', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
+    ['an engage that is neither on nor off', 'engage', { on: 'yes' }, /on: expected a bool/],
     ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaSquare', doorId: 'Main Door' }, /doorId: expected an id/],
     ['an empty door id', 'doorRefused', { sector: 'EdariaSquare', doorId: '' }, /doorId: expected an id/],
     ['an over-cap door id', 'useDoor', { sector: 'EdariaSquare', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
@@ -174,9 +175,21 @@ describe('runtime validation the erased types cannot do', () => {
     ['an empty sector name on useDoor', 'useDoor', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
     ['an over-cap sector name on doorRefused', 'doorRefused', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
     ['an empty sector name on doorRefused', 'doorRefused', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
-    ['an over-cap space id', 'enterSpace', { spaceId: overCapSectorName, selfId: 'a', worldSeconds: 0 }, /spaceId: exceeds 251 UTF-8 bytes/],
-    ['an empty space id', 'enterSpace', { spaceId: '', selfId: 'a', worldSeconds: 0 }, /spaceId: expected a non-empty string/],
-    ['a negative world time', 'enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: -1 }, /worldSeconds: expected a non-negative number/],
+    ['an over-cap space id', 'enterSpace', { spaceId: overCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }, /spaceId: exceeds 251 UTF-8 bytes/],
+    ['an empty space id', 'enterSpace', { spaceId: '', selfId: 'a', people: 'vigils', worldSeconds: 0 }, /spaceId: expected a non-empty string/],
+    [
+      'a negative world time',
+      'enterSpace',
+      { spaceId: 'outdoors', selfId: 'a', people: 'vigils', worldSeconds: -1 },
+      /worldSeconds: expected a non-negative number/,
+    ],
+    ['a join without its people', 'enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: 0 }, /people: expected a string, got nothing/],
+    [
+      'a join whose people is outside the id alphabet',
+      'enterSpace',
+      { spaceId: 'outdoors', selfId: 'a', people: 'Vigils', worldSeconds: 0 },
+      /people: expected an id/,
+    ],
     ['an unknown entity kind', 'entity', { ...entity, kind: 'ghost' }, /unknown value "ghost"/],
     ['a zero entity radius', 'entity', { ...entity, radius: 0 }, /radius: expected a positive length/],
     ['an over-cap id in a moves batch', 'moves', { moves: [{ ...move, id: overCapEntityId }] }, /moves\[0\]\.id: exceeds 320 UTF-8 bytes/],
@@ -244,7 +257,11 @@ describe('runtime validation the erased types cannot do', () => {
     ['a raise past its end', 'raising', { ...raising, progress: 1.5 }, /progress: expected a number from 0 to 1, got 1.5/],
     ['a raise with negative time left', 'raising', { ...raising, seconds: -1 }, /seconds: expected a non-negative number/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
+    ['a blow without its target', 'blow', { attackerId: 'a', hit: false }, /targetId: expected a string, got nothing/],
     ['a mend without its target', 'mend', {}, /targetId: expected/],
+    ['vitals below 0', 'vitals', { entityId: 'monster:7', health: -0.01 }, /health: expected a number from 0 to 1, got -0.01/],
+    ['vitals above 1', 'vitals', { entityId: 'monster:7', health: 1.01 }, /health: expected a number from 0 to 1, got 1.01/],
+    ['vitals without their entity', 'vitals', { health: 0.5 }, /entityId: expected a string, got nothing/],
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
@@ -263,13 +280,13 @@ describe('runtime validation the erased types cannot do', () => {
     const atCapEntityId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes);
     const atCapId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes);
     const atCapSectorName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
-    expect(() => decodeSomnioMessage(frame('swing', { targetId: atCapEntityId }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('target', { targetId: atCapEntityId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('talk', { npcId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('useDoor', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('doorRefused', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
-    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', worldSeconds: 0 }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('move', { ...move, x: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres }))).not.toThrow();
-    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: 'outdoors', selfId: 'a', worldSeconds: 0 }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: 'outdoors', selfId: 'a', people: 'vigils', worldSeconds: 0 }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('inventory', { rows: [{ ...row, itemId: atCapId, quantity: 0 }] }))).not.toThrow();
     const atCapRows = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows }, (_, index) => ({ ...row, slot: index }));
     expect(() => decodeSomnioMessage(frame('inventory', { rows: atCapRows }))).not.toThrow();
@@ -328,12 +345,9 @@ describe('round trips', () => {
     expect(decoded).toEqual({ tag: 'lucidity', payload: { ranks: [] } });
   });
 
-  /** Without a target a swing meets the air and a `tend` lets go, so the key must stay absent on all three. */
-  it.each<SomnioMessage>([
-    { tag: 'swing', payload: {} },
-    { tag: 'tend', payload: {} },
-    { tag: 'blow', payload: { attackerId: 'a', hit: false } },
-  ])('$tag round-trips without a target', (message) => {
+  /** Without a target a `target` clears, so the key must stay absent. */
+  it('target round-trips without a target', () => {
+    const message: SomnioMessage = { tag: 'target', payload: {} };
     const decoded = roundTrip(message);
     expect(decoded).toEqual(message);
     expect('targetId' in decoded.payload).toBe(false);
@@ -378,8 +392,14 @@ describe('round trips', () => {
   it('enterSpace round-trips a fractional world time near year 500 exactly', () => {
     const message: SomnioMessage = {
       tag: 'enterSpace',
-      payload: { spaceId: 'EdariaLibrary', selfId: 'a', worldSeconds: 500 * 12 * 28 * 86_400 + 0.125 },
+      payload: { spaceId: 'EdariaLibrary', selfId: 'a', people: 'vigils', worldSeconds: 500 * 12 * 28 * 86_400 + 0.125 },
     };
+    expect(roundTrip(message)).toEqual(message);
+  });
+
+  /** A resume straight into the world learns the player's own people from `enterSpace` alone. */
+  it.each(['vigils', 'sopors', 'umbrae', 'lumina'])('enterSpace round-trips the people %s', (people) => {
+    const message: SomnioMessage = { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'a', people, worldSeconds: 0 } };
     expect(roundTrip(message)).toEqual(message);
   });
 });
@@ -487,7 +507,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(16);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(17);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

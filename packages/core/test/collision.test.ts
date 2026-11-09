@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MOVE_SUBSTEP,
   bodyBlocks,
+  bodyBlocksLine,
   buildSpaceCollision,
   canStand,
   groundHeightAt,
@@ -564,6 +565,34 @@ describe('bodies', () => {
     expect(away.blocked).toBe(false);
     expect(away.position.x).toBeCloseTo(9, 9);
     expect(resolveMove(collision, { x: 9.8, z: 10 }, { x: 10, z: 10 }, RADIUS, [], [peer]).position).toEqual({ x: 9.8, z: 10 });
+  });
+
+  it('block a line exactly where steps a millimetre apart along it would be blocked', () => {
+    const peer = { x: 10, z: 10, radius: 0.3 };
+    const byMillimetre = (from: Point, to: Point): boolean => {
+      const count = Math.ceil(distance(from, to) / 0.001);
+      let previous = from;
+      for (let index = 1; index <= count; index += 1) {
+        const sample = { x: from.x + ((to.x - from.x) * index) / count, z: from.z + ((to.z - from.z) * index) / count };
+        if (bodyBlocks(previous, sample, 0.3, peer)) return true;
+        previous = sample;
+      }
+      return false;
+    };
+    const legs: [string, Point, Point, boolean][] = [
+      ['stops short of the body', { x: 5, z: 10 }, { x: 9, z: 10 }, false],
+      ['runs through the body', { x: 5, z: 10 }, { x: 15, z: 10 }, true],
+      ['passes within contact', { x: 5, z: 10.5 }, { x: 15, z: 10.5 }, true],
+      ['passes clear', { x: 5, z: 10.7 }, { x: 15, z: 10.7 }, false],
+      ['starts inside and leads away', { x: 9.8, z: 10 }, { x: 9, z: 10 }, false],
+      ['starts inside and leads sideways out', { x: 9.8, z: 10 }, { x: 9.8, z: 11 }, false],
+      ['starts inside and leads inward', { x: 9.6, z: 10 }, { x: 9.9, z: 10 }, true],
+      ['heads away from a body behind the start', { x: 8, z: 10 }, { x: 5, z: 10 }, false],
+    ];
+    for (const [label, from, to, blocked] of legs) {
+      expect(byMillimetre(from, to), label).toBe(blocked);
+      expect(bodyBlocksLine(from, to, 0.3, peer), label).toBe(blocked);
+    }
   });
 
   it('do not enter the legality of a move, where NPCs do', () => {

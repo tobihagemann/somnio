@@ -13,7 +13,7 @@ import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 const WORLD_SECONDS = 123_456.5;
 const JOIN_FRAMES = 6;
 const FELL_AT: Point = { x: 10, z: 9.7 };
-const FALLEN: Partial<Character> = { energy: energy({ healthCurrent: 0, balanceCurrent: 3, spiritCurrent: 60 }) };
+const FALLEN: Partial<Character> = { people: 'sopors', energy: energy({ healthCurrent: 0, balanceCurrent: 3, spiritCurrent: 60 }) };
 const INN_SPAWN = { x: 3, z: 4, facing: headingFromCardinal('east') };
 
 const INN = 'EdariaInn';
@@ -52,7 +52,7 @@ describe('handleWake', () => {
     });
     const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
     expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'entity']);
-    expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: INN, selfId: w.entityId, worldSeconds: WORLD_SECONDS } });
+    expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: INN, selfId: w.entityId, people: 'sopors', worldSeconds: WORLD_SECONDS } });
     expect(arrival[2]).toMatchObject({ payload: { id: w.entityId, condition: 'failing' } });
   });
 

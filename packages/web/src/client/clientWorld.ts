@@ -1,7 +1,9 @@
-import { buildSpaceCollision, neighbourSectors, resolveDoor, sectorAt } from '@somnio/core';
-import type { ModelRegistry, Point, ResolvedDoor, SpaceCollision, WorldEntity } from '@somnio/core';
+import { buildSpaceCollision, findPath, neighbourSectors, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
+import type { Body, EngageTarget, FoundPath, ModelRegistry, Point, ResolvedDoor, SpaceCollision, WalkRaster, WorldEntity } from '@somnio/core';
 import type { Condition, NPCService, SectorView } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
+import { defaultWalkRasterizer } from './walkRasterizer';
+import type { WalkRasterizer } from './walkRasterizer';
 
 /** An entity as the client holds it: where it is drawn, the body radius the server gave it, and how its health stands. */
 export interface ClientEntity extends WorldEntity {
@@ -9,6 +11,17 @@ export interface ClientEntity extends WorldEntity {
   condition: Condition;
   /** What asking an NPC offers beyond its dialog. */
   service: NPCService | undefined;
+}
+
+/** Whether the entity is a nightmare driven off: fading, it is nothing to face, act on, or walk round. */
+export function drivenOff(entity: ClientEntity): boolean {
+  return entity.kind === 'monster' && entity.condition === 'fallen';
+}
+
+/** What the entity is to slot 1: a nightmare not yet driven off, a dreamer, or nothing. */
+export function engageKind(entity: ClientEntity): EngageTarget | undefined {
+  if (entity.kind === 'npc' || drivenOff(entity)) return undefined;
+  return entity.kind === 'monster' ? 'nightmare' : 'dreamer';
 }
 
 /** A door of a held sector with its trigger resolved, addressed the way `useDoor` names it. */
@@ -38,10 +51,17 @@ export class ClientWorld {
   private readonly registry: ModelRegistry;
   private readonly sectors: SectorView[] = [];
   private readonly drawn = new Set<string>();
+  private readonly walkRasterizer: WalkRasterizer;
+  /** Each sector's walk raster, kept until the raster for its current inputs replaces it. */
+  private readonly walkRasters = new Map<string, WalkRaster>();
+  /** The raster each sector waits for; one asked for earlier is stale when it arrives. */
+  private readonly walkGenerations = new Map<string, number>();
+  private walkGeneration = 0;
 
-  constructor(spaceId: string, registry: ModelRegistry) {
+  constructor(spaceId: string, registry: ModelRegistry, walkRasterizer: WalkRasterizer = defaultWalkRasterizer()) {
     this.spaceId = spaceId;
     this.registry = registry;
+    this.walkRasterizer = walkRasterizer;
     this.collision = buildSpaceCollision({ id: spaceId, sectors: this.sectors }, registry);
   }
 
@@ -56,6 +76,27 @@ export class ClientWorld {
         return resolved === undefined ? [] : [{ sector: held.name, doorId: door.id, resolved }];
       }),
     );
+    // A sector edge with no held neighbour blocks, so the sectors touching this one walk differently now too.
+    this.rasterizeWalkable(sector);
+    for (const neighbour of neighbourSectors({ id: this.spaceId, sectors: this.sectors }, sector.name)) this.rasterizeWalkable(neighbour);
+  }
+
+  /**
+   * A path from `from` toward `to` round the held sectors' static world and `bodies`, over the walk
+   * rasters computed so far. `excludedEdges` is the walk's: the search adds to it, and every re-plan
+   * of one walk passes the same set.
+   */
+  findPath(from: Point, to: Point, bodies: readonly Body[], excludedEdges: Set<string>): FoundPath {
+    return findPath({ collision: this.collision, rasters: this.walkRasters.values() }, from, to, bodies, excludedEdges);
+  }
+
+  private rasterizeWalkable(sector: SectorView): void {
+    this.walkGeneration += 1;
+    const generation = this.walkGeneration;
+    this.walkGenerations.set(sector.name, generation);
+    this.walkRasterizer.rasterize(walkRasterInputs(this.collision, sector), (raster) => {
+      if (this.walkGenerations.get(sector.name) === generation) this.walkRasters.set(sector.name, raster);
+    });
   }
 
   /**

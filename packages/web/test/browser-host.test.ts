@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GameplaySession, KeyboardSampler, PlayerZoom, mouseFacingHeading, noHeldKeys } from '@/client';
-import { gaitFromHeld } from '@/client';
-import { PLACEHOLDER_REGISTRY, gaitMetresPerSecond } from '@somnio/core';
+import { GameplaySession, PlayerZoom } from '@/client';
+import { PLACEHOLDER_REGISTRY } from '@somnio/core';
 import { ORTHO_RIG, PLAYER_ZOOM, WHEEL_NOTCH, frustumBounds, wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { WorldScene } from '@/scene/worldScene';
 import { AppShell, element } from '@/ui';
@@ -30,192 +29,6 @@ function currentOverlay(app: AppShell): string | undefined {
   return app.controller.presentedOverlay?.kind;
 }
 
-describe('the keyboard sampler', () => {
-  /** The sampler reaches these through its own listener, installed by `start()`. */
-  function press(target: EventTarget, code: string, down: boolean): void {
-    target.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, cancelable: true }));
-  }
-
-  it('tracks WASD while gameplay is active', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    press(target, 'KeyW', true);
-    press(target, 'KeyD', true);
-
-    expect(sampler.snapshot()).toEqual({ ...noHeldKeys(), w: true, d: true });
-  });
-
-  it('maps the arrow keys onto the same four direction bits', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    press(target, 'ArrowUp', true);
-    press(target, 'ArrowLeft', true);
-
-    expect(sampler.snapshot().w).toBe(true);
-    expect(sampler.snapshot().a).toBe(true);
-  });
-
-  it('distinguishes the left modifiers from the right ones', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    press(target, 'ShiftRight', true);
-    press(target, 'AltRight', true);
-
-    // The legacy rule is left-side only: LShift runs, LOption walks. `KeyboardEvent.code` names the
-    // physical key, so the per-side state is directly observable.
-    expect(sampler.snapshot().leftShift).toBe(false);
-    expect(sampler.snapshot().leftOption).toBe(false);
-
-    press(target, 'ShiftLeft', true);
-    expect(sampler.snapshot().leftShift).toBe(true);
-  });
-
-  /**
-   * The positive direction matters on its own: asserting only that AltRight leaves `leftOption`
-   * false would pass with a wrong code in `MODIFIER_CODES`, leaving the slow walk silently dead.
-   */
-  it('tracks LeftOption and maps it to the walk gait at one metre a second', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    press(target, 'AltLeft', true);
-
-    const held = sampler.snapshot();
-    expect(held.leftOption).toBe(true);
-    // The whole chain, not just the bit: key -> gait -> speed. LShift outranks LOption, matching
-    // `gaitFromHeld`'s order.
-    expect(gaitFromHeld(held)).toBe('walk');
-    expect(gaitMetresPerSecond(gaitFromHeld(held))).toBe(1);
-
-    press(target, 'ShiftLeft', true);
-    expect(gaitFromHeld(sampler.snapshot())).toBe('run');
-  });
-
-  /**
-   * A consumed direction key must not also scroll the page — otherwise holding ArrowDown to walk
-   * south drifts the canvas out of view. Both directions are asserted: the negative case alone (a
-   * Meta combo reaching the browser) passes even if nothing is ever consumed.
-   */
-  it('prevents the default for a direction key it consumes', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    const event = new KeyboardEvent('keydown', { code: 'ArrowDown', cancelable: true, bubbles: true });
-    target.dispatchEvent(event);
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(sampler.snapshot().s).toBe(true);
-  });
-
-  it('ignores presses while gameplay is inactive', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-
-    press(target, 'KeyW', true);
-
-    // Keys typed into a focused text field must not walk the character.
-    expect(sampler.snapshot().w).toBe(false);
-  });
-
-  it('lets Meta and Control combos through to the browser', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    const event = new KeyboardEvent('keydown', { code: 'KeyW', metaKey: true, cancelable: true });
-    target.dispatchEvent(event);
-
-    // Cmd-W has to reach the browser, or the player cannot close the tab.
-    expect(sampler.snapshot().w).toBe(false);
-    expect(event.defaultPrevented).toBe(false);
-  });
-
-  it('clears a bit whose key-up arrives under a modifier', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-    press(target, 'KeyW', true);
-
-    target.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', metaKey: true, cancelable: true }));
-
-    // The press was consumed but the release was not; clearing has to be unconditional or the key
-    // sticks on and the character walks forever.
-    expect(sampler.snapshot().w).toBe(false);
-  });
-
-  it('drops held keys when the gate closes', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-    press(target, 'KeyW', true);
-
-    sampler.setGameplayActive(false);
-
-    // Releasing capture mid-hold means the matching key-up is never seen, so the bitset has to go.
-    expect(sampler.snapshot().w).toBe(false);
-  });
-
-  it('drops held keys when the window loses focus', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-    press(target, 'KeyW', true);
-
-    target.dispatchEvent(new Event('blur'));
-
-    // Switching windows never delivers the key-up, so without this the character walks on return.
-    expect(sampler.snapshot().w).toBe(false);
-  });
-
-  it('stops listening after stop()', () => {
-    const target = element('div');
-    const sampler = new KeyboardSampler(target);
-    sampler.start();
-    sampler.setGameplayActive(true);
-
-    sampler.stop();
-    press(target, 'KeyW', true);
-
-    expect(sampler._isStarted).toBe(false);
-    expect(sampler.snapshot().w).toBe(false);
-  });
-});
-
-describe('mouse facing', () => {
-  it('needs no Y flip', () => {
-    // DOM pointer coordinates already grow downward, which is the direction `worldMovement` expects.
-    const below = mouseFacingHeading({ x: 100, y: 200 }, { x: 100, y: 100 });
-    const above = mouseFacingHeading({ x: 100, y: 0 }, { x: 100, y: 100 });
-
-    // Opposite pointer offsets have to give opposite headings...
-    expect(Math.abs(Math.abs(below - above) - 180)).toBeLessThan(0.01);
-    // ...and each has to be the *right* one. The difference alone cannot say so: the two probes sit
-    // symmetrically about the centre, so flipping Y merely swaps them and leaves `|below - above|`
-    // untouched — a character facing 180 degrees away from the cursor passes. `worldMovement`
-    // rotates a straight-down screen offset through the camera yaw, so a cursor below the player
-    // faces exactly that yaw.
-    expect(below).toBeCloseTo(ORTHO_RIG.yawDegrees, 4);
-  });
-});
-
 describe('scroll zoom', () => {
   it('inverts the DOM wheel sign so scrolling up zooms in', () => {
     const zoom = new PlayerZoom();
@@ -240,7 +53,7 @@ describe('scroll zoom', () => {
   /**
    * `PLAYER_ZOOM.scrollGain` is sized for a few delta units per notch. Chrome and Safari on macOS
    * report ~100 px for the same notch, and `exp(100 * 0.015)`
-   * is 4.5x against a range of only 4x, so an unconverted delta pins the camera at a stop on the
+   * is 4.5x against a range of only 1.8x, so an unconverted delta pins the camera at a stop on the
    * first notch with nothing in between. Converting the scale is as load-bearing as the sign.
    */
   it('takes many notches to cross the zoom range rather than one', () => {
@@ -248,10 +61,9 @@ describe('scroll zoom', () => {
       new GameplaySession({
         controller: new AppShell({
           container: element('div'),
-          capabilities: { hasWebGL: false, isDesktop: true },
+          capabilities: { hasWebGL: false },
         }).controller,
         send: () => {},
-        input: { snapshot: () => noHeldKeys(), setGameplayActive: () => {}, clearHeldKeys: () => {} },
         measureText: (line) => line.length * 5,
       });
 
@@ -259,9 +71,9 @@ describe('scroll zoom', () => {
     let notches = 0;
     while (zoomIn.zoom.applyScroll(-wheelDeltaToZoomDelta(-WHEEL_NOTCH.pixels, 0))) notches += 1;
     expect(zoomIn.zoom.factor).toBe(PLAYER_ZOOM.maxFactor);
-    // ~12 notches from the default factor to the stop, so ~24 across the full range. What matters is
+    // ~6 notches from the default factor to the stop, ~10 across the full range. What matters is
     // that a player can stop part-way; one notch reaching a stop is the regression.
-    expect(notches).toBeGreaterThan(8);
+    expect(notches).toBeGreaterThan(4);
 
     const single = session();
     single.applyScrollZoom(-WHEEL_NOTCH.pixels, 0);
@@ -272,13 +84,12 @@ describe('scroll zoom', () => {
   it('reads Firefox line deltas at the same scale as Chrome pixel deltas', () => {
     const controller = new AppShell({
       container: element('div'),
-      capabilities: { hasWebGL: false, isDesktop: true },
+      capabilities: { hasWebGL: false },
     }).controller;
     const make = () =>
       new GameplaySession({
         controller,
         send: () => {},
-        input: { snapshot: () => noHeldKeys(), setGameplayActive: () => {}, clearHeldKeys: () => {} },
         measureText: (line) => line.length * 5,
       });
 
@@ -299,7 +110,7 @@ describe('the resize invariant', () => {
     const tallTop = scene.camera.top;
     const tallHeight = scene.camera.top - scene.camera.bottom;
 
-    scene.setViewportAspect(2.5);
+    scene.setViewportSize(2500, 1000);
 
     // A deliberate gameplay contract: every window size shows the
     // same vertical world extent, so a bigger window magnifies rather than reveals. Tying the
@@ -313,7 +124,7 @@ describe('the resize invariant', () => {
     const scene = new WorldScene(emptyAssets(), PLACEHOLDER_REGISTRY, 1, false);
     const before = scene._cameraScale();
 
-    scene.setViewportAspect(0.4);
+    scene.setViewportSize(400, 1000);
 
     expect(scene._cameraScale()).toBe(before);
   });
@@ -343,7 +154,7 @@ describe('host handlers', () => {
   function shell(): AppShell {
     return new AppShell({
       container,
-      capabilities: { hasWebGL: true, isDesktop: true },
+      capabilities: { hasWebGL: true },
       startRendering: false,
     });
   }
@@ -408,19 +219,19 @@ describe('host handlers', () => {
     expect(currentOverlay(app)).toBe(expected);
   });
 
-  it('blurs the chat input instead of opening the menu behind it', () => {
+  it('closes the chat instead of opening the menu behind it', () => {
     const app = shell();
     app.controller.connectionState = 'attached';
     app.controller.presentedOverlay = undefined;
-    container.append(app.panels.root);
-    app.panels.chatInput.focus();
+    app.hud.openChat();
     expect(app.controller.isChatInputFocused).toBe(true);
 
     pressEscape();
 
-    // `handleEscape` returns right after the blur, so the menu must not appear — and the
-    // gate has to reopen, or Esc would leave the player unable to walk *or* reach the menu.
+    // `handleEscape` returns right after closing the chat, so the menu must not appear. The field
+    // has to give up focus too, or Esc would leave the keyboard with the chat and the menu out of reach.
     expect(app.controller.isChatInputFocused).toBe(false);
+    expect(app.hud.chatOpen).toBe(false);
     expect(currentOverlay(app)).toBeUndefined();
   });
 
@@ -434,12 +245,27 @@ describe('host handlers', () => {
     expect(pressEscape().defaultPrevented).toBe(true);
   });
 
-  it('clears held keys when the tab is hidden', () => {
+  /** A long press on a touch screen opens the browser's menu with this, over a finger that is steering. */
+  it('keeps the browser menu off the play field', () => {
+    shell();
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+
+    container.querySelector('canvas')!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  /** A live session standing in the world, steering toward a held pointer. */
+  function steering(): AppShell {
     const app = shell();
+    app.controller.presentedOverlay = undefined;
     app.controller.connectionState = 'attached';
-    app.session.input.setGameplayActive(true);
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', cancelable: true }));
-    expect(app.session.input.snapshot().w).toBe(true);
+    app.session.predictor.steerToward({ x: 5, z: 5 });
+    return app;
+  }
+
+  it('lets go of a held press when the tab is hidden', () => {
+    const app = steering();
 
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
@@ -447,56 +273,101 @@ describe('host handlers', () => {
     // hidden makes every later test in this file read the wrong state and become order-dependent.
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
 
-    // The real hazard of a hidden tab is not the integrated delta — the tick already clamps that —
-    // it is a `keyup` delivered while hidden leaving the held set populated.
-    expect(app.session.input.snapshot().w).toBe(false);
+    // The tick already clamps the integrated delta, so the real hazard of a hidden tab is a
+    // `pointerup` missed while hidden, which would leave the player steering on return.
+    expect(app.session.predictor.walk).toBeUndefined();
   });
 
-  it('clears held keys when the window blurs', () => {
-    const app = shell();
-    app.controller.connectionState = 'attached';
-    app.session.input.setGameplayActive(true);
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', cancelable: true }));
-    let visibilityLosses = 0;
-    const original = app.session.handleVisibilityLoss.bind(app.session);
-    app.session.handleVisibilityLoss = (): void => {
-      visibilityLosses += 1;
-      original();
-    };
+  it('lets go of a held press when the window blurs', () => {
+    const app = steering();
 
     window.dispatchEvent(new Event('blur'));
 
-    expect(app.session.input.snapshot().s).toBe(false);
-    // The half that pins the *shell's* handler rather than the sampler's. `KeyboardSampler`
-    // installs its own `blur` listener on `window` and clears the held set itself, so the assertion
-    // above passes with the shell's handler deleted — only the call it makes distinguishes them.
-    expect(visibilityLosses).toBe(1);
+    expect(app.session.predictor.walk).toBeUndefined();
   });
 
-  it('clears held keys when an overlay is presented', () => {
-    const app = shell();
-    app.controller.presentedOverlay = undefined;
-    app.controller.connectionState = 'attached';
-    app.session.input.setGameplayActive(true);
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', cancelable: true }));
+  it('lets go of a held press when an overlay is presented', () => {
+    const app = steering();
 
     pressEscape();
 
-    expect(app.session.input.snapshot().d).toBe(false);
+    expect(app.session.predictor.walk).toBeUndefined();
   });
 
-  it('clears held keys when the chat input takes focus', () => {
-    const app = shell();
+  it('lets go of a held press when the chat input takes focus', () => {
+    const app = steering();
+
+    app.hud.chatInput.dispatchEvent(new FocusEvent('focus'));
+
+    expect(app.session.predictor.walk).toBeUndefined();
+    expect(app.controller.isChatInputFocused).toBe(true);
+  });
+});
+
+describe('the Run key', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+  });
+
+  function inWorld(): AppShell {
+    const app = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false });
     app.controller.presentedOverlay = undefined;
     app.controller.connectionState = 'attached';
-    app.session.input.setGameplayActive(true);
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', cancelable: true }));
+    return app;
+  }
 
-    app.panels.chatInput.dispatchEvent(new FocusEvent('focus'));
+  function pressShift(init: KeyboardEventInit = {}): void {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', cancelable: true, ...init }));
+  }
 
-    // A movement key landing during the focus transition would otherwise survive into the next
-    // tick, which is why focus *gain* clears rather than relying on the gate alone.
-    expect(app.session.input.snapshot().a).toBe(false);
-    expect(app.controller.isChatInputFocused).toBe(true);
+  it('toggles Run on each press of Shift, and lights the Run button while it is on', () => {
+    const app = inWorld();
+    const runButton = container.querySelector<HTMLButtonElement>('button[aria-label="Run"]')!;
+
+    pressShift();
+    expect(app.session.running).toBe(true);
+    expect(runButton.getAttribute('aria-pressed')).toBe('true');
+
+    pressShift({ code: 'ShiftRight' });
+    expect(app.session.running).toBe(false);
+    expect(runButton.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('does not toggle again while Shift is held down and repeats', () => {
+    const app = inWorld();
+
+    pressShift();
+    pressShift({ repeat: true });
+
+    expect(app.session.running).toBe(true);
+  });
+
+  it.each<[string, (app: AppShell) => void]>([
+    ['an overlay is up', (app) => (app.controller.presentedOverlay = { kind: 'gameMenu' })],
+    ['the chat input has focus', (app) => app.hud.chatInput.dispatchEvent(new FocusEvent('focus'))],
+  ])('leaves Run alone while %s, where Shift capitalizes', (_label, arrange) => {
+    const app = inWorld();
+    arrange(app);
+
+    pressShift();
+
+    expect(app.session.running).toBe(false);
+  });
+
+  it('toggles Run from the button on the HUD too', () => {
+    const app = inWorld();
+    const runButton = container.querySelector<HTMLButtonElement>('button[aria-label="Run"]')!;
+
+    runButton.click();
+    expect(app.session.running).toBe(true);
+    runButton.click();
+    expect(app.session.running).toBe(false);
   });
 });

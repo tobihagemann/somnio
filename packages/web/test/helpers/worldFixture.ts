@@ -30,9 +30,9 @@ export function makeDoor(id: string, at: Point, target: Door['target']): Pick<Se
   };
 }
 
-/** The first frame of a join: the space, and which entity in it is the local player. */
-export function enterSpaceFrame(spaceId = 'outdoors', worldSeconds = 0): SomnioMessage {
-  return { tag: 'enterSpace', payload: { spaceId, selfId: 'self', worldSeconds } };
+/** The first frame of a join: the space, which entity in it is the local player, and their people. */
+export function enterSpaceFrame(spaceId = 'outdoors', worldSeconds = 0, people = 'vigils'): SomnioMessage {
+  return { tag: 'enterSpace', payload: { spaceId, selfId: 'self', people, worldSeconds } };
 }
 
 export function sectorFrame(sector: Sector): SomnioMessage {

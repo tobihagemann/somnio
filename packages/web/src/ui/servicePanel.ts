@@ -58,9 +58,9 @@ const TEACHING_BLURB: Record<TeachingId, () => string> = {
   'follow-through': () => t('Each rank shortens the pause between your swings.'),
   'balance-recovery': () => t('Each rank brings your balance back faster.'),
   toughening: () => t('Each rank raises your health by %@.', String(COMBAT.healthPerTougheningRank)),
-  touch: () => t('Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.'),
+  touch: () => t('Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.'),
   depth: () => t('Each rank mends more with every touch.'),
-  'drawing-back': () => t('Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.'),
+  'drawing-back': () => t('Holding the Moonstone, turn on Mend at a fallen dreamer and stay beside them to raise them.'),
   'spirit-deepening': () => t('Each rank raises your spirit by %@.', String(COMBAT.spiritPerDeepeningRank)),
 };
 

@@ -135,7 +135,7 @@ describe('the committed world', () => {
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -61.44 },
         backgroundMaterialId: 'forest-floor',
-        counts: { placements: 140, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
+        counts: { placements: 124, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
         doors: {},
         npcs: {},
       },

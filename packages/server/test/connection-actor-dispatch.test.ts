@@ -49,8 +49,8 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
     state: 'awaitingLogin',
   },
   { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
-  { label: 'pre-login swing', message: { tag: 'swing', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
-  { label: 'pre-login tend', message: { tag: 'tend', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login target', message: { tag: 'target', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login engage', message: { tag: 'engage', payload: { on: true } }, state: 'awaitingLogin' },
   {
     label: 'pre-login useDoor',
     message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } },
@@ -76,6 +76,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'awaitingLogin' },
   { label: 'post-attach lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'attached' },
   { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, state: 'attached' },
+  { label: 'post-attach vitals', message: { tag: 'vitals', payload: { entityId: 'peer', health: 0.5 } }, state: 'attached' },
   { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, state: 'attached' },
   {
     label: 'post-attach raising',
@@ -139,12 +140,17 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'choosing redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok' } }, state: 'authenticated' },
   { label: 'choosing move', message: { tag: 'move', payload: move }, state: 'authenticated' },
   { label: 'choosing clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, state: 'authenticated' },
-  { label: 'choosing swing', message: { tag: 'swing', payload: {} }, state: 'authenticated' },
+  { label: 'choosing target', message: { tag: 'target', payload: {} }, state: 'authenticated' },
+  { label: 'choosing engage', message: { tag: 'engage', payload: { on: true } }, state: 'authenticated' },
   { label: 'choosing useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } }, state: 'authenticated' },
   { label: 'choosing wake', message: { tag: 'wake', payload: {} }, state: 'authenticated' },
   { label: 'choosing characters', message: { tag: 'characters', payload: { characters: [] } }, state: 'authenticated' },
   { label: 'choosing characterResult', message: { tag: 'characterResult', payload: { result: 'ok' } }, state: 'authenticated' },
-  { label: 'choosing enterSpace', message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'player', worldSeconds: 0 } }, state: 'authenticated' },
+  {
+    label: 'choosing enterSpace',
+    message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'player', people: 'vigils', worldSeconds: 0 } },
+    state: 'authenticated',
+  },
 ];
 
 /**
@@ -198,8 +204,6 @@ describe('an attached connection', () => {
   type Attached = Awaited<ReturnType<typeof attached>>;
 
   it.each<[string, Partial<Character>, InventoryRow[], (a: Attached) => SomnioMessage, (a: Attached) => unknown, unknown]>([
-    ['a swing', {}, [], () => ({ tag: 'swing', payload: {} }), (a) => a.own().character.energy.balanceCurrent, 92],
-    ['a tend', HEALER, [MOONSTONE_IN_HAND], (a) => ({ tag: 'tend', payload: { targetId: a.hurtId } }), (a) => a.hurt().energy.healthCurrent, 60],
     [
       'a use of the Moonstone',
       HEALER,
@@ -261,14 +265,30 @@ describe('an attached connection', () => {
     expect(read(a)).toEqual(expected);
   });
 
+  it('takes a target to the space, which sends its health back', async () => {
+    const a = await attached({}, []);
+    expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
+    expect(payloads(await collectMessages(a.connection.outbox), 'vitals')).toEqual([{ entityId: a.hurtId, health: 0.5 }]);
+  });
+
+  it('takes Mend to the space, which mends the target', async () => {
+    const a = await attached(HEALER, [MOONSTONE_IN_HAND]);
+    expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
+    expect(await a.connection.dispatch({ tag: 'engage', payload: { on: true } })).toEqual({ kind: 'keepOpen' });
+    a.space.step(0.05);
+    expect(a.hurt().energy.healthCurrent).toBe(60);
+  });
+
   /** The space runs on the machine's clock here, and a nightmare takes its respawn time to appear. */
-  it('takes a swing to the space with the nightmare it names', async () => {
+  it('takes Attack to the space, which swings at the target in front', async () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
     const a = await attached({}, [], { monsterSpawns: [makeMonsterSpawn({ x: 10, z: 10.2 })] });
     now.mockReturnValue(RESPAWN_MS);
     a.space.step(0);
 
-    expect(await a.connection.dispatch({ tag: 'swing', payload: { targetId: GHOST } })).toEqual({ kind: 'keepOpen' });
+    expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: GHOST } })).toEqual({ kind: 'keepOpen' });
+    expect(await a.connection.dispatch({ tag: 'engage', payload: { on: true } })).toEqual({ kind: 'keepOpen' });
+    a.space.step(0);
 
     const swings = payloads(await collectMessages(a.connection.outbox), 'blow').filter((blow) => blow.attackerId !== GHOST);
     expect(swings).toMatchObject([{ targetId: GHOST }]);

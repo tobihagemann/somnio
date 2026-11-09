@@ -155,7 +155,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 10,
-    camera: { kind: 'area', from: { point: { x: 18.5, z: 20.8 }, scale: 6.35 }, to: { point: { x: 22.5, z: 19.6 }, scale: 6.35 } },
+    camera: { kind: 'area', from: { point: { x: 18.5, z: 20.8 }, scale: 7 }, to: { point: { x: 22.5, z: 19.6 }, scale: 7 } },
     actors: [
       {
         kind: 'peer',
@@ -204,7 +204,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 11,
-    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: 0.2, scale: { from: 2.5, to: 2.5 }, span: 1.25 },
+    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: 0.2, scale: { from: 5, to: 5 }, span: 1.25 },
     actors: [
       {
         kind: 'peer',
@@ -226,7 +226,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: 'EdariaFighterHall',
     seconds: 7,
     hour: 12,
-    camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.05, scale: { from: 2.6, to: 2.6 }, span: 2 },
+    camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.05, scale: { from: 5, to: 5 }, span: 2 },
     actors: [
       { kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' },
       { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 3.84, z: 6.88 }, facing: 180, gait: 'jog', path: [{ x: 3.4, z: 2.9 }], faces: PUGNAX },
@@ -238,7 +238,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 7,
     hour: 14,
-    camera: { kind: 'subject', subject: { x: 21.8, z: 22.6 }, side: 'left', drop: 0.1, scale: { from: 2.8, to: 2.6 }, span: 1.5 },
+    camera: { kind: 'subject', subject: { x: 21.8, z: 22.6 }, side: 'left', drop: 0.1, scale: { from: 5.4, to: 5 }, span: 1.5 },
     actors: [
       { kind: 'peer', id: TAMO, name: 'Tamo', at: { x: 21.55, z: 22.77 }, facing: 120, gait: 'jog', path: [] },
       { kind: 'peer', id: LINNEA, name: 'Linnea', at: { x: 22.05, z: 22.43 }, facing: 300, gait: 'jog', path: [] },
@@ -255,17 +255,18 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 6,
     hour: 13,
-    camera: { kind: 'subject', subject: GHOST, side: 'left', drop: 0.2, scale: { from: 2.6, to: 2.6 }, span: 1.25 },
+    camera: { kind: 'subject', subject: GHOST, side: 'right', drop: -0.2, scale: { from: 5, to: 5 }, span: 1.25 },
     actors: [
       {
         kind: 'monster',
         id: GHOST,
         spawn: NORTH_WOOD_SPAWN,
-        at: { x: 18.5, z: -50.3 },
-        facing: 90,
+        at: { x: 24, z: -52.5 },
+        facing: 60,
         path: [
-          { x: 23, z: -50 },
-          { x: 19.77, z: -46.29 },
+          { x: 26.5, z: -51 },
+          { x: 24.5, z: -49.5 },
+          { x: 25.77, z: -47.79 },
         ],
       },
     ],
@@ -276,9 +277,9 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 8,
     hour: 13,
-    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.15, scale: { from: 2.6, to: 2.4 }, span: 1.75 },
+    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: -0.2, scale: { from: 5.2, to: 5 }, span: 1.75 },
     actors: [
-      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 19, z: -46.6 }, facing: 35, gait: 'jog', path: [], faces: GHOST },
+      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 25, z: -48.1 }, facing: 35, gait: 'jog', path: [], faces: GHOST },
       { kind: 'carried', id: GHOST, path: [], faces: AUREL },
     ],
     beats: [
@@ -306,11 +307,11 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 8,
     hour: 13,
-    camera: { kind: 'subject', subject: AUREL, side: 'left', drop: 0.3, scale: { from: 2.4, to: 2.4 }, span: 1.75 },
+    camera: { kind: 'subject', subject: AUREL, side: 'right', drop: -0.2, scale: { from: 5, to: 5 }, span: 1.75 },
     actors: [
       { kind: 'carried', id: AUREL, path: [] },
-      { kind: 'carried', id: GHOST, path: [{ x: 17.5, z: -48.5 }] },
-      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 16.5, z: -43.5 }, facing: 120, gait: 'jog', path: [{ x: 19.65, z: -46.63 }], faces: AUREL },
+      { kind: 'carried', id: GHOST, path: [{ x: 23.5, z: -50 }] },
+      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 22.5, z: -45 }, facing: 120, gait: 'jog', path: [{ x: 25.65, z: -48.13 }], faces: AUREL },
     ],
     beats: [
       { at: 2.4, kind: 'raise', target: AUREL, raise: { progress: 0, seconds: 5 } },
@@ -323,7 +324,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: 'EdariaInn',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'subject', subject: QUIETA, side: 'left', drop: -0.05, scale: { from: 2.6, to: 2.6 }, span: 2 },
+    camera: { kind: 'subject', subject: QUIETA, side: 'left', drop: -0.05, scale: { from: 5, to: 5 }, span: 2 },
     actors: [
       { kind: 'npc', sector: 'EdariaInn', npc: 'quieta' },
       {
@@ -347,7 +348,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: 'EdariaLibrary',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'subject', subject: LIBUS, side: 'right', drop: 0.2, scale: { from: 3.3, to: 3.3 }, span: 2.5 },
+    camera: { kind: 'subject', subject: LIBUS, side: 'right', drop: 0.2, scale: { from: 5, to: 5 }, span: 2.5 },
     actors: [
       { kind: 'npc', sector: 'EdariaLibrary', npc: 'libus' },
       {

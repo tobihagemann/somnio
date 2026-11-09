@@ -139,6 +139,11 @@ function twilightFactor(hourOfDay: number): number {
   return Math.min(1, hoursFromSwitch / DAY_NIGHT.twilightHours);
 }
 
+/** Whether the sun is up at a fractional hour of the day in `[0, 24)`, from the day's start hour up to its end hour. */
+export function sunIsUp(hourOfDay: number): boolean {
+  return hourOfDay >= DAY_NIGHT.dayStartHour && hourOfDay < DAY_NIGHT.dayEndHour;
+}
+
 /** Ground direction toward the camera, where the sun rises. */
 const TOWARD_CAMERA = worldMovement(0, 1);
 const SUNRISE_BEARING = Math.atan2(TOWARD_CAMERA.dz, TOWARD_CAMERA.dx);
@@ -161,7 +166,7 @@ export function sunState(hourOfDay: number, brightness: number | undefined): Sun
 
   const light = outdoorLight(hourOfDay);
   const sunIntensity = light.sunIntensity * twilightFactor(hourOfDay);
-  if (hourOfDay < DAY_NIGHT.dayStartHour || hourOfDay >= DAY_NIGHT.dayEndHour) {
+  if (!sunIsUp(hourOfDay)) {
     return { ...light, direction: NIGHT_DIRECTION, sunIntensity };
   }
 

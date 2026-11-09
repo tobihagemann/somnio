@@ -40,7 +40,7 @@ export function button(label: string, onClick: () => void, options: { className?
   return node;
 }
 
-const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 let controlSequence = 0;
 
@@ -61,26 +61,7 @@ function controlIdentifier(kind: string, labelText: string): string {
   return `somnio-${kind}-${slug}-${controlSequence}`;
 }
 
-/**
- * Line-art glyphs for the panel toggles. They are drawn here rather than loaded from the asset
- * pack because the pack carries no glyphs, and a web font would be a second network dependency
- * for three shapes.
- *
- * Stroked in `currentColor` at a 24-unit grid, so they inherit the button's ink and scale with it.
- */
-export const ICON_PATHS = {
-  /** `bubble.left` — rounded balloon with the tail on the lower left. */
-  chat: 'M3.5 5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9l-5 4v-4a2 2 0 0 1-1-2z',
-  /** `person.2` — one person in front, a second shouldered in behind it. */
-  players:
-    'M15 20.5v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1.5M12.5 7.5a2.75 2.75 0 1 1-5.5 0 2.75 2.75 0 0 1 5.5 0M16.5 15.2a4 4 0 0 1 4.5 3.8v1.5M15.2 4.6a2.75 2.75 0 0 1 0 5.8',
-  /** `bag` — body plus the handle arc. */
-  items: 'M4.5 8h15l-1.1 11.6a1.6 1.6 0 0 1-1.6 1.4H7.2a1.6 1.6 0 0 1-1.6-1.4zM8.5 8V6.6a3.5 3.5 0 0 1 7 0V8',
-} as const;
-
-export type IconName = keyof typeof ICON_PATHS;
-
-/** A 24-unit path from `ICON_PATHS` or the editor's own table, rendered as a stroked glyph. */
+/** A 24-unit path from the editor's table, rendered as a stroked glyph. */
 export type IconPath = string;
 
 /** Decorative by construction: the accessible name lives on the button, not on the glyph. */
@@ -102,15 +83,16 @@ function icon(path: IconPath): SVGSVGElement {
 }
 
 /**
- * Icon-only button. The label never renders — it becomes the accessible name and the tooltip.
+ * Icon-only button, showing a path from the editor's table or a glyph the HUD made. The label
+ * never renders — it becomes the accessible name and the tooltip.
  * Keeping it on `aria-label` is also what leaves the control findable by name in an
  * accessibility snapshot.
  */
-export function iconButton(label: string, path: IconPath, onClick: () => void, options: { className?: string } = {}): HTMLButtonElement {
+export function iconButton(label: string, art: IconPath | Element, onClick: () => void, options: { className?: string } = {}): HTMLButtonElement {
   const node = element('button', {
     className: options.className ?? 'fantasy-button',
     attributes: { type: 'button', title: label, 'aria-label': label },
-    children: [icon(path)],
+    children: [typeof art === 'string' ? icon(art) : art],
   });
   node.addEventListener('click', onClick);
   return node;
@@ -198,11 +180,7 @@ export function scrim(cardNode: HTMLElement): HTMLElement {
   return element('div', { className: 'overlay-scrim hidden', children: [cardNode] });
 }
 
-/**
- * Floating corner column. Construction only — the player's hover wiring (which suppresses
- * world input over chrome) stays in `GamePanels`, which attaches its own listeners; the
- * editor's panels need none.
- */
+/** Floating corner column, for the editor's corner panels. */
 export function floating(children: readonly Node[]): HTMLElement {
   return element('div', { className: 'floating', children });
 }
@@ -218,10 +196,6 @@ export function setHidden(node: HTMLElement, hidden: boolean): void {
 
 export function isHidden(node: HTMLElement): boolean {
   return node.classList.contains('hidden');
-}
-
-export function toggleHidden(node: HTMLElement): void {
-  node.classList.toggle('hidden');
 }
 
 export function replaceChildren(node: HTMLElement, children: readonly Node[]): void {

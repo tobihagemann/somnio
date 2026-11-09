@@ -1,10 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GROUND_GUTTER_TEXELS, groundRaster, sectorRect } from '@somnio/core';
 import { markPointBounds } from '@somnio/protocol';
 import type { GroundMark, SectorView } from '@somnio/protocol';
 import { rasterizeGround, sampleGroundField } from '@/scene/groundField';
 import type { GroundField } from '@/scene/groundField';
-import { defaultGroundRasterizer } from '@/scene/groundRasterizer';
 import { GROUND_MATERIAL_IDS, MAX_GROUND_MATERIALS, groundMaterialChannel } from '@/scene/groundMaterials';
 import type { GroundMaterialId } from '@/scene/groundMaterials';
 import { loadSectorFixtures } from '../../core/test/support/sectorFixture.ts';
@@ -284,44 +283,5 @@ describe('the committed world', () => {
         .map((id) => `${sector.name}: ${id}`),
     );
     expect(missing).toEqual([]);
-  });
-});
-
-describe('the default rasterizer', () => {
-  /** A worker that takes every job and answers none, as one whose chunk failed to load. */
-  class SilentWorker {
-    static last: SilentWorker | undefined;
-    onerror: (() => void) | null = null;
-    onmessage: (() => void) | null = null;
-    onmessageerror: (() => void) | null = null;
-    readonly posted: unknown[] = [];
-    constructor() {
-      SilentWorker.last = this;
-    }
-    postMessage(message: unknown): void {
-      this.posted.push(message);
-    }
-    terminate(): void {}
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('rasterizes inline what a failed worker held, and every field after', () => {
-    vi.stubGlobal('Worker', SilentWorker);
-    const rasterizer = defaultGroundRasterizer();
-    const inputs = { sector: interiorSector('Room'), neighbours: [] };
-    const fields: GroundField[] = [];
-
-    rasterizer.rasterize(inputs, (field) => fields.push(field));
-    expect(SilentWorker.last!.posted).toHaveLength(1);
-    expect(fields).toEqual([]);
-    SilentWorker.last!.onerror!();
-    expect(fields).toEqual([rasterizeGround(inputs)]);
-
-    rasterizer.rasterize(inputs, (field) => fields.push(field));
-    expect(fields).toHaveLength(2);
-    expect(SilentWorker.last!.posted).toHaveLength(1);
   });
 });

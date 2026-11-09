@@ -57,7 +57,7 @@ export type Role = (typeof ROLES)[number];
 export const NPC_SERVICES = ['fighterMaster', 'healerMaster', 'shopkeeper'] as const;
 export type NPCService = (typeof NPC_SERVICES)[number];
 
-/** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it. */
+/** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it, unless it is their target. */
 export const CONDITIONS = ['hale', 'grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
@@ -129,14 +129,17 @@ export interface TalkMessage {
   npcId: string;
 }
 
-/** One swing, at the nightmare the client picked in front of the dreamer, or at the air without one. */
-export interface SwingMessage {
+/** The entity the dreamer acts on from now on; absent clears it. */
+export interface TargetMessage {
   targetId?: string;
 }
 
-/** The dreamer a Healer tends from now on; absent tends no one. */
-export interface TendMessage {
-  targetId?: string;
+/**
+ * The dreamer's action on their target on or off: Attack at a nightmare, Mend at a dreamer for a
+ * Healer with the Moonstone in hand, which raises a fallen one.
+ */
+export interface EngageMessage {
+  on: boolean;
 }
 
 /** A door id is unique only within its sector, and a space can hold several sectors. */
@@ -221,11 +224,12 @@ export interface CharacterResultMessage {
 
 /**
  * The first frame of every join. `worldSeconds` is the world clock at that moment; the client
- * extrapolates from it, so no later frame carries the time.
+ * extrapolates from it, so no later frame carries the time. `people` is the joining character's.
  */
 export interface EnterSpaceMessage {
   spaceId: string;
   selfId: string;
+  people: string;
   worldSeconds: number;
 }
 
@@ -349,11 +353,16 @@ export interface ConditionMessage {
   condition: Condition;
 }
 
+/** The health of the dreamer's target, as a share of its maximum. Sent to that dreamer alone. */
+export interface VitalsMessage {
+  entityId: string;
+  health: number;
+}
+
 /** One swing or strike, landed or not. */
 export interface BlowMessage {
   attackerId: string;
-  /** Absent for a swing at the air. */
-  targetId?: string;
+  targetId: string;
   hit: boolean;
 }
 
@@ -371,7 +380,10 @@ export interface RaisingMessage {
   seconds: number;
 }
 
-/** A Healer's touch mended a dreamer. It carries no amount: all anyone learns of another's health is its condition. */
+/**
+ * A Healer's touch mended a dreamer. It carries no amount, because another player learns a dreamer's
+ * health only as its condition, or as `vitals` while targeting them.
+ */
 export interface MendMessage {
   targetId: string;
 }
@@ -473,16 +485,12 @@ export function decodeTalkMessage(container: Record<string, unknown>, path: stri
   return { npcId: requireEntityId(container, 'npcId', path) };
 }
 
-function decodeOptionalTarget(container: Record<string, unknown>, path: string): { targetId?: string } {
+export function decodeTargetMessage(container: Record<string, unknown>, path: string): TargetMessage {
   return isAbsent(container, 'targetId') ? {} : { targetId: requireEntityId(container, 'targetId', path) };
 }
 
-export function decodeSwingMessage(container: Record<string, unknown>, path: string): SwingMessage {
-  return decodeOptionalTarget(container, path);
-}
-
-export function decodeTendMessage(container: Record<string, unknown>, path: string): TendMessage {
-  return decodeOptionalTarget(container, path);
+export function decodeEngageMessage(container: Record<string, unknown>, path: string): EngageMessage {
+  return { on: requireBool(container, 'on', path) };
 }
 
 export function decodeUseDoorMessage(container: Record<string, unknown>, path: string): UseDoorMessage {
@@ -582,6 +590,7 @@ export function decodeEnterSpaceMessage(container: Record<string, unknown>, path
   return {
     spaceId: requireBoundedString(container, 'spaceId', path, PROTOCOL_BYTE_CAPS.sectorName),
     selfId: requireEntityId(container, 'selfId', path),
+    people: requireId(container, 'people', path),
     worldSeconds,
   };
 }
@@ -748,10 +757,17 @@ export function decodeConditionMessage(container: Record<string, unknown>, path:
   };
 }
 
+export function decodeVitalsMessage(container: Record<string, unknown>, path: string): VitalsMessage {
+  return {
+    entityId: requireEntityId(container, 'entityId', path),
+    health: requireUnitInterval(container, 'health', path),
+  };
+}
+
 export function decodeBlowMessage(container: Record<string, unknown>, path: string): BlowMessage {
   return {
     attackerId: requireEntityId(container, 'attackerId', path),
-    ...decodeOptionalTarget(container, path),
+    targetId: requireEntityId(container, 'targetId', path),
     hit: requireBool(container, 'hit', path),
   };
 }

@@ -175,10 +175,10 @@ jobs:
           path: assets
           persist-credentials: false
       - name: Verify the asset pack has what the client needs
-        # Fail here rather than shipping a site with unstyled panels or no favicon and wordmark.
-        # `bundle-web-assets.sh` also hard-fails on a missing UI/ subtree or brand file, but that
-        # runs inside the image build where the error is buried in build output; this names the
-        # problem up front.
+        # Fail here rather than shipping a site with unstyled panels, blank HUD icons, or no favicon
+        # and wordmark. `bundle-web-assets.sh` also hard-fails on a missing UI/ subtree, UI file, or
+        # brand file. That runs inside the image build, where the error is buried in build output, so
+        # this check names the problem up front.
         run: |
           for subtree in Web/Models Web/Branding UI; do
             if [[ ! -d "assets/${subtree}" ]]; then
@@ -189,6 +189,12 @@ jobs:
           for file in somnio-icon-64.png somnio-icon-dark-64.png somnio-icon-180.png somnio-wordmark.png; do
             if [[ ! -f "assets/Web/Branding/${file}" ]]; then
               echo "ERROR: asset pack is missing Web/Branding/${file}" >&2
+              exit 1
+            fi
+          done
+          for file in panel-primary.png panel-button.png panel-button-hover.png divider.png icon-sword.png icon-raise.png icon-run.png icon-players.png icon-bag.png icon-settings.png icon-close.png icon-menu.png; do
+            if [[ ! -f "assets/UI/${file}" ]]; then
+              echo "ERROR: asset pack is missing UI/${file}" >&2
               exit 1
             fi
           done

@@ -10,6 +10,7 @@ export * from './hash.ts';
 export * from './modelRegistry.ts';
 export * from './world.ts';
 export * from './collision.ts';
+export * from './pathfinding.ts';
 export * from './worldEntity.ts';
 export * from './worldClock.ts';
 export * from './items.ts';

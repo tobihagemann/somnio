@@ -206,6 +206,26 @@ describe('the character card', () => {
     expect(rig.controller.awaitingCharacterAnswer).toBe(false);
   });
 
+  /** Every join names the player's people, so the HUD's sigil never depends on the card having been shown. */
+  it("takes the player's own people from each join, and runs the world clock on from the join", () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    try {
+      rig.deliver({ tag: 'characters', payload: { characters: [saibot, ida] } });
+      rig.controller.selectCharacter('ida');
+      expect(rig.controller.worldSecondsAt(1000)).toBeUndefined();
+      rig.deliver({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'ida', people: 'umbrae', worldSeconds: 3600 } });
+      expect(rig.controller.selfPeople).toBe('umbrae');
+
+      // A people this client does not know draws no sigil.
+      rig.deliver({ tag: 'enterSpace', payload: { spaceId: 'EdariaInn', selfId: 'ida', people: 'somnia', worldSeconds: 3600 } });
+      expect(rig.controller.selfPeople).toBeUndefined();
+      // Four world seconds to each wall second: a world minute every 15 s.
+      expect(rig.controller.worldSecondsAt(16_000)).toBe(3660);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   /** A second select reaching a player already in the world is a frame the server closes on. */
   it('sends one request at a time, and none off the card', () => {
     rig.controller.selectCharacter('ida');

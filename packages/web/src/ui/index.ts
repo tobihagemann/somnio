@@ -1,5 +1,5 @@
 export * from './dom';
-export * from './panels';
+export * from './hud';
 export * from './overlays';
 export * from './servicePanel';
 export * from './fallenNotice';

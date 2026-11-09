@@ -17,7 +17,7 @@ import type { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { seededRandom } from '../src/world/random.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
-import { CUDGEL_IN_HAND, GHOST, RESPAWN_MS, energy, payloads } from './support/combat.ts';
+import { CUDGEL_IN_HAND, GHOST, RESPAWN_MS, energy, engage, face, payloads } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, serverSays } from './support/frames.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
@@ -299,6 +299,14 @@ describe('monster aggro and chase', () => {
     return movesIn(await collectMessages(outbox));
   }
 
+  /** Turns the dreamer to the Ghost at `at` and attacks it for two swings, a swing interval apart. */
+  function attackFor(space: SpaceActor, entityId: string, at: Point, steps: Steps): void {
+    face(space, entityId, at);
+    engage(space, GHOST, entityId);
+    steps(21);
+    space.handleEngage(false, entityId);
+  }
+
   /** The monster as a dreamer joining at `at` is shown it now. */
   async function monsterNow(space: SpaceActor, at: Point = AFAR) {
     const watcher = attachPlayer(space, at, 'watcher');
@@ -562,9 +570,7 @@ describe('monster aggro and chase', () => {
     // Two cudgel hits take it from 60 to 44, and more than a second of rest takes it past 45.
     const woundTwice = async () => {
       const watcher = attachPlayer(space, AFAR, 'watcher');
-      space.handleSwing(GHOST, alice.entityId);
-      steps(20);
-      space.handleSwing(GHOST, alice.entityId);
+      attackFor(space, alice.entityId, HOME, steps);
       space.detach(watcher.entityId, false);
       return conditionsIn(await collectMessages(watcher.outbox));
     };
@@ -587,9 +593,7 @@ describe('monster aggro and chase', () => {
     const { space, steps } = withMonster();
     const alice = attachPlayer(space, { x: 13.7, z: 10 }, 'alice', { inventory: [CUDGEL_IN_HAND] });
     steps(30);
-    space.handleSwing(GHOST, alice.entityId);
-    steps(20);
-    space.handleSwing(GHOST, alice.entityId);
+    attackFor(space, alice.entityId, await monsterNow(space), steps);
     space.handleMove({ x: 15, z: 10, facing: 0, gait: 'jog' }, alice.entityId);
     let lastMove = 0;
     let grazed = 0;

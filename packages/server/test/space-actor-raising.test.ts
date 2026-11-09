@@ -4,19 +4,19 @@ import type { Character, InventoryRow, Point } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
-import { BESIDE_GHOST, CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, arena, characterOf, energy, energyOf, lucidity, payloads } from './support/combat.ts';
+import { BESIDE_GHOST, CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, arena, characterOf, energy, energyOf, engage, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeSectorLine } from './support/sectorFactory.ts';
 
 const HEALER_AT: Point = { x: 5, z: 5 };
-/** Within a Moonstone's reach of `HEALER_AT`. */
+/** Within a Moonstone's touch of `HEALER_AT`. */
 const TARGET_AT: Point = { x: 5, z: 5.7 };
 const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) };
 const FALLEN: Partial<Character> = { energy: energy({ healthCurrent: 0 }) };
 
 type Arena = ReturnType<typeof arena>;
 
-/** Steps until the dreamer stands and returns how many steps that took. Tending mends them from the step after. */
+/** Steps until the dreamer stands and returns how many steps that took. Mend mends them from the step after. */
 function stepsUntilRaised({ space, steps }: Arena, entityId: string): number {
   let count = 0;
   while (space.isFallen(entityId) && count < 200) {
@@ -39,10 +39,10 @@ function pair(
 }
 
 describe('mending', () => {
-  it("restores part of the tended dreamer's health for the Healer's spirit, once per touch interval, until they are let go", () => {
+  it("restores part of the target's health for the Healer's spirit, once per touch interval, until Mend goes off", () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, HEALER, { energy: energy({ healthCurrent: 50 }) });
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, target.entityId).healthCurrent).toBe(60);
     expect(energyOf(space, healer.entityId).spiritCurrent).toBe(92);
@@ -50,7 +50,7 @@ describe('mending', () => {
     expect(energyOf(space, target.entityId).healthCurrent).toBe(60);
     steps(2);
     expect(energyOf(space, target.entityId).healthCurrent).toBe(70);
-    space.handleTend(undefined, healer.entityId);
+    space.handleEngage(false, healer.entityId);
     steps(22);
     expect(energyOf(space, target.entityId).healthCurrent).toBeLessThan(80);
   });
@@ -59,7 +59,7 @@ describe('mending', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, HEALER, { energy: energy({ healthCurrent: 50 }) });
     const bystander = attachPlayer(space, { x: 8, z: 8 }, 'bystander');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     for (const player of [healer, target, bystander]) {
       expect(payloads(await collectMessages(player.outbox), 'mend')).toEqual([{ targetId: target.entityId }]);
@@ -72,28 +72,52 @@ describe('mending', () => {
     const healer = attachPlayer(space, { x: 19.7, z: 10 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
     const target = attachPlayer(space, { x: 20.3, z: 10 }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
     const east = attachPlayer(space, { x: 45, z: 10 }, 'east');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(payloads(await collectMessages(east.outbox), 'mend')).toEqual([{ targetId: target.entityId }]);
   });
 
-  it.each<[string, (healerId: string) => string]>([
-    ['themselves', (healerId) => healerId],
-    ['someone who is not there', () => 'nobody'],
-  ])('tends no one when asked to tend %s, letting go of whoever they tended', (_label, asked) => {
+  it('switches Mend off at a target that is not there, and mends no one', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, { ...HEALER, energy: energy({ healthCurrent: 50 }) }, { energy: energy({ healthCurrent: 50 }) });
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(asked(healer.entityId), healer.entityId);
+    engage(space, target.entityId, healer.entityId);
+    space.handleTarget('nobody', healer.entityId);
+    space.handleTarget(target.entityId, healer.entityId);
     steps(1);
     expect([healer, target].map((player) => energyOf(space, player.entityId).healthCurrent)).toEqual([50, 50]);
+  });
+
+  it('mends a Healer who targets themselves once per touch interval, and shows it, keeping Mend on from the dreamer before', async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const { healer, target } = pair(space, { ...HEALER, energy: energy({ healthCurrent: 50 }) }, { energy: energy({ healthCurrent: 50 }) });
+    engage(space, target.entityId, healer.entityId);
+    engage(space, healer.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, healer.entityId)).toMatchObject({ healthCurrent: 60, spiritCurrent: 92 });
+    expect(energyOf(space, target.entityId).healthCurrent).toBe(50);
+    steps(19);
+    expect(energyOf(space, healer.entityId).healthCurrent).toBe(60);
+    steps(2);
+    expect(energyOf(space, healer.entityId).healthCurrent).toBe(70);
+    expect(payloads(await collectMessages(healer.outbox), 'mend')).toEqual([{ targetId: healer.entityId }, { targetId: healer.entityId }]);
+  });
+
+  it('refuses Mend to a Healer who targets themselves with the Moonstone put away', () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, HEALER_AT, 'healer', {
+      character: { ...HEALER, energy: energy({ healthCurrent: 50 }) },
+      inventory: [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }],
+    });
+    engage(space, healer.entityId, healer.entityId);
+    steps(22);
+    expect(energyOf(space, healer.entityId)).toMatchObject({ healthCurrent: 50, spiritCurrent: 100 });
   });
 
   it('mends more with Depth, and no further than full', () => {
     const { space, steps } = arena({}, { ghost: false });
     const deep = { lucidity: lucidity('healer', { touch: 1, depth: 2 }) };
     const { healer, target } = pair(space, deep, { energy: energy({ healthCurrent: 85 }) });
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, target.entityId).healthCurrent).toBe(100);
   });
@@ -108,19 +132,35 @@ describe('mending', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, healerCharacter, { energy: energy({ healthCurrent: 50, ...targetEnergy }) }, inventory);
     const before = [energyOf(space, healer.entityId), energyOf(space, target.entityId)];
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect([energyOf(space, healer.entityId), energyOf(space, target.entityId)]).toEqual(before);
     expect(payloads(await collectMessages(target.outbox), 'mend')).toEqual([]);
   });
 
-  it("does not reach a dreamer beyond a body's contact and the reach slack", () => {
+  it.each([
+    [COMBAT.mend.reach, 60],
+    [COMBAT.mend.reach + 0.05, 50],
+  ])('mends a standing dreamer %f m away, centre to centre, to %i health', (apart, health) => {
     const { space, steps } = arena({}, { ghost: false });
     const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
-    const target = attachPlayer(space, { x: 5, z: 5.9 }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
-    space.handleTend(target.entityId, healer.entityId);
+    const target = attachPlayer(space, { x: HEALER_AT.x, z: HEALER_AT.z + apart }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
+    engage(space, target.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, target.entityId).healthCurrent).toBe(health);
+  });
+
+  it("waits while spirit is short, staying on, and mends once it has recovered a mend's worth", () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const short = { ...HEALER, energy: energy({ spiritCurrent: COMBAT.mend.spiritCost - 1 }) };
+    const { healer, target } = pair(space, short, { energy: energy({ healthCurrent: 50 }) });
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, target.entityId).healthCurrent).toBe(50);
+    // Spirit recovers a unit a second, so the mend's worth is back within a second and a step.
+    steps(21);
+    expect(energyOf(space, target.entityId).healthCurrent).toBe(60);
+    expect(energyOf(space, healer.entityId).spiritCurrent).toBe(0);
   });
 
   it('mends the holder who uses the Moonstone in hand, for the same spirit, and shows it', async () => {
@@ -184,7 +224,7 @@ describe('raising', () => {
   ])('does not begin for %s', async (_label, healerCharacter) => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, healerCharacter);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(space.isFallen(target.entityId)).toBe(true);
     expect(payloads(await collectMessages(target.outbox), 'raising')).toEqual([]);
@@ -194,7 +234,7 @@ describe('raising', () => {
     const field = arena({}, { ghost: false });
     const { space, steps } = field;
     const { healer, target } = pair(space);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(119);
     expect(space.isFallen(target.entityId)).toBe(true);
     expect(stepsUntilRaised(field, target.entityId)).toBeLessThanOrEqual(2);
@@ -219,7 +259,7 @@ describe('raising', () => {
     const { space } = field;
     const { healer, target } = pair(space);
     const healers = [healer, ...BESIDE_TARGET.slice(0, count - 1).map((at, index) => addHealer(space, at, `other-${index}`))];
-    for (const one of healers) space.handleTend(target.entityId, one.entityId);
+    for (const one of healers) engage(space, target.entityId, one.entityId);
     // Within a step of the raise time shared among them.
     const took = stepsUntilRaised(field, target.entityId);
     expect(took).toBeGreaterThanOrEqual(most - 1);
@@ -233,9 +273,9 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(20);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(1);
     for (const player of [healer, other]) {
       const [alone, together] = payloads(await collectMessages(player.outbox), 'raising');
@@ -251,8 +291,8 @@ describe('raising', () => {
     const { space, steps } = field;
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(20);
     space.handleMove({ x: 5.7, z: 4.7, facing: 0, gait: 'jog' }, other.entityId);
     const rest = stepsUntilRaised(field, target.entityId);
@@ -275,13 +315,13 @@ describe('raising', () => {
     const { healer, target } = pair(space);
     const others = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers }, (_, index) => addHealer(space, HEALER_AT, `other-${index}`));
     const turnedAway = others.at(-1)!.entityId;
-    for (const one of [healer, ...others]) space.handleTend(target.entityId, one.entityId);
+    for (const one of [healer, ...others]) engage(space, target.entityId, one.entityId);
     steps(1);
     // Two checkpoints need two outboxes: collecting one finishes it.
     const full = payloads(await collectMessages(healer.outbox), 'raising').at(-1)!;
     expect(full.healerIds).toHaveLength(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers);
     expect(full.healerIds).not.toContain(turnedAway);
-    space.handleTend(undefined, healer.entityId);
+    space.handleEngage(false, healer.entityId);
     steps(1);
     // Turned away without spending their touch, they take the freed slot on the very next step.
     const freed = payloads(await collectMessages(target.outbox), 'raising').at(-1)!;
@@ -297,8 +337,8 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other', { ...HEALER, energy: energy({ spiritCurrent }) });
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(1);
     expect(await holds(target.outbox)).toEqual([
       { state: 'holding', healerIds: [healer.entityId] },
@@ -311,8 +351,8 @@ describe('raising', () => {
     const { space } = field;
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other', { ...HEALER, energy: energy({ spiritCurrent: COMBAT.mend.spiritCost }) });
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     expect(stepsUntilRaised(field, target.entityId)).toBeLessThanOrEqual(121);
     expect(await holds(target.outbox)).toEqual([
       { state: 'holding', healerIds: [healer.entityId] },
@@ -322,10 +362,20 @@ describe('raising', () => {
     ]);
   });
 
-  it('breaks off when the Healer steps out of reach, and begins again at once when they step back', async () => {
+  it('does not begin beyond touch, though the fallen dreamer stands within mend reach', async () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const target = attachPlayer(space, { x: HEALER_AT.x, z: HEALER_AT.z + 2 }, 'target', { character: FALLEN });
+    engage(space, target.entityId, healer.entityId);
+    steps(20);
+    expect(space.isFallen(target.entityId)).toBe(true);
+    expect(payloads(await collectMessages(target.outbox), 'raising')).toEqual([]);
+  });
+
+  it('breaks off when the Healer steps out of touch, and begins again at once when they step back', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(60);
     space.handleMove({ x: 5, z: 4.7, facing: 0, gait: 'jog' }, healer.entityId);
     steps(1);
@@ -343,26 +393,27 @@ describe('raising', () => {
   it.each<[string, (space: Arena['space'], healerId: string) => void]>([
     ['puts the Moonstone away', (space, healerId) => space.handleEquipToggle(MOONSTONE_IN_HAND.slot, undefined, healerId)],
     ['leaves the space', (space, healerId) => space.detach(healerId, true)],
-    ['lets go of them', (space, healerId) => space.handleTend(undefined, healerId)],
+    ['switches Mend off', (space, healerId) => space.handleEngage(false, healerId)],
+    ['targets nothing', (space, healerId) => space.handleTarget(undefined, healerId)],
   ])('breaks off when the Healer %s', async (_label, act) => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(10);
     act(space, healer.entityId);
     steps(1);
     expect(payloads(await collectMessages(target.outbox), 'raising').map((sent) => sent.state)).toEqual(['holding', 'broken']);
   });
 
-  it('breaks once, naming both, when both Healers let go on the same step', async () => {
+  it('breaks once, naming both, when both Healers switch Mend off on the same step', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(10);
-    space.handleTend(undefined, healer.entityId);
-    space.handleTend(undefined, other.entityId);
+    space.handleEngage(false, healer.entityId);
+    space.handleEngage(false, other.entityId);
     steps(1);
     expect((await holds(target.outbox)).at(-1)).toEqual({ state: 'broken', healerIds: [healer.entityId, other.entityId] });
   });
@@ -370,14 +421,14 @@ describe('raising', () => {
   it.each<[number, boolean]>([
     [COMBAT.raise.spiritCost - 1, false],
     [COMBAT.raise.spiritCost, true],
-  ])('hands no raise its last Healer let go on to a Healer tending with %i spirit, who has to begin anew', async (spiritCurrent, begins) => {
+  ])('hands no raise its last Healer let go on to a Healer engaging with %i spirit, who has to begin anew', async (spiritCurrent, begins) => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other', { ...HEALER, energy: energy({ spiritCurrent }) });
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(10);
-    space.handleTend(undefined, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    space.handleEngage(false, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(1);
     const raisings = payloads(await collectMessages(target.outbox), 'raising');
     expect(raisings.slice(1)).toEqual([
@@ -390,9 +441,9 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target: first } = pair(space);
     const second = attachPlayer(space, { x: 5.7, z: 5 }, 'second', { character: FALLEN });
-    space.handleTend(first.entityId, healer.entityId);
+    engage(space, first.entityId, healer.entityId);
     steps(1);
-    space.handleTend(second.entityId, healer.entityId);
+    engage(space, second.entityId, healer.entityId);
     steps(5);
     // Two checkpoints need two outboxes: collecting one finishes it.
     const heldAndBroken = payloads(await collectMessages(healer.outbox), 'raising').map(({ targetId, state }) => ({ targetId, state }));
@@ -409,12 +460,12 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(5);
-    space.handleTend(undefined, other.entityId);
+    space.handleEngage(false, other.entityId);
     steps(1);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, other.entityId);
     // Up to the step before the other's touch interval ends, 20 steps after they joined.
     steps(14);
     expect(await holds(healer.outbox)).toEqual([
@@ -434,10 +485,10 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(held);
-    space.handleTend(undefined, other.entityId);
+    space.handleEngage(false, other.entityId);
     steps(1);
     expect(spiritCharged(await collectMessages(other.outbox))).toBe(charged);
   });
@@ -445,11 +496,11 @@ describe('raising', () => {
   it('lets go of a Healer who leaves, though they are back under the same id before the next step', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(20);
     space.detach(healer.entityId, false);
     space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     const raising = { targetId: target.entityId, healerIds: [healer.entityId] };
     // The raise broke when they left, and the one they take hold of again starts from nothing.
@@ -463,12 +514,12 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(20);
     space.detach(other.entityId, false);
     space.attach(other.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
-    space.handleTend(target.entityId, other.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(1);
     // Dropped as they left, and back only by taking hold again.
     expect((await holds(target.outbox)).slice(2)).toEqual([
@@ -481,12 +532,12 @@ describe('raising', () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
-    space.handleTend(undefined, healer.entityId);
-    space.handleTend(target.entityId, other.entityId);
+    space.handleEngage(false, healer.entityId);
+    engage(space, target.entityId, other.entityId);
     steps(1);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     // Up to the step before the healer's touch interval ends, 20 steps after they took hold.
     steps(18);
     expect(await holds(healer.outbox)).toEqual([
@@ -502,7 +553,7 @@ describe('raising', () => {
     steps(1);
     const back = new ConnectionOutbox(4096);
     space.attach(healer.character, [MOONSTONE_IN_HAND], back, 0, 'en');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(await holds(watching.outbox)).toEqual([
       { state: 'holding', healerIds: [other.entityId, healer.entityId] },
@@ -516,13 +567,13 @@ describe('raising', () => {
     const { space, steps } = field;
     const { healer: cheat, target } = pair(space);
     const honest = addHealer(space, BESIDE_TARGET[0]!, 'honest');
-    space.handleTend(target.entityId, cheat.entityId);
-    space.handleTend(target.entityId, honest.entityId);
+    engage(space, target.entityId, cheat.entityId);
+    engage(space, target.entityId, honest.entityId);
     steps(20);
     // The cheat lets go just before the step on which their touch interval ends, and takes hold again just after it.
-    space.handleTend(undefined, cheat.entityId);
+    space.handleEngage(false, cheat.entityId);
     steps(1);
-    space.handleTend(target.entityId, cheat.entityId);
+    engage(space, target.entityId, cheat.entityId);
     stepsUntilRaised(field, target.entityId);
     const raisings = await holds(target.outbox);
     expect(raisings).toEqual([
@@ -540,7 +591,7 @@ describe('raising', () => {
     const { healer, target } = pair(space);
     const watching = attachPlayer(space, { x: 10, z: 10 }, 'watching');
     const crossing = attachPlayer(space, { x: 41, z: 10 }, 'crossing');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(30);
     const joining = attachPlayer(space, { x: 8, z: 8 }, 'joining');
     space.handleMove({ x: 39, z: 10, facing: 0, gait: 'jog' }, crossing.entityId);
@@ -564,7 +615,7 @@ describe('raising', () => {
     const { clock, space, steps } = arena({}, { ghost: false });
     const spent = { ...HEALER, energy: energy({ healthCurrent: 50, spiritCurrent: COMBAT.raise.spiritCost }) };
     const { healer, target } = pair(space, spent);
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(160, () => {
       if (clock.ms % 1000 === 0) space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
     });
@@ -576,7 +627,7 @@ describe('raising', () => {
     const { space, steps } = arena();
     const healer = addHealer(space, BESIDE_GHOST, 'healer', { ...HEALER, energy: energy({ healthCurrent: 9 }) });
     const target = attachPlayer(space, { x: 10.6, z: 10.7 }, 'target', { character: FALLEN });
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(space.isFallen(healer.entityId)).toBe(true);
     steps(21);
@@ -590,22 +641,22 @@ describe('raising', () => {
     expect(payloads(await collectMessages(healer.outbox), 'correction')).toEqual([BESIDE_GHOST]);
   });
 
-  it('lets a Healer who falls go of the dreamer they tended, and has them tend no one they ask for while fallen', () => {
+  it('switches Mend off for a Healer who falls, and refuses it while they lie fallen', () => {
     const field = arena();
     const { space, steps, dice } = field;
     const healer = addHealer(space, BESIDE_GHOST, 'healer', { ...HEALER, energy: energy({ healthCurrent: 9 }) });
     const hurt = attachPlayer(space, { x: 10.6, z: 10.7 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
-    space.handleTend(hurt.entityId, healer.entityId);
+    engage(space, hurt.entityId, healer.entityId);
     steps(1);
     expect(space.isFallen(healer.entityId)).toBe(true);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(60);
     dice.hit = false;
-    space.handleTend(hurt.entityId, healer.entityId);
+    space.handleEngage(true, healer.entityId);
 
     const rescuer = addHealer(space, { x: 9.4, z: 10.7 }, 'rescuer');
-    space.handleTend(healer.entityId, rescuer.entityId);
+    engage(space, healer.entityId, rescuer.entityId);
     expect(stepsUntilRaised(field, healer.entityId)).toBeLessThanOrEqual(121);
-    space.handleTend(undefined, rescuer.entityId);
+    space.handleEngage(false, rescuer.entityId);
     const spirit = energyOf(space, healer.entityId).spiritCurrent;
     steps(40);
     // Standing again with the Moonstone in hand beside them, and no touch: only recovery since.
@@ -618,7 +669,7 @@ describe('raising', () => {
     // The fallen body stands between the nightmare and the healer, who is out of its reach behind it.
     const target = attachPlayer(space, BESIDE_GHOST, 'target', { character: FALLEN });
     const healer = addHealer(space, { x: 10, z: 11.4 }, 'healer');
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(121);
     expect(space.isFallen(target.entityId)).toBe(false);
     const raisedAt = clock.ms;
@@ -636,17 +687,17 @@ describe('raising', () => {
     const studying = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }, { study: 'depth' }), energy: energy({ healthCurrent: 80 }) };
     const { healer, target } = pair(space, studying, { energy: energy({ healthCurrent: 50 }) });
     const practice = () => characterOf(space, healer.entityId).lucidity.ranks.find((held) => held.teachingId === 'depth')?.practice;
-    space.handleTend(target.entityId, healer.entityId);
+    engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(practice()).toBe(2.5);
-    space.handleTend(undefined, healer.entityId);
+    space.handleEngage(false, healer.entityId);
     clock.ms += 1000;
     space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
     expect(practice()).toBe(3.75);
 
     const fallen = attachPlayer(space, { x: 5.6, z: 5 }, 'fallen', { character: FALLEN });
     clock.ms += 1000;
-    space.handleTend(fallen.entityId, healer.entityId);
+    engage(space, fallen.entityId, healer.entityId);
     expect(stepsUntilRaised(field, fallen.entityId)).toBeLessThanOrEqual(121);
     expect(practice()).toBe(13.75);
   });
@@ -662,8 +713,8 @@ describe('raising', () => {
       const field = arena({}, { ghost: false });
       const { healer, target } = pair(field.space, STUDYING);
       const other = addHealer(field.space, BESIDE_TARGET[0]!, 'other', STUDYING);
-      field.space.handleTend(target.entityId, healer.entityId);
-      field.space.handleTend(target.entityId, other.entityId);
+      engage(field.space, target.entityId, healer.entityId);
+      engage(field.space, target.entityId, other.entityId);
       stepsUntilRaised(field, target.entityId);
       for (const one of [healer, other]) expect(practiceOf(field.space, one.entityId)).toBeCloseTo(PRACTICE.raise / 2, 9);
     });
@@ -674,12 +725,12 @@ describe('raising', () => {
       const { space, steps } = field;
       const { healer, target } = pair(space, STUDYING);
       const other = addHealer(space, BESIDE_TARGET[0]!, 'other', STUDYING);
-      space.handleTend(target.entityId, healer.entityId);
-      space.handleTend(target.entityId, other.entityId);
+      engage(space, target.entityId, healer.entityId);
+      engage(space, target.entityId, other.entityId);
       steps(20);
-      space.handleTend(undefined, other.entityId);
+      space.handleEngage(false, other.entityId);
       steps(1);
-      space.handleTend(target.entityId, other.entityId);
+      engage(space, target.entityId, other.entityId);
       stepsUntilRaised(field, target.entityId);
       const together = (COMBAT.raise.seconds - 2.05) / 2;
       expect(practiceOf(space, other.entityId)).toBeCloseTo((PRACTICE.raise * (1 + together)) / COMBAT.raise.seconds, 9);
@@ -688,15 +739,15 @@ describe('raising', () => {
 
     /** Twenty steps together are a second of the other's, so the healer held the other five of six. */
     it.each<[string, (space: Arena['space'], otherId: string) => void, number | undefined]>([
-      ['who dropped out and stayed earns their share', (space, otherId) => space.handleTend(undefined, otherId), 10 / 6],
+      ['who dropped out and stayed earns their share', (space, otherId) => space.handleEngage(false, otherId), 10 / 6],
       ['who left before the end earns nothing, and the rest is not scaled up', (space, otherId) => space.detach(otherId, true), undefined],
     ])('pays each Healer their seconds held: one %s', (_label, act, otherPractice) => {
       const field = arena({}, { ghost: false });
       const { space, steps } = field;
       const { healer, target } = pair(space, STUDYING);
       const other = addHealer(space, BESIDE_TARGET[0]!, 'other', STUDYING);
-      space.handleTend(target.entityId, healer.entityId);
-      space.handleTend(target.entityId, other.entityId);
+      engage(space, target.entityId, healer.entityId);
+      engage(space, target.entityId, other.entityId);
       steps(20);
       act(space, other.entityId);
       stepsUntilRaised(field, target.entityId);

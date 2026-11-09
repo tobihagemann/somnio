@@ -3,13 +3,13 @@ import { clamp } from '@somnio/core';
 /**
  * Where each speech bubble goes on the screen, all of them at once, so that they keep apart.
  *
- * Everything is in metres on the screen, `x` right and `y` up from its middle. A bubble whose anchor
- * is on screen goes straight above it when that spot is free. Otherwise it keeps the spot it already
- * has while that stays free, and failing that takes the nearest free spot round the anchor, leaning
- * toward above. A bubble with nothing on screen to hang from takes the fixed spot it was given, when
- * it has one and that is free. Otherwise it is pinned on the line from the player toward its voice,
- * as near the screen's edge as is free. A bubble's size is all it draws but its tail: a yell's teeth
- * belong to it.
+ * Everything is in metres of overlay art on the screen, `x` right and `y` up from its middle. A
+ * bubble whose anchor is on screen goes straight above it when that spot is free. Otherwise it keeps
+ * the spot it already has while that stays free, and failing that takes the nearest free spot round
+ * the anchor, leaning toward above. A bubble with nothing on screen to hang from takes the fixed spot
+ * it was given, when it has one and that is free. Otherwise it is pinned on the line from the player
+ * toward its voice, as near the screen's edge as is free. A bubble's size is all it draws but its
+ * tail: a yell's teeth belong to it.
  */
 
 export interface ScreenPoint {

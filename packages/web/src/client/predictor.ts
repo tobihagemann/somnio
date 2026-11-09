@@ -12,14 +12,13 @@ import {
   resolveMove,
   speedMultiplier,
 } from '@somnio/core';
-import type { Body, Heading, Point } from '@somnio/core';
-import { worldMovement } from '@/scene/cameraRig';
+import type { Body, Heading, Point, ResolvedDoor } from '@somnio/core';
 import type { ConnectionState, OverlayKind } from './connectionController';
 import type { Gait, SomnioMessage } from '@somnio/protocol';
+import { drivenOff } from './clientWorld';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 import type { RemoteInterpolation } from './remoteInterpolation';
 import type { WorldRenderSurface } from './renderSurface';
-import type { HeldKeys, KeyCaptureSink } from './input';
 
 /**
  * One client-predicted gameplay tick.
@@ -47,28 +46,50 @@ export const POSITION_HEARTBEAT_INTERVAL_MS = 100;
  */
 export const FACING_EMIT_THRESHOLD_DEGREES = 1;
 
-export interface Velocity {
-  dx: number;
-  dy: number;
-}
+/** How a walk follows its path, and gives it up. */
+export const PATH_FOLLOWING = {
+  /** How near a waypoint counts as there. */
+  arrivalMetres: 0.02,
+  /** How long a leg may bring the player no nearer its waypoint before the path is searched again. */
+  stallMs: 250,
+  /** How long a search that found no way waits before trying again. */
+  retryMs: 250,
+  /** How many times one destination is searched again, for a stall or for no way, before the walk ends. */
+  maxReplans: 4,
+} as const;
 
-/** Normalized eight-way screen direction from the held keys; zero when nothing is held. */
-export function velocityFromHeld(held: HeldKeys): Velocity {
-  let dx = 0;
-  let dy = 0;
-  if (held.d) dx += 1;
-  if (held.a) dx -= 1;
-  if (held.w) dy -= 1;
-  if (held.s) dy += 1;
-  if (dx === 0 && dy === 0) return { dx: 0, dy: 0 };
-  const length = Math.sqrt(dx * dx + dy * dy);
-  return { dx: dx / length, dy: dy / length };
-}
+/** Within this distance of the point a held pointer steers toward, the player stands still, so a pointer resting on them does not turn them on the spot. */
+const STEER_STANDS_WITHIN_METRES = 0.25;
+/** How near the player a point is too near to face. */
+const FACING_DEADZONE_METRES = 0.05;
+/** Less than this nearer a waypoint in a tick is no progress. */
+const PROGRESS_METRES = 1e-3;
 
-export function gaitFromHeld(held: HeldKeys): Gait {
-  if (held.leftShift) return 'run';
-  if (held.leftOption) return 'walk';
-  return 'jog';
+/**
+ * Where the player is walking. A path is followed waypoint by waypoint to a destination, searched
+ * again round what stops it; a steer heads straight for a point a held pointer moves.
+ */
+export type Walk =
+  | {
+      kind: 'path';
+      destination: Point;
+      /** What is left to walk through, the next first. */
+      waypoints: Point[];
+      /** The edges the walk found unwalkable, which every search for it leaves out. */
+      excludedEdges: Set<string>;
+      /** How many searches the destination has had: the first, then each re-plan. */
+      searches: number;
+      /** When the next search is due; `undefined` while a path is being followed. */
+      searchAtMs: number | undefined;
+      /** When the leg under way last brought the player nearer its waypoint. */
+      progressAtMs: number;
+    }
+  | { kind: 'steer'; toward: Point };
+
+/** The heading from `from` toward `to`, or `undefined` when there is no `to` or it is too near to face. */
+function headingToward(from: Point, to: Point | undefined): Heading | undefined {
+  if (to === undefined || distance(from, to) <= FACING_DEADZONE_METRES) return undefined;
+  return headingFromVector(to.x - from.x, to.z - from.z);
 }
 
 export interface EntityBlockers {
@@ -96,7 +117,7 @@ export function entityBlockers(entities: Iterable<ClientEntity>, self: ClientEnt
       blockers.npcs.push(body);
       continue;
     }
-    if (entity.kind === 'monster' && (entity.condition === 'fallen' || distance(self.position, body) < self.radius + body.radius)) continue;
+    if (drivenOff(entity) || (entity.kind === 'monster' && distance(self.position, body) < self.radius + body.radius)) continue;
     blockers.bodies.push(body);
   }
   return blockers;
@@ -111,7 +132,6 @@ export interface PredictorSession {
    */
   readonly connectionState: ConnectionState;
   readonly presentedOverlay: OverlayKind | undefined;
-  readonly isChatInputFocused: boolean;
   readonly entities: Map<string, ClientEntity>;
   readonly selfId: string | undefined;
   readonly world: ClientWorld | undefined;
@@ -119,12 +139,13 @@ export interface PredictorSession {
 
 export interface PredictorOptions {
   session: PredictorSession;
-  input: KeyCaptureSink;
   renderSurface: WorldRenderSurface;
   interpolation: RemoteInterpolation;
   send: (message: SomnioMessage) => void;
-  /** Latest cursor-derived facing, or `undefined` before the pointer has been seen. */
-  mouseFacing: () => Heading | undefined;
+  /** The point the player faces, or `undefined` to face the way they walk. */
+  lookAt: () => Point | undefined;
+  /** Whether Run is on. */
+  running: () => boolean;
   /** Whether the player's balance gave out: until it is back, only the slow gait moves them. */
   winded: () => boolean;
   /** Whether the player lies fallen, and so does not move or report. */
@@ -135,11 +156,11 @@ export interface PredictorOptions {
 
 export class GameplayPredictor {
   private readonly session: PredictorSession;
-  private readonly input: KeyCaptureSink;
   private readonly renderSurface: WorldRenderSurface;
   private readonly interpolation: RemoteInterpolation;
   private readonly send: (message: SomnioMessage) => void;
-  private readonly mouseFacing: () => Heading | undefined;
+  private readonly lookAt: () => Point | undefined;
+  private readonly running: () => boolean;
   private readonly winded: () => boolean;
   private readonly fallen: () => boolean;
   private readonly slowed: (nowMs: number) => boolean;
@@ -147,21 +168,49 @@ export class GameplayPredictor {
   private lastTickMs: number | undefined;
   private lastReport: { position: Point; facing: Heading; gait: Gait } | undefined;
   private lastHeartbeatMs: number | undefined;
+  private walking: Walk | undefined;
   /** Set from sending `useDoor` until the server answers it. */
   private awaitingDoor = false;
-  /** The door whose trigger the last attempted step touched, so leaning on it fires once. */
+  /** The door last asked for, held until a step lands outside every trigger, so leaning on it asks once. */
   private touchedDoor: string | undefined;
 
   constructor(options: PredictorOptions) {
     this.session = options.session;
-    this.input = options.input;
     this.renderSurface = options.renderSurface;
     this.interpolation = options.interpolation;
     this.send = options.send;
-    this.mouseFacing = options.mouseFacing;
+    this.lookAt = options.lookAt;
+    this.running = options.running;
     this.winded = options.winded;
     this.fallen = options.fallen;
     this.slowed = options.slowed;
+  }
+
+  get walk(): Readonly<Walk> | undefined {
+    return this.walking;
+  }
+
+  /** Walks to `destination` along a path searched on the next tick, in place of any walk under way. */
+  walkTo(destination: Point): void {
+    this.walking = {
+      kind: 'path',
+      destination,
+      waypoints: [],
+      excludedEdges: new Set(),
+      searches: 0,
+      searchAtMs: Number.NEGATIVE_INFINITY,
+      progressAtMs: Number.NEGATIVE_INFINITY,
+    };
+  }
+
+  /** Heads straight for `point` from the next tick, in place of any path; a steer under way only turns toward it. */
+  steerToward(point: Point): void {
+    if (this.walking?.kind === 'steer') this.walking.toward = point;
+    else this.walking = { kind: 'steer', toward: point };
+  }
+
+  stop(): void {
+    this.walking = undefined;
   }
 
   /**
@@ -185,9 +234,11 @@ export class GameplayPredictor {
 
   /**
    * The server refused a move and answered with the last position it accepted. That replaces the
-   * prediction outright, and it is what the next report is measured from.
+   * prediction outright, and it is what the next report is measured from. The walk ends there:
+   * its path started from where the server says the player is not.
    */
   correct(position: Point): void {
+    this.walking = undefined;
     const selfId = this.session.selfId;
     const entity = selfId === undefined ? undefined : this.session.entities.get(selfId);
     if (entity === undefined) return;
@@ -197,54 +248,43 @@ export class GameplayPredictor {
     this.session.world?.follow(position, this.renderSurface);
   }
 
-  /**
-   * The full gameplay-input gate, refreshed every tick so opening an overlay or focusing chat
-   * releases the keys without an explicit notify path.
-   */
-  private gateIsOpen(): boolean {
-    return this.session.connectionState === 'attached' && this.session.presentedOverlay === undefined && !this.session.isChatInputFocused;
+  /** The gameplay-input gate, refreshed every tick so opening an overlay ends the walk without an explicit notify path. Typing in chat leaves it open, so a walk goes on. */
+  gateIsOpen(): boolean {
+    return this.session.connectionState === 'attached' && this.session.presentedOverlay === undefined;
   }
 
   runTick(nowMs: number): void {
-    // Assigning the gate is what clears held keys when it closes: the sink drops its bitset on
-    // deactivation, so an overlay opening mid-hold cannot leave the character walking.
-    this.input.setGameplayActive(this.gateIsOpen());
+    if (!this.gateIsOpen()) this.walking = undefined;
     // Before the local player steps, so that step collides with what this frame draws.
     this.drawRemoteEntities(nowMs);
-    if (this.session.isChatInputFocused) return;
     const selfId = this.session.selfId;
     const world = this.session.world;
     if (selfId === undefined || world === undefined) return;
     const existing = this.session.entities.get(selfId);
-    if (existing === undefined || this.fallen()) return;
+    if (existing === undefined) return;
+    if (this.fallen()) {
+      this.walking = undefined;
+      return;
+    }
 
     const selfEntity: ClientEntity = { ...existing };
-    const held = this.input.snapshot();
-    const gait = this.winded() ? 'walk' : gaitFromHeld(held);
-
-    // Refresh facing every tick regardless of velocity so a stationary player still tracks the
-    // cursor.
-    const facing = this.mouseFacing();
-    if (facing !== undefined) selfEntity.facing = facing;
+    const gait = this.winded() ? 'walk' : this.running() ? 'run' : 'jog';
 
     // The lower bound guards a misbehaving injected timestamp; `performance.now()` is monotonic.
     const elapsedMs = this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS);
     this.lastTickMs = nowMs;
 
-    const velocity = velocityFromHeld(held);
-    const moving = velocity.dx !== 0 || velocity.dy !== 0;
-    selfEntity.gait = moving ? gait : 'jog';
-    // Declared out here so it reaches the unconditional render update below; `undefined` on a
-    // stationary tick preserves the renderer's held travel direction.
-    let travel: Heading | undefined;
-    if (moving && !this.awaitingDoor) {
-      const direction = worldMovement(velocity.dx, velocity.dy);
-      // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step, so
-      // a wall-slide keeps clip and speed mutually consistent.
-      travel = headingFromVector(direction.dx, direction.dz);
+    const course = this.awaitingDoor ? undefined : this.course(world, selfEntity, nowMs);
+    // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step, so a
+    // wall-slide keeps clip and speed mutually consistent. `undefined` on a stationary tick
+    // preserves the renderer's held travel direction.
+    const travel = course === undefined ? undefined : headingFromVector(course.x - selfEntity.position.x, course.z - selfEntity.position.z);
+    // Refreshed every tick, so a player standing still keeps turning with the cursor.
+    selfEntity.facing = headingToward(selfEntity.position, this.lookAt()) ?? travel ?? selfEntity.facing;
+    selfEntity.gait = course === undefined ? 'jog' : gait;
+    if (travel !== undefined) {
       const pace = speedMultiplier(relativeDirection(travel, selfEntity.facing)) * (this.slowed(nowMs) ? COMBAT.swingSlow.factor : 1);
-      const metres = gaitMetresPerSecond(gait) * (elapsedMs / 1000) * pace;
-      selfEntity.position = this.walk(world, selfEntity, direction, metres);
+      selfEntity.position = this.follow(world, selfEntity, gaitMetresPerSecond(gait) * (elapsedMs / 1000) * pace, nowMs);
     }
 
     this.session.entities.set(selfId, selfEntity);
@@ -270,6 +310,73 @@ export class GameplayPredictor {
     }
   }
 
+  /** The point this tick heads for: the steer's, or the next waypoint once any search due has run. `undefined` stands the player still. */
+  private course(world: ClientWorld, self: ClientEntity, nowMs: number): Point | undefined {
+    const walking = this.walking;
+    if (walking === undefined) return undefined;
+    if (walking.kind === 'steer') return distance(self.position, walking.toward) > STEER_STANDS_WITHIN_METRES ? walking.toward : undefined;
+    if (walking.searchAtMs !== undefined && nowMs >= walking.searchAtMs) this.search(world, self, walking, nowMs);
+    if (this.walking !== walking) return undefined;
+    while (walking.waypoints.length > 0 && distance(self.position, walking.waypoints[0]!) <= PATH_FOLLOWING.arrivalMetres) walking.waypoints.shift();
+    if (walking.waypoints.length === 0 && walking.searchAtMs === undefined) this.walking = undefined;
+    return walking.waypoints[0];
+  }
+
+  /**
+   * Searches the path to the walk's destination round the bodies as they now stand. A search that
+   * finds no way, as before the player's sector has its walk raster, waits and tries again. The
+   * first search and `maxReplans` more are all one destination gets.
+   */
+  private search(world: ClientWorld, self: ClientEntity, walking: Extract<Walk, { kind: 'path' }>, nowMs: number): void {
+    if (walking.searches > PATH_FOLLOWING.maxReplans) {
+      this.walking = undefined;
+      return;
+    }
+    walking.searches += 1;
+    const { npcs, bodies } = entityBlockers(this.session.entities.values(), self);
+    const found = world.findPath(self.position, walking.destination, [...npcs, ...bodies], walking.excludedEdges);
+    walking.waypoints = found.waypoints;
+    walking.progressAtMs = nowMs;
+    if (found.waypoints.length > 0) walking.searchAtMs = undefined;
+    else if (found.reached) this.walking = undefined;
+    else walking.searchAtMs = nowMs + PATH_FOLLOWING.retryMs;
+  }
+
+  /**
+   * Walks `metres` of the walk: straight for a steer's point, or through the path's waypoints in
+   * turn, dropping each once there. A leg that brings the player no nearer its waypoint for
+   * `stallMs`, as when a body steps into it, has the path searched again; a path walked to its end
+   * ends the walk.
+   */
+  private follow(world: ClientWorld, self: ClientEntity, metres: number, nowMs: number): Point {
+    const walking = this.walking!;
+    if (walking.kind === 'steer') return this.stepToward(world, self, self.position, walking.toward, metres);
+    const leg = walking.waypoints[0]!;
+    const before = distance(self.position, leg);
+    let position = self.position;
+    let left = metres;
+    while (left > 0 && this.walking === walking && walking.waypoints.length > 0) {
+      const waypoint = walking.waypoints[0]!;
+      const length = Math.min(left, distance(position, waypoint));
+      position = this.stepToward(world, self, position, waypoint, length);
+      left -= length;
+      if (distance(position, waypoint) > PATH_FOLLOWING.arrivalMetres) break;
+      walking.waypoints.shift();
+    }
+    if (this.walking !== walking) return position;
+    if (walking.waypoints[0] !== leg || distance(position, leg) < before - PROGRESS_METRES) walking.progressAtMs = nowMs;
+    else if (nowMs - walking.progressAtMs >= PATH_FOLLOWING.stallMs) walking.searchAtMs = nowMs;
+    if (walking.waypoints.length === 0) this.walking = undefined;
+    return position;
+  }
+
+  private stepToward(world: ClientWorld, self: ClientEntity, from: Point, to: Point, metres: number): Point {
+    const away = distance(from, to);
+    if (away === 0 || metres <= 0) return from;
+    const length = Math.min(metres, away);
+    return this.stepAlong(world, { ...self, position: from }, { dx: (to.x - from.x) / away, dz: (to.z - from.z) / away }, length);
+  }
+
   /**
    * Walks `metres` along `direction` in substeps, and returns where the player ends up.
    *
@@ -279,10 +386,12 @@ export class GameplayPredictor {
    * before is reported first. That waypoint is what carries a slide round a corner: the straight
    * line between two timed reports would cut inside it.
    *
-   * A substep that lands in a door's trigger is not taken; it asks for the door and stops the
-   * player there until the server answers.
+   * A substep that lands in the trigger of a door the walk heads through is not taken; it asks for
+   * the door, ends the walk, and stops the player there until the server answers. Any other substep
+   * into a trigger is taken, so a path passing a door walks on through it. A door already asked for
+   * is not asked for again until a substep has left its trigger.
    */
-  private walk(world: ClientWorld, self: ClientEntity, direction: { dx: number; dz: number }, metres: number): Point {
+  private stepAlong(world: ClientWorld, self: ClientEntity, direction: { dx: number; dz: number }, metres: number): Point {
     const { npcs, bodies } = entityBlockers(this.session.entities.values(), self);
     let position = self.position;
     const substeps = Math.ceil(metres / MOVE_SUBSTEP);
@@ -291,16 +400,15 @@ export class GameplayPredictor {
       const target = { x: position.x + direction.dx * length, z: position.z + direction.dz * length };
       const step = resolveMove(world.collision, position, target, self.radius, npcs, bodies);
       const door = world.doors.find((candidate) => doorContains(candidate.resolved, step.position, 0));
-      if (door !== undefined) {
-        const key = `${door.sector}/${door.doorId}`;
-        if (key !== this.touchedDoor) {
-          this.touchedDoor = key;
-          this.awaitingDoor = true;
-          this.send({ tag: 'useDoor', payload: { sector: door.sector, doorId: door.doorId } });
-        }
+      const doorKey = door === undefined ? undefined : `${door.sector}/${door.doorId}`;
+      if (door === undefined) this.touchedDoor = undefined;
+      else if (doorKey !== this.touchedDoor && this.headsThrough(door.resolved, position, step.position)) {
+        this.touchedDoor = doorKey;
+        this.awaitingDoor = true;
+        this.walking = undefined;
+        this.send({ tag: 'useDoor', payload: { sector: door.sector, doorId: door.doorId } });
         break;
       }
-      this.touchedDoor = undefined;
       if (step.position.x === position.x && step.position.z === position.z) break;
       if (!isLegalMove(world.collision, this.lastReport?.position ?? self.position, step.position, self.radius, npcs)) {
         this.report(position, self.facing, self.gait);
@@ -308,6 +416,20 @@ export class GameplayPredictor {
       position = step.position;
     }
     return position;
+  }
+
+  /**
+   * Whether a substep from `from` to `to`, which lands in the door's trigger, heads through the door.
+   * A path does only where it ends. A steer does on entering the trigger, and within it only toward
+   * the doorway, so a player standing in a trigger a path walked them into can steer back out.
+   */
+  private headsThrough(door: ResolvedDoor, from: Point, to: Point): boolean {
+    const walking = this.walking;
+    if (walking?.kind === 'path') {
+      const end = walking.waypoints.at(-1);
+      return end !== undefined && doorContains(door, end, 0);
+    }
+    return !doorContains(door, from, 0) || distance(to, door.doorway) < distance(from, door.doorway);
   }
 
   /**
@@ -333,19 +455,6 @@ export class GameplayPredictor {
     }
     this.lastHeartbeatMs = nowMs;
     this.report(entity.position, entity.facing, entity.gait);
-  }
-
-  /**
-   * Reports where the player stands and faces right now, ahead of the heartbeat, so a request
-   * that follows is judged from there. The walk keeps the line from the last report legal.
-   */
-  reportNow(): void {
-    const selfId = this.session.selfId;
-    const self = selfId === undefined ? undefined : this.session.entities.get(selfId);
-    if (self === undefined || this.awaitingDoor || this.fallen()) return;
-    const last = this.lastReport;
-    if (last?.position.x === self.position.x && last.position.z === self.position.z && last.facing === self.facing && last.gait === self.gait) return;
-    this.report(self.position, self.facing, self.gait);
   }
 
   private report(position: Point, facing: Heading, gait: Gait): void {

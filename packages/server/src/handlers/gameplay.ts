@@ -4,13 +4,13 @@ import type {
   BuyMessage,
   ClientSayMessage,
   CompleteTaskMessage,
+  EngageMessage,
   EquipToggleMessage,
   MoveMessage,
   SellMessage,
   StudyMessage,
-  SwingMessage,
   TalkMessage,
-  TendMessage,
+  TargetMessage,
   UseDoorMessage,
   UseItemMessage,
 } from '@somnio/protocol';
@@ -50,12 +50,12 @@ export function handleTalk(message: TalkMessage, entityId: string, spaceId: stri
   dependencies.worldRouter.space(spaceId)?.handleTalk(message.npcId, entityId);
 }
 
-export function handleSwing(message: SwingMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleSwing(message.targetId, entityId);
+export function handleTarget(message: TargetMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleTarget(message.targetId, entityId);
 }
 
-export function handleTend(message: TendMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleTend(message.targetId, entityId);
+export function handleEngage(message: EngageMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleEngage(message.on, entityId);
 }
 
 export function handleUseItem(message: UseItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {

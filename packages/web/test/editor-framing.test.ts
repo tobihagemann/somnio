@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ORTHO_RIG, PLAYER_ZOOM } from '@/scene/cameraRig';
+import { ORTHO_RIG } from '@/scene/cameraRig';
 import {
+  EDITOR_ZOOM,
   EditorCamera,
   applyFramingToCamera,
   editorFramingFitting,
   editorFramingFittingBounds,
   fitBounds,
-  playerZoomScale,
+  editorZoomScale,
   scrollIntent,
 } from '@/editor/framing';
 import type { EditorFraming } from '@/editor/framing';
@@ -22,7 +23,7 @@ import { VIEWPORT, dragContext } from './helpers/editorFixture';
 
 /**
  * The camera math: the project→unproject round trip, the whole-sector fit, the fit's
- * independence from the gameplay zoom clamp, the player-zoom opening framing, pan/zoom,
+ * independence from the gameplay zoom clamp, the editor's own opening framing, pan/zoom,
  * custom-camera persistence, and the scroll-intent cases. The unprojection here is the live Raycaster
  * against the camera the framing was applied to, so these also pin that the Three.js
  * projection agrees with the analytic fit math.
@@ -151,15 +152,15 @@ describe('whole-sector fit', () => {
 
   it('falls back to the default scale for a degenerate viewport', () => {
     const framing = editorFramingFittingBounds({ x: 0, z: 0 }, { x: 20, z: 20 }, { width: 0, height: 0 });
-    expect(framing.scale).toBe(ORTHO_RIG.defaultScale);
+    expect(framing.scale).toBe(EDITOR_ZOOM.scale);
   });
 });
 
-describe('playerZoomScale', () => {
+describe('editorZoomScale', () => {
   it('tracks viewport height and guards a degenerate one', () => {
-    expect(playerZoomScale(480)).toBe(ORTHO_RIG.defaultScale);
-    expect(playerZoomScale(960)).toBe(ORTHO_RIG.defaultScale * 2);
-    expect(playerZoomScale(0)).toBe(ORTHO_RIG.defaultScale);
+    expect(editorZoomScale(480)).toBe(3);
+    expect(editorZoomScale(960)).toBe(6);
+    expect(editorZoomScale(0)).toBe(3);
   });
 });
 
@@ -196,30 +197,31 @@ describe('EditorCamera', () => {
     return camera;
   }
 
-  it('opens sector-centered at the player zoom', () => {
+  it('opens sector-centered at its own zoom, closer than the game camera', () => {
     const sector = testSector();
     const camera = makeCamera(sector);
-    expect(camera.framing.scale).toBe(ORTHO_RIG.defaultScale);
+    expect(camera.framing.scale).toBe(EDITOR_ZOOM.scale);
+    expect(camera.framing.scale).toBeLessThan(ORTHO_RIG.defaultScale);
     const fit = editorFramingFitting(sector, camera.viewportSize);
     expect(camera.framing.focus).toEqual(fit.focus);
   });
 
-  it('zooming out stops at the player minimum magnification and keeps the pan', () => {
+  it('zooming out stops at its minimum magnification and keeps the pan', () => {
     const sector = testSector();
     const camera = makeCamera(sector);
     camera.pan({ width: 200, height: 200 }, sector);
     const panned = camera.framing.focus;
     camera.zoom(-500, sector);
-    expect(camera.framing.scale).toBeCloseTo(ORTHO_RIG.defaultScale / PLAYER_ZOOM.minFactor, 5);
+    expect(camera.framing.scale).toBeCloseTo(EDITOR_ZOOM.scale / EDITOR_ZOOM.minFactor, 5);
     expect(camera.framing.focus).toEqual(panned);
   });
 
-  it('zooming back in stops at the player maximum close-up', () => {
+  it('zooming back in stops at its maximum close-up', () => {
     const sector = testSector();
     const camera = makeCamera(sector);
     camera.zoom(-500, sector);
     camera.zoom(2000, sector);
-    expect(camera.framing.scale).toBeCloseTo(ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor, 5);
+    expect(camera.framing.scale).toBeCloseTo(EDITOR_ZOOM.scale / EDITOR_ZOOM.maxFactor, 5);
   });
 
   it('pans the content with the scroll: the ground at the center moves by the delta', () => {
@@ -247,11 +249,11 @@ describe('EditorCamera', () => {
     expect([focus.x === bounds.min.x || focus.x === bounds.max.x, focus.z === bounds.min.z || focus.z === bounds.max.z]).toEqual([true, true]);
   });
 
-  it('keeps the player magnification through a viewport resize', () => {
+  it('keeps its magnification through a viewport resize', () => {
     const sector = testSector();
     const camera = makeCamera(sector);
     camera.updateViewportSize({ width: 1280, height: 960 }, sector);
-    expect(camera.framing.scale).toBe(playerZoomScale(960));
+    expect(camera.framing.scale).toBe(editorZoomScale(960));
     const fit = editorFramingFitting(sector, camera.viewportSize);
     expect(camera.framing.focus).toEqual(fit.focus);
   });
@@ -296,14 +298,14 @@ describe('EditorCamera', () => {
     expect(camera.framing).toEqual(opening);
   });
 
-  it('opens a sector smaller than the player view at the player zoom', () => {
+  it('opens a sector smaller than its view at its own zoom', () => {
     const tiny = testSector({ size: { width: 2, depth: 2 } });
     const camera = makeCamera(tiny);
     const fit = editorFramingFitting(tiny, camera.viewportSize);
-    expect(fit.scale).toBeLessThan(ORTHO_RIG.defaultScale);
-    expect(camera.framing.scale).toBe(ORTHO_RIG.defaultScale);
+    expect(fit.scale).toBeLessThan(EDITOR_ZOOM.scale);
+    expect(camera.framing.scale).toBe(EDITOR_ZOOM.scale);
     expect(camera.framing.focus).toEqual(fit.focus);
     camera.zoom(2000, tiny);
-    expect(camera.framing.scale).toBeCloseTo(ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor, 5);
+    expect(camera.framing.scale).toBeCloseTo(EDITOR_ZOOM.scale / EDITOR_ZOOM.maxFactor, 5);
   });
 });

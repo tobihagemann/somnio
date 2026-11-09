@@ -13,30 +13,30 @@ import type {
 } from '@somnio/protocol';
 import {
   COMBAT,
+  engageAction,
   heading,
   isTeachingId,
   itemInHand,
   itemWeapon,
+  poolShare,
   purseCoins,
-  swingAllowed,
-  swingTarget,
   taskGoal,
   taskSpec,
   windedAfter,
   windedOnJoin,
   withinSpeakingDistance,
 } from '@somnio/core';
-import type { Heading, ItemId, TaskSpec } from '@somnio/core';
+import type { EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { parseChatInput } from './chatCommand';
+import { drivenOff, engageKind } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
 import { compassPoint } from './compass';
 import type { ConnectionController, GameplayMessage } from './connectionController';
 import { GameplayPredictor } from './predictor';
 import { RemoteInterpolation } from './remoteInterpolation';
-import { KeyboardSampler, PlayerZoom, mouseFacingHeading } from './input';
-import type { KeyCaptureSink } from './input';
+import { PlayerZoom } from './input';
 
 /**
  * The gameplay half of the client: it owns the predictor, the input samplers, and every inbound
@@ -72,8 +72,10 @@ export function taskIsDone(task: TaskMessage): boolean {
   return spec !== undefined && task.progress >= taskGoal(spec);
 }
 
-/** What a left click on the play field does, by what it points at. */
-export type ClickAction = 'talk' | 'tend' | 'swing';
+/** How long a press on the ground is held before the player steers toward the pointer rather than walking to where it lands. */
+export const HOLD_TO_STEER_MS = 180;
+/** How far on the page a press may wander and still be a tap; a press that moves further steers at once. */
+export const TAP_SLOP_PX = 12;
 
 /** How long the shop's buttons wait for a trade's answer. A refused trade gets none, so the lock gives way on its own. */
 const TRADE_ANSWER_TIMEOUT_MS = 1500;
@@ -83,8 +85,8 @@ const TRADE_SETTLE_MS = 500;
 export interface GameplaySessionOptions {
   controller: ConnectionController;
   send: (message: SomnioMessage) => void;
-  /** Overridable so headless tests drive the tick without a keyboard or a DOM. */
-  input?: KeyCaptureSink & { clearHeldKeys(): void };
+  /** Whether the pointer is a finger, which has no cursor to face. */
+  coarsePointer?: boolean;
   /**
    * Text measurer for speech-bubble wrapping. Defaults to the canvas measurer, which the wrap
    * must agree with or lines overflow the balloon; injectable so a headless test needs no canvas.
@@ -97,7 +99,6 @@ export interface GameplaySessionOptions {
 export class GameplaySession {
   readonly predictor: GameplayPredictor;
   readonly zoom = new PlayerZoom();
-  readonly input: KeyCaptureSink & { clearHeldKeys(): void };
 
   energy: Energy = ZERO_ENERGY;
   inventory: InventoryRowMessage[] = [];
@@ -106,10 +107,24 @@ export class GameplaySession {
   winded = false;
   /** The NPC whose service panel is open. It does not close the input gate: the player walks away from it. */
   servicePanel: ClientEntity | undefined;
-  /** The dreamer a Healer chose to tend, as the server was last told. */
-  tending: string | undefined;
+  /** The entity the player acts on, as the server was last told. */
+  target: string | undefined;
+  /**
+   * Whether the player faces their target whatever the cursor does, on a fine pointer. A right
+   * press on a body sets it, and it ends with the target, on a second right press on the target, or
+   * on a right press on the ground.
+   */
+  gazeLocked = false;
   /** The raise being given to the fallen player: the Healers holding on, and the whole seconds left. */
   raise: { healerNames: string[]; secondsLeft: number } | undefined;
+  /** Whether Run is on. A winded player walks whatever it says. */
+  running = false;
+  /**
+   * Whether slot 1 is on, as the server keeps it. The server sends nothing when it switches slot 1
+   * off, so the client applies the same rule: on at a new target it can act on, off at any other, at
+   * the target lost, at a fall, and at a new space.
+   */
+  engaged = false;
 
   /**
    * What has arrived since `enterSpace`. The first frame of each kind in a space states what is,
@@ -122,10 +137,14 @@ export class GameplaySession {
   private readonly heldRaises = new Set<string>();
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
   private waking = false;
-  /** Whether the button that began a swing is still down, which keeps swinging. */
-  private swingHeld = false;
-  /** The server's swing rhythm, kept here so a held button asks once a swing rather than once a tick. */
-  private swingReadyAtMs = 0;
+  /**
+   * A press on the ground still down: where it landed, where on the ground it points now, when it
+   * began, and whether it steers. It points nowhere from a new space's `enterSpace` until the
+   * player stands there.
+   */
+  private hold: { landed: Point; point: Point | undefined; startedAtMs: number; steering: boolean } | undefined;
+  /** Whether the press ring lies at the destination of the walk a press let go of, until that walk ends. */
+  private destinationMarked = false;
   private slowedUntilMs = 0;
   /** When the shop's buttons give way, or 0 once the tick has redrawn them free. */
   private tradeLockedUntilMs = 0;
@@ -135,42 +154,47 @@ export class GameplaySession {
   private readonly measureText: (line: string) => number;
   private readonly now: () => number;
   private readonly interpolation = new RemoteInterpolation();
-  private latestMouseFacing: Heading | undefined;
+  private readonly coarsePointer: boolean;
+  /** The point under the cursor the player aims at. */
+  private aimPoint: Point | undefined;
+  /** The health share last sent of the target. */
+  private targetHealth: number | undefined;
 
   constructor(options: GameplaySessionOptions) {
     this.controller = options.controller;
     this.send = options.send;
-    this.input = options.input ?? new KeyboardSampler();
+    this.coarsePointer = options.coarsePointer ?? false;
     this.measureText = options.measureText ?? canvasWidthMeasurer();
     this.now = options.now ?? (() => performance.now());
     this.predictor = new GameplayPredictor({
       session: this.controller,
-      input: this.input,
       renderSurface: this.controller.renderSurface,
       interpolation: this.interpolation,
       send: this.send,
-      mouseFacing: () => this.latestMouseFacing,
+      lookAt: () => this.lookAt(),
+      running: () => this.running,
       winded: () => this.winded,
       fallen: () => this.fallen,
       slowed: (nowMs) => nowMs < this.slowedUntilMs,
     });
 
     this.controller.onGameplayMessage = (message) => this.dispatch(message);
-    // The controller owns the two predicates the gate reads, so it is also what reports the gate
-    // closing. Releasing held keys and a held swing there rather than in each DOM handler is what
-    // keeps a stale hold from resuming when focus returns.
-    this.controller.onGateClosed = () => {
-      this.input.clearHeldKeys();
-      this.swingHeld = false;
-    };
+    // Chat focus lets go of a held press here, so a stale hold cannot resume when focus returns.
+    this.controller.onGateClosed = () => this.letGo();
     this.controller.onSpaceEntered = () => {
       this.resetSpaceState();
-      this.latestMouseFacing = undefined;
+      // A press held through a door steers on in the space it leads to. What it pointed at belongs
+      // to the space left, so it waits for the ground under the pointer there.
+      if (this.hold !== undefined) this.hold = { ...this.hold, point: undefined, steering: true };
+      this.aimPoint = undefined;
       if (this.waking) this.controller.appendChat({ kind: 'wokeWeakened' });
       this.waking = false;
     };
     this.controller.onEntityReset = (entityId) => {
       this.interpolation.delete(entityId);
+      // The server lets go of a target leaving view as it leaves, so it is let go here on the same frame,
+      // not on the next tick, by which time it may be back in view though no longer targeted there.
+      if (entityId === this.target && !this.controller.entities.has(entityId)) this.select(undefined);
       // A fallen dreamer who leaves takes their raise along without a `raising` frame, so the player holds it no more.
       this.heldRaises.delete(entityId);
       // The player's own entity carries their condition, which is what the fallen notice follows.
@@ -178,8 +202,9 @@ export class GameplaySession {
     };
     this.controller.onSelfConditionChanged = (condition) => this.handleOwnCondition(condition);
     this.controller.onTeardown = () => {
+      this.letGo();
       this.resetSpaceState();
-      this.input.clearHeldKeys();
+      this.running = false;
       this.energy = ZERO_ENERGY;
       this.inventory = [];
       this.lucidity = NO_LUCIDITY;
@@ -197,28 +222,35 @@ export class GameplaySession {
   /** Everything that belongs to the space being left, a pending door included. */
   private resetSpaceState(): void {
     this.predictor.reset();
+    this.predictor.stop();
+    this.liftDestinationMarker();
     this.predictor.releaseDoor(true);
     this.interpolation.clear();
     this.seen = { energy: false, inventory: false, lucidity: false };
     this.servicePanel = undefined;
     this.raise = undefined;
     this.heldRaises.clear();
-    this.swingHeld = false;
-    this.swingReadyAtMs = 0;
     this.slowedUntilMs = 0;
     this.tradeLockedUntilMs = 0;
-    // The server holds it per space, so a new space starts with no one tended there either.
-    this.tending = undefined;
-    this.controller.renderSurface.showSelection(undefined);
+    // The server holds the target per space, so a new space starts with nothing targeted there either.
+    this.target = undefined;
+    this.gazeLocked = false;
+    this.engaged = false;
+    this.targetHealth = undefined;
+    this.controller.renderSurface.showSelection(undefined, false);
   }
 
   /** The per-frame body. Injected timestamp, so a test drives it directly. */
   runTick(timestampMs: number): void {
+    if (this.hold !== undefined && timestampMs - this.hold.startedAtMs >= HOLD_TO_STEER_MS) this.hold.steering = true;
+    if (this.hold?.steering === true && this.hold.point !== undefined) this.predictor.steerToward(this.hold.point);
     this.predictor.runTick(timestampMs);
+    // However the walk a press let go of ends, its ring goes with it.
+    if (this.predictor.walk === undefined) this.liftDestinationMarker();
     this.closeServicePanelBeyondSpeakingDistance();
     this.countDownRaise(timestampMs);
-    if (this.tending !== undefined && !this.controller.entities.has(this.tending)) this.tend(undefined);
-    if (this.swingHeld) this.swing(timestampMs);
+    if (this.gazeLocked && !this.gazeHolds) this.unlockGaze();
+    if (this.engaged && !this.engageable) this.stopEngaging();
     if (this.tradeLockedUntilMs !== 0 && !this.tradeLocked()) {
       this.tradeLockedUntilMs = 0;
       this.onStateChanged?.();
@@ -230,83 +262,192 @@ export class GameplaySession {
     return selfId === undefined ? undefined : this.controller.entities.get(selfId);
   }
 
-  /** Whether a click acts on the world: attached, no overlay up, and standing. */
+  /**
+   * Whether a click acts on the world: attached, no overlay up, and the player standing in the
+   * space. Until they stand in a space just entered, the camera still frames the one left.
+   */
   private get acting(): boolean {
-    return this.controller.connectionState === 'attached' && this.controller.presentedOverlay === undefined && !this.fallen;
+    return this.controller.connectionState === 'attached' && this.controller.presentedOverlay === undefined && this.self !== undefined && !this.fallen;
   }
 
   /**
-   * What a left click at an entity, or at none, would do. An NPC is asked to go on from within
-   * speaking distance, and from further away the click does nothing. A Healer's click at another dreamer
-   * tends them. Everything else is a swing toward the cursor.
+   * A press on an entity's body, which never walks the player and makes the entity the target. An
+   * NPC within speaking distance is also asked to go on, which opens what it offers.
    */
-  clickAction(entityId: string | undefined): ClickAction | undefined {
+  pressEntity(entityId: string): void {
     const self = this.self;
-    if (self === undefined || !this.acting) return undefined;
-    const entity = entityId === undefined ? undefined : this.controller.entities.get(entityId);
-    if (entity?.kind === 'npc') return withinSpeakingDistance(self.position, entity.position) ? 'talk' : undefined;
-    if (entity?.kind === 'peer' && this.lucidity.role === 'healer') return 'tend';
-    return 'swing';
-  }
-
-  /**
-   * A left click on the play field at `entityId`, or at nothing. Clicking the dreamer tended lets
-   * go of them, and so does a swing. A new press ends a swing still held from the one before it.
-   */
-  pressAt(entityId: string | undefined, timestampMs: number): void {
-    this.swingHeld = false;
-    switch (this.clickAction(entityId)) {
-      case 'talk':
-        this.send({ tag: 'talk', payload: { npcId: entityId! } });
-        if (this.controller.entities.get(entityId!)?.service !== undefined) this.openServicePanel(entityId!);
-        return;
-      case 'tend':
-        this.tend(entityId === this.tending ? undefined : entityId);
-        return;
-      case 'swing':
-        this.tend(undefined);
-        this.swingHeld = true;
-        this.swing(timestampMs);
-        return;
-      case undefined:
-        return;
+    const entity = this.controller.entities.get(entityId);
+    if (self === undefined || entity === undefined || !this.acting) return;
+    this.select(entityId);
+    if (entity.kind === 'npc' && withinSpeakingDistance(self.position, entity.position)) {
+      this.send({ tag: 'talk', payload: { npcId: entityId } });
+      if (entity.service !== undefined) this.openServicePanel(entityId);
     }
   }
 
-  /** The button that began a swing came up, or the pointer was lost. */
-  release(): void {
-    this.swingHeld = false;
+  /**
+   * A right press on an entity's body makes it the target and locks the player's facing on it, if it
+   * is there to face. A right press on the target already locked ends the lock and keeps the target.
+   * The player's own body is ignored.
+   */
+  toggleGazeOn(entityId: string): void {
+    if (!this.acting || entityId === this.controller.selfId || !this.controller.entities.has(entityId)) return;
+    if (entityId === this.target && this.gazeLocked) {
+      this.unlockGaze();
+      return;
+    }
+    this.select(entityId);
+    if (!this.gazeHolds) return;
+    this.gazeLocked = true;
+    this.controller.renderSurface.showSelection(this.target, true);
+    this.onStateChanged?.();
   }
 
-  /** Tends `entityId` from now on, or no one, and tells the server when that is a change. */
-  tend(entityId: string | undefined): void {
-    if (entityId === this.tending) return;
-    this.tending = entityId;
-    this.send({ tag: 'tend', payload: entityId === undefined ? {} : { targetId: entityId } });
-    this.controller.renderSurface.showSelection(entityId);
+  /** Ends the gaze lock: the player faces the cursor again, and keeps the target. */
+  unlockGaze(): void {
+    if (!this.gazeLocked) return;
+    this.gazeLocked = false;
+    this.controller.renderSurface.showSelection(this.target, false);
+    this.onStateChanged?.();
+  }
+
+  /** Whether the target is still there to face: in view, and not a nightmare driven off. */
+  private get gazeHolds(): boolean {
+    const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
+    return target !== undefined && !drivenOff(target);
+  }
+
+  /** A press on the player's own frame: they target themselves. */
+  pressOwnFrame(): void {
+    const selfId = this.controller.selfId;
+    if (selfId !== undefined && this.acting) this.select(selfId);
+  }
+
+  /** A press on a name in the Players list: that dreamer becomes the target, while in view. */
+  pressPlayerName(name: string): void {
+    const dreamer = [...this.controller.entities.values()].find((entity) => entity.kind === 'peer' && entity.name === name);
+    if (dreamer !== undefined && this.acting) this.select(dreamer.id);
+  }
+
+  /**
+   * A press on open ground at `point`. A tap walks to where it landed; held past `HOLD_TO_STEER_MS`,
+   * or moved past `TAP_SLOP_PX`, the player steers toward the ground under the pointer.
+   */
+  pressGround(point: Point, timestampMs: number): void {
+    if (!this.acting) return;
+    this.liftDestinationMarker();
+    this.hold = { landed: point, point, startedAtMs: timestampMs, steering: false };
+    this.controller.renderSurface.showPressMarker(point);
+  }
+
+  /** Where on the ground the press still down points now. Before the player stands in a space just entered, it points nowhere yet. */
+  moveHold(point: Point): void {
+    const hold = this.hold;
+    if (hold === undefined || this.self === undefined) return;
+    hold.point = point;
+    if (hold.steering) this.controller.renderSurface.showPressMarker(point);
+  }
+
+  /** The press still down moved too far to be a tap, so the player steers from now on. */
+  steer(): void {
+    if (this.hold !== undefined) this.hold.steering = true;
+  }
+
+  /** A left press on the player's own body: they stop where they stand. */
+  pressSelf(): void {
+    this.predictor.stop();
+  }
+
+  /**
+   * The press came up, with the pointer over `point` on the ground. A tap walks along a path to
+   * where it landed, and a steer walks on to where it let go. The ring stays at that destination
+   * until the walk ends.
+   */
+  release(point: Point | undefined): void {
+    const hold = this.hold;
+    if (hold === undefined) return;
+    this.hold = undefined;
+    const destination = !this.acting ? undefined : hold.steering ? (point ?? hold.point) : hold.landed;
+    if (destination === undefined) {
+      this.controller.renderSurface.liftPressMarker();
+      return;
+    }
+    this.predictor.walkTo(destination);
+    if (hold.steering) this.controller.renderSurface.showPressMarker(destination);
+    this.destinationMarked = true;
+  }
+
+  private liftDestinationMarker(): void {
+    if (!this.destinationMarked) return;
+    this.destinationMarked = false;
+    this.controller.renderSurface.liftPressMarker();
+  }
+
+  /** The pointer was lost, or the world gave up the input: a held press and a steer stop, and a walk along a path goes on. */
+  letGo(): void {
+    if (this.hold !== undefined) this.controller.renderSurface.liftPressMarker();
+    this.hold = undefined;
+    if (this.predictor.walk?.kind === 'steer') this.predictor.stop();
+  }
+
+  /** Run on or off. It holds across spaces until the session ends. */
+  toggleRun(): void {
+    this.running = !this.running;
     this.onStateChanged?.();
   }
 
   /**
-   * Asks for one swing when the server would make one: the swing rhythm has come round, what is in
-   * hand swings, no task forbids it, and the balance covers it. The position is reported first, so
-   * the server judges the reach from where the player stands. The swing slows the player at once,
-   * without waiting for the `blow` that answers it.
+   * What slot 1 does at the target while the player stands, by the same `engageAction` rule the
+   * server judges with; `undefined` for nothing.
    */
-  private swing(nowMs: number): void {
-    const self = this.self;
-    if (self === undefined || !this.acting || nowMs < this.swingReadyAtMs) return;
-    const task = this.lucidity.task === undefined ? undefined : taskSpecOf(this.lucidity.task);
-    const swing = swingAllowed(task, itemInHand(this.inventory), this.lucidity.ranks, this.energy.balanceCurrent);
-    if (swing === undefined) return;
-    this.swingReadyAtMs = nowMs + swing.seconds * 1000;
-    this.slowedUntilMs = nowMs + COMBAT.swingSlow.seconds * 1000;
-    const nightmares = [...this.controller.entities.values()]
-      .filter((entity) => entity.kind === 'monster' && entity.condition !== 'fallen')
-      .map((entity) => ({ id: entity.id, x: entity.position.x, z: entity.position.z, radius: entity.radius }));
-    const met = swingTarget(self.position, this.latestMouseFacing ?? self.facing, nightmares);
-    this.predictor.reportNow();
-    this.send({ tag: 'swing', payload: met === undefined ? {} : { targetId: met.id } });
+  engageAction(): EngageAction | undefined {
+    const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
+    if (this.fallen || target === undefined) return undefined;
+    return engageAction(engageKind(target), this.lucidity.role, itemInHand(this.inventory));
+  }
+
+  /** Whether slot 1 can be switched on. */
+  get engageable(): boolean {
+    return this.engageAction() !== undefined;
+  }
+
+  /** Slot 1 on or off. On only while `engageable`, and it never walks the player toward the target. */
+  toggleEngage(): void {
+    if (this.engaged) {
+      this.send({ tag: 'engage', payload: { on: false } });
+      this.stopEngaging();
+    } else if (this.engageable) {
+      this.engaged = true;
+      this.send({ tag: 'engage', payload: { on: true } });
+      this.onStateChanged?.();
+    }
+  }
+
+  private stopEngaging(): void {
+    this.engaged = false;
+    this.onStateChanged?.();
+  }
+
+  /** Acts on `entityId` from now on, or on nothing, marks it, and tells the server when that is a change. */
+  select(entityId: string | undefined): void {
+    if (entityId === this.target) return;
+    this.targetHealth = undefined;
+    this.target = entityId;
+    this.gazeLocked = false;
+    this.engaged &&= this.engageable;
+    this.send({ tag: 'target', payload: entityId === undefined ? {} : { targetId: entityId } });
+    this.controller.renderSurface.showSelection(entityId, false);
+    this.onStateChanged?.();
+  }
+
+  /**
+   * The share of its health the server last sent for the target, or `undefined` before it has. The
+   * server sends none of the player's own, so when they target themselves it comes from their own pools.
+   */
+  vitalsOf(entityId: string): number | undefined {
+    if (entityId !== this.controller.selfId) return entityId === this.target ? this.targetHealth : undefined;
+    if (!this.seen.energy || entityId !== this.target) return undefined;
+    return poolShare(this.energy.healthCurrent, this.energy.healthMax);
   }
 
   private openServicePanel(npcId: string): void {
@@ -344,9 +485,8 @@ export class GameplaySession {
   private handleOwnCondition(condition: Condition): void {
     if (condition === 'fallen') {
       this.servicePanel = undefined;
-      // Falling lets go of the dreamer tended, as the server does: nothing sent while fallen could.
-      this.tending = undefined;
-      this.controller.renderSurface.showSelection(undefined);
+      // Falling switches slot 1 off here as it does on the server, which sends no frame to say so.
+      this.engaged = false;
       this.controller.appendChat({ kind: 'fell' });
     } else {
       // Standing again without an `enterSpace` means a raise came first, and the `wake` was dropped.
@@ -356,20 +496,28 @@ export class GameplaySession {
   }
 
   /**
-   * Clears input state that a `keyup` delivered while the page was hidden would have left
-   * populated, and drops the tick clock so the first tick back measures zero elapsed rather than
-   * the whole hidden interval. The clamp already bounds that interval, but resetting is what makes
-   * the resumed tick behave identically to the first tick of a session. A pending door stays
-   * pending: the server is still answering it.
+   * Lets go of a press whose `pointerup` a hidden page would never see, and resets the tick clock
+   * so the first tick back measures no elapsed time, as a session's first tick does. A pending door
+   * stays pending, since the server is still answering it.
    */
   handleVisibilityLoss(): void {
-    this.input.clearHeldKeys();
-    this.swingHeld = false;
+    this.letGo();
     this.predictor.reset();
   }
 
-  updateMouseFacing(pointer: { x: number; y: number }, center: { x: number; y: number }): void {
-    this.latestMouseFacing = mouseFacingHeading(pointer, center);
+  /** The point under the cursor at body height, which the player faces on a fine pointer. */
+  aimAt(point: Point | undefined): void {
+    this.aimPoint = point;
+  }
+
+  /**
+   * What the player faces: the cursor on a fine pointer, unless the gaze is locked on the target. A
+   * finger has no cursor, so on a coarse pointer they face their target where it is drawn, or the
+   * way they walk without one.
+   */
+  private lookAt(): Point | undefined {
+    if (!this.coarsePointer && !this.gazeLocked) return this.aimPoint;
+    return this.target === undefined ? undefined : this.controller.entities.get(this.target)?.position;
   }
 
   /**
@@ -382,6 +530,11 @@ export class GameplaySession {
    */
   applyScrollZoom(deltaY: number, deltaMode = 0): boolean {
     return this.zoom.applyScroll(-wheelDeltaToZoomDelta(deltaY, deltaMode));
+  }
+
+  /** Applies one step of a pinch whose fingers moved `ratio` times as far apart: spreading them magnifies. */
+  applyPinchZoom(ratio: number): boolean {
+    return this.zoom.applyPinch(ratio);
   }
 
   /**
@@ -530,6 +683,8 @@ export class GameplaySession {
         this.onStateChanged?.();
         return;
       case 'blow':
+        // The server chooses the moment of a swing, so its slow starts when the swing is shown.
+        if (message.payload.attackerId === this.controller.selfId) this.slowedUntilMs = this.now() + COMBAT.swingSlow.seconds * 1000;
         this.controller.renderSurface.showBlow(message.payload.attackerId, message.payload.targetId, message.payload.hit);
         return;
       case 'raising':
@@ -538,6 +693,13 @@ export class GameplaySession {
       case 'mend':
         this.controller.renderSurface.showMend(message.payload.targetId);
         return;
+      case 'vitals': {
+        const { entityId, health } = message.payload;
+        if (entityId !== this.target) return;
+        this.targetHealth = health;
+        this.onStateChanged?.();
+        return;
+      }
       case 'adminSay':
         this.controller.appendChat({ kind: 'adminBroadcast', message: message.payload.text });
         return;
@@ -577,7 +739,7 @@ export class GameplaySession {
 
   /**
    * The scene shows every raise as it stands. A Healer is told when a raise they hold on to is
-   * done, and when they lose hold of it while still tending the dreamer with the Moonstone in hand.
+   * done, and when they lose hold of it while Mend is still on at the dreamer with the Moonstone in hand.
    * The dreamer being raised is shown who draws them back and for how long, and told when it is
    * done or breaks.
    */
@@ -591,10 +753,16 @@ export class GameplaySession {
       const holding = state === 'holding' && named;
       if (state === 'done') {
         if (named) this.controller.appendChat({ kind: 'raisedOther', targetName });
-      } else if (this.heldRaises.has(targetId) && !holding && this.tending === targetId && itemInHand(this.inventory) === ('moonstone' satisfies ItemId)) {
-        // Still tending with the stone in hand, so they did not let go. Letting go clears `tending`, and
-        // so does a fall, whose `condition` comes a step before the drop. Putting the stone away keeps
-        // `tending`, but its `inventory` frame also comes before the drop.
+      } else if (
+        this.heldRaises.has(targetId) &&
+        !holding &&
+        this.engaged &&
+        this.target === targetId &&
+        itemInHand(this.inventory) === ('moonstone' satisfies ItemId)
+      ) {
+        // Mend still on at them with the Moonstone in hand means they did not let go. A switch-off, a
+        // fall, and putting the Moonstone away each reach this client before the drop, so none of them
+        // reads as a broken hold.
         this.controller.appendChat({ kind: 'raiseBrokenOther', targetName });
       }
       if (holding) this.heldRaises.add(targetId);

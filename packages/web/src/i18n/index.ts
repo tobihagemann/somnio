@@ -67,7 +67,7 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name in the items panel, every people's name on the character card, every role's and
+ * item's name in the Bag window, every people's name on the character card, every role's and
  * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, and every
  * place a trial sends a dreamer to.
  */
@@ -145,23 +145,55 @@ export const RENDERED_KEYS: readonly string[] = [
   'You lose hold of %@.',
   'You let go and wake, weakened.',
 
-  // HUD and floating panels
+  // The HUD: the frames, the belt, the clock, the chat, and the menu's windows
   'Health',
   'Balance',
   'Spirit',
+  'Winded',
+  'winded',
   'Chat',
   'Talk here. /w to whisper, /y to yell',
+  'Menu',
   'Players',
-  'Items',
+  'Bag',
+  'Settings',
+  'Close %@',
   'Players: %@',
   'Items: %@',
-  'winded',
+  'Run',
+  'Run (Shift)',
+  'Attack',
+  'Mend',
+  'Raise',
+  'Empty slot',
+  'Target yourself',
   'No role yet',
-  'Studying %1$@: %2$@ of %3$@',
+  'Studying %1$@ · %2$@%%',
   'Studying nothing',
   'Task: %@',
+  'hale',
+  'grazed',
+  'wounded',
+  'hurt',
+  'failing',
+  'fallen',
+  'Autumn Wood',
+  'Arena',
+  'Fighter Hall',
+  'Healer Hall',
+  'Inn',
+  'Library',
+  'Shop',
+  'Edaria Square',
+  'North Meadow',
+  'South Meadow',
+  'West Meadow',
   '%1$@ of %2$@',
   'miss',
+  'Target',
+  'Target, %@',
+  'Target, %@, facing locked',
+  'Clear target',
 
   // Masters and the fallen notice
   'Master of the Fighters',
@@ -204,9 +236,9 @@ export const RENDERED_KEYS: readonly string[] = [
   'Each rank shortens the pause between your swings.',
   'Each rank brings your balance back faster.',
   'Each rank raises your health by %@.',
-  'Holding the Moonstone, click a dreamer to tend them. Your spirit mends them while you stay close.',
+  'Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.',
   'Each rank mends more with every touch.',
-  'Holding the Moonstone, stay close to a fallen dreamer you tend to raise them.',
+  'Holding the Moonstone, turn on Mend at a fallen dreamer and stay beside them to raise them.',
   'Each rank raises your spirit by %@.',
   'You have fallen',
   'You cannot move, but you can still speak. A Healer can draw you back.',
@@ -289,9 +321,9 @@ export const RENDERED_KEYS: readonly string[] = [
 
   // Browser-only surfaces
   'This browser cannot render 3D graphics.',
-  'Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox on a desktop computer.',
-  'Somnio needs a desktop computer.',
-  'The game is played with a keyboard and a mouse. Come back from a laptop or desktop.',
+  'Somnio needs WebGL. Try a current version of Safari, Chrome, or Firefox.',
+  'Turn your phone sideways.',
+  'Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.',
   'Loading the world...',
   'Fullscreen',
 

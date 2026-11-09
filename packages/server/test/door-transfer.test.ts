@@ -14,6 +14,8 @@ import { StubCharacterRepository } from './support/stubRepositories.ts';
 const WORLD_SECONDS = 123_456.5;
 /** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`, `lucidity`. */
 const JOIN_FRAMES = 6;
+/** Not the fresh character's default, so a join that dropped the character's people would show. */
+const PEOPLE = 'umbrae';
 
 /** `Town` with a door at (10, 10) into the interior `Hall`, whose door at (5, 9) leads back. */
 function town(hall: Partial<Sector> = {}): Sector[] {
@@ -29,6 +31,7 @@ async function attachedAt(sectors: Sector[], at: Point, characters = new StubCha
   const { entityId } = attachPlayer(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, at, 'walker', {
     outbox: connection.outbox,
     worldSeconds: WORLD_SECONDS,
+    character: { people: PEOPLE },
   });
   connection.markAttached(entityId, OUTDOOR_SPACE_ID, crypto.randomUUID());
   const useDoor = (sector: string, doorId: string) => handleUseDoor({ sector, doorId }, entityId, OUTDOOR_SPACE_ID, connection, dependencies);
@@ -44,12 +47,12 @@ describe('handleUseDoor', () => {
     expect(w.snapshotIn('Hall')).toMatchObject({ space: 'Hall', position: { x: 5, z: 8.2 }, facing: headingFromCardinal('north') });
   });
 
-  it('starts the arrival with exactly one enterSpace, carrying the world clock', async () => {
+  it("starts the arrival with exactly one enterSpace, carrying the world clock and the character's people", async () => {
     const w = await attachedAt(town(), { x: 10, z: 9.7 });
     w.useDoor('Town', 'inside');
     const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
     expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
-    expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: 'Hall', selfId: w.entityId, worldSeconds: WORLD_SECONDS } });
+    expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: 'Hall', selfId: w.entityId, people: PEOPLE, worldSeconds: WORLD_SECONDS } });
   });
 
   it('accepts a player within the slack around the trigger and refuses one beyond it', async () => {
@@ -111,7 +114,7 @@ describe('handleUseDoor', () => {
     // The restoring `enterSpace` is what releases the client's wait for the transfer.
     const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
     expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
-    expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID } });
+    expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID, people: PEOPLE } });
   });
 
   /** A step the dialog catalog translates, greeted to whoever arrives within speaking distance. */

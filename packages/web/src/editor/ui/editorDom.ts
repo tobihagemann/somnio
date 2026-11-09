@@ -7,7 +7,7 @@ import type { EditorTool } from '../canvasController';
  * of them: an object literal there is not tree-shaken, so the tool glyphs would ship to players.
  */
 
-/** One glyph per editor tool, stroked on the same 24-unit grid as `ICON_PATHS`. */
+/** One glyph per editor tool, stroked on a 24-unit grid. */
 export const EDITOR_ICON_PATHS = {
   select: 'M6.5 3.5v14l4-3.6 2.6 6 2.7-1.2-2.6-5.8h5.3z',
   placement: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12v9M12 12L4 7.5M12 12l8-4.5',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { distance, isLegalMove } from '@somnio/core';
+import { bundledModelRegistry, distance, headingFromVector, isLegalMove, rasterizeWalkable, resolveDoor, sectorView } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import type { SectorView, SomnioMessage } from '@somnio/protocol';
 import {
@@ -7,34 +7,28 @@ import {
   FACING_EMIT_THRESHOLD_DEGREES,
   GameplayPredictor,
   MAX_TICK_ELAPSED_MS,
+  PATH_FOLLOWING,
   POSITION_HEARTBEAT_INTERVAL_MS,
   RemoteInterpolation,
   entityBlockers,
-  gaitFromHeld,
-  noHeldKeys,
   noopRenderSurface,
-  velocityFromHeld,
 } from '@/client';
-import type { ClientEntity, ConnectionState, HeldKeys, OverlayKind, PredictorSession } from '@/client';
+import type { ClientEntity, ConnectionState, OverlayKind, PredictorSession } from '@/client';
+import { loadSectorFixtures } from '../../core/test/support/sectorFixture.ts';
 import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, makeDoor } from './helpers/worldFixture';
 
 /**
- * Deterministic prediction-tick suite. Positional expectations are derived here from the camera
- * yaw and the gait speeds, never by running the predictor's own arithmetic, so the suite catches
- * the predictor drifting from the shared `@somnio/core` movement rules.
+ * Deterministic prediction-tick suite. Positional expectations are derived here from the gait
+ * speeds and the directions walked, never by running the predictor's own arithmetic, so the suite
+ * catches the predictor drifting from the shared `@somnio/core` movement rules.
  */
 
-/** Held W only. Screen-up under the camera's 35-degree yaw, so both world axes move. */
-const HELD_W: HeldKeys = { ...noHeldKeys(), w: true };
-const HELD_S: HeldKeys = { ...noHeldKeys(), s: true };
-
 const YAW = (35 * Math.PI) / 180;
-/** The unit world direction of held W. */
-const W_DIRECTION = { x: -Math.sin(YAW), z: -Math.cos(YAW) };
-
-/** Held W travels at heading 215; facing 210 buckets it as forward, with a 1.0 speed multiplier. */
-const FORWARD_FACING = 210;
+/** Heading 215, under the camera's 35-degree yaw. */
+const UP_SCREEN = { x: -Math.sin(YAW), z: -Math.cos(YAW) };
+/** Heading 35. */
+const DOWN_SCREEN = { x: Math.sin(YAW), z: Math.cos(YAW) };
 
 const START = { x: 10, z: 10 };
 
@@ -42,8 +36,14 @@ function along(direction: { x: number; z: number }, metres: number, from: Point 
   return { x: from.x + direction.x * metres, z: from.z + direction.z * metres };
 }
 
+/** A point a metre from `from` at `facing` degrees (0 south, 90 east). */
+function toward(facing: number, from: Point = START): Point {
+  const radians = (facing * Math.PI) / 180;
+  return { x: from.x + Math.sin(radians), z: from.z + Math.cos(radians) };
+}
+
 function self(overrides: Partial<ClientEntity> = {}): ClientEntity {
-  return clientEntity({ position: START, facing: FORWARD_FACING, ...overrides });
+  return clientEntity({ position: START, facing: 210, ...overrides });
 }
 
 interface Rig {
@@ -51,33 +51,32 @@ interface Rig {
   session: PredictorSession & {
     connectionState: ConnectionState;
     presentedOverlay: OverlayKind | undefined;
-    isChatInputFocused: boolean;
   };
   world: ClientWorld;
   interpolation: RemoteInterpolation;
   sent: SomnioMessage[];
   /** The tick time each `move` was sent on. */
   moveTimes: number[];
-  held: HeldKeys;
-  /** Cursor-derived facing; `undefined` leaves the entity's own facing alone. */
-  mouseFacing: number | undefined;
+  /** What the player faces; `undefined` faces the way they walk. */
+  lookAt: Point | undefined;
+  running: boolean;
   winded: boolean;
   fallen: boolean;
   /** Whether a swing is slowing the player. */
   slowed: boolean;
-  gateWrites: boolean[];
   self(): ClientEntity;
   moves(): Point[];
+  /** Steers toward a point far along `direction` from where the player stands. */
+  steer(direction: { x: number; z: number }): void;
 }
 
-function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntity[]; held?: HeldKeys } = {}): Rig {
+function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntity[]; world?: ClientWorld } = {}): Rig {
   const entities = new Map<string, ClientEntity>();
   for (const each of options.entities ?? [self()]) entities.set(each.id, each);
   const sent: SomnioMessage[] = [];
   const moveTimes: number[] = [];
-  const gateWrites: boolean[] = [];
-  const world = new ClientWorld('outdoors', TEST_REGISTRY);
-  world.addSector(outdoorSector('Meadow', { x: 0, z: 0 }, options.sector));
+  const world = options.world ?? new ClientWorld('outdoors', TEST_REGISTRY);
+  if (options.world === undefined) world.addSector(outdoorSector('Meadow', { x: 0, z: 0 }, options.sector));
   const interpolation = new RemoteInterpolation();
   let tickTime = 0;
 
@@ -86,7 +85,6 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
   const session: Rig['session'] = {
     connectionState: 'attached',
     presentedOverlay: undefined,
-    isChatInputFocused: false,
     entities,
     selfId: 'self',
     world,
@@ -99,33 +97,30 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     interpolation,
     sent,
     moveTimes,
-    held: options.held ?? HELD_W,
-    mouseFacing: undefined,
+    lookAt: undefined,
+    running: false,
     winded: false,
     fallen: false,
     slowed: false,
-    gateWrites,
     self: () => {
       const found = entities.get('self');
       if (found === undefined) throw new Error('self entity missing');
       return found;
     },
     moves: () => sent.flatMap((message) => (message.tag === 'move' ? [{ x: message.payload.x, z: message.payload.z }] : [])),
+    steer: (direction) => rig.predictor.steerToward(along(direction, 50, rig.self().position)),
   };
 
   const predictor = new GameplayPredictor({
     session,
-    input: {
-      snapshot: () => rig.held,
-      setGameplayActive: (active) => gateWrites.push(active),
-    },
     renderSurface: noopRenderSurface,
     interpolation,
     send: (message) => {
       sent.push(message);
       if (message.tag === 'move') moveTimes.push(tickTime);
     },
-    mouseFacing: () => rig.mouseFacing,
+    lookAt: () => rig.lookAt,
+    running: () => rig.running,
     winded: () => rig.winded,
     fallen: () => rig.fallen,
     slowed: () => rig.slowed,
@@ -147,31 +142,53 @@ function runTicks(rig: Rig, steps: number, stepMs: number): void {
   }
 }
 
+/** Ticks every `stepMs` from `fromMs` until the walk ends, failing past `limitMs`; answers when it ended. */
+function tickUntilWalkEnds(rig: Rig, stepMs: number, fromMs = 0, limitMs = 30_000): number {
+  for (let time = fromMs; time <= limitMs; time += stepMs) {
+    rig.predictor.runTick(time);
+    if (rig.predictor.walk === undefined) return time;
+  }
+  throw new Error('the walk never ended');
+}
+
 function expectAt(actual: Point, expected: Point): void {
   expect(actual.x).toBeCloseTo(expected.x, 9);
   expect(actual.z).toBeCloseTo(expected.z, 9);
 }
 
+/** Every report a legal move from the one before it, the server's own test, starting from `from`. */
+function expectLegalReports(rig: Rig, from: Point, npcs: { x: number; z: number; radius: number }[] = []): void {
+  const reports = [from, ...rig.moves()];
+  for (let index = 1; index < reports.length; index += 1) {
+    expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index]!, 0.3, npcs), `report ${index}`).toBe(true);
+  }
+}
+
 describe('elapsed-time handling', () => {
   it('does not move on the first tick, having no previous timestamp to measure from', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
 
     rig.predictor.runTick(0);
 
     expect(rig.self().position).toEqual(START);
   });
 
-  it('jogs two metres a second along the camera-rotated direction', () => {
+  it('jogs two metres a second by default', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 4, 16);
 
-    expectAt(rig.self().position, along(W_DIRECTION, 2 * 0.064));
+    expectAt(rig.self().position, along(UP_SCREEN, 2 * 0.064));
+    expect(rig.self().gait).toBe('jog');
   });
 
   it('advances by the same distance whether one 100 ms tick or a 5 s stall is reported', () => {
     const stalled = makeRig();
     const clamped = makeRig();
+    stalled.steer(UP_SCREEN);
+    clamped.steer(UP_SCREEN);
 
     stalled.predictor.runTick(0);
     stalled.predictor.runTick(5000);
@@ -180,30 +197,244 @@ describe('elapsed-time handling', () => {
 
     // A single tick is clamped to 100 ms. Without the clamp the stalled rig would teleport
     // fifty times further.
-    expectAt(stalled.self().position, along(W_DIRECTION, 0.2));
+    expectAt(stalled.self().position, along(UP_SCREEN, 0.2));
     expect(clamped.self().position).toEqual(stalled.self().position);
   });
 
-  it.each([
-    ['leftShift', 'run', 3],
-    ['leftOption', 'walk', 1],
-  ] as const)('scales the step by gait: %s is a %s', (key, gait, metresPerSecond) => {
-    const rig = makeRig({ held: { ...HELD_W, [key]: true } });
+  it('runs three metres a second while Run is on', () => {
+    const rig = makeRig();
+    rig.running = true;
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 3, 100);
 
-    expect(gaitFromHeld(rig.held)).toBe(gait);
-    expectAt(rig.self().position, along(W_DIRECTION, metresPerSecond * 0.3));
-    expect(rig.self().gait).toBe(gait);
+    expectAt(rig.self().position, along(UP_SCREEN, 0.9));
+    expect(rig.self().gait).toBe('run');
   });
 
-  it('halves the step when backpedalling', () => {
-    // Facing 30 looks back along the travel heading of 215.
-    const rig = makeRig({ entities: [self({ facing: 30 })] });
+  it('jogs when standing still with Run on, and reports no run', () => {
+    const rig = makeRig();
+    rig.running = true;
+    rig.lookAt = toward(90);
+
+    runTicks(rig, 2, 100);
+
+    expect(rig.self().gait).toBe('jog');
+    expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { gait: 'jog' } });
+  });
+});
+
+describe('facing', () => {
+  it('faces the cursor while walking another way, at the pace of that direction', () => {
+    const strafing = makeRig();
+    const backing = makeRig();
+    // Walking heading 215: the cursor at 125 is a quarter turn to the side, at 35 straight behind.
+    strafing.lookAt = toward(125);
+    backing.lookAt = toward(35);
+    strafing.steer(UP_SCREEN);
+    backing.steer(UP_SCREEN);
+
+    runTicks(strafing, 1, 100);
+    runTicks(backing, 1, 100);
+
+    expect(strafing.self().facing).toBeCloseTo(125, 9);
+    expectAt(strafing.self().position, along(UP_SCREEN, 0.2 * 0.7));
+    expect(backing.self().facing).toBeCloseTo(35, 9);
+    expectAt(backing.self().position, along(UP_SCREEN, 0.1));
+  });
+
+  it('turns toward the cursor while standing still', () => {
+    const rig = makeRig();
+    rig.lookAt = toward(300);
+
+    rig.predictor.runTick(0);
+
+    expect(rig.self().facing).toBeCloseTo(300, 9);
+    expect(rig.self().position).toEqual(START);
+  });
+
+  it('faces the way it walks with nothing to look at, and keeps its facing once it stands', () => {
+    const rig = makeRig();
+    rig.predictor.walkTo(along(DOWN_SCREEN, 0.5));
 
     runTicks(rig, 1, 100);
+    expect(rig.self().facing).toBeCloseTo(35, 9);
 
-    expectAt(rig.self().position, along(W_DIRECTION, 0.1));
+    tickUntilWalkEnds(rig, 100, 200);
+    rig.predictor.runTick(10_000);
+    expect(rig.self().facing).toBeCloseTo(35, 9);
+  });
+
+  /** A coarse pointer has no cursor; the session hands the predictor the target to look at, which it faces whichever way it walks. */
+  it('faces what it is given to look at whichever way it walks', () => {
+    const rig = makeRig();
+    const target = { x: START.x + 3, z: START.z };
+    rig.lookAt = target;
+    rig.steer(DOWN_SCREEN);
+
+    runTicks(rig, 2, 100);
+    const at = rig.self().position;
+    rig.predictor.runTick(300);
+
+    // Facing is taken before the tick's step, from where the player stood.
+    expect(distance(at, START)).toBeGreaterThan(0);
+    expect(rig.self().facing).toBeCloseTo(headingFromVector(target.x - at.x, target.z - at.z), 9);
+  });
+});
+
+describe('a path', () => {
+  it('walks to the destination straight across open ground and ends the walk there', () => {
+    const rig = makeRig();
+    const destination = along(UP_SCREEN, 1.5);
+    rig.predictor.walkTo(destination);
+
+    const ended = tickUntilWalkEnds(rig, 50);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    // 1.5 m at 2 m/s: the walk ends on the tick that arrives, three quarters of a second in.
+    expect(ended).toBe(750);
+  });
+
+  it('goes round a wall in its way rather than into it', () => {
+    const wall = { id: 'wall', x: 8, z: 11, width: 4, depth: 0.5 };
+    const rig = makeRig({ sector: { blockers: [wall] } });
+    const destination = { x: 10, z: 13 };
+    rig.predictor.walkTo(destination);
+
+    tickUntilWalkEnds(rig, 50);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    expectLegalReports(rig, START);
+  });
+
+  it('is replaced by a new destination', () => {
+    const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 5));
+    runTicks(rig, 2, 100);
+
+    const destination = along(DOWN_SCREEN, 1, rig.self().position);
+    rig.predictor.walkTo(destination);
+    tickUntilWalkEnds(rig, 50, 300);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+  });
+
+  it('ends with a stop', () => {
+    const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 5));
+    runTicks(rig, 2, 100);
+    const stopped = rig.self().position;
+
+    rig.predictor.stop();
+    runTicks(rig, 3, 100);
+
+    expect(rig.self().position).toEqual(stopped);
+  });
+
+  it('waits for a way while its sector has no walk raster yet, then walks', () => {
+    const answers: (() => void)[] = [];
+    const world = new ClientWorld('outdoors', TEST_REGISTRY, { rasterize: (inputs, done) => answers.push(() => done(rasterizeWalkable(inputs))) });
+    world.addSector(sectorView(outdoorSector('Meadow', { x: 0, z: 0 })));
+    const rig = makeRig({ world });
+    rig.predictor.walkTo(along(UP_SCREEN, 1));
+
+    rig.predictor.runTick(0);
+    expect(rig.predictor.walk).toMatchObject({ kind: 'path', waypoints: [], searchAtMs: PATH_FOLLOWING.retryMs });
+
+    for (const answer of answers) answer();
+    tickUntilWalkEnds(rig, 50, 250);
+    expect(distance(rig.self().position, along(UP_SCREEN, 1))).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+  });
+});
+
+describe('re-planning', () => {
+  it('searches again round a body that steps into its leg, and arrives', () => {
+    const rig = makeRig();
+    const destination = { x: 14, z: 10 };
+    rig.predictor.walkTo(destination);
+    runTicks(rig, 2, 100);
+    // A dreamer steps onto the line ahead, a body this client stops at.
+    rig.session.entities.set('peer', clientEntity({ id: 'peer', kind: 'peer', position: { x: 11.2, z: 10 } }));
+
+    let searches = 0;
+    for (let time = 300; rig.predictor.walk !== undefined && time < 10_000; time += 50) {
+      rig.predictor.runTick(time);
+      if (rig.predictor.walk?.kind === 'path') searches = rig.predictor.walk.searches;
+    }
+
+    expect(searches).toBe(2);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    expect(distance(rig.self().position, { x: 11.2, z: 10 })).toBeGreaterThan(0.6);
+  });
+
+  /** Eight dreamers ring the player at touching distance, so no step leads anywhere a body may go. */
+  function boxedIn(): Rig {
+    const ring = Array.from({ length: 8 }, (_, index) => {
+      const step = toward(index * 45);
+      return clientEntity({ id: `peer-${index}`, kind: 'peer', position: along({ x: step.x - START.x, z: step.z - START.z }, 0.6) });
+    });
+    return makeRig({ entities: [self(), ...ring] });
+  }
+
+  it('waits and tries again while boxed in, four times, then ends the walk where it stands', () => {
+    const rig = boxedIn();
+    rig.predictor.walkTo({ x: 14, z: 10 });
+
+    const searchedAt: number[] = [];
+    let searches = 0;
+    for (let time = 0; rig.predictor.walk !== undefined; time += 50) {
+      rig.predictor.runTick(time);
+      const walk = rig.predictor.walk;
+      if (walk?.kind === 'path' && walk.searches !== searches) {
+        searches = walk.searches;
+        searchedAt.push(time);
+      }
+      if (time > 5000) throw new Error('the walk never ended');
+    }
+
+    expect(searchedAt).toEqual([0, 250, 500, 750, 1000]);
+    expect(1 + PATH_FOLLOWING.maxReplans).toBe(5);
+    expect(rig.self().position).toEqual(START);
+  });
+
+  it('walks on once the bodies boxing it in step away', () => {
+    const rig = boxedIn();
+    const destination = { x: 14, z: 10 };
+    rig.predictor.walkTo(destination);
+    runTicks(rig, 6, 50);
+    for (let index = 0; index < 8; index += 1) rig.session.entities.delete(`peer-${index}`);
+
+    tickUntilWalkEnds(rig, 50, 350);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+  });
+});
+
+describe('a path through the committed square', () => {
+  const registry = bundledModelRegistry();
+  const outdoor = loadSectorFixtures().filter((sector) => sector.kind === 'outdoor');
+  const square = outdoor.find((sector) => sector.name === 'EdariaSquare')!;
+  const libraryDoor = resolveDoor(
+    square,
+    square.doors.find((door) => door.id === 'to-edarialibrary')!,
+    registry,
+  )!;
+
+  it.each([
+    { name: 'from the Library door to the well', from: libraryDoor.arrival, to: { x: 20.5, z: 22.5 } },
+    { name: 'round the townhall', from: { x: 31.5, z: 2 }, to: { x: 38, z: 9.5 } },
+  ])('is walked $name with only moves the server accepts', ({ from, to }) => {
+    const world = new ClientWorld('outdoors', registry);
+    for (const sector of outdoor) world.addSector(sectorView(sector));
+    const rig = makeRig({ world, entities: [self({ position: from })] });
+    rig.running = true;
+    rig.predictor.walkTo(to);
+
+    tickUntilWalkEnds(rig, 16);
+
+    expect(distance(rig.self().position, to)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    expectLegalReports(rig, from);
   });
 });
 
@@ -211,18 +442,20 @@ describe('collision resolution', () => {
   /** A wall whose east face is one body radius west of the player, so no step west is clear. */
   const westWall = { id: 'west-wall', x: 8.7, z: 5, width: 1, depth: 10 };
 
-  it('slides along a blocked axis instead of sticking', () => {
+  it('slides a steer along a blocked axis instead of sticking', () => {
     const rig = makeRig({ sector: { blockers: [westWall] } });
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 1, 100);
 
     // West is refused, north commits: the player glides up the wall's face.
-    expectAt(rig.self().position, { x: START.x, z: START.z + W_DIRECTION.z * 0.2 });
+    expectAt(rig.self().position, { x: START.x, z: START.z + UP_SCREEN.z * 0.2 });
   });
 
   it('treats a peer as solid', () => {
-    const peer = clientEntity({ id: 'peer', kind: 'peer', name: 'Peer', position: along(W_DIRECTION, 0.62) });
+    const peer = clientEntity({ id: 'peer', kind: 'peer', name: 'Peer', position: along(UP_SCREEN, 0.62) });
     const rig = makeRig({ entities: [self(), peer] });
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 3, 100);
 
@@ -231,14 +464,15 @@ describe('collision resolution', () => {
   });
 
   it('lets the player walk free of a monster already overlapping them', () => {
-    const overlapping = clientEntity({ id: 'monster:1', kind: 'monster', characterModelId: 'ghost', position: along(W_DIRECTION, 0.2) });
+    const overlapping = clientEntity({ id: 'monster:1', kind: 'monster', characterModelId: 'ghost', position: along(UP_SCREEN, 0.2) });
     const rig = makeRig({ entities: [self(), overlapping] });
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 1, 100);
 
     // Soft-solid: a block here would hold the player in place, because monsters chase on the
     // server's tick and can lag onto the player's own body.
-    expectAt(rig.self().position, along(W_DIRECTION, 0.2));
+    expectAt(rig.self().position, along(UP_SCREEN, 0.2));
   });
 
   it('sorts the entities into contact-blocking NPCs and the bodies only this client stops at', () => {
@@ -269,11 +503,13 @@ describe('collision resolution', () => {
   it('stops at a peer where it is drawn, halfway through its glide', () => {
     // The peer was last reported three metres to the west and is gliding there from three metres to
     // the east; at 50 ms it is drawn in the middle, right in the player's path.
-    const middle = along(W_DIRECTION, 0.62);
+    const middle = along(UP_SCREEN, 0.62);
     const peer = clientEntity({ id: 'peer', kind: 'peer', name: 'Peer', position: { x: middle.x + 3, z: middle.z } });
     const blocked = makeRig({ entities: [self(), peer] });
     const control = makeRig({ entities: [self(), peer] });
     blocked.interpolation.retarget('peer', peer.position, { x: middle.x - 3, z: middle.z }, 0);
+    blocked.steer(UP_SCREEN);
+    control.steer(UP_SCREEN);
 
     blocked.predictor.runTick(0);
     blocked.predictor.runTick(50);
@@ -283,8 +519,18 @@ describe('collision resolution', () => {
     expectAt(blocked.session.entities.get('peer')!.position, middle);
     expect(distance(blocked.self().position, middle)).toBeGreaterThanOrEqual(0.6 - 1e-6);
     // Against the last reported position, or the one before it, nothing stands in the way.
-    expectAt(control.self().position, along(W_DIRECTION, 0.1));
+    expectAt(control.self().position, along(UP_SCREEN, 0.1));
     expect(blocked.self().position).not.toEqual(control.self().position);
+  });
+
+  it('stands still once a steer is within a step of its point', () => {
+    const rig = makeRig();
+    rig.predictor.steerToward(along(UP_SCREEN, 0.2));
+
+    runTicks(rig, 3, 100);
+
+    expect(rig.self().position).toEqual(START);
+    expect(rig.predictor.walk?.kind).toBe('steer');
   });
 });
 
@@ -292,17 +538,54 @@ describe('triggers', () => {
   /** A door standing south of the player, its trigger reaching 0.58 m north from z = 12. */
   const doorSector = makeDoor('exit', { x: 10, z: 12 }, { sector: 'Hall', door: 'entry' });
   const beforeDoor = { x: 9.5, z: 11 };
+  const south = { x: 0, z: 1 };
+  const north = { x: 0, z: -1 };
 
   function doorRig(): Rig {
-    return makeRig({ sector: doorSector, held: HELD_S, entities: [self({ position: beforeDoor, facing: 30 })] });
+    const rig = makeRig({ sector: doorSector, entities: [self({ position: beforeDoor, facing: 30 })] });
+    rig.steer(south);
+    return rig;
   }
 
-  it('asks for the door by sector and id when a step lands in its trigger', () => {
+  it('asks for the door by sector and id when a step lands in its trigger, and ends the walk', () => {
     const rig = doorRig();
 
     runTicks(rig, 4, 100);
 
     expect(rig.sent.filter((message) => message.tag === 'useDoor')).toEqual([{ tag: 'useDoor', payload: { sector: 'Meadow', doorId: 'exit' } }]);
+    expect(rig.predictor.walk).toBeUndefined();
+  });
+
+  it('ends a path at the door it walks into: what it was walking to lies in the space left', () => {
+    const rig = makeRig({ sector: doorSector, entities: [self({ position: beforeDoor, facing: 30 })] });
+    rig.predictor.walkTo({ x: 9.5, z: 11.8 });
+
+    runTicks(rig, 4, 100);
+    rig.predictor.releaseDoor(true);
+    runTicks(rig, 4, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
+    expect(rig.predictor.walk).toBeUndefined();
+  });
+
+  it('walks a path on through the trigger of a door it does not end at', () => {
+    const rig = makeRig({ sector: doorSector, entities: [self({ position: { x: 8, z: 11.7 } })] });
+    rig.predictor.walkTo({ x: 12, z: 11.7 });
+
+    runTicks(rig, 30, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toEqual([]);
+    expect(distance(rig.self().position, { x: 12, z: 11.7 })).toBeLessThan(0.05);
+  });
+
+  it('takes the door a path ends at short of a destination it cannot reach', () => {
+    const walledBeyond = { ...doorSector, blockers: [{ id: 'wall', x: 9, z: 12.05, width: 2, depth: 1 }] };
+    const rig = makeRig({ sector: walledBeyond, entities: [self({ position: beforeDoor })] });
+    rig.predictor.walkTo({ x: 10, z: 12.5 });
+
+    runTicks(rig, 20, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
   });
 
   it('stops the player outside the trigger and holds them there', () => {
@@ -310,6 +593,7 @@ describe('triggers', () => {
 
     runTicks(rig, 4, 100);
     const held = rig.self().position;
+    rig.steer(south);
     runTicks(rig, 4, 100);
 
     expect(held.z).toBeLessThan(11.42);
@@ -327,36 +611,55 @@ describe('triggers', () => {
     expect(rig.sent.slice(asked + 1)).toEqual([]);
   });
 
-  /** A held swing reports before each swing, and the rhythm can come round between `useDoor` and `enterSpace`. */
-  it('reports nothing ahead of the heartbeat either while the door is pending', () => {
-    const rig = doorRig();
+  /** The doorway in a wall, as every committed door is, so nothing walks on past the trigger. */
+  const walledDoor = { ...doorSector, blockers: [{ id: 'wall', x: 8, z: 12.05, width: 4, depth: 1 }] };
+
+  it("walks into a refused door's trigger without asking again, until a step has left it", () => {
+    const rig = makeRig({ sector: walledDoor, entities: [self({ position: beforeDoor, facing: 30 })] });
+    rig.steer(south);
     runTicks(rig, 4, 100);
-    const turned = { ...rig.self(), facing: 200 };
-    rig.session.entities.set('self', turned);
-
-    rig.predictor.reportNow();
-    expect(rig.sent.at(-1)?.tag).toBe('useDoor');
-
-    // The same call reports the turn once the door has answered.
     rig.predictor.releaseDoor(false);
-    rig.predictor.reportNow();
-    expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { facing: 200 } });
+    const held = rig.self().position;
+
+    rig.steer(south);
+    for (let time = 500; time <= 900; time += 100) rig.predictor.runTick(time);
+    // Still leaning on it: one request, not one per round trip, and the step is taken.
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
+    expect(rig.self().position.z).toBeGreaterThan(held.z + 0.2);
+
+    rig.steer(north);
+    for (let time = 1000; time <= 1300; time += 100) rig.predictor.runTick(time);
+    rig.steer(south);
+    for (let time = 1400; time <= 1800; time += 100) rig.predictor.runTick(time);
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(2);
   });
 
-  it('does not ask again for a refused door until a step has left its trigger', () => {
-    const rig = doorRig();
+  /**
+   * A path that walks through a trigger can leave the player standing in it, by a stop, a
+   * correction, or another walk. A steer from there asks for the door only toward the doorway, while
+   * one entering the trigger asks whichever way it heads.
+   */
+  it.each([
+    ['steers out of a trigger it stands in without asking for the door', north, 0, { x: 10, z: 11.6 }],
+    ['asks for the door it stands in front of on steering toward the doorway', south, 1, { x: 10, z: 11.6 }],
+    ['asks for a door a steer enters at a glance, heading away from the doorway', { x: -0.9, z: 0.44 }, 1, { x: 9.4, z: 11.38 }],
+  ])('%s', (_label, direction, asked, from) => {
+    const rig = makeRig({ sector: walledDoor, entities: [self({ position: from })] });
+    rig.steer(direction);
+
     runTicks(rig, 4, 100);
 
-    rig.predictor.releaseDoor(false);
-    for (let time = 500; time <= 900; time += 100) rig.predictor.runTick(time);
-    // Still leaning on it: one request, not one per round trip.
-    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(asked);
+  });
 
-    rig.held = HELD_W;
-    rig.predictor.runTick(1000);
-    rig.held = HELD_S;
-    for (let time = 1100; time <= 1500; time += 100) rig.predictor.runTick(time);
-    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(2);
+  it('asks for nothing when a steer out of a trigger is stopped where it stands', () => {
+    const boxedIn = { ...walledDoor, blockers: [...walledDoor.blockers, { id: 'beam', x: 8, z: 10.9, width: 4, depth: 0.35 }] };
+    const rig = makeRig({ sector: boxedIn, entities: [self({ position: { x: 10, z: 11.6 } })] });
+    rig.steer(north);
+
+    runTicks(rig, 4, 100);
+
+    expect(rig.sent.filter((message) => message.tag === 'useDoor')).toEqual([]);
   });
 
   it.each<[string, Partial<ClientEntity>]>([
@@ -364,7 +667,8 @@ describe('triggers', () => {
     ['a peer', { id: 'peer', kind: 'peer' }],
     ['a nightmare', { id: 'monster:1', kind: 'monster' }],
   ])('asks nothing of %s it walks into: acting on something is a click', (_label, entity) => {
-    const rig = makeRig({ entities: [self(), clientEntity({ ...entity, position: along(W_DIRECTION, 0.61) })] });
+    const rig = makeRig({ entities: [self(), clientEntity({ ...entity, position: along(UP_SCREEN, 0.61) })] });
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 3, 100);
 
@@ -372,8 +676,9 @@ describe('triggers', () => {
   });
 
   it('stops at the NPC rather than walking through it', () => {
-    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: along(W_DIRECTION, 0.6) });
+    const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', name: 'Wirt', position: along(UP_SCREEN, 0.6) });
     const rig = makeRig({ entities: [self(), npc] });
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 3, 16);
 
@@ -384,49 +689,44 @@ describe('triggers', () => {
 describe('a swing', () => {
   it('slows the player to its share of their pace while it lasts', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
     rig.slowed = true;
     runTicks(rig, 1, 100);
-    expectAt(rig.self().position, along(W_DIRECTION, 0.14));
+    expectAt(rig.self().position, along(UP_SCREEN, 0.14));
 
     rig.slowed = false;
     runTicks(rig, 1, 100);
-    expectAt(rig.self().position, along(W_DIRECTION, 0.34));
-  });
-
-  it('is reported from where the player stands, ahead of the heartbeat, and once', () => {
-    const rig = makeRig();
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
-    expect(rig.moves()).toHaveLength(1);
-
-    rig.predictor.reportNow();
-    rig.predictor.reportNow();
-    expect(rig.moves()).toHaveLength(2);
-    expect(rig.moves().at(-1)).toEqual(rig.self().position);
+    expectAt(rig.self().position, along(UP_SCREEN, 0.34));
   });
 });
 
 describe('a balance that gave out, and a fall', () => {
-  it('moves a winded player at the slow gait whatever is held', () => {
-    const rig = makeRig({ held: { ...HELD_W, leftShift: true } });
+  it('moves a winded player at the slow gait whether Run is on or not', () => {
+    const rig = makeRig();
+    rig.running = true;
     rig.winded = true;
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 1, 100);
 
-    expectAt(rig.self().position, along(W_DIRECTION, 0.1));
+    expectAt(rig.self().position, along(UP_SCREEN, 0.1));
     expect(rig.self().gait).toBe('walk');
     expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { gait: 'walk' } });
   });
 
-  it('neither moves nor reports while the player lies fallen', () => {
+  it('neither moves nor reports while the player lies fallen, and the fall ends the walk', () => {
     const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 5));
     rig.fallen = true;
-    rig.mouseFacing = 90;
+    rig.lookAt = toward(90);
 
     runTicks(rig, 5, 100);
+    rig.fallen = false;
+    runTicks(rig, 5, 100);
 
-    expect(rig.self()).toMatchObject({ position: START, facing: FORWARD_FACING });
-    expect(rig.sent).toEqual([]);
+    expect(rig.self()).toMatchObject({ position: START });
+    expect(rig.predictor.walk).toBeUndefined();
+    expect(rig.moves()).toEqual([START]);
   });
 });
 
@@ -438,6 +738,7 @@ describe('emission gates', () => {
    */
   it('reports the position at 10 Hz over a fixed interval', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 62, 16);
 
@@ -448,14 +749,15 @@ describe('emission gates', () => {
 
   it('reports metres, the facing, and the gait', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, 1, 100);
 
-    const expected = along(W_DIRECTION, 0.2);
     const report = rig.sent.at(-1);
     if (report?.tag !== 'move') throw new Error('expected a move');
-    expect(report.payload).toEqual({ x: rig.self().position.x, z: rig.self().position.z, facing: FORWARD_FACING, gait: 'jog' });
-    expectAt(report.payload, expected);
+    expect(report.payload).toEqual({ x: rig.self().position.x, z: rig.self().position.z, facing: rig.self().facing, gait: 'jog' });
+    expectAt(report.payload, along(UP_SCREEN, 0.2));
+    expect(report.payload.facing).toBeCloseTo(215, 9);
   });
 
   /**
@@ -464,12 +766,12 @@ describe('emission gates', () => {
    * it. Both rigs are stationary so position and gait cannot be what changes.
    */
   it('does not emit for a sub-threshold facing change', () => {
-    const rig = makeRig({ held: noHeldKeys() });
-    rig.mouseFacing = 90;
+    const rig = makeRig();
+    rig.lookAt = toward(90);
     rig.predictor.runTick(0);
     const baseline = rig.sent.length;
 
-    rig.mouseFacing = 90.5;
+    rig.lookAt = toward(90.5);
     rig.predictor.runTick(1000);
 
     // `angularDistance(90 -> 90.5)` is 0.5, at or under the threshold. Without this gate a
@@ -478,12 +780,12 @@ describe('emission gates', () => {
   });
 
   it('emits exactly once for a super-threshold facing change', () => {
-    const rig = makeRig({ held: noHeldKeys() });
-    rig.mouseFacing = 90;
+    const rig = makeRig();
+    rig.lookAt = toward(90);
     rig.predictor.runTick(0);
     const baseline = rig.sent.length;
 
-    rig.mouseFacing = 91.5;
+    rig.lookAt = toward(91.5);
     rig.predictor.runTick(1000);
 
     // `angularDistance(90 -> 91.5)` is 1.5, past the threshold.
@@ -492,12 +794,12 @@ describe('emission gates', () => {
   });
 
   it('measures the facing delta across the 0/360 seam', () => {
-    const rig = makeRig({ held: noHeldKeys() });
-    rig.mouseFacing = 359.5;
+    const rig = makeRig();
+    rig.lookAt = toward(359.5);
     rig.predictor.runTick(0);
     const baseline = rig.sent.length;
 
-    rig.mouseFacing = 0.5;
+    rig.lookAt = toward(0.5);
     rig.predictor.runTick(1000);
 
     // The real turn is 1 degree, not 359. A naive subtraction would report every seam crossing.
@@ -506,6 +808,7 @@ describe('emission gates', () => {
 
   it('reports the final position after a throttled move rather than dropping it', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
 
     // t = 112 is the first tick past the 100 ms interval, so the final tick here is an emit.
     runTicks(rig, 7, 16);
@@ -516,16 +819,18 @@ describe('emission gates', () => {
   });
 });
 
-describe('waypoints', () => {
+describe('waypoint reports', () => {
   /**
-   * A box whose south-west corner the player slides round: held W runs north-north-west, so the
-   * player glides west under the box's south face and turns north once past the corner.
+   * A box whose south-west corner the player slides round: a steer screen-up (heading 215) glides
+   * the player west under the box's south face and turns north once past the corner.
    */
   const box = { id: 'box', x: 9, z: 8, width: 3, depth: 1 };
   const start = { x: 9.4, z: 9.3 };
 
   function slideRoundCorner(frameMs: number): { rig: Rig; reports: Point[] } {
-    const rig = makeRig({ sector: { blockers: [box] }, held: { ...HELD_W, leftShift: true }, entities: [self({ position: start })] });
+    const rig = makeRig({ sector: { blockers: [box] }, entities: [self({ position: start })] });
+    rig.running = true;
+    rig.steer(UP_SCREEN);
     runTicks(rig, Math.ceil(1000 / frameMs), frameMs);
     // The slide really went round the corner, to the box's west side.
     expect(rig.self().position.x).toBeLessThan(box.x);
@@ -534,12 +839,9 @@ describe('waypoints', () => {
   }
 
   it.each([16, 50, 99, 150])('reports a corner slide so that every report is a legal move from the last, at %i ms frames', (frameMs) => {
-    const { rig, reports } = slideRoundCorner(frameMs);
+    const { rig } = slideRoundCorner(frameMs);
 
-    // What the server checks: each report against the one it accepted before.
-    for (let index = 1; index < reports.length; index += 1) {
-      expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index]!, 0.3, []), `report ${index}`).toBe(true);
-    }
+    expectLegalReports(rig, start);
   });
 
   /**
@@ -564,104 +866,61 @@ describe('waypoints', () => {
    */
   it.each([16, 50, 99, 150])('reports a slide round an NPC so that every report is a legal move from the last, at %i ms frames', (frameMs) => {
     const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', position: { x: START.x - 0.15, z: START.z - 0.8 } });
-    const rig = makeRig({ held: { ...HELD_W, leftShift: true }, entities: [self(), npc] });
+    const rig = makeRig({ entities: [self(), npc] });
+    rig.running = true;
+    rig.steer(UP_SCREEN);
 
     runTicks(rig, Math.ceil(1000 / frameMs), frameMs);
 
     // The player ran into the NPC and came out on its far side.
     expect(rig.self().position.x).toBeLessThan(npc.position.x - 0.6);
     expect(rig.self().position.z).toBeLessThan(npc.position.z);
-    const reports = [START, ...rig.moves()];
-    const body = { x: npc.position.x, z: npc.position.z, radius: npc.radius };
-    for (let index = 1; index < reports.length; index += 1) {
-      expect(isLegalMove(rig.world.collision, reports[index - 1]!, reports[index]!, 0.3, [body]), `report ${index}`).toBe(true);
-    }
+    expectLegalReports(rig, START, [{ x: npc.position.x, z: npc.position.z, radius: npc.radius }]);
   });
 });
 
 describe('the input gate', () => {
-  it('is open while attached with no overlay and no chat focus', () => {
+  it.each<[string, (rig: Rig) => void]>([
+    ['an overlay is presented', (rig) => (rig.session.presentedOverlay = { kind: 'gameMenu' })],
+    ['the connection is not attached', (rig) => (rig.session.connectionState = 'awaitingEnterSpace')],
+  ])('ends the walk when %s', (_label, close) => {
     const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 5));
+    runTicks(rig, 2, 100);
+    const stopped = rig.self().position;
 
-    rig.predictor.runTick(0);
+    close(rig);
+    rig.predictor.runTick(300);
+    rig.session.presentedOverlay = undefined;
+    rig.session.connectionState = 'attached';
+    rig.predictor.runTick(400);
 
-    expect(rig.gateWrites).toEqual([true]);
+    expect(rig.predictor.walk).toBeUndefined();
+    expect(rig.self().position).toEqual(stopped);
   });
 
-  it('closes while an overlay is presented', () => {
+  it('is open while attached with no overlay', () => {
     const rig = makeRig();
+
+    expect(rig.predictor.gateIsOpen()).toBe(true);
     rig.session.presentedOverlay = { kind: 'gameMenu' };
-
-    rig.predictor.runTick(0);
-
-    expect(rig.gateWrites).toEqual([false]);
-  });
-
-  it('closes while the chat input is focused', () => {
-    const rig = makeRig();
-    rig.session.isChatInputFocused = true;
-
-    rig.predictor.runTick(0);
-
-    expect(rig.gateWrites).toEqual([false]);
-  });
-
-  it.each(['awaitingLoginResult', 'awaitingEnterSpace'] as const)('closes while %s', (state) => {
-    const rig = makeRig();
-    rig.session.connectionState = state;
-
-    rig.predictor.runTick(0);
-
-    expect(rig.gateWrites).toEqual([false]);
-  });
-
-  it('keeps reporting the gate closed across ticks while an overlay is up', () => {
-    const rig = makeRig();
-    rig.session.presentedOverlay = { kind: 'gameMenu' };
-    // Only the gate *write* is asserted, deliberately. `runTick` returns early on chat focus but not
-    // on an overlay, and this rig's stub sink keeps reporting the held key, so the character does
-    // move here by design — there is no position to assert. That the production sampler clears its
-    // bitset when the gate closes is covered in `browser-host.test.ts`, which drives a real
-    // `KeyboardSampler`.
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
-
-    expect(rig.gateWrites).toEqual([false, false]);
-  });
-
-  it('returns before moving the player while chat is focused', () => {
-    const rig = makeRig();
-    rig.session.isChatInputFocused = true;
-
-    rig.predictor.runTick(0);
-    rig.predictor.runTick(16);
-
-    expect(rig.self().position).toEqual(START);
-    expect(rig.sent).toHaveLength(0);
-  });
-
-  it('keeps drawing remote entities while chat is focused', () => {
-    const peer = clientEntity({ id: 'peer', kind: 'peer', position: { x: 2, z: 2 } });
-    const rig = makeRig({ entities: [self(), peer] });
-    rig.session.isChatInputFocused = true;
-    rig.interpolation.retarget('peer', peer.position, { x: 3, z: 2 }, 0);
-
-    rig.predictor.runTick(100);
-
-    expect(rig.session.entities.get('peer')?.position).toEqual({ x: 3, z: 2 });
+    expect(rig.predictor.gateIsOpen()).toBe(false);
   });
 });
 
 describe('correction', () => {
-  it('snaps to the corrected position and measures the next report from it', () => {
-    const rig = makeRig({ held: noHeldKeys() });
+  it('snaps to the corrected position, measures the next report from it, and ends the walk', () => {
+    const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 5));
     rig.predictor.runTick(0);
+    rig.predictor.runTick(100);
     const baseline = rig.sent.length;
 
     rig.predictor.correct({ x: 4, z: 4 });
     rig.predictor.runTick(1000);
 
     expect(rig.self().position).toEqual({ x: 4, z: 4 });
+    expect(rig.predictor.walk).toBeUndefined();
     // The server already holds this position, so standing on it is nothing to report.
     expect(rig.sent).toHaveLength(baseline);
   });
@@ -670,6 +929,7 @@ describe('correction', () => {
 describe('reset', () => {
   it('drops the tick clock and the last report', () => {
     const rig = makeRig();
+    rig.steer(UP_SCREEN);
     runTicks(rig, 4, 16);
     const before = rig.self().position;
     const reports = rig.moves().length;
@@ -681,17 +941,5 @@ describe('reset', () => {
     // leave the server not hearing from the client until something changed.
     expect(rig.self().position).toEqual(before);
     expect(rig.moves()).toHaveLength(reports + 1);
-  });
-});
-
-describe('velocity', () => {
-  it('normalizes a diagonal so eight-way movement is not faster', () => {
-    const diagonal = velocityFromHeld({ ...noHeldKeys(), w: true, d: true });
-
-    expect(Math.hypot(diagonal.dx, diagonal.dy)).toBeCloseTo(1, 12);
-  });
-
-  it('cancels opposing keys to a standstill', () => {
-    expect(velocityFromHeld({ ...noHeldKeys(), a: true, d: true })).toEqual({ dx: 0, dy: 0 });
   });
 });

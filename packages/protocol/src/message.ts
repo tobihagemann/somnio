@@ -13,6 +13,7 @@ import type {
   DeleteCharacterMessage,
   DoorRefusedMessage,
   EmptyMessage,
+  EngageMessage,
   Energy,
   EnterSpaceMessage,
   EntityMessage,
@@ -40,11 +41,11 @@ import type {
   SessionRevokedMessage,
   SessionTokenMessage,
   StudyMessage,
-  SwingMessage,
   TalkMessage,
-  TendMessage,
+  TargetMessage,
   UseDoorMessage,
   UseItemMessage,
+  VitalsMessage,
 } from './payloads.ts';
 import { isClientOnlyTag } from './tags.ts';
 import type { ClientToServerTag } from './tags.ts';
@@ -63,8 +64,8 @@ export type SomnioMessage =
   | { tag: 'clientSay'; payload: ClientSayMessage }
   | { tag: 'equipToggle'; payload: EquipToggleMessage }
   | { tag: 'talk'; payload: TalkMessage }
-  | { tag: 'swing'; payload: SwingMessage }
-  | { tag: 'tend'; payload: TendMessage }
+  | { tag: 'target'; payload: TargetMessage }
+  | { tag: 'engage'; payload: EngageMessage }
   | { tag: 'useDoor'; payload: UseDoorMessage }
   | { tag: 'askTask'; payload: AskTaskMessage }
   | { tag: 'completeTask'; payload: CompleteTaskMessage }
@@ -94,6 +95,7 @@ export type SomnioMessage =
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'lucidity'; payload: LucidityMessage }
   | { tag: 'condition'; payload: ConditionMessage }
+  | { tag: 'vitals'; payload: VitalsMessage }
   | { tag: 'blow'; payload: BlowMessage }
   | { tag: 'raising'; payload: RaisingMessage }
   | { tag: 'mend'; payload: MendMessage }

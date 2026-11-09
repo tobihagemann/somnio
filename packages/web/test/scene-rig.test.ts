@@ -48,19 +48,19 @@ describe('orthographic scale is a HALF-height', () => {
 
 describe('rig constants and derived bounds', () => {
   it('derives minScale from the zoom clamp so the two agree by construction', () => {
-    expect(MIN_SCALE).toBe(1.5);
+    expect(MIN_SCALE).toBe(5);
   });
 
   it('clamps scale into the interactive range', () => {
     expect(clampedScale(0.1)).toBe(MIN_SCALE);
     expect(clampedScale(100)).toBe(ORTHO_RIG.maxScale);
-    expect(clampedScale(3)).toBe(3);
+    expect(clampedScale(7)).toBe(7);
   });
 
   it('inverts the zoom factor into a camera scale', () => {
-    expect(scaleForZoomFactor(1)).toBe(3);
-    expect(scaleForZoomFactor(2)).toBe(1.5);
-    expect(scaleForZoomFactor(0.5)).toBe(6);
+    expect(scaleForZoomFactor(1)).toBe(7);
+    expect(scaleForZoomFactor(1.4)).toBe(5);
+    expect(scaleForZoomFactor(0.78)).toBeCloseTo(8.974, 3);
   });
 });
 
@@ -81,7 +81,7 @@ describe('offsetDirection', () => {
   });
 });
 
-describe('worldMovement rotates WASD through the camera yaw', () => {
+describe('worldMovement rotates a screen direction through the camera yaw', () => {
   it.each([
     [1, 0, 0.8191520442889918, -0.573576436351046],
     [0, -1, -0.573576436351046, -0.8191520442889918],
@@ -195,12 +195,12 @@ describe('eased height', () => {
 
 describe('scroll zoom', () => {
   it('clamps to the factor range', () => {
-    expect(applyScrollZoom(1, 10_000)).toBe(2);
-    expect(applyScrollZoom(1, -10_000)).toBe(0.5);
+    expect(applyScrollZoom(1, 10_000)).toBe(1.4);
+    expect(applyScrollZoom(1, -10_000)).toBe(0.78);
   });
 
   it('moves the same fraction at either clamp end', () => {
-    const fromLow = applyScrollZoom(0.6, 10) / 0.6;
+    const fromLow = applyScrollZoom(0.8, 10) / 0.8;
     const fromHigh = applyScrollZoom(1.2, 10) / 1.2;
     expect(fromLow).toBeCloseTo(fromHigh, 10);
   });
@@ -216,7 +216,7 @@ describe('rig constants', () => {
     ['pitchDegrees', ORTHO_RIG.pitchDegrees, 45],
     ['yawDegrees', ORTHO_RIG.yawDegrees, 35],
     ['cameraDistance', ORTHO_RIG.cameraDistance, 50],
-    ['defaultScale', ORTHO_RIG.defaultScale, 3],
+    ['defaultScale', ORTHO_RIG.defaultScale, 7],
     ['maxScale', ORTHO_RIG.maxScale, 24],
     ['nearClip', ORTHO_RIG.nearClip, 0.05],
     ['farClip', ORTHO_RIG.farClip, 500],
@@ -225,8 +225,8 @@ describe('rig constants', () => {
   });
 
   it.each([
-    ['minFactor', PLAYER_ZOOM.minFactor, 0.5],
-    ['maxFactor', PLAYER_ZOOM.maxFactor, 2.0],
+    ['minFactor', PLAYER_ZOOM.minFactor, 0.78],
+    ['maxFactor', PLAYER_ZOOM.maxFactor, 1.4],
     ['scrollGain', PLAYER_ZOOM.scrollGain, 0.015],
   ])('pins PlayerZoom %s', (_name, value, expected) => {
     expect(value).toBe(expected);

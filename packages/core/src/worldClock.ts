@@ -39,6 +39,17 @@ export function calendarFromWorldSeconds(worldSeconds: number): WorldCalendar {
   };
 }
 
+/** The world clock read `worldSeconds` at `atMs` on a wall clock. */
+export interface WorldClockReading {
+  worldSeconds: number;
+  atMs: number;
+}
+
+/** A clock reading run on to `nowMs` on the same wall clock. A wall clock read earlier than `atMs` counts as no time passed. */
+export function worldSecondsAt(clock: WorldClockReading, nowMs: number): number {
+  return clock.worldSeconds + (Math.max(0, nowMs - clock.atMs) / 1000) * WORLD_TIME_RATE;
+}
+
 /** The fractional hour of the day in `[0, 24)`, which the sun follows. */
 export function hourOfDay(worldSeconds: number): number {
   const secondOfDay = worldSeconds - Math.floor(worldSeconds / SECONDS_PER_DAY) * SECONDS_PER_DAY;

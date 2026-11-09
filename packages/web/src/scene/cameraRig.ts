@@ -10,13 +10,13 @@ export const ORTHO_RIG = {
   yawDegrees: 35,
   /** Pure translation under an orthographic projection; only has to clear the near plane. */
   cameraDistance: 50,
-  defaultScale: 3,
+  defaultScale: 7,
   maxScale: 24,
   nearClip: 0.05,
   farClip: 500,
 } as const;
 
-export const PLAYER_ZOOM = { minFactor: 0.5, maxFactor: 2.0, scrollGain: 0.015 } as const;
+export const PLAYER_ZOOM = { minFactor: 0.78, maxFactor: 1.4, scrollGain: 0.015 } as const;
 
 /** Derived so the rig bound and the zoom clamp agree by construction. */
 export const MIN_SCALE = ORTHO_RIG.defaultScale / PLAYER_ZOOM.maxFactor;
@@ -45,6 +45,15 @@ export interface Vec3 {
  */
 export function frustumBounds(scale: number, aspect: number): { left: number; right: number; top: number; bottom: number } {
   return { left: -scale * aspect, right: scale * aspect, top: scale, bottom: -scale };
+}
+
+export function applyFrustum(
+  camera: { left: number; right: number; top: number; bottom: number; updateProjectionMatrix(): void },
+  scale: number,
+  aspect: number,
+): void {
+  Object.assign(camera, frustumBounds(scale, aspect));
+  camera.updateProjectionMatrix();
 }
 
 /**
@@ -85,8 +94,8 @@ export function cameraPosition(focus: Vec3): Vec3 {
  *
  * `PLAYER_ZOOM.scrollGain` is sized for a few delta units per mouse-wheel notch. Chrome and
  * Safari on macOS report ~100 px for the same notch, and
- * `exp(100 * 0.015)` is 4.5x: more than the entire 0.5-2.0 range, so one notch would pin the camera
- * at a stop with no steps in between. Both the sign and the scale therefore have to be converted,
+ * `exp(100 * 0.015)` is 4.5x: more than twice the entire 0.78-1.4 range, so one notch would pin the
+ * camera at a stop with no steps in between. Both the sign and the scale therefore have to be converted,
  * not just the sign.
  *
  * Deliberately proportional rather than quantized to whole notches: a trackpad reports a stream of
@@ -101,7 +110,7 @@ export const WHEEL_NOTCH = {
   pages: 1,
   /**
    * What one notch is worth to `applyScrollZoom`. Sized so a notch moves the factor ~5.9%, about
-   * 24 notches across the range.
+   * 10 notches across the range.
    */
   zoomDelta: 3.85,
 } as const;
@@ -115,8 +124,8 @@ export function wheelDeltaToZoomDelta(deltaY: number, deltaMode: number): number
  * Session-only scroll zoom. Multiplicative steps keep the feel uniform across the range — one wheel
  * tick moves the same *fraction* at either clamp end.
  */
-export function applyScrollZoom(factor: number, deltaY: number): number {
-  return clamp(factor * Math.exp(deltaY * PLAYER_ZOOM.scrollGain), PLAYER_ZOOM.minFactor, PLAYER_ZOOM.maxFactor);
+export function applyScrollZoom(factor: number, deltaY: number, range: { minFactor: number; maxFactor: number } = PLAYER_ZOOM): number {
+  return clamp(factor * Math.exp(deltaY * PLAYER_ZOOM.scrollGain), range.minFactor, range.maxFactor);
 }
 
 /** The camera scale for a zoom factor: larger factor means more magnified, so smaller scale. */

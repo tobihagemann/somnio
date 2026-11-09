@@ -9,8 +9,7 @@ import type {
   SomnioMessage,
   SomnioMessageTag,
 } from '@somnio/protocol';
-import { collectOutbox } from '../../src/connection/outbox.ts';
-import type { ConnectionOutbox } from '../../src/connection/outbox.ts';
+import { ConnectionOutbox, collectOutbox } from '../../src/connection/outbox.ts';
 
 /** Finishes and drains an outbox, decoding every frame. */
 export async function collectMessages(outbox: ConnectionOutbox): Promise<SomnioMessage[]> {
@@ -33,6 +32,19 @@ export function entityMoves(messages: readonly SomnioMessage[]): EntityMove[] {
 
 export function entities(messages: readonly SomnioMessage[]): EntityMessage[] {
   return messages.flatMap((message) => (message.tag === 'entity' ? [message.payload] : []));
+}
+
+/** An outbox that notes the clock at each `vitals` frame it is sent, for a test that needs to know when each went out. */
+export function vitalsOutbox(clock: { ms: number }) {
+  const outbox = new ConnectionOutbox(4096);
+  const sent: { ms: number; entityId: string; health: number }[] = [];
+  const send = outbox.send.bind(outbox);
+  outbox.send = (frame) => {
+    const message = decodeSomnioMessage(frame);
+    if (message.tag === 'vitals') sent.push({ ms: clock.ms, ...message.payload });
+    send(frame);
+  };
+  return { outbox, sent };
 }
 
 export function loginResults(messages: readonly SomnioMessage[]): LoginResult[] {

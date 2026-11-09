@@ -1,0 +1,1103 @@
+/*
+ * The in-game HUD (`hud.ts`): unit frames at the top, the world clock top right, the belt at the
+ * bottom centre with the menu beside it, and the chat bottom left. A finger's layout is the
+ * `.hud--coarse` half below. The chrome itself (the 9-slice panels and buttons) is `chrome.css`.
+ */
+
+:root {
+  --hud-pool-health: rgb(176 30 32);
+  --hud-pool-health-surface: rgb(232 92 80);
+  --hud-pool-spirit: rgb(40 86 186);
+  --hud-pool-spirit-surface: rgb(120 164 255);
+  --hud-pool-balance: rgb(216 180 68);
+  --hud-winded: rgb(255 138 42);
+  --hud-key: rgb(255 217 138);
+  /* The chrome's line art is pure white. */
+  --hud-line: #fff;
+  /* A well under the line art: the plate of a button. */
+  --hud-well: rgb(0 0 0 / 0.8);
+  /* A control that is on: its plate tinted and a second line just inside its edge, both in its colour. */
+  --hud-lit-plate: rgb(64 52 28 / 0.94);
+  --hud-lit-line: var(--hud-key);
+  /* How far down the windows start, clear of the clock above them. */
+  --hud-window-top: 104px;
+}
+
+/* Its own stacking context, so a window's order among the others never lifts it over an overlay. */
+.hud {
+  /* How much a mouse's HUD shrinks to fit a small window (`GameHUD.setViewport`): 1 in a window it fits whole. */
+  --hud-scale: 1;
+  /* How far above the belt's foot the windows end: clear of the menu beside the Spirit globe. */
+  --hud-belt-reach: 86px;
+
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+/* A glyph (`hudIcons.ts`): a white silhouette used as a mask over the control's ink. */
+.hud-glyph {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  mask: var(--hud-glyph) center / var(--hud-glyph-size) no-repeat;
+}
+
+/* ---------- Unit frames ---------- */
+
+.hud-unit {
+  --hud-portrait-size: 52px;
+  --hud-portrait-left: 12px;
+
+  position: absolute;
+  top: var(--somnio-edge-padding);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px 12px var(--hud-portrait-left);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* The plate leaves the portrait's circle open, so the body the scene draws on the canvas under it shows. */
+.hud-unit.fantasy-panel {
+  background-image: radial-gradient(
+    circle at calc(var(--hud-portrait-left) + var(--hud-portrait-size) / 2 - var(--somnio-plate-inset)) 50%,
+    transparent calc(var(--hud-portrait-size) / 2),
+    var(--somnio-plate) calc(var(--hud-portrait-size) / 2)
+  );
+}
+
+/* A button under the panel chrome: its own background colour would show round the plate. */
+.hud-unit--self {
+  left: var(--somnio-edge-left);
+  width: var(--somnio-self-frame-width);
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.hud-unit--self:hover {
+  --somnio-plate: rgb(28 24 34 / 0.78);
+}
+
+.hud-unit--self[aria-pressed='true'] {
+  --somnio-plate: rgb(60 52 30 / 0.72);
+}
+
+.hud-unit__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hud-unit__traits {
+  overflow: hidden;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A name as wide as the bar under it. */
+.hud-unit__name {
+  display: block;
+  width: 150px;
+  overflow: hidden;
+  color: var(--somnio-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The portrait's circle in a line-art ring, in the player's condition on their own frame. */
+.hud-portrait {
+  position: relative;
+  flex: none;
+  width: var(--hud-portrait-size);
+  height: var(--hud-portrait-size);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--hud-tint, var(--hud-line));
+}
+
+/* The people's sigil on a badge at the portrait's foot. */
+.hud-sigil {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #0c0a10;
+  box-shadow: 0 0 0 1.5px var(--hud-tint, var(--hud-line));
+  color: var(--hud-line);
+}
+
+.hud-sigil:empty {
+  display: none;
+}
+
+.hud-sigil .fantasy-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.hud-unit--target {
+  left: 50%;
+  max-width: calc(100% - 2 * (var(--somnio-edge-left) + var(--somnio-self-frame-width) + 8px));
+  transform: translateX(-50%);
+}
+
+/* In a narrow window the target's name and bar give way, so its frame stays clear of the player's. */
+.hud--fine .hud-unit--target :is(.hud-unit__name, .hud-unit__caption, .hud-bar) {
+  max-width: 100%;
+}
+
+.hud-unit__caption {
+  width: 150px;
+  padding-right: 18px;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+}
+
+.hud-unit__clear,
+.hud-window__close {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--somnio-ink-dim);
+  cursor: pointer;
+}
+
+.hud-unit__clear:hover,
+.hud-window__close:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+
+.hud-unit__clear {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+}
+
+.hud-unit__clear .fantasy-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- Bars ---------- */
+
+.hud-bar {
+  position: relative;
+  display: block;
+  width: 150px;
+  height: 10px;
+  border: 1px solid rgb(255 255 255 / 0.7);
+  background: rgb(0 0 0 / 0.55);
+}
+
+.hud-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  transition: width 0.25s ease-out;
+}
+
+.hud-bar__fill--health {
+  background: rgb(224 0 0);
+}
+
+.hud-bar__fill--spirit {
+  background: var(--hud-pool-spirit);
+}
+
+.hud-bar__fill--balance {
+  background: var(--hud-pool-balance);
+}
+
+/* ---------- The world clock ---------- */
+
+.hud-clock {
+  position: absolute;
+  top: var(--somnio-edge-padding);
+  right: var(--somnio-edge-right);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 12px 20px;
+}
+
+.hud-clock__time {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-clock__glyph {
+  margin-right: 4px;
+  color: rgb(190 205 255);
+}
+
+.hud-clock__glyph--day {
+  color: rgb(255 214 120);
+}
+
+.hud-clock__place {
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+}
+
+/* ---------- The belt: globes, the Balance arc, the slots ---------- */
+
+.hud-belt {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  display: flex;
+  align-items: flex-end;
+  transform: translateX(-50%);
+}
+
+.hud-globe {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 110px;
+  height: 110px;
+}
+
+/* A flat dark well, reaching under the ring's line as a panel's plate reaches under its border. */
+.hud-globe__well {
+  position: absolute;
+  inset: 2px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: rgb(12 10 16 / 0.94);
+}
+
+/* The pool's level, flat, with its surface a lighter line of the same colour. */
+.hud-globe__level {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0;
+  background: var(--hud-globe-pool);
+  box-shadow: inset 0 2px 0 var(--hud-globe-surface);
+  transition: height 0.35s ease-out;
+}
+
+.hud-globe--health {
+  --hud-globe-pool: var(--hud-pool-health);
+  --hud-globe-surface: var(--hud-pool-health-surface);
+}
+
+.hud-globe--spirit {
+  --hud-globe-pool: var(--hud-pool-spirit);
+  --hud-globe-surface: var(--hud-pool-spirit-surface);
+}
+
+/* The chrome's line weight: 2px, with the brackets 2px outside it. */
+.hud-globe__ring {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  fill: none;
+  stroke: var(--hud-line);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.hud-globe__value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.85);
+}
+
+.hud-globe__value small {
+  color: rgb(255 255 255 / 0.8);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* The panel tucks under both globes. */
+.hud-belt__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin: 0 -22px;
+  padding: 8px 34px 9px;
+}
+
+.hud-balance {
+  position: relative;
+}
+
+.hud-balance--arc {
+  align-self: stretch;
+}
+
+.hud-balance__arc {
+  display: block;
+  width: 100%;
+  height: 18px;
+  overflow: visible;
+}
+
+.hud-balance__arc path {
+  fill: none;
+  stroke-linecap: round;
+}
+
+/* A 2px line either side of a dark track, as the chrome draws its edges. */
+.hud-balance__edge {
+  stroke: var(--hud-line);
+  stroke-width: 10;
+}
+
+.hud-balance__track {
+  stroke: rgb(12 10 16);
+  stroke-width: 6;
+}
+
+.hud-balance__fill {
+  stroke: var(--hud-pool-balance);
+  stroke-width: 6;
+  transition: stroke 0.3s;
+}
+
+/* Winded: the arc turns orange until the balance is back to where the slow gait ends. */
+.hud-balance--winded .hud-balance__fill {
+  stroke: var(--hud-winded);
+}
+
+.hud-winded {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  padding: 1px 8px;
+  border-radius: 3px;
+  background: rgb(30 14 4 / 0.9);
+  box-shadow: 0 0 0 1px var(--hud-winded);
+  color: var(--hud-winded);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.hud-slots {
+  display: flex;
+  gap: 6px;
+}
+
+/* Small square controls keep the plain button chrome in every state, drawn with 12px caps so the
+   corner ornaments leave room for a key number. Hover and on light the plate instead. */
+.hud-slot,
+.hud-menu__item {
+  --somnio-cap-inset: 12px;
+
+  border-image-source: url('/assets/UI/panel-button.png') !important;
+}
+
+.hud-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  min-width: 0;
+  height: 50px;
+  padding: 0;
+}
+
+.hud-slot:hover:enabled,
+.hud-menu__item:hover {
+  background-image: linear-gradient(rgb(0 0 0 / 0.65), rgb(0 0 0 / 0.65));
+}
+
+.hud-slot[aria-pressed='true'],
+.hud-menu__item[aria-pressed='true'] {
+  background-image: linear-gradient(var(--hud-lit-plate), var(--hud-lit-plate));
+  outline: 1.5px solid var(--hud-lit-line);
+  outline-offset: -6px;
+}
+
+.hud-slot .fantasy-icon {
+  width: 22px;
+  height: 22px;
+  /* Off the key number in the top left corner. */
+  translate: 2px 2px;
+}
+
+.hud-slot__key {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  color: var(--hud-key);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-slot--empty {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.hud-slot--empty .hud-slot__key {
+  color: rgb(255 217 138 / 0.45);
+}
+
+.hud-slot--run {
+  margin-left: 8px;
+}
+
+/* Slot 1 takes Attack's ember, Mend's green, or Raise's silver, by its look. */
+.hud-slot--act[data-look='attack'],
+.hud-orb--act[data-look='attack'] {
+  --hud-lit-plate: rgb(120 42 18 / 0.94);
+  --hud-lit-line: rgb(255 176 110);
+}
+
+.hud-slot--act[data-look='mend'],
+.hud-orb--act[data-look='mend'] {
+  --hud-lit-plate: rgb(18 70 52 / 0.94);
+  --hud-lit-line: rgb(150 235 195);
+
+  color: rgb(165 232 200);
+}
+
+.hud-slot--act[data-look='raise'],
+.hud-orb--act[data-look='raise'] {
+  --hud-lit-plate: rgb(52 58 90 / 0.94);
+  --hud-lit-line: rgb(225 232 255);
+
+  color: rgb(226 232 255);
+}
+
+.hud-study {
+  min-height: 1.35em;
+  margin: 0;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.hud-study b {
+  color: var(--somnio-ink);
+  font-weight: 600;
+}
+
+/* Beside the Spirit globe. */
+.hud-menu {
+  position: absolute;
+  bottom: 6px;
+  left: calc(100% + 12px);
+  display: flex;
+  gap: 6px;
+}
+
+.hud-menu__item {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
+
+/* ---------- The chat, a Clan Lord text pane ---------- */
+
+.hud-chat {
+  position: absolute;
+  bottom: var(--somnio-edge-bottom);
+  left: var(--somnio-edge-left);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(296px, calc(50% - 343px));
+}
+
+/* Closed, the newest lines lie on a shadow over the world, held at the newest line. */
+.hud-chat .chat-scrollback {
+  max-height: 140px;
+  padding: 6px 8px 4px;
+  overflow: hidden;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.25) 70%, transparent);
+  overflow-wrap: anywhere;
+  cursor: text;
+  transition: opacity 1.6s ease-in;
+}
+
+/* Faded, they let the pointer through to the world; resting on where they lie brings them back. */
+.hud-chat--idle .chat-scrollback {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Open, it keeps its width, clear of the Health globe beside it. */
+.hud-chat--open {
+  padding: 14px 18px 16px;
+}
+
+.hud-chat--open .chat-scrollback {
+  max-height: 240px;
+  padding: 0 2px 0 0;
+  overflow-y: auto;
+  background: none;
+  cursor: auto;
+  user-select: text;
+  transition: none;
+}
+
+.hud-chat__field {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 6px 8px;
+  line-height: 20px;
+}
+
+.chat-line {
+  margin: 0 0 3px;
+  padding-left: 7px;
+  line-height: 1.35;
+  text-shadow: 0 1px 2px #000;
+}
+
+.chat-line--ownMessage {
+  color: var(--somnio-chat-purple);
+}
+
+.chat-line--peerMessage,
+.chat-line--npcMessage,
+.chat-line--itemInfo {
+  color: #fff;
+}
+
+.chat-line--adminBroadcast,
+.chat-line--error {
+  color: var(--somnio-chat-red);
+}
+
+.chat-line--joinLeave,
+.chat-line--startupGreeting {
+  color: var(--somnio-chat-blue);
+  font-style: italic;
+}
+
+/* ---------- Windows ---------- */
+
+/* Opaque, like a master's panel: what lies under a text panel would show through. */
+.hud-window {
+  --somnio-plate: rgb(12 10 16);
+
+  --hud-window-scaled-top: calc(var(--somnio-edge-padding) + (var(--hud-window-top) - var(--somnio-edge-padding)) * var(--hud-scale));
+
+  position: absolute;
+  top: var(--hud-window-scaled-top);
+  right: var(--somnio-edge-right);
+  /* Over the open chat and a finger's sheet, the newest on top. */
+  z-index: calc(30 + var(--hud-window-order, 0));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 280px;
+  /* Ending above the menu, whatever the HUD's scale. */
+  max-height: calc(100% - var(--hud-window-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale));
+}
+
+.hud-window--beside {
+  right: calc(var(--somnio-edge-right) + 280px + 8px);
+}
+
+.hud-window__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-window__head .overlay-title {
+  flex: 1;
+  margin: 0;
+}
+
+.hud-window__close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.hud-window__close .fantasy-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hud-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hud-list__row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 0;
+  color: #fff;
+}
+
+.hud-list__row + .hud-list__row {
+  border-top: 1px solid rgb(255 255 255 / 0.14);
+}
+
+.hud-list__row--activatable {
+  cursor: pointer;
+}
+
+.hud-list__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A press on a name targets that dreamer, and the target's name is marked. */
+.hud-list__select {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-list__select[aria-pressed='true'] {
+  color: var(--hud-key);
+}
+
+/* `[L]` / `[R]` and the purse's coins in a fixed trailing column. */
+.hud-list__marker {
+  width: 32px;
+  text-align: right;
+}
+
+.hud-list__footer {
+  color: var(--somnio-secondary-text);
+}
+
+/* ---------- A mouse's layout in a narrow window ---------- */
+
+/* In a window too small for it, the HUD shrinks evenly, each part toward the edge it stands at. */
+.hud--fine .hud-unit--self {
+  transform: scale(var(--hud-scale));
+  transform-origin: 0 0;
+}
+
+.hud--fine .hud-unit--target {
+  max-width: calc((100% - 2 * (var(--somnio-edge-left) + 8px)) / var(--hud-scale) - 2 * var(--somnio-self-frame-width));
+  transform: translateX(-50%) scale(var(--hud-scale));
+  transform-origin: 50% 0;
+}
+
+.hud--fine .hud-clock {
+  transform: scale(var(--hud-scale));
+  transform-origin: 100% 0;
+}
+
+.hud--fine .hud-belt {
+  transform: translateX(-50%) scale(var(--hud-scale));
+  transform-origin: 50% 100%;
+}
+
+/* Too narrow for the chat beside the belt: it stands above it. */
+@media (max-width: 1126px) {
+  .hud--fine .hud-chat {
+    bottom: calc(var(--somnio-edge-bottom) + 136px * var(--hud-scale));
+    width: 296px;
+  }
+}
+
+/* Too narrow for the menu beside the Spirit globe: it stands above it, and the windows end above it. */
+@media (max-width: 962px) {
+  .hud--fine {
+    --hud-belt-reach: 170px;
+  }
+
+  .hud--fine .hud-menu {
+    bottom: calc(100% + 10px);
+    left: auto;
+    right: 0;
+  }
+}
+
+/* Too narrow for two windows side by side: the newer covers the older. */
+@media (max-width: 600px) {
+  .hud--fine .hud-window--beside {
+    right: var(--somnio-edge-right);
+  }
+}
+
+/* ---------- A finger's layout, on a phone on its side ---------- */
+
+@media (pointer: coarse) {
+  :root {
+    --somnio-self-frame-width: 170px;
+  }
+}
+
+/* One strip along the top: the player's frame, the target's, then the clock and ≡ at the right. */
+.hud-strip {
+  position: absolute;
+  top: 8px;
+  right: var(--somnio-edge-right);
+  left: var(--somnio-edge-left);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.hud-strip > * {
+  pointer-events: auto;
+}
+
+.hud-strip > .hud-strip__spacer {
+  flex: 1;
+  pointer-events: none;
+}
+
+.hud-strip .hud-unit {
+  position: relative;
+  top: 0;
+  left: 0;
+  transform: none;
+}
+
+.hud--coarse .hud-unit {
+  --hud-portrait-size: 40px;
+  --hud-portrait-left: 8px;
+
+  gap: 8px;
+}
+
+.hud--coarse .hud-unit--self {
+  padding: 8px 14px 8px var(--hud-portrait-left);
+}
+
+.hud--coarse .hud-sigil {
+  right: -6px;
+  bottom: -6px;
+  width: 18px;
+  height: 18px;
+}
+
+.hud--coarse .hud-sigil .fantasy-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.hud--coarse .hud-unit__name {
+  width: 100px;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.hud--coarse .hud-bar {
+  width: 100px;
+  height: 6px;
+}
+
+.hud--coarse .hud-unit__lines {
+  gap: 3px;
+}
+
+.hud--coarse .hud-unit--target {
+  padding: 8px 44px 8px var(--hud-portrait-left);
+}
+
+.hud--coarse .hud-unit__caption {
+  width: 100px;
+  padding-right: 0;
+  font-size: 10px;
+}
+
+.hud--coarse .hud-unit__clear {
+  top: 50%;
+  right: 2px;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+.hud--coarse .hud-unit__clear .fantasy-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hud--coarse .hud-clock {
+  position: static;
+  margin-top: 5px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.25;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px #000;
+}
+
+.hud--coarse .hud-clock__time {
+  font-size: 14px;
+}
+
+.hud--coarse .hud-clock__place {
+  color: var(--somnio-ink);
+  font-size: 12px;
+}
+
+.hud-sheet-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.hud-sheet {
+  position: absolute;
+  top: 60px;
+  right: var(--somnio-edge-right);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  padding: 16px 18px;
+}
+
+/* A row of glyph and label, over the chrome's centred grid for a button that holds a glyph. */
+.hud-sheet .hud-sheet__item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+
+.hud-sheet .hud-study {
+  margin-top: 4px;
+  text-align: center;
+  white-space: normal;
+}
+
+/* Slot 1 under the right thumb, slots 2 to 6 on an arc round it, and Run at the arc's end. */
+.hud-thumb {
+  position: absolute;
+  right: var(--somnio-edge-right);
+  bottom: var(--somnio-edge-bottom);
+  width: var(--hud-thumb-width);
+  height: var(--hud-thumb-height);
+  pointer-events: none;
+}
+
+/* A well in a 2px line-art ring, as the globes are drawn. */
+.hud-orb {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--hud-line);
+  border-radius: 50%;
+  background: var(--hud-well);
+  color: var(--somnio-ink);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.hud-orb:active:enabled {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.hud-orb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hud-orb--act {
+  width: 76px;
+  height: 76px;
+}
+
+.hud-orb--act .fantasy-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.hud-orb--empty {
+  width: 48px;
+  height: 48px;
+  border-width: 1.5px;
+  opacity: 0.55;
+  cursor: default;
+}
+
+.hud-orb--empty .hud-slot__key {
+  position: static;
+  color: rgb(255 217 138 / 0.6);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hud-orb--run {
+  width: 52px;
+  height: 52px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-orb[aria-pressed='true'] {
+  background: var(--hud-lit-plate);
+  outline: 1.5px solid var(--hud-lit-line);
+  outline-offset: -6px;
+}
+
+/* Balance as a thin bar at the bottom, between the chat icon and Run. */
+.hud-balance--bar {
+  position: absolute;
+  right: calc(var(--somnio-edge-right) + 280px + 16px);
+  bottom: calc(var(--somnio-edge-bottom) + 2px);
+  left: calc(var(--somnio-edge-left) + 44px + 16px);
+  display: flex;
+  justify-content: center;
+}
+
+.hud-balance--bar .hud-bar {
+  width: min(200px, 100%);
+  height: 6px;
+}
+
+.hud-balance--bar.hud-balance--winded .hud-bar {
+  border-color: var(--hud-winded);
+}
+
+.hud-balance--bar.hud-balance--winded .hud-bar__fill {
+  background: var(--hud-winded);
+}
+
+.hud-balance--bar .hud-winded {
+  top: -22px;
+}
+
+/* The chat's icon bottom left, the newest lines peeking above it, and the chat itself once opened. */
+.hud-chat-corner {
+  display: contents;
+}
+
+.hud-chat-toggle {
+  position: absolute;
+  bottom: var(--somnio-edge-bottom);
+  left: var(--somnio-edge-left);
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.hud-chat-peek {
+  position: absolute;
+  bottom: calc(var(--somnio-edge-bottom) + 52px);
+  left: var(--somnio-edge-left);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: min(300px, calc(100% - var(--somnio-edge-left) - var(--somnio-edge-right) - var(--hud-thumb-width)));
+  max-height: 66px;
+  padding: 6px 8px 4px;
+  overflow: hidden;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.25) 70%, transparent);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  transition: opacity 1.6s ease-in;
+}
+
+.hud-chat-peek.hud-chat--idle {
+  opacity: 0;
+}
+
+.hud--coarse .hud-chat {
+  z-index: 22;
+  width: min(300px, calc(100% - var(--somnio-edge-left) - var(--somnio-edge-right)));
+}
+
+.hud--coarse .hud-chat--open .chat-scrollback {
+  max-height: 150px;
+}
+
+.hud--coarse .hud-chat .hud-window__close {
+  width: 44px;
+  height: 44px;
+  margin: -10px -12px -10px 0;
+}
+
+/* One window at a time, as a panel down the right edge. */
+.hud--coarse .hud-window {
+  top: 8px;
+  bottom: 8px;
+  width: min(360px, calc(100% - var(--somnio-edge-left) - var(--somnio-edge-right)));
+  max-height: none;
+  padding: 16px 20px;
+}
+
+.hud--coarse .hud-window__close {
+  width: 44px;
+  height: 44px;
+  margin: -8px -10px -8px 0;
+}
+
+.hud--coarse .hud-list__row {
+  align-items: center;
+  min-height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-bar__fill,
+  .hud-globe__level,
+  .hud-chat .chat-scrollback,
+  .hud-chat-peek {
+    transition: none;
+  }
+}

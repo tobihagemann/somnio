@@ -5,9 +5,10 @@ import * as THREE from 'three';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
 import type { RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
 import {
-  WORLD_TIME_RATE,
+  EDGE_TOLERANCE,
   clamp,
   closestOnRect,
+  closestOnSegment,
   distance,
   distanceToRect,
   groundHeightAt,
@@ -16,19 +17,22 @@ import {
   neighbourSectors,
   objectModel,
   paddedRasterRect,
+  rectContains,
   relativeDirection,
   resolveDoor,
   sectorAt,
   sectorOrigin,
   sectorRect,
+  worldSecondsAt,
+  worldToModel,
 } from '@somnio/core';
-import type { Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision } from '@somnio/core';
+import type { Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
 import { CONDITIONS } from '@somnio/protocol';
 import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
-import { ORTHO_RIG, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
+import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -42,11 +46,21 @@ import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
-import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, PLAQUE_FEET_GAP, namePlaqueBackground, renderNamePlaque, speechBubbleFrameSize } from './overlayArt';
+import {
+  NAME_PLAQUE,
+  OVERLAY_METRES_PER_PIXEL,
+  PLAQUE_FEET_GAP,
+  namePlaqueBackground,
+  overlayMagnification,
+  renderNamePlaque,
+  speechBubbleFrameSize,
+} from './overlayArt';
 import type { RasterArt } from './overlayArt';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
 import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS, flameFlicker, flamePhase } from './propLights';
 import type { ModelAssets, PrototypeMesh } from './modelAssets';
+import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, portraitFraming, setPortraitLayer } from './portraits';
+import type { DeviceRect, PortraitFraming, PortraitRenderer, PortraitSlot } from './portraits';
 import { yawStep } from './yawSlew';
 
 /**
@@ -102,7 +116,7 @@ interface EntityRenderState {
 interface SpeechBubble {
   request: SpeechBubbleRequest;
   expiresAtMs: number;
-  /** Its frame, a yell's teeth included, in metres on the screen. */
+  /** Its frame, a yell's teeth included, in metres of overlay art on the screen. */
   size: ScreenSize;
   mode: BubbleMode | undefined;
   /** The offset from its speaker's head it held last tick; `undefined` while it hung from no head. */
@@ -121,6 +135,16 @@ interface BubbleEntry {
   fromHead: boolean;
   /** What a fixed bubble's tail points toward: the wall the voice comes through. */
   wall: ScreenPoint | undefined;
+}
+
+/** The ring a press on the ground drops where it holds. It stays at the destination of the walk the press lets go of, and lifts away when that walk ends. */
+interface PressMarker {
+  mesh: THREE.Mesh;
+  /** Where it lies once down: a point of the space, at the height a body there stands at. */
+  at: { x: number; z: number; height: number };
+  droppedAtMs: number;
+  /** When it begins to rise again; `undefined` while it is down. */
+  liftsAtMs: number | undefined;
 }
 
 /** A ring on the ground around a fallen body, drawn further round as the raise goes on: from `progress` at `anchoredAtMs`, whole after `seconds`. */
@@ -249,6 +273,8 @@ function enableShadows(root: THREE.Object3D): void {
 export class WorldScene implements WorldRenderSurface {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.OrthographicCamera;
+  /** Whether the pointer is a finger, under which a body is picked by a wider capsule. */
+  coarsePointer = false;
 
   private readonly assets: ModelAssets;
   private readonly registry: ModelRegistry;
@@ -306,9 +332,6 @@ export class WorldScene implements WorldRenderSurface {
   /** The outgoing space's bubbles, kept on screen with it during a held swap. */
   private heldBubbles: PlacedBubbles | undefined;
   private screenOccluders: readonly ScreenRect[] = [];
-  private pointer: { x: number; y: number } | undefined;
-  /** The entity drawn under the pointer, whose plaque shows through the world. */
-  private hovered: string | undefined;
   /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
   private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
   /** The short-lived word over an entity a blow missed. */
@@ -316,12 +339,17 @@ export class WorldScene implements WorldRenderSurface {
   private readonly raiseRings = new Map<string, RaiseRing>();
   /** The ring swelling from the feet of an entity just mended. */
   private readonly mendPulses = new Map<string, { mesh: THREE.Mesh; startedAtMs: number }>();
-  /** The ring round the entity the player tends. */
-  private selection: { id: string; mesh: THREE.Mesh } | undefined;
+  /** The ring round the player's target, a reticle while the player's facing is locked on it. Its id is the target whose plaque shows through the world. */
+  private selection: { id: string; mesh: THREE.Mesh; locked: boolean } | undefined;
+  /**
+   * The rings presses dropped, the one held last and those still lifting away. They hang on the
+   * scene rather than the space root, so a press held through a door keeps its ring.
+   */
+  private pressMarkers: PressMarker[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private ground: (() => SpaceCollision) | undefined;
   /** The world clock as last told, and when; `undefined` holds the light at noon. */
-  private clock: { worldSeconds: number; atMs: number } | undefined;
+  private clock: WorldClockReading | undefined;
   /** The floor of the room being built, which a voice from its door is shown just beyond; `undefined` outdoors. */
   private room: Rect | undefined;
   /** The interior light level of the space being built; `undefined` outdoors. */
@@ -340,6 +368,13 @@ export class WorldScene implements WorldRenderSurface {
   /** The scale a splash shot is framed at, which outranks the zoom until the player lands. */
   private shotScale: number | undefined;
   private aspect = 1;
+  /** The viewport's height in CSS pixels, once the host has told it. */
+  private viewportHeight: number | undefined;
+  /** How many times its size in metres the overlay art is drawn: the plaques, the miss marks, and the bubbles. */
+  private overlayScale = 1;
+  /** The entity whose body each HUD frame's portrait shows. */
+  private readonly portraitSubjects: Record<PortraitSlot, string | undefined> = { own: undefined, target: undefined };
+  private portraitPass: PortraitPass | undefined;
 
   constructor(
     assets: ModelAssets,
@@ -362,6 +397,10 @@ export class WorldScene implements WorldRenderSurface {
     // The target's world matrix is what gives a directional or a spot light its direction, and an
     // object outside the graph never gets one updated.
     this.scene.add(this.sun, this.sun.target, this.fill, ...this.propLights, this.doorSpill, this.doorSpill.target, this.spaceRoot);
+    // The portraits draw under the world's own lights, so their light count and programs are the world's.
+    for (const light of [this.sun, this.fill, ...this.propLights, this.doorSpill]) {
+      for (const slot of PORTRAIT_SLOTS) light.layers.enable(PORTRAIT_LAYERS[slot]);
+    }
     // What shows past the world's edge, tinted with the light by `relight`.
     this.scene.background = new THREE.Color();
     this.relight();
@@ -375,9 +414,11 @@ export class WorldScene implements WorldRenderSurface {
    * This is a gameplay contract, not a rendering detail: every window size must show the same
    * vertical slice of world, so a bigger window magnifies rather than reveals. Tying the frustum
    * to pixel height or `devicePixelRatio` silently hands large-window players more visible world.
+   * The height is used only to keep the overlay art at its smallest readable size (`overlayMagnification`).
    */
-  setViewportAspect(aspect: number): void {
-    this.aspect = aspect;
+  setViewportSize(width: number, height: number): void {
+    this.aspect = width / height;
+    this.viewportHeight = height;
     this.applyFraming();
   }
 
@@ -394,12 +435,11 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   private applyFraming(): void {
-    const bounds = frustumBounds(this.shotScale ?? scaleForZoomFactor(this.zoomFactor), this.aspect);
-    this.camera.left = bounds.left;
-    this.camera.right = bounds.right;
-    this.camera.top = bounds.top;
-    this.camera.bottom = bounds.bottom;
-    this.camera.updateProjectionMatrix();
+    const scale = this.shotScale ?? scaleForZoomFactor(this.zoomFactor);
+    applyFrustum(this.camera, scale, this.aspect);
+    this.overlayScale = this.viewportHeight === undefined ? 1 : overlayMagnification(scale, this.viewportHeight);
+    for (const state of this.entityStates.values()) state.namePlaque?.scale.setScalar(this.overlayScale);
+    for (const miss of this.misses.values()) miss.node.scale.setScalar(this.overlayScale);
   }
 
   /** Warms the cache, then re-resolves everything still rendering a placeholder. */
@@ -442,7 +482,6 @@ export class WorldScene implements WorldRenderSurface {
     this.entityStates.clear();
     this.bubbles.clear();
     this.placed = [];
-    this.hovered = undefined;
     this.misses.clear();
     this.raiseRings.clear();
     this.mendPulses.clear();
@@ -785,6 +824,7 @@ export class WorldScene implements WorldRenderSurface {
       };
       this.entityStates.set(entity.id, state);
       this.resolveEntityModel(state);
+      this.refreshPortraitLayers(entity.id, state);
     }
     // Captured before the branch below overwrites `state.kind`, because the plaque needs the *old*
     // kind to know it changed; reading `state.kind` after the assignment can only ever compare a
@@ -795,11 +835,12 @@ export class WorldScene implements WorldRenderSurface {
       state.characterModelId = entity.characterModelId;
       state.radius = entity.radius;
       this.resolveEntityModel(state);
+      this.refreshPortraitLayers(entity.id, state);
     }
     // Rebuilt on a kind or name change, because both pick the plaque's fill and its width.
     if (state.namePlaque === undefined || kindChanged || state.name !== entity.name) {
       state.name = entity.name;
-      this.rebuildNamePlaque(state, entity.id === this.hovered);
+      this.rebuildNamePlaque(state, this.isTarget(entity.id));
     }
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
 
@@ -847,7 +888,7 @@ export class WorldScene implements WorldRenderSurface {
     const state = this.entityStates.get(entityId);
     if (state === undefined) return;
     state.condition = condition;
-    this.rebuildNamePlaque(state, entityId === this.hovered);
+    this.rebuildNamePlaque(state, this.isTarget(entityId));
     if (condition === 'fallen') {
       this.playOneShot(state, 'fallen');
     } else if (state.oneShot?.held === true) {
@@ -855,11 +896,11 @@ export class WorldScene implements WorldRenderSurface {
     }
   }
 
-  showBlow(attackerId: string, targetId: string | undefined, hit: boolean): void {
+  showBlow(attackerId: string, targetId: string, hit: boolean): void {
     const attacker = this.entityStates.get(attackerId);
     if (attacker !== undefined) this.playOneShot(attacker, 'swing');
-    const target = targetId === undefined ? undefined : this.entityStates.get(targetId);
-    if (targetId === undefined || target === undefined) return;
+    const target = this.entityStates.get(targetId);
+    if (target === undefined) return;
     if (hit) {
       this.playOneShot(target, 'flinch');
       return;
@@ -867,6 +908,7 @@ export class WorldScene implements WorldRenderSurface {
     disposeSubtree(this.misses.get(targetId)?.node);
     const node = missQuad();
     node.position.set(0, target.headHeight + MISS_HEAD_GAP, 0);
+    node.scale.setScalar(this.overlayScale);
     target.node.add(node);
     this.misses.set(targetId, { node, expiresAtMs: this.now() + MISS_SECONDS * 1000 });
   }
@@ -894,33 +936,90 @@ export class WorldScene implements WorldRenderSurface {
     this.mendPulses.set(targetId, { mesh, startedAtMs: this.now() });
   }
 
-  showSelection(entityId: string | undefined): void {
+  /** A hale nightmare has a plaque only while it is the target, so the plaques of the old target and the new are rebuilt. */
+  showSelection(entityId: string | undefined, locked: boolean): void {
+    if (entityId !== undefined && this.selection?.id === entityId && this.selection.locked === locked) return;
+    const previous = this.selection === undefined ? undefined : this.entityStates.get(this.selection.id);
     disposeSubtree(this.selection?.mesh);
     this.selection = undefined;
     const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
-    if (entityId === undefined || state === undefined) return;
-    const mesh = groundRingMesh(state.radius * SELECTION_RING_RADII, SELECTION_RING_COLOR);
-    state.node.add(mesh);
-    this.selection = { id: entityId, mesh };
+    if (entityId !== undefined && state !== undefined) {
+      const innerRadius = state.radius * SELECTION_RING_RADII;
+      const mesh = locked ? lockReticleMesh(innerRadius) : groundRingMesh(innerRadius, SELECTION_RING_COLOR);
+      state.node.add(mesh);
+      this.selection = { id: entityId, mesh, locked };
+    }
+    if (previous === state) return;
+    for (const changed of new Set([previous, state])) {
+      if (changed?.kind === 'monster' && changed.condition === 'hale') this.rebuildNamePlaque(changed, changed === state);
+    }
+  }
+
+  showPressMarker(point: Point): void {
+    const at = { ...point, height: this.groundHeight(point) };
+    const held = this.pressMarkers.at(-1);
+    if (held !== undefined && held.liftsAtMs === undefined) {
+      held.at = at;
+      this.posePressMarker(held, this.now());
+      return;
+    }
+    const marker: PressMarker = { mesh: groundRingMesh(PRESS_MARKER_RADIUS, SELECTION_RING_COLOR), at, droppedAtMs: this.now(), liftsAtMs: undefined };
+    this.scene.add(marker.mesh);
+    this.pressMarkers.push(marker);
+    this.posePressMarker(marker, marker.droppedAtMs);
+  }
+
+  /** A ring let go before it has landed lands first, so a tap shows it come down and go up again. */
+  liftPressMarker(): void {
+    const held = this.pressMarkers.at(-1);
+    if (held === undefined || held.liftsAtMs !== undefined) return;
+    held.liftsAtMs = Math.max(this.now(), held.droppedAtMs + PRESS_MARKER_SECONDS * 1000);
+    this.posePressMarker(held, this.now());
+  }
+
+  /** Where a ring is and how strongly it shows at `nowMs`; `false` once it has lifted away. Under reduced motion it only fades. */
+  private posePressMarker(marker: PressMarker, nowMs: number): boolean {
+    const duration = PRESS_MARKER_SECONDS * 1000;
+    const easeOut = (progress: number): number => 1 - (1 - clamp(progress, 0, 1)) ** 3;
+    let down = easeOut((nowMs - marker.droppedAtMs) / duration);
+    if (marker.liftsAtMs !== undefined) {
+      if (nowMs - marker.liftsAtMs >= duration) return false;
+      down = Math.min(down, easeOut(1 - (nowMs - marker.liftsAtMs) / duration));
+    }
+    const rise = this.reducedMotion ? 0 : (1 - down) * PRESS_MARKER_DROP_METRES;
+    marker.mesh.position.set(marker.at.x, marker.at.height + GROUND_RING_LIFT + rise, marker.at.z);
+    (marker.mesh.material as THREE.MeshBasicMaterial).opacity = RING_OPACITY * down;
+    return true;
+  }
+
+  private isTarget(entityId: string): boolean {
+    return this.selection?.id === entityId;
   }
 
   /**
    * The entity drawn under a point of the viewport, in normalized device coordinates, other than
    * the one the camera follows. An entity is picked as a capsule from its feet to its head as drawn,
-   * a little wider than its body, and the one nearest the camera wins.
+   * by the radius its body is drawn with, wider under a finger, and the one nearest the camera wins.
    */
   entityAt(x: number, y: number): string | undefined {
-    this.camera.updateMatrixWorld();
-    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
-    const ray = this.raycaster.ray;
+    return this.pickAt(x, y, (id) => id !== this.cameraFollowId);
+  }
+
+  /** Whether the body the camera follows, the player's own, is drawn under a point of the viewport, picked as `entityAt` picks the others. */
+  playerAt(x: number, y: number): boolean {
+    return this.cameraFollowId !== undefined && this.pickAt(x, y, (id) => id === this.cameraFollowId) !== undefined;
+  }
+
+  private pickAt(x: number, y: number, accept: (id: string) => boolean): string | undefined {
+    const ray = this.rayAt(x, y);
     const onRay = new THREE.Vector3();
     let picked: string | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
-      if (id === this.cameraFollowId) continue;
+      if (!accept(id)) continue;
       const feet = state.node.position;
       const top = this.headPoint(state);
-      const reach = state.radius * PICK_RADII;
+      const reach = this.coarsePointer ? Math.max(state.radius, COARSE_PICK_METRES) : state.radius;
       if (ray.distanceSqToSegment(feet, top, onRay) > reach * reach) continue;
       const along = onRay.distanceToSquared(ray.origin);
       if (along >= nearest) continue;
@@ -928,6 +1027,34 @@ export class WorldScene implements WorldRenderSurface {
       nearest = along;
     }
     return picked;
+  }
+
+  /**
+   * The ground drawn under a point of the viewport, in normalized device coordinates, as a point of
+   * the space and the height it lies at: the top of a walk surface where the ray meets one, else the
+   * floor. `undefined` before a space is entered.
+   */
+  groundPointAt(x: number, y: number): { x: number; z: number; height: number } | undefined {
+    if (this.ground === undefined) return undefined;
+    return groundHit(this.ground(), this.rayAt(x, y));
+  }
+
+  /**
+   * The point of the space under a point of the viewport at body height over the player's feet, which
+   * the player aims at: a body is drawn above its feet, so the floor under the cursor would lie
+   * beyond a body the cursor points at. `undefined` before a space is entered.
+   */
+  aimPointAt(x: number, y: number): Point | undefined {
+    if (this.ground === undefined) return undefined;
+    const feet = this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId)?.node.position.y;
+    return pointOnRayAt(this.rayAt(x, y), (feet ?? 0) + AIM_HEIGHT);
+  }
+
+  /** The camera's ray through a point of the viewport, in normalized device coordinates. */
+  private rayAt(x: number, y: number): THREE.Ray {
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    return this.raycaster.ray;
   }
 
   setClock(worldSeconds: number): void {
@@ -958,15 +1085,10 @@ export class WorldScene implements WorldRenderSurface {
     this.screenOccluders = rects;
   }
 
-  /** Where the pointer is over the viewport, in normalized device coordinates; `undefined` once it leaves. */
-  setPointer(point: { x: number; y: number } | undefined): void {
-    this.pointer = point;
-  }
-
   /** The bubbles to paint over the world this frame, in the order they were placed. */
   placedBubbles(): PlacedBubbles {
     if (this.pendingPlayerReveal && this.heldBubbles !== undefined) return this.heldBubbles;
-    const ndc = this.ndcPerMetre();
+    const ndc = this.ndcPerOverlayMetre();
     return { halfSize: { x: 1 / ndc.x, y: 1 / ndc.y }, bubbles: this.placed };
   }
 
@@ -984,7 +1106,7 @@ export class WorldScene implements WorldRenderSurface {
       if (nowMs >= bubble.expiresAtMs) this.bubbles.delete(id);
     }
     this.camera.updateMatrixWorld();
-    const ndc = this.ndcPerMetre();
+    const ndc = this.ndcPerOverlayMetre();
     const toScreen = (point: THREE.Vector3): ScreenPoint => {
       const projected = point.clone().project(this.camera);
       return { x: projected.x / ndc.x, y: projected.y / ndc.y };
@@ -993,7 +1115,7 @@ export class WorldScene implements WorldRenderSurface {
     const heads = new Map<string, ScreenDisc>();
     for (const [id, state] of this.entityStates) {
       const head = this.headDisc(state);
-      heads.set(id, { centre: toScreen(head.centre), radius: head.radius });
+      heads.set(id, { centre: toScreen(head.centre), radius: head.radius / this.overlayScale });
     }
     const entries = [...this.bubbles].map(([id, bubble]): BubbleEntry => {
       const head = heads.get(id);
@@ -1091,9 +1213,9 @@ export class WorldScene implements WorldRenderSurface {
     };
   }
 
-  /** How far a metre reaches across the screen, in normalized device coordinates. */
-  private ndcPerMetre(): { x: number; y: number } {
-    return { x: 2 / (this.camera.right - this.camera.left), y: 2 / (this.camera.top - this.camera.bottom) };
+  /** How far a metre of overlay art reaches across the screen, in normalized device coordinates. The bubbles are laid out and painted in these metres. */
+  private ndcPerOverlayMetre(): { x: number; y: number } {
+    return { x: (2 * this.overlayScale) / (this.camera.right - this.camera.left), y: (2 * this.overlayScale) / (this.camera.top - this.camera.bottom) };
   }
 
   /**
@@ -1147,6 +1269,8 @@ export class WorldScene implements WorldRenderSurface {
   showSplash(): void {
     // Also drops any space parked for a swap the splash interrupts (a Leave Game mid-door).
     this.startSpace(false);
+    for (const marker of this.pressMarkers) disposeSubtree(marker.mesh);
+    this.pressMarkers = [];
     this.ground = undefined;
     this.relight();
     this.focusCamera(new THREE.Vector3());
@@ -1198,7 +1322,6 @@ export class WorldScene implements WorldRenderSurface {
     this.updateGrounds();
     this.growScatter();
     this.bendGrass(dt);
-    this.updateHover();
     this.orderPlaques();
     // Overlays run out on wall time, not on the clamped frame delta: a hidden tab gets no frames, and a
     // line said before it was hidden must not hang on after it returns.
@@ -1222,6 +1345,12 @@ export class WorldScene implements WorldRenderSurface {
       pulse.mesh.scale.set(scale, scale, 1);
       (pulse.mesh.material as THREE.MeshBasicMaterial).opacity = RING_OPACITY * (1 - progress);
     }
+
+    this.pressMarkers = this.pressMarkers.filter((marker) => {
+      if (this.posePressMarker(marker, nowMs)) return true;
+      disposeSubtree(marker.mesh);
+      return false;
+    });
 
     for (const ring of this.raiseRings.values()) {
       const since = ring.seconds === 0 ? 0 : Math.min((nowMs - ring.anchoredAtMs) / (ring.seconds * 1000), 1);
@@ -1293,56 +1422,40 @@ export class WorldScene implements WorldRenderSurface {
     this.fadeTo(state, next);
   }
 
-  /** Hovers the entity under the pointer, which is what a click would reach. A hale nightmare has a plaque only while hovered, so its plaque is rebuilt as the pointer comes and goes. */
-  private updateHover(): void {
-    const hovered = this.pointer === undefined ? undefined : this.entityAt(this.pointer.x, this.pointer.y);
-    if (hovered === this.hovered) return;
-    const left = this.hovered === undefined ? undefined : this.entityStates.get(this.hovered);
-    const entered = hovered === undefined ? undefined : this.entityStates.get(hovered);
-    this.hovered = hovered;
-    for (const [state, isHovered] of [
-      [left, false],
-      [entered, true],
-    ] as const) {
-      if (state?.kind === 'monster' && state.condition === 'hale') this.rebuildNamePlaque(state, isHovered);
-    }
-  }
-
   /**
    * Plaques are hidden by the world but never by each other's depth, so which draws over which is
-   * their draw order: the hovered one, the one tended, the more hurt over the less hurt, the
-   * player's own, then the rest, nearer the camera over further. Only the hovered one shows through
-   * the world.
+   * their draw order: the target's, the more hurt over the less hurt, the player's own, then the
+   * rest, nearer the camera over further. Only the target's shows through the world.
    */
   private orderPlaques(): void {
     for (const [id, state] of this.entityStates) {
       const plate = state.namePlaquePlate;
       if (plate === undefined) continue;
       plate.renderOrder = this.plaqueOrder(id, state.condition);
-      (plate.material as THREE.MeshBasicMaterial).depthTest = id !== this.hovered;
+      (plate.material as THREE.MeshBasicMaterial).depthTest = !this.isTarget(id);
     }
   }
 
   private plaqueOrder(id: string, condition: Condition): number {
-    if (id === this.hovered) return PLAQUE_ORDER.hovered;
-    if (id === this.selection?.id) return PLAQUE_ORDER.tended;
+    if (this.isTarget(id)) return PLAQUE_ORDER.target;
     // `CONDITIONS` runs from hale to fallen.
     const band = CONDITIONS.indexOf(condition);
     if (band > 0) return PLAQUE_ORDER.hurt + band - 1;
     return id === this.cameraFollowId ? PLAQUE_ORDER.own : PLAQUE_ORDER.rest;
   }
 
-  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale or is hovered; the local player's text is bold. */
-  private rebuildNamePlaque(state: EntityRenderState, hovered: boolean): void {
+  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale or is the target; the local player's text is bold. */
+  private rebuildNamePlaque(state: EntityRenderState, targeted: boolean): void {
     disposeSubtree(state.namePlaque);
     state.namePlaque = undefined;
     state.namePlaquePlate = undefined;
-    const background = namePlaqueBackground(state.kind, state.condition, hovered);
+    const background = namePlaqueBackground(state.kind, state.condition, targeted);
     if (background === undefined) return;
     const ink = state.kind !== 'npc' && state.condition === 'fallen' ? NAME_PLAQUE.fallenInk : NAME_PLAQUE.ink;
     // A nightmare's name is its kind's catalog key; a dreamer's or an NPC's is their own.
     const name = state.kind === 'monster' ? t(state.name) : state.name;
     const { container, plate } = namePlaqueQuad(name, background, state.kind === 'player', ink);
+    container.scale.setScalar(this.overlayScale);
     state.node.add(container);
     state.namePlaque = container;
     state.namePlaquePlate = plate;
@@ -1438,8 +1551,10 @@ export class WorldScene implements WorldRenderSurface {
     }
     // A sector whose scatter waited for its models is placed over the next frames, from the same fields.
     for (const name of this.grounds.keys()) this.scatterDue.add(name);
-    for (const state of this.entityStates.values()) {
-      if (state.isPlaceholder) this.resolveEntityModel(state);
+    for (const [id, state] of this.entityStates) {
+      if (!state.isPlaceholder) continue;
+      this.resolveEntityModel(state);
+      this.refreshPortraitLayers(id, state);
     }
   }
 
@@ -1553,7 +1668,7 @@ export class WorldScene implements WorldRenderSurface {
   /** Lights the scene for the world clock as it stands now. */
   private relight(): void {
     const clock = this.clock;
-    const hour = clock === undefined ? 12 : hourOfDay(clock.worldSeconds + ((this.now() - clock.atMs) / 1000) * WORLD_TIME_RATE);
+    const hour = clock === undefined ? 12 : hourOfDay(worldSecondsAt(clock, this.now()));
     const state = sunState(hour, this.litBrightness);
     this.sunDirection.set(state.direction.x, state.direction.y, state.direction.z);
     this.repositionSun();
@@ -1588,6 +1703,49 @@ export class WorldScene implements WorldRenderSurface {
   /** The drawn node of a placement, so a live drag can move and turn the real mesh. */
   placementNode(sectorName: string, placementId: string): THREE.Object3D | undefined {
     return this.sectors.get(sectorName)?.placements.find((placed) => placed.placement.id === placementId)?.node;
+  }
+
+  /** Has a HUD frame's portrait show the body of `entityId`, or nothing. */
+  setPortraitSubject(slot: PortraitSlot, entityId: string | undefined): void {
+    const previous = this.portraitSubjects[slot];
+    if (previous === entityId) return;
+    this.portraitSubjects[slot] = entityId;
+    const layer = PORTRAIT_LAYERS[slot];
+    const left = previous === undefined ? undefined : this.entityStates.get(previous);
+    if (left !== undefined) setPortraitLayer(left.modelHolder, layer, false);
+    const next = entityId === undefined ? undefined : this.entityStates.get(entityId);
+    if (next !== undefined) setPortraitLayer(next.modelHolder, layer, true);
+  }
+
+  /**
+   * Draws each portrait in its circle on the canvas, after the world. The hemisphere fill is lifted
+   * to a floor for them alone, a uniform and not a light, so a body in a dim room still reads.
+   */
+  drawPortraits(renderer: PortraitRenderer, views: readonly { slot: PortraitSlot; viewport: DeviceRect }[]): void {
+    if (views.length === 0) return;
+    this.portraitPass ??= new PortraitPass();
+    const shots = views.map(({ slot, viewport }) => ({ slot, viewport, framing: this.portraitFramingOf(this.portraitSubjects[slot]) }));
+    const fill = this.fill.intensity;
+    this.fill.intensity = Math.max(fill, PORTRAIT.fillFloor);
+    this.portraitPass.draw(renderer, this.scene, shots);
+    this.fill.intensity = fill;
+  }
+
+  private portraitFramingOf(entityId: string | undefined): PortraitFraming | undefined {
+    const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
+    if (state === undefined) return undefined;
+    const head = this.headPoint(state);
+    // Centred on the head as the model carries it, which need not stand over the feet.
+    if (state.headBone !== undefined) {
+      const bone = state.headBone.getWorldPosition(new THREE.Vector3());
+      head.set(bone.x, head.y, bone.z);
+    }
+    return portraitFraming({ head, feet: state.node.position, height: state.headHeight, yaw: state.currentYaw });
+  }
+
+  /** A model put in afresh carries the layers of the portraits that show its entity. */
+  private refreshPortraitLayers(entityId: string, state: EntityRenderState): void {
+    for (const slot of PORTRAIT_SLOTS) setPortraitLayer(state.modelHolder, PORTRAIT_LAYERS[slot], this.portraitSubjects[slot] === entityId);
   }
 
   /** Test seam: the scale the camera is currently framed at. */
@@ -1638,6 +1796,41 @@ export class WorldScene implements WorldRenderSurface {
     const point = this.headPoint(state).add(state.node.position).multiplyScalar(0.5).project(this.camera);
     return { x: point.x, y: point.y };
   }
+
+  /** Where a point of the space is drawn, on the ground a body there stands on, in normalized device coordinates. `groundPointAt` at that point picks it again. `undefined` before a space is entered. */
+  _viewportPointOfGround(position: Point): { x: number; y: number } | undefined {
+    if (this.ground === undefined) return undefined;
+    this.camera.updateMatrixWorld();
+    const point = new THREE.Vector3(position.x, this.groundHeight(position), position.z).project(this.camera);
+    return { x: point.x, y: point.y };
+  }
+}
+
+/**
+ * Where a ray falling from the camera first meets the floor or the top of a walk surface inside its
+ * rect. It falls as it goes, so the highest hit is the one nearest the camera. A model is tested
+ * only when the ray passes within its reach between its highest surface and the floor.
+ */
+function groundHit(collision: SpaceCollision, ray: THREE.Ray): { x: number; z: number; height: number } {
+  let hit = { ...pointOnRayAt(ray, 0), height: 0 };
+  for (const model of collision.models) {
+    if (model.walkSurfaces.length === 0) continue;
+    const top = Math.max(...model.walkSurfaces.map((surface) => surface.height));
+    if (distance(model.transform, closestOnSegment(model.transform, { a: pointOnRayAt(ray, top), b: pointOnRayAt(ray, 0) })) > model.reach + EDGE_TOLERANCE)
+      continue;
+    for (const surface of model.walkSurfaces) {
+      if (surface.height <= hit.height) continue;
+      const point = pointOnRayAt(ray, surface.height);
+      if (rectContains(surface, worldToModel(model.transform, point), EDGE_TOLERANCE)) hit = { ...point, height: surface.height };
+    }
+  }
+  return hit;
+}
+
+/** Where a ray falling from the camera crosses the level plane at `height`. */
+function pointOnRayAt(ray: THREE.Ray, height: number): Point {
+  const along = (height - ray.origin.y) / ray.direction.y;
+  return { x: ray.origin.x + ray.direction.x * along, z: ray.origin.z + ray.direction.z * along };
 }
 
 function entityPlaceholder(radius: number): THREE.Object3D {
@@ -1680,7 +1873,7 @@ const BUBBLE_GLIDE_SECONDS = 0.07;
 /** How much of a figure's standing height its head takes up. */
 const HEAD_SHARE = 0.4;
 /** Plaque draw orders, a later one drawn over an earlier; the bands below full health take one each from `hurt` up, the least hurt first. */
-const PLAQUE_ORDER = { rest: 1, own: 2, hurt: 3, tended: 8, hovered: 9 } as const;
+const PLAQUE_ORDER = { rest: 1, own: 2, hurt: 3, target: 8 } as const;
 /** How high over a doorway outdoors a voice through it hangs its bubble: on the building, above the door. */
 const DOORWAY_VOICE_HEIGHT = 2.2;
 /**
@@ -1710,6 +1903,8 @@ const BEYOND_WALL_GAP = 0.3;
 /** How long the word over a missed entity stays up. */
 const MISS_SECONDS = 0.8;
 const RING_SEGMENTS = 48;
+const RING_BAND_METRES = 0.08;
+const GROUND_RING_LIFT = 0.03;
 const RING_OPACITY = 0.9;
 const RAISE_RING_COLOR = 0xffd27a;
 /** A ring's inner radius in body radii: the raise ring clears a body lying down, the selection ring sits inside it. */
@@ -1722,8 +1917,21 @@ const MEND_PULSE_RADII = 3;
 const MEND_PULSE_COLOR = 0xd8e6ff;
 /** A friendly green, bluer than the plaque of a grazed body beside it. */
 const SELECTION_RING_COLOR = 0x8ef0b0;
-/** How much wider than its body an entity is to the cursor. */
-const PICK_RADII = 1.5;
+/** The locked target's reticle: a deeper gold than the raise ring, which lies further out. */
+const LOCK_RETICLE_COLOR = 0xffb21f;
+/** The reticle's four ticks, which point in at the ring from outside it: how far out they reach past its outer edge, and how wide their base is, in metres. */
+const LOCK_TICK_LENGTH = 0.2;
+const LOCK_TICK_WIDTH = 0.14;
+/** The inner radius of the ring a press on the ground drops, in metres. */
+const PRESS_MARKER_RADIUS = 0.22;
+/** How long it takes to drop onto the ground, and to rise off it again. */
+const PRESS_MARKER_SECONDS = 0.15;
+/** How far above the ground it drops from, and rises to. */
+const PRESS_MARKER_DROP_METRES = 0.5;
+/** The least radius of the capsule an entity is picked by under a finger, which need not land on the body itself. */
+const COARSE_PICK_METRES = 0.6;
+/** How far over the feet the cursor's aim is taken: about the middle of a body as drawn. */
+const AIM_HEIGHT = 0.8;
 /** Advance past the point where the below-the-feet quad clears the floor plane. */
 const PLAQUE_FLOOR_CLEARANCE = 0.15;
 
@@ -1839,7 +2047,7 @@ function missQuad(): THREE.Object3D {
 
 /** A flat ring just above the ground round an entity's feet. */
 function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
-  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + 0.08, RING_SEGMENTS, 1);
+  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + RING_BAND_METRES, RING_SEGMENTS, 1);
   const material = new THREE.MeshBasicMaterial({
     color,
     side: THREE.DoubleSide,
@@ -1851,8 +2059,32 @@ function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, material);
   markOwned(mesh, { geometry: true, material: true });
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.03;
+  mesh.position.y = GROUND_RING_LIFT;
   return mesh;
+}
+
+/** The selection ring in gold, with a tick at each cardinal point pointing in at it, drawn with the ring's own material. */
+function lockReticleMesh(innerRadius: number): THREE.Mesh {
+  const ring = groundRingMesh(innerRadius, LOCK_RETICLE_COLOR);
+  const tip = innerRadius + RING_BAND_METRES / 2;
+  const base = innerRadius + RING_BAND_METRES + LOCK_TICK_LENGTH;
+  const half = LOCK_TICK_WIDTH / 2;
+  const positions: number[] = [];
+  for (const [c, s] of [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ] as const) {
+    positions.push(c * tip, s * tip, 0, c * base - s * half, s * base + c * half, 0, c * base + s * half, s * base - c * half, 0);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  // In the ring's own plane, so it lies flat with it; the ring owns the material.
+  const ticks = new THREE.Mesh(geometry, ring.material);
+  markOwned(ticks, { geometry: true, material: false });
+  ring.add(ticks);
+  return ring;
 }
 
 function flameHaloTexture(): THREE.Texture {

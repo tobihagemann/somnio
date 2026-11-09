@@ -11,8 +11,8 @@ import type {
   SectorView,
   SomnioMessage,
 } from '@somnio/protocol';
-import { bundledModelRegistry, heading } from '@somnio/core';
-import type { ModelRegistry, People, WorldEntityKind } from '@somnio/core';
+import { bundledModelRegistry, heading, isPeople, worldSecondsAt } from '@somnio/core';
+import type { ModelRegistry, People, WorldClockReading, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
 import { SessionStore } from './sessionStore';
 import type { ChatLine } from './chatLine';
@@ -20,6 +20,7 @@ import { ClientWorld } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
 import { noopRenderSurface } from './renderSurface';
 import type { WorldRenderSurface } from './renderSurface';
+import { defaultWalkRasterizer } from './walkRasterizer';
 
 /**
  * Chat lines kept in memory. Well past a panel's worth of scrollback, and far short of where the
@@ -42,7 +43,9 @@ const MAX_ROSTER_NAMES = 500;
  */
 export type GameplayMessage = Extract<
   SomnioMessage,
-  { tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'lucidity' | 'blow' | 'raising' | 'mend' | 'adminSay' }
+  {
+    tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'lucidity' | 'blow' | 'raising' | 'mend' | 'vitals' | 'adminSay';
+  }
 >;
 
 export type ConnectionState = 'disconnected' | 'awaitingHello' | 'awaitingLoginResult' | 'awaitingEnterSpace' | 'attached';
@@ -105,9 +108,9 @@ export interface ConnectionControllerOptions {
  * The connection half of the client: authentication, session management, and the inbound dispatch.
  *
  * The controller owns the state the UI renders from — including `presentedOverlay` and
- * `isChatInputFocused`, the two predicates the gameplay input gate depends on. That ownership
- * is deliberate: it means the gate is complete before any DOM exists, and the DOM layer calls
- * explicit methods on the controller rather than the controller reaching into the DOM.
+ * `isChatInputFocused`, the two predicates gameplay input depends on. That ownership
+ * is deliberate: both are settled before any DOM exists, and the DOM layer calls explicit methods
+ * on the controller rather than the controller reaching into the DOM.
  */
 export class ConnectionController {
   connectionState: ConnectionState = 'disconnected';
@@ -137,6 +140,8 @@ export class ConnectionController {
   entities = new Map<string, ClientEntity>();
   players: string[] = [];
   selfId: string | undefined;
+  /** The player's own people, from the last `enterSpace`; `undefined` for one this client does not know. */
+  selfPeople: People | undefined;
   selfDisplayName = '';
   world: ClientWorld | undefined;
   /**
@@ -153,6 +158,11 @@ export class ConnectionController {
   otherSessionCount = 0;
   /** The account's characters while the player chooses one on the card, the one played last first; unset off the card. */
   characters: readonly CharacterSummaryMessage[] | undefined;
+  /**
+   * The world clock as the last `enterSpace` set it, and when on the page's clock it arrived. The
+   * wire carries no other time, so the client runs it on from there at `WORLD_TIME_RATE`.
+   */
+  worldClock: WorldClockReading | undefined;
 
   private status: ChatLine | undefined;
 
@@ -178,6 +188,8 @@ export class ConnectionController {
 
   private readonly transport: GameplayTransport;
   private readonly registry: ModelRegistry;
+  /** One worker computes the walk rasters of every space the session enters. */
+  private readonly walkRasterizer = defaultWalkRasterizer();
   private readonly resolveURL: () => string;
   private readonly maxResumeRetries: number;
   private readonly locale: Locale;
@@ -430,9 +442,9 @@ export class ConnectionController {
   }
 
   /**
-   * Hook the input layer installs to clear held keys whenever the gameplay gate closes. Routing
-   * focus through this method rather than letting the DOM own a local flag is what keeps focus
-   * gain clearing held keys on the production path.
+   * Hook the input layer installs to let go of a held press when the chat input takes focus.
+   * Routing focus through this method, rather than letting the DOM own a local flag, keeps focus
+   * gain letting go on the production path.
    */
   onGateClosed: (() => void) | undefined;
 
@@ -549,6 +561,7 @@ export class ConnectionController {
       case 'blow':
       case 'raising':
       case 'mend':
+      case 'vitals':
       case 'adminSay':
         this.onGameplayMessage?.(message);
         return;
@@ -741,9 +754,11 @@ export class ConnectionController {
     this.entities.clear();
     this.players = [];
     this.selfId = payload.selfId;
-    this.world = new ClientWorld(payload.spaceId, this.registry);
+    this.selfPeople = isPeople(payload.people) ? payload.people : undefined;
+    this.world = new ClientWorld(payload.spaceId, this.registry, this.walkRasterizer);
     this.renderSurface.enterSpace(this.world);
     this.renderSurface.setClock(payload.worldSeconds);
+    this.worldClock = { worldSeconds: payload.worldSeconds, atMs: performance.now() };
     this.connectionState = 'attached';
     this.characters = undefined;
     this.characterRequest = undefined;
@@ -753,6 +768,11 @@ export class ConnectionController {
   }
 
   onSpaceEntered: (() => void) | undefined;
+
+  /** The world's time at `nowMs` on the page's clock, run on from the last `enterSpace`; `undefined` before the first. */
+  worldSecondsAt(nowMs: number): number | undefined {
+    return this.worldClock === undefined ? undefined : worldSecondsAt(this.worldClock, nowMs);
+  }
 
   private handleSector(sector: SectorView): void {
     const world = this.world;
@@ -835,7 +855,7 @@ export class ConnectionController {
    */
   onPlayersChanged: (() => void) | undefined;
 
-  /** The only word on anyone's health but the player's own: the band it stands in, sent when it changes. */
+  /** The band anyone's health stands in, sent when it changes. Of everyone but the player and the target, it is the only word. */
   private handleCondition(entityId: string, condition: Condition): void {
     const entity = this.entities.get(entityId);
     if (entity === undefined) return;
@@ -911,7 +931,9 @@ export class ConnectionController {
     this.entities.clear();
     this.players = [];
     this.selfId = undefined;
+    this.selfPeople = undefined;
     this.world = undefined;
+    this.worldClock = undefined;
     this.characters = undefined;
     this.characterRequest = undefined;
     this.resumingWithToken = undefined;

@@ -1,133 +1,258 @@
 import { describe, expect, it } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
+import type { Character, InventoryRow } from '@somnio/core';
+import type { SomnioMessage } from '@somnio/protocol';
+import { ConnectionOutbox } from '../src/connection/outbox.ts';
+import type { SpaceActor } from '../src/world/spaceActor.ts';
 import { seededRandom } from '../src/world/random.ts';
 import {
   BESIDE_GHOST,
   CUDGEL_IN_HAND,
   GHOST,
+  GHOST_AT,
   MOONSTONE_IN_HAND,
   RESPAWN_MS,
   STRIKER,
   arena,
+  attackGhost,
   characterOf,
   energy,
   energyOf,
+  engage,
+  face,
   lucidity,
   PURSE,
   payloads,
 } from './support/combat.ts';
-import { collectMessages, entities, entityMoves, serverSays } from './support/frames.ts';
+import { collectMessages, entities, entityMoves, serverSays, vitalsOutbox } from './support/frames.ts';
 import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
-describe('swinging at a nightmare', () => {
-  it('lands one swing per swing interval, each for the balance bare hands cost', async () => {
-    const { clock, space } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
-    space.handleSwing(GHOST, alice.entityId);
-    space.handleSwing(GHOST, alice.entityId);
-    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(92);
-    clock.ms += 500;
-    space.handleSwing(GHOST, alice.entityId);
-    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(92);
-    clock.ms += 500;
-    space.handleSwing(GHOST, alice.entityId);
-    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(84);
-    const hit = { attackerId: alice.entityId, targetId: GHOST, hit: true };
-    expect(payloads(await collectMessages(alice.outbox), 'blow')).toEqual([hit, hit]);
-  });
+describe('attacking a nightmare', () => {
+  const blowsBy = (messages: readonly SomnioMessage[], attackerId: string) => payloads(messages, 'blow').filter((blow) => blow.attackerId === attackerId);
 
-  /** A client swinging on the rhythm sends a second apart, and its frames arrive a little less or more than a second apart. */
-  it('lets a swing in that arrives a little ahead of the rhythm, without bringing the next one forward', () => {
-    const { clock, space } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
-    const start = clock.ms;
-    const swingAt = (ms: number): number => {
-      clock.ms = start + ms;
-      space.handleSwing(GHOST, alice.entityId);
-      return energyOf(space, alice.entityId).balanceCurrent;
-    };
-    expect(swingAt(0)).toBe(92);
-    expect(swingAt(849)).toBe(92);
-    expect(swingAt(950)).toBe(84);
-    // The second swing was due at 1000, so the third is due at 2000, not 1950.
-    expect(swingAt(1849)).toBe(84);
-    expect(swingAt(1850)).toBe(76);
-  });
-
-  it('announces a miss and still spends the balance', async () => {
-    const { space, dice } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
-    dice.hit = false;
-    space.handleSwing(GHOST, alice.entityId);
-    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(92);
-    const messages = await collectMessages(alice.outbox);
-    expect(payloads(messages, 'blow')).toEqual([{ attackerId: alice.entityId, targetId: GHOST, hit: false }]);
-    expect(payloads(messages, 'condition')).toEqual([]);
-  });
+  it.each([
+    ['bare hands', [], 8],
+    ['the cudgel', [CUDGEL_IN_HAND], 18],
+  ])(
+    'swings at the target once per swing interval while Attack is on, each for the balance %s cost, and a miss costs it too',
+    async (_label, inventory, cost) => {
+      const { clock, space, dice } = arena();
+      dice.hit = false;
+      const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { inventory });
+      attackGhost(space, alice.entityId);
+      space.step(0);
+      expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100 - cost);
+      clock.ms += 999;
+      space.step(0);
+      expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100 - cost);
+      clock.ms += 1;
+      space.step(0);
+      expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100 - 2 * cost);
+      const messages = await collectMessages(alice.outbox);
+      const miss = { attackerId: alice.entityId, targetId: GHOST, hit: false };
+      expect(blowsBy(messages, alice.entityId)).toEqual([miss, miss]);
+      expect(payloads(messages, 'condition')).toEqual([]);
+    },
+  );
 
   it.each([
     ['with less balance than the swing costs', { character: { energy: energy({ balanceCurrent: 7 }) } }],
     ['with the Moonstone in hand', { inventory: [MOONSTONE_IN_HAND] }],
   ])('does not swing %s', async (_label, options) => {
-    const { space } = arena();
+    const { space, dice } = arena();
+    dice.hit = false;
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', options);
     const before = energyOf(space, alice.entityId);
-    space.handleSwing(GHOST, alice.entityId);
+    attackGhost(space, alice.entityId);
+    space.step(0);
     expect(energyOf(space, alice.entityId)).toEqual(before);
-    expect(payloads(await collectMessages(alice.outbox), 'blow')).toEqual([]);
+    expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toEqual([]);
   });
 
-  it.each<[string, { x: number; z: number }, string | undefined]>([
-    ['at a nightmare out of reach', { x: 10, z: 10.9 }, GHOST],
-    ['at nothing', BESIDE_GHOST, undefined],
-    ['at a nightmare that is not there', BESIDE_GHOST, 'monster:99'],
-  ])('swings at the air %s, for the same balance and the same wait', async (_label, at, targetId) => {
-    const { space } = arena();
-    const alice = attachPlayer(space, at, 'alice');
-    space.handleSwing(targetId, alice.entityId);
-    // The wait is the swing's own: one at the nightmare in reach right after it does not happen.
-    space.handleSwing(GHOST, alice.entityId);
+  it('spends nothing while the target stands out of reach, and swings once the dreamer steps into reach', async () => {
+    const { clock, space, dice } = arena();
+    dice.hit = false;
+    const alice = attachPlayer(space, { x: 10, z: 10.9 }, 'alice');
+    attackGhost(space, alice.entityId);
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+    space.handleMove({ ...BESIDE_GHOST, facing: 180, gait: 'walk' }, alice.entityId);
+    space.step(0);
     expect(energyOf(space, alice.entityId).balanceCurrent).toBe(92);
+    expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toHaveLength(1);
+  });
+
+  it('swings at nothing while the target stands behind the dreamer, and swings once they turn to it', async () => {
+    const { space, dice } = arena();
+    dice.hit = false;
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
+    // She faces south, away from the Ghost north of her.
+    engage(space, GHOST, alice.entityId);
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+    face(space, alice.entityId, GHOST_AT);
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(92);
+    expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toHaveLength(1);
+  });
+
+  it.each<[string, (space: SpaceActor, aliceId: string, bobId: string) => void]>([
+    ['without a target', () => {}],
+    ['with an NPC as the target', (space, aliceId) => space.handleTarget('npc:TestSector/guard', aliceId)],
+    ['with another dreamer as the target', (space, aliceId, bobId) => space.handleTarget(bobId, aliceId)],
+  ])('refuses slot 1 %s, swinging at nothing, not even the nightmare in reach in front', async (_label, choose) => {
+    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, 'Hello.')] });
+    dice.hit = false;
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
+    const bob = attachPlayer(space, { x: 9.4, z: 10.7 }, 'bob');
+    face(space, alice.entityId, GHOST_AT);
+    choose(space, alice.entityId, bob.entityId);
+    space.handleEngage(true, alice.entityId);
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+    expect(energyOf(space, bob.entityId).healthCurrent).toBe(100);
+    expect(blowsBy(await collectMessages(bob.outbox), alice.entityId)).toEqual([]);
+  });
+
+  describe('beside a second nightmare', () => {
+    const TARGET_AT = { x: 9.7, z: 10 };
+    /** In reach and in front of a dreamer at `BESIDE_GHOST` facing the target, and nearer to them than the target. */
+    const NEARER_AT = { x: 10.35, z: 10.15 };
+    const NEARER = 'monster:2';
+    const twoGhosts = () => arena({ monsterSpawns: [makeMonsterSpawn(TARGET_AT), { ...makeMonsterSpawn(NEARER_AT), id: 'spawn-2' }] });
+
+    it('swings at the target alone, never at the nearer one standing in front', async () => {
+      const { clock, space } = twoGhosts();
+      const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+      const watcher = attachPlayer(space, { x: 15, z: 15 }, 'watcher');
+      face(space, alice.entityId, TARGET_AT);
+      engage(space, GHOST, alice.entityId);
+      for (let swing = 0; swing < 3; swing += 1) {
+        space.step(0);
+        clock.ms += 1000;
+      }
+      const messages = await collectMessages(watcher.outbox);
+      expect(blowsBy(messages, alice.entityId).map((blow) => blow.targetId)).toEqual([GHOST, GHOST, GHOST]);
+      expect(payloads(messages, 'condition').filter((sent) => sent.entityId === NEARER)).toEqual([]);
+    });
+
+    it('swings at nothing while the target stands out of reach, though another stands in reach in front', async () => {
+      const { clock, space, dice } = twoGhosts();
+      dice.hit = false;
+      // In reach of the nearer one, due south of it, and out of the target's reach.
+      const alice = attachPlayer(space, { x: NEARER_AT.x, z: NEARER_AT.z + 0.65 }, 'alice');
+      face(space, alice.entityId, NEARER_AT);
+      engage(space, GHOST, alice.entityId);
+      for (let swing = 0; swing < 3; swing += 1) {
+        space.step(0);
+        clock.ms += 1000;
+      }
+      expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+      expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toEqual([]);
+    });
+
+    it('keeps Attack on when the target changes to the other nightmare, and swings at that one', async () => {
+      const { clock, space, dice } = twoGhosts();
+      dice.hit = false;
+      const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
+      face(space, alice.entityId, NEARER_AT);
+      engage(space, GHOST, alice.entityId);
+      space.handleTarget(NEARER, alice.entityId);
+      space.step(0);
+      clock.ms += 1000;
+      space.step(0);
+      expect(blowsBy(await collectMessages(alice.outbox), alice.entityId).map((blow) => blow.targetId)).toEqual([NEARER, NEARER]);
+    });
+  });
+
+  it('switches Attack off for a dreamer who cannot mend when the target changes to anything but a nightmare, and keeps it off on changing back', async () => {
+    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, 'Hello.')] });
+    dice.hit = false;
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
+    attackGhost(space, alice.entityId);
+    space.handleTarget('npc:TestSector/guard', alice.entityId);
+    space.handleTarget(GHOST, alice.entityId);
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+    expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toEqual([]);
+  });
+
+  it('switches Attack off once its target is driven off, swinging at none that takes its place', async () => {
+    const { clock, space, steps } = arena();
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+    attackGhost(space, alice.entityId);
+    for (let swing = 0; swing < 3; swing += 1) {
+      space.step(0);
+      clock.ms += 1000;
+    }
+    clock.ms += RESPAWN_MS;
+    space.step(0);
+    steps(60);
     const messages = await collectMessages(alice.outbox);
-    expect(payloads(messages, 'blow')).toEqual([{ attackerId: alice.entityId, hit: false }]);
-    expect(payloads(messages, 'condition')).toEqual([]);
+    expect(entities(messages).at(-1)).toMatchObject({ id: 'monster:2', condition: 'hale' });
+    expect(blowsBy(messages, alice.entityId).map((blow) => blow.targetId)).toEqual([GHOST, GHOST, GHOST]);
+  });
+
+  it('switches Attack off when the dreamer falls, so once raised they swing no more until they switch it on', async () => {
+    const { space, steps } = arena();
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { energy: energy({ healthCurrent: 9 }) } });
+    const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', {
+      character: { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) },
+      inventory: [MOONSTONE_IN_HAND],
+    });
+    attackGhost(space, alice.entityId);
+    steps(1);
+    expect(space.isFallen(alice.entityId)).toBe(true);
+    engage(space, alice.entityId, healer.entityId);
+    steps(140);
+    expect(space.isFallen(alice.entityId)).toBe(false);
+    steps(40);
+    space.handleEngage(true, alice.entityId);
+    steps(1);
+    // The swing before she fell, then the one she switched on again for.
+    expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toHaveLength(2);
   });
 
   /** A Ghost has 60 health, is grazed by any hit, and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
   it.each([
-    ['bare hands', [], 8, 4],
-    ['the cudgel', [CUDGEL_IN_HAND], 18, 2],
-  ])('costs and harms by what is in hand: %s', async (_label, inventory, cost, hitsToWound) => {
+    ['bare hands', [], 4],
+    ['the cudgel', [CUDGEL_IN_HAND], 2],
+  ])('harms by what is in hand: %s', async (_label, inventory, hitsToWound) => {
     const { clock, space } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { inventory });
-    const watcher = attachPlayer(space, { x: 15, z: 15 }, 'watcher');
-    for (let swing = 1; swing <= hitsToWound; swing += 1) {
-      space.handleSwing(GHOST, alice.entityId);
+    const before = attachPlayer(space, { x: 15, z: 15 }, 'before');
+    const after = attachPlayer(space, { x: 16, z: 16 }, 'after');
+    const ghostConditions = async (watcher: { outbox: ConnectionOutbox }) =>
+      payloads(await collectMessages(watcher.outbox), 'condition').filter((sent) => sent.entityId === GHOST);
+    attackGhost(space, alice.entityId);
+    for (let swing = 1; swing < hitsToWound; swing += 1) {
+      space.step(0);
       clock.ms += 1000;
-      // The condition is announced by the hit that crosses the band, and by none that stays inside one.
-      const announced = payloads(
-        await collectMessages(swing === hitsToWound ? watcher.outbox : attachPlayer(space, { x: 16, z: 16 }, `w${swing}`).outbox),
-        'condition',
-      );
-      if (swing === hitsToWound)
-        expect(announced).toEqual([
-          { entityId: GHOST, condition: 'grazed' },
-          { entityId: GHOST, condition: 'wounded' },
-        ]);
-      else expect(announced).toEqual([]);
     }
-    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100 - hitsToWound * cost);
+    expect(await ghostConditions(before)).toEqual([{ entityId: GHOST, condition: 'grazed' }]);
+    space.step(0);
+    expect(await ghostConditions(after)).toEqual([
+      { entityId: GHOST, condition: 'grazed' },
+      { entityId: GHOST, condition: 'wounded' },
+    ]);
   });
 
   it('fades a nightmare at zero, lets it go after the fade time, and refills its spawn after the respawn time', async () => {
     const { clock, space } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.handleSwing(GHOST, alice.entityId);
-      clock.ms += 1000;
-    }
-    const fadedAt = clock.ms - 1000;
-    space.handleSwing(GHOST, alice.entityId);
+    attackGhost(space, alice.entityId);
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    const fadedAt = clock.ms;
     clock.ms = fadedAt + 999;
     space.step(0.05);
     clock.ms = fadedAt + 1000;
@@ -137,9 +262,6 @@ describe('swinging at a nightmare', () => {
     clock.ms = fadedAt + RESPAWN_MS;
     space.step(0.05);
     const messages = await collectMessages(alice.outbox);
-    // Three swings meet it and the fourth meets the air: a fading nightmare takes none.
-    const swings = payloads(messages, 'blow').filter((blow) => blow.attackerId === alice.entityId);
-    expect(swings.map((blow) => blow.targetId)).toEqual([GHOST, GHOST, GHOST, undefined]);
     expect(
       payloads(messages, 'condition')
         .filter((sent) => sent.entityId === GHOST)
@@ -160,8 +282,9 @@ describe('swinging at a nightmare', () => {
     const near = attachPlayer(space, { x: 10, z: 15.9 }, 'near', { character: studying, inventory: [PURSE] });
     const far = attachPlayer(space, { x: 10, z: 16.1 }, 'far', { character: studying, inventory: [PURSE] });
     const fallen = attachPlayer(space, { x: 12, z: 10 }, 'fallen', { character: { ...studying, energy: energy({ healthCurrent: 0 }) }, inventory: [PURSE] });
+    attackGhost(space, striker.entityId);
     for (let swing = 0; swing < 3; swing += 1) {
-      space.handleSwing(GHOST, striker.entityId);
+      space.step(0);
       clock.ms += 1000;
     }
     const coins = (entityId: string) => space.snapshotForPlayer(entityId)!.inventory.find((row) => row.itemId === 'purse')!.quantity;
@@ -172,18 +295,21 @@ describe('swinging at a nightmare', () => {
 
   it('raises the health maximum where a Toughening rank is earned, and recovery then passes the old one', async () => {
     const { clock, space, steps } = arena();
-    const almost = lucidity('fighter', { strike: 5 }, { study: 'toughening' });
+    const almost = lucidity('fighter', {}, { study: 'toughening' });
     almost.ranks.push({ teachingId: 'toughening', rank: 0, practice: 15 });
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+    // Within the share radius and out of the Ghost's reach, so nothing takes her health.
+    const bob = attachPlayer(space, { x: 10, z: 13 }, 'bob', { character: { lucidity: almost } });
+    attackGhost(space, alice.entityId);
     for (let swing = 0; swing < 3; swing += 1) {
-      space.handleSwing(GHOST, alice.entityId);
+      space.step(0);
       clock.ms += 1000;
     }
-    expect(characterOf(space, alice.entityId).lucidity.ranks).toContainEqual({ teachingId: 'toughening', rank: 1, practice: 5 });
-    expect(energyOf(space, alice.entityId)).toMatchObject({ healthCurrent: 100, healthMax: 110 });
+    expect(characterOf(space, bob.entityId).lucidity.ranks).toContainEqual({ teachingId: 'toughening', rank: 1, practice: 5 });
+    expect(energyOf(space, bob.entityId)).toMatchObject({ healthCurrent: 100, healthMax: 110 });
     steps(50);
-    expect(energyOf(space, alice.entityId).healthCurrent).toBe(101);
-    expect(payloads(await collectMessages(alice.outbox), 'energy').some((sent) => sent.healthMax === 110 && sent.healthCurrent === 100)).toBe(true);
+    expect(energyOf(space, bob.entityId).healthCurrent).toBe(101);
+    expect(payloads(await collectMessages(bob.outbox), 'energy').some((sent) => sent.healthMax === 110 && sent.healthCurrent === 100)).toBe(true);
   });
 });
 
@@ -326,7 +452,7 @@ describe('balance', () => {
   });
 
   it.each([
-    ['the swing that spends', 8, (space: ReturnType<typeof arena>['space'], entityId: string) => space.handleSwing(GHOST, entityId), 0],
+    ['the swing that spends', 8, attackGhost, 1],
     ['the hit that takes', 15, () => {}, 61],
   ] as const)('leaves a dreamer winded by %s the last of their balance, and it then holds while they move', (_label, balance, act, runningSteps) => {
     const { space, dice, steps } = arena();
@@ -336,7 +462,7 @@ describe('balance', () => {
     let x = BESIDE_GHOST.x;
     steps(runningSteps, () => {
       x += 0.001;
-      space.handleMove({ x, z: BESIDE_GHOST.z, facing: 0, gait: 'run' }, alice.entityId);
+      space.handleMove({ x, z: BESIDE_GHOST.z, facing: 180, gait: 'run' }, alice.entityId);
     });
     expect(energyOf(space, alice.entityId).balanceCurrent).toBe(0);
     dice.hit = false;
@@ -353,31 +479,250 @@ describe('balance', () => {
   });
 });
 
+describe('a target', () => {
+  it('sends the dreamer who targets an entity its health at once, and no one else', async () => {
+    const { clock, space } = arena({ npcs: [makeNPC('guard', { x: 15, z: 15 }, 'Hello.')] });
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox }).entityId;
+    const bob = attachPlayer(space, { x: 5, z: 5 }, 'bob');
+    space.handleTarget(GHOST, aliceId);
+    space.handleTarget('npc:TestSector/guard', aliceId);
+    expect(alice.sent).toEqual([
+      { ms: clock.ms, entityId: GHOST, health: 1 },
+      { ms: clock.ms, entityId: 'npc:TestSector/guard', health: 1 },
+    ]);
+    expect(payloads(await collectMessages(bob.outbox), 'vitals')).toEqual([]);
+  });
+
+  it('is chosen by a fallen dreamer too, who is sent its health', () => {
+    const { clock, space } = arena();
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: { energy: energy({ healthCurrent: 0 }) } }).entityId;
+    expect(space.isFallen(aliceId)).toBe(true);
+    space.handleTarget(GHOST, aliceId);
+    expect(alice.sent).toEqual([{ ms: clock.ms, entityId: GHOST, health: 1 }]);
+  });
+
+  it('sends a change in its health, to two decimals, no sooner than a quarter second after the last, and nothing while it holds', () => {
+    const { clock, space, steps } = arena();
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    const start = clock.ms;
+    attackGhost(space, aliceId);
+    steps(10);
+    expect(alice.sent).toEqual([
+      { ms: start, entityId: GHOST, health: 1 },
+      { ms: start + 250, entityId: GHOST, health: 0.62 },
+    ]);
+  });
+
+  it('drops a target that is not in the space, keeping the one they had', () => {
+    const { clock, space, steps } = arena();
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    space.handleTarget(GHOST, aliceId);
+    space.handleTarget('monster:99', aliceId);
+    face(space, aliceId, GHOST_AT);
+    space.handleEngage(true, aliceId);
+    steps(5);
+    expect(alice.sent.map(({ entityId, health }) => ({ entityId, health }))).toEqual([
+      { entityId: GHOST, health: 1 },
+      { entityId: GHOST, health: 0.62 },
+    ]);
+  });
+
+  /** Their own `energy` already tells them their health. */
+  it('takes the dreamer themselves as their target, sends them no vitals of their own, and refuses slot 1 to a Fighter at them', async () => {
+    const { clock, space, steps, dice } = arena();
+    dice.hit = false;
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    face(space, aliceId, GHOST_AT);
+    engage(space, aliceId, aliceId);
+    steps(5);
+    space.handleTarget(GHOST, aliceId);
+    steps(1);
+    expect(alice.sent.map(({ entityId }) => entityId)).toEqual([GHOST]);
+    expect(energyOf(space, aliceId).balanceCurrent).toBe(100);
+    expect(payloads(await collectMessages(alice.outbox), 'blow').filter((blow) => blow.attackerId === aliceId)).toEqual([]);
+  });
+
+  it('switches Attack off when a dreamer who cannot mend targets themselves', () => {
+    const { clock, space, dice } = arena();
+    dice.hit = false;
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
+    attackGhost(space, alice.entityId);
+    space.handleTarget(alice.entityId, alice.entityId);
+    space.handleTarget(GHOST, alice.entityId);
+    space.step(0);
+    clock.ms += 1000;
+    space.step(0);
+    expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
+  });
+
+  it('sends nothing more once the dreamer clears their target', () => {
+    const { clock, space, steps } = arena();
+    const alice = vitalsOutbox(clock);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    space.handleTarget(GHOST, aliceId);
+    space.handleTarget(undefined, aliceId);
+    face(space, aliceId, GHOST_AT);
+    space.handleEngage(true, aliceId);
+    steps(10);
+    expect(alice.sent.map(({ entityId }) => entityId)).toEqual([GHOST]);
+  });
+
+  it('sends a Healer the health of the dreamer they mend, their target, and of nothing they targeted before', () => {
+    const { clock, space, steps } = arena();
+    const healer = vitalsOutbox(clock);
+    const healerId = attachPlayer(space, { x: 5, z: 5 }, 'healer', {
+      outbox: healer.outbox,
+      character: { lucidity: lucidity('healer', { touch: 2 }) },
+      inventory: [MOONSTONE_IN_HAND],
+    }).entityId;
+    const hurt = attachPlayer(space, { x: 5, z: 5.7 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
+    space.handleTarget(GHOST, healerId);
+    engage(space, hurt.entityId, healerId);
+    steps(5);
+    expect(healer.sent.map(({ entityId, health }) => ({ entityId, health }))).toEqual([
+      { entityId: GHOST, health: 1 },
+      { entityId: hurt.entityId, health: 0.5 },
+      { entityId: hurt.entityId, health: 0.6 },
+    ]);
+  });
+});
+
+describe('slot 1 at a dreamer', () => {
+  const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) };
+  const HURT: Partial<Character> = { energy: energy({ healthCurrent: 50 }) };
+
+  it.each<[string, Partial<Character>, InventoryRow[]]>([
+    ['a Fighter, Moonstone in hand or not', STRIKER, [MOONSTONE_IN_HAND]],
+    ['a Healer with the Moonstone put away', HEALER, [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }]],
+    ['a Healer with a weapon in hand', HEALER, [CUDGEL_IN_HAND]],
+  ])('is refused to %s', (_label, character, inventory) => {
+    const { space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character, inventory });
+    const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
+    engage(space, hurt.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+    expect(energyOf(space, healer.entityId).spiritCurrent).toBe(100);
+  });
+
+  it('is refused at a nightmare to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', () => {
+    const { space, steps } = arena();
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
+    engage(space, GHOST, healer.entityId);
+    space.handleTarget(hurt.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+  });
+
+  it.each<[string, (space: SpaceActor, healerId: string) => void, number]>([
+    ['stays on from one dreamer to the next', () => {}, 60],
+    ['goes off at a nightmare targeted between them, which the Moonstone does not swing at', (space, healerId) => space.handleTarget(GHOST, healerId), 50],
+  ])('%s', (_label, between, health) => {
+    const { clock, space, steps } = arena();
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const bren = attachPlayer(space, { x: 5, z: 6 }, 'bren', { character: { energy: energy({ healthCurrent: 100 }) } });
+    const alia = attachPlayer(space, { x: 6, z: 5 }, 'alia', { character: HURT });
+    engage(space, bren.entityId, healer.entityId);
+    steps(1);
+    between(space, healer.entityId);
+    steps(1);
+    space.handleTarget(alia.entityId, healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    expect(energyOf(space, alia.entityId).healthCurrent).toBe(health);
+  });
+
+  it.each<[string, Partial<Character>]>([
+    ['a Healer with a weapon in hand', HEALER],
+    ['a Fighter', STRIKER],
+  ])('from a nightmare to a dreamer goes off for %s, and stays off on changing back', async (_label, character) => {
+    const { clock, space, steps, dice } = arena();
+    dice.hit = false;
+    const engager = attachPlayer(space, BESIDE_GHOST, 'engager', { character, inventory: [CUDGEL_IN_HAND] });
+    const hurt = attachPlayer(space, { x: 10.6, z: 11.2 }, 'hurt', { character: HURT });
+    attackGhost(space, engager.entityId);
+    steps(1);
+    space.handleTarget(hurt.entityId, engager.entityId);
+    clock.ms += 1000;
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+    space.handleTarget(GHOST, engager.entityId);
+    clock.ms += 1000;
+    steps(1);
+    const swings = payloads(await collectMessages(hurt.outbox), 'blow').filter((blow) => blow.attackerId === engager.entityId);
+    // The one swing made at the nightmare before the dreamer was targeted.
+    expect(swings).toEqual([{ attackerId: engager.entityId, targetId: GHOST, hit: false }]);
+  });
+
+  it('goes off when the target leaves the space, so they are not mended once back and targeted again', () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
+    engage(space, hurt.entityId, healer.entityId);
+    space.detach(hurt.entityId, true);
+    steps(1);
+    space.attach(hurt.character, [], new ConnectionOutbox(4096), 0, 'en');
+    space.handleTarget(hurt.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+  });
+
+  it('starts off in a new space, as after a door, though the Healer targets the same dreamer there', () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
+    engage(space, hurt.entityId, healer.entityId);
+    space.detach(healer.entityId, false);
+    space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
+    space.handleTarget(hurt.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+  });
+
+  it('stays on when the dreamer mended falls, and raises them once the Healer steps into touch', async () => {
+    const { space, steps, dice } = arena();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { energy: energy({ healthCurrent: 9 }) } });
+    const healer = attachPlayer(space, { x: 10, z: 13.8 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    engage(space, fighter.entityId, healer.entityId);
+    steps(1);
+    expect(space.isFallen(fighter.entityId)).toBe(true);
+    dice.hit = false;
+    space.handleMove({ x: 10, z: 11.4, facing: 180, gait: 'jog' }, healer.entityId);
+    steps(1);
+    const raisings = payloads(await collectMessages(fighter.outbox), 'raising');
+    expect(raisings.map(({ state, healerIds }) => ({ state, healerIds }))).toEqual([{ state: 'holding', healerIds: [healer.entityId] }]);
+  });
+});
+
 describe('what a dreamer never does', () => {
-  it('harms no dreamer, whoever swings or tends and whatever they hold', async () => {
+  it('harms no dreamer, whoever engages them and whatever they hold', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const victim = attachPlayer(space, { x: 5, z: 5 }, 'victim', { character: { energy: energy({ healthCurrent: 50 }) } });
     const brawler = attachPlayer(space, { x: 5, z: 5.6 }, 'brawler', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
     const pretender = attachPlayer(space, { x: 5.6, z: 5 }, 'pretender', { inventory: [MOONSTONE_IN_HAND] });
     const before = [victim, pretender].map((player) => energyOf(space, player.entityId));
-    space.handleSwing(victim.entityId, brawler.entityId);
-    space.handleTend(victim.entityId, pretender.entityId);
-    space.handleTend(brawler.entityId, brawler.entityId);
+    engage(space, victim.entityId, brawler.entityId);
+    engage(space, victim.entityId, pretender.entityId);
     steps(1);
     expect([victim, pretender].map((player) => energyOf(space, player.entityId))).toEqual(before);
-    // A swing that names a dreamer meets the air.
-    expect(payloads(await collectMessages(victim.outbox), 'blow')).toEqual([{ attackerId: brawler.entityId, hit: false }]);
+    expect(payloads(await collectMessages(victim.outbox), 'blow')).toEqual([]);
   });
 
-  it('does nothing a fallen dreamer asks for: no swing, no answer, no mending', async () => {
+  it('does nothing a fallen dreamer asks for: no Attack, no answer, no Mend', async () => {
     const { space, steps, dice } = arena({ npcs: [makeNPC('guard', { x: 10, z: 12 }, 'Hello, $name.\n---\nMore.')] });
     dice.hit = false;
     const fallen = { energy: energy({ healthCurrent: 0 }), lucidity: lucidity('healer', { touch: 3 }) };
     const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: [MOONSTONE_IN_HAND] });
     const hurt = attachPlayer(space, { x: 10.6, z: 10.85 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
-    space.handleSwing(GHOST, alice.entityId);
+    engage(space, GHOST, alice.entityId);
     space.handleTalk('npc:TestSector/guard', alice.entityId);
-    space.handleTend(hurt.entityId, alice.entityId);
+    engage(space, hurt.entityId, alice.entityId);
     space.handleUseItem(MOONSTONE_IN_HAND.slot, alice.entityId);
     steps(1);
     expect(energyOf(space, alice.entityId)).toEqual(fallen.energy);

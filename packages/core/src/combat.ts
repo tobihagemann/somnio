@@ -1,4 +1,4 @@
-import type { Condition, Energy, Gait } from '@somnio/protocol';
+import type { Condition, Energy, Gait, Role } from '@somnio/protocol';
 import type { Body } from './collision.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { clamp, distance } from './geometry.ts';
@@ -6,6 +6,7 @@ import type { Point } from './geometry.ts';
 import { angularDistance, headingFromVector } from './heading.ts';
 import type { Heading } from './heading.ts';
 import { itemWeapon } from './items.ts';
+import type { ItemId } from './items.ts';
 import { forbidsStriking, rankOf } from './lucidity.ts';
 import type { HeldRank, TaskSpec } from './lucidity.ts';
 import type { MonsterKind } from './monsterKinds.ts';
@@ -48,7 +49,8 @@ export const COMBAT = {
   healthPerTougheningRank: 10,
   spiritPerDeepeningRank: 10,
 
-  mend: { health: 10, healthPerDepthRank: 5, spiritCost: 8, seconds: 1 },
+  /** `reach` is how far apart, centre to centre, a Healer and the dreamer they mend stand at most. */
+  mend: { health: 10, healthPerDepthRank: 5, spiritCost: 8, seconds: 1, reach: 3 },
   raise: { seconds: 6, spiritCost: 40, healthFraction: 0.25, graceSeconds: 5 },
   /** The share of each pool a dreamer who gave up wakes with. */
   weakenedFraction: 0.25,
@@ -61,15 +63,35 @@ export const COMBAT = {
   fadeSeconds: 1,
 } as const;
 
+/** The bands between the maximum and none, from the top, each above its share of the maximum. */
+const HARMED_BANDS = [
+  { condition: 'grazed', above: 0.75 },
+  { condition: 'wounded', above: 0.5 },
+  { condition: 'hurt', above: 0.25 },
+  { condition: 'failing', above: 0 },
+] as const;
+
 /** The band a health total stands in: hale only at the maximum, then by quarters. Anything above zero is still standing. */
 export function conditionOf(current: number, max: number): Condition {
   if (current <= 0) return 'fallen';
   if (current >= max) return 'hale';
   const part = current / max;
-  if (part > 0.75) return 'grazed';
-  if (part > 0.5) return 'wounded';
-  if (part > 0.25) return 'hurt';
+  for (const band of HARMED_BANDS) if (part > band.above) return band.condition;
   return 'failing';
+}
+
+/** The middle of a condition's band as a share of the maximum: what a bar shows of a health known only by its band. */
+export function conditionMidpoint(condition: Condition): number {
+  if (condition === 'hale') return 1;
+  if (condition === 'fallen') return 0;
+  const at = HARMED_BANDS.findIndex((band) => band.condition === condition);
+  const top = at === 0 ? 1 : HARMED_BANDS[at - 1]!.above;
+  return (top + HARMED_BANDS[at]!.above) / 2;
+}
+
+/** A pool's share of its maximum. A maximum of zero or less comes only from a broken frame, and would not divide to a share. */
+export function poolShare(current: number, max: number): number {
+  return max > 0 ? clamp(current / max, 0, 1) : 0;
 }
 
 /** Winded begins at an empty balance and ends only once it is back to the threshold. */
@@ -119,13 +141,35 @@ export function swingFor(itemInHand: string | undefined, ranks: readonly HeldRan
 
 /**
  * The swing a dreamer makes now, if they can make one: the task they hold does not forbid
- * striking, what they hold in hand swings, and their balance covers its cost. The server makes a
- * swing on this and the client asks for one on it, each at the swing rhythm on its own clock.
+ * striking, what they hold in hand swings, and their balance covers its cost.
  */
 export function swingAllowed(task: TaskSpec | undefined, itemInHand: string | undefined, ranks: readonly HeldRank[], balance: number): Swing | undefined {
   if (task !== undefined && forbidsStriking(task)) return undefined;
   const swing = swingFor(itemInHand, ranks);
   return swing !== undefined && balance >= swing.balanceCost ? swing : undefined;
+}
+
+/** What slot 1 does at the target. */
+export type EngageAction = 'attack' | 'mend';
+
+/** What a target is to slot 1. */
+export type EngageTarget = 'nightmare' | 'dreamer';
+
+/**
+ * What slot 1 does at a target: Attack at a nightmare not yet driven off, with bare hands or a
+ * weapon in hand, and Mend at a dreamer, the Healer themselves included, for a Healer with the
+ * Moonstone in hand. At anything else it does nothing, and cannot be switched on. The Moonstone does
+ * not swing, so one hand never does both.
+ */
+export function engageAction(target: EngageTarget | undefined, role: Role | undefined, itemInHand: string | undefined): EngageAction | undefined {
+  if (target === 'nightmare') return itemInHand === undefined || itemWeapon(itemInHand) !== undefined ? 'attack' : undefined;
+  if (target === 'dreamer' && role === 'healer' && itemInHand === ('moonstone' satisfies ItemId)) return 'mend';
+  return undefined;
+}
+
+/** Whether a Healer at `from` mends a standing dreamer at `to`. Raising a fallen one takes touch, as `reaches` measures it. */
+export function mendReaches(from: Point, to: Point): boolean {
+  return distance(from, to) <= COMBAT.mend.reach;
 }
 
 /** How far apart a dreamer and a body of `radius` stand at most when one reaches the other: contact, and the reach slack beyond. */
@@ -139,23 +183,15 @@ export function reaches(from: Point, body: Body): boolean {
 }
 
 /**
- * The body a swing meets: the nearest one it reaches inside the arc in front of the dreamer. One
+ * Whether a swing meets the body: it stands in reach, inside the arc in front of the dreamer. One
  * whose centre lies within the dreamer's own radius is in front wherever they face.
  */
-export function swingTarget<T extends Body>(from: Point, facing: Heading, bodies: Iterable<T>): T | undefined {
-  let met: T | undefined;
-  let away = Number.POSITIVE_INFINITY;
-  for (const body of bodies) {
-    const candidate = distance(from, body);
-    if (candidate >= away || !reaches(from, body)) continue;
-    const inFront =
-      candidate < SOMNIO_CONSTANTS.playerRadius ||
-      Math.abs(angularDistance(facing, headingFromVector(body.x - from.x, body.z - from.z))) <= COMBAT.swingArcDegrees / 2;
-    if (!inFront) continue;
-    met = body;
-    away = candidate;
-  }
-  return met;
+export function swingMeets(from: Point, facing: Heading, body: Body): boolean {
+  if (!reaches(from, body)) return false;
+  return (
+    distance(from, body) < SOMNIO_CONSTANTS.playerRadius ||
+    Math.abs(angularDistance(facing, headingFromVector(body.x - from.x, body.z - from.z))) <= COMBAT.swingArcDegrees / 2
+  );
 }
 
 /** A nightmare's chance to land its strike: higher the emptier the dreamer's balance, lower with Guard. */

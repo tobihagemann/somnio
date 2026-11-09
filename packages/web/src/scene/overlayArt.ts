@@ -20,6 +20,23 @@ const OVERLAY_RASTER_SCALE = 8;
 /** World metres per pixel of overlay artwork. */
 export const OVERLAY_METRES_PER_PIXEL = 0.016;
 
+/**
+ * The fewest CSS pixels an overlay pixel is drawn across, which holds a bubble's 10 px text at 12 px
+ * and a plaque's 11 px name at 13 px on screen however far the camera pulls back on however small a
+ * window.
+ */
+export const OVERLAY_MIN_SCREEN_PIXELS = 1.2;
+
+/**
+ * How many times its size in metres the overlay art is drawn, under a camera of half-height `scale`
+ * over a viewport `viewportHeight` CSS pixels tall: 1 while an overlay pixel is drawn across at least
+ * `OVERLAY_MIN_SCREEN_PIXELS`, and just enough more to hold it there once it would be drawn smaller.
+ */
+export function overlayMagnification(scale: number, viewportHeight: number): number {
+  const screenPixels = (OVERLAY_METRES_PER_PIXEL * viewportHeight) / (2 * scale);
+  return Math.max(1, OVERLAY_MIN_SCREEN_PIXELS / screenPixels);
+}
+
 /** Gap between the feet anchor and the top of the name plaque, in metres. */
 export const PLAQUE_FEET_GAP = 0.15;
 
@@ -379,11 +396,16 @@ export function baselineInCenteredBox(height: number, fontSize: number): number 
 /**
  * Background for an entity's plaque, or `undefined` for one that gets none. A player's plaque is
  * tinted by their condition, the local player's included. An NPC's never changes. A nightmare has
- * a plaque only while it is not hale or the pointer is over it, so one that has taken harm stands
- * out from the rest.
+ * a plaque only while it is not hale or it is the target, so one that has taken harm stands out
+ * from the rest.
  */
-export function namePlaqueBackground(kind: WorldEntityKind, condition: Condition, hovered: boolean): string | undefined {
+export function namePlaqueBackground(kind: WorldEntityKind, condition: Condition, targeted: boolean): string | undefined {
   if (kind === 'npc') return NAME_PLAQUE.npcBackground;
-  if (condition !== 'hale') return NAME_PLAQUE.conditionBackground[condition];
-  return kind === 'monster' && !hovered ? undefined : NAME_PLAQUE.playerBackground;
+  if (kind === 'monster' && condition === 'hale' && !targeted) return undefined;
+  return playerPlaqueBackground(condition);
+}
+
+/** The plaque background for a condition, which a dreamer's and a shown nightmare's plaque take alike. */
+export function playerPlaqueBackground(condition: Condition): string {
+  return condition === 'hale' ? NAME_PLAQUE.playerBackground : NAME_PLAQUE.conditionBackground[condition];
 }

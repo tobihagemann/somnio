@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { CONDITIONS } from '@somnio/protocol';
 import {
   COMBAT,
   balancePace,
   balancePerSecond,
+  conditionMidpoint,
   conditionOf,
+  engageAction,
   fullPools,
   maxPools,
   mendAmount,
+  mendReaches,
   reaches,
   strikeChance,
   swingAllowed,
   swingFor,
-  swingTarget,
+  swingMeets,
   windedAfter,
   windedOnJoin,
 } from '../src/combat.ts';
@@ -40,6 +44,10 @@ describe('conditionOf', () => {
     expect(conditionOf(100, 150)).toBe('wounded');
     expect(conditionOf(113, 150)).toBe('grazed');
     expect(conditionOf(150, 150)).toBe('hale');
+  });
+
+  it('takes the middle of each band as what a health known only by its band shows', () => {
+    expect(CONDITIONS.map(conditionMidpoint)).toEqual([1, 0.875, 0.625, 0.375, 0.125, 0]);
   });
 });
 
@@ -116,27 +124,59 @@ describe('swingAllowed', () => {
 
 describe('what a swing meets', () => {
   const SOUTH = heading(0);
-  const ghost = (x: number, z: number, id = 'ghost') => ({ id, x, z, radius: 0.3 });
+  const ghost = (x: number, z: number) => ({ x, z, radius: 0.3 });
 
   it('reaches a body as far as contact and the reach slack, and no further', () => {
     expect(reaches({ x: 0, z: 0 }, ghost(0, 0.85))).toBe(true);
     expect(reaches({ x: 0, z: 0 }, ghost(0, 0.86))).toBe(false);
   });
 
-  it('meets the nearest body in reach inside the arc in front', () => {
+  it('meets a body in reach inside the arc in front', () => {
     const edge = { x: Math.sin(Math.PI / 3) * 0.8, z: Math.cos(Math.PI / 3) * 0.8 };
-    expect(swingTarget({ x: 0, z: 0 }, SOUTH, [ghost(0, 0.8, 'far'), ghost(0, 0.7, 'near')])?.id).toBe('near');
-    expect(swingTarget({ x: 0, z: 0 }, SOUTH, [ghost(edge.x - 0.01, edge.z)])?.id).toBe('ghost');
-    expect(swingTarget({ x: 0, z: 0 }, heading(90), [ghost(0.8, 0)])?.id).toBe('ghost');
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(0, 0.8))).toBe(true);
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(edge.x - 0.01, edge.z))).toBe(true);
+    expect(swingMeets({ x: 0, z: 0 }, heading(90), ghost(0.8, 0))).toBe(true);
   });
 
   it('meets nothing beside, behind, or out of reach', () => {
-    expect(swingTarget({ x: 0, z: 0 }, SOUTH, [ghost(0.8, 0), ghost(0, -0.8), ghost(0, 0.9)])).toBeUndefined();
-    expect(swingTarget({ x: 0, z: 0 }, SOUTH, [])).toBeUndefined();
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(0.8, 0))).toBe(false);
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(0, -0.8))).toBe(false);
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(0, 0.9))).toBe(false);
   });
 
   it('meets a body the dreamer stands inside wherever they face', () => {
-    expect(swingTarget({ x: 0, z: 0 }, SOUTH, [ghost(0, -0.2)])?.id).toBe('ghost');
+    expect(swingMeets({ x: 0, z: 0 }, SOUTH, ghost(0, -0.2))).toBe(true);
+  });
+});
+
+describe('engageAction', () => {
+  it('attacks a nightmare with bare hands or a weapon in hand, whoever engages it', () => {
+    expect(engageAction('nightmare', undefined, undefined)).toBe('attack');
+    expect(engageAction('nightmare', 'healer', 'cudgel')).toBe('attack');
+  });
+
+  it('does not attack with the Moonstone in hand, which does not swing', () => {
+    expect(engageAction('nightmare', 'healer', 'moonstone')).toBeUndefined();
+  });
+
+  it('mends a dreamer only for a Healer with the Moonstone in hand', () => {
+    expect(engageAction('dreamer', 'healer', 'moonstone')).toBe('mend');
+    expect(engageAction('dreamer', 'healer', undefined)).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', 'cudgel')).toBeUndefined();
+    expect(engageAction('dreamer', 'fighter', 'moonstone')).toBeUndefined();
+    expect(engageAction('dreamer', undefined, 'moonstone')).toBeUndefined();
+  });
+
+  it('does nothing without a target it can act on', () => {
+    expect(engageAction(undefined, 'healer', 'moonstone')).toBeUndefined();
+  });
+});
+
+describe('mendReaches', () => {
+  it('reaches as far as the mend reach, centre to centre, and no further', () => {
+    expect(mendReaches({ x: 0, z: 0 }, { x: 0, z: 0 })).toBe(true);
+    expect(mendReaches({ x: 0, z: 0 }, { x: COMBAT.mend.reach, z: 0 })).toBe(true);
+    expect(mendReaches({ x: 0, z: 0 }, { x: COMBAT.mend.reach + 0.01, z: 0 })).toBe(false);
   });
 });
 

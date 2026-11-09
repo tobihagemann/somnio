@@ -96,7 +96,7 @@ const REEL: SplashShot[] = [
     space: 'outdoors',
     seconds: 6,
     hour: 10,
-    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 3, to: 3 }, span: 0 },
+    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 6, to: 6 }, span: 0 },
     actors: [
       { kind: 'peer', id: WALKER, name: 'Walker', at: { x: 18, z: 22 }, facing: 90, gait: 'walk', path: WALKER_PATH.slice(0, 1) },
       { kind: 'peer', id: STROLLER, name: 'Stroller', at: { x: 22, z: 24 }, facing: 0, gait: 'walk', path: [] },
@@ -108,7 +108,7 @@ const REEL: SplashShot[] = [
     space: 'outdoors',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'area', from: { point: { x: 20, z: 20 }, scale: 4 }, to: { point: { x: 21, z: 20 }, scale: 4 } },
+    camera: { kind: 'area', from: { point: { x: 20, z: 20 }, scale: 7 }, to: { point: { x: 21, z: 20 }, scale: 7 } },
     actors: [
       { kind: 'carried', id: WALKER, path: WALKER_PATH.slice(1) },
       { kind: 'peer', id: NEWCOMER, name: 'Newcomer', at: { x: 19, z: 24 }, facing: 0, gait: 'walk', path: [] },
@@ -120,7 +120,7 @@ const REEL: SplashShot[] = [
     space: 'EdariaInn',
     seconds: 6,
     hour: 12,
-    camera: { kind: 'area', from: { point: { x: 2.5, z: 2.5 }, scale: 2 }, to: { point: { x: 2.5, z: 2.5 }, scale: 2 } },
+    camera: { kind: 'area', from: { point: { x: 2.5, z: 2.5 }, scale: 5 }, to: { point: { x: 2.5, z: 2.5 }, scale: 5 } },
     actors: [{ kind: 'npc', sector: 'EdariaInn', npc: 'quieta' }],
     beats: [],
   },
@@ -133,7 +133,7 @@ const RAISE_REEL: SplashShot[] = [
     space: 'outdoors',
     seconds: 6,
     hour: 13,
-    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 2.5, to: 2.5 }, span: 0 },
+    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 5.5, to: 5.5 }, span: 0 },
     actors: [{ kind: 'peer', id: WALKER, name: 'Walker', at: { x: 18, z: 22 }, facing: 90, gait: 'walk', path: [{ x: 19, z: 22 }] }],
     beats: [{ at: 2, kind: 'condition', id: WALKER, condition: 'fallen' }],
   },
@@ -142,7 +142,7 @@ const RAISE_REEL: SplashShot[] = [
     space: 'outdoors',
     seconds: 8,
     hour: 13,
-    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 2.5, to: 2.5 }, span: 0 },
+    camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 5.5, to: 5.5 }, span: 0 },
     actors: [
       { kind: 'carried', id: WALKER, path: [] },
       { kind: 'peer', id: NEWCOMER, name: 'Healer', at: { x: 21, z: 23 }, facing: 270, gait: 'walk', path: [{ x: 19.6, z: 22.5 }], faces: WALKER },
@@ -177,14 +177,14 @@ describe('the splash director', () => {
       [WALKER, 'hale'],
       [STROLLER, 'hale'],
     ]);
-    expect(d.named('frameShot')[0]?.args).toEqual([shotFocus({ x: 18, z: 22 }, 'left', 0.4, 3, VIEWPORT), 3]);
+    expect(d.named('frameShot')[0]?.args).toEqual([shotFocus({ x: 18, z: 22 }, 'left', 0.4, 6, VIEWPORT), 6]);
     expect(d.director.currentShotId).toBe('first');
 
     d.calls.length = 0;
     d.director.setViewport(2560, 1080);
     d.director.update(FRAME);
     const [focus] = d.named('frameShot')[0]!.args as [Point];
-    expect(focus).not.toEqual(shotFocus({ x: 18, z: 22 }, 'left', 0.4, 3, VIEWPORT));
+    expect(focus).not.toEqual(shotFocus({ x: 18, z: 22 }, 'left', 0.4, 6, VIEWPORT));
   });
 
   it('cuts to the next shot only at full dark, keeping the space and the figure it carries over', () => {
@@ -323,7 +323,7 @@ describe('the splash director', () => {
         space: 'EdariaFighterHall',
         seconds: 6,
         hour: 12,
-        camera: { kind: 'subject', subject: 'npc:EdariaFighterHall/pugnax', side: 'right', drop: 0.5, scale: { from: 2.2, to: 2.2 }, span: 0 },
+        camera: { kind: 'subject', subject: 'npc:EdariaFighterHall/pugnax', side: 'right', drop: 0.5, scale: { from: 5.5, to: 5.5 }, span: 0 },
         actors: [{ kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' }],
         beats: [{ at: 1, kind: 'greeting', npc: 'npc:EdariaFighterHall/pugnax', listener: 'Mira' }],
       },

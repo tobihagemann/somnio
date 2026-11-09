@@ -266,6 +266,14 @@ describe('a bubble with nothing on screen to hang from', () => {
     expect(touchesHead(boxOf(placed!.centre, grown), inTheWay)).toBe(false);
   });
 
+  it("is pinned to the top for a voice on the player's own spot", () => {
+    const [placed] = layout([bubble({ voice: { x: 0, y: 0 } })]);
+
+    expect(placed!.mode).toBe('pinned');
+    expect(placed!.centre.x).toBeCloseTo(0, 9);
+    expect(placed!.centre.y).toBeCloseTo(3 - INSET - grown.height / 2, 9);
+  });
+
   /** Under a panel its text would be hidden; over a head, only the head is. */
   it('overlaps where no panel covers it when a panel and a head leave no spot free on its line', () => {
     const panel = { left: -4, bottom: -3, right: -2, top: 3 };

@@ -1,11 +1,11 @@
-import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, monsterKind } from '@somnio/core';
+import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
 import type { Character, InventoryRow, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { ranks } from '../../../core/test/support/ranks.ts';
 import type { SpaceActor } from '../../src/world/spaceActor.ts';
 import { makeClockedSpace, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
 
-const GHOST_AT: Point = { x: 10, z: 10 };
+export const GHOST_AT: Point = { x: 10, z: 10 };
 /** In reach of the nightmare at `GHOST_AT`, and south of it. */
 export const BESIDE_GHOST: Point = { x: 10, z: 10.7 };
 export const GHOST = 'monster:1';
@@ -51,6 +51,24 @@ export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolea
     }
   };
   return { clock, space, dice, steps };
+}
+
+/** Turns the dreamer on the spot toward `point`, as their client reports a turn. */
+export function face(space: SpaceActor, entityId: string, point: Point): void {
+  const at = characterOf(space, entityId).position;
+  space.handleMove({ x: at.x, z: at.z, facing: headingFromVector(point.x - at.x, point.z - at.z), gait: 'walk' }, entityId);
+}
+
+/** Turns the dreamer toward the Ghost, targets it, and switches Attack on, as their client would. */
+export function attackGhost(space: SpaceActor, entityId: string): void {
+  face(space, entityId, GHOST_AT);
+  engage(space, GHOST, entityId);
+}
+
+/** Targets the entity and switches slot 1 on, as a press on its body and then on slot 1 does. */
+export function engage(space: SpaceActor, targetId: string, entityId: string): void {
+  space.handleTarget(targetId, entityId);
+  space.handleEngage(true, entityId);
 }
 
 export function characterOf(space: SpaceActor, entityId: string): Character {

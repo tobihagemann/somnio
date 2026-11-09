@@ -58,6 +58,25 @@ BRANDING_FILES=(
   "somnio-wordmark.png"
 )
 
+# Every file the client loads from UI/: the chrome's 9-slice borders and divider (`chrome.css`) and
+# the HUD's icons (`hudIcons.ts`). Neither has a fallback, and a missing icon is a CSS mask with
+# nothing to show, so the control draws blank. `packages/web/test/ui-pack.test.ts` holds this list to
+# what the client references and to CI's pack check.
+UI_FILES=(
+  "panel-primary.png"
+  "panel-button.png"
+  "panel-button-hover.png"
+  "divider.png"
+  "icon-sword.png"
+  "icon-raise.png"
+  "icon-run.png"
+  "icon-players.png"
+  "icon-bag.png"
+  "icon-settings.png"
+  "icon-close.png"
+  "icon-menu.png"
+)
+
 for entry in "${SUBTREES[@]}"; do
   IFS=: read -r from to requirement <<< "$entry"
   src="${SRC}/${from}"
@@ -86,6 +105,14 @@ for file in "${BRANDING_FILES[@]}"; do
   if [[ ! -f "${DEST}/Branding/${file}" ]]; then
     echo "ERROR: Web asset bundling: brand file 'Web/Branding/${file}' missing from the pack." >&2
     echo "       Regenerate it with somnio-assets Branding/scripts/export_web.py." >&2
+    exit 1
+  fi
+done
+
+for file in "${UI_FILES[@]}"; do
+  if [[ ! -f "${DEST}/UI/${file}" ]]; then
+    echo "ERROR: Web asset bundling: UI file 'UI/${file}' missing from the pack." >&2
+    echo "       The client loads it by name; restore it in somnio-assets UI/." >&2
     exit 1
   fi
 done

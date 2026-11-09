@@ -6,13 +6,17 @@ import {
   BESIDE_GHOST,
   CUDGEL_IN_HAND,
   GHOST,
+  GHOST_AT,
   MOONSTONE_IN_HAND,
   PURSE,
   RESPAWN_MS,
   arena,
+  attackGhost,
   characterOf,
   energy,
   energyOf,
+  engage,
+  face,
   lucidity,
   payloads,
 } from './support/combat.ts';
@@ -58,10 +62,12 @@ function walk(world: Town, entityId: string, to: Point): void {
   throw new Error(`could not walk to (${to.x}, ${to.z})`);
 }
 
-/** Drives the named Ghost off with three cudgel swings. */
+/** Drives the named Ghost, standing where the first one did, off with three cudgel swings. */
 function driveOff(world: Town, entityId: string, ghost: string): void {
+  face(world.space, entityId, GHOST_AT);
+  engage(world.space, ghost, entityId);
   for (let swing = 0; swing < 3; swing += 1) {
-    world.space.handleSwing(ghost, entityId);
+    world.space.step(0);
     world.clock.ms += 1000;
   }
 }
@@ -77,13 +83,9 @@ describe('a trial', () => {
     expect(lucidityOf(world.space, alice.entityId).role).toBeUndefined();
 
     walk(world, alice.entityId, BESIDE_GHOST);
-    // Eight cudgel swings, with the nightmare's own strikes all missing while her balance comes back.
-    for (let swing = 0; swing < 8; swing += 1) {
-      world.dice.hit = true;
-      world.space.handleSwing(GHOST, alice.entityId);
-      world.dice.hit = false;
-      world.steps(40);
-    }
+    // Eight cudgel swings a second apart, with the nightmare's own strikes landing too.
+    attackGhost(world.space, alice.entityId);
+    world.steps(8 * 20);
     expect(lucidityOf(world.space, alice.entityId).task?.progress).toBe(1);
     // Passing the trial alone commits nothing, and the other master does not take it.
     expect(lucidityOf(world.space, alice.entityId).role).toBeUndefined();
@@ -135,10 +137,11 @@ describe('a trial', () => {
     world.space.handleAskTask(SANA, undefined, alice.entityId);
     walk(world, alice.entityId, BESIDE_GHOST);
     world.dice.hit = false;
-    world.space.handleSwing(GHOST, alice.entityId);
+    attackGhost(world.space, alice.entityId);
+    world.space.step(0);
     expect(energyOf(world.space, alice.entityId).balanceCurrent).toBe(100);
     world.space.handleAbandonTask(alice.entityId);
-    world.space.handleSwing(GHOST, alice.entityId);
+    world.space.step(0);
     expect(energyOf(world.space, alice.entityId).balanceCurrent).toBe(92);
   });
 
@@ -296,15 +299,15 @@ describe('a gate', () => {
     world.space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
     expect(lucidityOf(world.space, healer.entityId).task?.progress).toBe(0);
     world.clock.ms += 1000;
-    world.space.handleTend(patient.entityId, healer.entityId);
+    engage(world.space, patient.entityId, healer.entityId);
     world.steps(1);
     expect(lucidityOf(world.space, healer.entityId).task?.progress).toBe(30);
     world.space.handleCompleteTask(SANA, healer.entityId);
     expect(lucidityOf(world.space, healer.entityId).task?.progress).toBe(30);
-    // Tending the fallen dreamer for longer than a touch takes begins nothing before the rank.
-    world.space.handleTend(fallen.entityId, healer.entityId);
+    // Mend on the fallen dreamer for longer than a touch takes begins nothing before the rank.
+    engage(world.space, fallen.entityId, healer.entityId);
     world.steps(21);
-    world.space.handleTend(patient.entityId, healer.entityId);
+    engage(world.space, patient.entityId, healer.entityId);
     world.steps(1);
     expect(lucidityOf(world.space, healer.entityId).task?.progress).toBe(60);
 
@@ -314,7 +317,7 @@ describe('a gate', () => {
       ranks: expect.arrayContaining([{ teachingId: 'drawing-back', rank: 1, practice: 0 }]),
     });
     world.clock.ms += 1000;
-    world.space.handleTend(fallen.entityId, healer.entityId);
+    engage(world.space, fallen.entityId, healer.entityId);
     world.steps(1);
     // Only the touch after the rank began a raise.
     expect(payloads(await collectMessages(fallen.outbox), 'raising').map((raising) => raising.state)).toEqual(['holding']);

@@ -19,7 +19,7 @@ import {
 } from '@somnio/core';
 import type { Point, Rect } from '@somnio/core';
 import { ORTHO_RIG, clampedScale, worldMovement } from '@/scene/cameraRig';
-import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, PLAQUE_FEET_GAP, renderNamePlaque } from '@/scene/overlayArt';
+import { NAME_PLAQUE, OVERLAY_METRES_PER_PIXEL, PLAQUE_FEET_GAP, overlayMagnification, renderNamePlaque } from '@/scene/overlayArt';
 import { splashSectors } from '@/splash/sectors';
 import { DIP_SECONDS, PRE_LOGIN_CARD, SPLASH_REEL, WORDMARK_BAND_INSET, pathPoint, pathSeconds, shotFraming, stageReel } from '@/splash/reel';
 import type { StagedActor, StagedShot, Viewport } from '@/splash/reel';
@@ -167,19 +167,20 @@ interface Box {
 /**
  * Where a figure is drawn, in CSS pixels: as wide as its body or the name plate under its feet,
  * whichever is wider, from its head down to the plate's foot. The plate hangs in the screen's plane,
- * sized in metres like every overlay.
+ * sized in metres like every overlay, and magnified as the scene magnifies it to stay readable.
  */
 function drawnBox(actor: StagedActor, seconds: number, focus: Point, scale: number, viewport: Viewport): Box {
   const plate = renderNamePlaque(actor.name, actor.kind === 'npc' ? NAME_PLAQUE.npcBackground : NAME_PLAQUE.playerBackground, false);
   const pixelsPerMetre = viewport.height / 2 / scale;
-  const halfWidth = Math.max(actor.radius, (plate.widthPixels * OVERLAY_METRES_PER_PIXEL) / 2) * pixelsPerMetre;
+  const magnification = overlayMagnification(scale, viewport.height);
+  const halfWidth = Math.max(actor.radius, (plate.widthPixels * OVERLAY_METRES_PER_PIXEL * magnification) / 2) * pixelsPerMetre;
   const feet = drawnAt(pathPoint(actor, seconds), 0, focus, scale, viewport);
   const head = drawnAt(pathPoint(actor, seconds), FIGURE_HEIGHT, focus, scale, viewport);
   return {
     left: feet.x - halfWidth,
     right: feet.x + halfWidth,
     top: head.y,
-    bottom: feet.y + (plate.heightPixels * OVERLAY_METRES_PER_PIXEL + PLAQUE_FEET_GAP) * pixelsPerMetre,
+    bottom: feet.y + (plate.heightPixels * OVERLAY_METRES_PER_PIXEL + PLAQUE_FEET_GAP) * magnification * pixelsPerMetre,
   };
 }
 

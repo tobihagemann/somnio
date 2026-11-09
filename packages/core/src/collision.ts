@@ -314,6 +314,22 @@ function someFeatureTouched(collision: SpaceCollision, point: Point, radius: num
   return false;
 }
 
+/**
+ * The part of the collision a circle of up to `reach` centred in the rect can touch, so `isClear`
+ * judges such a circle the same on either and the part tests fewer features.
+ */
+export function collisionNear(collision: SpaceCollision, rect: Rect, reach: number): SpaceCollision {
+  const near = (minX: number, minZ: number, maxX: number, maxZ: number): boolean =>
+    minX <= rect.x + rect.width + reach && maxX >= rect.x - reach && minZ <= rect.z + rect.depth + reach && maxZ >= rect.z - reach;
+  return {
+    sectors: collision.sectors,
+    edges: collision.edges.filter(({ a, b }) => near(Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z))),
+    blockers: collision.blockers.filter((blocker) => near(blocker.x, blocker.z, blocker.x + blocker.width, blocker.z + blocker.depth)),
+    models: collision.models.filter((model) => distanceToRect(model.transform, rect) <= model.reach + reach),
+    issues: [],
+  };
+}
+
 /** True when a circle of `radius` centred on the point lies inside the space and touches no blocker, collider, or ledge. */
 export function isClear(collision: SpaceCollision, point: Point, radius: number): boolean {
   return collision.sectors.some((rect) => rectContains(rect, point, EDGE_TOLERANCE)) && !someFeatureTouched(collision, point, radius, () => true);
@@ -346,6 +362,22 @@ function touches(point: Point, radius: number, bodies: readonly Body[]): boolean
 export function bodyBlocks(from: Point, to: Point, radius: number, body: Body): boolean {
   const after = distance(to, body);
   return after < radius + body.radius - CONTACT_TOLERANCE && after < distance(from, body);
+}
+
+/**
+ * Whether a body stops some step along the straight line from `from` to `to`, by `bodyBlocks`'
+ * rule at any spacing of steps: the line nears the body's centre until its closest approach, so it
+ * is stopped where that stretch comes within contact.
+ */
+export function bodyBlocksLine(from: Point, to: Point, radius: number, body: Body): boolean {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const lengthSquared = dx * dx + dz * dz;
+  if (lengthSquared === 0) return false;
+  const along = ((body.x - from.x) * dx + (body.z - from.z) * dz) / lengthSquared;
+  if (along <= 0) return false;
+  const nearest = Math.min(along, 1);
+  return distance({ x: from.x + dx * nearest, z: from.z + dz * nearest }, body) < radius + body.radius - CONTACT_TOLERANCE;
 }
 
 /**

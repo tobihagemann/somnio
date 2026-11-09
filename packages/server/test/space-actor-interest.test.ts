@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { Sector } from '@somnio/core';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
-import { collectMessages, entities, entityMoves } from './support/frames.ts';
+import { MOONSTONE_IN_HAND, energy, energyOf, engage, lucidity } from './support/combat.ts';
+import { collectMessages, entities, entityMoves, vitalsOutbox } from './support/frames.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
 
 /** West (x 0 to 20), Middle (20 to 40), East (40 to 60): West and East are not neighbours. */
@@ -89,5 +90,53 @@ describe('interest on a line of three sectors', () => {
     // The player left behind in the first sector goes out of view and comes back with it.
     expect(sightings(messages, stayer.entityId)).toEqual(['entity', 'leave:false', 'entity']);
     expect(sightings(await collectMessages(stayer.outbox), walker.entityId)).toEqual(['entity', 'leave:false', 'entity']);
+  });
+});
+
+describe('a target on a line of three sectors', () => {
+  it('drops a target standing out of view', () => {
+    const { clock, space, join } = line();
+    const watcher = vitalsOutbox(clock);
+    const watcherId = attachPlayer(space, { x: 5, z: 10 }, 'watcher', { outbox: watcher.outbox }).entityId;
+    const far = join('far', 45);
+    const near = join('near', 25);
+    space.handleTarget(far.entityId, watcherId);
+    space.handleTarget(near.entityId, watcherId);
+    expect(watcher.sent.map(({ entityId }) => entityId)).toEqual([near.entityId]);
+  });
+
+  it('lets a target go once it leaves view, so it is sent nothing when it comes back', () => {
+    const { clock, space, walk } = line();
+    const watcher = vitalsOutbox(clock);
+    const watcherId = attachPlayer(space, { x: 5, z: 10 }, 'watcher', { outbox: watcher.outbox }).entityId;
+    const walker = attachPlayer(space, { x: 25, z: 10 }, 'walker', {
+      character: { lucidity: lucidity('healer', { touch: 2 }), energy: energy({ healthCurrent: 50 }) },
+      inventory: [MOONSTONE_IN_HAND],
+    });
+    space.handleTarget(walker.entityId, watcherId);
+    walk(walker.entityId, 45);
+    space.step(0.05);
+    // Out of view, the walker mends themselves, so a target kept would be sent the change.
+    space.handleUseItem(MOONSTONE_IN_HAND.slot, walker.entityId);
+    walk(walker.entityId, 25);
+    space.step(0.05);
+    expect(energyOf(space, walker.entityId).healthCurrent).toBeGreaterThan(50);
+    expect(watcher.sent.map(({ entityId }) => entityId)).toEqual([walker.entityId]);
+  });
+
+  it('switches Mend off once its target leaves view, so the Healer mends them no more when they are back and targeted again', () => {
+    const { space, walk } = line();
+    const healerId = attachPlayer(space, { x: 5, z: 10 }, 'healer', {
+      character: { lucidity: lucidity('healer', { touch: 2 }) },
+      inventory: [MOONSTONE_IN_HAND],
+    }).entityId;
+    const patient = attachPlayer(space, { x: 6, z: 10 }, 'patient', { character: { energy: energy({ healthCurrent: 50 }) } });
+    engage(space, patient.entityId, healerId);
+    walk(patient.entityId, 45);
+    space.step(0.05);
+    walk(patient.entityId, 6);
+    space.handleTarget(patient.entityId, healerId);
+    space.step(0.05);
+    expect(energyOf(space, patient.entityId).healthCurrent).toBe(50);
   });
 });

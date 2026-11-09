@@ -30,10 +30,11 @@
     },
     "tag": "blow"
   },
-  "blow-air": {
+  "blow-miss": {
     "payload": {
-      "attackerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
-      "hit": false
+      "attackerId": "monster:7",
+      "hit": false,
+      "targetId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c"
     },
     "tag": "blow"
   },
@@ -133,8 +134,21 @@
     },
     "tag": "energy"
   },
+  "engage-off": {
+    "payload": {
+      "on": false
+    },
+    "tag": "engage"
+  },
+  "engage-on": {
+    "payload": {
+      "on": true
+    },
+    "tag": "engage"
+  },
   "enterSpace": {
     "payload": {
+      "people": "umbrae",
       "selfId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
       "spaceId": "outdoors",
       "worldSeconds": 14515243200.5
@@ -181,7 +195,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 16
+      "protocolVersion": 17
     },
     "tag": "hello"
   },
@@ -586,31 +600,21 @@
     },
     "tag": "study"
   },
-  "swing": {
-    "payload": {
-      "targetId": "monster:7"
-    },
-    "tag": "swing"
-  },
-  "swing-air": {
-    "payload": {},
-    "tag": "swing"
-  },
   "talk": {
     "payload": {
       "npcId": "npc:EdariaLibrary/libus"
     },
     "tag": "talk"
   },
-  "tend": {
+  "target": {
     "payload": {
-      "targetId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      "targetId": "monster:7"
     },
-    "tag": "tend"
+    "tag": "target"
   },
-  "tend-no-one": {
+  "target-none": {
     "payload": {},
-    "tag": "tend"
+    "tag": "target"
   },
   "useDoor": {
     "payload": {
@@ -624,6 +628,13 @@
       "slot": 2
     },
     "tag": "useItem"
+  },
+  "vitals": {
+    "payload": {
+      "entityId": "monster:7",
+      "health": 0.42
+    },
+    "tag": "vitals"
   },
   "wake": {
     "payload": {},

@@ -3,12 +3,13 @@ import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { AppShell, FallenNotice, GamePanels, Overlays, ServicePanel, detectDesktop, element, field } from '@/ui';
-import { catalogTables, setLocale } from '@/i18n';
+import { AppShell, FallenNotice, Overlays, ServicePanel, UPRIGHT_PHONE_QUERY, element, field } from '@/ui';
+import { setLocale } from '@/i18n';
+import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
-import { mouseFacingHeading } from '@/client';
 import type { RegistrationForm } from '@/client';
-import { clamp, fullPools, headingRadians } from '@somnio/core';
+import { TAP_SLOP_PX } from '@/client';
+import { clamp, distance, fullPools, headingFromVector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { CharacterSummaryMessage, InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
@@ -26,15 +27,6 @@ import type { ChatLine, ClientEntity } from '@/client';
  */
 
 const chromePath = resolve(WEB_ROOT, 'src/ui/chrome.css');
-
-function noopCallbacks(): ConstructorParameters<typeof GamePanels>[0] {
-  return {
-    onSubmitChat: () => {},
-    onChatFocusChange: () => {},
-    onActivateItem: () => {},
-    onFloatingHoverChange: () => {},
-  };
-}
 
 function overlayCallbacks(): ConstructorParameters<typeof Overlays>[0] {
   return {
@@ -65,8 +57,8 @@ function joinedLines(count: number): ChatLine[] {
  * ancestor leaves it without a box, it measures nothing and takes no scroll, and once shown it is
  * back at its old offset.
  */
-function laidOutScrollback(panels: GamePanels): HTMLElement {
-  const scrollback = panels.root.querySelector('.chat-scrollback') as HTMLElement;
+function laidOutScrollback(root: HTMLElement): HTMLElement {
+  const scrollback = root.querySelector('.chat-scrollback') as HTMLElement;
   const boxHeight = 180;
   const rowHeight = 30;
   const boxed = () => scrollback.closest('.hidden') === null;
@@ -134,22 +126,16 @@ describe('panel chrome metrics', () => {
     expect(css).not.toMatch(/\.overlay-title::before\s*\{[^}]*scaleX\(-1\)/);
   });
 
-  it('lays the chat panel out as a fixed-width column with a gap', () => {
-    const panel = /\n\.chat-panel\s*\{([^}]*)\}/.exec(css)?.[1];
-    expect(panel).toBeDefined();
-    expect(panel).toContain('width: 380px');
-    // Without the gap the scrollback's 3px line margin is the only thing between the history and
-    // the input.
-    expect(panel).toContain('gap: 8px');
-
-    const field = /\.chat-panel \.fantasy-field\s*\{([^}]*)\}/.exec(css)?.[1];
-    // The designed text area is 44px: a 52px field box, 6px of chrome padding around it, and 4px
-    // of container inset taken off the inside. A 52px box instead leaves 38px of text — a whole
-    // row less, which makes the field look shallow.
-    expect(field).toContain('height: 64px');
-    expect(field).toContain('padding: 9px');
-    // 44 / 16 is exactly 2.75 rows; `line-height: normal` is ~15.6 and drifts off that count.
-    expect(field).toContain('line-height: 16px');
+  /** Phones play on a layout of their own, so a desktop's rules stay as they are. */
+  it('gives a finger the play field, controls a finger can hit, and fields a phone does not zoom into', () => {
+    const canvas = /\n#somnio-canvas\s*\{([^}]*)\}/.exec(css)?.[1];
+    // Without it the browser takes a drag as a scroll and a pinch as a page zoom, and cancels the pointer.
+    expect(canvas).toContain('touch-action: none');
+    expect(canvas).toContain('-webkit-touch-callout: none');
+    const coarse = /\n@media \(pointer: coarse\) \{([\s\S]*?)\n\}/.exec(css)?.[1];
+    // Under 16px, iOS zooms the page into the chat field a tap focuses.
+    expect(/\n {2}\.fantasy-field\s*\{([^}]*)\}/.exec(coarse ?? '')?.[1]).toContain('font-size: 16px');
+    expect(/\n {2}\.fantasy-button--compact\s*\{([^}]*)\}/.exec(coarse ?? '')?.[1]).toContain('min-height: 44px');
   });
 
   /**
@@ -172,11 +158,12 @@ describe('panel chrome metrics', () => {
     expect(/\n\.overlay-scrim\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('background: rgb(0 0 0 / 0.55)');
   });
 
-  it('narrows the fallen notice to keep clear of the Players panel and the HUD', () => {
-    expect(/\n\.trailing-column\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('width: var(--somnio-trailing-column-width)');
+  it("narrows the fallen notice to keep clear of the player's own frame", () => {
+    const hud = readFileSync(resolve(WEB_ROOT, 'src/ui/hud.css'), 'utf8');
+    expect(/\n\.hud-unit--self\s*\{([^}]*)\}/.exec(hud)?.[1]).toContain('width: var(--somnio-self-frame-width)');
     const width = /\n\.fallen-notice\s*\{[^}]*\n\s*width: ([^;]*);/.exec(css)?.[1];
     expect(width).toMatch(/^min\(380px, calc\(100% - 2 \*/);
-    expect(width).toContain('var(--somnio-trailing-column-width)');
+    expect(width).toContain('var(--somnio-self-frame-width)');
     // Without the floor the confirmation's buttons spill out of the plate in the narrowest windows.
     expect(/\n\.fallen-notice\s*\{([^}]*)\}/.exec(css)?.[1]).toContain('min-width: min-content');
   });
@@ -200,420 +187,6 @@ describe('the page head', () => {
     expect(links.find((link) => link.includes('somnio-icon-dark-64.png'))).toContain('media="(prefers-color-scheme: dark)"');
     expect(links.find((link) => link.includes('rel="apple-touch-icon"'))).toContain('href="/assets/Branding/somnio-icon-180.png"');
     for (const link of links) expect(link).toContain('href="/assets/Branding/');
-  });
-});
-
-describe('the four floating panels', () => {
-  it('renders HUD, chat, players, and items', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    expect(panels.root.querySelectorAll('.floating')).toHaveLength(4);
-    expect(panels.root.querySelector('.chat-scrollback')).not.toBeNull();
-    expect(panels.root.querySelector('.trailing-list--players')).not.toBeNull();
-    expect(panels.root.querySelector('.trailing-list--items')).not.toBeNull();
-    expect(panels.root.querySelectorAll('.hud-bar__track')).toHaveLength(3);
-  });
-
-  /** In a short window one of a side's columns gives way to the other only while they share one stack. */
-  it("stacks each side's two columns, the top one first, and lets the chat and the players give way", () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    const panelIn = (column: Element): string | undefined =>
-      ['hud-panel', 'chat-panel', 'trailing-list--players', 'trailing-list--items'].find((name) => column.querySelector(`.${name}`) !== null);
-    const stacks = [...panels.root.querySelectorAll('.floating-stack')].map((stack) =>
-      [...stack.children].map((column) => [panelIn(column), column.classList.contains('floating--yields')]),
-    );
-    expect(stacks).toEqual([
-      [
-        ['hud-panel', false],
-        ['chat-panel', true],
-      ],
-      [
-        ['trailing-list--players', true],
-        ['trailing-list--items', false],
-      ],
-    ]);
-  });
-
-  /** Speech bubbles keep clear of what this lists; a panel left out would cover them. */
-  it('lists every panel body and toggle as covering the play field', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    const shown = [...panels.root.querySelectorAll('.floating')].flatMap((column) => [...column.children]);
-    expect(shown).toHaveLength(7);
-    expect(new Set(panels.occluders)).toEqual(new Set(shown));
-  });
-
-  /** A bar is a bare track: its name is carried by `title` and `aria-label`, never drawn. */
-  it('names the energy bars without rendering text beside them', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    const tracks = [...panels.root.querySelectorAll('.hud-bar__track')];
-    expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['Health', 'Balance', 'Spirit']);
-    for (const track of tracks) expect(track.textContent).toBe('');
-
-    panels.renderEnergy(
-      {
-        healthCurrent: 30,
-        healthMax: 60,
-        balanceCurrent: 1,
-        balanceMax: 2,
-        spiritCurrent: 5,
-        spiritMax: 5,
-      },
-      false,
-    );
-    expect(tracks[0]?.getAttribute('aria-label')).toBe('Health 30/60');
-    expect(tracks[0]?.getAttribute('title')).toBe('Health 30/60');
-    // Each pool reads its own pair: three distinct readings, so a swapped pair cannot pass.
-    expect(tracks.map((node) => node.getAttribute('title'))).toEqual(['Health 30/60', 'Balance 1/2', 'Spirit 5/5']);
-  });
-
-  /** The German names of the three pools, where health is Gestalt rather than a literal translation. */
-  it('names the energy bars Gestalt, Gleichgewicht, and Geist in German', () => {
-    setLocale('de');
-    try {
-      const panels = new GamePanels(noopCallbacks(), catalogTables, 'de');
-      const tracks = [...panels.root.querySelectorAll('.hud-bar__track')];
-      expect(tracks.map((node) => node.getAttribute('aria-label'))).toEqual(['Gestalt', 'Gleichgewicht', 'Geist']);
-    } finally {
-      setLocale('en');
-    }
-  });
-
-  /**
-   * The panel toggles render a glyph with the text only as a tooltip, so the label has to be
-   * carried out-of-band or the accessible name is lost with the visible text.
-   */
-  it('renders the three panel toggles as named icon buttons', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    const toggles = [...panels.root.querySelectorAll('.fantasy-button--compact')];
-    expect(toggles.map((node) => node.getAttribute('aria-label'))).toEqual(['Chat', 'Players', 'Items']);
-    for (const toggle of toggles) {
-      expect(toggle.textContent).toBe('');
-      expect(toggle.querySelector('svg.fantasy-icon path')?.getAttribute('d')).toBeTruthy();
-      expect(toggle.getAttribute('title')).toBe(toggle.getAttribute('aria-label'));
-    }
-  });
-
-  it('toggles its panel body on click', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const bodies = {
-      Chat: panels.root.querySelector('.chat-panel') as HTMLElement,
-      Players: panels.root.querySelector('.trailing-list--players')?.closest('.fantasy-panel') as HTMLElement,
-      Items: panels.root.querySelector('.trailing-list--items')?.closest('.fantasy-panel') as HTMLElement,
-    };
-    const hiddenLabels = () =>
-      Object.entries(bodies)
-        .filter(([, body]) => body.classList.contains('hidden'))
-        .map(([label]) => label);
-
-    for (const label of Object.keys(bodies)) {
-      // Scoped to the button: each panel's list or log, and the chat input, carry its toggle's accessible name.
-      const toggle = panels.root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
-      toggle.click();
-      expect(hiddenLabels()).toEqual([label]);
-      toggle.click();
-      expect(hiddenLabels()).toEqual([]);
-    }
-  });
-
-  it('reopens the chat at the newest line when lines were said while it was collapsed', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const scrollback = laidOutScrollback(panels);
-    const toggle = panels.root.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
-    const history = joinedLines(20);
-    panels.renderChat(history);
-    expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
-
-    toggle.click();
-    history.push(...joinedLines(2));
-    panels.renderChat(history);
-    toggle.click();
-
-    expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
-  });
-
-  it('reopens the chat where a reader scrolled back through it left it', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const scrollback = laidOutScrollback(panels);
-    const toggle = panels.root.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
-    const history = joinedLines(20);
-    panels.renderChat(history);
-    scrollback.scrollTop = 120;
-
-    toggle.click();
-    history.push(...joinedLines(2));
-    panels.renderChat(history);
-    toggle.click();
-
-    expect(scrollback.scrollTop).toBe(120);
-  });
-
-  it('scales each energy bar by its own maximum', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderEnergy(
-      {
-        healthCurrent: 50,
-        healthMax: 100,
-        balanceCurrent: 3,
-        balanceMax: 4,
-        spiritCurrent: 0,
-        spiritMax: 10,
-      },
-      false,
-    );
-
-    const widths = [...panels.root.querySelectorAll('.hud-bar__fill')].map((node) => (node as HTMLElement).style.width);
-    // Pixels against the 148px span, not a percentage of the 150px track: a percentage runs the
-    // full bar one pixel past the track's trailing seam.
-    expect(widths).toEqual(['74px', '111px', '0px']);
-  });
-
-  it('collapses a bar whose maximum arrives as zero instead of rendering NaN', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderEnergy(
-      {
-        healthCurrent: 5,
-        healthMax: 0,
-        balanceCurrent: 0,
-        balanceMax: 1,
-        spiritCurrent: 0,
-        spiritMax: 1,
-      },
-      false,
-    );
-
-    const first = panels.root.querySelector('.hud-bar__fill') as HTMLElement;
-    expect(first.style.width).toBe('0px');
-  });
-
-  it('inserts chat as text, never as markup', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const hostile: ChatLine[] = [{ kind: 'spokenByPeer', senderName: '<img src=x onerror=alert(1)>', message: '<script>x</script>', speech: 'say' }];
-
-    panels.renderChat(hostile);
-
-    // The last row, not the first: the scrollback synthesizes the startup greeting ahead of the
-    // delivered lines.
-    const rows = panels.root.querySelectorAll('.chat-line');
-    const row = rows[rows.length - 1];
-    // Peer names and chat text are attacker-chosen, and a stored session token makes an injected
-    // script materially worse than a defaced panel.
-    expect(panels.root.querySelector('img')).toBeNull();
-    expect(panels.root.querySelector('script')).toBeNull();
-    expect(row?.textContent).toContain('<img src=x onerror=alert(1)>');
-  });
-
-  /** The shell renders on every `energy` frame, and replacing the lines takes a reader's text selection with them. */
-  it('keeps the chat lines across a render that brought none, and replaces them when one arrived', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const rows = (): Element[] => [...panels.root.querySelectorAll('.chat-line')];
-    const history: ChatLine[] = [{ kind: 'joined', playerName: 'Saibot' }];
-
-    panels.renderChat(history);
-    const shown = rows();
-    panels.renderChat(history);
-    expect(rows()).toEqual(shown);
-    expect(rows()[0]).toBe(shown[0]);
-
-    history.push({ kind: 'joined', playerName: 'Bren' });
-    panels.renderChat(history);
-    expect(rows().map((row) => row.textContent)).toEqual(['Welcome to Somnio!', 'Saibot entered the game.', 'Bren entered the game.']);
-
-    // At its cap the history keeps its length while its oldest line gives way to the newest.
-    history.shift();
-    history.push({ kind: 'left', playerName: 'Saibot' });
-    panels.renderChat(history);
-    expect(rows().map((row) => row.textContent)).toEqual(['Welcome to Somnio!', 'Bren entered the game.', 'Saibot left the game.']);
-  });
-
-  /**
-   * The chat panel always opens with this line, prepended at render time rather than stored.
-   * Synthesized at render time, so the scrollback cap can never trim it away.
-   */
-  it('always opens the scrollback with the startup greeting', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderChat([]);
-    expect(panels.root.querySelector('.chat-line')?.textContent).toBe('Welcome to Somnio!');
-
-    panels.renderChat([{ kind: 'joined', playerName: 'Saibot' }]);
-    const rows = panels.root.querySelectorAll('.chat-line');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toBe('Welcome to Somnio!');
-  });
-
-  it('inserts a player name as text, never as markup', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderPlayers(['<b>bold</b>']);
-
-    const row = panels.root.querySelector('.trailing-list--players .list-row');
-    expect(row?.querySelector('b')).toBeNull();
-    expect(row?.textContent).toBe('<b>bold</b>');
-  });
-
-  it('labels inventory rows from the item table, counts the purse, and marks the equipped one', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const rows: InventoryRowMessage[] = [
-      { slot: 0, itemId: 'purse', quantity: 107 },
-      { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
-      { slot: 2, itemId: 'cudgel', quantity: 1, equippedHand: 'left' },
-      { slot: 3, itemId: 'cudgel', quantity: 1 },
-    ];
-
-    panels.renderItems(rows);
-
-    const rowNodes = [...panels.root.querySelectorAll('.trailing-list--items .list-row')];
-    expect(rowNodes.map((node) => node.querySelector('.list-row__name')?.textContent)).toEqual(['Purse', 'Cudgel', 'Cudgel', 'Cudgel']);
-    // The purse shows its coins; an equipped row marks the hand rather than restyling the row, and
-    // the player never picks one.
-    expect(rowNodes.map((node) => node.querySelector('.list-row__marker')?.textContent)).toEqual(['107', '[R]', '[L]', '']);
-  });
-
-  /** A blank row tells an operator nothing; the raw id names the item the table is missing. */
-  it('renders the raw id of an item the item table does not know', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderItems([{ slot: 0, itemId: 'lantern', quantity: 1 }]);
-
-    expect(panels.root.querySelector('.trailing-list--items .list-row__name')?.textContent).toBe('lantern');
-  });
-
-  it('hands the activated row to the callback on a double click and on Enter', () => {
-    const activated: InventoryRowMessage[] = [];
-    const panels = new GamePanels({ ...noopCallbacks(), onActivateItem: (row) => activated.push(row) }, catalogTables, 'en');
-    const purse = { slot: 0, itemId: 'purse', quantity: 7 };
-    panels.renderItems([purse]);
-    const node = panels.root.querySelector('.trailing-list--items .list-row') as HTMLElement;
-
-    node.dispatchEvent(new Event('dblclick'));
-    node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-
-    expect(activated).toEqual([purse, purse]);
-  });
-
-  /** The shell renders on every `energy` frame, and a row replaced between two clicks never sees the double click. */
-  it('keeps its rows across a render of the same inventory, and replaces them for a new one', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const rows = [{ slot: 0, itemId: 'moonstone', quantity: 1 }];
-    const row = (): Element | null => panels.root.querySelector('.trailing-list--items .list-row');
-
-    panels.renderItems(rows);
-    const first = row();
-    panels.renderItems(rows);
-    expect(row()).toBe(first);
-
-    panels.renderItems([{ slot: 0, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }]);
-    expect(row()).not.toBe(first);
-    expect(row()?.querySelector('.list-row__marker')?.textContent).toBe('[R]');
-  });
-
-  /** Both trailing lists carry a count footer. */
-  it('renders the Players and Items count footers', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-
-    panels.renderPlayers(['Greta', 'Tobi']);
-    panels.renderItems([
-      { slot: 0, itemId: 'purse', quantity: 0 },
-      { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'left' },
-      { slot: 2, itemId: 'lantern', quantity: 1 },
-    ]);
-
-    const footers = [...panels.root.querySelectorAll('.list-footer')].map((node) => node.textContent);
-    expect(footers).toEqual(['Players: 2', 'Items: 3']);
-  });
-
-  /** The rule between scrollback and input has no counterpart in `chatPanel`. */
-  it('puts no divider between the scrollback and the chat input', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    expect(panels.root.querySelector('.chat-panel .fantasy-divider')).toBeNull();
-  });
-
-  /**
-   * `ReturnSubmittingTextView` calls `makeFirstResponder(nil)` after `onSubmit`, and the blank case
-   * takes the same path — the blur sits outside the guard. Without it the gameplay gate stays closed
-   * on `isChatInputFocused` and WASD is dead after every line the player sends.
-   */
-  it.each([
-    { label: 'a sent line', text: 'hallo', submits: ['hallo'] },
-    { label: 'a blank line', text: '   ', submits: [] },
-  ])('hands the keyboard back after Enter on $label', ({ text, submits }) => {
-    const submitted: string[] = [];
-    const focusEvents: boolean[] = [];
-    const panels = new GamePanels(
-      {
-        ...noopCallbacks(),
-        onSubmitChat: (line) => submitted.push(line),
-        onChatFocusChange: (focused) => focusEvents.push(focused),
-      },
-      catalogTables,
-      'en',
-    );
-    // `blur()` only fires the event when the element actually holds focus, so it has to be in the
-    // document and focused first — a detached element would pass this vacuously.
-    document.body.append(panels.root);
-    panels.chatInput.focus();
-    panels.chatInput.value = text;
-
-    panels.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-
-    expect(submitted).toEqual(submits);
-    expect(panels.chatInput.value).toBe('');
-    expect(focusEvents).toEqual([true, false]);
-    expect(document.activeElement).not.toBe(panels.chatInput);
-    panels.root.remove();
-  });
-
-  it('swallows Shift-Enter rather than inserting a line break', () => {
-    const submitted: string[] = [];
-    const panels = new GamePanels({ ...noopCallbacks(), onSubmitChat: (text) => submitted.push(text) }, catalogTables, 'en');
-    document.body.append(panels.root);
-    panels.chatInput.focus();
-    panels.chatInput.value = 'zwei';
-
-    panels.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
-
-    expect(submitted).toEqual([]);
-    // Focus is kept — the player is still composing — but the keystroke inserts nothing, because a
-    // newline reaches no renderer: the bubble wrap tokenizes on spaces and canvas text drops it.
-    expect(document.activeElement).toBe(panels.chatInput);
-    expect(panels.chatInput.value).toBe('zwei');
-    panels.root.remove();
-  });
-
-  it('teaches the whisper and yell commands in the empty chat field', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const placeholder = panels.chatInput.getAttribute('placeholder') ?? '';
-    expect(placeholder).toContain('/w');
-    expect(placeholder).toContain('/y');
-  });
-
-  it('reports chat focus so the caller can close the gameplay gate', () => {
-    const focusEvents: boolean[] = [];
-    const panels = new GamePanels({ ...noopCallbacks(), onChatFocusChange: (focused) => focusEvents.push(focused) }, catalogTables, 'en');
-
-    panels.chatInput.dispatchEvent(new FocusEvent('focus'));
-    panels.chatInput.dispatchEvent(new FocusEvent('blur'));
-
-    expect(focusEvents).toEqual([true, false]);
-  });
-
-  it('reports hover as an aggregate, so sliding between panels does not flicker', () => {
-    const hovers: boolean[] = [];
-    const panels = new GamePanels({ ...noopCallbacks(), onFloatingHoverChange: (hovering) => hovers.push(hovering) }, catalogTables, 'en');
-    const [first, second] = [...panels.root.querySelectorAll('.floating')];
-
-    // Enter the second before leaving the first — the reorder a real cursor produces.
-    first?.dispatchEvent(new Event('pointerenter'));
-    second?.dispatchEvent(new Event('pointerenter'));
-    first?.dispatchEvent(new Event('pointerleave'));
-
-    expect(hovers).toEqual([true]);
   });
 });
 
@@ -796,6 +369,15 @@ describe('field helpers', () => {
   });
 });
 
+/**
+ * Lays the window out at `width` x `height` and tells the page, as turning a phone does. It goes
+ * through happy-dom's own viewport, which its media queries read. Redefining `innerWidth` on the
+ * global reaches none of them.
+ */
+function layOut(width: number, height: number): void {
+  (window as unknown as { happyDOM: { setViewport: (viewport: { width: number; height: number }) => void } }).happyDOM.setViewport({ width, height });
+}
+
 describe('the app shell in a host that cannot render', () => {
   let container: HTMLElement;
 
@@ -809,7 +391,7 @@ describe('the app shell in a host that cannot render', () => {
   });
 
   it('shows the WebGL notice and never a blank canvas', () => {
-    new AppShell({ container, capabilities: { hasWebGL: false, isDesktop: true } });
+    new AppShell({ container, capabilities: { hasWebGL: false } });
 
     const notice = container.querySelector('.blocking-notice:not(.hidden)');
     expect(notice).not.toBeNull();
@@ -817,26 +399,25 @@ describe('the app shell in a host that cannot render', () => {
     expect(container.querySelector('.splash-wordmark')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('shows the desktop-only notice at a handheld viewport', () => {
-    new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: false } });
+  it('shows only the WebGL notice on an upright phone, which turning would not help', () => {
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
+    const { innerWidth, innerHeight } = window;
+    layOut(390, 844);
+    try {
+      expect(window.matchMedia(UPRIGHT_PHONE_QUERY).matches).toBe(true);
+      new AppShell({ container, capabilities: { hasWebGL: false } });
 
-    const notice = container.querySelector('.blocking-notice:not(.hidden)');
-    expect(notice?.textContent).toContain('keyboard');
-    expect(container.querySelector('.splash-wordmark')?.classList.contains('hidden')).toBe(false);
-  });
-
-  it('prefers the mobile notice over the WebGL one when both apply', () => {
-    // A phone with no WebGL is still first and foremost the wrong device; telling the player to try
-    // a different browser would be advice they cannot act on.
-    new AppShell({ container, capabilities: { hasWebGL: false, isDesktop: false } });
-
-    const visible = [...container.querySelectorAll('.blocking-notice:not(.hidden)')];
-    expect(visible).toHaveLength(1);
-    expect(visible[0]?.textContent).toContain('keyboard');
+      const visible = [...container.querySelectorAll('.blocking-notice:not(.hidden)')];
+      expect(visible).toHaveLength(1);
+      expect(visible[0]?.textContent).toContain('WebGL');
+    } finally {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
+      layOut(innerWidth, innerHeight);
+    }
   });
 
   it('builds no scene when the host cannot render one', () => {
-    const shell = new AppShell({ container, capabilities: { hasWebGL: false, isDesktop: true } });
+    const shell = new AppShell({ container, capabilities: { hasWebGL: false } });
 
     // The controller falls back to the no-op surface, so nothing downstream has to null-check.
     expect(shell.scene).toBeUndefined();
@@ -865,7 +446,7 @@ describe('the login overlay across an authentication attempt', () => {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({
       container,
-      capabilities: { hasWebGL: true, isDesktop: true },
+      capabilities: { hasWebGL: true },
       startRendering: false,
       socketFactory: factory,
     });
@@ -949,7 +530,7 @@ describe('the login overlay across an authentication attempt', () => {
     expect(shell.controller.connectionState).toBe('disconnected');
     // The panels stay hidden until the player is in the world, so the reason is said on the card.
     expect(loginStatus()).toBe('Bad credentials.');
-    expect(shell.panels.root.classList.contains('hidden')).toBe(true);
+    expect(shell.hud.root.classList.contains('hidden')).toBe(true);
   });
 
   /** A status left standing while the next attempt is under way reads as that attempt's answer. */
@@ -1057,7 +638,7 @@ describe('the login overlay across an authentication attempt', () => {
     const { shell, socket } = loginShell();
     const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
     const shown = () => ({
-      panels: !shell.panels.root.classList.contains('hidden'),
+      panels: !shell.hud.root.classList.contains('hidden'),
       veil: !container.querySelector('.splash-veil')!.classList.contains('hidden'),
       wordmark: !container.querySelector('.splash-wordmark')!.classList.contains('hidden'),
       // Takes the in-game menus' own scrim away only while the veil darkens instead.
@@ -1120,7 +701,7 @@ describe('the login overlay across an authentication attempt', () => {
 
   it('shows the newest chat line once the panels appear, though the lines came while they were hidden', () => {
     const { shell, socket } = loginShell();
-    const scrollback = laidOutScrollback(shell.panels);
+    const scrollback = laidOutScrollback(shell.hud.root);
     const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
     submitLogin(shell, container);
     socket().open();
@@ -1133,6 +714,28 @@ describe('the login overlay across an authentication attempt', () => {
     deliver(entityFrame());
 
     expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
+  });
+
+  /** A resume skips the card, so the join itself names the people the own frame draws, whatever this browser stored. */
+  it("draws the player's people sigil on their own frame after a resume in a browser that never listed the dreamer", () => {
+    localStorage.clear();
+    localStorage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    try {
+      const { socket } = loginShell();
+      const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
+      socket().open();
+      deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
+      deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+      deliver(enterSpaceFrame('outdoors', 0, 'umbrae'));
+      deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+      deliver(entityFrame());
+
+      expect(container.querySelector<HTMLElement>('.hud-unit--self .hud-sigil .hud-glyph')?.style.getPropertyValue('--hud-glyph')).toBe(
+        PEOPLE_SIGILS.umbrae.image,
+      );
+    } finally {
+      localStorage.removeItem('somnio.sessionToken');
+    }
   });
 
   /** A remembered session resumes with no card up, so its retry is said under the wordmark. */
@@ -1204,46 +807,87 @@ describe('the login overlay across an authentication attempt', () => {
   });
 });
 
-describe('desktop detection', () => {
-  const nativeWidth = window.innerWidth;
+describe('a phone held upright', () => {
+  const { innerWidth, innerHeight } = window;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = element('div');
+    document.body.append(container);
+  });
 
   afterEach(() => {
-    // happy-dom's navigator is shared across tests in the file, so the stub has to be undone or
-    // every later `matchMedia('(pointer: coarse)')` keeps answering true.
+    container.remove();
+    // happy-dom's navigator and window are shared across tests in the file, so the stubs have to be
+    // undone or every later `matchMedia` keeps answering for an upright phone.
     Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
-    Object.defineProperty(window, 'innerWidth', { value: nativeWidth, configurable: true });
+    layOut(innerWidth, innerHeight);
   });
 
-  it('treats a wide viewport as desktop even with a coarse pointer', () => {
-    // A touchscreen laptop has a coarse pointer and a real keyboard, so the pointer alone is not
-    // enough to send the player away.
-    //
-    // The stub is what makes this test mean what its name says: happy-dom derives
-    // `(pointer: coarse)` from `navigator.maxTouchPoints`, which defaults to 0, so without it the
-    // coarse branch is never taken and the assertion would hold for `return true`.
+  const turnCard = (): Element | undefined =>
+    [...container.querySelectorAll('.blocking-notice:not(.hidden)')].find((notice) => notice.textContent?.includes('Turn your phone sideways.'));
+
+  /**
+   * The stub is what makes a coarse pointer here: happy-dom derives `(pointer: coarse)` from
+   * `navigator.maxTouchPoints`, which defaults to 0.
+   */
+  function phone(width: number, height: number): AppShell {
     Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
-    expect(window.matchMedia('(pointer: coarse)').matches).toBe(true);
+    layOut(width, height);
+    return new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false });
+  }
 
-    expect(detectDesktop()).toBe(true);
+  it('is asked to turn, and plays once it is on its side', () => {
+    const shell = phone(390, 844);
+    expect(turnCard()?.textContent).toContain('tap');
+    expect(shell.scene).toBeDefined();
+
+    layOut(844, 390);
+    expect(turnCard()).toBeUndefined();
+
+    layOut(390, 844);
+    expect(turnCard()).toBeDefined();
   });
 
-  it('sends a coarse-pointer handheld to the desktop-only notice', () => {
-    // The other half of the predicate. Without a case that asserts `false`, every assertion in
-    // this block holds for `return true` — and so does inverting the query to `(pointer: fine)`,
-    // which would send desktop players away and let phones in.
-    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
-    Object.defineProperty(window, 'innerWidth', { value: 480, configurable: true });
-
-    expect(detectDesktop()).toBe(false);
+  it('plays straight away on its side', () => {
+    phone(844, 390);
+    expect(turnCard()).toBeUndefined();
   });
 
-  it('treats a narrow window with a fine pointer as desktop', () => {
-    // A desktop browser dragged narrow is still a desktop: the viewport alone must not decide,
-    // or a resized window loses its keyboard controls mid-session.
-    Object.defineProperty(window, 'innerWidth', { value: 480, configurable: true });
+  it.each([
+    ['a tablet held upright', 768, 1024, 1],
+    ['a narrow desktop window', 390, 844, 0],
+  ])('leaves %s to play', (_label, width, height, touchPoints) => {
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: touchPoints, configurable: true });
+    layOut(width, height);
+    new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false });
+    expect(container.querySelector('.blocking-notice:not(.hidden)')).toBeNull();
+  });
+});
 
-    expect(window.matchMedia('(pointer: coarse)').matches).toBe(false);
-    expect(detectDesktop()).toBe(true);
+describe("a mouse's HUD as the window is resized", () => {
+  const { innerWidth, innerHeight } = window;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = element('div');
+    document.body.append(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+    layOut(innerWidth, innerHeight);
+  });
+
+  it('shrinks to fit a small window and grows back to its size in a large one', () => {
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false });
+    const scale = (): string => shell.hud.root.style.getPropertyValue('--hud-scale');
+
+    layOut(560, 360);
+    expect(scale()).toBe('0.8');
+
+    layOut(1280, 720);
+    expect(scale()).toBe('1');
   });
 });
 
@@ -1268,7 +912,7 @@ describe("the world's flames", () => {
       if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(list, 'matches', { value: reduceMotion });
       return list;
     });
-    const scene = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false }).scene!;
+    const scene = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false }).scene!;
     scene.addSector(interiorSector('EdariaInn', { placements: [{ id: 'candle-1', modelId: 'candle', x: 2, z: 2, yaw: 0, elevation: 0 }] }));
     return [0.2, 0.2, 0.2].map((dt) => {
       scene.tick(dt);
@@ -1308,7 +952,7 @@ describe('the registration form validates before it sends', () => {
     let lastForm: RegistrationForm | undefined;
     const shell = new AppShell({
       container,
-      capabilities: { hasWebGL: true, isDesktop: true },
+      capabilities: { hasWebGL: true },
       startRendering: false,
       socketFactory: fakeSocketFactory().factory,
     });
@@ -1506,7 +1150,7 @@ describe("the game menu's Log Out Other Browsers", () => {
   /** A login answered up to the join, with the player's own body placed only when `placed`, and `others` other browsers remembered. */
   function joined(placed: boolean, others = 1) {
     const { factory, latest } = fakeSocketFactory();
-    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
     shell.controller.beginSession({ kind: 'login', credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: false } });
     const socket = latest();
     const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
@@ -1604,7 +1248,7 @@ describe('the character card', () => {
   /** A login answered up to the card, listing `characters`. */
   function onCard(characters: CharacterSummaryMessage[]) {
     const { factory, latest } = fakeSocketFactory();
-    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
     shell.controller.beginSession({ kind: 'login', credentials: { email: 'saibot@example.com', password: 'hunter2-long', rememberMe: false } });
     const socket = latest();
     const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
@@ -1791,47 +1435,6 @@ describe('overlay focus moves on entry, not on every repaint', () => {
     shell.overlays.present({ kind: 'registration' });
     expect(document.activeElement).not.toBe(shell.overlays.loginEmail);
     expect((document.activeElement as HTMLInputElement | null)?.tagName).toBe('INPUT');
-  });
-});
-
-describe('the HUD beyond its bars', () => {
-  const energy = { healthCurrent: 30, healthMax: 60, balanceCurrent: 4, balanceMax: 100, spiritCurrent: 5, spiritMax: 5 };
-
-  it('marks the balance bar, and names the state, only while winded', () => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    const tracks = (): Element[] => [...panels.root.querySelectorAll('.hud-bar__track')];
-
-    panels.renderEnergy(energy, true);
-    expect(tracks().map((track) => track.classList.contains('hud-bar__track--winded'))).toEqual([false, true, false]);
-    expect(tracks().map((track) => track.getAttribute('aria-label'))).toEqual(['Health 30/60', 'Balance 4/100, winded', 'Spirit 5/5']);
-
-    panels.renderEnergy({ ...energy, balanceCurrent: 15 }, false);
-    expect(tracks().some((track) => track.classList.contains('hud-bar__track--winded'))).toBe(false);
-    expect(tracks()[1]?.getAttribute('title')).toBe('Balance 15/100');
-  });
-
-  it.each<[string, LucidityMessage, string[]]>([
-    ['a dreamer with no role', { ranks: [] }, ['No role yet']],
-    ['a dreamer on a trial', { ranks: [], task: { role: 'healer', progress: 0 } }, ['No role yet', 'Task: 0 of 1']],
-    [
-      'a Fighter studying, with a task under way',
-      {
-        role: 'fighter',
-        ranks: [{ teachingId: 'strike', rank: 1, practice: 12.9 }],
-        study: 'strike',
-        task: { role: 'fighter', teachingId: 'follow-through', progress: 2 },
-      },
-      ['Fighter', 'Studying Strike: 12 of 35', 'Task: 2 of 3'],
-    ],
-    [
-      'a Healer studying nothing, with a task done',
-      { role: 'healer', ranks: [{ teachingId: 'touch', rank: 3, practice: 0 }], task: { role: 'healer', teachingId: 'drawing-back', progress: 60 } },
-      ['Healer', 'Studying nothing', 'Your task is done. Return to your master.'],
-    ],
-  ])('shows the role, the study, and the task of %s', (_label, lucidity, lines) => {
-    const panels = new GamePanels(noopCallbacks(), catalogTables, 'en');
-    panels.renderLucidity(lucidity);
-    expect([...panels.root.querySelectorAll('.hud-lucidity__line')].map((line) => line.textContent)).toEqual(lines);
   });
 });
 
@@ -2199,7 +1802,7 @@ describe('the play field and the panels through the shell', () => {
   /** A player in the world beside Pugnax, with another dreamer near, and every frame the client has sent since. */
   function playing() {
     const { factory, latest } = fakeSocketFactory();
-    const shell = new AppShell({ container, capabilities: { hasWebGL: true, isDesktop: true }, startRendering: false, socketFactory: factory });
+    const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
     shell.overlays.loginEmail.value = 'tester@example.com';
     (container.querySelector('input[type="password"]') as HTMLInputElement).value = 'hunter22';
     container.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -2224,83 +1827,677 @@ describe('the play field and the panels through the shell', () => {
     };
     const canvas = container.querySelector('canvas')!;
     const tags = (): string[] => sent().map((message) => message.tag);
-    return { shell, deliver, sent, press, canvas, tags, swings: () => tags().filter((tag) => tag === 'swing').length };
+    return { shell, deliver, sent, press, canvas, tags };
   }
 
-  it('swings on a left press on the play field, keeps swinging while it is held, and stops when the button comes up anywhere', () => {
+  /** The canvas laid out at 200 x 100 px, and a pointer event at a page point on it. */
+  function onCanvas(p: ReturnType<typeof playing>) {
+    vi.spyOn(p.canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 100));
+    return (type: string, at: { x: number; y: number }, init: PointerEventInit = {}): PointerEvent =>
+      new PointerEvent(type, { button: 0, clientX: at.x, clientY: at.y, bubbles: true, ...init });
+  }
+
+  it('selects a nightmare on a left press and not on the middle button, and attacks nothing of its own accord', () => {
     const p = playing();
-    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 2 }));
-    expect(p.swings()).toBe(0);
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const ghost = p.shell.pagePointOf('monster:1')!;
+    p.canvas.dispatchEvent(pointer('pointerdown', ghost, { button: 1, pointerType: 'mouse' }));
+    expect(p.shell.session.target).toBeUndefined();
 
     const pressed = performance.now();
-    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0 }));
-    expect(p.swings()).toBe(1);
+    p.canvas.dispatchEvent(pointer('pointerdown', ghost));
     p.shell.session.runTick(pressed + 1100);
-    expect(p.swings()).toBe(2);
-
     window.dispatchEvent(new PointerEvent('pointerup'));
-    p.shell.session.runTick(pressed + 2200);
-    expect(p.swings()).toBe(2);
+    expect(p.shell.session.target).toBe('monster:1');
+    expect(p.tags()).not.toContain('engage');
   });
 
-  /** A tap on a touch screen comes with no move before it, and nothing has turned the player toward it yet. */
-  it('swings toward where a press lands with no move before it', () => {
+  it("locks the player's facing on the body a mouse's right button presses, keeps it on their own body, and frees it on the ground", () => {
     const p = playing();
-    const pointer = { clientX: 0, clientY: -100 };
-    const toward = headingRadians(mouseFacingHeading({ x: pointer.clientX, y: pointer.clientY }, { x: 0, y: 0 }));
-    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 10 + 0.7 * Math.sin(toward), z: 10 + 0.7 * Math.cos(toward) }));
-    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...pointer }));
-    expect(p.sent().flatMap((message) => (message.tag === 'swing' ? [message.payload] : []))).toEqual([{ targetId: 'monster:1' }]);
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const right = { button: 2, buttons: 2, pointerType: 'mouse' };
+
+    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('monster:1')!, right));
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+
+    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('self')!, right));
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, right));
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+  });
+
+  it('frees the facing on a second right press at the body it is locked on, and locks it again on a third, ringing the target as the lock stands', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    p.deliver(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 8, z: 10 }));
+    const right = { button: 2, buttons: 2, pointerType: 'mouse' };
+    const selection = vi.spyOn(p.shell.scene!, 'showSelection');
+    const rightPress = (id: string): void => void p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf(id)!, right));
+
+    rightPress('monster:1');
+    rightPress('monster:1');
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
+    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', false]);
+    rightPress('monster:1');
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', true]);
+
+    rightPress('bren');
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['bren', true]);
+    expect(selection.mock.calls.at(-1)).toEqual(['bren', true]);
+    expect(p.sent().filter((message) => message.tag === 'target')).toEqual([
+      { tag: 'target', payload: { targetId: 'monster:1' } },
+      { tag: 'target', payload: { targetId: 'bren' } },
+    ]);
+  });
+
+  /** A button pressed while another is down fires no `pointerdown`, only a move naming it. */
+  it('locks the gaze on a right press made while the left button is down', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const mouse = { pointerType: 'mouse', pointerId: 1 };
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { ...mouse, buttons: 1 }));
+    p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOf('monster:1')!, { ...mouse, button: 2, buttons: 3 }));
+
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+  });
+
+  it('keeps the gaze locked when the right button comes up while the left stays down', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const mouse = { pointerType: 'mouse', pointerId: 1 };
+    const ghost = p.shell.pagePointOf('monster:1')!;
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { ...mouse, buttons: 1 }));
+    p.canvas.dispatchEvent(pointer('pointermove', ghost, { ...mouse, button: 2, buttons: 3 }));
+    p.canvas.dispatchEvent(pointer('pointermove', ghost, { ...mouse, button: 2, buttons: 1 }));
+
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+  });
+
+  /** With another button still down, the left one coming up fires no `pointerup`, only a move naming it. */
+  it('walks on a left press made while the right button is down', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    const mouse = { pointerType: 'mouse', pointerId: 1 };
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { ...mouse, button: 2, buttons: 2 }));
+    p.canvas.dispatchEvent(pointer('pointermove', { x: 170, y: 60 }, { ...mouse, button: 0, buttons: 3 }));
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+    p.canvas.dispatchEvent(pointer('pointermove', { x: 170, y: 60 }, { ...mouse, button: 0, buttons: 2 }));
+
+    expect(p.shell.session.predictor.walk).toBeDefined();
+  });
+
+  it("locks nothing on a pen's barrel button pressed while the pen is in contact", () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const pen = { pointerType: 'pen', pointerId: 1 };
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { ...pen, buttons: 1 }));
+    p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOf('monster:1')!, { ...pen, button: 2, buttons: 3 }));
+
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual([undefined, false]);
+  });
+
+  it('locks nothing on a right press from a pen or a finger', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    for (const pointerType of ['pen', 'touch']) p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('monster:1')!, { button: 2, pointerType }));
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual([undefined, false]);
+  });
+
+  it('faces the point a press lands on, with no move before it', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 10.45, z: 10.45 }));
+    const at = p.shell.pagePointOf('monster:1')!;
+    p.canvas.dispatchEvent(pointer('pointerdown', at));
+    p.shell.session.runTick(performance.now());
+
+    const aim = p.shell.scene!.aimPointAt(at.x / 100 - 1, 1 - at.y / 50)!;
+    expect(p.shell.controller.entities.get('self')!.facing).toBeCloseTo(headingFromVector(aim.x - 10, aim.z - 10), 6);
   });
 
   /** With another button still down, the left one coming up fires no `pointerup`, only a move, wherever the pointer is by then. */
-  it('stops swinging when a move of that pointer shows the left button is up, over the play field or not', () => {
+  it('ends a held press when a move of that pointer shows the left button is up, over the play field or not', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
     const p = playing();
-    const pressed = performance.now();
-    p.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1 }));
-    p.canvas.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, pointerId: 1, bubbles: true }));
+    const pointer = onCanvas(p);
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { pointerId: 1 }));
+    p.canvas.dispatchEvent(pointer('pointermove', { x: 170, y: 60 }, { buttons: 1, pointerId: 1 }));
     // Another device hovering by, or lifting, says nothing about this one's button.
     p.canvas.dispatchEvent(new PointerEvent('pointermove', { buttons: 0, pointerId: 2, bubbles: true }));
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2 }));
     window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2 }));
-    p.shell.session.runTick(pressed + 1100);
-    expect(p.swings()).toBe(2);
+    clock += 200;
+    p.shell.session.runTick(clock);
+    expect(p.shell.session.predictor.walk?.kind).toBe('steer');
 
-    document.body.dispatchEvent(new PointerEvent('pointermove', { buttons: 2, pointerId: 1, bubbles: true }));
-    p.shell.session.runTick(pressed + 2200);
-    expect(p.swings()).toBe(2);
+    document.body.dispatchEvent(pointer('pointermove', { x: 170, y: 60 }, { buttons: 2, pointerId: 1 }));
+    expect(p.shell.session.predictor.walk?.kind).toBe('path');
   });
 
-  it('tells the scene where the pointer rests on the play field, and when it leaves', () => {
+  it('walks along a path to the ground a quick press lets go on', () => {
     const p = playing();
-    const pointer = vi.spyOn(p.shell.scene!, 'setPointer');
-    vi.spyOn(p.canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 100));
+    const pointer = onCanvas(p);
+    const ground = { x: 170, y: 60 };
+    const point = p.shell.scene!.groundPointAt(0.7, -0.2)!;
 
-    p.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 150, clientY: 25 }));
-    p.canvas.dispatchEvent(new PointerEvent('pointerleave'));
+    p.canvas.dispatchEvent(pointer('pointerdown', ground));
+    window.dispatchEvent(pointer('pointerup', ground));
 
-    expect(pointer.mock.calls).toEqual([[{ x: 0.5, y: 0.5 }], [undefined]]);
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: point.x, z: point.z } });
   });
 
-  it('lets go of the dreamer tended on Escape, and opens the menu only on the next', () => {
+  it('drops the press ring on the ground a press lands on and keeps it there while the walk goes on, and drops none for a press on a body', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    const show = vi.spyOn(p.shell.scene!, 'showPressMarker');
+    const lift = vi.spyOn(p.shell.scene!, 'liftPressMarker');
+    const ground = { x: 170, y: 60 };
+    const point = p.shell.scene!.groundPointAt(0.7, -0.2)!;
+
+    p.canvas.dispatchEvent(pointer('pointerdown', ground));
+    window.dispatchEvent(pointer('pointerup', ground));
+    expect(show.mock.calls).toEqual([[{ x: point.x, z: point.z }]]);
+    expect(lift).not.toHaveBeenCalled();
+
+    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('self')!));
+    window.dispatchEvent(pointer('pointerup', p.shell.pagePointOf('self')!));
+    p.shell.session.runTick(performance.now());
+    expect(lift.mock.calls).toEqual([[]]);
+
+    show.mockClear();
+    lift.mockClear();
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    const ghost = p.shell.pagePointOf('monster:1')!;
+    p.canvas.dispatchEvent(pointer('pointerdown', ghost));
+    window.dispatchEvent(pointer('pointerup', ghost));
+    expect(p.shell.session.target).toBe('monster:1');
+    expect(show).not.toHaveBeenCalled();
+    expect(lift).not.toHaveBeenCalled();
+  });
+
+  it('lifts the press ring when a second finger lands', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    const lift = vi.spyOn(p.shell.scene!, 'liftPressMarker');
+    const finger = (pointerId: number) => ({ pointerType: 'touch', pointerId, isPrimary: pointerId === 1 });
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, finger(1)));
+    expect(lift).not.toHaveBeenCalled();
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 190, y: 90 }, finger(2)));
+
+    expect(lift.mock.calls).toEqual([[]]);
+  });
+
+  it('steers toward the ground under a press held past the hold', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const pointer = onCanvas(p);
+    const point = p.shell.scene!.groundPointAt(0.7, -0.2)!;
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }));
+    p.shell.session.runTick(clock + 100);
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+    clock += 200;
+    p.shell.session.runTick(clock);
+
+    expect(p.shell.session.predictor.walk).toEqual({ kind: 'steer', toward: { x: point.x, z: point.z } });
+  });
+
+  it.each(['mouse', 'touch', 'pen'])('taps to walk and holds to steer with a %s alike', (pointerType) => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const pointer = onCanvas(p);
+    const ground = { x: 170, y: 60 };
+    const point = p.shell.scene!.groundPointAt(0.7, -0.2)!;
+
+    p.canvas.dispatchEvent(pointer('pointerdown', ground, { pointerType, pointerId: 1, isPrimary: true }));
+    window.dispatchEvent(pointer('pointerup', ground, { pointerType, pointerId: 1, isPrimary: true }));
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: point.x, z: point.z } });
+
+    p.canvas.dispatchEvent(pointer('pointerdown', ground, { pointerType, pointerId: 2, isPrimary: true }));
+    clock += 200;
+    p.shell.session.runTick(clock);
+    expect(p.shell.session.predictor.walk).toEqual({ kind: 'steer', toward: { x: point.x, z: point.z } });
+  });
+
+  it("walks a tap to where it landed, and steers at once a press that wanders past a tap's slop", () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const pointer = onCanvas(p);
+    const landed = p.shell.scene!.groundPointAt(0.7, -0.2)!;
+    const touch = { pointerType: 'touch', pointerId: 1, isPrimary: true };
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, touch));
+    window.dispatchEvent(pointer('pointermove', { x: 170 + TAP_SLOP_PX - 1, y: 60 }, { ...touch, buttons: 1 }));
+    window.dispatchEvent(pointer('pointerup', { x: 170 + TAP_SLOP_PX - 1, y: 60 }, touch));
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: landed.x, z: landed.z } });
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, touch));
+    window.dispatchEvent(pointer('pointermove', { x: 170 + TAP_SLOP_PX + 1, y: 60 }, { ...touch, buttons: 1 }));
+    clock += 50;
+    p.shell.session.runTick(clock);
+    expect(p.shell.session.predictor.walk?.kind).toBe('steer');
+    const letGo = p.shell.scene!.groundPointAt((170 + TAP_SLOP_PX + 1) / 100 - 1, -0.2)!;
+    window.dispatchEvent(pointer('pointerup', { x: 170 + TAP_SLOP_PX + 1, y: 60 }, touch));
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: letGo.x, z: letGo.z } });
+  });
+
+  it('zooms with a pinch of two fingers and walks with neither', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const pointer = onCanvas(p);
+    const finger = (pointerId: number) => ({ pointerType: 'touch', pointerId, isPrimary: pointerId === 1 });
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, finger(1)));
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 180, y: 60 }, finger(2)));
+    window.dispatchEvent(pointer('pointermove', { x: 182, y: 60 }, { ...finger(2), buttons: 1 }));
+    expect(p.shell.session.zoom.factor).toBeCloseTo(1.2, 9);
+    clock += 400;
+    p.shell.session.runTick(clock);
+    window.dispatchEvent(pointer('pointermove', { x: 175, y: 60 }, { ...finger(2), buttons: 1 }));
+    expect(p.shell.session.zoom.factor).toBeLessThan(1);
+    window.dispatchEvent(pointer('pointerup', { x: 175, y: 60 }, finger(2)));
+    window.dispatchEvent(pointer('pointermove', { x: 150, y: 60 }, { ...finger(1), buttons: 1 }));
+    clock += 400;
+    p.shell.session.runTick(clock);
+    window.dispatchEvent(pointer('pointerup', { x: 150, y: 60 }, finger(1)));
+
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+    expect(p.shell.controller.entities.get('self')!.position).toEqual({ x: 10, z: 10 });
+  });
+
+  /** The finger left steering would otherwise drag the player after a point it no longer means. */
+  it('stops a steer where the player stands when a second finger lands', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const pointer = onCanvas(p);
+    const finger = (pointerId: number) => ({ pointerType: 'touch', pointerId, isPrimary: pointerId === 1 });
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, finger(1)));
+    clock += 200;
+    p.shell.session.runTick(clock);
+    expect(p.shell.session.predictor.walk?.kind).toBe('steer');
+
+    p.canvas.dispatchEvent(pointer('pointerdown', { x: 190, y: 90 }, finger(2)));
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+    window.dispatchEvent(pointer('pointerup', { x: 190, y: 90 }, finger(2)));
+    window.dispatchEvent(pointer('pointermove', { x: 30, y: 20 }, { ...finger(1), buttons: 1 }));
+    clock += 400;
+    p.shell.session.runTick(clock);
+    window.dispatchEvent(pointer('pointerup', { x: 30, y: 20 }, finger(1)));
+
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+  });
+
+  it('stops the player on a press on their own body', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.shell.session.predictor.walkTo({ x: 14, z: 10 });
+
+    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('self')!));
+
+    expect(p.shell.session.predictor.walk).toBeUndefined();
+  });
+
+  it('aims the player at the point under the cursor at body height', () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    const at = { x: 30, y: 20 };
+
+    p.canvas.dispatchEvent(pointer('pointermove', at));
+    p.shell.session.runTick(performance.now());
+
+    const aim = p.shell.scene!.aimPointAt(-0.7, 0.6)!;
+    const ground = p.shell.scene!.groundPointAt(-0.7, 0.6)!;
+    const self = p.shell.controller.entities.get('self')!;
+    expect(distance(aim, ground)).toBeGreaterThan(0.5);
+    expect(self.facing).toBeCloseTo(headingFromVector(aim.x - 10, aim.z - 10), 6);
+  });
+
+  it('clears the target on Escape, and opens the menu only on the next', () => {
     const p = playing();
     p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
-    p.shell.session.pressAt('bren', 0);
-    expect(p.shell.session.tending).toBe('bren');
+    p.shell.session.pressEntity('bren');
+    const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
-    expect(p.shell.session.tending).toBeUndefined();
+    escape();
+    expect(p.shell.session.target).toBeUndefined();
     expect(p.shell.controller.presentedOverlay).toBeUndefined();
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    escape();
     expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  it('closes the chat, then the newest window, then clears the target, and only then opens the menu on Escape', () => {
+    const p = playing();
+    const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    const label = (name: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+    p.shell.session.pressEntity('bren');
+    label('Players').click();
+    label('Bag').click();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    const state = () => [
+      p.shell.hud.chatOpen,
+      p.shell.hud.isWindowOpen('players'),
+      p.shell.hud.isWindowOpen('bag'),
+      p.shell.session.target,
+      p.shell.controller.presentedOverlay?.kind,
+    ];
+    expect(state()).toEqual([true, true, true, 'bren', undefined]);
+    expect(p.shell.controller.isChatInputFocused).toBe(true);
+
+    escape();
+    expect(state()).toEqual([false, true, true, 'bren', undefined]);
+    expect(p.shell.controller.isChatInputFocused).toBe(false);
+    escape();
+    expect(state()).toEqual([false, true, false, 'bren', undefined]);
+    escape();
+    expect(state()).toEqual([false, false, false, 'bren', undefined]);
+    escape();
+    expect(state()).toEqual([false, false, false, undefined, undefined]);
+    escape();
+    expect(state()).toEqual([false, false, false, undefined, 'gameMenu']);
+  });
+
+  it('opens the chat on Enter while the world has the keyboard, and not while a control or an overlay has it', () => {
+    const p = playing();
+    const enter = (target: EventTarget = window): boolean =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const run = container.querySelector<HTMLButtonElement>('button[aria-label="Run"]')!;
+
+    enter(run);
+    expect(p.shell.hud.chatOpen).toBe(false);
+    p.shell.controller.presentedOverlay = { kind: 'gameMenu' };
+    enter();
+    expect(p.shell.hud.chatOpen).toBe(false);
+    p.shell.controller.presentedOverlay = undefined;
+    enter();
+    expect(p.shell.hud.chatOpen).toBe(true);
+    expect(document.activeElement).toBe(p.shell.hud.chatInput);
+
+    // Shift types into the open field rather than toggling Run.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', cancelable: true }));
+    expect(p.shell.session.running).toBe(false);
+    p.shell.hud.chatInput.value = 'hallo';
+    p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(p.sent()).toContainEqual({ tag: 'clientSay', payload: { text: 'hallo', kind: 'say' } });
+    expect([p.shell.hud.chatOpen, p.shell.controller.isChatInputFocused]).toEqual([false, false]);
+  });
+
+  it('opens the game menu from Settings, and shows the world clock and where the player stands', () => {
+    const p = playing();
+    const clock = container.querySelector('.hud-clock')!;
+    expect(clock.querySelector('.hud-clock__place')?.textContent).toBe('Meadow');
+    // `enterSpaceFrame` starts the world at 00:00 on its first day.
+    expect(clock.querySelector('.hud-clock__time')?.textContent).toBe('☾00:00');
+    container.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')!.click();
+    expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  describe('the slot 1 toggle', () => {
+    const GHOST = 'monster:1';
+    const engageButton = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('.hud-slot--act')!;
+    const named = (node: HTMLElement): string | null => node.getAttribute('aria-label');
+    const pressOne = (init: KeyboardEventInit = {}): boolean =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', cancelable: true, ...init }));
+    const engages = (p: ReturnType<typeof playing>) => p.sent().flatMap((message) => (message.tag === 'engage' ? [message.payload] : []));
+
+    function withGhost() {
+      const p = playing();
+      p.deliver(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 12, z: 10 }));
+      return p;
+    }
+
+    /** A Healer with the Moonstone in hand, beside Bren and a Ghost. */
+    function healing() {
+      const p = withGhost();
+      p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
+      p.deliver({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }] } });
+      return p;
+    }
+
+    it('leads the belt as Attack, Run at its end, greyed out until it can act on the target', () => {
+      const p = withGhost();
+      expect([...container.querySelectorAll<HTMLElement>('.hud-slots button')].map(named)).toEqual(['Attack', 'Run']);
+      expect(engageButton().disabled).toBe(true);
+      expect(engageButton().getAttribute('aria-pressed')).toBe('false');
+      p.shell.session.pressEntity(PUGNAX);
+      expect(engageButton().disabled).toBe(true);
+      p.shell.session.pressEntity('bren');
+      expect(engageButton().disabled).toBe(true);
+      p.shell.session.pressEntity(GHOST);
+      expect(engageButton().disabled).toBe(false);
+    });
+
+    it('is named for what it does at the target, Mend at a dreamer for a Healer with the Moonstone, greyed out at a nightmare, keeping its element', () => {
+      const p = healing();
+      const before = engageButton();
+      p.shell.session.pressEntity('bren');
+      expect([named(engageButton()), engageButton().disabled]).toEqual(['Mend', false]);
+      p.shell.session.pressEntity(GHOST);
+      expect([named(engageButton()), engageButton().disabled]).toEqual(['Mend', true]);
+      p.shell.session.pressOwnFrame();
+      expect(named(engageButton())).toBe('Mend');
+      p.deliver({ tag: 'condition', payload: { entityId: 'bren', condition: 'fallen' } });
+      p.shell.session.pressEntity('bren');
+      expect([named(engageButton()), engageButton().dataset['look']]).toEqual(['Raise', 'raise']);
+      p.shell.session.select(undefined);
+      expect([named(engageButton()), engageButton().disabled]).toEqual(['Raise', true]);
+      expect(engageButton()).toBe(before);
+    });
+
+    it('toggles on key 1 and on a click, lit while on', () => {
+      const p = withGhost();
+      p.shell.session.pressEntity(GHOST);
+      pressOne();
+      expect(engageButton().getAttribute('aria-pressed')).toBe('true');
+      pressOne({ repeat: true });
+      expect(p.shell.session.engaged).toBe(true);
+      engageButton().click();
+      expect(engageButton().getAttribute('aria-pressed')).toBe('false');
+      engageButton().click();
+      expect(engages(p)).toEqual([{ on: true }, { on: false }, { on: true }]);
+    });
+
+    it('goes off and greys out from a dreamer to a nightmare for a Healer with the Moonstone, keeping its name and its element', () => {
+      const p = healing();
+      const before = engageButton();
+      p.shell.session.pressEntity('bren');
+      pressOne();
+      p.shell.session.pressEntity(GHOST);
+      p.shell.session.runTick(performance.now());
+      expect([named(engageButton()), engageButton().getAttribute('aria-pressed'), engageButton().disabled]).toEqual(['Mend', 'false', true]);
+      pressOne();
+      expect(engageButton()).toBe(before);
+      expect(engages(p)).toEqual([{ on: true }]);
+    });
+
+    it.each<[string, (p: ReturnType<typeof playing>) => void]>([
+      ['an overlay is up', (p) => (p.shell.controller.presentedOverlay = { kind: 'gameMenu' })],
+      ['the chat input has focus', (p) => p.shell.hud.chatInput.dispatchEvent(new FocusEvent('focus'))],
+    ])('leaves slot 1 alone on key 1 while %s', (_label, arrange) => {
+      const p = withGhost();
+      p.shell.session.pressEntity(GHOST);
+      arrange(p);
+      pressOne();
+      expect(p.shell.session.engaged).toBe(false);
+      expect(engages(p)).toEqual([]);
+    });
+
+    it('goes off and greys out with the target', () => {
+      const p = withGhost();
+      p.shell.session.pressEntity(GHOST);
+      pressOne();
+      p.deliver({ tag: 'leave', payload: { entityId: GHOST, leftGame: false } });
+      p.shell.session.runTick(performance.now());
+      expect(engageButton().getAttribute('aria-pressed')).toBe('false');
+      expect(engageButton().disabled).toBe(true);
+    });
+
+    it('keeps its element across energy frames', () => {
+      const p = withGhost();
+      p.shell.session.pressEntity(GHOST);
+      const before = engageButton();
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      pressOne();
+      expect(engageButton()).toBe(before);
+    });
+  });
+
+  describe('the target frame', () => {
+    const GHOST = 'monster:1';
+    const frames = (): HTMLElement[] => [...container.querySelectorAll<HTMLElement>('.hud-unit--target')];
+    const shown = (): { name: string | null | undefined; health: string | undefined }[] =>
+      frames()
+        .filter((frame) => !frame.classList.contains('hidden'))
+        .map((frame) => ({
+          name: frame.querySelector('.hud-unit__name')?.textContent,
+          health: frame.querySelector<HTMLElement>('.hud-bar__fill')?.style.width,
+        }));
+
+    /** A Healer targeting a Ghost to the south-east. */
+    function healing() {
+      const p = playing();
+      p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
+      p.deliver(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 12, z: 11 }));
+      return p;
+    }
+
+    it('selects the body a press lands on and shows its frame, from its condition until the server sends its health', () => {
+      const p = healing();
+      const pointer = onCanvas(p);
+      expect(shown()).toEqual([]);
+
+      p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf(GHOST)!));
+      window.dispatchEvent(pointer('pointerup', p.shell.pagePointOf(GHOST)!));
+      expect(p.sent()).toContainEqual({ tag: 'target', payload: { targetId: GHOST } });
+      expect(shown()).toEqual([{ name: 'Ghost', health: '100.00%' }]);
+
+      p.deliver({ tag: 'condition', payload: { entityId: GHOST, condition: 'wounded' } });
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.42 } });
+      expect(shown()).toEqual([{ name: 'Ghost', health: '42.00%' }]);
+    });
+
+    it('frames the dreamer a press on the name in the Players list targets, in place of the target before', () => {
+      const p = healing();
+      p.shell.session.pressEntity(GHOST);
+      p.press('Bren');
+      expect(p.shell.session.target).toBe('bren');
+
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.9 } });
+      p.deliver({ tag: 'vitals', payload: { entityId: 'bren', health: 0.35 } });
+      expect(shown()).toEqual([{ name: 'Bren', health: '35.00%' }]);
+      expect(frames().map((frame) => frame.querySelector('.hud-unit__caption')?.textContent)).toEqual(['Target']);
+    });
+
+    it("clears the target on a press at its frame's ✕", () => {
+      const p = healing();
+      p.shell.session.pressEntity(GHOST);
+      frames()[0]!.querySelector<HTMLButtonElement>('button[aria-label="Clear target"]')!.click();
+      expect(p.shell.session.target).toBeUndefined();
+      expect(p.sent().at(-1)).toEqual({ tag: 'target', payload: {} });
+      expect(shown()).toEqual([]);
+    });
+
+    it('keeps its elements and the names in the Players list across energy and vitals frames that change nothing they show', () => {
+      const p = healing();
+      p.shell.session.pressEntity(GHOST);
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.5 } });
+      const elements = (): Element[] => [
+        ...frames().flatMap((frame) => [frame, ...frame.querySelectorAll('*')]),
+        ...container.querySelectorAll('.hud-list--players button'),
+      ];
+      const before = elements();
+
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.5 } });
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.4 } });
+
+      expect(elements()).toHaveLength(before.length);
+      elements().forEach((node, index) => expect(node).toBe(before[index]));
+      expect(shown()[0]?.health).toBe('40.00%');
+    });
+
+    it("names the target's condition and the lock in the frame's accessible name alone, keeping its elements through the lock and its end", () => {
+      const p = healing();
+      const label = (): string | null => frames()[0]!.getAttribute('aria-label');
+      const elements = (): Element[] => frames().flatMap((frame) => [frame, ...frame.querySelectorAll('*')]);
+      p.shell.session.pressEntity(GHOST);
+      const before = elements();
+      const text = frames()[0]!.textContent;
+      expect(label()).toBe('Target, hale');
+
+      p.shell.session.toggleGazeOn(GHOST);
+      expect(label()).toBe('Target, hale, facing locked');
+      expect(frames()[0]!.textContent).toBe(text);
+      for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      p.deliver({ tag: 'condition', payload: { entityId: GHOST, condition: 'failing' } });
+      p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.2 } });
+      expect(label()).toBe('Target, failing, facing locked');
+      p.shell.session.toggleGazeOn(GHOST);
+      expect(label()).toBe('Target, failing');
+      elements().forEach((node, index) => expect(node).toBe(before[index]));
+      expect(elements()).toHaveLength(before.length);
+    });
+
+    it('targets the player on a press at their own frame, or their own name in Players, framed from their own energy, Healer or not', () => {
+      const p = playing();
+      const own = container.querySelector<HTMLButtonElement>('.hud-unit--self')!;
+      p.deliver({ tag: 'energy', payload: { ...fullPools([]), healthCurrent: 30 } });
+      own.querySelector<HTMLElement>('.hud-unit__name')!.click();
+      expect(p.shell.session.target).toBe('self');
+      expect(own.getAttribute('aria-pressed')).toBe('true');
+      expect(own.querySelector('.hud-unit__name')?.textContent).toBe('Tester');
+      expect(shown()).toEqual([{ name: 'Tester', health: '30.00%' }]);
+      expect(p.sent()).toEqual([{ tag: 'target', payload: { targetId: 'self' } }]);
+
+      container.querySelector<HTMLButtonElement>('button[aria-label="Run"]')!.click();
+      expect(p.sent()).toHaveLength(1);
+
+      p.shell.session.select(undefined);
+      expect(own.getAttribute('aria-pressed')).toBe('false');
+      p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
+      expect(own.querySelector('.hud-unit__traits')?.textContent).toBe('Vigils · Healer');
+      p.press('Tester');
+      expect(p.shell.session.target).toBe('self');
+      expect(shown()).toEqual([{ name: 'Tester', health: '30.00%' }]);
+      expect(frames().map((frame) => frame.querySelector('.hud-unit__caption')?.textContent)).toEqual(['Target']);
+    });
+
+    it('gives way to the fallen notice while the player lies fallen', () => {
+      const p = healing();
+      p.shell.session.pressEntity(GHOST);
+      p.deliver({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+      expect(shown()).toEqual([]);
+      p.deliver({ tag: 'condition', payload: { entityId: 'self', condition: 'grazed' } });
+      expect(shown().map((frame) => frame.name)).toEqual(['Ghost']);
+    });
   });
 
   it("sends each of a master's buttons as the request it names, from the trial to a teaching", () => {
     const p = playing();
     const panel = container.querySelector('.service-panel')!;
     expect(panel.classList.contains('hidden')).toBe(true);
-    p.shell.session.pressAt(PUGNAX, 0);
+    p.shell.session.pressEntity(PUGNAX);
     expect(panel.classList.contains('hidden')).toBe(false);
 
     p.press('Ask for the trial');
@@ -2309,10 +2506,11 @@ describe('the play field and the panels through the shell', () => {
     p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'fighter', progress: 1 } } });
     p.press('Become a Fighter');
     p.deliver({ tag: 'lucidity', payload: { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' } });
-    expect(container.querySelector('.hud-lucidity')?.textContent).toContain('Studying Strike');
+    expect(container.querySelector('.hud-study')?.textContent).toBe('Studying Strike · 0%');
     (panel.querySelector('[data-teaching="toughening"] button') as HTMLButtonElement).click();
 
     expect(p.sent()).toEqual([
+      { tag: 'target', payload: { targetId: PUGNAX } },
       { tag: 'talk', payload: { npcId: PUGNAX } },
       { tag: 'askTask', payload: { npcId: PUGNAX } },
       { tag: 'abandonTask', payload: {} },
@@ -2330,7 +2528,7 @@ describe('the play field and the panels through the shell', () => {
     const purse = { slot: 0, itemId: 'purse', quantity: 100 };
     p.deliver(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 9, z: 9, service: 'shopkeeper' }));
     p.deliver({ tag: 'inventory', payload: { rows: [purse, { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' }] } });
-    p.shell.session.pressAt(MERCUS, clock);
+    p.shell.session.pressEntity(MERCUS);
     const panel = container.querySelector('.service-panel')!;
     const action = (ware: string): HTMLButtonElement => panel.querySelector(`[data-ware="${ware}"] button`)!;
 
@@ -2354,6 +2552,7 @@ describe('the play field and the panels through the shell', () => {
 
     // The tick reports the player's position too, which is no trade.
     expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
+      { tag: 'target', payload: { targetId: MERCUS } },
       { tag: 'talk', payload: { npcId: MERCUS } },
       { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
       { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },

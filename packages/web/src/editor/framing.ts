@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { ORTHO_RIG, applyScrollZoom, cameraPosition, offsetDirection } from '@/scene/cameraRig';
+import { applyFrustum, applyScrollZoom, cameraPosition, offsetDirection } from '@/scene/cameraRig';
 import type { Vec3 } from '@/scene/cameraRig';
 import { clamp, sectorPointInSpace, sectorRect } from '@somnio/core';
 import type { Point, Sector } from '@somnio/core';
@@ -7,7 +7,7 @@ import { floorPointAtScreen } from './picking';
 import type { ScreenPoint, ViewportSize } from './picking';
 
 /**
- * The editor's camera: the whole-sector fit, the player-parity opening zoom, and the
+ * The editor's camera: the whole-sector fit, the opening zoom, and the
  * pan/zoom/custom-framing state machine.
  */
 
@@ -17,18 +17,22 @@ export interface EditorFraming {
   scale: number;
 }
 
-/** The viewport height at which the editor's opening scale is the game's `defaultScale`. */
-const PLAYER_VIEWPORT_HEIGHT = 480;
+/**
+ * The editor's own zoom, closer than the game's camera and over a wider range, so a prop can be
+ * placed by hand: `scale` at a canvas `viewportHeight` tall, divided by a factor from `minFactor` to
+ * `maxFactor`.
+ */
+export const EDITOR_ZOOM = { scale: 3, viewportHeight: 480, minFactor: 0.5, maxFactor: 2 } as const;
 
 /**
- * The orthographic scale the editor opens a sector at: the game's default close-up at
- * `PLAYER_VIEWPORT_HEIGHT`, growing with the viewport so a metre keeps its size on screen and a
+ * The orthographic scale the editor opens a sector at: `EDITOR_ZOOM.scale` at
+ * `EDITOR_ZOOM.viewportHeight`, growing with the viewport so a metre keeps its size on screen and a
  * taller canvas shows more ground. Viewport-height dependent — this is why the opening scale is
  * not the whole-sector fit.
  */
-export function playerZoomScale(viewportHeight: number): number {
-  if (viewportHeight <= 0) return ORTHO_RIG.defaultScale;
-  return (ORTHO_RIG.defaultScale * viewportHeight) / PLAYER_VIEWPORT_HEIGHT;
+export function editorZoomScale(viewportHeight: number): number {
+  if (viewportHeight <= 0) return EDITOR_ZOOM.scale;
+  return (EDITOR_ZOOM.scale * viewportHeight) / EDITOR_ZOOM.viewportHeight;
 }
 
 /**
@@ -95,12 +99,12 @@ export function editorFramingFittingBounds(min: Point, max: Point, viewport: Vie
   const verticalExtent = Math.max(...vertical) - Math.min(...vertical);
   const focus = { x: (min.x + max.x) / 2, y: 0, z: (min.z + max.z) / 2 };
   if (viewport.width <= 0 || viewport.height <= 0) {
-    return { focus, scale: ORTHO_RIG.defaultScale };
+    return { focus, scale: EDITOR_ZOOM.scale };
   }
   const aspect = viewport.width / viewport.height;
   // Halved because `scale` is the view volume's vertical half-height.
   const fit = Math.max(verticalExtent, horizontalExtent / aspect) / 2;
-  return { focus, scale: fit > 0 ? fit : ORTHO_RIG.defaultScale };
+  return { focus, scale: fit > 0 ? fit : EDITOR_ZOOM.scale };
 }
 
 /** Framing that fits the whole sector — floor rect plus placement positions — into the viewport. */
@@ -130,7 +134,7 @@ export function scrollIntent(input: { deltaX: number; deltaY: number; hasPrecise
 }
 
 /**
- * The editor's camera state machine: opens sector-centered at the player's zoom, pans and
+ * The editor's camera state machine: opens sector-centered at its own zoom, pans and
  * zooms with the game's own mechanics, and —
  * once the user navigates — preserves the custom camera through document mutations and
  * viewport resizes (`hasCustomFraming`), only re-clamping the focus.
@@ -139,13 +143,13 @@ export function scrollIntent(input: { deltaX: number; deltaY: number; hasPrecise
  * source both the renderer draws with and `picking` unprojects through.
  */
 export class EditorCamera {
-  framing: EditorFraming = { focus: { x: 0, y: 0, z: 0 }, scale: ORTHO_RIG.defaultScale };
+  framing: EditorFraming = { focus: { x: 0, y: 0, z: 0 }, scale: EDITOR_ZOOM.scale };
   viewportSize: ViewportSize = { width: 640, height: 480 };
 
   private readonly camera: THREE.OrthographicCamera;
   private readonly onFocused: (focus: Vec3) => void;
   private hasCustomFraming = false;
-  /** The game's interactive zoom factor, reused verbatim (clamped 0.5x-2x, multiplicative). */
+  /** A zoom factor stepped as the game's is, clamped to `EDITOR_ZOOM`'s range. */
   private zoomFactor = 1;
 
   /** `onFocused` hears every focus the framing lands on, so what follows the view (the sun's shadow volume) can follow it. */
@@ -156,7 +160,7 @@ export class EditorCamera {
   }
 
   /**
-   * Re-fits (or re-clamps) after a document change. The opening scale is `playerZoomScale`
+   * Re-fits (or re-clamps) after a document change. The opening scale is `editorZoomScale`
    * over the current zoom factor — NOT the whole-sector fit, whose focus alone is used.
    */
   refreshFraming(sector: Sector): void {
@@ -165,7 +169,7 @@ export class EditorCamera {
       return;
     }
     const fit = editorFramingFitting(sector, this.viewportSize);
-    this.framing = { focus: fit.focus, scale: playerZoomScale(this.viewportSize.height) / this.zoomFactor };
+    this.framing = { focus: fit.focus, scale: editorZoomScale(this.viewportSize.height) / this.zoomFactor };
     this.apply();
   }
 
@@ -191,14 +195,14 @@ export class EditorCamera {
   }
 
   /**
-   * ⌘-scroll zoom through the game's clamped multiplicative factor over the player-parity
-   * framing for this canvas height — composed from `applyScrollZoom` over `playerZoomScale`,
-   * not from `scaleForZoomFactor`, which divides the fixed default scale instead.
+   * ⌘-scroll zoom through the game's multiplicative factor, clamped to the editor's range, over
+   * the editor's framing for this canvas height — composed from `applyScrollZoom` over
+   * `editorZoomScale`, not from `scaleForZoomFactor`, which divides the game's fixed default scale.
    */
   zoom(zoomDeltaY: number, sector: Sector): void {
     this.hasCustomFraming = true;
-    this.zoomFactor = applyScrollZoom(this.zoomFactor, zoomDeltaY);
-    this.applyCustomFraming({ focus: this.framing.focus, scale: playerZoomScale(this.viewportSize.height) / this.zoomFactor }, sector);
+    this.zoomFactor = applyScrollZoom(this.zoomFactor, zoomDeltaY, EDITOR_ZOOM);
+    this.applyCustomFraming({ focus: this.framing.focus, scale: editorZoomScale(this.viewportSize.height) / this.zoomFactor }, sector);
   }
 
   /** Clamps the focus onto the sector's fit extent (no panning off into the void) and applies. */
@@ -226,11 +230,7 @@ export class EditorCamera {
  */
 export function applyFramingToCamera(camera: THREE.OrthographicCamera, framing: EditorFraming, viewport: ViewportSize): void {
   const aspect = viewport.width / viewport.height;
-  camera.left = -framing.scale * aspect;
-  camera.right = framing.scale * aspect;
-  camera.top = framing.scale;
-  camera.bottom = -framing.scale;
-  camera.updateProjectionMatrix();
+  applyFrustum(camera, framing.scale, aspect);
   const position = cameraPosition(framing.focus);
   camera.position.set(position.x, position.y, position.z);
   camera.lookAt(framing.focus.x, framing.focus.y, framing.focus.z);

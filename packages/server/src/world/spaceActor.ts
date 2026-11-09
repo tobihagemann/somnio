@@ -37,6 +37,7 @@ import {
   crumble,
   dialogSteps,
   distance,
+  engageAction,
   gaitMetresPerSecond,
   heading,
   headingFromCardinal,
@@ -50,9 +51,11 @@ import {
   masterRole,
   maxPools,
   mendAmount,
+  mendReaches,
   monsterKind,
   neighbourSectors,
   npcBodies,
+  poolShare,
   practiceNeeded,
   rankOf,
   reachDistance,
@@ -66,6 +69,7 @@ import {
   speechClarity,
   strikeChance,
   swingAllowed,
+  swingMeets,
   taskGoal,
   taskSpec,
   teaching,
@@ -78,6 +82,8 @@ import {
 import type {
   Body,
   Character,
+  EngageAction,
+  EngageTarget,
   Heading,
   InventoryRow,
   ItemId,
@@ -132,8 +138,12 @@ interface PlayerSlot {
   condition: Condition;
   /** The raise this fallen dreamer is being given, by every Healer holding on. */
   raise: Raise | undefined;
-  /** The dreamer a Healer chose to tend: mended, or raised, whenever the Moonstone reaches them. */
-  tending: string | undefined;
+  /** The entity the dreamer chose to act on. It is let go once it is out of their view. */
+  target: string | undefined;
+  /** Whether slot 1 is on: the dreamer attacks their target, a nightmare, or a Healer mends or raises their target, a dreamer. */
+  engaged: boolean;
+  /** The health share of their target last sent to the dreamer, and when. */
+  vitals: { entityId: string; health: number; at: number } | undefined;
 }
 
 interface Raise {
@@ -272,12 +282,6 @@ const PLACEMENT_ATTEMPTS = 64;
  */
 const MOVING_WINDOW_MS = 250;
 /**
- * How far ahead of the swing rhythm a swing may arrive. A client swinging on the rhythm sends at a
- * steady pace, but its frames do not arrive at one. A swing let in early does not bring the next
- * one forward, so no dreamer swings more often than the rhythm for it.
- */
-const SWING_ARRIVAL_SLACK_MS = 150;
-/**
  * A nightmare walking home that has come no `HOME_PROGRESS_METRES` nearer for this long stops
  * steering and tries only the straight step home, as when a body lies on its home or bodies wall
  * it off.
@@ -291,6 +295,8 @@ const HOME_PROGRESS_METRES = 0.01;
 const STOP_SLACK = 0.01;
 /** The turns off the bearing to its goal, in degrees, that a nightmare tries on each side when the straight step is blocked. */
 const STEER_DEGREES = [30, 60, 90];
+/** The least time between two `vitals` frames about one entity to one dreamer. */
+const VITALS_INTERVAL_MS = 250;
 /** How far a Healer's seconds held may fall short of the next whole unit of spirit and still be charged it. A sum of step times lands a rounding error under the exact figure. */
 const SHARE_SLACK_SECONDS = 1e-9;
 
@@ -327,6 +333,11 @@ function lucidityMessage({ role, ranks, study, task }: Lucidity): LucidityMessag
 
 function isFallen(slot: PlayerSlot): boolean {
   return slot.condition === 'fallen';
+}
+
+/** A dreamer's or a nightmare's health and its maximum. */
+function healthOf(entity: PlayerSlot | MonsterRuntime): [current: number, max: number] {
+  return 'character' in entity ? [entity.character.energy.healthCurrent, entity.character.energy.healthMax] : [entity.health, entity.kind.health];
 }
 
 /**
@@ -450,11 +461,13 @@ export class SpaceActor {
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
       raise: undefined,
-      tending: undefined,
+      target: undefined,
+      engaged: false,
+      vitals: undefined,
     };
     const interest = this.interest.get(sector.name)!;
     const messages: SomnioMessage[] = [
-      { tag: 'enterSpace', payload: { spaceId: this.space.id, selfId: character.id, worldSeconds } },
+      { tag: 'enterSpace', payload: { spaceId: this.space.id, selfId: character.id, people: character.people, worldSeconds } },
       ...[...interest].map((name) => this.sectorMessage(name)),
       { tag: 'entity', payload: this.playerEntity(slot) },
       { tag: 'inventory', payload: inventoryMessage(inventory) },
@@ -689,21 +702,31 @@ export class SpaceActor {
     if (npc.targetingEntity === undefined && this.inSpeakingDistance(npc, player)) npc.targetingEntity = entityId;
   }
 
-  /** A standing dreamer's swing, at the nightmare their client picked or at the air. */
-  handleSwing(targetId: string | undefined, entityId: string): void {
+  /**
+   * Chooses the entity a dreamer acts on, themselves included, or none. Choosing does nothing to
+   * the entity. One out of their view is refused, and the refusal switches slot 1 off.
+   */
+  handleTarget(targetId: string | undefined, entityId: string): void {
     const player = this.players.get(entityId);
-    if (player === undefined || isFallen(player)) return;
-    this.swing(player, targetId === undefined ? undefined : this.monsters.get(targetId));
+    if (player === undefined) return;
+    if (targetId !== undefined && !this.seesEntity(player, targetId)) {
+      player.engaged = false;
+      return;
+    }
+    player.target = targetId;
+    // Slot 1 stays on at a new target it can act on and goes off at anything else, as it does on the client.
+    player.engaged &&= this.engagedAction(player) !== undefined;
+    this.sendVitals(player);
   }
 
   /**
-   * Chooses the dreamer a standing dreamer tends, or no one. Anyone may choose; it does something
-   * only for a Healer holding the Moonstone. Nothing tending does harms another dreamer.
+   * Switches slot 1 on or off. Off is always taken. On is taken only from a standing dreamer whose
+   * target slot 1 can act on at that moment (`engageAction`). A refusal is dropped silently.
    */
-  handleTend(targetId: string | undefined, entityId: string): void {
+  handleEngage(on: boolean, entityId: string): void {
     const player = this.players.get(entityId);
-    if (player === undefined || isFallen(player)) return;
-    player.tending = targetId !== undefined && targetId !== entityId && this.players.has(targetId) ? targetId : undefined;
+    if (player === undefined) return;
+    player.engaged = on && !isFallen(player) && this.engagedAction(player) !== undefined;
   }
 
   /** Using the Moonstone from the inventory while it is in hand mends its holder. */
@@ -725,6 +748,8 @@ export class SpaceActor {
     this.runMonsterSpawns();
     this.runPlayers(elapsedSeconds);
     this.runMonsters(elapsedSeconds);
+    this.dropUnseenTargets();
+    for (const slot of this.players.values()) this.sendVitals(slot);
     return digest;
   }
 
@@ -1042,8 +1067,8 @@ export class SpaceActor {
       balanceCurrent: Math.max(0, energy.balanceCurrent - monster.kind.balanceDamage),
     });
     if (!isFallen(target)) return;
-    // Falling lets go of the dreamer tended, as their client does: nothing they send while fallen could.
-    target.tending = undefined;
+    // Falling switches slot 1 off here and on their client alike, with no frame between them.
+    target.engaged = false;
     this.advanceTask(
       target,
       (spec) => spec.kind === 'driveOff' && spec.withoutFalling === true,
@@ -1054,29 +1079,59 @@ export class SpaceActor {
   }
 
   /**
-   * A dreamer's swing, at the swing rhythm, for the balance what they hold in hand costs, whether
-   * or not it meets anything. It meets the nightmare named when that one is in reach and still
-   * standing, and the air otherwise. With less balance than the cost, with something in hand that
-   * does not swing, or while they hold a task that forbids striking, no swing happens.
+   * Every dreamer with slot 1 on acts on their target: swings at a nightmare, and a Healer touches
+   * a dreamer. Slot 1 goes off once the target is nothing it can act on: a nightmare driven off, an
+   * entity gone or out of view, a nightmare once the Moonstone is in hand, or a dreamer once it is
+   * out of hand.
    */
-  private swing(player: PlayerSlot, monster: MonsterRuntime | undefined): void {
+  private runEngaged(): void {
+    for (const slot of this.players.values()) {
+      if (!slot.engaged) continue;
+      if (this.engagedAction(slot) === undefined) {
+        slot.engaged = false;
+        continue;
+      }
+      const monster = this.monsters.get(slot.target!);
+      if (monster !== undefined) this.swing(slot, monster);
+      else this.touch(slot, this.players.get(slot.target!)!);
+    }
+  }
+
+  /** What slot 1 does at the dreamer's target as it stands: a nightmare not yet driven off, or a dreamer, in their view. */
+  private engagedAction(slot: PlayerSlot): EngageAction | undefined {
+    return engageAction(this.engageKind(slot), slot.character.lucidity.role, itemInHand(slot.inventory));
+  }
+
+  private engageKind(slot: PlayerSlot): EngageTarget | undefined {
+    const id = slot.target;
+    if (id === undefined || !this.seesEntity(slot, id)) return undefined;
+    if (this.players.has(id)) return 'dreamer';
+    const monster = this.monsters.get(id);
+    return monster !== undefined && monster.fadingUntil === undefined ? 'nightmare' : undefined;
+  }
+
+  /**
+   * A dreamer's swing at the nightmare, at the swing rhythm, for the balance what they hold in hand
+   * costs. It is made only while the nightmare stands in reach inside the arc of the facing they
+   * last reported. With less balance than the cost, with something in hand that does not swing, or
+   * while they hold a task that forbids striking, no swing happens. A swing not made costs nothing.
+   */
+  private swing(player: PlayerSlot, monster: MonsterRuntime): void {
     const now = this.now();
-    if (now < player.swingReadyAt - SWING_ARRIVAL_SLACK_MS) return;
+    if (now < player.swingReadyAt) return;
+    if (!swingMeets(player.character.position, player.character.facing, { ...monster.position, radius: monster.kind.radius })) return;
     const { task, ranks } = player.character.lucidity;
     const energy = player.character.energy;
     const swing = swingAllowed(task === undefined ? undefined : taskSpec(task), itemInHand(player.inventory), ranks, energy.balanceCurrent);
     if (swing === undefined) return;
-    player.swingReadyAt = Math.max(now, player.swingReadyAt) + swing.seconds * 1000;
+    player.swingReadyAt = now + swing.seconds * 1000;
     this.setEnergy(player, { ...energy, balanceCurrent: energy.balanceCurrent - swing.balanceCost });
-    const reached =
-      monster !== undefined && monster.fadingUntil === undefined && reaches(player.character.position, { ...monster.position, radius: monster.kind.radius });
-    const met = reached ? monster : undefined;
-    const hit = met !== undefined && randomUnit(this.random) < COMBAT.hitChance;
-    this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, ...(met === undefined ? {} : { targetId: met.id }), hit } }, player.sector);
-    if (met === undefined || !hit) return;
-    met.health = Math.max(0, met.health - swing.damage);
-    this.setCondition(met);
-    if (met.health === 0) this.driveOff(met);
+    const hit = randomUnit(this.random) < COMBAT.hitChance;
+    this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, targetId: monster.id, hit } }, player.sector);
+    if (!hit) return;
+    monster.health = Math.max(0, monster.health - swing.damage);
+    this.setCondition(monster);
+    if (monster.health === 0) this.driveOff(monster);
   }
 
   /**
@@ -1103,18 +1158,20 @@ export class SpaceActor {
   }
 
   /**
-   * A Healer's Moonstone reaching another dreamer: a standing one is mended, and on a fallen one the
-   * Healer takes hold, beginning a raise or joining the one under way. Beginning needs the raise's
-   * whole spirit cost on hand, so a lone Healer can finish it. Joining needs a mend's worth, and room
-   * among the most Healers one raise holds. Taking hold spends the touch, as a mend does, and that is
-   * the only limit on how often a Healer takes hold.
+   * A Healer's Moonstone reaching their target: a standing dreamer within mend reach, themselves
+   * included, is mended, and on a fallen one within touch the Healer takes hold, beginning a raise
+   * or joining the one under way. A Healer never raises themselves, since a fallen one does not
+   * wield the Moonstone. Beginning needs the raise's whole spirit cost on hand, so a lone Healer can
+   * finish it. Joining needs a mend's worth, and room among the most Healers one raise holds. Taking
+   * hold spends the touch, as a mend does, and that is the only limit on how often a Healer takes hold.
    */
   private touch(healer: PlayerSlot, target: PlayerSlot): void {
-    if (!this.canMend(healer) || !this.touches(healer, target)) return;
+    if (!this.canMend(healer)) return;
     if (!isFallen(target)) {
-      this.mend(healer, target);
+      if (mendReaches(healer.character.position, target.character.position)) this.mend(healer, target);
       return;
     }
+    if (!this.touches(healer, target)) return;
     const id = healer.character.id;
     const holders = target.raise?.holders ?? [];
     if (holders.includes(id) || holders.length >= SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers) return;
@@ -1143,7 +1200,7 @@ export class SpaceActor {
     healer.mendReadyAt = this.now() + COMBAT.mend.seconds * 1000;
   }
 
-  /** Whether a Moonstone reaches from one dreamer to the other. */
+  /** Whether a Moonstone reaches from one dreamer to the other to raise them. */
   private touches(healer: PlayerSlot, target: PlayerSlot): boolean {
     return reaches(healer.character.position, { ...target.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
   }
@@ -1173,10 +1230,10 @@ export class SpaceActor {
 
   /**
    * Recovers each standing dreamer's pools, drops out the Healers who no longer hold on to a raise,
-   * lets each reach the dreamer they tend, then advances the raises under way. Dropping out comes
-   * before the touches, so a raise its last Healer dropped out of is broken before anyone else can
-   * take hold of it. A Healer tending the dreamer can then only begin a new one, at its whole
-   * spirit cost.
+   * lets each dreamer with slot 1 on act on their target, then advances the raises under way.
+   * Dropping out comes before the touches, so a raise its last Healer dropped out of is broken
+   * before anyone else can take hold of it. A Healer engaged on the dreamer can then only begin a
+   * new one, at its whole spirit cost.
    */
   private runPlayers(elapsedSeconds: number): void {
     for (const slot of this.players.values()) {
@@ -1185,12 +1242,7 @@ export class SpaceActor {
     for (const target of this.players.values()) {
       if (target.raise !== undefined) this.releaseRaise(target, target.raise);
     }
-    for (const slot of this.players.values()) {
-      if (slot.tending === undefined) continue;
-      const tended = this.players.get(slot.tending);
-      if (tended === undefined) slot.tending = undefined;
-      else this.touch(slot, tended);
-    }
+    this.runEngaged();
     for (const target of this.players.values()) {
       if (target.raise !== undefined) this.advanceRaise(target, target.raise, elapsedSeconds);
     }
@@ -1226,7 +1278,7 @@ export class SpaceActor {
 
   /**
    * The one place a raise breaks, and the one place a Healer drops out of one. A Healer holds on
-   * only while they stay attached, tending the dreamer, standing, holding the Moonstone, in reach,
+   * only while they stay attached, engaged on the dreamer, standing, holding the Moonstone, in touch,
    * and with spirit left. One who does not drops out, taking only their pace with them. Once the
    * last has dropped out, the raise breaks off and has to start over. A raise whose fallen dreamer
    * leaves the space goes with their slot, unannounced.
@@ -1237,7 +1289,8 @@ export class SpaceActor {
       const healer = this.players.get(id);
       return (
         healer !== undefined &&
-        healer.tending === target.character.id &&
+        healer.engaged &&
+        healer.target === target.character.id &&
         this.wieldsMoonstone(healer) &&
         healer.character.energy.spiritCurrent > 0 &&
         this.touches(healer, target)
@@ -1313,16 +1366,49 @@ export class SpaceActor {
     this.setCondition(slot);
   }
 
-  /** Announces an entity's condition when its health crossed into another band. This is all another player learns of anyone's health. */
+  /** Announces an entity's condition when its health crossed into another band. This is all another player learns of anyone's health but their target's. */
   private setCondition(entity: PlayerSlot | MonsterRuntime): void {
-    const [id, current, max] =
-      'character' in entity
-        ? [entity.character.id, entity.character.energy.healthCurrent, entity.character.energy.healthMax]
-        : [entity.id, entity.health, entity.kind.health];
-    const condition = conditionOf(current, max);
+    const condition = conditionOf(...healthOf(entity));
     if (condition === entity.condition) return;
     entity.condition = condition;
-    this.broadcast({ tag: 'condition', payload: { entityId: id, condition } }, entity.sector);
+    const entityId = 'character' in entity ? entity.character.id : entity.id;
+    this.broadcast({ tag: 'condition', payload: { entityId, condition } }, entity.sector);
+  }
+
+  private dropUnseenTargets(): void {
+    for (const slot of this.players.values()) {
+      if (slot.target !== undefined && !this.seesEntity(slot, slot.target)) slot.target = undefined;
+    }
+  }
+
+  /**
+   * Sends the dreamer the health share of their target: at once for one newly targeted, then on a
+   * change, no sooner than the vitals interval after the last. The dreamer's own `energy` already
+   * tells them their health, so they are sent none of their own.
+   */
+  private sendVitals(slot: PlayerSlot): void {
+    const watched = slot.target === slot.character.id ? undefined : slot.target;
+    if (slot.vitals?.entityId !== watched) slot.vitals = undefined;
+    if (watched === undefined) return;
+    const now = this.now();
+    const health = this.healthShare(watched);
+    const last = slot.vitals;
+    if (last !== undefined && (last.health === health || now - last.at < VITALS_INTERVAL_MS)) return;
+    slot.vitals = { entityId: watched, health, at: now };
+    slot.outbox.sendEncoded({ tag: 'vitals', payload: { entityId: watched, health } }, this.logger);
+  }
+
+  /** An entity's health as a share of its maximum, to two decimals. An NPC is always whole. */
+  private healthShare(entityId: string): number {
+    const entity = this.players.get(entityId) ?? this.monsters.get(entityId);
+    if (entity === undefined) return 1;
+    return Math.round(poolShare(...healthOf(entity)) * 100) / 100;
+  }
+
+  /** Whether the entity is in the space and stands where the viewer sees it. */
+  private seesEntity(viewer: PlayerSlot, entityId: string): boolean {
+    const sector = (this.players.get(entityId) ?? this.npcs.get(entityId) ?? this.monsters.get(entityId))?.sector;
+    return sector !== undefined && this.sees(viewer, sector);
   }
 
   /** Whether the player lies fallen; `false` for anyone not in this space. */
