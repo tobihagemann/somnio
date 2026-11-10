@@ -753,7 +753,7 @@ describe('slot 1 at a dreamer', () => {
     const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
     engage(space, hurt.entityId, healer.entityId);
-    space.detach(hurt.entityId, true);
+    space.handOver(hurt.entityId, true);
     steps(1);
     space.attach(hurt.character, [], new ConnectionOutbox(4096), 0, 'en');
     space.handleTarget(hurt.entityId, healer.entityId);
@@ -766,7 +766,7 @@ describe('slot 1 at a dreamer', () => {
     const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
     engage(space, hurt.entityId, healer.entityId);
-    space.detach(healer.entityId, false);
+    space.handOver(healer.entityId, false);
     space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
     space.handleTarget(hurt.entityId, healer.entityId);
     steps(1);

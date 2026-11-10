@@ -1,6 +1,9 @@
 import { ROLES } from '@somnio/protocol';
-import type { NPCService, Role } from '@somnio/protocol';
+import type { NPCService, Role, SectorView } from '@somnio/protocol';
 import type { AbilityId } from './abilities.ts';
+import { distance } from './geometry.ts';
+import type { Point } from './geometry.ts';
+import { sectorPointInSpace } from './sector.ts';
 
 /**
  * What a dreamer grows into: a role taken for good when a master takes their passed trial as
@@ -14,7 +17,17 @@ export type TaskSpec =
   /** A dreamer holding a `withoutStriking` task cannot swing. `labelKey` is the catalog key of the sector's display name. */
   | { kind: 'reach'; sector: string; labelKey: string; withoutStriking?: boolean }
   /** Health mended on other dreamers. */
-  | { kind: 'mend'; amount: number };
+  | { kind: 'mend'; amount: number }
+  /** Every place stood in once, in any order. The progress keeps bit `i` for place `i`. */
+  | { kind: 'reachAll'; places: HiddenPlace[] };
+
+/** A spot no map marks, found by standing within `radius` of `x`/`z`, which is sector-relative like every record's position. */
+export interface HiddenPlace {
+  sector: string;
+  x: number;
+  z: number;
+  radius: number;
+}
 
 export interface Teaching {
   role: Role;
@@ -57,6 +70,17 @@ export const TEACHINGS = {
     gate: { kind: 'mend', amount: 60 },
   },
   'spirit-deepening': { role: 'healer', labelKey: 'Spirit deepening', maxRank: 5 },
+  'deep-mend': { role: 'healer', labelKey: 'Deep mend', maxRank: 3, needs: { teachingId: 'touch', rank: 1 }, ability: 'deep-mend' },
+  renewal: { role: 'healer', labelKey: 'Renewal', maxRank: 3, needs: { teachingId: 'touch', rank: 2 }, ability: 'renewal' },
+  radiance: { role: 'healer', labelKey: 'Radiance', maxRank: 3, needs: { teachingId: 'depth', rank: 1 }, ability: 'radiance' },
+  calm: { role: 'healer', labelKey: 'Calm', maxRank: 1, needs: { teachingId: 'touch', rank: 1 }, ability: 'calm' },
+  ward: { role: 'mystic', labelKey: 'Ward', maxRank: 3, ability: 'ward' },
+  weaken: { role: 'mystic', labelKey: 'Weaken', maxRank: 3, needs: { teachingId: 'ward', rank: 1 }, ability: 'weaken' },
+  bind: { role: 'mystic', labelKey: 'Bind', maxRank: 3, needs: { teachingId: 'weaken', rank: 1 }, ability: 'bind' },
+  'dream-bolt': { role: 'mystic', labelKey: 'Dream-bolt', maxRank: 3, needs: { teachingId: 'ward', rank: 1 }, ability: 'dream-bolt' },
+  veil: { role: 'mystic', labelKey: 'Veil', maxRank: 1, needs: { teachingId: 'bind', rank: 1 }, ability: 'veil' },
+  'sense-the-fallen': { role: 'mystic', labelKey: 'Sense the fallen', maxRank: 1, needs: { teachingId: 'ward', rank: 1 } },
+  'mystic-spirit-deepening': { role: 'mystic', labelKey: 'Spirit deepening', maxRank: 5 },
 } as const satisfies Record<string, Teaching>;
 export type TeachingId = keyof typeof TEACHINGS;
 
@@ -70,10 +94,19 @@ export function teaching(id: TeachingId): Teaching {
 export const TRIALS: Record<Role, TaskSpec> = {
   fighter: { kind: 'driveOff', count: 1 },
   healer: { kind: 'reach', sector: 'NorthWood', labelKey: 'North Wood', withoutStriking: true },
+  // Tacita's dialog in EdariaMysticTower is how a dreamer finds these, so a place moves with its hint.
+  mystic: {
+    kind: 'reachAll',
+    places: [
+      { sector: 'WestMeadow', x: 6.72, z: 24.88, radius: 3 },
+      { sector: 'AutumnWood', x: 9.04, z: 8, radius: 3 },
+      { sector: 'NorthMeadow', x: 6.88, z: 16.72, radius: 3 },
+    ],
+  },
 };
 
 /** The teaching a dreamer is taught, and set to study, on taking the role. */
-export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch' };
+export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch', mystic: 'ward' };
 
 /** What doing a thing adds toward the next rank of the teaching studied. */
 export const PRACTICE = {
@@ -115,7 +148,7 @@ export interface Lucidity {
 
 export const NO_LUCIDITY: Lucidity = { role: undefined, ranks: [], study: undefined, task: undefined };
 
-const ROLE_LABEL_KEYS: Record<Role, string> = { fighter: 'Fighter', healer: 'Healer' };
+const ROLE_LABEL_KEYS: Record<Role, string> = { fighter: 'Fighter', healer: 'Healer', mystic: 'Mystic' };
 
 /** The catalog key of a role's display name. */
 export function roleLabelKey(role: Role): string {
@@ -191,7 +224,25 @@ export function taskGoal(spec: TaskSpec): number {
       return 1;
     case 'mend':
       return spec.amount;
+    case 'reachAll':
+      return (1 << spec.places.length) - 1;
   }
+}
+
+/** How many of a `reachAll` task's places its progress holds as found. */
+export function placesFound(progress: number): number {
+  let found = 0;
+  for (let bits = progress; bits !== 0; bits >>>= 1) found += bits & 1;
+  return found;
+}
+
+/** The progress bits of the places of a `reachAll` task that `point`, in the sector's space, stands within; 0 for any other task. */
+export function placesReached(spec: TaskSpec, sector: SectorView, point: Point): number {
+  if (spec.kind !== 'reachAll') return 0;
+  return spec.places.reduce(
+    (bits, place, index) => (place.sector === sector.name && distance(sectorPointInSpace(sector, place), point) <= place.radius ? bits | (1 << index) : bits),
+    0,
+  );
 }
 
 /** Whether a dreamer holding the task cannot swing. */
@@ -200,7 +251,7 @@ export function forbidsStriking(spec: TaskSpec): boolean {
 }
 
 /** The role a master teaches; `undefined` for a service that is no master's. */
-export function masterRole(service: 'fighterMaster' | 'healerMaster'): Role;
+export function masterRole(service: 'fighterMaster' | 'healerMaster' | 'mysticMaster'): Role;
 export function masterRole(service: NPCService): Role | undefined;
 export function masterRole(service: NPCService): Role | undefined {
   switch (service) {
@@ -208,6 +259,8 @@ export function masterRole(service: NPCService): Role | undefined {
       return 'fighter';
     case 'healerMaster':
       return 'healer';
+    case 'mysticMaster':
+      return 'mystic';
     case 'shopkeeper':
       return undefined;
   }

@@ -140,15 +140,12 @@ export const DOOR_PATH = { materialId: 'dirt-path', radius: 0.8, opacity: 0.9 } 
 export interface Opening {
   id: string;
   inside: Point;
-  /** Whether the path runs on from `inside` to the nearest door path in the yard. */
-  join: boolean;
 }
 
 /** The town's compound openings no door path runs through, each with a point just inside its yard. */
 export const OPENINGS: Opening[] = [
-  { id: 'gen-opening-nw-south', inside: { x: 9.28, z: 13.4 }, join: true },
-  { id: 'gen-opening-sw-north', inside: { x: 9.28, z: 27.6 }, join: false },
-  { id: 'gen-opening-sw-east', inside: { x: 13.4, z: 31.68 }, join: false },
+  { id: 'gen-opening-nw-south', inside: { x: 9.28, z: 13.4 } },
+  { id: 'gen-opening-sw-north', inside: { x: 9.28, z: 27.6 } },
 ];
 
 export interface Link {
@@ -276,8 +273,6 @@ export const LANDS: LandRules[] = [
       { x: 18.2, z: 8, radius: 1.2 },
       { x: 23, z: 32.5, radius: 1.3 },
       { x: 8, z: 22.5, radius: 1 },
-      // The yard end of each opening path that stops there.
-      ...OPENINGS.filter((opening) => !opening.join).map((opening) => ({ ...opening.inside, radius: 1.1 })),
     ],
     clustersPerWindow: 2,
     clusterTrees: [1, 2],

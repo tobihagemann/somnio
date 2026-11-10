@@ -19,7 +19,7 @@ it('a Ghost of the committed Arena is fought to its fade, and its spawn then kee
   clock.ms = RESPAWN_MS;
   space.step(0);
   const scout = attachPlayer(space, REFUGE_AT, 'scout', { spaceId: 'EdariaArena' });
-  space.detach(scout.entityId, true);
+  space.handOver(scout.entityId, true);
   const [ghost] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
   if (ghost === undefined) throw new Error('no Ghost spawned in the Arena');
 
@@ -41,7 +41,7 @@ it('a Ghost of the committed Arena is fought to its fade, and its spawn then kee
   // Its bounty is what put a purse beside the cudgel.
   expect(space.snapshotForPlayer(fighter.entityId)!.inventory).toContainEqual({ slot: 0, itemId: 'purse', quantity: GHOST.bounty, equippedHand: undefined });
   expect(space.isFallen(fighter.entityId)).toBe(false);
-  space.detach(fighter.entityId, true);
+  space.handOver(fighter.entityId, true);
   const fight = await collectMessages(fighter.outbox);
   expect(payloads(fight, 'blow').filter((blow) => blow.attackerId === fighter.entityId && blow.hit)).toHaveLength(3);
   expect(

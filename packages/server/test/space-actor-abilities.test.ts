@@ -272,9 +272,8 @@ describe('Lunge', () => {
     const fighter = attachPlayer(space, { x: 1, z: 2 }, 'fighter', { character: LUNGER });
     travel(space, clock, fighter.entityId, { x: 18, z: 2 }, 3, 'run');
     // The door's arrival: out of the space and back into it, as a transfer detaches and attaches.
-    const { character, inventory } = space.snapshotForPlayer(fighter.entityId)!;
-    const transient = space.detach(fighter.entityId, false);
-    space.attach({ ...character, position: LUNGE_FROM }, inventory, fighter.outbox, 0, 'en', transient);
+    const { checkpoint, transient } = space.handOver(fighter.entityId, false)!;
+    space.attach({ ...checkpoint.character, position: LUNGE_FROM }, checkpoint.inventory, fighter.outbox, 0, 'en', transient);
     lungeAtGhost(space, clock, fighter.entityId);
     const messages = await collectMessages(fighter.outbox);
     expect(payloads(messages, 'ability')).toHaveLength(1);

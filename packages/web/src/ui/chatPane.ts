@@ -5,6 +5,7 @@ import { renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { element, iconButton, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
+import { setTip } from './hudTooltip';
 import { windowHead } from './hudWindows';
 
 /**
@@ -66,9 +67,11 @@ export class ChatPane {
 
     if (coarse) {
       this.peek = element('div', { className: 'hud-chat-peek', attributes: { 'aria-hidden': 'true' } });
-      this.toggle = iconButton(t('Chat'), glyph(HUD_ICONS.chat), () => this.openChat(), {
-        className: 'fantasy-button fantasy-button--compact hud-chat-toggle',
-      });
+      this.toggle = setTip(
+        iconButton(t('Chat'), glyph(HUD_ICONS.chat), () => this.openChat(), {
+          className: 'fantasy-button fantasy-button--compact hud-chat-toggle',
+        }),
+      );
       this.toggle.setAttribute('aria-expanded', 'false');
       this.panel = element('section', {
         className: 'fantasy-panel fantasy-panel--opaque hud-chat hud-chat--open hidden',

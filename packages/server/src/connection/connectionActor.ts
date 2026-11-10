@@ -368,6 +368,7 @@ export class ConnectionActor {
         case 'cooldowns':
         case 'raising':
         case 'mend':
+        case 'sensed':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -437,6 +438,7 @@ export class ConnectionActor {
         case 'cooldowns':
         case 'raising':
         case 'mend':
+        case 'sensed':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -530,6 +532,7 @@ export class ConnectionActor {
       case 'cooldowns':
       case 'raising':
       case 'mend':
+      case 'sensed':
       case 'adminSay':
       case 'sessionToken':
       case 'sessionRevoked':
@@ -582,10 +585,11 @@ export class ConnectionActor {
   }
 
   /**
-   * The player leaves the space in the same turn their snapshot is taken, so nothing that happens
-   * there during the write (a strike, a raise) is lost from it. The account stays registered until
-   * the write has landed, so a login racing it is answered `alreadyLoggedIn` rather than reading
-   * the row from before. A connection still choosing a character has nothing to write.
+   * The space hands the player over in one turn, so nothing that happens there during the write (a
+   * strike, a raise) is lost from their snapshot, and the snapshot includes any heal tick that fell
+   * due as they left. The account stays registered until the write has landed, so a login racing it
+   * is answered `alreadyLoggedIn` rather than reading the row from before. A connection still
+   * choosing a character has nothing to write.
    */
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
     const state = this.state;
@@ -595,11 +599,9 @@ export class ConnectionActor {
       return;
     }
     if (state.kind !== 'attached') return;
-    const space = this.dependencies.worldRouter.space(state.spaceId);
-    const snapshot = space?.snapshotForPlayer(state.entityId);
-    space?.detach(state.entityId, leftGame);
-    if (snapshot !== undefined) {
-      await persistPlayerCheckpoint(snapshot, this.dependencies.characters, this.logger, {
+    const handedOver = this.dependencies.worldRouter.space(state.spaceId)?.handOver(state.entityId, leftGame);
+    if (handedOver !== undefined) {
+      await persistPlayerCheckpoint(handedOver.checkpoint, this.dependencies.characters, this.logger, {
         origin: 'disconnect',
         space: state.spaceId,
       });

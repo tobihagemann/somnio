@@ -12,6 +12,7 @@ import {
   isTeachingId,
   itemInHand,
   masterRole,
+  placesFound,
   practiceNeeded,
   purseCoins,
   roleLabelKey,
@@ -49,10 +50,11 @@ export interface ServicePanelCallbacks {
 const SERVICE_TITLE: Record<NPCService, () => string> = {
   fighterMaster: () => t('Master of the Fighters'),
   healerMaster: () => t('Master of the Healers'),
+  mysticMaster: () => t('Master of the Mystics'),
   shopkeeper: () => t('Shopkeeper'),
 };
 
-const TEACHING_BLURB: Record<TeachingId, () => string> = {
+export const TEACHING_BLURB: Record<TeachingId, () => string> = {
   strike: () => t('Each rank adds to every hit you land.'),
   guard: () => t('Each rank makes nightmares miss you more often.'),
   'follow-through': () => t('Each rank shortens the pause between your swings.'),
@@ -67,14 +69,26 @@ const TEACHING_BLURB: Record<TeachingId, () => string> = {
   depth: () => t('Each rank mends more with every touch.'),
   'drawing-back': () => t('Holding the Moonstone, turn on Mend at a fallen dreamer and stay beside them to raise them.'),
   'spirit-deepening': () => t('Each rank raises your spirit by %@.', String(COMBAT.spiritPerDeepeningRank)),
+  'deep-mend': () =>
+    t('Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.'),
+  renewal: () => t('Mend the dreamer you target, or yourself, a little every second for a while. Each rank mends more.'),
+  radiance: () => t('Mend every dreamer near you at once, yourself included. Each rank mends more.'),
+  calm: () => t("Turn the nightmares' anger from you: they forget half of it, and your mending stirs them less for a while."),
+  ward: () => t('Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.'),
+  weaken: () => t('The nightmare you target strikes softer for a while. Each rank makes it last longer.'),
+  bind: () => t('Hold the nightmare you target where it stands for a few seconds. It still strikes whoever is in its reach. Each rank holds it longer.'),
+  'dream-bolt': () => t('Send a bolt of dream at the nightmare you target, even from afar. Each rank hits harder.'),
+  veil: () => t('Hide yourself and every dreamer near you from the nightmares for a few seconds. They forget you were there.'),
+  'sense-the-fallen': () => t('Always see which way each fallen dreamer lies, however far off.'),
+  'mystic-spirit-deepening': () => t('Each rank raises your spirit by %@.', String(COMBAT.spiritPerDeepeningRank)),
 };
 
 function roleName(role: Role): string {
   return t(roleLabelKey(role));
 }
 
-/** What a task asks for, with the condition it is held under. */
-function taskText(spec: TaskSpec): string[] {
+/** What a task asks for, with the condition it is held under, as the named master sets it. */
+function taskText(spec: TaskSpec, master: string): string[] {
   switch (spec.kind) {
     case 'driveOff':
       return [
@@ -88,13 +102,20 @@ function taskText(spec: TaskSpec): string[] {
       ];
     case 'mend':
       return [t('Mend %@ health on other dreamers.', String(spec.amount))];
+    case 'reachAll':
+      return [t('Find %@ hidden places and come back.', String(spec.places.length)), t('Talk to %@ to hear where they lie.', master)];
   }
 }
 
-/** How far a held task has come. A task this client cannot read has no line. */
+/**
+ * How far a held task has come: a count toward its goal, or for hidden places, how many are found,
+ * never which. A task this client cannot read has no line.
+ */
 export function taskProgressText(task: TaskMessage): string | undefined {
   const spec = taskSpecOf(task);
-  return spec === undefined ? undefined : t('%1$@ of %2$@', String(Math.floor(task.progress)), String(taskGoal(spec)));
+  if (spec === undefined) return undefined;
+  if (spec.kind === 'reachAll') return t('%1$@ of %2$@', String(placesFound(task.progress)), String(spec.places.length));
+  return t('%1$@ of %2$@', String(Math.floor(task.progress)), String(taskGoal(spec)));
 }
 
 /** The section of the panel a teaching is listed under: where it stands for the dreamer, or that they study it. */
@@ -172,6 +193,7 @@ export class ServicePanel {
     switch (service) {
       case 'fighterMaster':
       case 'healerMaster':
+      case 'mysticMaster':
         return { reads: [lucidity], build: () => this.master(npc, masterRole(service), lucidity) };
       case 'shopkeeper':
         return { reads: [inventory, tradeLocked], purse: purseCoins(inventory), build: () => this.shop(npc, inventory, tradeLocked) };
@@ -252,7 +274,7 @@ export class ServicePanel {
             roleName(role),
           ),
         ),
-        ...taskText(TRIALS[role]).map((line) => paragraph(line, 'form-note')),
+        ...taskText(TRIALS[role], npc.name).map((line) => paragraph(line, 'form-note')),
         button(t('Ask for the trial'), () => this.callbacks.onAskTask()),
       ];
     }
@@ -262,14 +284,14 @@ export class ServicePanel {
     if (!taskIsDone(task)) {
       return [
         element('h2', { className: 'service-heading', text: t('Your trial') }),
-        ...this.taskLines(task),
+        ...this.taskLines(npc, task),
         button(t('Give up the trial'), () => this.callbacks.onAbandonTask()),
       ];
     }
     return [
       element('h2', { className: 'service-heading', text: t('Become a %@?', roleName(role)) }),
       paragraph(
-        t('You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.', roleName(role)),
+        t('You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other masters will not teach you afterwards.', roleName(role)),
       ),
       element('div', {
         className: 'form-actions',
@@ -278,11 +300,11 @@ export class ServicePanel {
     ];
   }
 
-  private taskLines(task: TaskMessage): HTMLElement[] {
+  private taskLines(npc: ClientEntity, task: TaskMessage): HTMLElement[] {
     const spec = taskSpecOf(task);
     const progress = taskProgressText(task);
     if (spec === undefined || progress === undefined) return [];
-    const [what, ...conditions] = taskText(spec);
+    const [what, ...conditions] = taskText(spec, npc.name);
     return [paragraph(`${what} ${progress}`), ...conditions.map((line) => paragraph(line, 'form-note'))];
   }
 
@@ -338,7 +360,7 @@ export class ServicePanel {
     if (task?.teachingId !== id) {
       const asks = [
         paragraph(t('%@ teaches its first rank for a task.', npc.name), 'form-note'),
-        ...taskText(teaching(id).gate!).map((line) => paragraph(line, 'form-note')),
+        ...taskText(teaching(id).gate!, npc.name).map((line) => paragraph(line, 'form-note')),
       ];
       return task === undefined
         ? { notes: asks, action: button(t('Take the task'), () => this.callbacks.onAskTask(id)) }
@@ -350,6 +372,6 @@ export class ServicePanel {
         action: button(t('Learn %@', t(teaching(id).labelKey)), () => this.callbacks.onCompleteTask()),
       };
     }
-    return { notes: this.taskLines(task), action: button(t('Give up the task'), () => this.callbacks.onAbandonTask()) };
+    return { notes: this.taskLines(npc, task), action: button(t('Give up the task'), () => this.callbacks.onAbandonTask()) };
   }
 }

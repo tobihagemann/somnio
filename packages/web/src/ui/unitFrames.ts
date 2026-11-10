@@ -1,12 +1,13 @@
 import { clamp, conditionMidpoint, peopleLabelKey, poolShare, roleLabelKey } from '@somnio/core';
 import type { EffectId, People } from '@somnio/core';
 import type { Condition, Energy, Role } from '@somnio/protocol';
-import { wholeSecondsLeft } from '@/client';
-import type { ClientEffect, ClientEntity } from '@/client';
-import { t } from '@/i18n';
+import { raiseShownAt, wholeSecondsLeft } from '@/client';
+import type { ClientChannel, ClientEffect, ClientEntity, ClientRaise } from '@/client';
+import { abilityName, currentLocale, formatNameList, t } from '@/i18n';
 import { playerPlaqueBackground } from '@/scene/overlayArt';
 import { element, iconButton, setHidden } from './dom';
 import { EFFECT_GLYPHS, HUD_ICONS, PEOPLE_SIGILS, glyph } from './hudIcons';
+import { setTip } from './hudTooltip';
 
 /**
  * The unit frames at the top: the player's own at the top left, a press on which makes them their
@@ -26,6 +27,24 @@ const CONDITION_WORDS: Record<Condition, () => string> = {
 const EFFECT_NAMES: Record<EffectId, () => string> = {
   braced: () => t('Braced'),
   challenged: () => t('Challenged'),
+  renewing: () => t('Renewing'),
+  calmed: () => t('Calmed'),
+  warded: () => t('Warded'),
+  weakened: () => t('Weakened'),
+  bound: () => t('Bound'),
+  veiled: () => t('Veiled'),
+};
+
+/** What an effect does to whoever holds it, in its tip. */
+const EFFECT_LINES: Record<EffectId, () => string> = {
+  braced: () => t('Takes half the harm and cannot run.'),
+  challenged: () => t('Goes after the dreamer who challenged it.'),
+  renewing: () => t('Mends a little every second.'),
+  calmed: () => t("Stirs the nightmares' anger half as much."),
+  warded: () => t('A shield takes the harm of the next blows.'),
+  weakened: () => t('Strikes softer.'),
+  bound: () => t('Cannot move from where it stands.'),
+  veiled: () => t('Nightmares leave this dreamer alone.'),
 };
 
 /**
@@ -59,10 +78,16 @@ class EffectRow {
       const seconds = element('span', { className: 'hud-effect__seconds', attributes: { 'aria-hidden': 'true' } });
       const root = element('span', {
         className: 'hud-effect',
-        attributes: { role: 'listitem', title: EFFECT_NAMES[effectId]() },
+        attributes: { role: 'listitem' },
         children: [element('span', { className: 'hud-effect__glyph', children: [glyph(EFFECT_GLYPHS[effectId])] }), seconds],
       });
-      this.items.set(effectId, { root, seconds, endsAtMs, shown: undefined });
+      const created = { root, seconds, endsAtMs, shown: undefined };
+      setTip(root, (nowMs) => ({
+        title: EFFECT_NAMES[effectId](),
+        ...(created.endsAtMs === undefined ? {} : { aside: t('%@s', String(wholeSecondsLeft(created.endsAtMs, nowMs))) }),
+        lines: [EFFECT_LINES[effectId]()],
+      }));
+      this.items.set(effectId, created);
     }
     const roots = effects.map(({ effectId }) => this.items.get(effectId)!.root);
     if (roots.some((root, index) => this.root.children[index] !== root) || this.root.children.length !== roots.length) this.root.replaceChildren(...roots);
@@ -82,6 +107,71 @@ class EffectRow {
   }
 }
 
+/**
+ * What a frame's timed bar shows: a channel draining from its start, or a raise filling in its gold
+ * from its snapshot, to its end on the session's clock. A raise fills by `easing`, its schedule.
+ */
+interface Timing {
+  look: 'channel' | 'raise';
+  label: string;
+  startedAtMs: number;
+  endsAtMs: number;
+  easing?: string;
+}
+
+/** The raise of a framed entity, or else its channel, since a fallen dreamer channels nothing. */
+function timingOf(raise: ClientRaise | undefined, channel: ClientChannel | undefined): Timing | undefined {
+  if (raise !== undefined) {
+    const label = raise.healerNames.length === 0 ? t('Being drawn back') : t('Being drawn back by %@', formatNameList(raise.healerNames, currentLocale()));
+    return { look: 'raise', label, startedAtMs: raise.atMs, endsAtMs: raise.endsAtMs, easing: raiseEasing(raise) };
+  }
+  if (channel === undefined) return undefined;
+  const label = t('Channelling %@', abilityName(channel.abilityId, t));
+  return { look: 'channel', label, startedAtMs: channel.startedAtMs, endsAtMs: channel.endsAtMs };
+}
+
+/**
+ * The share a raise shows done over its seconds, as a CSS `linear()` easing of the fill: `raiseShownAt`
+ * at its snapshot, at each pause's end within its seconds, where its pace changes, and at its end.
+ */
+function raiseEasing(raise: ClientRaise): string {
+  const turns = [0, ...(raise.pausedSeconds ?? []).filter((paused) => paused > 0 && paused < raise.seconds), raise.seconds].sort((a, b) => a - b);
+  const stops = turns.map((at) => `${raiseShownAt(raise, at).toFixed(4)} ${(raise.seconds === 0 ? 100 : (at / raise.seconds) * 100).toFixed(2)}%`);
+  return `linear(${stops.join(', ')})`;
+}
+
+/**
+ * A thin bar hung under a frame while its entity channels or is raised. The fill is a CSS animation
+ * timed from the start, on the page's clock, so it keeps pace in a tab drawing slowly or hidden. An
+ * animation restarts only on a new element, so each new timing gets a new fill, started as far in
+ * as it has run, and the same timing keeps its elements.
+ */
+class TimedBar {
+  readonly root: HTMLElement;
+  private fill: HTMLElement;
+  private shown: string | undefined;
+
+  constructor() {
+    this.fill = element('span', { className: 'hud-timed__fill' });
+    this.root = setTip(element('span', { className: 'hud-timed hidden', attributes: { role: 'img' }, children: [this.fill] }));
+  }
+
+  render(timing: Timing | undefined, nowMs: number): void {
+    const shown = JSON.stringify(timing ?? null);
+    if (shown === this.shown) return;
+    this.shown = shown;
+    setHidden(this.root, timing === undefined);
+    if (timing === undefined) return;
+    this.root.setAttribute('aria-label', timing.label);
+    const fill = element('span', { className: `hud-timed__fill hud-timed__fill--${timing.look}` });
+    fill.style.animationDuration = `${Math.round(timing.endsAtMs - timing.startedAtMs)}ms`;
+    fill.style.animationDelay = `${Math.round(timing.startedAtMs - nowMs)}ms`;
+    if (timing.easing !== undefined) fill.style.animationTimingFunction = timing.easing;
+    this.fill.replaceWith(fill);
+    this.fill = fill;
+  }
+}
+
 /** A thin bar: a dark track with a light rim and a fill as wide as its share. */
 export interface ShareBar {
   root: HTMLElement;
@@ -90,13 +180,12 @@ export interface ShareBar {
 
 export function shareBar(fillClass: string): ShareBar {
   const fill = element('span', { className: `hud-bar__fill ${fillClass}` });
-  return { root: element('span', { className: 'hud-bar', attributes: { role: 'img' }, children: [fill] }), fill };
+  return { root: setTip(element('span', { className: 'hud-bar', attributes: { role: 'img' }, children: [fill] })), fill };
 }
 
-/** Sets a bar's fill and the reading its tooltip and accessible name carry. */
+/** Sets a bar's fill and the reading its tip and accessible name carry. */
 export function showShare(bar: ShareBar, share: number, reading: string): void {
   bar.fill.style.width = `${(clamp(share, 0, 1) * 100).toFixed(2)}%`;
-  bar.root.setAttribute('title', reading);
   bar.root.setAttribute('aria-label', reading);
 }
 
@@ -122,12 +211,16 @@ export interface OwnFrameState {
   /** Whether the player is their own target. */
   targeted: boolean;
   effects: readonly ClientEffect[];
+  channel: ClientChannel | undefined;
+  /** The raise under way while the player lies fallen. */
+  raise: ClientRaise | undefined;
 }
 
 export class OwnFrame {
   readonly root: HTMLButtonElement;
   readonly portrait: HTMLElement;
   readonly effects = new EffectRow();
+  readonly timed = new TimedBar();
   /** The people's sigil, on a badge at the portrait's foot. */
   private readonly sigil: HTMLElement;
   private readonly name: HTMLElement;
@@ -154,14 +247,16 @@ export class OwnFrame {
     ];
     this.root = element('button', {
       className: 'fantasy-panel hud-unit hud-unit--self',
-      attributes: { type: 'button', title: t('Target yourself'), 'aria-pressed': 'false' },
-      children: [this.portrait, element('span', { className: 'hud-unit__lines', children: lines })],
+      attributes: { type: 'button', 'aria-pressed': 'false' },
+      children: [this.portrait, element('span', { className: 'hud-unit__lines', children: lines }), this.timed.root],
     });
     this.root.addEventListener('click', onPress);
+    setTip(this.root, () => ({ title: t('Target yourself') }));
   }
 
   render(state: OwnFrameState, nowMs: number): void {
     this.effects.render(state.effects, nowMs);
+    this.timed.render(timingOf(state.raise, state.channel), nowMs);
     const shown = JSON.stringify([state.name, state.people ?? null, state.role ?? null, state.condition, state.targeted]);
     if (shown === this.shown) return;
     this.shown = shown;
@@ -190,11 +285,13 @@ export class OwnFrame {
   }
 }
 
-/** What the target frame shows: the entity, its effects, and the share of its health the server last sent, `undefined` before it has. */
+/** What the target frame shows: the entity, its effects, its channel or raise, and the share of its health the server last sent, `undefined` before it has. */
 export interface FramedEntity {
   entity: ClientEntity;
   health: number | undefined;
   effects: readonly ClientEffect[];
+  channel: ClientChannel | undefined;
+  raise: ClientRaise | undefined;
 }
 
 /**
@@ -206,6 +303,7 @@ export class TargetFrame {
   readonly root: HTMLElement;
   readonly portrait: HTMLElement;
   readonly effects = new EffectRow();
+  readonly timed = new TimedBar();
   private readonly name: HTMLElement;
   private readonly health: ShareBar;
   /** What it shows, compared by value: an entity is a new object after each of its moves. */
@@ -214,7 +312,7 @@ export class TargetFrame {
   constructor(onClear: () => void) {
     this.name = element('span', { className: 'hud-unit__name' });
     this.health = shareBar('hud-bar__fill--health');
-    const clear = iconButton(t('Clear target'), glyph(HUD_ICONS.close), onClear, { className: 'hud-unit__clear' });
+    const clear = setTip(iconButton(t('Clear target'), glyph(HUD_ICONS.close), onClear, { className: 'hud-unit__clear' }));
     this.portrait = portraitSlot();
     const lines = element('span', {
       className: 'hud-unit__lines',
@@ -223,12 +321,13 @@ export class TargetFrame {
     this.root = element('section', {
       className: 'fantasy-panel hud-unit hud-unit--target hidden',
       attributes: { 'aria-label': t('Target') },
-      children: [this.portrait, lines, clear],
+      children: [this.portrait, lines, clear, this.timed.root],
     });
   }
 
   render(target: FramedEntity | undefined, gazeLocked: boolean, nowMs: number): void {
     this.effects.render(target?.effects ?? [], nowMs);
+    this.timed.render(timingOf(target?.raise, target?.channel), nowMs);
     const shown =
       target === undefined
         ? undefined

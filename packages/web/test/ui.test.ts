@@ -1531,6 +1531,24 @@ describe('the service panel', () => {
     expect(p.calls).toEqual(['abandon']);
   });
 
+  it("offers the Mystic's trial and counts the places found without naming one", () => {
+    const p = mount();
+    const tacita = p.npc('mysticMaster', 'npc:EdariaMysticTower/tacita', 'Tacita');
+    p.render(tacita, { ranks: [] });
+    expect(p.text()).toContain('Master of the Mystics');
+    expect(p.text()).toContain('Find 3 hidden places and come back.');
+    expect(p.text()).toContain('Talk to Tacita to hear where they lie.');
+    expect(p.buttons()).toEqual(['Ask for the trial', 'Close']);
+
+    p.render(tacita, { ranks: [], task: { role: 'mystic', progress: 0b101 } });
+    expect(p.text()).toContain('Find 3 hidden places and come back. 2 of 3');
+    expect(p.text()).not.toMatch(/Meadow|Wood/);
+    expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
+
+    p.render(tacita, { ranks: [], task: { role: 'mystic', progress: 0b111 } });
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Mystic', 'Close']);
+  });
+
   it('asks a dreamer who passed the trial before making them the role for good', () => {
     const p = mount();
     p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 1 } });
@@ -1734,16 +1752,16 @@ describe('the fallen notice', () => {
 
   it('shows only while the player lies fallen', () => {
     const n = mount();
-    n.notice.render({ fallen: false, raise: undefined });
+    n.notice.render({ fallen: false, raise: undefined }, 0);
     expect(n.notice.root.classList.contains('hidden')).toBe(true);
-    n.notice.render({ fallen: true, raise: undefined });
+    n.notice.render({ fallen: true, raise: undefined }, 0);
     expect(n.notice.root.classList.contains('hidden')).toBe(false);
     expect(n.notice.root.textContent).toContain('You cannot move, but you can still speak.');
   });
 
   it('gives up in two steps, naming where the dreamer will wake', () => {
     const n = mount();
-    n.notice.render({ fallen: true, raise: undefined });
+    n.notice.render({ fallen: true, raise: undefined }, 0);
     expect(n.visible()).toEqual(['Give up']);
     n.press('Give up');
     expect(n.visible()).toEqual(['Stay', 'Wake there']);
@@ -1758,27 +1776,31 @@ describe('the fallen notice', () => {
 
   it('starts from the first step again after the dreamer has stood up', () => {
     const n = mount();
-    n.notice.render({ fallen: true, raise: undefined });
+    n.notice.render({ fallen: true, raise: undefined }, 0);
     n.press('Give up');
-    n.notice.render({ fallen: false, raise: undefined });
-    n.notice.render({ fallen: true, raise: undefined });
+    n.notice.render({ fallen: false, raise: undefined }, 0);
+    n.notice.render({ fallen: true, raise: undefined }, 0);
     expect(n.visible()).toEqual(['Give up']);
   });
 
-  it('counts a raise down while one runs, naming every Healer holding on', () => {
+  it('counts a raise down by whole seconds while one runs, naming every Healer holding on', () => {
     const n = mount();
-    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi'], secondsLeft: 4 } });
+    n.notice.render({ fallen: true, raise: { progress: 0, seconds: 6, healerNames: ['Lumi'], atMs: 0, endsAtMs: 6000 } }, 2000);
     expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 4 s');
-    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi', 'Bren'], secondsLeft: 2 } });
+    n.notice.tick(2500);
+    expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 4 s');
+    n.notice.tick(3001);
+    expect(n.notice.root.textContent).toContain('Lumi is drawing you back: 3 s');
+    n.notice.render({ fallen: true, raise: { progress: 0.5, seconds: 2, healerNames: ['Lumi', 'Bren'], atMs: 3000, endsAtMs: 5000 } }, 3000);
     expect(n.notice.root.textContent).toContain('Lumi and Bren are drawing you back: 2 s');
-    n.notice.render({ fallen: true, raise: undefined });
+    n.notice.render({ fallen: true, raise: undefined }, 0);
     expect(n.notice.root.querySelector('p.hidden')?.textContent).toContain('Lumi');
   });
 
   it('names the Healers drawing the player back as German lists them', () => {
     setLocale('de');
     const n = mount();
-    n.notice.render({ fallen: true, raise: { healerNames: ['Lumi', 'Bren'], secondsLeft: 2 } });
+    n.notice.render({ fallen: true, raise: { progress: 0, seconds: 2, healerNames: ['Lumi', 'Bren'], atMs: 0, endsAtMs: 2000 } }, 0);
     expect(n.notice.root.textContent).toContain('Lumi und Bren holen dich zurück: 2 s');
   });
 });
@@ -2626,6 +2648,21 @@ describe('the play field and the panels through the shell', () => {
       { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
       { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },
     ]);
+  });
+
+  it("counts a fallen player's raise down on the notice frame by frame, between the server's snapshots", () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const p = playing();
+    const frame = (): void => (p.shell as unknown as { onFrame(timestamp: number): void }).onFrame(clock);
+    const notice = container.querySelector('.fallen-notice')!;
+    p.deliver({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    p.deliver({ tag: 'raising', payload: { targetId: 'self', healerIds: ['bren'], state: 'holding', progress: 0, seconds: 6 } });
+    frame();
+    expect(notice.textContent).toContain('Bren is drawing you back: 6 s');
+    clock += 1001;
+    frame();
+    expect(notice.textContent).toContain('Bren is drawing you back: 5 s');
   });
 
   it('shows a fallen player the notice, and wakes them once they confirm giving up', () => {

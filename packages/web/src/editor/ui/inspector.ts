@@ -3,7 +3,7 @@ import type { ModelRegistry, Sector } from '@somnio/core';
 import { NPC_SERVICES } from '@somnio/protocol';
 import type { NPCService } from '@somnio/protocol';
 import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
-import { button, element, field, replaceChildren, select } from '@/ui/dom';
+import { button, checkbox, element, field, replaceChildren, select } from '@/ui/dom';
 import { maxStrokeRadius } from '../groundMarks';
 import { millimetres } from '../preferences';
 import { byId, isValidId, isValidSelection, selectionKey } from '../selection';
@@ -61,7 +61,12 @@ const POSITION_FIELDS = [
 
 const RECT_FIELDS = [...POSITION_FIELDS, ['Width', 'width'], ['Depth', 'depth']] as const;
 
-const SERVICE_LABELS: Record<NPCService, string> = { fighterMaster: 'Fighter master', healerMaster: 'Healer master', shopkeeper: 'Shopkeeper' };
+const SERVICE_LABELS: Record<NPCService, string> = {
+  fighterMaster: 'Fighter master',
+  healerMaster: 'Healer master',
+  mysticMaster: 'Mystic master',
+  shopkeeper: 'Shopkeeper',
+};
 
 function idOptions(ids: readonly string[]): PickerOption[] {
   return ids.map((id) => ({ value: id, label: id }));
@@ -219,6 +224,7 @@ export class InspectorPanel {
         actionName,
       ),
       this.picker('Target door', (s) => idOptions(targetDoors(s)), target, 'door', actionName),
+      this.nightOnlyToggle(door, actionName),
       this.issueLines(selection),
     ]);
   }
@@ -351,6 +357,27 @@ export class InspectorPanel {
       refresh: (sector) => {
         shown = current(sector);
         setSelectValue(picker.input, shown);
+      },
+    };
+  }
+
+  /** Whether the door opens only at night. Off removes the property, so a door open at every hour is saved without the key. */
+  private nightOnlyToggle(find: Find<Sector['doors'][number]>, actionName: string): DraftField {
+    const toggle = checkbox('Opens only at night', false);
+    toggle.input.addEventListener('change', () => {
+      const nightOnly = toggle.input.checked;
+      const { accepted } = this.callbacks.mutate(actionName, (draft) => {
+        const door = find(draft);
+        if (door === undefined) return;
+        if (nightOnly) door.nightOnly = true;
+        else delete door.nightOnly;
+      });
+      if (!accepted) toggle.input.checked = !nightOnly;
+    });
+    return {
+      row: toggle.row,
+      refresh: (sector) => {
+        toggle.input.checked = find(sector)?.nightOnly === true;
       },
     };
   }

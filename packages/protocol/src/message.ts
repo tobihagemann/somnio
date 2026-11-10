@@ -38,6 +38,7 @@ import type {
   RegisterResultMessage,
   RevokeSessionMessage,
   SayMessage,
+  SensedMessage,
   SectorMessage,
   SelectCharacterMessage,
   SellMessage,
@@ -107,6 +108,7 @@ export type SomnioMessage =
   | { tag: 'cooldowns'; payload: CooldownsMessage }
   | { tag: 'raising'; payload: RaisingMessage }
   | { tag: 'mend'; payload: MendMessage }
+  | { tag: 'sensed'; payload: SensedMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
   | { tag: 'sessionRevoked'; payload: SessionRevokedMessage }

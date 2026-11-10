@@ -11,6 +11,7 @@ const PLACE_NAMES: Record<string, () => string> = {
   EdariaHealerHall: () => t('Healer Hall'),
   EdariaInn: () => t('Inn'),
   EdariaLibrary: () => t('Library'),
+  EdariaMysticTower: () => t('Mystic Tower'),
   EdariaShop: () => t('Shop'),
   EdariaSquare: () => t('Edaria Square'),
   NorthMeadow: () => t('North Meadow'),

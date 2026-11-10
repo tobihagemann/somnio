@@ -31,6 +31,10 @@
     "en": "%1$@ is drawing you back: %2$@ s",
     "de": "%1$@ holt dich zurück: %2$@ s"
   },
+  "%1$@ lies fallen to the %2$@": {
+    "en": "%1$@ lies fallen to the %2$@",
+    "de": "%1$@ liegt gefallen im %2$@"
+  },
   "%1$@ of %2$@": {
     "en": "%1$@ of %2$@",
     "de": "%1$@ von %2$@"
@@ -79,6 +83,14 @@
     "en": "%1$@, %2$@ s left",
     "de": "%1$@, noch %2$@ s"
   },
+  "%@ Balance": {
+    "en": "%@ Balance",
+    "de": "%@ Gleichgewicht"
+  },
+  "%@ Spirit": {
+    "en": "%@ Spirit",
+    "de": "%@ Geist"
+  },
   "%@ deals in weapons. He buys back what he sells for half its price.": {
     "en": "%@ deals in weapons. He buys back what he sells for half its price.",
     "de": "%@ handelt mit Waffen. Was er verkauft, kauft er zum halben Preis zurück."
@@ -111,6 +123,14 @@
     "en": "%@ loses hold of you.",
     "de": "%@ verliert den Halt an dir."
   },
+  "%@ s channel": {
+    "en": "%@ s channel",
+    "de": "%@ s Wirkzeit"
+  },
+  "%@ s cooldown": {
+    "en": "%@ s cooldown",
+    "de": "%@ s Abklingzeit"
+  },
   "%@ teaches its first rank for a task.": {
     "en": "%@ teaches its first rank for a task.",
     "de": "%@ lehrt den ersten Rang für eine Aufgabe."
@@ -135,6 +155,10 @@
     "en": "A newer version is available. Please update your client to keep playing.",
     "de": "Eine neuere Version ist verfügbar. Bitte aktualisiere deinen Client, um weiterzuspielen."
   },
+  "A shield takes the harm of the next blows.": {
+    "en": "A shield takes the harm of the next blows.",
+    "de": "Ein Schild fängt den Schaden der nächsten Schläge ab."
+  },
   "About Somnio": {
     "en": "About Somnio",
     "de": "Über Somnio"
@@ -142,6 +166,14 @@
   "Already logged in.": {
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
+  },
+  "Always see which way each fallen dreamer lies, however far off.": {
+    "en": "Always see which way each fallen dreamer lies, however far off.",
+    "de": "Sieh stets, in welcher Richtung jeder gefallene Träumer liegt, wie weit er auch fort ist."
+  },
+  "An ability you learn takes this slot.": {
+    "en": "An ability you learn takes this slot.",
+    "de": "Eine Fähigkeit, die du lernst, kommt in dieses Feld."
   },
   "Another account already uses that email.": {
     "en": "Another account already uses that email.",
@@ -191,6 +223,18 @@
     "en": "Become a %@?",
     "de": "%@ werden?"
   },
+  "Being drawn back": {
+    "en": "Being drawn back",
+    "de": "Wird zurückgeholt"
+  },
+  "Being drawn back by %@": {
+    "en": "Being drawn back by %@",
+    "de": "Wird von %@ zurückgeholt"
+  },
+  "Bound": {
+    "en": "Bound",
+    "de": "Gefesselt"
+  },
   "Braced": {
     "en": "Braced",
     "de": "Standfest"
@@ -203,13 +247,25 @@
     "en": "Buy for %@c",
     "de": "Für %@c kaufen"
   },
+  "Calmed": {
+    "en": "Calmed",
+    "de": "Beruhigt"
+  },
   "Cancel": {
     "en": "Cancel",
     "de": "Abbrechen"
   },
+  "Cannot move from where it stands.": {
+    "en": "Cannot move from where it stands.",
+    "de": "Kann sich nicht von der Stelle rühren."
+  },
   "Challenged": {
     "en": "Challenged",
     "de": "Herausgefordert"
+  },
+  "Channelling %@": {
+    "en": "Channelling %@",
+    "de": "Wirkt %@"
   },
   "Chat": {
     "en": "Chat",
@@ -335,6 +391,10 @@
     "en": "Every other browser that remembers your password will have to log in again.",
     "de": "Jeder andere Browser, der sich dein Passwort merkt, muss sich erneut anmelden."
   },
+  "Fallen dreamers": {
+    "en": "Fallen dreamers",
+    "de": "Gefallene Träumer"
+  },
   "Falling starts the count over.": {
     "en": "Falling starts the count over.",
     "de": "Fällst du, beginnt die Zählung von vorn."
@@ -342,6 +402,10 @@
   "Fighter Hall": {
     "en": "Fighter Hall",
     "de": "Halle der Kämpfer"
+  },
+  "Find %@ hidden places and come back.": {
+    "en": "Find %@ hidden places and come back.",
+    "de": "Finde %@ verborgene Orte und kehre zurück."
   },
   "Finish your current task first.": {
     "en": "Finish your current task first.",
@@ -375,6 +439,10 @@
     "en": "Give up the trial",
     "de": "Prüfung aufgeben"
   },
+  "Goes after the dreamer who challenged it.": {
+    "en": "Goes after the dreamer who challenged it.",
+    "de": "Geht auf den Träumer los, der ihn herausgefordert hat."
+  },
   "Healer Hall": {
     "en": "Healer Hall",
     "de": "Halle der Heiler"
@@ -382,6 +450,14 @@
   "Health": {
     "en": "Health",
     "de": "Gestalt"
+  },
+  "Hide yourself and every dreamer near you from the nightmares for a few seconds. They forget you were there.": {
+    "en": "Hide yourself and every dreamer near you from the nightmares for a few seconds. They forget you were there.",
+    "de": "Verbirg dich und jeden Träumer in deiner Nähe ein paar Sekunden lang vor den Albträumen. Sie vergessen, dass ihr da wart."
+  },
+  "Hold the nightmare you target where it stands for a few seconds. It still strikes whoever is in its reach. Each rank holds it longer.": {
+    "en": "Hold the nightmare you target where it stands for a few seconds. It still strikes whoever is in its reach. Each rank holds it longer.",
+    "de": "Halte den Albtraum, den du als Ziel gewählt hast, ein paar Sekunden lang fest, wo er steht. Wer in seiner Reichweite ist, den schlägt er trotzdem. Jeder Rang hält ihn länger."
   },
   "Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.": {
     "en": "Holding the Moonstone, target a dreamer or yourself and turn on Mend. Your spirit mends them while they stay near.",
@@ -402,6 +478,10 @@
   "Inn": {
     "en": "Inn",
     "de": "Gasthaus"
+  },
+  "Instant": {
+    "en": "Instant",
+    "de": "Sofort"
   },
   "Items: %@": {
     "en": "Items: %@",
@@ -459,6 +539,10 @@
     "en": "Master of the Healers",
     "de": "Meisterin der Heiler"
   },
+  "Master of the Mystics": {
+    "en": "Master of the Mystics",
+    "de": "Meisterin der Mystiker"
+  },
   "Mastered": {
     "en": "Mastered",
     "de": "Gemeistert"
@@ -475,9 +559,25 @@
     "en": "Mend %@ health on other dreamers.",
     "de": "Heile %@ Gestalt bei anderen Träumern."
   },
+  "Mend every dreamer near you at once, yourself included. Each rank mends more.": {
+    "en": "Mend every dreamer near you at once, yourself included. Each rank mends more.",
+    "de": "Heile jeden Träumer in deiner Nähe auf einmal, dich selbst eingeschlossen. Jeder Rang heilt mehr."
+  },
+  "Mend the dreamer you target, or yourself, a little every second for a while. Each rank mends more.": {
+    "en": "Mend the dreamer you target, or yourself, a little every second for a while. Each rank mends more.",
+    "de": "Heile den Träumer, den du als Ziel gewählt hast, oder dich selbst eine Weile lang jede Sekunde ein wenig. Jeder Rang heilt mehr."
+  },
+  "Mends a little every second.": {
+    "en": "Mends a little every second.",
+    "de": "Heilt jede Sekunde ein wenig."
+  },
   "Menu": {
     "en": "Menu",
     "de": "Menü"
+  },
+  "Mystic Tower": {
+    "en": "Mystic Tower",
+    "de": "Turm der Mystiker"
   },
   "Name:": {
     "en": "Name:",
@@ -487,9 +587,29 @@
     "en": "Needs %1$@ at rank %2$@",
     "de": "Braucht %1$@ auf Rang %2$@"
   },
+  "Needs a weapon or empty hands": {
+    "en": "Needs a weapon or empty hands",
+    "de": "Braucht eine Waffe oder leere Hände"
+  },
+  "Needs the Moonstone in hand": {
+    "en": "Needs the Moonstone in hand",
+    "de": "Braucht den Mondstein in der Hand"
+  },
   "New Dreamer": {
     "en": "New Dreamer",
     "de": "Neuer Träumer"
+  },
+  "Nightmares in reach, in front of you": {
+    "en": "Nightmares in reach, in front of you",
+    "de": "Albträume in Reichweite vor dir"
+  },
+  "Nightmares leave this dreamer alone.": {
+    "en": "Nightmares leave this dreamer alone.",
+    "de": "Albträume lassen diesen Träumer in Ruhe."
+  },
+  "Nightmares up to %@ m around you": {
+    "en": "Nightmares up to %@ m around you",
+    "de": "Albträume bis %@ m um dich herum"
   },
   "No dreamers yet. Create one to enter the world.": {
     "en": "No dreamers yet. Create one to enter the world.",
@@ -506,6 +626,22 @@
   "North Meadow": {
     "en": "North Meadow",
     "de": "Nordwiese"
+  },
+  "Not enough Balance": {
+    "en": "Not enough Balance",
+    "de": "Nicht genug Gleichgewicht"
+  },
+  "Not enough Spirit": {
+    "en": "Not enough Spirit",
+    "de": "Nicht genug Geist"
+  },
+  "Not while channelling": {
+    "en": "Not while channelling",
+    "de": "Nicht, während du wirkst"
+  },
+  "Not while fallen": {
+    "en": "Not while fallen",
+    "de": "Nicht, solange du gefallen bist"
   },
   "Not yet": {
     "en": "Not yet",
@@ -551,6 +687,10 @@
     "en": "Rank %1$@ of %2$@",
     "de": "Rang %1$@ von %2$@"
   },
+  "Ready in %@ s": {
+    "en": "Ready in %@ s",
+    "de": "Bereit in %@ s"
+  },
   "Reconnecting...": {
     "en": "Reconnecting...",
     "de": "Verbindung wird wiederhergestellt..."
@@ -562,6 +702,10 @@
   "Remember password": {
     "en": "Remember password",
     "de": "Passwort merken"
+  },
+  "Renewing": {
+    "en": "Renewing",
+    "de": "Erneuernd"
   },
   "Repeat password:": {
     "en": "Repeat password:",
@@ -575,10 +719,6 @@
     "en": "Run",
     "de": "Rennen"
   },
-  "Run (Shift)": {
-    "en": "Run (Shift)",
-    "de": "Rennen (Umschalt)"
-  },
   "Sell": {
     "en": "Sell",
     "de": "Verkaufen"
@@ -587,9 +727,21 @@
     "en": "Sell for %@c",
     "de": "Für %@c verkaufen"
   },
+  "Send a bolt of dream at the nightmare you target, even from afar. Each rank hits harder.": {
+    "en": "Send a bolt of dream at the nightmare you target, even from afar. Each rank hits harder.",
+    "de": "Schick ein Traumgeschoss auf den Albtraum, den du als Ziel gewählt hast, auch aus der Ferne. Jeder Rang trifft härter."
+  },
   "Settings": {
     "en": "Settings",
     "de": "Einstellungen"
+  },
+  "Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.": {
+    "en": "Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.",
+    "de": "Schirm den Träumer, den du als Ziel gewählt hast, oder dich selbst ab. Der Schild fängt den Schaden der nächsten Schläge ab, bis er bricht. Jeder Rang hält mehr aus."
+  },
+  "Shift": {
+    "en": "Shift",
+    "de": "Umschalt"
   },
   "Shop": {
     "en": "Shop",
@@ -627,13 +779,25 @@
     "en": "Spirit",
     "de": "Geist"
   },
+  "Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.": {
+    "en": "Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.",
+    "de": "Steh still und gieß eine tiefe Heilung in den Träumer, den du als Ziel gewählt hast, oder in dich selbst. Bewegung bricht sie ab. Jeder Rang heilt mehr und schneller."
+  },
   "Stay": {
     "en": "Stay",
     "de": "Bleiben"
   },
+  "Stirs the nightmares' anger half as much.": {
+    "en": "Stirs the nightmares' anger half as much.",
+    "de": "Reizt den Zorn der Albträume nur halb so sehr."
+  },
   "Strike every nightmare in front of you at once. Each rank hits harder.": {
     "en": "Strike every nightmare in front of you at once. Each rank hits harder.",
     "de": "Triff jeden Albtraum vor dir auf einmal. Jeder Rang trifft härter."
+  },
+  "Strikes softer.": {
+    "en": "Strikes softer.",
+    "de": "Schlägt schwächer zu."
   },
   "Study this": {
     "en": "Study this",
@@ -655,13 +819,25 @@
     "en": "Take the task",
     "de": "Aufgabe annehmen"
   },
+  "Takes half the harm and cannot run.": {
+    "en": "Takes half the harm and cannot run.",
+    "de": "Nimmt nur halben Schaden und kann nicht rennen."
+  },
   "Talk here. /w to whisper, /y to yell": {
     "en": "Talk here. /w to whisper, /y to yell",
     "de": "Hier reden. /w zum Flüstern, /y zum Schreien"
   },
+  "Talk to %@ to hear where they lie.": {
+    "en": "Talk to %@ to hear where they lie.",
+    "de": "Sprich mit %@, um zu hören, wo sie liegen."
+  },
   "Target": {
     "en": "Target",
     "de": "Ziel"
+  },
+  "Target a nightmare in range": {
+    "en": "Target a nightmare in range",
+    "de": "Wähle einen Albtraum in Reichweite als Ziel"
   },
   "Target yourself": {
     "en": "Target yourself",
@@ -691,6 +867,18 @@
     "en": "The connection was lost.",
     "de": "Die Verbindung wurde unterbrochen!"
   },
+  "The dreamer you target, up to %@ m away, or yourself": {
+    "en": "The dreamer you target, up to %@ m away, or yourself",
+    "de": "Dein Ziel, ein Träumer bis %@ m entfernt, oder du selbst"
+  },
+  "The nightmare you target strikes softer for a while. Each rank makes it last longer.": {
+    "en": "The nightmare you target strikes softer for a while. Each rank makes it last longer.",
+    "de": "Der Albtraum, den du als Ziel gewählt hast, schlägt eine Weile schwächer zu. Jeder Rang lässt es länger anhalten."
+  },
+  "The nightmare you target, up to %@ m away": {
+    "en": "The nightmare you target, up to %@ m away",
+    "de": "Dein Ziel, ein Albtraum bis %@ m entfernt"
+  },
   "The server is being updated. Please try again in a few moments.": {
     "en": "The server is being updated. Please try again in a few moments.",
     "de": "Der Server wird gerade aktualisiert. Bitte versuche es in wenigen Augenblicken erneut."
@@ -702,6 +890,10 @@
   "This browser cannot render 3D graphics.": {
     "en": "This browser cannot render 3D graphics.",
     "de": "Dieser Browser kann keine 3D-Grafik darstellen."
+  },
+  "This door opens only at night.": {
+    "en": "This door opens only at night.",
+    "de": "Diese Tür öffnet sich nur bei Nacht."
   },
   "Too many attempts. Wait a little before trying again.": {
     "en": "Too many attempts. Wait a little before trying again.",
@@ -715,6 +907,10 @@
     "en": "Turn every nightmare near you on yourself.",
     "de": "Lenke jeden Albtraum in deiner Nähe auf dich."
   },
+  "Turn the nightmares' anger from you: they forget half of it, and your mending stirs them less for a while.": {
+    "en": "Turn the nightmares' anger from you: they forget half of it, and your mending stirs them less for a while.",
+    "de": "Lenk den Zorn der Albträume von dir ab: Sie vergessen die Hälfte davon, und dein Heilen reizt sie eine Weile weniger."
+  },
   "Turn your phone sideways.": {
     "en": "Turn your phone sideways.",
     "de": "Dreh dein Handy quer."
@@ -726,6 +922,10 @@
   "Update required": {
     "en": "Update required",
     "de": "Update erforderlich"
+  },
+  "Veiled": {
+    "en": "Veiled",
+    "de": "Verschleiert"
   },
   "Version: %@": {
     "en": "Version: %@",
@@ -739,9 +939,17 @@
     "en": "Walk to the %@ and come back.",
     "de": "Geh bis in den %@ und kehre zurück."
   },
+  "Warded": {
+    "en": "Warded",
+    "de": "Beschirmt"
+  },
   "Watch out, nightmares about!": {
     "en": "Watch out, nightmares about!",
     "de": "Vorsicht, hier spuken Albträume!"
+  },
+  "Weakened": {
+    "en": "Weakened",
+    "de": "Geschwächt"
   },
   "Welcome to Somnio!": {
     "en": "Welcome to Somnio!",
@@ -754,6 +962,10 @@
   "Winded": {
     "en": "Winded",
     "de": "Außer Atem"
+  },
+  "You and dreamers up to %@ m around you": {
+    "en": "You and dreamers up to %@ m around you",
+    "de": "Du und Träumer bis %@ m um dich herum"
   },
   "You are a %1$@. %2$@ has nothing to teach you.": {
     "en": "You are a %1$@. %2$@ has nothing to teach you.",
@@ -791,6 +1003,10 @@
     "en": "You draw %@ back into the dream.",
     "de": "Du holst %@ in den Traum zurück."
   },
+  "You found a hidden place, %1$@ of %2$@.": {
+    "en": "You found a hidden place, %1$@ of %2$@.",
+    "de": "Du hast einen verborgenen Ort gefunden, %1$@ von %2$@."
+  },
   "You have fallen": {
     "en": "You have fallen",
     "de": "Du bist gefallen"
@@ -815,9 +1031,9 @@
     "en": "You own %@c.",
     "de": "Du besitzt %@c."
   },
-  "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.": {
-    "en": "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other master will not teach you afterwards.",
-    "de": "Du hast die Prüfung bestanden. Nimmst du an, bist du für immer %@. Das lässt sich nicht rückgängig machen, und der andere Meister lehrt dich danach nicht mehr."
+  "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other masters will not teach you afterwards.": {
+    "en": "You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other masters will not teach you afterwards.",
+    "de": "Du hast die Prüfung bestanden. Nimmst du an, bist du für immer %@. Das lässt sich nicht rückgängig machen, und die anderen Meister lehren dich danach nicht mehr."
   },
   "You receive %@c.": {
     "en": "You receive %@c.",
@@ -859,6 +1075,10 @@
     "en": "Your session expired. Please log in again.",
     "de": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
   },
+  "Your target has fallen or is out of range": {
+    "en": "Your target has fallen or is out of range",
+    "de": "Dein Ziel ist gefallen oder außer Reichweite"
+  },
   "Your task is done. Return to your master.": {
     "en": "Your task is done. Return to your master.",
     "de": "Deine Aufgabe ist erfüllt. Kehre zu deinem Meister zurück."
@@ -866,6 +1086,10 @@
   "Your trial": {
     "en": "Your trial",
     "de": "Deine Prüfung"
+  },
+  "Yourself": {
+    "en": "Yourself",
+    "de": "Du selbst"
   },
   "cooling down": {
     "en": "cooling down",

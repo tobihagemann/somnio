@@ -16,6 +16,7 @@ export const SECTOR_FIXTURE_NAMES = [
   'EdariaHealerHall',
   'EdariaInn',
   'EdariaLibrary',
+  'EdariaMysticTower',
   'EdariaShop',
   'EdariaSquare',
   'NorthMeadow',

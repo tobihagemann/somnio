@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
+import { boltFlightSeconds, effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { COMBAT_EFFECTS_NAME, EFFECT_POOL_SIZES, STRIKE_AT } from '@/scene/combatEffects';
+import { offsetDirection } from '@/scene/cameraRig';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import type { ClientEntity } from '@/client';
@@ -13,9 +14,24 @@ import { clientEntity } from './helpers/worldFixture';
 
 const CLIP_SECONDS = 1;
 const SLICE = 'Melee_1H_Attack_Slice_Horizontal';
-const CLIPS = ['Idle', 'Flying_Idle', SLICE, 'Punch', 'Hit_A', 'Melee_Block', 'Ranged_Magic_Raise', 'Melee_1H_Attack_Jump_Chop', 'Cheering'].map(
-  (name) => new THREE.AnimationClip(name, CLIP_SECONDS, []),
-);
+/** Deep mend's long cast, as long as the pack's, so its push comes later than the channel is long. */
+const LONG_CAST = new THREE.AnimationClip('Ranged_Magic_Spellcasting_Long', 2.5, []);
+const CLIPS = [
+  ...[
+    'Idle',
+    'Flying_Idle',
+    SLICE,
+    'Punch',
+    'Hit_A',
+    'Melee_Block',
+    'Ranged_Magic_Raise',
+    'Melee_1H_Attack_Jump_Chop',
+    'Cheering',
+    'Ranged_Magic_Shoot',
+    'Ranged_Magic_Spellcasting',
+  ].map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, [])),
+  LONG_CAST,
+];
 /** When a slot-1 swing lands, from the blow. */
 const BLADE_LANDS = CLIP_SECONDS * STRIKE_AT[SLICE]!;
 
@@ -137,10 +153,52 @@ function ringUniforms(mesh: THREE.Mesh): Record<string, THREE.IUniform> | undefi
   return (mesh.material as THREE.ShaderMaterial | undefined)?.uniforms;
 }
 
+/** The rings and the motes of the Moonstone's light that show, by their colour. */
+function moonlit(scene: WorldScene): THREE.Mesh[] {
+  return visible([...rings(scene), ...motes(scene)]).filter((mesh) => (ringUniforms(mesh)!['uColor']!.value as THREE.Color).getHex() === 0xd8e6ff);
+}
+
+function motes(scene: WorldScene): THREE.Mesh[] {
+  return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute('aSeed') !== undefined);
+}
+
+function beams(scene: WorldScene): THREE.Mesh[] {
+  return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute('aAlong') !== undefined);
+}
+
+/** The words over bodies a blow missed: the one kind of effect that is no mesh of its own but holds a plaque's. */
+function missWords(scene: WorldScene): THREE.Object3D[] {
+  return effects(scene).children.filter((child) => !(child as THREE.Mesh).isMesh && !(child as THREE.Sprite).isSprite);
+}
+
 /** The Challenge pulses showing at the nightmares' feet, by their colour. */
 function pulses(scene: WorldScene): THREE.Mesh[] {
   return visible(rings(scene)).filter((ring) => (ringUniforms(ring)!['uColor']!.value as THREE.Color).getHex() === 0xff7a5a);
 }
+
+/**
+ * The effect meshes whose geometry carries `attribute`, which tells the Mystic's kinds apart: a
+ * ward's shells, the bolts and the cracks they leave, a binding's tethers, and Veil's domes.
+ */
+function ofKind(scene: WorldScene, attribute: string): THREE.Mesh[] {
+  return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute(attribute) !== undefined);
+}
+
+const shells = (scene: WorldScene) => ofKind(scene, 'aFacet');
+const bolts = (scene: WorldScene) => ofKind(scene, 'aHead');
+const cracks = (scene: WorldScene) => ofKind(scene, 'aReach');
+const tethers = (scene: WorldScene) => ofKind(scene, 'aTether');
+
+function domes(scene: WorldScene): THREE.Mesh[] {
+  return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.type === 'SphereGeometry');
+}
+
+/** A binding's runes: the rings broken into strokes. */
+function runes(scene: WorldScene): THREE.Mesh[] {
+  return rings(scene).filter((ring) => (ringUniforms(ring)!['uDash']!.value as number) > 0);
+}
+
+const uniformOf = (mesh: THREE.Mesh, name: string): number => ringUniforms(mesh)![name]!.value as number;
 
 function trails(scene: WorldScene): THREE.Mesh[] {
   return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute('aAge') !== undefined);
@@ -980,6 +1038,917 @@ describe('Rally', () => {
   });
 });
 
+describe('a missed blow', () => {
+  it('hangs the word over the head of the one missed as the blade lands, as large as the plaques are drawn, for a moment', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 10.5, z: 10.6 });
+    scene.tick(0.01);
+
+    scene.showBlow('self', 'monster:1', true);
+    run(scene, BLADE_LANDS + 0.05);
+    expect(visible(missWords(scene))).toEqual([]);
+
+    scene.showBlow('self', 'monster:1', false);
+    run(scene, BLADE_LANDS - 0.02);
+    expect(visible(missWords(scene))).toEqual([]);
+    run(scene, 0.05);
+    const [word] = visible(missWords(scene));
+    expect([word!.position.x, word!.position.y, word!.position.z]).toEqual([10.5, expect.closeTo(CHARACTER_SCALE + 0.2, 2), 10.6]);
+    expect(word!.scale.x).toBeGreaterThan(0);
+    run(scene, 0.85);
+    expect(visible(missWords(scene))).toEqual([]);
+  });
+});
+
+describe("the Moonstone's light", () => {
+  /** A Healer, `self`, beside a dreamer, `peer`, and a nightmare beyond them. */
+  function healing(options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'peer', { x: 12, z: 10 });
+    place(combat.scene, 'monster:1', { x: 10, z: 13 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  it('swells from the feet of a body mended and rises through it, drawn over the bodies, each mend its own, and is gone in about a second', () => {
+    const { scene } = healing();
+    scene.showMend('peer');
+    scene.tick(0.01);
+    const first = moonlit(scene);
+    expect(first.length).toBeGreaterThanOrEqual(3);
+    expect(visible(motes(scene))).toHaveLength(1);
+    expect((visible(motes(scene))[0]!.material as THREE.Material).depthTest).toBe(false);
+    expect(visible(motes(scene))[0]!.position.x).toBe(12);
+
+    scene.showMend('peer');
+    scene.tick(0.01);
+    expect(moonlit(scene).length).toBe(first.length * 2);
+    run(scene, 1.2);
+    expect(moonlit(scene)).toEqual([]);
+  });
+
+  it('shows no mend arriving while it is stalled', () => {
+    const { scene, hide } = healing();
+    hide(2000);
+    scene.showMend('peer');
+    scene.tick(0.01);
+    expect(moonlit(scene)).toEqual([]);
+  });
+
+  it('draws a gold ring round a body being raised as far round as the raise has gone, at its pace from each snapshot, frame by frame or hidden, and frees it when the raise ends', () => {
+    const { scene, hide } = healing();
+    const gold = (): THREE.Mesh[] => visible(rings(scene)).filter((ring) => (ringUniforms(ring)!['uColor']!.value as THREE.Color).getHex() === 0xffd27a);
+    const arc = (): number => ringUniforms(gold()[0]!)!['uArc']!.value as number;
+
+    scene.showRaising('peer', { progress: 0, seconds: 6 });
+    scene.tick(0.01);
+    expect(gold()).toHaveLength(1);
+    expect(gold()[0]!.position.x).toBe(12);
+    // The arc starts on the far side of the body from the camera, which no body lying in the ring or standing by covers, over the faint rest of the ring.
+    const ring = gold()[0]!;
+    ring.updateWorldMatrix(true, false);
+    const start = ring
+      .localToWorld(new THREE.Vector3(0, 1, 0))
+      .sub(ring.position)
+      .setY(0)
+      .normalize();
+    const toCamera = offsetDirection();
+    expect(start.dot(new THREE.Vector3(toCamera.x, 0, toCamera.z).normalize())).toBeCloseTo(-1, 6);
+    expect(uniformOf(ring, 'uTrack')).toBeGreaterThan(0);
+    run(scene, 2.99);
+    expect(arc()).toBeCloseTo(0.5, 2);
+
+    // A second Healer joins: the rest goes at twice the pace, and the ring keeps its mesh.
+    scene.showRaising('peer', { progress: 0.5, seconds: 1.5 });
+    run(scene, 0.75);
+    expect(gold()).toEqual([ring]);
+    expect(arc()).toBeCloseTo(0.75, 2);
+    // Hidden, it is not dropped as a moment in flight would be, and it is as far round on the return as the raise has gone.
+    hide(2000);
+    scene.tick(0.01);
+    expect(arc()).toBe(1);
+
+    scene.showRaising('peer', undefined);
+    scene.tick(0.01);
+    expect(gold()).toEqual([]);
+  });
+
+  it("holds a raise's ring while a channel holds a Healer's pace back, and never draws it back at the snapshot as the channel ends", () => {
+    const { scene, hide } = healing();
+    const gold = (): THREE.Mesh[] => visible(rings(scene)).filter((ring) => (ringUniforms(ring)!['uColor']!.value as THREE.Color).getHex() === 0xffd27a);
+    const arc = (): number => ringUniforms(gold()[0]!)!['uArc']!.value as number;
+
+    // A lone Healer channelling for 1.5 s of the 6 left.
+    scene.showRaising('peer', { progress: 0.25, seconds: 6, pausedSeconds: [1.5] });
+    run(scene, 1.4);
+    expect(arc()).toBe(0.25);
+    run(scene, 1.1);
+    expect(arc()).toBeCloseTo(0.25 + 1 / 6, 2);
+
+    // Two, one channelling for a second: one pace until then, two after.
+    scene.showRaising('peer', { progress: 0.25, seconds: 2.75, pausedSeconds: [0, 1] });
+    run(scene, 1);
+    const before = arc();
+    expect(before).toBeCloseTo(0.25 + 1 / 6, 2);
+    scene.showRaising('peer', { progress: 0.25 + 1 / 6, seconds: 1.75 });
+    scene.tick(0.01);
+    expect(arc()).toBeGreaterThanOrEqual(before);
+    expect(arc()).toBeCloseTo(before, 2);
+
+    // A snapshot that arrives between two ticks counts from its arrival, so the tick after it does not run the ring ahead.
+    hide(20);
+    scene.showRaising('peer', { progress: 0.5, seconds: 3 });
+    scene.tick(0.02);
+    expect(arc()).toBe(0.5);
+
+    // A snapshot naming no pause lets go of the pauses the one before named, so the ring runs on at once.
+    scene.showRaising('peer', { progress: 0.25, seconds: 6, pausedSeconds: [1.5] });
+    scene.showRaising('peer', { progress: 0.25, seconds: 4.5 });
+    run(scene, 1);
+    expect(arc()).toBeCloseTo(0.25 + 0.75 / 4.5, 2);
+  });
+});
+
+describe('Deep mend', () => {
+  function channelling(options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'peer', { x: 13, z: 10 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  it("plays the long cast started as far in as puts its push at the channel's end, with a beam to the dreamer and light gathering round them", () => {
+    const { scene } = channelling();
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    const cast = (play.mock.contexts as THREE.AnimationAction[]).find((action) => action.getClip() === LONG_CAST);
+    expect(cast?.time).toBeCloseTo(2.5 * STRIKE_AT['Ranged_Magic_Spellcasting_Long']! - 1.5, 6);
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toHaveLength(1);
+    expect((visible(beams(scene))[0]!.material as THREE.Material).depthTest).toBe(false);
+    const stream = visible(motes(scene));
+    expect(stream).toHaveLength(1);
+    expect(stream[0]!.position.x).toBe(13);
+
+    // It holds for as long as the channel runs, and a little past it with no landing.
+    run(scene, 1.4);
+    expect(visible(beams(scene))).toHaveLength(1);
+    run(scene, 0.7);
+    expect(visible(beams(scene))).toEqual([]);
+    expect(visible(motes(scene))).toEqual([]);
+  });
+
+  it('bursts on the dreamer as it lands, lifting them, while its beam fades out', () => {
+    const { scene, models } = channelling();
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    run(scene, 1.5);
+    const before = moonlit(scene).length;
+
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'done' });
+    scene.tick(0.01);
+    expect(moonlit(scene).length).toBeGreaterThan(before);
+    let lifted = false;
+    for (let tick = 0; tick < 30; tick += 1) {
+      scene.tick(0.01);
+      lifted ||= jolt(models[1]!).position.y > 0;
+    }
+    expect(lifted).toBe(true);
+    expect(visible(beams(scene))).toEqual([]);
+  });
+
+  it('gathers round the Healer with no beam on themselves, and lifts no one under reduced motion', () => {
+    const { scene, models } = channelling({ reducedMotion: true });
+    scene.showAbility('self', 'deep-mend', undefined, { phase: 'start', seconds: 1.5 });
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toEqual([]);
+    expect(visible(motes(scene))[0]!.position.x).toBe(10);
+    run(scene, 1.5);
+    scene.showAbility('self', 'deep-mend', undefined, { phase: 'done' });
+    for (let tick = 0; tick < 30; tick += 1) {
+      scene.tick(0.01);
+      expect(jolt(models[0]!).position.y).toBe(0);
+    }
+  });
+
+  it("breaks off: the beam fades, the cast gives way to the Healer's pose, and nothing bursts", () => {
+    const { scene, models } = channelling();
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'broken' });
+    run(scene, 0.3);
+    expect(visible(beams(scene))).toEqual([]);
+    expect(moonlit(scene)).toEqual([]);
+    const started = (play.mock.contexts as THREE.AnimationAction[]).filter((action) => action.getRoot() === models[0]).map((action) => action.getClip().name);
+    expect(started).toEqual(['Idle']);
+  });
+
+  it('shows one learned of under way for the seconds it has left', () => {
+    const { scene } = channelling();
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'channel', seconds: 0.4 });
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toHaveLength(1);
+    run(scene, 1);
+    expect(visible(beams(scene))).toEqual([]);
+  });
+
+  it('starts nothing while stalled, and ends one that landed while hidden with no burst on the return', () => {
+    const { scene, hide } = channelling();
+    hide(2000);
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toEqual([]);
+
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toHaveLength(1);
+    hide(1600);
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'done' });
+    scene.tick(0.01);
+    expect(visible(beams(scene))).toEqual([]);
+    expect(moonlit(scene)).toEqual([]);
+  });
+});
+
+describe('Renewal', () => {
+  function renewing() {
+    const combat = combatScene();
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'peer', { x: 13, z: 10 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+  const at = (scene: WorldScene, x: number): number => visible(motes(scene)).filter((mesh) => mesh.position.x === x).length;
+
+  it('blooms on the dreamer as the hand reaches out, and pulses there once a second for its rank-1 seconds where the server tells nothing', () => {
+    const { scene } = renewing();
+    scene.showAbility('self', 'renewal', 'peer');
+    run(scene, STRIKE_AT['Ranged_Magic_Shoot']! - 0.02);
+    expect(at(scene, 13)).toBe(0);
+    run(scene, 0.05);
+    expect(at(scene, 13)).toBeGreaterThan(0);
+    run(scene, 9);
+    expect(at(scene, 13)).toBeGreaterThan(0);
+    run(scene, 3);
+    expect(at(scene, 13)).toBe(0);
+  });
+
+  it('pulses for as long as the server says, and stops when it says the effect ended', () => {
+    const { scene } = renewing();
+    scene.showAbility('self', 'renewal', 'peer');
+    scene.showEffects('peer', [{ effectId: 'renewing', seconds: 2 }]);
+    run(scene, 4);
+    expect(at(scene, 13)).toBe(0);
+
+    scene.showAbility('self', 'renewal', 'peer');
+    run(scene, 2);
+    scene.showEffects('peer', []);
+    run(scene, 2);
+    expect(at(scene, 13)).toBe(0);
+  });
+
+  it('sends no pulse a stall skipped on its return', () => {
+    const { scene, hide } = renewing();
+    scene.showAbility('self', 'renewal', 'peer');
+    run(scene, 1.5);
+    hide(3000);
+    scene.tick(0.01);
+    expect(at(scene, 13)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('Radiance', () => {
+  it('lifts each dreamer its wave reaches, and none beyond it or under reduced motion', () => {
+    for (const reducedMotion of [false, true]) {
+      const { scene, models } = combatScene({ reducedMotion });
+      place(scene, 'self', { x: 10, z: 10 });
+      place(scene, 'peer', { x: 14.5, z: 10 });
+      place(scene, 'far', { x: 10, z: 15.5 });
+      scene.tick(0.01);
+
+      scene.showAbility('self', 'radiance', undefined);
+      let near = false;
+      for (let tick = 0; tick < 150; tick += 1) {
+        scene.tick(0.01);
+        near ||= jolt(models[1]!).position.y > 0;
+        expect(jolt(models[2]!).position.y).toBe(0);
+      }
+      expect(near).toBe(!reducedMotion);
+    }
+  });
+});
+
+describe('Calm', () => {
+  it("outlines the Healer in a cool line from the cast's moment for its rank-1 seconds, apart from a Brace's white", () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'peer', { x: 13, z: 10 });
+    scene.tick(0.01);
+    const outlined = () => visible(hulls(scene, THREE.BackSide)).map((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex());
+
+    scene.showAbility('self', 'calm', undefined);
+    scene.showAbility('peer', 'brace', undefined);
+    run(scene, STRIKE_AT['Ranged_Magic_Spellcasting']! - 0.05);
+    expect(outlined()).toEqual([0xffffff]);
+    run(scene, 0.5);
+    expect(outlined().sort()).toEqual([0x9fd8ff, 0xffffff]);
+    // It holds from its use, as the server's effect does, not from the cast's moment.
+    run(scene, effectSeconds('calmed', 1) - 1.2);
+    expect(outlined()).toContain(0x9fd8ff);
+    run(scene, 0.4);
+    expect(outlined()).not.toContain(0x9fd8ff);
+  });
+});
+
+describe('Ward', () => {
+  function warding() {
+    const combat = combatScene();
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'peer', { x: 13, z: 10 });
+    place(combat.scene, 'monster:1', { x: 13, z: 10.8 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  it('forms a shell round whom it lands on as the hand reaches out, drawn over the bodies, for its rank-1 seconds where the server tells nothing', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, STRIKE_AT['Ranged_Magic_Shoot']! - 0.02);
+    expect(visible(shells(scene))).toEqual([]);
+    run(scene, 0.05);
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.position.x).toBe(13);
+    expect((shown[0]!.material as THREE.Material).depthTest).toBe(false);
+    run(scene, effectSeconds('warded', 1) - 0.6);
+    expect(visible(shells(scene))).toHaveLength(1);
+    run(scene, 0.6);
+    expect(visible(shells(scene))).toEqual([]);
+  });
+
+  it('takes a landed blow in the body’s place: the shell flashes and loses facets, and the body neither flinches nor staggers', () => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showBlow('monster:1', 'peer', true);
+    let flashed = false;
+    for (let tick = 0; tick < 100; tick += 1) {
+      scene.tick(0.01);
+      flashed ||= uniformOf(visible(shells(scene))[0]!, 'uFlash') > 0;
+      expect(jolt(models[1]!).position.x).toBe(0);
+    }
+    expect(flashed).toBe(true);
+    expect(flinched(play, models[1]!)).toBe(false);
+    expect(uniformOf(visible(shells(scene))[0]!, 'uCrack')).toBeGreaterThan(0);
+  });
+
+  it('shatters when the server ends it well before its time, and is gone half a second later', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 0.5);
+    scene.showEffects('self', []);
+    scene.tick(0.1);
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(uniformOf(shown[0]!, 'uBurst')).toBeGreaterThan(0);
+    run(scene, 0.5);
+    expect(visible(shells(scene))).toEqual([]);
+  });
+
+  it('shatters as the blow that spent it lands, cracking it a last time, rather than when the server ends it with that blow', () => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    const shell = visible(shells(scene))[0]!;
+    const cracked = uniformOf(shell, 'uCrack');
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    for (let elapsed = 0; !flinched(play, models[1]!); elapsed += 0.01) {
+      expect(elapsed).toBeLessThan(2);
+      expect(uniformOf(shell, 'uBurst')).toBe(0);
+      scene.tick(0.01);
+    }
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([shell]);
+    expect(uniformOf(shell, 'uBurst')).toBeGreaterThan(0);
+    expect(uniformOf(shell, 'uFlash')).toBeGreaterThan(0);
+    expect(uniformOf(shell, 'uCrack')).toBeGreaterThan(cracked);
+    run(scene, 0.5);
+    expect(visible(shells(scene))).toEqual([]);
+  });
+
+  it('lets a ward two blows on their way spent take the first and shatter as the last lands on the body', () => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    const shell = visible(shells(scene))[0]!;
+    // The server took the first whole and the second spent it, in one step.
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    for (let elapsed = 0; !flinched(play, models[1]!); elapsed += 0.01) {
+      expect(elapsed).toBeLessThan(2);
+      scene.tick(0.01);
+    }
+    const flinches = (play.mock.contexts as THREE.AnimationAction[]).filter((action) => action.getRoot() === models[1] && action.getClip().name === 'Hit_A');
+    expect(flinches).toHaveLength(1);
+    scene.tick(0.01);
+    expect(uniformOf(shell, 'uBurst')).toBeGreaterThan(0);
+  });
+
+  it('holds a ward the blow on its way spent, and its shatter, through every later frame of effects until the shatter ends it', () => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    const shell = visible(shells(scene))[0]!;
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    scene.showEffects('peer', [{ effectId: 'renewing', seconds: 10 }]);
+    for (let elapsed = 0; !flinched(play, models[1]!); elapsed += 0.01) {
+      expect(elapsed).toBeLessThan(2);
+      expect(visible(shells(scene))).toEqual([shell]);
+      scene.tick(0.01);
+    }
+    scene.tick(0.01);
+    expect(uniformOf(shell, 'uBurst')).toBeGreaterThan(0);
+    run(scene, 0.3);
+    const bursting = uniformOf(shell, 'uBurst');
+    scene.showEffects('peer', []);
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([shell]);
+    expect(uniformOf(shell, 'uBurst')).toBeGreaterThan(bursting);
+    run(scene, 0.2);
+    expect(visible(shells(scene))).toEqual([]);
+  });
+
+  it.each<[string, boolean]>([
+    ['named again by an effects frame', false],
+    ['cast again, its ability frame first', true],
+  ])('lets the blow that spent a ward %s before it lands shatter the old shell and land on the body, then forms the new shell', (_label, cast) => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    const shell = visible(shells(scene))[0]!;
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    if (cast) scene.showAbility('self', 'ward', 'peer');
+    scene.showEffects('peer', [{ effectId: 'warded', seconds: 12 }]);
+    // The body flinches: the blow lands on it, as the server landed its harm, not on the new ward.
+    for (let elapsed = 0; !flinched(play, models[1]!); elapsed += 0.01) {
+      expect(elapsed).toBeLessThan(2);
+      expect(visible(shells(scene))).toEqual([shell]);
+      scene.tick(0.01);
+    }
+    scene.tick(0.01);
+    expect(uniformOf(shell, 'uBurst')).toBeGreaterThan(0);
+    for (let elapsed = 0; elapsed < 1; elapsed += 0.01) {
+      scene.tick(0.01);
+      expect(visible(shells(scene)).length).toBeLessThanOrEqual(1);
+    }
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(uniformOf(shown[0]!, 'uBurst')).toBe(0);
+    expect(uniformOf(shown[0]!, 'uCrack')).toBe(0);
+  });
+
+  it.each<[string, boolean]>([
+    ['spent by a blow', true],
+    ['ended with no blow on its way', false],
+  ])('lets a ward named again over one %s take the next blow while the old shell flies apart, and forms its shell cracked by it', (_label, spending) => {
+    const { scene, models } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    if (spending) scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    scene.showEffects('peer', [{ effectId: 'warded', seconds: 12 }]);
+    if (spending) {
+      for (let elapsed = 0; !flinched(play, models[1]!); elapsed += 0.01) {
+        expect(elapsed).toBeLessThan(2);
+        scene.tick(0.01);
+      }
+      play.mockClear();
+    }
+    // The old shell is still flying apart as the next blow lands, which the ward put on anew takes.
+    scene.showBlow('monster:1', 'peer', true);
+    for (let elapsed = 0; elapsed < 1; elapsed += 0.01) {
+      scene.tick(0.01);
+      expect(flinched(play, models[1]!)).toBe(false);
+    }
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(uniformOf(shown[0]!, 'uBurst')).toBe(0);
+    expect(uniformOf(shown[0]!, 'uCrack')).toBeGreaterThan(0);
+  });
+
+  it('forms a new shell for a ward the server names again while the last one shatters', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 0.5);
+    scene.showEffects('self', []);
+    scene.tick(0.1);
+    expect(uniformOf(visible(shells(scene))[0]!, 'uBurst')).toBeGreaterThan(0);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 1);
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(uniformOf(shown[0]!, 'uBurst')).toBe(0);
+  });
+
+  it('lets the shell of a ward put on again while it shatters fly apart until the new shell forms', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 0.5);
+    scene.showEffects('self', []);
+    scene.tick(0.1);
+    const shattering = visible(shells(scene))[0]!;
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    const bursting = uniformOf(shattering, 'uBurst');
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([shattering]);
+    expect(uniformOf(shattering, 'uBurst')).toBeGreaterThan(bursting);
+    for (let elapsed = 0; elapsed < 1; elapsed += 0.01) {
+      scene.tick(0.01);
+      expect(visible(shells(scene))).toHaveLength(1);
+    }
+    expect(uniformOf(visible(shells(scene))[0]!, 'uBurst')).toBe(0);
+  });
+
+  it('lets the shell of a ward an effects frame alone names again while it shatters fly apart, then forms the new shell', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 0.5);
+    scene.showEffects('self', []);
+    scene.tick(0.1);
+    const shattering = visible(shells(scene))[0]!;
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    const bursting = uniformOf(shattering, 'uBurst');
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([shattering]);
+    expect(uniformOf(shattering, 'uBurst')).toBeGreaterThan(bursting);
+    for (let elapsed = 0; elapsed < 1; elapsed += 0.01) {
+      scene.tick(0.01);
+      expect(visible(shells(scene))).toHaveLength(1);
+    }
+    expect(uniformOf(visible(shells(scene))[0]!, 'uBurst')).toBe(0);
+  });
+
+  it('fades a ward the server ends as its time runs out, with no shatter', () => {
+    const { scene } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 2 }]);
+    run(scene, 1.9);
+    const shell = visible(shells(scene))[0]!;
+    scene.showEffects('self', []);
+    for (let elapsed = 0; shell.visible; elapsed += 0.01) {
+      expect(elapsed).toBeLessThan(2);
+      expect(uniformOf(shell, 'uBurst')).toBe(0);
+      scene.tick(0.01);
+    }
+  });
+
+  it('drops the shatter of a ward spent by a blow a hidden tab dropped: the shell is gone on its return, and the body never flinches', () => {
+    const { scene, models, hide } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    scene.tick(0.01);
+    hide(2000);
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([]);
+    run(scene, 1);
+    expect(flinched(play, models[1]!)).toBe(false);
+  });
+
+  it('forms the shell of a ward named again over one a blow a hidden tab dropped had spent, once the old one has flown apart', () => {
+    const { scene, hide } = warding();
+    scene.showAbility('self', 'ward', 'peer');
+    run(scene, 0.5);
+    const old = visible(shells(scene))[0]!;
+    scene.showBlow('monster:1', 'peer', true);
+    scene.showEffects('peer', []);
+    scene.showEffects('peer', [{ effectId: 'warded', seconds: 12 }]);
+    scene.tick(0.01);
+    hide(2000);
+    scene.tick(0.01);
+    scene.tick(0.05);
+    expect(uniformOf(old, 'uBurst')).toBeGreaterThan(0);
+    run(scene, 1);
+    const shown = visible(shells(scene));
+    expect(shown).toHaveLength(1);
+    expect(uniformOf(shown[0]!, 'uBurst')).toBe(0);
+  });
+
+  it('keeps a shell the server told of through a hidden tab for the seconds it has left', () => {
+    const { scene, hide } = warding();
+    scene.showAbility('self', 'ward', undefined);
+    scene.showEffects('self', [{ effectId: 'warded', seconds: 12 }]);
+    run(scene, 0.5);
+    hide(5000);
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toHaveLength(1);
+    hide(8000);
+    scene.tick(0.01);
+    expect(visible(shells(scene))).toEqual([]);
+  });
+});
+
+describe('Dream-bolt', () => {
+  /** The seconds from the bolt's use until the nightmare `metres` east of the Mystic flinches, ticked by `step`. */
+  function flight(metres: number, step = 0.01, options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'monster:1', { x: 10 + metres, z: 10 });
+    combat.scene.tick(0.01);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    combat.scene.showAbility('self', 'dream-bolt', 'monster:1');
+    let elapsed = 0;
+    let flew = false;
+    while (!flinched(play, combat.models[1]!)) {
+      expect(elapsed).toBeLessThan(3);
+      combat.scene.tick(step);
+      elapsed += step;
+      flew ||= visible(bolts(combat.scene)).length > 0;
+    }
+    play.mockRestore();
+    return { ...combat, elapsed, flew };
+  }
+
+  it('flies from the hand as the cast pushes out, drawn over the bodies, and bursts on the nightmare as the server lands its harm, later the further it flies', () => {
+    const near = flight(2);
+    const far = flight(8);
+    expect(near.flew && far.flew).toBe(true);
+    expect((bolts(near.scene)[0]!.material as THREE.Material).depthTest).toBe(false);
+    expect(near.elapsed).toBeGreaterThan(STRIKE_AT['Ranged_Magic_Shoot']!);
+    expect(near.elapsed).toBeCloseTo(boltFlightSeconds(2), 1);
+    expect(far.elapsed).toBeCloseTo(boltFlightSeconds(8), 1);
+  });
+
+  it('bursts as harm rather than as a heal: no light rises, a ring snaps in, a crack splits its chest for a quarter second, and violet shards fly off and fall', () => {
+    const { scene } = flight(6);
+    expect(visible(motes(scene))).toEqual([]);
+    expect(visible(cracks(scene))).toHaveLength(1);
+    const shards = visible(sparks(scene));
+    expect(shards).toHaveLength(3);
+    for (const shard of shards) {
+      expect((ringUniforms(shard)!['uColor']!.value as THREE.Color).getHex()).toBe(0xa13cff);
+      expect(uniformOf(shard, 'uFall')).toBeGreaterThan(0);
+    }
+    const [ring] = visible(rings(scene)).filter((mesh) => (ringUniforms(mesh)!['uColor']!.value as THREE.Color).getHex() === 0xa13cff);
+    const snapsFrom = uniformOf(ring!, 'uRadius');
+    run(scene, 0.08);
+    expect(uniformOf(ring!, 'uRadius')).toBeLessThan(snapsFrom);
+    run(scene, 0.18);
+    expect(visible(cracks(scene))).toEqual([]);
+    expect(visible(motes(scene))).toEqual([]);
+  });
+
+  it('staggers the nightmare further and holds its clip longer than a blade does', () => {
+    /** How long the nightmare's clip holds from the tick it flinched, and how far it staggers at most. */
+    function aftermath(scene: WorldScene, models: THREE.Object3D[]): { held: number; shove: number } {
+      let held = 0;
+      let shove = 0;
+      for (let tick = 0; tick < 40; tick += 1) {
+        if (!advanced(scene, models, 0.01).includes(1)) held = tick + 1;
+        shove = Math.max(shove, jolt(models[1]!).position.length());
+      }
+      return { held, shove };
+    }
+    const bolt = flight(6);
+    const bladed = combatScene();
+    place(bladed.scene, 'self', { x: 10, z: 10 });
+    place(bladed.scene, 'monster:1', { x: 10, z: 10.8 });
+    bladed.scene.tick(0.01);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    bladed.scene.showBlow('self', 'monster:1', true);
+    untilFlinched(bladed.scene, play, bladed.models[1]!);
+    const blade = aftermath(bladed.scene, bladed.models);
+    const bolted = aftermath(bolt.scene, bolt.models);
+    expect(bolted.held).toBeGreaterThan(blade.held);
+    expect(bolted.shove).toBeGreaterThan(blade.shove * 1.3);
+  });
+
+  it('under reduced motion neither staggers nor holds the nightmare, but still splits its chest', () => {
+    const { scene, models } = flight(6, 0.01, { reducedMotion: true });
+    expect(visible(cracks(scene))).toHaveLength(1);
+    expect(advanced(scene, models, 0.02)).toEqual([0, 1]);
+    expect(jolt(models[1]!).position.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it('arrives at the same moment of the effects’ clock in a tab drawing slowly', () => {
+    expect(flight(6, 0.1).elapsed).toBeCloseTo(flight(6).elapsed, 0);
+  });
+
+  it('shows the miss word where it would have burst on a nightmare that evaded it, with no burst, flash, stagger, or hold', () => {
+    const { scene, models } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 16, z: 10 });
+    scene.tick(0.01);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showAbility('self', 'dream-bolt', 'monster:1', { evaded: true });
+    let elapsed = 0;
+    let flew = false;
+    while (visible(missWords(scene)).length === 0) {
+      expect(elapsed).toBeLessThan(3);
+      scene.tick(0.01);
+      elapsed += 0.01;
+      flew ||= visible(bolts(scene)).length > 0;
+    }
+    expect(flew).toBe(true);
+    expect(elapsed).toBeCloseTo(boltFlightSeconds(6), 1);
+    expect(visible(cracks(scene))).toEqual([]);
+    expect(visible(sparks(scene))).toEqual([]);
+    expect(flinched(play, models[1]!)).toBe(false);
+    expect(advanced(scene, models, 0.02)).toEqual([0, 1]);
+    expect(jolt(models[1]!).position.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it('starts no bolt while stalled, and drops one in flight when the tab is hidden', () => {
+    const { scene, models, hide } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 18, z: 10 });
+    scene.tick(0.01);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    hide(2000);
+    scene.showAbility('self', 'dream-bolt', 'monster:1');
+    run(scene, 1.5);
+    expect(visible(bolts(scene))).toEqual([]);
+
+    scene.showAbility('self', 'dream-bolt', 'monster:1');
+    run(scene, STRIKE_AT['Ranged_Magic_Shoot']! + 0.1);
+    expect(visible(bolts(scene))).toHaveLength(1);
+    hide(2000);
+    run(scene, 1);
+    expect(visible(bolts(scene))).toEqual([]);
+    expect(visible(cracks(scene))).toEqual([]);
+    expect(flinched(play, models[1]!)).toBe(false);
+  });
+});
+
+describe('Weaken', () => {
+  it('outlines the nightmare in a thin violet line from the cast’s moment for its rank-1 seconds', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    const outlined = () => visible(hulls(scene, THREE.BackSide)).map((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex());
+    scene.showAbility('self', 'weaken', 'monster:1');
+    run(scene, STRIKE_AT['Ranged_Magic_Spellcasting']! - 0.05);
+    expect(outlined()).toEqual([]);
+    run(scene, 0.1);
+    expect(outlined()).toEqual([0xc4a8ff]);
+    run(scene, effectSeconds('weakened', 1) - 0.8);
+    expect(outlined()).toEqual([0xc4a8ff]);
+    run(scene, 0.4);
+    expect(outlined()).toEqual([]);
+  });
+
+  it('keeps the outline of one cast again from its first moment, and holds it until the later end', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    const outlined = () => visible(hulls(scene, THREE.BackSide)).length;
+    scene.showAbility('self', 'weaken', 'monster:1');
+    run(scene, 2);
+    expect(outlined()).toBe(1);
+    scene.showAbility('self', 'weaken', 'monster:1');
+    scene.tick(0.01);
+    expect(outlined()).toBe(1);
+    run(scene, effectSeconds('weakened', 1) - 1.5);
+    expect(outlined()).toBe(1);
+  });
+});
+
+describe('Bind', () => {
+  it('lays runes round the nightmare’s feet and snaps tethers up to it for its rank-1 seconds, then frees both', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    scene.showAbility('self', 'bind', 'monster:1');
+    run(scene, STRIKE_AT['Ranged_Magic_Spellcasting']! + 0.05);
+    expect(visible(runes(scene)).map((ring) => ring.position.x)).toEqual([13]);
+    expect(visible(tethers(scene))).toHaveLength(1);
+    expect(uniformOf(visible(tethers(scene))[0]!, 'uReach')).toBeLessThan(1);
+    run(scene, 0.2);
+    expect(uniformOf(visible(tethers(scene))[0]!, 'uReach')).toBe(1);
+    run(scene, effectSeconds('bound', 1) - 1);
+    expect(visible(tethers(scene))).toHaveLength(1);
+    run(scene, 0.3);
+    expect(visible(runes(scene))).toEqual([]);
+    expect(visible(tethers(scene))).toEqual([]);
+  });
+
+  it('frees the runes and tethers of a nightmare driven off', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    scene.showAbility('self', 'bind', 'monster:1');
+    run(scene, 0.5);
+    scene.updateCondition('monster:1', 'fallen');
+    scene.tick(0.01);
+    expect(visible(tethers(scene))).toEqual([]);
+  });
+});
+
+describe('Veil', () => {
+  function veiling(reducedMotion: boolean) {
+    const combat = combatScene({ reducedMotion });
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    place(combat.scene, 'peer', { x: 13, z: 10 });
+    place(combat.scene, 'far', { x: 10, z: 16 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+  const misted = (scene: WorldScene) =>
+    visible(hulls(scene, THREE.FrontSide)).filter((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex() === 0xbdb6d8);
+
+  it('raises a dome of mist over the Mystic and fades each dreamer under it into the mist for its rank-1 seconds, and none beyond it', () => {
+    const { scene } = veiling(false);
+    scene.showAbility('self', 'veil', undefined);
+    run(scene, STRIKE_AT['Ranged_Magic_Raise']! + 0.05);
+    expect(visible(domes(scene))).toHaveLength(1);
+    run(scene, 1);
+    // A body's flash hull is one mesh per mesh of its model; each test body has one.
+    expect(misted(scene)).toHaveLength(2);
+    run(scene, 2);
+    expect(visible(domes(scene))).toEqual([]);
+    run(scene, effectSeconds('veiled', 1) - 3.6);
+    expect(misted(scene)).toHaveLength(2);
+    run(scene, 0.5);
+    expect(misted(scene)).toEqual([]);
+  });
+
+  it('holds the mist steady under reduced motion', () => {
+    const { scene } = veiling(true);
+    scene.showAbility('self', 'veil', undefined);
+    run(scene, 1.5);
+    const shade = () => (misted(scene)[0]!.material as THREE.MeshBasicMaterial).opacity;
+    const first = shade();
+    run(scene, 0.4);
+    expect(shade()).toBe(first);
+  });
+});
+
+describe('a look the server times', () => {
+  const outlinedIn = (scene: WorldScene, color: number) =>
+    visible(hulls(scene, THREE.BackSide)).some((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex() === color);
+  const looks = [
+    { effectId: 'weakened', holder: 'monster:1', shows: (scene: WorldScene) => outlinedIn(scene, 0xc4a8ff) },
+    { effectId: 'bound', holder: 'monster:1', shows: (scene: WorldScene) => visible(tethers(scene)).length > 0 },
+    {
+      effectId: 'veiled',
+      holder: 'peer',
+      shows: (scene: WorldScene) =>
+        visible(hulls(scene, THREE.FrontSide)).some((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex() === 0xbdb6d8),
+    },
+    { effectId: 'calmed', holder: 'peer', shows: (scene: WorldScene) => outlinedIn(scene, 0x9fd8ff) },
+  ] as const;
+
+  it.each(looks)(
+    'shows $effectId as long as an effects frame says, past its rank-1 seconds, and ends it when one leaves it out',
+    ({ effectId, holder, shows }) => {
+      const { scene } = combatScene();
+      place(scene, 'self', { x: 10, z: 10 });
+      place(scene, 'peer', { x: 13, z: 10 });
+      place(scene, 'monster:1', { x: 10, z: 13 });
+      scene.tick(0.01);
+      const seconds = effectSeconds(effectId, 1) + 3;
+      scene.showEffects(holder, [{ effectId, seconds }]);
+      run(scene, seconds - 0.5);
+      expect(shows(scene)).toBe(true);
+      run(scene, 1);
+      expect(shows(scene)).toBe(false);
+
+      scene.showEffects(holder, [{ effectId, seconds }]);
+      run(scene, 1);
+      expect(shows(scene)).toBe(true);
+      scene.showEffects(holder, []);
+      run(scene, 1);
+      expect(shows(scene)).toBe(false);
+    },
+  );
+});
+
 describe('the pools and the programs', () => {
   /** Every ability and a hit, on the same bodies, once through. */
   function everything(scene: WorldScene): void {
@@ -991,7 +1960,24 @@ describe('the pools and the programs', () => {
     scene.showAbility('self', 'brace', undefined);
     scene.showAbility('self', 'lunge', 'monster:1');
     scene.showAbility('self', 'rally', undefined);
+    scene.showBlow('self', 'monster:1', false);
+    scene.showMend('peer');
+    scene.showAbility('self', 'renewal', 'peer');
+    scene.showAbility('self', 'radiance', undefined);
+    scene.showAbility('self', 'calm', undefined);
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'start', seconds: 1.5 });
+    scene.showRaising('peer', { progress: 0.2, seconds: 3 });
     run(scene, 0.5, 0.05);
+    scene.showAbility('self', 'deep-mend', 'peer', { phase: 'done' });
+    scene.showRaising('peer', undefined);
+    scene.showAbility('self', 'ward', 'peer');
+    scene.showAbility('self', 'weaken', 'monster:1');
+    scene.showAbility('self', 'bind', 'monster:1');
+    scene.showAbility('self', 'dream-bolt', 'monster:1');
+    scene.showAbility('self', 'veil', undefined);
+    run(scene, 0.4, 0.05);
+    scene.showBlow('monster:1', 'peer', true);
+    run(scene, 0.3, 0.05);
   }
 
   function fight(): WorldScene {
@@ -1012,6 +1998,13 @@ describe('the pools and the programs', () => {
     expect(sparks(scene)).toHaveLength(EFFECT_POOL_SIZES.sparks);
     expect(marks(scene)).toHaveLength(EFFECT_POOL_SIZES.marks);
     expect(visible(marks(scene))).toHaveLength(EFFECT_POOL_SIZES.marks);
+    expect(motes(scene)).toHaveLength(EFFECT_POOL_SIZES.motes + EFFECT_POOL_SIZES.streams);
+    expect(missWords(scene).length).toBeLessThanOrEqual(EFFECT_POOL_SIZES.misses);
+    expect(shells(scene).length).toBeLessThanOrEqual(EFFECT_POOL_SIZES.shells);
+    expect(bolts(scene)).toHaveLength(EFFECT_POOL_SIZES.bolts);
+    expect(cracks(scene)).toHaveLength(EFFECT_POOL_SIZES.cracks);
+    expect(tethers(scene).length).toBeLessThanOrEqual(EFFECT_POOL_SIZES.tethers);
+    expect(domes(scene)).toHaveLength(EFFECT_POOL_SIZES.domes);
 
     for (let round = 0; round < 20; round += 1) everything(scene);
     expect(effects(scene).children).toHaveLength(drawn.length);
@@ -1024,26 +2017,15 @@ describe('the pools and the programs', () => {
    */
   it('draws every effect with clones of a handful of materials, and once the pools are full a fight brings no new material at all', () => {
     const scene = fight();
-    const variants = (): Set<string> =>
-      new Set(
-        materialsOf(scene).map((material) =>
-          [
-            material.type,
-            material.side,
-            material.customProgramCacheKey(),
-            (material as THREE.ShaderMaterial).vertexShader,
-            (material as THREE.ShaderMaterial).fragmentShader,
-          ].join('|'),
-        ),
-      );
+    const variants = (): Set<string> => programVariants(effects(scene));
     everything(scene);
     const firstVariants = variants();
     for (let round = 0; round < 20; round += 1) everything(scene);
     expect(variants()).toEqual(firstVariants);
-    const full = materialsOf(scene);
+    const full = materialsOf(effects(scene));
 
     for (let round = 0; round < 10; round += 1) everything(scene);
-    const later = materialsOf(scene);
+    const later = materialsOf(effects(scene));
     expect(later).toHaveLength(full.length);
     expect(later.every((material, index) => material === full[index])).toBe(true);
 
@@ -1053,7 +2035,22 @@ describe('the pools and the programs', () => {
     scene.showAbility('monster:2', 'brace', undefined);
     run(scene, 0.5, 0.05);
     expect(variants()).toEqual(firstVariants);
-    expect(firstVariants.size).toBeLessThanOrEqual(7);
+    expect(firstVariants.size).toBeLessThanOrEqual(15);
+  });
+
+  /** A program compiled on its first draw stalls the frame it draws in, which in a browser can take half a second. */
+  it("compiles every program a fight draws in the prewarm, in the world's light, before any of it draws", async () => {
+    const scene = fight();
+    let compiled = new Set<string>();
+    const compileAsync = vi.fn((root: THREE.Object3D) => {
+      compiled = programVariants(root);
+      return Promise.resolve(root);
+    });
+    await scene.prewarm({ compileAsync });
+    expect(compileAsync).toHaveBeenCalledWith(effects(scene), scene.camera, scene.scene);
+
+    everything(scene);
+    expect([...programVariants(effects(scene))].filter((variant) => !compiled.has(variant))).toEqual([]);
   });
 
   /** A disposed material releases its program, which three deletes once no material uses it, so the next flash or brace would compile it again. */
@@ -1093,11 +2090,38 @@ describe('the pools and the programs', () => {
   });
 });
 
-function materialsOf(scene: WorldScene): THREE.Material[] {
+function materialsOf(root: THREE.Object3D): THREE.Material[] {
   const materials: THREE.Material[] = [];
-  effects(scene).traverse((object) => {
+  root.traverse((object) => {
     const material = (object as THREE.Mesh).material;
     if (material !== undefined) materials.push(...(Array.isArray(material) ? material : [material]));
   });
   return materials;
+}
+
+/**
+ * The program variant of each mesh drawn under `root`, keyed as three.js keys it: what its material
+ * is, how its shaders read, and what of its geometry and skeleton they read.
+ */
+function programVariants(root: THREE.Object3D): Set<string> {
+  const variants = new Set<string>();
+  root.traverse((object) => {
+    const { material, geometry } = object as THREE.Mesh;
+    if (material === undefined) return;
+    for (const each of Array.isArray(material) ? material : [material]) {
+      variants.add(
+        [
+          each.type,
+          each.side,
+          each.customProgramCacheKey(),
+          (each as THREE.ShaderMaterial).vertexShader,
+          (each as THREE.ShaderMaterial).fragmentShader,
+          (object as THREE.SkinnedMesh).isSkinnedMesh === true,
+          geometry.hasAttribute('position'),
+          geometry.hasAttribute('normal'),
+        ].join('|'),
+      );
+    }
+  });
+  return variants;
 }

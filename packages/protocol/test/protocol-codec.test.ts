@@ -10,6 +10,7 @@ import {
   LOGIN_RESULTS,
   NPC_SERVICES,
   RAISING_STATES,
+  ABILITY_PHASES,
   REGISTER_RESULTS,
   ROLES,
   SECTOR_KINDS,
@@ -227,8 +228,8 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
     ['an unknown service', 'entity', { ...entity, service: 'banker' }, /unknown value "banker"/],
     ['an unknown condition', 'condition', { entityId: 'monster:7', condition: 'dying' }, /unknown value "dying"/],
-    ['an unknown role', 'lucidity', { ...lucidity, role: 'mystic' }, /unknown value "mystic"/],
-    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'mystic', progress: 0 } }, /task\.role: unknown value "mystic"/],
+    ['an unknown role', 'lucidity', { ...lucidity, role: 'bard' }, /unknown value "bard"/],
+    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'bard', progress: 0 } }, /task\.role: unknown value "bard"/],
     ['a teaching id outside the id alphabet', 'study', { npcId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
     ['a studied teaching outside the id alphabet', 'lucidity', { ...lucidity, study: 'Follow Through' }, /study: expected an id/],
     ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
@@ -256,9 +257,32 @@ describe('runtime validation the erased types cannot do', () => {
     ['an over-cap Healer id', 'raising', { ...raising, healerIds: [overCapEntityId] }, /healerIds\[0\]: exceeds 320 UTF-8 bytes/],
     ['a raise past its end', 'raising', { ...raising, progress: 1.5 }, /progress: expected a number from 0 to 1, got 1.5/],
     ['a raise with negative time left', 'raising', { ...raising, seconds: -1 }, /seconds: expected a non-negative number/],
+    [
+      'a pause for each of fewer Healers than hold on',
+      'raising',
+      { ...raising, pausedSeconds: [0, 1] },
+      /pausedSeconds: expected one pause per Healer \(1\), got 2/,
+    ],
+    ['a pause that is no number', 'raising', { ...raising, pausedSeconds: ['1'] }, /pausedSeconds\[0\]: expected a finite number, got string/],
+    ['a negative pause', 'raising', { ...raising, pausedSeconds: [-1] }, /pausedSeconds\[0\]: expected a non-negative number/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
     ['a blow without its target', 'blow', { attackerId: 'a', hit: false }, /targetId: expected a string, got nothing/],
     ['a mend without its target', 'mend', {}, /targetId: expected/],
+    ['a sensed bearing without its name', 'sensed', { bearings: [{ x: 1, z: 2 }] }, /name: expected a string, got nothing/],
+    ['an over-cap sensed name', 'sensed', { bearings: [{ name: overCapId, x: 1, z: 2 }] }, /name: exceeds 64 UTF-8 bytes/],
+    [
+      'a sensed bearing past the metre cap',
+      'sensed',
+      { bearings: [{ name: 'Mira', x: 1, z: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }] },
+      /z: exceeds 10000 metres/,
+    ],
+    [
+      'more sensed bearings than the cap',
+      'sensed',
+      // The first bearing is no object, so only a count checked before the bearings reports the cap.
+      { bearings: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxSensedBearings }, (_, index) => ({ name: `d${index}`, x: 0, z: 0 }))] },
+      /bearings: exceeds 32 records \(got 33\)/,
+    ],
     ['vitals below 0', 'vitals', { entityId: 'monster:7', health: -0.01 }, /health: expected a number from 0 to 1, got -0.01/],
     ['vitals above 1', 'vitals', { entityId: 'monster:7', health: 1.01 }, /health: expected a number from 0 to 1, got 1.01/],
     ['vitals without their entity', 'vitals', { health: 0.5 }, /entityId: expected a string, got nothing/],
@@ -266,6 +290,23 @@ describe('runtime validation the erased types cannot do', () => {
     ['a use of no ability', 'useAbility', {}, /abilityId: expected a string, got nothing/],
     ['an ability used by no one', 'ability', { abilityId: 'brace' }, /entityId: expected a string, got nothing/],
     ['an empty ability target', 'ability', { entityId: 'a', abilityId: 'brace', targetId: '' }, /targetId: expected a non-empty string/],
+    ['an unknown ability phase', 'ability', { entityId: 'a', abilityId: 'deep-mend', phase: 'paused' }, /unknown value "paused"/],
+    ['a channel begun without its length', 'ability', { entityId: 'a', abilityId: 'deep-mend', phase: 'start' }, /seconds: expected the seconds of a channel/],
+    ['a channel under way without its time left', 'ability', { entityId: 'a', abilityId: 'deep-mend', phase: 'channel' }, /seconds: expected the seconds/],
+    [
+      'a channel with negative time left',
+      'ability',
+      { entityId: 'a', abilityId: 'deep-mend', phase: 'channel', seconds: -1 },
+      /seconds: expected a non-negative number/,
+    ],
+    [
+      'a landed channel with seconds',
+      'ability',
+      { entityId: 'a', abilityId: 'deep-mend', phase: 'done', seconds: 0 },
+      /seconds: expected no seconds outside a channel/,
+    ],
+    ['an instant ability with seconds', 'ability', { entityId: 'a', abilityId: 'brace', seconds: 1 }, /seconds: expected no seconds outside a channel/],
+    ['an evasion that is no bool', 'ability', { entityId: 'a', abilityId: 'dream-bolt', evaded: 1 }, /evaded: expected a bool/],
     ['an effect id outside the id alphabet', 'effects', { entityId: 'a', effects: [{ effectId: 'Braced', seconds: 1 }] }, /effectId: expected an id/],
     [
       'an effect with negative time left',
@@ -336,6 +377,8 @@ describe('runtime validation the erased types cannot do', () => {
     expect(() => decodeSomnioMessage(frame('effects', { entityId: 'a', effects: atCapEffects }))).not.toThrow();
     const atCapCooldowns = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns }, (_, index) => ({ abilityId: `a${index}`, seconds: 1 }));
     expect(() => decodeSomnioMessage(frame('cooldowns', { globalSeconds: 0, cooldowns: atCapCooldowns }))).not.toThrow();
+    const atCapBearings = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxSensedBearings }, (_, index) => ({ name: `d${index}`, x: 0, z: 0 }));
+    expect(() => decodeSomnioMessage(frame('sensed', { bearings: atCapBearings }))).not.toThrow();
   });
 });
 
@@ -512,11 +555,11 @@ describe('string literal sets', () => {
   });
 
   it('pins Role', () => {
-    expect(ROLES).toEqual(['fighter', 'healer']);
+    expect(ROLES).toEqual(['fighter', 'healer', 'mystic']);
   });
 
   it('pins NPCService', () => {
-    expect(NPC_SERVICES).toEqual(['fighterMaster', 'healerMaster', 'shopkeeper']);
+    expect(NPC_SERVICES).toEqual(['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper']);
   });
 
   it('pins Locale', () => {
@@ -529,6 +572,10 @@ describe('string literal sets', () => {
 
   it('pins RaisingState', () => {
     expect(RAISING_STATES).toEqual(['holding', 'broken', 'done']);
+  });
+
+  it('pins AbilityPhase', () => {
+    expect(ABILITY_PHASES).toEqual(['start', 'channel', 'done', 'broken']);
   });
 
   it('pins SpeechKind', () => {
@@ -546,7 +593,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(18);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(19);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -578,6 +625,7 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns).toBe(32);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSensedBearings).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount).toBe(4);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame).toBe(256);
   });

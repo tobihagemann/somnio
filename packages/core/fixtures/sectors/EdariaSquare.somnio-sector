@@ -53,6 +53,16 @@
         "door": "exit",
         "sector": "EdariaHealerHall"
       }
+    },
+    {
+      "anchor": "main",
+      "id": "to-edariamystictower",
+      "nightOnly": true,
+      "placement": "building-tower-1",
+      "target": {
+        "door": "exit",
+        "sector": "EdariaMysticTower"
+      }
     }
   ],
   "ground": {
@@ -521,6 +531,57 @@
         }
       },
       {
+        "id": "gen-path-to-edariamystictower",
+        "materialId": "dirt-path",
+        "opacity": 0.9,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 12.6,
+              "z": 31.43
+            },
+            {
+              "x": 12.6,
+              "z": 32.23
+            },
+            {
+              "x": 13.52,
+              "z": 32.51
+            },
+            {
+              "x": 14.44,
+              "z": 32.79
+            },
+            {
+              "x": 15.08,
+              "z": 32.47
+            },
+            {
+              "x": 15.72,
+              "z": 32.15
+            },
+            {
+              "x": 16.51,
+              "z": 32.15
+            },
+            {
+              "x": 17.3,
+              "z": 32.15
+            },
+            {
+              "x": 18.09,
+              "z": 32.15
+            },
+            {
+              "x": 18.88,
+              "z": 32.15
+            }
+          ],
+          "radius": 0.8
+        }
+      },
+      {
         "id": "gen-opening-nw-south",
         "materialId": "dirt-path",
         "opacity": 0.9,
@@ -583,6 +644,34 @@
           "kind": "stroke",
           "points": [
             {
+              "x": 11.972,
+              "z": 32.725
+            },
+            {
+              "x": 11.359,
+              "z": 32.144
+            },
+            {
+              "x": 10.746,
+              "z": 31.563
+            },
+            {
+              "x": 10.133,
+              "z": 30.981
+            },
+            {
+              "x": 9.52,
+              "z": 30.4
+            },
+            {
+              "x": 9.44,
+              "z": 29.467
+            },
+            {
+              "x": 9.36,
+              "z": 28.533
+            },
+            {
               "x": 9.28,
               "z": 27.6
             },
@@ -609,45 +698,6 @@
             {
               "x": 9.52,
               "z": 22.08
-            }
-          ],
-          "radius": 0.8
-        }
-      },
-      {
-        "id": "gen-opening-sw-east",
-        "materialId": "dirt-path",
-        "opacity": 0.9,
-        "shape": {
-          "kind": "stroke",
-          "points": [
-            {
-              "x": 13.4,
-              "z": 31.68
-            },
-            {
-              "x": 14.313,
-              "z": 31.72
-            },
-            {
-              "x": 15.227,
-              "z": 31.76
-            },
-            {
-              "x": 16.14,
-              "z": 31.8
-            },
-            {
-              "x": 17.053,
-              "z": 31.84
-            },
-            {
-              "x": 17.967,
-              "z": 31.88
-            },
-            {
-              "x": 18.88,
-              "z": 31.92
             }
           ],
           "radius": 0.8
@@ -1272,36 +1322,6 @@
           ],
           "radius": 1
         }
-      },
-      {
-        "id": "gen-worn-4",
-        "materialId": "dirt-path",
-        "opacity": 0.5,
-        "shape": {
-          "kind": "stroke",
-          "points": [
-            {
-              "x": 9.28,
-              "z": 27.6
-            }
-          ],
-          "radius": 1.1
-        }
-      },
-      {
-        "id": "gen-worn-5",
-        "materialId": "dirt-path",
-        "opacity": 0.5,
-        "shape": {
-          "kind": "stroke",
-          "points": [
-            {
-              "x": 13.4,
-              "z": 31.68
-            }
-          ],
-          "radius": 1.1
-        }
       }
     ]
   },
@@ -1888,6 +1908,13 @@
       "z": 34.4
     },
     {
+      "id": "building-tower-1",
+      "modelId": "building-tower",
+      "x": 12.6,
+      "yaw": 270,
+      "z": 30
+    },
+    {
       "id": "gen-tree-3-a-1",
       "modelId": "tree-3-a",
       "x": 14.004,
@@ -2007,130 +2034,109 @@
       "z": 1.233
     },
     {
-      "id": "gen-tree-5-a-5",
-      "modelId": "tree-5-a",
-      "x": 9.996,
-      "yaw": 324,
-      "z": 36.355
-    },
-    {
-      "id": "gen-tree-5-a-6",
-      "modelId": "tree-5-a",
-      "x": 9.963,
-      "yaw": 146,
-      "z": 34.442
-    },
-    {
       "id": "gen-tree-1-a-6",
       "modelId": "tree-1-a",
-      "x": 6.711,
-      "yaw": 69,
-      "z": 31.628
+      "x": 12.188,
+      "yaw": 25,
+      "z": 36.886
     },
     {
-      "id": "gen-tree-5-a-7",
+      "id": "gen-tree-5-a-5",
       "modelId": "tree-5-a",
-      "x": 3.428,
-      "yaw": 331,
-      "z": 8.454
+      "x": 13.809,
+      "yaw": 38,
+      "z": 36.552
+    },
+    {
+      "id": "gen-bush-3-a-3",
+      "modelId": "bush-3-a",
+      "x": 12.997,
+      "yaw": 81,
+      "z": 38.323
     },
     {
       "id": "gen-tree-1-a-7",
       "modelId": "tree-1-a",
-      "x": 1.242,
-      "yaw": 57,
-      "z": 11.412
-    },
-    {
-      "id": "gen-tree-5-a-8",
-      "modelId": "tree-5-a",
-      "x": 0.962,
-      "yaw": 155,
-      "z": 9.674
-    },
-    {
-      "id": "gen-tree-3-a-6",
-      "modelId": "tree-3-a",
-      "x": 39.315,
-      "yaw": 280,
-      "z": 10.882
-    },
-    {
-      "id": "gen-tree-3-a-7",
-      "modelId": "tree-3-a",
-      "x": 39.082,
-      "yaw": 35,
-      "z": 13.34
+      "x": 11.054,
+      "yaw": 352,
+      "z": 37.988
     },
     {
       "id": "gen-tree-1-a-8",
       "modelId": "tree-1-a",
-      "x": 27.272,
-      "yaw": 265,
-      "z": 26.292
+      "x": 8.774,
+      "yaw": 193,
+      "z": 37.819
     },
     {
-      "id": "gen-tree-5-a-9",
+      "id": "gen-tree-5-a-6",
       "modelId": "tree-5-a",
-      "x": 26.283,
-      "yaw": 235,
-      "z": 28.965
+      "x": 2.265,
+      "yaw": 266,
+      "z": 26.872
     },
     {
-      "id": "gen-rock-1-a-1",
-      "modelId": "rock-1-a",
-      "x": 4.895,
-      "yaw": 120,
-      "z": 31.891
+      "id": "gen-tree-3-a-6",
+      "modelId": "tree-3-a",
+      "x": 27.017,
+      "yaw": 122,
+      "z": 14.373
+    },
+    {
+      "id": "gen-tree-3-a-7",
+      "modelId": "tree-3-a",
+      "x": 2.99,
+      "yaw": 196,
+      "z": 10.879
+    },
+    {
+      "id": "gen-tree-5-a-7",
+      "modelId": "tree-5-a",
+      "x": 3.948,
+      "yaw": 210,
+      "z": 9.545
     },
     {
       "id": "gen-bush-2-b-2",
       "modelId": "bush-2-b",
-      "x": 4.521,
-      "yaw": 235,
-      "z": 37.889
+      "x": 2.098,
+      "yaw": 38,
+      "z": 37.394
     },
     {
-      "id": "gen-bush-3-a-3",
+      "id": "gen-bush-3-a-4",
       "modelId": "bush-3-a",
       "x": 4.84,
       "yaw": 248,
       "z": 10.947
     },
     {
-      "id": "gen-rock-1-a-2",
+      "id": "gen-rock-1-a-1",
       "modelId": "rock-1-a",
       "x": 3.286,
       "yaw": 243,
       "z": 16.552
     },
     {
-      "id": "gen-rock-1-a-3",
+      "id": "gen-rock-1-a-2",
       "modelId": "rock-1-a",
       "x": 4.019,
       "yaw": 341,
       "z": 13.812
     },
     {
-      "id": "gen-rock-1-a-4",
+      "id": "gen-rock-1-a-3",
       "modelId": "rock-1-a",
       "x": 28.065,
       "yaw": 268,
       "z": 28.532
     },
     {
-      "id": "gen-rock-1-a-5",
+      "id": "gen-rock-1-a-4",
       "modelId": "rock-1-a",
       "x": 2.099,
       "yaw": 285,
       "z": 39.485
-    },
-    {
-      "id": "gen-rock-1-a-6",
-      "modelId": "rock-1-a",
-      "x": 8.228,
-      "yaw": 319,
-      "z": 31.321
     }
   ],
   "size": {

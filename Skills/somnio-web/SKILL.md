@@ -120,6 +120,9 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `vitals(entityId)` | the share of the target's health (0–1): as the server last sent it (two decimals), or from the player's own pools when they are their own target. `undefined` before the first `vitals` frame and for anyone but the target |
 | `abilities()` | the belt's slots after slot 1, in its order: `[{ abilityId, usable, cooldownSeconds }]`, one per ability the player has learned. `usable` is whether the server would act on it now but for its cooldowns; `cooldownSeconds` is what is left of the cooldown its slot waits on, its own or the global one, whichever ends later, `0` while none runs |
 | `effects(entityId)` | `[{ effectId, seconds }]`, the effects the server last sent of the player or of their target, with the seconds each has left (`seconds` is absent for one lasting as long as its holder); `[]` for anyone else |
+| `channel(entityId)` | `{ abilityId, seconds }`, the channel the server last showed that entity has under way (Deep mend), with the seconds it has left; `undefined` while none runs. The player sees their own, everyone in view sees one start and end, and a dreamer who targets the caster mid-channel is sent the rest |
+| `raise(entityId)` | `{ healerNames, seconds }`, the raise under way on that fallen dreamer as its last `raising` snapshot states it: the Healers holding on whose names the client knows, and the seconds left at their pace; `undefined` while none runs. Everyone who sees the fallen dreamer's sector is sent it |
+| `sensed()` | `[{ name, x, z }]`, where each other fallen dreamer in the space lies, nearest first, as the server last told a player who senses the fallen (a Mystic with Sense the fallen); `[]` for anyone else and after each join until the first `sensed` frame |
 | `screenPoint(entityId)` | `{ x, y }` in CSS pixels where that entity's body is drawn on the page (a fallen body where it lies), or `undefined` |
 | `groundScreenPoint(x, z)` | `{ x, y }` in CSS pixels where that point of the space is drawn on the ground a body there would stand on (a walk surface's top, else the floor), or `undefined` before the first join. A point outside the canvas's rect is off screen |
 | `chatHistory()` | the session's chat lines as localized strings; the greeting the chat shows above them is not included, so the result is `[]` until the first line arrives |
@@ -238,6 +241,59 @@ JS
 Brace (`braced` in `effects(self)`, about 4 s at rank 1) halves the harm the player takes and holds them to a jog: with Run on, `running()` stays `true` while `player().gait` reads `'jog'` on a walk, and the Run slot carries `.hud-run--held`. Rally gives Balance back to every standing dreamer within 12 m, the player included, so drain some first and watch `energy().balanceCurrent`. Cleave swings at every nightmare within touch that the swing arc meets, each swing a `blow`. The arc follows facing, so lock the gaze on a target among them first, as for slot 1. Challenge puts `challenged` on every nightmare within 5 m beyond contact, and they turn on the player; target one to read it in `effects(id)`. Lunge needs a targeted nightmare within 3 m beyond contact. The leap starts only once the server's `ability` frame for the player arrives, a round trip after the press. While it carries the player, `walk()` reads `{ kind: 'leap', end }`.
 
 The frames show the same effects as a row (`.hud-effects`): a glyph per effect with its whole seconds left, and an `aria-label` such as "Braced, 4 s left". Effects and cooldowns go through a door, so `abilities()` and `effects(self)` read on in the next space.
+
+**The HUD's tip.** HUD parts carry no `title`. A mouse resting on one shows the HUD's own tip at once: one `[role="tooltip"]` element in `.hud` (`.hud-tip`), hidden by the `hidden` class while nothing is under the pointer. `agent-browser hover @eN` on a slot from `snapshot -i`, or `mouse move` to its centre, shows it, and the part's `aria-describedby` names the tip's id while it shows. A synthetic `pointerover` works too, with `pointerType: 'mouse'` and `buttons: 0`, since a held button or a touch shows nothing. Read it part by part:
+
+```bash
+agent-browser eval --stdin <<'JS'
+(() => {
+  const tip = document.querySelector('.hud [role="tooltip"]')
+  if (tip.classList.contains('hidden')) return null
+  return [...tip.querySelectorAll('.hud-tip__title, .hud-tip__aside, .hud-tip__fact, .hud-tip__line, .hud-tip__warning')].map((node) => [node.className, node.textContent])
+})()
+JS
+```
+
+An ability's tip reads its name, its key, its cost (`.hud-tip__fact--spirit` or `--balance`), its channel or "Instant", and its cooldown at the rank held. Then come whom it lands on, the teaching's line, and in `.hud-tip__warning` why a greyed slot waits ("Not enough Spirit", "Needs the Moonstone in hand", "Target a nightmare in range") or "Ready in 4 s" while its own cooldown runs. An effect glyph's tip reads its name, its seconds left, and what it does. Moving the mouse off the part, or a press, hides it. On a phone layout the tip shows after a 400 ms hold, and the click after that hold does nothing. Drive it with `pointerdown`, a wait, and `pointerup` with `pointerType: 'touch'`, then a click whose `detail` is 1.
+
+**The Healer's and the Mystic's kits.** A Healer with the whole kit has Deep mend on 2, Renewal on 3, Radiance on 4, and Calm on 5, and every one needs the Moonstone in hand. A Mystic's has Ward on 2, Weaken on 3, Bind on 4, Dream-bolt on 5, and Veil on 6, and needs nothing in hand. Give either kit with the role recipe's heredoc, keeping its Moonstone statements for a Healer and dropping them for a Mystic:
+
+```sql
+UPDATE characters SET role='healer' WHERE name='<healer>';
+INSERT INTO character_ranks (character_id, teaching_id, rank, practice)
+  SELECT id, t, r, 0 FROM characters, (VALUES ('touch', 2), ('depth', 1), ('drawing-back', 1), ('deep-mend', 1), ('renewal', 1), ('radiance', 1), ('calm', 1)) AS v(t, r) WHERE name='<healer>'
+  ON CONFLICT (character_id, teaching_id) DO UPDATE SET rank = EXCLUDED.rank;
+UPDATE characters SET role='mystic' WHERE name='<mystic>';
+INSERT INTO character_ranks (character_id, teaching_id, rank, practice)
+  SELECT id, t, r, 0 FROM characters, (VALUES ('ward', 1), ('weaken', 1), ('bind', 1), ('dream-bolt', 1), ('veil', 1), ('sense-the-fallen', 1)) AS v(t, r) WHERE name='<mystic>'
+  ON CONFLICT (character_id, teaching_id) DO UPDATE SET rank = EXCLUDED.rank;
+```
+
+Deep mend, Renewal, and Ward land on the targeted dreamer within reach (5 m beyond contact, 6 m for Ward), or on the player with a nightmare or nothing targeted; at a fallen dreamer, or one too far off, the slot is greyed out. Radiance heals and Veil hides every standing dreamer within 5 m, the player included. Weaken, Bind, and Dream-bolt need a targeted nightmare in reach (6 m beyond contact, 8 m for Dream-bolt). Read their effects with `effects(id)`: `renewing`, `calmed`, `warded`, `veiled` on dreamers, `weakened` and `bound` on the targeted nightmare. A bound nightmare stays put in `entities()` but still strikes whoever stands in its reach. A Dream-bolt sends no `blow`, so watch `vitals(id)` fall. A Ward takes the harm of the next blows in the player's place, up to 12 harm at rank 1, so a warded player's `energy().healthCurrent` holds until it is spent and `warded` leaves `effects(self)`; the blow that spends it lands only what the ward could not take.
+
+Deep mend is a channel of 1.5 s at rank 1. `channel(self)` reads `{ abilityId: 'deep-mend', seconds }` while it runs, and a thin bar drains under the player's frame (`.hud-unit--self .hud-timed`, `aria-label` "Channelling Deep mend"), and under the target frame when the target channels. The press ends the walk under way. Any later step breaks it, so press nothing on the ground until `channel(self)` reads `undefined` again; a turn of the cursor does not break it. Slot 1 stays on through the channel and holds its mends until it lands:
+
+```bash
+agent-browser eval --stdin <<'JS'
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const self = window.somnio.player()
+  const target = window.somnio.target()   // a dreamer in reach, or none for the Healer themselves
+  const before = target === undefined ? window.somnio.energy().healthCurrent : window.somnio.vitals(target)
+  window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', key: '2' }))
+  await sleep(400)
+  const during = window.somnio.channel(window.somnio.entities().find((e) => e.name === self.name).id)
+  await sleep(1600)
+  const after = target === undefined ? window.somnio.energy().healthCurrent : window.somnio.vitals(target)
+  const moved = Math.hypot(window.somnio.player().x - self.x, window.somnio.player().z - self.z)
+  return { during, before, after, moved }
+})()
+JS
+```
+
+`during` must read the channel and `moved` stay 0; `after` above `before` shows it landed, given someone short of health. To see it break, tap the ground during the channel: `channel(self)` reads `undefined` at once and nothing is healed.
+
+**Sense the fallen.** A Mystic holding `sense-the-fallen` reads every other fallen dreamer in the space in `sensed()`, however far off, from the moment they log in. For each one lying off screen, a marker sits at the screen's edge toward them (`.hud-sensed__marker`, inside `.hud-sensed`), with their name and an `aria-label` such as "Mira lies fallen to the north-east". A fallen dreamer on screen gets no marker. Stage it with the role recipe: lay a bot's dreamer down fallen and relocate them out of view, such as the North Meadow at `(20, -15)` while the Mystic stands in Edaria Square, then log both in. A raise or a wake of that dreamer empties `sensed()`.
 
 **Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its first line, unasked: once per approach, and not again within 30 s. A press on it as above brings its remaining lines, a few seconds apart, and opens a master's or the shopkeeper's panel (`window.somnio.servicePanel()`).
 
@@ -469,7 +525,7 @@ agent-browser eval --stdin <<'JS'
 JS
 ```
 
-`target` must be the dreamer's id and `engaged` `true`. A mend shows `vitals` rising about 0.1 a second and `spirit` falling 8 a mend until the dreamer is whole. A raise shows `condition` at `fallen` for about 6 s, then a standing band, and needs `away` under 0.85. To see the reaches hold, stand the Healer about 2 m off instead: a mend still lands there, and a raise never begins.
+`target` must be the dreamer's id and `engaged` `true`. A mend shows `vitals` rising about 0.1 a second and `spirit` falling 8 a mend until the dreamer is whole. A raise shows `condition` at `fallen` for about 6 s, then a standing band, and needs `away` under 0.85. While it runs, `raise(dreamer.id)` reads the Healer's name and the seconds left, and a gold bar fills under the target frame (`.hud-unit--target .hud-timed`, its fill `.hud-timed__fill--raise`, `aria-label` "Being drawn back by <healer>"); the dreamer's own client shows the same bar under its own frame. To see the reaches hold, stand the Healer about 2 m off instead: a mend still lands there, and a raise never begins.
 
 **Set the time of day.** No admin verb sets the clock. Stop the server first: it saves the clock about every 15 s and on shutdown, so an `UPDATE` under a running server is overwritten. Then write the row and start the server again:
 
@@ -478,6 +534,10 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 ```
 
 `14515225200` is 07:00 on the first day of year 500; add 3600 per hour. World time runs at four times wall time, so an hour passes in 15 minutes. Outdoor light follows the clock. An interior is lit by its `brightness` and its flames, whatever the hour, and only the light through its first door follows the clock. `world_seconds` is double precision, so cast it before `%` in SQL: `world_seconds::bigint % 86400`.
+
+**The night door and Tacita.** Tacita, the Mystic master (`npc:EdariaMysticTower/tacita`), stands at `(3.55, 1.45)` in `EdariaMysticTower`. Its door, `to-edariamystictower` on the tower in the north-east corner of Edaria Square's south-west quarter, opens only from 22:00 to 06:00 world time, while the HUD clock shows ☾. It faces south; tap the ground at its doorway, about `(12.6, 31.5)` in the outdoor space. By day the server answers `doorRefused`, the player stays outside, and `chatHistory().at(-1)` reads "This door opens only at night." To get in, set the clock with the recipe above to 23:00, `14515282800`, and start the server again; with 2 h of real time per night, that leaves time for a run. The door out of the tower opens at every hour.
+
+Inside, a press on Tacita opens her panel ("Master of the Mystics") for a dreamer with no role, and her dialog hints at the trial's three hidden places. Each is a 3 m circle round a point, which in the outdoor space are `(-24, 30)` in the West Meadow, `(50, 8)` in the Autumn Wood, and `(12, -14)` in the North Meadow. With the trial taken, walking into each one moves `lucidity().task.progress` to the bit mask of places found, and the chat says "You found a hidden place, 1 of 3." for each but the last, which says the task is done. The trial is done at 7, and Tacita then makes the role theirs. To skip the walk, relocate the character beside each circle with the relocation recipe, then tap the ground inside it: the space counts a place only on an accepted `move` there.
 
 **Render a staged scene without a server.** To screenshot any sector with figures placed by hand, such as stills for a prototype, draw it from an `eval` on the dev page. It needs no gameplay server and no login. Wait for Step 4's prewarm gate first, then run an async IIFE from a script in the session scratchpad with `agent-browser eval --stdin`. The working tree stays untouched.
 

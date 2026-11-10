@@ -235,7 +235,18 @@ export function wholeAmount(amount: number): number {
  * and the `damageTaken` of each its taker holds, whole, and never less than 1.
  */
 export function harmTaken(amount: number, dealer: readonly EffectId[], taker: readonly EffectId[]): number {
-  return Math.max(1, wholeAmount(amount * effectShare(dealer, 'damageDealt') * effectShare(taker, 'damageTaken')));
+  return shieldedHarm(amount, dealer, taker, 0).landed;
+}
+
+/**
+ * A hit of `amount` on a taker behind a shield still holding `shield`: the shield takes what it can
+ * of the hit's share before it is made whole, and the rest lands, whole and never less than 1. A hit
+ * the shield takes all of lands nothing.
+ */
+export function shieldedHarm(amount: number, dealer: readonly EffectId[], taker: readonly EffectId[], shield: number): { landed: number; absorbed: number } {
+  const share = amount * effectShare(dealer, 'damageDealt') * effectShare(taker, 'damageTaken');
+  const absorbed = Math.min(shield, share);
+  return { landed: absorbed === share && absorbed > 0 ? 0 : Math.max(1, wholeAmount(share - absorbed)), absorbed };
 }
 
 /**
@@ -252,7 +263,7 @@ function effectShare(effects: readonly EffectId[], key: 'damageDealt' | 'damageT
 }
 
 /** The teaching that deepens each role's Spirit. */
-const SPIRIT_DEEPENING: Record<Role, TeachingId | undefined> = { fighter: undefined, healer: 'spirit-deepening' };
+const SPIRIT_DEEPENING: Record<Role, TeachingId | undefined> = { fighter: undefined, healer: 'spirit-deepening', mystic: 'mystic-spirit-deepening' };
 
 /** Each pool's maximum: Health by Toughening, Spirit by the Spirit deepening of the dreamer's role. */
 export function maxPools({ role, ranks }: Pick<Lucidity, 'role' | 'ranks'>): Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'> {
@@ -273,4 +284,27 @@ export function fullPools(lucidity: Pick<Lucidity, 'role' | 'ranks'>): Energy {
 /** The health one touch of the Moonstone restores. */
 export function mendAmount(ranks: readonly HeldRank[]): number {
   return COMBAT.mend.health + COMBAT.mend.healthPerDepthRank * rankOf(ranks, 'depth');
+}
+
+/**
+ * The work, in pace-seconds, that the Healers holding on to a raise add over `seconds`: each adds
+ * one a second once their pause, from `pausedSeconds`, is over. Both sides pace a raise by it.
+ */
+export function raiseWorkOver(pausedSeconds: readonly number[], seconds: number): number {
+  return pausedSeconds.reduce((sum, paused) => sum + Math.max(0, seconds - paused), 0);
+}
+
+/** The seconds the Healers holding on to a raise take to add `work` more, the inverse of `raiseWorkOver`; never, with none holding on. */
+export function raiseSecondsFor(work: number, pausedSeconds: readonly number[]): number {
+  const paceFrom = [...pausedSeconds].sort((a, b) => a - b);
+  if (paceFrom.length === 0) return Infinity;
+  let pace = 1;
+  let at = paceFrom[0]!;
+  let left = work;
+  while (pace < paceFrom.length && left > pace * (paceFrom[pace]! - at)) {
+    left -= pace * (paceFrom[pace]! - at);
+    at = paceFrom[pace]!;
+    pace += 1;
+  }
+  return at + left / pace;
 }

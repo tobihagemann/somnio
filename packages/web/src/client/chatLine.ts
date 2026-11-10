@@ -40,6 +40,7 @@ export type ChatLine =
   | { kind: 'sold'; itemId: string; coins: number; emptiedHand: boolean }
   | { kind: 'becameRole'; role: Role }
   | { kind: 'rankGained'; teachingId: TeachingId; rank: number }
+  | { kind: 'placeFound'; found: number; total: number }
   | { kind: 'taskDone' }
   | { kind: 'fell' }
   | { kind: 'raised'; healerNames: string[] }
@@ -47,6 +48,7 @@ export type ChatLine =
   | { kind: 'raisedOther'; targetName: string }
   | { kind: 'raiseBrokenOther'; targetName: string }
   | { kind: 'wokeWeakened' }
+  | { kind: 'doorOpensAtNight' }
   | { kind: 'credentialSaveFailed' }
   | { kind: 'loggedOutOtherBrowsers'; count: number }
   | { kind: 'logOutOtherBrowsersFailed' }
@@ -97,6 +99,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'sold':
     case 'becameRole':
     case 'rankGained':
+    case 'placeFound':
     case 'taskDone':
     case 'fell':
     case 'raised':
@@ -104,6 +107,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'raisedOther':
     case 'raiseBrokenOther':
     case 'wokeWeakened':
+    case 'doorOpensAtNight':
     case 'loggedOutOtherBrowsers':
       return 'itemInfo';
   }

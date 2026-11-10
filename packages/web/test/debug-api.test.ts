@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, element } from '@/ui';
 import { installDebugAPI, makeDebugAPI } from '@/debugApi';
 import { ClientWorld } from '@/client';
@@ -25,6 +25,7 @@ describe('the debug API', () => {
   afterEach(() => {
     container.remove();
     delete (window as unknown as Record<string, unknown>).somnio;
+    vi.restoreAllMocks();
   });
 
   function shell(): AppShell {
@@ -131,6 +132,47 @@ describe('the debug API', () => {
     expect(braced!.effectId).toBe('braced');
     expect(braced!.seconds).toBeCloseTo(4, 0);
     expect(api.effects('monster:1')).toEqual([{ effectId: 'challenged' }]);
+  });
+
+  it('reports a channel under way with the seconds it has left, until it lands', () => {
+    // The page's clock stands still, so the seconds left are exact however slowly the test runs.
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    app.controller.entities.set('self', clientEntity());
+    const api = makeDebugAPI(app);
+    expect(api.channel('self')).toBeUndefined();
+    app.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'start', seconds: 1.5 } });
+    const channel = api.channel('self');
+    expect(channel?.abilityId).toBe('deep-mend');
+    expect(channel?.seconds).toBe(1.5);
+    app.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'done' } });
+    expect(api.channel('self')).toBeUndefined();
+  });
+
+  it('reports a raise under way with its Healers and the seconds it has left, until it ends', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    app.controller.entities.set('self', clientEntity({ condition: 'fallen' }));
+    app.controller.entities.set('healer', clientEntity({ id: 'healer', kind: 'peer', name: 'Lumi' }));
+    const api = makeDebugAPI(app);
+    expect(api.raise('self')).toBeUndefined();
+    app.controller.dispatch({ tag: 'raising', payload: { targetId: 'self', healerIds: ['healer'], state: 'holding', progress: 0.5, seconds: 3 } });
+    const raise = api.raise('self');
+    expect(raise?.healerNames).toEqual(['Lumi']);
+    expect(raise?.seconds).toBe(3);
+    app.controller.dispatch({ tag: 'raising', payload: { targetId: 'self', healerIds: ['healer'], state: 'done', progress: 1, seconds: 0 } });
+    expect(api.raise('self')).toBeUndefined();
+  });
+
+  it('reports where each fallen dreamer lies, as the server last told a Mystic who senses them', () => {
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    const api = makeDebugAPI(app);
+    expect(api.sensed()).toEqual([]);
+    app.controller.dispatch({ tag: 'sensed', payload: { bearings: [{ name: 'Mira', x: 30, z: 10 }] } });
+    expect(api.sensed()).toEqual([{ name: 'Mira', x: 30, z: 10 }]);
   });
 
   it('reports the gaze lock as a second right press on the target lets go of it and a third takes it again', () => {

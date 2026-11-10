@@ -16,6 +16,7 @@ import { canvasWidthMeasurer } from '@/scene/speechBubbleText';
 import { SplashDirector } from '@/splash/director';
 import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
+import { SensedMarkers } from './sensedMarkers';
 import { GameHUD } from './hud';
 import type { HUDClock } from './hud';
 import { BlockingNotices, Overlays } from './overlays';
@@ -119,6 +120,7 @@ export class AppShell {
   readonly hud: GameHUD;
   readonly servicePanel: ServicePanel;
   readonly fallenNotice: FallenNotice;
+  private readonly sensedMarkers = new SensedMarkers();
   readonly overlays: Overlays;
   readonly notices: BlockingNotices;
 
@@ -294,6 +296,7 @@ export class AppShell {
     this.container.append(
       this.canvas,
       this.bubbleCanvas,
+      this.sensedMarkers.root,
       this.splashVeil,
       this.hud.root,
       this.servicePanel.root,
@@ -738,7 +741,7 @@ export class AppShell {
     // between "loading" and "apparently broken".
     this.notices.setLoading(true);
     void scene
-      .prewarm()
+      .prewarm(this.renderer)
       .finally(() => this.notices.setLoading(false))
       .then(() => this.pumpFrames());
   }
@@ -782,6 +785,7 @@ export class AppShell {
       this.splashDip.style.opacity = String(dipOpacity);
     }
     this.hud.tick(performance.now(), this.clock());
+    this.fallenNotice.tick(performance.now());
     this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
     if (this.scene !== undefined && this.renderer !== undefined) {
       this.renderer.render(this.scene.scene, this.scene.camera);
@@ -796,10 +800,13 @@ export class AppShell {
         }),
       );
       paintBubbles(this.bubbleContext, this.bubbleScratchContext, this.scene.placedBubbles(), this.bubbleCanvas);
+      const self = this.controller.selfId === undefined ? undefined : this.controller.entities.get(this.controller.selfId);
+      this.sensedMarkers.render(this.controller.inWorld ? this.scene.placedMarkers() : undefined, canvasRect, self?.position);
     }
-    // Deliberately not re-rendering the DOM here beyond the HUD's clock and the chat's fading, which
-    // move with time. The controller's and the session's state hooks cover every path that changes
-    // what the rest shows.
+    // Deliberately not re-rendering the DOM here beyond what moves with time or the camera: the HUD's
+    // clock, its seconds left on cooldowns and effects, and its tip, the chat's fading, the fallen
+    // notice's countdown, and the sensed markers. The controller's and the session's state hooks
+    // cover every path that changes what the rest shows.
   }
 
   /**
@@ -813,7 +820,15 @@ export class AppShell {
 
   private framed(entityId: string | undefined): FramedEntity | undefined {
     const entity = entityId === undefined ? undefined : this.controller.entities.get(entityId);
-    return entity === undefined ? undefined : { entity, health: this.session.vitalsOf(entity.id), effects: this.session.effectsOf(entity.id) };
+    return entity === undefined
+      ? undefined
+      : {
+          entity,
+          health: this.session.vitalsOf(entity.id),
+          effects: this.session.effectsOf(entity.id),
+          channel: this.session.channelOf(entity.id),
+          raise: this.session.raiseOf(entity.id),
+        };
   }
 
   /** The world's time now, and the place the player stands in, for the HUD's clock. */
@@ -862,12 +877,14 @@ export class AppShell {
       condition: self?.condition ?? 'hale',
       targeted: selfId !== undefined && this.session.target === selfId,
       effects: this.session.effectsOf(selfId),
+      channel: this.session.channelOf(selfId),
+      raise: this.session.raiseOf(selfId),
     });
     this.servicePanel.render(this.session.servicePanel, this.session.lucidity, this.session.inventory, this.session.tradeLocked());
     // The fallen notice takes the target frame's place while the player lies fallen.
     const framing = inWorld && !this.session.fallen;
     this.hud.renderTarget(framing ? this.framed(this.session.target) : undefined, this.session.gazeLocked);
-    this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raise });
+    this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raiseOf(selfId) }, performance.now());
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
     this.hud.renderItems(this.session.inventory);

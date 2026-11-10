@@ -12,6 +12,7 @@ import type { ModelRegistry } from './modelRegistry.ts';
 import { monsterKind } from './monsterKinds.ts';
 import { sectorPointInSpace, sectorRect, spawnArea } from './sector.ts';
 import type { Sector } from './sector.ts';
+import { hourOfDay, sunIsUp } from './worldClock.ts';
 
 /**
  * The world as spaces: every outdoor sector lies in one continuous space at its `origin`, and
@@ -265,6 +266,11 @@ export function resolveDoor(sector: SectorView, door: Door, registry: ModelRegis
 /** Whether the point stands in the door's trigger, widened by `slack` on every side. */
 export function doorContains(resolved: ResolvedDoor, point: Point, slack: number): boolean {
   return rectContains(resolved.trigger, worldToModel(resolved.transform, point), slack);
+}
+
+/** Whether the door lets a dreamer through at the world clock's `worldSeconds`: always, or for a `nightOnly` door while the sun is down. */
+export function doorOpenAt(door: { nightOnly?: boolean }, worldSeconds: number): boolean {
+  return door.nightOnly !== true || !sunIsUp(hourOfDay(worldSeconds));
 }
 
 /** Whether a dreamer stands within speaking distance of an NPC: where it greets them, answers a `talk`, and keeps a master's offer open. */

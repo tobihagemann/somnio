@@ -2,7 +2,17 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import type { Door } from '@somnio/protocol';
-import { SOMNIO_CONSTANTS, TRIALS, WorldError, buildWorld, parseModelRegistry, readSectorFile, resolveDoor, sectorPointInSpace } from '@somnio/core';
+import {
+  SOMNIO_CONSTANTS,
+  TRIALS,
+  WorldError,
+  buildWorld,
+  parseModelRegistry,
+  readSectorFile,
+  rectContains,
+  resolveDoor,
+  sectorPointInSpace,
+} from '@somnio/core';
 import type { Character, ModelRegistry, ResolvedDoor, Sector, SectorSpawn, World } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 
@@ -80,13 +90,29 @@ const WAKE_SECTOR = 'EdariaInn';
 /**
  * What the rules name that the loaded sectors lack. The world loads all the same: without the
  * inn's spawn a dreamer who gives up wakes at the starter spawn, and a trial that names a sector
- * not loaded cannot be passed.
+ * not loaded, or a place outside the sector it names, cannot be passed.
  */
 export function ruleSectorIssues(sectors: ReadonlyMap<string, Sector>): string[] {
   const issues: string[] = [];
   if (sectors.get(WAKE_SECTOR)?.spawn === undefined) issues.push(`sector ${WAKE_SECTOR} has no spawn to wake at`);
   for (const [role, trial] of Object.entries(TRIALS)) {
-    if (trial.kind === 'reach' && !sectors.has(trial.sector)) issues.push(`the ${role} trial names sector ${trial.sector}, which is not loaded`);
+    switch (trial.kind) {
+      case 'reach':
+        if (!sectors.has(trial.sector)) issues.push(`the ${role} trial names sector ${trial.sector}, which is not loaded`);
+        break;
+      case 'reachAll':
+        for (const place of trial.places) {
+          const sector = sectors.get(place.sector);
+          if (sector === undefined) issues.push(`the ${role} trial names sector ${place.sector}, which is not loaded`);
+          else if (!rectContains({ x: 0, z: 0, ...sector.size }, place)) {
+            issues.push(`the ${role} trial names a place at (${place.x}, ${place.z}) outside sector ${place.sector}`);
+          }
+        }
+        break;
+      case 'driveOff':
+      case 'mend':
+        break;
+    }
   }
   return issues;
 }

@@ -265,6 +265,151 @@
   background: var(--hud-pool-balance);
 }
 
+/*
+ * A timed bar hangs just under its frame: a channel's drains over the seconds left, and a raise's
+ * fills toward done. Each is timed from when it began, as far as its last snapshot says.
+ */
+.hud-timed {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 18px;
+  left: 18px;
+  display: block;
+  height: 6px;
+  border: 1px solid rgb(255 255 255 / 0.7);
+  background: rgb(0 0 0 / 0.55);
+}
+
+.hud-timed__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* The Moonstone's light, as the world draws a mend. */
+.hud-timed__fill--channel {
+  background: var(--hud-moonlight);
+  animation-name: hud-timed-drain;
+}
+
+/* The gold of the raise's ring in the world. */
+.hud-timed__fill--raise {
+  background: var(--hud-raise);
+  animation-name: hud-timed-fill;
+}
+
+@keyframes hud-timed-drain {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes hud-timed-fill {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ---------- The fallen a Mystic senses ---------- */
+
+/* Laid out by the scene with the speech bubbles, so it keeps clear of every HUD part; it takes no pointer. */
+.hud-sensed {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud-sensed__marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* The Mystic's dream violet rings the badge, white line art over a dark well like every other control. */
+.hud-sensed__badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--hud-line);
+  border-radius: 50%;
+  background: var(--hud-well);
+  color: var(--hud-line);
+}
+
+.hud-sensed__badge .hud-glyph {
+  width: 22px;
+  height: 22px;
+}
+
+.hud-sensed__badge::after {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--hud-dream);
+  border-radius: 50%;
+  content: '';
+  animation: hud-sensed-pulse 1.8s ease-out infinite;
+}
+
+/* Spans the badge, so turning it swings the arrowhead round the badge's middle toward the fallen. */
+.hud-sensed__arrow {
+  position: absolute;
+  inset: -2px;
+}
+
+.hud-sensed__arrow::before {
+  position: absolute;
+  top: 50%;
+  right: -10px;
+  margin-top: -6px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid var(--hud-line);
+  content: '';
+}
+
+.hud-sensed__name {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 6px;
+  background: var(--hud-well);
+  color: var(--hud-line);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes hud-sensed-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
 /* ---------- The world clock ---------- */
 
 .hud-clock {
@@ -870,6 +1015,73 @@
   }
 }
 
+/* ---------- The tooltip ---------- */
+
+/* One panel in the chrome's line art, placed over or under its part by `HUDTooltip`. The pointer passes through it. */
+.hud > .hud-tip {
+  --somnio-cap-inset: 12px;
+
+  position: absolute;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 260px;
+  padding: 12px 14px;
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.hud-tip__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hud-tip__title {
+  color: var(--somnio-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hud-tip__aside {
+  color: var(--hud-key);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-tip__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  color: var(--somnio-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-tip__fact--spirit {
+  color: var(--hud-pool-spirit-surface);
+  font-weight: 600;
+}
+
+.hud-tip__fact--balance {
+  color: var(--hud-pool-balance);
+  font-weight: 600;
+}
+
+.hud-tip__line {
+  margin: 0;
+  color: var(--somnio-ink-dim);
+  text-wrap: pretty;
+}
+
+.hud-tip__warning {
+  margin: 0;
+  color: var(--somnio-chat-red);
+}
+
 /* ---------- A finger's layout, on a phone on its side ---------- */
 
 @media (pointer: coarse) {
@@ -1226,6 +1438,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hud-sensed__badge::after {
+    animation: none;
+    opacity: 0.6;
+  }
+
   .hud-bar__fill,
   .hud-globe__level,
   .hud-chat .chat-scrollback,

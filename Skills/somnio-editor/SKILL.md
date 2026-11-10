@@ -90,7 +90,7 @@ machine.
 directory — screenshots can lie, the saved file cannot. An unedited open+save is byte-identical
 to the input (`cmp` against the fixture), so any diff is exactly your edit. Defaults are left
 out of the file (`yaw` and `elevation` at 0, a mark's `opacity` at 1, empty arrays, an NPC's
-Service at None), so an absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
+Service at None, a door's night flag off), so an absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
 
 ## Notes
 
@@ -113,9 +113,13 @@ Service at None), so an absent key is not a lost edit. AGENTS.md's "Sector forma
   lists the same: a door that does not resolve, has no sound counterpart, or arrives on
   something solid (an NPC included). A door that arrives within a nightmare's reach of a monster
   spawn's area is reported too, though it stays live. So are walk surfaces of two placements that
-  overlap, an `elevation` on a model with walk surfaces, and an unmapped model. Two things the server logs
-  at boot are not among them: an `EdariaInn` without a spawn, and a missing `NorthWood`, which
-  the Healer trial names.
+  overlap, an `elevation` on a model with walk surfaces, and an unmapped model. What the server logs
+  at boot about the rules' named sectors is not among them. That is an `EdariaInn` without a spawn,
+  a missing `NorthWood`, which the Healer trial names, and a missing `WestMeadow`, `AutumnWood`, or
+  `NorthMeadow`. It is also a resize of one of those three that leaves outside it the hidden place
+  the Mystic trial puts there (`TRIALS` in `packages/core/src/lucidity.ts`, sector-relative at
+  `(6.72, 24.88)`, `(9.04, 8)`, and `(6.88, 16.72)`). Tacita's dialog in `EdariaMysticTower` hints
+  at each place, so moving one means rewording its hint.
 - Doors, NPCs, and monster spawns carry a text label (`<door id> -> <sector>/<door>`, the
   NPC's name, `<kind> x<maxAlive>`). The labels are DOM elements (`.editor-label`,
   `.editor-label--issue` in red), so `agent-browser snapshot` sees them.
@@ -124,6 +128,10 @@ Service at None), so an absent key is not a lost edit. AGENTS.md's "Sector forma
   an empty target, so it shows as an issue until Target sector and Target door are picked in
   the door's own inspector. Deleting a placement deletes its doors, and a door is copied only
   together with its placement.
+- A door's inspector carries an `Opens only at night` checkbox under its target pickers, which sets `nightOnly: true`
+  on the door; unticked, the key is left out of the file. The game opens such a door from 22:00
+  to 06:00 world time. Set it on the outer door of a pair only, as on the tower's
+  `to-edariamystictower` in `EdariaSquare`, so no dreamer is shut in.
 - Placement tools place on tap; only the Select tool picks. The placement tool stamps the
   model of the placement selected last (the registry's first model until then); change it in
   the placed record's inspector.

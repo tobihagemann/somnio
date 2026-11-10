@@ -55,9 +55,13 @@ export function requireInt32(container: Record<string, unknown>, key: string, pa
  * rejected here rather than propagating NaN into the transform math.
  */
 export function requireFloat(container: Record<string, unknown>, key: string, path: string): number {
-  const value = container[key];
+  return requireFloatValue(container[key], `${path}.${key}`);
+}
+
+/** A finite number as `requireFloat` checks one, given the value itself, such as an array's element. */
+export function requireFloatValue(value: unknown, path: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected a finite number, got ${describe(value)}`);
+    throw new WireDecodingError(path, `expected a finite number, got ${describe(value)}`);
   }
   return value;
 }

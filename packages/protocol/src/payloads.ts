@@ -6,11 +6,13 @@ import {
   PROTOCOL_BYTE_CAPS,
   isAbsent,
   mapArray,
+  requireArray,
   requireBool,
   requireBoundedString,
   requireEntityId,
   requireEntityIds,
   requireFloat,
+  requireFloatValue,
   requireId,
   requireInt32,
   requireMetres,
@@ -50,11 +52,11 @@ export type RegisterResult = (typeof REGISTER_RESULTS)[number];
 export const CHARACTER_RESULTS = ['ok', 'nameExists', 'nameNotAllowed', 'full', 'failure'] as const;
 export type CharacterResult = (typeof CHARACTER_RESULTS)[number];
 
-export const ROLES = ['fighter', 'healer'] as const;
+export const ROLES = ['fighter', 'healer', 'mystic'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** What asking an NPC offers beyond its dialog. */
-export const NPC_SERVICES = ['fighterMaster', 'healerMaster', 'shopkeeper'] as const;
+export const NPC_SERVICES = ['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper'] as const;
 export type NPCService = (typeof NPC_SERVICES)[number];
 
 /** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it, unless it is their target. */
@@ -63,6 +65,10 @@ export type Condition = (typeof CONDITIONS)[number];
 
 export const RAISING_STATES = ['holding', 'broken', 'done'] as const;
 export type RaisingState = (typeof RAISING_STATES)[number];
+
+/** Where a channelled ability stands: begun, under way as told to a dreamer who targets its user, landed, or broken off. */
+export const ABILITY_PHASES = ['start', 'channel', 'done', 'broken'] as const;
+export type AbilityPhase = (typeof ABILITY_PHASES)[number];
 
 /** What a trade did, from the dreamer's side. */
 export const TRADE_KINDS = ['bought', 'sold'] as const;
@@ -383,11 +389,19 @@ export interface BlowMessage {
   hit: boolean;
 }
 
-/** An entity used an ability. `targetId` is whom it landed on, absent when that is the user or the ability lands round them. */
+/**
+ * An entity used an ability. `targetId` is whom it landed on, absent when that is the user or the
+ * ability lands round them. A channelled ability carries its `phase`, and an instant one none.
+ * `seconds` is the channel's length on `start` and the seconds left on `channel`, and is carried
+ * with no other phase. `evaded` is set when the nightmare it flies at evades it, landing nothing.
+ */
 export interface AbilityMessage {
   entityId: string;
   abilityId: string;
   targetId?: string;
+  phase?: AbilityPhase;
+  seconds?: number;
+  evaded?: boolean;
 }
 
 export interface AbilityCooldownMessage {
@@ -407,8 +421,10 @@ export interface CooldownsMessage {
 /**
  * A raise on a fallen dreamer as it stands, whole in every frame. While `holding`, `healerIds` are
  * the Healers holding on in the order they took hold, `progress` is the share done, and `seconds`
- * the time left at their pace. `done` and `broken` name the Healers holding on just before the
- * end, with `seconds` 0 and `progress` 1 when done, 0 when broken.
+ * the time left at their pace. Each adds their pace once a channel of theirs ends, and
+ * `pausedSeconds` gives the seconds before each does, in the order of `healerIds`, left out while
+ * every one adds it now. `done` and `broken` name the Healers holding on just before the end,
+ * with `seconds` 0 and `progress` 1 when done, 0 when broken.
  */
 export interface RaisingMessage {
   targetId: string;
@@ -416,6 +432,7 @@ export interface RaisingMessage {
   state: RaisingState;
   progress: number;
   seconds: number;
+  pausedSeconds?: number[];
 }
 
 /**
@@ -424,6 +441,22 @@ export interface RaisingMessage {
  */
 export interface MendMessage {
   targetId: string;
+}
+
+/** Where a fallen dreamer lies, in the coordinates of the space. */
+export interface SensedBearingMessage {
+  name: string;
+  x: number;
+  z: number;
+}
+
+/**
+ * The fallen dreamers in the space other than the Mystic, nearest first and at most
+ * `maxSensedBearings`, whole in every frame and empty when none lies fallen. Sent only to a Mystic
+ * who senses the fallen.
+ */
+export interface SensedMessage {
+  bearings: SensedBearingMessage[];
 }
 
 export interface AdminSayMessage {
@@ -831,10 +864,18 @@ export function decodeBlowMessage(container: Record<string, unknown>, path: stri
 }
 
 export function decodeAbilityMessage(container: Record<string, unknown>, path: string): AbilityMessage {
+  const phase = isAbsent(container, 'phase') ? undefined : requireStringEnum(container, 'phase', path, ABILITY_PHASES);
+  const timed = phase === 'start' || phase === 'channel';
+  if (timed === isAbsent(container, 'seconds')) {
+    throw new WireDecodingError(`${path}.seconds`, timed ? 'expected the seconds of a channel' : 'expected no seconds outside a channel');
+  }
   return {
     entityId: requireEntityId(container, 'entityId', path),
     abilityId: requireId(container, 'abilityId', path),
     ...(isAbsent(container, 'targetId') ? {} : { targetId: requireEntityId(container, 'targetId', path) }),
+    ...(phase === undefined ? {} : { phase }),
+    ...(timed ? { seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`) } : {}),
+    ...(isAbsent(container, 'evaded') ? {} : { evaded: requireBool(container, 'evaded', path) }),
   };
 }
 
@@ -863,11 +904,39 @@ export function decodeRaisingMessage(container: Record<string, unknown>, path: s
     state: requireStringEnum(container, 'state', path, RAISING_STATES),
     progress: requireUnitInterval(container, 'progress', path),
     seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
+    ...decodePausedSeconds(container, path, healerIds.length),
+  };
+}
+
+/** One pause per Healer named, so the count is checked against theirs before any pause is decoded. */
+function decodePausedSeconds(container: Record<string, unknown>, path: string, healerCount: number): { pausedSeconds?: number[] } {
+  if (isAbsent(container, 'pausedSeconds')) return {};
+  const pauses = requireArray(container, 'pausedSeconds', path);
+  if (pauses.length !== healerCount) {
+    throw new WireDecodingError(`${path}.pausedSeconds`, `expected one pause per Healer (${healerCount}), got ${pauses.length}`);
+  }
+  return {
+    pausedSeconds: pauses.map((pause, index) => {
+      const elementPath = `${path}.pausedSeconds[${index}]`;
+      return requireNonNegative(requireFloatValue(pause, elementPath), elementPath);
+    }),
   };
 }
 
 export function decodeMendMessage(container: Record<string, unknown>, path: string): MendMessage {
   return { targetId: requireEntityId(container, 'targetId', path) };
+}
+
+function decodeSensedBearingMessage(container: Record<string, unknown>, path: string): SensedBearingMessage {
+  return {
+    name: requireBoundedString(container, 'name', path, PROTOCOL_BYTE_CAPS.identifier),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
+  };
+}
+
+export function decodeSensedMessage(container: Record<string, unknown>, path: string): SensedMessage {
+  return { bearings: mapArray(container, 'bearings', path, SOMNIO_PROTOCOL_CONSTANTS.maxSensedBearings, decodeSensedBearingMessage) };
 }
 
 export function decodeAdminSayMessage(container: Record<string, unknown>, path: string): AdminSayMessage {

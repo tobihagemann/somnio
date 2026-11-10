@@ -149,7 +149,7 @@ describe('NPC dialog', () => {
     const alice = attachPlayer(space, NEAR, 'alice');
     space.step(0.05);
     space.handleTalk(GUARD, alice.entityId);
-    space.detach(alice.entityId, false);
+    space.handOver(alice.entityId, false);
     expect(space.step(0.05).dialogResets).toHaveLength(1);
     expect(space.step(0.05).dialogResets).toEqual([]);
   });
@@ -256,7 +256,7 @@ describe('monster spawn cadence', () => {
     const blocker = attachPlayer(space, { x: 10, z: 10 }, 'blocker');
     clock.ms = RESPAWN_MS;
     space.step(0);
-    space.detach(blocker.entityId, false);
+    space.handOver(blocker.entityId, false);
     space.step(0);
     expect(await monstersSeen(observer.outbox)).toHaveLength(1);
   });
@@ -310,7 +310,7 @@ describe('monster aggro and chase', () => {
   /** The monster as a dreamer joining at `at` is shown it now. */
   async function monsterNow(space: SpaceActor, at: Point = AFAR) {
     const watcher = attachPlayer(space, at, 'watcher');
-    space.detach(watcher.entityId, false);
+    space.handOver(watcher.entityId, false);
     return (await monstersSeen(watcher.outbox))[0]!;
   }
 
@@ -320,7 +320,7 @@ describe('monster aggro and chase', () => {
     const watcher = attachPlayer(space, at, 'watcher');
     steps(count);
     space.flushMoves();
-    space.detach(watcher.entityId, false);
+    space.handOver(watcher.entityId, false);
     return collectMessages(watcher.outbox);
   }
 
@@ -451,7 +451,7 @@ describe('monster aggro and chase', () => {
       const first = await monsterNow(space);
       expect(first.x).toBeCloseTo(10, 9);
       expect(first.z).toBeCloseTo(10 + STRIDE, 9);
-      space.detach(fallen.entityId, false);
+      space.handOver(fallen.entityId, false);
       // 0.65 m ahead and 0.1 m south of the bearing, a body blocks the straight step, both 30-degree
       // turns, and the 60 to the south. The 90 to the south and the 60 to the north are free.
       const bearing = headingRadians(headingFromVector(12 - first.x, 10 - first.z));
@@ -492,7 +492,7 @@ describe('monster aggro and chase', () => {
     leave();
     steps(100);
     expect(movesIn(await sentOver(space, steps, 40))).toEqual([]);
-    space.detach(fallen.entityId, false);
+    space.handOver(fallen.entityId, false);
     steps(20);
     expect(await monsterNow(space)).toMatchObject(HOME);
   });
@@ -571,7 +571,7 @@ describe('monster aggro and chase', () => {
     const woundTwice = async () => {
       const watcher = attachPlayer(space, AFAR, 'watcher');
       attackFor(space, alice.entityId, HOME, steps);
-      space.detach(watcher.entityId, false);
+      space.handOver(watcher.entityId, false);
       return conditionsIn(await collectMessages(watcher.outbox));
     };
     expect(await woundTwice()).toEqual(['grazed', 'wounded']);

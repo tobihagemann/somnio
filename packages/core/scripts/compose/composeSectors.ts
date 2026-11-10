@@ -109,15 +109,14 @@ function doorPathId(doorId: string): string {
 }
 
 /**
- * A dirt path through each compound opening no door path runs through, from just inside its yard
- * to the edge of the nearest street, and for an opening that joins, on into the yard to the edge
- * of the nearest door path. It comes after the door paths, so it paints over the one it joins.
+ * A dirt path through each compound opening no door path runs through, from the edge of the
+ * nearest door path in its yard, through a point just inside it, to the edge of the nearest street.
+ * It comes after the door paths, so it paints over the one it joins.
  */
 function openingPaths(route: Route, doors: readonly Road[]): Road[] {
   return OPENINGS.flatMap((opening) => {
     const outward = route(opening.inside, STREETS);
     if (outward === undefined) return [];
-    if (!opening.join) return [{ id: opening.id, ...DOOR_PATH, points: outward }];
     const inward = route(opening.inside, doors);
     return inward === undefined ? [] : [{ id: opening.id, ...DOOR_PATH, points: [...inward.toReversed(), ...outward.slice(1)] }];
   });

@@ -84,3 +84,30 @@ it('a dreamer who left fallen joins fallen, and cannot move', async () => {
   await joined.client.close();
   await pollUntil(() => Promise.resolve(server.server.worldRouter.loggedInPlayerCount() === 0 ? true : undefined));
 });
+
+it('a Mystic joins as stored, with the spirit their Spirit deepening gives and the fallen they sense, and leaves as they joined', async () => {
+  const lucidity: Lucidity = {
+    role: 'mystic',
+    ranks: [
+      { teachingId: 'mystic-spirit-deepening', rank: 2, practice: 0 },
+      { teachingId: 'sense-the-fallen', rank: 1, practice: 0 },
+      { teachingId: 'ward', rank: 2, practice: 4.5 },
+    ],
+    study: 'ward',
+    task: undefined,
+  };
+  const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 115, spiritMax: 120 };
+  const stored = await seeded('mystic', { lucidity, energy }, []);
+
+  const joined = await loginOverWire(server.url, stored.name);
+  const sent = (tag: string) => joined.join.find((message) => message.tag === tag)?.payload;
+  expect(sent('lucidity')).toEqual({ role: lucidity.role, ranks: lucidity.ranks, study: lucidity.study });
+  expect(sent('energy')).toEqual(energy);
+  expect(sent('sensed')).toEqual({ bearings: [] });
+  await closeAndAwaitCleanup(joined, server);
+  const after = await pollUntil(async () => {
+    const row = await characters.findByName(stored.name);
+    return row !== undefined && row.lastSeen.getTime() > stored.lastSeen.getTime() ? row : undefined;
+  });
+  expect(after).toMatchObject({ lucidity, energy });
+});

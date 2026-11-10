@@ -3,9 +3,17 @@
     "en": "Balance recovery",
     "de": "Standfestigkeit"
   },
+  "Bind": {
+    "en": "Bind",
+    "de": "Fesseln"
+  },
   "Brace": {
     "en": "Brace",
     "de": "Gegenstemmen"
+  },
+  "Calm": {
+    "en": "Calm",
+    "de": "Ruhe"
   },
   "Challenge": {
     "en": "Challenge",
@@ -23,6 +31,10 @@
     "en": "Dagger",
     "de": "Dolch"
   },
+  "Deep mend": {
+    "en": "Deep mend",
+    "de": "Tiefes Heilen"
+  },
   "Depth": {
     "en": "Depth",
     "de": "Tiefe"
@@ -30,6 +42,10 @@
   "Drawing back": {
     "en": "Drawing back",
     "de": "Zurückholen"
+  },
+  "Dream-bolt": {
+    "en": "Dream-bolt",
+    "de": "Traumgeschoss"
   },
   "Fighter": {
     "en": "Fighter",
@@ -67,6 +83,10 @@
     "en": "Moonstone",
     "de": "Mondstein"
   },
+  "Mystic": {
+    "en": "Mystic",
+    "de": "Mystiker"
+  },
   "North Wood": {
     "en": "North Wood",
     "de": "Nordwald"
@@ -75,9 +95,21 @@
     "en": "Purse",
     "de": "Geldbeutel"
   },
+  "Radiance": {
+    "en": "Radiance",
+    "de": "Strahlen"
+  },
   "Rally": {
     "en": "Rally",
     "de": "Sammelruf"
+  },
+  "Renewal": {
+    "en": "Renewal",
+    "de": "Erneuerung"
+  },
+  "Sense the fallen": {
+    "en": "Sense the fallen",
+    "de": "Gefallene spüren"
   },
   "Short sword": {
     "en": "Short sword",
@@ -107,8 +139,20 @@
     "en": "Umbrae",
     "de": "Umbrae"
   },
+  "Veil": {
+    "en": "Veil",
+    "de": "Schleier"
+  },
   "Vigils": {
     "en": "Vigils",
     "de": "Vigils"
+  },
+  "Ward": {
+    "en": "Ward",
+    "de": "Schutzbann"
+  },
+  "Weaken": {
+    "en": "Weaken",
+    "de": "Schwächen"
   }
 }

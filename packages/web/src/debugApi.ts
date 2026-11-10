@@ -10,7 +10,8 @@ import type { AppShell } from '@/ui/appShell';
  * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
  * adds controller and session state the scene never sees — connection state, the space and sector,
  * the chat scrollback, the presented overlay, the zoom factor, the player's own pools and lucidity, the
- * walk under way, the target, the belt's abilities with their cooldowns, and the frames' effects.
+ * walk under way, the target, the belt's abilities with their cooldowns, the frames' effects,
+ * channels, and raises, and the fallen a Mystic senses.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -54,6 +55,12 @@ export interface SomnioDebugAPI {
   abilities(): { abilityId: AbilityId; usable: boolean; cooldownSeconds: number }[];
   /** The effects the server last sent of the player or of their target, with the seconds each has left; none of anyone else. */
   effects(entityId: string): { effectId: EffectId; seconds?: number }[];
+  /** The channel the server last showed the entity has under way, with the seconds it has left; `undefined` while none runs. */
+  channel(entityId: string): { abilityId: AbilityId; seconds: number } | undefined;
+  /** The raise under way on the fallen dreamer, as its last snapshot states it: the Healers holding on, and the seconds left at their pace; `undefined` while none runs. */
+  raise(entityId: string): { healerNames: string[]; seconds: number } | undefined;
+  /** Where each fallen dreamer in the space lies, as the server last told a player who senses the fallen; none for anyone else. */
+  sensed(): { name: string; x: number; z: number }[];
   /** Where on the page an entity's body is drawn, in CSS pixels, so a click can be aimed at it. */
   screenPoint(entityId: string): { x: number; y: number } | undefined;
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels, so a tap can be aimed at it. */
@@ -119,13 +126,22 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     gazeLocked: () => shell.session.gazeLocked,
     vitals: (entityId) => shell.session.vitalsOf(entityId),
     abilities: () =>
-      shell.session.abilitySlots().map(({ abilityId, usable, cooldown }) => ({
+      shell.session.abilitySlots().map(({ abilityId, refusal, cooldown }) => ({
         abilityId,
-        usable,
+        usable: refusal === undefined,
         cooldownSeconds: cooldown === undefined ? 0 : secondsUntil(cooldown.endsAtMs),
       })),
     effects: (entityId) =>
       shell.session.effectsOf(entityId).map(({ effectId, endsAtMs }) => ({ effectId, ...(endsAtMs === undefined ? {} : { seconds: secondsUntil(endsAtMs) }) })),
+    channel: (entityId) => {
+      const channel = shell.session.channelOf(entityId);
+      return channel === undefined ? undefined : { abilityId: channel.abilityId, seconds: secondsUntil(channel.endsAtMs) };
+    },
+    raise: (entityId) => {
+      const raise = shell.session.raiseOf(entityId);
+      return raise === undefined ? undefined : { healerNames: [...raise.healerNames], seconds: secondsUntil(raise.endsAtMs) };
+    },
+    sensed: () => shell.session.sensed.map(({ name, x, z }) => ({ name, x, z })),
     screenPoint: (entityId) => shell.pagePointOf(entityId),
     groundScreenPoint: (x, z) => shell.pagePointOfGround({ x, z }),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,

@@ -1427,10 +1427,9 @@ describe('overlay quads', () => {
     scene.placeEntity(player());
     scene.placeEntity(clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }));
     scene.showSelection('peer-1', false);
-    scene.showMend('peer-1');
 
     const materials = [...overlayPlates(scene), ...rings(scene)].map((mesh) => mesh.material as THREE.MeshBasicMaterial);
-    expect(materials.length).toBeGreaterThanOrEqual(4);
+    expect(materials.length).toBeGreaterThanOrEqual(3);
     for (const material of materials) expect(material.toneMapped).toBe(false);
   });
 
@@ -1981,13 +1980,6 @@ describe('blows, falls, and raises', () => {
     for (let elapsed = 0; elapsed < seconds; elapsed += MAX_TICK_DELTA) scene.tick(MAX_TICK_DELTA);
   }
 
-  function entityNode(scene: WorldScene, entityId: string): THREE.Object3D {
-    scene.showSelection(entityId, false);
-    const node = rings(scene)[0]!.parent!;
-    scene.showSelection(undefined, false);
-    return node;
-  }
-
   it('plays a swing once over the pose, then fades the pose back in', () => {
     const { scene, started, last } = fightingScene();
     scene.placeEntity(player());
@@ -2009,42 +2001,22 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle', SLICE, 'Idle']);
   });
 
-  it('makes the one hit flinch, and marks a miss over the one missed for a moment, as the blade lands', () => {
-    let nowMs = 0;
-    const { scene, started } = fightingScene(undefined, () => nowMs);
+  it('makes the one hit flinch, and the one missed not, as the blade lands', () => {
+    const { scene, started } = fightingScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
     scene.tick(0.016);
-    const ghost = entityNode(scene, 'monster:1');
-    const before = ghost.children.length;
     const bladeLands = CLIP_SECONDS * STRIKE_AT[SLICE]!;
 
     scene.showBlow('self', 'monster:1', true);
     expect(started().at(-1)).toBe(SLICE);
     run(scene, bladeLands);
     expect(started().slice(-2)).toEqual([SLICE, 'Hit_A']);
-    expect(ghost.children).toHaveLength(before);
 
-    scene.showBlow('self', 'monster:1', false);
     scene.showBlow('self', 'monster:1', false);
     expect(started().at(-1)).toBe(SLICE);
-    expect(ghost.children).toHaveLength(before);
     run(scene, bladeLands);
-    expect(ghost.children).toHaveLength(before + 1);
-    nowMs = 1000;
-    scene.tick(0.016);
-    expect(ghost.children).toHaveLength(before);
-  });
-
-  it('hangs the miss mark over the head of the one missed', () => {
-    const scene = makeScene();
-    scene.placeEntity(player());
-    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
-    const ghost = entityNode(scene, 'monster:1');
-
-    scene.showBlow('self', 'monster:1', false);
-
-    expect(ghost.children.at(-1)!.position.y).toBeCloseTo(CHARACTER_SCALE + 0.2, 6);
+    expect(started().at(-1)).toBe(SLICE);
   });
 
   it('drops a fallen entity once and keeps it down, whatever strikes it, until it stands again', () => {
@@ -2099,76 +2071,6 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle', 'Melee_Block', 'Idle']);
   });
 
-  it('draws a ring round a body being raised as far round as the raise has gone, at its pace from each snapshot, however few frames were drawn, and frees it when the raise ends', () => {
-    let nowMs = 0;
-    const scene = makeScene(emptyAssets(), () => nowMs);
-    scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
-
-    scene.showRaising('peer', { progress: 0, seconds: 6 });
-    const [ring] = rings(scene);
-    const whole = ring!.geometry.getIndex()!.count;
-    expect(ring!.geometry.drawRange.count).toBe(0);
-
-    nowMs = 3000;
-    scene.tick(0.016);
-    expect(ring!.geometry.drawRange.count).toBe(whole / 2);
-
-    // A second Healer joins: the rest goes at twice the pace.
-    scene.showRaising('peer', { progress: 0.5, seconds: 1.5 });
-    const [faster, ...others] = rings(scene);
-    expect(others).toEqual([]);
-    nowMs = 3750;
-    scene.tick(0.016);
-    expect(faster!.geometry.drawRange.count).toBe((whole * 3) / 4);
-    nowMs = 4500;
-    scene.tick(0.016);
-    expect(faster!.geometry.drawRange.count).toBe(whole);
-
-    const dispose = vi.spyOn(faster!.geometry, 'dispose');
-    scene.showRaising('peer', undefined);
-    expect(rings(scene)).toEqual([]);
-    expect(dispose).toHaveBeenCalled();
-  });
-
-  it('swells a ring out from the feet of a body mended and fades it in half a second, one at a time, then frees it', () => {
-    let nowMs = 0;
-    const scene = makeScene(emptyAssets(), () => nowMs);
-    scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
-
-    scene.showMend('peer');
-    nowMs = 100;
-    scene.showMend('peer');
-    const [pulse] = rings(scene);
-    expect(rings(scene)).toHaveLength(1);
-
-    nowMs = 350;
-    scene.tick(0.016);
-    expect(pulse!.scale.x).toBeGreaterThan(1);
-    expect(pulse!.scale.x).toBeLessThan(3 / 1.4);
-    const opacity = (pulse!.material as THREE.MeshBasicMaterial).opacity;
-    expect(opacity).toBeGreaterThan(0);
-    expect(opacity).toBeLessThan(0.9);
-
-    // Restarted by the second mend: it would be gone by now had it kept the first one's start.
-    nowMs = 550;
-    scene.tick(0.016);
-    expect(rings(scene)).toEqual([pulse]);
-
-    const dispose = vi.spyOn(pulse!.geometry, 'dispose');
-    nowMs = 700;
-    scene.tick(0.016);
-    expect(rings(scene)).toEqual([]);
-    expect(dispose).toHaveBeenCalled();
-  });
-});
-
-describe('the sun travels with the camera focus', () => {
-  /**
-   * three.js derives a directional light's direction from `position - target.position`. Anchoring
-   * the light at the world origin while the target follows the player swings that direction
-   * further off the authored one the further the player walks from the origin — the sun
-   * would visibly rotate as you cross the world.
-   */
   it('holds the authored direction as the focus moves across the world', () => {
     const scene = makeScene();
 
@@ -3043,6 +2945,56 @@ describe('speech bubbles leave as they are replaced and expire', () => {
     expect(lines(scene)).toEqual(['Tschüss']);
     expect(bubbleSaying(scene, 'Tschüss')!.centre.x).toBeCloseTo(over.x, 9);
     expect(bubbleSaying(scene, 'Tschüss')!.centre.y).toBeCloseTo(over.y, 9);
+  });
+});
+
+describe('the fallen a Mystic senses', () => {
+  function sensing(): WorldScene {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.setViewportSize(800, 800);
+    return scene;
+  }
+
+  it('marks none lying on screen, and pins a marker toward each lying off it, inside the screen', () => {
+    const scene = sensing();
+    scene.showSensed([
+      { name: 'Ida', x: 11, z: 10 },
+      { name: 'Mira', x: 40, z: 10 },
+    ]);
+    const { halfSize, markers } = scene.placedMarkers();
+    expect(markers.map(({ name }) => name)).toEqual(['Mira']);
+    const [marker] = markers;
+    const toward = screenOf(scene, new THREE.Vector3(40, 0, 10));
+    expect(Math.atan2(marker!.centre.y, marker!.centre.x)).toBeCloseTo(Math.atan2(toward.y, toward.x), 6);
+    expect(marker!.toward).toBeCloseTo(Math.atan2(toward.y - marker!.centre.y, toward.x - marker!.centre.x), 9);
+    expect(Math.abs(marker!.centre.x)).toBeLessThan(halfSize.x);
+    expect(Math.max(Math.abs(marker!.centre.x) / halfSize.x, Math.abs(marker!.centre.y) / halfSize.y)).toBeGreaterThan(0.5);
+  });
+
+  it('keeps a marker clear of what covers the screen, and a voice pinned the same way clear of the marker', () => {
+    const scene = sensing();
+    scene.showSensed([{ name: 'Mira', x: 40, z: 10 }]);
+    const open = scene.placedMarkers().markers[0]!.centre;
+    const { halfSize } = scene.placedMarkers();
+    const panel = { left: open.x - 0.3, bottom: open.y - 0.3, right: open.x + 0.3, top: open.y + 0.3 };
+    scene.setScreenOccluders([
+      { left: panel.left / halfSize.x, bottom: panel.bottom / halfSize.y, right: panel.right / halfSize.x, top: panel.top / halfSize.y },
+    ]);
+    scene.showSpeechBubble(voiced('bren', ['Hallo'], { x: 40, z: 10 }));
+    scene.tick(MAX_TICK_DELTA);
+
+    const marker = scene.placedMarkers().markers[0]!.centre;
+    expect(Math.hypot(marker.x - open.x, marker.y - open.y)).toBeGreaterThan(0.3);
+    const bubble = bubbleSaying(scene, 'Hallo')!;
+    expect(Math.hypot(bubble.centre.x - marker.x, bubble.centre.y - marker.y)).toBeGreaterThan(0.3);
+  });
+
+  it('marks nothing in a new space until the server says again', () => {
+    const scene = sensing();
+    scene.showSensed([{ name: 'Mira', x: 40, z: 10 }]);
+    scene.enterSpace(world('Hall'));
+    expect(scene.placedMarkers().markers).toEqual([]);
   });
 });
 

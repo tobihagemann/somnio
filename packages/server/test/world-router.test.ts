@@ -116,7 +116,7 @@ describe('WorldRouter ticks', () => {
     // The two sectors are neighbours, but the guards stand 20 m apart, past a said line's reach: each player hears the guard beside them.
     const says = (await collectMessages(west.outbox)).flatMap((message) => (message.tag === 'serverSay' ? [message.payload] : []));
     expect(says.map(({ entityId, text }) => ({ entityId, text }))).toEqual([{ entityId: 'npc:West/guard', text: 'second.' }]);
-    middle.space.detach(middle.entityId, true);
+    middle.space.handOver(middle.entityId, true);
     await tick(router);
     expect(dialogRepo.resets).toEqual([{ sectorName: 'Middle', npcId: 'guard' }]);
   });

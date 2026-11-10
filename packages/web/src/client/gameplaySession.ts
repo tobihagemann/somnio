@@ -1,13 +1,16 @@
 import { PROTOCOL_BYTE_CAPS, assertNever, truncateToUTF8Bytes } from '@somnio/protocol';
 import type {
+  AbilityPhase,
   Condition,
   CooldownsMessage,
+  DoorRefusedMessage,
   Energy,
   EntityMove,
   InventoryRowMessage,
   LucidityMessage,
   RaisingMessage,
   SayMessage,
+  SensedBearingMessage,
   SomnioMessage,
   TaskMessage,
   TradeMessage,
@@ -17,9 +20,10 @@ import {
   GLOBAL_COOLDOWN_SECONDS,
   abilitiesTaught,
   ability,
-  abilityAllowed,
   abilityCooldownSeconds,
+  abilityRefusal,
   abilityRank,
+  doorOpenAt,
   engageAction,
   gaitAllowed,
   heading,
@@ -28,6 +32,7 @@ import {
   isTeachingId,
   itemInHand,
   itemWeapon,
+  placesFound,
   poolShare,
   purseCoins,
   taskGoal,
@@ -36,12 +41,13 @@ import {
   windedOnJoin,
   withinSpeakingDistance,
 } from '@somnio/core';
-import type { AbilityId, EffectId, EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
+import type { AbilityId, AbilityRefusal, EffectId, EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { parseChatInput } from './chatCommand';
 import { abilityBody, drivenOff, engageKind } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
+import type { RaiseProgress } from './renderSurface';
 import { compassPoint } from './compass';
 import type { ConnectionController, GameplayMessage } from './connectionController';
 import { GameplayPredictor } from './predictor';
@@ -81,10 +87,33 @@ export interface CooldownSpan {
 /** What an ability's slot on the belt shows. */
 export interface AbilitySlotState {
   abilityId: AbilityId;
-  /** Whether the server would act on it now, but for its cooldowns. */
-  usable: boolean;
+  /** The rank the player holds of the teaching that teaches it. */
+  rank: number;
+  /** Why the server would not act on it now, but for its cooldowns; `undefined` when it would. */
+  refusal: AbilityRefusal | undefined;
   /** The cooldown it waits on while one runs: the later-ending of its own and the global one. */
   cooldown: CooldownSpan | undefined;
+}
+
+/**
+ * A channel an entity has under way, as the client keeps it on the session's clock: since when, as
+ * far as it knows, and until when. A channel it learned of only under way counts from then.
+ */
+export interface ClientChannel {
+  abilityId: AbilityId;
+  startedAtMs: number;
+  endsAtMs: number;
+}
+
+/**
+ * A raise under way on a fallen dreamer, as its last snapshot states it, kept on the session's clock:
+ * the Healers holding on whose names it knows, when the snapshot arrived, and when the raise will be
+ * done at the pace it states.
+ */
+export interface ClientRaise extends RaiseProgress {
+  healerNames: string[];
+  atMs: number;
+  endsAtMs: number;
 }
 
 /** An effect an entity holds, as the client keeps it: when it ends on the session's clock, or never while its holder lasts. */
@@ -109,6 +138,11 @@ export function taskSpecOf(task: TaskMessage): TaskSpec | undefined {
 /** The whole seconds left until `endsAtMs`, rounded up, as a countdown shows them; never below 0. */
 export function wholeSecondsLeft(endsAtMs: number, nowMs: number): number {
   return Math.max(0, Math.ceil((endsAtMs - nowMs) / 1000));
+}
+
+/** The share done and the schedule a `raising` snapshot states, without its Healers. */
+function raiseProgress({ progress, seconds, pausedSeconds }: RaisingMessage): RaiseProgress {
+  return { progress, seconds, ...(pausedSeconds === undefined ? {} : { pausedSeconds }) };
 }
 
 /** Whether a task as the wire carries it is at its goal. A task this client cannot read has no goal to reach. */
@@ -162,8 +196,6 @@ export class GameplaySession {
    * on a right press on the ground.
    */
   gazeLocked = false;
-  /** The raise being given to the fallen player: the Healers holding on, and the whole seconds left. */
-  raise: { healerNames: string[]; secondsLeft: number } | undefined;
   /** Whether Run is on. A winded player walks whatever it says, and one an effect holds below a run jogs. */
   running = false;
   /**
@@ -179,7 +211,6 @@ export class GameplaySession {
    * with the one before.
    */
   private seen = { energy: false, inventory: false, lucidity: false };
-  private raiseEndsAtMs = 0;
   /** The fallen dreamers whose raise this player was last told they hold on to. */
   private readonly heldRaises = new Set<string>();
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
@@ -215,8 +246,14 @@ export class GameplaySession {
   private cooldowns: Cooldowns = NO_COOLDOWNS;
   /** Until when no ability is used again, from a use until the `cooldowns` frame that answers it, or 0 with none awaited. */
   private awaitingUseUntilMs = 0;
-  /** Each ability slot's usable flag and whether a cooldown runs, as the tick last saw them, so the tick runs the state hook again only when one changes. */
+  /** Each ability slot's refusal and whether a cooldown runs, as the tick last saw them, so the tick runs the state hook again only when one changes. */
   private shownAbilitySlots = '[]';
+  /** The channels under way that the server has shown, by their user, until each lands or breaks. */
+  private readonly channels = new Map<string, ClientChannel>();
+  /** The raises under way in view, by the fallen dreamer, from each `raising` snapshot until it ends or they leave view. */
+  private readonly raises = new Map<string, ClientRaise>();
+  /** Where each fallen dreamer in the space lies, as the server last said; none for a player who does not sense the fallen. */
+  sensed: readonly SensedBearingMessage[] = [];
 
   constructor(options: GameplaySessionOptions) {
     this.controller = options.controller;
@@ -256,6 +293,10 @@ export class GameplaySession {
       if (entityId === this.target && !this.controller.entities.has(entityId)) this.select(undefined);
       // A fallen dreamer who leaves takes their raise along without a `raising` frame, so the player holds it no more.
       this.heldRaises.delete(entityId);
+      if (!this.controller.entities.has(entityId)) {
+        this.channels.delete(entityId);
+        this.raises.delete(entityId);
+      }
       // The player's own entity carries their condition, which is what the fallen notice follows.
       if (entityId === this.controller.selfId) this.onStateChanged?.();
     };
@@ -287,7 +328,6 @@ export class GameplaySession {
     this.interpolation.clear();
     this.seen = { energy: false, inventory: false, lucidity: false };
     this.servicePanel = undefined;
-    this.raise = undefined;
     this.heldRaises.clear();
     this.slowedUntilMs = 0;
     this.tradeLockedUntilMs = 0;
@@ -298,6 +338,9 @@ export class GameplaySession {
     this.targetHealth = undefined;
     // The join sends again the effects and cooldowns carried through a door or a wake.
     this.heldEffects.clear();
+    this.channels.clear();
+    this.raises.clear();
+    this.sensed = [];
     this.cooldowns = NO_COOLDOWNS;
     this.awaitingUseUntilMs = 0;
     this.controller.renderSurface.showSelection(undefined, false);
@@ -311,7 +354,6 @@ export class GameplaySession {
     // However the walk a press let go of ends, its ring goes with it.
     if (this.predictor.walk === undefined) this.liftDestinationMarker();
     this.closeServicePanelBeyondSpeakingDistance();
-    this.countDownRaise(timestampMs);
     if (this.gazeLocked && !this.gazeHolds) this.unlockGaze();
     if (this.engaged && !this.engageable) this.stopEngaging();
     if (this.tradeLockedUntilMs !== 0 && !this.tradeLocked()) {
@@ -319,7 +361,7 @@ export class GameplaySession {
       this.onStateChanged?.();
     }
     // An ability comes in range or out of it as bodies move, and leaves its cooldown with time.
-    const abilitySlots = JSON.stringify(this.abilitySlots().map(({ usable, cooldown }) => [usable, cooldown !== undefined]));
+    const abilitySlots = JSON.stringify(this.abilitySlots().map(({ refusal, cooldown }) => [refusal ?? null, cooldown !== undefined]));
     if (abilitySlots !== this.shownAbilitySlots) {
       this.shownAbilitySlots = abilitySlots;
       this.onStateChanged?.();
@@ -474,6 +516,58 @@ export class GameplaySession {
     return this.effectsOf(this.controller.selfId).map(({ effectId }) => effectId);
   }
 
+  /** The channel the entity has under way, as far as the server has shown it. */
+  channelOf(entityId: string | undefined): ClientChannel | undefined {
+    return entityId === undefined ? undefined : this.channels.get(entityId);
+  }
+
+  /**
+   * Keeps an entity's channel as its frames tell it: from its start, or from the seconds left a
+   * dreamer who targets its user is sent, until it lands or breaks.
+   */
+  private trackChannel(entityId: string, abilityId: AbilityId, phase: AbilityPhase, seconds: number | undefined): void {
+    const now = this.now();
+    switch (phase) {
+      case 'start':
+      case 'channel': {
+        const known = this.channels.get(entityId);
+        const startedAtMs = phase === 'channel' && known?.abilityId === abilityId ? known.startedAtMs : now;
+        this.channels.set(entityId, { abilityId, startedAtMs, endsAtMs: now + (seconds ?? 0) * 1000 });
+        break;
+      }
+      case 'done':
+      case 'broken':
+        this.channels.delete(entityId);
+        break;
+    }
+    this.onStateChanged?.();
+  }
+
+  /** The raise under way on the fallen dreamer, as its last snapshot states it. */
+  raiseOf(entityId: string | undefined): ClientRaise | undefined {
+    return entityId === undefined ? undefined : this.raises.get(entityId);
+  }
+
+  /** Keeps a raise as its snapshots state it, until it is done or breaks. */
+  private trackRaise(raising: RaisingMessage): void {
+    if (raising.state !== 'holding') {
+      this.raises.delete(raising.targetId);
+      return;
+    }
+    const atMs = this.now();
+    this.raises.set(raising.targetId, {
+      ...raiseProgress(raising),
+      healerNames: this.knownNames(raising.healerIds),
+      atMs,
+      endsAtMs: atMs + raising.seconds * 1000,
+    });
+  }
+
+  /** The names of the entities this client knows, in order; one it does not know is left out. */
+  private knownNames(entityIds: readonly string[]): string[] {
+    return entityIds.flatMap((id) => this.controller.entities.get(id)?.name ?? []);
+  }
+
   /** The effects the server last sent of an entity: of the player, or of their target, and none of any other. */
   effectsOf(entityId: string | undefined): readonly ClientEffect[] {
     return (entityId === undefined ? undefined : this.heldEffects.get(entityId)) ?? [];
@@ -519,20 +613,23 @@ export class GameplaySession {
     return this.abilities.map((abilityId) => {
       const own = running(this.cooldowns.abilities[abilityId]);
       const cooldown = own === undefined || (global !== undefined && global.endsAtMs > own.endsAtMs) ? global : own;
-      return { abilityId, usable: this.abilityUsable(abilityId, { globalReadyAt: now, readyAt: {} }), cooldown };
+      const refusal = this.abilityRefusal(abilityId, { globalReadyAt: now, readyAt: {} });
+      return { abilityId, rank: abilityRank(this.lucidity.ranks, abilityId), refusal, cooldown };
     });
   }
 
   /**
-   * Whether the server would act on the ability if the player used it now, by the `abilityAllowed`
-   * rule it judges with. The cooldowns are those the server last sent unless `cooldowns` stands in
-   * for them.
+   * Why the server would not act on the ability if the player used it now, by the `abilityRefusal`
+   * rule it judges with, or `undefined` when it would. The cooldowns are those the server last sent
+   * unless `cooldowns` stands in for them. Before the player's own body is known, nothing would
+   * receive it.
    */
-  private abilityUsable(abilityId: AbilityId, cooldowns?: { globalReadyAt: number; readyAt: Partial<Record<AbilityId, number>> }): boolean {
+  private abilityRefusal(abilityId: AbilityId, cooldowns?: { globalReadyAt: number; readyAt: Partial<Record<AbilityId, number>> }): AbilityRefusal | undefined {
     const self = this.self;
-    if (self === undefined) return false;
+    if (self === undefined) return 'recipient';
     const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
     const state = {
+      channelling: this.channels.has(self.id),
       caster: abilityBody(self, self.position),
       ranks: this.lucidity.ranks,
       itemInHand: itemInHand(this.inventory),
@@ -543,7 +640,7 @@ export class GameplaySession {
         readyAt: Object.fromEntries(Object.entries(this.cooldowns.abilities).map(([id, span]) => [id, span.endsAtMs])),
       }),
     };
-    return abilityAllowed(state, abilityId, target === undefined ? undefined : abilityBody(target, target.position)) !== undefined;
+    return abilityRefusal(state, abilityId, target === undefined ? undefined : abilityBody(target, target.position));
   }
 
   /**
@@ -551,11 +648,16 @@ export class GameplaySession {
    * stood, so the report the heartbeat holds back goes first. The global cooldown starts here too.
    * No ability is used again until the server's `cooldowns` answer, or for `ABILITY_ANSWER_TIMEOUT_MS`
    * without one, so a second press inside the round trip sends nothing. A leap waits for the
-   * server's yes, the player's own `ability` frame.
+   * server's yes, the player's own `ability` frame. A channel breaks once the player moves, so using
+   * one ends the walk under way, a held press's steer included. A new walk breaks it.
    */
   useAbility(abilityId: AbilityId): void {
-    if (!this.abilityUsable(abilityId)) return;
+    if (this.abilityRefusal(abilityId) !== undefined) return;
     this.predictor.flush();
+    if (ability(abilityId).channelSeconds !== undefined) {
+      this.letGo();
+      this.predictor.stop();
+    }
     this.send({ tag: 'useAbility', payload: { abilityId } });
     const now = this.now();
     this.cooldowns = { ...this.cooldowns, global: { startedAtMs: now, endsAtMs: now + GLOBAL_COOLDOWN_SECONDS * 1000, global: true } };
@@ -617,18 +719,6 @@ export class GameplaySession {
     const npc = this.servicePanel;
     if (npc === undefined) return;
     if (self === undefined || !withinSpeakingDistance(self.position, npc.position)) this.closeServicePanel();
-  }
-
-  /**
-   * Counts the raise down between snapshots, and never up: a frame's timestamp can lie a little
-   * before the moment the last snapshot arrived, which would otherwise read a whole second more.
-   */
-  private countDownRaise(timestampMs: number): void {
-    if (this.raise === undefined) return;
-    const secondsLeft = Math.min(this.raise.secondsLeft, wholeSecondsLeft(this.raiseEndsAtMs, timestampMs));
-    if (secondsLeft === this.raise.secondsLeft) return;
-    this.raise = { ...this.raise, secondsLeft };
-    this.onStateChanged?.();
   }
 
   private handleOwnCondition(condition: Condition): void {
@@ -800,6 +890,7 @@ export class GameplaySession {
         return;
       case 'doorRefused':
         this.predictor.releaseDoor(false);
+        this.explainRefusedDoor(message.payload);
         return;
       case 'serverSay':
         this.handleServerSay(message.payload);
@@ -842,6 +933,10 @@ export class GameplaySession {
       case 'mend':
         this.controller.renderSurface.showMend(message.payload.targetId);
         return;
+      case 'sensed':
+        this.sensed = message.payload.bearings;
+        this.controller.renderSurface.showSensed(this.sensed);
+        return;
       case 'vitals': {
         const { entityId, health } = message.payload;
         if (entityId !== this.target) return;
@@ -863,10 +958,15 @@ export class GameplaySession {
         return;
       }
       case 'ability': {
-        const { entityId, abilityId, targetId } = message.payload;
+        const { entityId, abilityId, targetId, phase, seconds, evaded } = message.payload;
         if (!isAbilityId(abilityId)) return;
         if (entityId === this.controller.selfId) this.leapOnAnswer(abilityId, targetId);
-        this.controller.renderSurface.showAbility(entityId, abilityId, targetId);
+        if (phase === undefined) {
+          this.controller.renderSurface.showAbility(entityId, abilityId, targetId, evaded === true ? { evaded } : undefined);
+          return;
+        }
+        this.trackChannel(entityId, abilityId, phase, seconds);
+        this.controller.renderSurface.showAbility(entityId, abilityId, targetId, { phase, ...(seconds === undefined ? {} : { seconds }) });
         return;
       }
       case 'cooldowns':
@@ -921,27 +1021,51 @@ export class GameplaySession {
     }
   }
 
-  /** The chat lines for what changed from one `lucidity` frame to the next. */
+  /**
+   * A door that opens only at night, refused while this client's clock has the sun up, is shut for
+   * the day, and the player is told so. Any other refusal says nothing: the player stood too far
+   * off, or lies fallen.
+   */
+  private explainRefusedDoor(refused: DoorRefusedMessage): void {
+    const door = this.controller.world?.doors.find((candidate) => candidate.sector === refused.sector && candidate.doorId === refused.doorId);
+    const worldSeconds = this.controller.worldSecondsAt(this.now());
+    if (door !== undefined && worldSeconds !== undefined && !doorOpenAt(door, worldSeconds)) this.controller.appendChat({ kind: 'doorOpensAtNight' });
+  }
+
+  /** The chat lines for what changed from one `lucidity` frame to the next. A hidden place found is told unless it finishes the task. */
   private announceLucidity(before: LucidityMessage, after: LucidityMessage): void {
     if (before.role === undefined && after.role !== undefined) this.controller.appendChat({ kind: 'becameRole', role: after.role });
     for (const held of after.ranks) {
       const had = before.ranks.find((other) => other.teachingId === held.teachingId)?.rank ?? 0;
       if (held.rank > had && isTeachingId(held.teachingId)) this.controller.appendChat({ kind: 'rankGained', teachingId: held.teachingId, rank: held.rank });
     }
-    if (before.task !== undefined && after.task !== undefined && !taskIsDone(before.task) && taskIsDone(after.task)) {
+    if (before.task === undefined || after.task === undefined) return;
+    if (!taskIsDone(before.task) && taskIsDone(after.task)) {
       this.controller.appendChat({ kind: 'taskDone' });
+      return;
+    }
+    const spec = taskSpecOf(after.task);
+    const found = placesFound(after.task.progress);
+    if (spec?.kind === 'reachAll' && found > placesFound(before.task.progress)) {
+      this.controller.appendChat({ kind: 'placeFound', found, total: spec.places.length });
     }
   }
 
-  /**
-   * The scene shows every raise as it stands. A Healer is told when a raise they hold on to is
-   * done, and when they lose hold of it while Mend is still on at the dreamer with the Moonstone in hand.
-   * The dreamer being raised is shown who draws them back and for how long, and told when it is
-   * done or breaks.
-   */
+  /** The scene shows every raise as it stands, and each unit frame shows the raise on whom it frames. */
   private handleRaising(raising: RaisingMessage): void {
+    this.controller.renderSurface.showRaising(raising.targetId, raising.state === 'holding' ? raiseProgress(raising) : undefined);
+    this.tellRaising(raising);
+    this.trackRaise(raising);
+    this.onStateChanged?.();
+  }
+
+  /**
+   * A Healer is told when a raise they hold on to is done, and when they lose hold of it while
+   * Mend is still on at the dreamer with the Moonstone in hand. The dreamer being raised is told when
+   * it is done or breaks, before `trackRaise` lets it go.
+   */
+  private tellRaising(raising: RaisingMessage): void {
     const { targetId, healerIds, state } = raising;
-    this.controller.renderSurface.showRaising(targetId, state === 'holding' ? { progress: raising.progress, seconds: raising.seconds } : undefined);
     const selfId = this.controller.selfId;
     const named = selfId !== undefined && healerIds.includes(selfId);
     if (named || this.heldRaises.has(targetId)) {
@@ -965,18 +1089,10 @@ export class GameplaySession {
       else this.heldRaises.delete(targetId);
       return;
     }
-    if (targetId !== selfId) return;
-    const names = healerIds.map((id) => this.controller.entities.get(id)?.name ?? '');
-    if (state === 'holding') {
-      this.raiseEndsAtMs = this.now() + raising.seconds * 1000;
-      this.raise = { healerNames: names, secondsLeft: Math.ceil(raising.seconds) };
-    } else {
-      // The names kept from the last snapshot, which held the same Healers: one who left is out of view by now.
-      const healerNames = this.raise?.healerNames ?? names;
-      this.raise = undefined;
-      this.controller.appendChat({ kind: state === 'done' ? 'raised' : 'raiseBroken', healerNames });
-    }
-    this.onStateChanged?.();
+    if (targetId !== selfId || state === 'holding') return;
+    // The names kept from the last snapshot, which held the same Healers: one who left is out of view by now.
+    const healerNames = this.raises.get(targetId)?.healerNames ?? this.knownNames(healerIds);
+    this.controller.appendChat({ kind: state === 'done' ? 'raised' : 'raiseBroken', healerNames });
   }
 
   /**

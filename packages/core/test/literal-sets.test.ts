@@ -75,8 +75,19 @@ describe('literal sets', () => {
       depth: 'healer',
       'drawing-back': 'healer',
       'spirit-deepening': 'healer',
+      'deep-mend': 'healer',
+      renewal: 'healer',
+      radiance: 'healer',
+      calm: 'healer',
+      ward: 'mystic',
+      weaken: 'mystic',
+      bind: 'mystic',
+      'dream-bolt': 'mystic',
+      veil: 'mystic',
+      'sense-the-fallen': 'mystic',
+      'mystic-spirit-deepening': 'mystic',
     });
-    expect(FIRST_TEACHING).toEqual({ fighter: 'strike', healer: 'touch' });
+    expect(FIRST_TEACHING).toEqual({ fighter: 'strike', healer: 'touch', mystic: 'ward' });
   });
 
   it('pins the ability each teaching teaches', () => {
@@ -86,6 +97,15 @@ describe('literal sets', () => {
       brace: 'brace',
       lunge: 'lunge',
       rally: 'rally',
+      'deep-mend': 'deep-mend',
+      renewal: 'renewal',
+      radiance: 'radiance',
+      calm: 'calm',
+      ward: 'ward',
+      weaken: 'weaken',
+      bind: 'bind',
+      'dream-bolt': 'dream-bolt',
+      veil: 'veil',
     });
   });
 
@@ -102,7 +122,11 @@ describe('literal sets', () => {
 
   /** A task's progress is stored as a bare number, which means something only against the kind of task it counts. */
   it('pins the kind of every trial and gate', () => {
-    expect({ fighter: TRIALS.fighter.kind, healer: TRIALS.healer.kind }).toEqual({ fighter: 'driveOff', healer: 'reach' });
+    expect(Object.fromEntries(Object.entries(TRIALS).map(([role, trial]) => [role, trial.kind]))).toEqual({
+      fighter: 'driveOff',
+      healer: 'reach',
+      mystic: 'reachAll',
+    });
     const gated = TEACHING_IDS.filter((id) => teaching(id).gate !== undefined);
     expect(Object.fromEntries(gated.map((id) => [id, taskSpec({ role: TEACHINGS[id].role, teachingId: id })?.kind]))).toEqual({
       'follow-through': 'driveOff',

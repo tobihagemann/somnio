@@ -2,11 +2,10 @@
  * The day/night light: the sun, the hemisphere fill under the sky, and the backdrop past the
  * world, all read from one table by the hour.
  */
+import { DAY_END_HOUR, DAY_START_HOUR, sunIsUp } from '@somnio/core';
 import { worldMovement } from './cameraRig';
 
 const DAY_NIGHT = {
-  dayStartHour: 6,
-  dayEndHour: 22,
   maximumElevationRadians: (55 * Math.PI) / 180,
   /**
    * How far round the sun's bearing turns from sunrise to sunset, at an even pace, so shadows
@@ -135,13 +134,8 @@ export function doorLightState(hourOfDay: number): DoorLightState {
  * happens while the light is off. The hemisphere fill carries the scene across.
  */
 function twilightFactor(hourOfDay: number): number {
-  const hoursFromSwitch = Math.min(Math.abs(hourOfDay - DAY_NIGHT.dayStartHour), Math.abs(hourOfDay - DAY_NIGHT.dayEndHour));
+  const hoursFromSwitch = Math.min(Math.abs(hourOfDay - DAY_START_HOUR), Math.abs(hourOfDay - DAY_END_HOUR));
   return Math.min(1, hoursFromSwitch / DAY_NIGHT.twilightHours);
-}
-
-/** Whether the sun is up at a fractional hour of the day in `[0, 24)`, from the day's start hour up to its end hour. */
-export function sunIsUp(hourOfDay: number): boolean {
-  return hourOfDay >= DAY_NIGHT.dayStartHour && hourOfDay < DAY_NIGHT.dayEndHour;
 }
 
 /** Ground direction toward the camera, where the sun rises. */
@@ -170,7 +164,7 @@ export function sunState(hourOfDay: number, brightness: number | undefined): Sun
     return { ...light, direction: NIGHT_DIRECTION, sunIntensity };
   }
 
-  const progress = (hourOfDay - DAY_NIGHT.dayStartHour) / (DAY_NIGHT.dayEndHour - DAY_NIGHT.dayStartHour);
+  const progress = (hourOfDay - DAY_START_HOUR) / (DAY_END_HOUR - DAY_START_HOUR);
   const elevation = DAY_NIGHT.maximumElevationRadians * Math.sin(progress * Math.PI);
   const bearing = SUNRISE_BEARING + progress * DAY_NIGHT.sweepRadians;
   const horizontal = { x: Math.cos(bearing), z: Math.sin(bearing) };

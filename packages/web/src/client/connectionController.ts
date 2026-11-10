@@ -59,6 +59,7 @@ export type GameplayMessage = Extract<
       | 'effects'
       | 'ability'
       | 'cooldowns'
+      | 'sensed'
       | 'adminSay';
   }
 >;
@@ -580,6 +581,7 @@ export class ConnectionController {
       case 'effects':
       case 'ability':
       case 'cooldowns':
+      case 'sensed':
       case 'adminSay':
         this.onGameplayMessage?.(message);
         return;

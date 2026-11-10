@@ -5,7 +5,7 @@ import type { Character, Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { lucidity, payloads } from './support/combat.ts';
+import { MOONSTONE_IN_HAND, characterOf, lucidity, payloads, wounded } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -25,12 +25,18 @@ function town(hall: Partial<Sector> = {}): Sector[] {
   ];
 }
 
-async function attachedAt(sectors: Sector[], at: Point, characters = new StubCharacterRepository(), character: Partial<Character> = {}) {
-  const dependencies = await makeStubConnectionDependencies({ sectors, characters, initialWorldSeconds: WORLD_SECONDS });
+async function attachedAt(
+  sectors: Sector[],
+  at: Point,
+  characters = new StubCharacterRepository(),
+  character: Partial<Character> = {},
+  worldSeconds = WORLD_SECONDS,
+) {
+  const dependencies = await makeStubConnectionDependencies({ sectors, characters, initialWorldSeconds: worldSeconds });
   const connection = new ConnectionActor(dependencies);
   const { entityId } = attachPlayer(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, at, 'walker', {
     outbox: connection.outbox,
-    worldSeconds: WORLD_SECONDS,
+    worldSeconds,
     character: { people: PEOPLE, ...character },
   });
   connection.markAttached(entityId, OUTDOOR_SPACE_ID, crypto.randomUUID());
@@ -72,6 +78,20 @@ describe('handleUseDoor', () => {
     expect(w.useDoor(sector, doorId)).toBeUndefined();
     expect((await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES)).toEqual([{ tag: 'doorRefused', payload: { sector, doorId } }]);
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toMatchObject({ space: OUTDOOR_SPACE_ID, position: at });
+  });
+
+  /** The world clock stands still in the stub, so the hour of the join is the hour of the request. */
+  it.each([
+    ['refuses by day', 21.9, undefined],
+    ['opens at night', 22, { spaceId: 'Hall' }],
+  ])('%s a door that opens only at night', async (_label, hour, outcome) => {
+    const [square, hall] = town();
+    const nightOnly = { ...square!, doors: square!.doors.map((door) => ({ ...door, nightOnly: true as const })) };
+    const w = await attachedAt([nightOnly, hall!], { x: 10, z: 9.7 }, undefined, {}, 400 * 86_400 + hour * 3600);
+    expect(w.useDoor('Town', 'inside')).toEqual(outcome);
+    if (outcome === undefined) {
+      expect((await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES)).toEqual([{ tag: 'doorRefused', payload: { sector: 'Town', doorId: 'inside' } }]);
+    }
   });
 
   it('resolves the door by its sector when two sectors of the space share a door id', async () => {
@@ -155,6 +175,49 @@ describe('handleUseDoor', () => {
       expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns', 'effects']);
       expect(restore.at(-2)).toEqual({ tag: 'cooldowns', payload: RUNNING.cooldowns });
       expect(restore.at(-1)).toEqual({ tag: 'effects', payload: { entityId: w.entityId, ...RUNNING.effects } });
+    });
+  });
+
+  describe('with a tick of a heal over time due and not yet given as the player leaves', () => {
+    /** Renewal at its first rank gives 2.5 a second for 10 s, 25 in all. Its first tick, 2 with 0.5 owed, is 10 ms due. */
+    async function renewed(characters = new StubCharacterRepository()) {
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+      const w = await attachedAt(town(), { x: 10, z: 9.7 }, characters, wounded(40));
+      const square = w.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
+      const healer = attachPlayer(square, { x: 8, z: 9.7 }, 'healer', {
+        character: { lucidity: lucidity('healer', { touch: 2, renewal: 1 }) },
+        inventory: [MOONSTONE_IN_HAND],
+      });
+      square.handleTarget(w.entityId, healer.entityId);
+      square.handleUseAbility('renewal', healer.entityId);
+      now.mockReturnValue(2010);
+      return { ...w, now };
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('arrives through the door with the tick given, and is given the whole health', async () => {
+      const w = await renewed();
+      w.useDoor('Town', 'inside');
+      const arrived = w.snapshotIn('Hall')!.energy.healthCurrent;
+      expect(arrived).toBe(42);
+      // Beside another wounded alike, so what Renewal gives on is the gap between the two.
+      const hall = w.dependencies.worldRouter.space('Hall')!;
+      const other = attachPlayer(hall, { x: 3, z: 3 }, 'other', { character: wounded(42) });
+      for (let ms = 2060; ms <= 14_000; ms += 50) {
+        w.now.mockReturnValue(ms);
+        hall.step(0.05);
+      }
+      const gap = w.snapshotIn('Hall')!.energy.healthCurrent - characterOf(hall, other.entityId).energy.healthCurrent;
+      expect(arrived - 40 + gap).toBe(25);
+    });
+
+    it('saves the health of the tick on a disconnect', async () => {
+      const characters = new StubCharacterRepository();
+      const persistCheckpoint = vi.spyOn(characters, 'persistCheckpoint');
+      const w = await renewed(characters);
+      await w.connection.drainForShutdown();
+      expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: w.entityId, energy: expect.objectContaining({ healthCurrent: 42 }) }), []]]);
     });
   });
 

@@ -4,9 +4,9 @@ import { element } from './dom';
 /**
  * The HUD's glyphs, white silhouettes in the weight of Kenney's CC0 icons. Most are those icons, in
  * the asset pack's `UI/`, where `Scripts/bundle-web-assets.sh` names each one. Where Kenney has
- * nothing that fits (the chat, the Moonstone, Cleave, and the peoples' sigils) one is drawn here on a
- * 24-unit grid instead. Each is a CSS mask (`.hud-glyph` in `hud.css`), so it takes the ink of the
- * control it sits on.
+ * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, and
+ * the peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a CSS mask
+ * (`.hud-glyph` in `hud.css`), so it takes the ink of the control it sits on.
  */
 export interface HUDGlyph {
   /** The mask image, a CSS `url()`. */
@@ -55,6 +55,24 @@ export const HUD_ICONS = {
   brace: packed('/assets/UI/icon-brace.png'),
   lunge: packed('/assets/UI/icon-lunge.png'),
   rally: packed('/assets/UI/icon-rally.png'),
+  deepMend: packed('/assets/UI/icon-deep-mend.png'),
+  renewal: packed('/assets/UI/icon-renewal.png'),
+  /** A four-pointed burst of light with shorter rays between its points. */
+  radiance: drawn(
+    '<path d="M12 1.5l2.1 8.4 8.4 2.1-8.4 2.1-2.1 8.4-2.1-8.4L1.5 12l8.4-2.1z"/>' +
+      line('M17.3 6.7l1.9-1.9M17.3 17.3l1.9 1.9M6.7 17.3l-1.9 1.9M6.7 6.7 4.8 4.8', 2.6),
+  ),
+  calm: packed('/assets/UI/icon-calm.png'),
+  ward: packed('/assets/UI/icon-ward.png'),
+  weaken: packed('/assets/UI/icon-weaken.png'),
+  bind: packed('/assets/UI/icon-bind.png'),
+  /** A bolt with its head a star of four points and three streaks trailing behind it. */
+  dreamBolt: drawn(
+    '<path d="M17 1.5l1.6 3.9 3.9 1.6-3.9 1.6-1.6 3.9-1.6-3.9-3.9-1.6 3.9-1.6z"/>' + line('M2.5 21.5l9.6-9.6M2.8 15.2l5.6-5.6M8.8 21.2l5.6-5.6', 2.6),
+  ),
+  veil: packed('/assets/UI/icon-veil.png', GAME_ICONS_SIZE),
+  /** A dreamer lying fallen on the ground. */
+  fallen: drawn('<path d="M7 12.5a2.75 2.75 0 1 1-5.5 0 2.75 2.75 0 1 1 5.5 0zM11 10h9a2.5 2.5 0 0 1 0 5h-9a2.5 2.5 0 0 1 0-5z"/>' + line('M2 19.5h20', 2.2)),
 } as const satisfies Record<string, HUDGlyph>;
 
 /** Each ability's glyph on its belt slot. */
@@ -64,12 +82,27 @@ export const ABILITY_GLYPHS: Record<AbilityId, HUDGlyph> = {
   brace: HUD_ICONS.brace,
   lunge: HUD_ICONS.lunge,
   rally: HUD_ICONS.rally,
+  'deep-mend': HUD_ICONS.deepMend,
+  renewal: HUD_ICONS.renewal,
+  radiance: HUD_ICONS.radiance,
+  calm: HUD_ICONS.calm,
+  ward: HUD_ICONS.ward,
+  weaken: HUD_ICONS.weaken,
+  bind: HUD_ICONS.bind,
+  'dream-bolt': HUD_ICONS.dreamBolt,
+  veil: HUD_ICONS.veil,
 };
 
 /** Each effect's glyph on the unit frames: the glyph of the ability that puts it on its holder. */
 export const EFFECT_GLYPHS: Record<EffectId, HUDGlyph> = {
   braced: HUD_ICONS.brace,
   challenged: HUD_ICONS.challenge,
+  renewing: HUD_ICONS.renewal,
+  calmed: HUD_ICONS.calm,
+  warded: HUD_ICONS.ward,
+  weakened: HUD_ICONS.weaken,
+  bound: HUD_ICONS.bind,
+  veiled: HUD_ICONS.veil,
 };
 
 /** Each people's sigil on the player's own frame: the Waking's open eye, the Deep's closed one, the Shadow's crescent, and the Light's sun. */

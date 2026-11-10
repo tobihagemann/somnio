@@ -57,9 +57,15 @@ const outdoorSector: SectorView = {
       },
     ],
   },
-  placements: [{ id: 'townhall', modelId: 'building-townhall', x: 36.8, z: 4.48, yaw: 270, elevation: 0.75 }],
+  placements: [
+    { id: 'townhall', modelId: 'building-townhall', x: 36.8, z: 4.48, yaw: 270, elevation: 0.75 },
+    { id: 'tower', modelId: 'building-tower', x: 3.6, z: 28.5, yaw: 0, elevation: 0 },
+  ],
   blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
-  doors: [{ id: 'to-edarialibrary', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }],
+  doors: [
+    { id: 'to-edarialibrary', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } },
+    { id: 'to-edariamystictower', placement: 'tower', anchor: 'main', target: { sector: 'EdariaMysticTower', door: 'exit' }, nightOnly: true },
+  ],
 };
 
 const interiorSector: SectorView = {
@@ -185,6 +191,25 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     },
   },
   {
+    name: 'entity-mystic-master',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: 'npc:EdariaMysticTower/tacita',
+        kind: 'npc',
+        characterModelId: 'libus',
+        name: 'Tacita',
+        radius: 0.3,
+        x: 4.5,
+        z: 3.25,
+        facing: 180,
+        gait: 'jog',
+        condition: 'hale',
+        service: 'mysticMaster',
+      },
+    },
+  },
+  {
     name: 'moves',
     message: {
       tag: 'moves',
@@ -262,15 +287,74 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       },
     },
   },
+  {
+    name: 'lucidity-mystic',
+    message: {
+      tag: 'lucidity',
+      payload: {
+        role: 'mystic',
+        ranks: [
+          { teachingId: 'ward', rank: 2, practice: 4.5 },
+          { teachingId: 'sense-the-fallen', rank: 1, practice: 0 },
+        ],
+        study: 'ward',
+      },
+    },
+  },
+  { name: 'lucidity-mystic-trial', message: { tag: 'lucidity', payload: { ranks: [], task: { role: 'mystic', progress: 5 } } } },
   { name: 'lucidity-empty', message: { tag: 'lucidity', payload: { ranks: [] } } },
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
   { name: 'vitals', message: { tag: 'vitals', payload: { entityId: 'monster:7', health: 0.42 } } },
   { name: 'effects', message: { tag: 'effects', payload: { entityId: PLAYER_ID, effects: [{ effectId: 'braced', seconds: 3.25 }] } } },
+  {
+    name: 'effects-mystic',
+    message: {
+      tag: 'effects',
+      payload: {
+        entityId: PLAYER_ID,
+        effects: [
+          { effectId: 'warded', seconds: 11.5 },
+          { effectId: 'veiled', seconds: 4 },
+        ],
+      },
+    },
+  },
+  {
+    name: 'effects-on-a-nightmare',
+    message: {
+      tag: 'effects',
+      payload: {
+        entityId: 'monster:7',
+        effects: [
+          { effectId: 'weakened', seconds: 7.75 },
+          { effectId: 'bound', seconds: 2.5 },
+        ],
+      },
+    },
+  },
   { name: 'effects-none', message: { tag: 'effects', payload: { entityId: 'monster:7', effects: [] } } },
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-miss', message: { tag: 'blow', payload: { attackerId: 'monster:7', targetId: PLAYER_ID, hit: false } } },
   { name: 'ability', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'lunge', targetId: 'monster:7' } } },
+  { name: 'ability-dream-bolt', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'dream-bolt', targetId: 'monster:7' } } },
+  {
+    name: 'ability-dream-bolt-evaded',
+    message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'dream-bolt', targetId: 'monster:7', evaded: true } },
+  },
   { name: 'ability-on-self', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'brace' } } },
+  {
+    name: 'ability-channel-start',
+    message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'deep-mend', targetId: OTHER_PLAYER_ID, phase: 'start', seconds: 1.5 } },
+  },
+  {
+    name: 'ability-channel-under-way',
+    message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'deep-mend', targetId: OTHER_PLAYER_ID, phase: 'channel', seconds: 0.5 } },
+  },
+  {
+    name: 'ability-channel-done',
+    message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'deep-mend', targetId: OTHER_PLAYER_ID, phase: 'done' } },
+  },
+  { name: 'ability-channel-broken', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'deep-mend', phase: 'broken' } } },
   { name: 'cooldowns', message: { tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [{ abilityId: 'brace', seconds: 14.5 }] } } },
   { name: 'cooldowns-none', message: { tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [] } } },
   {
@@ -280,7 +364,27 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       payload: { targetId: FALLEN_PLAYER_ID, healerIds: [PLAYER_ID, OTHER_PLAYER_ID], state: 'holding', progress: 0.25, seconds: 2.25 },
     },
   },
+  {
+    name: 'raising-paused',
+    message: {
+      tag: 'raising',
+      payload: { targetId: FALLEN_PLAYER_ID, healerIds: [PLAYER_ID, OTHER_PLAYER_ID], state: 'holding', progress: 0.25, seconds: 2.75, pausedSeconds: [0, 1] },
+    },
+  },
   { name: 'mend', message: { tag: 'mend', payload: { targetId: OTHER_PLAYER_ID } } },
+  {
+    name: 'sensed',
+    message: {
+      tag: 'sensed',
+      payload: {
+        bearings: [
+          { name: 'Ida', x: 31.5, z: -12.25 },
+          { name: 'Mira', x: 2, z: 40.75 },
+        ],
+      },
+    },
+  },
+  { name: 'sensed-none', message: { tag: 'sensed', payload: { bearings: [] } } },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {
     name: 'sessionToken',

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { modelToWorld } from '../src/geometry.ts';
 import type { MonsterSpawn, Sector, SectorNPC } from '../src/sector.ts';
-import { OUTDOOR_SPACE_ID, WorldError, buildWorld, doorContains, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
+import { OUTDOOR_SPACE_ID, WorldError, buildWorld, doorContains, doorOpenAt, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from './support/worldFixture.ts';
 
 const HALL = { id: 'hall-1', modelId: 'hall', x: 10, z: 10, yaw: 270, elevation: 0 };
@@ -264,5 +264,15 @@ describe('doorContains', () => {
     expect(doorContains(resolved, beyond, SOMNIO_CONSTANTS.doorUseSlack)).toBe(true);
     // The arrival point lies outside the trigger, so an arriving body does not turn straight back.
     expect(doorContains(resolved, resolved.arrival, 0)).toBe(false);
+  });
+});
+
+describe('doorOpenAt', () => {
+  const HOUR = 3600;
+
+  it('opens a door at every hour, and a nightOnly door from the sun going down to its rising', () => {
+    const hours = [0, 5.5, 6, 12, 21.5, 22, 23.5];
+    expect(hours.map((hour) => doorOpenAt(TOWN_DOOR, hour * HOUR))).toEqual([true, true, true, true, true, true, true]);
+    expect(hours.map((hour) => doorOpenAt({ ...TOWN_DOOR, nightOnly: true }, hour * HOUR))).toEqual([true, true, false, false, false, true, true]);
   });
 });

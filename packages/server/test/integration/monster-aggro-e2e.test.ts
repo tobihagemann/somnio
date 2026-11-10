@@ -34,7 +34,7 @@ async function northWood() {
   clock.ms = RESPAWN_MS;
   const scout = attachPlayer(space, SCOUT_AT, 'scout');
   space.step(0);
-  space.detach(scout.entityId, true);
+  space.handOver(scout.entityId, true);
   const [monster] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
   if (monster === undefined) throw new Error('no Ghost spawned in the North Wood');
   return { space, monster: { x: monster.x, z: monster.z } };

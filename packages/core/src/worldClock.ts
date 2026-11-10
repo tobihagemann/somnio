@@ -55,3 +55,12 @@ export function hourOfDay(worldSeconds: number): number {
   const secondOfDay = worldSeconds - Math.floor(worldSeconds / SECONDS_PER_DAY) * SECONDS_PER_DAY;
   return secondOfDay / 3600;
 }
+
+/** The hour the sun rises and the hour it sets. The sky, the HUD's clock, and a door that opens only at night all follow them. */
+export const DAY_START_HOUR = 6;
+export const DAY_END_HOUR = 22;
+
+/** Whether the sun is up at a fractional hour of the day in `[0, 24)`, from the day's start hour up to its end hour. */
+export function sunIsUp(hourOfDay: number): boolean {
+  return hourOfDay >= DAY_START_HOUR && hourOfDay < DAY_END_HOUR;
+}

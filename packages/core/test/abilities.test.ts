@@ -4,8 +4,11 @@ import {
   ABILITIES,
   GLOBAL_COOLDOWN_SECONDS,
   abilitiesTaught,
+  ability,
   abilityAllowed,
+  abilityChannelSeconds,
   abilityRecipient,
+  abilityRefusal,
   abilityTeaching,
   areaRecipients,
   isAbilityId,
@@ -76,19 +79,56 @@ describe('the table', () => {
         hand: 'mainHand',
         does: { kind: 'restore', pool: 'balance', amount: { atRank1: 20, perRank: 5 } },
       },
+      'deep-mend': {
+        pool: 'spirit',
+        cost: 18,
+        cooldownSeconds: 6,
+        aim: 'ally',
+        range: 5,
+        hand: 'moonstone',
+        channelSeconds: { atRank1: 1.5, perRank: -0.15 },
+        does: { kind: 'heal', amount: { atRank1: 35, perRank: 10 } },
+      },
+      renewal: { pool: 'spirit', cost: 15, cooldownSeconds: 3, aim: 'ally', range: 5, hand: 'moonstone', does: { kind: 'effect', effectId: 'renewing' } },
+      radiance: {
+        pool: 'spirit',
+        cost: 22,
+        cooldownSeconds: 12,
+        aim: 'area',
+        range: 4.4,
+        among: 'dreamer',
+        hand: 'moonstone',
+        does: { kind: 'heal', amount: { atRank1: 15, perRank: 5 } },
+      },
+      calm: {
+        pool: 'spirit',
+        cost: 10,
+        cooldownSeconds: 20,
+        aim: 'self',
+        range: 0,
+        hand: 'moonstone',
+        does: { kind: 'calm', threatKept: 0.5, effectId: 'calmed' },
+      },
+      ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, does: { kind: 'effect', effectId: 'warded' } },
+      weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'weakened' } },
+      bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'bound' } },
+      'dream-bolt': { pool: 'spirit', cost: 12, cooldownSeconds: 3, aim: 'enemy', range: 8, does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } } },
+      veil: { pool: 'spirit', cost: 25, cooldownSeconds: 45, aim: 'area', range: 4.4, among: 'dreamer', does: { kind: 'effect', effectId: 'veiled' } },
     });
     expect(GLOBAL_COOLDOWN_SECONDS).toBe(0.75);
   });
 
-  it('teaches each ability by exactly one teaching, the Fighter its five in teaching order', () => {
+  it('teaches each ability by exactly one teaching, the Fighter its five, the Healer its four, and the Mystic its five in teaching order', () => {
     for (const id of ABILITY_IDS) expect(TEACHING_IDS.filter((taught) => teaching(taught).ability === id)).toEqual([abilityTeaching(id)]);
-    expect(TEACHING_IDS.filter((id) => teaching(id).ability !== undefined && teaching(id).role === 'fighter')).toEqual([
-      'cleave',
-      'challenge',
-      'brace',
-      'lunge',
-      'rally',
-    ]);
+    const taught = (role: string) => TEACHING_IDS.filter((id) => teaching(id).ability !== undefined && teaching(id).role === role);
+    expect(taught('fighter')).toEqual(['cleave', 'challenge', 'brace', 'lunge', 'rally']);
+    expect(taught('healer')).toEqual(['deep-mend', 'renewal', 'radiance', 'calm']);
+    expect(taught('mystic')).toEqual(['ward', 'weaken', 'bind', 'dream-bolt', 'veil']);
+  });
+
+  it('channels Deep mend alone, shorter at each rank, and lands every other ability at once', () => {
+    expect([1, 2, 3].map((rank) => abilityChannelSeconds('deep-mend', rank))).toEqual([1.5, 1.35, 1.2]);
+    expect(ABILITY_IDS.filter((id) => abilityChannelSeconds(id, 1) !== undefined)).toEqual(['deep-mend']);
   });
 
   it('lists the abilities held ranks teach in teaching order, not the order they were learned', () => {
@@ -115,7 +155,9 @@ describe('the table', () => {
         expect(scaled(ability.cooldownSeconds, rank)).toBeGreaterThan(0);
         if (deed.kind === 'effect') expect(scaled(EFFECTS[deed.effectId].seconds, rank)).toBeGreaterThan(0);
         if (deed.kind === 'strike') expect(scaled(deed.damageShare, rank)).toBeGreaterThan(0);
-        if (deed.kind === 'restore') expect(scaled(deed.amount, rank)).toBeGreaterThan(0);
+        if (deed.kind === 'harm') expect(scaled(deed.damage, rank)).toBeGreaterThan(0);
+        if (deed.kind === 'restore' || deed.kind === 'heal') expect(scaled(deed.amount, rank)).toBeGreaterThan(0);
+        if (ability.channelSeconds !== undefined) expect(scaled(ability.channelSeconds, rank)).toBeGreaterThan(0);
       }
     }
   });
@@ -131,9 +173,12 @@ describe('the hand rule', () => {
     }
   });
 
-  it("asks bare hands or a weapon of the Fighter's kit", () => {
-    for (const id of ABILITY_IDS) expect(ABILITIES[id].hand).toBe('mainHand');
+  it("asks bare hands or a weapon of the Fighter's kit, the Moonstone of the Healer's, and nothing of the Mystic's", () => {
+    const hands = Object.fromEntries(ABILITY_IDS.map((id) => [teaching(abilityTeaching(id)).role, new Set<string | undefined>()]));
+    for (const id of ABILITY_IDS) hands[teaching(abilityTeaching(id)).role]!.add(ability(id).hand);
+    expect(hands).toEqual({ fighter: new Set(['mainHand']), healer: new Set(['moonstone']), mystic: new Set([undefined]) });
     expect(inHand.filter((item) => handAllows('mainHand', item))).toEqual([undefined, 'dagger', 'cudgel', 'sword', 'mace']);
+    expect(inHand.filter((item) => handAllows('moonstone', item))).toEqual(['moonstone']);
   });
 });
 
@@ -179,6 +224,7 @@ describe('abilityAllowed', () => {
     now: 10,
     globalReadyAt: 10,
     readyAt: { lunge: 10 },
+    channelling: false,
   };
   const inReach = ghost(1);
 
@@ -188,19 +234,27 @@ describe('abilityAllowed', () => {
   });
 
   it.each([
-    ['the caster has fallen', { caster: { ...caster, fallen: true } }],
-    ['the teaching is not held', { ranks: ranks({ strike: 2 }) }],
-    ['what is in hand does not swing', { itemInHand: 'moonstone' }],
-    ['the pool is short of the cost', { energy: { balanceCurrent: ABILITIES.lunge.cost - 1, spiritCurrent: 100 } }],
-    ['its own cooldown runs', { readyAt: { lunge: 10.1 } }],
-    ['the global cooldown runs', { globalReadyAt: 10.1 }],
-  ] as const)('refuses while %s', (_label, change) => {
+    ['the caster has fallen', { caster: { ...caster, fallen: true } }, 'fallen'],
+    ['the teaching is not held', { ranks: ranks({ strike: 2 }) }, 'untaught'],
+    ['what is in hand does not swing', { itemInHand: 'moonstone' }, 'hand'],
+    ['the pool is short of the cost', { energy: { balanceCurrent: ABILITIES.lunge.cost - 1, spiritCurrent: 100 } }, 'cost'],
+    ['its own cooldown runs', { readyAt: { lunge: 10.1 } }, 'cooldown'],
+    ['the global cooldown runs', { globalReadyAt: 10.1 }, 'cooldown'],
+    ['a channel of theirs is under way', { channelling: true }, 'channelling'],
+  ] as const)('refuses while %s, naming it', (_label, change, refusal) => {
     expect(abilityAllowed({ ...ready, ...change }, 'lunge', inReach)).toBeUndefined();
+    expect(abilityRefusal({ ...ready, ...change }, 'lunge', inReach)).toBe(refusal);
   });
 
   it('refuses with no recipient', () => {
     expect(abilityAllowed(ready, 'lunge', undefined)).toBeUndefined();
     expect(abilityAllowed(ready, 'lunge', ghost(10))).toBeUndefined();
+    expect([abilityRefusal(ready, 'lunge', undefined), abilityRefusal(ready, 'lunge', inReach)]).toEqual(['recipient', undefined]);
+  });
+
+  it('names the first need missed, in the order the rule checks them', () => {
+    expect(abilityRefusal({ ...ready, channelling: true, itemInHand: 'moonstone', globalReadyAt: 11 }, 'lunge', undefined)).toBe('channelling');
+    expect(abilityRefusal({ ...ready, itemInHand: 'moonstone', globalReadyAt: 11 }, 'lunge', undefined)).toBe('hand');
   });
 
   it("is held back only by the ability's own cooldown, not another's", () => {

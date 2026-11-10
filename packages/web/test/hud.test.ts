@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameHUD } from '@/ui/hud';
 import { CHAT_IDLE_MS } from '@/ui/chatPane';
 import { HUD_ICONS, PEOPLE_SIGILS } from '@/ui/hudIcons';
+import { TIP_HOLD_MS } from '@/ui/hudTooltip';
 import { NAMED_PLACES, placeName } from '@/ui/placeNames';
+import { SensedMarkers } from '@/ui/sensedMarkers';
 import { catalogTables, setLocale } from '@/i18n';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import type { Energy, InventoryRowMessage } from '@somnio/protocol';
+import { TAP_SLOP_PX } from '@/client';
 import type { AbilitySlotState, ChatLine } from '@/client';
 import type { AbilityId } from '@somnio/core';
 import type { HUDCallbacks } from '@/ui/hud';
@@ -41,6 +44,22 @@ function recording() {
   return { callbacks, calls, named: (name: keyof HUDCallbacks) => calls.filter(([called]) => called === name).map(([, ...args]) => args) };
 }
 
+function point(node: Element, type: string, init: PointerEventInit = {}): void {
+  node.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'mouse', ...init }));
+}
+
+/** A pointer coming to rest on `node`, as a mouse with no button held unless `init` says otherwise. */
+function hover(node: Element, init: PointerEventInit = {}): void {
+  point(node, 'pointerover', init);
+}
+
+/** What the HUD's tip says, part by part, or `undefined` while it is hidden. */
+function tipSays(root: HTMLElement): (string | null)[] | undefined {
+  const tip = root.querySelector('[role="tooltip"]');
+  if (tip === null || tip.classList.contains('hidden')) return undefined;
+  return [...tip.querySelectorAll('.hud-tip__title, .hud-tip__aside, .hud-tip__fact, .hud-tip__line, .hud-tip__warning')].map((node) => node.textContent);
+}
+
 /** The mask image of the glyph in `node`, which says which glyph it draws. */
 function drawnGlyph(node: Element | null): string | undefined {
   return node?.querySelector<HTMLElement>('.hud-glyph')?.style.getPropertyValue('--hud-glyph');
@@ -72,15 +91,24 @@ afterEach(() => {
 });
 
 const POOLS: Energy = { healthCurrent: 30, healthMax: 60, balanceCurrent: 1, balanceMax: 4, spiritCurrent: 5, spiritMax: 10 };
-const HEALER = { name: 'Smokewalker', people: 'vigils', role: 'healer', condition: 'hale', targeted: false, effects: [] } as const;
+const HEALER = {
+  name: 'Smokewalker',
+  people: 'vigils',
+  role: 'healer',
+  condition: 'hale',
+  targeted: false,
+  effects: [],
+  channel: undefined,
+  raise: undefined,
+} as const;
 const NO_CLOCK = { worldSeconds: undefined, place: undefined };
 
 /** An ability's slot the server would act on now, with no cooldown running. */
-const ready = (abilityId: AbilityId): AbilitySlotState => ({ abilityId, usable: true, cooldown: undefined });
+const ready = (abilityId: AbilityId, rank = 1): AbilitySlotState => ({ abilityId, rank, refusal: undefined, cooldown: undefined });
 
 describe("a mouse's HUD", () => {
   it('lays out the frames, the clock, the belt with its six slots and Run, the menu, and the chat', () => {
-    const { hud, $, button } = makeHUD();
+    const { hud, $ } = makeHUD();
 
     expect($('.hud-unit--self').tagName).toBe('BUTTON');
     expect($('.hud-unit--target').classList.contains('hidden')).toBe(true);
@@ -96,7 +124,6 @@ describe("a mouse's HUD", () => {
       expect(slot.querySelector('.hud-glyph')).toBeNull();
     }
     expect([...$('.hud-menu').querySelectorAll('button')].map((node) => node.getAttribute('aria-label'))).toEqual(['Players', 'Bag', 'Settings']);
-    expect(button('Run').getAttribute('title')).toBe('Run (Shift)');
     expect($('.chat-scrollback').getAttribute('role')).toBe('log');
     expect([...hud.root.querySelectorAll('.hud-window')].every((window) => window.classList.contains('hidden'))).toBe(true);
   });
@@ -141,7 +168,6 @@ describe("a mouse's HUD", () => {
     expect(shown()).toEqual(['Attack', 'attack', HUD_ICONS.attack.image, true, 'false']);
     hud.renderSlotOne(true, 'attack', false);
     expect(shown()).toEqual(['Attack', 'attack', HUD_ICONS.attack.image, false, 'true']);
-    expect(slot.title).toBe('Attack (1)');
     hud.renderSlotOne(true, 'mend', false);
     expect(shown()).toEqual(['Mend', 'mend', HUD_ICONS.mend.image, false, 'true']);
     hud.renderSlotOne(false, 'mend', true);
@@ -189,18 +215,13 @@ describe("a mouse's HUD", () => {
       ['5', null],
       ['6', null],
     ]);
-    expect([button('Cleave').title, drawnGlyph(button('Cleave')), drawnGlyph(button('Lunge'))]).toEqual([
-      'Cleave (2)',
-      HUD_ICONS.cleave.image,
-      HUD_ICONS.lunge.image,
-    ]);
+    expect([drawnGlyph(button('Cleave')), drawnGlyph(button('Lunge'))]).toEqual([HUD_ICONS.cleave.image, HUD_ICONS.lunge.image]);
     button('Lunge').click();
     expect(named('onUseAbility')).toEqual([['lunge']]);
 
     // An ability learned earlier in the order moves the later ones along.
     hud.renderAbilities([ready('cleave'), ready('brace'), ready('lunge')]);
     expect(slots().map(([key, label]) => `${label}:${key}`)).toEqual(['Cleave:2', 'Brace:3', 'Lunge:4', 'null:5', 'null:6']);
-    expect(button('Lunge').title).toBe('Lunge (4)');
     hud.renderAbilities([]);
     expect($('.hud-slots').querySelectorAll('.hud-slot--empty')).toHaveLength(5);
   });
@@ -217,14 +238,14 @@ describe("a mouse's HUD", () => {
       slot().getAttribute('aria-description'),
     ];
 
-    hud.renderAbilities([{ abilityId: 'brace', usable: false, cooldown: undefined }]);
+    hud.renderAbilities([{ ...ready('brace'), refusal: 'recipient' }]);
     expect(look()).toEqual([true, true, true, null]);
     hud.renderAbilities([ready('brace')]);
     expect(look()).toEqual([false, false, true, null]);
 
     // Fifteen seconds that began five ago, at 1000 on the HUD's clock.
     const ownCooldown = { startedAtMs: -4000, endsAtMs: 11000, global: false };
-    hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: ownCooldown }]);
+    hud.renderAbilities([{ ...ready('brace'), cooldown: ownCooldown }]);
     expect(look()).toEqual([true, false, false, 'cooling down']);
     expect([sweep().style.animationDuration, sweep().style.animationDelay, seconds()]).toEqual(['15000ms', '-5000ms', '10s']);
     const swept = sweep();
@@ -232,12 +253,12 @@ describe("a mouse's HUD", () => {
     hud.tick(clock, NO_CLOCK);
     expect(seconds()).toBe('9s');
     // Out of reach as well, it is greyed out under the same sweep.
-    hud.renderAbilities([{ abilityId: 'brace', usable: false, cooldown: ownCooldown }]);
+    hud.renderAbilities([{ ...ready('brace'), refusal: 'recipient', cooldown: ownCooldown }]);
     expect(look()).toEqual([true, true, false, 'cooling down']);
     expect(sweep()).toBe(swept);
 
     // The global cooldown sweeps anew and counts nothing down.
-    hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: { startedAtMs: 2000, endsAtMs: 2750, global: true } }]);
+    hud.renderAbilities([{ ...ready('brace'), cooldown: { startedAtMs: 2000, endsAtMs: 2750, global: true } }]);
     expect(sweep()).not.toBe(swept);
     expect([sweep().style.animationDuration, sweep().style.animationDelay, seconds()]).toEqual(['750ms', '0ms', '']);
     hud.renderAbilities([ready('brace')]);
@@ -253,6 +274,8 @@ describe("a mouse's HUD", () => {
     expect(study().querySelector('b')?.textContent).toBe('Touch');
     hud.renderLucidity({ ranks: [], task: { role: 'fighter', progress: 0 } });
     expect(study().textContent).toBe('Task: 0 of 1');
+    hud.renderLucidity({ ranks: [], task: { role: 'mystic', progress: 0b100 } });
+    expect(study().textContent).toBe('Task: 1 of 3');
     hud.renderLucidity({ role: 'fighter', ranks: [] });
     expect(study().textContent).toBe('Studying nothing');
     hud.renderLucidity({ ranks: [] });
@@ -272,7 +295,6 @@ describe("a mouse's HUD", () => {
     expect(frame.querySelector('.hud-unit__traits')?.textContent).toBe('Vigils · Healer');
     expect(drawnGlyph(frame.querySelector('.hud-sigil'))).toBe(PEOPLE_SIGILS.vigils.image);
     expect(frame.getAttribute('aria-pressed')).toBe('false');
-    expect(frame.title).toBe('Target yourself');
 
     hud.renderSelf({ ...HEALER, people: 'lumina', role: undefined, condition: 'grazed', targeted: true });
     expect(frame.querySelector('.hud-unit__traits')?.textContent).toBe('Lumina · No role yet');
@@ -300,12 +322,7 @@ describe("a mouse's HUD", () => {
     const ghost = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost' });
     const own = $('.hud-unit--self .hud-effects');
     const shown = (row: Element) =>
-      [...row.querySelectorAll<HTMLElement>('.hud-effect')].map((effect) => [
-        drawnGlyph(effect),
-        effect.title,
-        effect.textContent,
-        effect.getAttribute('aria-label'),
-      ]);
+      [...row.querySelectorAll<HTMLElement>('.hud-effect')].map((effect) => [drawnGlyph(effect), effect.textContent, effect.getAttribute('aria-label')]);
     expect(own.getAttribute('aria-label')).toBe('Effects');
     // Empty, the row stays out of the frame's accessible name.
     hud.renderSelf(HEALER);
@@ -313,22 +330,127 @@ describe("a mouse's HUD", () => {
 
     hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 4200 }] });
     expect(own.getAttribute('aria-hidden')).toBeNull();
-    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, 'Braced', '4s', 'Braced, 4 s left']]);
+    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, '4s', 'Braced, 4 s left']]);
     const braced = own.firstElementChild;
     clock = 2300;
     hud.tick(clock, NO_CLOCK);
-    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, 'Braced', '2s', 'Braced, 2 s left']]);
+    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, '2s', 'Braced, 2 s left']]);
     // Applied again, it keeps its element and starts its seconds over.
     hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 7000 }] });
     expect(own.firstElementChild).toBe(braced);
     expect(own.textContent).toBe('5s');
 
     // One without seconds lasts while its holder does.
-    hud.renderTarget({ entity: ghost, health: 1, effects: [{ effectId: 'challenged' }] }, false);
-    expect(shown($('.hud-unit--target .hud-effects'))).toEqual([[HUD_ICONS.challenge.image, 'Challenged', '', 'Challenged']]);
+    hud.renderTarget({ entity: ghost, health: 1, effects: [{ effectId: 'challenged' }], channel: undefined, raise: undefined }, false);
+    expect(shown($('.hud-unit--target .hud-effects'))).toEqual([[HUD_ICONS.challenge.image, '', 'Challenged']]);
     hud.renderSelf(HEALER);
     expect(own.childElementCount).toBe(0);
     expect(own.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it("hangs a channel's bar under the own frame and the target's, draining from when it began, and keeps its elements while the channel is the same", () => {
+    const { hud, $ } = makeHUD();
+    const bren = clientEntity({ id: 'peer-1', kind: 'peer', name: 'Bren' });
+    const own = $('.hud-unit--self .hud-timed');
+    const fill = (bar: Element) => bar.querySelector<HTMLElement>('.hud-timed__fill')!;
+    hud.renderSelf(HEALER);
+    expect(own.classList.contains('hidden')).toBe(true);
+
+    const channel = { abilityId: 'deep-mend', startedAtMs: 1000, endsAtMs: 2500 } as const;
+    clock = 1200;
+    hud.renderSelf({ ...HEALER, channel });
+    expect(own.classList.contains('hidden')).toBe(false);
+    expect(own.getAttribute('aria-label')).toBe('Channelling Deep mend');
+    expect(fill(own).classList.contains('hud-timed__fill--channel')).toBe(true);
+    // Rendered late, a tab hidden or drawing slowly, it is already as far drained as the channel has run.
+    const drained = fill(own);
+    expect([drained.style.animationDuration, drained.style.animationDelay]).toEqual(['1500ms', '-200ms']);
+    clock = 1800;
+    hud.renderSelf({ ...HEALER, channel: { ...channel } });
+    expect(fill(own)).toBe(drained);
+    expect(drained.style.animationDelay).toBe('-200ms');
+
+    // A new channel starts a new drain.
+    hud.renderSelf({ ...HEALER, channel: { abilityId: 'deep-mend', startedAtMs: 1800, endsAtMs: 3000 } });
+    expect(fill(own)).not.toBe(drained);
+    expect([fill(own).style.animationDuration, fill(own).style.animationDelay]).toEqual(['1200ms', '0ms']);
+    hud.renderSelf(HEALER);
+    expect(own.classList.contains('hidden')).toBe(true);
+
+    const target = $('.hud-unit--target .hud-timed');
+    hud.renderTarget({ entity: bren, health: 1, effects: [], channel, raise: undefined }, false);
+    expect(target.classList.contains('hidden')).toBe(false);
+    hud.renderTarget({ entity: bren, health: 1, effects: [], channel: undefined, raise: undefined }, false);
+    expect(target.classList.contains('hidden')).toBe(true);
+  });
+
+  it("hangs a raise's bar under the target frame and the own frame, filling from as far as the raise has gone, and re-timed only at a new snapshot", () => {
+    const { hud, $ } = makeHUD();
+    const mira = clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira', condition: 'fallen' });
+    const target = $('.hud-unit--target .hud-timed');
+    const fill = (bar: Element) => bar.querySelector<HTMLElement>('.hud-timed__fill')!;
+    const timing = (bar: Element) => [fill(bar).style.animationDuration, fill(bar).style.animationDelay, fill(bar).style.animationTimingFunction];
+    const raise = { progress: 0.25, seconds: 4.5, healerNames: ['Lumi'], atMs: 1000, endsAtMs: 5500 };
+    clock = 1200;
+    hud.renderTarget({ entity: mira, health: 0, effects: [], channel: undefined, raise }, false);
+    expect(target.classList.contains('hidden')).toBe(false);
+    expect(target.getAttribute('aria-label')).toBe('Being drawn back by Lumi');
+    expect(fill(target).classList.contains('hud-timed__fill--raise')).toBe(true);
+    // Rendered late, it is already as far filled as the raise has gone since its snapshot.
+    expect(timing(target)).toEqual(['4500ms', '-200ms', 'linear(0.2500 0.00%, 1.0000 100.00%)']);
+    const filling = fill(target);
+    clock = 2500;
+    hud.renderTarget({ entity: { ...mira }, health: 0, effects: [], channel: undefined, raise: { ...raise } }, false);
+    expect(fill(target)).toBe(filling);
+
+    // At twice the pace, half done with 1.5 s left, the new fill starts half full.
+    hud.renderTarget(
+      {
+        entity: mira,
+        health: 0,
+        effects: [],
+        channel: undefined,
+        raise: { progress: 0.5, seconds: 1.5, healerNames: ['Lumi', 'Bren'], atMs: 2500, endsAtMs: 4000 },
+      },
+      false,
+    );
+    expect(fill(target)).not.toBe(filling);
+    expect(target.getAttribute('aria-label')).toBe('Being drawn back by Lumi and Bren');
+    expect(timing(target)).toEqual(['1500ms', '0ms', 'linear(0.5000 0.00%, 1.0000 100.00%)']);
+    hud.renderTarget({ entity: mira, health: 0, effects: [], channel: undefined, raise: undefined }, false);
+    expect(target.classList.contains('hidden')).toBe(true);
+
+    // The player lying fallen sees it under their own frame, and a raise is shown over a channel.
+    const own = $('.hud-unit--self .hud-timed');
+    const channel = { abilityId: 'deep-mend', startedAtMs: 1000, endsAtMs: 2500 } as const;
+    hud.renderSelf({ ...HEALER, condition: 'fallen', channel, raise: { progress: 0, seconds: 6, healerNames: [], atMs: 2500, endsAtMs: 8500 } });
+    expect(own.classList.contains('hidden')).toBe(false);
+    expect(own.getAttribute('aria-label')).toBe('Being drawn back');
+    expect(fill(own).classList.contains('hud-timed__fill--raise')).toBe(true);
+    hud.renderSelf({ ...HEALER, condition: 'fallen' });
+    expect(own.classList.contains('hidden')).toBe(true);
+  });
+
+  it("holds a raise's bar while a channel holds a Healer's pace back, and fills it on from there to where the next snapshot starts it", () => {
+    const { hud, $ } = makeHUD();
+    const mira = clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira', condition: 'fallen' });
+    const target = $('.hud-unit--target .hud-timed');
+    const easing = () => target.querySelector<HTMLElement>('.hud-timed__fill')!.style.animationTimingFunction;
+    const show = (raise: { progress: number; seconds: number; pausedSeconds?: number[] }) =>
+      hud.renderTarget(
+        { entity: mira, health: 0, effects: [], channel: undefined, raise: { ...raise, healerNames: ['Lumi'], atMs: 0, endsAtMs: raise.seconds * 1000 } },
+        false,
+      );
+
+    // A lone Healer channelling for 1.5 s of the 6 left: it holds a quarter done until the channel ends.
+    show({ progress: 0.25, seconds: 6, pausedSeconds: [1.5] });
+    expect(easing()).toBe('linear(0.2500 0.00%, 0.2500 25.00%, 1.0000 100.00%)');
+    // Two, one channelling for a second: one pace until then, two after, so a sixth of the raise is done by then.
+    show({ progress: 0.25, seconds: 2.75, pausedSeconds: [0, 1] });
+    expect(easing()).toBe('linear(0.2500 0.00%, 0.4167 36.36%, 1.0000 100.00%)');
+    // The snapshot as the channel ends starts the bar where it stood.
+    show({ progress: 0.25 + 1 / 6, seconds: 1.75 });
+    expect(easing()).toBe('linear(0.4167 0.00%, 1.0000 100.00%)');
   });
 
   it('frames the target with its name, its health, and a ✕ that clears it, and names its condition and the lock only to assistive tech', () => {
@@ -339,7 +461,7 @@ describe("a mouse's HUD", () => {
     expect(hud.portraits.target.parentElement).toBe(frame);
     expect(hud.portraits.target.childElementCount).toBe(0);
 
-    hud.renderTarget({ entity: ghost, health: undefined, effects: [] }, false);
+    hud.renderTarget({ entity: ghost, health: undefined, effects: [], channel: undefined, raise: undefined }, false);
     expect(frame.classList.contains('hidden')).toBe(false);
     expect(frame.textContent).toBe('TargetGhost');
     expect(frame.querySelector('.hud-unit__name')?.textContent).toBe('Ghost');
@@ -347,15 +469,18 @@ describe("a mouse's HUD", () => {
     expect(frame.getAttribute('aria-label')).toBe('Target, wounded');
     expect(frame.querySelector<HTMLElement>('.hud-bar__fill')?.style.width).toBe('62.50%');
     const children = [...frame.querySelectorAll('*')];
-    hud.renderTarget({ entity: ghost, health: 0.42, effects: [] }, true);
+    hud.renderTarget({ entity: ghost, health: 0.42, effects: [], channel: undefined, raise: undefined }, true);
     expect(frame.querySelector<HTMLElement>('.hud-bar__fill')?.style.width).toBe('42.00%');
     expect(frame.getAttribute('aria-label')).toBe('Target, wounded, facing locked');
     expect(frame.textContent).toBe('TargetGhost');
-    hud.renderTarget({ entity: { ...ghost, condition: 'hurt' }, health: 0.3, effects: [] }, false);
+    hud.renderTarget({ entity: { ...ghost, condition: 'hurt' }, health: 0.3, effects: [], channel: undefined, raise: undefined }, false);
     expect(frame.getAttribute('aria-label')).toBe('Target, hurt');
     // A frame that swapped its elements under the pointer would lose a press on its ✕.
     expect([...frame.querySelectorAll('*')]).toEqual(children);
-    hud.renderTarget({ entity: clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }), health: 1, effects: [] }, false);
+    hud.renderTarget(
+      { entity: clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }), health: 1, effects: [], channel: undefined, raise: undefined },
+      false,
+    );
     expect(frame.querySelector('.hud-portrait')).toBe(hud.portraits.target);
 
     button('Clear target').click();
@@ -462,8 +587,8 @@ describe("a mouse's HUD", () => {
     expect($('.hud-window--bag .hud-list__footer').textContent).toBe('Items: 4');
   });
 
-  it('keeps every element of the belt, the frames, and the windows across energy frames and repaints that change nothing they show', () => {
-    const { hud } = makeHUD();
+  it('keeps every element of the belt, the frames, and the windows across energy frames and repaints that change nothing they show, the tip shown over a slot included', () => {
+    const { hud, button } = makeHUD();
     const ghost = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', condition: 'wounded' });
     const rows: InventoryRowMessage[] = [{ slot: 0, itemId: 'purse', quantity: 5 }];
     const history: ChatLine[] = [{ kind: 'joined', playerName: 'Bren' }];
@@ -472,15 +597,20 @@ describe("a mouse's HUD", () => {
       hud.renderRun(false, false);
       hud.renderSlotOne(false, 'attack', false);
       // A sweep restarted on every frame would jump back to its start.
-      hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: { startedAtMs: 0, endsAtMs: 9000, global: false } }, ready('lunge')]);
+      hud.renderAbilities([{ ...ready('brace'), cooldown: { startedAtMs: 0, endsAtMs: 9000, global: false } }, ready('lunge')]);
       hud.renderLucidity({ role: 'healer', ranks: [{ teachingId: 'touch', rank: 2, practice: 20 }], study: 'touch' });
       hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 5000 }] });
-      hud.renderTarget({ entity: { ...ghost }, health, effects: [{ effectId: 'challenged', endsAtMs: 6000 }] }, false);
+      hud.renderTarget({ entity: { ...ghost }, health, effects: [{ effectId: 'challenged', endsAtMs: 6000 }], channel: undefined, raise: undefined }, false);
       hud.renderPlayers(['Bren', 'Tester'], { own: 'Tester', target: undefined });
       hud.renderItems(rows);
       hud.renderChat(history);
+      hud.tick(clock, NO_CLOCK);
     };
     paint(1, 0.5);
+    // A tip shown over a slot is kept too, so a recovering pool does not make it flicker.
+    hover(button('Lunge'));
+    hud.tick(clock, NO_CLOCK);
+    expect(tipSays(hud.root)?.[0]).toBe('Lunge');
     const before = [...hud.root.querySelectorAll('*')];
 
     for (const balanceCurrent of [2, 3, 4]) paint(balanceCurrent, 0.5);
@@ -495,10 +625,19 @@ describe("a mouse's HUD", () => {
     const { hud, $, button } = makeHUD();
     const covers = (selector: string) => hud.occluders.includes($(selector));
     expect(
-      ['.hud-unit--self', '.hud-unit--target', '.hud-clock', '.hud-globe--health', '.hud-belt__panel', '.hud-globe--spirit', '.hud-menu', '.hud-chat'].map(
-        covers,
-      ),
-    ).toEqual(Array(8).fill(true));
+      [
+        '.hud-unit--self',
+        '.hud-unit--self .hud-timed',
+        '.hud-unit--target',
+        '.hud-unit--target .hud-timed',
+        '.hud-clock',
+        '.hud-globe--health',
+        '.hud-belt__panel',
+        '.hud-globe--spirit',
+        '.hud-menu',
+        '.hud-chat',
+      ].map(covers),
+    ).toEqual(Array(10).fill(true));
     button('Players').click();
     expect(covers('.hud-window--players')).toBe(true);
     hud.tick(clock + CHAT_IDLE_MS + 1, { worldSeconds: undefined, place: undefined });
@@ -677,7 +816,7 @@ describe("a finger's HUD", () => {
 
     hud.renderAbilities([ready('cleave')]);
     const orb = button('Cleave');
-    expect([orb.className, orb.title, orb.querySelector('.hud-slot__key')]).toEqual(['hud-orb hud-orb--ability', 'Cleave', null]);
+    expect([orb.className, orb.querySelector('.hud-slot__key')]).toEqual(['hud-orb hud-orb--ability', null]);
     expect([orb.style.left, orb.style.top]).toEqual([empty.style.left, empty.style.top]);
     expect(hud.occluders).toContain(orb);
     expect(hud.occluders).not.toContain(empty);
@@ -740,6 +879,185 @@ describe("a finger's HUD", () => {
     clock += CHAT_IDLE_MS + 1;
     hud.tick(clock, { worldSeconds: undefined, place: undefined });
     expect($('.hud-chat-peek').classList.contains('hud-chat--idle')).toBe(true);
+  });
+});
+
+describe("the HUD's tip", () => {
+  it('shows at once over an ability: its name, key, cost in its pool, timing and reach at the rank held, what it teaches, and why it waits', () => {
+    const { hud, button } = makeHUD();
+    hud.renderAbilities([{ ...ready('deep-mend', 2), refusal: 'cost' }]);
+    const slot = button('Deep mend');
+    hover(slot.querySelector('.hud-glyph')!);
+
+    const tip = hud.root.querySelector<HTMLElement>('[role="tooltip"]')!;
+    expect(tipSays(hud.root)).toEqual([
+      'Deep mend',
+      '2',
+      '18 Spirit',
+      '1.35 s channel',
+      '6 s cooldown',
+      'The dreamer you target, up to 5 m away, or yourself',
+      'Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.',
+      'Not enough Spirit',
+    ]);
+    expect(tip.querySelector('.hud-tip__fact')?.className).toBe('hud-tip__fact hud-tip__fact--spirit');
+    expect(slot.getAttribute('aria-describedby')).toBe(tip.id);
+
+    // Waiting only on its own cooldown, it counts down to ready.
+    hud.renderAbilities([{ ...ready('deep-mend', 2), cooldown: { startedAtMs: 0, endsAtMs: 4200, global: false } }]);
+    hud.tick(clock, NO_CLOCK);
+    expect(tipSays(hud.root)?.at(-1)).toBe('Ready in 4 s');
+    clock = 2300;
+    hud.tick(clock, NO_CLOCK);
+    expect(tipSays(hud.root)?.at(-1)).toBe('Ready in 2 s');
+
+    // A Fighter's ability spends Balance, lands at once, and names what it needs in hand.
+    hud.renderAbilities([{ ...ready('cleave'), refusal: 'hand' }]);
+    hover(button('Cleave'));
+    expect(tipSays(hud.root)?.slice(2, 6)).toEqual(['16 Balance', 'Instant', '6 s cooldown', 'Nightmares in reach, in front of you']);
+    expect(tipSays(hud.root)?.at(-1)).toBe('Needs a weapon or empty hands');
+  });
+
+  it('names slot 1, Run, and an empty slot with their keys, and an effect with what it does and its seconds left', () => {
+    const { hud, $, button } = makeHUD();
+    hud.renderSlotOne(false, 'attack', false);
+    hover($('.hud-slot--act'));
+    expect(tipSays(hud.root)).toEqual(['Attack', '1']);
+    hover(button('Run'));
+    expect(tipSays(hud.root)).toEqual(['Run', 'Shift']);
+    hover($('.hud-slot--empty'));
+    expect(tipSays(hud.root)).toEqual(['Empty slot', '2', 'An ability you learn takes this slot.']);
+
+    hud.renderSelf({ ...HEALER, effects: [{ effectId: 'renewing', endsAtMs: 9200 }] });
+    hover($('.hud-effect__glyph'));
+    expect(tipSays(hud.root)).toEqual(['Renewing', '9s', 'Mends a little every second.']);
+    const tip = hud.root.querySelector('[role="tooltip"]');
+    clock = 3200;
+    hud.tick(clock, NO_CLOCK);
+    expect(tipSays(hud.root)).toEqual(['Renewing', '6s', 'Mends a little every second.']);
+    expect(hud.root.querySelector('[role="tooltip"]')).toBe(tip);
+  });
+
+  it('hides when the pointer leaves, presses, or scrolls, when its part goes, and when the HUD hides', () => {
+    const { hud, $, button } = makeHUD();
+    hud.renderAbilities([ready('brace')]);
+    const slot = button('Brace');
+    const glyph = slot.querySelector('.hud-glyph')!;
+
+    hover(glyph);
+    // Moving within the part keeps it.
+    point(glyph, 'pointerout', { relatedTarget: slot });
+    expect(tipSays(hud.root)?.[0]).toBe('Brace');
+    point(slot, 'pointerout', { relatedTarget: $('.hud-slots') });
+    expect(tipSays(hud.root)).toBeUndefined();
+    expect(slot.hasAttribute('aria-describedby')).toBe(false);
+
+    hover(slot);
+    point(slot, 'pointerdown');
+    expect(tipSays(hud.root)).toBeUndefined();
+
+    hover(button('Run'));
+    document.dispatchEvent(new Event('scroll'));
+    expect(tipSays(hud.root)).toBeUndefined();
+
+    hover(slot);
+    hud.renderAbilities([ready('lunge')]);
+    hud.tick(clock, NO_CLOCK);
+    expect(tipSays(hud.root)).toBeUndefined();
+
+    hover(button('Run'));
+    hud.setShown(false);
+    expect(tipSays(hud.root)).toBeUndefined();
+  });
+
+  it('shows nothing for a press held from the play field or for a finger passing over', () => {
+    const { hud, button } = makeHUD();
+    hover(button('Run'), { buttons: 1 });
+    expect(tipSays(hud.root)).toBeUndefined();
+    hover(button('Run'), { pointerType: 'touch' });
+    expect(tipSays(hud.root)).toBeUndefined();
+  });
+
+  it("shows a finger's tip after a hold, without using what it holds, while a quick tap uses it as ever", () => {
+    vi.useFakeTimers();
+    try {
+      const { hud, button, named } = makeHUD(true);
+      hud.renderAbilities([ready('cleave')]);
+      const orb = button('Cleave');
+      const tap = (held: number): void => {
+        point(orb, 'pointerdown', { pointerType: 'touch' });
+        vi.advanceTimersByTime(held);
+        point(orb, 'pointerup', { pointerType: 'touch' });
+        orb.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      };
+
+      point(orb, 'pointerdown', { pointerType: 'touch' });
+      vi.advanceTimersByTime(TIP_HOLD_MS);
+      expect(tipSays(hud.root)?.[0]).toBe('Cleave');
+      point(orb, 'pointerup', { pointerType: 'touch' });
+      orb.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      expect(tipSays(hud.root)).toBeUndefined();
+      expect(named('onUseAbility')).toEqual([]);
+
+      tap(TIP_HOLD_MS - 50);
+      expect(tipSays(hud.root)).toBeUndefined();
+      expect(named('onUseAbility')).toEqual([['cleave']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets go of a finger's hold that slides past the tap slop, showing no tip, and the press is a press as ever", () => {
+    vi.useFakeTimers();
+    try {
+      const { hud, button, named } = makeHUD(true);
+      hud.renderAbilities([ready('cleave')]);
+      const orb = button('Cleave');
+      const press = (slide: number): void => {
+        point(orb, 'pointerdown', { pointerType: 'touch', clientX: 100, clientY: 100 });
+        point(orb, 'pointermove', { pointerType: 'touch', clientX: 100 + slide, clientY: 100 });
+        vi.advanceTimersByTime(TIP_HOLD_MS);
+      };
+      const release = (): void => {
+        point(orb, 'pointerup', { pointerType: 'touch' });
+        orb.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      };
+
+      press(TAP_SLOP_PX);
+      expect(tipSays(hud.root)?.[0]).toBe('Cleave');
+      release();
+      expect(named('onUseAbility')).toEqual([]);
+
+      press(TAP_SLOP_PX + 1);
+      expect(tipSays(hud.root)).toBeUndefined();
+      release();
+      expect(named('onUseAbility')).toEqual([['cleave']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes the colours the world draws its effects in, on the HUD and on the sensed markers', () => {
+    for (const root of [makeHUD().hud.root, new SensedMarkers().root]) {
+      expect(['--hud-moonlight', '--hud-raise', '--hud-dream'].map((name) => root.style.getPropertyValue(name))).toEqual(['#d8e6ff', '#ffd27a', '#c4a8ff']);
+    }
+  });
+
+  it('leaves no browser tooltip on any part of the HUD', () => {
+    const { hud } = makeHUD();
+    const ghost = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost' });
+    hud.renderPools(POOLS, false);
+    hud.renderSlotOne(false, 'attack', false);
+    hud.renderAbilities([ready('brace')]);
+    hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 4200 }], channel: { abilityId: 'deep-mend', startedAtMs: 1000, endsAtMs: 2500 } });
+    hud.renderTarget({ entity: ghost, health: 1, effects: [{ effectId: 'challenged' }], channel: undefined, raise: undefined }, false);
+    expect(hud.root.querySelectorAll('[title]')).toHaveLength(0);
+    expect(makeHUD(true).hud.root.querySelectorAll('[title]')).toHaveLength(0);
+    const sensed = new SensedMarkers();
+    const mira = { name: 'Mira', at: { x: 30, z: 10 }, centre: { x: 3, y: 0 }, toward: 0 };
+    sensed.render({ halfSize: { x: 4, y: 3 }, markers: [mira] }, new DOMRect(0, 0, 800, 600), { x: 10, z: 10 });
+    expect(sensed.root.querySelectorAll('.hud-sensed__marker')).toHaveLength(1);
+    expect(sensed.root.querySelectorAll('[title]')).toHaveLength(0);
   });
 });
 

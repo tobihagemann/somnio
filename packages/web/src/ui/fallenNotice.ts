@@ -1,4 +1,5 @@
-import type { GameplaySession } from '@/client';
+import { wholeSecondsLeft } from '@/client';
+import type { ClientRaise } from '@/client';
 import { currentLocale, formatNameList, t } from '@/i18n';
 import { button, element, setHidden } from './dom';
 
@@ -10,7 +11,8 @@ import { button, element, setHidden } from './dom';
 
 export interface FallenState {
   fallen: boolean;
-  raise: GameplaySession['raise'];
+  /** The raise under way on the fallen dreamer, as `GameplaySession.raiseOf` keeps it. */
+  raise: ClientRaise | undefined;
 }
 
 export class FallenNotice {
@@ -19,6 +21,7 @@ export class FallenNotice {
   private readonly raise: HTMLElement;
   private readonly giveUp: HTMLButtonElement;
   private readonly confirmation: HTMLElement;
+  private shownRaise: ClientRaise | undefined;
 
   constructor(onWake: () => void) {
     this.raise = element('p', { className: 'service-text hidden' });
@@ -43,12 +46,20 @@ export class FallenNotice {
     });
   }
 
-  render(state: FallenState): void {
+  render(state: FallenState, nowMs: number): void {
     // Standing again withdraws a confirmation left open, so the next fall starts from the first step.
     if (!state.fallen) this.confirm(false);
     setHidden(this.root, !state.fallen);
     setHidden(this.raise, state.raise === undefined);
-    if (state.raise !== undefined) this.raise.textContent = raiseText(state.raise);
+    this.shownRaise = state.raise;
+    this.tick(nowMs);
+  }
+
+  /** The whole seconds left on the raise shown, which move with time rather than with a frame from the server. */
+  tick(nowMs: number): void {
+    if (this.shownRaise === undefined) return;
+    const text = raiseText(this.shownRaise.healerNames, wholeSecondsLeft(this.shownRaise.endsAtMs, nowMs));
+    if (this.raise.textContent !== text) this.raise.textContent = text;
   }
 
   private confirm(asking: boolean): void {
@@ -57,7 +68,7 @@ export class FallenNotice {
   }
 }
 
-function raiseText({ healerNames, secondsLeft }: NonNullable<FallenState['raise']>): string {
+function raiseText(healerNames: readonly string[], secondsLeft: number): string {
   return healerNames.length === 1
     ? t('%1$@ is drawing you back: %2$@ s', healerNames[0]!, String(secondsLeft))
     : t('%1$@ are drawing you back: %2$@ s', formatNameList(healerNames, currentLocale()), String(secondsLeft));

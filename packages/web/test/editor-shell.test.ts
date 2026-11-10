@@ -151,7 +151,7 @@ describe('issues', () => {
   it('reports a door whose target sector is not among the files', () => {
     const issues = documentIssues(square(), [], registry);
     expect(issues.error).toBeUndefined();
-    expect(issues.records.map((issue) => issue.record)).toEqual(['door', 'door', 'door', 'door', 'door', 'door']);
+    expect(issues.records.map((issue) => issue.record)).toEqual(['door', 'door', 'door', 'door', 'door', 'door', 'door']);
   });
 
   it('reports a model the registry does not know and an elevation its walk surfaces ignore', () => {

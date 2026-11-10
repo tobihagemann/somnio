@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bundledModelRegistry, distance, headingFromVector, isLegalMove, rasterizeWalkable, resolveDoor, sectorView } from '@somnio/core';
+import { bundledModelRegistry, distance, headingFromVector, isLegalMove, rasterizeWalkable, reaches, resolveDoor, sectorView } from '@somnio/core';
 import type { EffectId, Point } from '@somnio/core';
 import type { SectorView, SomnioMessage } from '@somnio/protocol';
 import {
@@ -307,6 +307,23 @@ describe('a path', () => {
     tickUntilWalkEnds(rig, 50);
 
     expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    expectLegalReports(rig, START);
+  });
+
+  /** The fallen peer stands on a cell corner, so the cell under each tap has its centre within the margin round them. */
+  it.each([
+    { metres: 0.55, side: 'east', tap: { x: 12.55, z: 10 } },
+    { metres: 0.7, side: 'east', tap: { x: 12.7, z: 10 } },
+    { metres: 0.55, side: 'north', tap: { x: 12, z: 9.45 } },
+    { metres: 0.7, side: 'north', tap: { x: 12, z: 9.3 } },
+  ])('ends a tap on the ground $metres m $side of a fallen peer within touch of them', ({ tap }) => {
+    const fallen = clientEntity({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 }, condition: 'fallen' });
+    const rig = makeRig({ entities: [self(), fallen] });
+    rig.predictor.walkTo(tap);
+
+    tickUntilWalkEnds(rig, 50);
+
+    expect(reaches(rig.self().position, { ...fallen.position, radius: fallen.radius })).toBe(true);
     expectLegalReports(rig, START);
   });
 

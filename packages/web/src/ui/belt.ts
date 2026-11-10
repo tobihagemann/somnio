@@ -1,12 +1,14 @@
-import { abilityTeaching, isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
-import type { AbilityId, EngageAction } from '@somnio/core';
+import { ability, abilityChannelSeconds, abilityCooldownSeconds, abilityTeaching, isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
+import type { Ability, AbilityId, AbilityRefusal, EngageAction } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
 import { taskIsDone, wholeSecondsLeft } from '@/client';
 import type { AbilitySlotState, CooldownSpan } from '@/client';
-import { t } from '@/i18n';
+import { abilityName, currentLocale, t } from '@/i18n';
 import { SVG_NAMESPACE, element, setHidden } from './dom';
 import { ABILITY_GLYPHS, HUD_ICONS, glyph, showGlyph } from './hudIcons';
-import { taskProgressText } from './servicePanel';
+import { setTip } from './hudTooltip';
+import type { Tip } from './hudTooltip';
+import { TEACHING_BLURB, taskProgressText } from './servicePanel';
 import { shareBar, showShare } from './unitFrames';
 import type { ShareBar } from './unitFrames';
 
@@ -112,16 +114,18 @@ export class BalanceMeter {
       this.arcFill.setAttribute('pathLength', '100');
       this.arcFill.setAttribute('stroke-dasharray', '0 200');
       this.arcFill.setAttribute('stroke-opacity', '0');
-      this.root = element('div', { className: 'hud-balance hud-balance--arc', attributes: { role: 'meter', 'aria-valuemin': 0 } });
+      this.root = setTip(element('div', { className: 'hud-balance hud-balance--arc', attributes: { role: 'meter', 'aria-valuemin': 0 } }));
       this.root.append(this.windedTag, svg);
     } else {
       this.bar = shareBar('hud-bar__fill--balance');
       this.bar.root.removeAttribute('role');
-      this.root = element('div', {
-        className: 'hud-balance hud-balance--bar',
-        attributes: { role: 'meter', 'aria-valuemin': 0 },
-        children: [this.windedTag, this.bar.root],
-      });
+      this.root = setTip(
+        element('div', {
+          className: 'hud-balance hud-balance--bar',
+          attributes: { role: 'meter', 'aria-valuemin': 0 },
+          children: [this.windedTag, this.bar.root],
+        }),
+      );
     }
   }
 
@@ -137,7 +141,6 @@ export class BalanceMeter {
     this.arcFill?.setAttribute('stroke-opacity', share > 0 ? '1' : '0');
     if (this.bar !== undefined) showShare(this.bar, share, reading);
     this.root.setAttribute('aria-label', reading);
-    this.root.setAttribute('title', reading);
     this.root.setAttribute('aria-valuenow', String(current));
     this.root.setAttribute('aria-valuemax', String(max));
     this.root.classList.toggle('hud-balance--winded', winded);
@@ -162,7 +165,6 @@ const SLOT_ONE_LABELS: Record<SlotOneLook, () => string> = {
 export class SlotOneButton {
   readonly root: HTMLButtonElement;
   private readonly glyph: HTMLElement;
-  private readonly orb: boolean;
   private look: SlotOneLook = 'attack';
   private shown: string | undefined;
 
@@ -175,7 +177,7 @@ export class SlotOneButton {
       children: [...(orb ? [] : [element('span', { className: 'hud-slot__key', text: '1', attributes: { 'aria-hidden': 'true' } })]), this.glyph],
     });
     this.root.addEventListener('click', onPress);
-    this.orb = orb;
+    setTip(this.root, () => ({ title: SLOT_ONE_LABELS[this.look](), ...(orb ? {} : { aside: '1' }) }));
   }
 
   render(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean): void {
@@ -187,9 +189,7 @@ export class SlotOneButton {
     this.root.disabled = action === undefined;
     this.root.dataset['look'] = this.look;
     showGlyph(this.glyph, HUD_ICONS[this.look]);
-    const label = SLOT_ONE_LABELS[this.look]();
-    this.root.setAttribute('aria-label', label);
-    this.root.setAttribute('title', this.orb ? label : `${label} (1)`);
+    this.root.setAttribute('aria-label', SLOT_ONE_LABELS[this.look]());
   }
 }
 
@@ -197,13 +197,81 @@ export class SlotOneButton {
 export function runButton(onPress: () => void, orb: boolean): HTMLButtonElement {
   const node = orb
     ? element('button', { className: 'hud-orb hud-orb--run', text: t('Run'), attributes: { type: 'button', 'aria-pressed': 'false' } })
-    : element('button', {
-        className: 'fantasy-button hud-slot hud-slot--run',
-        attributes: { type: 'button', 'aria-pressed': 'false', 'aria-label': t('Run'), title: t('Run (Shift)') },
-        children: [element('span', { className: 'hud-slot__key', text: '⇧', attributes: { 'aria-hidden': 'true' } }), glyph(HUD_ICONS.run)],
-      });
+    : setTip(
+        element('button', {
+          className: 'fantasy-button hud-slot hud-slot--run',
+          attributes: { type: 'button', 'aria-pressed': 'false', 'aria-label': t('Run') },
+          children: [element('span', { className: 'hud-slot__key', text: '⇧', attributes: { 'aria-hidden': 'true' } }), glyph(HUD_ICONS.run)],
+        }),
+        () => ({ title: t('Run'), aside: t('Shift') }),
+      );
   node.addEventListener('click', onPress);
   return node;
+}
+
+/** A number of seconds or metres as the player's language writes it, to two places at most. */
+function decimal(value: number): string {
+  return new Intl.NumberFormat(currentLocale(), { maximumFractionDigits: 2 }).format(value);
+}
+
+/** Who an ability lands on and how far beyond contact it reaches, from its aim. */
+function abilityReach(used: Ability): string {
+  const metres = decimal(used.range);
+  switch (used.aim) {
+    case 'enemy':
+      return t('The nightmare you target, up to %@ m away', metres);
+    case 'ally':
+      return t('The dreamer you target, up to %@ m away, or yourself', metres);
+    case 'self':
+      return t('Yourself');
+    case 'area':
+      if (used.does.kind === 'strike') return t('Nightmares in reach, in front of you');
+      return used.among === 'nightmare' ? t('Nightmares up to %@ m around you', metres) : t('You and dreamers up to %@ m around you', metres);
+  }
+}
+
+/**
+ * What keeps an ability from acting, where the player can do something about it. A belt slot holds
+ * only a taught ability, and shows its cooldown itself.
+ */
+function refusalLine(used: Ability, refusal: AbilityRefusal): string | undefined {
+  switch (refusal) {
+    case 'fallen':
+      return t('Not while fallen');
+    case 'channelling':
+      return t('Not while channelling');
+    case 'hand':
+      return used.hand === 'moonstone' ? t('Needs the Moonstone in hand') : t('Needs a weapon or empty hands');
+    case 'cost':
+      return used.pool === 'spirit' ? t('Not enough Spirit') : t('Not enough Balance');
+    case 'recipient':
+      if (used.aim === 'enemy') return t('Target a nightmare in range');
+      return used.aim === 'ally' ? t('Your target has fallen or is out of range') : undefined;
+    case 'untaught':
+    case 'cooldown':
+      return undefined;
+  }
+}
+
+/** An ability's tip: its cost, timing, and reach at the rank held, what it does, and what keeps it from acting now. */
+function abilityTip(abilityId: AbilityId, state: AbilitySlotState, key: string | undefined, nowMs: number): Tip {
+  const used = ability(abilityId);
+  const cost = String(used.cost);
+  const channel = abilityChannelSeconds(abilityId, state.rank);
+  const ownCooldown = state.cooldown === undefined || state.cooldown.global ? undefined : state.cooldown;
+  const ready = ownCooldown === undefined ? undefined : t('Ready in %@ s', String(wholeSecondsLeft(ownCooldown.endsAtMs, nowMs)));
+  const warning = (state.refusal === undefined ? undefined : refusalLine(used, state.refusal)) ?? ready;
+  return {
+    title: abilityName(abilityId, t),
+    ...(key === undefined ? {} : { aside: key }),
+    facts: [
+      { text: used.pool === 'spirit' ? t('%@ Spirit', cost) : t('%@ Balance', cost), pool: used.pool },
+      { text: channel === undefined ? t('Instant') : t('%@ s channel', decimal(channel)) },
+      { text: t('%@ s cooldown', decimal(abilityCooldownSeconds(abilityId, state.rank))) },
+    ],
+    lines: [abilityReach(used), TEACHING_BLURB[abilityTeaching(abilityId)]()],
+    ...(warning === undefined ? {} : { warning }),
+  };
 }
 
 /**
@@ -218,6 +286,7 @@ export class AbilitySlot {
   readonly abilityId: AbilityId;
   private sweep: HTMLElement;
   private readonly seconds: HTMLElement;
+  private state: AbilitySlotState | undefined;
   private cooldown: CooldownSpan | undefined;
   private shown: string | undefined;
   private shownSeconds = '';
@@ -225,12 +294,12 @@ export class AbilitySlot {
   /** `orb` is a finger's round button on the arc; otherwise a square slot with its key number. */
   constructor(abilityId: AbilityId, key: number, onPress: () => void, orb: boolean) {
     this.abilityId = abilityId;
-    const label = t(teaching(abilityTeaching(abilityId)).labelKey);
+    const label = abilityName(abilityId, t);
     this.sweep = element('span', { className: 'hud-sweep hidden', attributes: { 'aria-hidden': 'true' } });
     this.seconds = element('span', { className: 'hud-sweep__seconds', attributes: { 'aria-hidden': 'true' } });
     this.root = element('button', {
       className: orb ? 'hud-orb hud-orb--ability' : 'fantasy-button hud-slot hud-slot--ability',
-      attributes: { type: 'button', 'aria-label': label, title: orb ? label : `${label} (${key})` },
+      attributes: { type: 'button', 'aria-label': label },
       children: [
         ...(orb ? [] : [element('span', { className: 'hud-slot__key', text: String(key), attributes: { 'aria-hidden': 'true' } })]),
         glyph(ABILITY_GLYPHS[abilityId]),
@@ -239,15 +308,19 @@ export class AbilitySlot {
       ],
     });
     this.root.addEventListener('click', onPress);
+    // The HUD renders a slot before it places it, so a tip never reads a slot unrendered.
+    setTip(this.root, (nowMs) => abilityTip(abilityId, this.state!, orb ? undefined : String(key), nowMs));
   }
 
   render(state: AbilitySlotState, nowMs: number): void {
-    const shown = JSON.stringify([state.usable, state.cooldown ?? null]);
+    this.state = state;
+    const shown = JSON.stringify([state.refusal ?? null, state.cooldown ?? null]);
     if (shown === this.shown) return;
     this.shown = shown;
+    const usable = state.refusal === undefined;
     const cooling = state.cooldown !== undefined;
-    this.root.disabled = !state.usable || cooling;
-    this.root.classList.toggle('hud-ability--greyed', !state.usable);
+    this.root.disabled = !usable || cooling;
+    this.root.classList.toggle('hud-ability--greyed', !usable);
     if (cooling) this.root.setAttribute('aria-description', t('cooling down'));
     else this.root.removeAttribute('aria-description');
     if (JSON.stringify(state.cooldown ?? null) !== JSON.stringify(this.cooldown ?? null)) this.startSweep(state.cooldown, nowMs);
@@ -280,11 +353,12 @@ export class AbilitySlot {
 
 /** A slot no ability fills yet, with its key number. */
 export function emptySlot(key: number, orb: boolean): HTMLElement {
-  return element('span', {
+  const slot = element('span', {
     className: orb ? 'hud-orb hud-orb--empty' : 'fantasy-button hud-slot hud-slot--empty',
-    attributes: { 'aria-hidden': 'true', title: t('Empty slot') },
+    attributes: { 'aria-hidden': 'true' },
     children: [element('span', { className: 'hud-slot__key', text: String(key) })],
   });
+  return setTip(slot, () => ({ title: t('Empty slot'), ...(orb ? {} : { aside: String(key) }), lines: [t('An ability you learn takes this slot.')] }));
 }
 
 /**

@@ -1,16 +1,17 @@
-import { calendarFromWorldSeconds, hourOfDay } from '@somnio/core';
+import { calendarFromWorldSeconds, hourOfDay, sunIsUp } from '@somnio/core';
 import type { AbilityId, EngageAction } from '@somnio/core';
 import type { Energy, InventoryRowMessage, LucidityMessage } from '@somnio/protocol';
 import type { AbilitySlotState, ChatLine } from '@/client';
 import { t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
-import { sunIsUp } from '@/scene/dayNightSun';
+import { DREAM_COLOR, MOONLIGHT, RAISE_COLOR } from '@/scene/combatEffects';
 import type { PortraitSlot } from '@/scene/portraits';
 import { AbilitySlot, BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
 import { ChatPane } from './chatPane';
 import { element, iconButton, isHidden, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
 import type { HUDGlyph } from './hudIcons';
+import { HUDTooltip, setTip } from './hudTooltip';
 import { BagList, HUDWindow, PlayersList } from './hudWindows';
 import type { PlayersSelection } from './hudWindows';
 import { OwnFrame, TargetFrame } from './unitFrames';
@@ -101,6 +102,14 @@ function twoDigits(value: number): string {
   return String(value).padStart(2, '0');
 }
 
+/** Gives the node the colours the world draws its effects in, as `--hud-*` properties, so a bar or a marker in one never drifts from the scene's. */
+export function paintEffectColors(node: HTMLElement): void {
+  const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
+  node.style.setProperty('--hud-moonlight', css(MOONLIGHT));
+  node.style.setProperty('--hud-raise', css(RAISE_COLOR));
+  node.style.setProperty('--hud-dream', css(DREAM_COLOR));
+}
+
 export class GameHUD {
   readonly root: HTMLElement;
   readonly chatInput: HTMLTextAreaElement;
@@ -137,6 +146,7 @@ export class GameHUD {
   /** What covers the play field whatever is open, beside the windows, the sheet, and the chat. */
   private readonly fixedOccluders: HTMLElement[];
   private readonly hovered = new Set<HTMLElement>();
+  private readonly tooltip: HUDTooltip;
   private readonly now: () => number;
   private shownStudy: string | undefined;
   private shownClock: string | undefined;
@@ -208,9 +218,11 @@ export class GameHUD {
         ],
       });
       this.sheet = sheet;
-      this.sheetToggle = iconButton(t('Menu'), glyph(HUD_ICONS.menu), () => this.setSheetOpen(isHidden(sheet)), {
-        className: 'fantasy-button fantasy-button--compact hud-sheet-toggle',
-      });
+      this.sheetToggle = setTip(
+        iconButton(t('Menu'), glyph(HUD_ICONS.menu), () => this.setSheetOpen(isHidden(sheet)), {
+          className: 'fantasy-button fantasy-button--compact hud-sheet-toggle',
+        }),
+      );
       this.sheetToggle.setAttribute('aria-expanded', 'false');
       const strip = element('div', {
         className: 'hud-strip',
@@ -225,7 +237,17 @@ export class GameHUD {
         ],
       });
       layout = [strip, this.sheet, this.balance.root, thumb, this.chat.root];
-      this.fixedOccluders = [this.ownFrame.root, this.targetFrame.root, this.clock, this.sheetToggle, this.balance.root, this.slotOne.root, this.run];
+      this.fixedOccluders = [
+        this.ownFrame.root,
+        this.ownFrame.timed.root,
+        this.targetFrame.root,
+        this.targetFrame.timed.root,
+        this.clock,
+        this.sheetToggle,
+        this.balance.root,
+        this.slotOne.root,
+        this.run,
+      ];
       this.trackHover(strip, thumb, this.sheet, this.balance.root);
     } else {
       this.sheet = undefined;
@@ -237,7 +259,7 @@ export class GameHUD {
       });
       const panel = element('div', { className: 'fantasy-panel hud-belt__panel', children: [this.balance.root, slots, this.study] });
       const menuButton = (id: HUDWindowId, label: string, art: HUDGlyph): HTMLButtonElement => {
-        const node = iconButton(label, glyph(art), () => this.toggleWindow(id), { className: 'fantasy-button fantasy-button--compact hud-menu__item' });
+        const node = setTip(iconButton(label, glyph(art), () => this.toggleWindow(id), { className: 'fantasy-button fantasy-button--compact hud-menu__item' }));
         node.setAttribute('aria-pressed', 'false');
         this.windowToggles.set(id, node);
         return node;
@@ -248,14 +270,26 @@ export class GameHUD {
         children: [
           menuButton('players', t('Players'), HUD_ICONS.players),
           menuButton('bag', t('Bag'), HUD_ICONS.bag),
-          iconButton(t('Settings'), glyph(HUD_ICONS.settings), () => this.openSettings(), {
-            className: 'fantasy-button fantasy-button--compact hud-menu__item',
-          }),
+          setTip(
+            iconButton(t('Settings'), glyph(HUD_ICONS.settings), () => this.openSettings(), {
+              className: 'fantasy-button fantasy-button--compact hud-menu__item',
+            }),
+          ),
         ],
       });
       const belt = element('div', { className: 'hud-belt', children: [this.globes.health.root, panel, this.globes.spirit.root, menu] });
       layout = [this.ownFrame.root, this.targetFrame.root, this.clock, belt, this.chat.root];
-      this.fixedOccluders = [this.ownFrame.root, this.targetFrame.root, this.clock, this.globes.health.root, panel, this.globes.spirit.root, menu];
+      this.fixedOccluders = [
+        this.ownFrame.root,
+        this.ownFrame.timed.root,
+        this.targetFrame.root,
+        this.targetFrame.timed.root,
+        this.clock,
+        this.globes.health.root,
+        panel,
+        this.globes.spirit.root,
+        menu,
+      ];
       this.trackHover(this.ownFrame.root, this.targetFrame.root, this.clock, belt, this.chat.root);
     }
     this.trackHover(this.windows.players.root, this.windows.bag.root, ...(this.coarse ? [this.chat.root] : []));
@@ -264,8 +298,11 @@ export class GameHUD {
       className: `hud ${this.coarse ? 'hud--coarse' : 'hud--fine'}`,
       children: [...layout, this.windows.players.root, this.windows.bag.root],
     });
+    this.tooltip = new HUDTooltip(this.root, now);
+    this.root.append(this.tooltip.root);
     this.root.style.setProperty('--hud-thumb-width', `${THUMB.width}px`);
     this.root.style.setProperty('--hud-thumb-height', `${THUMB.height}px`);
+    paintEffectColors(this.root);
     // A control pressed with the pointer hands the keyboard straight back to the world, so Enter
     // opens the chat and Shift runs rather than pressing the control again. A keyboard press keeps it.
     this.root.addEventListener(
@@ -306,6 +343,7 @@ export class GameHUD {
     if (shown === !isHidden(this.root)) return;
     setHidden(this.root, !shown);
     if (!shown) {
+      this.tooltip.hide();
       for (const id of [...this.openWindows]) this.closeWindow(id);
       this.setSheetOpen(false);
     }
@@ -386,12 +424,16 @@ export class GameHUD {
     this.bag.render(rows);
   }
 
-  /** The clock's minute, the chat's fading, and the seconds left on cooldowns and effects, which move with time rather than with a frame from the server. */
+  /**
+   * The clock's minute, the chat's fading, and the seconds left on cooldowns and effects, which move
+   * with time rather than with a frame from the server, and the tip shown, which follows its part.
+   */
   tick(nowMs: number, clock: HUDClock): void {
     this.chat.tick(nowMs);
     for (const slot of this.abilitySlots) slot?.tick(nowMs);
     this.ownFrame.effects.tick(nowMs);
     this.targetFrame.effects.tick(nowMs);
+    this.tooltip.refresh(nowMs);
     const shown = JSON.stringify([clock.worldSeconds === undefined ? null : Math.floor(clock.worldSeconds / 60), clock.place ?? null]);
     if (shown === this.shownClock) return;
     this.shownClock = shown;

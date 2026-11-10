@@ -3,11 +3,13 @@ import { buildSpaceCollision, canStand, isLegalMove, npcBodies } from '../src/co
 import { reachDistance } from '../src/combat.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import type { Point } from '../src/geometry.ts';
+import { TRIALS, placesReached } from '../src/lucidity.ts';
 import { bundledModelRegistry, objectModel } from '../src/modelRegistry.ts';
 import { monsterKind } from '../src/monsterKinds.ts';
-import { spawnArea } from '../src/sector.ts';
+import { findPath, rasterizeWalkable, walkRasterInputs } from '../src/pathfinding.ts';
+import { sectorPointInSpace, spawnArea } from '../src/sector.ts';
 import type { Sector } from '../src/sector.ts';
-import { OUTDOOR_SPACE_ID, buildWorld, neighbourSectors, resolveDoor } from '../src/world.ts';
+import { OUTDOOR_SPACE_ID, buildWorld, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
 import { loadSectorFixtures } from './support/sectorFixture.ts';
 
 /**
@@ -40,7 +42,7 @@ function contents(sector: Sector): object {
 }
 
 describe('the committed world', () => {
-  it('is six outdoor lands and six interiors, each holding what it was authored with', () => {
+  it('is six outdoor lands and seven interiors, each holding what it was authored with', () => {
     expect(Object.fromEntries(sectors.map((sector) => [sector.name, contents(sector)]))).toEqual({
       AutumnWood: {
         kind: 'outdoor',
@@ -96,6 +98,15 @@ describe('the committed world', () => {
         doors: { exit: 'EdariaSquare/to-edarialibrary' },
         npcs: { libus: 'libus' },
       },
+      EdariaMysticTower: {
+        kind: 'interior',
+        size: { width: 5.12, depth: 5.12 },
+        brightness: 70,
+        backgroundMaterialId: 'stone-arena',
+        counts: { placements: 36, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
+        doors: { exit: 'EdariaSquare/to-edariamystictower' },
+        npcs: { tacita: 'libus' },
+      },
       EdariaShop: {
         kind: 'interior',
         size: { width: 5.12, depth: 5.12 },
@@ -110,7 +121,7 @@ describe('the committed world', () => {
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 0, z: 0 },
         backgroundMaterialId: 'grass-meadow',
-        counts: { placements: 123, blockers: 0, doors: 6, npcs: 0, monsterSpawns: 0, marks: 23 },
+        counts: { placements: 121, blockers: 0, doors: 7, npcs: 0, monsterSpawns: 0, marks: 21 },
         doors: {
           'to-edarialibrary': 'EdariaLibrary/exit',
           'to-edariaarena': 'EdariaArena/exit',
@@ -118,6 +129,7 @@ describe('the committed world', () => {
           'to-edariainn': 'EdariaInn/exit',
           'to-edariafighterhall': 'EdariaFighterHall/exit',
           'to-edariahealerhall': 'EdariaHealerHall/exit',
+          'to-edariamystictower': 'EdariaMysticTower/exit',
         },
         npcs: {},
       },
@@ -165,6 +177,7 @@ describe('the committed world', () => {
     expect(Object.fromEntries(services)).toEqual({
       'EdariaFighterHall/pugnax': 'fighterMaster',
       'EdariaHealerHall/sana': 'healerMaster',
+      'EdariaMysticTower/tacita': 'mysticMaster',
       'EdariaShop/mercus': 'shopkeeper',
     });
     expect(byName.get('EdariaInn')?.spawn).toBeDefined();
@@ -179,6 +192,12 @@ describe('the committed world', () => {
       }
     }
     expect(unpaired).toEqual([]);
+  });
+
+  /** Only the night shuts a door, and only from outside: a dreamer inside a room it shuts can always leave. */
+  it('shuts only the tower from outside by day, and never a door out of a room', () => {
+    const nightOnly = sectors.flatMap((sector) => sector.doors.filter((door) => door.nightOnly === true).map((door) => `${sector.name}/${door.id}`));
+    expect(nightOnly).toEqual(['EdariaSquare/to-edariamystictower']);
   });
 
   it('tiles the outdoor lands round the town so their openings meet its gates', () => {
@@ -211,13 +230,13 @@ describe('the committed world', () => {
   });
 
   /** The camera looks in over the low front walls, and the door is a threshold of the room's wall set in a gap in them. */
-  it.each(['EdariaArena', 'EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaShop'])(
+  it.each(['EdariaArena', 'EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaMysticTower', 'EdariaShop'])(
     'walls %s on all four sides with a gap at its door',
     (name) => {
       const room = byName.get(name)!;
       const { width, depth } = room.size;
       const door = room.placements.find((placement) => placement.id === room.doors[0]!.placement)!;
-      expect(door.modelId).toBe(name === 'EdariaFighterHall' ? 'stone-room-threshold' : 'timber-room-threshold');
+      expect(door.modelId).toBe(['EdariaFighterHall', 'EdariaMysticTower'].includes(name) ? 'stone-room-threshold' : 'timber-room-threshold');
       const walls = room.placements.filter((placement) => placement.modelId.includes('-room-') && !placement.modelId.endsWith('-threshold'));
       const side = (test: (x: number, z: number) => boolean): string[] => walls.filter((wall) => test(wall.x, wall.z)).map((wall) => wall.modelId);
       const north = side((x, z) => z < 0 && x > 0 && x < width);
@@ -238,7 +257,7 @@ describe('the committed world', () => {
   );
 
   /** Collision comes from the registry's colliders, which the game never draws, so a room whose furniture walls its keeper off would still look fine. */
-  it.each(['EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaShop'])(
+  it.each(['EdariaFighterHall', 'EdariaHealerHall', 'EdariaInn', 'EdariaLibrary', 'EdariaMysticTower', 'EdariaShop'])(
     'lets a dreamer walk from the door of %s to its keeper',
     (name) => {
       const registry = bundledModelRegistry();
@@ -290,6 +309,27 @@ describe('the committed world', () => {
       const area = spawnArea(arena, spawn);
       expect(refugeEdge - SOMNIO_CONSTANTS.playerRadius - (area.x + area.width)).toBeGreaterThan(reachDistance(monsterKind(spawn.kind).radius));
     }
+  });
+
+  /** Tacita's trial asks a dreamer to stand at each of its places, so each must be a walk from the town, judged as the server judges a place reached. */
+  it("lets a dreamer walk from the Library's door to every place of the Mystic's trial", () => {
+    const registry = bundledModelRegistry();
+    const outdoors = buildWorld(sectors, registry).spaces.get(OUTDOOR_SPACE_ID)!;
+    const collision = buildSpaceCollision(outdoors, registry);
+    const grid = { collision, rasters: outdoors.sectors.map((sector) => rasterizeWalkable(walkRasterInputs(collision, sector))) };
+    const square = byName.get('EdariaSquare')!;
+    const from = resolveDoor(
+      square,
+      square.doors.find((door) => door.id === 'to-edarialibrary')!,
+      registry,
+    )!.arrival;
+    const trial = TRIALS.mystic;
+    if (trial.kind !== 'reachAll') throw new Error('the Mystic trial is no longer a round of places');
+    trial.places.forEach((place, index) => {
+      const path = findPath(grid, from, sectorPointInSpace(byName.get(place.sector)!, place), npcBodies(outdoors), new Set());
+      const end = path.waypoints.at(-1) ?? from;
+      expect(placesReached(trial, sectorAt(outdoors, end)!, end), place.sector).toBe(1 << index);
+    });
   });
 
   it('builds with every door live, no collision issue, and a clear starter spawn', () => {

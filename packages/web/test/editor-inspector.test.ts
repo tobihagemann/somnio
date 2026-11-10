@@ -359,7 +359,13 @@ describe("an NPC's service", () => {
     const h = harness();
     h.select([{ kind: 'npc', id: 'libus' }]);
     expect(h.picker('Service').value).toBe('');
-    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual(['None', 'Fighter master', 'Healer master', 'Shopkeeper']);
+    expect([...h.picker('Service').options].map((option) => option.textContent)).toEqual([
+      'None',
+      'Fighter master',
+      'Healer master',
+      'Mystic master',
+      'Shopkeeper',
+    ]);
 
     choose(h.picker('Service'), 'healerMaster');
     expect(h.document.sector.npcs[0]?.service).toBe('healerMaster');
@@ -443,6 +449,24 @@ describe('doors', () => {
     h.document.undo();
     expect(options(h.picker('Target door'))).toEqual(['exit', 'cellar']);
     expect(h.picker('Target door').value).toBe('cellar');
+  });
+
+  it('opens a door only at night when ticked, and removes the key again when not, each as one undo step', () => {
+    const h = harness();
+    h.select([{ kind: 'door', id: 'to-shop' }]);
+    const nightOnly = h.input('Opens only at night');
+    expect(nightOnly.checked).toBe(false);
+
+    nightOnly.click();
+    expect(h.document.sector.doors[0]?.nightOnly).toBe(true);
+    nightOnly.click();
+    // Removed, not set false: a door open at every hour is saved without the key.
+    expect('nightOnly' in h.document.sector.doors[0]!).toBe(false);
+
+    h.document.undo();
+    expect(h.input('Opens only at night').checked).toBe(true);
+    h.document.undo();
+    expect(h.input('Opens only at night').checked).toBe(false);
   });
 });
 

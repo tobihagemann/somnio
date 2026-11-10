@@ -10,8 +10,11 @@ import {
   fullPools,
   gaitAllowed,
   harmTaken,
+  shieldedHarm,
   maxPools,
   mendAmount,
+  raiseSecondsFor,
+  raiseWorkOver,
   mendReaches,
   reaches,
   strikeChance,
@@ -166,6 +169,8 @@ describe('engageAction', () => {
   it('attacks a nightmare with bare hands or a weapon in hand, whoever engages it', () => {
     expect(engageAction('nightmare', undefined, undefined)).toBe('attack');
     expect(engageAction('nightmare', 'healer', 'cudgel')).toBe('attack');
+    expect(engageAction('nightmare', 'mystic', undefined)).toBe('attack');
+    expect(engageAction('nightmare', 'mystic', 'cudgel')).toBe('attack');
   });
 
   it('does not attack with the Moonstone in hand, which does not swing', () => {
@@ -177,6 +182,7 @@ describe('engageAction', () => {
     expect(engageAction('dreamer', 'healer', undefined)).toBeUndefined();
     expect(engageAction('dreamer', 'healer', 'cudgel')).toBeUndefined();
     expect(engageAction('dreamer', 'fighter', 'moonstone')).toBeUndefined();
+    expect(engageAction('dreamer', 'mystic', 'moonstone')).toBeUndefined();
     expect(engageAction('dreamer', undefined, 'moonstone')).toBeUndefined();
   });
 
@@ -227,6 +233,16 @@ describe('whole amounts', () => {
     expect(harmTaken(7, [], ['braced'])).toBe(4);
     expect(harmTaken(1, [], ['braced'])).toBe(1);
     expect(harmTaken(9, ['braced'], ['challenged'])).toBe(9);
+    expect(harmTaken(9, ['weakened'], [])).toBe(5);
+    expect(harmTaken(9, ['weakened'], ['braced'])).toBe(3);
+  });
+
+  it("lets a shield take what it holds of a hit's share before the rest is made whole", () => {
+    expect(shieldedHarm(9, [], [], 12)).toEqual({ landed: 0, absorbed: 9 });
+    expect(shieldedHarm(9, [], [], 3)).toEqual({ landed: 6, absorbed: 3 });
+    expect(shieldedHarm(9, [], ['braced'], 3)).toEqual({ landed: 2, absorbed: 3 });
+    expect(shieldedHarm(9, [], [], 8.8)).toEqual({ landed: 1, absorbed: 8.8 });
+    expect(shieldedHarm(9, [], [], 0)).toEqual({ landed: 9, absorbed: 0 });
   });
 });
 
@@ -249,10 +265,41 @@ describe('ranks that deepen a pool or a touch', () => {
   it("reads only the Spirit deepening of the dreamer's own role", () => {
     expect(maxPools({ role: 'fighter', ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
     expect(maxPools({ role: undefined, ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
+    expect(maxPools({ role: 'mystic', ranks: ranks({ 'mystic-spirit-deepening': 2 }) }).spiritMax).toBe(120);
+    expect(maxPools({ role: 'mystic', ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
+    expect(maxPools({ role: 'healer', ranks: ranks({ 'mystic-spirit-deepening': 3 }) }).spiritMax).toBe(100);
   });
 
   it('mends more with Depth', () => {
     expect(mendAmount([])).toBe(10);
     expect(mendAmount(ranks({ depth: 2 }))).toBe(20);
+  });
+});
+
+describe('the raise schedule', () => {
+  it('adds a pace-second a second for each Healer holding on once their pause is over', () => {
+    expect(raiseWorkOver([0], 2)).toBe(2);
+    expect(raiseWorkOver([0, 0], 2)).toBe(4);
+    // One paused for 1.5 s adds half a second of the two.
+    expect(raiseWorkOver([1.5, 0], 2)).toBe(2.5);
+    // While every one is paused, nothing moves.
+    expect(raiseWorkOver([1, 0.5], 0.5)).toBe(0);
+  });
+
+  it('takes as long to add work as its inverse says, whatever order the pauses come in', () => {
+    for (const paused of [[0], [0, 0], [1.5, 0], [0, 1.5], [0.4, 2, 1], [3, 3]]) {
+      for (const work of [0.25, 1, 2.5, 6]) {
+        const seconds = raiseSecondsFor(work, paused);
+        expect(raiseWorkOver(paused, seconds)).toBeCloseTo(work, 9);
+        // And no sooner: a hundredth of a second before, the work falls short.
+        expect(raiseWorkOver(paused, seconds - 0.01)).toBeLessThan(work);
+      }
+    }
+  });
+
+  it('waits out the shortest pause before any work, and never finishes with none holding on', () => {
+    expect(raiseSecondsFor(1, [1.5, 2])).toBeCloseTo(1.5 + 1 / 2 + 0.25, 9);
+    expect(raiseSecondsFor(0, [0.5])).toBe(0.5);
+    expect(raiseSecondsFor(1, [])).toBe(Infinity);
   });
 });

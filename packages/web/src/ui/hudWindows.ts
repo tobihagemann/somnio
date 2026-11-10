@@ -3,6 +3,7 @@ import type { ItemId } from '@somnio/core';
 import { itemName, t } from '@/i18n';
 import { element, iconButton } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
+import { setTip } from './hudTooltip';
 
 /**
  * The windows the HUD's menu opens: Players and the Bag. Each is a titled panel with a ✕, built
@@ -23,7 +24,7 @@ export class HUDWindow {
 
 /** A window's title and the ✕ that closes it. */
 export function windowHead(title: string, onClose: () => void): HTMLElement {
-  const close = iconButton(t('Close %@', title), glyph(HUD_ICONS.close), onClose, { className: 'hud-window__close' });
+  const close = setTip(iconButton(t('Close %@', title), glyph(HUD_ICONS.close), onClose, { className: 'hud-window__close' }));
   return element('div', { className: 'hud-window__head', children: [element('h2', { className: 'overlay-title', text: title }), close] });
 }
 

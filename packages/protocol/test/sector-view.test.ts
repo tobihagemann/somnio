@@ -37,7 +37,10 @@ const outdoor: SectorView = {
     { id: 'candle-1', modelId: 'candle', x: 12, z: 9.5, yaw: 0, elevation: 0.75 },
   ],
   blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
-  doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }],
+  doors: [
+    { id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } },
+    { id: 'tower', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaMysticTower', door: 'exit' }, nightOnly: true },
+  ],
 };
 
 const interior: SectorView = {
@@ -96,6 +99,12 @@ describe('omitted defaults', () => {
     ]);
     const marks = (encoded['ground'] as { marks: Record<string, unknown>[] }).marks;
     expect(marks.map((mark) => 'opacity' in mark)).toEqual([false, true]);
+    expect((encoded['doors'] as Record<string, unknown>[]).map((door) => door['nightOnly'])).toEqual([undefined, true]);
+  });
+
+  it('decodes a door open at every hour without a nightOnly, whether the key is absent or false', () => {
+    const doors = decode({ ...encodeSectorView(outdoor), doors: [outdoor.doors[0], { ...outdoor.doors[1], nightOnly: false }] }).doors;
+    expect(doors.map((door) => 'nightOnly' in door)).toEqual([false, false]);
   });
 
   it.each([outdoor, interior])('decodes the encoded form of an $kind sector back to the same value', (view) => {
@@ -211,6 +220,7 @@ describe('rejections', () => {
       { ...outdoorJSON, doors: [{ id: 'library', placement: 'tavern', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } }] },
       /doors\[0\]\.placement: no placement "tavern"/,
     ],
+    ['a door whose nightOnly is not a boolean', { ...outdoorJSON, doors: [{ ...door, nightOnly: 'yes' }] }, /doors\[0\]\.nightOnly: expected a bool/],
     [
       'a door whose target door is not an id',
       { ...outdoorJSON, doors: [{ id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: '' } }] },

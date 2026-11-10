@@ -3,7 +3,7 @@ import type { Character, InventoryRow, Lucidity, Point, Sector, TeachingId } fro
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { ranks } from '../../../core/test/support/ranks.ts';
 import type { SpaceActor } from '../../src/world/spaceActor.ts';
-import { makeClockedSpace, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
+import { landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
 
 export const GHOST_AT: Point = { x: 10, z: 10 };
 /** In reach of the nightmare at `GHOST_AT`, and south of it. */
@@ -20,6 +20,11 @@ export function energy(overrides: Partial<Energy> = {}): Energy {
   return { ...fullPools(NO_LUCIDITY), ...overrides };
 }
 
+/** A dreamer at `healthCurrent` and every other pool full. */
+export function wounded(healthCurrent: number): Partial<Character> {
+  return { energy: energy({ healthCurrent }) };
+}
+
 export function lucidity(role: Lucidity['role'], held: Partial<Record<TeachingId, number>> = {}, overrides: Partial<Lucidity> = {}): Lucidity {
   return { ...NO_LUCIDITY, role, ranks: ranks(held), ...overrides };
 }
@@ -29,14 +34,17 @@ export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { str
 
 /**
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
- * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`.
+ * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, it
+ * keeps to a home ground reaching that many metres each way, where it can chase.
  */
-export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; sectors?: Sector[] } = {}) {
+export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; ground?: number; sectors?: Sector[] } = {}) {
   const dice = { hit: true };
   const ghost = options.ghost ?? true;
-  const sector = makeSector('TestSector', { ...(ghost ? { monsterSpawns: [makeMonsterSpawn(GHOST_AT)] } : {}), ...overrides });
+  const spawn = options.ground === undefined ? makeMonsterSpawn(GHOST_AT) : makeMonsterGround(GHOST_AT, options.ground);
+  const sector = makeSector('TestSector', { ...(ghost ? { monsterSpawns: [spawn] } : {}), ...overrides });
+  const lands = landsAtCentre(options.ground ?? 0);
   const { clock, space } = makeClockedSpace(makeWorld([sector, ...(options.sectors ?? [])]), OUTDOOR_SPACE_ID, {
-    random: { nextUInt32: () => (dice.hit ? 0 : 0xffff_ffff) },
+    random: { nextUInt32: () => (dice.hit ? lands.nextUInt32() : 0xffff_ffff) },
   });
   if (ghost) {
     clock.ms = RESPAWN_MS;

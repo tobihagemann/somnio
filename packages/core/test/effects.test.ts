@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EFFECTS, effectSeconds, isEffectId, scaled } from '../src/effects.ts';
+import { EFFECTS, effectAbsorb, effectHealthPerSecond, effectSeconds, isEffectId, scaled } from '../src/effects.ts';
 
 describe('scaled', () => {
   it('holds a plain number at every rank', () => {
@@ -17,7 +17,23 @@ describe('effects', () => {
     expect(EFFECTS).toEqual({
       braced: { seconds: { atRank1: 4, perRank: 1 }, damageTaken: 0.5, movement: 'noRun' },
       challenged: { seconds: 6, turnsOnSource: true },
+      renewing: { seconds: 10, healthPerSecond: { atRank1: 2.5, perRank: 0.75 } },
+      calmed: { seconds: 8, threatGenerated: 0.5 },
+      warded: { seconds: 12, absorb: { atRank1: 12, perRank: 5 } },
+      weakened: { seconds: { atRank1: 8, perRank: 2 }, damageDealt: 0.6 },
+      bound: { seconds: { atRank1: 3, perRank: 1 }, movement: 'rooted' },
+      veiled: { seconds: 5, unseen: true },
     });
+  });
+
+  it('heals its holder a second by the rank of the ability that applies it, and nothing for an effect that does not heal', () => {
+    expect([1, 2, 3].map((rank) => effectHealthPerSecond('renewing', rank))).toEqual([2.5, 3.25, 4]);
+    expect(effectHealthPerSecond('braced', 1)).toBe(0);
+  });
+
+  it('shields its holder by the rank of the ability that applies it, and not at all for an effect that is no shield', () => {
+    expect([1, 2, 3].map((rank) => effectAbsorb('warded', rank))).toEqual([12, 17, 22]);
+    expect(effectAbsorb('braced', 1)).toBe(0);
   });
 
   it('holds each effect for its seconds at the rank of the ability that applies it', () => {

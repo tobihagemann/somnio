@@ -3,7 +3,7 @@
  */
 import * as THREE from 'three';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
-import type { RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
+import type { AbilityShown, RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
 import {
   EDGE_TOLERANCE,
   clamp,
@@ -28,12 +28,12 @@ import {
 } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
 import { CONDITIONS } from '@somnio/protocol';
-import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
+import type { Condition, Gait, Placement, SectorView, SensedBearingMessage } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { CombatEffects } from './combatEffects';
+import { CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -130,6 +130,25 @@ interface SpeechBubble {
   drawn: ScreenPoint | undefined;
 }
 
+/** How large a fallen dreamer's marker is drawn on the page, in CSS pixels: its badge, the arrow round it, and its name under it. */
+export const SENSED_MARKER_PIXELS = { width: 96, height: 66 } as const;
+
+/** A fallen dreamer's marker as the scene placed it: at the screen's edge toward where they lie, in metres of overlay art from the screen's middle. */
+export interface PlacedMarker {
+  name: string;
+  /** Where they lie in the space. */
+  at: Point;
+  centre: ScreenPoint;
+  /** The way they lie from the marker on the screen, in radians counter-clockwise from the right. */
+  toward: number;
+}
+
+export interface PlacedMarkers {
+  /** Half the screen's width and height. */
+  halfSize: ScreenPoint;
+  markers: readonly PlacedMarker[];
+}
+
 /** What the layout is asked about one bubble, and what its tail points at once it is placed. */
 interface BubbleEntry {
   bubble: SpeechBubble;
@@ -148,12 +167,6 @@ interface PressMarker {
   droppedAtMs: number;
   /** When it begins to rise again; `undefined` while it is down. */
   liftsAtMs: number | undefined;
-}
-
-/** A ring on the ground around a fallen body, drawn further round as the raise goes on: from `progress` at `anchoredAtMs`, whole after `seconds`. */
-interface RaiseRing extends RaiseProgress {
-  mesh: THREE.Mesh;
-  anchoredAtMs: number;
 }
 
 interface PlacedModel {
@@ -332,16 +345,15 @@ export class WorldScene implements WorldRenderSurface {
   private readonly bubbles = new Map<string, SpeechBubble>();
   /** The bubbles as last laid out. */
   private placed: PlacedBubble[] = [];
+  /** Where each fallen dreamer the player senses lies. */
+  private sensed: readonly SensedBearingMessage[] = [];
+  /** The markers as last laid out, toward those of them off screen. */
+  private markers: PlacedMarker[] = [];
   /** The outgoing space's bubbles, kept on screen with it during a held swap. */
   private heldBubbles: PlacedBubbles | undefined;
   private screenOccluders: readonly ScreenRect[] = [];
   /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
   private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
-  /** The short-lived word over an entity a blow missed. */
-  private readonly misses = new Map<string, { node: THREE.Object3D; expiresAtMs: number }>();
-  private readonly raiseRings = new Map<string, RaiseRing>();
-  /** The ring swelling from the feet of an entity just mended. */
-  private readonly mendPulses = new Map<string, { mesh: THREE.Mesh; startedAtMs: number }>();
   /** The ring round the player's target, a reticle while the player's facing is locked on it. Its id is the target whose plaque shows through the world. */
   private selection: { id: string; mesh: THREE.Mesh; locked: boolean } | undefined;
   /**
@@ -405,11 +417,16 @@ export class WorldScene implements WorldRenderSurface {
         body: (entityId) => this.entityStates.get(entityId),
         bodies: () => this.entityStates,
         playerId: () => this.cameraFollowId,
-        playOneShot: (entityId, oneShot) => {
+        playOneShot: (entityId, oneShot, landsIn) => {
           const state = this.entityStates.get(entityId);
-          return state === undefined ? undefined : this.playOneShot(state, oneShot);
+          return state === undefined ? undefined : this.playOneShot(state, oneShot, landsIn);
         },
-        markMiss: (entityId) => this.markMiss(entityId),
+        endOneShot: (entityId) => {
+          const state = this.entityStates.get(entityId);
+          if (state?.oneShot !== undefined && !state.oneShot.held) this.endOneShot(state);
+        },
+        missWord,
+        overlayScale: () => this.overlayScale,
         now: () => this.now(),
       },
       reducedMotion,
@@ -459,12 +476,14 @@ export class WorldScene implements WorldRenderSurface {
     applyFrustum(this.camera, scale, this.aspect);
     this.overlayScale = this.viewportHeight === undefined ? 1 : overlayMagnification(scale, this.viewportHeight);
     for (const state of this.entityStates.values()) state.namePlaque?.scale.setScalar(this.overlayScale);
-    for (const miss of this.misses.values()) miss.node.scale.setScalar(this.overlayScale);
   }
 
-  /** Warms the cache, then re-resolves everything still rendering a placeholder. */
-  async prewarm(): Promise<void> {
-    await this.assets.prewarm();
+  /**
+   * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
+   * it meanwhile compiles every combat effect's program, which a first use would compile mid-fight.
+   */
+  async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
+    await Promise.all([this.assets.prewarm(), renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene)]);
     this.refreshResolvedModels();
   }
 
@@ -502,9 +521,8 @@ export class WorldScene implements WorldRenderSurface {
     this.entityStates.clear();
     this.bubbles.clear();
     this.placed = [];
-    this.misses.clear();
-    this.raiseRings.clear();
-    this.mendPulses.clear();
+    this.sensed = [];
+    this.markers = [];
     this.effects.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
@@ -924,47 +942,25 @@ export class WorldScene implements WorldRenderSurface {
     this.effects.blow(attackerId, targetId, hit);
   }
 
-  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined): void {
-    this.effects.ability(entityId, abilityId, targetId);
+  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined, shown?: AbilityShown): void {
+    this.effects.ability(entityId, abilityId, targetId, shown);
   }
 
   showEffects(entityId: string, effects: readonly { effectId: EffectId; seconds?: number }[]): void {
     this.effects.hold(entityId, effects);
   }
 
-  /** The word over an entity a blow missed, for a moment. */
-  private markMiss(targetId: string): void {
-    const target = this.entityStates.get(targetId);
-    if (target === undefined) return;
-    disposeSubtree(this.misses.get(targetId)?.node);
-    const node = missQuad();
-    node.position.set(0, target.headHeight + MISS_HEAD_GAP, 0);
-    node.scale.setScalar(this.overlayScale);
-    target.node.add(node);
-    this.misses.set(targetId, { node, expiresAtMs: this.now() + MISS_SECONDS * 1000 });
-  }
-
   showRaising(targetId: string, raise: RaiseProgress | undefined): void {
-    disposeSubtree(this.raiseRings.get(targetId)?.mesh);
-    this.raiseRings.delete(targetId);
-    const state = this.entityStates.get(targetId);
-    if (state === undefined || raise === undefined) return;
-    // It starts with nothing drawn: the tick, which runs before the next render, draws it from `progress` on.
-    const mesh = groundRingMesh(state.radius * RAISE_RING_RADII, RAISE_RING_COLOR);
-    mesh.geometry.setDrawRange(0, 0);
-    state.node.add(mesh);
-    this.raiseRings.set(targetId, { mesh, anchoredAtMs: this.now(), ...raise });
+    this.effects.raising(targetId, raise);
   }
 
   showMend(targetId: string): void {
-    disposeSubtree(this.mendPulses.get(targetId)?.mesh);
-    this.mendPulses.delete(targetId);
-    const state = this.entityStates.get(targetId);
-    if (state === undefined) return;
-    // It starts at the selection ring's radius: the tick swells and fades it.
-    const mesh = groundRingMesh(state.radius * SELECTION_RING_RADII, MEND_PULSE_COLOR);
-    state.node.add(mesh);
-    this.mendPulses.set(targetId, { mesh, startedAtMs: this.now() });
+    this.effects.mend(targetId);
+  }
+
+  showSensed(bearings: readonly SensedBearingMessage[]): void {
+    this.sensed = bearings;
+    this.layoutSpeechBubbles(0);
   }
 
   /** A hale nightmare has a plaque only while it is the target, so the plaques of the old target and the new are rebuilt. */
@@ -1116,6 +1112,12 @@ export class WorldScene implements WorldRenderSurface {
     this.screenOccluders = rects;
   }
 
+  /** The markers toward the fallen dreamers the player senses who lie off screen, as laid out this frame. */
+  placedMarkers(): PlacedMarkers {
+    const ndc = this.ndcPerOverlayMetre();
+    return { halfSize: { x: 1 / ndc.x, y: 1 / ndc.y }, markers: this.pendingPlayerReveal ? [] : this.markers };
+  }
+
   /** The bubbles to paint over the world this frame, in the order they were placed. */
   placedBubbles(): PlacedBubbles {
     if (this.pendingPlayerReveal && this.heldBubbles !== undefined) return this.heldBubbles;
@@ -1130,6 +1132,8 @@ export class WorldScene implements WorldRenderSurface {
    * building over a door. In a room it goes just past the wall toward it, in the dark around the
    * floor. A bubble whose head or doorway is off screen, or whose spot past the wall is off screen or
    * taken, is pinned on the line from the player toward the voice, as near the screen's edge as is free.
+   * A marker toward each fallen dreamer the player senses whose spot is off screen is pinned the same
+   * way, before every bubble, so the bubbles keep clear of the markers.
    */
   private layoutSpeechBubbles(dt: number): void {
     const nowMs = this.now();
@@ -1167,13 +1171,23 @@ export class WorldScene implements WorldRenderSurface {
     // Voices with no head on screen first: where they go is fixed by where the voice is.
     const headShown = (entry: BubbleEntry) => entry.fromHead && onScreen(entry.request.anchor!.centre);
     entries.sort((first, second) => Number(headShown(first)) - Number(headShown(second)));
+    const markerSize = this.markerSize(ndc);
+    const fallen = this.sensed.flatMap((bearing) => {
+      const voice = toScreen(new THREE.Vector3(bearing.x, this.groundHeight(bearing), bearing.z));
+      return onScreen(voice) ? [] : [{ bearing, request: { size: markerSize, anchor: undefined, fixed: undefined, voice, held: undefined } }];
+    });
     const placements = layoutBubbles({
       halfSize: { x: 1 / ndc.x, y: 1 / ndc.y },
       covered: this.screenOccluders.map((rect) => ({ left: rect.left / ndc.x, bottom: rect.bottom / ndc.y, right: rect.right / ndc.x, top: rect.top / ndc.y })),
       heads: [...heads.values()],
       player: toScreen(this.focus),
-      bubbles: entries.map((entry) => entry.request),
+      bubbles: [...fallen.map((marker) => marker.request), ...entries.map((entry) => entry.request)],
     });
+    this.markers = fallen.map(({ bearing, request }, index) => {
+      const { centre } = placements[index]!;
+      return { name: bearing.name, at: { x: bearing.x, z: bearing.z }, centre, toward: Math.atan2(request.voice.y - centre.y, request.voice.x - centre.x) };
+    });
+    placements.splice(0, fallen.length);
     const glide = 1 - Math.exp(-dt / BUBBLE_GLIDE_SECONDS);
     this.placed = entries.map(({ bubble, request, fromHead, wall }, index) => {
       const { centre, mode } = placements[index]!;
@@ -1244,6 +1258,12 @@ export class WorldScene implements WorldRenderSurface {
     };
   }
 
+  /** A marker's size in metres of overlay art, from its size on the page and the canvas's height. */
+  private markerSize(ndc: { x: number; y: number }): ScreenSize {
+    const metresPerPixel = this.viewportHeight === undefined ? OVERLAY_METRES_PER_PIXEL : 2 / ndc.y / this.viewportHeight;
+    return { width: SENSED_MARKER_PIXELS.width * metresPerPixel, height: SENSED_MARKER_PIXELS.height * metresPerPixel };
+  }
+
   /** How far a metre of overlay art reaches across the screen, in normalized device coordinates. The bubbles are laid out and painted in these metres. */
   private ndcPerOverlayMetre(): { x: number; y: number } {
     return { x: (2 * this.overlayScale) / (this.camera.right - this.camera.left), y: (2 * this.overlayScale) / (this.camera.top - this.camera.bottom) };
@@ -1291,9 +1311,6 @@ export class WorldScene implements WorldRenderSurface {
     disposeSubtree(state?.node);
     this.entityStates.delete(entityId);
     this.bubbles.delete(entityId);
-    this.misses.delete(entityId);
-    this.raiseRings.delete(entityId);
-    this.mendPulses.delete(entityId);
     this.effects.forget(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
   }
@@ -1364,43 +1381,18 @@ export class WorldScene implements WorldRenderSurface {
     // line said before it was hidden must not hang on after it returns.
     this.layoutSpeechBubbles(dt);
     const nowMs = this.now();
-    for (const [id, miss] of this.misses) {
-      if (nowMs < miss.expiresAtMs) continue;
-      disposeSubtree(miss.node);
-      this.misses.delete(id);
-    }
-    for (const [id, pulse] of this.mendPulses) {
-      const progress = (nowMs - pulse.startedAtMs) / (MEND_PULSE_SECONDS * 1000);
-      if (progress >= 1) {
-        disposeSubtree(pulse.mesh);
-        this.mendPulses.delete(id);
-        continue;
-      }
-      const eased = 1 - (1 - progress) ** 2;
-      // Scaled in the ring's own plane, which widens the band a little as it swells.
-      const scale = 1 + (MEND_PULSE_RADII / SELECTION_RING_RADII - 1) * eased;
-      pulse.mesh.scale.set(scale, scale, 1);
-      (pulse.mesh.material as THREE.MeshBasicMaterial).opacity = RING_OPACITY * (1 - progress);
-    }
-
     this.pressMarkers = this.pressMarkers.filter((marker) => {
       if (this.posePressMarker(marker, nowMs)) return true;
       disposeSubtree(marker.mesh);
       return false;
     });
-
-    for (const ring of this.raiseRings.values()) {
-      const since = ring.seconds === 0 ? 0 : Math.min((nowMs - ring.anchoredAtMs) / (ring.seconds * 1000), 1);
-      const progress = ring.progress + (1 - ring.progress) * since;
-      ring.mesh.geometry.setDrawRange(0, Math.floor(progress * RING_SEGMENTS) * 6);
-    }
   }
 
   /**
    * Plays a one-shot over the looping pose, and answers the clip played. A model that carries none
    * of its clips keeps its pose, and nothing interrupts a held fall.
    */
-  private playOneShot(state: EntityRenderState, oneShot: OneShot): THREE.AnimationClip | undefined {
+  private playOneShot(state: EntityRenderState, oneShot: OneShot, landsIn?: number): THREE.AnimationClip | undefined {
     if (state.mixer === undefined || state.oneShot?.held === true) return undefined;
     const clips = this.assets.clipsFor(state.modelHolder.children[0] ?? state.modelHolder);
     const name = resolveOneShotClipName(
@@ -1413,6 +1405,7 @@ export class WorldScene implements WorldRenderSurface {
     next.setLoop(THREE.LoopOnce, 1);
     next.clampWhenFinished = true;
     this.fadeTo(state, next);
+    if (landsIn !== undefined) next.time = Math.max(0, strikeDelay(clip) - landsIn);
     state.oneShot = { action: next, held: oneShot === 'fallen' };
     return clip;
   }
@@ -1903,8 +1896,6 @@ const OVERLAY_ORIENTATION = (() => {
   const matrix = new THREE.Matrix4().lookAt(new THREE.Vector3(eye.x, eye.y, eye.z), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
   return new THREE.Quaternion().setFromRotationMatrix(matrix);
 })();
-/** Gap between an entity's head and the word over it a blow missed. */
-const MISS_HEAD_GAP = 0.2;
 /** How much of a speech bubble's opacity is left at the far end of the band, where speech crumbles away. */
 const FAINTEST_BUBBLE_OPACITY = 0.15;
 /** How long a bubble takes to glide most of the way to a new spot. */
@@ -1939,25 +1930,14 @@ const DOOR_SPILL = {
 } as const;
 /** The gap on screen, in metres, between a room's wall and a bubble past it. */
 const BEYOND_WALL_GAP = 0.3;
-/** How long the word over a missed entity stays up. */
-const MISS_SECONDS = 0.8;
 const RING_SEGMENTS = 48;
-const RING_BAND_METRES = 0.08;
-const GROUND_RING_LIFT = 0.03;
 const RING_OPACITY = 0.9;
-const RAISE_RING_COLOR = 0xffd27a;
-/** A ring's inner radius in body radii: the raise ring clears a body lying down, the selection ring sits inside it. */
-const RAISE_RING_RADII = 2;
-const SELECTION_RING_RADII = 1.4;
-/** How long a mend's ring takes to swell and fade, and the inner radius it swells to, in body radii. */
-const MEND_PULSE_SECONDS = 0.5;
-const MEND_PULSE_RADII = 3;
-/** The Moonstone's moonlight, apart from the health colours and from the raise ring. */
-const MEND_PULSE_COLOR = 0xd8e6ff;
+/** The selection ring's inner radius in body radii, inside a raise's ring. */
+const SELECTION_RING_RADII = RAISE_RING_RADII * 0.7;
 /** A friendly green, bluer than the plaque of a grazed body beside it. */
 const SELECTION_RING_COLOR = 0x8ef0b0;
 /** The locked target's reticle: a deeper gold than the raise ring, which lies further out. */
-const LOCK_RETICLE_COLOR = 0xffb21f;
+const LOCK_RETICLE_COLOR = darker(RAISE_COLOR, 0.18);
 /** The reticle's four ticks, which point in at the ring from outside it: how far out they reach past its outer edge, and how wide their base is, in metres. */
 const LOCK_TICK_LENGTH = 0.2;
 const LOCK_TICK_WIDTH = 0.14;
@@ -2077,16 +2057,22 @@ function namePlaqueQuad(name: string, background: string, bold: boolean, ink: st
   return { container, plate };
 }
 
-/** The word over an entity a blow missed, a gap above its standing head. */
-function missQuad(): THREE.Object3D {
+/** The word over an entity a blow missed, its foot at its container's origin, which the effects hang a gap above the head. */
+function missWord(): THREE.Object3D {
   const { container, plate, size } = overlayQuad(renderNamePlaque(t('miss'), NAME_PLAQUE.playerBackground, false));
   plate.position.y = size.y / 2;
   return container;
 }
 
+/** The colour with its lightness lowered by `by`, its hue and saturation kept. */
+function darker(color: number, by: number): number {
+  const hsl = new THREE.Color(color).getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace);
+  return new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l - by, THREE.SRGBColorSpace).getHex();
+}
+
 /** A flat ring just above the ground round an entity's feet. */
 function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
-  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + RING_BAND_METRES, RING_SEGMENTS, 1);
+  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + GROUND_RING_WIDTH, RING_SEGMENTS, 1);
   const material = new THREE.MeshBasicMaterial({
     color,
     side: THREE.DoubleSide,
@@ -2106,8 +2092,8 @@ function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
 /** The selection ring in gold, with a tick at each cardinal point pointing in at it, drawn with the ring's own material. */
 function lockReticleMesh(innerRadius: number): THREE.Mesh {
   const ring = groundRingMesh(innerRadius, LOCK_RETICLE_COLOR);
-  const tip = innerRadius + RING_BAND_METRES / 2;
-  const base = innerRadius + RING_BAND_METRES + LOCK_TICK_LENGTH;
+  const tip = innerRadius + GROUND_RING_WIDTH / 2;
+  const base = innerRadius + GROUND_RING_WIDTH + LOCK_TICK_LENGTH;
   const half = LOCK_TICK_WIDTH / 2;
   const positions: number[] = [];
   for (const [c, s] of [

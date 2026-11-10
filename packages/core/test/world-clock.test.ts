@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOOT_DEFAULT_WORLD_SECONDS, WORLD_TIME_RATE, calendarFromWorldSeconds, hourOfDay } from '../src/worldClock.ts';
+import { BOOT_DEFAULT_WORLD_SECONDS, WORLD_TIME_RATE, calendarFromWorldSeconds, hourOfDay, sunIsUp } from '../src/worldClock.ts';
 
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
@@ -36,5 +36,15 @@ describe('world clock', () => {
     expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 90 * MINUTE)).toBe(13.5);
     expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 12 * HOUR)).toBe(0);
     expect(hourOfDay(BOOT_DEFAULT_WORLD_SECONDS + 12 * HOUR - 1)).toBeCloseTo(24 - 1 / 3600, 9);
+  });
+
+  it.each([
+    [5.99, false],
+    [6, true],
+    [21.99, true],
+    [22, false],
+    [0, false],
+  ])('has the sun up at hour %s: %s', (hour, up) => {
+    expect(sunIsUp(hour)).toBe(up);
   });
 });

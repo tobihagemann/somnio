@@ -6,6 +6,7 @@ import edariaFighterHall from '@somnio/core/fixtures/sectors/EdariaFighterHall.s
 import edariaHealerHall from '@somnio/core/fixtures/sectors/EdariaHealerHall.somnio-sector?raw';
 import edariaInn from '@somnio/core/fixtures/sectors/EdariaInn.somnio-sector?raw';
 import edariaLibrary from '@somnio/core/fixtures/sectors/EdariaLibrary.somnio-sector?raw';
+import edariaMysticTower from '@somnio/core/fixtures/sectors/EdariaMysticTower.somnio-sector?raw';
 import edariaShop from '@somnio/core/fixtures/sectors/EdariaShop.somnio-sector?raw';
 import edariaSquare from '@somnio/core/fixtures/sectors/EdariaSquare.somnio-sector?raw';
 import northMeadow from '@somnio/core/fixtures/sectors/NorthMeadow.somnio-sector?raw';
@@ -21,6 +22,7 @@ const SECTOR_FILES: Record<string, string> = {
   EdariaHealerHall: edariaHealerHall,
   EdariaInn: edariaInn,
   EdariaLibrary: edariaLibrary,
+  EdariaMysticTower: edariaMysticTower,
   EdariaShop: edariaShop,
   EdariaSquare: edariaSquare,
   NorthMeadow: northMeadow,

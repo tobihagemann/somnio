@@ -15,12 +15,11 @@ import type {
   UseDoorMessage,
   UseItemMessage,
 } from '@somnio/protocol';
-import { COMBAT, SOMNIO_CONSTANTS, doorContains } from '@somnio/core';
+import { COMBAT, SOMNIO_CONSTANTS, doorContains, doorOpenAt } from '@somnio/core';
 import type { Character } from '@somnio/core';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import { counterpartOf, doorIn } from '../sectors/sectorCache.ts';
-import type { PlayerCheckpoint } from '../world/spaceActor.ts';
 
 /** Where the player stands after a transfer; it must replace the source space on the connection. */
 export interface TransferOutcome {
@@ -92,23 +91,25 @@ export function handleSell(message: SellMessage, entityId: string, spaceId: stri
 }
 
 /**
- * Moves a player from one space to where `moved` stands, with `enterSpace` first in what they are
- * sent. The source slot is released before the attach, so a failed attach puts the player back
- * where they came from. The effects and cooldowns the source hands back go with the player either
- * way. The restoring `enterSpace` is what releases a client waiting on the transfer. If even the
- * restore fails, the loss is reported so the actor closes.
+ * Moves a player from one space to where `arrive` places them, with `enterSpace` first in what they
+ * are sent. The source hands the player over before the attach, so any heal tick due as they leave
+ * arrives with them, and a failed attach puts them back where they came from. The effects and
+ * cooldowns the source hands back go with the player either way. The restoring `enterSpace` is
+ * what releases a client waiting on the transfer. If even the restore fails, the loss is reported
+ * so the actor closes.
  */
 function transferPlayer(
-  checkpoint: PlayerCheckpoint,
-  moved: Character,
+  entityId: string,
   spaceId: string,
+  arrive: (character: Character) => Character,
   connection: ConnectionActor,
   dependencies: ConnectionDependencies,
 ): TransferOutcome | typeof TRANSFER_LOST {
   const logger = dependencies.logger;
   const oldSpace = dependencies.worldRouter.space(spaceId)!;
   const worldSeconds = dependencies.worldClock.currentWorldSeconds();
-  const transient = oldSpace.detach(checkpoint.character.id, false);
+  const { checkpoint, transient } = oldSpace.handOver(entityId, false)!;
+  const moved = arrive(checkpoint.character);
   try {
     dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale, transient);
     return { spaceId: moved.space };
@@ -126,9 +127,9 @@ function transferPlayer(
 
 /**
  * The door transfer. `undefined` leaves the player where they are. It comes with a `doorRefused`
- * when the player's space has no such door, the player stands outside its trigger, or the player
- * lies fallen, and silently when the source space or the player's slot is gone. `TRANSFER_LOST`
- * means the player is attached nowhere.
+ * when the player's space has no such door, the player stands outside its trigger or lies fallen,
+ * or the door opens only at night and the sun is up. It comes silently when the source space or the
+ * player's slot is gone. `TRANSFER_LOST` means the player is attached nowhere.
  * The player arrives in front of the counterpart door, facing away from it, whoever already
  * stands there: an overlapping pair can always separate.
  */
@@ -141,16 +142,21 @@ export function handleUseDoor(
 ): TransferOutcome | typeof TRANSFER_LOST | undefined {
   const world = dependencies.worldRouter.world;
   const oldSpace = dependencies.worldRouter.space(spaceId);
-  const checkpoint = oldSpace?.snapshotForPlayer(entityId);
-  if (oldSpace === undefined || checkpoint === undefined) return undefined;
+  const position = oldSpace?.snapshotForPlayer(entityId)?.character.position;
+  if (oldSpace === undefined || position === undefined) return undefined;
   const source = doorIn(world, spaceId, message.sector, message.doorId);
-  if (source === undefined || oldSpace.isFallen(entityId) || !doorContains(source.resolved, checkpoint.character.position, SOMNIO_CONSTANTS.doorUseSlack)) {
+  if (
+    source === undefined ||
+    oldSpace.isFallen(entityId) ||
+    !doorContains(source.resolved, position, SOMNIO_CONSTANTS.doorUseSlack) ||
+    !doorOpenAt(source.door, dependencies.worldClock.currentWorldSeconds())
+  ) {
     connection.outbox.sendEncoded({ tag: 'doorRefused', payload: { sector: message.sector, doorId: message.doorId } }, dependencies.logger);
     return undefined;
   }
   const { spaceId: newSpaceId, resolved: arrival } = counterpartOf(world, source.door);
-  const moved = { ...checkpoint.character, space: newSpaceId, position: arrival.arrival, facing: arrival.facing };
-  return transferPlayer(checkpoint, moved, spaceId, connection, dependencies);
+  const arrive = (character: Character): Character => ({ ...character, space: newSpaceId, position: arrival.arrival, facing: arrival.facing });
+  return transferPlayer(entityId, spaceId, arrive, connection, dependencies);
 }
 
 /**
@@ -167,14 +173,14 @@ export function handleWake(
   const world = dependencies.worldRouter.world;
   const oldSpace = dependencies.worldRouter.space(spaceId);
   if (oldSpace === undefined || !oldSpace.isFallen(entityId)) return undefined;
-  const checkpoint = oldSpace.snapshotForPlayer(entityId)!;
-  const character = checkpoint.character;
   const weakened = (max: number): number => Math.ceil(max * COMBAT.weakenedFraction);
-  const energy = character.energy;
-  const moved = {
-    ...character,
-    ...world.wakeSpawn,
-    energy: { ...energy, healthCurrent: weakened(energy.healthMax), balanceCurrent: weakened(energy.balanceMax), spiritCurrent: weakened(energy.spiritMax) },
+  const wake = (character: Character): Character => {
+    const energy = character.energy;
+    return {
+      ...character,
+      ...world.wakeSpawn,
+      energy: { ...energy, healthCurrent: weakened(energy.healthMax), balanceCurrent: weakened(energy.balanceMax), spiritCurrent: weakened(energy.spiritMax) },
+    };
   };
-  return transferPlayer(checkpoint, moved, spaceId, connection, dependencies);
+  return transferPlayer(entityId, spaceId, wake, connection, dependencies);
 }

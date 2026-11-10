@@ -95,13 +95,16 @@ function expectPathsWalkable(sectors: readonly Sector[], prefix: string, first: 
 }
 
 describe('composing the lands', () => {
-  it('writes the same bytes composing the committed world, and composing that again', () => {
+  /** Composing the whole world twice takes seconds, and longer on a loaded machine. */
+  const TWO_WORLDS = { timeout: 30_000 };
+
+  it('writes the same bytes composing the committed world, and composing that again', TWO_WORLDS, () => {
     const once = compose(loadSectorFixtures());
     expect(files(compose(once))).toEqual(files(once));
     expect(files(once)).toEqual(files(loadSectorFixtures()));
   });
 
-  it('dresses a land differently from another seed', () => {
+  it('dresses a land differently from another seed', TWO_WORLDS, () => {
     const generated = (sectors: Sector[]): string[] =>
       sectors
         .find((sector) => sector.name === 'NorthWood')!
@@ -173,14 +176,14 @@ describe('composing the lands', () => {
   });
 
   it('routes every door path round what blocks, from its doorway to the edge of the nearest street', () => {
-    expectPathsWalkable(compose(loadSectorFixtures()), 'gen-path-', 1, 6);
+    expectPathsWalkable(compose(loadSectorFixtures()), 'gen-path-', 1, 7);
   });
 
   it('routes a door path round an NPC standing on its way', () => {
     const sectors = loadSectorFixtures();
     const square = sectors.find((sector) => sector.name === 'EdariaSquare')!;
     square.npcs.push({ id: 'loiterer', name: 'Loiterer', characterModelId: 'fighter-master', x: 15.2, z: 8.8, facing: 0, dialogScript: '' });
-    expectPathsWalkable(compose(sectors), 'gen-path-', 1, 6);
+    expectPathsWalkable(compose(sectors), 'gen-path-', 1, 7);
   });
 
   it('routes each unused compound opening from the street into its yard', () => {
@@ -189,9 +192,15 @@ describe('composing the lands', () => {
     const painted = routes(composed);
     const byId = (id: string): KeepOut | undefined => painted.find((route) => route.id === id);
     for (const opening of OPENINGS) expect(byId(opening.id), opening.id).toBeDefined();
-    const start = byId('gen-opening-nw-south')!.points[0]!;
-    const doorPaths = ['gen-path-to-edariainn', 'gen-path-to-edariahealerhall'].map((id) => byId(id)!);
-    expect(Math.min(...doorPaths.map((path) => nearestOnLine(path.points, start)))).toBeLessThanOrEqual(DOOR_PATH.radius + 0.01);
+    const joins = {
+      'gen-opening-nw-south': ['gen-path-to-edariainn', 'gen-path-to-edariahealerhall'],
+      'gen-opening-sw-north': ['gen-path-to-edariamystictower'],
+    };
+    for (const [opening, paths] of Object.entries(joins)) {
+      const start = byId(opening)!.points[0]!;
+      const doorPaths = paths.map((id) => byId(id)!);
+      expect(Math.min(...doorPaths.map((path) => nearestOnLine(path.points, start))), opening).toBeLessThanOrEqual(DOOR_PATH.radius + 0.01);
+    }
   });
 
   it("joins a compound's two doors whose paths do not meet, from one's arrival point to the edge of the other's path", () => {

@@ -100,13 +100,14 @@ describe('the committed registry parses', () => {
     expect(objectModel(registry, 'stone-wall-corner')?.colliders).toHaveLength(2);
   });
 
-  it('gives a door anchor to the five buildings with an interior and to the two room thresholds', () => {
+  it('gives a door anchor to the six buildings with an interior and to the two room thresholds', () => {
     const anchored = registry.objectModels.filter((rule) => rule.doors.length > 0).map((rule) => rule.id);
     expect(anchored.sort()).toEqual([
       'building-barracks',
       'building-chapel',
       'building-house',
       'building-tavern',
+      'building-tower',
       'building-townhall',
       'stone-room-threshold',
       'timber-room-threshold',

@@ -25,22 +25,36 @@ import { attachPlayer, makeNPC } from './support/sectorFactory.ts';
 
 const PUGNAX = 'npc:TestSector/pugnax';
 const SANA = 'npc:TestSector/sana';
+const TACITA = 'npc:TestSector/tacita';
 const LIBUS = 'npc:TestSector/libus';
 const AT_PUGNAX: Point = { x: 4, z: 5 };
 const AT_SANA: Point = { x: 16, z: 5 };
+const AT_TACITA: Point = { x: 5, z: 16 };
 
-/** Both masters and an NPC with nothing to offer, round a Ghost; the North Wood lies east. */
+/**
+ * The three masters and an NPC with nothing to offer, round a Ghost. The North Wood lies east, the
+ * West Meadow west, the Autumn Wood south, and the North Meadow north, each holding a place of the
+ * Mystic's trial where the trial puts it.
+ */
 const TOWN: Partial<Sector> = {
   spawn: { x: 10, z: 18, facing: 0 },
   npcs: [
     { ...makeNPC('pugnax', { x: 4, z: 4 }, ''), service: 'fighterMaster' },
     { ...makeNPC('sana', { x: 16, z: 4 }, ''), service: 'healerMaster' },
+    { ...makeNPC('tacita', { x: 4, z: 16 }, ''), service: 'mysticMaster' },
     makeNPC('libus', { x: 16, z: 17 }, ''),
   ],
 };
 
 function town() {
-  return arena(TOWN, { sectors: [outdoorSector('NorthWood', { x: 20, z: 0 })] });
+  return arena(TOWN, {
+    sectors: [
+      outdoorSector('NorthWood', { x: 20, z: 0 }),
+      outdoorSector('WestMeadow', { x: -30.72, z: 0 }, { size: { width: 30.72, depth: 30.72 } }),
+      outdoorSector('AutumnWood', { x: 0, z: 20 }),
+      outdoorSector('NorthMeadow', { x: 0, z: -20 }),
+    ],
+  });
 }
 
 type Town = ReturnType<typeof town>;
@@ -129,6 +143,36 @@ describe('a trial', () => {
     // The Moonstone follows the role in what the dreamer is sent.
     const order = messages.flatMap((message) => (message.tag === 'inventory' || message.tag === 'lucidity' ? [message.tag] : []));
     expect(order.slice(-2)).toEqual(['lucidity', 'inventory']);
+  });
+
+  it('makes a Mystic of a dreamer who stands in each of the three hidden places, in any order, and returns', async () => {
+    const world = town();
+    const alice = attachPlayer(world.space, AT_TACITA, 'alice', { inventory: [PURSE] });
+    world.space.handleAskTask(TACITA, undefined, alice.entityId);
+    const progress = () => lucidityOf(world.space, alice.entityId).task?.progress;
+    // The North Meadow's place, then the West Meadow's, each found once.
+    walk(world, alice.entityId, { x: 6.88, z: -3.28 });
+    expect(progress()).toBe(0b100);
+    walk(world, alice.entityId, { x: -24, z: 21.8 });
+    expect(progress()).toBe(0b100);
+    walk(world, alice.entityId, { x: -24, z: 22 });
+    expect(progress()).toBe(0b101);
+    walk(world, alice.entityId, { x: 5, z: 18 });
+    walk(world, alice.entityId, AT_TACITA);
+    world.space.handleCompleteTask(TACITA, alice.entityId);
+    expect(lucidityOf(world.space, alice.entityId).role).toBeUndefined();
+    walk(world, alice.entityId, { x: 9.04, z: 28 });
+    expect(progress()).toBe(0b111);
+    walk(world, alice.entityId, AT_TACITA);
+    world.space.handleCompleteTask(TACITA, alice.entityId);
+    expect(lucidityOf(world.space, alice.entityId)).toEqual({
+      role: 'mystic',
+      ranks: [{ teachingId: 'ward', rank: 1, practice: 0 }],
+      study: 'ward',
+      task: undefined,
+    });
+    // A Mystic is given nothing to carry.
+    expect(payloads(await collectMessages(alice.outbox), 'inventory')).toEqual([{ rows: [{ slot: 0, itemId: 'purse', quantity: 100 }] }]);
   });
 
   it("keeps a dreamer holding the Healer's trial from swinging, until it is completed or given up", () => {
@@ -284,7 +328,7 @@ describe('a gate', () => {
     const novice = attachPlayer(world.space, AT_SANA, 'novice', { character: { lucidity: lucidity('healer', { touch: 1 }) }, inventory: [MOONSTONE_IN_HAND] });
     world.space.handleAskTask(SANA, 'drawing-back', novice.entityId);
     expect(lucidityOf(world.space, novice.entityId).task).toBeUndefined();
-    world.space.detach(novice.entityId, true);
+    world.space.handOver(novice.entityId, true);
 
     const hurt = { energy: energy({ healthCurrent: 20 }), lucidity: lucidity('healer', { touch: 2, depth: 4 }) };
     const healer = attachPlayer(world.space, AT_SANA, 'healer', { character: hurt, inventory: [MOONSTONE_IN_HAND] });

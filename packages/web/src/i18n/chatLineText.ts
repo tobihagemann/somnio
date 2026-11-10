@@ -1,7 +1,8 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
 import type { CompassPoint } from '@/client/compass';
-import { itemLabelKey, roleLabelKey, teaching } from '@somnio/core';
+import { abilityTeaching, itemLabelKey, roleLabelKey, teaching } from '@somnio/core';
+import type { AbilityId } from '@somnio/core';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 
@@ -57,6 +58,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('You are now a %@.', lookup(roleLabelKey(line.role)));
     case 'rankGained':
       return lookup('Your %1$@ deepens: rank %2$@.', lookup(teaching(line.teachingId).labelKey), String(line.rank));
+    case 'placeFound':
+      return lookup('You found a hidden place, %1$@ of %2$@.', String(line.found), String(line.total));
     case 'taskDone':
       return lookup('Your task is done. Return to your master.');
     case 'fell':
@@ -75,6 +78,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('You lose hold of %@.', line.targetName);
     case 'wokeWeakened':
       return lookup('You let go and wake, weakened.');
+    case 'doorOpensAtNight':
+      return lookup('This door opens only at night.');
     case 'credentialSaveFailed':
       return lookup('Your password could not be saved.');
     case 'loggedOutOtherBrowsers':
@@ -128,8 +133,13 @@ export function itemName(itemId: string, lookup: Lookup): string {
   return key === undefined ? itemId : lookup(key);
 }
 
+/** An ability's display name in the lookup's locale: the name of the teaching that teaches it. */
+export function abilityName(abilityId: AbilityId, lookup: Lookup): string {
+  return lookup(teaching(abilityTeaching(abilityId)).labelKey);
+}
+
 /** One literal lookup per direction, so the catalog test sees each one rendered. */
-function compassName(direction: CompassPoint, lookup: Lookup): string {
+export function compassName(direction: CompassPoint, lookup: Lookup): string {
   switch (direction) {
     case 'north':
       return lookup('north');

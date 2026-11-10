@@ -2,6 +2,7 @@ import type { Blocker } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { buildSpaceCollision, canStand, collisionNear, isClear, npcBodies, resolveMove } from '../src/collision.ts';
 import type { Body, SpaceCollision } from '../src/collision.ts';
+import { reaches } from '../src/combat.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { distance } from '../src/geometry.ts';
 import type { Point, Rect } from '../src/geometry.ts';
@@ -196,7 +197,7 @@ class FloodFill {
   }
 
   /** Whether the cell is one a raster holds, its centre in a sector's rect, and a body is clear there. */
-  private clearCell(column: number, row: number): boolean {
+  clearCell(column: number, row: number): boolean {
     const key = `${column},${row}`;
     let clear = this.clearCells.get(key);
     if (clear === undefined) {
@@ -249,6 +250,42 @@ function cellCentre(column: number, row: number): Point {
   return { x: (column + 0.5) * CELL, z: (row + 0.5) * CELL };
 }
 
+/**
+ * The nearest point to the goal outside the margin round every body, as a search moves it there:
+ * of the points on each margin's edge nearest the goal and the points where two edges cross, the
+ * nearest outside them all, or the goal itself where it lies outside them or none does.
+ */
+function expectedGoal(to: Point, bodies: readonly Body[]): Point {
+  const edge = (body: Body): number => RADIUS + PATHFINDING.bodyMargin + body.radius;
+  const outside = (point: Point): boolean => bodies.every((body) => distance(point, body) >= edge(body));
+  if (outside(to)) return to;
+  const onEdge = (body: Body, angle: number): Point => ({ x: body.x + Math.cos(angle) * edge(body), z: body.z + Math.sin(angle) * edge(body) });
+  const candidates = bodies.flatMap((body, index) => {
+    const bearing = Math.atan2(to.z - body.z, to.x - body.x);
+    const crossings = bodies.slice(index + 1).flatMap((other) => {
+      const apart = distance(body, other);
+      if (apart >= edge(body) + edge(other) || apart <= Math.abs(edge(body) - edge(other))) return [];
+      // The law of cosines gives the angle at the body between the other's centre and either crossing.
+      const spread = Math.acos((apart ** 2 + edge(body) ** 2 - edge(other) ** 2) / (2 * apart * edge(body)));
+      const toOther = Math.atan2(other.z - body.z, other.x - body.x);
+      return [onEdge(body, toOther - spread), onEdge(body, toOther + spread)];
+    });
+    return [...(distance(to, body) > 0 ? [onEdge(body, bearing)] : []), ...crossings];
+  });
+  const outsideAll = candidates.filter((candidate) => bodies.every((body) => distance(candidate, body) >= edge(body) - 1e-9));
+  return (
+    outsideAll.reduce<Point | undefined>(
+      (best, candidate) => (best === undefined || distance(candidate, to) < distance(best, to) ? candidate : best),
+      undefined,
+    ) ?? to
+  );
+}
+
+function expectNear(actual: Point, expected: Point): void {
+  expect(actual.x).toBeCloseTo(expected.x, 6);
+  expect(actual.z).toBeCloseTo(expected.z, 6);
+}
+
 function inHalfOpen(rect: Rect, point: Point): boolean {
   return point.x >= rect.x && point.x < rect.x + rect.width && point.z >= rect.z && point.z < rect.z + rect.depth;
 }
@@ -279,21 +316,26 @@ describe('the search against a flood fill over the same edge rule', () => {
         expect(path.capped).toBe(false);
         expect(path.retries).toBe(0);
 
-        const reachable = flood.reachable(from, to);
-        const goalCell = `${Math.floor(to.x / CELL)},${Math.floor(to.z / CELL)}`;
+        const goal = expectedGoal(to, space.npcs);
+        const reachable = flood.reachable(from, goal);
+        const column = Math.floor(goal.x / CELL);
+        const row = Math.floor(goal.z / CELL);
         const end = path.waypoints.at(-1) ?? from;
-        const goalCentre = reachable.get(goalCell);
+        const goalCentre = reachable.get(`${column},${row}`);
+        const outside = space.npcs.every((npc) => distance(goal, npc) >= RADIUS + PATHFINDING.bodyMargin + npc.radius - 1e-6);
         if (goalCentre !== undefined) {
           reached += 1;
           expect(path.reached).toBe(true);
-          const standable =
-            space.npcs.every((npc) => distance(to, npc) >= RADIUS + PATHFINDING.bodyMargin + npc.radius) &&
-            legWalkable(space.collision, goalCentre, to, space.npcs);
-          expect(end).toEqual(standable ? to : goalCentre);
+          const standable = outside && legWalkable(space.collision, goalCentre, goal, space.npcs);
+          expectNear(end, standable ? goal : goalCentre);
+        } else if (path.reached) {
+          // The goal's cell is out of reach, but a leg from the cell the search ended at reaches the goal.
+          expect(outside && flood.clearCell(column, row)).toBe(true);
+          expectNear(end, goal);
         } else {
-          expect(path.reached).toBe(false);
-          const nearest = Math.min(distance(from, to), ...[...reachable.values()].map((centre) => distance(centre, to)));
-          expect(distance(end, to)).toBeCloseTo(nearest, 9);
+          const nearest = Math.min(distance(from, goal), ...[...reachable.values()].map((centre) => distance(centre, goal)));
+          expect(distance(end, goal)).toBeCloseTo(nearest, 9);
+          expect(outside && flood.clearCell(column, row) && legWalkable(space.collision, end, goal, space.npcs)).toBe(false);
         }
       }
       expect(reached).toBeGreaterThan(0);
@@ -416,6 +458,36 @@ describe('the edge rule', () => {
     expect(distance(walk(space, from, path, bodies), to)).toBeLessThan(1e-9);
   });
 
+  it('ends a tap inside the margins of a fallen dreamer and a Healer beside them outside both, within touch of the fallen', () => {
+    const space = field();
+    const fallen = { x: 10, z: 10, radius: RADIUS };
+    const healer = { x: 10.697, z: 9.434, radius: RADIUS };
+    const bodies = [fallen, healer];
+    const from = { x: 8, z: 12 };
+    const tap = { x: 10.04, z: 9.901 };
+
+    const path = search(space, from, tap, bodies);
+
+    expect(path.reached).toBe(true);
+    const end = walk(space, from, path, bodies);
+    expectNear(end, expectedGoal(tap, bodies));
+    for (const body of bodies) expect(distance(end, body)).toBeGreaterThanOrEqual(RADIUS + PATHFINDING.bodyMargin + body.radius);
+    expect(reaches(end, fallen)).toBe(true);
+  });
+
+  /** The goal is moved up out of the notch between the two, which no cell within reach of it can leg into, only a leg from the south can. */
+  it('ends a tap between two bodies by a leg from the start, which no cell near it reaches', () => {
+    const space = field();
+    const bodies = [9.3505, 10.6495].map((x) => ({ x, z: 10, radius: 0.3 }));
+    const from = { x: 10, z: 12 };
+    const tap = { x: 10, z: 10.01 };
+
+    const path = search(space, from, tap, bodies);
+
+    expect(path.reached).toBe(true);
+    expectNear(walk(space, from, path, bodies), expectedGoal(tap, bodies));
+  });
+
   it('plans round a body standing on the line and still arrives', () => {
     const space = field();
     const from = { x: 5, z: 10 };
@@ -433,6 +505,21 @@ describe('the edge rule', () => {
       }
     }
     expect(distance(walk(space, from, path, [body]), to)).toBeLessThan(1e-9);
+  });
+
+  it('finds no path from a sector whose raster has not arrived, even to a goal one leg away in a sector whose raster has', () => {
+    const west = outdoorSector('West', { x: 0, z: 0 });
+    const east = outdoorSector('East', { x: 20, z: 0 });
+    const collision = buildSpaceCollision({ id: 'outdoors', sectors: [west, east] }, TEST_REGISTRY);
+    const grid = { collision, rasters: [rasterizeWalkable(walkRasterInputs(collision, east))] };
+    // Every cell round the start lies in the sector with no raster.
+    const from = { x: 19.6, z: 10 };
+    const to = { x: 20.6, z: 10 };
+    expect(legWalkable(collision, from, to, [])).toBe(true);
+
+    const path = findPath(grid, from, to, [], new Set());
+
+    expect(path).toMatchObject({ reached: false, waypoints: [] });
   });
 
   it('leaves out an edge a leg could not take where the rasters are older than the collision, and keeps it out across re-plans', () => {

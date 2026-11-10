@@ -1,0 +1,269 @@
+{
+  "brightness": 70,
+  "doors": [
+    {
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-edariamystictower",
+        "sector": "EdariaSquare"
+      }
+    }
+  ],
+  "ground": {
+    "backgroundMaterialId": "stone-arena"
+  },
+  "kind": "interior",
+  "npcs": [
+    {
+      "characterModelId": "libus",
+      "dialogScript": "Hush, $name. The dream speaks clearest at night.---Whoever would learn from me first finds three places the dream keeps to itself.---Where the sun sets, the West Meadow keeps a ring of open grass, far out and south of the road.---Where it rises, the Autumn Wood hides a glade just past the gate, north of the road.---Toward the north, the North Meadow lies open west of the road. Stand in all three, then come back to me.",
+      "facing": 0,
+      "id": "tacita",
+      "name": "Tacita",
+      "service": "mysticMaster",
+      "x": 3.55,
+      "z": 1.45
+    }
+  ],
+  "placements": [
+    {
+      "id": "grand-bookcase-1",
+      "modelId": "grand-bookcase",
+      "x": 1.28,
+      "z": 0.175
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 3.2,
+      "z": 0.133
+    },
+    {
+      "id": "desk-1",
+      "modelId": "desk",
+      "x": 4.48,
+      "z": 0.482
+    },
+    {
+      "elevation": 0.432,
+      "id": "open-book-1",
+      "modelId": "open-book",
+      "x": 4.35,
+      "z": 0.5
+    },
+    {
+      "elevation": 0.432,
+      "id": "candle-1",
+      "modelId": "candle",
+      "x": 4.78,
+      "z": 0.3
+    },
+    {
+      "id": "bookshelf-1",
+      "modelId": "bookshelf",
+      "x": 0.175,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "chest-1",
+      "modelId": "chest",
+      "x": 0.31,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-2",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "id": "oval-rug-1",
+      "modelId": "oval-rug",
+      "x": 2,
+      "z": 2.9
+    },
+    {
+      "id": "round-table-1",
+      "modelId": "round-table",
+      "x": 2,
+      "z": 2.9
+    },
+    {
+      "elevation": 0.432,
+      "id": "lantern-1",
+      "modelId": "lantern",
+      "x": 2,
+      "z": 2.9
+    },
+    {
+      "id": "stool-1",
+      "modelId": "stool",
+      "x": 2,
+      "z": 2.25
+    },
+    {
+      "id": "stool-2",
+      "modelId": "stool",
+      "x": 2,
+      "z": 3.55
+    },
+    {
+      "id": "bench-1",
+      "modelId": "bench",
+      "x": 4.93,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "door-1",
+      "modelId": "stone-room-threshold",
+      "x": 2.56,
+      "z": 5.336
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 2.56,
+      "z": 4.37
+    },
+    {
+      "id": "wall-north-1",
+      "modelId": "stone-room-wall",
+      "x": 0.64,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-1",
+      "modelId": "stone-room-wall-low",
+      "x": 0.64,
+      "z": 5.336
+    },
+    {
+      "id": "wall-north-2",
+      "modelId": "stone-room-wall",
+      "x": 1.92,
+      "z": -0.216
+    },
+    {
+      "id": "wall-north-3",
+      "modelId": "stone-room-wall",
+      "x": 3.2,
+      "z": -0.216
+    },
+    {
+      "id": "wall-north-4",
+      "modelId": "stone-room-window-wall",
+      "x": 4.48,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-4",
+      "modelId": "stone-room-wall-low",
+      "x": 4.48,
+      "z": 5.336
+    },
+    {
+      "id": "wall-west-1",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-east-1",
+      "modelId": "stone-room-wall-low",
+      "x": 5.336,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-west-2",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-east-2",
+      "modelId": "stone-room-wall-low",
+      "x": 5.336,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-west-3",
+      "modelId": "stone-room-window-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-east-3",
+      "modelId": "stone-room-wall-low",
+      "x": 5.336,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-west-4",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "id": "wall-east-4",
+      "modelId": "stone-room-wall-low",
+      "x": 5.336,
+      "yaw": 90,
+      "z": 4.48
+    },
+    {
+      "id": "post-north-west",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": -0.324
+    },
+    {
+      "id": "post-north-east",
+      "modelId": "stone-room-pillar",
+      "x": 5.444,
+      "z": -0.324
+    },
+    {
+      "id": "post-south-west",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": 5.444
+    },
+    {
+      "id": "post-south-east",
+      "modelId": "stone-room-pillar-low",
+      "x": 5.444,
+      "z": 5.444
+    },
+    {
+      "id": "post-door-1",
+      "modelId": "stone-room-pillar-low",
+      "x": 1.28,
+      "z": 5.444
+    },
+    {
+      "id": "post-door-2",
+      "modelId": "stone-room-pillar-low",
+      "x": 3.84,
+      "z": 5.444
+    }
+  ],
+  "size": {
+    "depth": 5.12,
+    "width": 5.12
+  }
+}

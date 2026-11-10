@@ -35,7 +35,7 @@ describe('loadSectorCache', () => {
 
   it('returns one entry per loaded sector', () => {
     const sectors = loadSectorCache(DEV_SECTORS_DIRECTORY);
-    expect(sectors.size).toBe(12);
+    expect(sectors.size).toBe(13);
     expect(sectors.get('EdariaArena')?.monsterSpawns.length).toBe(1);
   });
 
@@ -111,6 +111,7 @@ describe('loadWorld', () => {
       'EdariaHealerHall',
       'EdariaInn',
       'EdariaLibrary',
+      'EdariaMysticTower',
       'EdariaShop',
     ]);
     expect(world.starterSpawn).toMatchObject({ space: STARTER_SECTOR });
@@ -121,8 +122,17 @@ describe('loadWorld', () => {
     expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn')))).toEqual([
       'sector EdariaInn has no spawn to wake at',
       'the healer trial names sector NorthWood, which is not loaded',
+      'the mystic trial names sector WestMeadow, which is not loaded',
+      'the mystic trial names sector AutumnWood, which is not loaded',
+      'the mystic trial names sector NorthMeadow, which is not loaded',
     ]);
-    expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } }), makeSector('NorthWood')))).toEqual([]);
+    const land = { size: { width: 30.72, depth: 30.72 } };
+    const inn = interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } });
+    const lands = ['NorthWood', 'WestMeadow', 'AutumnWood', 'NorthMeadow'].map((name) => makeSector(name, land));
+    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands))).toEqual([]);
+    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, makeSector('WestMeadow')))).toEqual([
+      'the mystic trial names a place at (6.72, 24.88) outside sector WestMeadow',
+    ]);
   });
 
   it('carries the starter spawn in the coordinates of its space', () => {

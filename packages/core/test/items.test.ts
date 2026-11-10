@@ -8,13 +8,17 @@ import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
   'Balance recovery',
+  'Bind',
   'Brace',
+  'Calm',
   'Challenge',
   'Cleave',
   'Cudgel',
   'Dagger',
+  'Deep mend',
   'Depth',
   'Drawing back',
+  'Dream-bolt',
   'Fighter',
   'Follow-through',
   'Ghost',
@@ -24,9 +28,13 @@ const CORE_KEYS = [
   'Lunge',
   'Mace',
   'Moonstone',
+  'Mystic',
   'North Wood',
   'Purse',
+  'Radiance',
   'Rally',
+  'Renewal',
+  'Sense the fallen',
   'Short sword',
   'Sopors',
   'Spirit deepening',
@@ -34,7 +42,10 @@ const CORE_KEYS = [
   'Touch',
   'Toughening',
   'Umbrae',
+  'Veil',
   'Vigils',
+  'Ward',
+  'Weaken',
 ];
 
 describe('items', () => {
@@ -97,7 +108,8 @@ describe('core catalog', () => {
       ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
       ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
     ];
-    expect(labels.sort()).toEqual(CORE_KEYS);
+    // Each role's Spirit deepening is its own teaching under one label.
+    expect([...new Set(labels)].sort()).toEqual(CORE_KEYS);
   });
 });
 

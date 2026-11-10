@@ -188,7 +188,7 @@ describe('character repository', () => {
   });
 
   it.each([
-    ['a role', sql`UPDATE characters SET task_role = 'mystic' WHERE name = 'Odd'`],
+    ['a role', sql`UPDATE characters SET task_role = 'necromancer' WHERE name = 'Odd'`],
     ['a studied teaching', sql`UPDATE characters SET study = 'fireball' WHERE name = 'Odd'`],
     [
       "a rank's teaching",

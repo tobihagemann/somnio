@@ -34,6 +34,7 @@ export interface ClientDoor {
   sector: string;
   doorId: string;
   resolved: ResolvedDoor;
+  nightOnly: boolean;
 }
 
 /**
@@ -78,7 +79,7 @@ export class ClientWorld {
     this.doors = this.sectors.flatMap((held) =>
       held.doors.flatMap((door) => {
         const resolved = resolveDoor(held, door, this.registry);
-        return resolved === undefined ? [] : [{ sector: held.name, doorId: door.id, resolved }];
+        return resolved === undefined ? [] : [{ sector: held.name, doorId: door.id, resolved, nightOnly: door.nightOnly === true }];
       }),
     );
     // A sector edge with no held neighbour blocks, so the sectors touching this one walk differently now too.

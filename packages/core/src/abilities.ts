@@ -3,7 +3,7 @@ import type { Body } from './collision.ts';
 import { COMBAT, handAllows } from './combat.ts';
 import type { EngageTarget, HandNeed } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
-import { scaled } from './effects.ts';
+import { scaled, scaledOr } from './effects.ts';
 import type { EffectId, Scaled } from './effects.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
@@ -33,12 +33,18 @@ export type AbilityAim = 'enemy' | 'ally' | 'self' | 'area';
 export type AbilityDeed =
   /** A swing at every nightmare a swing meets, for a share of the swing's damage. */
   | { kind: 'strike'; damageShare: Scaled }
+  /** Harm sent at the recipient, a nightmare, as a bolt: it lands as the bolt arrives (`boltFlightSeconds`). */
+  | { kind: 'harm'; damage: Scaled }
   /** A timed effect, holding for its seconds at the ability's rank. */
   | { kind: 'effect'; effectId: EffectId }
   /** A leap to the recipient, as far as the ability's range, which the caster's client moves them through. */
   | { kind: 'leap'; metresPerSecond: number }
   /** Some of a pool given back at once. */
-  | { kind: 'restore'; pool: AbilityPool; amount: Scaled };
+  | { kind: 'restore'; pool: AbilityPool; amount: Scaled }
+  /** Health given back at once to each standing dreamer it lands on, up to their maximum. Only the raise stands a fallen one up. */
+  | { kind: 'heal'; amount: Scaled }
+  /** The caster's threat on every nightmare's table cut to `threatKept` of itself at once, and a timed effect on the caster after. */
+  | { kind: 'calm'; threatKept: number; effectId: EffectId };
 
 export interface Ability {
   pool: AbilityPool;
@@ -51,7 +57,12 @@ export interface Ability {
   among?: EngageTarget;
   /** What the caster holds in hand to use it, by the rule slot 1 holds to; left out when the hand does not matter. */
   hand?: HandNeed;
-  /** How long it names to channel before it lands. The server lands every ability the moment it is used. */
+  /**
+   * How long the caster channels it before it lands, by its rank; left out for an ability that lands
+   * the moment it is used. A channel breaks when the caster moves, goes through a door, or falls, or
+   * the recipient falls, leaves, or is out of the caster's view as it would land, and then it lands
+   * nothing.
+   */
   channelSeconds?: Scaled;
   does: AbilityDeed;
 }
@@ -99,8 +110,76 @@ export const ABILITIES = {
     hand: 'mainHand',
     does: { kind: 'restore', pool: 'balance', amount: { atRank1: 20, perRank: 5 } },
   },
+  'deep-mend': {
+    pool: 'spirit',
+    cost: 18,
+    cooldownSeconds: 6,
+    aim: 'ally',
+    range: 5,
+    hand: 'moonstone',
+    channelSeconds: { atRank1: 1.5, perRank: -0.15 },
+    does: { kind: 'heal', amount: { atRank1: 35, perRank: 10 } },
+  },
+  renewal: {
+    pool: 'spirit',
+    cost: 15,
+    cooldownSeconds: 3,
+    aim: 'ally',
+    range: 5,
+    hand: 'moonstone',
+    does: { kind: 'effect', effectId: 'renewing' },
+  },
+  /** A light as far round the Healer as five metres, centre to centre. */
+  radiance: {
+    pool: 'spirit',
+    cost: 22,
+    cooldownSeconds: 12,
+    aim: 'area',
+    range: 5 - 2 * SOMNIO_CONSTANTS.playerRadius,
+    among: 'dreamer',
+    hand: 'moonstone',
+    does: { kind: 'heal', amount: { atRank1: 15, perRank: 5 } },
+  },
+  calm: {
+    pool: 'spirit',
+    cost: 10,
+    cooldownSeconds: 20,
+    aim: 'self',
+    range: 0,
+    hand: 'moonstone',
+    does: { kind: 'calm', threatKept: 0.5, effectId: 'calmed' },
+  },
+  ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, does: { kind: 'effect', effectId: 'warded' } },
+  weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'weakened' } },
+  bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'bound' } },
+  'dream-bolt': { pool: 'spirit', cost: 12, cooldownSeconds: 3, aim: 'enemy', range: 8, does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } } },
+  /** A mist as far round the Mystic as five metres, centre to centre. */
+  veil: {
+    pool: 'spirit',
+    cost: 25,
+    cooldownSeconds: 45,
+    aim: 'area',
+    range: 5 - 2 * SOMNIO_CONSTANTS.playerRadius,
+    among: 'dreamer',
+    does: { kind: 'effect', effectId: 'veiled' },
+  },
 } as const satisfies Record<string, Ability>;
 export type AbilityId = keyof typeof ABILITIES;
+
+/**
+ * A bolt's flight. It leaves the hand as the cast pushes out, `releaseSeconds` after the use: the
+ * 0.35 share of the pack's 0.9167 s `Ranged_Magic_Shoot` clip at which the casting hand reaches
+ * furthest (`STRIKE_AT` in the web client's combat effects). It then flies at `metresPerSecond`.
+ */
+const BOLT_FLIGHT = { releaseSeconds: 0.32, metresPerSecond: 22 } as const;
+
+/**
+ * The seconds from a bolt's use until it arrives at a nightmare `metres` off, centre to centre, as
+ * they stand at the use: when the server lands its harm, and when the client draws it arriving.
+ */
+export function boltFlightSeconds(metres: number): number {
+  return BOLT_FLIGHT.releaseSeconds + metres / BOLT_FLIGHT.metresPerSecond;
+}
 
 export function isAbilityId(value: string): value is AbilityId {
   return Object.hasOwn(ABILITIES, value);
@@ -122,6 +201,11 @@ export function abilityRank(ranks: readonly HeldRank[], abilityId: AbilityId): n
 
 export function abilityCooldownSeconds(abilityId: AbilityId, rank: number): number {
   return scaled(ability(abilityId).cooldownSeconds, rank);
+}
+
+/** How long the ability channels at the rank given, or `undefined` for one that lands at once. */
+export function abilityChannelSeconds(abilityId: AbilityId, rank: number): number | undefined {
+  return scaledOr(ability(abilityId).channelSeconds, rank, undefined);
 }
 
 /** The abilities a dreamer's ranks teach, in the order of the teachings that teach them, which is the belt's order. */
@@ -180,6 +264,8 @@ export interface AbilityState<B extends AbilityBody> {
   globalReadyAt: number;
   /** When each ability's own cooldown ends; an ability left out is ready. */
   readyAt: Partial<Record<AbilityId, number>>;
+  /** Whether a channel of theirs is under way, during which no other ability is used. */
+  channelling: boolean;
 }
 
 /** Where each pool an ability spends or gives back lies in the pools, and its maximum. */
@@ -188,16 +274,34 @@ export const POOL_FIELDS = {
   spirit: { current: 'spiritCurrent', max: 'spiritMax' },
 } as const satisfies Record<AbilityPool, { current: keyof Energy; max: keyof Energy }>;
 
+/** The first of `abilityAllowed`'s needs a dreamer misses. */
+export type AbilityRefusal = 'fallen' | 'channelling' | 'untaught' | 'hand' | 'cost' | 'cooldown' | 'recipient';
+
 /**
- * Who the ability lands on if the dreamer uses it now, or `undefined` when they cannot: they stand,
- * hold its teaching, hold what its kit needs in hand, have its cost in its pool, are past both its
- * own cooldown and the global one, and it has a recipient.
+ * Why the dreamer cannot use the ability now, or who it lands on: they stand, channel nothing, hold
+ * its teaching, hold what its kit needs in hand, have its cost in its pool, are past both its own
+ * cooldown and the global one, and it has a recipient.
  */
-export function abilityAllowed<B extends AbilityBody>(state: AbilityState<B>, abilityId: AbilityId, target: B | undefined): B | undefined {
+function judgedUse<B extends AbilityBody>(state: AbilityState<B>, abilityId: AbilityId, target: B | undefined): AbilityRefusal | { recipient: B } {
   const used = ability(abilityId);
-  if (state.caster.fallen || abilityRank(state.ranks, abilityId) < 1) return undefined;
-  if (used.hand !== undefined && !handAllows(used.hand, state.itemInHand)) return undefined;
-  if (state.energy[POOL_FIELDS[used.pool].current] < used.cost) return undefined;
-  if (state.now < state.globalReadyAt || state.now < (state.readyAt[abilityId] ?? state.now)) return undefined;
-  return abilityRecipient(used, state.caster, target);
+  if (state.caster.fallen) return 'fallen';
+  if (state.channelling) return 'channelling';
+  if (abilityRank(state.ranks, abilityId) < 1) return 'untaught';
+  if (used.hand !== undefined && !handAllows(used.hand, state.itemInHand)) return 'hand';
+  if (state.energy[POOL_FIELDS[used.pool].current] < used.cost) return 'cost';
+  if (state.now < state.globalReadyAt || state.now < (state.readyAt[abilityId] ?? state.now)) return 'cooldown';
+  const recipient = abilityRecipient(used, state.caster, target);
+  return recipient === undefined ? 'recipient' : { recipient };
+}
+
+/** Why the dreamer cannot use the ability now (`judgedUse`), or `undefined` when they can. */
+export function abilityRefusal<B extends AbilityBody>(state: AbilityState<B>, abilityId: AbilityId, target: B | undefined): AbilityRefusal | undefined {
+  const judged = judgedUse(state, abilityId, target);
+  return typeof judged === 'string' ? judged : undefined;
+}
+
+/** Who the ability lands on if the dreamer uses it now, or `undefined` when `abilityRefusal` names a need they miss. */
+export function abilityAllowed<B extends AbilityBody>(state: AbilityState<B>, abilityId: AbilityId, target: B | undefined): B | undefined {
+  const judged = judgedUse(state, abilityId, target);
+  return typeof judged === 'string' ? undefined : judged.recipient;
 }

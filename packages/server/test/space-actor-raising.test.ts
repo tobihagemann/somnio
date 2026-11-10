@@ -392,7 +392,7 @@ describe('raising', () => {
 
   it.each<[string, (space: Arena['space'], healerId: string) => void]>([
     ['puts the Moonstone away', (space, healerId) => space.handleEquipToggle(MOONSTONE_IN_HAND.slot, undefined, healerId)],
-    ['leaves the space', (space, healerId) => space.detach(healerId, true)],
+    ['leaves the space', (space, healerId) => space.handOver(healerId, true)],
     ['switches Mend off', (space, healerId) => space.handleEngage(false, healerId)],
     ['targets nothing', (space, healerId) => space.handleTarget(undefined, healerId)],
   ])('breaks off when the Healer %s', async (_label, act) => {
@@ -498,7 +498,7 @@ describe('raising', () => {
     const { healer, target } = pair(space);
     engage(space, target.entityId, healer.entityId);
     steps(20);
-    space.detach(healer.entityId, false);
+    space.handOver(healer.entityId, false);
     space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
     engage(space, target.entityId, healer.entityId);
     steps(1);
@@ -517,7 +517,7 @@ describe('raising', () => {
     engage(space, target.entityId, healer.entityId);
     engage(space, target.entityId, other.entityId);
     steps(20);
-    space.detach(other.entityId, false);
+    space.handOver(other.entityId, false);
     space.attach(other.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
     engage(space, target.entityId, other.entityId);
     steps(1);
@@ -526,6 +526,44 @@ describe('raising', () => {
       { state: 'holding', healerIds: [healer.entityId] },
       { state: 'holding', healerIds: [healer.entityId, other.entityId] },
     ]);
+  });
+
+  /**
+   * The twenty steps after the one the raise began in are a second of each, a step of 30 ms makes
+   * 1.03 s, and the other leaves 30 ms after it, at 1.06 s: seven whole units of spirit, where the
+   * seconds up to the step before are six.
+   */
+  it('counts a Healer who leaves between two steps up to the moment they leave, and charges them for it before they go', async () => {
+    const { clock, space, steps } = arena({}, { ghost: false });
+    const { healer, target } = pair(space);
+    const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
+    engage(space, target.entityId, healer.entityId);
+    engage(space, target.entityId, other.entityId);
+    steps(21);
+    clock.ms += 30;
+    space.step(0.03);
+    const watcher = attachPlayer(space, { x: 6, z: 6 }, 'watcher');
+    clock.ms += 30;
+    space.handOver(other.entityId, false);
+    expect(spiritCharged(await collectMessages(other.outbox))).toBe(Math.floor((COMBAT.raise.spiritCost * 1.06) / COMBAT.raise.seconds));
+    const [shown, released] = payloads(await collectMessages(watcher.outbox), 'raising');
+    // Both paces for the 30 ms since the snapshot the watcher was shown, and the healer's alone from then on.
+    expect([released!.state, released!.healerIds]).toEqual(['holding', [healer.entityId]]);
+    expect(released!.progress).toBeCloseTo(shown!.progress + 0.06 / COMBAT.raise.seconds, 9);
+  });
+
+  it('completes a raise whose time is up when its last Healer drops out after it filled, before the step that finds them out', async () => {
+    const field = arena({}, { ghost: false });
+    const { space, steps } = field;
+    const { healer, target } = pair(space);
+    engage(space, target.entityId, healer.entityId);
+    // Within a step of the raise time: the next step fills it.
+    steps(120);
+    expect(space.isFallen(target.entityId)).toBe(true);
+    space.handleEngage(false, healer.entityId);
+    steps(1);
+    expect(space.isFallen(target.entityId)).toBe(false);
+    expect((await holds(target.outbox)).at(-1)).toEqual({ state: 'done', healerIds: [healer.entityId] });
   });
 
   it('lets a Healer take hold again once their touch interval has passed, and at once with a fresh touch', async () => {
@@ -549,7 +587,7 @@ describe('raising', () => {
     expect((await holds(other.outbox)).at(-1)).toEqual({ state: 'holding', healerIds: [other.entityId, healer.entityId] });
 
     const watching = attachPlayer(space, { x: 8, z: 8 }, 'watching');
-    space.detach(healer.entityId, false);
+    space.handOver(healer.entityId, false);
     steps(1);
     const back = new ConnectionOutbox(4096);
     space.attach(healer.character, [MOONSTONE_IN_HAND], back, 0, 'en');
@@ -592,7 +630,8 @@ describe('raising', () => {
     const watching = attachPlayer(space, { x: 10, z: 10 }, 'watching');
     const crossing = attachPlayer(space, { x: 41, z: 10 }, 'crossing');
     engage(space, target.entityId, healer.entityId);
-    steps(30);
+    // The step it begins in, then a second and a half.
+    steps(31);
     const joining = attachPlayer(space, { x: 8, z: 8 }, 'joining');
     space.handleMove({ x: 39, z: 10, facing: 0, gait: 'jog' }, crossing.entityId);
     for (const player of [joining, crossing]) {
@@ -737,11 +776,15 @@ describe('raising', () => {
       expect(practiceOf(space, healer.entityId)).toBeCloseTo((PRACTICE.raise * (1.05 + together)) / COMBAT.raise.seconds, 9);
     });
 
-    /** Twenty steps together are a second of the other's, so the healer held the other five of six. */
-    it.each<[string, (space: Arena['space'], otherId: string) => void, number | undefined]>([
-      ['who dropped out and stayed earns their share', (space, otherId) => space.handleEngage(false, otherId), 10 / 6],
-      ['who left before the end earns nothing, and the rest is not scaled up', (space, otherId) => space.detach(otherId, true), undefined],
-    ])('pays each Healer their seconds held: one %s', (_label, act, otherPractice) => {
+    /**
+     * The nineteen steps after the one the raise began in are 0.95 s of each. One who drops out
+     * holds on until the next step finds them out, a second in all, so the healer holds the other
+     * five of six. One who leaves goes at once, after 0.95 s, so the healer holds the other 5.05.
+     */
+    it.each<[string, (space: Arena['space'], otherId: string) => void, number, number | undefined]>([
+      ['who dropped out and stayed earns their share', (space, otherId) => space.handleEngage(false, otherId), 5, 10 / 6],
+      ['who left before the end earns nothing, and the rest is not scaled up', (space, otherId) => space.handOver(otherId, true), 5.05, undefined],
+    ])('pays each Healer their seconds held: one %s', (_label, act, healerSeconds, otherPractice) => {
       const field = arena({}, { ghost: false });
       const { space, steps } = field;
       const { healer, target } = pair(space, STUDYING);
@@ -751,7 +794,7 @@ describe('raising', () => {
       steps(20);
       act(space, other.entityId);
       stepsUntilRaised(field, target.entityId);
-      expect(practiceOf(space, healer.entityId)).toBeCloseTo(50 / 6, 9);
+      expect(practiceOf(space, healer.entityId)).toBeCloseTo((PRACTICE.raise * healerSeconds) / COMBAT.raise.seconds, 9);
       if (otherPractice !== undefined) expect(practiceOf(space, other.entityId)).toBeCloseTo(otherPractice, 9);
     });
   });

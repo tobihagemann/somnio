@@ -73,12 +73,12 @@ describe('SpaceActor.attach', () => {
   });
 });
 
-describe('SpaceActor.detach', () => {
+describe('SpaceActor.handOver', () => {
   it('tells the peers who left and why', async () => {
     const { space } = actor();
     const stayer = attachPlayer(space, { x: 1, z: 1 }, 'stayer');
     const leaver = attachPlayer(space, { x: 5, z: 5 }, 'leaver');
-    space.detach(leaver.entityId, true);
+    space.handOver(leaver.entityId, true);
     expect(await collectMessages(stayer.outbox)).toContainEqual({ tag: 'leave', payload: { entityId: leaver.entityId, leftGame: true } });
     expect(space.snapshotForPlayer(leaver.entityId)).toBeUndefined();
   });

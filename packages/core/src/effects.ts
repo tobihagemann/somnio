@@ -9,6 +9,11 @@ export function scaled(value: Scaled, rank: number): number {
   return typeof value === 'number' ? value : value.atRank1 + value.perRank * (rank - 1);
 }
 
+/** A scaled number at the rank given, or `fallback` for one left out. */
+export function scaledOr<F>(value: Scaled | undefined, rank: number, fallback: F): number | F {
+  return value === undefined ? fallback : scaled(value, rank);
+}
+
 /**
  * A timed effect on a dreamer or a nightmare, and what it changes while it holds. A share left out
  * is 1, so it changes nothing.
@@ -26,10 +31,15 @@ export interface Effect {
   threatGenerated?: number;
   /** Its holder, a nightmare, turns on the dreamer who applied it, whoever else it holds threat against. */
   turnsOnSource?: true;
-  /** The health a second it names for its holder, which makes it a heal over time, so a fall ends it. */
-  healthPerSecond?: number;
-  /** The harm it names to take in its holder's place, a shield's size. `harmTaken` does not read it. */
-  absorb?: number;
+  /** The health a second it gives its holder, by the rank of the ability that applied it, which makes it a heal over time, so a fall ends it. */
+  healthPerSecond?: Scaled;
+  /**
+   * The harm it takes in its holder's place, by the rank of the ability that applied it: a shield,
+   * worn down by each hit it takes and gone once it has taken all it holds.
+   */
+  absorb?: Scaled;
+  /** Nightmares leave its holder alone: off their tables, and out of whom they chase and strike, while it holds. */
+  unseen?: true;
 }
 
 /**
@@ -39,6 +49,12 @@ export interface Effect {
 export const EFFECTS = {
   braced: { seconds: { atRank1: 4, perRank: 1 }, damageTaken: 0.5, movement: 'noRun' },
   challenged: { seconds: 6, turnsOnSource: true },
+  renewing: { seconds: 10, healthPerSecond: { atRank1: 2.5, perRank: 0.75 } },
+  calmed: { seconds: 8, threatGenerated: 0.5 },
+  warded: { seconds: 12, absorb: { atRank1: 12, perRank: 5 } },
+  weakened: { seconds: { atRank1: 8, perRank: 2 }, damageDealt: 0.6 },
+  bound: { seconds: { atRank1: 3, perRank: 1 }, movement: 'rooted' },
+  veiled: { seconds: 5, unseen: true },
 } as const satisfies Record<string, Effect>;
 export type EffectId = keyof typeof EFFECTS;
 
@@ -53,4 +69,14 @@ export function effect(effectId: EffectId): Effect {
 /** How long the effect holds when an ability of the rank given applies it. */
 export function effectSeconds(effectId: EffectId, rank: number): number {
   return scaled(effect(effectId).seconds, rank);
+}
+
+/** The harm the effect takes in its holder's place when an ability of the rank given applies it; 0 for an effect that is no shield. */
+export function effectAbsorb(effectId: EffectId, rank: number): number {
+  return scaledOr(effect(effectId).absorb, rank, 0);
+}
+
+/** The health a second the effect gives its holder when an ability of the rank given applies it; 0 for an effect that heals nothing. */
+export function effectHealthPerSecond(effectId: EffectId, rank: number): number {
+  return scaledOr(effect(effectId).healthPerSecond, rank, 0);
 }

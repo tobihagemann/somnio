@@ -1,5 +1,6 @@
+import { clamp, raiseWorkOver } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, Point } from '@somnio/core';
-import type { Condition, Gait, SectorView, SpeechKind } from '@somnio/protocol';
+import type { AbilityPhase, Condition, Gait, SectorView, SensedBearingMessage, SpeechKind } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
 /** A line to show as a bubble: round its speaker's head while that is drawn on screen, and placed toward the voice otherwise. */
@@ -15,10 +16,34 @@ export interface SpeechBubbleRequest {
   clarity: number;
 }
 
-/** A raise under way as its last snapshot states it: the share done, and the seconds left at the pace of those holding on. */
+/** Where a channelled ability stands, with the channel's length on `start` and its seconds left on `channel`. */
+interface AbilityChannel {
+  phase: AbilityPhase;
+  seconds?: number;
+}
+
+/** What an `ability` frame says beyond who used what on whom: a channel's phase, or harm its nightmare evaded. */
+export type AbilityShown = AbilityChannel | { evaded: true };
+
+/**
+ * A raise under way as its last snapshot states it: the share done, the seconds left at the pace of
+ * those holding on, and the seconds before each of them adds their pace, absent while every one
+ * adds it now.
+ */
 export interface RaiseProgress {
   progress: number;
   seconds: number;
+  pausedSeconds?: readonly number[];
+}
+
+/**
+ * The share of a raise done `elapsedSeconds` after its snapshot, on the schedule the server paces it
+ * by (`raiseWorkOver`): it holds while every Healer holding on is paused, and it is whole once its
+ * seconds are up.
+ */
+export function raiseShownAt({ progress, seconds, pausedSeconds = [0] }: RaiseProgress, elapsedSeconds: number): number {
+  const whole = raiseWorkOver(pausedSeconds, seconds);
+  return whole === 0 ? progress : progress + ((1 - progress) * raiseWorkOver(pausedSeconds, clamp(elapsedSeconds, 0, seconds))) / whole;
 }
 
 /**
@@ -45,14 +70,20 @@ export interface WorldRenderSurface {
   updateCondition(entityId: string, condition: Condition): void;
   /** One swing or strike: the attacker swings, and as the swing lands the target flinches or is missed. */
   showBlow(attackerId: string, targetId: string, hit: boolean): void;
-  /** An ability used: its user plays it, and it shows where it lands. `targetId` is whom it landed on, `undefined` for its user or an ability that lands round them. */
-  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined): void;
+  /**
+   * An ability used: its user plays it, and it shows where it lands. `targetId` is whom it landed
+   * on, `undefined` for its user or an ability that lands round them. A channelled one comes once
+   * per phase it reaches, with `shown.phase`, and harm its nightmare evaded comes with `evaded`.
+   */
+  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined, shown?: AbilityShown): void;
   /** Every effect an entity holds, with the seconds each has left; told only of the player's own and their target's. */
   showEffects(entityId: string, effects: readonly { effectId: EffectId; seconds?: number }[]): void;
   /** A raise under way on a fallen entity; `undefined` ends it. */
   showRaising(targetId: string, raise: RaiseProgress | undefined): void;
   /** A mend landing on an entity: a ring swells from its feet and fades. */
   showMend(targetId: string): void;
+  /** Where each fallen dreamer in the space lies, for a player who senses the fallen; a new space starts with none. */
+  showSensed(bearings: readonly SensedBearingMessage[]): void;
   /** Marks the target, as a reticle while the player's facing is locked on it; `undefined` marks none. */
   showSelection(entityId: string | undefined, locked: boolean): void;
   /** A ring where a press holds the ground, or where the walk it let go of heads: it drops onto `point` the first time, and follows it after. */
@@ -81,6 +112,7 @@ export const noopRenderSurface: WorldRenderSurface = {
   showEffects: () => {},
   showRaising: () => {},
   showMend: () => {},
+  showSensed: () => {},
   showSelection: () => {},
   showPressMarker: () => {},
   liftPressMarker: () => {},

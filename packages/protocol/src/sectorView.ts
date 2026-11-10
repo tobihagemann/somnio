@@ -6,6 +6,7 @@ import {
   mapArray,
   mapRecords,
   requireArray,
+  requireBool,
   requireBoundedString,
   requireFloat,
   requireId,
@@ -82,6 +83,8 @@ export interface Door {
   placement: string;
   anchor: string;
   target: { sector: string; door: string };
+  /** Open only while the sun is down. Left out when the door is open at every hour. */
+  nightOnly?: true;
 }
 
 export interface SectorView {
@@ -277,13 +280,15 @@ function decodeDoor(container: Record<string, unknown>, path: string): Door {
       sector: requireWithinByteCap(requireString(target, 'sector', `${path}.target`), PROTOCOL_BYTE_CAPS.sectorName, `${path}.target.sector`),
       door: requireId(target, 'door', `${path}.target`),
     },
+    ...(!isAbsent(container, 'nightOnly') && requireBool(container, 'nightOnly', path) ? { nightOnly: true } : {}),
   };
 }
 
 /**
  * Decodes a sector from the wire or, with `name` injected, from a sector file. `yaw` and
  * `elevation` default to 0, a mark's `opacity` to 1, and the record arrays and the ground's marks
- * to empty, so the decoded value always carries them whichever form it was read from.
+ * to empty, so the decoded value always carries them whichever form it was read from. A door's
+ * `nightOnly` is carried only when true.
  */
 export function decodeSectorView(container: Record<string, unknown>, path: string): SectorView {
   const kind = requireStringEnum(container, 'kind', path, SECTOR_KINDS);
@@ -316,9 +321,10 @@ export function decodeSectorView(container: Record<string, unknown>, path: strin
 
 /**
  * The plain-JSON form with every default left out: `yaw` and `elevation` at 0, a mark's `opacity`
- * at 1, empty record arrays and marks, and an unset `origin` or `brightness`. It is the inverse of
- * `decodeSectorView`, so the two together are the one definition of an omitted default. Nothing is validated or dropped
- * here: a `brightness` set on an outdoor sector is emitted, for the decoder to refuse.
+ * at 1, empty record arrays and marks, a door open at every hour, and an unset `origin` or
+ * `brightness`. It is the inverse of `decodeSectorView`, so the two together are the one definition
+ * of an omitted default. Nothing is validated or dropped here: a `brightness` set on an outdoor
+ * sector is emitted, for the decoder to refuse.
  */
 export function encodeSectorView(view: SectorView): Record<string, unknown> {
   return {

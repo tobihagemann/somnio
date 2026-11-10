@@ -26,7 +26,7 @@ export const PATHFINDING = {
   maxExpansions: 30_000,
   /** How far from the start a body is planned round. */
   bodyRange: 16,
-  /** Room kept between the walker and a body it plans round. */
+  /** Room kept between the walker and a body it plans round, and where a goal within that room is moved out to. */
   bodyMargin: 0.05,
   /** How many times one search runs again without an edge its legs could not take. */
   maxRetries: 3,
@@ -178,7 +178,7 @@ export interface PathGrid {
 export interface FoundPath {
   /** The points to walk through in turn, the start left out; empty where the walker already stands as near as it can come. */
   waypoints: Point[];
-  /** The path ends at the goal: at the point itself, or at the centre of its cell where the point cannot be stood on. */
+  /** The path ends at the goal: at the point itself, moved out of any body's margin, or at the centre of its cell where the point cannot be stood on. */
   reached: boolean;
   /** The search stopped at `maxExpansions`, so the path ends at the nearest point toward the goal it had found by then. */
   capped: boolean;
@@ -190,18 +190,21 @@ export interface FoundPath {
 
 /**
  * A path from `from` toward `to` round the static world and `bodies` (the NPCs, monsters, and other
- * players as they stand), searched within the start and the goal plus `windowMargin`. Where the goal
- * cannot be reached, the path ends at the expanded cell nearest it, the nearest point toward it the
- * walker can reach in that window. `excludedEdges` holds the edges a walk found unwalkable; the
- * search leaves them out and adds any it finds, so a walk passes the same set to every re-plan.
+ * players as they stand), searched within the start and the goal plus `windowMargin`. A goal where
+ * the walker would overlap a body or come within `bodyMargin` of it is moved to the nearest point
+ * outside every body's margin. Where the goal cannot be reached, the path ends at the expanded cell
+ * nearest it, the nearest point toward it the walker can reach in that window.
+ * `excludedEdges` holds the edges a walk found unwalkable; the search leaves them out and adds any
+ * it finds, so a walk passes the same set to every re-plan.
  */
 export function findPath(grid: PathGrid, from: Point, to: Point, bodies: readonly Body[], excludedEdges: Set<string>): FoundPath {
-  const window = searchWindow(grid.rasters, from, to);
-  const clear = tiledClearance(grid.collision);
   const near = bodies.filter((body) => distance(body, from) <= PATHFINDING.bodyRange);
+  const goal = outsideBodies(to, near);
+  const window = searchWindow(grid.rasters, from, goal);
+  const clear = tiledClearance(grid.collision);
   const leg = (a: Point, b: Point): boolean => walkable((point) => clear(point, RADIUS), a, b, near);
   for (let retries = 0; ; retries += 1) {
-    const search = searchCells(window, from, to, near, excludedEdges, leg);
+    const search = searchCells(window, from, goal, near, excludedEdges, leg);
     const pulled = pullString(from, search.nodes, leg);
     if (pulled.unwalkable === undefined || retries === PATHFINDING.maxRetries) {
       return {
@@ -214,6 +217,57 @@ export function findPath(grid: PathGrid, from: Point, to: Point, bodies: readonl
     }
     excludedEdges.add(pulled.unwalkable);
   }
+}
+
+/** How near the goal an expanded cell lies that a search tries to reach it from by a leg, where its own cell is not reached. */
+const GOAL_APPROACH = 1;
+/** How far past the edge of a body's margin a goal inside it is moved, so rounding leaves it outside. */
+const GOAL_CLEARANCE = 1e-9;
+
+/**
+ * The nearest point to the goal outside the margin round every body. A goal inside margins is moved
+ * to just past the edge of one, straight out from its body, or to just past where the edges of two
+ * meet, since the nearest point outside them all lies on one of those. Where none of them lies
+ * outside every margin, as for a goal at the very centre of a lone body, the goal stays as it is,
+ * and the path ends at the cell nearest it.
+ */
+function outsideBodies(to: Point, bodies: readonly Body[]): Point {
+  if (outsideMargins(to, bodies)) return to;
+  const edge = (body: Body): number => BODY_RADIUS + body.radius + GOAL_CLEARANCE;
+  let goal = to;
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const [index, body] of bodies.entries()) {
+    const away = distance(to, body);
+    const straightOut = away === 0 ? [] : [{ x: body.x + ((to.x - body.x) * edge(body)) / away, z: body.z + ((to.z - body.z) * edge(body)) / away }];
+    const crossings = bodies.slice(index + 1).flatMap((other) => edgeCrossings(body, edge(body), other, edge(other)));
+    for (const candidate of [...straightOut, ...crossings]) {
+      const moved = distance(to, candidate);
+      if (moved >= nearest || !outsideMargins(candidate, bodies)) continue;
+      goal = candidate;
+      nearest = moved;
+    }
+  }
+  return goal;
+}
+
+/** Whether the point lies outside the margin round every body. */
+function outsideMargins(point: Point, bodies: readonly Body[]): boolean {
+  return bodies.every((body) => distance(point, body) >= BODY_RADIUS + body.radius);
+}
+
+/** Where the circles of the given radii round the two centres cross, none where they do not. */
+function edgeCrossings(a: Point, aRadius: number, b: Point, bRadius: number): Point[] {
+  const apart = distance(a, b);
+  if (apart >= aRadius + bRadius || apart <= Math.abs(aRadius - bRadius)) return [];
+  const along = (apart * apart + aRadius * aRadius - bRadius * bRadius) / (2 * apart);
+  const across = Math.sqrt(aRadius * aRadius - along * along);
+  const x = (b.x - a.x) / apart;
+  const z = (b.z - a.z) / apart;
+  const middle = { x: a.x + x * along, z: a.z + z * along };
+  return [
+    { x: middle.x - z * across, z: middle.z + x * across },
+    { x: middle.x + z * across, z: middle.z - x * across },
+  ];
 }
 
 interface Cell {
@@ -255,9 +309,13 @@ function searchWindow(rasters: Iterable<WalkRaster>, from: Point, to: Point): Se
  * A* from the start point over the window's cells. The start steps by `leg` to its own cell and the
  * eight round it. A cell steps to a neighbour where its raster's edge bit allows and `leg`'s rule
  * leaves the step clear of the bodies. A diagonal step also needs both cells beside it clear. The
- * nodes run from the first cell to the goal's cell, then to the goal itself where `leg` reaches it
- * and it lies outside every body's disk. Where the goal's cell is not reached, they end at the
- * expanded cell nearest the goal.
+ * nodes run from the first cell to the goal's cell, or where that cell is not reached to the
+ * expanded cell nearest the goal. They end at the goal itself where its cell is clear in the raster,
+ * it lies outside every body's margin, and `leg` reaches it: from the goal's cell where that was
+ * reached, and otherwise from whichever of the start, the expanded cell nearest it, and the
+ * expanded cells within `GOAL_APPROACH` of it lies nearest it with a `leg` to it. So a goal whose
+ * cell a body's disk covers is still reached. So is one in the notch where two disks meet: a leg
+ * reaches it only from outside both, and from the start where no cell near it lies outside them.
  */
 function searchCells(
   window: SearchWindow,
@@ -343,11 +401,33 @@ function searchCells(
     }
   }
 
+  const pointOf = (index: number): Point => (index === start ? from : centreOf(index));
+  let end = reached ? goal : best;
+  let arrives = false;
+  if (expansions > 0 && (cells[goal]! & CLEAR) !== 0 && outsideMargins(to, bodies)) {
+    const approaches = reached ? [goal] : best === start ? [start] : [start, best];
+    if (!reached) {
+      const span = Math.ceil(GOAL_APPROACH / PATHFINDING.cell);
+      for (let row = Math.max(0, goalRow - span); row <= Math.min(rows - 1, goalRow + span); row += 1) {
+        for (let column = Math.max(0, goalColumn - span); column <= Math.min(columns - 1, goalColumn + span); column += 1) {
+          const index = row * columns + column;
+          if (closed[index] === 1 && index !== best && distance(centreOf(index), to) <= GOAL_APPROACH) approaches.push(index);
+        }
+      }
+      approaches.sort((a, b) => distance(pointOf(a), to) - distance(pointOf(b), to));
+    }
+    const approach = approaches.find((index) => leg(pointOf(index), to));
+    if (approach !== undefined) {
+      end = approach;
+      arrives = true;
+    }
+  }
   const nodes: PathNode[] = [];
-  for (let index = reached ? goal : best; index !== start; index = parent[index]!) nodes.push({ ...cellAt(index), point: centreOf(index) });
+  for (let index = end; index !== start; index = parent[index]!) nodes.push({ ...cellAt(index), point: centreOf(index) });
   nodes.reverse();
-  if (reached && bodies.every((body) => distance(to, body) >= BODY_RADIUS + body.radius) && leg(centreOf(goal), to)) {
+  if (arrives) {
     nodes.push({ ...cellAt(goal), point: to });
+    reached = true;
   }
   return { nodes, reached, capped, expansions };
 }

@@ -72,6 +72,15 @@ export const ONE_SHOT_CLIPS: Record<OneShot, readonly string[]> = {
   brace: ['Melee_Block'],
   lunge: ['Melee_1H_Attack_Jump_Chop'],
   rally: ['Cheering'],
+  'deep-mend': ['Ranged_Magic_Spellcasting_Long'],
+  renewal: ['Ranged_Magic_Shoot'],
+  radiance: ['Ranged_Magic_Raise'],
+  calm: ['Ranged_Magic_Spellcasting'],
+  ward: ['Ranged_Magic_Shoot'],
+  weaken: ['Ranged_Magic_Spellcasting'],
+  bind: ['Ranged_Magic_Spellcasting'],
+  'dream-bolt': ['Ranged_Magic_Shoot'],
+  veil: ['Ranged_Magic_Raise'],
 };
 
 export function resolveOneShotClipName(oneShot: OneShot, available: readonly string[]): string | undefined {
