@@ -1,4 +1,4 @@
-import type { Heading, Point } from '@somnio/core';
+import type { AbilityId, EffectId, Heading, Point } from '@somnio/core';
 import type { Condition, Gait, SectorView, SpeechKind } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
@@ -43,8 +43,12 @@ export interface WorldRenderSurface {
   updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void;
   updateGait(entityId: string, gait: Gait): void;
   updateCondition(entityId: string, condition: Condition): void;
-  /** One swing or strike: the attacker lunges, and the target flinches or is missed. */
+  /** One swing or strike: the attacker swings, and as the swing lands the target flinches or is missed. */
   showBlow(attackerId: string, targetId: string, hit: boolean): void;
+  /** An ability used: its user plays it, and it shows where it lands. `targetId` is whom it landed on, `undefined` for its user or an ability that lands round them. */
+  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined): void;
+  /** Every effect an entity holds, with the seconds each has left; told only of the player's own and their target's. */
+  showEffects(entityId: string, effects: readonly { effectId: EffectId; seconds?: number }[]): void;
   /** A raise under way on a fallen entity; `undefined` ends it. */
   showRaising(targetId: string, raise: RaiseProgress | undefined): void;
   /** A mend landing on an entity: a ring swells from its feet and fades. */
@@ -73,6 +77,8 @@ export const noopRenderSurface: WorldRenderSurface = {
   updateGait: () => {},
   updateCondition: () => {},
   showBlow: () => {},
+  showAbility: () => {},
+  showEffects: () => {},
   showRaising: () => {},
   showMend: () => {},
   showSelection: () => {},

@@ -8,6 +8,9 @@ import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
   'Balance recovery',
+  'Brace',
+  'Challenge',
+  'Cleave',
   'Cudgel',
   'Dagger',
   'Depth',
@@ -18,10 +21,12 @@ const CORE_KEYS = [
   'Guard',
   'Healer',
   'Lumina',
+  'Lunge',
   'Mace',
   'Moonstone',
   'North Wood',
   'Purse',
+  'Rally',
   'Short sword',
   'Sopors',
   'Spirit deepening',

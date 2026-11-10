@@ -2,8 +2,8 @@ import type { Blocker, Placement } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   MOVE_SUBSTEP,
-  bodyBlocks,
-  bodyBlocksLine,
+  bodiesBlock,
+  bodiesBlockLine,
   buildSpaceCollision,
   canStand,
   groundHeightAt,
@@ -494,8 +494,7 @@ describe('the slide', () => {
       const angle = random() * 2 * Math.PI;
       const direction = { x: Math.cos(angle), z: Math.sin(angle) };
       const bodies = random() < 1 / 3 ? [{ x: position.x + random() * 2 - 1, z: position.z + random() * 2 - 1, radius: RADIUS }] : [];
-      const legal = (from: Point, to: Point): boolean =>
-        isLegalMove(collision, from, to, RADIUS, npcs) && !bodies.some((body) => bodyBlocks(from, to, RADIUS, body));
+      const legal = (from: Point, to: Point): boolean => isLegalMove(collision, from, to, RADIUS, npcs) && !bodiesBlock(from, to, RADIUS, bodies);
       const step = { x: direction.x * MOVE_SUBSTEP, z: direction.z * MOVE_SUBSTEP };
       for (let call = 0; call < 20; call += 1) {
         const to = { x: position.x + step.x, z: position.z + step.z };
@@ -543,15 +542,15 @@ describe('bodies', () => {
   const body = { x: 0, z: 0, radius: RADIUS };
 
   it('block an approach at contact', () => {
-    expect(bodyBlocks({ x: 1, z: 0 }, { x: 0.59, z: 0 }, RADIUS, body)).toBe(true);
-    expect(bodyBlocks({ x: 1, z: 0 }, { x: 0.6, z: 0 }, RADIUS, body)).toBe(false);
+    expect(bodiesBlock({ x: 1, z: 0 }, { x: 0.59, z: 0 }, RADIUS, [body])).toBe(true);
+    expect(bodiesBlock({ x: 1, z: 0 }, { x: 0.6, z: 0 }, RADIUS, [body])).toBe(false);
   });
 
   it('let an overlapping pair separate but not close in, whichever of the two moves', () => {
     for (const side of [1, -1]) {
       const from = { x: 0.4 * side, z: 0 };
-      expect(bodyBlocks(from, { x: 0.35 * side, z: 0 }, RADIUS, body)).toBe(true);
-      expect(bodyBlocks(from, { x: 0.45 * side, z: 0 }, RADIUS, body)).toBe(false);
+      expect(bodiesBlock(from, { x: 0.35 * side, z: 0 }, RADIUS, [body])).toBe(true);
+      expect(bodiesBlock(from, { x: 0.45 * side, z: 0 }, RADIUS, [body])).toBe(false);
     }
   });
 
@@ -569,29 +568,41 @@ describe('bodies', () => {
 
   it('block a line exactly where steps a millimetre apart along it would be blocked', () => {
     const peer = { x: 10, z: 10, radius: 0.3 };
-    const byMillimetre = (from: Point, to: Point): boolean => {
+    const byMillimetre = (from: Point, to: Point, bodies: Body[]): boolean => {
       const count = Math.ceil(distance(from, to) / 0.001);
       let previous = from;
       for (let index = 1; index <= count; index += 1) {
         const sample = { x: from.x + ((to.x - from.x) * index) / count, z: from.z + ((to.z - from.z) * index) / count };
-        if (bodyBlocks(previous, sample, 0.3, peer)) return true;
+        if (bodiesBlock(previous, sample, 0.3, bodies)) return true;
         previous = sample;
       }
       return false;
     };
-    const legs: [string, Point, Point, boolean][] = [
-      ['stops short of the body', { x: 5, z: 10 }, { x: 9, z: 10 }, false],
-      ['runs through the body', { x: 5, z: 10 }, { x: 15, z: 10 }, true],
-      ['passes within contact', { x: 5, z: 10.5 }, { x: 15, z: 10.5 }, true],
-      ['passes clear', { x: 5, z: 10.7 }, { x: 15, z: 10.7 }, false],
-      ['starts inside and leads away', { x: 9.8, z: 10 }, { x: 9, z: 10 }, false],
-      ['starts inside and leads sideways out', { x: 9.8, z: 10 }, { x: 9.8, z: 11 }, false],
-      ['starts inside and leads inward', { x: 9.6, z: 10 }, { x: 9.9, z: 10 }, true],
-      ['heads away from a body behind the start', { x: 8, z: 10 }, { x: 5, z: 10 }, false],
+    /** Two bodies the walker at the peer's centre overlaps, on opposite sides of it, or skewed off one line. */
+    const pressed = [-0.08, 0.08].map((offset) => ({ x: 10 + offset, z: 10, radius: 0.3 }));
+    const skewed = [
+      { x: 9.94, z: 9.945, radius: 0.3 },
+      { x: 10.07, z: 10.055, radius: 0.3 },
     ];
-    for (const [label, from, to, blocked] of legs) {
-      expect(byMillimetre(from, to), label).toBe(blocked);
-      expect(bodyBlocksLine(from, to, 0.3, peer), label).toBe(blocked);
+    const legs: [string, Point, Point, Body[], boolean][] = [
+      ['stops short of the body', { x: 5, z: 10 }, { x: 9, z: 10 }, [peer], false],
+      ['runs through the body', { x: 5, z: 10 }, { x: 15, z: 10 }, [peer], true],
+      ['passes within contact', { x: 5, z: 10.5 }, { x: 15, z: 10.5 }, [peer], true],
+      ['passes clear', { x: 5, z: 10.7 }, { x: 15, z: 10.7 }, [peer], false],
+      ['starts inside and leads away', { x: 9.8, z: 10 }, { x: 9, z: 10 }, [peer], false],
+      ['starts inside and leads sideways out', { x: 9.8, z: 10 }, { x: 9.8, z: 11 }, [peer], false],
+      ['starts inside and leads inward', { x: 9.6, z: 10 }, { x: 9.9, z: 10 }, [peer], true],
+      ['heads away from a body behind the start', { x: 8, z: 10 }, { x: 5, z: 10 }, [peer], false],
+      ['leads out between two it overlaps on opposite sides', { x: 10, z: 10 }, { x: 12, z: 10 }, pressed, false],
+      ['leads out across the line of two it overlaps', { x: 10, z: 10 }, { x: 10, z: 12 }, pressed, false],
+      ['heads more squarely at one of two it overlaps than away from the other', { x: 10, z: 10 }, { x: 12, z: 10 }, skewed, true],
+      ['leads out away from both of two it overlaps', { x: 10, z: 10 }, { x: 9, z: 11 }, skewed, false],
+      ['enters a body while leaving another more squarely', { x: 10.05, z: 10 }, { x: 10.45, z: 10 }, [peer, { x: 10.5, z: 10.58, radius: 0.3 }], false],
+      ['leaves a body while still heading into another', { x: 10.05, z: 10 }, { x: 12, z: 10 }, [peer, { x: 10.75, z: 10.58, radius: 0.3 }], true],
+    ];
+    for (const [label, from, to, bodies, blocked] of legs) {
+      expect(byMillimetre(from, to, bodies), label).toBe(blocked);
+      expect(bodiesBlockLine(from, to, 0.3, bodies), label).toBe(blocked);
     }
   });
 

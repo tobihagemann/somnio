@@ -106,7 +106,7 @@ export function newCharacter(id: string, name: string, people: People): Characte
     space: STARTER_SECTOR,
     position: { x: 0, z: 0 },
     facing: headingFromCardinal('south'),
-    energy: fullPools(NO_LUCIDITY.ranks),
+    energy: fullPools(NO_LUCIDITY),
     lucidity: NO_LUCIDITY,
     lastSeen: new Date(NEVER_PLAYED_MS),
   };

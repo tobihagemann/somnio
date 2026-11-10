@@ -18,6 +18,8 @@ export * from './shop.ts';
 export * from './monsterKinds.ts';
 export * from './lucidity.ts';
 export * from './combat.ts';
+export * from './effects.ts';
+export * from './abilities.ts';
 export * from './npcDialog.ts';
 export * from './speech.ts';
 export * from './domain/account.ts';

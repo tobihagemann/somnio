@@ -14,11 +14,11 @@ function actor(overrides: Partial<Sector> = {}) {
 }
 
 describe('SpaceActor.attach', () => {
-  it("streams enterSpace first and once, carrying the character's people, then the sector, the self entity, inventory, energy, and lucidity", async () => {
+  it("streams enterSpace first and once, carrying the character's people, then the sector, the self entity, inventory, energy, lucidity, and cooldowns", async () => {
     const { space } = actor();
     const alice = attachPlayer(space, { x: 2, z: 2 }, 'alice', { worldSeconds: 1234.5, character: { people: 'lumina' } });
     const messages = await collectMessages(alice.outbox);
-    expect(messages.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
+    expect(messages.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns']);
     expect(messages[0]).toEqual({
       tag: 'enterSpace',
       payload: { spaceId: OUTDOOR_SPACE_ID, selfId: alice.character.id, people: 'lumina', worldSeconds: 1234.5 },

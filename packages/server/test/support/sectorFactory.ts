@@ -83,7 +83,7 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
     space,
     position,
     facing: headingFromCardinal('south'),
-    energy: fullPools(NO_LUCIDITY.ranks),
+    energy: fullPools(NO_LUCIDITY),
     lucidity: NO_LUCIDITY,
     lastSeen: new Date(),
   };

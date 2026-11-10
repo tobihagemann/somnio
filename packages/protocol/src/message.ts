@@ -1,4 +1,5 @@
 import type {
+  AbilityMessage,
   AdminSayMessage,
   AskTaskMessage,
   BlowMessage,
@@ -8,10 +9,12 @@ import type {
   ClientSayMessage,
   CompleteTaskMessage,
   ConditionMessage,
+  CooldownsMessage,
   CorrectionMessage,
   CreateCharacterMessage,
   DeleteCharacterMessage,
   DoorRefusedMessage,
+  EffectsMessage,
   EmptyMessage,
   EngageMessage,
   Energy,
@@ -43,6 +46,7 @@ import type {
   StudyMessage,
   TalkMessage,
   TargetMessage,
+  UseAbilityMessage,
   UseDoorMessage,
   UseItemMessage,
   VitalsMessage,
@@ -66,6 +70,7 @@ export type SomnioMessage =
   | { tag: 'talk'; payload: TalkMessage }
   | { tag: 'target'; payload: TargetMessage }
   | { tag: 'engage'; payload: EngageMessage }
+  | { tag: 'useAbility'; payload: UseAbilityMessage }
   | { tag: 'useDoor'; payload: UseDoorMessage }
   | { tag: 'askTask'; payload: AskTaskMessage }
   | { tag: 'completeTask'; payload: CompleteTaskMessage }
@@ -96,7 +101,10 @@ export type SomnioMessage =
   | { tag: 'lucidity'; payload: LucidityMessage }
   | { tag: 'condition'; payload: ConditionMessage }
   | { tag: 'vitals'; payload: VitalsMessage }
+  | { tag: 'effects'; payload: EffectsMessage }
   | { tag: 'blow'; payload: BlowMessage }
+  | { tag: 'ability'; payload: AbilityMessage }
+  | { tag: 'cooldowns'; payload: CooldownsMessage }
   | { tag: 'raising'; payload: RaisingMessage }
   | { tag: 'mend'; payload: MendMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }

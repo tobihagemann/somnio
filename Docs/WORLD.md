@@ -52,7 +52,7 @@ The view looks down from a fixed angle at about fourteen metres of ground, top t
 - **Pace.** A dreamer jogs. The Run toggle, on the bar or Shift on a desktop, makes them run, which drains Balance. A winded dreamer walks.
 - **Targets.** A tap on anyone or anything alive makes it the dreamer's target and never walks them, as does a tap on a name in the Players list, and a tap on the dreamer's own frame targets themselves. A frame shows the target's name and a bar of its health. There are no damage numbers.
 - **Slot 1.** The first button on the bar is a toggle like Run, and acts on the target. At a nightmare it is **Attack**, with bare hands or a weapon in hand: it swings on the swing rhythm at that target alone while it stands in reach in front of the dreamer. The Moonstone does not swing, so a Healer holding it cannot attack. At a dreamer, or at themselves, it is **Mend** for a Healer with the Moonstone in hand. At anything else it cannot be switched on. It stays on from one target it can act on to the next, and switches off when the target is lost, when the dreamer falls, and through a door.
-- **Abilities.** The bar holds six buttons, keys 1 to 6 on a desktop: slot 1, then the abilities the dreamer's teachings have given them. Most act at once; a few are short channels that break when the dreamer moves. *(being built)*
+- **Abilities.** The bar holds six buttons, keys 1 to 6 on a desktop: slot 1, then the abilities the dreamer's teachings have given them, in the order they were taught. Each costs Balance or Spirit and needs a while before it can be used again, shown as a sweep across its button. Any use holds every ability back for a moment. An ability for a friend lands on the dreamer targeted, or on its user with no dreamer targeted, but never on a fallen dreamer or one too far away *(being built)*. What an ability leaves behind, such as a Brace, shows on the frame of whoever holds it, and on the target frame of whoever targets them. Most act at once; a few are short channels that break when the dreamer moves *(being built)*.
 - **People.** Someone a dreamer comes near greets them unasked. A tap from within speaking distance asks them to go on and opens a master's or the shopkeeper's offer. A quest giver shows a marker over their head *(being built)*.
 - **Speech.** Words carry by distance. A whisper reaches only those close by, a plain line a little further, and a yell far, even one door into the next room. Further off, a line arrives in pieces.
 
@@ -62,11 +62,11 @@ Walking into someone only stops a dreamer.
 
 Three roles in tension, where support classes *cannot* go it alone. A class is earned by passing its master's trial and is kept for good.
 
-- **Fighter** (Balance) — the front line. Holds nightmares on themselves and strikes them down. The only truly self-sufficient role — but bring friends. Abilities: **Cleave** strikes every nightmare in front, **Challenge** turns every nightmare near the Fighter on them, **Brace** halves the harm they take at the cost of running, **Lunge** leaps to the target, and **Rally** gives Balance back to the dreamers in earshot. *(being built)*
+- **Fighter** (Balance) — the front line. Holds nightmares on themselves and strikes them down. The only truly self-sufficient role — but bring friends. Each of their abilities spends Balance and is used with bare hands or a weapon in hand. **Cleave** swings at every nightmare in front within touch. **Challenge** turns every nightmare a few steps around the Fighter on them for a few breaths. **Brace** halves the harm they take for a few seconds, and they cannot run while it holds. **Lunge** leaps to the targeted nightmare from a few steps off. **Rally** is a shout that gives Balance back to every standing dreamer who would hear a plain line.
 - **Healer** (Spirit) — carries the **Moonstone**: heals their target, from a few steps away, draining their own Spirit to do it. Can barely fight. Exists to keep the group breathing. Precious and rare. **Touch** and **Drawing back** happen while **Mend** is on: the Moonstone mends the targeted dreamer, the Healer included, once a second, and waits while Spirit is short. A fallen dreamer is drawn back only by touch, and several Healers with Mend on at one fallen dreamer draw them back together. Abilities: **Deep mend** mends deeply in a short channel, **Renewal** mends over time, **Radiance** mends every dreamer close by a little, and **Calm** makes nightmares forget the Healer for a while. *(being built)*
 - **Mystic** (Spirit) — *deliberately secretive* support, not a fireball-wizard. Wards allies, weakens and binds nightmares, **locates the fallen**, and senses the dream's hidden currents — invaluable in a world where nightmares bleed in unseen. Abilities: **Ward** absorbs the next harm, **Weaken** softens a nightmare's strikes, **Bind** holds a nightmare in place, **Dream-bolt** is a modest strike from afar, and **Veil** hides the dreamers near the Mystic from every nightmare for a few breaths. **Sense the fallen** needs no button: a Mystic who has learned it always sees the way to the fallen in the land. *(being built)*
 
-**Threat.** A nightmare attacks the dreamer it holds the most threat against: harm done to it, and mending done to the dreamers it fights. A Fighter's Challenge puts them on top, a Healer's Calm brings them down, and a Mystic's Veil takes a group off the table. *(being built)*
+**Threat.** A nightmare attacks the dreamer it holds the most threat against: harm done to it, and mending done to the dreamers it fights. With no one on its mind it goes for the nearest, and it forgets whoever falls or leaves its ground. A Fighter's Challenge puts them on top. A Healer's Calm brings them down, and a Mystic's Veil takes a group off the table *(being built)*.
 
 ## The peoples — kinds of dreamers
 
@@ -108,14 +108,14 @@ Somnio commits to the Clan Lord model of growth: **horizontal skill-ranks, no le
 Three trained pools, carried from the game's legacy heritage (in German Gestalt, Gleichgewicht, and Geist):
 
 - **Health** — how firmly the dream-self holds together. Others see how a dreamer or a wounded nightmare fares only as a tint on its name, and the target frame as a bar, never as a number. When Health gives out, the dreamer falls (see *Death* below).
-- **Balance** — the combat resource: footing, timing, poise. Every swing spends it, and so do running, being struck, and the Fighter's abilities *(being built)*. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Balance runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Fighter's primary pool.
+- **Balance** — the combat resource: footing, timing, poise. Every swing spends it, and so do running, being struck, and the Fighter's abilities. The less a dreamer has, the easier they are to hit; recovering it is what the pause in a fight *is*. It recovers fastest standing or at the slow gait, slowly at a jog, and not at all at a run. A dreamer whose Balance runs out is **winded**. Until it is partway back, only the slow gait moves them, and it recovers only while they stand. The Fighter's primary pool.
 - **Spirit** — the support resource: the reach of a Healer's Moonstone and the depth of a Mystic's senses. Support acts drain Spirit; an empty Spirit is why neither can go it alone.
 
 ### Masters and teachings
 
 A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets. No experience bar and no rank for sale: depth over rush.
 
-**Abilities are teachings.** Learning a teaching's first rank puts its ability on the bar, and each further rank deepens it. *(being built)*
+**Abilities are teachings.** Learning a teaching's first rank puts its ability on the bar, and each further rank deepens it: Cleave strikes harder, Brace holds longer, Lunge is ready sooner, and Rally gives more back.
 
 The three trials:
 
@@ -127,7 +127,7 @@ A rank's mechanical effect is a **combat or support capability** — hit harder,
 
 ### What each master teaches
 
-- **Fighter** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Balance recovery, and Toughening. Then the Fighter's abilities (see *The classes*) *(being built)*.
+- **Fighter** — Strike (every hit lands harder), Guard (nightmares miss more often), Follow-through (a shorter pause between swings; its task is three nightmares driven off without falling in between), Balance recovery, and Toughening. Then the Fighter's abilities (see *The classes*): Cleave and Lunge build on Strike, Challenge and Brace on Guard, and Rally on Balance recovery.
 - **Healer** — Touch (Mend mends the targeted dreamer from about 3 m), Depth (each touch mends more), Drawing back (raising the fallen by touch; its task is Health mended on other dreamers), and Spirit deepening. Then the Healer's abilities (see *The classes*) *(being built)*.
 - **Mystic** — the Mystic's abilities (see *The classes*), Sense the fallen, and Spirit deepening. Taught obliquely; half the lesson is finding the tower open. *(being built)*
 

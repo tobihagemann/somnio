@@ -17,6 +17,7 @@ import {
   handleStudy,
   handleTalk,
   handleTarget,
+  handleUseAbility,
   handleUseDoor,
   handleUseItem,
   handleWake,
@@ -331,6 +332,7 @@ export class ConnectionActor {
         case 'talk':
         case 'target':
         case 'engage':
+        case 'useAbility':
         case 'useDoor':
         case 'askTask':
         case 'completeTask':
@@ -360,7 +362,10 @@ export class ConnectionActor {
         case 'lucidity':
         case 'condition':
         case 'vitals':
+        case 'effects':
         case 'blow':
+        case 'ability':
+        case 'cooldowns':
         case 'raising':
         case 'mend':
         case 'adminSay':
@@ -398,6 +403,7 @@ export class ConnectionActor {
         case 'talk':
         case 'target':
         case 'engage':
+        case 'useAbility':
         case 'useDoor':
         case 'askTask':
         case 'completeTask':
@@ -425,7 +431,10 @@ export class ConnectionActor {
         case 'lucidity':
         case 'condition':
         case 'vitals':
+        case 'effects':
         case 'blow':
+        case 'ability':
+        case 'cooldowns':
         case 'raising':
         case 'mend':
         case 'adminSay':
@@ -454,6 +463,9 @@ export class ConnectionActor {
         return { kind: 'keepOpen' };
       case 'engage':
         handleEngage(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'useAbility':
+        handleUseAbility(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'useDoor':
         return this.applyTransfer(handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies), state.accountId);
@@ -512,7 +524,10 @@ export class ConnectionActor {
       case 'lucidity':
       case 'condition':
       case 'vitals':
+      case 'effects':
       case 'blow':
+      case 'ability':
+      case 'cooldowns':
       case 'raising':
       case 'mend':
       case 'adminSay':

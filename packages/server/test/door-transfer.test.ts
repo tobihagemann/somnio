@@ -1,19 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID, headingFromCardinal } from '@somnio/core';
-import type { Point, Sector } from '@somnio/core';
+import type { Character, Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { payloads } from './support/combat.ts';
+import { lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
 const WORLD_SECONDS = 123_456.5;
-/** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`, `lucidity`. */
-const JOIN_FRAMES = 6;
+/** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`, `lucidity`, `cooldowns`. */
+const JOIN_FRAMES = 7;
 /** Not the fresh character's default, so a join that dropped the character's people would show. */
 const PEOPLE = 'umbrae';
 
@@ -25,13 +25,13 @@ function town(hall: Partial<Sector> = {}): Sector[] {
   ];
 }
 
-async function attachedAt(sectors: Sector[], at: Point, characters = new StubCharacterRepository()) {
+async function attachedAt(sectors: Sector[], at: Point, characters = new StubCharacterRepository(), character: Partial<Character> = {}) {
   const dependencies = await makeStubConnectionDependencies({ sectors, characters, initialWorldSeconds: WORLD_SECONDS });
   const connection = new ConnectionActor(dependencies);
   const { entityId } = attachPlayer(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, at, 'walker', {
     outbox: connection.outbox,
     worldSeconds: WORLD_SECONDS,
-    character: { people: PEOPLE },
+    character: { people: PEOPLE, ...character },
   });
   connection.markAttached(entityId, OUTDOOR_SPACE_ID, crypto.randomUUID());
   const useDoor = (sector: string, doorId: string) => handleUseDoor({ sector, doorId }, entityId, OUTDOOR_SPACE_ID, connection, dependencies);
@@ -51,7 +51,7 @@ describe('handleUseDoor', () => {
     const w = await attachedAt(town(), { x: 10, z: 9.7 });
     w.useDoor('Town', 'inside');
     const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
+    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns']);
     expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: 'Hall', selfId: w.entityId, people: PEOPLE, worldSeconds: WORLD_SECONDS } });
   });
 
@@ -113,8 +113,49 @@ describe('handleUseDoor', () => {
     expect(w.snapshotIn('Hall')).toBeUndefined();
     // The restoring `enterSpace` is what releases the client's wait for the transfer.
     const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity']);
+    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns']);
     expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID, people: PEOPLE } });
+  });
+
+  describe('with an ability used half a second before', () => {
+    /** Braced for 4 s, Brace's own cooldown 15 s, and the global one 0.75 s, each half a second along. */
+    const RUNNING = {
+      cooldowns: { globalSeconds: 0.25, cooldowns: [{ abilityId: 'brace', seconds: 14.5 }] },
+      effects: { effects: [{ effectId: 'braced', seconds: 3.5 }] },
+    };
+
+    async function braced(sectors: Sector[]) {
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+      const w = await attachedAt(sectors, { x: 10, z: 9.7 }, new StubCharacterRepository(), { lucidity: lucidity('fighter', { brace: 1 }) });
+      w.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!.handleUseAbility('brace', w.entityId);
+      now.mockReturnValue(1500);
+      return w;
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('carries its effect and its cooldowns through the door, sending both after enterSpace', async () => {
+      const w = await braced(town());
+      expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: 'Hall' });
+      const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES + 4);
+      expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns', 'effects']);
+      expect(arrival.at(-2)).toEqual({ tag: 'cooldowns', payload: RUNNING.cooldowns });
+      expect(arrival.at(-1)).toEqual({ tag: 'effects', payload: { entityId: w.entityId, ...RUNNING.effects } });
+      const hall = w.dependencies.worldRouter.space('Hall')!;
+      hall.handleUseAbility('brace', w.entityId);
+      expect(hall.snapshotForPlayer(w.entityId)!.character.energy.balanceCurrent).toBe(85);
+    });
+
+    it('carries them back with the player when the target cannot attach', async () => {
+      const oversized = { id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 };
+      const hall = town()[1]!;
+      const w = await braced(town({ placements: [...hall.placements, oversized] }));
+      expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: OUTDOOR_SPACE_ID });
+      const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES + 4);
+      expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns', 'effects']);
+      expect(restore.at(-2)).toEqual({ tag: 'cooldowns', payload: RUNNING.cooldowns });
+      expect(restore.at(-1)).toEqual({ tag: 'effects', payload: { entityId: w.entityId, ...RUNNING.effects } });
+    });
   });
 
   /** A step the dialog catalog translates, greeted to whoever arrives within speaking distance. */

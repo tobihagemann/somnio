@@ -100,6 +100,9 @@ describe('the names rendered through a core label key', () => {
   it('are every item, people, role, teaching, nightmare, and place a trial names, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
       'Balance recovery',
+      'Brace',
+      'Challenge',
+      'Cleave',
       'Cudgel',
       'Dagger',
       'Depth',
@@ -110,10 +113,12 @@ describe('the names rendered through a core label key', () => {
       'Guard',
       'Healer',
       'Lumina',
+      'Lunge',
       'Mace',
       'Moonstone',
       'North Wood',
       'Purse',
+      'Rally',
       'Short sword',
       'Sopors',
       'Spirit deepening',

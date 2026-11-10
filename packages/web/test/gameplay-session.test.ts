@@ -13,7 +13,7 @@ import { GameplayTransport } from '@/transport';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { fullPools, headingFromVector } from '@somnio/core';
+import { NO_LUCIDITY, fullPools, headingFromVector } from '@somnio/core';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
 
 /**
@@ -24,9 +24,22 @@ import type { RaisingState, SomnioMessage } from '@somnio/protocol';
  * are pinned here.
  */
 
-const FULL = fullPools([]);
+const FULL = fullPools(NO_LUCIDITY);
 const MOONSTONE_IN_HAND = { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' as const };
 const MOONSTONE_PUT_AWAY = { slot: 2, itemId: 'moonstone', quantity: 1 };
+/** A Fighter who has learned Brace and Lunge. */
+const FIGHTER_KIT: SomnioMessage = {
+  tag: 'lucidity',
+  payload: {
+    role: 'fighter',
+    ranks: [
+      { teachingId: 'strike', rank: 2, practice: 0 },
+      { teachingId: 'guard', rank: 1, practice: 0 },
+      { teachingId: 'brace', rank: 1, practice: 0 },
+      { teachingId: 'lunge', rank: 2, practice: 0 },
+    ],
+  },
+};
 
 interface Rig {
   session: GameplaySession;
@@ -39,7 +52,7 @@ interface Rig {
   selections: (string | undefined)[];
   /** Every `showSelection` call's `locked`, in step with `selections`. */
   selectionLocks: boolean[];
-  /** Every `showBlow`, `showRaising`, `showMend`, and `updateCondition` call, by name. */
+  /** Every `showBlow`, `showAbility`, `showEffects`, `showRaising`, `showMend`, and `updateCondition` call, by name. */
   shown: unknown[][];
   /** Every `showSpeechBubble` call. */
   bubbles: SpeechBubbleRequest[];
@@ -77,6 +90,8 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
       showBlow: (...blow) => shown.push(['showBlow', ...blow]),
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
       showMend: (...mend) => shown.push(['showMend', ...mend]),
+      showAbility: (...ability) => shown.push(['showAbility', ...ability]),
+      showEffects: (...effects) => shown.push(['showEffects', ...effects]),
       updateCondition: (...condition) => shown.push(['updateCondition', ...condition]),
       showPressMarker: (point) => pressMarks.push(['show', point]),
       liftPressMarker: () => pressMarks.push(['lift']),
@@ -439,6 +454,79 @@ describe('walking', () => {
     ticks(350, 3000);
 
     expect(at().x).toBeCloseTo(14, 1);
+  });
+
+  it('uses an ability after the move the heartbeat held back, since the server judges it where the player stands', () => {
+    const { rig, ticks, at } = standing();
+    rig.controller.dispatch(FIGHTER_KIT);
+    tapGround(rig, { x: 14, z: 10 });
+    ticks(0, 50);
+    rig.session.runTick(75);
+
+    rig.session.useAbility('brace');
+
+    expect(rig.sent.slice(-2)).toEqual([
+      { tag: 'move', payload: expect.objectContaining(at()) },
+      { tag: 'useAbility', payload: { abilityId: 'brace' } },
+    ]);
+  });
+
+  it("leaps at the target once the server takes Lunge, by the player's own ability frame, in place of the walk under way", () => {
+    const { rig, ticks, at } = standing();
+    rig.controller.dispatch(FIGHTER_KIT);
+    rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 10, z: 7 }));
+    tapGround(rig, { x: 14, z: 10 });
+    rig.session.useAbility('lunge');
+    expect(rig.session.predictor.walk?.kind).toBe('path');
+    expect(rig.sent.filter((message) => message.tag === 'useAbility')).toEqual([]);
+
+    rig.session.select('monster:1');
+    rig.session.useAbility('lunge');
+    expect(rig.sent.at(-1)).toEqual({ tag: 'useAbility', payload: { abilityId: 'lunge' } });
+    // The press alone moves the player nowhere new: a use the server refuses must not leap.
+    expect(rig.session.predictor.walk?.kind).toBe('path');
+    // Another's Lunge moves no one but them.
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'peer', abilityId: 'lunge', targetId: 'monster:1' } });
+    expect(rig.session.predictor.walk?.kind).toBe('path');
+
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'lunge', targetId: 'monster:1' } });
+    expect(rig.session.predictor.walk).toEqual({ kind: 'leap', end: { x: 10, z: 7.6 }, metresPerSecond: 6 });
+    ticks(0, 1000);
+    expect(at().x).toBeCloseTo(10, 9);
+    expect(at().z).toBeCloseTo(7.6, 9);
+    expect(rig.session.predictor.walk).toBeUndefined();
+  });
+
+  it('leaps at the body the frame names, not at a target chosen since the press', () => {
+    const { rig } = standing();
+    rig.controller.dispatch(FIGHTER_KIT);
+    rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 10, z: 7 }));
+    rig.controller.dispatch(entityFrame({ id: 'monster:2', kind: 'monster', x: 10, z: 12.5 }));
+    rig.session.select('monster:1');
+    rig.session.useAbility('lunge');
+    expect(rig.sent.at(-1)).toEqual({ tag: 'useAbility', payload: { abilityId: 'lunge' } });
+
+    rig.session.select('monster:2');
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'lunge', targetId: 'monster:1' } });
+    expect(rig.session.predictor.walk).toEqual({ kind: 'leap', end: { x: 10, z: 7.6 }, metresPerSecond: 6 });
+  });
+
+  it('jogs while braced whatever Run says, holding Run off until the effect ends', () => {
+    const { rig, ticks } = standing();
+    const gaits = (): string[] => rig.sent.flatMap((message) => (message.tag === 'move' ? [message.payload.gait] : []));
+    rig.session.toggleRun();
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: 'self', effects: [{ effectId: 'braced', seconds: 4 }] } });
+    tapGround(rig, { x: 18, z: 10 });
+    ticks(0, 200);
+    expect(rig.session.runHeldOff).toBe(true);
+    expect(gaits().at(-1)).toBe('jog');
+
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: 'self', effects: [] } });
+    // Only the player's own effects hold them, not those of a dreamer they target.
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: 'other', effects: [{ effectId: 'braced', seconds: 4 }] } });
+    ticks(250, 450);
+    expect(rig.session.runHeldOff).toBe(false);
+    expect(gaits().at(-1)).toBe('run');
   });
 
   it('walks nowhere on a press while fallen', () => {
@@ -1956,6 +2044,196 @@ describe('slot 1 at a dreamer', () => {
       expect([rig.session.target, rig.session.engaged]).toEqual([undefined, false]);
       expect(rig.controller.chatHistory.filter((line) => line.kind !== 'left' && line.kind !== 'joined')).toEqual([]);
     });
+  });
+});
+
+describe('abilities', () => {
+  const GHOST = 'monster:1';
+  const uses = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'useAbility' ? [message.payload.abilityId] : []));
+
+  /** A Fighter at (10, 10) with Brace and Lunge learned and full pools, a nightmare a leap away to the north, and Bren beside them. */
+  function fighter(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10, z: 7 }));
+    rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 11, z: 10 }));
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    rig.controller.dispatch(FIGHTER_KIT);
+    return rig;
+  }
+
+  it('fills the belt with the abilities the ranks teach, in teaching order', () => {
+    const rig = fighter();
+    expect(rig.session.abilities).toEqual(['brace', 'lunge']);
+    expect(rig.session.abilitySlots()).toEqual([
+      { abilityId: 'brace', usable: true, cooldown: undefined },
+      { abilityId: 'lunge', usable: false, cooldown: undefined },
+    ]);
+    rig.session.select(GHOST);
+    expect(rig.session.abilitySlots()[1]).toEqual({ abilityId: 'lunge', usable: true, cooldown: undefined });
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['the ability is not learned', (rig) => rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [] } })],
+    ['the Balance is short of its cost', (rig) => rig.controller.dispatch({ tag: 'energy', payload: { ...FULL, balanceCurrent: 11 } })],
+    ['the Moonstone is in hand', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_IN_HAND] } })],
+    ['the player lies fallen', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
+    ['the target stands out of reach', (rig) => rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10, z: 2 }))],
+    [
+      'its own cooldown runs',
+      (rig) => rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [{ abilityId: 'lunge', seconds: 2 }] } }),
+    ],
+    ['the global cooldown runs', (rig) => rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [] } })],
+  ])('neither asks for Lunge nor leaps while %s', (_label, arrange) => {
+    const rig = fighter();
+    rig.session.select(GHOST);
+    arrange(rig);
+    rig.session.useAbility('lunge');
+    expect(uses(rig)).toEqual([]);
+    expect(rig.session.predictor.walk).toBeUndefined();
+  });
+
+  it('keeps the cooldowns the server sends on its own clock, each begun as long before its end as it runs at the rank held, and asks again once they end', () => {
+    const rig = fighter();
+    rig.session.select(GHOST);
+    rig.now = 1000;
+    // Lunge runs 8 s at rank 2, so 6 s left of it began 2 s ago.
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [{ abilityId: 'lunge', seconds: 6 }] } });
+    expect(rig.session.abilitySlots()).toEqual([
+      { abilityId: 'brace', usable: true, cooldown: { startedAtMs: 750, endsAtMs: 1500, global: true } },
+      { abilityId: 'lunge', usable: true, cooldown: { startedAtMs: -1000, endsAtMs: 7000, global: false } },
+    ]);
+    rig.now = 1500;
+    rig.session.useAbility('brace');
+    rig.now = 6999;
+    rig.session.useAbility('lunge');
+    expect(uses(rig)).toEqual(['brace']);
+    rig.now = 7000;
+    expect(rig.session.abilitySlots()[1]!.cooldown).toBeUndefined();
+    rig.session.useAbility('lunge');
+    expect(uses(rig)).toEqual(['brace', 'lunge']);
+  });
+
+  it('runs its state hook as an ability comes in reach or leaves its cooldown, and not on a tick that changes neither', () => {
+    const rig = fighter();
+    let changes = 0;
+    rig.session.onStateChanged = () => (changes += 1);
+    rig.session.select(GHOST);
+    rig.session.runTick(0);
+    changes = 0;
+    rig.session.runTick(50);
+    rig.session.runTick(100);
+    expect(changes).toBe(0);
+    rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10, z: 2 }));
+    rig.session.runTick(150);
+    expect(changes).toBe(1);
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [{ abilityId: 'brace', seconds: 1 }] } });
+    rig.session.runTick(200);
+    changes = 0;
+    rig.now = 1000;
+    rig.session.runTick(250);
+    expect(changes).toBe(1);
+  });
+
+  it('uses an ability once for two presses inside the round trip, sweeping the global cooldown from the first, until the answer comes', () => {
+    const rig = fighter();
+    rig.session.select(GHOST);
+    rig.now = 1000;
+    rig.session.useAbility('lunge');
+    rig.now = 1100;
+    rig.session.useAbility('lunge');
+    rig.session.useAbility('brace');
+    expect(uses(rig)).toEqual(['lunge']);
+    expect(rig.session.abilitySlots()[0]!.cooldown).toEqual({ startedAtMs: 1000, endsAtMs: 1750, global: true });
+
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [{ abilityId: 'lunge', seconds: 7.9 }] } });
+    rig.session.useAbility('brace');
+    expect(uses(rig)).toEqual(['lunge', 'brace']);
+  });
+
+  it('frees the belt once a use the server refused goes unanswered for a while', () => {
+    const rig = fighter();
+    rig.now = 1000;
+    rig.session.useAbility('brace');
+    // Past the global cooldown, still awaiting the answer.
+    rig.now = 1900;
+    rig.session.useAbility('brace');
+    expect(uses(rig)).toEqual(['brace']);
+    rig.now = 2000;
+    rig.session.useAbility('brace');
+    expect(uses(rig)).toEqual(['brace', 'brace']);
+  });
+
+  it('never leaps for a Lunge the server refuses, which no ability frame answers', () => {
+    const rig = fighter();
+    rig.session.select(GHOST);
+    rig.now = 1000;
+    rig.session.useAbility('lunge');
+    for (let ms = 1000; ms <= 3000; ms += 50) {
+      rig.now = ms;
+      rig.session.runTick(ms);
+    }
+    expect(uses(rig)).toEqual(['lunge']);
+    expect(rig.session.predictor.walk).toBeUndefined();
+    expect(rig.controller.entities.get('self')!.position).toEqual({ x: 10, z: 10 });
+  });
+
+  it('starts a new space with no cooldowns until the snapshot its join sends', () => {
+    const rig = fighter();
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [{ abilityId: 'brace', seconds: 9 }] } });
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    expect(rig.session.abilitySlots().map(({ cooldown }) => cooldown)).toEqual([undefined, undefined]);
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [{ abilityId: 'brace', seconds: 4 }] } });
+    expect(rig.session.abilitySlots()[0]!.cooldown).toEqual({ startedAtMs: -11000, endsAtMs: 4000, global: false });
+  });
+
+  it('plays an ability on whoever used it, and ignores one this client does not know', () => {
+    const rig = fighter();
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'bren', abilityId: 'rally' } });
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'bren', abilityId: 'dream-bolt', targetId: GHOST } });
+    expect(rig.shown).toEqual([['showAbility', 'bren', 'rally', undefined]]);
+  });
+});
+
+describe('effects', () => {
+  const GHOST = 'monster:1';
+
+  function holding(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 14, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 11, z: 10 }));
+    return rig;
+  }
+
+  it("keeps the player's and the target's, each ending on the session's clock or lasting while its holder does, and drops the target's with it", () => {
+    const rig = holding();
+    rig.now = 1000;
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: 'self', effects: [{ effectId: 'braced', seconds: 4 }, { effectId: 'unknown' }] } });
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: GHOST, effects: [{ effectId: 'challenged', seconds: 6 }] } });
+    expect(rig.session.effectsOf('self')).toEqual([{ effectId: 'braced', endsAtMs: 5000 }]);
+    // Only a target's effects are kept.
+    expect(rig.session.effectsOf(GHOST)).toEqual([]);
+    // The scene draws the ones kept, with the seconds the frame gave.
+    expect(rig.shown).toEqual([['showEffects', 'self', [{ effectId: 'braced', seconds: 4 }]]]);
+
+    rig.session.select(GHOST);
+    rig.controller.dispatch({ tag: 'effects', payload: { entityId: GHOST, effects: [{ effectId: 'challenged' }] } });
+    expect(rig.session.effectsOf(GHOST)).toEqual([{ effectId: 'challenged' }]);
+    rig.session.select('bren');
+    expect(rig.session.effectsOf(GHOST)).toEqual([]);
+    // The player's own outlast a target of their own.
+    rig.session.pressOwnFrame();
+    rig.session.select(undefined);
+    expect(rig.session.effectsOf('self')).toEqual([{ effectId: 'braced', endsAtMs: 5000 }]);
+
+    rig.controller.dispatch(enterSpaceFrame());
+    expect(rig.session.effectsOf('self')).toEqual([]);
   });
 });
 

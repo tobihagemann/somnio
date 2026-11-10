@@ -124,6 +124,7 @@ describe('login handler over Postgres', () => {
       'inventory',
       'energy',
       'lucidity',
+      'cooldowns',
       'entity',
     ]);
   });

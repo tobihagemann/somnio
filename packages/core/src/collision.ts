@@ -24,6 +24,9 @@ export const MOVE_SUBSTEP = 0.05;
 /** A distance this close to a radius is contact, and contact is clear, so a slide along a wall does not stick. */
 const CONTACT_TOLERANCE = 1e-6;
 
+/** The rounding allowed in the overlap's rise, per metre walked: a step along the line between two bodies the walker overlaps leaves the rise at 0 only up to rounding. */
+const OVERLAP_RISE_TOLERANCE = 1e-9;
+
 /** How far a glide may still lean into a face that refused its step: rounding residue, not a push into a wedge. */
 const WEDGE_TOLERANCE = 1e-9;
 
@@ -355,29 +358,56 @@ function touches(point: Point, radius: number, bodies: readonly Body[]): boolean
   return bodies.some((body) => distance(point, body) < radius + body.radius - CONTACT_TOLERANCE);
 }
 
-/**
- * Whether another body stops a step. It does at contact, unless the step does not bring
- * the two centres closer, so an overlapping pair can always separate.
- */
-export function bodyBlocks(from: Point, to: Point, radius: number, body: Body): boolean {
-  const after = distance(to, body);
-  return after < radius + body.radius - CONTACT_TOLERANCE && after < distance(from, body);
+/** How far past contact a body of `radius` at the point reaches into another body. */
+function overlap(point: Point, radius: number, body: Body): number {
+  return Math.max(0, radius + body.radius - CONTACT_TOLERANCE - distance(point, body));
 }
 
 /**
- * Whether a body stops some step along the straight line from `from` to `to`, by `bodyBlocks`'
- * rule at any spacing of steps: the line nears the body's centre until its closest approach, so it
- * is stopped where that stretch comes within contact.
+ * Whether other bodies stop a step: they do where it deepens the overlap with all of them taken
+ * together. A step into a body the walker is clear of deepens it. With one body overlapped, a step
+ * deepens it only by bringing the centres closer, so an overlapping pair can always separate.
+ * Judged body by body, a walker overlapping two on opposite sides would near one of them with every
+ * step but one square across their line. Taken together, a step between them leaves one as far as
+ * it nears the other.
  */
-export function bodyBlocksLine(from: Point, to: Point, radius: number, body: Body): boolean {
+export function bodiesBlock(from: Point, to: Point, radius: number, bodies: readonly Body[]): boolean {
+  let rise = 0;
+  for (const body of bodies) rise += overlap(to, radius, body) - overlap(from, radius, body);
+  return rise > OVERLAP_RISE_TOLERANCE * distance(from, to);
+}
+
+/**
+ * Whether bodies stop some step along the straight line from `from` to `to`, by `bodiesBlock`'s
+ * rule at any spacing of steps: the overlap rises somewhere along the line. Its rate is the sum,
+ * over the bodies the line is inside, of how squarely the line heads at each centre. That only
+ * falls while the line stays inside the same bodies, so it can first rise only at the start or
+ * where the line enters or leaves a body.
+ */
+export function bodiesBlockLine(from: Point, to: Point, radius: number, bodies: readonly Body[]): boolean {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
-  const lengthSquared = dx * dx + dz * dz;
-  if (lengthSquared === 0) return false;
-  const along = ((body.x - from.x) * dx + (body.z - from.z) * dz) / lengthSquared;
-  if (along <= 0) return false;
-  const nearest = Math.min(along, 1);
-  return distance({ x: from.x + dx * nearest, z: from.z + dz * nearest }, body) < radius + body.radius - CONTACT_TOLERANCE;
+  const length = Math.hypot(dx, dz);
+  if (length === 0) return false;
+  const spans = bodies.flatMap((body) => {
+    const contact = radius + body.radius - CONTACT_TOLERANCE;
+    const along = ((body.x - from.x) * dx + (body.z - from.z) * dz) / (length * length);
+    const aside = Math.abs((body.x - from.x) * dz - (body.z - from.z) * dx) / length;
+    if (aside >= contact) return [];
+    const half = Math.sqrt(contact * contact - aside * aside) / length;
+    return [{ body, along, enters: along - half, leaves: along + half }];
+  });
+  const changes = [0, ...spans.flatMap((span) => [span.enters, span.leaves]).filter((at) => at > 0 && at < 1)];
+  return changes.some((at) => {
+    const point = { x: from.x + dx * at, z: from.z + dz * at };
+    let rate = 0;
+    for (const span of spans) {
+      if (span.enters > at || span.leaves <= at) continue;
+      const away = distance(point, span.body);
+      rate += away === 0 ? -1 : ((span.along - at) * length) / away;
+    }
+    return rate > OVERLAP_RISE_TOLERANCE;
+  });
 }
 
 /**
@@ -437,8 +467,7 @@ export function resolveMove(collision: SpaceCollision, from: Point, to: Point, r
   const step = { x: (to.x - from.x) / substeps, z: (to.z - from.z) / substeps };
   let position = from;
   let blocked = false;
-  const legal = (next: Point): boolean =>
-    isLegalMove(collision, position, next, radius, npcs) && !bodies.some((body) => bodyBlocks(position, next, radius, body));
+  const legal = (next: Point): boolean => isLegalMove(collision, position, next, radius, npcs) && !bodiesBlock(position, next, radius, bodies);
   for (let index = 0; index < substeps; index += 1) {
     const full = { x: position.x + step.x, z: position.z + step.z };
     if (legal(full)) {
@@ -479,7 +508,8 @@ function glideAlong(step: Point, normals: readonly Point[]): Point | undefined {
  * For every feature that refuses a step from `at` to `probe`, the unit vector out to `at` from
  * where the feature lies nearest it: `own` as each feature lies, and `runs` with a joint taken as
  * the run it lies in. The static world refuses as `isClear` judges it, an NPC the probe overlaps,
- * and another body only where it stops the step, so an overlapping pair can still separate.
+ * and another body only where the step deepens the overlap with it, so an overlapping pair can
+ * still separate.
  */
 function contactNormals(
   collision: SpaceCollision,
@@ -507,7 +537,10 @@ function contactNormals(
     runs.push(...(run === undefined ? normal : [run]));
     return false;
   });
-  const centres = [...npcs.filter((npc) => touches(probe, radius, [npc])), ...bodies.filter((body) => bodyBlocks(at, probe, radius, body))];
+  const centres = [
+    ...npcs.filter((npc) => touches(probe, radius, [npc])),
+    ...bodies.filter((body) => overlap(probe, radius, body) > overlap(at, radius, body)),
+  ];
   const fromCentres = centres.flatMap((centre) => outFrom(centre, at));
   return { runs: [...runs, ...fromCentres], own: [...own, ...fromCentres] };
 }

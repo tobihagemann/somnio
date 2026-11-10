@@ -1,6 +1,8 @@
 import type { Condition, Energy, Gait, Role } from '@somnio/protocol';
 import type { Body } from './collision.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
+import { effect } from './effects.ts';
+import type { EffectId } from './effects.ts';
 import { clamp, distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { angularDistance, headingFromVector } from './heading.ts';
@@ -8,7 +10,7 @@ import type { Heading } from './heading.ts';
 import { itemWeapon } from './items.ts';
 import type { ItemId } from './items.ts';
 import { forbidsStriking, rankOf } from './lucidity.ts';
-import type { HeldRank, TaskSpec } from './lucidity.ts';
+import type { HeldRank, Lucidity, TaskSpec, TeachingId } from './lucidity.ts';
 import type { MonsterKind } from './monsterKinds.ts';
 
 /**
@@ -52,6 +54,8 @@ export const COMBAT = {
   /** `reach` is how far apart, centre to centre, a Healer and the dreamer they mend stand at most. */
   mend: { health: 10, healthPerDepthRank: 5, spiritCost: 8, seconds: 1, reach: 3 },
   raise: { seconds: 6, spiritCost: 40, healthFraction: 0.25, graceSeconds: 5 },
+  /** The threat each point of health mended raises against the Healer, shared among the nightmares holding threat against the dreamer mended. A hit raises as much threat as the harm it lands. */
+  threatPerHealthMended: 0.5,
   /** The share of each pool a dreamer who gave up wakes with. */
   weakenedFraction: 0.25,
 
@@ -114,6 +118,11 @@ export function balancePace(motion: Gait | 'standing', winded: boolean): number 
   return winded ? 0 : COMBAT.balancePace[motion];
 }
 
+/** The gait a dreamer asking for `gait` moves at: no faster than a jog while an effect they hold limits how they move. */
+export function gaitAllowed(gait: Gait, effects: readonly EffectId[]): Gait {
+  return gait === 'run' && effects.some((effectId) => effect(effectId).movement !== undefined) ? 'jog' : gait;
+}
+
 export function balancePerSecond(ranks: readonly HeldRank[]): number {
   return COMBAT.balancePerSecond * (1 + COMBAT.balancePerRecoveryRank * rankOf(ranks, 'balance-recovery'));
 }
@@ -155,6 +164,19 @@ export type EngageAction = 'attack' | 'mend';
 /** What a target is to slot 1. */
 export type EngageTarget = 'nightmare' | 'dreamer';
 
+/** What a kit needs in hand: `mainHand` bare hands or a weapon, `moonstone` the Moonstone. */
+export type HandNeed = 'mainHand' | 'moonstone';
+
+/** Whether what is in hand serves a kit, for slot 1 and the abilities alike. */
+export function handAllows(need: HandNeed, itemInHand: string | undefined): boolean {
+  switch (need) {
+    case 'mainHand':
+      return itemInHand === undefined || itemWeapon(itemInHand) !== undefined;
+    case 'moonstone':
+      return itemInHand === ('moonstone' satisfies ItemId);
+  }
+}
+
 /**
  * What slot 1 does at a target: Attack at a nightmare not yet driven off, with bare hands or a
  * weapon in hand, and Mend at a dreamer, the Healer themselves included, for a Healer with the
@@ -162,8 +184,8 @@ export type EngageTarget = 'nightmare' | 'dreamer';
  * not swing, so one hand never does both.
  */
 export function engageAction(target: EngageTarget | undefined, role: Role | undefined, itemInHand: string | undefined): EngageAction | undefined {
-  if (target === 'nightmare') return itemInHand === undefined || itemWeapon(itemInHand) !== undefined ? 'attack' : undefined;
-  if (target === 'dreamer' && role === 'healer' && itemInHand === ('moonstone' satisfies ItemId)) return 'mend';
+  if (target === 'nightmare') return handAllows('mainHand', itemInHand) ? 'attack' : undefined;
+  if (target === 'dreamer' && role === 'healer' && handAllows('moonstone', itemInHand)) return 'mend';
   return undefined;
 }
 
@@ -200,17 +222,51 @@ export function strikeChance(kind: MonsterKind, balance: number, balanceMax: num
   return clamp(kind.hitChance - COMBAT.hitChancePerGuardRank * rankOf(ranks, 'guard') + unsteady, 0, 1);
 }
 
-export function maxPools(ranks: readonly HeldRank[]): Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'> {
+/**
+ * An amount an effect or a rank changed, as the whole number a pool holds: rounded once, half up,
+ * before it touches the pool.
+ */
+export function wholeAmount(amount: number): number {
+  return Math.round(amount);
+}
+
+/**
+ * The harm a hit of `amount` lands: its share by the `damageDealt` of each effect its dealer holds
+ * and the `damageTaken` of each its taker holds, whole, and never less than 1.
+ */
+export function harmTaken(amount: number, dealer: readonly EffectId[], taker: readonly EffectId[]): number {
+  return Math.max(1, wholeAmount(amount * effectShare(dealer, 'damageDealt') * effectShare(taker, 'damageTaken')));
+}
+
+/**
+ * The threat a deed of `amount` raises against a nightmare: its share by the `threatGenerated` of
+ * each effect the doer holds.
+ */
+export function threatRaised(amount: number, doer: readonly EffectId[]): number {
+  return amount * effectShare(doer, 'threatGenerated');
+}
+
+/** The product of the share `key` of each effect held. */
+function effectShare(effects: readonly EffectId[], key: 'damageDealt' | 'damageTaken' | 'threatGenerated'): number {
+  return effects.reduce((product, effectId) => product * (effect(effectId)[key] ?? 1), 1);
+}
+
+/** The teaching that deepens each role's Spirit. */
+const SPIRIT_DEEPENING: Record<Role, TeachingId | undefined> = { fighter: undefined, healer: 'spirit-deepening' };
+
+/** Each pool's maximum: Health by Toughening, Spirit by the Spirit deepening of the dreamer's role. */
+export function maxPools({ role, ranks }: Pick<Lucidity, 'role' | 'ranks'>): Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'> {
+  const deepening = role === undefined ? undefined : SPIRIT_DEEPENING[role];
   return {
     healthMax: COMBAT.basePool + COMBAT.healthPerTougheningRank * rankOf(ranks, 'toughening'),
     balanceMax: COMBAT.basePool,
-    spiritMax: COMBAT.basePool + COMBAT.spiritPerDeepeningRank * rankOf(ranks, 'spirit-deepening'),
+    spiritMax: COMBAT.basePool + (deepening === undefined ? 0 : COMBAT.spiritPerDeepeningRank * rankOf(ranks, deepening)),
   };
 }
 
-/** Every pool at the maximum the ranks give. */
-export function fullPools(ranks: readonly HeldRank[]): Energy {
-  const maxima = maxPools(ranks);
+/** Every pool at the maximum the role and ranks give. */
+export function fullPools(lucidity: Pick<Lucidity, 'role' | 'ranks'>): Energy {
+  const maxima = maxPools(lucidity);
   return { healthCurrent: maxima.healthMax, balanceCurrent: maxima.balanceMax, spiritCurrent: maxima.spiritMax, ...maxima };
 }
 

@@ -142,6 +142,11 @@ export interface EngageMessage {
   on: boolean;
 }
 
+/** Uses an ability on the belt. It names no target: the server lands it by the dreamer's one target. */
+export interface UseAbilityMessage {
+  abilityId: string;
+}
+
 /** A door id is unique only within its sector, and a space can hold several sectors. */
 export interface UseDoorMessage {
   sector: string;
@@ -359,11 +364,44 @@ export interface VitalsMessage {
   health: number;
 }
 
+/** A timed effect its holder holds, with the seconds it has left; without them it lasts as long as its holder. */
+export interface HeldEffectMessage {
+  effectId: string;
+  seconds?: number;
+}
+
+/** Every effect an entity holds, whole in every frame. Sent to the entity and to each dreamer whose target it is. */
+export interface EffectsMessage {
+  entityId: string;
+  effects: HeldEffectMessage[];
+}
+
 /** One swing or strike, landed or not. */
 export interface BlowMessage {
   attackerId: string;
   targetId: string;
   hit: boolean;
+}
+
+/** An entity used an ability. `targetId` is whom it landed on, absent when that is the user or the ability lands round them. */
+export interface AbilityMessage {
+  entityId: string;
+  abilityId: string;
+  targetId?: string;
+}
+
+export interface AbilityCooldownMessage {
+  abilityId: string;
+  seconds: number;
+}
+
+/**
+ * The seconds left on each of the dreamer's running cooldowns, the global one beside each
+ * ability's own, whole in every frame. An ability left out is ready. Sent to that dreamer alone.
+ */
+export interface CooldownsMessage {
+  globalSeconds: number;
+  cooldowns: AbilityCooldownMessage[];
 }
 
 /**
@@ -491,6 +529,11 @@ export function decodeTargetMessage(container: Record<string, unknown>, path: st
 
 export function decodeEngageMessage(container: Record<string, unknown>, path: string): EngageMessage {
   return { on: requireBool(container, 'on', path) };
+}
+
+/** The ability id decodes as an id: the abilities are core's, so the server checks it. */
+export function decodeUseAbilityMessage(container: Record<string, unknown>, path: string): UseAbilityMessage {
+  return { abilityId: requireId(container, 'abilityId', path) };
 }
 
 export function decodeUseDoorMessage(container: Record<string, unknown>, path: string): UseDoorMessage {
@@ -764,11 +807,48 @@ export function decodeVitalsMessage(container: Record<string, unknown>, path: st
   };
 }
 
+function decodeHeldEffectMessage(container: Record<string, unknown>, path: string): HeldEffectMessage {
+  return {
+    effectId: requireId(container, 'effectId', path),
+    ...(isAbsent(container, 'seconds') ? {} : { seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`) }),
+  };
+}
+
+/** Effect ids decode as ids: the effects are core's, and the client draws only those it knows. */
+export function decodeEffectsMessage(container: Record<string, unknown>, path: string): EffectsMessage {
+  return {
+    entityId: requireEntityId(container, 'entityId', path),
+    effects: mapArray(container, 'effects', path, SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects, decodeHeldEffectMessage),
+  };
+}
+
 export function decodeBlowMessage(container: Record<string, unknown>, path: string): BlowMessage {
   return {
     attackerId: requireEntityId(container, 'attackerId', path),
     targetId: requireEntityId(container, 'targetId', path),
     hit: requireBool(container, 'hit', path),
+  };
+}
+
+export function decodeAbilityMessage(container: Record<string, unknown>, path: string): AbilityMessage {
+  return {
+    entityId: requireEntityId(container, 'entityId', path),
+    abilityId: requireId(container, 'abilityId', path),
+    ...(isAbsent(container, 'targetId') ? {} : { targetId: requireEntityId(container, 'targetId', path) }),
+  };
+}
+
+function decodeAbilityCooldownMessage(container: Record<string, unknown>, path: string): AbilityCooldownMessage {
+  return {
+    abilityId: requireId(container, 'abilityId', path),
+    seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
+  };
+}
+
+export function decodeCooldownsMessage(container: Record<string, unknown>, path: string): CooldownsMessage {
+  return {
+    globalSeconds: requireNonNegative(requireFloat(container, 'globalSeconds', path), `${path}.globalSeconds`),
+    cooldowns: mapArray(container, 'cooldowns', path, SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns, decodeAbilityCooldownMessage),
   };
 }
 

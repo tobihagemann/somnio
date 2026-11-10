@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 17,
+  helloVersion: 18,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `email` on login/registration, for a character's name, for item ids, and for the record ids inside a sector. */
@@ -58,6 +58,10 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxInventoryRows: 32,
   /** The most ranks a `lucidity` frame carries, generous over the teachings there are. */
   maxLucidityRanks: 32,
+  /** The most effects an `effects` frame carries, generous over the effects there are. */
+  maxEntityEffects: 32,
+  /** The most cooldowns a `cooldowns` frame carries, generous over the abilities there are. */
+  maxAbilityCooldowns: 32,
   /** The most characters one account holds, which bounds the list a `characters` frame carries. */
   maxCharactersPerAccount: 4,
   /** The most entities one `moves` frame carries; the server splits a larger batch across frames. */

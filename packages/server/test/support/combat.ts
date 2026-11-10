@@ -17,7 +17,7 @@ export const CUDGEL_IN_HAND: InventoryRow = { slot: 1, itemId: 'cudgel', quantit
 export const MOONSTONE_IN_HAND: InventoryRow = { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' };
 
 export function energy(overrides: Partial<Energy> = {}): Energy {
-  return { ...fullPools([]), ...overrides };
+  return { ...fullPools(NO_LUCIDITY), ...overrides };
 }
 
 export function lucidity(role: Lucidity['role'], held: Partial<Record<TeachingId, number>> = {}, overrides: Partial<Lucidity> = {}): Lucidity {

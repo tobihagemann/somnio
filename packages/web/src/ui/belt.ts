@@ -1,17 +1,18 @@
-import { isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
-import type { EngageAction } from '@somnio/core';
+import { abilityTeaching, isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
+import type { AbilityId, EngageAction } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
-import { taskIsDone } from '@/client';
+import { taskIsDone, wholeSecondsLeft } from '@/client';
+import type { AbilitySlotState, CooldownSpan } from '@/client';
 import { t } from '@/i18n';
 import { SVG_NAMESPACE, element, setHidden } from './dom';
-import { HUD_ICONS, glyph, showGlyph } from './hudIcons';
+import { ABILITY_GLYPHS, HUD_ICONS, glyph, showGlyph } from './hudIcons';
 import { taskProgressText } from './servicePanel';
 import { shareBar, showShare } from './unitFrames';
 import type { ShareBar } from './unitFrames';
 
 /**
  * The controls the HUD's belt is built from: the Health and Spirit globes, the Balance meter, slot 1,
- * the empty ability slots, Run, and the line that says what the player studies. A mouse's belt sits
+ * the ability slots, Run, and the line that says what the player studies. A mouse's belt sits
  * at the bottom centre; a finger's keeps slot 1 and Run under the right thumb and Balance as a bar.
  */
 
@@ -203,6 +204,78 @@ export function runButton(onPress: () => void, orb: boolean): HTMLButtonElement 
       });
   node.addEventListener('click', onPress);
   return node;
+}
+
+/**
+ * An ability's slot, named and drawn for it, greyed out while the server would not act on it, and
+ * swept dark while it waits on a cooldown. The sweep is a CSS animation timed from when the server
+ * says the cooldown began, so the slot keeps its elements while what it shows is unchanged, and only
+ * a new cooldown starts a new sweep. Its own cooldown counts down in whole seconds; the short global
+ * one only sweeps.
+ */
+export class AbilitySlot {
+  readonly root: HTMLButtonElement;
+  readonly abilityId: AbilityId;
+  private sweep: HTMLElement;
+  private readonly seconds: HTMLElement;
+  private cooldown: CooldownSpan | undefined;
+  private shown: string | undefined;
+  private shownSeconds = '';
+
+  /** `orb` is a finger's round button on the arc; otherwise a square slot with its key number. */
+  constructor(abilityId: AbilityId, key: number, onPress: () => void, orb: boolean) {
+    this.abilityId = abilityId;
+    const label = t(teaching(abilityTeaching(abilityId)).labelKey);
+    this.sweep = element('span', { className: 'hud-sweep hidden', attributes: { 'aria-hidden': 'true' } });
+    this.seconds = element('span', { className: 'hud-sweep__seconds', attributes: { 'aria-hidden': 'true' } });
+    this.root = element('button', {
+      className: orb ? 'hud-orb hud-orb--ability' : 'fantasy-button hud-slot hud-slot--ability',
+      attributes: { type: 'button', 'aria-label': label, title: orb ? label : `${label} (${key})` },
+      children: [
+        ...(orb ? [] : [element('span', { className: 'hud-slot__key', text: String(key), attributes: { 'aria-hidden': 'true' } })]),
+        glyph(ABILITY_GLYPHS[abilityId]),
+        this.sweep,
+        this.seconds,
+      ],
+    });
+    this.root.addEventListener('click', onPress);
+  }
+
+  render(state: AbilitySlotState, nowMs: number): void {
+    const shown = JSON.stringify([state.usable, state.cooldown ?? null]);
+    if (shown === this.shown) return;
+    this.shown = shown;
+    const cooling = state.cooldown !== undefined;
+    this.root.disabled = !state.usable || cooling;
+    this.root.classList.toggle('hud-ability--greyed', !state.usable);
+    if (cooling) this.root.setAttribute('aria-description', t('cooling down'));
+    else this.root.removeAttribute('aria-description');
+    if (JSON.stringify(state.cooldown ?? null) !== JSON.stringify(this.cooldown ?? null)) this.startSweep(state.cooldown, nowMs);
+    this.tick(nowMs);
+  }
+
+  /** The whole seconds left on the slot's own cooldown. */
+  tick(nowMs: number): void {
+    const cooldown = this.cooldown;
+    const seconds = cooldown === undefined || cooldown.global ? '' : t('%@s', String(wholeSecondsLeft(cooldown.endsAtMs, nowMs)));
+    if (seconds === this.shownSeconds) return;
+    this.shownSeconds = seconds;
+    this.seconds.textContent = seconds;
+  }
+
+  /** A new sweep for a new cooldown, already as far along as the cooldown is: an animation restarts only on a new element. */
+  private startSweep(cooldown: CooldownSpan | undefined, nowMs: number): void {
+    this.cooldown = cooldown;
+    if (cooldown === undefined) {
+      setHidden(this.sweep, true);
+      return;
+    }
+    const sweep = element('span', { className: 'hud-sweep', attributes: { 'aria-hidden': 'true' } });
+    sweep.style.animationDuration = `${Math.round(cooldown.endsAtMs - cooldown.startedAtMs)}ms`;
+    sweep.style.animationDelay = `${Math.round(cooldown.startedAtMs - nowMs)}ms`;
+    this.sweep.replaceWith(sweep);
+    this.sweep = sweep;
+  }
 }
 
 /** A slot no ability fills yet, with its key number. */

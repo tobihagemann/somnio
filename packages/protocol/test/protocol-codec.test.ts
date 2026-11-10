@@ -262,6 +262,36 @@ describe('runtime validation the erased types cannot do', () => {
     ['vitals below 0', 'vitals', { entityId: 'monster:7', health: -0.01 }, /health: expected a number from 0 to 1, got -0.01/],
     ['vitals above 1', 'vitals', { entityId: 'monster:7', health: 1.01 }, /health: expected a number from 0 to 1, got 1.01/],
     ['vitals without their entity', 'vitals', { health: 0.5 }, /entityId: expected a string, got nothing/],
+    ['an ability id outside the id alphabet', 'useAbility', { abilityId: 'Brace' }, /abilityId: expected an id/],
+    ['a use of no ability', 'useAbility', {}, /abilityId: expected a string, got nothing/],
+    ['an ability used by no one', 'ability', { abilityId: 'brace' }, /entityId: expected a string, got nothing/],
+    ['an empty ability target', 'ability', { entityId: 'a', abilityId: 'brace', targetId: '' }, /targetId: expected a non-empty string/],
+    ['an effect id outside the id alphabet', 'effects', { entityId: 'a', effects: [{ effectId: 'Braced', seconds: 1 }] }, /effectId: expected an id/],
+    [
+      'an effect with negative time left',
+      'effects',
+      { entityId: 'a', effects: [{ effectId: 'braced', seconds: -1 }] },
+      /seconds: expected a non-negative number/,
+    ],
+    [
+      'more effects than the cap',
+      'effects',
+      // The first effect is no object, so only a count checked before the effects reports the cap.
+      { entityId: 'a', effects: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects }, (_, index) => ({ effectId: `e${index}` }))] },
+      /effects: exceeds 32 records \(got 33\)/,
+    ],
+    ['a global cooldown with negative time left', 'cooldowns', { globalSeconds: -0.5, cooldowns: [] }, /globalSeconds: expected a non-negative number/],
+    ['a cooldown without its time left', 'cooldowns', { globalSeconds: 0, cooldowns: [{ abilityId: 'brace' }] }, /seconds: expected a finite number/],
+    [
+      'more cooldowns than the cap',
+      'cooldowns',
+      // The first cooldown is no object, so only a count checked before the cooldowns reports the cap.
+      {
+        globalSeconds: 0,
+        cooldowns: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns }, (_, index) => ({ abilityId: `a${index}`, seconds: 1 }))],
+      },
+      /cooldowns: exceeds 32 records \(got 33\)/,
+    ],
     ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
@@ -302,6 +332,10 @@ describe('runtime validation the erased types cannot do', () => {
       name: atCapId,
     }));
     expect(() => decodeSomnioMessage(frame('characters', { characters: atCapCharacters }))).not.toThrow();
+    const atCapEffects = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects }, (_, index) => ({ effectId: `e${index}`, seconds: 1 }));
+    expect(() => decodeSomnioMessage(frame('effects', { entityId: 'a', effects: atCapEffects }))).not.toThrow();
+    const atCapCooldowns = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns }, (_, index) => ({ abilityId: `a${index}`, seconds: 1 }));
+    expect(() => decodeSomnioMessage(frame('cooldowns', { globalSeconds: 0, cooldowns: atCapCooldowns }))).not.toThrow();
   });
 });
 
@@ -346,6 +380,11 @@ describe('round trips', () => {
   });
 
   /** Without a target a `target` clears, so the key must stay absent. */
+  it('effects decodes an effect that lasts as long as its holder without a seconds key', () => {
+    const decoded = decodeSomnioMessage(frame('effects', { entityId: 'monster:7', effects: [{ effectId: 'stony' }] }));
+    expect(decoded).toEqual({ tag: 'effects', payload: { entityId: 'monster:7', effects: [{ effectId: 'stony' }] } });
+  });
+
   it('target round-trips without a target', () => {
     const message: SomnioMessage = { tag: 'target', payload: {} };
     const decoded = roundTrip(message);
@@ -507,7 +546,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(17);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(18);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -537,6 +576,8 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects).toBe(32);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxCharactersPerAccount).toBe(4);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame).toBe(256);
   });

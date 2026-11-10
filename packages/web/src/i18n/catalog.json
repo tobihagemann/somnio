@@ -75,6 +75,10 @@
     "en": "%1$@ yells, \"%2$@\"",
     "de": "%1$@ schreit, \"%2$@\""
   },
+  "%1$@, %2$@ s left": {
+    "en": "%1$@, %2$@ s left",
+    "de": "%1$@, noch %2$@ s"
+  },
   "%@ deals in weapons. He buys back what he sells for half its price.": {
     "en": "%@ deals in weapons. He buys back what he sells for half its price.",
     "de": "%@ handelt mit Waffen. Was er verkauft, kauft er zum halben Preis zurück."
@@ -118,6 +122,10 @@
   "%@c": {
     "en": "%@c",
     "de": "%@c"
+  },
+  "%@s": {
+    "en": "%@s",
+    "de": "%@s"
   },
   "3D characters and props by KayKit.": {
     "en": "3D characters and props by KayKit.",
@@ -183,6 +191,10 @@
     "en": "Become a %@?",
     "de": "%@ werden?"
   },
+  "Braced": {
+    "en": "Braced",
+    "de": "Standfest"
+  },
   "Broadcast message: %@": {
     "en": "Broadcast message: %@",
     "de": "Broadcast Nachricht: %@"
@@ -194,6 +206,10 @@
   "Cancel": {
     "en": "Cancel",
     "de": "Abbrechen"
+  },
+  "Challenged": {
+    "en": "Challenged",
+    "de": "Herausgefordert"
   },
   "Chat": {
     "en": "Chat",
@@ -291,6 +307,10 @@
     "en": "Edaria Square",
     "de": "Edaria-Platz"
   },
+  "Effects": {
+    "en": "Effects",
+    "de": "Effekte"
+  },
   "Email": {
     "en": "Email",
     "de": "E-Mail"
@@ -386,6 +406,10 @@
   "Items: %@": {
     "en": "Items: %@",
     "de": "Items: %@"
+  },
+  "Leap to the nightmare you target. Each rank readies it sooner.": {
+    "en": "Leap to the nightmare you target. Each rank readies it sooner.",
+    "de": "Spring zu dem Albtraum, den du als Ziel gewählt hast. Mit jedem Rang ist der Sprung früher wieder bereit."
   },
   "Learn %@": {
     "en": "Learn %@",
@@ -575,6 +599,10 @@
     "en": "Shopkeeper",
     "de": "Krämer"
   },
+  "Shout to give balance back to every dreamer who hears you. Each rank gives back more.": {
+    "en": "Shout to give balance back to every dreamer who hears you. Each rank gives back more.",
+    "de": "Ruf, und jeder Träumer, der dich hört, gewinnt Gleichgewicht zurück. Jeder Rang gibt mehr zurück."
+  },
   "Sign Up": {
     "en": "Sign Up",
     "de": "Registrieren"
@@ -603,6 +631,10 @@
     "en": "Stay",
     "de": "Bleiben"
   },
+  "Strike every nightmare in front of you at once. Each rank hits harder.": {
+    "en": "Strike every nightmare in front of you at once. Each rank hits harder.",
+    "de": "Triff jeden Albtraum vor dir auf einmal. Jeder Rang trifft härter."
+  },
   "Study this": {
     "en": "Study this",
     "de": "Das lernen"
@@ -614,6 +646,10 @@
   "Studying nothing": {
     "en": "Studying nothing",
     "de": "Du lernst nichts"
+  },
+  "Take half the harm for a few seconds, but you cannot run. Each rank holds it longer.": {
+    "en": "Take half the harm for a few seconds, but you cannot run. Each rank holds it longer.",
+    "de": "Nimm ein paar Sekunden lang nur halben Schaden, kannst aber nicht rennen. Jeder Rang hält länger."
   },
   "Take the task": {
     "en": "Take the task",
@@ -674,6 +710,10 @@
   "Try Again": {
     "en": "Try Again",
     "de": "Erneut versuchen"
+  },
+  "Turn every nightmare near you on yourself.": {
+    "en": "Turn every nightmare near you on yourself.",
+    "de": "Lenke jeden Albtraum in deiner Nähe auf dich."
   },
   "Turn your phone sideways.": {
     "en": "Turn your phone sideways.",
@@ -827,6 +867,10 @@
     "en": "Your trial",
     "de": "Deine Prüfung"
   },
+  "cooling down": {
+    "en": "cooling down",
+    "de": "klingt ab"
+  },
   "east": {
     "en": "east",
     "de": "Osten"
@@ -846,6 +890,10 @@
   "hale": {
     "en": "hale",
     "de": "unversehrt"
+  },
+  "held off": {
+    "en": "held off",
+    "de": "ausgesetzt"
   },
   "hurt": {
     "en": "hurt",

@@ -3,6 +3,18 @@
     "en": "Balance recovery",
     "de": "Standfestigkeit"
   },
+  "Brace": {
+    "en": "Brace",
+    "de": "Gegenstemmen"
+  },
+  "Challenge": {
+    "en": "Challenge",
+    "de": "Herausforderung"
+  },
+  "Cleave": {
+    "en": "Cleave",
+    "de": "Rundhieb"
+  },
   "Cudgel": {
     "en": "Cudgel",
     "de": "Knüppel"
@@ -43,6 +55,10 @@
     "en": "Lumina",
     "de": "Lumina"
   },
+  "Lunge": {
+    "en": "Lunge",
+    "de": "Ausfall"
+  },
   "Mace": {
     "en": "Mace",
     "de": "Streitkolben"
@@ -58,6 +74,10 @@
   "Purse": {
     "en": "Purse",
     "de": "Geldbeutel"
+  },
+  "Rally": {
+    "en": "Rally",
+    "de": "Sammelruf"
   },
   "Short sword": {
     "en": "Short sword",

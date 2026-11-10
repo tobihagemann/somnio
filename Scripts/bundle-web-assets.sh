@@ -75,6 +75,10 @@ UI_FILES=(
   "icon-settings.png"
   "icon-close.png"
   "icon-menu.png"
+  "icon-challenge.png"
+  "icon-brace.png"
+  "icon-lunge.png"
+  "icon-rally.png"
 )
 
 for entry in "${SUBTREES[@]}"; do

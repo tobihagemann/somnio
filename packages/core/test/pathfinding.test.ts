@@ -374,6 +374,48 @@ describe('the edge rule', () => {
     expect(distance(walk(space, from, path, [body]), to)).toBeLessThan(1e-9);
   });
 
+  /** Each leg runs along `z = lineZ`, which passes the body's centre within contact plus the margin but not within contact. */
+  describe('keeps the margin from a body only where a leg starts clear of it by the margin', () => {
+    const body = { x: 10, z: 10, radius: RADIUS };
+    const lineZ = body.z + RADIUS + body.radius + PATHFINDING.bodyMargin / 2;
+
+    it('lets a leg starting within the margin pass by in contact', () => {
+      const from = { x: body.x - 0.15, z: lineZ };
+      expect(distance(from, body)).toBeLessThan(RADIUS + body.radius + PATHFINDING.bodyMargin);
+
+      expect(legWalkable(field().collision, from, { x: 15, z: lineZ }, [body])).toBe(true);
+    });
+
+    it('refuses a leg starting clear of it that would pass within the margin', () => {
+      const space = field();
+      const from = { x: body.x - 3, z: lineZ };
+      const to = { x: body.x + 3, z: lineZ };
+
+      expect(legWalkable(space.collision, from, to, [body])).toBe(false);
+      expect(search(space, from, to, [body]).waypoints).not.toEqual([to]);
+    });
+  });
+
+  /**
+   * Every leg but one square across their line nears one of the two centres, so a rule judging each
+   * body alone leaves almost no way out. Just clear of them, within the margin, a leg toward either
+   * would come into contact.
+   */
+  it.each([
+    { name: 'it overlaps', offset: 0.08 },
+    { name: 'it is just clear of', offset: 0.61 },
+  ])('walks out from between two bodies $name on opposite sides, and arrives', ({ offset }) => {
+    const space = committed('EdariaArena');
+    const from = { x: 2.882, z: 3.375 };
+    const to = { x: 9, z: 3.4 };
+    const bodies = [-offset, offset].map((along) => ({ x: from.x + along, z: from.z, radius: RADIUS }));
+
+    const path = search(space, from, to, bodies);
+
+    expect(path.reached).toBe(true);
+    expect(distance(walk(space, from, path, bodies), to)).toBeLessThan(1e-9);
+  });
+
   it('plans round a body standing on the line and still arrives', () => {
     const space = field();
     const from = { x: 5, z: 10 };

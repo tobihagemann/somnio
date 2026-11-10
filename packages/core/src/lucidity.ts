@@ -1,5 +1,6 @@
 import { ROLES } from '@somnio/protocol';
 import type { NPCService, Role } from '@somnio/protocol';
+import type { AbilityId } from './abilities.ts';
 
 /**
  * What a dreamer grows into: a role taken for good when a master takes their passed trial as
@@ -24,6 +25,8 @@ export interface Teaching {
   needs?: { teachingId: string; rank: number };
   /** The task whose completion teaches the first rank; practice builds only the ranks after it. */
   gate?: TaskSpec;
+  /** The ability its first rank teaches, which its further ranks deepen. */
+  ability?: AbilityId;
 }
 
 /** The teachings, by id. An id is persisted and travels the wire, so it is kebab-case like a record id. */
@@ -39,6 +42,11 @@ export const TEACHINGS = {
   },
   'balance-recovery': { role: 'fighter', labelKey: 'Balance recovery', maxRank: 3 },
   toughening: { role: 'fighter', labelKey: 'Toughening', maxRank: 5 },
+  cleave: { role: 'fighter', labelKey: 'Cleave', maxRank: 3, needs: { teachingId: 'strike', rank: 1 }, ability: 'cleave' },
+  challenge: { role: 'fighter', labelKey: 'Challenge', maxRank: 1, needs: { teachingId: 'guard', rank: 1 }, ability: 'challenge' },
+  brace: { role: 'fighter', labelKey: 'Brace', maxRank: 3, needs: { teachingId: 'guard', rank: 1 }, ability: 'brace' },
+  lunge: { role: 'fighter', labelKey: 'Lunge', maxRank: 3, needs: { teachingId: 'strike', rank: 2 }, ability: 'lunge' },
+  rally: { role: 'fighter', labelKey: 'Rally', maxRank: 3, needs: { teachingId: 'balance-recovery', rank: 1 }, ability: 'rally' },
   touch: { role: 'healer', labelKey: 'Touch', maxRank: 3 },
   depth: { role: 'healer', labelKey: 'Depth', maxRank: 5, needs: { teachingId: 'touch', rank: 1 } },
   'drawing-back': {

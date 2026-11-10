@@ -11,6 +11,7 @@ import type {
   StudyMessage,
   TalkMessage,
   TargetMessage,
+  UseAbilityMessage,
   UseDoorMessage,
   UseItemMessage,
 } from '@somnio/protocol';
@@ -58,6 +59,10 @@ export function handleEngage(message: EngageMessage, entityId: string, spaceId: 
   dependencies.worldRouter.space(spaceId)?.handleEngage(message.on, entityId);
 }
 
+export function handleUseAbility(message: UseAbilityMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleUseAbility(message.abilityId, entityId);
+}
+
 export function handleUseItem(message: UseItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleUseItem(message.slot, entityId);
 }
@@ -89,8 +94,9 @@ export function handleSell(message: SellMessage, entityId: string, spaceId: stri
 /**
  * Moves a player from one space to where `moved` stands, with `enterSpace` first in what they are
  * sent. The source slot is released before the attach, so a failed attach puts the player back
- * where they came from. The restoring `enterSpace` is what releases a client waiting on the
- * transfer. If even the restore fails, the loss is reported so the actor closes.
+ * where they came from. The effects and cooldowns the source hands back go with the player either
+ * way. The restoring `enterSpace` is what releases a client waiting on the transfer. If even the
+ * restore fails, the loss is reported so the actor closes.
  */
 function transferPlayer(
   checkpoint: PlayerCheckpoint,
@@ -102,14 +108,14 @@ function transferPlayer(
   const logger = dependencies.logger;
   const oldSpace = dependencies.worldRouter.space(spaceId)!;
   const worldSeconds = dependencies.worldClock.currentWorldSeconds();
-  oldSpace.detach(checkpoint.character.id, false);
+  const transient = oldSpace.detach(checkpoint.character.id, false);
   try {
-    dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale);
+    dependencies.worldRouter.space(moved.space)!.attach(moved, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale, transient);
     return { spaceId: moved.space };
   } catch (error) {
     logger.error({ error: String(error), space: moved.space }, 'failed to attach after transfer');
     try {
-      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale);
+      oldSpace.attach(checkpoint.character, checkpoint.inventory, connection.outbox, worldSeconds, connection.locale, transient);
       return { spaceId };
     } catch (restoreError) {
       logger.error({ error: String(restoreError), space: spaceId }, 'failed to restore after transfer');

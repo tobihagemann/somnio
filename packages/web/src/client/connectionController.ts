@@ -44,7 +44,22 @@ const MAX_ROSTER_NAMES = 500;
 export type GameplayMessage = Extract<
   SomnioMessage,
   {
-    tag: 'moves' | 'correction' | 'doorRefused' | 'serverSay' | 'energy' | 'inventory' | 'lucidity' | 'blow' | 'raising' | 'mend' | 'vitals' | 'adminSay';
+    tag:
+      | 'moves'
+      | 'correction'
+      | 'doorRefused'
+      | 'serverSay'
+      | 'energy'
+      | 'inventory'
+      | 'lucidity'
+      | 'blow'
+      | 'raising'
+      | 'mend'
+      | 'vitals'
+      | 'effects'
+      | 'ability'
+      | 'cooldowns'
+      | 'adminSay';
   }
 >;
 
@@ -562,6 +577,9 @@ export class ConnectionController {
       case 'raising':
       case 'mend':
       case 'vitals':
+      case 'effects':
+      case 'ability':
+      case 'cooldowns':
       case 'adminSay':
         this.onGameplayMessage?.(message);
         return;

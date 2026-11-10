@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { Character, InventoryRow } from '@somnio/core';
+import type { Character, InventoryRow, Point } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
@@ -364,7 +364,7 @@ describe('a nightmare striking', () => {
     // One when they fell, one for the move they then tried.
     expect(payloads(mine, 'correction')).toEqual([BESIDE_GHOST, BESIDE_GHOST]);
     expect(payloads(mine, 'blow')).toHaveLength(1);
-    const seen = (await collectMessages(watcher.outbox)).slice(6);
+    const seen = (await collectMessages(watcher.outbox)).slice(7);
     expect(payloads(seen, 'condition')).toEqual([{ entityId: alice.entityId, condition: 'fallen' }]);
     // She lies due south, the way it already faced, so it neither moved nor turned.
     expect(entityMoves(seen).filter((move) => move.id === GHOST)).toEqual([]);
@@ -392,6 +392,82 @@ describe('a nightmare striking', () => {
       expect(Number.isInteger(health)).toBe(true);
     }
     expect(fell).toBe(true);
+  });
+});
+
+describe('threat', () => {
+  /** A Ghost at `GHOST_AT`, keeping to ground reaching 6 m south and east of it. */
+  const withGround = () => arena({ monsterSpawns: [makeMonsterSpawn(GHOST_AT, 6)] });
+  /** In the Ghost's reach and its ground, and nearer to it than `BESIDE_GHOST`. */
+  const NEARER: Point = { x: 10.6, z: 10.2 };
+  const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1, depth: 1 }) };
+  const targetsOf = (messages: readonly SomnioMessage[], attackerId: string) =>
+    payloads(messages, 'blow').flatMap((blow) => (blow.attackerId === attackerId ? [blow.targetId] : []));
+
+  it('rises less for a Healer mending a Fighter than for the Fighter harming the nightmare, so it strikes the Fighter though the Healer stands nearer', async () => {
+    const { space, steps } = withGround();
+    // Each landed swing takes 11, and each mend restores 15.
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 1 }), energy: energy({ healthCurrent: 70 }) },
+      inventory: [CUDGEL_IN_HAND],
+    });
+    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    attackGhost(space, fighter.entityId);
+    engage(space, fighter.entityId, healer.entityId);
+    steps(61);
+    const messages = await collectMessages(healer.outbox);
+    expect(payloads(messages, 'mend')).not.toEqual([]);
+    expect(targetsOf(messages, GHOST)).toEqual([fighter.entityId, fighter.entityId, fighter.entityId]);
+  });
+
+  it('turns every nightmare the Fighter challenged on them, and one passing a Healer in reach on its way strikes the Fighter once it reaches them', async () => {
+    const second = { ...makeMonsterSpawn({ x: 10, z: 14 }, 6), id: 'spawn-2' };
+    const { space, steps } = arena({ monsterSpawns: [makeMonsterSpawn({ x: 11, z: 11 }, 6), second] });
+    // Out of both nightmares' aggro radius and inside both their grounds, within Challenge's reach of both.
+    const fighter = attachPlayer(space, { x: 14, z: 15 }, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1, guard: 1, challenge: 1 }) } });
+    // Within the second's aggro radius, and in its reach as it passes on its way to the Fighter.
+    const healer = attachPlayer(space, { x: 11.77, z: 15.16 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    space.handleUseAbility('challenge', fighter.entityId);
+    steps(80);
+    const messages = await collectMessages(healer.outbox);
+    expect(targetsOf(messages, GHOST)).toEqual([fighter.entityId, fighter.entityId]);
+    expect(targetsOf(messages, 'monster:2')).toEqual([healer.entityId, fighter.entityId, fighter.entityId]);
+  });
+
+  it('forgets a dreamer who fell, so once raised they are struck no sooner than a nearer one', async () => {
+    const { space, dice, steps } = withGround();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
+      character: { ...STRIKER, energy: energy({ healthCurrent: 9 }) },
+      inventory: [CUDGEL_IN_HAND],
+    });
+    const nearer = attachPlayer(space, NEARER, 'nearer');
+    const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    attackGhost(space, fighter.entityId);
+    steps(1);
+    // The threat of the Fighter's swing turned it on them rather than on the nearer dreamer.
+    expect(space.isFallen(fighter.entityId)).toBe(true);
+    dice.hit = false;
+    engage(space, fighter.entityId, healer.entityId);
+    // The raise, then the grace after it.
+    steps(240);
+    expect(space.isFallen(fighter.entityId)).toBe(false);
+    const watcher = attachPlayer(space, { x: 2, z: 2 }, 'watcher');
+    steps(60);
+    expect(targetsOf(await collectMessages(watcher.outbox), GHOST)).toEqual([nearer.entityId, nearer.entityId]);
+  });
+
+  it('forgets a dreamer who steps outside its ground, so it strikes a nearer one in its reach there instead', async () => {
+    const { space, steps } = withGround();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1 }) }, inventory: [CUDGEL_IN_HAND] });
+    // Outside the ground, north-west of the Ghost at its corner, and in its reach.
+    const nearer = attachPlayer(space, { x: 9.5, z: 9.6 }, 'nearer');
+    attackGhost(space, fighter.entityId);
+    steps(1);
+    space.handleEngage(false, fighter.entityId);
+    // Outside the ground too, still in the Ghost's reach, and further from it than the nearer dreamer.
+    space.handleMove({ x: 9.3, z: 10.3, facing: 0, gait: 'walk' }, fighter.entityId);
+    steps(40);
+    expect(targetsOf(await collectMessages(nearer.outbox), GHOST)).toEqual([fighter.entityId, nearer.entityId]);
   });
 });
 
@@ -610,14 +686,26 @@ describe('slot 1 at a dreamer', () => {
     expect(energyOf(space, healer.entityId).spiritCurrent).toBe(100);
   });
 
-  it('is refused at a nightmare to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', () => {
-    const { space, steps } = arena();
+  const GUARD = makeNPC('guard', { x: 6, z: 5 }, 'Hello.');
+  const GUARD_ID = 'npc:TestSector/guard';
+
+  it.each([GHOST, GUARD_ID])('is refused at %s to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', async (refusedAt) => {
+    const { space, steps } = arena({ npcs: [GUARD] });
     const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
-    engage(space, GHOST, healer.entityId);
+    engage(space, refusedAt, healer.entityId);
     space.handleTarget(hurt.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
+    expect(energyOf(space, healer.entityId).spiritCurrent).toBe(100);
+    expect(payloads(await collectMessages(healer.outbox), 'mend')).toEqual([]);
+  });
+
+  it('is refused at an NPC to a Healer with the Moonstone in hand, and the space steps on', () => {
+    const { space, steps } = arena({ npcs: [GUARD] }, { ghost: false });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    engage(space, GUARD_ID, healer.entityId);
+    expect(() => steps(60)).not.toThrow();
   });
 
   it.each<[string, (space: SpaceActor, healerId: string) => void, number]>([

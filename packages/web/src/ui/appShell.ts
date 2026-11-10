@@ -209,6 +209,7 @@ export class AppShell {
         },
         onToggleRun: () => this.session.toggleRun(),
         onToggleEngage: () => this.session.toggleEngage(),
+        onUseAbility: (abilityId) => this.session.useAbility(abilityId),
         onPressPlayer: (name) => this.session.pressPlayerName(name),
         onPressOwnFrame: () => this.session.pressOwnFrame(),
         onClearTarget: () => this.session.select(undefined),
@@ -389,6 +390,7 @@ export class AppShell {
       }
       if (event.key === 'Shift') this.session.toggleRun();
       else if (event.code === 'Digit1') this.session.toggleEngage();
+      else this.useAbilityOnKey(event.code);
     });
 
     // `requestAnimationFrame` does not fire in a hidden tab, and the tick already clamps its
@@ -811,13 +813,20 @@ export class AppShell {
 
   private framed(entityId: string | undefined): FramedEntity | undefined {
     const entity = entityId === undefined ? undefined : this.controller.entities.get(entityId);
-    return entity === undefined ? undefined : { entity, health: this.session.vitalsOf(entity.id) };
+    return entity === undefined ? undefined : { entity, health: this.session.vitalsOf(entity.id), effects: this.session.effectsOf(entity.id) };
   }
 
   /** The world's time now, and the place the player stands in, for the HUD's clock. */
   private clock(): HUDClock {
     const sector = this.controller.world?.predictedSector;
     return { worldSeconds: this.controller.worldSecondsAt(performance.now()), place: sector === undefined ? undefined : placeName(sector) };
+  }
+
+  /** Keys 2 to 6 use the abilities on the belt's slots after slot 1. */
+  private useAbilityOnKey(code: string): void {
+    const key = /^Digit([2-6])$/.exec(code)?.[1];
+    const abilityId = key === undefined ? undefined : this.session.abilities[Number(key) - 2];
+    if (abilityId !== undefined) this.session.useAbility(abilityId);
   }
 
   /** Pushes controller and session state into the DOM. Cheap enough to run per frame. */
@@ -842,8 +851,9 @@ export class AppShell {
     const self = selfId === undefined ? undefined : this.controller.entities.get(selfId);
     const target = this.session.target === undefined ? undefined : this.controller.entities.get(this.session.target);
     this.hud.renderPools(this.session.energy, this.session.winded);
-    this.hud.renderRun(this.session.running);
+    this.hud.renderRun(this.session.running, this.session.runHeldOff);
     this.hud.renderSlotOne(this.session.engaged, this.session.engageAction(), target?.condition === 'fallen');
+    this.hud.renderAbilities(this.session.abilitySlots());
     this.hud.renderLucidity(this.session.lucidity);
     this.hud.renderSelf({
       name: this.controller.selfDisplayName,
@@ -851,6 +861,7 @@ export class AppShell {
       role: this.session.lucidity.role,
       condition: self?.condition ?? 'hale',
       targeted: selfId !== undefined && this.session.target === selfId,
+      effects: this.session.effectsOf(selfId),
     });
     this.servicePanel.render(this.session.servicePanel, this.session.lucidity, this.session.inventory, this.session.tradeLocked());
     // The fallen notice takes the target frame's place while the player lies fallen.

@@ -3,6 +3,21 @@
     "payload": {},
     "tag": "abandonTask"
   },
+  "ability": {
+    "payload": {
+      "abilityId": "lunge",
+      "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "targetId": "monster:7"
+    },
+    "tag": "ability"
+  },
+  "ability-on-self": {
+    "payload": {
+      "abilityId": "brace",
+      "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c"
+    },
+    "tag": "ability"
+  },
   "adminSay": {
     "payload": {
       "text": "Server restart in 5 minutes"
@@ -96,6 +111,25 @@
     },
     "tag": "condition"
   },
+  "cooldowns": {
+    "payload": {
+      "cooldowns": [
+        {
+          "abilityId": "brace",
+          "seconds": 14.5
+        }
+      ],
+      "globalSeconds": 0.5
+    },
+    "tag": "cooldowns"
+  },
+  "cooldowns-none": {
+    "payload": {
+      "cooldowns": [],
+      "globalSeconds": 0
+    },
+    "tag": "cooldowns"
+  },
   "correction": {
     "payload": {
       "x": 10.25,
@@ -122,6 +156,25 @@
       "sector": "EdariaSquare"
     },
     "tag": "doorRefused"
+  },
+  "effects": {
+    "payload": {
+      "effects": [
+        {
+          "effectId": "braced",
+          "seconds": 3.25
+        }
+      ],
+      "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c"
+    },
+    "tag": "effects"
+  },
+  "effects-none": {
+    "payload": {
+      "effects": [],
+      "entityId": "monster:7"
+    },
+    "tag": "effects"
   },
   "energy": {
     "payload": {
@@ -195,7 +248,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 17
+      "protocolVersion": 18
     },
     "tag": "hello"
   },
@@ -615,6 +668,12 @@
   "target-none": {
     "payload": {},
     "tag": "target"
+  },
+  "useAbility": {
+    "payload": {
+      "abilityId": "brace"
+    },
+    "tag": "useAbility"
   },
   "useDoor": {
     "payload": {

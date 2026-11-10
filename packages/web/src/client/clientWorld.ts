@@ -1,5 +1,5 @@
 import { buildSpaceCollision, findPath, neighbourSectors, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
-import type { Body, EngageTarget, FoundPath, ModelRegistry, Point, ResolvedDoor, SpaceCollision, WalkRaster, WorldEntity } from '@somnio/core';
+import type { AbilityBody, Body, EngageTarget, FoundPath, ModelRegistry, Point, ResolvedDoor, SpaceCollision, WalkRaster, WorldEntity } from '@somnio/core';
 import type { Condition, NPCService, SectorView } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 import { defaultWalkRasterizer } from './walkRasterizer';
@@ -14,14 +14,19 @@ export interface ClientEntity extends WorldEntity {
 }
 
 /** Whether the entity is a nightmare driven off: fading, it is nothing to face, act on, or walk round. */
-export function drivenOff(entity: ClientEntity): boolean {
+export function drivenOff(entity: Pick<ClientEntity, 'kind' | 'condition'>): boolean {
   return entity.kind === 'monster' && entity.condition === 'fallen';
 }
 
 /** What the entity is to slot 1: a nightmare not yet driven off, a dreamer, or nothing. */
-export function engageKind(entity: ClientEntity): EngageTarget | undefined {
+export function engageKind(entity: Pick<ClientEntity, 'kind' | 'condition'>): EngageTarget | undefined {
   if (entity.kind === 'npc' || drivenOff(entity)) return undefined;
   return entity.kind === 'monster' ? 'nightmare' : 'dreamer';
+}
+
+/** The body as an ability's rules see it, standing `at`. */
+export function abilityBody(body: Pick<ClientEntity, 'kind' | 'condition' | 'radius'>, at: Point): AbilityBody {
+  return { x: at.x, z: at.z, radius: body.radius, kind: engageKind(body), fallen: body.condition === 'fallen' };
 }
 
 /** A door of a held sector with its trigger resolved, addressed the way `useDoor` names it. */

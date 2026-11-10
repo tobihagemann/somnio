@@ -26,13 +26,14 @@ import {
   worldSecondsAt,
   worldToModel,
 } from '@somnio/core';
-import type { Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
+import type { AbilityId, EffectId, Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
 import { CONDITIONS } from '@somnio/protocol';
 import type { Condition, Gait, Placement, SectorView } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
+import { CombatEffects } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -72,6 +73,8 @@ import { yawStep } from './yawSlew';
 interface EntityRenderState {
   /** Translation only. Overlays hang off this, so it must never carry the facing yaw. */
   node: THREE.Object3D;
+  /** Between the node and the model holder: the stagger and the lift of the combat effects move it, render-only, so a move never fights them. */
+  jolt: THREE.Object3D;
   /** Carries the yaw and the swappable model, so a post-prewarm swap never moves the overlays. */
   modelHolder: THREE.Object3D;
   mixer: THREE.AnimationMixer | undefined;
@@ -375,6 +378,9 @@ export class WorldScene implements WorldRenderSurface {
   /** The entity whose body each HUD frame's portrait shows. */
   private readonly portraitSubjects: Record<PortraitSlot, string | undefined> = { own: undefined, target: undefined };
   private portraitPass: PortraitPass | undefined;
+  private readonly effects: CombatEffects;
+  /** Where the screen shake puts the camera off where the rig placed it. */
+  private readonly shake = new THREE.Vector3();
 
   constructor(
     assets: ModelAssets,
@@ -394,9 +400,23 @@ export class WorldScene implements WorldRenderSurface {
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
     this.configureSunShadow();
     this.configureDoorSpill();
+    this.effects = new CombatEffects(
+      {
+        body: (entityId) => this.entityStates.get(entityId),
+        bodies: () => this.entityStates,
+        playerId: () => this.cameraFollowId,
+        playOneShot: (entityId, oneShot) => {
+          const state = this.entityStates.get(entityId);
+          return state === undefined ? undefined : this.playOneShot(state, oneShot);
+        },
+        markMiss: (entityId) => this.markMiss(entityId),
+        now: () => this.now(),
+      },
+      reducedMotion,
+    );
     // The target's world matrix is what gives a directional or a spot light its direction, and an
     // object outside the graph never gets one updated.
-    this.scene.add(this.sun, this.sun.target, this.fill, ...this.propLights, this.doorSpill, this.doorSpill.target, this.spaceRoot);
+    this.scene.add(this.sun, this.sun.target, this.fill, ...this.propLights, this.doorSpill, this.doorSpill.target, this.effects.root, this.spaceRoot);
     // The portraits draw under the world's own lights, so their light count and programs are the world's.
     for (const light of [this.sun, this.fill, ...this.propLights, this.doorSpill]) {
       for (const slot of PORTRAIT_SLOTS) light.layers.enable(PORTRAIT_LAYERS[slot]);
@@ -485,6 +505,7 @@ export class WorldScene implements WorldRenderSurface {
     this.misses.clear();
     this.raiseRings.clear();
     this.mendPulses.clear();
+    this.effects.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
@@ -792,11 +813,14 @@ export class WorldScene implements WorldRenderSurface {
     let state = this.entityStates.get(entity.id);
     if (state === undefined) {
       const node = new THREE.Object3D();
+      const jolt = new THREE.Object3D();
       const modelHolder = new THREE.Object3D();
-      node.add(modelHolder);
+      node.add(jolt);
+      jolt.add(modelHolder);
       this.spaceRoot.add(node);
       state = {
         node,
+        jolt,
         modelHolder,
         mixer: undefined,
         action: undefined,
@@ -897,14 +921,21 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   showBlow(attackerId: string, targetId: string, hit: boolean): void {
-    const attacker = this.entityStates.get(attackerId);
-    if (attacker !== undefined) this.playOneShot(attacker, 'swing');
+    this.effects.blow(attackerId, targetId, hit);
+  }
+
+  showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined): void {
+    this.effects.ability(entityId, abilityId, targetId);
+  }
+
+  showEffects(entityId: string, effects: readonly { effectId: EffectId; seconds?: number }[]): void {
+    this.effects.hold(entityId, effects);
+  }
+
+  /** The word over an entity a blow missed, for a moment. */
+  private markMiss(targetId: string): void {
     const target = this.entityStates.get(targetId);
     if (target === undefined) return;
-    if (hit) {
-      this.playOneShot(target, 'flinch');
-      return;
-    }
     disposeSubtree(this.misses.get(targetId)?.node);
     const node = missQuad();
     node.position.set(0, target.headHeight + MISS_HEAD_GAP, 0);
@@ -1251,7 +1282,7 @@ export class WorldScene implements WorldRenderSurface {
   private measureHeadHeight(state: EntityRenderState): number {
     state.node.updateWorldMatrix(true, false);
     // `updateMatrixWorld`, because only there does a skinned mesh re-read where it is bound, which its bounds are skinned against.
-    state.modelHolder.updateMatrixWorld(true);
+    state.jolt.updateMatrixWorld(true);
     return Math.max(new THREE.Box3().setFromObject(state.modelHolder).max.y - state.node.position.y, 0);
   }
 
@@ -1263,6 +1294,7 @@ export class WorldScene implements WorldRenderSurface {
     this.misses.delete(entityId);
     this.raiseRings.delete(entityId);
     this.mendPulses.delete(entityId);
+    this.effects.forget(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
   }
 
@@ -1316,8 +1348,13 @@ export class WorldScene implements WorldRenderSurface {
 
       const direction = state.travelHeading === undefined ? 'forward' : relativeDirection(state.travelHeading, state.facing);
       if (!this.oneShotIsPlaying(state)) this.applyPose(isMoving ? movementPose(state.kind, state.gait, direction) : 'idle', state);
-      state.mixer?.update(dt);
+      // A hit-pause holds the clip where it is, for the bodies a blow names alone.
+      if (!this.effects.frozen(id)) state.mixer?.update(dt);
     }
+    this.effects.tick(dt);
+    this.camera.position.sub(this.shake);
+    this.effects.shakeOffset(this.camera, this.shake);
+    this.camera.position.add(this.shake);
 
     this.updateGrounds();
     this.growScatter();
@@ -1360,23 +1397,24 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Plays a one-shot over the looping pose. A model that carries none of its clips keeps its
-   * pose, and nothing interrupts a held fall.
+   * Plays a one-shot over the looping pose, and answers the clip played. A model that carries none
+   * of its clips keeps its pose, and nothing interrupts a held fall.
    */
-  private playOneShot(state: EntityRenderState, oneShot: OneShot): void {
-    if (state.mixer === undefined || state.oneShot?.held === true) return;
+  private playOneShot(state: EntityRenderState, oneShot: OneShot): THREE.AnimationClip | undefined {
+    if (state.mixer === undefined || state.oneShot?.held === true) return undefined;
     const clips = this.assets.clipsFor(state.modelHolder.children[0] ?? state.modelHolder);
     const name = resolveOneShotClipName(
       oneShot,
       clips.map((clip) => clip.name),
     );
     const clip = clips.find((candidate) => candidate.name === name);
-    if (clip === undefined) return;
+    if (clip === undefined) return undefined;
     const next = state.mixer.clipAction(clip);
     next.setLoop(THREE.LoopOnce, 1);
     next.clampWhenFinished = true;
     this.fadeTo(state, next);
     state.oneShot = { action: next, held: oneShot === 'fallen' };
+    return clip;
   }
 
   /** Starts an action from its beginning, fading over from the one the entity was playing. */
@@ -1688,6 +1726,7 @@ export class WorldScene implements WorldRenderSurface {
     const position = cameraPosition({ x: focus.x, y: focus.y, z: focus.z });
     this.camera.position.set(position.x, position.y, position.z);
     this.camera.lookAt(focus);
+    this.camera.position.add(this.shake);
     this.repositionSun();
   }
 
@@ -2051,6 +2090,7 @@ function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   const material = new THREE.MeshBasicMaterial({
     color,
     side: THREE.DoubleSide,
+    forceSinglePass: true,
     transparent: true,
     opacity: RING_OPACITY,
     depthWrite: false,

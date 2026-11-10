@@ -9,7 +9,7 @@ import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import type { RegistrationForm } from '@/client';
 import { TAP_SLOP_PX } from '@/client';
-import { clamp, distance, fullPools, headingFromVector } from '@somnio/core';
+import { NO_LUCIDITY, clamp, distance, fullPools, headingFromVector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { CharacterSummaryMessage, InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
@@ -1575,7 +1575,12 @@ describe('the service panel', () => {
       'strike',
       'guard',
       'balance-recovery',
+      'cleave',
       'follow-through',
+      'challenge',
+      'brace',
+      'lunge',
+      'rally',
       'toughening',
     ]);
     expect(p.row('strike')).toContain('Rank 1 of 5');
@@ -1584,7 +1589,7 @@ describe('the service panel', () => {
     expect(p.row('follow-through')).toContain('Needs Strike at rank 2');
     expect(p.row('toughening')).toContain('Rank 5 of 5');
     // One control per teaching that has something to do, and none for the rest.
-    expect(p.buttons()).toEqual(['Study this', 'Study this', 'Close']);
+    expect(p.buttons()).toEqual(['Study this', 'Study this', 'Study this', 'Close']);
     p.press('Study this');
     expect(p.calls).toEqual(['study:guard']);
   });
@@ -1594,7 +1599,7 @@ describe('the service panel', () => {
     const ready: LucidityMessage = { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
     p.render(p.npc('fighterMaster'), ready);
     expect(p.text()).toContain('You study nothing. Choose a teaching below.');
-    expect(headings(p.panel)).toEqual(['You can study', 'Earned by a task']);
+    expect(headings(p.panel)).toEqual(['You can study', 'Earned by a task', 'Not yet']);
     expect(p.row('follow-through')).toContain('Pugnax teaches its first rank for a task.');
     expect(p.row('follow-through')).toContain('Drive off 3 nightmares.');
     expect(p.row('follow-through')).toContain('Falling starts the count over.');
@@ -1816,7 +1821,7 @@ describe('the play field and the panels through the shell', () => {
     deliver(entityFrame());
     deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'fighterMaster' }));
     deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
-    deliver({ tag: 'energy', payload: fullPools([]) });
+    deliver({ tag: 'energy', payload: fullPools(NO_LUCIDITY) });
     deliver({ tag: 'lucidity', payload: { ranks: [] } });
     socket.sent.length = 0;
     const sent = (): SomnioMessage[] => socket.sent.map((text) => decodeSomnioMessage(text));
@@ -2357,9 +2362,73 @@ describe('the play field and the panels through the shell', () => {
       const p = withGhost();
       p.shell.session.pressEntity(GHOST);
       const before = engageButton();
-      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
       pressOne();
       expect(engageButton()).toBe(before);
+    });
+  });
+
+  describe('the ability slots', () => {
+    const pressKey = (digit: number, init: KeyboardEventInit = {}): boolean =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: String(digit), code: `Digit${digit}`, cancelable: true, ...init }));
+    const uses = (p: ReturnType<typeof playing>) => p.sent().flatMap((message) => (message.tag === 'useAbility' ? [message.payload.abilityId] : []));
+    const brace = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('button[aria-label="Brace"]')!;
+
+    /** A Fighter who has learned Brace. */
+    function bracing() {
+      const p = playing();
+      p.deliver({
+        tag: 'lucidity',
+        payload: {
+          role: 'fighter',
+          ranks: [
+            { teachingId: 'strike', rank: 1, practice: 0 },
+            { teachingId: 'guard', rank: 1, practice: 0 },
+            { teachingId: 'brace', rank: 1, practice: 0 },
+          ],
+        },
+      });
+      return p;
+    }
+
+    it('follows slot 1 on the belt and uses its ability on its key, ignoring a held key and a key with no ability', () => {
+      const p = bracing();
+      expect([...container.querySelectorAll<HTMLElement>('.hud-slots button')].map((node) => node.getAttribute('aria-label'))).toEqual([
+        'Attack',
+        'Brace',
+        'Run',
+      ]);
+      pressKey(2);
+      pressKey(2, { repeat: true });
+      pressKey(3);
+      expect(uses(p)).toEqual(['brace']);
+      // Its answer frees the belt for a click.
+      p.deliver({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [] } });
+      brace().click();
+      expect(uses(p)).toEqual(['brace', 'brace']);
+    });
+
+    it.each<[string, (p: ReturnType<typeof playing>) => void]>([
+      ['an overlay is up', (p) => (p.shell.controller.presentedOverlay = { kind: 'gameMenu' })],
+      ['the chat input has focus', (p) => p.shell.hud.chatInput.dispatchEvent(new FocusEvent('focus'))],
+    ])('uses nothing on its key while %s', (_label, arrange) => {
+      const p = bracing();
+      arrange(p);
+      pressKey(2);
+      expect(uses(p)).toEqual([]);
+    });
+
+    it('sweeps while the cooldown the server sent runs, keeping its element across energy frames', () => {
+      const p = bracing();
+      const before = brace();
+      p.deliver({ tag: 'cooldowns', payload: { globalSeconds: 0.75, cooldowns: [{ abilityId: 'brace', seconds: 15 }] } });
+      const sweep = before.querySelector('.hud-sweep');
+      expect([before.disabled, sweep?.classList.contains('hidden')]).toEqual([true, false]);
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
+      pressKey(2);
+      expect(uses(p)).toEqual([]);
+      expect(brace()).toBe(before);
+      expect(before.querySelector('.hud-sweep')).toBe(sweep);
     });
   });
 
@@ -2428,7 +2497,7 @@ describe('the play field and the panels through the shell', () => {
       ];
       const before = elements();
 
-      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.5 } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.4 } });
 
@@ -2449,7 +2518,7 @@ describe('the play field and the panels through the shell', () => {
       p.shell.session.toggleGazeOn(GHOST);
       expect(label()).toBe('Target, hale, facing locked');
       expect(frames()[0]!.textContent).toBe(text);
-      for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools([]), balanceCurrent } });
+      for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
       p.deliver({ tag: 'condition', payload: { entityId: GHOST, condition: 'failing' } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.2 } });
       expect(label()).toBe('Target, failing, facing locked');
@@ -2462,7 +2531,7 @@ describe('the play field and the panels through the shell', () => {
     it('targets the player on a press at their own frame, or their own name in Players, framed from their own energy, Healer or not', () => {
       const p = playing();
       const own = container.querySelector<HTMLButtonElement>('.hud-unit--self')!;
-      p.deliver({ tag: 'energy', payload: { ...fullPools([]), healthCurrent: 30 } });
+      p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), healthCurrent: 30 } });
       own.querySelector<HTMLElement>('.hud-unit__name')!.click();
       expect(p.shell.session.target).toBe('self');
       expect(own.getAttribute('aria-pressed')).toBe('true');

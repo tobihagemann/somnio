@@ -5,6 +5,7 @@ import {
   clamp,
   distance,
   doorContains,
+  gaitAllowed,
   gaitMetresPerSecond,
   headingFromVector,
   isLegalMove,
@@ -12,7 +13,7 @@ import {
   resolveMove,
   speedMultiplier,
 } from '@somnio/core';
-import type { Body, Heading, Point, ResolvedDoor } from '@somnio/core';
+import type { Body, EffectId, Heading, Point, ResolvedDoor } from '@somnio/core';
 import type { ConnectionState, OverlayKind } from './connectionController';
 import type { Gait, SomnioMessage } from '@somnio/protocol';
 import { drivenOff } from './clientWorld';
@@ -66,8 +67,9 @@ const FACING_DEADZONE_METRES = 0.05;
 const PROGRESS_METRES = 1e-3;
 
 /**
- * Where the player is walking. A path is followed waypoint by waypoint to a destination, searched
- * again round what stops it; a steer heads straight for a point a held pointer moves.
+ * Where the player is walking. A path is followed waypoint by waypoint to a destination, and
+ * searched again round what stops it. A steer heads straight for a point a held pointer moves. A
+ * leap heads straight for its end at a speed of its own, and ends where it stops.
  */
 export type Walk =
   | {
@@ -84,7 +86,8 @@ export type Walk =
       /** When the leg under way last brought the player nearer its waypoint. */
       progressAtMs: number;
     }
-  | { kind: 'steer'; toward: Point };
+  | { kind: 'steer'; toward: Point }
+  | { kind: 'leap'; end: Point; metresPerSecond: number };
 
 /** The heading from `from` toward `to`, or `undefined` when there is no `to` or it is too near to face. */
 function headingToward(from: Point, to: Point | undefined): Heading | undefined {
@@ -148,6 +151,8 @@ export interface PredictorOptions {
   running: () => boolean;
   /** Whether the player's balance gave out: until it is back, only the slow gait moves them. */
   winded: () => boolean;
+  /** The effects the player holds, which may hold them below a run. */
+  effects: () => readonly EffectId[];
   /** Whether the player lies fallen, and so does not move or report. */
   fallen: () => boolean;
   /** Whether a swing is still slowing the player at `nowMs`. */
@@ -162,6 +167,7 @@ export class GameplayPredictor {
   private readonly lookAt: () => Point | undefined;
   private readonly running: () => boolean;
   private readonly winded: () => boolean;
+  private readonly effects: () => readonly EffectId[];
   private readonly fallen: () => boolean;
   private readonly slowed: (nowMs: number) => boolean;
 
@@ -182,6 +188,7 @@ export class GameplayPredictor {
     this.lookAt = options.lookAt;
     this.running = options.running;
     this.winded = options.winded;
+    this.effects = options.effects;
     this.fallen = options.fallen;
     this.slowed = options.slowed;
   }
@@ -203,14 +210,44 @@ export class GameplayPredictor {
     };
   }
 
-  /** Heads straight for `point` from the next tick, in place of any path; a steer under way only turns toward it. */
+  /**
+   * Heads straight for `point` from the next tick, in place of any path. A steer under way only
+   * turns toward it. A leap under way runs on and the steer is dropped, so a held pointer, which
+   * asks again each tick, steers once the leap ends.
+   */
   steerToward(point: Point): void {
     if (this.walking?.kind === 'steer') this.walking.toward = point;
-    else this.walking = { kind: 'steer', toward: point };
+    else if (this.walking?.kind !== 'leap') this.walking = { kind: 'steer', toward: point };
+  }
+
+  /**
+   * Leaps from the next tick toward the body until in contact with it, at most `metres`, in place
+   * of any walk under way.
+   */
+  leapAt(target: Body, metres: number, metresPerSecond: number): void {
+    const self = this.session.selfId === undefined ? undefined : this.session.entities.get(this.session.selfId);
+    if (self === undefined) return;
+    const from = self.position;
+    const away = distance(from, target);
+    const length = clamp(away - self.radius - target.radius, 0, metres);
+    const end = away === 0 ? from : { x: from.x + ((target.x - from.x) / away) * length, z: from.z + ((target.z - from.z) / away) * length };
+    this.walking = { kind: 'leap', end, metresPerSecond };
   }
 
   stop(): void {
     this.walking = undefined;
+  }
+
+  /**
+   * Sends at once the report the heartbeat is holding back, if one is. A request the server judges
+   * by where the player stands then follows the move that brought them there. Like every report it
+   * is legal, and none goes out while a door is pending.
+   */
+  flush(): void {
+    const selfId = this.session.selfId;
+    const entity = selfId === undefined ? undefined : this.session.entities.get(selfId);
+    if (entity === undefined || this.awaitingDoor || !this.changedSinceReport(entity)) return;
+    this.report(entity.position, entity.facing, entity.gait);
   }
 
   /**
@@ -268,7 +305,7 @@ export class GameplayPredictor {
     }
 
     const selfEntity: ClientEntity = { ...existing };
-    const gait = this.winded() ? 'walk' : this.running() ? 'run' : 'jog';
+    const gait = this.winded() ? 'walk' : gaitAllowed(this.running() ? 'run' : 'jog', this.effects());
 
     // The lower bound guards a misbehaving injected timestamp; `performance.now()` is monotonic.
     const elapsedMs = this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS);
@@ -284,7 +321,8 @@ export class GameplayPredictor {
     selfEntity.gait = course === undefined ? 'jog' : gait;
     if (travel !== undefined) {
       const pace = speedMultiplier(relativeDirection(travel, selfEntity.facing)) * (this.slowed(nowMs) ? COMBAT.swingSlow.factor : 1);
-      selfEntity.position = this.follow(world, selfEntity, gaitMetresPerSecond(gait) * (elapsedMs / 1000) * pace, nowMs);
+      const metresPerSecond = this.walking?.kind === 'leap' ? this.walking.metresPerSecond : gaitMetresPerSecond(gait) * pace;
+      selfEntity.position = this.follow(world, selfEntity, metresPerSecond * (elapsedMs / 1000), nowMs);
     }
 
     this.session.entities.set(selfId, selfEntity);
@@ -315,6 +353,11 @@ export class GameplayPredictor {
     const walking = this.walking;
     if (walking === undefined) return undefined;
     if (walking.kind === 'steer') return distance(self.position, walking.toward) > STEER_STANDS_WITHIN_METRES ? walking.toward : undefined;
+    if (walking.kind === 'leap') {
+      if (distance(self.position, walking.end) > PATH_FOLLOWING.arrivalMetres) return walking.end;
+      this.walking = undefined;
+      return undefined;
+    }
     if (walking.searchAtMs !== undefined && nowMs >= walking.searchAtMs) this.search(world, self, walking, nowMs);
     if (this.walking !== walking) return undefined;
     while (walking.waypoints.length > 0 && distance(self.position, walking.waypoints[0]!) <= PATH_FOLLOWING.arrivalMetres) walking.waypoints.shift();
@@ -343,14 +386,19 @@ export class GameplayPredictor {
   }
 
   /**
-   * Walks `metres` of the walk: straight for a steer's point, or through the path's waypoints in
-   * turn, dropping each once there. A leg that brings the player no nearer its waypoint for
-   * `stallMs`, as when a body steps into it, has the path searched again; a path walked to its end
-   * ends the walk.
+   * Walks `metres` of the walk: straight for a steer's point or a leap's end, or through the path's
+   * waypoints in turn, dropping each once there. A leg that brings the player no nearer its
+   * waypoint for `stallMs`, as when a body steps into it, has the path searched again; a path
+   * walked to its end ends the walk, and so does a leap that is stopped.
    */
   private follow(world: ClientWorld, self: ClientEntity, metres: number, nowMs: number): Point {
     const walking = this.walking!;
     if (walking.kind === 'steer') return this.stepToward(world, self, self.position, walking.toward, metres);
+    if (walking.kind === 'leap') {
+      const position = this.stepToward(world, self, self.position, walking.end, metres);
+      if (metres > 0 && position.x === self.position.x && position.z === self.position.z) this.walking = undefined;
+      return position;
+    }
     const leg = walking.waypoints[0]!;
     const before = distance(self.position, leg);
     let position = self.position;
@@ -420,11 +468,13 @@ export class GameplayPredictor {
 
   /**
    * Whether a substep from `from` to `to`, which lands in the door's trigger, heads through the door.
-   * A path does only where it ends. A steer does on entering the trigger, and within it only toward
-   * the doorway, so a player standing in a trigger a path walked them into can steer back out.
+   * A path does only where it ends, and a leap, which heads for a body, never does. A steer does on
+   * entering the trigger, and within it only toward the doorway, so a player standing in a trigger a
+   * path walked them into can steer back out.
    */
   private headsThrough(door: ResolvedDoor, from: Point, to: Point): boolean {
     const walking = this.walking;
+    if (walking?.kind === 'leap') return false;
     if (walking?.kind === 'path') {
       const end = walking.waypoints.at(-1);
       return end !== undefined && doorContains(door, end, 0);
@@ -437,16 +487,7 @@ export class GameplayPredictor {
    * never see two slightly different instants within one tick.
    */
   private reportIfChanged(entity: ClientEntity, nowMs: number): void {
-    const last = this.lastReport;
-    if (
-      last !== undefined &&
-      last.position.x === entity.position.x &&
-      last.position.z === entity.position.z &&
-      Math.abs(angularDistance(last.facing, entity.facing)) <= FACING_EMIT_THRESHOLD_DEGREES &&
-      last.gait === entity.gait
-    ) {
-      return;
-    }
+    if (!this.changedSinceReport(entity)) return;
     // Heartbeat gate. The last report is deliberately left unchanged when throttled, so the next
     // tick past the interval still sees the move as pending and reports the final position rather
     // than dropping it.
@@ -455,6 +496,17 @@ export class GameplayPredictor {
     }
     this.lastHeartbeatMs = nowMs;
     this.report(entity.position, entity.facing, entity.gait);
+  }
+
+  private changedSinceReport(entity: ClientEntity): boolean {
+    const last = this.lastReport;
+    return (
+      last === undefined ||
+      last.position.x !== entity.position.x ||
+      last.position.z !== entity.position.z ||
+      Math.abs(angularDistance(last.facing, entity.facing)) > FACING_EMIT_THRESHOLD_DEGREES ||
+      last.gait !== entity.gait
+    );
   }
 
   private report(position: Point, facing: Heading, gait: Gait): void {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NO_LUCIDITY,
   TEACHINGS,
+  TEACHING_IDS,
   TRIALS,
   forbidsStriking,
   isRole,
@@ -12,6 +13,7 @@ import {
   rankOf,
   taskGoal,
   taskSpec,
+  teaching,
   teachingStanding,
   unmetNeed,
 } from '../src/lucidity.ts';
@@ -25,6 +27,28 @@ function fighter(strike: number): Lucidity {
 describe('practice', () => {
   it('asks more for each rank already held', () => {
     expect([0, 1, 2].map(practiceNeeded)).toEqual([20, 35, 50]);
+  });
+});
+
+describe('the teachings', () => {
+  /** A rank is stored against its teaching's last rank, and a master offers a teaching only once its need is met. */
+  it('pins the last rank and the need of every teaching', () => {
+    expect(Object.fromEntries(TEACHING_IDS.map((id) => [id, [teaching(id).maxRank, teaching(id).needs]]))).toEqual({
+      strike: [5, undefined],
+      guard: [3, { teachingId: 'strike', rank: 1 }],
+      'follow-through': [3, { teachingId: 'strike', rank: 2 }],
+      'balance-recovery': [3, undefined],
+      toughening: [5, undefined],
+      cleave: [3, { teachingId: 'strike', rank: 1 }],
+      challenge: [1, { teachingId: 'guard', rank: 1 }],
+      brace: [3, { teachingId: 'guard', rank: 1 }],
+      lunge: [3, { teachingId: 'strike', rank: 2 }],
+      rally: [3, { teachingId: 'balance-recovery', rank: 1 }],
+      touch: [3, undefined],
+      depth: [5, { teachingId: 'touch', rank: 1 }],
+      'drawing-back': [1, { teachingId: 'touch', rank: 2 }],
+      'spirit-deepening': [5, undefined],
+    });
   });
 });
 
@@ -47,6 +71,8 @@ describe('what a teaching needs', () => {
     ['open to study past its gate', ranks({ strike: 2, 'follow-through': 1 }), 'follow-through', 'open'],
     ['mastered at its last rank', ranks({ strike: 2, 'follow-through': 3 }), 'follow-through', 'mastered'],
     ['mastered even when its need is no longer met', ranks({ 'drawing-back': 1 }), 'drawing-back', 'mastered'],
+    ['an ability later while its need is unmet', ranks({ strike: 1 }), 'challenge', 'later'],
+    ['an ability open to study once its need is met', ranks({ strike: 1, guard: 1 }), 'challenge', 'open'],
   ] as const)('a teaching is %s', (_label, held, teachingId, standing) => {
     expect(teachingStanding(held, teachingId)).toBe(standing);
   });

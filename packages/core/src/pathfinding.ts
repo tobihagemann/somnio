@@ -1,5 +1,5 @@
 import type { SectorView } from '@somnio/protocol';
-import { MOVE_SUBSTEP, bodyBlocksLine, collisionNear, isClear } from './collision.ts';
+import { MOVE_SUBSTEP, bodiesBlockLine, collisionNear, isClear } from './collision.ts';
 import type { Body, SpaceCollision } from './collision.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { distance } from './geometry.ts';
@@ -123,12 +123,13 @@ export function rasterizeWalkable({ sector, rect, collision }: WalkRasterInputs)
 
 /**
  * The one rule every part of the pathfinder judges a step by. A leg is walkable when every sample
- * along it, at most `MOVE_SUBSTEP` apart, is clear at the full `playerRadius`, and no body stops it
- * by `bodyBlocksLine` at the body's radius plus `playerRadius` plus `bodyMargin`. That is the
- * follower's rule at any spacing of its steps, so a leg can always lead away from a body the walker
- * touches. The rule uses the full radius, not `isLegalMove`'s path tolerance, because `resolveMove`
- * tests each substep at the full radius, and a leg grazing a corner within the tolerance would stop
- * the walker dead.
+ * along it, at most `MOVE_SUBSTEP` apart, is clear at the full `playerRadius`, and the bodies do not
+ * stop it by `bodiesBlockLine`. Where the leg starts clear of every body by `bodyMargin`, it judges
+ * the bodies at `playerRadius` plus that margin, and otherwise at `playerRadius` alone. Either way
+ * it is the follower's rule at any spacing of its steps, or stricter only by a margin the leg
+ * starts clear of, so a leg can always lead out of the bodies the walker touches. The rule uses the
+ * full radius, not `isLegalMove`'s path tolerance, because `resolveMove` tests each substep at the
+ * full radius, and a leg grazing a corner within the tolerance would stop the walker dead.
  */
 export function legWalkable(collision: SpaceCollision, from: Point, to: Point, bodies: readonly Body[]): boolean {
   return walkable((point) => isClear(collision, point, RADIUS), from, to, bodies);
@@ -139,7 +140,8 @@ function walkable(clear: (point: Point) => boolean, from: Point, to: Point, bodi
 }
 
 function clearOfBodies(from: Point, to: Point, bodies: readonly Body[]): boolean {
-  return !bodies.some((body) => bodyBlocksLine(from, to, BODY_RADIUS, body));
+  const radius = bodies.some((body) => distance(from, body) < BODY_RADIUS + body.radius) ? RADIUS : BODY_RADIUS;
+  return !bodiesBlockLine(from, to, radius, bodies);
 }
 
 function everySample(from: Point, to: Point, accept: (sample: Point) => boolean): boolean {

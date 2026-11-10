@@ -8,6 +8,8 @@ import {
   conditionOf,
   engageAction,
   fullPools,
+  gaitAllowed,
+  harmTaken,
   maxPools,
   mendAmount,
   mendReaches,
@@ -16,11 +18,12 @@ import {
   swingAllowed,
   swingFor,
   swingMeets,
+  wholeAmount,
   windedAfter,
   windedOnJoin,
 } from '../src/combat.ts';
 import { heading } from '../src/heading.ts';
-import { TRIALS } from '../src/lucidity.ts';
+import { NO_LUCIDITY, TRIALS } from '../src/lucidity.ts';
 import { monsterKind } from '../src/monsterKinds.ts';
 import { ranks } from './support/ranks.ts';
 
@@ -65,6 +68,16 @@ describe('winded', () => {
   it('starts a join from the balance alone', () => {
     expect(windedOnJoin(COMBAT.windedUntil - 1)).toBe(true);
     expect(windedOnJoin(COMBAT.windedUntil)).toBe(false);
+  });
+});
+
+describe('gaitAllowed', () => {
+  it('holds a braced dreamer below a run, and leaves every gait else as asked', () => {
+    expect(gaitAllowed('run', ['braced'])).toBe('jog');
+    expect(gaitAllowed('jog', ['braced'])).toBe('jog');
+    expect(gaitAllowed('walk', ['braced'])).toBe('walk');
+    expect(gaitAllowed('run', [])).toBe('run');
+    expect(gaitAllowed('run', ['challenged'])).toBe('run');
   });
 });
 
@@ -199,10 +212,28 @@ describe('strikeChance', () => {
   });
 });
 
+describe('whole amounts', () => {
+  it('rounds an amount once, half up', () => {
+    expect(wholeAmount(4.5)).toBe(5);
+    expect(wholeAmount(4.49)).toBe(4);
+    expect(wholeAmount(3.5)).toBe(4);
+    expect(wholeAmount(0.4)).toBe(0);
+    expect(wholeAmount(9)).toBe(9);
+  });
+
+  it('lands a hit whole by every effect on either side, and never less than 1', () => {
+    expect(harmTaken(9, [], [])).toBe(9);
+    expect(harmTaken(9, [], ['braced'])).toBe(5);
+    expect(harmTaken(7, [], ['braced'])).toBe(4);
+    expect(harmTaken(1, [], ['braced'])).toBe(1);
+    expect(harmTaken(9, ['braced'], ['challenged'])).toBe(9);
+  });
+});
+
 describe('ranks that deepen a pool or a touch', () => {
-  it('fills every pool to what the ranks give', () => {
-    expect(fullPools([])).toEqual({ healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 });
-    expect(fullPools(ranks({ toughening: 2, 'spirit-deepening': 1 }))).toMatchObject({
+  it('fills every pool to what the role and ranks give', () => {
+    expect(fullPools(NO_LUCIDITY)).toEqual({ healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 });
+    expect(fullPools({ role: 'healer', ranks: ranks({ toughening: 2, 'spirit-deepening': 1 }) })).toMatchObject({
       healthCurrent: 120,
       healthMax: 120,
       spiritCurrent: 110,
@@ -211,8 +242,13 @@ describe('ranks that deepen a pool or a touch', () => {
   });
 
   it('raises health with Toughening and spirit with Spirit deepening, and leaves balance alone', () => {
-    expect(maxPools([])).toEqual({ healthMax: 100, balanceMax: 100, spiritMax: 100 });
-    expect(maxPools(ranks({ toughening: 2, 'spirit-deepening': 3 }))).toEqual({ healthMax: 120, balanceMax: 100, spiritMax: 130 });
+    expect(maxPools(NO_LUCIDITY)).toEqual({ healthMax: 100, balanceMax: 100, spiritMax: 100 });
+    expect(maxPools({ role: 'healer', ranks: ranks({ toughening: 2, 'spirit-deepening': 3 }) })).toEqual({ healthMax: 120, balanceMax: 100, spiritMax: 130 });
+  });
+
+  it("reads only the Spirit deepening of the dreamer's own role", () => {
+    expect(maxPools({ role: 'fighter', ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
+    expect(maxPools({ role: undefined, ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
   });
 
   it('mends more with Depth', () => {

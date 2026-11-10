@@ -102,7 +102,7 @@ describe('character repository', () => {
       space: 'EdariaLibrary',
       position: { x: 0, z: 0 },
       facing: 0,
-      energy: fullPools(NO_LUCIDITY.ranks),
+      energy: fullPools(NO_LUCIDITY),
       lucidity: NO_LUCIDITY,
       lastSeen: new Date(),
     };

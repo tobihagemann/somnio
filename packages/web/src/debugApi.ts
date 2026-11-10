@@ -1,6 +1,6 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
-import type { EngageAction, Point } from '@somnio/core';
+import type { AbilityId, EffectId, EngageAction, Point } from '@somnio/core';
 import type { Energy, LucidityMessage } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 
@@ -10,7 +10,7 @@ import type { AppShell } from '@/ui/appShell';
  * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
  * adds controller and session state the scene never sees — connection state, the space and sector,
  * the chat scrollback, the presented overlay, the zoom factor, the player's own pools and lucidity, the
- * walk under way, and the target.
+ * walk under way, the target, the belt's abilities with their cooldowns, and the frames' effects.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -22,8 +22,8 @@ export interface SomnioDebugAPI {
   connectionState(): string;
   /** `undefined` until the entity stream places the player. Metres, in the space's coordinates. */
   player(): { x: number; z: number; facing: number; gait: string; name: string } | undefined;
-  /** Where the player is walking: a path's destination and the waypoints left, or the point a held pointer steers toward. */
-  walk(): { kind: 'path'; destination: Point; waypoints: Point[] } | { kind: 'steer'; toward: Point } | undefined;
+  /** Where the player is walking: a path's destination and the waypoints left, the point a held pointer steers toward, or where a leap ends. */
+  walk(): { kind: 'path'; destination: Point; waypoints: Point[] } | { kind: 'steer'; toward: Point } | { kind: 'leap'; end: Point } | undefined;
   spaceId(): string | undefined;
   /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
@@ -46,6 +46,14 @@ export interface SomnioDebugAPI {
   gazeLocked(): boolean;
   /** The share of its health the server last sent for the target, or from the player's own pools when that is themselves. */
   vitals(entityId: string): number | undefined;
+  /**
+   * The abilities on the belt's slots after slot 1, in its order: whether the server would act on
+   * each now but for its cooldowns, and the seconds left on the cooldown its slot waits on, its own
+   * or the global one, whichever ends later; 0 while none runs.
+   */
+  abilities(): { abilityId: AbilityId; usable: boolean; cooldownSeconds: number }[];
+  /** The effects the server last sent of the player or of their target, with the seconds each has left; none of anyone else. */
+  effects(entityId: string): { effectId: EffectId; seconds?: number }[];
   /** Where on the page an entity's body is drawn, in CSS pixels, so a click can be aimed at it. */
   screenPoint(entityId: string): { x: number; y: number } | undefined;
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels, so a tap can be aimed at it. */
@@ -59,6 +67,11 @@ export interface SomnioDebugAPI {
   zoomFactor(): number;
   /** The id of the splash shot playing, or `undefined` while none is. */
   splashShot(): string | undefined;
+}
+
+/** The seconds from now until a moment on the session's clock, which is the page's `performance.now()`. */
+function secondsUntil(atMs: number): number {
+  return Math.max(0, (atMs - performance.now()) / 1000);
 }
 
 export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
@@ -81,6 +94,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
       const walk = shell.session.predictor.walk;
       if (walk === undefined) return undefined;
       if (walk.kind === 'steer') return { kind: 'steer', toward: { ...walk.toward } };
+      if (walk.kind === 'leap') return { kind: 'leap', end: { ...walk.end } };
       return { kind: 'path', destination: { ...walk.destination }, waypoints: walk.waypoints.map((point) => ({ ...point })) };
     },
     spaceId: () => shell.controller.world?.spaceId,
@@ -104,6 +118,14 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     target: () => shell.session.target,
     gazeLocked: () => shell.session.gazeLocked,
     vitals: (entityId) => shell.session.vitalsOf(entityId),
+    abilities: () =>
+      shell.session.abilitySlots().map(({ abilityId, usable, cooldown }) => ({
+        abilityId,
+        usable,
+        cooldownSeconds: cooldown === undefined ? 0 : secondsUntil(cooldown.endsAtMs),
+      })),
+    effects: (entityId) =>
+      shell.session.effectsOf(entityId).map(({ effectId, endsAtMs }) => ({ effectId, ...(endsAtMs === undefined ? {} : { seconds: secondsUntil(endsAtMs) }) })),
     screenPoint: (entityId) => shell.pagePointOf(entityId),
     groundScreenPoint: (x, z) => shell.pagePointOfGround({ x, z }),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,

@@ -13,7 +13,14 @@
           "Running_Strafe_Right",
           "Death_A",
           "Hit_A",
-          "Interact"
+          "Melee_1H_Attack_Slice_Horizontal",
+          "Ranged_Magic_Raise",
+          "Melee_Block",
+          "Melee_1H_Attack_Jump_Chop",
+          "Cheering",
+          "Ranged_Magic_Shoot",
+          "Ranged_Magic_Spellcasting",
+          "Ranged_Magic_Spellcasting_Long"
         ],
         "stem": "WachenKaempfer"
       }

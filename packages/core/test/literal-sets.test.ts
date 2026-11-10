@@ -1,6 +1,8 @@
 import { GAITS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
+import { ABILITIES } from '../src/abilities.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
+import { EFFECTS } from '../src/effects.ts';
 import { gaitMetresPerSecond } from '../src/gait.ts';
 import { ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIALS, isTeachingId, taskSpec, teaching } from '../src/lucidity.ts';
@@ -64,6 +66,11 @@ describe('literal sets', () => {
       'follow-through': 'fighter',
       'balance-recovery': 'fighter',
       toughening: 'fighter',
+      cleave: 'fighter',
+      challenge: 'fighter',
+      brace: 'fighter',
+      lunge: 'fighter',
+      rally: 'fighter',
       touch: 'healer',
       depth: 'healer',
       'drawing-back': 'healer',
@@ -72,9 +79,25 @@ describe('literal sets', () => {
     expect(FIRST_TEACHING).toEqual({ fighter: 'strike', healer: 'touch' });
   });
 
+  it('pins the ability each teaching teaches', () => {
+    expect(Object.fromEntries(TEACHING_IDS.flatMap((id) => (teaching(id).ability === undefined ? [] : [[id, teaching(id).ability]])))).toEqual({
+      cleave: 'cleave',
+      challenge: 'challenge',
+      brace: 'brace',
+      lunge: 'lunge',
+      rally: 'rally',
+    });
+  });
+
   /** A `lucidity` frame carries a rank for each teaching held, and its decoder refuses more than the cap. */
   it('fits a rank of every teaching in one lucidity frame', () => {
     expect(TEACHING_IDS.length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks);
+  });
+
+  /** An `effects` frame lists each effect its holder holds, and a `cooldowns` frame each cooldown running; their decoders refuse more than the caps. */
+  it("fits every effect in one effects frame and every ability's cooldown in one cooldowns frame", () => {
+    expect(Object.keys(EFFECTS).length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects);
+    expect(Object.keys(ABILITIES).length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns);
   });
 
   /** A task's progress is stored as a bare number, which means something only against the kind of task it counts. */

@@ -6,7 +6,8 @@ import { NAMED_PLACES, placeName } from '@/ui/placeNames';
 import { catalogTables, setLocale } from '@/i18n';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import type { Energy, InventoryRowMessage } from '@somnio/protocol';
-import type { ChatLine } from '@/client';
+import type { AbilitySlotState, ChatLine } from '@/client';
+import type { AbilityId } from '@somnio/core';
 import type { HUDCallbacks } from '@/ui/hud';
 import { clientEntity } from './helpers/worldFixture';
 
@@ -30,6 +31,7 @@ function recording() {
     onActivateItem: record('onActivateItem'),
     onToggleRun: record('onToggleRun'),
     onToggleEngage: record('onToggleEngage'),
+    onUseAbility: record('onUseAbility'),
     onPressPlayer: record('onPressPlayer'),
     onPressOwnFrame: record('onPressOwnFrame'),
     onClearTarget: record('onClearTarget'),
@@ -70,7 +72,11 @@ afterEach(() => {
 });
 
 const POOLS: Energy = { healthCurrent: 30, healthMax: 60, balanceCurrent: 1, balanceMax: 4, spiritCurrent: 5, spiritMax: 10 };
-const HEALER = { name: 'Smokewalker', people: 'vigils', role: 'healer', condition: 'hale', targeted: false } as const;
+const HEALER = { name: 'Smokewalker', people: 'vigils', role: 'healer', condition: 'hale', targeted: false, effects: [] } as const;
+const NO_CLOCK = { worldSeconds: undefined, place: undefined };
+
+/** An ability's slot the server would act on now, with no cooldown running. */
+const ready = (abilityId: AbilityId): AbilitySlotState => ({ abilityId, usable: true, cooldown: undefined });
 
 describe("a mouse's HUD", () => {
   it('lays out the frames, the clock, the belt with its six slots and Run, the menu, and the chat', () => {
@@ -151,10 +157,91 @@ describe("a mouse's HUD", () => {
     hud.renderSlotOne(false, 'attack', false);
     $<HTMLButtonElement>('.hud-slot--act').click();
     button('Run').click();
-    hud.renderRun(true);
+    hud.renderRun(true, false);
     expect(named('onToggleEngage')).toHaveLength(1);
     expect(named('onToggleRun')).toHaveLength(1);
     expect(button('Run').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows Run held off while an effect keeps the player from running, still lit and still pressable', () => {
+    const { hud, button, named } = makeHUD();
+    hud.renderRun(true, true);
+    expect(button('Run').classList).toContain('hud-run--held');
+    expect(button('Run').getAttribute('aria-description')).toBe('held off');
+    expect(button('Run').getAttribute('aria-pressed')).toBe('true');
+    button('Run').click();
+    expect(named('onToggleRun')).toHaveLength(1);
+    hud.renderRun(true, false);
+    expect(button('Run').classList).not.toContain('hud-run--held');
+    expect(button('Run').hasAttribute('aria-description')).toBe(false);
+  });
+
+  it('puts the abilities learned in the slots after slot 1, in the order given, each named, drawn, and keyed, and reports a press', () => {
+    const { hud, $, button, named } = makeHUD();
+    const slots = () =>
+      [...$('.hud-slots').children].slice(1, 6).map((slot) => [slot.querySelector('.hud-slot__key')?.textContent, slot.getAttribute('aria-label')]);
+
+    hud.renderAbilities([ready('cleave'), ready('lunge')]);
+    expect(slots()).toEqual([
+      ['2', 'Cleave'],
+      ['3', 'Lunge'],
+      ['4', null],
+      ['5', null],
+      ['6', null],
+    ]);
+    expect([button('Cleave').title, drawnGlyph(button('Cleave')), drawnGlyph(button('Lunge'))]).toEqual([
+      'Cleave (2)',
+      HUD_ICONS.cleave.image,
+      HUD_ICONS.lunge.image,
+    ]);
+    button('Lunge').click();
+    expect(named('onUseAbility')).toEqual([['lunge']]);
+
+    // An ability learned earlier in the order moves the later ones along.
+    hud.renderAbilities([ready('cleave'), ready('brace'), ready('lunge')]);
+    expect(slots().map(([key, label]) => `${label}:${key}`)).toEqual(['Cleave:2', 'Brace:3', 'Lunge:4', 'null:5', 'null:6']);
+    expect(button('Lunge').title).toBe('Lunge (4)');
+    hud.renderAbilities([]);
+    expect($('.hud-slots').querySelectorAll('.hud-slot--empty')).toHaveLength(5);
+  });
+
+  it('greys an ability out while the server would not act on it, and sweeps it from the start the server gave while it waits on a cooldown, counting its own down', () => {
+    const { hud, button } = makeHUD();
+    const slot = () => button('Brace');
+    const sweep = () => slot().querySelector<HTMLElement>('.hud-sweep')!;
+    const seconds = () => slot().querySelector('.hud-sweep__seconds')?.textContent;
+    const look = () => [
+      slot().disabled,
+      slot().classList.contains('hud-ability--greyed'),
+      sweep().classList.contains('hidden'),
+      slot().getAttribute('aria-description'),
+    ];
+
+    hud.renderAbilities([{ abilityId: 'brace', usable: false, cooldown: undefined }]);
+    expect(look()).toEqual([true, true, true, null]);
+    hud.renderAbilities([ready('brace')]);
+    expect(look()).toEqual([false, false, true, null]);
+
+    // Fifteen seconds that began five ago, at 1000 on the HUD's clock.
+    const ownCooldown = { startedAtMs: -4000, endsAtMs: 11000, global: false };
+    hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: ownCooldown }]);
+    expect(look()).toEqual([true, false, false, 'cooling down']);
+    expect([sweep().style.animationDuration, sweep().style.animationDelay, seconds()]).toEqual(['15000ms', '-5000ms', '10s']);
+    const swept = sweep();
+    clock = 2000;
+    hud.tick(clock, NO_CLOCK);
+    expect(seconds()).toBe('9s');
+    // Out of reach as well, it is greyed out under the same sweep.
+    hud.renderAbilities([{ abilityId: 'brace', usable: false, cooldown: ownCooldown }]);
+    expect(look()).toEqual([true, true, false, 'cooling down']);
+    expect(sweep()).toBe(swept);
+
+    // The global cooldown sweeps anew and counts nothing down.
+    hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: { startedAtMs: 2000, endsAtMs: 2750, global: true } }]);
+    expect(sweep()).not.toBe(swept);
+    expect([sweep().style.animationDuration, sweep().style.animationDelay, seconds()]).toEqual(['750ms', '0ms', '']);
+    hud.renderAbilities([ready('brace')]);
+    expect(look()).toEqual([false, false, true, null]);
   });
 
   it('says what the player studies and how far toward the next rank, else the task they hold, else that they study nothing', () => {
@@ -208,6 +295,42 @@ describe("a mouse's HUD", () => {
     expect(named('onPressOwnFrame')).toEqual([[]]);
   });
 
+  it('shows the effects on the player and on their target in a row on each frame, a glyph each with the whole seconds it has left', () => {
+    const { hud, $ } = makeHUD();
+    const ghost = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost' });
+    const own = $('.hud-unit--self .hud-effects');
+    const shown = (row: Element) =>
+      [...row.querySelectorAll<HTMLElement>('.hud-effect')].map((effect) => [
+        drawnGlyph(effect),
+        effect.title,
+        effect.textContent,
+        effect.getAttribute('aria-label'),
+      ]);
+    expect(own.getAttribute('aria-label')).toBe('Effects');
+    // Empty, the row stays out of the frame's accessible name.
+    hud.renderSelf(HEALER);
+    expect(own.getAttribute('aria-hidden')).toBe('true');
+
+    hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 4200 }] });
+    expect(own.getAttribute('aria-hidden')).toBeNull();
+    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, 'Braced', '4s', 'Braced, 4 s left']]);
+    const braced = own.firstElementChild;
+    clock = 2300;
+    hud.tick(clock, NO_CLOCK);
+    expect(shown(own)).toEqual([[HUD_ICONS.brace.image, 'Braced', '2s', 'Braced, 2 s left']]);
+    // Applied again, it keeps its element and starts its seconds over.
+    hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 7000 }] });
+    expect(own.firstElementChild).toBe(braced);
+    expect(own.textContent).toBe('5s');
+
+    // One without seconds lasts while its holder does.
+    hud.renderTarget({ entity: ghost, health: 1, effects: [{ effectId: 'challenged' }] }, false);
+    expect(shown($('.hud-unit--target .hud-effects'))).toEqual([[HUD_ICONS.challenge.image, 'Challenged', '', 'Challenged']]);
+    hud.renderSelf(HEALER);
+    expect(own.childElementCount).toBe(0);
+    expect(own.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('frames the target with its name, its health, and a ✕ that clears it, and names its condition and the lock only to assistive tech', () => {
     const { hud, $, button, named } = makeHUD();
     const frame = $('.hud-unit--target');
@@ -216,7 +339,7 @@ describe("a mouse's HUD", () => {
     expect(hud.portraits.target.parentElement).toBe(frame);
     expect(hud.portraits.target.childElementCount).toBe(0);
 
-    hud.renderTarget({ entity: ghost, health: undefined }, false);
+    hud.renderTarget({ entity: ghost, health: undefined, effects: [] }, false);
     expect(frame.classList.contains('hidden')).toBe(false);
     expect(frame.textContent).toBe('TargetGhost');
     expect(frame.querySelector('.hud-unit__name')?.textContent).toBe('Ghost');
@@ -224,15 +347,15 @@ describe("a mouse's HUD", () => {
     expect(frame.getAttribute('aria-label')).toBe('Target, wounded');
     expect(frame.querySelector<HTMLElement>('.hud-bar__fill')?.style.width).toBe('62.50%');
     const children = [...frame.querySelectorAll('*')];
-    hud.renderTarget({ entity: ghost, health: 0.42 }, true);
+    hud.renderTarget({ entity: ghost, health: 0.42, effects: [] }, true);
     expect(frame.querySelector<HTMLElement>('.hud-bar__fill')?.style.width).toBe('42.00%');
     expect(frame.getAttribute('aria-label')).toBe('Target, wounded, facing locked');
     expect(frame.textContent).toBe('TargetGhost');
-    hud.renderTarget({ entity: { ...ghost, condition: 'hurt' }, health: 0.3 }, false);
+    hud.renderTarget({ entity: { ...ghost, condition: 'hurt' }, health: 0.3, effects: [] }, false);
     expect(frame.getAttribute('aria-label')).toBe('Target, hurt');
     // A frame that swapped its elements under the pointer would lose a press on its ✕.
     expect([...frame.querySelectorAll('*')]).toEqual(children);
-    hud.renderTarget({ entity: clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }), health: 1 }, false);
+    hud.renderTarget({ entity: clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }), health: 1, effects: [] }, false);
     expect(frame.querySelector('.hud-portrait')).toBe(hud.portraits.target);
 
     button('Clear target').click();
@@ -346,11 +469,13 @@ describe("a mouse's HUD", () => {
     const history: ChatLine[] = [{ kind: 'joined', playerName: 'Bren' }];
     const paint = (balanceCurrent: number, health: number): void => {
       hud.renderPools({ ...POOLS, balanceCurrent }, false);
-      hud.renderRun(false);
+      hud.renderRun(false, false);
       hud.renderSlotOne(false, 'attack', false);
+      // A sweep restarted on every frame would jump back to its start.
+      hud.renderAbilities([{ abilityId: 'brace', usable: true, cooldown: { startedAtMs: 0, endsAtMs: 9000, global: false } }, ready('lunge')]);
       hud.renderLucidity({ role: 'healer', ranks: [{ teachingId: 'touch', rank: 2, practice: 20 }], study: 'touch' });
-      hud.renderSelf(HEALER);
-      hud.renderTarget({ entity: { ...ghost }, health }, false);
+      hud.renderSelf({ ...HEALER, effects: [{ effectId: 'braced', endsAtMs: 5000 }] });
+      hud.renderTarget({ entity: { ...ghost }, health, effects: [{ effectId: 'challenged', endsAtMs: 6000 }] }, false);
       hud.renderPlayers(['Bren', 'Tester'], { own: 'Tester', target: undefined });
       hud.renderItems(rows);
       hud.renderChat(history);
@@ -543,6 +668,19 @@ describe("a finger's HUD", () => {
     hud.renderSlotOne(false, 'mend', false);
     expect(orbs[0]!.getAttribute('aria-label')).toBe('Mend');
     expect(hud.root.querySelector('.hud-menu')).toBeNull();
+  });
+
+  it("puts an ability's round button at its slot's place on the arc, among what covers the play field", () => {
+    const { hud, $, button } = makeHUD(true);
+    const empty = [...$('.hud-thumb').children][1] as HTMLElement;
+    expect(hud.occluders).toContain(empty);
+
+    hud.renderAbilities([ready('cleave')]);
+    const orb = button('Cleave');
+    expect([orb.className, orb.title, orb.querySelector('.hud-slot__key')]).toEqual(['hud-orb hud-orb--ability', 'Cleave', null]);
+    expect([orb.style.left, orb.style.top]).toEqual([empty.style.left, empty.style.top]);
+    expect(hud.occluders).toContain(orb);
+    expect(hud.occluders).not.toContain(empty);
   });
 
   it('opens a sheet from ≡ with Players, Bag, Settings, and the study line, and shows one window at a time in its place', () => {

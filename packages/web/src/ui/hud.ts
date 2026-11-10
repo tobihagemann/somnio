@@ -1,12 +1,12 @@
 import { calendarFromWorldSeconds, hourOfDay } from '@somnio/core';
-import type { EngageAction } from '@somnio/core';
+import type { AbilityId, EngageAction } from '@somnio/core';
 import type { Energy, InventoryRowMessage, LucidityMessage } from '@somnio/protocol';
-import type { ChatLine } from '@/client';
+import type { AbilitySlotState, ChatLine } from '@/client';
 import { t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { sunIsUp } from '@/scene/dayNightSun';
 import type { PortraitSlot } from '@/scene/portraits';
-import { BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
+import { AbilitySlot, BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
 import { ChatPane } from './chatPane';
 import { element, iconButton, isHidden, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
@@ -20,7 +20,7 @@ import type { FramedEntity, OwnFrameState } from './unitFrames';
  * The in-game HUD, DOM over the WebGL canvas so `agent-browser snapshot` and assistive technology
  * see it. On a mouse: the player's own frame top left and the target's top centre, the world clock
  * top right, the belt at the bottom centre (the Health and Spirit globes, the Balance arc, slot 1,
- * five ability slots, Run, and what the player studies), the menu beside the Spirit globe, and the
+ * five slots for the abilities the player has learned, Run, and what the player studies), the menu beside the Spirit globe, and the
  * chat bottom left. On a finger: one strip of frames along the top with the clock and ≡, slot 1 and
  * the ability slots in an arc under the right thumb, Balance as a bar at the bottom centre, and the
  * chat behind an icon bottom left.
@@ -34,6 +34,7 @@ export interface HUDCallbacks {
   onActivateItem: (row: InventoryRowMessage) => void;
   onToggleRun: () => void;
   onToggleEngage: () => void;
+  onUseAbility: (abilityId: AbilityId) => void;
   /** A press on a dreamer's name in the Players window. */
   onPressPlayer: (name: string) => void;
   /** A press on the player's own frame, or their own name in the Players window. */
@@ -50,7 +51,7 @@ export interface HUDOptions {
   locale: CatalogLocale;
   /** A finger's layout rather than a mouse's. */
   coarse: boolean;
-  /** The clock the chat's fading is timed on. */
+  /** The clock the chat's fading, the cooldowns, and the effects' seconds are timed on. */
   now?: () => number;
 }
 
@@ -64,6 +65,9 @@ export interface HUDClock {
 
 /** The thumb's corner box, in px, and where a finger's slots lie in it: slot 1, then 2 to 6 on an arc round it, and Run at the arc's end. */
 const THUMB = { width: 300, height: 230, act: { x: 262, y: 192 }, run: { x: 58, y: 204 }, radius: 145, firstDegrees: 92, stepDegrees: 22.5 } as const;
+
+/** The keys of the slots for abilities, after slot 1's. */
+const ABILITY_KEYS = [2, 3, 4, 5, 6] as const;
 
 /**
  * What a mouse's HUD needs of the window, in px, mirroring `hud.css`. Across: the edge and an 8 px
@@ -79,6 +83,18 @@ const FIT = { across: { fixed: 2 * (12 + 8), scaled: 2 * 250 + 150 }, down: { fi
 function hudScale(width: number, height: number): number {
   const fits = Math.min(1, (width - FIT.across.fixed) / FIT.across.scaled, (height - FIT.down.fixed) / FIT.down.scaled);
   return Math.floor(fits * 1000) / 1000;
+}
+
+function placeOnThumb(node: HTMLElement, at: { x: number; y: number }): HTMLElement {
+  node.style.left = `${at.x}px`;
+  node.style.top = `${at.y}px`;
+  return node;
+}
+
+/** Puts a finger's slot for an ability at its place on the arc round slot 1, from the first place at 0. */
+function placeOnArc(node: HTMLElement, index: number): HTMLElement {
+  const radians = ((THUMB.firstDegrees + index * THUMB.stepDegrees) * Math.PI) / 180;
+  return placeOnThumb(node, { x: THUMB.act.x + THUMB.radius * Math.cos(radians), y: THUMB.act.y - THUMB.radius * Math.sin(radians) });
 }
 
 function twoDigits(value: number): string {
@@ -102,6 +118,10 @@ export class GameHUD {
   private readonly globes: { health: PoolGlobe; spirit: PoolGlobe } | undefined;
   private readonly balance: BalanceMeter;
   private readonly slotOne: SlotOneButton;
+  /** What stands in each slot for abilities: the slot of the ability learned for it, or else an empty one. */
+  private readonly abilityPlaces: HTMLElement[];
+  private readonly emptySlots: HTMLElement[];
+  private readonly abilitySlots: (AbilitySlot | undefined)[] = ABILITY_KEYS.map(() => undefined);
   private readonly run: HTMLButtonElement;
   private readonly study: HTMLElement;
   private readonly chat: ChatPane;
@@ -117,6 +137,7 @@ export class GameHUD {
   /** What covers the play field whatever is open, beside the windows, the sheet, and the chat. */
   private readonly fixedOccluders: HTMLElement[];
   private readonly hovered = new Set<HTMLElement>();
+  private readonly now: () => number;
   private shownStudy: string | undefined;
   private shownClock: string | undefined;
 
@@ -124,6 +145,7 @@ export class GameHUD {
     this.callbacks = callbacks;
     this.coarse = options.coarse;
     const now = options.now ?? (() => performance.now());
+    this.now = now;
 
     this.ownFrame = new OwnFrame(() => callbacks.onPressOwnFrame(), this.coarse);
     this.targetFrame = new TargetFrame(() => callbacks.onClearTarget());
@@ -137,6 +159,8 @@ export class GameHUD {
     });
     this.balance = new BalanceMeter(this.coarse ? 'bar' : 'arc');
     this.slotOne = new SlotOneButton(() => callbacks.onToggleEngage(), this.coarse);
+    this.emptySlots = ABILITY_KEYS.map((key) => emptySlot(key, this.coarse));
+    this.abilityPlaces = [...this.emptySlots];
     this.run = runButton(() => callbacks.onToggleRun(), this.coarse);
     this.study = element('p', { className: 'hud-study' });
 
@@ -192,27 +216,16 @@ export class GameHUD {
         className: 'hud-strip',
         children: [this.ownFrame.root, this.targetFrame.root, element('span', { className: 'hud-strip__spacer' }), this.clock, this.sheetToggle],
       });
-      const place = (node: HTMLElement, at: { x: number; y: number }): HTMLElement => {
-        node.style.left = `${at.x}px`;
-        node.style.top = `${at.y}px`;
-        return node;
-      };
-      const abilities = [2, 3, 4, 5, 6].map((key, index) => {
-        const radians = ((THUMB.firstDegrees + index * THUMB.stepDegrees) * Math.PI) / 180;
-        return place(emptySlot(key, true), { x: THUMB.act.x + THUMB.radius * Math.cos(radians), y: THUMB.act.y - THUMB.radius * Math.sin(radians) });
+      const thumb = element('div', {
+        className: 'hud-thumb',
+        children: [
+          placeOnThumb(this.slotOne.root, THUMB.act),
+          ...this.emptySlots.map((slot, index) => placeOnArc(slot, index)),
+          placeOnThumb(this.run, THUMB.run),
+        ],
       });
-      const thumb = element('div', { className: 'hud-thumb', children: [place(this.slotOne.root, THUMB.act), ...abilities, place(this.run, THUMB.run)] });
       layout = [strip, this.sheet, this.balance.root, thumb, this.chat.root];
-      this.fixedOccluders = [
-        this.ownFrame.root,
-        this.targetFrame.root,
-        this.clock,
-        this.sheetToggle,
-        this.balance.root,
-        this.slotOne.root,
-        this.run,
-        ...abilities,
-      ];
+      this.fixedOccluders = [this.ownFrame.root, this.targetFrame.root, this.clock, this.sheetToggle, this.balance.root, this.slotOne.root, this.run];
       this.trackHover(strip, thumb, this.sheet, this.balance.root);
     } else {
       this.sheet = undefined;
@@ -220,7 +233,7 @@ export class GameHUD {
       this.globes = { health: new PoolGlobe('health', t('Health')), spirit: new PoolGlobe('spirit', t('Spirit')) };
       const slots = element('div', {
         className: 'hud-slots',
-        children: [this.slotOne.root, ...[2, 3, 4, 5, 6].map((key) => emptySlot(key, false)), this.run],
+        children: [this.slotOne.root, ...this.emptySlots, this.run],
       });
       const panel = element('div', { className: 'fantasy-panel hud-belt__panel', children: [this.balance.root, slots, this.study] });
       const menuButton = (id: HUDWindowId, label: string, art: HUDGlyph): HTMLButtonElement => {
@@ -269,6 +282,8 @@ export class GameHUD {
   get occluders(): HTMLElement[] {
     return [
       ...this.fixedOccluders,
+      // A mouse's ability slots lie within the belt's panel.
+      ...(this.coarse ? this.abilityPlaces : []),
       ...this.chat.occluders,
       this.windows.players.root,
       this.windows.bag.root,
@@ -305,12 +320,42 @@ export class GameHUD {
     this.globes?.spirit.render(energy.spiritCurrent, energy.spiritMax);
   }
 
-  renderRun(running: boolean): void {
+  /** Run lit while it is on, and held off while an effect keeps the player from running. */
+  renderRun(running: boolean, heldOff: boolean): void {
     this.run.setAttribute('aria-pressed', String(running));
+    this.run.classList.toggle('hud-run--held', heldOff);
+    if (heldOff) this.run.setAttribute('aria-description', t('held off'));
+    else this.run.removeAttribute('aria-description');
   }
 
   renderSlotOne(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean): void {
     this.slotOne.render(engaged, action, targetFallen);
+  }
+
+  /**
+   * The abilities the player has learned, in the slots after slot 1 in the belt's order, and empty
+   * slots after them. Each ability keeps its slot while it stays in the same place.
+   */
+  renderAbilities(slots: readonly AbilitySlotState[]): void {
+    const nowMs = this.now();
+    ABILITY_KEYS.forEach((key, index) => {
+      const state = slots[index];
+      let node = this.emptySlots[index]!;
+      if (state !== undefined) {
+        const { abilityId } = state;
+        let slot = this.abilitySlots[index];
+        if (slot?.abilityId !== abilityId) {
+          slot = new AbilitySlot(abilityId, key, () => this.callbacks.onUseAbility(abilityId), this.coarse);
+          this.abilitySlots[index] = slot;
+        }
+        slot.render(state, nowMs);
+        node = slot.root;
+      }
+      if (node === this.abilityPlaces[index]) return;
+      if (this.coarse) placeOnArc(node, index);
+      this.abilityPlaces[index]!.replaceWith(node);
+      this.abilityPlaces[index] = node;
+    });
   }
 
   renderLucidity(lucidity: LucidityMessage): void {
@@ -322,11 +367,11 @@ export class GameHUD {
   }
 
   renderSelf(state: OwnFrameState): void {
-    this.ownFrame.render(state);
+    this.ownFrame.render(state, this.now());
   }
 
   renderTarget(target: FramedEntity | undefined, gazeLocked: boolean): void {
-    this.targetFrame.render(target, gazeLocked);
+    this.targetFrame.render(target, gazeLocked, this.now());
   }
 
   renderChat(lines: readonly ChatLine[]): void {
@@ -341,9 +386,12 @@ export class GameHUD {
     this.bag.render(rows);
   }
 
-  /** The clock's minute and the chat's fading, which move with time rather than with a frame from the server. */
+  /** The clock's minute, the chat's fading, and the seconds left on cooldowns and effects, which move with time rather than with a frame from the server. */
   tick(nowMs: number, clock: HUDClock): void {
     this.chat.tick(nowMs);
+    for (const slot of this.abilitySlots) slot?.tick(nowMs);
+    this.ownFrame.effects.tick(nowMs);
+    this.targetFrame.effects.tick(nowMs);
     const shown = JSON.stringify([clock.worldSeconds === undefined ? null : Math.floor(clock.worldSeconds / 60), clock.place ?? null]);
     if (shown === this.shownClock) return;
     this.shownClock = shown;

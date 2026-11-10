@@ -7,6 +7,7 @@ import { ORTHO_RIG, PLAYER_ZOOM, cameraPosition, frustumBounds, offsetDirection,
 import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
 import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
+import { STRIKE_AT } from '@/scene/combatEffects';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { rasterizeGround } from '@/scene/groundField';
 import type { GroundField, GroundFieldInputs } from '@/scene/groundField';
@@ -1959,12 +1960,13 @@ describe('movement poses', () => {
 
 describe('blows, falls, and raises', () => {
   const CLIP_SECONDS = 1;
+  const SLICE = 'Melee_1H_Attack_Slice_Horizontal';
 
   afterEach(() => vi.restoreAllMocks());
 
   /** A scene whose character model carries `names` as clips, and the action of every clip started on it, in order. */
   function fightingScene(
-    names = ['Idle', 'Interact', 'Hit_A', 'Death_A'],
+    names = ['Idle', SLICE, 'Hit_A', 'Death_A'],
     now?: () => number,
   ): { scene: WorldScene; started: () => string[]; last: () => THREE.AnimationAction } {
     const clips = names.map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, []));
@@ -1994,7 +1996,7 @@ describe('blows, falls, and raises', () => {
 
     const idle = last();
     scene.showBlow('self', 'monster:1', false);
-    expect(started()).toEqual(['Idle', 'Interact']);
+    expect(started()).toEqual(['Idle', SLICE]);
     expect(last().loop).toBe(THREE.LoopOnce);
     // Half-way through the fade the pose has given half its weight to the swing.
     scene.tick(CLIP_TRANSITION_DURATION / 2);
@@ -2002,12 +2004,12 @@ describe('blows, falls, and raises', () => {
     expect(last().getEffectiveWeight()).toBeCloseTo(0.5, 6);
 
     run(scene, CLIP_SECONDS / 2);
-    expect(started()).toEqual(['Idle', 'Interact']);
+    expect(started()).toEqual(['Idle', SLICE]);
     run(scene, CLIP_SECONDS);
-    expect(started()).toEqual(['Idle', 'Interact', 'Idle']);
+    expect(started()).toEqual(['Idle', SLICE, 'Idle']);
   });
 
-  it('makes the one hit flinch, and marks a miss over the one missed for a moment', () => {
+  it('makes the one hit flinch, and marks a miss over the one missed for a moment, as the blade lands', () => {
     let nowMs = 0;
     const { scene, started } = fightingScene(undefined, () => nowMs);
     scene.placeEntity(player());
@@ -2015,14 +2017,19 @@ describe('blows, falls, and raises', () => {
     scene.tick(0.016);
     const ghost = entityNode(scene, 'monster:1');
     const before = ghost.children.length;
+    const bladeLands = CLIP_SECONDS * STRIKE_AT[SLICE]!;
 
     scene.showBlow('self', 'monster:1', true);
-    expect(started().slice(-2)).toEqual(['Interact', 'Hit_A']);
+    expect(started().at(-1)).toBe(SLICE);
+    run(scene, bladeLands);
+    expect(started().slice(-2)).toEqual([SLICE, 'Hit_A']);
     expect(ghost.children).toHaveLength(before);
 
     scene.showBlow('self', 'monster:1', false);
     scene.showBlow('self', 'monster:1', false);
-    expect(started().at(-1)).toBe('Interact');
+    expect(started().at(-1)).toBe(SLICE);
+    expect(ghost.children).toHaveLength(before);
+    run(scene, bladeLands);
     expect(ghost.children).toHaveLength(before + 1);
     nowMs = 1000;
     scene.tick(0.016);
@@ -2075,6 +2082,21 @@ describe('blows, falls, and raises', () => {
     run(scene, CLIP_SECONDS * 2);
 
     expect(started()).toEqual(['Idle']);
+  });
+
+  it("plays an ability's own clip once, and on a model without it keeps the pose rather than swinging", () => {
+    const { scene, started, last } = fightingScene(['Idle', 'Melee_Block']);
+    scene.placeEntity(player());
+    scene.tick(0.016);
+
+    scene.showAbility('self', 'brace', undefined);
+    expect(started()).toEqual(['Idle', 'Melee_Block']);
+    expect(last().loop).toBe(THREE.LoopOnce);
+    run(scene, CLIP_SECONDS * 2);
+
+    scene.showAbility('self', 'cleave', undefined);
+    run(scene, CLIP_SECONDS);
+    expect(started()).toEqual(['Idle', 'Melee_Block', 'Idle']);
   });
 
   it('draws a ring round a body being raised as far round as the raise has gone, at its pace from each snapshot, however few frames were drawn, and frees it when the raise ends', () => {

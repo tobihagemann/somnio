@@ -105,6 +105,34 @@ describe('the debug API', () => {
     expect(api.running()).toBe(true);
   });
 
+  it("reports the belt's abilities with the cooldown each waits on, and the effects of the player and the target in seconds", () => {
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    app.controller.entities.set('self', clientEntity());
+    app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 30 } }));
+    const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 };
+    const ranks = [
+      { teachingId: 'brace', rank: 1, practice: 0 },
+      { teachingId: 'lunge', rank: 1, practice: 0 },
+    ];
+    app.controller.dispatch({ tag: 'energy', payload: energy });
+    app.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks } });
+    app.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [{ abilityId: 'brace', seconds: 9 }] } });
+    app.session.select('monster:1');
+    app.controller.dispatch({ tag: 'effects', payload: { entityId: 'self', effects: [{ effectId: 'braced', seconds: 4 }] } });
+    app.controller.dispatch({ tag: 'effects', payload: { entityId: 'monster:1', effects: [{ effectId: 'challenged' }] } });
+    const api = makeDebugAPI(app);
+
+    // The nightmare stands too far off to leap to.
+    const [brace, lunge] = api.abilities();
+    expect([brace!.abilityId, brace!.usable, lunge]).toEqual(['brace', true, { abilityId: 'lunge', usable: false, cooldownSeconds: 0 }]);
+    expect(brace!.cooldownSeconds).toBeCloseTo(9, 0);
+    const [braced] = api.effects('self');
+    expect(braced!.effectId).toBe('braced');
+    expect(braced!.seconds).toBeCloseTo(4, 0);
+    expect(api.effects('monster:1')).toEqual([{ effectId: 'challenged' }]);
+  });
+
   it('reports the gaze lock as a second right press on the target lets go of it and a third takes it again', () => {
     const app = shell();
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bundledModelRegistry, distance, headingFromVector, isLegalMove, rasterizeWalkable, resolveDoor, sectorView } from '@somnio/core';
-import type { Point } from '@somnio/core';
+import type { EffectId, Point } from '@somnio/core';
 import type { SectorView, SomnioMessage } from '@somnio/protocol';
 import {
   ClientWorld,
@@ -61,6 +61,7 @@ interface Rig {
   lookAt: Point | undefined;
   running: boolean;
   winded: boolean;
+  effects: EffectId[];
   fallen: boolean;
   /** Whether a swing is slowing the player. */
   slowed: boolean;
@@ -100,6 +101,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     lookAt: undefined,
     running: false,
     winded: false,
+    effects: [],
     fallen: false,
     slowed: false,
     self: () => {
@@ -122,6 +124,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     lookAt: () => rig.lookAt,
     running: () => rig.running,
     winded: () => rig.winded,
+    effects: () => rig.effects,
     fallen: () => rig.fallen,
     slowed: () => rig.slowed,
   });
@@ -475,6 +478,38 @@ describe('collision resolution', () => {
     expectAt(rig.self().position, along(UP_SCREEN, 0.2));
   });
 
+  /** Where a dreamer stood in the Arena with a body drawn on either side of them, and where they retreated to. */
+  const PRESSED = { x: 2.882, z: 3.375 };
+  const RETREAT = { x: 9, z: 3.4 };
+
+  function pressedInTheArena(): Rig {
+    const arena = loadSectorFixtures().find((sector) => sector.name === 'EdariaArena')!;
+    const world = new ClientWorld('EdariaArena', bundledModelRegistry());
+    world.addSector(sectorView(arena));
+    const peers = [-0.08, 0.08].map((offset, index) => clientEntity({ id: `peer-${index}`, kind: 'peer', position: { x: PRESSED.x + offset, z: PRESSED.z } }));
+    return makeRig({ world, entities: [self({ position: PRESSED }), ...peers] });
+  }
+
+  it('steers out from between two peers it overlaps on opposite sides', () => {
+    const rig = pressedInTheArena();
+    rig.predictor.steerToward(RETREAT);
+
+    runTicks(rig, 5, 100);
+
+    expect(rig.self().position.x).toBeGreaterThan(PRESSED.x + 0.9);
+    expectLegalReports(rig, PRESSED);
+  });
+
+  it('walks a path out from between two peers it overlaps on opposite sides, and arrives', () => {
+    const rig = pressedInTheArena();
+    rig.predictor.walkTo(RETREAT);
+
+    tickUntilWalkEnds(rig, 16);
+
+    expect(distance(rig.self().position, RETREAT)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+    expectLegalReports(rig, PRESSED);
+  });
+
   it('sorts the entities into contact-blocking NPCs and the bodies only this client stops at', () => {
     const player = self();
     const npc = clientEntity({ id: 'npc:Meadow/wirt', kind: 'npc', position: { x: 12, z: 10 } });
@@ -714,6 +749,18 @@ describe('a balance that gave out, and a fall', () => {
     expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { gait: 'walk' } });
   });
 
+  it('jogs a braced player whether Run is on or not', () => {
+    const rig = makeRig();
+    rig.running = true;
+    rig.effects = ['braced'];
+    rig.steer(UP_SCREEN);
+
+    runTicks(rig, 1, 100);
+
+    expectAt(rig.self().position, along(UP_SCREEN, 0.2));
+    expect(rig.sent.at(-1)).toMatchObject({ tag: 'move', payload: { gait: 'jog' } });
+  });
+
   it('neither moves nor reports while the player lies fallen, and the fall ends the walk', () => {
     const rig = makeRig();
     rig.predictor.walkTo(along(UP_SCREEN, 5));
@@ -816,6 +863,64 @@ describe('emission gates', () => {
     // The last report is deliberately left unchanged while throttled, so the next tick past the
     // interval still sees the move as pending.
     expect(rig.moves().at(-1)).toEqual(rig.self().position);
+  });
+});
+
+describe('a leap', () => {
+  const ghostAt = (metres: number) => clientEntity({ id: 'monster:1', kind: 'monster', position: along(UP_SCREEN, metres) });
+
+  it('heads for contact with the body at its own speed in place of the walk under way, and ends there, every report legal', () => {
+    const ghost = ghostAt(3);
+    const rig = makeRig({ entities: [self(), ghost] });
+    rig.predictor.walkTo(along(DOWN_SCREEN, 5));
+    rig.predictor.leapAt({ ...ghost.position, radius: ghost.radius }, 3, 6);
+    // A steer asked for during the leap is dropped.
+    rig.steer(DOWN_SCREEN);
+
+    runTicks(rig, 2, 100);
+    expectAt(rig.self().position, along(UP_SCREEN, 1.2));
+    expect(rig.predictor.walk?.kind).toBe('leap');
+
+    const ended = tickUntilWalkEnds(rig, 100, 300);
+    expect(ended).toBe(500);
+    expectAt(rig.self().position, along(UP_SCREEN, 2.4));
+    expectLegalReports(rig, START);
+  });
+
+  it('goes no further than the metres it is given toward a body further off', () => {
+    const ghost = ghostAt(5);
+    const rig = makeRig({ entities: [self(), ghost] });
+    rig.predictor.leapAt({ ...ghost.position, radius: ghost.radius }, 3, 6);
+    tickUntilWalkEnds(rig, 100);
+    expectAt(rig.self().position, along(UP_SCREEN, 3));
+  });
+});
+
+describe('a flush', () => {
+  it('sends the report the heartbeat holds back at once, so a useAbility sent between two heartbeats arrives after the final move', () => {
+    const rig = makeRig();
+    rig.steer(UP_SCREEN);
+    // t = 0 reports, and the ticks at 16 and 32 are held back by the heartbeat.
+    runTicks(rig, 2, 16);
+    expect(rig.moves().at(-1)).not.toEqual(rig.self().position);
+
+    rig.predictor.flush();
+    rig.sent.push({ tag: 'useAbility', payload: { abilityId: 'brace' } });
+
+    const last = rig.sent.at(-2);
+    if (last?.tag !== 'move') throw new Error('expected a move ahead of the request');
+    expect(last.payload).toEqual({ x: rig.self().position.x, z: rig.self().position.z, facing: rig.self().facing, gait: 'jog' });
+    expectLegalReports(rig, START);
+  });
+
+  it('sends nothing when the last report already holds where the player stands', () => {
+    const rig = makeRig();
+    rig.steer(UP_SCREEN);
+    runTicks(rig, 2, 16);
+    rig.predictor.flush();
+    const sent = rig.sent.length;
+    rig.predictor.flush();
+    expect(rig.sent).toHaveLength(sent);
   });
 });
 

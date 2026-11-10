@@ -1,4 +1,4 @@
-import type { RelativeDirection, WorldEntityKind } from '@somnio/core';
+import type { AbilityId, RelativeDirection, WorldEntityKind } from '@somnio/core';
 import type { Gait } from '@somnio/protocol';
 
 /** Pose selection and clip preference lists. */
@@ -54,19 +54,24 @@ export function resolveClipName(pose: AnimationPose, available: readonly string[
 
 /**
  * Clips that play once, over whatever pose is looping: the fall, which then holds its last frame
- * for as long as the entity lies fallen, and a blow given or taken, after which the entity returns
- * to its looping pose.
+ * for as long as the entity lies fallen, a blow given or taken, and an ability used, after which
+ * the entity returns to its looping pose.
  *
  * A table of its own rather than more poses: a pose is what an entity is doing and has to reach a
  * clip on every model, while a one-shot is an event and has no fallback. A model with none of its
  * clips keeps its looping pose.
  */
-export type OneShot = 'fallen' | 'swing' | 'flinch';
+export type OneShot = 'fallen' | 'swing' | 'flinch' | AbilityId;
 
 export const ONE_SHOT_CLIPS: Record<OneShot, readonly string[]> = {
   fallen: ['Death_A', 'Death'],
-  swing: ['Interact', 'Punch'],
+  swing: ['Melee_1H_Attack_Slice_Horizontal', 'Punch'],
   flinch: ['Hit_A', 'HitReact'],
+  cleave: ['Melee_1H_Attack_Slice_Horizontal'],
+  challenge: ['Ranged_Magic_Raise'],
+  brace: ['Melee_Block'],
+  lunge: ['Melee_1H_Attack_Jump_Chop'],
+  rally: ['Cheering'],
 };
 
 export function resolveOneShotClipName(oneShot: OneShot, available: readonly string[]): string | undefined {

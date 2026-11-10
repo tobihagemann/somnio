@@ -51,6 +51,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login target', message: { tag: 'target', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login engage', message: { tag: 'engage', payload: { on: true } }, state: 'awaitingLogin' },
+  { label: 'pre-login useAbility', message: { tag: 'useAbility', payload: { abilityId: 'brace' } }, state: 'awaitingLogin' },
   {
     label: 'pre-login useDoor',
     message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } },
@@ -78,6 +79,10 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, state: 'attached' },
   { label: 'post-attach vitals', message: { tag: 'vitals', payload: { entityId: 'peer', health: 0.5 } }, state: 'attached' },
   { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, state: 'attached' },
+  { label: 'post-attach effects', message: { tag: 'effects', payload: { entityId: 'peer', effects: [] } }, state: 'attached' },
+  { label: 'post-attach ability', message: { tag: 'ability', payload: { entityId: 'peer', abilityId: 'brace' } }, state: 'attached' },
+  { label: 'pre-login cooldowns', message: { tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [] } }, state: 'awaitingLogin' },
+  { label: 'post-attach cooldowns', message: { tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [] } }, state: 'attached' },
   {
     label: 'post-attach raising',
     message: { tag: 'raising', payload: { targetId: 'player', healerIds: ['peer'], state: 'holding', progress: 0, seconds: 6 } },
@@ -142,6 +147,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'choosing clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, state: 'authenticated' },
   { label: 'choosing target', message: { tag: 'target', payload: {} }, state: 'authenticated' },
   { label: 'choosing engage', message: { tag: 'engage', payload: { on: true } }, state: 'authenticated' },
+  { label: 'choosing useAbility', message: { tag: 'useAbility', payload: { abilityId: 'brace' } }, state: 'authenticated' },
   { label: 'choosing useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } }, state: 'authenticated' },
   { label: 'choosing wake', message: { tag: 'wake', payload: {} }, state: 'authenticated' },
   { label: 'choosing characters', message: { tag: 'characters', payload: { characters: [] } }, state: 'authenticated' },
@@ -219,6 +225,14 @@ describe('an attached connection', () => {
       () => ({ tag: 'equipToggle', payload: { slot: CUDGEL_IN_HAND.slot, hand: 'right' } }),
       (a) => a.own().inventory,
       [CUDGEL_IN_HAND],
+    ],
+    [
+      'a use of an ability',
+      { lucidity: lucidity('fighter', { brace: 1 }) },
+      [],
+      () => ({ tag: 'useAbility', payload: { abilityId: 'brace' } }),
+      (a) => a.own().character.energy.balanceCurrent,
+      85,
     ],
     ['a request for the trial', {}, [], () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.task?.role, 'fighter'],
     [

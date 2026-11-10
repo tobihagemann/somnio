@@ -1,10 +1,10 @@
-import type { People } from '@somnio/core';
+import type { AbilityId, EffectId, People } from '@somnio/core';
 import { element } from './dom';
 
 /**
  * The HUD's glyphs, white silhouettes in the weight of Kenney's CC0 icons. Most are those icons, in
  * the asset pack's `UI/`, where `Scripts/bundle-web-assets.sh` names each one. Where Kenney has
- * nothing that fits (the chat, the Moonstone, and the peoples' sigils) one is drawn here on a
+ * nothing that fits (the chat, the Moonstone, Cleave, and the peoples' sigils) one is drawn here on a
  * 24-unit grid instead. Each is a CSS mask (`.hud-glyph` in `hud.css`), so it takes the ink of the
  * control it sits on.
  */
@@ -49,7 +49,28 @@ export const HUD_ICONS = {
   mend: drawn('<path d="M12 2c5.8 0 9 4.6 9 10.4C21 18 17.2 22 12 22s-9-4-9-9.6C3 6.6 6.2 2 12 2zM10.95 8.4A4.8 4.8 0 1 0 15.48 14.93 4 4 0 0 1 10.95 8.4z"/>'),
   /** A figure drawn back up off the ground. */
   raise: packed('/assets/UI/icon-raise.png'),
+  /** Two blade sweeps, one over the other, across everything in front. */
+  cleave: drawn('<path d="M1.5 15Q12-5 22.5 15 12 4 1.5 15zM5.5 20Q12 7 18.5 20 12 13 5.5 20z"/>'),
+  challenge: packed('/assets/UI/icon-challenge.png', GAME_ICONS_SIZE),
+  brace: packed('/assets/UI/icon-brace.png'),
+  lunge: packed('/assets/UI/icon-lunge.png'),
+  rally: packed('/assets/UI/icon-rally.png'),
 } as const satisfies Record<string, HUDGlyph>;
+
+/** Each ability's glyph on its belt slot. */
+export const ABILITY_GLYPHS: Record<AbilityId, HUDGlyph> = {
+  cleave: HUD_ICONS.cleave,
+  challenge: HUD_ICONS.challenge,
+  brace: HUD_ICONS.brace,
+  lunge: HUD_ICONS.lunge,
+  rally: HUD_ICONS.rally,
+};
+
+/** Each effect's glyph on the unit frames: the glyph of the ability that puts it on its holder. */
+export const EFFECT_GLYPHS: Record<EffectId, HUDGlyph> = {
+  braced: HUD_ICONS.brace,
+  challenged: HUD_ICONS.challenge,
+};
 
 /** Each people's sigil on the player's own frame: the Waking's open eye, the Deep's closed one, the Shadow's crescent, and the Light's sun. */
 export const PEOPLE_SIGILS: Record<People, HUDGlyph> = {

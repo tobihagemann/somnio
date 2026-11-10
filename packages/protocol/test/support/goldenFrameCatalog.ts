@@ -107,6 +107,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'target-none', message: { tag: 'target', payload: {} } },
   { name: 'engage-on', message: { tag: 'engage', payload: { on: true } } },
   { name: 'engage-off', message: { tag: 'engage', payload: { on: false } } },
+  { name: 'useAbility', message: { tag: 'useAbility', payload: { abilityId: 'brace' } } },
   { name: 'useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaSquare', doorId: 'to-edarialibrary' } } },
   { name: 'askTask', message: { tag: 'askTask', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
   { name: 'askTask-trial', message: { tag: 'askTask', payload: { npcId: MASTER_ID } } },
@@ -264,8 +265,14 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'lucidity-empty', message: { tag: 'lucidity', payload: { ranks: [] } } },
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
   { name: 'vitals', message: { tag: 'vitals', payload: { entityId: 'monster:7', health: 0.42 } } },
+  { name: 'effects', message: { tag: 'effects', payload: { entityId: PLAYER_ID, effects: [{ effectId: 'braced', seconds: 3.25 }] } } },
+  { name: 'effects-none', message: { tag: 'effects', payload: { entityId: 'monster:7', effects: [] } } },
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-miss', message: { tag: 'blow', payload: { attackerId: 'monster:7', targetId: PLAYER_ID, hit: false } } },
+  { name: 'ability', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'lunge', targetId: 'monster:7' } } },
+  { name: 'ability-on-self', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'brace' } } },
+  { name: 'cooldowns', message: { tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [{ abilityId: 'brace', seconds: 14.5 }] } } },
+  { name: 'cooldowns-none', message: { tag: 'cooldowns', payload: { globalSeconds: 0, cooldowns: [] } } },
   {
     name: 'raising',
     message: {

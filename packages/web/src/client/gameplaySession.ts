@@ -1,6 +1,7 @@
 import { PROTOCOL_BYTE_CAPS, assertNever, truncateToUTF8Bytes } from '@somnio/protocol';
 import type {
   Condition,
+  CooldownsMessage,
   Energy,
   EntityMove,
   InventoryRowMessage,
@@ -13,8 +14,17 @@ import type {
 } from '@somnio/protocol';
 import {
   COMBAT,
+  GLOBAL_COOLDOWN_SECONDS,
+  abilitiesTaught,
+  ability,
+  abilityAllowed,
+  abilityCooldownSeconds,
+  abilityRank,
   engageAction,
+  gaitAllowed,
   heading,
+  isAbilityId,
+  isEffectId,
   isTeachingId,
   itemInHand,
   itemWeapon,
@@ -26,11 +36,11 @@ import {
   windedOnJoin,
   withinSpeakingDistance,
 } from '@somnio/core';
-import type { EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
+import type { AbilityId, EffectId, EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { parseChatInput } from './chatCommand';
-import { drivenOff, engageKind } from './clientWorld';
+import { abilityBody, drivenOff, engageKind } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
 import { compassPoint } from './compass';
 import type { ConnectionController, GameplayMessage } from './connectionController';
@@ -60,10 +70,45 @@ const ZERO_ENERGY: Energy = {
 
 const NO_LUCIDITY: LucidityMessage = { ranks: [] };
 
+/** A cooldown on the session's clock, as the server last told of it: when it began and when it ends. */
+export interface CooldownSpan {
+  startedAtMs: number;
+  endsAtMs: number;
+  /** Whether it is the short wait every ability use starts, rather than an ability's own. */
+  global: boolean;
+}
+
+/** What an ability's slot on the belt shows. */
+export interface AbilitySlotState {
+  abilityId: AbilityId;
+  /** Whether the server would act on it now, but for its cooldowns. */
+  usable: boolean;
+  /** The cooldown it waits on while one runs: the later-ending of its own and the global one. */
+  cooldown: CooldownSpan | undefined;
+}
+
+/** An effect an entity holds, as the client keeps it: when it ends on the session's clock, or never while its holder lasts. */
+export interface ClientEffect {
+  effectId: EffectId;
+  endsAtMs?: number;
+}
+
+interface Cooldowns {
+  global: CooldownSpan | undefined;
+  abilities: Partial<Record<AbilityId, CooldownSpan>>;
+}
+
+const NO_COOLDOWNS: Cooldowns = { global: undefined, abilities: {} };
+
 /** What a task as the wire carries it asks for; `undefined` for a teaching this client does not know or one without a gate. */
 export function taskSpecOf(task: TaskMessage): TaskSpec | undefined {
   if (task.teachingId !== undefined && !isTeachingId(task.teachingId)) return undefined;
   return taskSpec({ role: task.role, teachingId: task.teachingId });
+}
+
+/** The whole seconds left until `endsAtMs`, rounded up, as a countdown shows them; never below 0. */
+export function wholeSecondsLeft(endsAtMs: number, nowMs: number): number {
+  return Math.max(0, Math.ceil((endsAtMs - nowMs) / 1000));
 }
 
 /** Whether a task as the wire carries it is at its goal. A task this client cannot read has no goal to reach. */
@@ -81,6 +126,8 @@ export const TAP_SLOP_PX = 12;
 const TRADE_ANSWER_TIMEOUT_MS = 1500;
 /** How long they stay locked after the answer, so a double click trades once. */
 const TRADE_SETTLE_MS = 500;
+/** How long an ability use waits for the server's `cooldowns` answer. A refused use gets none, so the wait gives way on its own. */
+const ABILITY_ANSWER_TIMEOUT_MS = 1000;
 
 export interface GameplaySessionOptions {
   controller: ConnectionController;
@@ -117,7 +164,7 @@ export class GameplaySession {
   gazeLocked = false;
   /** The raise being given to the fallen player: the Healers holding on, and the whole seconds left. */
   raise: { healerNames: string[]; secondsLeft: number } | undefined;
-  /** Whether Run is on. A winded player walks whatever it says. */
+  /** Whether Run is on. A winded player walks whatever it says, and one an effect holds below a run jogs. */
   running = false;
   /**
    * Whether slot 1 is on, as the server keeps it. The server sends nothing when it switches slot 1
@@ -159,6 +206,17 @@ export class GameplaySession {
   private aimPoint: Point | undefined;
   /** The health share last sent of the target. */
   private targetHealth: number | undefined;
+  /** The effects the server last sent of the player and of their target, the only ones it sends. */
+  private readonly heldEffects = new Map<string, ClientEffect[]>();
+  /**
+   * The cooldowns of the belt's abilities, from the server's last `cooldowns` frame. A new space
+   * starts with none until the snapshot the join sends arrives.
+   */
+  private cooldowns: Cooldowns = NO_COOLDOWNS;
+  /** Until when no ability is used again, from a use until the `cooldowns` frame that answers it, or 0 with none awaited. */
+  private awaitingUseUntilMs = 0;
+  /** Each ability slot's usable flag and whether a cooldown runs, as the tick last saw them, so the tick runs the state hook again only when one changes. */
+  private shownAbilitySlots = '[]';
 
   constructor(options: GameplaySessionOptions) {
     this.controller = options.controller;
@@ -174,6 +232,7 @@ export class GameplaySession {
       lookAt: () => this.lookAt(),
       running: () => this.running,
       winded: () => this.winded,
+      effects: () => this.ownEffects,
       fallen: () => this.fallen,
       slowed: (nowMs) => nowMs < this.slowedUntilMs,
     });
@@ -237,6 +296,10 @@ export class GameplaySession {
     this.gazeLocked = false;
     this.engaged = false;
     this.targetHealth = undefined;
+    // The join sends again the effects and cooldowns carried through a door or a wake.
+    this.heldEffects.clear();
+    this.cooldowns = NO_COOLDOWNS;
+    this.awaitingUseUntilMs = 0;
     this.controller.renderSurface.showSelection(undefined, false);
   }
 
@@ -253,6 +316,12 @@ export class GameplaySession {
     if (this.engaged && !this.engageable) this.stopEngaging();
     if (this.tradeLockedUntilMs !== 0 && !this.tradeLocked()) {
       this.tradeLockedUntilMs = 0;
+      this.onStateChanged?.();
+    }
+    // An ability comes in range or out of it as bodies move, and leaves its cooldown with time.
+    const abilitySlots = JSON.stringify(this.abilitySlots().map(({ usable, cooldown }) => [usable, cooldown !== undefined]));
+    if (abilitySlots !== this.shownAbilitySlots) {
+      this.shownAbilitySlots = abilitySlots;
       this.onStateChanged?.();
     }
   }
@@ -396,6 +465,20 @@ export class GameplaySession {
     this.onStateChanged?.();
   }
 
+  /** Whether an effect the player holds keeps them from running, whatever Run says. */
+  get runHeldOff(): boolean {
+    return gaitAllowed('run', this.ownEffects) !== 'run';
+  }
+
+  private get ownEffects(): EffectId[] {
+    return this.effectsOf(this.controller.selfId).map(({ effectId }) => effectId);
+  }
+
+  /** The effects the server last sent of an entity: of the player, or of their target, and none of any other. */
+  effectsOf(entityId: string | undefined): readonly ClientEffect[] {
+    return (entityId === undefined ? undefined : this.heldEffects.get(entityId)) ?? [];
+  }
+
   /**
    * What slot 1 does at the target while the player stands, by the same `engageAction` rule the
    * server judges with; `undefined` for nothing.
@@ -423,6 +506,71 @@ export class GameplaySession {
     }
   }
 
+  /** The abilities on the belt, in its order: those the player's ranks teach. */
+  get abilities(): AbilityId[] {
+    return abilitiesTaught(this.lucidity.ranks);
+  }
+
+  /** What each ability slot on the belt shows, in the belt's order. */
+  abilitySlots(): AbilitySlotState[] {
+    const now = this.now();
+    const running = (span: CooldownSpan | undefined): CooldownSpan | undefined => (span !== undefined && now < span.endsAtMs ? span : undefined);
+    const global = running(this.cooldowns.global);
+    return this.abilities.map((abilityId) => {
+      const own = running(this.cooldowns.abilities[abilityId]);
+      const cooldown = own === undefined || (global !== undefined && global.endsAtMs > own.endsAtMs) ? global : own;
+      return { abilityId, usable: this.abilityUsable(abilityId, { globalReadyAt: now, readyAt: {} }), cooldown };
+    });
+  }
+
+  /**
+   * Whether the server would act on the ability if the player used it now, by the `abilityAllowed`
+   * rule it judges with. The cooldowns are those the server last sent unless `cooldowns` stands in
+   * for them.
+   */
+  private abilityUsable(abilityId: AbilityId, cooldowns?: { globalReadyAt: number; readyAt: Partial<Record<AbilityId, number>> }): boolean {
+    const self = this.self;
+    if (self === undefined) return false;
+    const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
+    const state = {
+      caster: abilityBody(self, self.position),
+      ranks: this.lucidity.ranks,
+      itemInHand: itemInHand(this.inventory),
+      energy: this.energy,
+      now: this.now(),
+      ...(cooldowns ?? {
+        globalReadyAt: Math.max(this.cooldowns.global?.endsAtMs ?? 0, this.awaitingUseUntilMs),
+        readyAt: Object.fromEntries(Object.entries(this.cooldowns.abilities).map(([id, span]) => [id, span.endsAtMs])),
+      }),
+    };
+    return abilityAllowed(state, abilityId, target === undefined ? undefined : abilityBody(target, target.position)) !== undefined;
+  }
+
+  /**
+   * Uses the ability, when the server would act on it. The server judges it where the player last
+   * stood, so the report the heartbeat holds back goes first. The global cooldown starts here too.
+   * No ability is used again until the server's `cooldowns` answer, or for `ABILITY_ANSWER_TIMEOUT_MS`
+   * without one, so a second press inside the round trip sends nothing. A leap waits for the
+   * server's yes, the player's own `ability` frame.
+   */
+  useAbility(abilityId: AbilityId): void {
+    if (!this.abilityUsable(abilityId)) return;
+    this.predictor.flush();
+    this.send({ tag: 'useAbility', payload: { abilityId } });
+    const now = this.now();
+    this.cooldowns = { ...this.cooldowns, global: { startedAtMs: now, endsAtMs: now + GLOBAL_COOLDOWN_SECONDS * 1000, global: true } };
+    this.awaitingUseUntilMs = now + ABILITY_ANSWER_TIMEOUT_MS;
+    this.onStateChanged?.();
+  }
+
+  /** The player's own leap, once the server has taken it: toward its recipient where the client draws it now. */
+  private leapOnAnswer(abilityId: AbilityId, targetId: string | undefined): void {
+    const { does, range } = ability(abilityId);
+    if (does.kind !== 'leap' || targetId === undefined) return;
+    const recipient = this.controller.entities.get(targetId);
+    if (recipient !== undefined) this.predictor.leapAt(abilityBody(recipient, recipient.position), range, does.metresPerSecond);
+  }
+
   private stopEngaging(): void {
     this.engaged = false;
     this.onStateChanged?.();
@@ -431,6 +579,7 @@ export class GameplaySession {
   /** Acts on `entityId` from now on, or on nothing, marks it, and tells the server when that is a change. */
   select(entityId: string | undefined): void {
     if (entityId === this.target) return;
+    if (this.target !== undefined && this.target !== this.controller.selfId) this.heldEffects.delete(this.target);
     this.targetHealth = undefined;
     this.target = entityId;
     this.gazeLocked = false;
@@ -476,7 +625,7 @@ export class GameplaySession {
    */
   private countDownRaise(timestampMs: number): void {
     if (this.raise === undefined) return;
-    const secondsLeft = Math.min(this.raise.secondsLeft, Math.max(0, Math.ceil((this.raiseEndsAtMs - timestampMs) / 1000)));
+    const secondsLeft = Math.min(this.raise.secondsLeft, wholeSecondsLeft(this.raiseEndsAtMs, timestampMs));
     if (secondsLeft === this.raise.secondsLeft) return;
     this.raise = { ...this.raise, secondsLeft };
     this.onStateChanged?.();
@@ -700,6 +849,31 @@ export class GameplaySession {
         this.onStateChanged?.();
         return;
       }
+      case 'effects': {
+        const { entityId, effects } = message.payload;
+        if (entityId !== this.controller.selfId && entityId !== this.target) return;
+        const now = this.now();
+        const known = effects.flatMap(({ effectId, seconds }) => (isEffectId(effectId) ? [{ effectId, ...(seconds === undefined ? {} : { seconds }) }] : []));
+        this.heldEffects.set(
+          entityId,
+          known.map(({ effectId, seconds }) => ({ effectId, ...(seconds === undefined ? {} : { endsAtMs: now + seconds * 1000 }) })),
+        );
+        this.controller.renderSurface.showEffects(entityId, known);
+        this.onStateChanged?.();
+        return;
+      }
+      case 'ability': {
+        const { entityId, abilityId, targetId } = message.payload;
+        if (!isAbilityId(abilityId)) return;
+        if (entityId === this.controller.selfId) this.leapOnAnswer(abilityId, targetId);
+        this.controller.renderSurface.showAbility(entityId, abilityId, targetId);
+        return;
+      }
+      case 'cooldowns':
+        this.cooldowns = this.cooldownsFrom(message.payload);
+        this.awaitingUseUntilMs = 0;
+        this.onStateChanged?.();
+        return;
       case 'adminSay':
         this.controller.appendChat({ kind: 'adminBroadcast', message: message.payload.text });
         return;
@@ -711,6 +885,28 @@ export class GameplaySession {
   }
 
   onStateChanged: (() => void) | undefined;
+
+  /**
+   * The cooldowns a `cooldowns` frame tells of, on the session's clock. Each began as long before
+   * its end as it runs in all, which the ability's rank says, so a snapshot after a door shows it
+   * part spent.
+   */
+  private cooldownsFrom({ globalSeconds, cooldowns }: CooldownsMessage): Cooldowns {
+    const now = this.now();
+    const span = (seconds: number, wholeSeconds: number, global: boolean): CooldownSpan => ({
+      startedAtMs: now - Math.max(0, wholeSeconds - seconds) * 1000,
+      endsAtMs: now + seconds * 1000,
+      global,
+    });
+    const abilities: Cooldowns['abilities'] = {};
+    for (const { abilityId, seconds } of cooldowns) {
+      if (!isAbilityId(abilityId)) continue;
+      // Ranks count from 1, so one the client does not hold yet reads as the first.
+      const rank = Math.max(1, abilityRank(this.lucidity.ranks, abilityId));
+      abilities[abilityId] = span(seconds, abilityCooldownSeconds(abilityId, rank), false);
+    }
+    return { global: globalSeconds > 0 ? span(globalSeconds, GLOBAL_COOLDOWN_SECONDS, true) : undefined, abilities };
+  }
 
   private announceTrade({ kind, itemId, coins }: TradeMessage): void {
     switch (kind) {

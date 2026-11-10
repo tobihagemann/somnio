@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { ABILITIES, bundledModelRegistry, modelForCharacter } from '@somnio/core';
+import type { AbilityId } from '@somnio/core';
 import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
@@ -64,16 +66,22 @@ describe('clip preference chains', () => {
 
 describe('one-shot clips', () => {
   /** What the player's model and the Ghost carry, as the registry expects of each. */
-  const DREAMER = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Interact'];
+  const DREAMER = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Melee_1H_Attack_Slice_Horizontal'];
   const GHOST = ['Flying_Idle', 'Death', 'HitReact', 'Punch'];
 
   it.each([
     ['fallen', 'Death_A', 'Death'],
-    ['swing', 'Interact', 'Punch'],
+    ['swing', 'Melee_1H_Attack_Slice_Horizontal', 'Punch'],
     ['flinch', 'Hit_A', 'HitReact'],
   ] as const)('resolves %s to %s on a dreamer and %s on a Ghost', (oneShot, dreamer, ghost) => {
     expect(resolveOneShotClipName(oneShot, DREAMER)).toBe(dreamer);
     expect(resolveOneShotClipName(oneShot, GHOST)).toBe(ghost);
+  });
+
+  it.each(Object.keys(ABILITIES) as AbilityId[])('resolves %s on the player model, as the registry expects of it', (abilityId) => {
+    const registry = bundledModelRegistry();
+    const clips = modelForCharacter(registry, registry.playerModel)?.expectedClips ?? [];
+    expect(resolveOneShotClipName(abilityId, clips)).toBeDefined();
   });
 
   /** An event has no fallback: a model without the clip keeps the pose it is looping. */

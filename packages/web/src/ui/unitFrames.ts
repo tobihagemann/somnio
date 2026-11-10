@@ -1,15 +1,16 @@
 import { clamp, conditionMidpoint, peopleLabelKey, poolShare, roleLabelKey } from '@somnio/core';
-import type { People } from '@somnio/core';
+import type { EffectId, People } from '@somnio/core';
 import type { Condition, Energy, Role } from '@somnio/protocol';
-import type { ClientEntity } from '@/client';
+import { wholeSecondsLeft } from '@/client';
+import type { ClientEffect, ClientEntity } from '@/client';
 import { t } from '@/i18n';
 import { playerPlaqueBackground } from '@/scene/overlayArt';
 import { element, iconButton, setHidden } from './dom';
-import { HUD_ICONS, PEOPLE_SIGILS, glyph } from './hudIcons';
+import { EFFECT_GLYPHS, HUD_ICONS, PEOPLE_SIGILS, glyph } from './hudIcons';
 
 /**
  * The unit frames at the top: the player's own at the top left, a press on which makes them their
- * own target, and the target's at the top centre.
+ * own target, and the target's at the top centre. Each carries a row of the effects on its entity.
  */
 
 /** A condition as a word, which the target frame carries in its accessible name. */
@@ -21,6 +22,65 @@ const CONDITION_WORDS: Record<Condition, () => string> = {
   failing: () => t('failing'),
   fallen: () => t('fallen'),
 };
+
+const EFFECT_NAMES: Record<EffectId, () => string> = {
+  braced: () => t('Braced'),
+  challenged: () => t('Challenged'),
+};
+
+/**
+ * The effects on a framed entity, one glyph each with the whole seconds it has left, in the order
+ * the server sent them. An effect keeps its element while it holds, refreshed or not.
+ */
+class EffectRow {
+  readonly root: HTMLElement;
+  private readonly items = new Map<EffectId, { root: HTMLElement; seconds: HTMLElement; endsAtMs: number | undefined; shown: string | undefined }>();
+  private shown: string | undefined;
+
+  constructor() {
+    this.root = element('span', { className: 'hud-effects', attributes: { role: 'list', 'aria-label': t('Effects'), 'aria-hidden': 'true' } });
+  }
+
+  render(effects: readonly ClientEffect[], nowMs: number): void {
+    const shown = JSON.stringify(effects);
+    if (shown === this.shown) return;
+    this.shown = shown;
+    // An empty row keeps its height, so the frame does not jump, but stays out of the frame's name.
+    if (effects.length === 0) this.root.setAttribute('aria-hidden', 'true');
+    else this.root.removeAttribute('aria-hidden');
+    const held = new Set(effects.map(({ effectId }) => effectId));
+    for (const effectId of this.items.keys()) if (!held.has(effectId)) this.items.delete(effectId);
+    for (const { effectId, endsAtMs } of effects) {
+      const item = this.items.get(effectId);
+      if (item !== undefined) {
+        item.endsAtMs = endsAtMs;
+        continue;
+      }
+      const seconds = element('span', { className: 'hud-effect__seconds', attributes: { 'aria-hidden': 'true' } });
+      const root = element('span', {
+        className: 'hud-effect',
+        attributes: { role: 'listitem', title: EFFECT_NAMES[effectId]() },
+        children: [element('span', { className: 'hud-effect__glyph', children: [glyph(EFFECT_GLYPHS[effectId])] }), seconds],
+      });
+      this.items.set(effectId, { root, seconds, endsAtMs, shown: undefined });
+    }
+    const roots = effects.map(({ effectId }) => this.items.get(effectId)!.root);
+    if (roots.some((root, index) => this.root.children[index] !== root) || this.root.children.length !== roots.length) this.root.replaceChildren(...roots);
+    this.tick(nowMs);
+  }
+
+  /** The whole seconds each effect has left, and its name with them for assistive tech. An effect without an end shows none. */
+  tick(nowMs: number): void {
+    for (const [effectId, item] of this.items) {
+      const left = item.endsAtMs === undefined ? undefined : String(wholeSecondsLeft(item.endsAtMs, nowMs));
+      const shown = left ?? '';
+      if (shown === item.shown) continue;
+      item.shown = shown;
+      item.seconds.textContent = left === undefined ? '' : t('%@s', left);
+      item.root.setAttribute('aria-label', left === undefined ? EFFECT_NAMES[effectId]() : t('%1$@, %2$@ s left', EFFECT_NAMES[effectId](), left));
+    }
+  }
+}
 
 /** A thin bar: a dark track with a light rim and a fill as wide as its share. */
 export interface ShareBar {
@@ -61,11 +121,13 @@ export interface OwnFrameState {
   condition: Condition;
   /** Whether the player is their own target. */
   targeted: boolean;
+  effects: readonly ClientEffect[];
 }
 
 export class OwnFrame {
   readonly root: HTMLButtonElement;
   readonly portrait: HTMLElement;
+  readonly effects = new EffectRow();
   /** The people's sigil, on a badge at the portrait's foot. */
   private readonly sigil: HTMLElement;
   private readonly name: HTMLElement;
@@ -88,6 +150,7 @@ export class OwnFrame {
       this.name,
       ...(this.traits === undefined ? [] : [this.traits]),
       ...(this.pools === undefined ? [] : [this.pools.health.root, this.pools.spirit.root]),
+      this.effects.root,
     ];
     this.root = element('button', {
       className: 'fantasy-panel hud-unit hud-unit--self',
@@ -97,7 +160,8 @@ export class OwnFrame {
     this.root.addEventListener('click', onPress);
   }
 
-  render(state: OwnFrameState): void {
+  render(state: OwnFrameState, nowMs: number): void {
+    this.effects.render(state.effects, nowMs);
     const shown = JSON.stringify([state.name, state.people ?? null, state.role ?? null, state.condition, state.targeted]);
     if (shown === this.shown) return;
     this.shown = shown;
@@ -126,10 +190,11 @@ export class OwnFrame {
   }
 }
 
-/** What the target frame shows: the entity, and the share of its health the server last sent, `undefined` before it has. */
+/** What the target frame shows: the entity, its effects, and the share of its health the server last sent, `undefined` before it has. */
 export interface FramedEntity {
   entity: ClientEntity;
   health: number | undefined;
+  effects: readonly ClientEffect[];
 }
 
 /**
@@ -140,6 +205,7 @@ export interface FramedEntity {
 export class TargetFrame {
   readonly root: HTMLElement;
   readonly portrait: HTMLElement;
+  readonly effects = new EffectRow();
   private readonly name: HTMLElement;
   private readonly health: ShareBar;
   /** What it shows, compared by value: an entity is a new object after each of its moves. */
@@ -152,7 +218,7 @@ export class TargetFrame {
     this.portrait = portraitSlot();
     const lines = element('span', {
       className: 'hud-unit__lines',
-      children: [element('span', { className: 'hud-unit__caption', text: t('Target') }), this.name, this.health.root],
+      children: [element('span', { className: 'hud-unit__caption', text: t('Target') }), this.name, this.health.root, this.effects.root],
     });
     this.root = element('section', {
       className: 'fantasy-panel hud-unit hud-unit--target hidden',
@@ -161,7 +227,8 @@ export class TargetFrame {
     });
   }
 
-  render(target: FramedEntity | undefined, gazeLocked: boolean): void {
+  render(target: FramedEntity | undefined, gazeLocked: boolean, nowMs: number): void {
+    this.effects.render(target?.effects ?? [], nowMs);
     const shown =
       target === undefined
         ? undefined
