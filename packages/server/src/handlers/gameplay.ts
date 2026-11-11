@@ -4,16 +4,19 @@ import type {
   BuyMessage,
   ClientSayMessage,
   CompleteTaskMessage,
+  DropItemMessage,
   EngageMessage,
-  EquipToggleMessage,
+  EquipMessage,
+  MoveItemMessage,
   MoveMessage,
+  PickUpMessage,
   SellMessage,
   StudyMessage,
   TalkMessage,
   TargetMessage,
+  UnequipMessage,
   UseAbilityMessage,
   UseDoorMessage,
-  UseItemMessage,
 } from '@somnio/protocol';
 import { COMBAT, SOMNIO_CONSTANTS, doorContains, doorOpenAt } from '@somnio/core';
 import type { Character } from '@somnio/core';
@@ -42,8 +45,24 @@ export function handleSay(message: ClientSayMessage, entityId: string, spaceId: 
   dependencies.worldRouter.say(spaceId, entityId, message);
 }
 
-export function handleEquipToggle(message: EquipToggleMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleEquipToggle(message.slot, message.hand, entityId);
+export function handleEquip(message: EquipMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleEquip(message.itemId, message.slot, entityId);
+}
+
+export function handleUnequip(message: UnequipMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleUnequip(message.slot, entityId);
+}
+
+export function handleMoveItem(message: MoveItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleMoveItem(message.itemId, message.place, entityId);
+}
+
+export function handleDropItem(message: DropItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleDropItem(message.itemId, message.heading, entityId);
+}
+
+export function handlePickUp(message: PickUpMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handlePickUp(message.lootId, entityId);
 }
 
 export function handleTalk(message: TalkMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
@@ -60,10 +79,6 @@ export function handleEngage(message: EngageMessage, entityId: string, spaceId: 
 
 export function handleUseAbility(message: UseAbilityMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleUseAbility(message.abilityId, entityId);
-}
-
-export function handleUseItem(message: UseItemMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleUseItem(message.slot, entityId);
 }
 
 export function handleAskTask(message: AskTaskMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
@@ -83,7 +98,7 @@ export function handleStudy(message: StudyMessage, entityId: string, spaceId: st
 }
 
 export function handleBuy(message: BuyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleBuy(message.npcId, message.itemId, entityId);
+  dependencies.worldRouter.space(spaceId)?.handleBuy(message.npcId, message.baseId, entityId);
 }
 
 export function handleSell(message: SellMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {

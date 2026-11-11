@@ -15,6 +15,7 @@ export function clientEntity(overrides: Partial<ClientEntity> = {}): ClientEntit
     gait: 'jog',
     condition: 'hale',
     service: undefined,
+    held: undefined,
     ...overrides,
   };
 }

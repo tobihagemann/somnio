@@ -15,6 +15,8 @@ function emptyAssets(): ModelAssets {
   return {
     prewarm: async () => {},
     character: () => undefined,
+    hand: () => undefined,
+    ground: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,

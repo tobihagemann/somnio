@@ -7,6 +7,7 @@ import { scaled, scaledOr } from './effects.ts';
 import type { EffectId, Scaled } from './effects.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
+import type { Hands } from './items.ts';
 import { TEACHING_IDS, rankOf, teaching } from './lucidity.ts';
 import type { HeldRank, TeachingId } from './lucidity.ts';
 import { SPEECH } from './speech.ts';
@@ -55,8 +56,8 @@ export interface Ability {
   range: number;
   /** Which bodies round the caster an `area` ability lands on, of those still standing. */
   among?: EngageTarget;
-  /** What the caster holds in hand to use it, by the rule slot 1 holds to; left out when the hand does not matter. */
-  hand?: HandNeed;
+  /** What the caster holds in hand to use it, by the rule slot 1 holds to. */
+  hand: HandNeed;
   /**
    * How long the caster channels it before it lands, by its rank; left out for an ability that lands
    * the moment it is used. A channel breaks when the caster moves, goes through a door, or falls, or
@@ -149,10 +150,18 @@ export const ABILITIES = {
     hand: 'moonstone',
     does: { kind: 'calm', threatKept: 0.5, effectId: 'calmed' },
   },
-  ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, does: { kind: 'effect', effectId: 'warded' } },
-  weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'weakened' } },
-  bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'bound' } },
-  'dream-bolt': { pool: 'spirit', cost: 12, cooldownSeconds: 3, aim: 'enemy', range: 8, does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } } },
+  ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'warded' } },
+  weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'weakened' } },
+  bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'bound' } },
+  'dream-bolt': {
+    pool: 'spirit',
+    cost: 12,
+    cooldownSeconds: 3,
+    aim: 'enemy',
+    range: 8,
+    hand: 'focus',
+    does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } },
+  },
   /** A mist as far round the Mystic as five metres, centre to centre. */
   veil: {
     pool: 'spirit',
@@ -161,6 +170,7 @@ export const ABILITIES = {
     aim: 'area',
     range: 5 - 2 * SOMNIO_CONSTANTS.playerRadius,
     among: 'dreamer',
+    hand: 'focus',
     does: { kind: 'effect', effectId: 'veiled' },
   },
 } as const satisfies Record<string, Ability>;
@@ -256,7 +266,7 @@ export function abilityRecipient<B extends AbilityBody>(ability: Ability, caster
 export interface AbilityState<B extends AbilityBody> {
   caster: B;
   ranks: readonly HeldRank[];
-  itemInHand: string | undefined;
+  hands: Hands;
   energy: Pick<Energy, 'balanceCurrent' | 'spiritCurrent'>;
   /** The caller's clock, in the unit of the ready times. */
   now: number;
@@ -287,7 +297,7 @@ function judgedUse<B extends AbilityBody>(state: AbilityState<B>, abilityId: Abi
   if (state.caster.fallen) return 'fallen';
   if (state.channelling) return 'channelling';
   if (abilityRank(state.ranks, abilityId) < 1) return 'untaught';
-  if (used.hand !== undefined && !handAllows(used.hand, state.itemInHand)) return 'hand';
+  if (!handAllows(used.hand, state.hands)) return 'hand';
   if (state.energy[POOL_FIELDS[used.pool].current] < used.cost) return 'cost';
   if (state.now < state.globalReadyAt || state.now < (state.readyAt[abilityId] ?? state.now)) return 'cooldown';
   const recipient = abilityRecipient(used, state.caster, target);

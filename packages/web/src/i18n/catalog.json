@@ -55,10 +55,6 @@
     "en": "%1$@ sold for %2$@c.",
     "de": "%1$@ für %2$@c verkauft."
   },
-  "%1$@ sold for %2$@c. Your hands are empty.": {
-    "en": "%1$@ sold for %2$@c. Your hands are empty.",
-    "de": "%1$@ für %2$@c verkauft. Deine Hände sind leer."
-  },
   "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.": {
     "en": "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.",
     "de": "%1$@ nimmt auf, wer eine Prüfung besteht. Sie verpflichtet dich zu nichts: Du entscheidest danach, ob du %2$@ wirst."
@@ -79,9 +75,17 @@
     "en": "%1$@ yells, \"%2$@\"",
     "de": "%1$@ schreit, \"%2$@\""
   },
+  "%1$@ − %2$@ Guard": {
+    "en": "%1$@ − %2$@ Guard",
+    "de": "%1$@ − %2$@ Deckung"
+  },
   "%1$@, %2$@ s left": {
     "en": "%1$@, %2$@ s left",
     "de": "%1$@, noch %2$@ s"
+  },
+  "%1$@: %2$@": {
+    "en": "%1$@: %2$@",
+    "de": "%1$@: %2$@"
   },
   "%@ Balance": {
     "en": "%@ Balance",
@@ -91,10 +95,6 @@
     "en": "%@ Spirit",
     "de": "%@ Geist"
   },
-  "%@ deals in weapons. He buys back what he sells for half its price.": {
-    "en": "%@ deals in weapons. He buys back what he sells for half its price.",
-    "de": "%@ handelt mit Waffen. Was er verkauft, kauft er zum halben Preis zurück."
-  },
   "%@ draw you back into the dream.": {
     "en": "%@ draw you back into the dream.",
     "de": "%@ holen dich in den Traum zurück."
@@ -102,6 +102,10 @@
   "%@ draws you back into the dream.": {
     "en": "%@ draws you back into the dream.",
     "de": "%@ holt dich in den Traum zurück."
+  },
+  "%@ dropped.": {
+    "en": "%@ dropped.",
+    "de": "%@ fallen gelassen."
   },
   "%@ entered the game.": {
     "en": "%@ entered the game.",
@@ -123,6 +127,18 @@
     "en": "%@ loses hold of you.",
     "de": "%@ verliert den Halt an dir."
   },
+  "%@ only": {
+    "en": "%@ only",
+    "de": "Nur %@"
+  },
+  "%@ picked up.": {
+    "en": "%@ picked up.",
+    "de": "%@ aufgehoben."
+  },
+  "%@ s": {
+    "en": "%@ s",
+    "de": "%@ s"
+  },
   "%@ s channel": {
     "en": "%@ s channel",
     "de": "%@ s Wirkzeit"
@@ -130,6 +146,14 @@
   "%@ s cooldown": {
     "en": "%@ s cooldown",
     "de": "%@ s Abklingzeit"
+  },
+  "%@ sells plain gear and buys what you find. Rarer finds fetch more.": {
+    "en": "%@ sells plain gear and buys what you find. Rarer finds fetch more.",
+    "de": "%@ verkauft schlichte Ausrüstung und kauft, was du findest. Seltenere Funde bringen mehr."
+  },
+  "%@ strikes land": {
+    "en": "%@ strikes land",
+    "de": "Treffer durch %@"
   },
   "%@ teaches its first rank for a task.": {
     "en": "%@ teaches its first rank for a task.",
@@ -139,6 +163,10 @@
     "en": "%@ will be gone for good, with every rank and everything they carry.",
     "de": "%@ ist dann für immer fort, mit allen Rängen und aller Habe."
   },
+  "%@%%": {
+    "en": "%@%%",
+    "de": "%@ %%"
+  },
   "%@c": {
     "en": "%@c",
     "de": "%@c"
@@ -146,6 +174,58 @@
   "%@s": {
     "en": "%@s",
     "de": "%@s"
+  },
+  "+%@ Balance": {
+    "en": "+%@ Balance",
+    "de": "+%@ Gleichgewicht"
+  },
+  "+%@ Guard": {
+    "en": "+%@ Guard",
+    "de": "+%@ Deckung"
+  },
+  "+%@ Health": {
+    "en": "+%@ Health",
+    "de": "+%@ Gestalt"
+  },
+  "+%@ Spirit": {
+    "en": "+%@ Spirit",
+    "de": "+%@ Geist"
+  },
+  "+%@ damage": {
+    "en": "+%@ damage",
+    "de": "+%@ Schaden"
+  },
+  "+%@ gear": {
+    "en": "+%@ gear",
+    "de": "+%@ Ausrüstung"
+  },
+  "+%@ health a mend": {
+    "en": "+%@ health a mend",
+    "de": "+%@ Gestalt je Heilung"
+  },
+  "+%@ ranks": {
+    "en": "+%@ ranks",
+    "de": "+%@ Ränge"
+  },
+  "+%@%% Balance recovery": {
+    "en": "+%@%% Balance recovery",
+    "de": "+%@ %% Erholung des Gleichgewichts"
+  },
+  "+%@%% Spirit recovery": {
+    "en": "+%@%% Spirit recovery",
+    "de": "+%@ %% Erholung des Geistes"
+  },
+  "+%@%% swing speed": {
+    "en": "+%@%% swing speed",
+    "de": "+%@ %% Schlagtempo"
+  },
+  "+%@%% ward strength": {
+    "en": "+%@%% ward strength",
+    "de": "+%@ %% Stärke des Schutzbanns"
+  },
+  "...with no Balance left": {
+    "en": "...with no Balance left",
+    "de": "...ohne Gleichgewicht"
   },
   "3D characters and props by KayKit.": {
     "en": "3D characters and props by KayKit.",
@@ -211,9 +291,25 @@
     "en": "Bag",
     "de": "Tasche"
   },
+  "Bag full": {
+    "en": "Bag full",
+    "de": "Tasche voll"
+  },
   "Balance": {
     "en": "Balance",
     "de": "Gleichgewicht"
+  },
+  "Balance a second": {
+    "en": "Balance a second",
+    "de": "Gleichgewicht je Sekunde"
+  },
+  "Balance a swing": {
+    "en": "Balance a swing",
+    "de": "Gleichgewicht je Schlag"
+  },
+  "Bare hands": {
+    "en": "Bare hands",
+    "de": "Bloße Hände"
   },
   "Become a %@": {
     "en": "Become a %@",
@@ -243,6 +339,10 @@
     "en": "Broadcast message: %@",
     "de": "Broadcast Nachricht: %@"
   },
+  "Buy %1$@ for %2$@c": {
+    "en": "Buy %1$@ for %2$@c",
+    "de": "%1$@ für %2$@c kaufen"
+  },
   "Buy for %@c": {
     "en": "Buy for %@c",
     "de": "Für %@c kaufen"
@@ -267,9 +367,17 @@
     "en": "Channelling %@",
     "de": "Wirkt %@"
   },
+  "Character": {
+    "en": "Character",
+    "de": "Charakter"
+  },
   "Chat": {
     "en": "Chat",
     "de": "Chat"
+  },
+  "Chest": {
+    "en": "Chest",
+    "de": "Brust"
   },
   "Clear target": {
     "en": "Clear target",
@@ -307,6 +415,14 @@
     "en": "Create",
     "de": "Erstellen"
   },
+  "Damage a swing": {
+    "en": "Damage a swing",
+    "de": "Schaden je Schlag"
+  },
+  "Defence": {
+    "en": "Defence",
+    "de": "Abwehr"
+  },
   "Delete": {
     "en": "Delete",
     "de": "Löschen"
@@ -326,6 +442,10 @@
   "Drive off a nightmare.": {
     "en": "Drive off a nightmare.",
     "de": "Vertreibe einen Albtraum."
+  },
+  "Drop": {
+    "en": "Drop",
+    "de": "Fallen lassen"
   },
   "Each rank adds to every hit you land.": {
     "en": "Each rank adds to every hit you land.",
@@ -383,6 +503,10 @@
     "en": "Enter a valid email address.",
     "de": "Gib eine gültige E-Mail-Adresse ein."
   },
+  "Equip": {
+    "en": "Equip",
+    "de": "Anlegen"
+  },
   "Error %@ occurred.": {
     "en": "Error %@ occurred.",
     "de": "Der Fehler %@ ist aufgetreten!"
@@ -399,6 +523,10 @@
     "en": "Falling starts the count over.",
     "de": "Fällst du, beginnt die Zählung von vorn."
   },
+  "Feet": {
+    "en": "Feet",
+    "de": "Füße"
+  },
   "Fighter Hall": {
     "en": "Fighter Hall",
     "de": "Halle der Kämpfer"
@@ -411,6 +539,10 @@
     "en": "Finish your current task first.",
     "de": "Erfülle zuerst deine jetzige Aufgabe."
   },
+  "Fits only the %@ slot.": {
+    "en": "Fits only the %@ slot.",
+    "de": "Passt nur auf den Platz %@."
+  },
   "For sale": {
     "en": "For sale",
     "de": "Im Angebot"
@@ -418,6 +550,10 @@
   "Fullscreen": {
     "en": "Fullscreen",
     "de": "Vollbild"
+  },
+  "Gear": {
+    "en": "Gear",
+    "de": "Ausrüstung"
   },
   "Ghost model by Quaternius.": {
     "en": "Ghost model by Quaternius.",
@@ -443,6 +579,14 @@
     "en": "Goes after the dreamer who challenged it.",
     "de": "Geht auf den Träumer los, der ihn herausgefordert hat."
   },
+  "Hands": {
+    "en": "Hands",
+    "de": "Hände"
+  },
+  "Head": {
+    "en": "Head",
+    "de": "Kopf"
+  },
   "Healer Hall": {
     "en": "Healer Hall",
     "de": "Halle der Heiler"
@@ -450,6 +594,14 @@
   "Health": {
     "en": "Health",
     "de": "Gestalt"
+  },
+  "Health a mend": {
+    "en": "Health a mend",
+    "de": "Gestalt je Heilung"
+  },
+  "Health a second": {
+    "en": "Health a second",
+    "de": "Gestalt je Sekunde"
   },
   "Hide yourself and every dreamer near you from the nightmares for a few seconds. They forget you were there.": {
     "en": "Hide yourself and every dreamer near you from the nightmares for a few seconds. They forget you were there.",
@@ -471,9 +623,13 @@
     "en": "If you don't have an account, click here!",
     "de": "Wenn du keinen Account hast, klick hier!"
   },
-  "In hand": {
-    "en": "In hand",
-    "de": "In der Hand"
+  "In the off hand, it lets a Healer mend and use their abilities.": {
+    "en": "In the off hand, it lets a Healer mend and use their abilities.",
+    "de": "In der Nebenhand lässt er einen Heiler heilen und seine Fähigkeiten nutzen."
+  },
+  "In the off hand, it lets a Mystic use their abilities.": {
+    "en": "In the off hand, it lets a Mystic use their abilities.",
+    "de": "In der Nebenhand lässt er einen Mystiker seine Fähigkeiten nutzen."
   },
   "Inn": {
     "en": "Inn",
@@ -483,9 +639,9 @@
     "en": "Instant",
     "de": "Sofort"
   },
-  "Items: %@": {
-    "en": "Items: %@",
-    "de": "Items: %@"
+  "Items": {
+    "en": "Items",
+    "de": "Gegenstände"
   },
   "Leap to the nightmare you target. Each rank readies it sooner.": {
     "en": "Leap to the nightmare you target. Each rank readies it sooner.",
@@ -498,6 +654,10 @@
   "Leave Game": {
     "en": "Leave Game",
     "de": "Spiel verlassen"
+  },
+  "Legs": {
+    "en": "Legs",
+    "de": "Beine"
   },
   "Library": {
     "en": "Library",
@@ -530,6 +690,14 @@
   "Logged out one other browser.": {
     "en": "Logged out one other browser.",
     "de": "Einen anderen Browser abgemeldet."
+  },
+  "Magic": {
+    "en": "Magic",
+    "de": "Magisch"
+  },
+  "Main hand": {
+    "en": "Main hand",
+    "de": "Haupthand"
   },
   "Master of the Fighters": {
     "en": "Master of the Fighters",
@@ -567,6 +735,10 @@
     "en": "Mend the dreamer you target, or yourself, a little every second for a while. Each rank mends more.",
     "de": "Heile den Träumer, den du als Ziel gewählt hast, oder dich selbst eine Weile lang jede Sekunde ein wenig. Jeder Rang heilt mehr."
   },
+  "Mending": {
+    "en": "Mending",
+    "de": "Heilung"
+  },
   "Mends a little every second.": {
     "en": "Mends a little every second.",
     "de": "Heilt jede Sekunde ein wenig."
@@ -583,17 +755,25 @@
     "en": "Name:",
     "de": "Name:"
   },
+  "Neck": {
+    "en": "Neck",
+    "de": "Hals"
+  },
   "Needs %1$@ at rank %2$@": {
     "en": "Needs %1$@ at rank %2$@",
     "de": "Braucht %1$@ auf Rang %2$@"
   },
-  "Needs a weapon or empty hands": {
-    "en": "Needs a weapon or empty hands",
-    "de": "Braucht eine Waffe oder leere Hände"
+  "Needs a wand in your off hand": {
+    "en": "Needs a wand in your off hand",
+    "de": "Braucht einen Zauberstab in deiner Nebenhand"
   },
-  "Needs the Moonstone in hand": {
-    "en": "Needs the Moonstone in hand",
-    "de": "Braucht den Mondstein in der Hand"
+  "Needs a weapon or an empty main hand": {
+    "en": "Needs a weapon or an empty main hand",
+    "de": "Braucht eine Waffe oder eine leere Haupthand"
+  },
+  "Needs the Moonstone in your off hand": {
+    "en": "Needs the Moonstone in your off hand",
+    "de": "Braucht den Mondstein in deiner Nebenhand"
   },
   "New Dreamer": {
     "en": "New Dreamer",
@@ -651,6 +831,14 @@
     "en": "OK",
     "de": "OK"
   },
+  "Off hand": {
+    "en": "Off hand",
+    "de": "Nebenhand"
+  },
+  "Offence": {
+    "en": "Offence",
+    "de": "Angriff"
+  },
   "Options": {
     "en": "Options",
     "de": "Optionen"
@@ -667,6 +855,10 @@
     "en": "People:",
     "de": "Volk:"
   },
+  "Plain": {
+    "en": "Plain",
+    "de": "Schlicht"
+  },
   "Play": {
     "en": "Play",
     "de": "Spielen"
@@ -679,6 +871,10 @@
     "en": "Players: %@",
     "de": "Spieler: %@"
   },
+  "Pools": {
+    "en": "Pools",
+    "de": "Vorräte"
+  },
   "Raise": {
     "en": "Raise",
     "de": "Zurückholen"
@@ -687,6 +883,10 @@
     "en": "Rank %1$@ of %2$@",
     "de": "Rang %1$@ von %2$@"
   },
+  "Rare": {
+    "en": "Rare",
+    "de": "Selten"
+  },
   "Ready in %@ s": {
     "en": "Ready in %@ s",
     "de": "Bereit in %@ s"
@@ -694,6 +894,10 @@
   "Reconnecting...": {
     "en": "Reconnecting...",
     "de": "Verbindung wird wiederhergestellt..."
+  },
+  "Recovery": {
+    "en": "Recovery",
+    "de": "Erholung"
   },
   "Registration failed.": {
     "en": "Registration failed.",
@@ -715,6 +919,26 @@
     "en": "Resume",
     "de": "Fortsetzen"
   },
+  "Right-click or double-click to equip.": {
+    "en": "Right-click or double-click to equip.",
+    "de": "Rechtsklick oder Doppelklick zum Anlegen."
+  },
+  "Right-click or double-click to unequip.": {
+    "en": "Right-click or double-click to unequip.",
+    "de": "Rechtsklick oder Doppelklick zum Ablegen."
+  },
+  "Ring": {
+    "en": "Ring",
+    "de": "Ring"
+  },
+  "Ring 1": {
+    "en": "Ring 1",
+    "de": "Ring 1"
+  },
+  "Ring 2": {
+    "en": "Ring 2",
+    "de": "Ring 2"
+  },
   "Run": {
     "en": "Run",
     "de": "Rennen"
@@ -722,6 +946,10 @@
   "Sell": {
     "en": "Sell",
     "de": "Verkaufen"
+  },
+  "Sell %1$@ for %2$@c": {
+    "en": "Sell %1$@ for %2$@c",
+    "de": "%1$@ für %2$@c verkaufen"
   },
   "Sell for %@c": {
     "en": "Sell for %@c",
@@ -779,13 +1007,25 @@
     "en": "Spirit",
     "de": "Geist"
   },
+  "Spirit a second": {
+    "en": "Spirit a second",
+    "de": "Geist je Sekunde"
+  },
   "Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.": {
     "en": "Stand still and pour a deep mend into the dreamer you target, or into yourself. Moving breaks it off. Each rank mends more, and sooner.",
     "de": "Steh still und gieß eine tiefe Heilung in den Träumer, den du als Ziel gewählt hast, oder in dich selbst. Bewegung bricht sie ab. Jeder Rang heilt mehr und schneller."
   },
+  "Stats": {
+    "en": "Stats",
+    "de": "Werte"
+  },
   "Stay": {
     "en": "Stay",
     "de": "Bleiben"
+  },
+  "Stays with you": {
+    "en": "Stays with you",
+    "de": "Bleibt bei dir"
   },
   "Stirs the nightmares' anger half as much.": {
     "en": "Stirs the nightmares' anger half as much.",
@@ -895,6 +1135,14 @@
     "en": "This door opens only at night.",
     "de": "Diese Tür öffnet sich nur bei Nacht."
   },
+  "This stays with you.": {
+    "en": "This stays with you.",
+    "de": "Das bleibt bei dir."
+  },
+  "Time between swings": {
+    "en": "Time between swings",
+    "de": "Zeit zwischen Schlägen"
+  },
   "Too many attempts. Wait a little before trying again.": {
     "en": "Too many attempts. Wait a little before trying again.",
     "de": "Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut."
@@ -919,6 +1167,10 @@
     "en": "UI borders by Kenney.",
     "de": "UI-Rahmen von Kenney."
   },
+  "Unequip": {
+    "en": "Unequip",
+    "de": "Ablegen"
+  },
   "Update required": {
     "en": "Update required",
     "de": "Update erforderlich"
@@ -939,9 +1191,17 @@
     "en": "Walk to the %@ and come back.",
     "de": "Geh bis in den %@ und kehre zurück."
   },
+  "Ward strength": {
+    "en": "Ward strength",
+    "de": "Stärke des Schutzbanns"
+  },
   "Warded": {
     "en": "Warded",
     "de": "Beschirmt"
+  },
+  "Warding": {
+    "en": "Warding",
+    "de": "Schutzbann"
   },
   "Watch out, nightmares about!": {
     "en": "Watch out, nightmares about!",
@@ -990,10 +1250,6 @@
   "You cannot strike while you hold this trial.": {
     "en": "You cannot strike while you hold this trial.",
     "de": "Solange du diese Prüfung trägst, kannst du nicht zuschlagen."
-  },
-  "You carry nothing %@ buys.": {
-    "en": "You carry nothing %@ buys.",
-    "de": "Du trägst nichts, was %@ kauft."
   },
   "You did what %@ asked.": {
     "en": "You did what %@ asked.",
@@ -1059,6 +1315,22 @@
     "en": "Your Dreamers",
     "de": "Deine Träumer"
   },
+  "Your bag holds nothing %@ buys.": {
+    "en": "Your bag holds nothing %@ buys.",
+    "de": "In deiner Tasche ist nichts, was %@ kauft."
+  },
+  "Your bag is full.": {
+    "en": "Your bag is full.",
+    "de": "Deine Tasche ist voll."
+  },
+  "Your bag is full. Make room in it before you accept.": {
+    "en": "Your bag is full. Make room in it before you accept.",
+    "de": "Deine Tasche ist voll. Schaffe darin Platz, bevor du annimmst."
+  },
+  "Your dreamer, wearing what is equipped. Drag to turn.": {
+    "en": "Your dreamer, wearing what is equipped. Drag to turn.",
+    "de": "Dein Träumer mit allem, was er trägt. Ziehen zum Drehen."
+  },
   "Your health gives out. You fall.": {
     "en": "Your health gives out. You fall.",
     "de": "Deine Gestalt gibt nach. Du fällst."
@@ -1074,6 +1346,10 @@
   "Your session expired. Please log in again.": {
     "en": "Your session expired. Please log in again.",
     "de": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
+  },
+  "Your swings land": {
+    "en": "Your swings land",
+    "de": "Deine Schläge treffen"
   },
   "Your target has fallen or is out of range": {
     "en": "Your target has fallen or is out of range",

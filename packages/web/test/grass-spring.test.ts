@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GrassSpring } from '@/scene/grassSpring';
+import { FLAT_TILT, GrassSpring } from '@/scene/grassSpring';
 import type { GrassBatch, GrassContact } from '@/scene/grassSpring';
 
 /** Grass leaning under a body's feet and springing back once let go, frame by frame. */
@@ -41,6 +41,14 @@ describe('the grass spring', () => {
     run(second.spring, [{ x: 7.3, z: 2.1, radius: 0.06 }], 0.3);
     expect(tilt(first.batch)).toBeGreaterThan(0.5);
     expect(Math.atan2(first.batch.tilts[1]!, first.batch.tilts[0]!)).not.toBeCloseTo(Math.atan2(second.batch.tilts[1]!, second.batch.tilts[0]!), 3);
+  });
+
+  it('leans a tuft beside the middle of a capsule away from its line, as far as its lean', () => {
+    const { spring, batch } = tuft();
+    run(spring, [{ x: 4.5, z: 4.98, end: { x: 5.5, z: 4.98 }, radius: 0.05, lean: FLAT_TILT }], 0.5);
+    expect(tilt(batch)).toBeCloseTo(FLAT_TILT, 2);
+    expect(Math.abs(batch.tilts[0]!)).toBeLessThan(1e-6);
+    expect(batch.tilts[1]).toBeGreaterThan(0);
   });
 
   it('springs back below 0.1 rad between 0.8 and 1.4 s after the contact leaves', () => {

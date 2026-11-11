@@ -99,9 +99,11 @@ describe('catalog coverage', () => {
 describe('the names rendered through a core label key', () => {
   it('are every item, people, role, teaching, nightmare, and place a trial names, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
+      'Amulet',
       'Balance recovery',
       'Bind',
       'Brace',
+      'Buckler',
       'Calm',
       'Challenge',
       'Cleave',
@@ -116,16 +118,22 @@ describe('the names rendered through a core label key', () => {
       'Ghost',
       'Guard',
       'Healer',
+      'Iron ring',
+      'Leather boots',
+      'Leather cap',
+      'Leather gloves',
+      'Leather trousers',
       'Lumina',
       'Lunge',
       'Mace',
       'Moonstone',
       'Mystic',
       'North Wood',
-      'Purse',
+      'Padded tunic',
       'Radiance',
       'Rally',
       'Renewal',
+      'Round shield',
       'Sense the fallen',
       'Short sword',
       'Sopors',
@@ -136,11 +144,11 @@ describe('the names rendered through a core label key', () => {
       'Umbrae',
       'Veil',
       'Vigils',
+      'Wand',
       'Ward',
       'Weaken',
     ]);
     expect(translate('de', 'Follow-through')).toBe('Nachsetzen');
-    expect(translate('de', 'Purse')).toBe('Geldbeutel');
     expect(translate('de', 'Cudgel')).toBe('Knüppel');
     expect(translate('de', 'Short sword')).toBe('Kurzschwert');
     expect(['Fighter', 'Healer', 'Moonstone', 'Ghost', 'North Wood'].map((key) => translate('de', key))).toEqual([
@@ -251,9 +259,10 @@ describe('renderChatLine', () => {
     { kind: 'startupGreeting' },
     { kind: 'purseBalance', coins: 42 },
     { kind: 'coinsGained', coins: 4 },
-    { kind: 'bought', itemId: 'dagger', coins: 60 },
-    { kind: 'sold', itemId: 'sword', coins: 75, emptiedHand: false },
-    { kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true },
+    { kind: 'bought', baseId: 'dagger', coins: 60 },
+    { kind: 'sold', baseId: 'sword', coins: 75 },
+    { kind: 'pickedUp', baseId: 'cap' },
+    { kind: 'bagFull' },
     { kind: 'becameRole', role: 'healer' },
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'placeFound', found: 1, total: 3 },
@@ -311,15 +320,14 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'raiseBrokenOther', targetName: 'Bren' }, catalogTables, 'de')).toBe('Du verlierst den Halt an Bren.');
   });
 
-  /** The ware is named in the line's own locale, which a lookup through the active one would miss. */
-  it('names the ware traded and the coins, and an emptied hand only when there was one', () => {
-    expect(renderChatLine({ kind: 'bought', itemId: 'dagger', coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
-    expect(renderChatLine({ kind: 'bought', itemId: 'dagger', coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
-    expect(renderChatLine({ kind: 'sold', itemId: 'sword', coins: 75, emptiedHand: false }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
-    expect(renderChatLine({ kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true }, catalogTables, 'en')).toBe(
-      'Cudgel sold for 15c. Your hands are empty.',
-    );
-    expect(renderChatLine({ kind: 'sold', itemId: 'lantern', coins: 1, emptiedHand: false }, catalogTables, 'en')).toBe('lantern sold for 1c.');
+  /** The item is named in the line's own locale, which a lookup through the active one would miss. */
+  it('names the ware traded and the coins, and the item picked up', () => {
+    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
+    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'sword', coins: 75 }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'lantern', coins: 1 }, catalogTables, 'en')).toBe('lantern sold for 1c.');
+    expect(renderChatLine({ kind: 'pickedUp', baseId: 'cap' }, catalogTables, 'en')).toBe('Leather cap picked up.');
+    expect(renderChatLine({ kind: 'pickedUp', baseId: 'cap' }, catalogTables, 'de')).toBe('Lederkappe aufgehoben.');
   });
 
   it('names several Healers as the language lists them', () => {

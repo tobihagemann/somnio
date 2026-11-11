@@ -13,6 +13,9 @@ import {
   shieldedHarm,
   maxPools,
   mendAmount,
+  spiritPerSecond,
+  statsOf,
+  wardShare,
   raiseSecondsFor,
   raiseWorkOver,
   mendReaches,
@@ -26,9 +29,16 @@ import {
   windedOnJoin,
 } from '../src/combat.ts';
 import { heading } from '../src/heading.ts';
-import { NO_LUCIDITY, TRIALS } from '../src/lucidity.ts';
+import { NO_STATS } from '../src/items.ts';
+import type { Equipment } from '../src/items.ts';
+import { TRIALS } from '../src/lucidity.ts';
+import type { Lucidity, TeachingId } from '../src/lucidity.ts';
 import { monsterKind } from '../src/monsterKinds.ts';
+import { holding, plain } from './support/items.ts';
 import { ranks } from './support/ranks.ts';
+
+/** The stats of a dreamer of the role holding the ranks given and wearing nothing. */
+const ranked = (held: Partial<Record<TeachingId, number>>, role: Lucidity['role'] = undefined) => statsOf({}, { role, ranks: ranks(held) });
 
 describe('conditionOf', () => {
   it.each([
@@ -98,43 +108,57 @@ describe('balance recovery', () => {
     expect(balancePace('standing', true)).toBe(1);
   });
 
-  it('quickens by a quarter with each Balance recovery rank', () => {
-    expect(balancePerSecond([])).toBe(12);
-    expect(balancePerSecond(ranks({ 'balance-recovery': 2 }))).toBe(18);
+  it('quickens by a quarter with each Balance recovery rank, and by its share of gear', () => {
+    expect(balancePerSecond(NO_STATS)).toBe(12);
+    expect(balancePerSecond(ranked({ 'balance-recovery': 2 }))).toBe(18);
+    expect(balancePerSecond({ ...NO_STATS, balanceRecovery: 10 })).toBeCloseTo(13.2, 9);
+  });
+
+  it('recovers spirit faster by its share of gear', () => {
+    expect(spiritPerSecond(NO_STATS)).toBe(1);
+    expect(spiritPerSecond({ ...NO_STATS, spiritRecovery: 15 })).toBeCloseTo(1.15, 9);
   });
 });
 
 describe('swingFor', () => {
+  const cudgel = plain('cudgel');
+
   it('swings bare hands for less cost and less harm than the cudgel', () => {
-    expect(swingFor(undefined, [])).toEqual({ damage: 4, balanceCost: 8, seconds: 1 });
-    expect(swingFor('cudgel', [])).toEqual({ damage: 8, balanceCost: 18, seconds: 1 });
+    expect(swingFor(undefined, NO_STATS)).toEqual({ damage: 4, balanceCost: 8, seconds: 1 });
+    expect(swingFor(cudgel, NO_STATS)).toEqual({ damage: 8, balanceCost: 18, seconds: 1 });
   });
 
   it('does not swing what is no weapon', () => {
-    expect(swingFor('moonstone', [])).toBeUndefined();
-    expect(swingFor('purse', [])).toBeUndefined();
+    expect(swingFor(plain('moonstone'), NO_STATS)).toBeUndefined();
+    expect(swingFor(plain('shield'), NO_STATS)).toBeUndefined();
   });
 
   it('adds damage with Strike and shortens the pause with Follow-through', () => {
-    expect(swingFor('cudgel', ranks({ strike: 2 }))).toMatchObject({ damage: 14, seconds: 1 });
-    expect(swingFor(undefined, ranks({ 'follow-through': 3 }))).toMatchObject({ damage: 4, seconds: 0.7 });
+    expect(swingFor(cudgel, ranked({ strike: 2 }))).toMatchObject({ damage: 14, seconds: 1 });
+    expect(swingFor(undefined, ranked({ 'follow-through': 3 }))).toMatchObject({ damage: 4, seconds: 0.7 });
+  });
+
+  it('adds the damage and the swing speed of gear', () => {
+    expect(swingFor(cudgel, { ...NO_STATS, damage: 2, swingSpeed: 5 })).toEqual({ damage: 10, balanceCost: 18, seconds: 0.95 });
   });
 });
 
 describe('swingAllowed', () => {
-  it('is the swing of what is in hand while the balance covers its cost, to the last point', () => {
-    expect(swingAllowed(undefined, 'cudgel', [], 18)).toEqual(swingFor('cudgel', []));
-    expect(swingAllowed(undefined, 'cudgel', [], 17)).toBeUndefined();
-    expect(swingAllowed(undefined, undefined, [], 8)).toEqual(swingFor(undefined, []));
+  const cudgel = plain('cudgel');
+
+  it('is the swing of what is in the main hand while the balance covers its cost, to the last point', () => {
+    expect(swingAllowed(undefined, cudgel, NO_STATS, 18)).toEqual(swingFor(cudgel, NO_STATS));
+    expect(swingAllowed(undefined, cudgel, NO_STATS, 17)).toBeUndefined();
+    expect(swingAllowed(undefined, undefined, NO_STATS, 8)).toEqual(swingFor(undefined, NO_STATS));
   });
 
-  it('is none with something in hand that does not swing', () => {
-    expect(swingAllowed(undefined, 'moonstone', [], 100)).toBeUndefined();
+  it('is none with something in the main hand that does not swing', () => {
+    expect(swingAllowed(undefined, plain('moonstone'), NO_STATS, 100)).toBeUndefined();
   });
 
   it('is none while a task forbids striking, and is not held back by one that does not', () => {
-    expect(swingAllowed(TRIALS.healer, 'cudgel', [], 100)).toBeUndefined();
-    expect(swingAllowed(TRIALS.fighter, 'cudgel', [], 100)).toEqual(swingFor('cudgel', []));
+    expect(swingAllowed(TRIALS.healer, cudgel, NO_STATS, 100)).toBeUndefined();
+    expect(swingAllowed(TRIALS.fighter, cudgel, NO_STATS, 100)).toEqual(swingFor(cudgel, NO_STATS));
   });
 });
 
@@ -166,28 +190,39 @@ describe('what a swing meets', () => {
 });
 
 describe('engageAction', () => {
-  it('attacks a nightmare with bare hands or a weapon in hand, whoever engages it', () => {
-    expect(engageAction('nightmare', undefined, undefined)).toBe('attack');
-    expect(engageAction('nightmare', 'healer', 'cudgel')).toBe('attack');
-    expect(engageAction('nightmare', 'mystic', undefined)).toBe('attack');
-    expect(engageAction('nightmare', 'mystic', 'cudgel')).toBe('attack');
+  const cudgel = plain('cudgel');
+  const moonstone = plain('moonstone');
+
+  it('attacks a nightmare with the main hand empty or holding a weapon, whatever the off hand holds and whoever engages it', () => {
+    expect(engageAction('nightmare', undefined, {})).toBe('attack');
+    expect(engageAction('nightmare', 'healer', holding(cudgel, undefined))).toBe('attack');
+    expect(engageAction('nightmare', 'healer', holding(undefined, moonstone))).toBe('attack');
+    expect(engageAction('nightmare', 'mystic', holding(undefined, plain('wand')))).toBe('attack');
+    expect(engageAction('nightmare', 'fighter', holding(cudgel, plain('shield')))).toBe('attack');
   });
 
-  it('does not attack with the Moonstone in hand, which does not swing', () => {
-    expect(engageAction('nightmare', 'healer', 'moonstone')).toBeUndefined();
+  it('does not attack with something in the main hand that does not swing', () => {
+    expect(engageAction('nightmare', 'healer', holding(moonstone, undefined))).toBeUndefined();
   });
 
-  it('mends a dreamer only for a Healer with the Moonstone in hand', () => {
-    expect(engageAction('dreamer', 'healer', 'moonstone')).toBe('mend');
-    expect(engageAction('dreamer', 'healer', undefined)).toBeUndefined();
-    expect(engageAction('dreamer', 'healer', 'cudgel')).toBeUndefined();
-    expect(engageAction('dreamer', 'fighter', 'moonstone')).toBeUndefined();
-    expect(engageAction('dreamer', 'mystic', 'moonstone')).toBeUndefined();
-    expect(engageAction('dreamer', undefined, 'moonstone')).toBeUndefined();
+  it('mends a dreamer only for a Healer with the Moonstone in the off hand', () => {
+    expect(engageAction('dreamer', 'healer', holding(undefined, moonstone))).toBe('mend');
+    expect(engageAction('dreamer', 'healer', holding(cudgel, moonstone))).toBe('mend');
+    expect(engageAction('dreamer', 'healer', {})).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', holding(cudgel, undefined))).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', holding(moonstone, undefined))).toBeUndefined();
+    expect(engageAction('dreamer', 'fighter', holding(undefined, moonstone))).toBeUndefined();
+    expect(engageAction('dreamer', 'mystic', holding(undefined, moonstone))).toBeUndefined();
+    expect(engageAction('dreamer', undefined, holding(undefined, moonstone))).toBeUndefined();
+  });
+
+  it('attacks or mends, by the target, for a Healer holding a weapon and the Moonstone', () => {
+    const both = holding(cudgel, moonstone);
+    expect([engageAction('nightmare', 'healer', both), engageAction('dreamer', 'healer', both)]).toEqual(['attack', 'mend']);
   });
 
   it('does nothing without a target it can act on', () => {
-    expect(engageAction(undefined, 'healer', 'moonstone')).toBeUndefined();
+    expect(engageAction(undefined, 'healer', holding(cudgel, moonstone))).toBeUndefined();
   });
 });
 
@@ -203,18 +238,19 @@ describe('strikeChance', () => {
   const ghost = monsterKind('ghost');
 
   it('rises as the balance falls', () => {
-    expect(strikeChance(ghost, 100, 100, [])).toBeCloseTo(0.6, 9);
-    expect(strikeChance(ghost, 50, 100, [])).toBeCloseTo(0.75, 9);
-    expect(strikeChance(ghost, 0, 100, [])).toBeCloseTo(0.9, 9);
+    expect(strikeChance(ghost, 100, 100, NO_STATS)).toBeCloseTo(0.6, 9);
+    expect(strikeChance(ghost, 50, 100, NO_STATS)).toBeCloseTo(0.75, 9);
+    expect(strikeChance(ghost, 0, 100, NO_STATS)).toBeCloseTo(0.9, 9);
   });
 
-  it('falls with Guard', () => {
-    expect(strikeChance(ghost, 100, 100, ranks({ guard: 3 }))).toBeCloseTo(0.36, 9);
+  it('falls with Guard, from ranks and from gear', () => {
+    expect(strikeChance(ghost, 100, 100, ranked({ guard: 3 }))).toBeCloseTo(0.36, 9);
+    expect(strikeChance(ghost, 100, 100, { ...NO_STATS, guard: 10 })).toBeCloseTo(0.5, 9);
   });
 
   it('stays a chance', () => {
-    expect(strikeChance({ ...ghost, hitChance: 0.95 }, 0, 100, [])).toBe(1);
-    expect(strikeChance({ ...ghost, hitChance: 0.1 }, 100, 100, ranks({ guard: 3 }))).toBe(0);
+    expect(strikeChance({ ...ghost, hitChance: 0.95 }, 0, 100, NO_STATS)).toBe(1);
+    expect(strikeChance({ ...ghost, hitChance: 0.1 }, 100, 100, ranked({ guard: 3 }))).toBe(0);
   });
 });
 
@@ -246,10 +282,10 @@ describe('whole amounts', () => {
   });
 });
 
-describe('ranks that deepen a pool or a touch', () => {
+describe('ranks and gear that deepen a pool, a touch, or a ward', () => {
   it('fills every pool to what the role and ranks give', () => {
-    expect(fullPools(NO_LUCIDITY)).toEqual({ healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 });
-    expect(fullPools({ role: 'healer', ranks: ranks({ toughening: 2, 'spirit-deepening': 1 }) })).toMatchObject({
+    expect(fullPools(NO_STATS)).toEqual({ healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 });
+    expect(fullPools(ranked({ toughening: 2, 'spirit-deepening': 1 }, 'healer'))).toMatchObject({
       healthCurrent: 120,
       healthMax: 120,
       spiritCurrent: 110,
@@ -258,21 +294,62 @@ describe('ranks that deepen a pool or a touch', () => {
   });
 
   it('raises health with Toughening and spirit with Spirit deepening, and leaves balance alone', () => {
-    expect(maxPools(NO_LUCIDITY)).toEqual({ healthMax: 100, balanceMax: 100, spiritMax: 100 });
-    expect(maxPools({ role: 'healer', ranks: ranks({ toughening: 2, 'spirit-deepening': 3 }) })).toEqual({ healthMax: 120, balanceMax: 100, spiritMax: 130 });
+    expect(maxPools(NO_STATS)).toEqual({ healthMax: 100, balanceMax: 100, spiritMax: 100 });
+    expect(maxPools(ranked({ toughening: 2, 'spirit-deepening': 3 }, 'healer'))).toEqual({ healthMax: 120, balanceMax: 100, spiritMax: 130 });
   });
 
   it("reads only the Spirit deepening of the dreamer's own role", () => {
-    expect(maxPools({ role: 'fighter', ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
-    expect(maxPools({ role: undefined, ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
-    expect(maxPools({ role: 'mystic', ranks: ranks({ 'mystic-spirit-deepening': 2 }) }).spiritMax).toBe(120);
-    expect(maxPools({ role: 'mystic', ranks: ranks({ 'spirit-deepening': 3 }) }).spiritMax).toBe(100);
-    expect(maxPools({ role: 'healer', ranks: ranks({ 'mystic-spirit-deepening': 3 }) }).spiritMax).toBe(100);
+    expect(maxPools(ranked({ 'spirit-deepening': 3 }, 'fighter')).spiritMax).toBe(100);
+    expect(maxPools(ranked({ 'spirit-deepening': 3 })).spiritMax).toBe(100);
+    expect(maxPools(ranked({ 'mystic-spirit-deepening': 2 }, 'mystic')).spiritMax).toBe(120);
+    expect(maxPools(ranked({ 'spirit-deepening': 3 }, 'mystic')).spiritMax).toBe(100);
+    expect(maxPools(ranked({ 'mystic-spirit-deepening': 3 }, 'healer')).spiritMax).toBe(100);
   });
 
-  it('mends more with Depth', () => {
-    expect(mendAmount([])).toBe(10);
-    expect(mendAmount(ranks({ depth: 2 }))).toBe(20);
+  it('raises each pool by what gear adds to it', () => {
+    expect(maxPools({ ...NO_STATS, healthMax: 5, balanceMax: 6, spiritMax: 7 })).toEqual({ healthMax: 105, balanceMax: 106, spiritMax: 107 });
+  });
+
+  it('mends more with Depth and with gear', () => {
+    expect(mendAmount(NO_STATS)).toBe(10);
+    expect(mendAmount(ranked({ depth: 2 }))).toBe(20);
+    expect(mendAmount({ ...NO_STATS, mendDepth: 3 })).toBe(13);
+  });
+
+  it('puts up a stronger ward by its share of gear', () => {
+    expect(wardShare(NO_STATS)).toBe(1);
+    expect(wardShare({ ...NO_STATS, wardStrength: 10 })).toBeCloseTo(1.1, 9);
+  });
+});
+
+describe('statsOf', () => {
+  it("adds every worn item's base stats and affixes to what the ranks give", () => {
+    const equipment: Equipment = {
+      mainHand: { baseId: 'sword', tier: 1, rarity: 'magic', affixes: [{ affixId: 'swing-speed', value: 4 }] },
+      offHand: plain('shield'),
+      chest: {
+        baseId: 'tunic',
+        tier: 1,
+        rarity: 'rare',
+        affixes: [
+          { affixId: 'health', value: 6 },
+          { affixId: 'guard', value: 2 },
+          { affixId: 'balance-recovery', value: 9 },
+        ],
+      },
+      neck: plain('amulet'),
+    };
+    expect(statsOf(equipment, { role: 'fighter', ranks: ranks({ guard: 1, 'follow-through': 1, toughening: 1 }) })).toEqual({
+      ...NO_STATS,
+      healthMax: 10 + 6 + 5,
+      guard: 8 + 4 + 3 + 2,
+      swingSpeed: 10 + 4,
+      balanceRecovery: 9,
+    });
+  });
+
+  it('gives nothing to a dreamer with no ranks who wears nothing', () => {
+    expect(statsOf({}, { role: undefined, ranks: [] })).toEqual(NO_STATS);
   });
 });
 

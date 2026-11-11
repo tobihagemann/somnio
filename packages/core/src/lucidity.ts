@@ -1,6 +1,7 @@
 import { ROLES } from '@somnio/protocol';
 import type { NPCService, Role, SectorView } from '@somnio/protocol';
 import type { AbilityId } from './abilities.ts';
+import type { BaseItemId } from './items.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { sectorPointInSpace } from './sector.ts';
@@ -107,6 +108,9 @@ export const TRIALS: Record<Role, TaskSpec> = {
 
 /** The teaching a dreamer is taught, and set to study, on taking the role. */
 export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch', mystic: 'ward' };
+
+/** What a trial gives besides its role, plain: the Healer their Moonstone, and the Mystic a focus. */
+export const TRIAL_REWARDS: Partial<Record<Role, BaseItemId>> = { healer: 'moonstone', mystic: 'wand' };
 
 /** What doing a thing adds toward the next rank of the teaching studied. */
 export const PRACTICE = {

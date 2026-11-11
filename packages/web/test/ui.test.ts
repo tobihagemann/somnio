@@ -6,15 +6,18 @@ import * as THREE from 'three';
 import { AppShell, FallenNotice, Overlays, ServicePanel, UPRIGHT_PHONE_QUERY, element, field } from '@/ui';
 import { setLocale } from '@/i18n';
 import { PEOPLE_SIGILS } from '@/ui/hudIcons';
+import { ITEM_ICONS } from '@/ui/itemIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import type { RegistrationForm } from '@/client';
 import { TAP_SLOP_PX } from '@/client';
-import { NO_LUCIDITY, clamp, distance, fullPools, headingFromVector } from '@somnio/core';
+import { NO_STATS, clamp, distance, fullPools, headingFromVector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
-import type { CharacterSummaryMessage, InventoryRowMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
+import type { CharacterSummaryMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
+import type { Inventory, ItemInstance } from '@somnio/core';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
 import type { ChatLine, ClientEntity } from '@/client';
 
@@ -1439,7 +1442,7 @@ describe('overlay focus moves on entry, not on every repaint', () => {
 });
 
 describe('the service panel', () => {
-  const NO_ROWS: readonly InventoryRowMessage[] = [];
+  const NOTHING: Inventory = carrying();
 
   function mount() {
     const calls: string[] = [];
@@ -1448,11 +1451,11 @@ describe('the service panel', () => {
       onCompleteTask: () => calls.push('complete'),
       onAbandonTask: () => calls.push('abandon'),
       onStudy: (teachingId) => calls.push(`study:${teachingId}`),
-      onBuy: (itemId) => calls.push(`buy:${itemId}`),
+      onBuy: (baseId) => calls.push(`buy:${baseId}`),
       onSell: (itemId) => calls.push(`sell:${itemId}`),
       onClose: () => calls.push('close'),
     });
-    const render = (npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory = NO_ROWS, tradeLocked = false): void =>
+    const render = (npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory = NOTHING, tradeLocked = false): void =>
       panel.render(npc, lucidity, inventory, tradeLocked);
     const npc = (service: NPCService, id = 'npc:EdariaFighterHall/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
     const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
@@ -1500,8 +1503,8 @@ describe('the service panel', () => {
     const first = control();
     p.render(p.npc('fighterMaster'), lucidity);
     expect(control()).toBe(first);
-    // A master reads no inventory, so a bounty landing in the purse leaves the panel standing.
-    p.render(p.npc('fighterMaster'), lucidity, [{ slot: 0, itemId: 'purse', quantity: 5 }]);
+    // A master reads only whether a trial's reward has a place to go, so a bounty landing in the purse leaves the panel standing.
+    p.render(p.npc('fighterMaster'), lucidity, carrying({ coins: 5 }));
     expect(control()).toBe(first);
 
     p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 0 } });
@@ -1547,6 +1550,21 @@ describe('the service panel', () => {
 
     p.render(tacita, { ranks: [], task: { role: 'mystic', progress: 0b111 } });
     expect(p.buttons()).toEqual(['Not yet', 'Become a Mystic', 'Close']);
+  });
+
+  it("holds back the role while the trial's reward has nowhere to go, as the master does", () => {
+    const p = mount();
+    const sana = p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana');
+    const passed = { ranks: [], task: { role: 'healer' as const, progress: 1 } };
+    const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+    p.render(sana, passed, carrying({ worn: [item('buckler')], bag: fullBag }));
+    expect(p.text()).toContain('Your bag is full. Make room in it before you accept.');
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Healer (disabled)', 'Close']);
+    p.render(sana, passed, carrying({ bag: fullBag }));
+    expect(p.text()).not.toContain('Your bag is full.');
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Healer', 'Close']);
+    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 1 } }, carrying({ worn: [item('buckler')], bag: fullBag }));
+    expect(p.buttons()).toEqual(['Not yet', 'Become a Fighter', 'Close']);
   });
 
   it('asks a dreamer who passed the trial before making them the role for good', () => {
@@ -1656,54 +1674,100 @@ describe('the service panel', () => {
 
   describe('of the shopkeeper', () => {
     const mercus = () => clientEntity({ id: 'npc:EdariaShop/mercus', kind: 'npc', name: 'Mercus', service: 'shopkeeper' });
-    const purse = (quantity: number): InventoryRowMessage => ({ slot: 0, itemId: 'purse', quantity });
-    const carried = (itemId: string, slot: number, equippedHand?: 'right'): InventoryRowMessage => ({
-      slot,
-      itemId,
-      quantity: 1,
-      ...(equippedHand === undefined ? {} : { equippedHand }),
-    });
     const wares = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-ware]')].map((node) => node.getAttribute('data-ware'));
     const ware = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-ware="${id}"]`)?.textContent ?? '';
+    const sold = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-item]')].map((node) => node.getAttribute('data-item'));
+    const sale = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-item="${id}"]`)?.textContent ?? '';
 
-    it('offers what the dreamer does not carry, says what each costs and does, and buys back what they carry', () => {
+    it('offers every ware, says what each costs and does, and buys what the bag holds for what its rarity fetches', () => {
       const p = mount();
-      p.render(mercus(), { ranks: [] }, [purse(100), carried('cudgel', 1, 'right')]);
+      const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, worn: [item('dagger')], bag: [item('cudgel'), rare, item('moonstone')] }));
       expect(p.text()).toContain('Shopkeeper');
       expect(p.panel.root.querySelector('.shop-purse')?.textContent).toBe('Your purse100c');
       expect(p.panel.root.querySelector('.service-body .shop-purse')).toBeNull();
       expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
-      expect(wares(p.panel)).toEqual(['dagger', 'sword', 'mace', 'cudgel']);
+      expect(wares(p.panel)).toEqual([
+        'dagger',
+        'cudgel',
+        'sword',
+        'mace',
+        'buckler',
+        'shield',
+        'wand',
+        'cap',
+        'tunic',
+        'gloves',
+        'trousers',
+        'boots',
+        'amulet',
+        'ring',
+      ]);
       expect(ware(p.panel, 'dagger')).toContain('6 damage, 10 balance a swing');
       expect(ware(p.panel, 'dagger')).not.toContain('more.');
+      expect(ware(p.panel, 'shield')).toContain('+4 Guard');
+      expect(ware(p.panel, 'wand')).toContain('In the off hand, it lets a Mystic use their abilities.');
       expect(ware(p.panel, 'sword')).toContain('You need 50c more.');
       expect(ware(p.panel, 'mace')).toContain('You need 140c more.');
-      expect(ware(p.panel, 'cudgel')).toContain('In hand');
-      expect(ware(p.panel, 'dagger')).not.toContain('In hand');
-      expect(p.buttons()).toEqual(['Buy for 60c', 'Buy for 150c (disabled)', 'Buy for 240c (disabled)', 'Sell for 15c', 'Close']);
-      p.press('Buy for 60c');
-      p.press('Sell for 15c');
-      expect(p.calls).toEqual(['buy:dagger', 'sell:cudgel']);
+      // The Moonstone is never bought, so it has no row to sell it from.
+      expect(sold(p.panel)).toEqual(['cudgel-1', 'amulet-rare']);
+      expect(sale(p.panel, 'amulet-rare')).toBe('AmuletRare+5 Health+6 SpiritSell for 75c');
+      expect(p.panel.root.querySelector('[data-item="amulet-rare"] .ware-name')?.classList.contains('hud-rarity--rare')).toBe(true);
+      expect(sale(p.panel, 'cudgel-1')).toBe('Cudgel8 damage, 18 balance a swingSell for 10c');
+      expect(p.buttons().filter((label) => !label.startsWith('Buy'))).toEqual(['Sell for 10c', 'Sell for 75c', 'Close']);
+      // Two wares can share a price, so each trade button's accessible name says which item it trades.
+      expect(p.panel.root.querySelector('[data-item="amulet-rare"] button')?.getAttribute('aria-label')).toBe('Sell Amulet for 75c');
+      expect(p.panel.root.querySelector('[data-ware="gloves"] button')?.getAttribute('aria-label')).toBe('Buy Leather gloves for 25c');
+      p.press('Sell for 75c');
+      expect(p.calls).toEqual(['sell:amulet-rare']);
     });
 
-    it('drops the wares on sale once the dreamer carries every one, and says when they carry none', () => {
+    it("draws each ware's and each sale's item as its icon, edged in its rarity's colour", () => {
       const p = mount();
-      const everything = [purse(0), carried('dagger', 1), carried('cudgel', 2), carried('sword', 3), carried('mace', 4)];
-      p.render(mercus(), { ranks: [] }, everything);
-      expect(headings(p.panel)).toEqual(['Sell']);
-      p.render(mercus(), { ranks: [] }, [purse(500)]);
+      const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, bag: [rare] }));
+      const icon = (row: string) => {
+        const node = p.panel.root.querySelector<HTMLImageElement>(`${row} .ware-head > img`);
+        return [
+          node?.getAttribute('src'),
+          node?.getAttribute('alt'),
+          node?.classList.contains('ware-icon'),
+          [...(node?.classList ?? [])].find((name) => name.startsWith('hud-rarity--')),
+        ];
+      };
+      expect(icon('[data-ware="sword"]')).toEqual([ITEM_ICONS.sword, '', true, 'hud-rarity--plain']);
+      expect(icon('[data-item="amulet-rare"]')).toEqual([ITEM_ICONS.amulet, '', true, 'hud-rarity--rare']);
+    });
+
+    it('sells nothing into a full bag, and says so', () => {
+      const p = mount();
+      const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 500, bag: fullBag }));
+      expect(ware(p.panel, 'dagger')).toContain('Your bag is full.');
+      expect(
+        p
+          .buttons()
+          .filter((label) => label.startsWith('Buy'))
+          .every((label) => label.endsWith('(disabled)')),
+      ).toBe(true);
+    });
+
+    it('sells another of a ware the dreamer carries, and says when the bag holds nothing to sell', () => {
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 500, worn: [item('cudgel')], bag: [item('moonstone')] }));
+      expect(p.buttons()).toContain('Buy for 30c');
       expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
-      expect(p.text()).toContain('You carry nothing Mercus buys.');
+      expect(p.text()).toContain('Your bag holds nothing Mercus buys.');
     });
 
     it('keeps the purse current through a trade, and hides it at a master', () => {
       const p = mount();
       const purseLine = (): HTMLElement => p.panel.root.querySelector<HTMLElement>('.shop-purse')!;
-      p.render(mercus(), { ranks: [] }, [purse(100)]);
-      p.render(mercus(), { ranks: [] }, [purse(40), carried('dagger', 1)]);
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }));
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 40, bag: [item('dagger')] }));
       expect(purseLine().textContent).toBe('Your purse40c');
       expect(purseLine().classList.contains('hidden')).toBe(false);
-      p.render(p.npc('fighterMaster'), { ranks: [] }, [purse(40)]);
+      p.render(p.npc('fighterMaster'), { ranks: [] }, carrying({ coins: 40 }));
       expect(purseLine().classList.contains('hidden')).toBe(true);
     });
 
@@ -1711,8 +1775,8 @@ describe('the service panel', () => {
     it('keeps its buttons across a render that changed nothing, and locks every trade while one is under way', () => {
       const p = mount();
       const lucidity = { ranks: [] };
-      const inventory = [purse(100), carried('cudgel', 1)];
-      const sell = (): Element | null => p.panel.root.querySelector('[data-ware="cudgel"] button');
+      const inventory = carrying({ coins: 100, bag: [item('cudgel')] });
+      const sell = (): Element | null => p.panel.root.querySelector('[data-item="cudgel-1"] button');
       p.render(mercus(), lucidity, inventory);
       const first = sell();
       p.render(mercus(), lucidity, inventory);
@@ -1722,16 +1786,22 @@ describe('the service panel', () => {
       expect(sell()).toBe(first);
 
       p.render(mercus(), lucidity, inventory, true);
-      expect(p.buttons()).toEqual(['Buy for 60c (disabled)', 'Buy for 150c (disabled)', 'Buy for 240c (disabled)', 'Sell for 15c (disabled)', 'Close']);
+      expect(
+        p
+          .buttons()
+          .filter((label) => label !== 'Close')
+          .every((label) => label.endsWith('(disabled)')),
+      ).toBe(true);
+      expect(p.buttons()).toContain('Sell for 10c (disabled)');
     });
 
     it('renders in German, naming each ware in the locale', () => {
       setLocale('de');
       const p = mount();
-      p.render(mercus(), { ranks: [] }, [purse(100), carried('cudgel', 1, 'right')]);
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, bag: [{ ...item('cap'), rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] }] }));
       expect(headings(p.panel)).toEqual(['Im Angebot', 'Verkaufen']);
       expect(ware(p.panel, 'sword')).toContain('Kurzschwert');
-      expect(ware(p.panel, 'cudgel')).toContain('In der Hand');
+      expect(sale(p.panel, 'cap-1')).toBe('LederkappeMagisch+1 Deckung+2 DeckungFür 30c verkaufen');
     });
   });
 });
@@ -1843,7 +1913,7 @@ describe('the play field and the panels through the shell', () => {
     deliver(entityFrame());
     deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'fighterMaster' }));
     deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
-    deliver({ tag: 'energy', payload: fullPools(NO_LUCIDITY) });
+    deliver({ tag: 'energy', payload: fullPools(NO_STATS) });
     deliver({ tag: 'lucidity', payload: { ranks: [] } });
     socket.sent.length = 0;
     const sent = (): SomnioMessage[] => socket.sent.map((text) => decodeSomnioMessage(text));
@@ -1880,7 +1950,7 @@ describe('the play field and the panels through the shell', () => {
     expect(p.tags()).not.toContain('engage');
   });
 
-  it("locks the player's facing on the body a mouse's right button presses, keeps it on their own body, and frees it on the ground", () => {
+  it("locks the player's facing on the body a mouse's right button presses, and frees it on the ground, under their own body too", () => {
     const p = playing();
     const pointer = onCanvas(p);
     p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
@@ -1891,14 +1961,15 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.session.predictor.walk).toBeUndefined();
 
     p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('self')!, right));
-    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
 
+    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('monster:1')!, right));
     p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, right));
     expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
     expect(p.shell.session.predictor.walk).toBeUndefined();
   });
 
-  it('frees the facing on a second right press at the body it is locked on, and locks it again on a third, ringing the target as the lock stands', () => {
+  it('frees the facing and slot 1 on a second right press at the body it is locked on, and takes both again on a third, marking the target as they stand', () => {
     const p = playing();
     const pointer = onCanvas(p);
     p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
@@ -1910,16 +1981,19 @@ describe('the play field and the panels through the shell', () => {
     rightPress('monster:1');
     rightPress('monster:1');
     expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
-    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', false]);
+    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', { locked: false, acting: false }]);
     rightPress('monster:1');
     expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
-    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', true]);
+    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', { locked: true, acting: true }]);
 
     rightPress('bren');
     expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['bren', true]);
-    expect(selection.mock.calls.at(-1)).toEqual(['bren', true]);
-    expect(p.sent().filter((message) => message.tag === 'target')).toEqual([
+    expect(selection.mock.calls.at(-1)).toEqual(['bren', { locked: true, acting: false }]);
+    expect(p.sent().filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
       { tag: 'target', payload: { targetId: 'monster:1' } },
+      { tag: 'engage', payload: { on: true } },
+      { tag: 'engage', payload: { on: false } },
+      { tag: 'engage', payload: { on: true } },
       { tag: 'target', payload: { targetId: 'bren' } },
     ]);
   });
@@ -2176,14 +2250,19 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.session.predictor.walk).toBeUndefined();
   });
 
-  it('stops the player on a press on their own body', () => {
+  it('walks to the ground under their own body on a tap there, and targets nothing', () => {
     const p = playing();
     const pointer = onCanvas(p);
     p.shell.session.predictor.walkTo({ x: 14, z: 10 });
+    const own = p.shell.pagePointOf('self')!;
 
-    p.canvas.dispatchEvent(pointer('pointerdown', p.shell.pagePointOf('self')!));
+    p.canvas.dispatchEvent(pointer('pointerdown', own));
+    window.dispatchEvent(pointer('pointerup', own));
 
-    expect(p.shell.session.predictor.walk).toBeUndefined();
+    const rect = p.canvas.getBoundingClientRect();
+    const under = p.shell.scene!.groundPointAt(((own.x - rect.left) / rect.width) * 2 - 1, 1 - ((own.y - rect.top) / rect.height) * 2)!;
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: expect.closeTo(under.x, 6), z: expect.closeTo(under.z, 6) } });
+    expect(p.shell.session.target).toBeUndefined();
   });
 
   it('aims the player at the point under the cursor at body height', () => {
@@ -2220,12 +2299,12 @@ describe('the play field and the panels through the shell', () => {
     const label = (name: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
     p.shell.session.pressEntity('bren');
     label('Players').click();
-    label('Bag').click();
+    label('Character').click();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
     const state = () => [
       p.shell.hud.chatOpen,
       p.shell.hud.isWindowOpen('players'),
-      p.shell.hud.isWindowOpen('bag'),
+      p.shell.hud.isWindowOpen('character'),
       p.shell.session.target,
       p.shell.controller.presentedOverlay?.kind,
     ];
@@ -2243,6 +2322,43 @@ describe('the play field and the panels through the shell', () => {
     expect(state()).toEqual([false, false, false, undefined, undefined]);
     escape();
     expect(state()).toEqual([false, false, false, undefined, 'gameMenu']);
+  });
+
+  it('opens and closes the Character window on C and on I while the world has the keyboard, and not while the chat has it or with a modifier', () => {
+    const p = playing();
+    const press = (key: string, init: KeyboardEventInit = {}): boolean =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }));
+    press('c');
+    expect(p.shell.hud.isWindowOpen('character')).toBe(true);
+    press('I');
+    expect(p.shell.hud.isWindowOpen('character')).toBe(false);
+    press('i', { metaKey: true });
+    press('c', { ctrlKey: true });
+    expect(p.shell.hud.isWindowOpen('character')).toBe(false);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    expect(p.shell.controller.isChatInputFocused).toBe(true);
+    press('c');
+    expect(p.shell.hud.isWindowOpen('character')).toBe(false);
+  });
+
+  it('opens and closes the Players window on O while the world has the keyboard, and not while the chat has it or with a modifier', () => {
+    const p = playing();
+    const press = (key: string, init: KeyboardEventInit = {}): boolean =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }));
+    press('o');
+    expect([p.shell.hud.isWindowOpen('players'), p.shell.hud.isWindowOpen('character')]).toEqual([true, false]);
+    press('O');
+    expect(p.shell.hud.isWindowOpen('players')).toBe(false);
+    press('o', { metaKey: true });
+    press('o', { ctrlKey: true });
+    press('o', { altKey: true });
+    expect(p.shell.hud.isWindowOpen('players')).toBe(false);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    expect(p.shell.controller.isChatInputFocused).toBe(true);
+    press('o');
+    expect(p.shell.hud.isWindowOpen('players')).toBe(false);
   });
 
   it('opens the chat on Enter while the world has the keyboard, and not while a control or an overlay has it', () => {
@@ -2294,11 +2410,11 @@ describe('the play field and the panels through the shell', () => {
       return p;
     }
 
-    /** A Healer with the Moonstone in hand, beside Bren and a Ghost. */
+    /** A Healer with the Moonstone in the off hand and the main hand empty, beside Bren and a Ghost. */
     function healing() {
       const p = withGhost();
       p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } });
-      p.deliver({ tag: 'inventory', payload: { rows: [{ slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' }] } });
+      p.deliver(inventoryFrame(carrying({ worn: [item('moonstone')] })));
       return p;
     }
 
@@ -2315,13 +2431,13 @@ describe('the play field and the panels through the shell', () => {
       expect(engageButton().disabled).toBe(false);
     });
 
-    it('is named for what it does at the target, Mend at a dreamer for a Healer with the Moonstone, greyed out at a nightmare, keeping its element', () => {
+    it('is named for what it does at the target, Mend at a dreamer and Attack at a nightmare for a Healer with the Moonstone, keeping its look greyed out and its element', () => {
       const p = healing();
       const before = engageButton();
       p.shell.session.pressEntity('bren');
       expect([named(engageButton()), engageButton().disabled]).toEqual(['Mend', false]);
       p.shell.session.pressEntity(GHOST);
-      expect([named(engageButton()), engageButton().disabled]).toEqual(['Mend', true]);
+      expect([named(engageButton()), engageButton().disabled]).toEqual(['Attack', false]);
       p.shell.session.pressOwnFrame();
       expect(named(engageButton())).toBe('Mend');
       p.deliver({ tag: 'condition', payload: { entityId: 'bren', condition: 'fallen' } });
@@ -2345,17 +2461,17 @@ describe('the play field and the panels through the shell', () => {
       expect(engages(p)).toEqual([{ on: true }, { on: false }, { on: true }]);
     });
 
-    it('goes off and greys out from a dreamer to a nightmare for a Healer with the Moonstone, keeping its name and its element', () => {
+    it('stays on from a dreamer to a nightmare for a Healer with the Moonstone, turning from Mend to Attack and keeping its element', () => {
       const p = healing();
       const before = engageButton();
       p.shell.session.pressEntity('bren');
       pressOne();
       p.shell.session.pressEntity(GHOST);
       p.shell.session.runTick(performance.now());
-      expect([named(engageButton()), engageButton().getAttribute('aria-pressed'), engageButton().disabled]).toEqual(['Mend', 'false', true]);
+      expect([named(engageButton()), engageButton().getAttribute('aria-pressed'), engageButton().disabled]).toEqual(['Attack', 'true', false]);
       pressOne();
       expect(engageButton()).toBe(before);
-      expect(engages(p)).toEqual([{ on: true }]);
+      expect(engages(p)).toEqual([{ on: true }, { on: false }]);
     });
 
     it.each<[string, (p: ReturnType<typeof playing>) => void]>([
@@ -2384,7 +2500,7 @@ describe('the play field and the panels through the shell', () => {
       const p = withGhost();
       p.shell.session.pressEntity(GHOST);
       const before = engageButton();
-      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), balanceCurrent } });
       pressOne();
       expect(engageButton()).toBe(before);
     });
@@ -2446,7 +2562,7 @@ describe('the play field and the panels through the shell', () => {
       p.deliver({ tag: 'cooldowns', payload: { globalSeconds: 0.75, cooldowns: [{ abilityId: 'brace', seconds: 15 }] } });
       const sweep = before.querySelector('.hud-sweep');
       expect([before.disabled, sweep?.classList.contains('hidden')]).toEqual([true, false]);
-      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), balanceCurrent } });
       pressKey(2);
       expect(uses(p)).toEqual([]);
       expect(brace()).toBe(before);
@@ -2519,7 +2635,7 @@ describe('the play field and the panels through the shell', () => {
       ];
       const before = elements();
 
-      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
+      for (const balanceCurrent of [90, 91, 92]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), balanceCurrent } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.5 } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.4 } });
 
@@ -2540,7 +2656,7 @@ describe('the play field and the panels through the shell', () => {
       p.shell.session.toggleGazeOn(GHOST);
       expect(label()).toBe('Target, hale, facing locked');
       expect(frames()[0]!.textContent).toBe(text);
-      for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), balanceCurrent } });
+      for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), balanceCurrent } });
       p.deliver({ tag: 'condition', payload: { entityId: GHOST, condition: 'failing' } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.2 } });
       expect(label()).toBe('Target, failing, facing locked');
@@ -2553,7 +2669,7 @@ describe('the play field and the panels through the shell', () => {
     it('targets the player on a press at their own frame, or their own name in Players, framed from their own energy, Healer or not', () => {
       const p = playing();
       const own = container.querySelector<HTMLButtonElement>('.hud-unit--self')!;
-      p.deliver({ tag: 'energy', payload: { ...fullPools(NO_LUCIDITY), healthCurrent: 30 } });
+      p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), healthCurrent: 30 } });
       own.querySelector<HTMLElement>('.hud-unit__name')!.click();
       expect(p.shell.session.target).toBe('self');
       expect(own.getAttribute('aria-pressed')).toBe('true');
@@ -2616,37 +2732,28 @@ describe('the play field and the panels through the shell', () => {
     let clock = 1000;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
     const p = playing();
-    const purse = { slot: 0, itemId: 'purse', quantity: 100 };
+    const cudgel = item('cudgel');
+    const dagger = item('dagger');
     p.deliver(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 9, z: 9, service: 'shopkeeper' }));
-    p.deliver({ tag: 'inventory', payload: { rows: [purse, { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' }] } });
+    p.deliver(inventoryFrame(carrying({ coins: 100, bag: [cudgel] })));
     p.shell.session.pressEntity(MERCUS);
     const panel = container.querySelector('.service-panel')!;
     const action = (ware: string): HTMLButtonElement => panel.querySelector(`[data-ware="${ware}"] button`)!;
 
     p.press('Buy for 60c');
     expect(action('cudgel').disabled).toBe(true);
-    p.deliver({
-      tag: 'inventory',
-      payload: {
-        rows: [
-          { ...purse, quantity: 40 },
-          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
-          { slot: 2, itemId: 'dagger', quantity: 1 },
-        ],
-        trade: { kind: 'bought', itemId: 'dagger', coins: 60 },
-      },
-    });
+    p.deliver(inventoryFrame(carrying({ coins: 40, bag: [cudgel, dagger] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }));
     clock += 600;
     p.shell.session.runTick(clock);
     expect(action('cudgel').disabled).toBe(false);
-    p.press('Sell for 15c');
+    p.press('Sell for 10c');
 
     // The tick reports the player's position too, which is no trade.
     expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
       { tag: 'target', payload: { targetId: MERCUS } },
       { tag: 'talk', payload: { npcId: MERCUS } },
-      { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
-      { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },
+      { tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } },
+      { tag: 'sell', payload: { npcId: MERCUS, itemId: cudgel.id } },
     ]);
   });
 

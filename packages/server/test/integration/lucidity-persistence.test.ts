@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import type { Character, InventoryRow, Lucidity } from '@somnio/core';
-import { PostgresCharacterRepository, PostgresInventoryRepository } from '@somnio/data';
+import type { Character, Inventory, ItemInstance, Lucidity } from '@somnio/core';
+import { PostgresCharacterRepository, PostgresItemRepository } from '@somnio/data';
+import { plain } from '../../../core/test/support/items.ts';
 import { bootTestServer, closeAndAwaitCleanup, drainFrames, frame, joinFreshPlayer, loginOverWire, pollUntil, startDatabase } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
@@ -19,8 +20,10 @@ afterAll(async () => {
   await harness.stop();
 });
 
+const NOTHING: Inventory = { coins: 0, equipped: {}, bag: [] };
+
 /** Registers a player, lets them leave, and writes `changes` over their row as a later checkpoint would. */
-async function seeded(prefix: string, changes: Partial<Character>, inventory: InventoryRow[]): Promise<Character> {
+async function seeded(prefix: string, changes: Partial<Character>, inventory: Inventory = NOTHING): Promise<Character> {
   const fresh = await joinFreshPlayer(server.url, prefix);
   const registered = (await characters.findByName(fresh.name))!;
   await closeAndAwaitCleanup(fresh, server);
@@ -33,7 +36,7 @@ async function seeded(prefix: string, changes: Partial<Character>, inventory: In
   return character;
 }
 
-it('what a dreamer has grown into joins as it was stored, and a checkpoint stores what changed and nothing else', async () => {
+it('what a dreamer has grown into and carries joins as it was stored, and a checkpoint stores what changed and nothing else', async () => {
   const lucidity: Lucidity = {
     role: 'healer',
     ranks: [
@@ -44,10 +47,20 @@ it('what a dreamer has grown into joins as it was stored, and a checkpoint store
     task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
   };
   const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 60, balanceMax: 100, spiritCurrent: 30, spiritMax: 100 };
-  const inventory: InventoryRow[] = [
-    { slot: 0, itemId: 'purse', quantity: 137, equippedHand: undefined },
-    { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
-  ];
+  // Nothing here adds to a pool, so the stored maxima stand.
+  const moonstone: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a1', ...plain('moonstone') };
+  const sword: ItemInstance = {
+    id: '00000000-0000-7000-8000-0000000000a2',
+    ...plain('sword'),
+    rarity: 'rare',
+    affixes: [
+      { affixId: 'damage', value: 2 },
+      { affixId: 'swing-speed', value: 5 },
+      { affixId: 'balance-recovery', value: 12 },
+    ],
+  };
+  const amulet: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a3', ...plain('amulet'), rarity: 'magic', affixes: [{ affixId: 'health', value: 5 }] };
+  const inventory: Inventory = { coins: 137, equipped: { mainHand: sword, offHand: moonstone }, bag: [{ place: 0, item: amulet }] };
   const stored = await seeded('lucid', { lucidity, energy }, inventory);
 
   const joined = await loginOverWire(server.url, stored.name);
@@ -55,10 +68,12 @@ it('what a dreamer has grown into joins as it was stored, and a checkpoint store
   expect(sent('energy')).toEqual(energy);
   expect(sent('lucidity')).toEqual(lucidity);
   expect(sent('inventory')).toEqual({
-    rows: [
-      { slot: 0, itemId: 'purse', quantity: 137 },
-      { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' },
+    coins: 137,
+    equipped: [
+      { slot: 'mainHand', item: sword },
+      { slot: 'offHand', item: moonstone },
     ],
+    bag: [{ place: 0, item: amulet }],
   });
 
   joined.client.send(frame({ tag: 'abandonTask', payload: {} }));
@@ -70,12 +85,12 @@ it('what a dreamer has grown into joins as it was stored, and a checkpoint store
     return row !== undefined && row.lastSeen.getTime() > stored.lastSeen.getTime() ? row : undefined;
   });
   expect(after).toMatchObject({ lucidity: { ...lucidity, task: undefined }, energy });
-  expect(await new PostgresInventoryRepository(harness.db).loadAll(stored.id)).toEqual(inventory);
+  expect(await new PostgresItemRepository(harness.db).load(stored.id)).toEqual(inventory);
 });
 
 it('a dreamer who left fallen joins fallen, and cannot move', async () => {
   const energy = { healthCurrent: 0, healthMax: 100, balanceCurrent: 80, balanceMax: 100, spiritCurrent: 100, spiritMax: 100 };
-  const stored = await seeded('fallen', { energy }, []);
+  const stored = await seeded('fallen', { energy });
   const joined = await loginOverWire(server.url, stored.name);
   const self = joined.join.find((message) => message.tag === 'entity' && message.payload.id === joined.entityId);
   expect(self).toMatchObject({ payload: { condition: 'fallen', x: stored.position.x, z: stored.position.z } });
@@ -97,7 +112,7 @@ it('a Mystic joins as stored, with the spirit their Spirit deepening gives and t
     task: undefined,
   };
   const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 115, spiritMax: 120 };
-  const stored = await seeded('mystic', { lucidity, energy }, []);
+  const stored = await seeded('mystic', { lucidity, energy });
 
   const joined = await loginOverWire(server.url, stored.name);
   const sent = (tag: string) => joined.join.find((message) => message.tag === tag)?.payload;

@@ -8,7 +8,9 @@ import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
 import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { STRIKE_AT } from '@/scene/combatEffects';
+import { LOOT_BEAM_NAME, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
+import { GrassSpring } from '@/scene/grassSpring';
 import { rasterizeGround } from '@/scene/groundField';
 import type { GroundField, GroundFieldInputs } from '@/scene/groundField';
 import type { GroundRasterizer } from '@/scene/groundRasterizer';
@@ -31,9 +33,10 @@ import { tailTip } from '@/scene/bubbleLayout';
 import type { ScreenPoint } from '@/scene/bubbleLayout';
 import { groundHeightAt, parseModelRegistry } from '@somnio/core';
 import type { Point } from '@somnio/core';
-import type { SectorView, SpeechKind } from '@somnio/protocol';
+import { RARITIES } from '@somnio/protocol';
+import type { LootMessage, Rarity, SectorView, SpeechKind } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
-import type { ClientEntity, SpeechBubbleRequest } from '@/client';
+import type { ClientEntity, SpeechBubbleRequest, TargetMark } from '@/client';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity } from './helpers/worldFixture';
 import { setLocale } from '@/i18n';
@@ -48,6 +51,8 @@ function emptyAssets(): ModelAssets {
   return {
     prewarm: async () => {},
     character: () => undefined,
+    hand: () => undefined,
+    ground: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
@@ -58,6 +63,8 @@ function resolvingAssets(): ModelAssets {
   return {
     prewarm: async () => {},
     character: () => new THREE.Object3D(),
+    hand: () => undefined,
+    ground: () => undefined,
     object: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)),
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
@@ -165,6 +172,9 @@ function planeSize(mesh: THREE.Mesh): { width: number; height: number } {
   const { width, height } = (mesh.geometry as THREE.PlaneGeometry).parameters;
   return { width, height };
 }
+
+/** The target's mark with slot 1 off and the gaze free. */
+const PLAIN_MARK: TargetMark = { locked: false, acting: false };
 
 /** Every ground ring in the scene: round the target, round a fallen body being raised, a mend's pulse, and a press's ring. */
 function rings(scene: WorldScene): THREE.Mesh[] {
@@ -643,6 +653,27 @@ describe('placeholders', () => {
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', characterModelId: 'ghost' }));
 
     expect(asked).toEqual(['ghost']);
+  });
+
+  it('hangs what each hand holds on its handslot bone, as the entity comes and as it changes, and nothing for an item without a model', () => {
+    const model = new THREE.Object3D();
+    const bones = { mainHand: Object.assign(new THREE.Bone(), { name: 'handslotr' }), offHand: Object.assign(new THREE.Bone(), { name: 'handslotl' }) };
+    model.add(bones.mainHand, bones.offHand);
+    const scene = makeScene({
+      ...emptyAssets(),
+      character: () => model,
+      hand: (baseId) => (baseId === 'unknown' ? undefined : Object.assign(new THREE.Object3D(), { name: baseId })),
+    });
+    const held = () => ({ mainHand: bones.mainHand.children.map(({ name }) => name), offHand: bones.offHand.children.map(({ name }) => name) });
+
+    scene.placeEntity(player({ held: { mainHand: 'sword', offHand: 'shield' } }));
+    expect(held()).toEqual({ mainHand: ['sword'], offHand: ['shield'] });
+
+    scene.updateHeld('self', { mainHand: 'mace' });
+    expect(held()).toEqual({ mainHand: ['mace'], offHand: [] });
+
+    scene.placeEntity(player({ held: { offHand: 'unknown' } }));
+    expect(held()).toEqual({ mainHand: [], offHand: [] });
   });
 });
 
@@ -1426,7 +1457,7 @@ describe('overlay quads', () => {
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(clientEntity({ id: 'peer-1', kind: 'peer', name: 'Mira' }));
-    scene.showSelection('peer-1', false);
+    scene.showSelection('peer-1', PLAIN_MARK);
 
     const materials = [...overlayPlates(scene), ...rings(scene)].map((mesh) => mesh.material as THREE.MeshBasicMaterial);
     expect(materials.length).toBeGreaterThanOrEqual(3);
@@ -1607,7 +1638,7 @@ describe('what a pointer is over, and the target', () => {
   it.each([
     ['a mouse', false, 0.3],
     ['a finger', true, 0.6],
-  ])("picks a body, and the player's own, from as far beside it as its pick radius under %s, and no further", (_label, coarse, radius) => {
+  ])('picks a body from as far beside it as its pick radius under %s, and no further', (_label, coarse, radius) => {
     const scene = makeScene();
     scene.coarsePointer = coarse;
     scene.placeEntity(player());
@@ -1618,10 +1649,292 @@ describe('what a pointer is over, and the target', () => {
       [1, 1.02],
     ] as const) {
       const besidePeer = besideBody(scene, { x: 13, z: 10 }, side * inside * radius);
-      const besideOwn = besideBody(scene, { x: 10, z: 10 }, side * inside * radius);
       expect(scene.entityAt(besidePeer.x, besidePeer.y)).toBe(inside < 1 ? 'peer' : undefined);
-      expect(scene.playerAt(besideOwn.x, besideOwn.y)).toBe(inside < 1);
     }
+  });
+
+  describe('a drop', () => {
+    const drop = (lootId: string, x: number, z: number, rarity: Rarity = 'rare'): LootMessage => ({
+      lootId,
+      x,
+      z,
+      contents: { kind: 'item', baseId: 'dagger', rarity },
+    });
+
+    /** A dagger as its ground model lies: low and long, its ground bounds centred on its origin. */
+    function lyingDagger(): THREE.Mesh {
+      return new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.1).translate(0, 0.025, 0));
+    }
+
+    /** The player at (10, 10), a Ghost standing on a drop at (13, 10), and a drop on open ground at (10, 13). */
+    function dropsAround(scene = makeScene({ ...emptyAssets(), ground: lyingDagger })): WorldScene {
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 13, z: 10 } }));
+      scene.showLoot(drop('under', 13, 10));
+      scene.showLoot(drop('open', 10, 13));
+      return scene;
+    }
+
+    /** The visible meshes of the drops named `name`. */
+    function shown(scene: WorldScene, name: string): THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] {
+      const meshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = [];
+      scene.scene.getObjectByName(LOOT_MARKERS_NAME)!.traverseVisible((object) => {
+        if (object.name === name) meshes.push(object as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>);
+      });
+      return meshes;
+    }
+
+    it("is pressed by its name before a body, a body before its model, and its model before the ground, the player's own body no part of it", () => {
+      const scene = dropsAround();
+      // A body standing on the ground under the name is drawn over it, and the name still takes the press.
+      const label = scene._viewportPointOfLoot('under', 'label')!;
+      const underName = scene.groundPointAt(label.x, label.y)!;
+      scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: underName.x, z: underName.z } }));
+      expect(scene.entityAt(label.x, label.y)).toBe('bren');
+      expect(scene.pressTargetAt(label.x, label.y)).toEqual({ kind: 'loot', lootId: 'under' });
+      scene.removeEntity('bren');
+
+      const under = scene._viewportPointOfLoot('under', 'model')!;
+      expect(scene.pressTargetAt(under.x, under.y)).toEqual({ kind: 'entity', entityId: 'monster:1' });
+      const open = scene._viewportPointOfLoot('open', 'model')!;
+      expect(scene.pressTargetAt(open.x, open.y)).toEqual({ kind: 'loot', lootId: 'open' });
+      const body = viewportOf(scene, 10, CHARACTER_SCALE / 2, 10);
+      const underBody = scene.groundPointAt(body.x, body.y)!;
+      expect(scene.pressTargetAt(body.x, body.y)).toEqual({ kind: 'ground', point: { x: underBody.x, z: underBody.z } });
+      scene.showLoot(drop('own', 10, 10));
+      const own = scene._viewportPointOfLoot('own', 'model')!;
+      expect(scene.pressTargetAt(own.x, own.y)).toEqual({ kind: 'loot', lootId: 'own' });
+      const ground = viewportOf(scene, 7, 0, 13);
+      expect(scene.pressTargetAt(ground.x, ground.y)).toMatchObject({ kind: 'ground', point: { x: expect.closeTo(7, 5), z: expect.closeTo(13, 5) } });
+    });
+
+    /** How far up the screen a mesh is drawn, lowest and highest, in viewport units. */
+    function screenSpan(scene: WorldScene, mesh: THREE.Mesh): [number, number] {
+      mesh.updateWorldMatrix(true, false);
+      const position = mesh.geometry.getAttribute('position');
+      const heights = Array.from({ length: position.count }, (_, index) => {
+        const vertex = new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld);
+        return viewportOf(scene, vertex.x, vertex.y, vertex.z).y;
+      });
+      return [Math.min(...heights), Math.max(...heights)];
+    }
+
+    it('stands its name centred under its model on screen, its top edge clear of the model, whatever way the model lies', () => {
+      const laid: THREE.Mesh[] = [];
+      const scene = dropsAround(makeScene({ ...emptyAssets(), ground: () => laid[laid.push(lyingDagger()) - 1] }));
+      const plates: THREE.Mesh[] = [];
+      scene.scene.getObjectByName(LOOT_MARKERS_NAME)!.traverseVisible((object) => {
+        if ((object as THREE.Mesh).isMesh && ((object as THREE.Mesh).material as THREE.Material).depthTest === false) plates.push(object as THREE.Mesh);
+      });
+      expect(plates).toHaveLength(2);
+      for (const [index, lootId] of ['under', 'open'].entries()) {
+        const label = scene._viewportPointOfLoot(lootId, 'label')!;
+        const model = scene._viewportPointOfLoot(lootId, 'model')!;
+        expect(label.x).toBeCloseTo(model.x, 6);
+        const [modelBottom] = screenSpan(scene, laid[index]!);
+        const [, plateTop] = screenSpan(scene, plates[index]!);
+        expect(plateTop, lootId).toBeLessThan(modelBottom);
+        expect(scene.pressTargetAt(label.x, plateTop - 0.001)).toEqual({ kind: 'loot', lootId });
+      }
+    });
+
+    it('lies at a yaw of its own, the same each time it is drawn', () => {
+      const laid: THREE.Object3D[] = [];
+      const scene = dropsAround(makeScene({ ...emptyAssets(), ground: () => laid[laid.push(lyingDagger()) - 1] }));
+      const [under, open] = laid.map((model) => model.parent!.rotation.y);
+      expect(Math.abs(under! - open!)).toBeGreaterThan(0.1);
+      scene.removeLoot('under');
+      scene.showLoot(drop('under', 13, 10));
+      expect(laid.at(-1)!.parent!.rotation.y).toBe(under);
+    });
+
+    it('draws its name alone while it has no model, and lays its model once the models are loaded', async () => {
+      let loaded = false;
+      const scene = dropsAround(makeScene({ ...emptyAssets(), ground: () => (loaded ? lyingDagger() : undefined) }));
+      expect(scene._viewportPointOfLoot('open', 'model')).toBeUndefined();
+      const label = scene._viewportPointOfLoot('open', 'label')!;
+      expect(scene.pressTargetAt(label.x, label.y)).toEqual({ kind: 'loot', lootId: 'open' });
+
+      loaded = true;
+      await scene.prewarm();
+      const model = scene._viewportPointOfLoot('open', 'model')!;
+      expect(scene.pressTargetAt(model.x, model.y)).toEqual({ kind: 'loot', lootId: 'open' });
+    });
+
+    it('raises a beam from a rare drop alone, and glows under a magic and a rare one in its colour', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      for (const [index, rarity] of RARITIES.entries()) scene.showLoot(drop(rarity, 4 + index * 3, 4, rarity));
+      expect(shown(scene, LOOT_BEAM_NAME).map((beam) => beam.parent!.position.x)).toEqual([10]);
+      expect(shown(scene, LOOT_GLOW_NAME).map((glow) => [glow.parent!.position.x, glow.material.color.getHex()])).toEqual([
+        [7, RARITY_COLORS.magic],
+        [10, RARITY_COLORS.rare],
+      ]);
+    });
+
+    it('brightens and dims its beam, and holds it steady under reduced motion', () => {
+      for (const reducedMotion of [false, true]) {
+        const scene = new WorldScene({ ...emptyAssets(), ground: lyingDagger }, TEST_REGISTRY, 1, reducedMotion);
+        scene.enterSpace(world());
+        scene.placeEntity(player());
+        scene.showLoot(drop('rare', 12, 10));
+        const opacities = [0.3, 0.6, 0.6].map((seconds) => {
+          scene.tick(seconds);
+          return shown(scene, LOOT_BEAM_NAME)[0]!.material.opacity;
+        });
+        expect(new Set(opacities).size, `reduced motion ${reducedMotion}`).toBe(reducedMotion ? 1 : 3);
+      }
+    });
+
+    it('is pressed no more once it is gone', () => {
+      const scene = dropsAround();
+      const open = scene._viewportPointOfLoot('open', 'model')!;
+      scene.removeLoot('open');
+      expect(scene._viewportPointOfLoot('open', 'model')).toBeUndefined();
+      expect(scene.pressTargetAt(open.x, open.y)).toMatchObject({ kind: 'ground' });
+    });
+
+    it('waits for a free marker beyond the pool, the newer of two drops as far from the player, and takes the first one freed', () => {
+      const scene = makeScene();
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(drop(`loot-${index}`, 2 + index, 4));
+      const waiting = `loot-${LOOT_MARKER_POOL_SIZE}`;
+      expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
+      scene.removeLoot('loot-3');
+      expect(scene._viewportPointOfLoot(waiting, 'label')).toBeDefined();
+    });
+
+    it('draws the drops nearest the player while more lie than the pool holds, and chooses them again as the player walks', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      // The pool's worth of older drops lie along the north edge, the first furthest from the player at (10, 10).
+      for (let index = 0; index < LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(drop(`far-${index}`, 1 + index, 1));
+      scene.showLoot(drop('near', 11, 10));
+      const drawn = (): string[] =>
+        ['near', ...Array.from({ length: LOOT_MARKER_POOL_SIZE }, (_, index) => `far-${index}`)].filter(
+          (lootId) => scene._viewportPointOfLoot(lootId, 'label') !== undefined,
+        );
+
+      expect(drawn()).toHaveLength(LOOT_MARKER_POOL_SIZE);
+      expect(drawn()).not.toContain('far-0');
+      for (const part of ['label', 'model'] as const) {
+        const near = scene._viewportPointOfLoot('near', part)!;
+        expect(scene.pressTargetAt(near.x, near.y), part).toEqual({ kind: 'loot', lootId: 'near' });
+      }
+
+      // Walking toward the first of them hands it the marker of the one now furthest.
+      scene.updatePosition('self', { x: 2, z: 3 }, 0, 270);
+      scene.tick(1 / 60);
+      expect(drawn()).toHaveLength(LOOT_MARKER_POOL_SIZE);
+      expect(drawn()).toContain('far-0');
+      expect(drawn()).not.toContain('far-15');
+      const first = scene._viewportPointOfLoot('far-0', 'label')!;
+      expect(scene.pressTargetAt(first.x, first.y)).toEqual({ kind: 'loot', lootId: 'far-0' });
+    });
+
+    it('chooses the drops it draws again once a waiting one lies a quarter metre nearer than a drawn one, and trades no marker over less', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      for (let index = 0; index < LOOT_MARKER_POOL_SIZE - 1; index += 1)
+        scene.showLoot(drop(`near-${index}`, 9 + (index % 5) * 0.5, 11 + Math.floor(index / 5) * 0.5));
+      // As far from the player at (10, 10) as each other: the older takes the last marker.
+      scene.showLoot(drop('west', 5, 10));
+      scene.showLoot(drop('east', 15, 10));
+      const drawn = (): [boolean, boolean] => [
+        scene._viewportPointOfLoot('west', 'label') !== undefined,
+        scene._viewportPointOfLoot('east', 'label') !== undefined,
+      ];
+      expect(drawn()).toEqual([true, false]);
+
+      // Shifting either way by a tenth of a metre, the east drop is at most 0.2 m nearer, inside the margin, and the marker stays.
+      for (const x of [10.1, 9.9, 10.1, 10, 10.1]) {
+        scene.updatePosition('self', { x, z: 10 }, 0, 90);
+        scene.tick(1 / 60);
+        expect(drawn(), `at ${x}`).toEqual([true, false]);
+      }
+
+      // At (10.2, 10) it is 0.4 m nearer, and takes the marker.
+      scene.updatePosition('self', { x: 10.2, z: 10 }, 0, 90);
+      scene.tick(1 / 60);
+      expect(drawn()).toEqual([false, true]);
+      // Back a tenth, the west drop is no nearer, and nothing trades back.
+      for (const x of [10.1, 10.2, 10.1]) {
+        scene.updatePosition('self', { x, z: 10 }, 0, 270);
+        scene.tick(1 / 60);
+        expect(drawn(), `at ${x}`).toEqual([false, true]);
+      }
+    });
+
+    it('draws a drop that comes to the feet of a player among a cluster of drops once it lies a margin nearer than a drawn one', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      // Thrown drops lie about a metre round the player at (10, 10): one more than the pool holds, the newest waiting.
+      const ring = Array.from({ length: LOOT_MARKER_POOL_SIZE + 1 }, (_, index) => {
+        const angle = (index / (LOOT_MARKER_POOL_SIZE + 1)) * Math.PI * 2;
+        return drop(`ring-${index}`, 10 + Math.cos(angle) * (1 + index * 0.01), 10 + Math.sin(angle) * (1 + index * 0.01));
+      });
+      for (const loot of ring) scene.showLoot(loot);
+      const waiting = ring.at(-1)!;
+      expect(scene._viewportPointOfLoot(waiting.lootId, 'label')).toBeUndefined();
+
+      // Six tenths of a metre toward it, it lies 0.56 m away and every drawn drop beyond it lies further.
+      const toward = Math.atan2(waiting.z - 10, waiting.x - 10);
+      scene.updatePosition('self', { x: 10 + Math.cos(toward) * 0.6, z: 10 + Math.sin(toward) * 0.6 }, 0, 0);
+      scene.tick(1 / 60);
+      const label = scene._viewportPointOfLoot(waiting.lootId, 'label')!;
+      expect(scene.pressTargetAt(label.x, label.y)).toEqual({ kind: 'loot', lootId: waiting.lootId });
+    });
+
+    it('hands the marker a far drop in the air held to a nearer drop waiting once it lands, the player standing still', () => {
+      for (const stall of [false, true]) {
+        let now = 0;
+        const scene = makeScene({ ...emptyAssets(), ground: lyingDagger }, () => now);
+        scene.enterSpace(world());
+        scene.placeEntity(player());
+        for (let index = 0; index < LOOT_MARKER_POOL_SIZE - 1; index += 1)
+          scene.showLoot(drop(`near-${index}`, 9 + (index % 5) * 0.5, 11 + Math.floor(index / 5) * 0.5));
+        scene.showLoot({ ...drop('thrown', 2, 2), from: { x: 2.5, z: 2 } });
+        scene.showLoot(drop('waiting', 10, 14));
+        expect(scene._viewportPointOfLoot('thrown', 'label')).toBeDefined();
+        expect(scene._viewportPointOfLoot('waiting', 'label')).toBeUndefined();
+
+        if (stall) {
+          // A hidden tab draws no frame for two seconds; the drop lies where it fell on the first frame back.
+          now = 2000;
+          scene.tick(2);
+        } else {
+          for (let frame = 0; frame < 60; frame += 1) {
+            now += 1000 / 60;
+            scene.tick(1 / 60);
+          }
+        }
+        expect(scene._viewportPointOfLoot('thrown', 'label'), `stalled ${stall}`).toBeUndefined();
+        expect(scene._viewportPointOfLoot('waiting', 'label'), `stalled ${stall}`).toBeDefined();
+      }
+    });
+
+    it('keeps the marker of a drop in the air until it lands, whatever comes nearer meanwhile', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      scene.showLoot({ ...drop('thrown', 4, 4), from: { x: 4.5, z: 4 } });
+      for (let index = 0; index < LOOT_MARKER_POOL_SIZE; index += 1)
+        scene.showLoot(drop(`near-${index}`, 10 + (index % 4) * 0.5, 11 + Math.floor(index / 4) * 0.5));
+      expect(scene._viewportPointOfLoot('thrown', 'label')).toBeDefined();
+      expect(scene._viewportPointOfLoot('near-15', 'label')).toBeUndefined();
+
+      for (let frame = 0; frame < 60; frame += 1) scene.tick(1 / 60);
+      scene.updatePosition('self', { x: 10, z: 11 }, 0, 0);
+      scene.tick(1 / 60);
+      expect(scene._viewportPointOfLoot('thrown', 'label')).toBeUndefined();
+      expect(scene._viewportPointOfLoot('near-15', 'label')).toBeDefined();
+    });
   });
 
   it('rings the target, and frees the ring when another is chosen, none is, or the entity leaves', () => {
@@ -1630,40 +1943,40 @@ describe('what a pointer is over, and the target', () => {
     scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
     scene.placeEntity(player({ id: 'cara', kind: 'peer', position: { x: 8, z: 10 } }));
 
-    scene.showSelection('bren', false);
+    scene.showSelection('bren', PLAIN_MARK);
     expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([12]);
 
-    scene.showSelection('cara', false);
+    scene.showSelection('cara', PLAIN_MARK);
     expect(rings(scene).map((ring) => ring.parent?.position.x)).toEqual([8]);
-    scene.showSelection(undefined, false);
+    scene.showSelection(undefined, PLAIN_MARK);
     expect(rings(scene)).toEqual([]);
 
-    scene.showSelection('nobody', false);
+    scene.showSelection('nobody', PLAIN_MARK);
     expect(rings(scene)).toEqual([]);
-    scene.showSelection('bren', false);
+    scene.showSelection('bren', PLAIN_MARK);
     scene.removeEntity('bren');
     expect(rings(scene)).toEqual([]);
   });
 
-  it('draws the target of a locked gaze as a gold reticle with four ticks pointing in, and swaps it at once both ways', () => {
+  it('draws the target in green, in gold while slot 1 acts on it, and as a reticle with four ticks pointing in while the gaze is locked, swapping at once each way', () => {
     const scene = makeScene();
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: 12, z: 10 } }));
     const colorOf = (mesh: THREE.Mesh): number => (mesh.material as THREE.MeshBasicMaterial).color.getHex();
 
-    scene.showSelection('bren', false);
+    scene.showSelection('bren', PLAIN_MARK);
     const [plain] = rings(scene);
     expect(plain!.children).toEqual([]);
-    scene.showSelection('bren', false);
+    scene.showSelection('bren', { ...PLAIN_MARK });
     expect(rings(scene)).toEqual([plain]);
 
     const disposePlain = vi.spyOn(plain!.geometry, 'dispose');
-    scene.showSelection('bren', true);
+    scene.showSelection('bren', { locked: true, acting: false });
     const [reticle] = rings(scene);
     expect(disposePlain).toHaveBeenCalled();
     expect(reticle).not.toBe(plain);
     expect(reticle!.parent?.position.x).toBe(12);
-    expect(colorOf(reticle!)).not.toBe(colorOf(plain!));
+    expect(colorOf(reticle!)).toBe(colorOf(plain!));
     const [ticks] = reticle!.children as THREE.Mesh[];
     expect(reticle!.children).toHaveLength(1);
     expect(ticks!.material).toBe(reticle!.material);
@@ -1680,12 +1993,17 @@ describe('what a pointer is over, and the target', () => {
       expect(Math.min(radius(1), radius(2))).toBeGreaterThan(outer);
     }
 
-    const disposeTicks = vi.spyOn(ticks!.geometry, 'dispose');
-    const disposeMaterial = vi.spyOn(reticle!.material as THREE.Material, 'dispose');
-    scene.showSelection('bren', false);
+    scene.showSelection('bren', { locked: true, acting: true });
+    const [acting] = rings(scene);
+    expect(acting!.children).toHaveLength(1);
+    expect(colorOf(acting!)).not.toBe(colorOf(plain!));
+
+    const disposeTicks = vi.spyOn((acting!.children[0] as THREE.Mesh).geometry, 'dispose');
+    const disposeMaterial = vi.spyOn(acting!.material as THREE.Material, 'dispose');
+    scene.showSelection('bren', { locked: false, acting: true });
     expect(rings(scene)).toHaveLength(1);
     expect(rings(scene)[0]!.children).toEqual([]);
-    expect(colorOf(rings(scene)[0]!)).toBe(colorOf(plain!));
+    expect(colorOf(rings(scene)[0]!)).toBe(colorOf(acting!));
     expect(disposeTicks).toHaveBeenCalled();
     expect(disposeMaterial).toHaveBeenCalledTimes(1);
   });
@@ -2425,7 +2743,7 @@ describe('name plaques hang off the entity node', () => {
       scene.placeEntity(player({ id: 'hale', kind: 'peer', position: { x: 8, z: 10 } }));
       scene.placeEntity(player({ id: 'target', kind: 'peer', position: { x: 11, z: 10 } }));
       scene.placeEntity(player({ id: 'hurt', kind: 'peer', condition: 'hurt', position: { x: 12, z: 10 } }));
-      scene.showSelection('target', false);
+      scene.showSelection('target', PLAIN_MARK);
       scene.tick(0.016);
       return scene;
     }
@@ -2468,7 +2786,7 @@ describe('name plaques hang off the entity node', () => {
       const scene = crowd();
       expect([8, 10, 11, 12].map((x) => depthTested(plateAt(scene, x)!))).toEqual([true, true, false, true]);
 
-      scene.showSelection('hale', false);
+      scene.showSelection('hale', PLAIN_MARK);
       scene.tick(0.016);
       expect(plateAt(scene, 8)!.renderOrder).toBeGreaterThan(plateAt(scene, 12)!.renderOrder);
       expect([8, 10, 11, 12].map((x) => depthTested(plateAt(scene, x)!))).toEqual([false, true, true, true]);
@@ -2481,7 +2799,7 @@ describe('name plaques hang off the entity node', () => {
       scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
       expect(plateAt(scene, 12)).toBeUndefined();
 
-      scene.showSelection('monster:1', false);
+      scene.showSelection('monster:1', PLAIN_MARK);
       expect(plateAt(scene, 12)).toBeDefined();
 
       // Struck and healed again while targeted, it keeps its name.
@@ -2489,7 +2807,7 @@ describe('name plaques hang off the entity node', () => {
       scene.updateCondition('monster:1', 'hale');
       expect(plateAt(scene, 12)).toBeDefined();
 
-      scene.showSelection(undefined, false);
+      scene.showSelection(undefined, PLAIN_MARK);
       expect(plateAt(scene, 12)).toBeUndefined();
     });
   });
@@ -2783,6 +3101,98 @@ describe('scatter', () => {
       const bent = tilts(group).some((attribute) => [...(attribute.array as Float32Array)].some((value) => Math.abs(value) > 0.1));
       expect(bent, `foot at ${height} m`).toBe(bends);
     }
+  });
+
+  /** A scene grown with grass, and the root of its first tuft, whose lean `tilt` reads. */
+  function grown(assets: Partial<ModelAssets>): { scene: WorldScene; root: THREE.Vector3; tilt: () => number; bent: () => boolean } {
+    const scene = makeScene({ ...scatterAssets(), ...assets });
+    scene.addSector(sector());
+    scene.tick(0.016);
+    const group = scatterGroups(scene)[0]!;
+    const first = group.children[0] as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    first.getMatrixAt(0, matrix);
+    const array = first.geometry.getAttribute('aTilt').array as Float32Array;
+    return {
+      scene,
+      root: new THREE.Vector3().setFromMatrixPosition(matrix),
+      tilt: () => Math.hypot(array[0]!, array[1]!),
+      bent: () => tilts(group).some((attribute) => [...(attribute.array as Float32Array)].some((value) => Math.abs(value) > 0.1)),
+    };
+  }
+
+  it('bends the grass a held sword hanging into it passes through, and none for one held above it', () => {
+    for (const [handHeight, bends] of [
+      [0.5, true],
+      [1.5, false],
+    ] as const) {
+      // A foot lifted clear of the grass, so only the sword can bend it.
+      const model = footed(0.2);
+      const hand = Object.assign(new THREE.Bone(), { name: 'handslotr' });
+      hand.position.y = handHeight / CHARACTER_SCALE;
+      model.add(hand);
+      const sword = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04).translate(0, -0.3, 0));
+      const { scene, root, bent } = grown({ character: () => model, hand: sword });
+      scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x + 0.02, z: root.z }, held: { mainHand: 'sword' } }));
+      for (let frame = 0; frame < 10; frame += 1) scene.tick(1 / 60);
+      expect(bent(), `hand at ${handHeight} m`).toBe(bends);
+    }
+  });
+
+  /** A dagger as its ground model lies: low and long. */
+  const lyingDagger = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.1).translate(0, 0.025, 0));
+  const dagger = (lootId: string, at: { x: number; z: number }, overrides: Partial<LootMessage> = {}): LootMessage => ({
+    lootId,
+    x: at.x,
+    z: at.z,
+    contents: { kind: 'item', baseId: 'dagger', rarity: 'plain' },
+    ...overrides,
+  });
+
+  it('presses the grass under a lying drop flat, and lets it spring back once the drop is gone', () => {
+    const { scene, root, tilt } = grown({ ground: lyingDagger });
+    scene.showLoot(dagger('loot-1', root));
+    for (let frame = 0; frame < 30; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeGreaterThan(1.45);
+
+    scene.removeLoot('loot-1');
+    for (let frame = 0; frame < 180; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeLessThan(0.05);
+  });
+
+  it('presses nothing with a drop in the air, until it lands', () => {
+    const { scene, root, tilt } = grown({ ground: lyingDagger });
+    scene.showLoot(dagger('loot-1', root, { from: { x: root.x + 1, z: root.z } }));
+    for (let frame = 0; frame < 24; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBe(0);
+
+    for (let frame = 0; frame < 30; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeGreaterThan(1);
+  });
+
+  it('presses the grass flat as a thrown drop touches down, while it still hops, as an impact does', () => {
+    const { scene, root, tilt } = grown({ ground: lyingDagger });
+    scene.showLoot(dagger('loot-1', root, { from: { x: root.x + 1, z: root.z } }));
+    // Still in the air at 38 frames of a nightmare's 0.65 s burst.
+    for (let frame = 0; frame < 38; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBe(0);
+
+    // Four frames later it is down and hopping, and the grass under it already lies flat.
+    for (let frame = 0; frame < 4; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeGreaterThan(1.2);
+  });
+
+  it('touches the grass once for each held item and each drop drawn, however many lie', () => {
+    const model = footed(0.2);
+    model.add(Object.assign(new THREE.Bone(), { name: 'handslotr' }), Object.assign(new THREE.Bone(), { name: 'handslotl' }));
+    const { scene, root } = grown({ ground: lyingDagger, character: () => model, hand: () => new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1)) });
+    scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x, z: root.z }, held: { mainHand: 'sword', offHand: 'shield' } }));
+    for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(dagger(`loot-${index}`, { x: 2 + index, z: 4 }));
+    const step = vi.spyOn(GrassSpring.prototype, 'step');
+    scene.tick(1 / 60);
+    const [contacts] = step.mock.calls[0]!;
+    step.mockRestore();
+    expect(contacts).toHaveLength(2 + LOOT_MARKER_POOL_SIZE);
   });
 });
 

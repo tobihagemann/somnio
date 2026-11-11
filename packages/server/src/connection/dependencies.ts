@@ -1,4 +1,4 @@
-import type { AccountRepository, CharacterRepository, InventoryRepository, NPCDialogStateRepository, SessionRepository } from '@somnio/data';
+import type { AccountRepository, CharacterRepository, ItemRepository, NPCDialogStateRepository, SessionRepository } from '@somnio/data';
 import type { Logger } from '../logging.ts';
 import type { WorldClockService } from '../services/worldClockService.ts';
 import type { WorldRouter } from '../world/worldRouter.ts';
@@ -8,7 +8,7 @@ import type { AttemptLimiter } from './attemptLimiter.ts';
 export interface ConnectionDependencies {
   accounts: AccountRepository;
   characters: CharacterRepository;
-  inventories: InventoryRepository;
+  items: ItemRepository;
   npcDialogStates: NPCDialogStateRepository;
   sessions: SessionRepository;
   worldRouter: WorldRouter;

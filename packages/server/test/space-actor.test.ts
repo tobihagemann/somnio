@@ -1,16 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, sectorView } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { SpaceActor } from '../src/world/spaceActor.ts';
+import { wearing } from './support/combat.ts';
 import { collectMessages, entities } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
 import { attachPlayer, makeCharacter, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
 function actor(overrides: Partial<Sector> = {}) {
   const sector = makeSector('TestSector', overrides);
-  return { sector, space: new SpaceActor(makeWorld([sector]), OUTDOOR_SPACE_ID, { logger: testLogger() }) };
+  return { sector, space: new SpaceActor(makeWorld([sector]), OUTDOOR_SPACE_ID, { logger: testLogger(), requestDropSave: () => {} }) };
 }
 
 describe('SpaceActor.attach', () => {
@@ -36,6 +37,7 @@ describe('SpaceActor.attach', () => {
         facing: 0,
         gait: 'jog',
         condition: 'hale',
+        held: {},
       },
     });
     expect(messages[5]).toEqual({ tag: 'lucidity', payload: { ranks: [] } });
@@ -62,14 +64,30 @@ describe('SpaceActor.attach', () => {
       placements: [{ id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 }],
     });
     const outbox = new ConnectionOutbox(1024);
-    expect(() => space.attach(makeCharacter({ x: 2, z: 2 }), [], outbox, 0, 'en')).toThrow();
+    expect(() => space.attach(makeCharacter({ x: 2, z: 2 }), wearing(), outbox, 0, 'en')).toThrow();
     expect(await collectMessages(outbox)).toEqual([]);
     expect(space.snapshotForCheckpoint()).toEqual([]);
   });
 
   it('refuses a position no sector of the space holds', () => {
     const { space } = actor();
-    expect(() => space.attach(makeCharacter({ x: 25, z: 2 }), [], new ConnectionOutbox(1024), 0, 'en')).toThrow(/no sector/);
+    expect(() => space.attach(makeCharacter({ x: 25, z: 2 }), wearing(), new ConnectionOutbox(1024), 0, 'en')).toThrow(/no sector/);
+  });
+});
+
+describe('a checkpoint', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("carries a lastSeen strictly after the player's last one, though taken in the same millisecond", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { space } = actor();
+    const { character, entityId } = attachPlayer(space, { x: 2, z: 2 }, 'alice');
+    const taken = [space.snapshotForCheckpoint()[0]!, space.snapshotForPlayer(entityId)!, space.handOver(entityId, true)!.checkpoint];
+    const joined = character.lastSeen.getTime();
+    expect(joined).toBe(Date.now());
+    expect(taken.map((checkpoint) => checkpoint.character.lastSeen.getTime())).toEqual([joined + 1, joined + 2, joined + 3]);
   });
 });
 

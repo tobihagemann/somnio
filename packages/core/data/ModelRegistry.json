@@ -13,6 +13,7 @@
           "Running_Strafe_Right",
           "Death_A",
           "Hit_A",
+          "Throw",
           "Melee_1H_Attack_Slice_Horizontal",
           "Ranged_Magic_Raise",
           "Melee_Block",
@@ -70,6 +71,32 @@
         "stem": "Gespenst"
       }
     }
+  ],
+  "handModels": [
+    { "id": "dagger", "stem": "HandDagger" },
+    { "id": "cudgel", "stem": "HandCudgel" },
+    { "id": "sword", "stem": "HandSword" },
+    { "id": "mace", "stem": "HandMace" },
+    { "id": "buckler", "stem": "HandBuckler" },
+    { "id": "shield", "stem": "HandShield" },
+    { "id": "moonstone", "stem": "HandMoonstone" },
+    { "id": "wand", "stem": "HandWand" }
+  ],
+  "groundModels": [
+    { "id": "dagger", "stem": "GroundDagger" },
+    { "id": "cudgel", "stem": "GroundCudgel" },
+    { "id": "sword", "stem": "GroundSword" },
+    { "id": "mace", "stem": "GroundMace" },
+    { "id": "buckler", "stem": "GroundBuckler" },
+    { "id": "shield", "stem": "GroundShield" },
+    { "id": "wand", "stem": "GroundWand" },
+    { "id": "cap", "stem": "GroundCap" },
+    { "id": "tunic", "stem": "GroundTunic" },
+    { "id": "gloves", "stem": "GroundGloves" },
+    { "id": "trousers", "stem": "GroundTrousers" },
+    { "id": "boots", "stem": "GroundBoots" },
+    { "id": "amulet", "stem": "GroundAmulet" },
+    { "id": "ring", "stem": "GroundRing" }
   ],
   "objectModels": [
     {

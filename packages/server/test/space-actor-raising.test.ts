@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { COMBAT, PRACTICE } from '@somnio/core';
-import type { Character, InventoryRow, Point } from '@somnio/core';
+import type { Character, Inventory, ItemInstance, Point } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
+import { plain } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
-import { BESIDE_GHOST, CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, arena, characterOf, energy, energyOf, engage, lucidity, payloads } from './support/combat.ts';
+import { BESIDE_GHOST, GHOST, MOONSTONE, arena, carrying, characterOf, energy, energyOf, engage, lucidity, payloads, wearing } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeSectorLine } from './support/sectorFactory.ts';
 
@@ -26,12 +27,7 @@ function stepsUntilRaised({ space, steps }: Arena, entityId: string): number {
   return count;
 }
 
-function pair(
-  space: Arena['space'],
-  healer: Partial<Character> = HEALER,
-  target: Partial<Character> = FALLEN,
-  inventory: InventoryRow[] = [MOONSTONE_IN_HAND],
-) {
+function pair(space: Arena['space'], healer: Partial<Character> = HEALER, target: Partial<Character> = FALLEN, inventory: Inventory = wearing(MOONSTONE)) {
   return {
     healer: attachPlayer(space, HEALER_AT, 'healer', { character: healer, inventory }),
     target: attachPlayer(space, TARGET_AT, 'target', { character: target }),
@@ -69,7 +65,7 @@ describe('mending', () => {
   /** The arena is the west of a line of three sectors, so a player in the east sees the mended dreamer's sector and not the Healer's. */
   it("shows a mend to whoever sees the mended dreamer's sector, not the Healer's", async () => {
     const { space, steps } = arena({}, { ghost: false, sectors: makeSectorLine().slice(1) });
-    const healer = attachPlayer(space, { x: 19.7, z: 10 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 19.7, z: 10 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const target = attachPlayer(space, { x: 20.3, z: 10 }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
     const east = attachPlayer(space, { x: 45, z: 10 }, 'east');
     engage(space, target.entityId, healer.entityId);
@@ -106,7 +102,7 @@ describe('mending', () => {
     const { space, steps } = arena({}, { ghost: false });
     const healer = attachPlayer(space, HEALER_AT, 'healer', {
       character: { ...HEALER, energy: energy({ healthCurrent: 50 }) },
-      inventory: [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }],
+      inventory: carrying({ bag: [MOONSTONE] }),
     });
     engage(space, healer.entityId, healer.entityId);
     steps(22);
@@ -122,12 +118,31 @@ describe('mending', () => {
     expect(energyOf(space, target.entityId).healthCurrent).toBe(100);
   });
 
-  it.each<[string, Partial<Character>, InventoryRow[], Partial<Energy>]>([
-    ['from anyone but a Healer', { lucidity: lucidity('fighter', { strike: 1 }) }, [MOONSTONE_IN_HAND], {}],
-    ['from a Healer with the Moonstone put away', HEALER, [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }], {}],
-    ['from a Healer with the Moonstone in the other hand', HEALER, [{ ...MOONSTONE_IN_HAND, equippedHand: 'left' }, CUDGEL_IN_HAND], {}],
-    ['from a Healer with too little spirit', { ...HEALER, energy: energy({ spiritCurrent: 7 }) }, [MOONSTONE_IN_HAND], {}],
-    ['for a dreamer at full health', HEALER, [MOONSTONE_IN_HAND], { healthCurrent: 100 }],
+  it('mends more by the mend depth of what the Healer wears', () => {
+    const { space, steps } = arena({}, { ghost: false });
+    const gloves: ItemInstance = {
+      id: '00000000-0000-7000-8000-000000000031',
+      ...plain('gloves'),
+      rarity: 'magic',
+      affixes: [{ affixId: 'mend-depth', value: 3 }],
+    };
+    const { healer, target } = pair(space, HEALER, { energy: energy({ healthCurrent: 50 }) }, wearing(MOONSTONE, gloves));
+    engage(space, target.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, target.entityId).healthCurrent).toBe(63);
+  });
+
+  it.each<[string, Partial<Character>, Inventory, Partial<Energy>]>([
+    ['from anyone but a Healer', { lucidity: lucidity('fighter', { strike: 1 }) }, wearing(MOONSTONE), {}],
+    ['from a Healer with the Moonstone put away', HEALER, carrying({ bag: [MOONSTONE] }), {}],
+    [
+      'from a Healer with the Moonstone in the main hand, which holds it nowhere but the off hand',
+      HEALER,
+      { coins: 0, equipped: { mainHand: MOONSTONE }, bag: [] },
+      {},
+    ],
+    ['from a Healer with too little spirit', { ...HEALER, energy: energy({ spiritCurrent: 7 }) }, wearing(MOONSTONE), {}],
+    ['for a dreamer at full health', HEALER, wearing(MOONSTONE), { healthCurrent: 100 }],
   ])('does nothing %s', async (_label, healerCharacter, inventory, targetEnergy) => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space, healerCharacter, { energy: energy({ healthCurrent: 50, ...targetEnergy }) }, inventory);
@@ -143,7 +158,7 @@ describe('mending', () => {
     [COMBAT.mend.reach + 0.05, 50],
   ])('mends a standing dreamer %f m away, centre to centre, to %i health', (apart, health) => {
     const { space, steps } = arena({}, { ghost: false });
-    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const target = attachPlayer(space, { x: HEALER_AT.x, z: HEALER_AT.z + apart }, 'target', { character: { energy: energy({ healthCurrent: 50 }) } });
     engage(space, target.entityId, healer.entityId);
     steps(1);
@@ -162,38 +177,6 @@ describe('mending', () => {
     expect(energyOf(space, target.entityId).healthCurrent).toBe(60);
     expect(energyOf(space, healer.entityId).spiritCurrent).toBe(0);
   });
-
-  it('mends the holder who uses the Moonstone in hand, for the same spirit, and shows it', async () => {
-    const { space } = arena({}, { ghost: false });
-    const hurt = { ...HEALER, energy: energy({ healthCurrent: 50 }) };
-    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: hurt, inventory: [MOONSTONE_IN_HAND] });
-    space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
-    expect(energyOf(space, healer.entityId)).toMatchObject({ healthCurrent: 60, spiritCurrent: 92 });
-    expect(payloads(await collectMessages(healer.outbox), 'mend')).toEqual([{ targetId: healer.entityId }]);
-  });
-
-  it.each<[string, Partial<Character>, InventoryRow[], number]>([
-    ['a fallen holder', { ...HEALER, energy: energy({ healthCurrent: 0 }) }, [MOONSTONE_IN_HAND], MOONSTONE_IN_HAND.slot],
-    [
-      'a Moonstone not in hand',
-      { ...HEALER, energy: energy({ healthCurrent: 50 }) },
-      [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }],
-      MOONSTONE_IN_HAND.slot,
-    ],
-    [
-      'any other row',
-      { ...HEALER, energy: energy({ healthCurrent: 50 }) },
-      [MOONSTONE_IN_HAND, { ...CUDGEL_IN_HAND, equippedHand: undefined }],
-      CUDGEL_IN_HAND.slot,
-    ],
-    ['a slot that holds nothing', { ...HEALER, energy: energy({ healthCurrent: 50 }) }, [MOONSTONE_IN_HAND], 9],
-  ])('does nothing on use for %s', (_label, character, inventory, slot) => {
-    const { space } = arena({}, { ghost: false });
-    const healer = attachPlayer(space, HEALER_AT, 'healer', { character, inventory });
-    const before = energyOf(space, healer.entityId);
-    space.handleUseItem(slot, healer.entityId);
-    expect(energyOf(space, healer.entityId)).toEqual(before);
-  });
 });
 
 describe('raising', () => {
@@ -204,7 +187,7 @@ describe('raising', () => {
   ];
 
   function addHealer(space: Arena['space'], at: Point, name: string, character: Partial<Character> = HEALER) {
-    return attachPlayer(space, at, name, { character, inventory: [MOONSTONE_IN_HAND] });
+    return attachPlayer(space, at, name, { character, inventory: wearing(MOONSTONE) });
   }
 
   /** Who held each raise frame, and how it stood. */
@@ -364,7 +347,7 @@ describe('raising', () => {
 
   it('does not begin beyond touch, though the fallen dreamer stands within mend reach', async () => {
     const { space, steps } = arena({}, { ghost: false });
-    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, HEALER_AT, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const target = attachPlayer(space, { x: HEALER_AT.x, z: HEALER_AT.z + 2 }, 'target', { character: FALLEN });
     engage(space, target.entityId, healer.entityId);
     steps(20);
@@ -391,7 +374,7 @@ describe('raising', () => {
   });
 
   it.each<[string, (space: Arena['space'], healerId: string) => void]>([
-    ['puts the Moonstone away', (space, healerId) => space.handleEquipToggle(MOONSTONE_IN_HAND.slot, undefined, healerId)],
+    ['puts the Moonstone away', (space, healerId) => space.handleUnequip('offHand', healerId)],
     ['leaves the space', (space, healerId) => space.handOver(healerId, true)],
     ['switches Mend off', (space, healerId) => space.handleEngage(false, healerId)],
     ['targets nothing', (space, healerId) => space.handleTarget(undefined, healerId)],
@@ -499,7 +482,7 @@ describe('raising', () => {
     engage(space, target.entityId, healer.entityId);
     steps(20);
     space.handOver(healer.entityId, false);
-    space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
+    space.attach(healer.character, wearing(MOONSTONE), new ConnectionOutbox(4096), 0, 'en');
     engage(space, target.entityId, healer.entityId);
     steps(1);
     const raising = { targetId: target.entityId, healerIds: [healer.entityId] };
@@ -518,7 +501,7 @@ describe('raising', () => {
     engage(space, target.entityId, other.entityId);
     steps(20);
     space.handOver(other.entityId, false);
-    space.attach(other.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
+    space.attach(other.character, wearing(MOONSTONE), new ConnectionOutbox(4096), 0, 'en');
     engage(space, target.entityId, other.entityId);
     steps(1);
     // Dropped as they left, and back only by taking hold again.
@@ -590,7 +573,7 @@ describe('raising', () => {
     space.handOver(healer.entityId, false);
     steps(1);
     const back = new ConnectionOutbox(4096);
-    space.attach(healer.character, [MOONSTONE_IN_HAND], back, 0, 'en');
+    space.attach(healer.character, wearing(MOONSTONE), back, 0, 'en');
     engage(space, target.entityId, healer.entityId);
     steps(1);
     expect(await holds(watching.outbox)).toEqual([
@@ -651,13 +634,13 @@ describe('raising', () => {
 
   /** The whole cost is there at the start, and a Healer can still spend it elsewhere while the raise runs. */
   it("breaks off when the Healer's spirit runs out", async () => {
-    const { clock, space, steps } = arena({}, { ghost: false });
-    const spent = { ...HEALER, energy: energy({ healthCurrent: 50, spiritCurrent: COMBAT.raise.spiritCost }) };
+    const { space, steps } = arena({}, { ghost: false });
+    const spent = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1, calm: 1 }), energy: energy({ spiritCurrent: COMBAT.raise.spiritCost }) };
     const { healer, target } = pair(space, spent);
     engage(space, target.entityId, healer.entityId);
-    steps(160, () => {
-      if (clock.ms % 1000 === 0) space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
-    });
+    steps(1);
+    space.handleUseAbility('calm', healer.entityId);
+    steps(160);
     expect(space.isFallen(target.entityId)).toBe(true);
     expect(payloads(await collectMessages(target.outbox), 'raising').map((sent) => sent.state)).toEqual(['holding', 'broken']);
   });
@@ -731,7 +714,8 @@ describe('raising', () => {
     expect(practice()).toBe(2.5);
     space.handleEngage(false, healer.entityId);
     clock.ms += 1000;
-    space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
+    engage(space, healer.entityId, healer.entityId);
+    steps(1);
     expect(practice()).toBe(3.75);
 
     const fallen = attachPlayer(space, { x: 5.6, z: 5 }, 'fallen', { character: FALLEN });

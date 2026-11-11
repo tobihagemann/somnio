@@ -4,7 +4,9 @@ import { ABILITIES } from '../src/abilities.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { EFFECTS } from '../src/effects.ts';
 import { gaitMetresPerSecond } from '../src/gait.ts';
-import { ITEMS } from '../src/items.ts';
+import { AFFIXES, rollItem } from '../src/affixes.ts';
+import { hashString, seededSequence } from '../src/hash.ts';
+import { BASE_ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIALS, isTeachingId, taskSpec, teaching } from '../src/lucidity.ts';
 import { MONSTER_KINDS, MONSTER_KIND_IDS, monsterKind } from '../src/monsterKinds.ts';
 import { PEOPLES } from '../src/people.ts';
@@ -12,7 +14,7 @@ import { SPEECH } from '../src/speech.ts';
 
 /**
  * Literal pins for the string sets and tables this package owns. Their members are persisted
- * (`people`, `itemId`) or written into sector files (`kind`), so a renamed member would round-trip
+ * (`people`, a base id, an affix id) or written into sector files (`kind`), so a renamed member would round-trip
  * cleanly through every codec test while orphaning every saved row that carries the old name.
  */
 describe('literal sets', () => {
@@ -20,20 +22,46 @@ describe('literal sets', () => {
     expect(PEOPLES).toEqual(['vigils', 'sopors', 'umbrae', 'lumina']);
   });
 
-  it('pins the items', () => {
-    expect(ITEMS).toEqual({
-      purse: { labelKey: 'Purse' },
-      dagger: { labelKey: 'Dagger', weapon: { damage: 6, balanceCost: 10 } },
-      cudgel: { labelKey: 'Cudgel', weapon: { damage: 8, balanceCost: 18 } },
-      sword: { labelKey: 'Short sword', weapon: { damage: 11, balanceCost: 24 } },
-      mace: { labelKey: 'Mace', weapon: { damage: 14, balanceCost: 32 } },
-      moonstone: { labelKey: 'Moonstone' },
+  it('pins the base items', () => {
+    expect(BASE_ITEMS).toEqual({
+      dagger: { labelKey: 'Dagger', slot: 'mainHand', tier: 1, weapon: { damage: 6, balanceCost: 10 } },
+      cudgel: { labelKey: 'Cudgel', slot: 'mainHand', tier: 1, weapon: { damage: 8, balanceCost: 18 } },
+      sword: { labelKey: 'Short sword', slot: 'mainHand', tier: 1, weapon: { damage: 11, balanceCost: 24 } },
+      mace: { labelKey: 'Mace', slot: 'mainHand', tier: 1, weapon: { damage: 14, balanceCost: 32 } },
+      buckler: { labelKey: 'Buckler', slot: 'offHand', tier: 1, implicit: { guard: 2 } },
+      shield: { labelKey: 'Round shield', slot: 'offHand', tier: 1, implicit: { guard: 4 } },
+      moonstone: { labelKey: 'Moonstone', slot: 'offHand', tier: 1, trialOnly: true },
+      wand: { labelKey: 'Wand', slot: 'offHand', tier: 1, focus: true },
+      cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, implicit: { guard: 1 } },
+      tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, implicit: { guard: 3 } },
+      gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, implicit: { guard: 1 } },
+      trousers: { labelKey: 'Leather trousers', slot: 'legs', tier: 1, implicit: { guard: 2 } },
+      boots: { labelKey: 'Leather boots', slot: 'feet', tier: 1, implicit: { guard: 1 } },
+      amulet: { labelKey: 'Amulet', slot: 'neck', tier: 1, implicit: { healthMax: 5 } },
+      ring: { labelKey: 'Iron ring', slot: 'ring', tier: 1, implicit: { healthMax: 2 } },
     });
   });
 
-  /** An `inventory` frame carries a row for each item carried, and its decoder refuses more than the cap. */
-  it('fits a row of every item in one inventory frame', () => {
-    expect(Object.keys(ITEMS).length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows);
+  it('pins the affixes', () => {
+    expect(AFFIXES).toEqual({
+      health: { stat: 'healthMax', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8] } },
+      balance: { stat: 'balanceMax', slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8] } },
+      spirit: { stat: 'spiritMax', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8] } },
+      damage: { stat: 'damage', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3] } },
+      guard: { stat: 'guard', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [1, 3] } },
+      'swing-speed': { stat: 'swingSpeed', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8] } },
+      'balance-recovery': { stat: 'balanceRecovery', slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'], tiers: { 1: [5, 15] } },
+      'spirit-recovery': { stat: 'spiritRecovery', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15] } },
+      'mend-depth': { stat: 'mendDepth', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3] } },
+      'ward-strength': { stat: 'wardStrength', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15] } },
+    });
+  });
+
+  /** An `inventory` frame carries every affix of each item, and its decoder refuses more than the cap. */
+  it('fits every affix a rare item rolls in one inventory frame', () => {
+    const random = seededSequence(hashString('affix cap'));
+    const most = Math.max(...Array.from({ length: 100 }, () => rollItem('amulet', 1, 'rare', random).affixes.length));
+    expect(most).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes);
   });
 
   it('pins the monster kinds', () => {
@@ -41,6 +69,7 @@ describe('literal sets', () => {
     expect(MONSTER_KINDS).toEqual({
       ghost: {
         name: 'Ghost',
+        tier: 1,
         characterModelId: 'ghost',
         radius: 0.3,
         metresPerSecond: 2.4,

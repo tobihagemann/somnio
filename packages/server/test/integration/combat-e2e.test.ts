@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { monsterKind, reachDistance } from '@somnio/core';
 import { seededRandom } from '../../src/world/random.ts';
-import { CUDGEL_IN_HAND, RESPAWN_MS, STRIKER, engage, face, payloads } from '../support/combat.ts';
+import { CUDGEL, RESPAWN_MS, STRIKER, engage, face, payloads, wearing } from '../support/combat.ts';
 import { collectMessages, entities } from '../support/frames.ts';
 import { attachPlayer, makeClockedSpace } from '../support/sectorFactory.ts';
 import { fixtureWorld, standableNear } from './support/harness.ts';
@@ -26,7 +26,7 @@ it('a Ghost of the committed Arena is fought to its fade, and its spawn then kee
   const fighter = attachPlayer(space, standableNear(space, ghost, reachDistance(GHOST.radius)), 'fighter', {
     spaceId: 'EdariaArena',
     character: STRIKER,
-    inventory: [CUDGEL_IN_HAND],
+    inventory: wearing(CUDGEL),
   });
   // It stands in reach, so it strikes her where it is and she faces it there for every swing.
   face(space, fighter.entityId, ghost);
@@ -35,11 +35,11 @@ it('a Ghost of the committed Arena is fought to its fade, and its spawn then kee
     clock.ms += 50;
     space.step(0.05);
   };
-  for (let count = 0; count < 400 && space.snapshotForPlayer(fighter.entityId)!.inventory.length === 1; count += 1) step();
+  for (let count = 0; count < 400 && space.snapshotForPlayer(fighter.entityId)!.inventory.coins === 0; count += 1) step();
   // Its fade.
   for (let count = 0; count < 20; count += 1) step();
-  // Its bounty is what put a purse beside the cudgel.
-  expect(space.snapshotForPlayer(fighter.entityId)!.inventory).toContainEqual({ slot: 0, itemId: 'purse', quantity: GHOST.bounty, equippedHand: undefined });
+  // Its bounty is what put coins in her purse.
+  expect(space.snapshotForPlayer(fighter.entityId)!.inventory.coins).toBe(GHOST.bounty);
   expect(space.isFallen(fighter.entityId)).toBe(false);
   space.handOver(fighter.entityId, true);
   const fight = await collectMessages(fighter.outbox);

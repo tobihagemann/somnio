@@ -1,10 +1,13 @@
 import { calendarFromWorldSeconds, hourOfDay, sunIsUp } from '@somnio/core';
-import type { AbilityId, EngageAction } from '@somnio/core';
-import type { Energy, InventoryRowMessage, LucidityMessage } from '@somnio/protocol';
+import type { AbilityId, EngageAction, Inventory } from '@somnio/core';
+import { RARITIES } from '@somnio/protocol';
+import type { Energy, EquipSlot, LucidityMessage } from '@somnio/protocol';
 import type { AbilitySlotState, ChatLine } from '@/client';
 import { t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { DREAM_COLOR, MOONLIGHT, RAISE_COLOR } from '@/scene/combatEffects';
+import { RARITY_COLORS } from '@/scene/lootMarkers';
+import { cssColor } from '@/scene/overlayArt';
 import type { PortraitSlot } from '@/scene/portraits';
 import { AbilitySlot, BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
 import { ChatPane } from './chatPane';
@@ -12,7 +15,8 @@ import { element, iconButton, isHidden, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
 import type { HUDGlyph } from './hudIcons';
 import { HUDTooltip, setTip } from './hudTooltip';
-import { BagList, HUDWindow, PlayersList } from './hudWindows';
+import { CharacterWindow } from './characterWindow';
+import { HUDWindow, PlayersList } from './hudWindows';
 import type { PlayersSelection } from './hudWindows';
 import { OwnFrame, TargetFrame } from './unitFrames';
 import type { FramedEntity, OwnFrameState } from './unitFrames';
@@ -32,7 +36,11 @@ import type { FramedEntity, OwnFrameState } from './unitFrames';
 export interface HUDCallbacks {
   onSubmitChat: (text: string) => void;
   onChatFocusChange: (focused: boolean) => void;
-  onActivateItem: (row: InventoryRowMessage) => void;
+  onTellPurse: () => void;
+  onEquip: (itemId: string, slot?: EquipSlot) => void;
+  onUnequip: (slot: EquipSlot) => void;
+  onMoveItem: (itemId: string, place: number) => void;
+  onDropItem: (itemId: string, at?: { clientX: number; clientY: number }) => void;
   onToggleRun: () => void;
   onToggleEngage: () => void;
   onUseAbility: (abilityId: AbilityId) => void;
@@ -56,7 +64,10 @@ export interface HUDOptions {
   now?: () => number;
 }
 
-export type HUDWindowId = 'players' | 'bag';
+export type HUDWindowId = 'players' | 'character';
+
+/** The keys that open and close each window, the first named in its menu button's tip: the Character window on Diablo's C and I, the Players window on O. */
+export const WINDOW_KEYS: Readonly<Record<HUDWindowId, readonly [string, ...string[]]>> = { players: ['o'], character: ['c', 'i'] };
 
 /** Where the world clock stands and where the player stands in it, for the plate at the top right. */
 export interface HUDClock {
@@ -104,16 +115,20 @@ function twoDigits(value: number): string {
 
 /** Gives the node the colours the world draws its effects in, as `--hud-*` properties, so a bar or a marker in one never drifts from the scene's. */
 export function paintEffectColors(node: HTMLElement): void {
-  const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
-  node.style.setProperty('--hud-moonlight', css(MOONLIGHT));
-  node.style.setProperty('--hud-raise', css(RAISE_COLOR));
-  node.style.setProperty('--hud-dream', css(DREAM_COLOR));
+  node.style.setProperty('--hud-moonlight', cssColor(MOONLIGHT));
+  node.style.setProperty('--hud-raise', cssColor(RAISE_COLOR));
+  node.style.setProperty('--hud-dream', cssColor(DREAM_COLOR));
+}
+
+/** Gives the node each rarity's colour as `--hud-rarity-*`, the colour a drop of it is drawn in on the ground. */
+export function paintRarityColors(node: HTMLElement): void {
+  for (const rarity of RARITIES) node.style.setProperty(`--hud-rarity-${rarity}`, cssColor(RARITY_COLORS[rarity]));
 }
 
 export class GameHUD {
   readonly root: HTMLElement;
   readonly chatInput: HTMLTextAreaElement;
-  /** The circle of each frame that its portrait is drawn in, on the canvas under it. */
+  /** The place each portrait is drawn in, on the canvas under it: each frame's circle, and the Character window's body. */
   readonly portraits: Record<PortraitSlot, HTMLElement>;
 
   private readonly coarse: boolean;
@@ -136,7 +151,7 @@ export class GameHUD {
   private readonly chat: ChatPane;
   private readonly windows: Record<HUDWindowId, HUDWindow>;
   private readonly players: PlayersList;
-  private readonly bag: BagList;
+  private readonly character: CharacterWindow;
   /** The menu's buttons that open each window, lit while it is open. */
   private readonly windowToggles = new Map<HUDWindowId, HTMLButtonElement>();
   /** The open windows, the newest last. */
@@ -159,7 +174,15 @@ export class GameHUD {
 
     this.ownFrame = new OwnFrame(() => callbacks.onPressOwnFrame(), this.coarse);
     this.targetFrame = new TargetFrame(() => callbacks.onClearTarget());
-    this.portraits = { own: this.ownFrame.portrait, target: this.targetFrame.portrait };
+    this.character = new CharacterWindow(
+      callbacks,
+      this.coarse,
+      () => this.closeWindow('character'),
+      () => this.forgetHover(this.character.card.root),
+      () => this.tooltip.hide(),
+      now,
+    );
+    this.portraits = { own: this.ownFrame.portrait, target: this.targetFrame.portrait, body: this.character.body };
     this.clockGlyph = element('span', { className: 'hud-clock__glyph', attributes: { 'aria-hidden': 'true' } });
     this.clockTime = element('span', { className: 'hud-clock__digits' });
     this.clockPlace = element('span', { className: 'hud-clock__place' });
@@ -187,13 +210,11 @@ export class GameHUD {
       (name) => callbacks.onPressPlayer(name),
       () => callbacks.onPressOwnFrame(),
     );
-    this.bag = new BagList((row) => callbacks.onActivateItem(row));
     this.windows = {
       players: new HUDWindow(t('Players'), () => this.closeWindow('players'), this.players.nodes),
-      bag: new HUDWindow(t('Bag'), () => this.closeWindow('bag'), this.bag.nodes),
+      character: this.character.window,
     };
     this.windows.players.root.classList.add('hud-window--players');
-    this.windows.bag.root.classList.add('hud-window--bag');
 
     let layout: HTMLElement[];
     if (this.coarse) {
@@ -212,7 +233,7 @@ export class GameHUD {
         attributes: { 'aria-label': t('Menu') },
         children: [
           sheetButton(t('Players'), HUD_ICONS.players, () => this.openWindow('players')),
-          sheetButton(t('Bag'), HUD_ICONS.bag, () => this.openWindow('bag')),
+          sheetButton(t('Character'), HUD_ICONS.character, () => this.openWindow('character')),
           sheetButton(t('Settings'), HUD_ICONS.settings, () => this.openSettings()),
           this.study,
         ],
@@ -259,7 +280,11 @@ export class GameHUD {
       });
       const panel = element('div', { className: 'fantasy-panel hud-belt__panel', children: [this.balance.root, slots, this.study] });
       const menuButton = (id: HUDWindowId, label: string, art: HUDGlyph): HTMLButtonElement => {
-        const node = setTip(iconButton(label, glyph(art), () => this.toggleWindow(id), { className: 'fantasy-button fantasy-button--compact hud-menu__item' }));
+        const key = WINDOW_KEYS[id][0].toUpperCase();
+        const node = setTip(
+          iconButton(label, glyph(art), () => this.toggleWindow(id), { className: 'fantasy-button fantasy-button--compact hud-menu__item' }),
+          () => ({ title: label, aside: key }),
+        );
         node.setAttribute('aria-pressed', 'false');
         this.windowToggles.set(id, node);
         return node;
@@ -269,7 +294,7 @@ export class GameHUD {
         attributes: { 'aria-label': t('Menu') },
         children: [
           menuButton('players', t('Players'), HUD_ICONS.players),
-          menuButton('bag', t('Bag'), HUD_ICONS.bag),
+          menuButton('character', t('Character'), HUD_ICONS.character),
           setTip(
             iconButton(t('Settings'), glyph(HUD_ICONS.settings), () => this.openSettings(), {
               className: 'fantasy-button fantasy-button--compact hud-menu__item',
@@ -292,17 +317,18 @@ export class GameHUD {
       ];
       this.trackHover(this.ownFrame.root, this.targetFrame.root, this.clock, belt, this.chat.root);
     }
-    this.trackHover(this.windows.players.root, this.windows.bag.root, ...(this.coarse ? [this.chat.root] : []));
+    this.trackHover(this.windows.players.root, this.windows.character.root, this.character.card.root, ...(this.coarse ? [this.chat.root] : []));
 
     this.root = element('div', {
       className: `hud ${this.coarse ? 'hud--coarse' : 'hud--fine'}`,
-      children: [...layout, this.windows.players.root, this.windows.bag.root],
+      children: [...layout, this.windows.players.root, this.windows.character.root, this.character.card.root, this.character.notice, this.character.ghost],
     });
     this.tooltip = new HUDTooltip(this.root, now);
     this.root.append(this.tooltip.root);
     this.root.style.setProperty('--hud-thumb-width', `${THUMB.width}px`);
     this.root.style.setProperty('--hud-thumb-height', `${THUMB.height}px`);
     paintEffectColors(this.root);
+    paintRarityColors(this.root);
     // A control pressed with the pointer hands the keyboard straight back to the world, so Enter
     // opens the chat and Shift runs rather than pressing the control again. A keyboard press keeps it.
     this.root.addEventListener(
@@ -315,7 +341,7 @@ export class GameHUD {
     );
   }
 
-  /** What covers the play field now: the frames, the belt or the thumb's slots, and whatever window, sheet, or chat is open. */
+  /** What covers the play field now: the frames, the belt or the thumb's slots, and whatever window, item card, sheet, or chat is open. */
   get occluders(): HTMLElement[] {
     return [
       ...this.fixedOccluders,
@@ -323,7 +349,8 @@ export class GameHUD {
       ...(this.coarse ? this.abilityPlaces : []),
       ...this.chat.occluders,
       this.windows.players.root,
-      this.windows.bag.root,
+      this.windows.character.root,
+      this.character.card.root,
       ...(this.sheet === undefined ? [] : [this.sheet]),
     ];
   }
@@ -420,8 +447,18 @@ export class GameHUD {
     this.players.render(players, selection);
   }
 
-  renderItems(rows: readonly InventoryRowMessage[]): void {
-    this.bag.render(rows);
+  renderCharacter(inventory: Inventory, lucidity: LucidityMessage): void {
+    this.character.render(inventory, lucidity);
+  }
+
+  /** How far the Character window's body is turned from its usual view, in radians. */
+  bodyTurn(nowMs: number): number {
+    return this.character.bodyTurn(nowMs);
+  }
+
+  /** Leaves the Character window's plate open over the body's rect on the page, read with the other rects of the frame. */
+  openBodyHole(body: DOMRect): void {
+    this.character.openBodyHole(body);
   }
 
   /**
@@ -465,7 +502,10 @@ export class GameHUD {
     this.chat.closeChat();
   }
 
-  /** Escape closes what the HUD has open, one thing at a time: the chat, the menu sheet, then the newest window. Reports whether it closed anything. */
+  /**
+   * Escape closes what the HUD has open, one thing at a time: the chat, the menu sheet, an item
+   * carried, an item's card, then the newest window. Reports whether it closed anything.
+   */
   escape(): boolean {
     if (this.chat.isOpen) {
       this.chat.closeChat();
@@ -473,6 +513,11 @@ export class GameHUD {
     }
     if (this.sheet !== undefined && !isHidden(this.sheet)) {
       this.setSheetOpen(false);
+      return true;
+    }
+    if (this.character.cancelCarry()) return true;
+    if (this.character.card.itemId !== undefined) {
+      this.character.card.close();
       return true;
     }
     const newest = this.openWindows.at(-1);
@@ -516,8 +561,12 @@ export class GameHUD {
       this.windowToggles.get(id)?.setAttribute('aria-pressed', String(order >= 0));
       if (order < 0) this.forgetHover(window.root);
     }
-    // On a mouse the Bag stands beside the Players window while both are open, or over it where the window is too narrow for both.
-    this.windows.bag.root.classList.toggle('hud-window--beside', this.openWindows.includes('players'));
+    // On a mouse the Players window stands beside the Character window while both are open. Where the window is too narrow for both, they share a place and the newer covers the older.
+    this.windows.players.root.classList.toggle('hud-window--beside', this.openWindows.includes('character'));
+    // What the Character window has under way goes with it.
+    if (!this.openWindows.includes('character')) this.character.closed();
+    // Its plate is open over the body, so a part of the HUD under it would show through.
+    this.root.classList.toggle('hud--character-open', this.openWindows.includes('character'));
   }
 
   private openSettings(): void {

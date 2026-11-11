@@ -1,6 +1,7 @@
-import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
-import type { Character, InventoryRow, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
+import { NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
+import type { Character, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
+import { carrying, plain } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
 import type { SpaceActor } from '../../src/world/spaceActor.ts';
 import { landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
@@ -12,12 +13,21 @@ export const GHOST = 'monster:1';
 export const RESPAWN_MS = monsterKind('ghost').respawnSeconds * 1000;
 const STEP_SECONDS = 0.05;
 
-export const PURSE: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
-export const CUDGEL_IN_HAND: InventoryRow = { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' };
-export const MOONSTONE_IN_HAND: InventoryRow = { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' };
+export const COINS = 100;
+/** Plain tier-1 items under fixed ids. */
+export const CUDGEL: ItemInstance = { id: '00000000-0000-7000-8000-000000000001', ...plain('cudgel') };
+export const MOONSTONE: ItemInstance = { id: '00000000-0000-7000-8000-000000000002', ...plain('moonstone') };
+export const WAND: ItemInstance = { id: '00000000-0000-7000-8000-000000000003', ...plain('wand') };
+
+export { carrying };
+
+/** An inventory with no coins and an empty bag, wearing each item in the slot equipping it takes. */
+export function wearing(...worn: ItemInstance[]): Inventory {
+  return carrying({ worn });
+}
 
 export function energy(overrides: Partial<Energy> = {}): Energy {
-  return { ...fullPools(NO_LUCIDITY), ...overrides };
+  return { ...fullPools(NO_STATS), ...overrides };
 }
 
 /** A dreamer at `healthCurrent` and every other pool full. */
@@ -35,9 +45,10 @@ export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { str
 /**
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
  * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, it
- * keeps to a home ground reaching that many metres each way, where it can chase.
+ * keeps to a home ground reaching that many metres each way, where it can chase. With `drops`,
+ * every dreamer who shares a nightmare driven off finds a plain dagger where it stood.
  */
-export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; ground?: number; sectors?: Sector[] } = {}) {
+export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; ground?: number; sectors?: Sector[]; drops?: boolean } = {}) {
   const dice = { hit: true };
   const ghost = options.ghost ?? true;
   const spawn = options.ground === undefined ? makeMonsterSpawn(GHOST_AT) : makeMonsterGround(GHOST_AT, options.ground);
@@ -45,6 +56,7 @@ export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolea
   const lands = landsAtCentre(options.ground ?? 0);
   const { clock, space } = makeClockedSpace(makeWorld([sector, ...(options.sectors ?? [])]), OUTDOOR_SPACE_ID, {
     random: { nextUInt32: () => (dice.hit ? lands.nextUInt32() : 0xffff_ffff) },
+    ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
   });
   if (ghost) {
     clock.ms = RESPAWN_MS;

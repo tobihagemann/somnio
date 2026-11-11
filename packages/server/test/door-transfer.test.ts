@@ -5,7 +5,7 @@ import type { Character, Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { MOONSTONE_IN_HAND, characterOf, lucidity, payloads, wounded } from './support/combat.ts';
+import { MOONSTONE, characterOf, lucidity, payloads, wearing, wounded } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -117,7 +117,7 @@ describe('handleUseDoor', () => {
     await w.connection.dispatch({ tag: 'move', payload: { x: 5, z: 8, facing: 180, gait: 'walk' } });
     expect(w.snapshotIn('Hall')).toMatchObject({ position: { x: 5, z: 8 } });
     await w.connection.drainForShutdown();
-    expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: w.entityId, space: 'Hall', position: { x: 5, z: 8 } }), []]]);
+    expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: w.entityId, space: 'Hall', position: { x: 5, z: 8 } }), wearing()]]);
     expect(w.snapshotIn('Hall')).toBeUndefined();
   });
 
@@ -186,7 +186,7 @@ describe('handleUseDoor', () => {
       const square = w.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
       const healer = attachPlayer(square, { x: 8, z: 9.7 }, 'healer', {
         character: { lucidity: lucidity('healer', { touch: 2, renewal: 1 }) },
-        inventory: [MOONSTONE_IN_HAND],
+        inventory: wearing(MOONSTONE),
       });
       square.handleTarget(w.entityId, healer.entityId);
       square.handleUseAbility('renewal', healer.entityId);
@@ -217,7 +217,9 @@ describe('handleUseDoor', () => {
       const persistCheckpoint = vi.spyOn(characters, 'persistCheckpoint');
       const w = await renewed(characters);
       await w.connection.drainForShutdown();
-      expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: w.entityId, energy: expect.objectContaining({ healthCurrent: 42 }) }), []]]);
+      expect(persistCheckpoint.mock.calls).toEqual([
+        [expect.objectContaining({ id: w.entityId, energy: expect.objectContaining({ healthCurrent: 42 }) }), wearing()],
+      ]);
     });
   });
 

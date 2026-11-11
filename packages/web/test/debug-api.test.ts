@@ -3,6 +3,7 @@ import { AppShell, element } from '@/ui';
 import { installDebugAPI, makeDebugAPI } from '@/debugApi';
 import { ClientWorld } from '@/client';
 import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity } from './helpers/worldFixture';
 
 /**
@@ -49,32 +50,35 @@ describe('the debug API', () => {
     expect(api.groundScreenPoint(0, 0)).toBeUndefined();
   });
 
-  it('reports the local player once the entity stream has placed it', () => {
+  it('reports the local player once the entity stream has placed it, and what a dreamer holds', () => {
     const app = shell();
     app.controller.selfId = 'self';
-    app.controller.entities.set('self', clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90 }));
+    app.controller.entities.set('self', clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90, held: { mainHand: 'sword', offHand: 'moonstone' } }));
     app.controller.entities.set('npc:EdariaSquare/libus', clientEntity({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', position: { x: 3, z: 4 } }));
 
     const api = makeDebugAPI(app);
     expect(api.player()).toEqual({ x: 12.8, z: 9.6, facing: 90, gait: 'jog', name: 'Tester' });
     expect(api.entities()).toEqual([
-      { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale' },
+      { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale', held: { mainHand: 'sword', offHand: 'moonstone' } },
       { id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', x: 3, z: 4, condition: 'hale' },
     ]);
   });
 
-  it("reports the player's own pools, lucidity, winded state, and open service panel", () => {
+  it("reports the player's own pools, lucidity, inventory, winded state, and open service panel", () => {
     const app = shell();
     const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 0, balanceMax: 100, spiritCurrent: 70, spiritMax: 110 };
     const lucidity = { role: 'healer' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 2.5 }], study: 'touch' };
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
     app.controller.dispatch({ tag: 'energy', payload: energy });
     app.controller.dispatch({ tag: 'lucidity', payload: lucidity });
+    const inventory = inventoryFrame(carrying({ coins: 12, worn: [item('moonstone')], bag: [item('cap')] }));
+    app.controller.dispatch(inventory);
     app.session.servicePanel = clientEntity({ id: 'npc:EdariaHealerHall/sana', kind: 'npc', service: 'healerMaster' });
 
     const api = makeDebugAPI(app);
     expect(api.energy()).toEqual(energy);
     expect(api.lucidity()).toEqual(lucidity);
+    expect(api.inventory()).toEqual(inventory.payload);
     expect(api.winded()).toBe(true);
     expect(api.servicePanel()).toBe('npc:EdariaHealerHall/sana');
     // No scene draws anything in this shell, so there is nowhere to point.
@@ -173,6 +177,14 @@ describe('the debug API', () => {
     expect(api.sensed()).toEqual([]);
     app.controller.dispatch({ tag: 'sensed', payload: { bearings: [{ name: 'Mira', x: 30, z: 10 }] } });
     expect(api.sensed()).toEqual([{ name: 'Mira', x: 30, z: 10 }]);
+  });
+
+  it("reports where the Character window draws the player's body and how far it is turned, and nothing while it is not shown", () => {
+    const app = shell();
+    const api = makeDebugAPI(app);
+    expect(api.characterBody()).toBeUndefined();
+    vi.spyOn(app.hud.portraits.body, 'getBoundingClientRect').mockReturnValue(new DOMRect(964, 182, 256, 172));
+    expect(api.characterBody()).toEqual({ left: 964, top: 182, width: 256, height: 172, turnDegrees: expect.any(Number) });
   });
 
   it('reports the gaze lock as a second right press on the target lets go of it and a third takes it again', () => {

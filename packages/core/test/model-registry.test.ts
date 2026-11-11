@@ -5,12 +5,15 @@ import {
   PLACEHOLDER_REGISTRY,
   allModelEntries,
   bundledModelRegistry,
+  groundModelStem,
+  handModelStem,
   missingClips,
   modelForCharacter,
   modelForObjectId,
   objectModel,
   parseModelRegistry,
 } from '../src/modelRegistry.ts';
+import { BASE_ITEMS } from '../src/items.ts';
 import { MONSTER_KINDS } from '../src/monsterKinds.ts';
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { loadSectorFixtures } from './support/sectorFixture.ts';
@@ -73,6 +76,24 @@ describe('the committed registry parses', () => {
     expect(unresolved).toEqual([]);
   });
 
+  /** An item with no hand model draws nothing in the hand, so a base added without one would go unseen. */
+  it('gives every item a hand holds a hand model, and none to anything worn elsewhere', () => {
+    for (const [baseId, base] of Object.entries(BASE_ITEMS)) {
+      const held = base.slot === 'mainHand' || base.slot === 'offHand';
+      expect(handModelStem(registry, baseId) !== undefined, baseId).toBe(held);
+    }
+    expect(handModelStem(registry, 'sword')).toBe('HandSword');
+  });
+
+  /** A drop of an item with no ground model draws its name alone, so a base added without one would lie unseen. */
+  it('gives every item that can drop a ground model, and none to the Moonstone, which never drops', () => {
+    for (const [baseId, base] of Object.entries(BASE_ITEMS)) {
+      const drops = !('trialOnly' in base);
+      expect(groundModelStem(registry, baseId) !== undefined, baseId).toBe(drops);
+    }
+    expect(groundModelStem(registry, 'cap')).toBe('GroundCap');
+  });
+
   it('lists every model once, character models before object models', () => {
     const stems = allModelEntries(registry).map((entry) => entry.stem);
     expect(new Set(stems).size).toBe(stems.length);
@@ -82,6 +103,9 @@ describe('the committed registry parses', () => {
     const lastCharacterIndex = Math.max(...registry.characterModels.map((rule) => stems.indexOf(rule.model.stem)));
     const firstPropIndex = Math.min(...registry.objectModels.map((rule) => stems.indexOf(rule.model.stem)));
     expect(lastCharacterIndex).toBeLessThan(firstPropIndex);
+    // Hand and ground models are loaded with the rest, expecting no clip.
+    const itemModels = [...registry.handModels, ...registry.groundModels];
+    expect(allModelEntries(registry).slice(-itemModels.length)).toEqual(itemModels.map(({ stem }) => ({ stem, expectedClips: [] })));
   });
 
   it('gives every prop an empty clip contract and every character a non-empty one', () => {
@@ -132,6 +156,8 @@ describe('structural invariants the JSON shape cannot express', () => {
   const valid = {
     characterModels: [{ id: 'hero', model: { stem: 'A', expectedClips: ['Idle'] } }],
     playerModel: 'hero',
+    handModels: [{ id: 'sword', stem: 'HandSword' }],
+    groundModels: [{ id: 'sword', stem: 'GroundSword' }],
     objectModels: [
       {
         id: 'house',
@@ -168,6 +194,10 @@ describe('structural invariants the JSON shape cannot express', () => {
     // vacuously — the exact failure that gate exists to catch.
     ['a character model expecting no clips', (registry: typeof valid) => (registry.characterModels[0]!.model.expectedClips = []), /must expect a clip/],
     ['a player model that is no character model', (registry: typeof valid) => (registry.playerModel = 'nobody'), /no character model "nobody"/],
+    ['a hand model of no item', (registry: typeof valid) => (registry.handModels[0]!.id = 'halberd'), /handModels\[0\]\.id: no item "halberd"/],
+    ['a hand model without a stem', (registry: typeof valid) => (registry.handModels[0]!.stem = ''), /handModels\[0\]\.stem: expected a non-empty string/],
+    ['a duplicate hand model', (registry: typeof valid) => registry.handModels.push(registry.handModels[0]!), /duplicate id "sword"/],
+    ['a ground model of no item', (registry: typeof valid) => (registry.groundModels[0]!.id = 'halberd'), /groundModels\[0\]\.id: no item "halberd"/],
     ['a footprint without extent', (registry: typeof valid) => (registry.objectModels[0]!.footprint.depth = 0), /footprint\.depth: expected a positive number/],
     [
       'a collider without extent',
@@ -197,6 +227,10 @@ describe('structural invariants the JSON shape cannot express', () => {
   it('reads absent walk surfaces and doors as none', () => {
     const bare = { ...valid, objectModels: [{ id: 'crate', model: { stem: 'Crate', expectedClips: [] }, footprint: { width: 1, depth: 1 } }] };
     expect(parseModelRegistry(bare).objectModels[0]).toMatchObject({ walkSurfaces: [], doors: [] });
+  });
+
+  it('reads absent hand and ground models as none', () => {
+    expect(parseModelRegistry({ ...valid, handModels: undefined, groundModels: undefined })).toMatchObject({ handModels: [], groundModels: [] });
   });
 
   it('rejects a non-object root', () => {

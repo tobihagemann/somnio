@@ -1,36 +1,50 @@
-import { purseCoins } from './items.ts';
-import type { ItemId } from './items.ts';
+import { bagHasRoom } from './domain/inventory.ts';
+import type { Inventory } from './domain/inventory.ts';
+import { baseItem } from './items.ts';
+import type { BaseItemId, Item, ItemInstance, Rarity } from './items.ts';
 
-/** What the shopkeeper sells, in shelf order, and the share of a price paid to buy one back. The prices are tuned in play, as `COMBAT`'s numbers are. */
+/**
+ * What the shopkeeper sells, plain and at tier 1, in shelf order, and what he pays for an item of
+ * each rarity for each tier it rolled at. The numbers are tuned in play, as `COMBAT`'s are.
+ */
 export const SHOP = {
-  prices: { dagger: 60, cudgel: 30, sword: 150, mace: 240 },
-  buyBackShare: 0.5,
-} as const satisfies { prices: Partial<Record<ItemId, number>>; buyBackShare: number };
+  prices: {
+    dagger: 60,
+    cudgel: 30,
+    sword: 150,
+    mace: 240,
+    buckler: 40,
+    shield: 90,
+    wand: 80,
+    cap: 25,
+    tunic: 50,
+    gloves: 25,
+    trousers: 40,
+    boots: 25,
+    amulet: 70,
+    ring: 50,
+  },
+  salePerTier: { plain: 10, magic: 30, rare: 75 },
+} as const satisfies { prices: Partial<Record<BaseItemId, number>>; salePerTier: Record<Rarity, number> };
 export type Ware = keyof typeof SHOP.prices;
 
 export const WARES = Object.keys(SHOP.prices) as Ware[];
 
-/** The rows a rule reads, which a row off the wire satisfies too. */
-type Rows = readonly { itemId: string; quantity: number }[];
-
-export function isWare(itemId: string): itemId is Ware {
-  return Object.hasOwn(SHOP.prices, itemId);
+export function isWare(baseId: string): baseId is Ware {
+  return Object.hasOwn(SHOP.prices, baseId);
 }
 
-export function buyBackPrice(ware: Ware): number {
-  return Math.floor(SHOP.prices[ware] * SHOP.buyBackShare);
+/** What the shopkeeper pays for the item: by its rarity, for each tier it rolled at. */
+export function salePrice(item: Item): number {
+  return SHOP.salePerTier[item.rarity] * item.tier;
 }
 
-function carries(rows: Rows, itemId: string): boolean {
-  return rows.some((row) => row.itemId === itemId);
+/** Whether a dreamer can buy a plain one of the base: a ware their purse covers, into a bag with room. */
+export function canBuy(inventory: Inventory, baseId: string): baseId is Ware {
+  return isWare(baseId) && inventory.coins >= SHOP.prices[baseId] && bagHasRoom(inventory);
 }
 
-/** Whether a dreamer can buy the item: a ware they do not carry, one of each, which their purse covers. */
-export function canBuy(rows: Rows, itemId: string): itemId is Ware {
-  return isWare(itemId) && !carries(rows, itemId) && purseCoins(rows) >= SHOP.prices[itemId];
-}
-
-/** Whether a dreamer can sell the item: a ware they carry. The purse and the Moonstone are no wares. */
-export function canSell(rows: Rows, itemId: string): itemId is Ware {
-  return isWare(itemId) && carries(rows, itemId);
+/** The item in a dreamer's bag the shopkeeper buys, by its id: anything there but the Moonstone. What they wear is not for sale. */
+export function sellableItem(inventory: Inventory, itemId: string): ItemInstance | undefined {
+  return inventory.bag.find(({ item }) => item.id === itemId && baseItem(item.baseId).trialOnly !== true)?.item;
 }

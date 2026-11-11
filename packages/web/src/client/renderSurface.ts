@@ -1,6 +1,6 @@
 import { clamp, raiseWorkOver } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, Point } from '@somnio/core';
-import type { AbilityPhase, Condition, Gait, SectorView, SensedBearingMessage, SpeechKind } from '@somnio/protocol';
+import type { AbilityPhase, Condition, Gait, Held, LootMessage, SectorView, SensedBearingMessage, SpeechKind } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
 /** A line to show as a bubble: round its speaker's head while that is drawn on screen, and placed toward the voice otherwise. */
@@ -24,6 +24,12 @@ interface AbilityChannel {
 
 /** What an `ability` frame says beyond who used what on whom: a channel's phase, or harm its nightmare evaded. */
 export type AbilityShown = AbilityChannel | { evaded: true };
+
+/** How the target is marked: in gold while slot 1 acts on it, and as a reticle while the player's facing is locked on it. */
+export interface TargetMark {
+  locked: boolean;
+  acting: boolean;
+}
 
 /**
  * A raise under way as its last snapshot states it: the share done, the seconds left at the pace of
@@ -68,6 +74,8 @@ export interface WorldRenderSurface {
   updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void;
   updateGait(entityId: string, gait: Gait): void;
   updateCondition(entityId: string, condition: Condition): void;
+  /** What a dreamer's hands hold, drawn in them. */
+  updateHeld(entityId: string, held: Held | undefined): void;
   /** One swing or strike: the attacker swings, and as the swing lands the target flinches or is missed. */
   showBlow(attackerId: string, targetId: string, hit: boolean): void;
   /**
@@ -84,8 +92,11 @@ export interface WorldRenderSurface {
   showMend(targetId: string): void;
   /** Where each fallen dreamer in the space lies, for a player who senses the fallen; a new space starts with none. */
   showSensed(bearings: readonly SensedBearingMessage[]): void;
-  /** Marks the target, as a reticle while the player's facing is locked on it; `undefined` marks none. */
-  showSelection(entityId: string | undefined, locked: boolean): void;
+  /** A drop lying on the ground, the player's own or one for anyone: its model, with its name under it in its rarity's colour, until it is removed or a new space begins. */
+  showLoot(loot: LootMessage): void;
+  removeLoot(lootId: string): void;
+  /** Marks the target as `mark` says; `undefined` marks none. */
+  showSelection(entityId: string | undefined, mark: TargetMark): void;
   /** A ring where a press holds the ground, or where the walk it let go of heads: it drops onto `point` the first time, and follows it after. */
   showPressMarker(point: Point): void;
   /** The ring rises away from where it lies, once it has landed. */
@@ -107,12 +118,15 @@ export const noopRenderSurface: WorldRenderSurface = {
   updatePosition: () => {},
   updateGait: () => {},
   updateCondition: () => {},
+  updateHeld: () => {},
   showBlow: () => {},
   showAbility: () => {},
   showEffects: () => {},
   showRaising: () => {},
   showMend: () => {},
   showSensed: () => {},
+  showLoot: () => {},
+  removeLoot: () => {},
   showSelection: () => {},
   showPressMarker: () => {},
   liftPressMarker: () => {},

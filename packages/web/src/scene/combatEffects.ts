@@ -39,8 +39,8 @@ import { offsetDirection } from './cameraRig';
 /**
  * When the weapon lands, or the gesture peaks, as a share of each clip: measured off the clips' hand
  * bones, where the blade crosses the front, the chop comes down, the fist and the casting hand reach
- * furthest, the arms come up, the circling hands sink lowest, and the long cast's hand pushes out at
- * its end. A clip left out lands at once.
+ * furthest, the arms come up, the circling hands sink lowest, the long cast's hand pushes out at its
+ * end, and the throwing hand lets go, coming forward fastest. A clip left out lands at once.
  */
 export const STRIKE_AT: Readonly<Record<string, number>> = {
   Melee_1H_Attack_Slice_Horizontal: 0.2,
@@ -52,6 +52,7 @@ export const STRIKE_AT: Readonly<Record<string, number>> = {
   Ranged_Magic_Shoot: 0.35,
   Ranged_Magic_Spellcasting: 0.5,
   Ranged_Magic_Spellcasting_Long: 0.63,
+  Throw: 0.53,
 };
 
 /** A body as the effects read it: the entity's render state. */
@@ -117,6 +118,12 @@ export const EFFECT_POOL_SIZES = {
 
 /** The name of the group every effect hangs on. */
 export const COMBAT_EFFECTS_NAME = 'somnio-combat-effects';
+
+/**
+ * The `userData` key marking a mesh hung on a body that is no part of it, a model in a hand. The
+ * flash and the outline cover the body alone, so swapping what a hand holds leaves them as built.
+ */
+export const HELD_PROP = 'somnioHeldProp';
 
 /**
  * The arc a swing draws: a band across the swing arc at the reach that sweeps across once and
@@ -945,7 +952,7 @@ export class CombatEffects {
   }
 
   /** Whether no tick has run for longer than `STALE_EFFECT_MS`: the tab is hidden, or was until this tick. */
-  private stalled(now: number): boolean {
+  stalled(now: number): boolean {
     return now - this.lastTickMs > STALE_EFFECT_MS;
   }
 
@@ -2266,7 +2273,7 @@ export class CombatEffects {
     this.dropHulls(entityId);
     const sources: THREE.Mesh[] = [];
     model.traverse((object) => {
-      if ((object as THREE.Mesh).isMesh) sources.push(object as THREE.Mesh);
+      if ((object as THREE.Mesh).isMesh && object.userData[HELD_PROP] !== true) sources.push(object as THREE.Mesh);
     });
     const { flashMaterial, outlineMaterial, thickness } = this.spareHullMaterials.pop() ?? { flashMaterial: flashMaterialFor(), ...outlineFor() };
     const hulls: Hulls = {

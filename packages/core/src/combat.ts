@@ -7,10 +7,11 @@ import { clamp, distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { angularDistance, headingFromVector } from './heading.ts';
 import type { Heading } from './heading.ts';
-import { itemWeapon } from './items.ts';
-import type { ItemId } from './items.ts';
+import { affix } from './affixes.ts';
+import { NO_STATS, baseItem } from './items.ts';
+import type { BaseItemId, Equipment, Hands, Item, StatId, Stats } from './items.ts';
 import { forbidsStriking, rankOf } from './lucidity.ts';
-import type { HeldRank, Lucidity, TaskSpec, TeachingId } from './lucidity.ts';
+import type { HeldRank, TaskSpec, TeachingId } from './lucidity.ts';
 import type { MonsterKind } from './monsterKinds.ts';
 
 /**
@@ -26,14 +27,15 @@ export const COMBAT = {
   /** A dreamer's chance to land a swing. */
   hitChance: 0.75,
   damagePerStrikeRank: 3,
-  /** The share of the swing interval each Follow-through rank takes off. */
-  swingSecondsPerFollowThroughRank: 0.1,
+  /** The share of the swing interval, in percent, each Follow-through rank takes off. */
+  swingSpeedPerFollowThroughRank: 10,
   /** How wide in front of a dreamer a swing looks for a nightmare to meet. */
   swingArcDegrees: 120,
   /** A swing slows the dreamer who makes it to this share of their speed, for this long. */
   swingSlow: { factor: 0.7, seconds: 0.4 },
-  /** What each Guard rank takes off a nightmare's hit chance. */
-  hitChancePerGuardRank: 0.08,
+  /** What each point of Guard takes off a nightmare's hit chance. */
+  hitChancePerGuard: 0.01,
+  guardPerGuardRank: 8,
   /** What an empty balance adds to a nightmare's hit chance, scaled linearly down to nothing at full. */
   emptyBalanceHitChance: 0.3,
 
@@ -42,8 +44,8 @@ export const COMBAT = {
   /** Balance a second of standing recovers. */
   balancePerSecond: 12,
   balancePace: { walk: 1.0, jog: 0.4, run: 0 },
-  /** The share each Balance recovery rank adds to the recovery. */
-  balancePerRecoveryRank: 0.25,
+  /** The share, in percent, each Balance recovery rank adds to the recovery. */
+  balanceRecoveryPerRank: 25,
   /** A winded dreamer stays winded until their balance is back to this. */
   windedUntil: 15,
   healthPerSecond: 0.5,
@@ -123,8 +125,39 @@ export function gaitAllowed(gait: Gait, effects: readonly EffectId[]): Gait {
   return gait === 'run' && effects.some((effectId) => effect(effectId).movement !== undefined) ? 'jog' : gait;
 }
 
-export function balancePerSecond(ranks: readonly HeldRank[]): number {
-  return COMBAT.balancePerSecond * (1 + COMBAT.balancePerRecoveryRank * rankOf(ranks, 'balance-recovery'));
+export function balancePerSecond(stats: Stats): number {
+  return COMBAT.balancePerSecond * (1 + stats.balanceRecovery / 100);
+}
+
+export function spiritPerSecond(stats: Stats): number {
+  return COMBAT.spiritPerSecond * (1 + stats.spiritRecovery / 100);
+}
+
+/** The teaching that deepens each role's Spirit. */
+const SPIRIT_DEEPENING: Record<Role, TeachingId | undefined> = { fighter: undefined, healer: 'spirit-deepening', mystic: 'mystic-spirit-deepening' };
+
+/**
+ * What a dreamer's ranks and the gear they wear add to the rules: each rank by its teaching, and
+ * each item's base stats and affixes. Spirit deepens only by the deepening of the dreamer's role.
+ */
+export function statsOf(equipment: Equipment, { role, ranks }: { role?: Role | undefined; ranks: readonly HeldRank[] }): Stats {
+  const deepening = role === undefined ? undefined : SPIRIT_DEEPENING[role];
+  const stats: Stats = {
+    ...NO_STATS,
+    healthMax: COMBAT.healthPerTougheningRank * rankOf(ranks, 'toughening'),
+    spiritMax: deepening === undefined ? 0 : COMBAT.spiritPerDeepeningRank * rankOf(ranks, deepening),
+    damage: COMBAT.damagePerStrikeRank * rankOf(ranks, 'strike'),
+    guard: COMBAT.guardPerGuardRank * rankOf(ranks, 'guard'),
+    swingSpeed: COMBAT.swingSpeedPerFollowThroughRank * rankOf(ranks, 'follow-through'),
+    balanceRecovery: COMBAT.balanceRecoveryPerRank * rankOf(ranks, 'balance-recovery'),
+    mendDepth: COMBAT.mend.healthPerDepthRank * rankOf(ranks, 'depth'),
+  };
+  for (const item of Object.values(equipment)) {
+    const implicit: Partial<Stats> = baseItem(item.baseId).implicit ?? {};
+    for (const stat of Object.keys(implicit) as StatId[]) stats[stat] += implicit[stat]!;
+    for (const { affixId, value } of item.affixes) stats[affix(affixId).stat] += value;
+  }
+  return stats;
 }
 
 export interface Swing {
@@ -135,26 +168,26 @@ export interface Swing {
 }
 
 /**
- * The swing a dreamer makes with what they hold in hand: bare hands for nothing, the weapon's for
- * a weapon, and `undefined` for anything else, which does not swing.
+ * The swing a dreamer makes with what they hold in the main hand: bare hands for nothing, the
+ * weapon's for a weapon, and `undefined` for anything else, which does not swing.
  */
-export function swingFor(itemInHand: string | undefined, ranks: readonly HeldRank[]): Swing | undefined {
-  const weapon = itemInHand === undefined ? COMBAT.bareHands : itemWeapon(itemInHand);
+export function swingFor(mainHand: Item | undefined, stats: Stats): Swing | undefined {
+  const weapon = mainHand === undefined ? COMBAT.bareHands : baseItem(mainHand.baseId).weapon;
   if (weapon === undefined) return undefined;
   return {
-    damage: weapon.damage + COMBAT.damagePerStrikeRank * rankOf(ranks, 'strike'),
+    damage: weapon.damage + stats.damage,
     balanceCost: weapon.balanceCost,
-    seconds: COMBAT.swingSeconds * (1 - COMBAT.swingSecondsPerFollowThroughRank * rankOf(ranks, 'follow-through')),
+    seconds: COMBAT.swingSeconds * (1 - stats.swingSpeed / 100),
   };
 }
 
 /**
  * The swing a dreamer makes now, if they can make one: the task they hold does not forbid
- * striking, what they hold in hand swings, and their balance covers its cost.
+ * striking, what they hold in the main hand swings, and their balance covers its cost.
  */
-export function swingAllowed(task: TaskSpec | undefined, itemInHand: string | undefined, ranks: readonly HeldRank[], balance: number): Swing | undefined {
+export function swingAllowed(task: TaskSpec | undefined, mainHand: Item | undefined, stats: Stats, balance: number): Swing | undefined {
   if (task !== undefined && forbidsStriking(task)) return undefined;
-  const swing = swingFor(itemInHand, ranks);
+  const swing = swingFor(mainHand, stats);
   return swing !== undefined && balance >= swing.balanceCost ? swing : undefined;
 }
 
@@ -164,28 +197,33 @@ export type EngageAction = 'attack' | 'mend';
 /** What a target is to slot 1. */
 export type EngageTarget = 'nightmare' | 'dreamer';
 
-/** What a kit needs in hand: `mainHand` bare hands or a weapon, `moonstone` the Moonstone. */
-export type HandNeed = 'mainHand' | 'moonstone';
+/**
+ * What a kit needs in hand: `mainHand` an empty main hand or a weapon in it, `moonstone` the
+ * Moonstone in the off hand, `focus` a focus in the off hand.
+ */
+export type HandNeed = 'mainHand' | 'moonstone' | 'focus';
 
-/** Whether what is in hand serves a kit, for slot 1 and the abilities alike. */
-export function handAllows(need: HandNeed, itemInHand: string | undefined): boolean {
+/** Whether what is in the hands serves a kit, for slot 1 and the abilities alike. */
+export function handAllows(need: HandNeed, { mainHand, offHand }: Hands): boolean {
   switch (need) {
     case 'mainHand':
-      return itemInHand === undefined || itemWeapon(itemInHand) !== undefined;
+      return mainHand === undefined || baseItem(mainHand.baseId).weapon !== undefined;
     case 'moonstone':
-      return itemInHand === ('moonstone' satisfies ItemId);
+      return offHand?.baseId === ('moonstone' satisfies BaseItemId);
+    case 'focus':
+      return offHand !== undefined && baseItem(offHand.baseId).focus === true;
   }
 }
 
 /**
- * What slot 1 does at a target: Attack at a nightmare not yet driven off, with bare hands or a
- * weapon in hand, and Mend at a dreamer, the Healer themselves included, for a Healer with the
- * Moonstone in hand. At anything else it does nothing, and cannot be switched on. The Moonstone does
- * not swing, so one hand never does both.
+ * What slot 1 does at a target. Each hand does its own job: Attack at a nightmare not yet driven
+ * off, with the main hand empty or holding a weapon, and Mend at a dreamer, the Healer themselves
+ * included, for a Healer with the Moonstone in the off hand. So a Healer holding both does either,
+ * by the target. At anything else it does nothing, and cannot be switched on.
  */
-export function engageAction(target: EngageTarget | undefined, role: Role | undefined, itemInHand: string | undefined): EngageAction | undefined {
-  if (target === 'nightmare') return handAllows('mainHand', itemInHand) ? 'attack' : undefined;
-  if (target === 'dreamer' && role === 'healer' && handAllows('moonstone', itemInHand)) return 'mend';
+export function engageAction(target: EngageTarget | undefined, role: Role | undefined, hands: Hands): EngageAction | undefined {
+  if (target === 'nightmare') return handAllows('mainHand', hands) ? 'attack' : undefined;
+  if (target === 'dreamer' && role === 'healer' && handAllows('moonstone', hands)) return 'mend';
   return undefined;
 }
 
@@ -217,9 +255,9 @@ export function swingMeets(from: Point, facing: Heading, body: Body): boolean {
 }
 
 /** A nightmare's chance to land its strike: higher the emptier the dreamer's balance, lower with Guard. */
-export function strikeChance(kind: MonsterKind, balance: number, balanceMax: number, ranks: readonly HeldRank[]): number {
+export function strikeChance(kind: MonsterKind, balance: number, balanceMax: number, stats: Stats): number {
   const unsteady = COMBAT.emptyBalanceHitChance * (1 - balance / balanceMax);
-  return clamp(kind.hitChance - COMBAT.hitChancePerGuardRank * rankOf(ranks, 'guard') + unsteady, 0, 1);
+  return clamp(kind.hitChance - COMBAT.hitChancePerGuard * stats.guard + unsteady, 0, 1);
 }
 
 /**
@@ -262,28 +300,29 @@ function effectShare(effects: readonly EffectId[], key: 'damageDealt' | 'damageT
   return effects.reduce((product, effectId) => product * (effect(effectId)[key] ?? 1), 1);
 }
 
-/** The teaching that deepens each role's Spirit. */
-const SPIRIT_DEEPENING: Record<Role, TeachingId | undefined> = { fighter: undefined, healer: 'spirit-deepening', mystic: 'mystic-spirit-deepening' };
-
-/** Each pool's maximum: Health by Toughening, Spirit by the Spirit deepening of the dreamer's role. */
-export function maxPools({ role, ranks }: Pick<Lucidity, 'role' | 'ranks'>): Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'> {
-  const deepening = role === undefined ? undefined : SPIRIT_DEEPENING[role];
+/** Each pool's maximum: the base pool and what the dreamer's stats add to it. */
+export function maxPools(stats: Stats): Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'> {
   return {
-    healthMax: COMBAT.basePool + COMBAT.healthPerTougheningRank * rankOf(ranks, 'toughening'),
-    balanceMax: COMBAT.basePool,
-    spiritMax: COMBAT.basePool + (deepening === undefined ? 0 : COMBAT.spiritPerDeepeningRank * rankOf(ranks, deepening)),
+    healthMax: COMBAT.basePool + stats.healthMax,
+    balanceMax: COMBAT.basePool + stats.balanceMax,
+    spiritMax: COMBAT.basePool + stats.spiritMax,
   };
 }
 
-/** Every pool at the maximum the role and ranks give. */
-export function fullPools(lucidity: Pick<Lucidity, 'role' | 'ranks'>): Energy {
-  const maxima = maxPools(lucidity);
+/** Every pool at the maximum the stats give. */
+export function fullPools(stats: Stats): Energy {
+  const maxima = maxPools(stats);
   return { healthCurrent: maxima.healthMax, balanceCurrent: maxima.balanceMax, spiritCurrent: maxima.spiritMax, ...maxima };
 }
 
 /** The health one touch of the Moonstone restores. */
-export function mendAmount(ranks: readonly HeldRank[]): number {
-  return COMBAT.mend.health + COMBAT.mend.healthPerDepthRank * rankOf(ranks, 'depth');
+export function mendAmount(stats: Stats): number {
+  return COMBAT.mend.health + stats.mendDepth;
+}
+
+/** The share of a ward's shield a caster of these stats puts up. */
+export function wardShare(stats: Stats): number {
+  return 1 + stats.wardStrength / 100;
 }
 
 /**

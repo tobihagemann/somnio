@@ -9,17 +9,20 @@ import {
   handleAskTask,
   handleBuy,
   handleCompleteTask,
+  handleDropItem,
   handleEngage,
-  handleEquipToggle,
+  handleEquip,
   handleMove,
+  handleMoveItem,
+  handlePickUp,
   handleSay,
   handleSell,
   handleStudy,
   handleTalk,
   handleTarget,
+  handleUnequip,
   handleUseAbility,
   handleUseDoor,
-  handleUseItem,
   handleWake,
 } from '../handlers/gameplay.ts';
 import type { TransferOutcome } from '../handlers/gameplay.ts';
@@ -328,7 +331,11 @@ export class ConnectionActor {
         case 'deleteCharacter':
         case 'move':
         case 'clientSay':
-        case 'equipToggle':
+        case 'equip':
+        case 'unequip':
+        case 'moveItem':
+        case 'dropItem':
+        case 'pickUp':
         case 'talk':
         case 'target':
         case 'engage':
@@ -341,7 +348,6 @@ export class ConnectionActor {
         case 'buy':
         case 'sell':
         case 'wake':
-        case 'useItem':
         case 'revokeSession':
         case 'revokeOtherSessions':
         case 'hello':
@@ -358,9 +364,12 @@ export class ConnectionActor {
         case 'serverSay':
         case 'energy':
         case 'inventory':
+        case 'loot':
+        case 'lootGone':
         case 'leave':
         case 'lucidity':
         case 'condition':
+        case 'held':
         case 'vitals':
         case 'effects':
         case 'blow':
@@ -400,7 +409,11 @@ export class ConnectionActor {
         case 'redeemSession':
         case 'move':
         case 'clientSay':
-        case 'equipToggle':
+        case 'equip':
+        case 'unequip':
+        case 'moveItem':
+        case 'dropItem':
+        case 'pickUp':
         case 'talk':
         case 'target':
         case 'engage':
@@ -413,7 +426,6 @@ export class ConnectionActor {
         case 'buy':
         case 'sell':
         case 'wake':
-        case 'useItem':
         case 'hello':
         case 'loginResult':
         case 'registerResult':
@@ -428,9 +440,12 @@ export class ConnectionActor {
         case 'serverSay':
         case 'energy':
         case 'inventory':
+        case 'loot':
+        case 'lootGone':
         case 'leave':
         case 'lucidity':
         case 'condition':
+        case 'held':
         case 'vitals':
         case 'effects':
         case 'blow':
@@ -454,8 +469,20 @@ export class ConnectionActor {
       case 'clientSay':
         handleSay(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'equipToggle':
-        handleEquipToggle(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'equip':
+        handleEquip(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'unequip':
+        handleUnequip(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'moveItem':
+        handleMoveItem(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'dropItem':
+        handleDropItem(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'pickUp':
+        handlePickUp(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'talk':
         handleTalk(message.payload, state.entityId, state.spaceId, this.dependencies);
@@ -473,9 +500,6 @@ export class ConnectionActor {
         return this.applyTransfer(handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies), state.accountId);
       case 'wake':
         return this.applyTransfer(handleWake(state.entityId, state.spaceId, this, this.dependencies), state.accountId);
-      case 'useItem':
-        handleUseItem(message.payload, state.entityId, state.spaceId, this.dependencies);
-        return { kind: 'keepOpen' };
       case 'askTask':
         handleAskTask(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
@@ -522,9 +546,12 @@ export class ConnectionActor {
       case 'serverSay':
       case 'energy':
       case 'inventory':
+      case 'loot':
+      case 'lootGone':
       case 'leave':
       case 'lucidity':
       case 'condition':
+      case 'held':
       case 'vitals':
       case 'effects':
       case 'blow':
@@ -587,9 +614,11 @@ export class ConnectionActor {
   /**
    * The space hands the player over in one turn, so nothing that happens there during the write (a
    * strike, a raise) is lost from their snapshot, and the snapshot includes any heal tick that fell
-   * due as they left. The account stays registered until the write has landed, so a login racing it
-   * is answered `alreadyLoggedIn` rather than reading the row from before. A connection still
-   * choosing a character has nothing to write.
+   * due as they left. A drop save still pending for them is dropped, since this snapshot is newer,
+   * and one in flight is waited for before this one is written. The account stays registered until
+   * the write has landed, so a login racing it is answered `alreadyLoggedIn` rather than reading the
+   * row from before, or rows a drop save is about to replace. A connection still choosing a
+   * character has nothing to write.
    */
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
     const state = this.state;
@@ -601,6 +630,7 @@ export class ConnectionActor {
     if (state.kind !== 'attached') return;
     const handedOver = this.dependencies.worldRouter.space(state.spaceId)?.handOver(state.entityId, leftGame);
     if (handedOver !== undefined) {
+      await this.dependencies.worldRouter.settleDropSaves(state.entityId);
       await persistPlayerCheckpoint(handedOver.checkpoint, this.dependencies.characters, this.logger, {
         origin: 'disconnect',
         space: state.spaceId,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { CreateCharacterMessage } from '@somnio/protocol';
 import { headingFromCardinal } from '@somnio/core';
@@ -6,7 +6,7 @@ import type { Character, People, Sector } from '@somnio/core';
 import { STARTER_SECTOR, newCharacter } from '@somnio/data';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
-import { handleCreateCharacter, resolvedSpawn } from '../src/handlers/characters.ts';
+import { handleCreateCharacter, joinCharacter, resolvedSpawn } from '../src/handlers/characters.ts';
 import { characterResults, collectMessages } from './support/frames.ts';
 import { makeCharacter, makeNPC, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -112,5 +112,26 @@ describe('resolvedSpawn', () => {
 
   it('falls back to the starter spawn from a space the world no longer has', async () => {
     expect(resolvedSpawn(makeCharacter({ x: 5, z: 5 }, 'tester', 'Gone'), await router())).toEqual(STARTER_SPAWN);
+  });
+});
+
+/** The host clock, which the join reads, stands at `NOW`. */
+describe('a join', () => {
+  const NOW = Date.UTC(2026, 10, 11, 12);
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ['now, after a last_seen behind the clock', NOW - 60_000, NOW],
+    ['a millisecond after a last_seen the clock has stepped back behind', NOW + 60_000, NOW + 60_001],
+  ])('stamps its last_seen %s', async (_label, stored, joined) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+    const characters = new StubCharacterRepository();
+    const snapshot = vi.spyOn(characters, 'snapshot');
+    const dependencies = await makeStubConnectionDependencies({ characters });
+    const character = { ...makeCharacter({ x: 5, z: 5 }), lastSeen: new Date(stored) };
+
+    expect(await joinCharacter(character, crypto.randomUUID(), new ConnectionActor(dependencies), dependencies)).toBe(true);
+    expect(snapshot.mock.calls.map(([written]) => written.lastSeen.getTime())).toEqual([joined]);
   });
 });

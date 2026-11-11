@@ -24,7 +24,7 @@ function sourceFiles(directory: string): string[] {
 /** Every `UI/` file named by an `/assets/UI/...` URL in the client's sources and its page. */
 function referencedFiles(): string[] {
   const texts = [...sourceFiles(resolve(WEB_ROOT, 'src')), resolve(WEB_ROOT, 'index.html')].map((path) => readFileSync(path, 'utf8'));
-  return [...new Set(texts.flatMap((text) => [...text.matchAll(/\/assets\/UI\/([\w.-]+)/g)].map((match) => match[1]!)))].sort();
+  return [...new Set(texts.flatMap((text) => [...text.matchAll(/\/assets\/UI\/([\w./-]+)/g)].map((match) => match[1]!)))].sort();
 }
 
 function bundledFiles(): string[] {

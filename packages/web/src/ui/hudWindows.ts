@@ -1,13 +1,13 @@
-import type { InventoryRowMessage } from '@somnio/protocol';
-import type { ItemId } from '@somnio/core';
+import type { ItemInstance } from '@somnio/core';
 import { itemName, t } from '@/i18n';
-import { element, iconButton } from './dom';
+import { button, element, iconButton, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
-import { setTip } from './hudTooltip';
+import { placeBeside, setTip, tipNodes } from './hudTooltip';
+import { itemTip } from './itemText';
 
 /**
- * The windows the HUD's menu opens: Players and the Bag. Each is a titled panel with a ✕, built
- * once and shown or hidden, its rows kept while what they show is unchanged.
+ * The windows the HUD's menu opens: Players and Character. Each is a titled panel with a ✕, built
+ * once and shown or hidden, its contents kept while what they show is unchanged.
  */
 
 export class HUDWindow {
@@ -17,15 +17,18 @@ export class HUDWindow {
     this.root = element('section', {
       className: 'fantasy-panel fantasy-panel--opaque hud-window hidden',
       attributes: { 'aria-label': title },
-      children: [windowHead(title, onClose), ...body],
+      children: [...windowHead(title, onClose), ...body],
     });
   }
 }
 
-/** A window's title and the ✕ that closes it. */
-export function windowHead(title: string, onClose: () => void): HTMLElement {
-  const close = setTip(iconButton(t('Close %@', title), glyph(HUD_ICONS.close), onClose, { className: 'hud-window__close' }));
-  return element('div', { className: 'hud-window__head', children: [element('h2', { className: 'overlay-title', text: title }), close] });
+/**
+ * A window's title, centred over its whole width, and the ✕ that closes it, a small chrome button
+ * on the panel's top-right corner. The ✕ is returned beside the head, not in it, so the panel positions it.
+ */
+export function windowHead(title: string, onClose: () => void): HTMLElement[] {
+  const close = setTip(iconButton(t('Close %@', title), glyph(HUD_ICONS.close), onClose, { className: 'fantasy-button hud-window__close' }));
+  return [element('div', { className: 'hud-window__head', children: [element('h2', { className: 'overlay-title', text: title })] }), close];
 }
 
 /** What the Players list marks: the player's own name, and the target's. */
@@ -73,55 +76,96 @@ export class PlayersList {
   }
 }
 
-/**
- * The trailing cell of an item row: the purse's coin count, else the equip marker. `[L]`/`[R]` are
- * layout markers, not translatable text, and the player never picks a hand, so this only reflects
- * what the server says.
- */
-function rowMarker(row: InventoryRowMessage): string {
-  if (row.itemId === ('purse' satisfies ItemId)) return String(row.quantity);
-  if (row.equippedHand === 'left') return '[L]';
-  if (row.equippedHand === 'right') return '[R]';
-  return '';
+/** An item card's main action and, while it cannot run, why not. A droppable item in the bag also gets a drop. */
+export interface ItemAction {
+  label: string;
+  run: (() => void) | undefined;
+  warning?: string;
+  drop?: () => void;
 }
 
-/** What the player carries. A double click on a row, or Enter on it, uses the item: equips or puts away a weapon, takes the Moonstone in hand or, with it already in hand, mends its holder, and says the purse's coins in the chat. */
-export class BagList {
-  readonly nodes: readonly HTMLElement[];
-  private readonly list: HTMLElement;
-  private readonly footer: HTMLElement;
-  private readonly onActivate: (row: InventoryRowMessage) => void;
-  private shown: readonly InventoryRowMessage[] | undefined;
+/**
+ * An item's card, opened by a tap on the item or Enter on it: what its tip says, a button for the
+ * one thing a press can do with it, and Drop beside it for a carried item. Unlike the HUD's tip it
+ * takes the pointer, so it is a dialog that holds a button rather than a tooltip. It closes on a
+ * press anywhere else, on Escape, and once its button is pressed.
+ */
+export class ItemCard {
+  readonly root: HTMLElement;
+  private readonly onClose: () => void;
+  private shown: { itemId: string; anchor: HTMLElement } | undefined;
 
-  constructor(onActivate: (row: InventoryRowMessage) => void) {
-    this.onActivate = onActivate;
-    this.list = element('div', { className: 'hud-list hud-list--bag', attributes: { role: 'list' } });
-    this.footer = element('div', { className: 'hud-list__footer' });
-    this.nodes = [this.list, this.footer];
+  /** `onClose` hears of every close, since a part hidden under the pointer reports no leave. */
+  constructor(onClose: () => void) {
+    this.onClose = onClose;
+    this.root = element('section', {
+      className: 'fantasy-panel fantasy-panel--opaque hud-tip hud-item-card hidden',
+      attributes: { role: 'dialog', tabindex: -1 },
+    });
+    // Ahead of whatever the press lands on. A press on the item itself closes the card through its click.
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (this.shown === undefined || !(event.target instanceof Node)) return;
+        if (!this.root.contains(event.target) && !this.shown.anchor.contains(event.target)) this.close();
+      },
+      true,
+    );
+    // Placed beside its item, it would be left behind by a scroll that moves the item, or a resize.
+    window.addEventListener(
+      'scroll',
+      (event) => {
+        if (this.shown !== undefined && event.target instanceof Node && event.target.contains(this.shown.anchor)) this.close();
+      },
+      true,
+    );
+    window.addEventListener('resize', () => this.close());
   }
 
-  render(rows: readonly InventoryRowMessage[]): void {
-    // A row replaced between the two clicks of a double click, or while it holds the keyboard
-    // focus, is never activated, and the shell renders on every `energy` frame.
-    if (rows === this.shown) return;
-    this.shown = rows;
-    this.list.replaceChildren(
-      ...rows.map((row) => {
-        const node = element('div', {
-          className: 'hud-list__row hud-list__row--activatable',
-          attributes: { role: 'listitem', tabindex: 0 },
-          children: [
-            element('span', { className: 'hud-list__name', text: itemName(row.itemId, t) }),
-            element('span', { className: 'hud-list__marker', text: rowMarker(row) }),
-          ],
-        });
-        node.addEventListener('dblclick', () => this.onActivate(row));
-        node.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') this.onActivate(row);
-        });
-        return node;
-      }),
+  /** The item whose card is open. */
+  get itemId(): string | undefined {
+    return this.shown?.itemId;
+  }
+
+  /** Opens the item's card beside `anchor`, the part it was pressed on, and gives its button the keyboard when `focus` says so. */
+  open(anchor: HTMLElement, item: ItemInstance, action: ItemAction, focus: boolean): void {
+    this.close();
+    const { run, drop } = action;
+    const press = button(action.label, () => {
+      this.close();
+      run?.();
+    });
+    press.disabled = run === undefined;
+    const buttons = [press];
+    if (drop !== undefined) {
+      buttons.unshift(
+        button(t('Drop'), () => {
+          this.close();
+          drop();
+        }),
+      );
+    }
+    this.root.setAttribute('aria-label', itemName(item.baseId, t));
+    this.root.replaceChildren(
+      ...tipNodes(itemTip(item, action.warning === undefined ? {} : { warning: action.warning })),
+      element('div', { className: 'hud-item-card__action', children: buttons }),
     );
-    this.footer.textContent = t('Items: %@', String(rows.length));
+    setHidden(this.root, false);
+    placeBeside(this.root, anchor, this.root.parentElement ?? this.root);
+    anchor.setAttribute('aria-expanded', 'true');
+    this.shown = { itemId: item.id, anchor };
+    if (focus) (press.disabled ? this.root : press).focus();
+  }
+
+  /** Closes the card, handing the keyboard back to its item if the card held it. */
+  close(): void {
+    if (this.shown === undefined) return;
+    const { anchor } = this.shown;
+    this.shown = undefined;
+    anchor.setAttribute('aria-expanded', 'false');
+    const focused = this.root.contains(document.activeElement);
+    setHidden(this.root, true);
+    if (focused) anchor.focus();
+    this.onClose();
   }
 }

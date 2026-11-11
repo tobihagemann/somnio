@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { persistPlayerCheckpoint } from '../src/world/checkpointWriter.ts';
+import { CHECKPOINT_ORIGINS, persistPlayerCheckpoint } from '../src/world/checkpointWriter.ts';
+import { wearing } from './support/combat.ts';
 import { testLogger } from './support/logger.ts';
 import { makeCharacter } from './support/sectorFactory.ts';
 import { RepositoryFailure, StubCharacterRepository } from './support/stubRepositories.ts';
@@ -16,8 +17,14 @@ class FailingCharacterRepository extends StubCharacterRepository {
 describe('persistPlayerCheckpoint', () => {
   it('logs and swallows a failed write so the periodic pass continues past it', async () => {
     const characters = new FailingCharacterRepository();
-    const snapshot = { character: makeCharacter({ x: 1, z: 1 }), inventory: [] };
-    await expect(persistPlayerCheckpoint(snapshot, characters, testLogger())).resolves.toBeUndefined();
+    const snapshot = { character: makeCharacter({ x: 1, z: 1 }), inventory: wearing() };
+    await expect(persistPlayerCheckpoint(snapshot, characters, testLogger(), { origin: 'periodic', space: 'outdoors' })).resolves.toBeUndefined();
     expect(characters.attempts).toBe(1);
+  });
+});
+
+describe('CHECKPOINT_ORIGINS', () => {
+  it('names the three writers a failed checkpoint record can come from', () => {
+    expect(CHECKPOINT_ORIGINS).toEqual(['periodic', 'disconnect', 'drop']);
   });
 });

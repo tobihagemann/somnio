@@ -1,6 +1,6 @@
 import type { Door, Locale } from '@somnio/protocol';
-import { NO_LUCIDITY, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
-import type { Character, InventoryRow, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
+import { NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
+import type { Character, Inventory, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../../core/test/support/worldFixture.ts';
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
@@ -83,16 +83,19 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
     space,
     position,
     facing: headingFromCardinal('south'),
-    energy: fullPools(NO_LUCIDITY),
+    energy: fullPools(NO_STATS),
     lucidity: NO_LUCIDITY,
     lastSeen: new Date(),
   };
 }
 
+/** Rolls that never drop anything, so a nightmare driven off leaves nothing on the ground unless a test asks for drops. */
+const NO_DROPS: RandomSource = { nextUInt32: () => 0xffff_ffff };
+
 /** One space of the world on a clock the test advances. */
 export function makeClockedSpace(world: LoadedWorld, spaceId: string = OUTDOOR_SPACE_ID, options: Partial<SpaceActorOptions> = {}) {
   const clock = { ms: 0 };
-  const space = new SpaceActor(world, spaceId, { logger: testLogger(), now: () => clock.ms, ...options });
+  const space = new SpaceActor(world, spaceId, { logger: testLogger(), now: () => clock.ms, lootRandom: NO_DROPS, requestDropSave: () => {}, ...options });
   return { clock, space };
 }
 
@@ -103,7 +106,7 @@ export interface AttachPlayerOptions {
   worldSeconds?: number;
   /** What the character differs in from a fresh one: its people, its pools, and what it has grown into. */
   character?: Partial<Pick<Character, 'people' | 'energy' | 'lucidity'>>;
-  inventory?: InventoryRow[];
+  inventory?: Inventory;
   /** The language NPCs speak to the player in; English unless given. */
   locale?: Locale;
 }
@@ -112,6 +115,6 @@ export interface AttachPlayerOptions {
 export function attachPlayer(space: SpaceActor, at: Point, name = 'tester', options: AttachPlayerOptions = {}) {
   const outbox = options.outbox ?? new ConnectionOutbox(4096);
   const character = { ...makeCharacter(at, name, options.spaceId), ...options.character };
-  space.attach(character, options.inventory ?? [], outbox, options.worldSeconds ?? 0, options.locale ?? 'en');
+  space.attach(character, options.inventory ?? { coins: 0, equipped: {}, bag: [] }, outbox, options.worldSeconds ?? 0, options.locale ?? 'en');
   return { outbox, character, entityId: character.id };
 }

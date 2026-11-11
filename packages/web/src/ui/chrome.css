@@ -392,6 +392,11 @@ button {
   white-space: nowrap;
 }
 
+/* Its rarity's colour, and the icon's edge and plate, are in `hud.css` with the item's tip. */
+.ware-name {
+  margin-right: auto;
+}
+
 .teaching-action,
 .ware-action {
   display: flex;

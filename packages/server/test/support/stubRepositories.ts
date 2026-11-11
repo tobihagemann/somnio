@@ -1,9 +1,9 @@
 import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
-import type { Account, Character, InventoryRow, NPCDialogState, People } from '@somnio/core';
+import type { Account, Character, Inventory, NPCDialogState, People } from '@somnio/core';
 import type {
   AccountRepository,
   CharacterRepository,
-  InventoryRepository,
+  ItemRepository,
   IssuedSession,
   NPCDialogStateRepository,
   ResolvedSession,
@@ -50,7 +50,7 @@ export class StubCharacterRepository implements CharacterRepository {
     this.charactersByAccount = charactersByAccount;
   }
 
-  create(_accountId: string, _name: string, _people: People, _starterInventory: readonly InventoryRow[]): Promise<Character> {
+  create(_accountId: string, _name: string, _people: People, _starterInventory: Inventory): Promise<Character> {
     throw new Error('StubCharacterRepository: create is not used by these tests');
   }
 
@@ -62,11 +62,11 @@ export class StubCharacterRepository implements CharacterRepository {
     return Promise.resolve(undefined);
   }
 
-  snapshot(): Promise<boolean> {
+  snapshot(_character: Character): Promise<boolean> {
     return Promise.resolve(false);
   }
 
-  persistCheckpoint(): Promise<boolean> {
+  persistCheckpoint(_character: Character, _inventory: Inventory): Promise<boolean> {
     return Promise.resolve(false);
   }
 
@@ -75,13 +75,9 @@ export class StubCharacterRepository implements CharacterRepository {
   }
 }
 
-export class StubInventoryRepository implements InventoryRepository {
-  loadAll(): Promise<InventoryRow[]> {
-    return Promise.resolve([]);
-  }
-
-  replaceAll(): Promise<void> {
-    return Promise.resolve();
+export class StubItemRepository implements ItemRepository {
+  load(): Promise<Inventory> {
+    return Promise.resolve({ coins: 0, equipped: {}, bag: [] });
   }
 }
 

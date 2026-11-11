@@ -1,15 +1,17 @@
 import { ROLES } from '@somnio/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
-import { ITEMS, itemInHand, itemLabelKey, itemWeapon, purseCoins } from '../src/items.ts';
+import { BASE_ITEMS, itemLabelKey, newItemId, plainInstance } from '../src/items.ts';
 import { TEACHINGS, TRIALS, roleLabelKey } from '../src/lucidity.ts';
 import { MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
+  'Amulet',
   'Balance recovery',
   'Bind',
   'Brace',
+  'Buckler',
   'Calm',
   'Challenge',
   'Cleave',
@@ -24,16 +26,22 @@ const CORE_KEYS = [
   'Ghost',
   'Guard',
   'Healer',
+  'Iron ring',
+  'Leather boots',
+  'Leather cap',
+  'Leather gloves',
+  'Leather trousers',
   'Lumina',
   'Lunge',
   'Mace',
   'Moonstone',
   'Mystic',
   'North Wood',
-  'Purse',
+  'Padded tunic',
   'Radiance',
   'Rally',
   'Renewal',
+  'Round shield',
   'Sense the fallen',
   'Short sword',
   'Sopors',
@@ -44,51 +52,37 @@ const CORE_KEYS = [
   'Umbrae',
   'Veil',
   'Vigils',
+  'Wand',
   'Ward',
   'Weaken',
 ];
 
 describe('items', () => {
-  it('resolves the purse and the cudgel', () => {
-    expect(itemLabelKey('purse')).toBe('Purse');
+  it('resolves the cudgel', () => {
     expect(itemLabelKey('cudgel')).toBe('Cudgel');
   });
 
-  it('resolves nothing for an unknown id, inherited object keys included', () => {
+  it('resolves nothing for an unknown id, the purse and inherited object keys included', () => {
     expect(itemLabelKey('longsword')).toBeUndefined();
+    expect(itemLabelKey('purse')).toBeUndefined();
     expect(itemLabelKey('toString')).toBeUndefined();
   });
 
-  it('makes weapons of the dagger, the cudgel, the short sword, and the mace alone', () => {
-    expect(itemWeapon('dagger')).toEqual({ damage: 6, balanceCost: 10 });
-    expect(itemWeapon('cudgel')).toEqual({ damage: 8, balanceCost: 18 });
-    expect(itemWeapon('sword')).toEqual({ damage: 11, balanceCost: 24 });
-    expect(itemWeapon('mace')).toEqual({ damage: 14, balanceCost: 32 });
-    expect(itemWeapon('purse')).toBeUndefined();
-    expect(itemWeapon('moonstone')).toBeUndefined();
-    expect(itemWeapon('toString')).toBeUndefined();
+  it('names each new item by a UUIDv7, so items sort by id in the order they were made', () => {
+    const now = vi.spyOn(Date, 'now');
+    const made = [1_700_000_000_000, 1_700_000_000_001, 1_800_000_000_000].map((ms) => {
+      now.mockReturnValue(ms);
+      return plainInstance('dagger');
+    });
+    now.mockRestore();
+    expect(made.every(({ id }) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))).toBe(true);
+    const ids = made.map(({ id }) => id);
+    expect([...ids].reverse().sort()).toEqual(ids);
+    expect(newItemId()).not.toBe(newItemId());
   });
 
-  it('holds what is in the right hand, and nothing for a row in the left', () => {
-    const cudgel = { itemId: 'cudgel', equippedHand: 'left' as const };
-    const moonstone = { itemId: 'moonstone', equippedHand: 'right' as const };
-    expect(itemInHand([{ itemId: 'purse' }, cudgel, moonstone])).toBe('moonstone');
-    expect(itemInHand([{ itemId: 'purse' }, cudgel])).toBeUndefined();
-  });
-
-  it('reads the purse, and an empty one with none', () => {
-    expect(
-      purseCoins([
-        { itemId: 'cudgel', quantity: 1 },
-        { itemId: 'purse', quantity: 42 },
-      ]),
-    ).toBe(42);
-    expect(purseCoins([{ itemId: 'cudgel', quantity: 1 }])).toBe(0);
-  });
-
-  it('ships English and German for both labels', () => {
-    expect(lookupIn(coreCatalog, 'en', 'Purse', [])).toBe('Purse');
-    expect(lookupIn(coreCatalog, 'de', 'Purse', [])).toBe('Geldbeutel');
+  it('ships English and German for an item label', () => {
+    expect(lookupIn(coreCatalog, 'en', 'Cudgel', [])).toBe('Cudgel');
     expect(lookupIn(coreCatalog, 'de', 'Cudgel', [])).toBe('Knüppel');
   });
 });
@@ -101,7 +95,7 @@ describe('core catalog', () => {
 
   it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, and the places a trial names', () => {
     const labels = [
-      ...Object.values(ITEMS).map((item) => item.labelKey),
+      ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),
       ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),

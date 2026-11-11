@@ -12,7 +12,11 @@ const CLIENT_TO_SERVER_TAGS = [
   'deleteCharacter',
   'move',
   'clientSay',
-  'equipToggle',
+  'equip',
+  'unequip',
+  'moveItem',
+  'dropItem',
+  'pickUp',
   'talk',
   'target',
   'engage',
@@ -25,7 +29,6 @@ const CLIENT_TO_SERVER_TAGS = [
   'buy',
   'sell',
   'wake',
-  'useItem',
   // Remembered sessions. `redeemSession` is accepted pre-login: it is an alternative to a password
   // login and reuses `loginResult` for its outcome. `revokeSession` and `revokeOtherSessions` are
   // accepted once the account is authenticated, on the card and in the world. The server sends
@@ -51,9 +54,12 @@ const SERVER_TO_CLIENT_TAGS = [
   'serverSay',
   'energy',
   'inventory',
+  'loot',
+  'lootGone',
   'leave',
   'lucidity',
   'condition',
+  'held',
   'vitals',
   'effects',
   'blow',

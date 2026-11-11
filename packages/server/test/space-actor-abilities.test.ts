@@ -4,7 +4,7 @@ import type { Character, Point } from '@somnio/core';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import {
   BESIDE_GHOST,
-  CUDGEL_IN_HAND,
+  CUDGEL,
   GHOST,
   GHOST_AT,
   arena,
@@ -15,6 +15,7 @@ import {
   face,
   lucidity,
   payloads,
+  wearing,
 } from './support/combat.ts';
 import { collectMessages, entityMoves } from './support/frames.ts';
 import { attachPlayer, makeMonsterSpawn } from './support/sectorFactory.ts';
@@ -195,7 +196,7 @@ describe('Cleave', () => {
     // Each landed cudgel swing takes 11, and Cleave's first rank 0.6 of it: 6.6, taken whole as 7.
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { lucidity: lucidity('fighter', { strike: 1, cleave: 1 }) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
     face(space, fighter.entityId, GHOST_AT);
     space.handleTarget(GHOST, fighter.entityId);
@@ -317,7 +318,7 @@ describe('an ability at its third rank', () => {
     // A landed cudgel swing takes 11, and Cleave's third rank all of it.
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { lucidity: lucidity('fighter', { strike: 1, cleave: 3 }) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
     face(space, fighter.entityId, GHOST_AT);
     space.handleTarget(GHOST, fighter.entityId);

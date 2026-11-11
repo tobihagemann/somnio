@@ -217,6 +217,7 @@ export class SplashDirector {
       gait: actor.gait,
       condition: actor.condition,
       service: undefined,
+      held: undefined,
     });
     this.actors.set(actor.id, { position: actor.start, facing: actor.facing, condition: actor.condition });
   }

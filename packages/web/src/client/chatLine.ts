@@ -36,8 +36,11 @@ export type ChatLine =
   | { kind: 'startupGreeting' }
   | { kind: 'purseBalance'; coins: number }
   | { kind: 'coinsGained'; coins: number }
-  | { kind: 'bought'; itemId: string; coins: number }
-  | { kind: 'sold'; itemId: string; coins: number; emptiedHand: boolean }
+  | { kind: 'bought'; baseId: string; coins: number }
+  | { kind: 'sold'; baseId: string; coins: number }
+  | { kind: 'dropped'; baseId: string }
+  | { kind: 'pickedUp'; baseId: string }
+  | { kind: 'bagFull' }
   | { kind: 'becameRole'; role: Role }
   | { kind: 'rankGained'; teachingId: TeachingId; rank: number }
   | { kind: 'placeFound'; found: number; total: number }
@@ -97,6 +100,9 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'coinsGained':
     case 'bought':
     case 'sold':
+    case 'dropped':
+    case 'pickedUp':
+    case 'bagFull':
     case 'becameRole':
     case 'rankGained':
     case 'placeFound':

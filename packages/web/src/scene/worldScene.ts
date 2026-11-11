@@ -3,7 +3,7 @@
  */
 import * as THREE from 'three';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
-import type { AbilityShown, RaiseProgress, SpeechBubbleRequest, WorldRenderSurface } from '@/client/renderSurface';
+import type { AbilityShown, RaiseProgress, SpeechBubbleRequest, TargetMark, WorldRenderSurface } from '@/client/renderSurface';
 import {
   EDGE_TOLERANCE,
   clamp,
@@ -14,6 +14,7 @@ import {
   groundHeightAt,
   headingRadians,
   hourOfDay,
+  itemLabelKey,
   neighbourSectors,
   objectModel,
   paddedRasterRect,
@@ -27,24 +28,26 @@ import {
   worldToModel,
 } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
-import { CONDITIONS } from '@somnio/protocol';
-import type { Condition, Gait, Placement, SectorView, SensedBearingMessage } from '@somnio/protocol';
+import { CONDITIONS, HANDS } from '@somnio/protocol';
+import type { Condition, Gait, Hand, Held, LootMessage, Placement, SectorView, SensedBearingMessage, ThrownFromMessage } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
+import { CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, HELD_PROP, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
 import { GROUND_MATERIAL_IDS, GROUND_RECIPES, groundFragmentChunks, groundMaterialChannel } from './groundMaterials';
 import { defaultGroundRasterizer } from './groundRasterizer';
 import type { GroundRasterizer } from './groundRasterizer';
-import { GrassSpring } from './grassSpring';
+import { FLAT_TILT, GrassSpring, IMPACT_PRESS_RATE } from './grassSpring';
 import type { GrassBatch, GrassContact } from './grassSpring';
 import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
 import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
+import { BURST_ARC, LootMarkers, THROW_ARC } from './lootMarkers';
+import type { LootThrow } from './lootMarkers';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
 import {
@@ -59,9 +62,10 @@ import {
 import type { RasterArt } from './overlayArt';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
 import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS, flameFlicker, flamePhase } from './propLights';
+import { prototypeMeshesOf } from './modelAssets';
 import type { ModelAssets, PrototypeMesh } from './modelAssets';
-import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, portraitFraming, setPortraitLayer } from './portraits';
-import type { DeviceRect, PortraitFraming, PortraitRenderer, PortraitSlot } from './portraits';
+import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, bodyFraming, portraitFraming, setPortraitLayer } from './portraits';
+import type { DeviceRect, PortraitRenderer, PortraitSlot, PortraitSubject } from './portraits';
 import { yawStep } from './yawSlew';
 
 /**
@@ -113,6 +117,9 @@ interface EntityRenderState {
   condition: Condition;
   /** A clip playing once over the looping pose; `held` keeps its last frame until the entity stands again. */
   oneShot: { action: THREE.AnimationAction; held: boolean } | undefined;
+  /** What the hands hold, and the models hung on their bones for it. */
+  held: Held | undefined;
+  heldProps: Partial<Record<Hand, THREE.Object3D>>;
 }
 
 /** A speech bubble, with what it was asked to show, so every frame can place it again. */
@@ -148,6 +155,9 @@ export interface PlacedMarkers {
   halfSize: ScreenPoint;
   markers: readonly PlacedMarker[];
 }
+
+/** What a press on the play field lands on. */
+export type PressTarget = { kind: 'loot'; lootId: string } | { kind: 'entity'; entityId: string } | { kind: 'ground'; point: Point };
 
 /** What the layout is asked about one bubble, and what its tail points at once it is placed. */
 interface BubbleEntry {
@@ -339,6 +349,9 @@ export class WorldScene implements WorldRenderSurface {
   private readonly bending = new Map<GrassBatch, THREE.InstancedBufferAttribute[]>();
   /** One bending copy of each prototype material grass is drawn with, shared by every batch and never freed. */
   private readonly bendingMaterials = new Map<THREE.Material, THREE.Material>();
+  /** By base, how a hand's model and a ground model reach into grass, measured once each; `undefined` for a model with no mesh. */
+  private readonly heldReaches = new Map<string, GrassReach | undefined>();
+  private readonly lyingReaches = new Map<string, GrassReach | undefined>();
   /** The clock the wind sways the grass by. */
   private readonly wind = { value: 0 };
   private readonly entityStates = new Map<string, EntityRenderState>();
@@ -354,8 +367,8 @@ export class WorldScene implements WorldRenderSurface {
   private screenOccluders: readonly ScreenRect[] = [];
   /** The player's own bubble, carried through a door to be hung over them again in the space they enter. */
   private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
-  /** The ring round the player's target, a reticle while the player's facing is locked on it. Its id is the target whose plaque shows through the world. */
-  private selection: { id: string; mesh: THREE.Mesh; locked: boolean } | undefined;
+  /** The ring round the player's target, as its mark says. Its id is the target whose plaque shows through the world. */
+  private selection: { id: string; mesh: THREE.Mesh; mark: TargetMark } | undefined;
   /**
    * The rings presses dropped, the one held last and those still lifting away. They hang on the
    * scene rather than the space root, so a press held through a door keeps its ring.
@@ -387,10 +400,12 @@ export class WorldScene implements WorldRenderSurface {
   private viewportHeight: number | undefined;
   /** How many times its size in metres the overlay art is drawn: the plaques, the miss marks, and the bubbles. */
   private overlayScale = 1;
-  /** The entity whose body each HUD frame's portrait shows. */
-  private readonly portraitSubjects: Record<PortraitSlot, string | undefined> = { own: undefined, target: undefined };
+  /** The entity whose body each portrait of the HUD shows. */
+  private readonly portraitSubjects: Record<PortraitSlot, string | undefined> = { own: undefined, target: undefined, body: undefined };
   private portraitPass: PortraitPass | undefined;
   private readonly effects: CombatEffects;
+  /** The drops lying on the ground for the player. They hang on the scene and go with each new space. */
+  private readonly loot: LootMarkers;
   /** Where the screen shake puts the camera off where the rig placed it. */
   private readonly shake = new THREE.Vector3();
 
@@ -412,6 +427,16 @@ export class WorldScene implements WorldRenderSurface {
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
     this.configureSunShadow();
     this.configureDoorSpill();
+    this.loot = new LootMarkers(
+      OVERLAY_ORIENTATION,
+      (baseId) => {
+        const model = this.assets.ground(baseId);
+        if (model !== undefined) enableShadows(model);
+        return model;
+      },
+      () => (this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId)?.position),
+      reducedMotion,
+    );
     this.effects = new CombatEffects(
       {
         body: (entityId) => this.entityStates.get(entityId),
@@ -433,7 +458,17 @@ export class WorldScene implements WorldRenderSurface {
     );
     // The target's world matrix is what gives a directional or a spot light its direction, and an
     // object outside the graph never gets one updated.
-    this.scene.add(this.sun, this.sun.target, this.fill, ...this.propLights, this.doorSpill, this.doorSpill.target, this.effects.root, this.spaceRoot);
+    this.scene.add(
+      this.sun,
+      this.sun.target,
+      this.fill,
+      ...this.propLights,
+      this.doorSpill,
+      this.doorSpill.target,
+      this.effects.root,
+      this.loot.root,
+      this.spaceRoot,
+    );
     // The portraits draw under the world's own lights, so their light count and programs are the world's.
     for (const light of [this.sun, this.fill, ...this.propLights, this.doorSpill]) {
       for (const slot of PORTRAIT_SLOTS) light.layers.enable(PORTRAIT_LAYERS[slot]);
@@ -476,14 +511,20 @@ export class WorldScene implements WorldRenderSurface {
     applyFrustum(this.camera, scale, this.aspect);
     this.overlayScale = this.viewportHeight === undefined ? 1 : overlayMagnification(scale, this.viewportHeight);
     for (const state of this.entityStates.values()) state.namePlaque?.scale.setScalar(this.overlayScale);
+    this.loot.setOverlayScale(this.overlayScale);
   }
 
   /**
    * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
-   * it meanwhile compiles every combat effect's program, which a first use would compile mid-fight.
+   * it meanwhile compiles every combat effect's program and a drop's, which a first use would
+   * compile mid-fight.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
-    await Promise.all([this.assets.prewarm(), renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene)]);
+    await Promise.all([
+      this.assets.prewarm(),
+      renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene),
+      renderer === undefined ? undefined : this.loot.compile(renderer, this.camera, this.scene),
+    ]);
     this.refreshResolvedModels();
   }
 
@@ -524,6 +565,7 @@ export class WorldScene implements WorldRenderSurface {
     this.sensed = [];
     this.markers = [];
     this.effects.clear();
+    this.loot.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
@@ -807,7 +849,10 @@ export class WorldScene implements WorldRenderSurface {
     return bending;
   }
 
-  /** The grass each body brushes this frame, leaning and springing back. */
+  /**
+   * The grass each body brushes this frame, with its legs and what its hands hold, and the grass
+   * each drop lying in it presses flat, leaning and springing back.
+   */
   private bendGrass(dt: number): void {
     this.wind.value = this.sceneClock;
     if (this.bending.size === 0) return;
@@ -821,6 +866,18 @@ export class WorldScene implements WorldRenderSurface {
         if (foot && at.y - state.node.position.y > GRASS_FOOT_CONTACT_HEIGHT) continue;
         contacts.push({ x: at.x, z: at.z, radius: foot ? GRASS_FOOT_RADIUS : GRASS_LEG_RADIUS });
       }
+      for (const hand of HANDS) {
+        const prop = state.heldProps[hand];
+        const baseId = state.held?.[hand];
+        if (prop === undefined || baseId === undefined) continue;
+        const contact = grassContact(prop, measuredReach(this.heldReaches, baseId, prop));
+        if (contact !== undefined) contacts.push(contact);
+      }
+    }
+    for (const { baseId, model } of this.loot.lying()) {
+      model.updateWorldMatrix(true, false);
+      const contact = grassContact(model, measuredReach(this.lyingReaches, baseId, model), FLAT_TILT, IMPACT_PRESS_RATE);
+      if (contact !== undefined) contacts.push(contact);
     }
     for (const batch of this.grass.step(contacts, dt)) {
       for (const attribute of this.bending.get(batch) ?? []) attribute.needsUpdate = true;
@@ -863,6 +920,8 @@ export class WorldScene implements WorldRenderSurface {
         pose: undefined,
         condition: entity.condition,
         oneShot: undefined,
+        held: entity.held,
+        heldProps: {},
       };
       this.entityStates.set(entity.id, state);
       this.resolveEntityModel(state);
@@ -885,6 +944,7 @@ export class WorldScene implements WorldRenderSurface {
       this.rebuildNamePlaque(state, this.isTarget(entity.id));
     }
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
+    if (!sameHeld(state.held, entity.held)) this.updateHeld(entity.id, entity.held);
 
     state.facing = entity.facing;
     state.gait = entity.gait;
@@ -938,6 +998,15 @@ export class WorldScene implements WorldRenderSurface {
     }
   }
 
+  /** Hangs what the hands hold on their bones, and puts it on the portraits that show its holder, as a model put in afresh is. */
+  updateHeld(entityId: string, held: Held | undefined): void {
+    const state = this.entityStates.get(entityId);
+    if (state === undefined || sameHeld(state.held, held)) return;
+    state.held = held;
+    this.hangHeldProps(state);
+    this.refreshPortraitLayers(entityId, state);
+  }
+
   showBlow(attackerId: string, targetId: string, hit: boolean): void {
     this.effects.blow(attackerId, targetId, hit);
   }
@@ -963,18 +1032,68 @@ export class WorldScene implements WorldRenderSurface {
     this.layoutSpeechBubbles(0);
   }
 
+  /**
+   * A drop of a base this build does not know is not drawn, so nothing can be pressed for it. One
+   * shown as it falls is thrown there. Under reduced motion or in a stalled tab it lies there at
+   * once, and a hand it left empties with the `held` that follows.
+   */
+  showLoot({ lootId, x, z, contents, from }: LootMessage): void {
+    const labelKey = itemLabelKey(contents.baseId);
+    if (labelKey === undefined) return;
+    const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, contents.baseId);
+    this.loot.show(
+      { lootId, at: { x, z, height: this.groundHeight({ x, z }) }, baseId: contents.baseId, name: t(labelKey), rarity: contents.rarity },
+      this.reducedMotion ? undefined : thrown,
+    );
+  }
+
+  /**
+   * How a drop leaves for where it falls: tossed from the hand of the dreamer who throws it, who
+   * plays the throw cut short so it lets go within `THROW_WINDUP_SECONDS`, or bursting at once from
+   * the body of the nightmare that stood there. An item that leaves a hand drawn holding it is
+   * handed to the throw: it stays on the hand through the wind-up, whatever the hands are shown
+   * holding meanwhile, and goes from it as the drop flies.
+   */
+  private throwFrom(from: ThrownFromMessage, baseId: string): LootThrow {
+    const thrower = from.entityId === undefined ? undefined : this.entityStates.get(from.entityId);
+    const clip = thrower === undefined ? undefined : this.playOneShot(thrower, 'throw', THROW_WINDUP_SECONDS);
+    const hand = thrower?.modelHolder.getObjectByName(HAND_BONES[from.hand ?? 'mainHand']);
+    const nightmare = from.entityId === undefined;
+    const ground = new THREE.Vector3(from.x, this.groundHeight(from) + (nightmare ? BURST_FROM_HEIGHT : THROWN_FROM_HEIGHT), from.z);
+    const prop = thrower === undefined || from.hand === undefined || this.reducedMotion ? undefined : this.handOver(thrower, from.hand, baseId);
+    return {
+      releaseIn: Math.min(strikeDelay(clip), THROW_WINDUP_SECONDS),
+      from: () => hand?.getWorldPosition(new THREE.Vector3()) ?? ground,
+      ...(prop === undefined ? {} : { prop }),
+      arc: nightmare ? BURST_ARC : THROW_ARC,
+    };
+  }
+
+  /** Takes the model a hand holds of the base from what the hands hold, for a throw to let go of: `undefined` when the hand draws none of it. */
+  private handOver(state: EntityRenderState, hand: Hand, baseId: string): THREE.Object3D | undefined {
+    const prop = state.held?.[hand] === baseId ? state.heldProps[hand] : undefined;
+    if (prop !== undefined) delete state.heldProps[hand];
+    return prop;
+  }
+
+  removeLoot(lootId: string): void {
+    this.loot.remove(lootId);
+  }
+
   /** A hale nightmare has a plaque only while it is the target, so the plaques of the old target and the new are rebuilt. */
-  showSelection(entityId: string | undefined, locked: boolean): void {
-    if (entityId !== undefined && this.selection?.id === entityId && this.selection.locked === locked) return;
+  showSelection(entityId: string | undefined, mark: TargetMark): void {
+    const shown = this.selection?.mark;
+    if (entityId !== undefined && this.selection?.id === entityId && shown?.locked === mark.locked && shown.acting === mark.acting) return;
     const previous = this.selection === undefined ? undefined : this.entityStates.get(this.selection.id);
     disposeSubtree(this.selection?.mesh);
     this.selection = undefined;
     const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
     if (entityId !== undefined && state !== undefined) {
       const innerRadius = state.radius * SELECTION_RING_RADII;
-      const mesh = locked ? lockReticleMesh(innerRadius) : groundRingMesh(innerRadius, SELECTION_RING_COLOR);
+      const color = mark.acting ? ACTING_RING_COLOR : SELECTION_RING_COLOR;
+      const mesh = mark.locked ? lockReticleMesh(innerRadius, color) : groundRingMesh(innerRadius, color);
       state.node.add(mesh);
-      this.selection = { id: entityId, mesh, locked };
+      this.selection = { id: entityId, mesh, mark: { ...mark } };
     }
     if (previous === state) return;
     for (const changed of new Set([previous, state])) {
@@ -1024,26 +1143,35 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
+   * What a press at a point of the viewport, in normalized device coordinates, lands on: a drop's
+   * name first, then another body, a drop's model, and the ground. A body is picked up to its feet,
+   * so it covers a drop's model under it, and the name under the model is what a press reaches the
+   * drop by. The player's own body is no part of it: a press there lands on what lies under it.
+   * `undefined` before a space is entered and over nothing.
+   */
+  pressTargetAt(x: number, y: number): PressTarget | undefined {
+    const label = this.loot.labelAt(this.raycasterAt(x, y));
+    if (label !== undefined) return { kind: 'loot', lootId: label };
+    const entityId = this.entityAt(x, y);
+    if (entityId !== undefined) return { kind: 'entity', entityId };
+    const model = this.loot.modelAt(this.rayAt(x, y), this.coarsePointer ? COARSE_PICK_METRES : undefined);
+    if (model !== undefined) return { kind: 'loot', lootId: model };
+    const ground = this.groundPointAt(x, y);
+    return ground === undefined ? undefined : { kind: 'ground', point: { x: ground.x, z: ground.z } };
+  }
+
+  /**
    * The entity drawn under a point of the viewport, in normalized device coordinates, other than
    * the one the camera follows. An entity is picked as a capsule from its feet to its head as drawn,
    * by the radius its body is drawn with, wider under a finger, and the one nearest the camera wins.
    */
   entityAt(x: number, y: number): string | undefined {
-    return this.pickAt(x, y, (id) => id !== this.cameraFollowId);
-  }
-
-  /** Whether the body the camera follows, the player's own, is drawn under a point of the viewport, picked as `entityAt` picks the others. */
-  playerAt(x: number, y: number): boolean {
-    return this.cameraFollowId !== undefined && this.pickAt(x, y, (id) => id === this.cameraFollowId) !== undefined;
-  }
-
-  private pickAt(x: number, y: number, accept: (id: string) => boolean): string | undefined {
     const ray = this.rayAt(x, y);
     const onRay = new THREE.Vector3();
     let picked: string | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
-      if (!accept(id)) continue;
+      if (id === this.cameraFollowId) continue;
       const feet = state.node.position;
       const top = this.headPoint(state);
       const reach = this.coarsePointer ? Math.max(state.radius, COARSE_PICK_METRES) : state.radius;
@@ -1079,9 +1207,13 @@ export class WorldScene implements WorldRenderSurface {
 
   /** The camera's ray through a point of the viewport, in normalized device coordinates. */
   private rayAt(x: number, y: number): THREE.Ray {
+    return this.raycasterAt(x, y).ray;
+  }
+
+  private raycasterAt(x: number, y: number): THREE.Raycaster {
     this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
-    return this.raycaster.ray;
+    return this.raycaster;
   }
 
   setClock(worldSeconds: number): void {
@@ -1368,6 +1500,8 @@ export class WorldScene implements WorldRenderSurface {
       // A hit-pause holds the clip where it is, for the bodies a blow names alone.
       if (!this.effects.frozen(id)) state.mixer?.update(dt);
     }
+    // After the clips move on, so a drop leaving a hand leaves it where this frame draws the hand.
+    this.loot.tick(this.sceneClock, this.effects.stalled(this.now()));
     this.effects.tick(dt);
     this.camera.position.sub(this.shake);
     this.effects.shakeOffset(this.camera, this.shake);
@@ -1537,7 +1671,31 @@ export class WorldScene implements WorldRenderSurface {
       const bone = model.getObjectByName(name);
       return bone === undefined ? [] : [{ bone, foot }];
     });
+    // After the head is measured, so a raised blade does not count toward the body's height.
+    this.hangHeldProps(state);
     if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
+  }
+
+  /**
+   * Replaces the models hung on the hands' bones with those for what they hold now. A hand whose
+   * item has no model, and a body without the bone (a placeholder, a nightmare), draws nothing there.
+   */
+  private hangHeldProps(state: EntityRenderState): void {
+    for (const prop of Object.values(state.heldProps)) prop.removeFromParent();
+    state.heldProps = {};
+    const model = state.modelHolder.children[0];
+    if (state.isPlaceholder || model === undefined) return;
+    for (const hand of HANDS) {
+      const baseId = state.held?.[hand];
+      const bone = model.getObjectByName(HAND_BONES[hand]);
+      if (baseId === undefined || bone === undefined) continue;
+      const prop = this.assets.hand(baseId);
+      if (prop === undefined) continue;
+      enableShadows(prop);
+      prop.traverse((object) => (object.userData[HELD_PROP] = true));
+      bone.add(prop);
+      state.heldProps[hand] = prop;
+    }
   }
 
   /**
@@ -1580,6 +1738,7 @@ export class WorldScene implements WorldRenderSurface {
         placed.isPlaceholder = false;
       }
     }
+    this.loot.refreshModels();
     // A sector whose scatter waited for its models is placed over the next frames, from the same fields.
     for (const name of this.grounds.keys()) this.scatterDue.add(name);
     for (const [id, state] of this.entityStates) {
@@ -1737,7 +1896,7 @@ export class WorldScene implements WorldRenderSurface {
     return this.sectors.get(sectorName)?.placements.find((placed) => placed.placement.id === placementId)?.node;
   }
 
-  /** Has a HUD frame's portrait show the body of `entityId`, or nothing. */
+  /** Has a portrait of the HUD show the body of `entityId`, or nothing. */
   setPortraitSubject(slot: PortraitSlot, entityId: string | undefined): void {
     const previous = this.portraitSubjects[slot];
     if (previous === entityId) return;
@@ -1750,20 +1909,25 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Draws each portrait in its circle on the canvas, after the world. The hemisphere fill is lifted
-   * to a floor for them alone, a uniform and not a light, so a body in a dim room still reads.
+   * Draws each portrait in its place on the canvas, after the world, the Character window's body
+   * turned `bodyTurn` radians round from its usual view. The hemisphere fill is lifted to a floor for
+   * them alone, a uniform and not a light, so a body in a dim room still reads.
    */
-  drawPortraits(renderer: PortraitRenderer, views: readonly { slot: PortraitSlot; viewport: DeviceRect }[]): void {
+  drawPortraits(renderer: PortraitRenderer, views: readonly { slot: PortraitSlot; viewport: DeviceRect }[], bodyTurn = 0): void {
     if (views.length === 0) return;
     this.portraitPass ??= new PortraitPass();
-    const shots = views.map(({ slot, viewport }) => ({ slot, viewport, framing: this.portraitFramingOf(this.portraitSubjects[slot]) }));
+    const shots = views.map(({ slot, viewport }) => {
+      const subject = this.portraitSubjectOf(this.portraitSubjects[slot]);
+      const framing = subject === undefined ? undefined : slot === 'body' ? bodyFraming(subject, bodyTurn) : portraitFraming(subject);
+      return { slot, viewport, framing };
+    });
     const fill = this.fill.intensity;
     this.fill.intensity = Math.max(fill, PORTRAIT.fillFloor);
     this.portraitPass.draw(renderer, this.scene, shots);
     this.fill.intensity = fill;
   }
 
-  private portraitFramingOf(entityId: string | undefined): PortraitFraming | undefined {
+  private portraitSubjectOf(entityId: string | undefined): PortraitSubject | undefined {
     const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
     if (state === undefined) return undefined;
     const head = this.headPoint(state);
@@ -1772,7 +1936,7 @@ export class WorldScene implements WorldRenderSurface {
       const bone = state.headBone.getWorldPosition(new THREE.Vector3());
       head.set(bone.x, head.y, bone.z);
     }
-    return portraitFraming({ head, feet: state.node.position, height: state.headHeight, yaw: state.currentYaw });
+    return { head, feet: state.node.position, height: state.headHeight, yaw: state.currentYaw };
   }
 
   /** A model put in afresh carries the layers of the portraits that show its entity. */
@@ -1827,6 +1991,16 @@ export class WorldScene implements WorldRenderSurface {
     this.camera.updateMatrixWorld();
     const point = this.headPoint(state).add(state.node.position).multiplyScalar(0.5).project(this.camera);
     return { x: point.x, y: point.y };
+  }
+
+  /**
+   * Where the middle of a drop's name or of its model is drawn, in normalized device coordinates: a
+   * point `pressTargetAt` picks it at, unless a body covers its model.
+   */
+  _viewportPointOfLoot(lootId: string, part: 'label' | 'model'): { x: number; y: number } | undefined {
+    this.camera.updateMatrixWorld();
+    const point = this.loot.pointOf(lootId, part)?.project(this.camera);
+    return point === undefined ? undefined : { x: point.x, y: point.y };
   }
 
   /** Where a point of the space is drawn, on the ground a body there stands on, in normalized device coordinates. `groundPointAt` at that point picks it again. `undefined` before a space is entered. */
@@ -1936,9 +2110,12 @@ const RING_OPACITY = 0.9;
 const SELECTION_RING_RADII = RAISE_RING_RADII * 0.7;
 /** A friendly green, bluer than the plaque of a grazed body beside it. */
 const SELECTION_RING_COLOR = 0x8ef0b0;
-/** The locked target's reticle: a deeper gold than the raise ring, which lies further out. */
-const LOCK_RETICLE_COLOR = darker(RAISE_COLOR, 0.18);
-/** The reticle's four ticks, which point in at the ring from outside it: how far out they reach past its outer edge, and how wide their base is, in metres. */
+/** The target's ring while slot 1 acts on it: a deeper gold than the raise ring, which lies further out. */
+const ACTING_RING_COLOR = darker(RAISE_COLOR, 0.18);
+/**
+ * The locked target's reticle's four ticks, which point in at the ring from outside it: how far out
+ * they reach past its outer edge, and how wide their base is, in metres.
+ */
 const LOCK_TICK_LENGTH = 0.2;
 const LOCK_TICK_WIDTH = 0.14;
 /** The inner radius of the ring a press on the ground drops, in metres. */
@@ -1951,6 +2128,12 @@ const PRESS_MARKER_DROP_METRES = 0.5;
 const COARSE_PICK_METRES = 0.6;
 /** How far over the feet the cursor's aim is taken: about the middle of a body as drawn. */
 const AIM_HEIGHT = 0.8;
+/** The longest a thrower winds up before the item leaves the hand: their throw starts part-way in, so a drop asked for flies soon. */
+const THROW_WINDUP_SECONDS = 0.25;
+/** How high over the ground a dreamer's throw leaves from where no hand of theirs is drawn: about a hand's height. */
+const THROWN_FROM_HEIGHT = 0.4;
+/** How high over the ground a nightmare's drops burst out of it: about a Ghost's chest, its head standing 0.8 m. */
+const BURST_FROM_HEIGHT = 0.55;
 /** Advance past the point where the below-the-feet quad clears the floor plane. */
 const PLAQUE_FLOOR_CLEARANCE = 0.15;
 
@@ -2089,9 +2272,9 @@ function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
   return mesh;
 }
 
-/** The selection ring in gold, with a tick at each cardinal point pointing in at it, drawn with the ring's own material. */
-function lockReticleMesh(innerRadius: number): THREE.Mesh {
-  const ring = groundRingMesh(innerRadius, LOCK_RETICLE_COLOR);
+/** The selection ring with a tick at each cardinal point pointing in at it, drawn with the ring's own material. */
+function lockReticleMesh(innerRadius: number, color: number): THREE.Mesh {
+  const ring = groundRingMesh(innerRadius, color);
   const tip = innerRadius + GROUND_RING_WIDTH / 2;
   const base = innerRadius + GROUND_RING_WIDTH + LOCK_TICK_LENGTH;
   const half = LOCK_TICK_WIDTH / 2;
@@ -2203,6 +2386,13 @@ const FLOWER_HEAD_RADIUS = 0.03;
 const FLOWER_HEAD_MATERIAL = new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true });
 const FLOWER_STEM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x5f8f3a, roughness: 1 });
 
+/** The bone each hand's model hangs from at identity, the rig's `handslot.r` and `handslot.l` as `GLTFLoader` names them (see `GRASS_BONES`). */
+const HAND_BONES: Record<Hand, string> = { mainHand: 'handslotr', offHand: 'handslotl' };
+
+function sameHeld(a: Held | undefined, b: Held | undefined): boolean {
+  return a?.mainHand === b?.mainHand && a?.offHand === b?.offHand;
+}
+
 /**
  * The bones that brush grass, as `GLTFLoader` names them: it strips the dots from node names, so
  * the rig's `foot.l` is `footl`. A model without them, as the ghost is, bends nothing.
@@ -2219,6 +2409,66 @@ const GRASS_BONES = [
 const GRASS_FOOT_CONTACT_HEIGHT = 0.1;
 const GRASS_FOOT_RADIUS = 0.06;
 const GRASS_LEG_RADIUS = 0.05;
+/** How tall the tallest tufts stand, which a held item reaches only below. */
+const GRASS_HEIGHT = 0.4;
+
+/**
+ * How a model reaches into grass, in its own frame: a capsule along its longest extent, through
+ * its middle, its radius half its greater other extent and its ends that far in from the model's.
+ */
+interface GrassReach {
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  radius: number;
+}
+
+/** The model's reach, measured the first time its base asks and kept in `reaches` after. */
+function measuredReach(reaches: Map<string, GrassReach | undefined>, baseId: string, model: THREE.Object3D): GrassReach | undefined {
+  if (!reaches.has(baseId)) reaches.set(baseId, grassReach(model));
+  return reaches.get(baseId);
+}
+
+function grassReach(model: THREE.Object3D): GrassReach | undefined {
+  const box = new THREE.Box3();
+  for (const { geometry, matrix } of prototypeMeshesOf(model)) {
+    if (geometry.boundingBox === null) geometry.computeBoundingBox();
+    box.union(geometry.boundingBox!.clone().applyMatrix4(matrix));
+  }
+  if (box.isEmpty()) return undefined;
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const [long, across] = [0, 1, 2].sort((a, b) => size.getComponent(b) - size.getComponent(a)) as [number, number, number];
+  const radius = size.getComponent(across) / 2;
+  const half = size.getComponent(long) / 2 - radius;
+  return {
+    from: centre.clone().setComponent(long, centre.getComponent(long) - half),
+    to: centre.clone().setComponent(long, centre.getComponent(long) + half),
+    radius,
+  };
+}
+
+/**
+ * Where a model touches grass this frame: its reach taken into the world by its world matrix, cut
+ * where it rises out of the grass, and laid on the ground; `undefined` where it is all above it.
+ */
+function grassContact(model: THREE.Object3D, reach: GrassReach | undefined, lean?: number, pressRate?: number): GrassContact | undefined {
+  if (reach === undefined) return undefined;
+  const radius = reach.radius * model.matrixWorld.getMaxScaleOnAxis();
+  const top = GRASS_HEIGHT + radius;
+  const from = reach.from.clone().applyMatrix4(model.matrixWorld);
+  const to = reach.to.clone().applyMatrix4(model.matrixWorld);
+  if (from.y > top && to.y > top) return undefined;
+  if (from.y > top) from.lerp(to, (from.y - top) / (from.y - to.y));
+  else if (to.y > top) to.lerp(from, (to.y - top) / (to.y - from.y));
+  return {
+    x: from.x,
+    z: from.z,
+    end: { x: to.x, z: to.z },
+    radius,
+    ...(lean === undefined ? {} : { lean }),
+    ...(pressRate === undefined ? {} : { pressRate }),
+  };
+}
 
 /**
  * Tilts a vertex about its instance's root by the instance's tilt and a light wind, rather than
@@ -2233,7 +2483,7 @@ vec4 bendWorld = modelMatrix * mvPosition;
 float bendHeight = max(bendWorld.y, 0.0);
 vec2 wind = vec2(sin(uWindTime * 1.6 + bendWorld.x * 0.9 + bendWorld.z * 0.4), cos(uWindTime * 1.2 + bendWorld.z * 0.8)) * 0.06;
 vec2 tilt = aTilt + wind;
-float angle = min(length(tilt), 1.05);
+float angle = min(length(tilt), ${FLAT_TILT.toFixed(2)});
 vec2 tiltDirection = angle > 0.0001 ? tilt / length(tilt) : vec2(0.0);
 bendWorld.xz += tiltDirection * bendHeight * sin(angle);
 bendWorld.y = bendHeight * cos(angle);

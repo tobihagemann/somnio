@@ -2,16 +2,26 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
-import { PORTRAIT, PORTRAIT_LAYERS, portraitFraming, portraitViewport, setPortraitLayer } from '@/scene/portraits';
+import { BODY_VIEW, PORTRAIT, PORTRAIT_LAYERS, bodyFraming, portraitFraming, portraitViewport, setPortraitLayer } from '@/scene/portraits';
 import type { PortraitRenderer } from '@/scene/portraits';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
 import { clientEntity } from './helpers/worldFixture';
 
+/** A body with the rig's two hand bones, as the pack's characters carry them. */
+function rig(): THREE.Object3D {
+  const root = new THREE.Object3D();
+  root.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 1, 0.4)));
+  for (const name of ['handslotr', 'handslotl']) root.add(Object.assign(new THREE.Bone(), { name }));
+  return root;
+}
+
 function assets(resolves: () => boolean): ModelAssets {
   return {
     prewarm: async () => {},
-    character: () => (resolves() ? new THREE.Mesh(new THREE.BoxGeometry(0.4, 1, 0.4)) : undefined),
+    character: () => (resolves() ? rig() : undefined),
+    hand: (baseId) => Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1)), { name: baseId }),
+    ground: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
@@ -20,6 +30,15 @@ function assets(resolves: () => boolean): ModelAssets {
 
 function makeScene(resolves = () => false): WorldScene {
   return new WorldScene(assets(resolves), TEST_REGISTRY, 1, false);
+}
+
+/** The models in hand a portrait's camera draws, by the item each is for. */
+function heldOn(scene: WorldScene, layer: number): string[] {
+  const names: string[] = [];
+  scene.scene.traverse((object) => {
+    if ((object as THREE.Mesh).isMesh && object.name !== '' && object.layers.isEnabled(layer)) names.push(object.name);
+  });
+  return names.sort();
 }
 
 /** The meshes a portrait's camera draws, by the x they stand at. */
@@ -64,6 +83,31 @@ describe('portrait framing', () => {
   });
 });
 
+describe("the Character window's body", () => {
+  const feet = { x: 4, y: 0.5, z: 7 };
+  const bearingOf = (framing: ReturnType<typeof bodyFraming>): number =>
+    THREE.MathUtils.radToDeg(Math.atan2(framing.eye.x - framing.focus.x, framing.eye.z - framing.focus.z));
+
+  it('frames the whole standing body round its middle, three-quarters from the front, a little above', () => {
+    const framing = bodyFraming({ head: { x: 4, y: 2.3, z: 7 }, feet, height: 1.8, yaw: 0 }, 0);
+    expect(framing.halfHeight).toBeCloseTo((BODY_VIEW.frame * 1.8) / 2);
+    expect(framing.focus).toEqual({ x: 4, y: 1.4, z: 7 });
+    expect(bearingOf(framing)).toBeCloseTo(BODY_VIEW.sideDegrees);
+    expect(THREE.MathUtils.radToDeg(Math.asin((framing.eye.y - framing.focus.y) / PORTRAIT.distance))).toBeCloseTo(BODY_VIEW.elevationDegrees);
+  });
+
+  it('turns round the body by the turn the window gives it, from the way the body faces', () => {
+    const framing = bodyFraming({ head: { x: 4, y: 2.3, z: 7 }, feet, height: 1.8, yaw: Math.PI / 2 }, THREE.MathUtils.degToRad(30));
+    expect(bearingOf(framing)).toBeCloseTo(90 + BODY_VIEW.sideDegrees + 30);
+  });
+
+  it('looks down on a body that lies fallen, round its middle', () => {
+    const framing = bodyFraming({ head: { x: 3, y: 0.5, z: 7 }, feet, height: 1.8, yaw: 0 }, 0);
+    expect(framing.focus).toEqual({ x: 3.5, y: 0.5, z: 7 });
+    expect(THREE.MathUtils.radToDeg(Math.asin((framing.eye.y - framing.focus.y) / PORTRAIT.distance))).toBeCloseTo(PORTRAIT.lyingElevationDegrees);
+  });
+});
+
 describe('portrait viewports', () => {
   const canvas = { left: 0, top: 0, width: 1280, height: 720 };
 
@@ -100,7 +144,7 @@ describe('portrait layers', () => {
     const scene = makeScene();
     scene.placeEntity(clientEntity({ id: 'a', kind: 'peer', name: 'Ada', position: { x: 2, z: 5 } }));
     scene.placeEntity(clientEntity({ id: 'b', kind: 'monster', name: 'Ghost', condition: 'grazed', position: { x: 8, z: 5 } }));
-    scene.showSelection('a', false);
+    scene.showSelection('a', { locked: false, acting: false });
     expect(drawnOn(scene, PORTRAIT_LAYERS.target)).toEqual([]);
 
     scene.setPortraitSubject('target', 'a');
@@ -141,6 +185,28 @@ describe('portrait layers', () => {
   });
 });
 
+describe('what a portrait shows in hand', () => {
+  it("shows what the own and the target body take in hand, and what they swap it for, on the Character window's body too", () => {
+    const scene = makeScene(() => true);
+    scene.placeEntity(clientEntity({ id: 'self', kind: 'player', position: { x: 2, z: 5 } }));
+    scene.placeEntity(clientEntity({ id: 'peer', kind: 'peer', position: { x: 8, z: 5 } }));
+    scene.setPortraitSubject('own', 'self');
+    scene.setPortraitSubject('body', 'self');
+    scene.setPortraitSubject('target', 'peer');
+
+    scene.updateHeld('self', { mainHand: 'sword' });
+    scene.updateHeld('peer', { offHand: 'moonstone' });
+    expect(heldOn(scene, PORTRAIT_LAYERS.own)).toEqual(['sword']);
+    expect(heldOn(scene, PORTRAIT_LAYERS.target)).toEqual(['moonstone']);
+
+    scene.updateHeld('self', { mainHand: 'mace', offHand: 'shield' });
+    scene.updateHeld('peer', { mainHand: 'dagger' });
+    expect(heldOn(scene, PORTRAIT_LAYERS.own)).toEqual(['mace', 'shield']);
+    expect(heldOn(scene, PORTRAIT_LAYERS.body)).toEqual(['mace', 'shield']);
+    expect(heldOn(scene, PORTRAIT_LAYERS.target)).toEqual(['dagger']);
+  });
+});
+
 describe('drawing portraits', () => {
   /** Stands in for the renderer, and records what each render was drawn with. */
   function fakeRenderer(scene: WorldScene) {
@@ -161,6 +227,7 @@ describe('drawing portraits', () => {
           'render',
           {
             world: drawn === scene.scene,
+            clip: drawn === scene.scene ? undefined : drawn.children.length,
             layers: camera.layers.mask,
             camera: camera.position.clone(),
             top: (camera as THREE.OrthographicCamera).top,
@@ -221,6 +288,34 @@ describe('drawing portraits', () => {
       true,
       0.1,
     ]);
+  });
+
+  it("draws the Character window's body on its own layer over a backdrop filling its rect, turned as the window says, framed to the rect", () => {
+    const scene = makeScene();
+    scene.placeEntity(clientEntity({ id: 'self', kind: 'player', position: { x: 6, z: 9 } }));
+    scene.setPortraitSubject('body', 'self');
+    const { renderer, calls } = fakeRenderer(scene);
+    const draw = (turn: number) => {
+      calls.length = 0;
+      scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'body', viewport: { x: 100, y: 200, width: 512, height: 344 } }], turn);
+      return calls.filter(([name]) => name === 'render').map(([, drawn]) => drawn as Record<string, unknown>);
+    };
+    const renders = draw(0);
+    // One backdrop and no circle cut out of it, then the body.
+    expect(renders.map((drawn) => [drawn['world'], drawn['clip']])).toEqual([
+      [false, 1],
+      [true, undefined],
+    ]);
+    expect(renders[1]).toMatchObject({ layers: 1 << PORTRAIT_LAYERS.body });
+    expect(renders[1]!['top']).toBeCloseTo((BODY_VIEW.frame * CHARACTER_SCALE) / 2, 6);
+    expect((renders[1]!['right'] as number) / (renders[1]!['top'] as number)).toBeCloseTo(512 / 344, 6);
+    const eye = (turn: number) => draw(turn)[1]!['camera'] as THREE.Vector3;
+    const bearing = (point: THREE.Vector3) => THREE.MathUtils.radToDeg(Math.atan2(point.x - 6, point.z - 9));
+    expect(bearing(eye(Math.PI / 2)) - bearing(eye(0))).toBeCloseTo(90, 4);
+    // A frame's portrait keeps its circle.
+    scene.setPortraitSubject('own', 'self');
+    scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'own', viewport: { x: 0, y: 0, width: 80, height: 80 } }]);
+    expect(calls.filter(([name]) => name === 'render').at(-2)?.[1]).toMatchObject({ clip: 2 });
   });
 
   it('draws the backdrop alone while the subject is not in view, and nothing without a frame shown', () => {

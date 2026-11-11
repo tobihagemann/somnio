@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { NO_LUCIDITY } from '@somnio/core';
-import type { Character, InventoryRow, Lucidity, Point, Sector } from '@somnio/core';
+import type { BaseItemId, Character, Inventory, ItemInstance, Lucidity, Point, Sector } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import type { Role } from '@somnio/protocol';
+import { plain } from '../../core/test/support/items.ts';
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
 import {
   BESIDE_GHOST,
-  CUDGEL_IN_HAND,
+  COINS,
+  CUDGEL,
   GHOST,
   GHOST_AT,
-  MOONSTONE_IN_HAND,
-  PURSE,
+  MOONSTONE,
   RESPAWN_MS,
   arena,
   attackGhost,
+  carrying,
   characterOf,
   energy,
   energyOf,
@@ -19,6 +23,7 @@ import {
   face,
   lucidity,
   payloads,
+  wearing,
 } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeNPC } from './support/sectorFactory.ts';
@@ -86,10 +91,58 @@ function driveOff(world: Town, entityId: string, ghost: string): void {
   }
 }
 
+describe("a trial's reward", () => {
+  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000031', ...plain('buckler') };
+  /** A bag with no room left, of caps. */
+  const fullBag = (): ItemInstance[] =>
+    Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
+      id: `00000000-0000-7000-8000-1${String(index).padStart(11, '0')}`,
+      ...plain('cap'),
+    }));
+  const passed = (role: Role, progress: number): Partial<Character> => ({
+    lucidity: lucidity(undefined, {}, { task: { role, teachingId: undefined, progress } }),
+  });
+  const inventoryOf = (world: Town, entityId: string): Inventory => world.space.snapshotForPlayer(entityId)!.inventory;
+
+  it.each<[Role, string, Point, number, BaseItemId]>([
+    ['healer', SANA, AT_SANA, 1, 'moonstone'],
+    ['mystic', TACITA, AT_TACITA, 0b111, 'wand'],
+  ])(
+    'waits, granting nothing, while the off hand is filled and the bag full, and goes into the bag once it has room: %s',
+    async (role, master, at, progress, baseId) => {
+      const world = town();
+      const caps = fullBag();
+      const full = carrying({ worn: [BUCKLER], bag: caps });
+      const alice = attachPlayer(world.space, at, 'alice', { character: passed(role, progress), inventory: full });
+      const before = lucidityOf(world.space, alice.entityId);
+      world.space.handleCompleteTask(master, alice.entityId);
+      expect(lucidityOf(world.space, alice.entityId)).toEqual(before);
+      expect(inventoryOf(world, alice.entityId)).toEqual(full);
+
+      world.space.handleEquip(caps[0]!.id, undefined, alice.entityId);
+      world.space.handleCompleteTask(master, alice.entityId);
+      expect(lucidityOf(world.space, alice.entityId).role).toBe(role);
+      const { equipped, bag } = inventoryOf(world, alice.entityId);
+      expect([equipped.offHand, bag.length, bag[0]?.item.baseId]).toEqual([BUCKLER, SOMNIO_PROTOCOL_CONSTANTS.maxBagItems, baseId]);
+      // The refusal sent nothing: past the join, one frame of each for the equip and the reward.
+      const messages = await collectMessages(alice.outbox);
+      expect([payloads(messages, 'lucidity').length, payloads(messages, 'inventory').length]).toEqual([2, 3]);
+    },
+  );
+
+  it('goes into an empty off hand, whatever the bag holds', () => {
+    const world = town();
+    const alice = attachPlayer(world.space, AT_SANA, 'alice', { character: passed('healer', 1), inventory: carrying({ bag: fullBag() }) });
+    world.space.handleCompleteTask(SANA, alice.entityId);
+    expect(lucidityOf(world.space, alice.entityId).role).toBe('healer');
+    expect(inventoryOf(world, alice.entityId).equipped.offHand?.baseId).toBe('moonstone');
+  });
+});
+
 describe('a trial', () => {
   it('makes a dreamer who passes and accepts it a Fighter for good, studying Strike', async () => {
     const world = town();
-    const alice = attachPlayer(world.space, AT_PUGNAX, 'alice', { inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(world.space, AT_PUGNAX, 'alice', { inventory: wearing(CUDGEL) });
     world.space.handleAskTask(PUGNAX, undefined, alice.entityId);
     expect(lucidityOf(world.space, alice.entityId).task).toEqual({ role: 'fighter', teachingId: undefined, progress: 0 });
     // Completing it early changes nothing.
@@ -124,7 +177,7 @@ describe('a trial', () => {
 
   it('makes a Healer of a dreamer who reaches the North Wood and returns, and gives them a Moonstone', async () => {
     const world = town();
-    const alice = attachPlayer(world.space, AT_SANA, 'alice', { inventory: [PURSE] });
+    const alice = attachPlayer(world.space, AT_SANA, 'alice', { inventory: carrying({ coins: COINS }) });
     world.space.handleAskTask(SANA, undefined, alice.entityId);
     walk(world, alice.entityId, { x: 19.5, z: 5 });
     expect(lucidityOf(world.space, alice.entityId).task?.progress).toBe(0);
@@ -135,19 +188,18 @@ describe('a trial', () => {
     expect(lucidityOf(world.space, alice.entityId)).toMatchObject({ role: 'healer', ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }], study: 'touch' });
     const messages = await collectMessages(alice.outbox);
     expect(payloads(messages, 'inventory').at(-1)).toEqual({
-      rows: [
-        { slot: 0, itemId: 'purse', quantity: 100 },
-        { slot: 1, itemId: 'moonstone', quantity: 1 },
-      ],
+      coins: 100,
+      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('moonstone') } }],
+      bag: [],
     });
     // The Moonstone follows the role in what the dreamer is sent.
     const order = messages.flatMap((message) => (message.tag === 'inventory' || message.tag === 'lucidity' ? [message.tag] : []));
     expect(order.slice(-2)).toEqual(['lucidity', 'inventory']);
   });
 
-  it('makes a Mystic of a dreamer who stands in each of the three hidden places, in any order, and returns', async () => {
+  it('makes a Mystic of a dreamer who stands in each of the three hidden places, in any order, and returns, and gives them a wand', async () => {
     const world = town();
-    const alice = attachPlayer(world.space, AT_TACITA, 'alice', { inventory: [PURSE] });
+    const alice = attachPlayer(world.space, AT_TACITA, 'alice', { inventory: carrying({ coins: COINS }) });
     world.space.handleAskTask(TACITA, undefined, alice.entityId);
     const progress = () => lucidityOf(world.space, alice.entityId).task?.progress;
     // The North Meadow's place, then the West Meadow's, each found once.
@@ -171,8 +223,11 @@ describe('a trial', () => {
       study: 'ward',
       task: undefined,
     });
-    // A Mystic is given nothing to carry.
-    expect(payloads(await collectMessages(alice.outbox), 'inventory')).toEqual([{ rows: [{ slot: 0, itemId: 'purse', quantity: 100 }] }]);
+    expect(payloads(await collectMessages(alice.outbox), 'inventory').at(-1)).toEqual({
+      coins: 100,
+      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('wand') } }],
+      bag: [],
+    });
   });
 
   it("keeps a dreamer holding the Healer's trial from swinging, until it is completed or given up", () => {
@@ -220,7 +275,7 @@ describe('practice', () => {
     const world = town();
     const almost = lucidity('fighter', { strike: 5 }, { study: 'guard' });
     almost.ranks.push({ teachingId: 'guard', rank: 1, practice: 30 });
-    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: wearing(CUDGEL) });
     driveOff(world, alice.entityId, GHOST);
     // 40 practice at rank 1: 35 for rank 2, and 5 toward rank 3.
     expect(lucidityOf(world.space, alice.entityId)).toMatchObject({
@@ -233,7 +288,7 @@ describe('practice', () => {
     const world = town();
     const almost = lucidity('fighter', { strike: 5 }, { study: 'guard' });
     almost.ranks.push({ teachingId: 'guard', rank: 2, practice: 45 });
-    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: almost }, inventory: wearing(CUDGEL) });
     driveOff(world, alice.entityId, GHOST);
     expect(lucidityOf(world.space, alice.entityId)).toMatchObject({
       study: undefined,
@@ -244,20 +299,9 @@ describe('practice', () => {
   it('accrues nothing with no teaching studied', () => {
     const world = town();
     const idle = lucidity('fighter', { strike: 5 });
-    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: idle }, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: idle }, inventory: wearing(CUDGEL) });
     driveOff(world, alice.entityId, GHOST);
     expect(lucidityOf(world.space, alice.entityId)).toEqual(idle);
-  });
-
-  it('pays a bounty to a dreamer with no purse by giving them one in the first free slot', () => {
-    const world = town();
-    const inventory: InventoryRow[] = [
-      { ...CUDGEL_IN_HAND, slot: 0 },
-      { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: undefined },
-    ];
-    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: lucidity('fighter', { strike: 5 }) }, inventory });
-    driveOff(world, alice.entityId, GHOST);
-    expect(world.space.snapshotForPlayer(alice.entityId)!.inventory).toContainEqual({ slot: 1, itemId: 'purse', quantity: 12, equippedHand: undefined });
   });
 });
 
@@ -306,7 +350,7 @@ describe('a gate', () => {
   it('counts each nightmare driven off, and no further than its goal', () => {
     const world = town();
     const tasked = lucidity('fighter', { strike: 5 }, { task: { role: 'fighter', teachingId: 'follow-through', progress: 2 } });
-    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: tasked }, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character: { lucidity: tasked }, inventory: wearing(CUDGEL) });
     world.dice.hit = true;
     driveOff(world, alice.entityId, GHOST);
     expect(lucidityOf(world.space, alice.entityId).task?.progress).toBe(3);
@@ -325,13 +369,13 @@ describe('a gate', () => {
 
   it('teaches Drawing back from end to end: asked at Touch 2, earned by mending others, and only then does a touch raise', async () => {
     const world = town();
-    const novice = attachPlayer(world.space, AT_SANA, 'novice', { character: { lucidity: lucidity('healer', { touch: 1 }) }, inventory: [MOONSTONE_IN_HAND] });
+    const novice = attachPlayer(world.space, AT_SANA, 'novice', { character: { lucidity: lucidity('healer', { touch: 1 }) }, inventory: wearing(MOONSTONE) });
     world.space.handleAskTask(SANA, 'drawing-back', novice.entityId);
     expect(lucidityOf(world.space, novice.entityId).task).toBeUndefined();
     world.space.handOver(novice.entityId, true);
 
     const hurt = { energy: energy({ healthCurrent: 20 }), lucidity: lucidity('healer', { touch: 2, depth: 4 }) };
-    const healer = attachPlayer(world.space, AT_SANA, 'healer', { character: hurt, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(world.space, AT_SANA, 'healer', { character: hurt, inventory: wearing(MOONSTONE) });
     const patient = attachPlayer(world.space, { x: 16.6, z: 5 }, 'patient', { character: { energy: energy({ healthCurrent: 10 }) } });
     const fallen = attachPlayer(world.space, { x: 15.4, z: 5 }, 'fallen', { character: { energy: energy({ healthCurrent: 0 }) } });
     world.space.handleAskTask(SANA, 'drawing-back', healer.entityId);
@@ -340,7 +384,9 @@ describe('a gate', () => {
     world.space.handleAskTask(SANA, 'drawing-back', healer.entityId);
 
     // Mending oneself does not count; 30 a touch on another does.
-    world.space.handleUseItem(MOONSTONE_IN_HAND.slot, healer.entityId);
+    engage(world.space, healer.entityId, healer.entityId);
+    world.steps(1);
+    expect(energyOf(world.space, healer.entityId).healthCurrent).toBeGreaterThan(20);
     expect(lucidityOf(world.space, healer.entityId).task?.progress).toBe(0);
     world.clock.ms += 1000;
     engage(world.space, patient.entityId, healer.entityId);

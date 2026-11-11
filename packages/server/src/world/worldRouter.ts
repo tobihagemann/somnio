@@ -1,14 +1,15 @@
 import type { ClientSayMessage, SomnioMessage } from '@somnio/protocol';
-import type { NPCDialogState } from '@somnio/core';
+import type { Character, NPCDialogState } from '@somnio/core';
 import { postgresNormalizedKey } from '@somnio/data';
 import type { CharacterRepository, NPCDialogStateRepository } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
-import { persistPlayerCheckpoint } from './checkpointWriter.ts';
+import { DropSaves, persistPlayerCheckpoint } from './checkpointWriter.ts';
+import { PersonalDrops } from './personalDrops.ts';
 import { SpaceActor } from './spaceActor.ts';
-import type { DoorVoice, TickDigest } from './spaceActor.ts';
+import type { DoorVoice, PlayerCheckpoint, TickDigest } from './spaceActor.ts';
 
 /** The surface of the router the admin dispatcher consumes, so its tests can substitute a stub. */
 export interface AdminWorldRouter {
@@ -19,8 +20,8 @@ export interface AdminWorldRouter {
 
 interface LoggedInEntry {
   actor: ConnectionActor;
-  /** The `postgresNormalizedKey` of the character's name; absent while the account is on the character card, until a character joins. */
-  nameKey: string | undefined;
+  /** The character in the world, and the `postgresNormalizedKey` of its name; absent while the account is on the character card, until a character joins. */
+  joined: { characterId: string; nameKey: string } | undefined;
 }
 
 /**
@@ -31,6 +32,8 @@ export class WorldRouter implements AdminWorldRouter {
   readonly world: LoadedWorld;
   private readonly spaceActors: Map<string, SpaceActor>;
   private readonly loggedIn = new Map<string, LoggedInEntry>();
+  private readonly personalDrops: PersonalDrops;
+  private readonly dropSaves: DropSaves;
   private readonly characters: CharacterRepository;
   private readonly npcDialogStates: NPCDialogStateRepository;
   private readonly logger: Logger;
@@ -38,12 +41,16 @@ export class WorldRouter implements AdminWorldRouter {
   private constructor(
     world: LoadedWorld,
     spaceActors: Map<string, SpaceActor>,
+    personalDrops: PersonalDrops,
+    dropSaves: DropSaves,
     characters: CharacterRepository,
     npcDialogStates: NPCDialogStateRepository,
     logger: Logger,
   ) {
     this.world = world;
     this.spaceActors = spaceActors;
+    this.personalDrops = personalDrops;
+    this.dropSaves = dropSaves;
     this.characters = characters;
     this.npcDialogStates = npcDialogStates;
     this.logger = logger;
@@ -58,12 +65,15 @@ export class WorldRouter implements AdminWorldRouter {
     spaceLogger: Logger = logger,
   ): Promise<WorldRouter> {
     const actors = new Map<string, SpaceActor>();
+    const personalDrops = new PersonalDrops();
+    const dropSaves = new DropSaves(characters, logger);
     for (const [id, space] of world.spaces) {
       const initialDialogStates: NPCDialogState[] = [];
       for (const sector of space.sectors) initialDialogStates.push(...(await npcDialogStates.loadAll(sector.name)));
-      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates }));
+      const requestDropSave = (snapshot: PlayerCheckpoint): void => dropSaves.request(snapshot, id);
+      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave }));
     }
-    return new WorldRouter(world, actors, characters, npcDialogStates, logger);
+    return new WorldRouter(world, actors, personalDrops, dropSaves, characters, npcDialogStates, logger);
   }
 
   space(id: string): SpaceActor | undefined {
@@ -77,18 +87,29 @@ export class WorldRouter implements AdminWorldRouter {
    */
   register(actor: ConnectionActor, accountId: string): boolean {
     if (this.loggedIn.has(accountId)) return false;
-    this.loggedIn.set(accountId, { actor, nameKey: undefined });
+    this.loggedIn.set(accountId, { actor, joined: undefined });
     return true;
   }
 
-  /** Supplies the name `kickByCharacterName` matches, once a character joins. Until then the entry matches no kick. */
-  nameRegistered(accountId: string, characterName: string): void {
+  /**
+   * Records the character that joined the world, whose name `kickByCharacterName` matches and
+   * whose drops `unregister` takes away. Until then the entry matches no kick.
+   */
+  characterJoined(accountId: string, character: Pick<Character, 'id' | 'name'>): void {
     const entry = this.loggedIn.get(accountId);
-    if (entry !== undefined) entry.nameKey = postgresNormalizedKey(characterName);
+    if (entry !== undefined) entry.joined = { characterId: character.id, nameKey: postgresNormalizedKey(character.name) };
   }
 
+  /** The account leaves the router, and every drop from nightmares lying for its character, in any space, goes with it. */
   unregister(accountId: string): void {
+    const joined = this.loggedIn.get(accountId)?.joined;
+    if (joined !== undefined) this.personalDrops.forget(joined.characterId);
     this.loggedIn.delete(accountId);
+  }
+
+  /** Drops the character's pending drop save and resolves once the one in flight has settled. */
+  settleDropSaves(characterId: string): Promise<void> {
+    return this.dropSaves.settle(characterId);
   }
 
   /** Logged-in *and attached* connections, so the post-register / pre-attach window is excluded. */
@@ -105,7 +126,7 @@ export class WorldRouter implements AdminWorldRouter {
     const needle = postgresNormalizedKey(name);
     let kicked = false;
     for (const entry of [...this.loggedIn.values()]) {
-      if (entry.nameKey !== needle) continue;
+      if (entry.joined?.nameKey !== needle) continue;
       entry.actor.disconnectForAdminKick();
       kicked = true;
     }
@@ -116,7 +137,7 @@ export class WorldRouter implements AdminWorldRouter {
   async checkpointAll(): Promise<void> {
     for (const [spaceId, space] of this.spaceActors) {
       for (const snapshot of space.snapshotForCheckpoint()) {
-        await persistPlayerCheckpoint(snapshot, this.characters, this.logger, { space: spaceId });
+        await persistPlayerCheckpoint(snapshot, this.characters, this.logger, { origin: 'periodic', space: spaceId });
       }
     }
   }

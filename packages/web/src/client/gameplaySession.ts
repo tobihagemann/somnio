@@ -6,7 +6,8 @@ import type {
   DoorRefusedMessage,
   Energy,
   EntityMove,
-  InventoryRowMessage,
+  EquipSlot,
+  LootMessage,
   LucidityMessage,
   RaisingMessage,
   SayMessage,
@@ -18,30 +19,35 @@ import type {
 import {
   COMBAT,
   GLOBAL_COOLDOWN_SECONDS,
+  PICKUP_REACH,
   abilitiesTaught,
   ability,
   abilityCooldownSeconds,
   abilityRefusal,
   abilityRank,
+  bagHasRoom,
   doorOpenAt,
+  droppableItem,
   engageAction,
   gaitAllowed,
+  handAllows,
   heading,
+  headingFromVector,
+  inventoryOf,
   isAbilityId,
   isEffectId,
   isTeachingId,
-  itemInHand,
-  itemWeapon,
+  moveItem,
+  NO_INVENTORY,
   placesFound,
   poolShare,
-  purseCoins,
   taskGoal,
   taskSpec,
   windedAfter,
   windedOnJoin,
   withinSpeakingDistance,
 } from '@somnio/core';
-import type { AbilityId, AbilityRefusal, EffectId, EngageAction, ItemId, Point, TaskSpec } from '@somnio/core';
+import type { AbilityId, AbilityRefusal, EffectId, EngageAction, Inventory, Point, TaskSpec } from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { parseChatInput } from './chatCommand';
@@ -74,7 +80,8 @@ const ZERO_ENERGY: Energy = {
   spiritMax: 1,
 };
 
-const NO_LUCIDITY: LucidityMessage = { ranks: [] };
+/** The lucidity frame of a dreamer who has grown into nothing yet, until the server sends theirs. */
+export const NO_LUCIDITY_MESSAGE: LucidityMessage = { ranks: [] };
 
 /** A cooldown on the session's clock, as the server last told of it: when it began and when it ends. */
 export interface CooldownSpan {
@@ -182,8 +189,8 @@ export class GameplaySession {
   readonly zoom = new PlayerZoom();
 
   energy: Energy = ZERO_ENERGY;
-  inventory: InventoryRowMessage[] = [];
-  lucidity: LucidityMessage = NO_LUCIDITY;
+  inventory: Inventory = NO_INVENTORY;
+  lucidity: LucidityMessage = NO_LUCIDITY_MESSAGE;
   /** Whether the player's balance gave out. Kept as the server keeps it: from each `energy` frame, in order. */
   winded = false;
   /** The NPC whose service panel is open. It does not close the input gate: the player walks away from it. */
@@ -193,7 +200,8 @@ export class GameplaySession {
   /**
    * Whether the player faces their target whatever the cursor does, on a fine pointer. A right
    * press on a body sets it, and it ends with the target, on a second right press on the target, or
-   * on a right press on the ground.
+   * on a right press on the ground. A right press on a body switches slot 1 with it, but the 1 key
+   * switches slot 1 alone, and a right press on the ground ends the lock alone.
    */
   gazeLocked = false;
   /** Whether Run is on. A winded player walks whatever it says, and one an effect holds below a run jogs. */
@@ -246,6 +254,11 @@ export class GameplaySession {
   private cooldowns: Cooldowns = NO_COOLDOWNS;
   /** Until when no ability is used again, from a use until the `cooldowns` frame that answers it, or 0 with none awaited. */
   private awaitingUseUntilMs = 0;
+  /**
+   * Whether the walk under way waits for the player's own channel, from its use until it lands or
+   * breaks, or until its answer is overdue. A new press lets it go.
+   */
+  private walkWaitsForChannel = false;
   /** Each ability slot's refusal and whether a cooldown runs, as the tick last saw them, so the tick runs the state hook again only when one changes. */
   private shownAbilitySlots = '[]';
   /** The channels under way that the server has shown, by their user, until each lands or breaks. */
@@ -254,6 +267,8 @@ export class GameplaySession {
   private readonly raises = new Map<string, ClientRaise>();
   /** Where each fallen dreamer in the space lies, as the server last said; none for a player who does not sense the fallen. */
   sensed: readonly SensedBearingMessage[] = [];
+  /** The drops lying on the ground for the player, or for anyone, by id, from each `loot` frame until its `lootGone` or a new space. */
+  readonly loot = new Map<string, LootMessage>();
 
   constructor(options: GameplaySessionOptions) {
     this.controller = options.controller;
@@ -272,6 +287,7 @@ export class GameplaySession {
       effects: () => this.ownEffects,
       fallen: () => this.fallen,
       slowed: (nowMs) => nowMs < this.slowedUntilMs,
+      heldStill: () => this.walkWaitsForChannel,
     });
 
     this.controller.onGameplayMessage = (message) => this.dispatch(message);
@@ -306,8 +322,8 @@ export class GameplaySession {
       this.resetSpaceState();
       this.running = false;
       this.energy = ZERO_ENERGY;
-      this.inventory = [];
-      this.lucidity = NO_LUCIDITY;
+      this.inventory = NO_INVENTORY;
+      this.lucidity = NO_LUCIDITY_MESSAGE;
       this.winded = false;
       this.waking = false;
     };
@@ -341,15 +357,19 @@ export class GameplaySession {
     this.channels.clear();
     this.raises.clear();
     this.sensed = [];
+    // A join sends again the dreamer's own drops lying in the space they enter and what lies for anyone in view.
+    this.loot.clear();
     this.cooldowns = NO_COOLDOWNS;
     this.awaitingUseUntilMs = 0;
-    this.controller.renderSurface.showSelection(undefined, false);
+    this.walkWaitsForChannel = false;
+    this.markTarget();
   }
 
   /** The per-frame body. Injected timestamp, so a test drives it directly. */
   runTick(timestampMs: number): void {
     if (this.hold !== undefined && timestampMs - this.hold.startedAtMs >= HOLD_TO_STEER_MS) this.hold.steering = true;
     if (this.hold?.steering === true && this.hold.point !== undefined) this.predictor.steerToward(this.hold.point);
+    if (this.walkWaitsForChannel && !this.channelUnderWay) this.walkWaitsForChannel = false;
     this.predictor.runTick(timestampMs);
     // However the walk a press let go of ends, its ring goes with it.
     if (this.predictor.walk === undefined) this.liftDestinationMarker();
@@ -398,28 +418,38 @@ export class GameplaySession {
 
   /**
    * A right press on an entity's body makes it the target and locks the player's facing on it, if it
-   * is there to face. A right press on the target already locked ends the lock and keeps the target.
-   * The player's own body is ignored.
+   * is there to face, and switches slot 1 on wherever it can act on it. A right press on the target
+   * already locked ends the lock and switches slot 1 off, and keeps the target. The player's own
+   * body is ignored.
    */
   toggleGazeOn(entityId: string): void {
     if (!this.acting || entityId === this.controller.selfId || !this.controller.entities.has(entityId)) return;
-    if (entityId === this.target && this.gazeLocked) {
-      this.unlockGaze();
-      return;
+    const locking = entityId !== this.target || !this.gazeLocked;
+    if (locking) {
+      this.select(entityId);
+      if (!this.gazeHolds) return;
     }
-    this.select(entityId);
-    if (!this.gazeHolds) return;
-    this.gazeLocked = true;
-    this.controller.renderSurface.showSelection(this.target, true);
+    this.gazeLocked = locking;
+    const engaging = locking && this.engageable;
+    if (engaging !== this.engaged) {
+      this.engaged = engaging;
+      this.send({ tag: 'engage', payload: { on: engaging } });
+    }
+    this.markTarget();
     this.onStateChanged?.();
   }
 
-  /** Ends the gaze lock: the player faces the cursor again, and keeps the target. */
+  /** Ends the gaze lock: the player faces the cursor again, and keeps the target and slot 1 as they are. */
   unlockGaze(): void {
     if (!this.gazeLocked) return;
     this.gazeLocked = false;
-    this.controller.renderSurface.showSelection(this.target, false);
+    this.markTarget();
     this.onStateChanged?.();
+  }
+
+  /** Marks the target in the scene: in gold while slot 1 acts on it, and as a reticle while the gaze is locked on it. */
+  private markTarget(): void {
+    this.controller.renderSurface.showSelection(this.target, { locked: this.gazeLocked, acting: this.engaged });
   }
 
   /** Whether the target is still there to face: in view, and not a nightmare driven off. */
@@ -447,6 +477,13 @@ export class GameplaySession {
   pressGround(point: Point, timestampMs: number): void {
     if (!this.acting) return;
     this.liftDestinationMarker();
+    // A walk waiting for the player's channel ends, so the walk this press makes breaks the channel.
+    if (this.walkWaitsForChannel) {
+      this.walkWaitsForChannel = false;
+      this.predictor.stop();
+    }
+    // The walk under way goes on until the press lets go, but no longer to pick anything up.
+    this.predictor.dropArrival();
     this.hold = { landed: point, point, startedAtMs: timestampMs, steering: false };
     this.controller.renderSurface.showPressMarker(point);
   }
@@ -464,9 +501,26 @@ export class GameplaySession {
     if (this.hold !== undefined) this.hold.steering = true;
   }
 
-  /** A left press on the player's own body: they stop where they stand. */
-  pressSelf(): void {
-    this.predictor.stop();
+  /**
+   * A press on a drop, the player's own or one lying for anyone: they walk into pickup reach of it,
+   * which may be short of where it lies, and pick it up as they arrive.
+   */
+  pressLoot(lootId: string): void {
+    const loot = this.loot.get(lootId);
+    if (loot === undefined || !this.acting) return;
+    this.liftDestinationMarker();
+    this.walkWaitsForChannel = false;
+    this.predictor.walkTo({ x: loot.x, z: loot.z }, { within: PICKUP_REACH, act: () => this.pickUp(lootId) });
+  }
+
+  /** Asks for a drop still lying there. A full bag, which the server would refuse, is said in chat instead, and the drop stays. */
+  private pickUp(lootId: string): void {
+    if (!this.loot.has(lootId)) return;
+    if (!bagHasRoom(this.inventory)) {
+      this.controller.appendChat({ kind: 'bagFull' });
+      return;
+    }
+    this.send({ tag: 'pickUp', payload: { lootId } });
   }
 
   /**
@@ -514,6 +568,15 @@ export class GameplaySession {
 
   private get ownEffects(): EffectId[] {
     return this.effectsOf(this.controller.selfId).map(({ effectId }) => effectId);
+  }
+
+  /**
+   * Whether the player's own channel runs, or a use of one waits for the server's answer. A refused
+   * use gets no answer, so the wait ends with the use's own, after `ABILITY_ANSWER_TIMEOUT_MS`.
+   */
+  private get channelUnderWay(): boolean {
+    const selfId = this.controller.selfId;
+    return (selfId !== undefined && this.channels.has(selfId)) || this.now() < this.awaitingUseUntilMs;
   }
 
   /** The channel the entity has under way, as far as the server has shown it. */
@@ -580,7 +643,7 @@ export class GameplaySession {
   engageAction(): EngageAction | undefined {
     const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
     if (this.fallen || target === undefined) return undefined;
-    return engageAction(engageKind(target), this.lucidity.role, itemInHand(this.inventory));
+    return engageAction(engageKind(target), this.lucidity.role, this.inventory.equipped);
   }
 
   /** Whether slot 1 can be switched on. */
@@ -596,6 +659,7 @@ export class GameplaySession {
     } else if (this.engageable) {
       this.engaged = true;
       this.send({ tag: 'engage', payload: { on: true } });
+      this.markTarget();
       this.onStateChanged?.();
     }
   }
@@ -632,7 +696,7 @@ export class GameplaySession {
       channelling: this.channels.has(self.id),
       caster: abilityBody(self, self.position),
       ranks: this.lucidity.ranks,
-      itemInHand: itemInHand(this.inventory),
+      hands: this.inventory.equipped,
       energy: this.energy,
       now: this.now(),
       ...(cooldowns ?? {
@@ -648,16 +712,14 @@ export class GameplaySession {
    * stood, so the report the heartbeat holds back goes first. The global cooldown starts here too.
    * No ability is used again until the server's `cooldowns` answer, or for `ABILITY_ANSWER_TIMEOUT_MS`
    * without one, so a second press inside the round trip sends nothing. A leap waits for the
-   * server's yes, the player's own `ability` frame. A channel breaks once the player moves, so using
-   * one ends the walk under way, a held press's steer included. A new walk breaks it.
+   * server's yes, the player's own `ability` frame. A channel breaks once the player moves, so the
+   * walk under way, a held press's steer included, waits until it lands or breaks and then goes on.
+   * A new press ends that walk, and the walk it makes breaks the channel.
    */
   useAbility(abilityId: AbilityId): void {
     if (this.abilityRefusal(abilityId) !== undefined) return;
     this.predictor.flush();
-    if (ability(abilityId).channelSeconds !== undefined) {
-      this.letGo();
-      this.predictor.stop();
-    }
+    if (ability(abilityId).channelSeconds !== undefined) this.walkWaitsForChannel = true;
     this.send({ tag: 'useAbility', payload: { abilityId } });
     const now = this.now();
     this.cooldowns = { ...this.cooldowns, global: { startedAtMs: now, endsAtMs: now + GLOBAL_COOLDOWN_SECONDS * 1000, global: true } };
@@ -675,6 +737,7 @@ export class GameplaySession {
 
   private stopEngaging(): void {
     this.engaged = false;
+    this.markTarget();
     this.onStateChanged?.();
   }
 
@@ -687,7 +750,7 @@ export class GameplaySession {
     this.gazeLocked = false;
     this.engaged &&= this.engageable;
     this.send({ tag: 'target', payload: entityId === undefined ? {} : { targetId: entityId } });
-    this.controller.renderSurface.showSelection(entityId, false);
+    this.markTarget();
     this.onStateChanged?.();
   }
 
@@ -726,6 +789,7 @@ export class GameplaySession {
       this.servicePanel = undefined;
       // Falling switches slot 1 off here as it does on the server, which sends no frame to say so.
       this.engaged = false;
+      this.markTarget();
       this.controller.appendChat({ kind: 'fell' });
     } else {
       // Standing again without an `enterSpace` means a raise came first, and the `wake` was dropped.
@@ -809,27 +873,49 @@ export class GameplaySession {
     });
   }
 
-  /**
-   * Double-click activation. A weapon toggles equip in its fixed hand — the player never picks
-   * one — and the purse reports its balance to the chat log rather than equipping. The Moonstone
-   * is taken in that same hand, which puts the weapon away, and used once it is there.
-   */
-  activateInventoryRow(row: InventoryRowMessage): void {
+  /** Says the purse's coins in the chat. */
+  tellPurse(): void {
     if (this.controller.connectionState !== 'attached') return;
-    if (itemWeapon(row.itemId) !== undefined) {
-      // Re-toggling leaves the hand out to unequip; the server clears whatever else held it.
-      this.send({ tag: 'equipToggle', payload: { slot: row.slot, ...(row.equippedHand === undefined ? { hand: 'right' } : {}) } });
-      return;
+    this.controller.appendChat({ kind: 'purseBalance', coins: this.inventory.coins });
+  }
+
+  /**
+   * Wears an item in `slot`, or in the slot the server chooses for its base; from the bag, whatever
+   * that slot wore takes its place there, and a worn ring changes ring slots.
+   */
+  equip(itemId: string, slot?: EquipSlot): void {
+    if (this.controller.connectionState !== 'attached') return;
+    this.send({ tag: 'equip', payload: { itemId, ...(slot === undefined ? {} : { slot }) } });
+  }
+
+  /** Puts what the slot wears into the bag, which a full bag refuses as the server does. */
+  unequip(slot: EquipSlot): void {
+    if (this.controller.connectionState !== 'attached' || !bagHasRoom(this.inventory)) return;
+    this.send({ tag: 'unequip', payload: { slot } });
+  }
+
+  /** Moves an item to a place in the bag, a worn one put away there, as `moveItem` rules it on both sides. */
+  moveItem(itemId: string, place: number): void {
+    if (this.controller.connectionState !== 'attached' || moveItem(this.inventory, itemId, place) === undefined) return;
+    this.send({ tag: 'moveItem', payload: { itemId, place } });
+  }
+
+  /**
+   * Throws an item the player carries or wears to the ground: toward `toward`, else toward the
+   * cursor on a fine pointer, else the way they face. They face the throw, and the held-back report
+   * goes first, since the server throws from where it judges they stand. A fallen player throws
+   * nothing. A worn item leaves its slot as it goes, so a full bag does not keep it.
+   */
+  dropItem(itemId: string, toward?: Point): void {
+    const self = this.self;
+    if (this.controller.connectionState !== 'attached' || this.fallen || self === undefined) return;
+    if (droppableItem(this.inventory, itemId) === undefined) return;
+    const aim = toward ?? (this.coarsePointer ? undefined : this.aimPoint);
+    if (aim !== undefined && (aim.x !== self.position.x || aim.z !== self.position.z)) {
+      self.facing = headingFromVector(aim.x - self.position.x, aim.z - self.position.z);
     }
-    switch (row.itemId) {
-      case 'purse' satisfies ItemId:
-        this.controller.appendChat({ kind: 'purseBalance', coins: row.quantity });
-        return;
-      case 'moonstone' satisfies ItemId:
-        if (row.equippedHand === 'right') this.send({ tag: 'useItem', payload: { slot: row.slot } });
-        else this.send({ tag: 'equipToggle', payload: { slot: row.slot, hand: 'right' } });
-        return;
-    }
+    this.predictor.flush();
+    this.send({ tag: 'dropItem', payload: { itemId, heading: self.facing } });
   }
 
   /** Asks the master whose panel is open for a task: their trial, or the one that gates `teachingId`. */
@@ -851,13 +937,13 @@ export class GameplaySession {
   }
 
   /** Asks the shopkeeper whose panel is open to sell one of a ware. */
-  buy(itemId: string): void {
-    this.trade('buy', itemId);
+  buy(baseId: string): void {
+    this.trade((npcId) => ({ tag: 'buy', payload: { npcId, baseId } }));
   }
 
-  /** Asks the shopkeeper whose panel is open to buy back a ware. */
+  /** Asks the shopkeeper whose panel is open to buy an item from the bag. */
   sell(itemId: string): void {
-    this.trade('sell', itemId);
+    this.trade((npcId) => ({ tag: 'sell', payload: { npcId, itemId } }));
   }
 
   /** Whether the shop's buttons are locked, from a trade until a moment after its answer. */
@@ -865,10 +951,10 @@ export class GameplaySession {
     return this.now() < this.tradeLockedUntilMs;
   }
 
-  private trade(tag: 'buy' | 'sell', itemId: string): void {
+  private trade(request: (npcId: string) => SomnioMessage): void {
     const npc = this.servicePanel;
     if (npc?.service !== 'shopkeeper' || this.tradeLocked()) return;
-    this.send({ tag, payload: { npcId: npc.id, itemId } });
+    this.send(request(npc.id));
     this.tradeLockedUntilMs = this.now() + TRADE_ANSWER_TIMEOUT_MS;
     this.onStateChanged?.();
   }
@@ -902,20 +988,32 @@ export class GameplaySession {
         this.onStateChanged?.();
         return;
       case 'inventory': {
-        const trade = message.payload.trade;
+        const { trade, dropped, pickedUp } = message.payload;
         if (trade !== undefined) {
           // A trade is its own news: the coins it moved are not announced again.
           this.announceTrade(trade);
           this.tradeLockedUntilMs = this.now() + TRADE_SETTLE_MS;
+        } else if (dropped !== undefined) {
+          this.controller.appendChat({ kind: 'dropped', baseId: dropped.baseId });
+        } else if (pickedUp !== undefined) {
+          this.controller.appendChat({ kind: 'pickedUp', baseId: pickedUp.baseId });
         } else {
-          const gained = purseCoins(message.payload.rows) - purseCoins(this.inventory);
+          const gained = message.payload.coins - this.inventory.coins;
           if (this.seen.inventory && gained > 0) this.controller.appendChat({ kind: 'coinsGained', coins: gained });
         }
         this.seen.inventory = true;
-        this.inventory = message.payload.rows;
+        this.inventory = inventoryOf(message.payload);
         this.onStateChanged?.();
         return;
       }
+      case 'loot':
+        this.loot.set(message.payload.lootId, message.payload);
+        this.controller.renderSurface.showLoot(message.payload);
+        return;
+      case 'lootGone':
+        this.loot.delete(message.payload.lootId);
+        this.controller.renderSurface.removeLoot(message.payload.lootId);
+        return;
       case 'lucidity':
         if (this.seen.lucidity) this.announceLucidity(this.lucidity, message.payload);
         this.seen.lucidity = true;
@@ -1008,17 +1106,8 @@ export class GameplaySession {
     return { global: globalSeconds > 0 ? span(globalSeconds, GLOBAL_COOLDOWN_SECONDS, true) : undefined, abilities };
   }
 
-  private announceTrade({ kind, itemId, coins }: TradeMessage): void {
-    switch (kind) {
-      case 'bought':
-        this.controller.appendChat({ kind, itemId, coins });
-        break;
-      case 'sold': {
-        const emptiedHand = itemInHand(this.inventory) === itemId;
-        this.controller.appendChat({ kind, itemId, coins, emptiedHand });
-        break;
-      }
-    }
+  private announceTrade({ kind, baseId, coins }: TradeMessage): void {
+    this.controller.appendChat({ kind, baseId, coins });
   }
 
   /**
@@ -1073,13 +1162,7 @@ export class GameplaySession {
       const holding = state === 'holding' && named;
       if (state === 'done') {
         if (named) this.controller.appendChat({ kind: 'raisedOther', targetName });
-      } else if (
-        this.heldRaises.has(targetId) &&
-        !holding &&
-        this.engaged &&
-        this.target === targetId &&
-        itemInHand(this.inventory) === ('moonstone' satisfies ItemId)
-      ) {
+      } else if (this.heldRaises.has(targetId) && !holding && this.engaged && this.target === targetId && handAllows('moonstone', this.inventory.equipped)) {
         // Mend still on at them with the Moonstone in hand means they did not let go. A switch-off, a
         // fall, and putting the Moonstone away each reach this client before the drop, so none of them
         // reads as a broken hold.

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NO_LUCIDITY, OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { Character, InventoryRow, Sector } from '@somnio/core';
+import type { Character, Inventory, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
 import type { ConnectionState } from '../src/connection/connectionActor.ts';
-import { CUDGEL_IN_HAND, GHOST, MOONSTONE_IN_HAND, PURSE, RESPAWN_MS, energy, lucidity, payloads } from './support/combat.ts';
+import { plain } from '../../core/test/support/items.ts';
+import { COINS, CUDGEL, GHOST, MOONSTONE, RESPAWN_MS, carrying, energy, lucidity, payloads, wearing } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
@@ -43,11 +44,11 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login leave', message: { tag: 'leave', payload: leave }, state: 'awaitingLogin' },
   { label: 'pre-login move', message: { tag: 'move', payload: move }, state: 'awaitingLogin' },
   { label: 'pre-login clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } }, state: 'awaitingLogin' },
-  {
-    label: 'pre-login equipToggle',
-    message: { tag: 'equipToggle', payload: { slot: 1, hand: 'left' } },
-    state: 'awaitingLogin',
-  },
+  { label: 'pre-login equip', message: { tag: 'equip', payload: { itemId: CUDGEL.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login unequip', message: { tag: 'unequip', payload: { slot: 'mainHand' } }, state: 'awaitingLogin' },
+  { label: 'pre-login moveItem', message: { tag: 'moveItem', payload: { itemId: CUDGEL.id, place: 5 } }, state: 'awaitingLogin' },
+  { label: 'pre-login dropItem', message: { tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 90 } }, state: 'awaitingLogin' },
+  { label: 'pre-login pickUp', message: { tag: 'pickUp', payload: { lootId: 'loot-1' } }, state: 'awaitingLogin' },
   { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login target', message: { tag: 'target', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login engage', message: { tag: 'engage', payload: { on: true } }, state: 'awaitingLogin' },
@@ -61,10 +62,9 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login completeTask', message: { tag: 'completeTask', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login abandonTask', message: { tag: 'abandonTask', payload: {} }, state: 'awaitingLogin' },
   { label: 'pre-login study', message: { tag: 'study', payload: { npcId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
-  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, itemId: 'dagger' } }, state: 'awaitingLogin' },
-  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: 'cudgel' } }, state: 'awaitingLogin' },
+  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, baseId: 'dagger' } }, state: 'awaitingLogin' },
+  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
   { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, state: 'awaitingLogin' },
-  { label: 'pre-login useItem', message: { tag: 'useItem', payload: { slot: 1 } }, state: 'awaitingLogin' },
   {
     label: 'post-attach login',
     message: { tag: 'login', payload: { email: 'n', password: 'p' } },
@@ -77,6 +77,13 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'awaitingLogin' },
   { label: 'post-attach lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'attached' },
   { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, state: 'attached' },
+  { label: 'post-attach held', message: { tag: 'held', payload: { entityId: 'peer', held: {} } }, state: 'attached' },
+  {
+    label: 'post-attach loot',
+    message: { tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 12, contents: { kind: 'item', baseId: 'dagger', rarity: 'plain' } } },
+    state: 'attached',
+  },
+  { label: 'post-attach lootGone', message: { tag: 'lootGone', payload: { lootId: 'loot-1' } }, state: 'attached' },
   { label: 'post-attach vitals', message: { tag: 'vitals', payload: { entityId: 'peer', health: 0.5 } }, state: 'attached' },
   { label: 'post-attach blow', message: { tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: true } }, state: 'attached' },
   { label: 'post-attach effects', message: { tag: 'effects', payload: { entityId: 'peer', effects: [] } }, state: 'attached' },
@@ -186,7 +193,7 @@ describe('an attached connection', () => {
   afterEach(() => vi.restoreAllMocks());
 
   /** A dreamer beside Pugnax and Mercus, with a hurt dreamer in a Moonstone's reach. */
-  async function attached(character: Partial<Character>, inventory: InventoryRow[], overrides: Partial<Sector> = {}) {
+  async function attached(character: Partial<Character>, inventory: Inventory, overrides: Partial<Sector> = {}) {
     const npcs = [
       { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'fighterMaster' as const },
       { ...makeNPC('mercus', { x: 8.6, z: 9.5 }, ''), service: 'shopkeeper' as const },
@@ -200,6 +207,7 @@ describe('an attached connection', () => {
     const hurt = attachPlayer(space, { x: 10.6, z: 9.5 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
     return {
       connection,
+      dependencies,
       space,
       own: () => space.snapshotForPlayer(entityId)!,
       hurt: () => space.snapshotForPlayer(hurt.entityId)!.character,
@@ -209,45 +217,61 @@ describe('an attached connection', () => {
 
   type Attached = Awaited<ReturnType<typeof attached>>;
 
-  it.each<[string, Partial<Character>, InventoryRow[], (a: Attached) => SomnioMessage, (a: Attached) => unknown, unknown]>([
+  it.each<[string, Partial<Character>, Inventory, (a: Attached) => SomnioMessage, (a: Attached) => unknown, unknown]>([
+    ['an equip', {}, carrying({ bag: [CUDGEL] }), () => ({ tag: 'equip', payload: { itemId: CUDGEL.id } }), (a) => a.own().inventory, wearing(CUDGEL)],
+    ['an unequip', {}, wearing(CUDGEL), () => ({ tag: 'unequip', payload: { slot: 'mainHand' } }), (a) => a.own().inventory, carrying({ bag: [CUDGEL] })],
     [
-      'a use of the Moonstone',
-      HEALER,
-      [MOONSTONE_IN_HAND],
-      () => ({ tag: 'useItem', payload: { slot: MOONSTONE_IN_HAND.slot } }),
-      (a) => a.own().character.energy.healthCurrent,
-      60,
+      'a move in the bag',
+      {},
+      carrying({ bag: [CUDGEL] }),
+      () => ({ tag: 'moveItem', payload: { itemId: CUDGEL.id, place: 5 } }),
+      (a) => a.own().inventory.bag,
+      [{ place: 5, item: CUDGEL }],
     ],
     [
-      'an equip toggle',
+      'a drop to the ground',
       {},
-      [{ ...CUDGEL_IN_HAND, equippedHand: undefined }],
-      () => ({ tag: 'equipToggle', payload: { slot: CUDGEL_IN_HAND.slot, hand: 'right' } }),
+      carrying({ worn: [CUDGEL] }),
+      () => ({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } }),
       (a) => a.own().inventory,
-      [CUDGEL_IN_HAND],
+      carrying(),
     ],
     [
       'a use of an ability',
       { lucidity: lucidity('fighter', { brace: 1 }) },
-      [],
+      carrying(),
       () => ({ tag: 'useAbility', payload: { abilityId: 'brace' } }),
       (a) => a.own().character.energy.balanceCurrent,
       85,
     ],
-    ['a request for the trial', {}, [], () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.task?.role, 'fighter'],
+    [
+      'a request for the trial',
+      {},
+      carrying(),
+      () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }),
+      (a) => a.own().character.lucidity.task?.role,
+      'fighter',
+    ],
     [
       "a request for a teaching's task",
       { lucidity: lucidity('fighter', { strike: 2 }) },
-      [],
+      carrying(),
       () => ({ tag: 'askTask', payload: { npcId: PUGNAX, teachingId: 'follow-through' } }),
       (a) => a.own().character.lucidity.task?.teachingId,
       'follow-through',
     ],
-    ['a trial handed in', TRIAL_PASSED, [], () => ({ tag: 'completeTask', payload: { npcId: PUGNAX } }), (a) => a.own().character.lucidity.role, 'fighter'],
+    [
+      'a trial handed in',
+      TRIAL_PASSED,
+      carrying(),
+      () => ({ tag: 'completeTask', payload: { npcId: PUGNAX } }),
+      (a) => a.own().character.lucidity.role,
+      'fighter',
+    ],
     [
       'a teaching to study',
       { lucidity: lucidity('fighter', { strike: 1 }) },
-      [],
+      carrying(),
       () => ({ tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } }),
       (a) => a.own().character.lucidity.study,
       'toughening',
@@ -255,21 +279,18 @@ describe('an attached connection', () => {
     [
       'a purchase',
       {},
-      [PURSE],
-      () => ({ tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } }),
+      carrying({ coins: COINS }),
+      () => ({ tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } }),
       (a) => a.own().inventory,
-      [
-        { ...PURSE, quantity: 40 },
-        { slot: 1, itemId: 'dagger', quantity: 1, equippedHand: undefined },
-      ],
+      { coins: 40, equipped: {}, bag: [{ place: 0, item: { id: expect.any(String), ...plain('dagger') } }] },
     ],
     [
       'a sale',
       {},
-      [PURSE, CUDGEL_IN_HAND],
-      () => ({ tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } }),
+      carrying({ coins: COINS, bag: [CUDGEL] }),
+      () => ({ tag: 'sell', payload: { npcId: MERCUS, itemId: CUDGEL.id } }),
       (a) => a.own().inventory,
-      [{ ...PURSE, quantity: 115 }],
+      carrying({ coins: 110 }),
     ],
   ])('takes %s to the space', async (_label, character, inventory, message, read, expected) => {
     const a = await attached(character, inventory);
@@ -279,14 +300,29 @@ describe('an attached connection', () => {
     expect(read(a)).toEqual(expected);
   });
 
+  it("saves the dropper's checkpoint without the item through the router the moment it is thrown", async () => {
+    const a = await attached({}, carrying({ worn: [CUDGEL] }));
+    const persistCheckpoint = vi.spyOn(a.dependencies.characters, 'persistCheckpoint');
+    expect(await a.connection.dispatch({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } })).toEqual({ kind: 'keepOpen' });
+    expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: a.own().character.id }), carrying()]]);
+  });
+
+  it('takes a pick-up to the space, which puts the item back in the bag under a new id', async () => {
+    const a = await attached({}, carrying({ bag: [CUDGEL] }));
+    a.space.handleDropItem(CUDGEL.id, 0, a.own().character.id);
+    expect(a.own().inventory.bag).toEqual([]);
+    expect(await a.connection.dispatch({ tag: 'pickUp', payload: { lootId: 'loot-1' } })).toEqual({ kind: 'keepOpen' });
+    expect(a.own().inventory.bag).toEqual([{ place: 0, item: { ...CUDGEL, id: expect.not.stringMatching(CUDGEL.id) } }]);
+  });
+
   it('takes a target to the space, which sends its health back', async () => {
-    const a = await attached({}, []);
+    const a = await attached({}, carrying());
     expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
     expect(payloads(await collectMessages(a.connection.outbox), 'vitals')).toEqual([{ entityId: a.hurtId, health: 0.5 }]);
   });
 
   it('takes Mend to the space, which mends the target', async () => {
-    const a = await attached(HEALER, [MOONSTONE_IN_HAND]);
+    const a = await attached(HEALER, wearing(MOONSTONE));
     expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
     expect(await a.connection.dispatch({ tag: 'engage', payload: { on: true } })).toEqual({ kind: 'keepOpen' });
     a.space.step(0.05);
@@ -296,7 +332,7 @@ describe('an attached connection', () => {
   /** The space runs on the machine's clock here, and a nightmare takes its respawn time to appear. */
   it('takes Attack to the space, which swings at the target in front', async () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
-    const a = await attached({}, [], { monsterSpawns: [makeMonsterSpawn({ x: 10, z: 10.2 })] });
+    const a = await attached({}, carrying(), { monsterSpawns: [makeMonsterSpawn({ x: 10, z: 10.2 })] });
     now.mockReturnValue(RESPAWN_MS);
     a.space.step(0);
 

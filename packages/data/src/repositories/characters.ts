@@ -1,12 +1,12 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { NO_LUCIDITY, fullPools, headingFromCardinal, isPeople, isRole, isSoundTask, isTeachingId } from '@somnio/core';
-import type { Character, InventoryRow, Lucidity, People, TeachingRank } from '@somnio/core';
+import { NO_LUCIDITY, NO_STATS, fullPools, headingFromCardinal, isPeople, isRole, isSoundTask, isTeachingId } from '@somnio/core';
+import type { Character, Inventory, Lucidity, People, TeachingRank } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import type { Database } from '../schema.ts';
 import { RepositoryDecodingError, isUniqueViolation } from './errors.ts';
-import { insertInventoryRows } from './inventoryRows.ts';
+import { insertItems } from './items.ts';
 
 /** Surfaced from the unique-name constraint race, so the handler answers `nameExists`. */
 export class CharacterNameTakenError extends Error {
@@ -17,8 +17,8 @@ export class CharacterNameTakenError extends Error {
 }
 
 export interface CharacterRepository {
-  /** Provisions the character and its starter rows in one transaction, never played. */
-  create(accountId: string, name: string, people: People, starterInventory: readonly InventoryRow[]): Promise<Character>;
+  /** Provisions the character with its starting coins and items in one transaction, never played. */
+  create(accountId: string, name: string, people: People, starterInventory: Inventory): Promise<Character>;
   /** The account's characters in `compareCharacters` order. */
   findByAccount(accountId: string): Promise<Character[]>;
   findByName(name: string): Promise<Character | undefined>;
@@ -29,12 +29,12 @@ export interface CharacterRepository {
    */
   snapshot(character: Character): Promise<boolean>;
   /**
-   * Atomically persists the character and replaces its rank and inventory rows in one
+   * Atomically persists the character with its coins and replaces its rank and item rows in one
    * transaction, gated by the same `last_seen` skip-if-stale guard. Returns `false` (touching
    * neither) when the character update was skipped as stale.
    */
-  persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean>;
-  /** Deletes one of the account's characters with its rank and inventory rows; `false` when the account has no such character. */
+  persistCheckpoint(character: Character, inventory: Inventory): Promise<boolean>;
+  /** Deletes one of the account's characters with its rank and item rows; `false` when the account has no such character. */
   delete(accountId: string, characterId: string): Promise<boolean>;
 }
 
@@ -106,7 +106,7 @@ export function newCharacter(id: string, name: string, people: People): Characte
     space: STARTER_SECTOR,
     position: { x: 0, z: 0 },
     facing: headingFromCardinal('south'),
-    energy: fullPools(NO_LUCIDITY),
+    energy: fullPools(NO_STATS),
     lucidity: NO_LUCIDITY,
     lastSeen: new Date(NEVER_PLAYED_MS),
   };
@@ -201,7 +201,7 @@ function characterColumns(character: Character) {
   };
 }
 
-async function insertCharacter(db: Kysely<Database>, accountId: string, character: Character): Promise<void> {
+async function insertCharacter(db: Kysely<Database>, accountId: string, character: Character, coins: number): Promise<void> {
   await db
     .insertInto('characters')
     .values({
@@ -210,6 +210,7 @@ async function insertCharacter(db: Kysely<Database>, accountId: string, characte
       name: character.name,
       ...characterColumns(character),
       name_skeleton: confusableSkeleton(character.name),
+      coins,
     })
     .execute();
 }
@@ -236,12 +237,12 @@ export class PostgresCharacterRepository implements CharacterRepository {
     this.db = db;
   }
 
-  async create(accountId: string, name: string, people: People, starterInventory: readonly InventoryRow[]): Promise<Character> {
+  async create(accountId: string, name: string, people: People, starterInventory: Inventory): Promise<Character> {
     const character = newCharacter(crypto.randomUUID(), name, people);
     try {
       await this.db.transaction().execute(async (transaction) => {
-        await insertCharacter(transaction, accountId, character);
-        await insertInventoryRows(transaction, character.id, starterInventory);
+        await insertCharacter(transaction, accountId, character, starterInventory.coins);
+        await insertItems(transaction, character.id, starterInventory);
       });
     } catch (error) {
       if (isUniqueViolation(error, CHARACTER_NAME_CONSTRAINTS)) throw new CharacterNameTakenError();
@@ -282,7 +283,7 @@ export class PostgresCharacterRepository implements CharacterRepository {
     return guardedUpdate(this.db, character);
   }
 
-  persistCheckpoint(character: Character, inventory: readonly InventoryRow[]): Promise<boolean> {
+  persistCheckpoint(character: Character, inventory: Inventory): Promise<boolean> {
     return this.db.transaction().execute(async (transaction) => {
       if (!(await guardedUpdate(transaction, character))) return false;
       await transaction.deleteFrom('character_ranks').where('character_id', '=', character.id).execute();
@@ -292,8 +293,9 @@ export class PostgresCharacterRepository implements CharacterRepository {
           .values({ character_id: character.id, teaching_id: held.teachingId, rank: held.rank, practice: held.practice })
           .execute();
       }
-      await transaction.deleteFrom('inventory_rows').where('character_id', '=', character.id).execute();
-      await insertInventoryRows(transaction, character.id, inventory);
+      await transaction.updateTable('characters').set({ coins: inventory.coins }).where('id', '=', character.id).execute();
+      await transaction.deleteFrom('items').where('character_id', '=', character.id).execute();
+      await insertItems(transaction, character.id, inventory);
       return true;
     });
   }

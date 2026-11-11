@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { allModelEntries, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
+import { allModelEntries, groundModelStem, handModelStem, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
 import type { ModelRegistry } from '@somnio/core';
 
 /**
@@ -16,6 +16,10 @@ import type { ModelRegistry } from '@somnio/core';
 export interface ModelAssets {
   prewarm(): Promise<void>;
   character(id: string): THREE.Object3D | undefined;
+  /** What a hand holding an item of `baseId` draws, to hang at identity under its `handslot` bone. */
+  hand(baseId: string): THREE.Object3D | undefined;
+  /** What a drop of an item of `baseId` draws: a model lying on the ground, its ground bounds centred on its origin. */
+  ground(baseId: string): THREE.Object3D | undefined;
   object(id: string): THREE.Object3D | undefined;
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[];
   /**
@@ -63,6 +67,16 @@ export class HttpModelAssets implements ModelAssets {
   character(id: string): THREE.Object3D | undefined {
     const entry = modelForCharacter(this.registry, id);
     return entry === undefined ? undefined : this.instantiate(entry.stem);
+  }
+
+  hand(baseId: string): THREE.Object3D | undefined {
+    const stem = handModelStem(this.registry, baseId);
+    return stem === undefined ? undefined : this.instantiate(stem);
+  }
+
+  ground(baseId: string): THREE.Object3D | undefined {
+    const stem = groundModelStem(this.registry, baseId);
+    return stem === undefined ? undefined : this.instantiate(stem);
   }
 
   object(id: string): THREE.Object3D | undefined {

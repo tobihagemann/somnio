@@ -17,8 +17,10 @@ import type { Ability, AbilityBody, AbilityId, AbilityState } from '../src/abili
 import { engageAction, handAllows } from '../src/combat.ts';
 import type { EngageTarget } from '../src/combat.ts';
 import { EFFECTS, scaled } from '../src/effects.ts';
-import { ITEMS } from '../src/items.ts';
+import { BASE_ITEMS } from '../src/items.ts';
+import type { BaseItemId } from '../src/items.ts';
 import { TEACHING_IDS, teaching } from '../src/lucidity.ts';
+import { holding, plain } from './support/items.ts';
 import { ranks } from './support/ranks.ts';
 
 const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
@@ -33,7 +35,15 @@ const npc: Named = { name: 'npc', kind: undefined, fallen: false, x: 1, z: 0, ra
 const dreamer = (x: number, fallen = false): Named => ({ name: 'dreamer', kind: 'dreamer', fallen, x, z: 0, radius: 0.3 });
 
 /** One ability of each aim, each reaching 1 m beyond contact: 1.6 m centre to centre between two bodies of 0.3 m. */
-const aimed = (aim: Ability['aim']): Ability => ({ pool: 'spirit', cost: 0, cooldownSeconds: 0, aim, range: 1, does: { kind: 'leap', metresPerSecond: 1 } });
+const aimed = (aim: Ability['aim']): Ability => ({
+  pool: 'spirit',
+  cost: 0,
+  cooldownSeconds: 0,
+  aim,
+  range: 1,
+  hand: 'mainHand',
+  does: { kind: 'leap', metresPerSecond: 1 },
+});
 
 describe('the table', () => {
   /** An ability id travels the wire, so the table is pinned, not only its use. */
@@ -109,11 +119,28 @@ describe('the table', () => {
         hand: 'moonstone',
         does: { kind: 'calm', threatKept: 0.5, effectId: 'calmed' },
       },
-      ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, does: { kind: 'effect', effectId: 'warded' } },
-      weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'weakened' } },
-      bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, does: { kind: 'effect', effectId: 'bound' } },
-      'dream-bolt': { pool: 'spirit', cost: 12, cooldownSeconds: 3, aim: 'enemy', range: 8, does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } } },
-      veil: { pool: 'spirit', cost: 25, cooldownSeconds: 45, aim: 'area', range: 4.4, among: 'dreamer', does: { kind: 'effect', effectId: 'veiled' } },
+      ward: { pool: 'spirit', cost: 15, cooldownSeconds: 12, aim: 'ally', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'warded' } },
+      weaken: { pool: 'spirit', cost: 12, cooldownSeconds: 12, aim: 'enemy', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'weakened' } },
+      bind: { pool: 'spirit', cost: 14, cooldownSeconds: 15, aim: 'enemy', range: 6, hand: 'focus', does: { kind: 'effect', effectId: 'bound' } },
+      'dream-bolt': {
+        pool: 'spirit',
+        cost: 12,
+        cooldownSeconds: 3,
+        aim: 'enemy',
+        range: 8,
+        hand: 'focus',
+        does: { kind: 'harm', damage: { atRank1: 12, perRank: 3 } },
+      },
+      veil: {
+        pool: 'spirit',
+        cost: 25,
+        cooldownSeconds: 45,
+        aim: 'area',
+        range: 4.4,
+        among: 'dreamer',
+        hand: 'focus',
+        does: { kind: 'effect', effectId: 'veiled' },
+      },
     });
     expect(GLOBAL_COOLDOWN_SECONDS).toBe(0.75);
   });
@@ -164,21 +191,34 @@ describe('the table', () => {
 });
 
 describe('the hand rule', () => {
-  const inHand = [undefined, ...Object.keys(ITEMS)];
+  const held = [undefined, ...(Object.keys(BASE_ITEMS) as BaseItemId[]).map(plain)];
+  const allowing = (fits: (item: ReturnType<typeof plain> | undefined) => boolean) => held.filter(fits).map((item) => item?.baseId);
 
-  it("is slot 1's: the main hand attacks a nightmare and the Moonstone mends a dreamer, by the same reading of what is in hand", () => {
-    for (const item of inHand) {
-      expect(handAllows('mainHand', item)).toBe(engageAction('nightmare', 'fighter', item) === 'attack');
-      expect(handAllows('moonstone', item)).toBe(engageAction('dreamer', 'healer', item) === 'mend');
+  it("is slot 1's: the main hand attacks a nightmare and the Moonstone mends a dreamer, by the same reading of the hands", () => {
+    for (const mainHand of held) {
+      for (const offHand of held) {
+        const hands = holding(mainHand, offHand);
+        expect(handAllows('mainHand', hands)).toBe(engageAction('nightmare', 'fighter', hands) === 'attack');
+        expect(handAllows('moonstone', hands)).toBe(engageAction('dreamer', 'healer', hands) === 'mend');
+      }
     }
   });
 
-  it("asks bare hands or a weapon of the Fighter's kit, the Moonstone of the Healer's, and nothing of the Mystic's", () => {
-    const hands = Object.fromEntries(ABILITY_IDS.map((id) => [teaching(abilityTeaching(id)).role, new Set<string | undefined>()]));
-    for (const id of ABILITY_IDS) hands[teaching(abilityTeaching(id)).role]!.add(ability(id).hand);
-    expect(hands).toEqual({ fighter: new Set(['mainHand']), healer: new Set(['moonstone']), mystic: new Set([undefined]) });
-    expect(inHand.filter((item) => handAllows('mainHand', item))).toEqual([undefined, 'dagger', 'cudgel', 'sword', 'mace']);
-    expect(inHand.filter((item) => handAllows('moonstone', item))).toEqual(['moonstone']);
+  it("asks an empty main hand or a weapon in it of the Fighter's kit, the Moonstone in the off hand of the Healer's, and a focus there of the Mystic's", () => {
+    const kits = Object.fromEntries(ABILITY_IDS.map((id) => [teaching(abilityTeaching(id)).role, new Set<string>()]));
+    for (const id of ABILITY_IDS) kits[teaching(abilityTeaching(id)).role]!.add(ability(id).hand);
+    expect(kits).toEqual({ fighter: new Set(['mainHand']), healer: new Set(['moonstone']), mystic: new Set(['focus']) });
+    expect(allowing((item) => handAllows('mainHand', holding(item, undefined)))).toEqual([undefined, 'dagger', 'cudgel', 'sword', 'mace']);
+    expect(allowing((item) => handAllows('moonstone', holding(undefined, item)))).toEqual(['moonstone']);
+    expect(allowing((item) => handAllows('focus', holding(undefined, item)))).toEqual(['wand']);
+  });
+
+  it('reads each need in its own hand alone', () => {
+    for (const item of held) {
+      expect(handAllows('mainHand', holding(undefined, item))).toBe(true);
+      expect(handAllows('moonstone', holding(item, undefined))).toBe(false);
+      expect(handAllows('focus', holding(item, undefined))).toBe(false);
+    }
   });
 });
 
@@ -219,7 +259,7 @@ describe('abilityAllowed', () => {
   const ready: AbilityState<Named> = {
     caster,
     ranks: ranks({ strike: 2, lunge: 1, guard: 1, brace: 1 }),
-    itemInHand: 'cudgel',
+    hands: holding(plain('cudgel'), undefined),
     energy: { balanceCurrent: ABILITIES.lunge.cost, spiritCurrent: 0 },
     now: 10,
     globalReadyAt: 10,
@@ -230,13 +270,13 @@ describe('abilityAllowed', () => {
 
   it('lands on the recipient once every need is met, a cooldown ending at this moment included', () => {
     expect(abilityAllowed(ready, 'lunge', inReach)).toBe(inReach);
-    expect(abilityAllowed({ ...ready, itemInHand: undefined }, 'lunge', inReach)).toBe(inReach);
+    expect(abilityAllowed({ ...ready, hands: {} }, 'lunge', inReach)).toBe(inReach);
   });
 
   it.each([
     ['the caster has fallen', { caster: { ...caster, fallen: true } }, 'fallen'],
     ['the teaching is not held', { ranks: ranks({ strike: 2 }) }, 'untaught'],
-    ['what is in hand does not swing', { itemInHand: 'moonstone' }, 'hand'],
+    ['what is in the main hand does not swing', { hands: holding(plain('moonstone'), undefined) }, 'hand'],
     ['the pool is short of the cost', { energy: { balanceCurrent: ABILITIES.lunge.cost - 1, spiritCurrent: 100 } }, 'cost'],
     ['its own cooldown runs', { readyAt: { lunge: 10.1 } }, 'cooldown'],
     ['the global cooldown runs', { globalReadyAt: 10.1 }, 'cooldown'],
@@ -253,8 +293,9 @@ describe('abilityAllowed', () => {
   });
 
   it('names the first need missed, in the order the rule checks them', () => {
-    expect(abilityRefusal({ ...ready, channelling: true, itemInHand: 'moonstone', globalReadyAt: 11 }, 'lunge', undefined)).toBe('channelling');
-    expect(abilityRefusal({ ...ready, itemInHand: 'moonstone', globalReadyAt: 11 }, 'lunge', undefined)).toBe('hand');
+    const moonstoneInMainHand = holding(plain('moonstone'), undefined);
+    expect(abilityRefusal({ ...ready, channelling: true, hands: moonstoneInMainHand, globalReadyAt: 11 }, 'lunge', undefined)).toBe('channelling');
+    expect(abilityRefusal({ ...ready, hands: moonstoneInMainHand, globalReadyAt: 11 }, 'lunge', undefined)).toBe('hand');
   });
 
   it("is held back only by the ability's own cooldown, not another's", () => {

@@ -1,34 +1,45 @@
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
-import { WARES, buyBackPrice, canBuy, canSell, isWare } from '../src/shop.ts';
+import type { Inventory } from '../src/domain/inventory.ts';
+import { BASE_ITEMS, plainInstance } from '../src/items.ts';
+import type { ItemInstance } from '../src/items.ts';
+import { WARES, canBuy, isWare, salePrice, sellableItem } from '../src/shop.ts';
+import { bagOf } from './support/items.ts';
 
-const purse = (quantity: number) => ({ itemId: 'purse', quantity });
-const carried = (itemId: string) => ({ itemId, quantity: 1 });
+const purse = (coins: number): Inventory => ({ coins, equipped: {}, bag: [] });
 
 describe('the shop', () => {
-  it('shelves its wares in order', () => {
-    expect(WARES).toEqual(['dagger', 'cudgel', 'sword', 'mace']);
+  it('shelves every plain base but the Moonstone, in order', () => {
+    expect(WARES).toEqual(['dagger', 'cudgel', 'sword', 'mace', 'buckler', 'shield', 'wand', 'cap', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'ring']);
+    expect(Object.keys(BASE_ITEMS).filter((baseId) => !isWare(baseId))).toEqual(['moonstone']);
   });
 
-  it('buys each ware back for half its price, rounded down', () => {
-    expect(WARES.map(buyBackPrice)).toEqual([30, 15, 75, 120]);
+  it('pays for an item by its rarity, for each tier it rolled at', () => {
+    const piece = (rarity: ItemInstance['rarity'], tier: ItemInstance['tier']) => ({ ...plainInstance('cap'), rarity, tier });
+    expect([piece('plain', 1), piece('magic', 1), piece('rare', 1), piece('rare', 3)].map(salePrice)).toEqual([10, 30, 75, 225]);
   });
 
-  it('deals in weapons alone, and in nothing inherited from an object', () => {
-    expect(isWare('dagger')).toBe(true);
+  it('deals in nothing inherited from an object', () => {
     expect(['purse', 'moonstone', 'toString'].map(isWare)).toEqual([false, false, false]);
   });
 
-  it('sells a ware the purse covers and the dreamer does not carry', () => {
-    expect(canBuy([purse(60)], 'dagger')).toBe(true);
-    expect(canBuy([purse(59)], 'dagger')).toBe(false);
-    expect(canBuy([purse(100), carried('dagger')], 'dagger')).toBe(false);
-    expect(canBuy([purse(100)], 'moonstone')).toBe(false);
+  it('sells a ware the purse covers, however many of it the dreamer carries, into a bag with room', () => {
+    expect(canBuy(purse(60), 'dagger')).toBe(true);
+    expect(canBuy(purse(59), 'dagger')).toBe(false);
+    expect(canBuy({ ...purse(100), equipped: { mainHand: plainInstance('dagger') }, bag: bagOf([plainInstance('dagger')]) }, 'dagger')).toBe(true);
+    expect(canBuy(purse(1000), 'moonstone')).toBe(false);
+    const full = bagOf(Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, () => plainInstance('cap')));
+    expect(canBuy({ ...purse(100), bag: full }, 'dagger')).toBe(false);
+    expect(canBuy({ ...purse(100), bag: full.slice(1) }, 'dagger')).toBe(true);
   });
 
-  it('buys back only a ware the dreamer carries', () => {
-    expect(canSell([carried('cudgel')], 'cudgel')).toBe(true);
-    expect(canSell([carried('cudgel')], 'mace')).toBe(false);
-    expect(canSell([purse(100), carried('moonstone')], 'moonstone')).toBe(false);
-    expect(canSell([purse(100)], 'purse')).toBe(false);
+  it('buys anything from the bag by its id but the Moonstone, and nothing worn', () => {
+    const cudgel = plainInstance('cudgel');
+    const amulet: ItemInstance = { ...plainInstance('amulet'), rarity: 'rare', affixes: [{ affixId: 'health', value: 5 }] };
+    const moonstone = plainInstance('moonstone');
+    const sword = plainInstance('sword');
+    const inventory: Inventory = { coins: 100, equipped: { mainHand: sword }, bag: bagOf([cudgel, amulet, moonstone]) };
+    expect([cudgel.id, amulet.id].map((itemId) => sellableItem(inventory, itemId))).toEqual([cudgel, amulet]);
+    expect([moonstone.id, sword.id, 'purse'].map((itemId) => sellableItem(inventory, itemId))).toEqual([undefined, undefined, undefined]);
   });
 });

@@ -49,11 +49,15 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'coinsGained':
       return lookup('You receive %@c.', String(line.coins));
     case 'bought':
-      return lookup('%1$@ bought for %2$@c.', itemName(line.itemId, lookup), String(line.coins));
+      return lookup('%1$@ bought for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
     case 'sold':
-      return line.emptiedHand
-        ? lookup('%1$@ sold for %2$@c. Your hands are empty.', itemName(line.itemId, lookup), String(line.coins))
-        : lookup('%1$@ sold for %2$@c.', itemName(line.itemId, lookup), String(line.coins));
+      return lookup('%1$@ sold for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
+    case 'dropped':
+      return lookup('%@ dropped.', itemName(line.baseId, lookup));
+    case 'pickedUp':
+      return lookup('%@ picked up.', itemName(line.baseId, lookup));
+    case 'bagFull':
+      return lookup('Your bag is full.');
     case 'becameRole':
       return lookup('You are now a %@.', lookup(roleLabelKey(line.role)));
     case 'rankGained':
@@ -128,9 +132,9 @@ function renderSpoken(line: SpokenLine, lookup: Lookup): string {
  * An item's display name in the lookup's locale. An id the item table does not know renders raw, so
  * an operator seeing it in a screenshot can tell which item is missing from the table.
  */
-export function itemName(itemId: string, lookup: Lookup): string {
-  const key = itemLabelKey(itemId);
-  return key === undefined ? itemId : lookup(key);
+export function itemName(baseId: string, lookup: Lookup): string {
+  const key = itemLabelKey(baseId);
+  return key === undefined ? baseId : lookup(key);
 }
 
 /** An ability's display name in the lookup's locale: the name of the teaching that teaches it. */

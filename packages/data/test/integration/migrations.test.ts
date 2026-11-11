@@ -1,6 +1,10 @@
 import { sql } from 'kysely';
+import { Migrator } from 'kysely/migration';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { plain } from '../../../core/test/support/items.ts';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
+import { down as dreamersDown, up as dreamersUp } from '../../src/migrations/0001_dreamers.ts';
+import { PostgresItemRepository } from '../../src/repositories/items.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
@@ -25,7 +29,7 @@ describe('migrations', () => {
       'accounts',
       'character_ranks',
       'characters',
-      'inventory_rows',
+      'items',
       'kysely_migration',
       'kysely_migration_lock',
       'npc_dialog_states',
@@ -102,5 +106,60 @@ describe('migrating a database that is not fresh', () => {
     await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${name}, ${new Date().toISOString()})`.execute(harness.db);
     await expect(migrateToLatest(harness.db)).rejects.toThrow(LegacyDatabaseError);
     await sql`DELETE FROM kysely_migration WHERE name = ${name}`.execute(harness.db);
+  });
+});
+
+describe('upgrading a database from the first schema', () => {
+  let harness: DatabaseHarness;
+
+  beforeAll(async () => {
+    harness = await startDatabase({ migrate: false });
+    const first = new Migrator({
+      db: harness.db,
+      provider: { getMigrations: () => Promise.resolve({ '0001_dreamers': { up: dreamersUp, down: dreamersDown } }) },
+    });
+    expect((await first.migrateToLatest()).error).toBeUndefined();
+    const accountId = crypto.randomUUID();
+    await sql`INSERT INTO accounts (id, password_hash, email) VALUES (${accountId}, 'h', 'old@example.com')`.execute(harness.db);
+    for (const [name, role, coins] of [
+      ['Hale', 'healer', 37],
+      ['Myst', 'mystic', 250],
+      ['Plain', null, null],
+    ] as const) {
+      const id = crypto.randomUUID();
+      await sql`INSERT INTO characters (
+        id, account_id, name, people, space, position_x, position_z, facing,
+        health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton, role
+      ) VALUES (
+        ${id}, ${accountId}, ${name}, 'vigils', 'EdariaLibrary', 0, 0, 0, 100, 100, 100, 100, 100, 100, NOW(), ${name.toLowerCase()}, ${role}
+      )`.execute(harness.db);
+      if (coins !== null) {
+        await sql`INSERT INTO inventory_rows (character_id, slot, item_id, quantity) VALUES (${id}, 0, 'purse', ${coins})`.execute(harness.db);
+      }
+      await sql`INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand) VALUES (${id}, 1, 'mace', 1, 'right')`.execute(harness.db);
+    }
+    await migrateToLatest(harness.db);
+  });
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  async function inventoryOf(name: string) {
+    const character = await sql<{ id: string }>`SELECT id FROM characters WHERE name = ${name}`.execute(harness.db);
+    return new PostgresItemRepository(harness.db).load(character.rows[0]!.id);
+  }
+
+  it.each([
+    ['a Healer their Moonstone', 'Hale', 37, { offHand: { id: expect.any(String), ...plain('moonstone') } }],
+    ['a Mystic a plain focus', 'Myst', 250, { offHand: { id: expect.any(String), ...plain('wand') } }],
+    ['a dreamer with no role nothing', 'Plain', 0, {}],
+  ])('keeps the coins, gives the starter kit in place of the rows, and puts in hand for %s', async (_label, name, coins, equipped) => {
+    expect(await inventoryOf(name)).toEqual({ coins, equipped, bag: [{ place: 0, item: { id: expect.any(String), ...plain('cudgel') } }] });
+  });
+
+  it('drops the inventory rows', async () => {
+    const rows = await sql<{ exists: string | null }>`SELECT to_regclass('inventory_rows') AS exists`.execute(harness.db);
+    expect(rows.rows[0]?.exists).toBeNull();
   });
 });

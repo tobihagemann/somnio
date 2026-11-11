@@ -1,17 +1,19 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
+import { inventoryMessage } from '@somnio/core';
 import type { AbilityId, EffectId, EngageAction, Point } from '@somnio/core';
-import type { Energy, LucidityMessage } from '@somnio/protocol';
+import type { Energy, Held, InventoryMessage, LucidityMessage, Rarity } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 
 /**
  * Read-only introspection surface for automated verification.
  *
- * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and
- * adds controller and session state the scene never sees — connection state, the space and sector,
- * the chat scrollback, the presented overlay, the zoom factor, the player's own pools and lucidity, the
- * walk under way, the target, the belt's abilities with their cooldowns, the frames' effects,
- * channels, and raises, and the fallen a Mystic senses.
+ * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and adds
+ * controller and session state the scene never sees — connection state, the space and sector, the
+ * chat scrollback, the presented overlay, the zoom factor, the player's own pools, lucidity, and
+ * inventory, where the Character window draws their body, what each dreamer's hands hold, the walk
+ * under way, the target, the belt's abilities with their cooldowns, the frames' effects, channels,
+ * and raises, the fallen a Mystic senses, and the drops lying for the player.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -28,10 +30,18 @@ export interface SomnioDebugAPI {
   spaceId(): string | undefined;
   /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
-  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string }[];
+  /** `held` is what a dreamer's hands hold, as base ids; absent for anything but a dreamer. */
+  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string; held?: Held }[];
   /** The player's own pools, as last sent. */
   energy(): Energy;
   lucidity(): LucidityMessage;
+  /** What the player carries, as last sent, the bag at its places, without the items this build does not know. */
+  inventory(): InventoryMessage;
+  /**
+   * Where the Character window draws the player's body on the page, in CSS pixels, and how far it
+   * is turned from its usual view, in degrees; `undefined` while it is not shown.
+   */
+  characterBody(): { left: number; top: number; width: number; height: number; turnDegrees: number } | undefined;
   winded(): boolean;
   /** Whether Run is on. */
   running(): boolean;
@@ -61,6 +71,22 @@ export interface SomnioDebugAPI {
   raise(entityId: string): { healerNames: string[]; seconds: number } | undefined;
   /** Where each fallen dreamer in the space lies, as the server last told a player who senses the fallen; none for anyone else. */
   sensed(): { name: string; x: number; z: number }[];
+  /**
+   * The drops lying on the ground for the player, as the server last said, each with whether it is
+   * an item a dreamer dropped for anyone (`shared`) and where on the page its name and its model are
+   * drawn, in CSS pixels, so a press can be aimed at either; `undefined` for one not drawn, and
+   * `model` for one drawn without its model.
+   */
+  loot(): {
+    lootId: string;
+    baseId: string;
+    rarity: Rarity;
+    shared: boolean;
+    x: number;
+    z: number;
+    label: { x: number; y: number } | undefined;
+    model: { x: number; y: number } | undefined;
+  }[];
   /** Where on the page an entity's body is drawn, in CSS pixels, so a click can be aimed at it. */
   screenPoint(entityId: string): { x: number; y: number } | undefined;
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels, so a tap can be aimed at it. */
@@ -114,9 +140,16 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         x: entity.position.x,
         z: entity.position.z,
         condition: entity.condition,
+        ...(entity.held === undefined ? {} : { held: { ...entity.held } }),
       })),
     energy: () => shell.session.energy,
     lucidity: () => shell.session.lucidity,
+    inventory: () => inventoryMessage(shell.session.inventory),
+    characterBody: () => {
+      const { left, top, width, height } = shell.hud.portraits.body.getBoundingClientRect();
+      if (width === 0 || height === 0) return undefined;
+      return { left, top, width, height, turnDegrees: (shell.hud.bodyTurn(performance.now()) * 180) / Math.PI };
+    },
     winded: () => shell.session.winded,
     running: () => shell.session.running,
     engaged: () => shell.session.engaged,
@@ -142,6 +175,17 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
       return raise === undefined ? undefined : { healerNames: [...raise.healerNames], seconds: secondsUntil(raise.endsAtMs) };
     },
     sensed: () => shell.session.sensed.map(({ name, x, z }) => ({ name, x, z })),
+    loot: () =>
+      [...shell.session.loot.values()].map(({ lootId, x, z, contents, shared }) => ({
+        lootId,
+        baseId: contents.baseId,
+        rarity: contents.rarity,
+        shared: shared === true,
+        x,
+        z,
+        label: shell.pagePointOfLoot(lootId, 'label'),
+        model: shell.pagePointOfLoot(lootId, 'model'),
+      })),
     screenPoint: (entityId) => shell.pagePointOf(entityId),
     groundScreenPoint: (x, z) => shell.pagePointOfGround({ x, z }),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,

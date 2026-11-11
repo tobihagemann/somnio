@@ -1,4 +1,4 @@
-import { SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import { HANDS, SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
 import type {
   AbilityPhase,
   ClientSayMessage,
@@ -7,27 +7,32 @@ import type {
   Energy,
   EntityMessage,
   EntityMove,
+  EquipSlot,
   Gait,
-  Hand,
-  InventoryMessage,
+  Held,
   Locale,
+  LootContentsMessage,
   LucidityMessage,
   MoveMessage,
   NPCService,
   RaisingState,
   SomnioMessage,
   SpeechKind,
-  TradeMessage,
+  ThrownFromMessage,
 } from '@somnio/protocol';
 import {
   COMBAT,
   EDGE_TOLERANCE,
   FIRST_TEACHING,
   GLOBAL_COOLDOWN_SECONDS,
+  MAX_SHARED_DROPS,
   POOL_FIELDS,
   PRACTICE,
+  SHARED_LOOT_SECONDS,
   SHOP,
   SOMNIO_CONSTANTS,
+  THROW_DISTANCE,
+  TRIAL_REWARDS,
   SPEECH,
   ability,
   abilityAllowed,
@@ -35,44 +40,51 @@ import {
   abilityCooldownSeconds,
   abilityRank,
   areaRecipients,
+  bagHasRoom,
   boltFlightSeconds,
   balancePace,
   balancePerSecond,
   bodiesBlock,
   buildSpaceCollision,
-  buyBackPrice,
   canBuy,
-  canSell,
   canStand,
   conditionOf,
   crumble,
   dialogSteps,
   distance,
+  droppableItem,
   effect,
   effectAbsorb,
   effectHealthPerSecond,
   effectSeconds,
   engageAction,
+  equipItem,
   gaitAllowed,
   gaitMetresPerSecond,
+  grantItem,
+  handAllows,
   harmTaken,
   heading,
   headingFromCardinal,
   headingFromVector,
   headingRadians,
+  inventoryMessage,
   isAbilityId,
   isClear,
   isLegalMove,
   isTeachingId,
-  itemInHand,
   localizedDialogLine,
   masterRole,
   maxPools,
   mendAmount,
   mendReaches,
   monsterKind,
+  moveItem,
   neighbourSectors,
+  newItemId,
+  nextLastSeen,
   npcBodies,
+  plainInstance,
   placesReached,
   poolShare,
   practiceNeeded,
@@ -83,13 +95,19 @@ import {
   reaches,
   rectContains,
   resolveDoor,
+  rollDrops,
+  scatterLandings,
   scaled,
+  salePrice,
+  sellableItem,
   sectorAt,
   sectorPointInSpace,
   sectorView,
   shieldedHarm,
   spawnArea,
   speechClarity,
+  spiritPerSecond,
+  statsOf,
   strikeChance,
   swingAllowed,
   swingFor,
@@ -99,10 +117,16 @@ import {
   teaching,
   teachingStanding,
   threatRaised,
+  unequipItem,
+  wardShare,
   wholeAmount,
   windedAfter,
   windedOnJoin,
+  withItem,
   withRank,
+  withoutItem,
+  throwLanding,
+  withinPickupReach,
   withinSpeakingDistance,
 } from '@somnio/core';
 import type {
@@ -115,8 +139,9 @@ import type {
   EngageAction,
   EngageTarget,
   Heading,
-  InventoryRow,
-  ItemId,
+  Inventory,
+  InventoryChange,
+  Item,
   Lucidity,
   MonsterKind,
   MonsterSpawn,
@@ -127,6 +152,7 @@ import type {
   SectorNPC,
   Space,
   SpaceCollision,
+  Stats,
   TaskSpec,
 } from '@somnio/core';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
@@ -135,12 +161,13 @@ import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
 import { counterpartOf } from '../sectors/sectorCache.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
+import { PersonalDrops } from './personalDrops.ts';
 import { randomInRange, randomUnit, systemRandom } from './random.ts';
 import type { RandomSource } from './random.ts';
 
 interface PlayerSlot {
   character: Character;
-  inventory: InventoryRow[];
+  inventory: Inventory;
   outbox: ConnectionOutbox;
   /** The language NPCs speak to this player in. */
   locale: Locale;
@@ -166,6 +193,8 @@ interface PlayerSlot {
   /** Nightmares leave the dreamer alone until this moment. */
   graceUntil: number;
   condition: Condition;
+  /** What everyone who sees the dreamer was last shown in their hands. */
+  held: Held;
   /** The raise this fallen dreamer is being given, by every Healer holding on. */
   raise: Raise | undefined;
   /** The entity the dreamer chose to act on. It is let go once it is out of their view. */
@@ -270,6 +299,29 @@ interface MonsterRuntime {
   threat: Map<string, number>;
 }
 
+/** What a drop is: a whole item, of which whoever is shown the drop sees only the base and the rarity until they pick it up. */
+interface LootContents {
+  kind: 'item';
+  item: Item;
+}
+
+/**
+ * A drop lying on the ground until it is picked up: one from a nightmare for one dreamer alone,
+ * which lies until they leave the world or it is their oldest past `MAX_PERSONAL_DROPS`, or an item
+ * a dreamer dropped, for anyone, which lies until it has lain there too long.
+ */
+interface Loot {
+  lootId: string;
+  /** The dreamer it lies for alone; none for an item a dreamer dropped. */
+  ownerId: string | undefined;
+  position: Point;
+  /** The sector it lies in, by whose interest an item a dreamer dropped is shown. */
+  sector: string;
+  contents: LootContents;
+  /** When an item a dreamer dropped is gone; none for a drop from a nightmare. */
+  expiresAt: number | undefined;
+}
+
 /** A live door of the space whose counterpart lies in another space: a yell near it is heard on the far side. */
 interface Doorway {
   /** The door's own opening, in this space. */
@@ -339,7 +391,7 @@ const NO_TRANSIENT: PlayerTransient = { effects: [], globalSeconds: 0, cooldowns
 
 export interface PlayerCheckpoint {
   character: Character;
-  inventory: InventoryRow[];
+  inventory: Inventory;
 }
 
 /** A player taken out of the space: what is saved of them, and what they carry on but is never saved. */
@@ -403,16 +455,54 @@ export interface SpaceActorOptions {
   random?: RandomSource;
   /** Picks the words a listener misses; separate from `random`, so speech never shifts the rolls of combat and placement. */
   speechRandom?: RandomSource;
+  /** Rolls each dreamer's drops; separate from `random`, so a drop never shifts the rolls of combat and placement. */
+  lootRandom?: RandomSource;
+  /** Counts each dreamer's drops from nightmares across the world; one ledger serves every space of it. */
+  personalDrops?: PersonalDrops;
+  /**
+   * Asks for a thrower's checkpoint to be saved outside the space, without the space awaiting it:
+   * an item thrown to the ground cannot wait for the next periodic pass, since another dreamer's
+   * own checkpoint could otherwise save it as theirs while the thrower's rows still hold it.
+   */
+  requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   /** Monotonic milliseconds, for the movement allowance and the dialog and spawn deadlines. */
   now?: () => number;
 }
 
 type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string };
 
-function inventoryMessage(rows: readonly InventoryRow[], trade?: TradeMessage): InventoryMessage {
+/** The bases of what the dreamer's hands hold, which everyone who sees them is shown. */
+function heldOf({ equipped: { mainHand, offHand } }: Inventory): Held {
+  return { ...(mainHand === undefined ? {} : { mainHand: mainHand.baseId }), ...(offHand === undefined ? {} : { offHand: offHand.baseId }) };
+}
+
+/** What a drop's viewers are shown of it: its base and rarity, never its stat lines. */
+function lootContentsMessage({ item }: LootContents): LootContentsMessage {
+  return { kind: 'item', baseId: item.baseId, rarity: item.rarity };
+}
+
+/** A drop as it is shown; `from` only as it is thrown, so the viewers who see it fall play its flight. */
+function lootMessage({ lootId, ownerId, position, contents }: Loot, from?: ThrownFromMessage): SomnioMessage {
   return {
-    rows: rows.map(({ slot, itemId, quantity, equippedHand }) => ({ slot, itemId, quantity, ...(equippedHand === undefined ? {} : { equippedHand }) })),
-    ...(trade === undefined ? {} : { trade }),
+    tag: 'loot',
+    payload: {
+      lootId,
+      x: position.x,
+      z: position.z,
+      contents: lootContentsMessage(contents),
+      ...(ownerId === undefined ? { shared: true } : {}),
+      ...(from === undefined ? {} : { from }),
+    },
+  };
+}
+
+/** The pools at new maxima, none above its maximum. */
+function withinMaxima(energy: Energy, maxima: Pick<Energy, 'healthMax' | 'balanceMax' | 'spiritMax'>): Energy {
+  return {
+    healthCurrent: Math.min(energy.healthCurrent, maxima.healthMax),
+    balanceCurrent: Math.min(energy.balanceCurrent, maxima.balanceMax),
+    spiritCurrent: Math.min(energy.spiritCurrent, maxima.spiritMax),
+    ...maxima,
   };
 }
 
@@ -466,8 +556,8 @@ function secondsLeft(until: number, now: number): number {
 
 /**
  * An effect as its holder holds it from `now`. A heal over time it gives is next due in a second and
- * owes nothing, and a shield it is starts whole, unless `carried` says how they stood as they left
- * their last space.
+ * owes nothing, and a shield it is starts at its rank's size. `carried` overrides either: with how
+ * they stood as the holder left their last space, or with a new shield's strength by its source's wards.
  */
 function heldEffect(
   effectId: EffectId,
@@ -529,14 +619,20 @@ export class SpaceActor {
   private readonly monsters = new Map<string, MonsterRuntime>();
   /** The bolts in flight, in the order they were sent. */
   private bolts: Bolt[] = [];
+  /** The drops lying on the ground, by id. */
+  private readonly loot = new Map<string, Loot>();
   private readonly spawnTimers: MonsterSpawnTimer[] = [];
   /** The entities that moved since the last flush, each with the sector it now stands in. */
   private readonly moved = new Map<string, { sector: string; move: EntityMove }>();
   private readonly doorways: Doorway[];
   private readonly random: RandomSource;
   private readonly speechRandom: RandomSource;
+  private readonly lootRandom: RandomSource;
+  private readonly personalDrops: PersonalDrops;
+  private readonly requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   private readonly now: () => number;
   private nextMonsterNumber = 1;
+  private nextLootNumber = 1;
   private readonly logger: Logger;
 
   constructor(world: LoadedWorld, spaceId: string, options: SpaceActorOptions) {
@@ -546,6 +642,9 @@ export class SpaceActor {
     this.logger = options.logger;
     this.random = options.random ?? systemRandom;
     this.speechRandom = options.speechRandom ?? systemRandom;
+    this.lootRandom = options.lootRandom ?? systemRandom;
+    this.personalDrops = options.personalDrops ?? new PersonalDrops();
+    this.requestDropSave = options.requestDropSave;
     this.now = options.now ?? (() => performance.now());
     for (const sector of this.space.sectors) {
       this.interest.set(sector.name, new Set([sector.name, ...neighbourSectors(this.space, sector.name).map((neighbour) => neighbour.name)]));
@@ -600,13 +699,13 @@ export class SpaceActor {
    * them. The player's entity id is the character's. Throws when no sector holds the position
    * or the join sequence cannot be encoded; a throw leaves no slot and no frame behind.
    *
-   * The pools' maxima are what the character's role and ranks give, whatever the row held. NPCs
+   * The pools' maxima are what the character's role, ranks, and worn gear give, whatever the row held. NPCs
    * speak to the player in `locale`. The effects and cooldowns a transfer carries run on from
    * `transient`. The player is sent their cooldowns, and their effects when they hold any.
    */
   attach(
     character: Character,
-    inventory: InventoryRow[],
+    inventory: Inventory,
     outbox: ConnectionOutbox,
     worldSeconds: number,
     locale: Locale,
@@ -615,13 +714,7 @@ export class SpaceActor {
     const now = this.now();
     const sector = sectorAt(this.space, character.position);
     if (sector === undefined) throw new Error(`no sector of ${this.space.id} holds (${character.position.x}, ${character.position.z})`);
-    const maxima = maxPools(character.lucidity);
-    const energy: Energy = {
-      healthCurrent: Math.min(character.energy.healthCurrent, maxima.healthMax),
-      balanceCurrent: Math.min(character.energy.balanceCurrent, maxima.balanceMax),
-      spiritCurrent: Math.min(character.energy.spiritCurrent, maxima.spiritMax),
-      ...maxima,
-    };
+    const energy = withinMaxima(character.energy, maxPools(statsOf(inventory.equipped, character.lucidity)));
     const slot: PlayerSlot = {
       character: { ...character, energy },
       inventory,
@@ -640,6 +733,7 @@ export class SpaceActor {
       mendReadyAt: 0,
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
+      held: heldOf(inventory),
       raise: undefined,
       target: undefined,
       engaged: false,
@@ -668,6 +762,9 @@ export class SpaceActor {
     }
     for (const other of this.players.values()) {
       if (other.raise !== undefined && interest.has(other.sector)) messages.push(this.raisingMessage(other, 'holding', other.raise.holders));
+    }
+    for (const loot of this.loot.values()) {
+      if (this.seesLoot(slot, loot)) messages.push(lootMessage(loot));
     }
     const frames = messages.map((message) => encodeSomnioMessage(message));
     for (const frame of frames) outbox.send(frame);
@@ -824,6 +921,12 @@ export class SpaceActor {
       if (id === slot.character.id || other.raise === undefined || !current.has(other.sector) || previous.has(other.sector)) continue;
       slot.outbox.sendEncoded(this.raisingMessage(other, 'holding', other.raise.holders), this.logger);
     }
+    for (const loot of this.loot.values()) {
+      if (loot.ownerId !== undefined) continue;
+      if (current.has(loot.sector) && !previous.has(loot.sector)) slot.outbox.sendEncoded(lootMessage(loot), this.logger);
+      else if (previous.has(loot.sector) && !current.has(loot.sector))
+        slot.outbox.sendEncoded({ tag: 'lootGone', payload: { lootId: loot.lootId } }, this.logger);
+    }
     this.entityChangedSector(this.playerEntity(slot), from, slot.sector);
   }
 
@@ -899,20 +1002,135 @@ export class SpaceActor {
   }
 
   /**
-   * Per-row equip with an implicit unequip of any other row holding the same hand. No one else is
-   * shown what a dreamer holds, so the rows go back to the player alone and are never broadcast.
+   * Wears an item the dreamer has in a slot its base fits, as `equipItem` chooses it: from the bag,
+   * whatever that slot wore takes the item's place there, and a worn ring changes ring slots. The
+   * inventory goes back to the player alone; everyone who sees them is shown only what their hands
+   * now hold.
    */
-  handleEquipToggle(slot: number, hand: Hand | undefined, entityId: string): void {
+  handleEquip(itemId: string, slot: EquipSlot | undefined, entityId: string): void {
     const player = this.players.get(entityId);
-    if (player === undefined) return;
-    const rowIndex = player.inventory.findIndex((row) => row.slot === slot);
-    if (rowIndex === -1) return;
-    player.inventory = player.inventory.map((row, index) => {
-      if (index === rowIndex) return { ...row, equippedHand: hand };
-      if (hand !== undefined && row.equippedHand === hand) return { ...row, equippedHand: undefined };
-      return row;
-    });
-    this.sendInventory(player);
+    this.changeInventory(player, player === undefined ? undefined : equipItem(player.inventory, itemId, slot));
+  }
+
+  /** Puts what the slot wears into the dreamer's bag, which a full bag refuses. */
+  handleUnequip(slot: EquipSlot, entityId: string): void {
+    const player = this.players.get(entityId);
+    this.changeInventory(player, player === undefined ? undefined : unequipItem(player.inventory, slot));
+  }
+
+  /** Moves an item the dreamer has to a place in their bag, as `moveItem` rules it. */
+  handleMoveItem(itemId: string, place: number, entityId: string): void {
+    const player = this.players.get(entityId);
+    this.changeInventory(player, player === undefined ? undefined : moveItem(player.inventory, itemId, place));
+  }
+
+  /**
+   * Throws an item the dreamer carries or wears to the ground along `heading`, whole, for anyone to
+   * pick up, where `throwLanding` lands it. A worn item leaves its slot as it goes, so it needs no
+   * room in the bag. The thrown `loot` goes out before the `held` that empties the hand, so viewers
+   * see the item leave the hand as the throw lets go. The checkpoint goes to `requestDropSave` at
+   * once, so the item leaves the thrower's rows ahead of the next periodic pass.
+   */
+  handleDropItem(itemId: string, heading: number, entityId: string): void {
+    const player = this.players.get(entityId);
+    const item = player === undefined ? undefined : droppableItem(player.inventory, itemId);
+    if (player === undefined || item === undefined || isFallen(player)) return;
+    const hand = HANDS.find((worn) => player.inventory.equipped[worn]?.id === item.id);
+    player.inventory = withoutItem(player.inventory, item.id);
+    const { baseId, tier, rarity, affixes } = item;
+    const contents: LootContents = { kind: 'item', item: { baseId, tier, rarity, affixes } };
+    const from = player.character.position;
+    const landing = throwLanding(this.collision, from, heading, THROW_DISTANCE, this.npcBodies);
+    this.layLoot(undefined, landing, contents, { x: from.x, z: from.z, entityId, ...(hand === undefined ? {} : { hand }) });
+    this.sendInventory(player, { dropped: lootContentsMessage(contents) });
+    this.requestDropSave(this.checkpointOf(player, new Date()));
+  }
+
+  /**
+   * Picks up a drop into the dreamer's bag, from within pickup reach: one of their own, or an item
+   * a dreamer dropped, which the first to ask takes. A fallen dreamer picks up nothing, and a full
+   * bag leaves the drop where it lies. The drop is gone, and the item comes into the bag under a new
+   * id, since a thrown item's old one may still stand in the thrower's rows until their drop save
+   * lands. The inventory goes back to the dreamer saying what was picked up.
+   */
+  handlePickUp(lootId: string, entityId: string): void {
+    const player = this.players.get(entityId);
+    const loot = this.loot.get(lootId);
+    if (player === undefined || loot === undefined || isFallen(player) || !bagHasRoom(player.inventory)) return;
+    if ((loot.ownerId ?? entityId) !== entityId || !withinPickupReach(player.character.position, loot.position)) return;
+    this.removeLoot(loot);
+    if (loot.ownerId !== undefined) this.personalDrops.pickedUp(loot.ownerId, this, lootId);
+    player.inventory = withItem(player.inventory, { id: newItemId(), ...loot.contents.item });
+    this.sendInventory(player, { pickedUp: lootContentsMessage(loot.contents) });
+  }
+
+  /**
+   * The drops the dreamers sharing a nightmare find where it was driven off, each sent to its owner
+   * alone, scattered from where it stood and fanned round it, so several drops lie apart (`scatterLandings`).
+   */
+  private scatter(position: Point, drops: readonly { owner: PlayerSlot; item: Item }[]): void {
+    const landings = scatterLandings(this.collision, position, drops.length, this.npcBodies, () => randomUnit(this.lootRandom));
+    drops.forEach(({ owner, item }, index) => this.layLoot(owner.character.id, landings[index]!, { kind: 'item', item }, { x: position.x, z: position.z }));
+  }
+
+  /**
+   * Lays a drop on the ground for `ownerId` alone, counted among their drops across the world, or
+   * for anyone without one, for `SHARED_LOOT_SECONDS`, the space's oldest such drop going past
+   * `MAX_SHARED_DROPS`. Shows it to whoever sees it, as thrown from `from`.
+   */
+  private layLoot(ownerId: string | undefined, position: Point, contents: LootContents, from: ThrownFromMessage): void {
+    const loot: Loot = {
+      lootId: `loot-${this.nextLootNumber++}`,
+      ownerId,
+      position: { x: position.x, z: position.z },
+      sector: sectorAt(this.space, position)!.name,
+      contents,
+      expiresAt: ownerId === undefined ? this.now() + SHARED_LOOT_SECONDS * 1000 : undefined,
+    };
+    this.loot.set(loot.lootId, loot);
+    this.sendToLootViewers(loot, lootMessage(loot, from));
+    if (ownerId !== undefined) this.personalDrops.laid(ownerId, this, loot.lootId);
+    else this.capSharedLoot();
+  }
+
+  /** Takes the oldest items dreamers dropped away while more than `MAX_SHARED_DROPS` lie in the space; the drops lie in the order they fell. */
+  private capSharedLoot(): void {
+    const shared = [...this.loot.values()].filter((loot) => loot.ownerId === undefined);
+    for (const loot of shared.slice(0, Math.max(0, shared.length - MAX_SHARED_DROPS))) this.removeLoot(loot);
+  }
+
+  /** Takes the items dreamers dropped that have lain on the ground too long away. */
+  private expireLoot(): void {
+    const now = this.now();
+    for (const loot of this.loot.values()) {
+      if (loot.expiresAt !== undefined && now >= loot.expiresAt) this.removeLoot(loot);
+    }
+  }
+
+  /** Takes a drop from a nightmare away as the world's ledger lets it go, telling its owner if they are here. */
+  letGoDrop(lootId: string): void {
+    const loot = this.loot.get(lootId);
+    if (loot !== undefined) this.removeLoot(loot);
+  }
+
+  /** The drop is gone from the ground, and everyone it was shown to is told so. */
+  private removeLoot(loot: Loot): void {
+    this.loot.delete(loot.lootId);
+    this.sendToLootViewers(loot, { tag: 'lootGone', payload: { lootId: loot.lootId } });
+  }
+
+  /** Whether the dreamer is shown the drop: their own wherever it lies, and one for anyone while they see its sector. */
+  private seesLoot(viewer: PlayerSlot, loot: Loot): boolean {
+    return loot.ownerId === undefined ? this.sees(viewer, loot.sector) : loot.ownerId === viewer.character.id;
+  }
+
+  /** Encode once and send to everyone shown the drop. */
+  private sendToLootViewers(loot: Loot, message: SomnioMessage): void {
+    const frame = encodeOrWarn(message, this.logger);
+    if (frame === undefined) return;
+    for (const viewer of this.players.values()) {
+      if (this.seesLoot(viewer, loot)) viewer.outbox.send(frame);
+    }
   }
 
   /**
@@ -976,7 +1194,7 @@ export class SpaceActor {
     const state = {
       caster: this.abilityBody(player, entityId)!,
       ranks: lucidity.ranks,
-      itemInHand: itemInHand(player.inventory),
+      hands: player.inventory.equipped,
       energy: player.character.energy,
       now,
       globalReadyAt: player.globalReadyAt,
@@ -1136,8 +1354,8 @@ export class SpaceActor {
     const does = ability.does;
     switch (does.kind) {
       case 'strike': {
-        const { position, facing, lucidity } = caster.character;
-        const damage = swingFor(itemInHand(caster.inventory), lucidity.ranks)!.damage * scaled(does.damageShare, rank);
+        const { position, facing } = caster.character;
+        const damage = swingFor(caster.inventory.equipped.mainHand, this.statsFor(caster))!.damage * scaled(does.damageShare, rank);
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
           if (monster !== undefined && swingMeets(position, facing, body)) this.blow(caster, monster, damage);
@@ -1158,7 +1376,7 @@ export class SpaceActor {
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
           if (monster !== undefined) addThreat(monster, caster, 0);
-          this.applyEffect(this.players.get(body.id) ?? monster!, does.effectId, rank, caster.character.id);
+          this.applyEffect(this.players.get(body.id) ?? monster!, does.effectId, rank, caster);
         }
         return;
       case 'leap':
@@ -1188,16 +1406,20 @@ export class SpaceActor {
           const held = monster.threat.get(id);
           if (held !== undefined) monster.threat.set(id, held * does.threatKept);
         }
-        this.applyEffect(caster, does.effectId, rank, id);
+        this.applyEffect(caster, does.effectId, rank, caster);
         return;
       }
     }
   }
 
-  /** Puts the effect on its holder for its seconds at the rank given, or starts those seconds over on a holder who has it. */
-  private applyEffect(holder: PlayerSlot | MonsterRuntime, effectId: EffectId, rank: number, sourceId: string): void {
+  /**
+   * Puts the effect on its holder for its seconds at the rank given, or starts those seconds over on
+   * a holder who has it. A shield is as strong as its source's stats make their wards.
+   */
+  private applyEffect(holder: PlayerSlot | MonsterRuntime, effectId: EffectId, rank: number, source: PlayerSlot): void {
     const now = this.now();
-    const held = heldEffect(effectId, now + effectSeconds(effectId, rank) * 1000, sourceId, rank, now);
+    const shield = effectAbsorb(effectId, rank) * wardShare(this.statsFor(source));
+    const held = heldEffect(effectId, now + effectSeconds(effectId, rank) * 1000, source.character.id, rank, now, { shield });
     holder.effects = [...holder.effects.filter((other) => other.effectId !== effectId), held];
     this.sendEffects(holder);
   }
@@ -1271,15 +1493,6 @@ export class SpaceActor {
     };
   }
 
-  /** Using the Moonstone from the inventory while it is in hand mends its holder. */
-  handleUseItem(inventorySlot: number, entityId: string): void {
-    const player = this.players.get(entityId);
-    if (player === undefined) return;
-    const row = player.inventory.find((candidate) => candidate.slot === inventorySlot);
-    if (row?.itemId !== ('moonstone' satisfies ItemId) || row.equippedHand !== 'right') return;
-    if (this.canMend(player)) this.mend(player, player);
-  }
-
   private inSpeakingDistance(npc: NPCRuntime, player: PlayerSlot): boolean {
     return withinSpeakingDistance(player.character.position, npc.position);
   }
@@ -1291,6 +1504,7 @@ export class SpaceActor {
     this.settleEffects([...this.players.values(), ...this.monsters.values()]);
     this.runPlayers(elapsedSeconds);
     this.runMonsters(elapsedSeconds);
+    this.expireLoot();
     this.dropUnseenTargets();
     for (const slot of this.players.values()) this.sendVitals(slot);
     return digest;
@@ -1636,7 +1850,7 @@ export class SpaceActor {
   private strike(monster: MonsterRuntime, target: PlayerSlot): void {
     monster.strikeReadyAt = this.now() + monster.kind.strikeSeconds * 1000;
     const energy = target.character.energy;
-    const hit = randomUnit(this.random) < strikeChance(monster.kind, energy.balanceCurrent, energy.balanceMax, target.character.lucidity.ranks);
+    const hit = randomUnit(this.random) < strikeChance(monster.kind, energy.balanceCurrent, energy.balanceMax, this.statsFor(target));
     this.broadcast({ tag: 'blow', payload: { attackerId: monster.id, targetId: target.character.id, hit } }, target.sector);
     if (hit) this.harmDreamer(target, monster.kind.damage, monster.kind.balanceDamage, monster);
   }
@@ -1682,7 +1896,8 @@ export class SpaceActor {
    * Every dreamer with slot 1 on acts on their target: swings at a nightmare, and a Healer touches
    * a dreamer. While a channel of theirs is under way it holds, and stays on. Slot 1 goes off once
    * the target is nothing it can act on: a nightmare driven off, an entity gone or out of view, a
-   * nightmare once the Moonstone is in hand, or a dreamer once it is out of hand.
+   * nightmare once the main hand holds what does not swing, or a dreamer once the Moonstone leaves
+   * the off hand.
    */
   private runEngaged(): void {
     for (const slot of this.players.values()) {
@@ -1700,7 +1915,7 @@ export class SpaceActor {
 
   /** What slot 1 does at the dreamer's target as it stands: a nightmare not yet driven off, or a dreamer, in their view. */
   private engagedAction(slot: PlayerSlot): EngageAction | undefined {
-    return engageAction(this.engageKind(slot), slot.character.lucidity.role, itemInHand(slot.inventory));
+    return engageAction(this.engageKind(slot), slot.character.lucidity.role, slot.inventory.equipped);
   }
 
   private engageKind(slot: PlayerSlot): EngageTarget | undefined {
@@ -1708,18 +1923,24 @@ export class SpaceActor {
   }
 
   /**
-   * A dreamer's swing at the nightmare, at the swing rhythm, for the balance what they hold in hand
-   * costs. It is made only while the nightmare stands in reach inside the arc of the facing they
-   * last reported. With less balance than the cost, with something in hand that does not swing, or
-   * while they hold a task that forbids striking, no swing happens. A swing not made costs nothing.
+   * A dreamer's swing at the nightmare, at the swing rhythm, for the balance what they hold in the
+   * main hand costs. It is made only while the nightmare stands in reach inside the arc of the facing
+   * they last reported. With less balance than the cost, with something in the main hand that does not
+   * swing, or while they hold a task that forbids striking, no swing happens. A swing not made costs
+   * nothing.
    */
   private swing(player: PlayerSlot, monster: MonsterRuntime): void {
     const now = this.now();
     if (now < player.swingReadyAt) return;
     if (!swingMeets(player.character.position, player.character.facing, { ...monster.position, radius: monster.kind.radius })) return;
-    const { task, ranks } = player.character.lucidity;
+    const task = player.character.lucidity.task;
     const energy = player.character.energy;
-    const swing = swingAllowed(task === undefined ? undefined : taskSpec(task), itemInHand(player.inventory), ranks, energy.balanceCurrent);
+    const swing = swingAllowed(
+      task === undefined ? undefined : taskSpec(task),
+      player.inventory.equipped.mainHand,
+      this.statsFor(player),
+      energy.balanceCurrent,
+    );
     if (swing === undefined) return;
     player.swingReadyAt = now + swing.seconds * 1000;
     this.setEnergy(player, { ...energy, balanceCurrent: energy.balanceCurrent - swing.balanceCost });
@@ -1749,7 +1970,8 @@ export class SpaceActor {
    * The one place a nightmare ends. It fades where it stands, its spawn has a slot to refill after
    * the kind's respawn time, and the standing dreamers within the share radius, and the standing
    * dreamer whose harm drove it off from however far, split its bounty and each earn the practice in
-   * full.
+   * full. Each of them rolls for drops of their own, by the nightmare's tier, and all their drops
+   * scatter fanned round where it stood.
    */
   private driveOff(monster: MonsterRuntime, finisher: PlayerSlot): void {
     const now = this.now();
@@ -1760,8 +1982,11 @@ export class SpaceActor {
       (slot) => !isFallen(slot) && (slot === finisher || distance(slot.character.position, monster.position) <= COMBAT.shareRadius),
     );
     const share = Math.floor(monster.kind.bounty / near.length);
+    const drops: { owner: PlayerSlot; item: Item }[] = [];
     for (const slot of near) {
-      if (share > 0) this.giveItem(slot, 'purse', share);
+      if (share > 0) this.giveCoins(slot, share);
+      for (const item of rollDrops(monster.kind.tier, 'nightmare', slot.character.lucidity.role, () => randomUnit(this.lootRandom)))
+        drops.push({ owner: slot, item });
       this.addPractice(slot, PRACTICE.nightmare);
       this.advanceTask(
         slot,
@@ -1769,6 +1994,7 @@ export class SpaceActor {
         (progress) => progress + 1,
       );
     }
+    this.scatter(monster.position, drops);
   }
 
   /**
@@ -1799,9 +2025,9 @@ export class SpaceActor {
     this.broadcastRaising(target, 'holding', target.raise.holders);
   }
 
-  /** Whether the dreamer is a standing Healer holding the Moonstone. */
+  /** Whether the dreamer is a standing Healer holding the Moonstone in the off hand. */
   private wieldsMoonstone(healer: PlayerSlot): boolean {
-    return !isFallen(healer) && healer.character.lucidity.role === 'healer' && itemInHand(healer.inventory) === ('moonstone' satisfies ItemId);
+    return !isFallen(healer) && healer.character.lucidity.role === 'healer' && handAllows('moonstone', healer.inventory.equipped);
   }
 
   /** Whether the dreamer can use the Moonstone right now: they wield it, and the last touch is past. */
@@ -1828,7 +2054,7 @@ export class SpaceActor {
     if (isFallen(target) || missing <= 0 || healer.character.energy.spiritCurrent < COMBAT.mend.spiritCost) return;
     this.spendTouch(healer);
     this.setEnergy(healer, { ...healer.character.energy, spiritCurrent: healer.character.energy.spiritCurrent - COMBAT.mend.spiritCost });
-    this.heal(healer.character.id, target, mendAmount(healer.character.lucidity.ranks));
+    this.heal(healer.character.id, target, mendAmount(this.statsFor(healer)));
     this.broadcast({ tag: 'mend', payload: { targetId: target.character.id } }, target.sector);
   }
 
@@ -1893,12 +2119,13 @@ export class SpaceActor {
   private recover(slot: PlayerSlot, elapsedSeconds: number): void {
     const energy = slot.character.energy;
     const motion = this.now() - slot.lastMoveAt < MOVING_WINDOW_MS ? slot.lastGait : 'standing';
-    const balance = balancePerSecond(slot.character.lucidity.ranks) * balancePace(motion, slot.winded);
+    const stats = this.statsFor(slot);
+    const balance = balancePerSecond(stats) * balancePace(motion, slot.winded);
     const recovered: Energy = {
       ...energy,
       healthCurrent: accrue(slot.carry, 'health', COMBAT.healthPerSecond * elapsedSeconds, energy.healthCurrent, energy.healthMax),
       balanceCurrent: accrue(slot.carry, 'balance', balance * elapsedSeconds, energy.balanceCurrent, energy.balanceMax),
-      spiritCurrent: accrue(slot.carry, 'spirit', COMBAT.spiritPerSecond * elapsedSeconds, energy.spiritCurrent, energy.spiritMax),
+      spiritCurrent: accrue(slot.carry, 'spirit', spiritPerSecond(stats) * elapsedSeconds, energy.spiritCurrent, energy.spiritMax),
     };
     if (
       recovered.healthCurrent !== energy.healthCurrent ||
@@ -2155,10 +2382,20 @@ export class SpaceActor {
     slot.character = { ...slot.character, lucidity };
     slot.outbox.sendEncoded({ tag: 'lucidity', payload: lucidityMessage(lucidity) }, this.logger);
     if (!sensed && sensesFallen(slot)) slot.outbox.sendEncoded(this.sensedMessage(slot), this.logger);
+    this.settleMaxima(slot);
+  }
+
+  /** What the dreamer's ranks and everything they wear add to the rules. */
+  private statsFor(slot: PlayerSlot): Stats {
+    return statsOf(slot.inventory.equipped, slot.character.lucidity);
+  }
+
+  /** Brings the dreamer's pool maxima to what their ranks and gear give, once either has changed. */
+  private settleMaxima(slot: PlayerSlot): void {
     const energy = slot.character.energy;
-    const maxima = maxPools(slot.character.lucidity);
+    const maxima = maxPools(this.statsFor(slot));
     if (maxima.healthMax !== energy.healthMax || maxima.balanceMax !== energy.balanceMax || maxima.spiritMax !== energy.spiritMax) {
-      this.setEnergy(slot, { ...energy, ...maxima });
+      this.setEnergy(slot, withinMaxima(energy, maxima));
     }
   }
 
@@ -2193,29 +2430,35 @@ export class SpaceActor {
     if (progress !== task.progress) this.updateLucidity(slot, { ...lucidity, task: { ...task, progress } });
   }
 
-  private giveItem(slot: PlayerSlot, itemId: ItemId, quantity: number): void {
-    this.addItem(slot, itemId, quantity);
+  private giveCoins(slot: PlayerSlot, coins: number): void {
+    this.addCoins(slot, coins);
     this.sendInventory(slot);
   }
 
-  /** Adds to the dreamer's row of the item, or puts a new row in the first free slot. */
-  private addItem(slot: PlayerSlot, itemId: ItemId, quantity: number): void {
-    if (slot.inventory.some((row) => row.itemId === itemId)) {
-      slot.inventory = slot.inventory.map((row) => (row.itemId === itemId ? { ...row, quantity: row.quantity + quantity } : row));
-    } else {
-      let free = 0;
-      while (slot.inventory.some((row) => row.slot === free)) free += 1;
-      slot.inventory = [...slot.inventory, { slot: free, itemId, quantity, equippedHand: undefined }];
-    }
+  private addCoins(slot: PlayerSlot, coins: number): void {
+    slot.inventory = { ...slot.inventory, coins: slot.inventory.coins + coins };
   }
 
-  /** Drops the dreamer's row of the item, and with it whatever hand held it. */
-  private removeItem(slot: PlayerSlot, itemId: ItemId): void {
-    slot.inventory = slot.inventory.filter((row) => row.itemId !== itemId);
+  /** Takes on what the dreamer's request made of their inventory and sends it, or drops a request it refused. */
+  private changeInventory(slot: PlayerSlot | undefined, changed: Inventory | undefined): void {
+    if (slot === undefined || changed === undefined || changed === slot.inventory) return;
+    slot.inventory = changed;
+    this.sendInventory(slot);
   }
 
-  private sendInventory(slot: PlayerSlot, trade?: TradeMessage): void {
-    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, trade) }, this.logger);
+  /** Every change to what a dreamer carries goes out here. Their pool maxima follow what they wear, and what others see in their hands follows the hands. */
+  private sendInventory(slot: PlayerSlot, change?: InventoryChange): void {
+    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, change) }, this.logger);
+    this.settleMaxima(slot);
+    this.setHeld(slot);
+  }
+
+  /** Shows everyone who sees the dreamer what their hands hold, when that changed. */
+  private setHeld(slot: PlayerSlot): void {
+    const held = heldOf(slot.inventory);
+    if (held.mainHand === slot.held.mainHand && held.offHand === slot.held.offHand) return;
+    slot.held = held;
+    this.broadcast({ tag: 'held', payload: { entityId: slot.character.id, held } }, slot.sector);
   }
 
   /**
@@ -2253,7 +2496,9 @@ export class SpaceActor {
   /**
    * The master who set a task takes it as done once it is at its goal. A trial makes the dreamer
    * the role for good, teaches the role's first teaching and sets them to study it, and gives a
-   * Healer their Moonstone. A gate teaches the first rank of its teaching.
+   * Healer their Moonstone and a Mystic a focus, into an empty off hand or else the bag. With room
+   * in neither, nothing is granted and the trial waits, done, until there is. A gate teaches the
+   * first rank of its teaching.
    */
   handleCompleteTask(npcId: string, entityId: string): void {
     const asked = this.serviceFor(npcId, entityId);
@@ -2263,6 +2508,9 @@ export class SpaceActor {
     if (task === undefined || task.role !== masterRole(asked.service)) return;
     const spec = taskSpec(task);
     if (spec === undefined || task.progress < taskGoal(spec)) return;
+    const reward = task.teachingId === undefined ? TRIAL_REWARDS[task.role] : undefined;
+    const granted = reward === undefined ? undefined : grantItem(asked.player.inventory, plainInstance(reward));
+    if (reward !== undefined && granted === undefined) return;
     const learned = task.teachingId ?? FIRST_TEACHING[task.role];
     this.updateLucidity(asked.player, {
       role: task.role,
@@ -2270,7 +2518,9 @@ export class SpaceActor {
       study: task.teachingId === undefined ? learned : lucidity.study,
       task: undefined,
     });
-    if (task.teachingId === undefined && task.role === 'healer') this.giveItem(asked.player, 'moonstone', 1);
+    if (granted === undefined) return;
+    asked.player.inventory = granted;
+    this.sendInventory(asked.player);
   }
 
   /** Clears the task held, wherever the dreamer is. */
@@ -2291,30 +2541,32 @@ export class SpaceActor {
   }
 
   /**
-   * The shopkeeper sells a dreamer one of a ware they do not carry, for its price. The purse and the
-   * new row go out together in one `inventory` frame that says what was bought. Anything else is
-   * dropped silently.
+   * The shopkeeper sells a dreamer a plain one of a ware, for its price, into a bag with room. The
+   * coins and the new item go out together in one `inventory` frame that says what was bought.
+   * Anything else is dropped silently.
    */
-  handleBuy(npcId: string, itemId: string, entityId: string): void {
+  handleBuy(npcId: string, baseId: string, entityId: string): void {
     const asked = this.serviceFor(npcId, entityId);
-    if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, itemId)) return;
-    const price = SHOP.prices[itemId];
-    this.addItem(asked.player, 'purse', -price);
-    this.addItem(asked.player, itemId, 1);
-    this.sendInventory(asked.player, { kind: 'bought', itemId, coins: price });
+    if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, baseId)) return;
+    const price = SHOP.prices[baseId];
+    const bought = plainInstance(baseId);
+    this.addCoins(asked.player, -price);
+    asked.player.inventory = withItem(asked.player.inventory, bought);
+    this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, rarity: bought.rarity, coins: price } });
   }
 
-  /** The shopkeeper buys back a ware the dreamer carries, for its buy-back price. One sold from the hand leaves the hand empty. Anything else is dropped silently. */
+  /** The shopkeeper buys an item from the dreamer's bag, for its sale price, but never the Moonstone. Anything else is dropped silently. */
   handleSell(npcId: string, itemId: string, entityId: string): void {
     const asked = this.serviceFor(npcId, entityId);
-    if (asked?.service !== 'shopkeeper' || !canSell(asked.player.inventory, itemId)) return;
-    const coins = buyBackPrice(itemId);
-    this.removeItem(asked.player, itemId);
-    this.addItem(asked.player, 'purse', coins);
-    this.sendInventory(asked.player, { kind: 'sold', itemId, coins });
+    const sold = asked === undefined ? undefined : sellableItem(asked.player.inventory, itemId);
+    if (asked?.service !== 'shopkeeper' || sold === undefined) return;
+    const coins = salePrice(sold);
+    asked.player.inventory = withoutItem(asked.player.inventory, sold.id);
+    this.addCoins(asked.player, coins);
+    this.sendInventory(asked.player, { trade: { kind: 'sold', baseId: sold.baseId, rarity: sold.rarity, coins } });
   }
 
-  /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing disconnect snapshot. */
+  /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing snapshot of theirs. */
   snapshotForCheckpoint(): PlayerCheckpoint[] {
     const now = new Date();
     return [...this.players.values()].map((slot) => this.checkpointOf(slot, now));
@@ -2325,8 +2577,9 @@ export class SpaceActor {
     return slot === undefined ? undefined : this.checkpointOf(slot, new Date());
   }
 
+  /** The player's checkpoint as of `now`, its `lastSeen` strictly after their last one's, so two taken in one millisecond still order. */
   private checkpointOf(slot: PlayerSlot, now: Date): PlayerCheckpoint {
-    slot.character = { ...slot.character, lastSeen: now };
+    slot.character = { ...slot.character, lastSeen: nextLastSeen(slot.character.lastSeen, now) };
     return { character: slot.character, inventory: slot.inventory };
   }
 
@@ -2383,6 +2636,7 @@ export class SpaceActor {
       facing: slot.character.facing,
       gait: slot.gait,
       condition: slot.condition,
+      held: slot.held,
     };
   }
 

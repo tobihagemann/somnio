@@ -1,6 +1,6 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { CharacterResult, CreateCharacterMessage, DeleteCharacterMessage, SelectCharacterMessage } from '@somnio/protocol';
-import { isPeople } from '@somnio/core';
+import { isPeople, nextLastSeen } from '@somnio/core';
 import type { Character } from '@somnio/core';
 import { CharacterNameTakenError, compareCharacters, validateCharacterName } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
@@ -9,7 +9,7 @@ import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import type { WorldRouter } from '../world/worldRouter.ts';
-import { STARTER_INVENTORY } from './starterInventory.ts';
+import { starterInventory } from './starterInventory.ts';
 
 /**
  * The unique-constraint race maps to `nameExists`; there is no pre-check. A character created is
@@ -37,7 +37,7 @@ export async function handleCreateCharacter(
       sendCharacterResult(outbox, 'full', logger);
       return;
     }
-    const created = await dependencies.characters.create(accountId, message.name, message.people, STARTER_INVENTORY);
+    const created = await dependencies.characters.create(accountId, message.name, message.people, starterInventory());
     sendCharacters(outbox, [...characters, created].sort(compareCharacters), logger);
     sendCharacterResult(outbox, 'ok', logger);
   } catch (error) {
@@ -100,7 +100,9 @@ export async function handleDeleteCharacter(
 /**
  * Joins the world as `character`: its inventory, then its `last_seen` written, then the attach. The
  * write makes a resume find it played last, and lets the snapshot's stale-write guard accept a
- * corrected spawn. `false`, answered `characterResult(failure)`, leaves the player choosing.
+ * corrected spawn. Its `last_seen` follows the stored one by `nextLastSeen`, so a host clock
+ * stepped back since the last save cannot leave the join and every checkpoint after it skipped as
+ * stale. `false`, answered `characterResult(failure)`, leaves the player choosing.
  */
 export async function joinCharacter(
   character: Character,
@@ -111,17 +113,17 @@ export async function joinCharacter(
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   try {
-    const inventory = await dependencies.inventories.loadAll(character.id);
+    const inventory = await dependencies.items.load(character.id);
     const spawn = resolvedSpawn(character, dependencies.worldRouter);
-    const joined: Character = { ...character, ...spawn, lastSeen: new Date() };
+    const joined: Character = { ...character, ...spawn, lastSeen: nextLastSeen(character.lastSeen, new Date()) };
     try {
       await dependencies.characters.snapshot(joined);
     } catch (error) {
       logger.warn({ error: String(error), name: character.name, spawn: `${spawn.position.x},${spawn.position.z}` }, 'failed to persist the join');
     }
-    dependencies.worldRouter.space(spawn.space)!.attach(joined, [...inventory], outbox, dependencies.worldClock.currentWorldSeconds(), connection.locale);
+    dependencies.worldRouter.space(spawn.space)!.attach(joined, inventory, outbox, dependencies.worldClock.currentWorldSeconds(), connection.locale);
     connection.markAttached(character.id, spawn.space, accountId);
-    dependencies.worldRouter.nameRegistered(accountId, character.name);
+    dependencies.worldRouter.characterJoined(accountId, character);
     logger.info({ name: character.name, space: spawn.space }, 'player joined');
     return true;
   } catch (error) {

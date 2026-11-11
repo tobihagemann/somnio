@@ -12,7 +12,7 @@ import { makeWorld } from './sectorFactory.ts';
 import {
   StubAccountRepository,
   StubCharacterRepository,
-  StubInventoryRepository,
+  StubItemRepository,
   StubNPCDialogStateRepository,
   StubSessionRepository,
   StubWorldClockRepository,
@@ -51,7 +51,7 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
   return {
     accounts: options.accounts ?? new StubAccountRepository(),
     characters,
-    inventories: new StubInventoryRepository(),
+    items: new StubItemRepository(),
     npcDialogStates: new StubNPCDialogStateRepository(),
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,

@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OUTDOOR_SPACE_ID, sectorPointInSpace } from '@somnio/core';
 import type { NPCDialogState, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { collectOutbox } from '../src/connection/outbox.ts';
 import { WorldRouter } from '../src/world/worldRouter.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { collectMessages, serverSays } from './support/frames.ts';
+import { collectMessages, recordingOutbox, serverSays } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
-import { payloads } from './support/combat.ts';
-import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
+import { BESIDE_GHOST, CUDGEL, GHOST_AT, RESPAWN_MS, STRIKER, attackGhost, payloads, wearing } from './support/combat.ts';
+import { attachPlayer, makeDoor, makeMonsterSpawn, makeNPC, makeSector, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { RepositoryFailure, StubCharacterRepository, StubNPCDialogStateRepository } from './support/stubRepositories.ts';
 
@@ -72,8 +72,8 @@ async function tick(router: WorldRouter): Promise<void> {
   await router.persistDialogDigest(router.runTickAcrossSpaces(0.05));
 }
 
-async function emptyRouterConnections(count: number) {
-  const dependencies = await makeStubConnectionDependencies();
+async function emptyRouterConnections(count: number, sectors: Sector[] = []) {
+  const dependencies = await makeStubConnectionDependencies({ sectors });
   const router = dependencies.worldRouter;
   const connections = Array.from({ length: count }, () => ({
     actor: new ConnectionActor(dependencies),
@@ -282,6 +282,11 @@ describe('WorldRouter speech', () => {
 });
 
 describe('WorldRouter connections', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it('broadcastToAllConnections fans out an identical frame to every attached connection', async () => {
     const { router, connections } = await emptyRouterConnections(2);
     for (const { actor, accountId } of connections) {
@@ -325,10 +330,42 @@ describe('WorldRouter connections', () => {
     expect(router.register(connections[1]!.actor, accountId)).toBe(false);
   });
 
+  /** The space runs on the faked `performance` clock here, and on rolls of 0, so a Fighter's three swings drive the Ghost off and leave them a drop. */
+  it("unregister takes away the drops lying for the account's character in the world, and none for an account still choosing", async () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { router, connections } = await emptyRouterConnections(2, [makeSector('TestSector', { monsterSpawns: [makeMonsterSpawn(GHOST_AT)] })]);
+    const [playing, choosing] = connections;
+    const space = router.space(OUTDOOR_SPACE_ID)!;
+    vi.advanceTimersByTime(RESPAWN_MS);
+    space.step(0);
+    const striker = recordingOutbox();
+    const { character, entityId } = attachPlayer(space, BESIDE_GHOST, 'striker', { outbox: striker.outbox, character: STRIKER, inventory: wearing(CUDGEL) });
+    router.register(playing!.actor, playing!.accountId);
+    router.register(choosing!.actor, choosing!.accountId);
+    router.characterJoined(playing!.accountId, character);
+    attackGhost(space, entityId);
+    for (let swing = 0; swing < 3; swing += 1) {
+      space.step(0);
+      vi.advanceTimersByTime(1000);
+    }
+    const [drop] = payloads(striker.sent, 'loot');
+    expect(drop).toBeDefined();
+
+    router.unregister(choosing!.accountId);
+    expect(payloads(striker.sent, 'lootGone')).toEqual([]);
+    const { checkpoint } = space.handOver(entityId, true)!;
+    router.unregister(playing!.accountId);
+    const back = recordingOutbox();
+    space.attach(checkpoint.character, checkpoint.inventory, back.outbox, 0, 'en');
+    space.handlePickUp(drop!.lootId, entityId);
+    expect([payloads(back.sent, 'loot'), payloads(back.sent, 'inventory').flatMap(({ pickedUp }) => pickedUp ?? [])]).toEqual([[], []]);
+  });
+
   it('kickByCharacterName returns false when nobody matches', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     router.register(connections[0]!.actor, connections[0]!.accountId);
-    router.nameRegistered(connections[0]!.accountId, 'Alice');
+    router.characterJoined(connections[0]!.accountId, { id: crypto.randomUUID(), name: 'Alice' });
     expect(router.kickByCharacterName('Bob')).toBe(false);
   });
 
@@ -343,7 +380,7 @@ describe('WorldRouter connections', () => {
   it('kickByCharacterName normalizes case to match the schema collation', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     router.register(connections[0]!.actor, connections[0]!.accountId);
-    router.nameRegistered(connections[0]!.accountId, 'Saibot');
+    router.characterJoined(connections[0]!.accountId, { id: crypto.randomUUID(), name: 'Saibot' });
     expect(router.kickByCharacterName('saibot')).toBe(true);
   });
 
@@ -351,14 +388,14 @@ describe('WorldRouter connections', () => {
   it('kickByCharacterName folds İ as the schema collation does', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     router.register(connections[0]!.actor, connections[0]!.accountId);
-    router.nameRegistered(connections[0]!.accountId, 'tobias');
+    router.characterJoined(connections[0]!.accountId, { id: crypto.randomUUID(), name: 'tobias' });
     expect(router.kickByCharacterName('TOBİAS')).toBe(true);
   });
 
   it('kickByCharacterName matches NFKC compatibility equivalent names', async () => {
     const { router, connections } = await emptyRouterConnections(1);
     router.register(connections[0]!.actor, connections[0]!.accountId);
-    router.nameRegistered(connections[0]!.accountId, 'Ｓａｉｂｏｔ');
+    router.characterJoined(connections[0]!.accountId, { id: crypto.randomUUID(), name: 'Ｓａｉｂｏｔ' });
     expect(router.kickByCharacterName('saibot')).toBe(true);
   });
 });

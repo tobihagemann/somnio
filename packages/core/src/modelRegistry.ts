@@ -1,12 +1,15 @@
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { rectsOverlap } from './geometry.ts';
 import type { Rect, Size } from './geometry.ts';
+import { isBaseItemId } from './items.ts';
+import type { BaseItemId } from './items.ts';
 
 /**
  * The model registry: character model ids to character model stems (each with its clip-presence
- * contract), and semantic object ids to prop stems with their collision geometry. It references
- * only filename stems, so one file describes the pack for the browser, the editor, the server's
- * collision, and the asset pipeline's gates.
+ * contract), the items a dreamer holds to the stems drawn in their hands, the items that can drop
+ * to the stems drawn lying on the ground, and semantic object ids to prop stems with their
+ * collision geometry. It references only filename stems, so one file describes the pack for the
+ * browser, the editor, the server's collision, and the asset pipeline's gates.
  *
  * Object geometry is in model space: metres, the model's origin at its ground-footprint centre,
  * +X east and +Z south at yaw 0.
@@ -62,10 +65,20 @@ export interface ObjectModelRule {
   light?: PropLight;
 }
 
+/** The static model an item of the base `id` is drawn as. */
+export interface ItemModelRule {
+  id: BaseItemId;
+  stem: string;
+}
+
 export interface ModelRegistry {
   characterModels: CharacterModelRule[];
   /** The character model every player uses. */
   playerModel: string;
+  /** What a hand holding an item draws: a model in the frame of the hand's `handslot` bone, its grip at the origin, hung there at identity. */
+  handModels: ItemModelRule[];
+  /** What a drop of an item draws: a model lying on the ground, its ground bounds centred on the origin, at the size a dreamer holds or wears it. */
+  groundModels: ItemModelRule[];
   objectModels: ObjectModelRule[];
 }
 
@@ -73,14 +86,16 @@ export interface ModelRegistry {
 export const PLACEHOLDER_REGISTRY: ModelRegistry = {
   characterModels: [],
   playerModel: '',
+  handModels: [],
+  groundModels: [],
   objectModels: [],
 };
 
 /**
  * Validates the structural invariants the JSON shape cannot express: non-empty stems and ids, no
  * duplicate ids, characters expecting at least one clip, a player model that is a character
- * model, positive sizes, cardinal door facings, walk surfaces of one model that do not overlap,
- * and lights of a known kind not below the ground.
+ * model, hand and ground models of known items, positive sizes, cardinal door facings, walk
+ * surfaces of one model that do not overlap, and lights of a known kind not below the ground.
  */
 export function parseModelRegistry(raw: unknown): ModelRegistry {
   const root = requireRecord(raw, 'registry');
@@ -106,6 +121,9 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     throw new ModelRegistryError(`registry.playerModel: no character model "${playerModel}"`);
   }
 
+  const handModels = parseItemModels(root['handModels'], 'registry.handModels');
+  const groundModels = parseItemModels(root['groundModels'], 'registry.groundModels');
+
   const objectModels = requireArray(root['objectModels'], 'registry.objectModels').map((element, index) => {
     const path = `registry.objectModels[${index}]`;
     const record = requireRecord(element, path);
@@ -128,11 +146,21 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.objectModels',
   );
 
-  return { characterModels, playerModel, objectModels };
+  return { characterModels, playerModel, handModels, groundModels, objectModels };
 }
 
 export function modelForCharacter(registry: ModelRegistry, id: string): ModelEntry | undefined {
   return registry.characterModels.find((rule) => rule.id === id)?.model;
+}
+
+/** The stem a hand holding an item of `baseId` draws, or `undefined` for an item no hand shows. */
+export function handModelStem(registry: ModelRegistry, baseId: string): string | undefined {
+  return registry.handModels.find((rule) => rule.id === baseId)?.stem;
+}
+
+/** The stem a drop of an item of `baseId` lies on the ground as, or `undefined` for an item with no ground model. */
+export function groundModelStem(registry: ModelRegistry, baseId: string): string | undefined {
+  return registry.groundModels.find((rule) => rule.id === baseId)?.stem;
 }
 
 export function objectModel(registry: ModelRegistry, id: string): ObjectModelRule | undefined {
@@ -143,9 +171,13 @@ export function modelForObjectId(registry: ModelRegistry, id: string): ModelEntr
   return objectModel(registry, id)?.model;
 }
 
-/** Every entry, character models first, dropping duplicate stems. */
+/** Every entry, character models first and the item models last, dropping duplicate stems. An item model expects no clip. */
 export function allModelEntries(registry: ModelRegistry): ModelEntry[] {
-  const entries = [...registry.characterModels.map((rule) => rule.model), ...registry.objectModels.map((rule) => rule.model)];
+  const entries = [
+    ...registry.characterModels.map((rule) => rule.model),
+    ...registry.objectModels.map((rule) => rule.model),
+    ...[...registry.handModels, ...registry.groundModels].map((rule) => ({ stem: rule.stem, expectedClips: [] })),
+  ];
   const seen = new Set<string>();
   const unique: typeof entries = [];
   for (const entry of entries) {
@@ -197,6 +229,23 @@ function parseWalkSurfaces(raw: unknown, path: string): WalkSurface[] {
     if (other !== -1) throw new ModelRegistryError(`${path}[${index}]: overlaps ${path}[${other}]`);
   });
   return surfaces;
+}
+
+/** Absent, no item shows there. */
+function parseItemModels(raw: unknown, path: string): ItemModelRule[] {
+  if (raw === undefined) return [];
+  const rules = requireArray(raw, path).map((element, index) => {
+    const rulePath = `${path}[${index}]`;
+    const record = requireRecord(element, rulePath);
+    const id = requireNonEmptyString(record['id'], `${rulePath}.id`);
+    if (!isBaseItemId(id)) throw new ModelRegistryError(`${rulePath}.id: no item "${id}"`);
+    return { id, stem: requireNonEmptyString(record['stem'], `${rulePath}.stem`) };
+  });
+  requireUniqueIds(
+    rules.map((rule) => rule.id),
+    path,
+  );
+  return rules;
 }
 
 function parseDoorAnchors(raw: unknown, path: string): DoorAnchor[] {

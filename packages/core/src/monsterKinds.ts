@@ -1,6 +1,10 @@
+import type { Tier } from './items.ts';
+
 export interface MonsterKind {
   /** The name an entity of this kind carries: a core catalog key, which the client translates. */
   name: string;
+  /** The bestiary's ring it belongs to, which is the tier of what it drops. */
+  tier: Tier;
   characterModelId: string;
   radius: number;
   metresPerSecond: number;
@@ -26,6 +30,7 @@ export interface MonsterKind {
 export const MONSTER_KINDS = {
   ghost: {
     name: 'Ghost',
+    tier: 1,
     characterModelId: 'ghost',
     radius: 0.3,
     metresPerSecond: 2.4,

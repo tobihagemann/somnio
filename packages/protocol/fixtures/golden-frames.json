@@ -109,7 +109,7 @@
   },
   "buy": {
     "payload": {
-      "itemId": "dagger",
+      "baseId": "dagger",
       "npcId": "npc:EdariaShop/mercus"
     },
     "tag": "buy"
@@ -210,6 +210,13 @@
       "sector": "EdariaSquare"
     },
     "tag": "doorRefused"
+  },
+  "dropItem": {
+    "payload": {
+      "heading": 247.5,
+      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e"
+    },
+    "tag": "dropItem"
   },
   "effects": {
     "payload": {
@@ -325,6 +332,25 @@
     },
     "tag": "entity"
   },
+  "entity-player": {
+    "payload": {
+      "characterModelId": "dreamer",
+      "condition": "grazed",
+      "facing": 90,
+      "gait": "run",
+      "held": {
+        "mainHand": "sword",
+        "offHand": "moonstone"
+      },
+      "id": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "kind": "player",
+      "name": "Alice",
+      "radius": 0.3,
+      "x": 12.5,
+      "z": 7.25
+    },
+    "tag": "entity"
+  },
   "entity-with-service": {
     "payload": {
       "characterModelId": "fighter-master",
@@ -341,61 +367,144 @@
     },
     "tag": "entity"
   },
-  "equipToggle": {
+  "equip": {
     "payload": {
-      "hand": "right",
-      "slot": 1
+      "itemId": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b"
     },
-    "tag": "equipToggle"
+    "tag": "equip"
+  },
+  "equip-into-slot": {
+    "payload": {
+      "itemId": "0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf",
+      "slot": "ring2"
+    },
+    "tag": "equip"
+  },
+  "held": {
+    "payload": {
+      "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "held": {
+        "mainHand": "dagger"
+      }
+    },
+    "tag": "held"
   },
   "hello": {
     "payload": {
-      "protocolVersion": 19
+      "protocolVersion": 20
     },
     "tag": "hello"
   },
   "inventory": {
     "payload": {
-      "rows": [
+      "bag": [
         {
-          "itemId": "purse",
-          "quantity": 100,
-          "slot": 0
+          "item": {
+            "affixes": [
+              {
+                "affixId": "guard",
+                "value": 2
+              }
+            ],
+            "baseId": "cap",
+            "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+            "rarity": "magic",
+            "tier": 1
+          },
+          "place": 3
+        }
+      ],
+      "coins": 100,
+      "equipped": [
+        {
+          "item": {
+            "affixes": [
+              {
+                "affixId": "damage",
+                "value": 2
+              },
+              {
+                "affixId": "swing-speed",
+                "value": 5
+              },
+              {
+                "affixId": "balance",
+                "value": 7
+              }
+            ],
+            "baseId": "sword",
+            "id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+            "rarity": "rare",
+            "tier": 1
+          },
+          "slot": "mainHand"
         },
         {
-          "equippedHand": "right",
-          "itemId": "cudgel",
-          "quantity": 1,
-          "slot": 1
+          "item": {
+            "affixes": [],
+            "baseId": "moonstone",
+            "id": "0190a1b2-c3d5-7a1b-9c2d-3e4f5a6b7c8d",
+            "rarity": "plain",
+            "tier": 1
+          },
+          "slot": "offHand"
         }
       ]
     },
     "tag": "inventory"
   },
-  "inventory-after-trade": {
+  "inventory-after-drop": {
     "payload": {
-      "rows": [
+      "bag": [],
+      "coins": 100,
+      "dropped": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "magic"
+      },
+      "equipped": []
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-pick-up": {
+    "payload": {
+      "bag": [
         {
-          "itemId": "purse",
-          "quantity": 40,
-          "slot": 0
-        },
-        {
-          "equippedHand": "right",
-          "itemId": "cudgel",
-          "quantity": 1,
-          "slot": 1
-        },
-        {
-          "itemId": "dagger",
-          "quantity": 1,
-          "slot": 2
+          "item": {
+            "affixes": [
+              {
+                "affixId": "guard",
+                "value": 2
+              }
+            ],
+            "baseId": "cap",
+            "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+            "rarity": "magic",
+            "tier": 1
+          },
+          "place": 3
         }
       ],
+      "coins": 100,
+      "equipped": [],
+      "pickedUp": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "magic"
+      }
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-trade": {
+    "payload": {
+      "bag": [],
+      "coins": 105,
+      "equipped": [],
       "trade": {
-        "coins": 60,
-        "itemId": "dagger",
-        "kind": "bought"
+        "baseId": "cap",
+        "coins": 5,
+        "kind": "sold",
+        "rarity": "magic"
       }
     },
     "tag": "inventory"
@@ -435,6 +544,95 @@
       "result": "ok"
     },
     "tag": "loginResult"
+  },
+  "loot": {
+    "payload": {
+      "contents": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "magic"
+      },
+      "lootId": "loot-12",
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
+  "loot-scattered": {
+    "payload": {
+      "contents": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "rare"
+      },
+      "from": {
+        "x": 31,
+        "z": -12
+      },
+      "lootId": "loot-12",
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
+  "loot-shared": {
+    "payload": {
+      "contents": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "magic"
+      },
+      "lootId": "loot-12",
+      "shared": true,
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
+  "loot-thrown": {
+    "payload": {
+      "contents": {
+        "baseId": "cap",
+        "kind": "item",
+        "rarity": "magic"
+      },
+      "from": {
+        "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+        "x": 32.25,
+        "z": -11.5
+      },
+      "lootId": "loot-12",
+      "shared": true,
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
+  "loot-thrown-from-hand": {
+    "payload": {
+      "contents": {
+        "baseId": "sword",
+        "kind": "item",
+        "rarity": "rare"
+      },
+      "from": {
+        "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+        "hand": "mainHand",
+        "x": 32.25,
+        "z": -11.5
+      },
+      "lootId": "loot-12",
+      "shared": true,
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
+  "lootGone": {
+    "payload": {
+      "lootId": "loot-12"
+    },
+    "tag": "lootGone"
   },
   "lucidity": {
     "payload": {
@@ -510,6 +708,13 @@
     },
     "tag": "move"
   },
+  "moveItem": {
+    "payload": {
+      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+      "place": 7
+    },
+    "tag": "moveItem"
+  },
   "moves": {
     "payload": {
       "moves": [
@@ -543,6 +748,12 @@
       "revoked": true
     },
     "tag": "otherSessionsRevoked"
+  },
+  "pickUp": {
+    "payload": {
+      "lootId": "loot-12"
+    },
+    "tag": "pickUp"
   },
   "raising": {
     "payload": {
@@ -770,7 +981,7 @@
   },
   "sell": {
     "payload": {
-      "itemId": "cudgel",
+      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
       "npcId": "npc:EdariaShop/mercus"
     },
     "tag": "sell"
@@ -858,6 +1069,12 @@
     "payload": {},
     "tag": "target"
   },
+  "unequip": {
+    "payload": {
+      "slot": "offHand"
+    },
+    "tag": "unequip"
+  },
   "useAbility": {
     "payload": {
       "abilityId": "brace"
@@ -870,12 +1087,6 @@
       "sector": "EdariaSquare"
     },
     "tag": "useDoor"
-  },
-  "useItem": {
-    "payload": {
-      "slot": 2
-    },
-    "tag": "useItem"
   },
   "vitals": {
     "payload": {

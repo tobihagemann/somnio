@@ -34,6 +34,18 @@ export function entities(messages: readonly SomnioMessage[]): EntityMessage[] {
   return messages.flatMap((message) => (message.tag === 'entity' ? [message.payload] : []));
 }
 
+/** An outbox whose frames are read as they are sent, so one test can look at them more than once. */
+export function recordingOutbox(): { outbox: ConnectionOutbox; sent: SomnioMessage[] } {
+  const outbox = new ConnectionOutbox(4096);
+  const sent: SomnioMessage[] = [];
+  const send = outbox.send.bind(outbox);
+  outbox.send = (frame) => {
+    sent.push(decodeSomnioMessage(frame));
+    send(frame);
+  };
+  return { outbox, sent };
+}
+
 /** An outbox that notes the clock at each `vitals` frame it is sent, for a test that needs to know when each went out. */
 export function vitalsOutbox(clock: { ms: number }) {
   const outbox = new ConnectionOutbox(4096);

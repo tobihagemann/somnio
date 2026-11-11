@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { Sector } from '@somnio/core';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
-import { MOONSTONE_IN_HAND, energy, energyOf, engage, lucidity } from './support/combat.ts';
+import { MOONSTONE, energy, energyOf, engage, lucidity, wearing } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, vitalsOutbox } from './support/frames.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
 
@@ -111,13 +111,14 @@ describe('a target on a line of three sectors', () => {
     const watcherId = attachPlayer(space, { x: 5, z: 10 }, 'watcher', { outbox: watcher.outbox }).entityId;
     const walker = attachPlayer(space, { x: 25, z: 10 }, 'walker', {
       character: { lucidity: lucidity('healer', { touch: 2 }), energy: energy({ healthCurrent: 50 }) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     });
     space.handleTarget(walker.entityId, watcherId);
     walk(walker.entityId, 45);
     space.step(0.05);
     // Out of view, the walker mends themselves, so a target kept would be sent the change.
-    space.handleUseItem(MOONSTONE_IN_HAND.slot, walker.entityId);
+    engage(space, walker.entityId, walker.entityId);
+    space.step(0.05);
     walk(walker.entityId, 25);
     space.step(0.05);
     expect(energyOf(space, walker.entityId).healthCurrent).toBeGreaterThan(50);
@@ -128,7 +129,7 @@ describe('a target on a line of three sectors', () => {
     const { space, walk } = line();
     const healerId = attachPlayer(space, { x: 5, z: 10 }, 'healer', {
       character: { lucidity: lucidity('healer', { touch: 2 }) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     }).entityId;
     const patient = attachPlayer(space, { x: 6, z: 10 }, 'patient', { character: { energy: energy({ healthCurrent: 50 }) } });
     engage(space, patient.entityId, healerId);

@@ -9,6 +9,7 @@ import type { GameplaySocketFactory } from '@/transport';
 import type * as THREE from 'three';
 import { MAX_TICK_DELTA } from '@/scene/animation';
 import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
+import type { PressTarget } from '@/scene/worldScene';
 import { paintBubbles } from '@/scene/bubbleLayer';
 import { PORTRAIT_SLOTS, portraitViewport } from '@/scene/portraits';
 import { HttpModelAssets } from '@/scene/modelAssets';
@@ -17,14 +18,21 @@ import { SplashDirector } from '@/splash/director';
 import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
 import { SensedMarkers } from './sensedMarkers';
-import { GameHUD } from './hud';
-import type { HUDClock } from './hud';
+import { GameHUD, WINDOW_KEYS } from './hud';
+import type { HUDClock, HUDWindowId } from './hud';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
 import type { FramedEntity } from './unitFrames';
 import { placeName } from './placeNames';
 import { screenOccluders, viewportPoint } from './occluders';
 import { element, prefersReducedMotion, setHidden } from './dom';
+
+/** The window a key press opens and closes, if any: one of a window's keys with no modifier. */
+function windowOnKey(event: KeyboardEvent): HUDWindowId | undefined {
+  if (event.metaKey || event.ctrlKey || event.altKey) return undefined;
+  const key = event.key.toLowerCase();
+  return (Object.keys(WINDOW_KEYS) as HUDWindowId[]).find((id) => WINDOW_KEYS[id].includes(key));
+}
 
 /**
  * Composition root: canvas, DOM overlays, controller, session, and every browser-host concern.
@@ -205,10 +213,14 @@ export class AppShell {
           this.render();
         },
         onChatFocusChange: (focused) => this.controller.setChatInputFocused(focused),
-        onActivateItem: (row) => {
-          this.session.activateInventoryRow(row);
+        onTellPurse: () => {
+          this.session.tellPurse();
           this.render();
         },
+        onEquip: (itemId, slot) => this.session.equip(itemId, slot),
+        onUnequip: (slot) => this.session.unequip(slot),
+        onMoveItem: (itemId, place) => this.session.moveItem(itemId, place),
+        onDropItem: (itemId, at) => this.dropItem(itemId, at),
         onToggleRun: () => this.session.toggleRun(),
         onToggleEngage: () => this.session.toggleEngage(),
         onUseAbility: (abilityId) => this.session.useAbility(abilityId),
@@ -391,8 +403,10 @@ export class AppShell {
         this.hud.openChat();
         return;
       }
+      const windowId = windowOnKey(event);
       if (event.key === 'Shift') this.session.toggleRun();
       else if (event.code === 'Digit1') this.session.toggleEngage();
+      else if (windowId !== undefined) this.hud.toggleWindow(windowId);
       else this.useAbilityOnKey(event.code);
     });
 
@@ -417,8 +431,9 @@ export class AppShell {
       this.aimAt(event);
       // The chat's faded lines let the pointer through to the world, so resting on them is seen here.
       this.hud.revealChatAt(event.clientX, event.clientY);
-      // A pointer over a body, which a click selects or acts on.
-      this.canvas.style.cursor = this.entityUnder(event) === undefined ? '' : 'pointer';
+      // A pointer over a body, which a click selects or acts on, or over a drop, which a click picks up.
+      const kind = this.pressTargetUnder(event)?.kind;
+      this.canvas.style.cursor = kind === 'entity' || kind === 'loot' ? 'pointer' : '';
     });
 
     // A wheel event over the HUD scrolls it; only the bare play field zooms.
@@ -479,11 +494,14 @@ export class AppShell {
     });
   }
 
-  /** A right press of a mouse: on a body it locks the gaze on it, or lets go of it; on the ground it lets go. */
+  /**
+   * A right press of a mouse: on a body it locks the gaze on it and switches slot 1 on there, or lets
+   * go of both; on the ground, the player's own body's included, it lets go of the lock alone. On a drop it does nothing.
+   */
   private pressGaze(event: PointerEvent): void {
-    const entity = this.entityUnder(event);
-    if (entity !== undefined) this.session.toggleGazeOn(entity);
-    else if (!this.playerUnder(event)) this.session.unlockGaze();
+    const target = this.pressTargetUnder(event);
+    if (target?.kind === 'entity') this.session.toggleGazeOn(target.entityId);
+    else if (target === undefined || target.kind === 'ground') this.session.unlockGaze();
   }
 
   /** A press of a mouse's left button, a finger, or a pen. */
@@ -503,11 +521,20 @@ export class AppShell {
     this.pressLanded = this.pressPoint;
     // A press with no move before it, such as a tap on a touch screen, still faces where it lands.
     this.aimAt(event);
-    const entity = this.entityUnder(event);
-    const ground = this.groundUnder(event);
-    if (entity !== undefined) this.session.pressEntity(entity);
-    else if (this.playerUnder(event)) this.session.pressSelf();
-    else if (ground !== undefined) this.session.pressGround(ground, performance.now());
+    const target = this.pressTargetUnder(event);
+    switch (target?.kind) {
+      case undefined:
+        return;
+      case 'loot':
+        this.session.pressLoot(target.lootId);
+        return;
+      case 'entity':
+        this.session.pressEntity(target.entityId);
+        return;
+      case 'ground':
+        this.session.pressGround(target.point, performance.now());
+        return;
+    }
   }
 
   private endPress(): void {
@@ -575,6 +602,11 @@ export class AppShell {
     return this.pagePointAt(this.scene?._viewportPointFor(entityId));
   }
 
+  /** Where on the page a drop's name or model is drawn, in CSS pixels, for an agent that has to press it. */
+  pagePointOfLoot(lootId: string, part: 'label' | 'model'): { x: number; y: number } | undefined {
+    return this.pagePointAt(this.scene?._viewportPointOfLoot(lootId, part));
+  }
+
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels: the inverse of `groundUnder`, for an agent that has to tap there. */
   pagePointOfGround(position: Point): { x: number; y: number } | undefined {
     return this.pagePointAt(this.scene?._viewportPointOfGround(position));
@@ -590,8 +622,23 @@ export class AppShell {
   /** Turns the player toward what the cursor points at. */
   private aimAt(pointer: PagePoint): void {
     this.cursorPoint = pagePoint(pointer);
+    this.session.aimAt(this.aimPointUnder(pointer));
+  }
+
+  /** The point under the pointer at body height, which the player faces. */
+  private aimPointUnder(pointer: PagePoint): Point | undefined {
     const point = this.viewportPointOf(pointer);
-    this.session.aimAt(point === undefined ? undefined : this.scene?.aimPointAt(point.x, point.y));
+    return point === undefined ? undefined : this.scene?.aimPointAt(point.x, point.y);
+  }
+
+  /** Throws an item toward where a drag let it go over the world, as the cursor now points there, or else as the session judges. */
+  private dropItem(itemId: string, at: PagePoint | undefined): void {
+    if (at === undefined) {
+      this.session.dropItem(itemId);
+      return;
+    }
+    this.aimAt(at);
+    this.session.dropItem(itemId, this.aimPointUnder(at));
   }
 
   /** Where the pointer is over the canvas, in normalized device coordinates. */
@@ -599,17 +646,10 @@ export class AppShell {
     return viewportPoint(this.canvas.getBoundingClientRect(), pointer.clientX, pointer.clientY);
   }
 
-  /** The entity drawn under the pointer, if any. */
-  private entityUnder(pointer: PagePoint): string | undefined {
+  /** What a press at the pointer lands on, if anything. */
+  private pressTargetUnder(pointer: PagePoint): PressTarget | undefined {
     const point = this.viewportPointOf(pointer);
-    if (this.scene === undefined || point === undefined) return undefined;
-    return this.scene.entityAt(point.x, point.y);
-  }
-
-  /** Whether the player's own body is drawn under the pointer. */
-  private playerUnder(pointer: PagePoint): boolean {
-    const point = this.viewportPointOf(pointer);
-    return this.scene !== undefined && point !== undefined && this.scene.playerAt(point.x, point.y);
+    return point === undefined ? undefined : this.scene?.pressTargetAt(point.x, point.y);
   }
 
   /** The ground drawn under the pointer, if any. */
@@ -777,6 +817,7 @@ export class AppShell {
     const canvasRect = this.canvas.getBoundingClientRect();
     // Read with the panels', so a frame lays the page out once.
     const portraitRects = PORTRAIT_SLOTS.map((slot) => ({ slot, rect: this.hud.portraits[slot].getBoundingClientRect() }));
+    this.hud.openBodyHole(portraitRects.find(({ slot }) => slot === 'body')!.rect);
     this.scene?.setScreenOccluders(screenOccluders(canvasRect, covering));
     this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
     const dipOpacity = this.splash?.dipOpacity ?? 0;
@@ -791,6 +832,7 @@ export class AppShell {
       this.renderer.render(this.scene.scene, this.scene.camera);
       this.scene.setPortraitSubject('own', this.controller.selfId);
       this.scene.setPortraitSubject('target', this.session.target);
+      this.scene.setPortraitSubject('body', this.controller.selfId);
       const ratio = this.renderer.getPixelRatio();
       this.scene.drawPortraits(
         this.renderer,
@@ -798,6 +840,7 @@ export class AppShell {
           const viewport = portraitViewport(rect, canvasRect, ratio);
           return viewport === undefined ? [] : [{ slot, viewport }];
         }),
+        this.hud.bodyTurn(performance.now()),
       );
       paintBubbles(this.bubbleContext, this.bubbleScratchContext, this.scene.placedBubbles(), this.bubbleCanvas);
       const self = this.controller.selfId === undefined ? undefined : this.controller.entities.get(this.controller.selfId);
@@ -887,7 +930,7 @@ export class AppShell {
     this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raiseOf(selfId) }, performance.now());
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
-    this.hud.renderItems(this.session.inventory);
+    this.hud.renderCharacter(this.session.inventory, this.session.lucidity);
     this.hud.tick(performance.now(), this.clock());
   }
 }

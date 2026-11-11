@@ -14,42 +14,48 @@ import type {
   CreateCharacterMessage,
   DeleteCharacterMessage,
   DoorRefusedMessage,
+  DropItemMessage,
   EffectsMessage,
   EmptyMessage,
-  EngageMessage,
   Energy,
+  EngageMessage,
   EnterSpaceMessage,
   EntityMessage,
-  EquipToggleMessage,
+  EquipMessage,
+  HeldMessage,
   HelloMessage,
   InventoryMessage,
   LeaveMessage,
   LoginMessage,
   LoginResultMessage,
+  LootGoneMessage,
+  LootMessage,
   LucidityMessage,
   MendMessage,
+  MoveItemMessage,
   MoveMessage,
   MovesMessage,
   OtherSessionsMessage,
   OtherSessionsRevokedMessage,
+  PickUpMessage,
   RaisingMessage,
   RedeemSessionMessage,
   RegisterMessage,
   RegisterResultMessage,
   RevokeSessionMessage,
   SayMessage,
-  SensedMessage,
   SectorMessage,
   SelectCharacterMessage,
   SellMessage,
+  SensedMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
   StudyMessage,
   TalkMessage,
   TargetMessage,
+  UnequipMessage,
   UseAbilityMessage,
   UseDoorMessage,
-  UseItemMessage,
   VitalsMessage,
 } from './payloads.ts';
 import { isClientOnlyTag } from './tags.ts';
@@ -67,7 +73,11 @@ export type SomnioMessage =
   | { tag: 'deleteCharacter'; payload: DeleteCharacterMessage }
   | { tag: 'move'; payload: MoveMessage }
   | { tag: 'clientSay'; payload: ClientSayMessage }
-  | { tag: 'equipToggle'; payload: EquipToggleMessage }
+  | { tag: 'equip'; payload: EquipMessage }
+  | { tag: 'unequip'; payload: UnequipMessage }
+  | { tag: 'moveItem'; payload: MoveItemMessage }
+  | { tag: 'dropItem'; payload: DropItemMessage }
+  | { tag: 'pickUp'; payload: PickUpMessage }
   | { tag: 'talk'; payload: TalkMessage }
   | { tag: 'target'; payload: TargetMessage }
   | { tag: 'engage'; payload: EngageMessage }
@@ -80,7 +90,6 @@ export type SomnioMessage =
   | { tag: 'buy'; payload: BuyMessage }
   | { tag: 'sell'; payload: SellMessage }
   | { tag: 'wake'; payload: EmptyMessage }
-  | { tag: 'useItem'; payload: UseItemMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }
   | { tag: 'revokeSession'; payload: RevokeSessionMessage }
   | { tag: 'revokeOtherSessions'; payload: EmptyMessage }
@@ -98,9 +107,12 @@ export type SomnioMessage =
   | { tag: 'serverSay'; payload: SayMessage }
   | { tag: 'energy'; payload: Energy }
   | { tag: 'inventory'; payload: InventoryMessage }
+  | { tag: 'loot'; payload: LootMessage }
+  | { tag: 'lootGone'; payload: LootGoneMessage }
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'lucidity'; payload: LucidityMessage }
   | { tag: 'condition'; payload: ConditionMessage }
+  | { tag: 'held'; payload: HeldMessage }
   | { tag: 'vitals'; payload: VitalsMessage }
   | { tag: 'effects'; payload: EffectsMessage }
   | { tag: 'blow'; payload: BlowMessage }

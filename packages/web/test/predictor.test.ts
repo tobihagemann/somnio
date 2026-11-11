@@ -65,6 +65,8 @@ interface Rig {
   fallen: boolean;
   /** Whether a swing is slowing the player. */
   slowed: boolean;
+  /** Whether a channel of the player's holds them still. */
+  heldStill: boolean;
   self(): ClientEntity;
   moves(): Point[];
   /** Steers toward a point far along `direction` from where the player stands. */
@@ -104,6 +106,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     effects: [],
     fallen: false,
     slowed: false,
+    heldStill: false,
     self: () => {
       const found = entities.get('self');
       if (found === undefined) throw new Error('self entity missing');
@@ -127,6 +130,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     effects: () => rig.effects,
     fallen: () => rig.fallen,
     slowed: () => rig.slowed,
+    heldStill: () => rig.heldStill,
   });
   rig.predictor = predictor;
   const runTick = predictor.runTick.bind(predictor);
@@ -791,6 +795,50 @@ describe('a balance that gave out, and a fall', () => {
     expect(rig.self()).toMatchObject({ position: START });
     expect(rig.predictor.walk).toBeUndefined();
     expect(rig.moves()).toEqual([START]);
+  });
+});
+
+describe('a channel holding the player still', () => {
+  it('keeps the walk and its arrival, turning the player but moving them nowhere, and walks on to act once it lets go', () => {
+    const rig = makeRig();
+    const destination = along(UP_SCREEN, 2);
+    let acted = 0;
+    rig.predictor.walkTo(destination, { within: 0.5, act: () => (acted += 1) });
+    rig.heldStill = true;
+    rig.lookAt = toward(90);
+
+    runTicks(rig, 5, 100);
+
+    expect(rig.self()).toMatchObject({ position: START });
+    expect(rig.self().facing).toBeCloseTo(90, 9);
+    expect(rig.moves()).toEqual([START]);
+    expect(rig.predictor.walk).toMatchObject({ kind: 'path', destination });
+    expect(acted).toBe(0);
+
+    rig.heldStill = false;
+    tickUntilWalkEnds(rig, 100, 600);
+
+    expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(0.5);
+    expect(acted).toBe(1);
+  });
+
+  it('counts no stall while it holds, so a leg blocked once it lets go spends no re-plan at once', () => {
+    const rig = makeRig();
+    rig.predictor.walkTo(along(UP_SCREEN, 4));
+    rig.predictor.runTick(0);
+    // A walk whose every re-plan is spent: the next search due ends it.
+    (rig.predictor.walk as { searches: number }).searches = 1 + PATH_FOLLOWING.maxReplans;
+    rig.heldStill = true;
+    for (let time = 100; time <= 1000; time += 100) rig.predictor.runTick(time);
+    // A dreamer steps onto the leg, touching the player, so the next steps bring them no nearer.
+    rig.session.entities.set('peer', clientEntity({ id: 'peer', kind: 'peer', position: along(UP_SCREEN, 0.6) }));
+
+    rig.heldStill = false;
+    rig.predictor.runTick(1050);
+    rig.predictor.runTick(1100);
+
+    expect(rig.self().position).toEqual(START);
+    expect(rig.predictor.walk).toMatchObject({ kind: 'path' });
   });
 });
 

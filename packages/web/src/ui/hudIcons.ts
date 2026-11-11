@@ -4,9 +4,10 @@ import { element } from './dom';
 /**
  * The HUD's glyphs, white silhouettes in the weight of Kenney's CC0 icons. Most are those icons, in
  * the asset pack's `UI/`, where `Scripts/bundle-web-assets.sh` names each one. Where Kenney has
- * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, and
- * the peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a CSS mask
- * (`.hud-glyph` in `hud.css`), so it takes the ink of the control it sits on.
+ * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, and the
+ * peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a CSS mask (`.hud-glyph` in
+ * `hud.css`), so it takes the ink of the control it sits on. Items are drawn as pictures, not glyphs
+ * (`itemIcons.ts`).
  */
 export interface HUDGlyph {
   /** The mask image, a CSS `url()`. */
@@ -39,7 +40,8 @@ export const HUD_ICONS = {
     '<path d="M5 3h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-8l-4.6 3.8a.6.6 0 0 1-1-.46V18H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zM9.1 10.5a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 1 1 3.2 0zM13.6 10.5a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 1 1 3.2 0zM18.1 10.5a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 1 1 3.2 0z"/>',
   ),
   players: packed('/assets/UI/icon-players.png', GAME_ICONS_SIZE),
-  bag: packed('/assets/UI/icon-bag.png'),
+  /** One dreamer, the player's own, beside the Players' two. */
+  character: packed('/assets/UI/icon-character.png', GAME_ICONS_SIZE),
   settings: packed('/assets/UI/icon-settings.png', GAME_ICONS_SIZE),
   menu: packed('/assets/UI/icon-menu.png', GAME_ICONS_SIZE),
   close: packed('/assets/UI/icon-close.png', GAME_ICONS_SIZE),

@@ -1,32 +1,36 @@
 import {
   COMBAT,
-  ITEMS,
   SHOP,
   TEACHINGS,
   TEACHING_IDS,
   TRIALS,
+  TRIAL_REWARDS,
   WARES,
-  buyBackPrice,
+  bagHasRoom,
   canBuy,
-  canSell,
+  grantPlace,
   isTeachingId,
-  itemInHand,
   masterRole,
   placesFound,
+  plainItem,
   practiceNeeded,
-  purseCoins,
   roleLabelKey,
+  salePrice,
+  sellableItem,
   taskGoal,
   teaching,
   teachingStanding,
   unmetNeed,
 } from '@somnio/core';
-import type { TaskSpec, TeachingId, TeachingStanding, Ware } from '@somnio/core';
-import type { InventoryRowMessage, LucidityMessage, NPCService, Role, TaskMessage } from '@somnio/protocol';
+import type { Inventory, Item, ItemInstance, TaskSpec, TeachingId, TeachingStanding, Ware } from '@somnio/core';
+import type { LucidityMessage, NPCService, Role, TaskMessage } from '@somnio/protocol';
 import type { ClientEntity } from '@/client';
 import { taskIsDone, taskSpecOf } from '@/client';
-import { t } from '@/i18n';
+import { itemName, t } from '@/i18n';
 import { button, element, replaceChildren, setHidden } from './dom';
+import { itemIcon } from './itemIcons';
+import { paintRarityColors } from './hud';
+import { itemLines, rarityName } from './itemText';
 
 /**
  * What a master or the shopkeeper offers, opened by a click at them and closed by walking away. It
@@ -41,7 +45,7 @@ export interface ServicePanelCallbacks {
   onCompleteTask: () => void;
   onAbandonTask: () => void;
   onStudy: (teachingId: string) => void;
-  onBuy: (itemId: string) => void;
+  onBuy: (baseId: string) => void;
   onSell: (itemId: string) => void;
   onClose: () => void;
 }
@@ -130,6 +134,29 @@ function paragraph(text: string, className = 'service-text'): HTMLElement {
   return element('p', { className, text });
 }
 
+/** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless plain, what it does, and the button that trades it. */
+function tradeRow(attributes: Record<string, string>, item: Item, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
+  const icon = itemIcon(item.baseId);
+  icon.classList.add('ware-icon', `hud-rarity--${item.rarity}`);
+  return element('div', {
+    className: 'ware-row',
+    attributes,
+    children: [
+      element('div', {
+        className: 'ware-head',
+        children: [
+          icon,
+          element('strong', { className: `ware-name hud-rarity--${item.rarity}`, text: itemName(item.baseId, t) }),
+          ...(item.rarity === 'plain' ? [] : [element('span', { className: 'ware-tag', text: rarityName(item.rarity) })]),
+        ],
+      }),
+      ...itemLines(item).map((line) => paragraph(line)),
+      ...notes,
+      element('div', { className: 'ware-action', children: [action] }),
+    ],
+  });
+}
+
 export class ServicePanel {
   readonly root: HTMLElement;
 
@@ -159,9 +186,10 @@ export class ServicePanel {
         element('div', { className: 'form-actions', children: [button(t('Close'), () => callbacks.onClose())] }),
       ],
     });
+    paintRarityColors(this.root);
   }
 
-  render(npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): void {
+  render(npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory: Inventory, tradeLocked: boolean): void {
     const service = npc?.service;
     setHidden(this.root, service === undefined);
     if (npc === undefined || service === undefined) {
@@ -187,65 +215,62 @@ export class ServicePanel {
     npc: ClientEntity,
     service: NPCService,
     lucidity: LucidityMessage,
-    inventory: readonly InventoryRowMessage[],
+    inventory: Inventory,
     tradeLocked: boolean,
   ): { reads: readonly unknown[]; purse?: number; build: () => HTMLElement[] } {
     switch (service) {
       case 'fighterMaster':
       case 'healerMaster':
-      case 'mysticMaster':
-        return { reads: [lucidity], build: () => this.master(npc, masterRole(service), lucidity) };
+      case 'mysticMaster': {
+        const role = masterRole(service);
+        const reward = TRIAL_REWARDS[role];
+        // Of what the dreamer carries, a master reads only whether the trial's reward has a place to go.
+        const rewardFits = reward === undefined || grantPlace(inventory, reward) !== undefined;
+        return { reads: [lucidity, rewardFits], build: () => this.master(npc, role, lucidity, rewardFits) };
+      }
       case 'shopkeeper':
-        return { reads: [inventory, tradeLocked], purse: purseCoins(inventory), build: () => this.shop(npc, inventory, tradeLocked) };
+        return { reads: [inventory, tradeLocked], purse: inventory.coins, build: () => this.shop(npc, inventory, tradeLocked) };
     }
   }
 
-  /** Every ware the dreamer does not carry, to buy, and those they carry, to sell back. Every button is disabled while a trade holds the lock. */
-  private shop(npc: ClientEntity, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): HTMLElement[] {
-    const forSale = WARES.filter((ware) => !canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
-    const yours = WARES.filter((ware) => canSell(inventory, ware)).map((ware) => this.wareRow(ware, inventory, tradeLocked));
+  /** Every ware, to buy, and every item in the dreamer's bag the shopkeeper buys, to sell. Every button is disabled while a trade holds the lock. */
+  private shop(npc: ClientEntity, inventory: Inventory, tradeLocked: boolean): HTMLElement[] {
+    const sellable = inventory.bag.flatMap(({ item }) => sellableItem(inventory, item.id) ?? []);
     return [
-      paragraph(t('%@ deals in weapons. He buys back what he sells for half its price.', npc.name)),
-      ...(forSale.length === 0 ? [] : [element('h2', { className: 'service-heading', text: t('For sale') }), ...forSale]),
+      paragraph(t('%@ sells plain gear and buys what you find. Rarer finds fetch more.', npc.name)),
+      element('h2', { className: 'service-heading', text: t('For sale') }),
+      ...WARES.map((ware) => this.wareRow(ware, inventory, tradeLocked)),
       element('h2', { className: 'service-heading', text: t('Sell') }),
-      ...(yours.length === 0 ? [paragraph(t('You carry nothing %@ buys.', npc.name), 'form-note')] : yours),
+      ...(sellable.length === 0
+        ? [paragraph(t('Your bag holds nothing %@ buys.', npc.name), 'form-note')]
+        : sellable.map((item) => this.saleRow(item, tradeLocked))),
     ];
   }
 
-  private wareRow(ware: Ware, inventory: readonly InventoryRowMessage[], tradeLocked: boolean): HTMLElement {
-    const { labelKey, weapon } = ITEMS[ware];
+  /** A ware to buy, a plain one at its base's tier. */
+  private wareRow(ware: Ware, inventory: Inventory, tradeLocked: boolean): HTMLElement {
     const price = SHOP.prices[ware];
-    const short = price - purseCoins(inventory);
+    const short = price - inventory.coins;
+    const action = button(t('Buy for %@c', String(price)), () => this.callbacks.onBuy(ware));
+    // Several wares share a price, so the button's accessible name says which one it buys.
+    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, t), String(price)));
+    action.disabled = tradeLocked || !canBuy(inventory, ware);
     let notes: HTMLElement[] = [];
-    let action: HTMLButtonElement;
-    if (canSell(inventory, ware)) {
-      action = button(t('Sell for %@c', String(buyBackPrice(ware))), () => this.callbacks.onSell(ware));
-      action.disabled = tradeLocked;
-    } else {
-      action = button(t('Buy for %@c', String(price)), () => this.callbacks.onBuy(ware));
-      action.disabled = tradeLocked || !canBuy(inventory, ware);
-      if (short > 0) notes = [paragraph(t('You need %@c more.', String(short)), 'form-note')];
-    }
-    return element('div', {
-      className: 'ware-row',
-      attributes: { 'data-ware': ware },
-      children: [
-        element('div', {
-          className: 'ware-head',
-          children: [
-            element('strong', { text: t(labelKey) }),
-            ...(itemInHand(inventory) === ware ? [element('span', { className: 'ware-tag', text: t('In hand') })] : []),
-          ],
-        }),
-        paragraph(t('%1$@ damage, %2$@ balance a swing', String(weapon.damage), String(weapon.balanceCost)), 'service-text'),
-        ...notes,
-        element('div', { className: 'ware-action', children: [action] }),
-      ],
-    });
+    if (short > 0) notes = [paragraph(t('You need %@c more.', String(short)), 'form-note')];
+    else if (!bagHasRoom(inventory)) notes = [paragraph(t('Your bag is full.'), 'form-note')];
+    return tradeRow({ 'data-ware': ware }, plainItem(ware), notes, action);
   }
 
-  private master(npc: ClientEntity, role: Role, lucidity: LucidityMessage): HTMLElement[] {
-    if (lucidity.role === undefined) return this.trial(npc, role, lucidity.task);
+  /** An item in the bag to sell, for what its tier and rarity fetch. */
+  private saleRow(item: ItemInstance, tradeLocked: boolean): HTMLElement {
+    const action = button(t('Sell for %@c', String(salePrice(item))), () => this.callbacks.onSell(item.id));
+    action.setAttribute('aria-label', t('Sell %1$@ for %2$@c', itemName(item.baseId, t), String(salePrice(item))));
+    action.disabled = tradeLocked;
+    return tradeRow({ 'data-item': item.id }, item, [], action);
+  }
+
+  private master(npc: ClientEntity, role: Role, lucidity: LucidityMessage, rewardFits: boolean): HTMLElement[] {
+    if (lucidity.role === undefined) return this.trial(npc, role, lucidity.task, rewardFits);
     if (lucidity.role !== role) return [paragraph(t('You are a %1$@. %2$@ has nothing to teach you.', roleName(lucidity.role), npc.name))];
     const ids = TEACHING_IDS.filter((id) => TEACHINGS[id].role === role);
     const section = (standing: Standing, heading: string): HTMLElement[] => {
@@ -263,8 +288,8 @@ export class ServicePanel {
     ];
   }
 
-  /** A dreamer with no role yet: the offer, the trial under way, or the choice it earned. */
-  private trial(npc: ClientEntity, role: Role, task: TaskMessage | undefined): HTMLElement[] {
+  /** A dreamer with no role yet: the offer, the trial under way, or the choice it earned, which waits while what it gives has nowhere to go. */
+  private trial(npc: ClientEntity, role: Role, task: TaskMessage | undefined, rewardFits: boolean): HTMLElement[] {
     if (task === undefined) {
       return [
         paragraph(
@@ -288,15 +313,15 @@ export class ServicePanel {
         button(t('Give up the trial'), () => this.callbacks.onAbandonTask()),
       ];
     }
+    const accept = button(t('Become a %@', roleName(role)), () => this.callbacks.onCompleteTask());
+    accept.disabled = !rewardFits;
     return [
       element('h2', { className: 'service-heading', text: t('Become a %@?', roleName(role)) }),
       paragraph(
         t('You passed the trial. Accepting makes you a %@ for good. It cannot be undone, and the other masters will not teach you afterwards.', roleName(role)),
       ),
-      element('div', {
-        className: 'form-actions',
-        children: [button(t('Not yet'), () => this.callbacks.onClose()), button(t('Become a %@', roleName(role)), () => this.callbacks.onCompleteTask())],
-      }),
+      ...(rewardFits ? [] : [paragraph(t('Your bag is full. Make room in it before you accept.'), 'form-error')]),
+      element('div', { className: 'form-actions', children: [button(t('Not yet'), () => this.callbacks.onClose()), accept] }),
     ];
   }
 

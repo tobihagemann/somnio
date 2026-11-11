@@ -1,6 +1,6 @@
 import { buildSpaceCollision, findPath, neighbourSectors, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
 import type { AbilityBody, Body, EngageTarget, FoundPath, ModelRegistry, Point, ResolvedDoor, SpaceCollision, WalkRaster, WorldEntity } from '@somnio/core';
-import type { Condition, NPCService, SectorView } from '@somnio/protocol';
+import type { Condition, Held, NPCService, SectorView } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 import { defaultWalkRasterizer } from './walkRasterizer';
 import type { WalkRasterizer } from './walkRasterizer';
@@ -11,6 +11,8 @@ export interface ClientEntity extends WorldEntity {
   condition: Condition;
   /** What asking an NPC offers beyond its dialog. */
   service: NPCService | undefined;
+  /** What a dreamer's hands hold. */
+  held: Held | undefined;
 }
 
 /** Whether the entity is a nightmare driven off: fading, it is nothing to face, act on, or walk round. */

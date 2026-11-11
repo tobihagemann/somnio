@@ -5,6 +5,7 @@ import type {
   Condition,
   EnterSpaceMessage,
   EntityKind,
+  Held,
   Locale,
   LoginResult,
   RegisterResult,
@@ -51,6 +52,8 @@ export type GameplayMessage = Extract<
       | 'serverSay'
       | 'energy'
       | 'inventory'
+      | 'loot'
+      | 'lootGone'
       | 'lucidity'
       | 'blow'
       | 'raising'
@@ -567,12 +570,17 @@ export class ConnectionController {
       case 'condition':
         this.handleCondition(message.payload.entityId, message.payload.condition);
         return;
+      case 'held':
+        this.handleHeld(message.payload.entityId, message.payload.held);
+        return;
       case 'moves':
       case 'correction':
       case 'doorRefused':
       case 'serverSay':
       case 'energy':
       case 'inventory':
+      case 'loot':
+      case 'lootGone':
       case 'lucidity':
       case 'blow':
       case 'raising':
@@ -839,6 +847,7 @@ export class ConnectionController {
       gait: payload.gait,
       condition: payload.condition,
       service: payload.service,
+      held: payload.held,
     };
     this.entities.set(entity.id, entity);
     this.onEntityReset?.(entity.id);
@@ -882,6 +891,14 @@ export class ConnectionController {
     this.entities.set(entityId, { ...entity, condition });
     this.renderSurface.updateCondition(entityId, condition);
     if (entityId === this.selfId) this.onSelfConditionChanged?.(condition);
+  }
+
+  /** What a dreamer's hands hold, sent when it changes. */
+  private handleHeld(entityId: string, held: Held): void {
+    const entity = this.entities.get(entityId);
+    if (entity === undefined) return;
+    this.entities.set(entityId, { ...entity, held });
+    this.renderSurface.updateHeld(entityId, held);
   }
 
   /**

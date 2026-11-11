@@ -1,4 +1,4 @@
-import type { Generated } from 'kysely';
+import type { ColumnType, Generated } from 'kysely';
 
 // The Postgres schema, as the migrations create it. `Generated<>` marks columns Postgres fills
 // (defaults and the generated `*_normalized` columns), so inserts may omit them. Positions are metres
@@ -36,6 +36,7 @@ export interface CharactersTable {
   task_role: string | null;
   task_teaching: string | null;
   task_progress: number;
+  coins: number;
 }
 
 export interface CharacterRanksTable {
@@ -45,12 +46,17 @@ export interface CharacterRanksTable {
   practice: number;
 }
 
-export interface InventoryRowsTable {
+/** One item a character has: worn in `equipped_slot`, or at `bag_place` in their bag, exactly one of the two set. */
+export interface ItemsTable {
+  id: string;
   character_id: string;
-  slot: number;
-  item_id: string;
-  quantity: number;
-  equipped_hand: string | null;
+  base_id: string;
+  tier: number;
+  rarity: string;
+  /** The rolled affixes as `[{affixId, value}]`: written as JSON text, read back parsed. */
+  affixes: ColumnType<unknown, string, string>;
+  equipped_slot: string | null;
+  bag_place: number | null;
 }
 
 export interface WorldClockTable {
@@ -75,7 +81,7 @@ export interface Database {
   accounts: AccountsTable;
   characters: CharactersTable;
   character_ranks: CharacterRanksTable;
-  inventory_rows: InventoryRowsTable;
+  items: ItemsTable;
   world_clock: WorldClockTable;
   npc_dialog_states: NPCDialogStatesTable;
   sessions: SessionsTable;

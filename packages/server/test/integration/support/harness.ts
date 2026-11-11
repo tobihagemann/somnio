@@ -6,7 +6,7 @@ import type { Character, Point } from '@somnio/core';
 import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
-  PostgresInventoryRepository,
+  PostgresItemRepository,
   PostgresNPCDialogStateRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
@@ -19,7 +19,7 @@ import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer
 import { DEFAULT_CARD_DEADLINE_MS, DEFAULT_LOGIN_DEADLINE_MS, DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
 import { AttemptLimiter } from '../../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
-import { STARTER_INVENTORY } from '../../../src/handlers/starterInventory.ts';
+import { starterInventory } from '../../../src/handlers/starterInventory.ts';
 import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
 import type { LoadedWorld } from '../../../src/sectors/sectorCache.ts';
 import { WorldClockService } from '../../../src/services/worldClockService.ts';
@@ -91,7 +91,7 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
   return {
     accounts: new PostgresAccountRepository(db),
     characters,
-    inventories: new PostgresInventoryRepository(db),
+    items: new PostgresItemRepository(db),
     npcDialogStates,
     sessions: new PostgresSessionRepository(db),
     worldRouter,
@@ -204,7 +204,7 @@ export async function joinFreshPlayerAt(
 ): Promise<JoinedClient & { name: string }> {
   const name = await registerFreshPlayer(server.url, prefix);
   const account = await new PostgresAccountRepository(server.server.db).findByEmail(emailFor(name));
-  const character = await new PostgresCharacterRepository(server.server.db).create(account!.id, name, 'vigils', STARTER_INVENTORY);
+  const character = await new PostgresCharacterRepository(server.server.db).create(account!.id, name, 'vigils', starterInventory());
   await server.server.db
     .updateTable('characters')
     .set({ space: place.space, position_x: place.position.x, position_z: place.position.z })

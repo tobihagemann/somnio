@@ -19,6 +19,11 @@ const FALLEN_PLAYER_ID = '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7';
 const NPC_ID = 'npc:EdariaLibrary/libus';
 const MASTER_ID = 'npc:EdariaFighterHall/pugnax';
 const SHOPKEEPER_ID = 'npc:EdariaShop/mercus';
+const SWORD_ID = '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
+const MOONSTONE_ID = '0190a1b2-c3d5-7a1b-9c2d-3e4f5a6b7c8d';
+const CAP_ID = '0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e';
+const RING_ID = '0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf';
+const LOOT_ID = 'loot-12';
 
 /** Every record array populated at once, both ground mark shapes, and a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
@@ -107,7 +112,12 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'move', message: { tag: 'move', payload: { x: 10.25, z: 20.5, facing: 137.5, gait: 'jog' } } },
   { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } } },
   { name: 'clientSay-yell', message: { tag: 'clientSay', payload: { text: 'Hilfe!', kind: 'yell' } } },
-  { name: 'equipToggle', message: { tag: 'equipToggle', payload: { slot: 1, hand: 'right' } } },
+  { name: 'equip', message: { tag: 'equip', payload: { itemId: SWORD_ID } } },
+  { name: 'equip-into-slot', message: { tag: 'equip', payload: { itemId: RING_ID, slot: 'ring2' } } },
+  { name: 'unequip', message: { tag: 'unequip', payload: { slot: 'offHand' } } },
+  { name: 'moveItem', message: { tag: 'moveItem', payload: { itemId: CAP_ID, place: 7 } } },
+  { name: 'dropItem', message: { tag: 'dropItem', payload: { itemId: CAP_ID, heading: 247.5 } } },
+  { name: 'pickUp', message: { tag: 'pickUp', payload: { lootId: LOOT_ID } } },
   { name: 'talk', message: { tag: 'talk', payload: { npcId: NPC_ID } } },
   { name: 'target', message: { tag: 'target', payload: { targetId: 'monster:7' } } },
   { name: 'target-none', message: { tag: 'target', payload: {} } },
@@ -120,10 +130,9 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'completeTask', message: { tag: 'completeTask', payload: { npcId: MASTER_ID } } },
   { name: 'abandonTask', message: { tag: 'abandonTask', payload: {} } },
   { name: 'study', message: { tag: 'study', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
-  { name: 'buy', message: { tag: 'buy', payload: { npcId: SHOPKEEPER_ID, itemId: 'dagger' } } },
-  { name: 'sell', message: { tag: 'sell', payload: { npcId: SHOPKEEPER_ID, itemId: 'cudgel' } } },
+  { name: 'buy', message: { tag: 'buy', payload: { npcId: SHOPKEEPER_ID, baseId: 'dagger' } } },
+  { name: 'sell', message: { tag: 'sell', payload: { npcId: SHOPKEEPER_ID, itemId: CAP_ID } } },
   { name: 'wake', message: { tag: 'wake', payload: {} } },
-  { name: 'useItem', message: { tag: 'useItem', payload: { slot: 2 } } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
   { name: 'redeemSession-with-locale', message: { tag: 'redeemSession', payload: { token: 'tok-abc', locale: 'de' } } },
   { name: 'revokeSession', message: { tag: 'revokeSession', payload: { token: 'tok-abc' } } },
@@ -168,6 +177,25 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         facing: 359.96875,
         gait: 'walk',
         condition: 'hale',
+      },
+    },
+  },
+  {
+    name: 'entity-player',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: OTHER_PLAYER_ID,
+        kind: 'player',
+        characterModelId: 'dreamer',
+        name: 'Alice',
+        radius: 0.3,
+        x: 12.5,
+        z: 7.25,
+        facing: 90,
+        gait: 'run',
+        condition: 'grazed',
+        held: { mainHand: 'sword', offHand: 'moonstone' },
       },
     },
   },
@@ -250,10 +278,25 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: {
       tag: 'inventory',
       payload: {
-        rows: [
-          { slot: 0, itemId: 'purse', quantity: 100 },
-          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
+        coins: 100,
+        equipped: [
+          {
+            slot: 'mainHand',
+            item: {
+              id: SWORD_ID,
+              baseId: 'sword',
+              tier: 1,
+              rarity: 'rare',
+              affixes: [
+                { affixId: 'damage', value: 2 },
+                { affixId: 'swing-speed', value: 5 },
+                { affixId: 'balance', value: 7 },
+              ],
+            },
+          },
+          { slot: 'offHand', item: { id: MOONSTONE_ID, baseId: 'moonstone', tier: 1, rarity: 'plain', affixes: [] } },
         ],
+        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
       },
     },
   },
@@ -262,15 +305,73 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: {
       tag: 'inventory',
       payload: {
-        rows: [
-          { slot: 0, itemId: 'purse', quantity: 40 },
-          { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' },
-          { slot: 2, itemId: 'dagger', quantity: 1 },
-        ],
-        trade: { kind: 'bought', itemId: 'dagger', coins: 60 },
+        coins: 105,
+        equipped: [],
+        bag: [],
+        trade: { kind: 'sold', baseId: 'cap', rarity: 'magic', coins: 5 },
       },
     },
   },
+  {
+    name: 'inventory-after-drop',
+    message: {
+      tag: 'inventory',
+      payload: { coins: 100, equipped: [], bag: [], dropped: { kind: 'item', baseId: 'cap', rarity: 'magic' } },
+    },
+  },
+  {
+    name: 'inventory-after-pick-up',
+    message: {
+      tag: 'inventory',
+      payload: {
+        coins: 100,
+        equipped: [],
+        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
+        pickedUp: { kind: 'item', baseId: 'cap', rarity: 'magic' },
+      },
+    },
+  },
+  { name: 'loot', message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } } } },
+  {
+    name: 'loot-shared',
+    message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' }, shared: true } },
+  },
+  {
+    name: 'loot-thrown',
+    message: {
+      tag: 'loot',
+      payload: {
+        lootId: LOOT_ID,
+        x: 31.5,
+        z: -12.25,
+        contents: { kind: 'item', baseId: 'cap', rarity: 'magic' },
+        shared: true,
+        from: { x: 32.25, z: -11.5, entityId: PLAYER_ID },
+      },
+    },
+  },
+  {
+    name: 'loot-thrown-from-hand',
+    message: {
+      tag: 'loot',
+      payload: {
+        lootId: LOOT_ID,
+        x: 31.5,
+        z: -12.25,
+        contents: { kind: 'item', baseId: 'sword', rarity: 'rare' },
+        shared: true,
+        from: { x: 32.25, z: -11.5, entityId: PLAYER_ID, hand: 'mainHand' },
+      },
+    },
+  },
+  {
+    name: 'loot-scattered',
+    message: {
+      tag: 'loot',
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'rare' }, from: { x: 31, z: -12 } },
+    },
+  },
+  { name: 'lootGone', message: { tag: 'lootGone', payload: { lootId: LOOT_ID } } },
   { name: 'leave', message: { tag: 'leave', payload: { entityId: PLAYER_ID, leftGame: true } } },
   {
     name: 'lucidity',
@@ -304,6 +405,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'lucidity-mystic-trial', message: { tag: 'lucidity', payload: { ranks: [], task: { role: 'mystic', progress: 5 } } } },
   { name: 'lucidity-empty', message: { tag: 'lucidity', payload: { ranks: [] } } },
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
+  { name: 'held', message: { tag: 'held', payload: { entityId: OTHER_PLAYER_ID, held: { mainHand: 'dagger' } } } },
   { name: 'vitals', message: { tag: 'vitals', payload: { entityId: 'monster:7', health: 0.42 } } },
   { name: 'effects', message: { tag: 'effects', payload: { entityId: PLAYER_ID, effects: [{ effectId: 'braced', seconds: 3.25 }] } } },
   {

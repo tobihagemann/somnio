@@ -2,15 +2,23 @@ import { hash2 } from '@somnio/core';
 
 /**
  * The lean of grass under bodies. Each tuft keeps a tilt, a 2-vector in radians toward the
- * ground direction it leans; a body's feet, toes, and lower legs push the tufts they touch, which
- * lean over quickly and spring back slowly once let go.
+ * ground direction it leans; a body's feet, toes, and lower legs, what its hands hold, and a drop
+ * lying on the ground push the tufts they touch, which lean over quickly and spring back slowly
+ * once let go.
  */
 
-/** Something that touches grass: a circle on the ground. */
+/**
+ * Something that touches grass: a circle on the ground, or, with an `end`, a capsule from its
+ * centre to `end`. It leans the tufts it touches at most `lean` radians, by default `MAX_TILT`,
+ * at `pressRate` per second, by default `PRESS_RATE`.
+ */
 export interface GrassContact {
   x: number;
   z: number;
+  end?: { x: number; z: number };
   radius: number;
+  lean?: number;
+  pressRate?: number;
 }
 
 /** One batch of tufts: their roots, their half-widths, and the tilts the shader reads, two floats a tuft. */
@@ -21,9 +29,13 @@ export interface GrassBatch {
 }
 
 const MAX_TILT = 1;
+/** The lean of grass pressed flat, short of the ground so no blade lies in it. */
+export const FLAT_TILT = 1.5;
 /** How fast a touched tuft leans to its target and a released one comes back, per second. */
 const PRESS_RATE = 14;
 const RELEASE_RATE = 2.2;
+/** How fast a drop landing on grass presses it, per second: at once, as an impact does. */
+export const IMPACT_PRESS_RATE = 80;
 /** Contacts nearer the root than this lean the tuft its own way, since they have no direction of their own. */
 const CENTRED = 0.001;
 const BUCKET_METRES = 1;
@@ -68,13 +80,21 @@ export class GrassSpring {
    * batches whose tilts changed.
    */
   step(contacts: readonly GrassContact[], dt: number): Set<GrassBatch> {
-    const press = 1 - Math.exp(-PRESS_RATE * dt);
     const release = 1 - Math.exp(-RELEASE_RATE * dt);
     const visit = new Map([...this.recovering].map(([batch, indices]) => [batch, new Set(indices)]));
     for (const contact of contacts) {
       const reach = contact.radius + 0.5;
-      for (let bx = Math.floor((contact.x - reach) / BUCKET_METRES); bx <= Math.floor((contact.x + reach) / BUCKET_METRES); bx += 1) {
-        for (let bz = Math.floor((contact.z - reach) / BUCKET_METRES); bz <= Math.floor((contact.z + reach) / BUCKET_METRES); bz += 1) {
+      const end = contact.end ?? contact;
+      for (
+        let bx = Math.floor((Math.min(contact.x, end.x) - reach) / BUCKET_METRES);
+        bx <= Math.floor((Math.max(contact.x, end.x) + reach) / BUCKET_METRES);
+        bx += 1
+      ) {
+        for (
+          let bz = Math.floor((Math.min(contact.z, end.z) - reach) / BUCKET_METRES);
+          bz <= Math.floor((Math.max(contact.z, end.z) + reach) / BUCKET_METRES);
+          bz += 1
+        ) {
           for (const [batch, index] of this.buckets.get(`${bx},${bz}`) ?? []) tuftsOf(visit, batch).add(index);
         }
       }
@@ -87,7 +107,7 @@ export class GrassSpring {
         const target = targetTilt(batch, index, contacts);
         const x = tilts[index * 2]!;
         const z = tilts[index * 2 + 1]!;
-        const rate = Math.hypot(target.x, target.z) > Math.hypot(x, z) ? press : release;
+        const rate = Math.hypot(target.x, target.z) > Math.hypot(x, z) ? 1 - Math.exp(-target.pressRate * dt) : release;
         tilts[index * 2] = x + (target.x - x) * rate;
         tilts[index * 2 + 1] = z + (target.z - z) * rate;
         changed.add(batch);
@@ -112,20 +132,29 @@ function tuftsOf(tufts: Map<GrassBatch, Set<number>>, batch: GrassBatch): Set<nu
   return indices;
 }
 
-/** Where a tuft is pushed: away from every contact over it, deeper in pushing further, at most `MAX_TILT`. */
-function targetTilt(batch: GrassBatch, index: number, contacts: readonly GrassContact[]): { x: number; z: number } {
+/**
+ * Where a tuft is pushed: away from the nearest point of every contact over it, deeper in pushing
+ * further, at most the greatest `lean` among them, and how fast: the fastest `pressRate` among them.
+ */
+function targetTilt(batch: GrassBatch, index: number, contacts: readonly GrassContact[]): { x: number; z: number; pressRate: number } {
   const rootX = batch.roots[index * 2]!;
   const rootZ = batch.roots[index * 2 + 1]!;
   let x = 0;
   let z = 0;
+  let most = 0;
+  let pressRate = PRESS_RATE;
   for (const contact of contacts) {
-    const dx = rootX - contact.x;
-    const dz = rootZ - contact.z;
+    const nearest = nearestOn(contact, rootX, rootZ);
+    const dx = rootX - nearest.x;
+    const dz = rootZ - nearest.z;
     const reach = contact.radius + batch.halfWidths[index]!;
     if (Math.abs(dx) >= reach || Math.abs(dz) >= reach) continue;
     const distance = Math.hypot(dx, dz);
     if (distance >= reach) continue;
-    const depth = 1 - distance / reach;
+    const lean = contact.lean ?? MAX_TILT;
+    const depth = (1 - distance / reach) * lean;
+    most = Math.max(most, lean);
+    pressRate = Math.max(pressRate, contact.pressRate ?? PRESS_RATE);
     if (distance < CENTRED) {
       const angle = hash2(Math.round(rootX * 1000), Math.round(rootZ * 1000), 0) * Math.PI * 2;
       x += Math.cos(angle) * depth;
@@ -136,9 +165,19 @@ function targetTilt(batch: GrassBatch, index: number, contacts: readonly GrassCo
     }
   }
   const length = Math.hypot(x, z);
-  if (length === 0) return { x: 0, z: 0 };
-  const scale = (Math.min(1, length * 1.5) * MAX_TILT) / length;
-  return { x: x * scale, z: z * scale };
+  if (length === 0) return { x: 0, z: 0, pressRate };
+  const scale = Math.min(most, length * 1.5) / length;
+  return { x: x * scale, z: z * scale, pressRate };
+}
+
+/** The point of the contact nearest the root: its centre, or the nearest point of its capsule's segment. */
+function nearestOn(contact: GrassContact, rootX: number, rootZ: number): { x: number; z: number } {
+  if (contact.end === undefined) return contact;
+  const alongX = contact.end.x - contact.x;
+  const alongZ = contact.end.z - contact.z;
+  const lengthSquared = alongX * alongX + alongZ * alongZ;
+  const share = lengthSquared === 0 ? 0 : Math.min(1, Math.max(0, ((rootX - contact.x) * alongX + (rootZ - contact.z) * alongZ) / lengthSquared));
+  return { x: contact.x + alongX * share, z: contact.z + alongZ * share };
 }
 
 function bucketKey(x: number, z: number): string {

@@ -192,7 +192,7 @@ jobs:
               exit 1
             fi
           done
-          for file in panel-primary.png panel-button.png panel-button-hover.png divider.png icon-sword.png icon-raise.png icon-run.png icon-players.png icon-bag.png icon-settings.png icon-close.png icon-menu.png icon-challenge.png icon-brace.png icon-lunge.png icon-rally.png icon-deep-mend.png icon-renewal.png icon-calm.png icon-ward.png icon-weaken.png icon-bind.png icon-veil.png; do
+          for file in panel-primary.png panel-button.png panel-button-hover.png divider.png icon-sword.png icon-raise.png icon-run.png icon-players.png icon-character.png icon-settings.png icon-close.png icon-menu.png icon-challenge.png icon-brace.png icon-lunge.png icon-rally.png icon-deep-mend.png icon-renewal.png icon-calm.png icon-ward.png icon-weaken.png icon-bind.png icon-veil.png Items/dagger.png Items/cudgel.png Items/sword.png Items/mace.png Items/buckler.png Items/shield.png Items/moonstone.png Items/wand.png Items/cap.png Items/tunic.png Items/gloves.png Items/trousers.png Items/boots.png Items/amulet.png Items/ring.png; do
             if [[ ! -f "assets/UI/${file}" ]]; then
               echo "ERROR: asset pack is missing UI/${file}" >&2
               exit 1

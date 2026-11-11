@@ -5,10 +5,10 @@ import type { SomnioMessage } from '@somnio/protocol';
 import type { PlayerTransient } from '../src/world/spaceActor.ts';
 import {
   BESIDE_GHOST,
-  CUDGEL_IN_HAND,
+  CUDGEL,
   GHOST,
   GHOST_AT,
-  MOONSTONE_IN_HAND,
+  MOONSTONE,
   arena,
   attackGhost,
   characterOf,
@@ -17,6 +17,7 @@ import {
   engage,
   lucidity,
   payloads,
+  wearing,
   wounded,
 } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
@@ -40,7 +41,7 @@ type Arena = ReturnType<typeof arena>;
 
 /** A Healer at `ALICE_AT` with the Moonstone in hand, targeting a dreamer at `BOB_AT` of `bobHealth`. */
 function healerAndBob({ space }: Arena, bobHealth = 50) {
-  const alice = attachPlayer(space, ALICE_AT, 'alice', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+  const alice = attachPlayer(space, ALICE_AT, 'alice', { character: HEALER, inventory: wearing(MOONSTONE) });
   const bob = attachPlayer(space, BOB_AT, 'bob', { character: wounded(bobHealth) });
   space.handleTarget(bob.entityId, alice.entityId);
   return { alice, bob };
@@ -77,7 +78,7 @@ describe('Deep mend', () => {
 
   it('lands on the Healer themselves with no dreamer targeted', async () => {
     const field = arena({}, { ghost: false });
-    const alice = attachPlayer(field.space, ALICE_AT, 'alice', { character: { ...HEALER, ...wounded(50) }, inventory: [MOONSTONE_IN_HAND] });
+    const alice = attachPlayer(field.space, ALICE_AT, 'alice', { character: { ...HEALER, ...wounded(50) }, inventory: wearing(MOONSTONE) });
     field.space.handleUseAbility('deep-mend', alice.entityId);
     field.steps(CHANNEL_STEPS);
     expect(energyOf(field.space, alice.entityId).healthCurrent).toBe(85);
@@ -132,7 +133,7 @@ describe('Deep mend', () => {
     const at = (name: string): Point => (name === struck ? BESIDE_GHOST : { x: 5, z: 10 });
     const alice = attachPlayer(space, at('alice'), 'alice', {
       character: { ...HEALER, ...wounded(struck === 'alice' ? 5 : 100) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     });
     const bob = attachPlayer(space, at('bob'), 'bob', { character: wounded(5) });
     space.handleTarget(bob.entityId, alice.entityId);
@@ -223,7 +224,7 @@ describe('Deep mend', () => {
     const { space, steps } = field;
     const { alice, bob } = healerAndBob(field);
     const carol = attachPlayer(space, { x: 5, z: 5.7 }, 'carol', { character: wounded(0) });
-    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, carol.entityId, alice.entityId);
     engage(space, carol.entityId, dave.entityId);
     steps(2);
@@ -245,7 +246,7 @@ describe('Deep mend', () => {
     const { alice, bob } = healerAndBob(field);
     // Fallen within the touch of both Healers' Moonstones.
     const carol = attachPlayer(space, { x: 5, z: 5.7 }, 'carol', { character: wounded(0) });
-    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, carol.entityId, alice.entityId);
     engage(space, carol.entityId, dave.entityId);
     steps(2);
@@ -291,7 +292,7 @@ describe('Deep mend', () => {
     const { clock, space, steps } = field;
     const { alice, bob } = healerAndBob(field);
     const carol = attachPlayer(space, { x: 5, z: 5.7 }, 'carol', { character: wounded(0) });
-    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, carol.entityId, alice.entityId);
     engage(space, carol.entityId, dave.entityId);
     steps(2);
@@ -323,7 +324,7 @@ describe('Deep mend', () => {
     const { space, steps } = field;
     const { alice, bob } = healerAndBob(field);
     const carol = attachPlayer(space, { x: 5, z: 5.7 }, 'carol', { character: wounded(0) });
-    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const dave = attachPlayer(space, { x: 5.7, z: 5.7 }, 'dave', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, carol.entityId, alice.entityId);
     engage(space, carol.entityId, dave.entityId);
     steps(2);
@@ -398,7 +399,7 @@ describe('Renewal', () => {
 
   it('ends when its holder falls, and heals them no more where they lie', async () => {
     const { space, steps } = arena();
-    const alice = attachPlayer(space, { x: 5, z: 10 }, 'alice', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const alice = attachPlayer(space, { x: 5, z: 10 }, 'alice', { character: HEALER, inventory: wearing(MOONSTONE) });
     const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: wounded(5) });
     space.handleTarget(bob.entityId, alice.entityId);
     space.handleUseAbility('renewal', alice.entityId);
@@ -415,7 +416,7 @@ describe('a heal over time through a door', () => {
     const field = arena({}, { ghost: false });
     const alice = attachPlayer(field.space, ALICE_AT, 'alice', {
       character: { lucidity: lucidity('healer', { touch: 2, renewal: rank }) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     });
     const bob = attachPlayer(field.space, BOB_AT, 'bob', { character: wounded(40) });
     const carol = attachPlayer(field.space, { x: 9, z: 9 }, 'carol', { character: wounded(40) });
@@ -428,7 +429,7 @@ describe('a heal over time through a door', () => {
   /** The dreamer, wounded to 40, arriving in a fresh space with what they carried, beside another wounded alike. */
   function arrive(bob: ReturnType<typeof attachPlayer>, carried: PlayerTransient) {
     const field = arena({}, { ghost: false });
-    field.space.attach({ ...bob.character, energy: energy({ healthCurrent: 40 }) }, [], bob.outbox, 0, 'en', carried);
+    field.space.attach({ ...bob.character, energy: energy({ healthCurrent: 40 }) }, wearing(), bob.outbox, 0, 'en', carried);
     const carol = attachPlayer(field.space, { x: 9, z: 9 }, 'carol', { character: wounded(40) });
     return { ...field, given: () => healthGap(field.space, bob.entityId, carol.entityId) };
   }
@@ -477,7 +478,7 @@ describe('a heal over time through a door', () => {
 describe('Radiance', () => {
   it('heals every standing dreamer within five metres of the Healer, the Healer included, and none further or fallen', () => {
     const { space } = arena({}, { ghost: false });
-    const alice = attachPlayer(space, ALICE_AT, 'alice', { character: { ...HEALER, ...wounded(50) }, inventory: [MOONSTONE_IN_HAND] });
+    const alice = attachPlayer(space, ALICE_AT, 'alice', { character: { ...HEALER, ...wounded(50) }, inventory: wearing(MOONSTONE) });
     const near = attachPlayer(space, { x: 9.9, z: 5 }, 'near', { character: wounded(50) });
     const far = attachPlayer(space, { x: 10.1, z: 5 }, 'far', { character: wounded(50) });
     const fallen = attachPlayer(space, { x: 6, z: 5 }, 'fallen', { character: wounded(0) });
@@ -499,9 +500,9 @@ describe("a Healer's threat", () => {
     // One landed swing raises 11 threat; Deep mend's 35 raises 17.5, and Calm leaves 8.75 of it.
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { lucidity: lucidity('fighter', { strike: 1 }), ...wounded(60) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
-    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     attackGhost(space, fighter.entityId);
     steps(1);
     space.handleEngage(false, fighter.entityId);
@@ -518,9 +519,9 @@ describe("a Healer's threat", () => {
     const { space, dice, steps } = withGround();
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { lucidity: lucidity('fighter', { strike: 1 }), ...wounded(60) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
-    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     attackGhost(space, fighter.entityId);
     steps(1);
     space.handleEngage(false, fighter.entityId);

@@ -17,7 +17,7 @@ import type { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { seededRandom } from '../src/world/random.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
-import { CUDGEL_IN_HAND, GHOST, RESPAWN_MS, energy, engage, face, payloads } from './support/combat.ts';
+import { CUDGEL, GHOST, RESPAWN_MS, energy, engage, face, payloads, wearing } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, serverSays } from './support/frames.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
@@ -566,7 +566,7 @@ describe('monster aggro and chase', () => {
     const { space, steps } = withMonster({}, 0.5);
     // Just outside the ground and in reach, so it strikes her and does not chase her.
     const inReach = { x: 10.7, z: 10 };
-    const alice = attachPlayer(space, inReach, 'alice', { inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, inReach, 'alice', { inventory: wearing(CUDGEL) });
     // Two cudgel hits take it from 60 to 44, and more than a second of rest takes it past 45.
     const woundTwice = async () => {
       const watcher = attachPlayer(space, AFAR, 'watcher');
@@ -591,7 +591,7 @@ describe('monster aggro and chase', () => {
 
   it('heals nothing while it walks home', async () => {
     const { space, steps } = withMonster();
-    const alice = attachPlayer(space, { x: 13.7, z: 10 }, 'alice', { inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, { x: 13.7, z: 10 }, 'alice', { inventory: wearing(CUDGEL) });
     steps(30);
     attackFor(space, alice.entityId, await monsterNow(space), steps);
     space.handleMove({ x: 15, z: 10, facing: 0, gait: 'jog' }, alice.entityId);

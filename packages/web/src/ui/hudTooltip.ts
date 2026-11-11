@@ -1,6 +1,8 @@
-import type { AbilityPool } from '@somnio/core';
+import type { AbilityPool, BaseItemId } from '@somnio/core';
+import type { Rarity } from '@somnio/protocol';
 import { TAP_SLOP_PX } from '@/client';
 import { element, setHidden } from './dom';
+import { itemIcon } from './itemIcons';
 
 /**
  * The HUD's one tooltip, in place of the browser's slow `title`. A mouse or a pen resting on a part
@@ -17,6 +19,10 @@ interface TipFact {
 
 export interface Tip {
   title: string;
+  /** An item's rarity, whose colour the title takes. */
+  rarity?: Rarity;
+  /** An item's base, whose icon leads the tip, edged in the rarity's colour. */
+  icon?: BaseItemId;
   /** Beside the title: the key that works the part, or the seconds an effect has left. */
   aside?: string;
   facts?: readonly TipFact[];
@@ -143,7 +149,7 @@ export class HUDTooltip {
     this.shown = shown;
     this.root.replaceChildren(...tipNodes(tip));
     setHidden(this.root, false);
-    this.place(anchor);
+    placeBeside(this.root, anchor, this.container);
   }
 
   hide(): void {
@@ -172,30 +178,49 @@ export class HUDTooltip {
     }
     return undefined;
   }
-
-  /** Centred over its part, or under it where there is no room above, and inside the window. */
-  private place(anchor: HTMLElement): void {
-    const bounds = this.container.getBoundingClientRect();
-    const part = anchor.getBoundingClientRect();
-    const width = this.root.offsetWidth;
-    const height = this.root.offsetHeight;
-    const centred = part.left + part.width / 2 - width / 2 - bounds.left;
-    const left = Math.max(TIP_GAP_PX, Math.min(centred, bounds.width - width - TIP_GAP_PX));
-    const above = part.top - bounds.top - TIP_GAP_PX - height;
-    const top = above >= TIP_GAP_PX ? above : part.bottom - bounds.top + TIP_GAP_PX;
-    this.root.style.left = `${Math.round(left)}px`;
-    this.root.style.top = `${Math.round(top)}px`;
-  }
 }
 
-function tipNodes(tip: Tip): HTMLElement[] {
+/** Places `node`, shown in `container`, centred over `anchor`, or under it where there is no room above, and inside the container. */
+export function placeBeside(node: HTMLElement, anchor: HTMLElement, container: HTMLElement): void {
+  const bounds = container.getBoundingClientRect();
+  const part = anchor.getBoundingClientRect();
+  const width = node.offsetWidth;
+  const height = node.offsetHeight;
+  const centred = part.left + part.width / 2 - width / 2 - bounds.left;
+  const left = Math.max(TIP_GAP_PX, Math.min(centred, bounds.width - width - TIP_GAP_PX));
+  const above = part.top - bounds.top - TIP_GAP_PX - height;
+  const top = above >= TIP_GAP_PX ? above : part.bottom - bounds.top + TIP_GAP_PX;
+  node.style.left = `${Math.round(left)}px`;
+  node.style.top = `${Math.round(top)}px`;
+}
+
+/** What a tip says, as the elements that show it. */
+export function tipNodes(tip: Tip): HTMLElement[] {
   const aside = tip.aside === undefined ? [] : [element('span', { className: 'hud-tip__aside', text: tip.aside })];
   const facts = (tip.facts ?? []).map(({ text, pool }) =>
     element('span', { className: pool === undefined ? 'hud-tip__fact' : `hud-tip__fact hud-tip__fact--${pool}`, text }),
   );
-  return [
-    element('div', { className: 'hud-tip__head', children: [element('span', { className: 'hud-tip__title', text: tip.title }), ...aside] }),
+  const titles = [
+    element('div', {
+      className: 'hud-tip__head',
+      children: [
+        element('span', { className: tip.rarity === undefined ? 'hud-tip__title' : `hud-tip__title hud-rarity--${tip.rarity}`, text: tip.title }),
+        ...aside,
+      ],
+    }),
     ...(facts.length === 0 ? [] : [element('div', { className: 'hud-tip__facts', children: facts })]),
+  ];
+  const top =
+    tip.icon === undefined
+      ? titles
+      : [
+          element('div', {
+            className: tip.rarity === undefined ? 'hud-tip__top' : `hud-tip__top hud-rarity--${tip.rarity}`,
+            children: [itemIcon(tip.icon), element('div', { className: 'hud-tip__titles', children: titles })],
+          }),
+        ];
+  return [
+    ...top,
     ...(tip.lines ?? []).map((line) => element('p', { className: 'hud-tip__line', text: line })),
     ...(tip.warning === undefined ? [] : [element('p', { className: 'hud-tip__warning', text: tip.warning })]),
   ];

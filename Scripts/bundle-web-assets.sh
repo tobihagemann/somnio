@@ -58,9 +58,10 @@ BRANDING_FILES=(
   "somnio-wordmark.png"
 )
 
-# Every file the client loads from UI/: the chrome's 9-slice borders and divider (`chrome.css`) and
-# the HUD's icons (`hudIcons.ts`). Neither has a fallback, and a missing icon is a CSS mask with
-# nothing to show, so the control draws blank. `packages/web/test/ui-pack.test.ts` holds this list to
+# Every file the client loads from UI/: the chrome's 9-slice borders and divider (`chrome.css`), the
+# HUD's icons (`hudIcons.ts`), and the items' pictures in UI/Items/ (`itemIcons.ts`). None has a
+# fallback: a missing icon is a CSS mask with nothing to show, and a missing picture an empty image,
+# so the control draws blank. `packages/web/test/ui-pack.test.ts` holds this list to
 # what the client references and to CI's pack check.
 UI_FILES=(
   "panel-primary.png"
@@ -71,7 +72,7 @@ UI_FILES=(
   "icon-raise.png"
   "icon-run.png"
   "icon-players.png"
-  "icon-bag.png"
+  "icon-character.png"
   "icon-settings.png"
   "icon-close.png"
   "icon-menu.png"
@@ -86,6 +87,21 @@ UI_FILES=(
   "icon-weaken.png"
   "icon-bind.png"
   "icon-veil.png"
+  "Items/dagger.png"
+  "Items/cudgel.png"
+  "Items/sword.png"
+  "Items/mace.png"
+  "Items/buckler.png"
+  "Items/shield.png"
+  "Items/moonstone.png"
+  "Items/wand.png"
+  "Items/cap.png"
+  "Items/tunic.png"
+  "Items/gloves.png"
+  "Items/trousers.png"
+  "Items/boots.png"
+  "Items/amulet.png"
+  "Items/ring.png"
 )
 
 for entry in "${SUBTREES[@]}"; do

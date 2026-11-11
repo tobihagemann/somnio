@@ -1,40 +1,43 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NO_LUCIDITY, fullPools, headingFromCardinal } from '@somnio/core';
-import type { Character, InventoryRow, Lucidity } from '@somnio/core';
+import { NO_LUCIDITY, NO_STATS, fullPools, headingFromCardinal, plainInstance } from '@somnio/core';
+import type { Character, Inventory, Lucidity } from '@somnio/core';
 import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
 import { CharacterNameTakenError, PostgresCharacterRepository, hasBeenPlayed } from '../../src/repositories/characters.ts';
 import { RepositoryDecodingError } from '../../src/repositories/errors.ts';
-import { PostgresInventoryRepository } from '../../src/repositories/inventory.ts';
+import { bagOf } from '../../../core/test/support/items.ts';
+import { PostgresItemRepository } from '../../src/repositories/items.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
+
+const NOTHING: Inventory = { coins: 0, equipped: {}, bag: [] };
 
 describe('character repository', () => {
   let harness: DatabaseHarness;
   let accounts: PostgresAccountRepository;
   let characters: PostgresCharacterRepository;
-  let inventory: PostgresInventoryRepository;
+  let items: PostgresItemRepository;
 
   beforeAll(async () => {
     harness = await startDatabase();
     accounts = new PostgresAccountRepository(harness.db);
     characters = new PostgresCharacterRepository(harness.db);
-    inventory = new PostgresInventoryRepository(harness.db);
+    items = new PostgresItemRepository(harness.db);
   });
 
   afterAll(async () => {
     await harness.stop();
   });
 
-  it('round-trips create and findByName with every energy field, the starter rows, and never played', async () => {
+  it('round-trips create and findByName with every energy field, the starting coins and items, and never played', async () => {
     const account = await accounts.create('alice@example.com', 'hash');
-    const purse: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
-    const created = await characters.create(account.id, 'Alice the Bold', 'lumina', [purse]);
+    const kit: Inventory = { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) };
+    const created = await characters.create(account.id, 'Alice the Bold', 'lumina', kit);
     const fetched = await characters.findByName('Alice the Bold');
     expect(fetched?.id).toBe(created.id);
     expect(fetched?.lastSeen).toEqual(created.lastSeen);
     expect(hasBeenPlayed(fetched!)).toBe(false);
-    expect(await inventory.loadAll(created.id)).toEqual([purse]);
+    expect(await items.load(created.id)).toEqual(kit);
     expect(fetched?.people).toBe('lumina');
     expect(fetched?.space).toBe('EdariaLibrary');
     expect(fetched?.position).toEqual({ x: 0, z: 0 });
@@ -50,18 +53,21 @@ describe('character repository', () => {
     expect(fetched?.lucidity).toEqual(NO_LUCIDITY);
   });
 
-  it('surfaces a taken name and a confusable one as a taken name, leaving no starter rows behind', async () => {
+  it('surfaces a taken name and a confusable one as a taken name, leaving no starting items behind', async () => {
     const owner = await accounts.create('owner-a@example.com', 'h');
     const other = await accounts.create('owner-b@example.com', 'h');
-    await characters.create(owner.id, 'ADMIN', 'vigils', []);
-    const purse: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
-    await expect(characters.create(other.id, 'admin', 'vigils', [purse])).rejects.toThrow(CharacterNameTakenError);
+    await characters.create(owner.id, 'ADMIN', 'vigils', NOTHING);
+    await expect(characters.create(other.id, 'admin', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) })).rejects.toThrow(
+      CharacterNameTakenError,
+    );
     // All-Cyrillic "АDMIN" slips past `name_normalized`; the confusable skeleton catches it.
-    await expect(characters.create(other.id, 'АDMIN', 'vigils', [purse])).rejects.toThrow(CharacterNameTakenError);
+    await expect(characters.create(other.id, 'АDMIN', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) })).rejects.toThrow(
+      CharacterNameTakenError,
+    );
     expect(await characters.findByAccount(other.id)).toEqual([]);
     const rows = await sql<{
       count: string;
-    }>`SELECT COUNT(*) AS count FROM inventory_rows r JOIN characters c ON c.id = r.character_id WHERE c.account_id = ${other.id}`.execute(harness.db);
+    }>`SELECT COUNT(*) AS count FROM items i JOIN characters c ON c.id = i.character_id WHERE c.account_id = ${other.id}`.execute(harness.db);
     expect(rows.rows[0]?.count).toBe('0');
   });
 
@@ -70,7 +76,7 @@ describe('character repository', () => {
     // must agree on the normalized base. Full-width "Ｍｅｒｃｕｓ" exercises compatibility folding.
     const owner = await accounts.create('nfkc@example.com', 'h');
     const name = 'Ｍｅｒｃｕｓ';
-    await characters.create(owner.id, name, 'vigils', []);
+    await characters.create(owner.id, name, 'vigils', NOTHING);
     const stored = await sql<{
       name_normalized: string;
     }>`SELECT name_normalized FROM characters WHERE name = ${name}`.execute(harness.db);
@@ -86,10 +92,10 @@ describe('character repository', () => {
     await expect(
       sql`INSERT INTO characters (
         id, account_id, name, people, space, position_x, position_z, facing,
-        health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton
+        health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton, coins
       ) VALUES (
         ${crypto.randomUUID()}, ${account.id}, ${`over-${label}`}, 'vigils', 'EdariaLibrary', 0, 0, 0,
-        ${sql.raw(energy)}, NOW(), ${`over-${label}`}
+        ${sql.raw(energy)}, NOW(), ${`over-${label}`}, 0
       )`.execute(harness.db),
     ).rejects.toThrow();
   });
@@ -102,7 +108,7 @@ describe('character repository', () => {
       space: 'EdariaLibrary',
       position: { x: 0, z: 0 },
       facing: 0,
-      energy: fullPools(NO_LUCIDITY),
+      energy: fullPools(NO_STATS),
       lucidity: NO_LUCIDITY,
       lastSeen: new Date(),
     };
@@ -111,7 +117,7 @@ describe('character repository', () => {
 
   it('skips a snapshot whose last_seen is older than the persisted row', async () => {
     const account = await accounts.create('stale-tester@example.com', 'stub');
-    const original = await characters.create(account.id, 'Stale', 'umbrae', []);
+    const original = await characters.create(account.id, 'Stale', 'umbrae', NOTHING);
 
     const fresh = {
       ...original,
@@ -126,28 +132,28 @@ describe('character repository', () => {
     expect((await characters.findByName('Stale'))?.position).toEqual({ x: 5, z: 5 });
   });
 
-  it('persists a checkpoint atomically and skips a stale one without touching inventory', async () => {
+  it('persists a checkpoint atomically and skips a stale one without touching the coins or the items', async () => {
     const account = await accounts.create('checkpoint-tester@example.com', 'stub');
-    const original = await characters.create(account.id, 'Checkpoint', 'vigils', []);
-    const purse: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
+    const original = await characters.create(account.id, 'Checkpoint', 'vigils', NOTHING);
+    const carried: Inventory = { coins: 100, equipped: { mainHand: plainInstance('cudgel') }, bag: [] };
 
     const fresh = {
       ...original,
       position: { x: 8, z: 8 },
       lastSeen: new Date(original.lastSeen.getTime() + 60_000),
     };
-    expect(await characters.persistCheckpoint(fresh, [purse])).toBe(true);
-    expect(await inventory.loadAll(original.id)).toEqual([purse]);
+    expect(await characters.persistCheckpoint(fresh, carried)).toBe(true);
+    expect(await items.load(original.id)).toEqual(carried);
 
     const stale = { ...original, position: { x: 1, z: 1 }, lastSeen: original.lastSeen };
-    expect(await characters.persistCheckpoint(stale, [])).toBe(false);
-    expect(await inventory.loadAll(original.id)).toEqual([purse]);
+    expect(await characters.persistCheckpoint(stale, NOTHING)).toBe(false);
+    expect(await items.load(original.id)).toEqual(carried);
     expect((await characters.findByName('Checkpoint'))?.position).toEqual({ x: 8, z: 8 });
   });
 
   it('round-trips role, ranks with practice, study, and task through a checkpoint, by name and by account', async () => {
     const account = await accounts.create('lucid@example.com', 'stub');
-    const original = await characters.create(account.id, 'Lucid', 'lumina', []);
+    const original = await characters.create(account.id, 'Lucid', 'lumina', NOTHING);
     const lucidity: Lucidity = {
       role: 'healer',
       ranks: [
@@ -158,7 +164,7 @@ describe('character repository', () => {
       task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
     };
     const grown = { ...original, lucidity, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
-    expect(await characters.persistCheckpoint(grown, [])).toBe(true);
+    expect(await characters.persistCheckpoint(grown, NOTHING)).toBe(true);
     expect(await characters.findByName('Lucid')).toEqual(grown);
     expect(await characters.findByAccount(account.id)).toEqual([grown]);
 
@@ -173,17 +179,17 @@ describe('character repository', () => {
       },
       lastSeen: new Date(grown.lastSeen.getTime() + 60_000),
     };
-    expect(await characters.persistCheckpoint(later, [])).toBe(true);
+    expect(await characters.persistCheckpoint(later, NOTHING)).toBe(true);
     expect(await characters.findByName('Lucid')).toEqual(later);
   });
 
   it('leaves the rank rows alone when a checkpoint is skipped as stale', async () => {
     const account = await accounts.create('stale-ranks@example.com', 'stub');
-    const original = await characters.create(account.id, 'StaleRanks', 'vigils', []);
+    const original = await characters.create(account.id, 'StaleRanks', 'vigils', NOTHING);
     const ranks = [{ teachingId: 'strike' as const, rank: 1, practice: 3 }];
     const fresh = { ...original, lucidity: { ...NO_LUCIDITY, role: 'fighter' as const, ranks }, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
-    expect(await characters.persistCheckpoint(fresh, [])).toBe(true);
-    expect(await characters.persistCheckpoint({ ...original, lastSeen: original.lastSeen }, [])).toBe(false);
+    expect(await characters.persistCheckpoint(fresh, NOTHING)).toBe(true);
+    expect(await characters.persistCheckpoint({ ...original, lastSeen: original.lastSeen }, NOTHING)).toBe(false);
     expect((await characters.findByName('StaleRanks'))?.lucidity.ranks).toEqual(ranks);
   });
 
@@ -196,7 +202,7 @@ describe('character repository', () => {
     ],
   ])('throws on %s it does not know', async (_label, corrupt) => {
     const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}@example.com`, 'h');
-    await characters.create(account.id, 'Odd', 'vigils', []);
+    await characters.create(account.id, 'Odd', 'vigils', NOTHING);
     await corrupt.execute(harness.db);
     await expect(characters.findByName('Odd')).rejects.toThrow(RepositoryDecodingError);
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
@@ -207,7 +213,7 @@ describe('character repository', () => {
     ["another role's gate", sql`UPDATE characters SET task_role = 'fighter', task_teaching = 'drawing-back' WHERE name = 'Odd'`],
   ])('drops a task naming %s', async (_label, corrupt) => {
     const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}@example.com`, 'h');
-    await characters.create(account.id, 'Odd', 'vigils', []);
+    await characters.create(account.id, 'Odd', 'vigils', NOTHING);
     await corrupt.execute(harness.db);
     expect((await characters.findByName('Odd'))?.lucidity.task).toBeUndefined();
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
@@ -215,7 +221,7 @@ describe('character repository', () => {
 
   it('admits the three roles and refuses any other role and a pool below zero through the CHECK constraints', async () => {
     const account = await accounts.create('checks@example.com', 'h');
-    await characters.create(account.id, 'Checked', 'vigils', []);
+    await characters.create(account.id, 'Checked', 'vigils', NOTHING);
     for (const role of ['fighter', 'healer', 'mystic']) await sql`UPDATE characters SET role = ${role} WHERE name = 'Checked'`.execute(harness.db);
     await expect(sql`UPDATE characters SET role = 'heiler' WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
     await expect(sql`UPDATE characters SET health_current = -1 WHERE name = 'Checked'`.execute(harness.db)).rejects.toThrow();
@@ -234,20 +240,20 @@ describe('character repository', () => {
     const account = await accounts.create('weird@example.com', 'h');
     await sql`INSERT INTO characters (
       id, account_id, name, people, space, position_x, position_z, facing,
-      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton
+      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton, coins
     ) VALUES (
       ${crypto.randomUUID()}, ${account.id}, 'WeirdPeople', 'elves', 'EdariaLibrary', 0, 0, 0,
-      100, 100, 100, 100, 100, 100, NOW(), 'weirdpeople'
+      100, 100, 100, 100, 100, 100, NOW(), 'weirdpeople', 0
     )`.execute(harness.db);
     await expect(characters.findByName('WeirdPeople')).rejects.toThrow(RepositoryDecodingError);
   });
 
   it('lists every character on the account, the one played last first and those never played last by name', async () => {
     const account = await accounts.create('lister@example.com', 'hash');
-    await characters.create(account.id, 'Delta', 'vigils', []);
-    await characters.create(account.id, 'Beta', 'vigils', []);
-    const earlier = await characters.create(account.id, 'Gamma', 'lumina', []);
-    const later = await characters.create(account.id, 'Alpha', 'lumina', []);
+    await characters.create(account.id, 'Delta', 'vigils', NOTHING);
+    await characters.create(account.id, 'Beta', 'vigils', NOTHING);
+    const earlier = await characters.create(account.id, 'Gamma', 'lumina', NOTHING);
+    const later = await characters.create(account.id, 'Alpha', 'lumina', NOTHING);
     expect(await characters.snapshot({ ...earlier, lastSeen: new Date(Date.now() - 60_000) })).toBe(true);
     expect(await characters.snapshot({ ...later, lastSeen: new Date() })).toBe(true);
     expect((await characters.findByAccount(account.id)).map((character) => character.name)).toEqual(['Alpha', 'Gamma', 'Beta', 'Delta']);
@@ -256,23 +262,24 @@ describe('character repository', () => {
   it("deletes one of the account's characters with its rows, and not another account's", async () => {
     const owner = await accounts.create('deleter@example.com', 'h');
     const stranger = await accounts.create('stranger@example.com', 'h');
-    const purse: InventoryRow = { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined };
-    const doomed = await characters.create(owner.id, 'Doomed', 'vigils', [purse]);
-    const kept = await characters.create(owner.id, 'Kept', 'vigils', [purse]);
+    const doomed = await characters.create(owner.id, 'Doomed', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) });
+    const keptKit: Inventory = { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) };
+    const kept = await characters.create(owner.id, 'Kept', 'vigils', keptKit);
     const grown = {
       ...doomed,
       lucidity: { ...NO_LUCIDITY, role: 'fighter' as const, ranks: [{ teachingId: 'strike' as const, rank: 1, practice: 0 }] },
       lastSeen: new Date(),
     };
-    expect(await characters.persistCheckpoint(grown, [purse])).toBe(true);
+    expect(await characters.persistCheckpoint(grown, { coins: 100, equipped: {}, bag: bagOf([plainInstance('dagger')]) })).toBe(true);
 
     expect(await characters.delete(stranger.id, doomed.id)).toBe(false);
     expect(await characters.delete(owner.id, doomed.id)).toBe(true);
     expect(await characters.delete(owner.id, doomed.id)).toBe(false);
 
     expect((await characters.findByAccount(owner.id)).map((character) => character.id)).toEqual([kept.id]);
-    expect(await inventory.loadAll(doomed.id)).toEqual([]);
-    expect(await inventory.loadAll(kept.id)).toEqual([purse]);
+    const doomedItems = await sql<{ count: string }>`SELECT COUNT(*) AS count FROM items WHERE character_id = ${doomed.id}`.execute(harness.db);
+    expect(doomedItems.rows[0]?.count).toBe('0');
+    expect(await items.load(kept.id)).toEqual(keptKit);
     const ranks = await sql<{ count: string }>`SELECT COUNT(*) AS count FROM character_ranks WHERE character_id = ${doomed.id}`.execute(harness.db);
     expect(ranks.rows[0]?.count).toBe('0');
   });

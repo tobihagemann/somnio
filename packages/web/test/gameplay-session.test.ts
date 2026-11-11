@@ -8,12 +8,14 @@ import {
   compassPoint,
   noopRenderSurface,
 } from '@/client';
-import type { ClientEntity, SpeechBubbleRequest } from '@/client';
+import type { ClientEntity, SpeechBubbleRequest, TargetMark } from '@/client';
 import { GameplayTransport } from '@/transport';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { NO_LUCIDITY, fullPools, headingFromVector } from '@somnio/core';
+import { NO_STATS, PICKUP_REACH, fullPools, headingFromVector } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
 
 /**
@@ -24,9 +26,9 @@ import type { RaisingState, SomnioMessage } from '@somnio/protocol';
  * are pinned here.
  */
 
-const FULL = fullPools(NO_LUCIDITY);
-const MOONSTONE_IN_HAND = { slot: 2, itemId: 'moonstone', quantity: 1, equippedHand: 'right' as const };
-const MOONSTONE_PUT_AWAY = { slot: 2, itemId: 'moonstone', quantity: 1 };
+const FULL = fullPools(NO_STATS);
+const MOONSTONE_IN_HAND = inventoryFrame(carrying({ worn: [item('moonstone')] }));
+const MOONSTONE_PUT_AWAY = inventoryFrame(carrying({ bag: [item('moonstone')] }));
 /** A Fighter who has learned Brace and Lunge. */
 const FIGHTER_KIT: SomnioMessage = {
   tag: 'lucidity',
@@ -50,9 +52,9 @@ interface Rig {
   gaits: { id: string; gait: string }[];
   /** Every `showSelection` call's entity. */
   selections: (string | undefined)[];
-  /** Every `showSelection` call's `locked`, in step with `selections`. */
-  selectionLocks: boolean[];
-  /** Every `showBlow`, `showAbility`, `showEffects`, `showRaising`, `showMend`, `showSensed`, and `updateCondition` call, by name. */
+  /** Every `showSelection` call's mark, in step with `selections`. */
+  selectionMarks: TargetMark[];
+  /** Every `showBlow`, `showAbility`, `showEffects`, `showRaising`, `showMend`, `showSensed`, `showLoot`, `removeLoot`, and `updateCondition` call, by name. */
   shown: unknown[][];
   /** Every `showSpeechBubble` call. */
   bubbles: SpeechBubbleRequest[];
@@ -70,7 +72,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
   const positions: Rig['positions'] = [];
   const gaits: Rig['gaits'] = [];
   const selections: Rig['selections'] = [];
-  const selectionLocks: Rig['selectionLocks'] = [];
+  const selectionMarks: Rig['selectionMarks'] = [];
   const shown: Rig['shown'] = [];
   const bubbles: Rig['bubbles'] = [];
   const pressMarks: Rig['pressMarks'] = [];
@@ -83,14 +85,16 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
       ...noopRenderSurface,
       updatePosition: (id, position) => positions.push({ id, x: position.x, z: position.z }),
       updateGait: (id, gait) => gaits.push({ id, gait }),
-      showSelection: (id, locked) => {
+      showSelection: (id, mark) => {
         selections.push(id);
-        selectionLocks.push(locked);
+        selectionMarks.push(mark);
       },
       showBlow: (...blow) => shown.push(['showBlow', ...blow]),
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
       showMend: (...mend) => shown.push(['showMend', ...mend]),
       showSensed: (...sensed) => shown.push(['showSensed', ...sensed]),
+      showLoot: (...loot) => shown.push(['showLoot', ...loot]),
+      removeLoot: (...loot) => shown.push(['removeLoot', ...loot]),
       showAbility: (...ability) => shown.push(['showAbility', ...ability]),
       showEffects: (...effects) => shown.push(['showEffects', ...effects]),
       updateCondition: (...condition) => shown.push(['updateCondition', ...condition]),
@@ -110,7 +114,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
     positions,
     gaits,
     selections,
-    selectionLocks,
+    selectionMarks,
     shown,
     bubbles,
     pressMarks,
@@ -370,7 +374,6 @@ describe('walking', () => {
   });
 
   it.each<[string, (rig: Rig) => void]>([
-    ['a press on their own body', (rig) => rig.session.pressSelf()],
     ['a fall', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ['a correction', (rig) => rig.controller.dispatch({ tag: 'correction', payload: { x: 10, z: 10 } })],
     ['an overlay closing the gate', (rig) => (rig.controller.presentedOverlay = { kind: 'gameMenu' })],
@@ -409,19 +412,6 @@ describe('walking', () => {
     rig.session.pressEntity('monster:1');
     rig.session.release({ x: 10, z: 6 });
     expect(rig.pressMarks).toEqual([['show', { x: 14, z: 10 }], ['lift']]);
-  });
-
-  it('stops where the player stands on a press on their own body', () => {
-    const { rig, ticks, at } = standing();
-    tapGround(rig, { x: 14, z: 10 });
-    ticks(0, 300);
-    const stopped = at();
-
-    rig.session.pressSelf();
-    ticks(350, 1000);
-
-    expect(rig.session.predictor.walk).toBeUndefined();
-    expect(at()).toEqual(stopped);
   });
 
   it.each<[string, (rig: Rig) => void]>([
@@ -870,40 +860,242 @@ describe('outbound chat', () => {
   });
 });
 
-describe('inventory activation', () => {
-  it('reports the purse balance to chat instead of equipping it', () => {
+describe('the Bag', () => {
+  it('reports the purse balance to chat', () => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
+    rig.controller.dispatch(inventoryFrame(carrying({ coins: 7 })));
 
-    rig.session.activateInventoryRow({ slot: 0, itemId: 'purse', quantity: 7 });
+    rig.session.tellPurse();
 
     expect(rig.sent).toEqual([]);
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'purseBalance', coins: 7 });
   });
 
-  /** Unequipped asks for the right hand; already-equipped leaves the hand out to clear it. */
-  it.each(
-    ['dagger', 'cudgel', 'sword', 'mace'].flatMap((itemId) => [
-      [itemId, {}, { slot: 4, hand: 'right' }],
-      [itemId, { equippedHand: 'right' }, { slot: 4 }],
-    ]) as [string, { equippedHand?: 'right' }, { slot: number; hand?: 'right' }][],
-  )('toggles the %s from %j with %j', (itemId, equipped, expected) => {
+  it('wears an item by its id, in the slot asked for when one is, and puts a worn one away by its slot', () => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
 
-    rig.session.activateInventoryRow({ slot: 4, itemId, quantity: 1, ...equipped });
+    rig.session.equip('moonstone-1');
+    rig.session.equip('ring-1', 'ring2');
+    rig.session.unequip('head');
 
-    expect(rig.sent).toEqual([{ tag: 'equipToggle', payload: expected }]);
+    expect(rig.sent).toEqual([
+      { tag: 'equip', payload: { itemId: 'moonstone-1' } },
+      { tag: 'equip', payload: { itemId: 'ring-1', slot: 'ring2' } },
+      { tag: 'unequip', payload: { slot: 'head' } },
+    ]);
   });
 
-  it('does nothing for an item it does not know', () => {
+  it('moves an item to a place in the bag, and asks nothing the rule refuses', () => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
+    const full = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+    rig.controller.dispatch(inventoryFrame(carrying({ worn: [item('cudgel')], bag: full })));
 
-    rig.session.activateInventoryRow({ slot: 1, itemId: 'lantern', quantity: 1 });
+    rig.session.moveItem('cap-0', 9);
+    rig.session.moveItem('cudgel-1', 3);
+    rig.session.moveItem('nothing', 3);
+
+    expect(rig.sent).toEqual([{ tag: 'moveItem', payload: { itemId: 'cap-0', place: 9 } }]);
+  });
+
+  it('puts nothing away into a full bag', () => {
+    const rig = makeRig();
+    rig.controller.connectionState = 'attached';
+    const bag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+    rig.controller.dispatch(inventoryFrame(carrying({ worn: [item('cudgel')], bag })));
+
+    rig.session.unequip('mainHand');
 
     expect(rig.sent).toEqual([]);
-    expect(rig.controller.chatHistory).toEqual([]);
+  });
+
+  it('drops an item from the bag by its id, and nothing while the player lies fallen', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.connectionState = 'attached';
+    rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap', 'cap-1'), item('cap', 'cap-2')] })));
+
+    rig.session.dropItem('cap-1');
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    rig.session.dropItem('cap-2');
+
+    expect(rig.sent.filter((message) => message.tag === 'dropItem')).toEqual([{ tag: 'dropItem', payload: { itemId: 'cap-1', heading: 0 } }]);
+  });
+
+  it.each<[string, boolean, number]>([
+    ['toward the cursor on a fine pointer', false, 180],
+    ['the way the player faces on a coarse pointer', true, 90],
+  ])('throws toward where a drag lets go, else %s, facing the throw as it reports', (_label, coarsePointer, second) => {
+    const rig = makeRig({ coarsePointer });
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.connectionState = 'attached';
+    rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap', 'cap-1'), item('cap', 'cap-2')] })));
+
+    rig.session.dropItem('cap-1', { x: 12, z: 10 });
+    rig.session.aimAt({ x: 10, z: 7 });
+    rig.session.dropItem('cap-2');
+
+    expect(rig.sent.filter((message) => message.tag === 'move' || message.tag === 'dropItem')).toEqual([
+      { tag: 'move', payload: { x: 10, z: 10, facing: 90, gait: 'jog' } },
+      { tag: 'dropItem', payload: { itemId: 'cap-1', heading: 90 } },
+      ...(second === 90 ? [] : [{ tag: 'move', payload: { x: 10, z: 10, facing: second, gait: 'jog' } }]),
+      { tag: 'dropItem', payload: { itemId: 'cap-2', heading: second } },
+    ]);
+  });
+
+  it('drops a worn item in one request, whatever room the bag has, and never the Moonstone', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.connectionState = 'attached';
+    const full = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('boots', `boots-${index}`));
+    rig.controller.dispatch(inventoryFrame(carrying({ worn: [item('sword'), item('moonstone')], bag: full })));
+
+    rig.session.dropItem('sword-1');
+    rig.session.dropItem('moonstone-1');
+
+    expect(rig.sent.filter((message) => message.tag === 'unequip' || message.tag === 'dropItem')).toEqual([
+      { tag: 'dropItem', payload: { itemId: 'sword-1', heading: 0 } },
+    ]);
+  });
+
+  it('announces what was dropped', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap')] })));
+    rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', rarity: 'plain' } }));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', baseId: 'cap' }]);
+  });
+});
+
+describe('a drop', () => {
+  const DAGGER_DROP = { kind: 'item', baseId: 'dagger', rarity: 'magic' } as const;
+  const lootFrame = (lootId: string, at: { x: number; z: number }): SomnioMessage => ({ tag: 'loot', payload: { lootId, ...at, contents: DAGGER_DROP } });
+  const pickUps = (rig: Rig) => rig.sent.filter((message) => message.tag === 'pickUp');
+  const at = (rig: Rig) => rig.controller.entities.get('self')!.position;
+  const away = (rig: Rig, point: { x: number; z: number }) => Math.hypot(at(rig).x - point.x, at(rig).z - point.z);
+
+  /** Joins an empty meadow standing at (10, 10), with a dagger lying at (14, 10). */
+  function nearLoot(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    rig.controller.dispatch(lootFrame('loot-1', { x: 14, z: 10 }));
+    return rig;
+  }
+
+  /** Ticks every 50 ms from `fromMs`, until `done` or `toMs`, and answers the time it stopped at. */
+  function tickUntil(rig: Rig, fromMs: number, toMs: number, done: () => boolean): number {
+    let time = fromMs;
+    for (; time <= toMs && !done(); time += 50) rig.session.runTick(time);
+    return time;
+  }
+
+  it('is drawn as it arrives, and taken away when it is gone or the space is left', () => {
+    const rig = nearLoot();
+    rig.controller.dispatch(lootFrame('loot-2', { x: 4, z: 4 }));
+    rig.controller.dispatch({ tag: 'lootGone', payload: { lootId: 'loot-1' } });
+    expect(rig.shown).toEqual([
+      ['showLoot', { lootId: 'loot-1', x: 14, z: 10, contents: DAGGER_DROP }],
+      ['showLoot', { lootId: 'loot-2', x: 4, z: 4, contents: DAGGER_DROP }],
+      ['removeLoot', 'loot-1'],
+    ]);
+    expect([...rig.session.loot.keys()]).toEqual(['loot-2']);
+    rig.controller.dispatch(enterSpaceFrame());
+    expect(rig.session.loot.size).toBe(0);
+  });
+
+  it('is walked to on a press and picked up as soon as the player stands within reach, after the move that brought them there', () => {
+    const rig = nearLoot();
+    rig.session.pressLoot('loot-1');
+    tickUntil(rig, 0, 3000, () => pickUps(rig).length > 0);
+
+    expect(away(rig, { x: 14, z: 10 })).toBeLessThanOrEqual(PICKUP_REACH);
+    expect(away(rig, { x: 14, z: 10 })).toBeGreaterThan(PICKUP_REACH - 0.25);
+    expect(rig.sent.slice(-2)).toEqual([
+      { tag: 'move', payload: expect.objectContaining(at(rig)) },
+      { tag: 'pickUp', payload: { lootId: 'loot-1' } },
+    ]);
+    expect(rig.session.predictor.walk).toBeUndefined();
+    tickUntil(rig, 3000, 4000, () => false);
+    expect(pickUps(rig)).toHaveLength(1);
+  });
+
+  it('is picked up from beside a body standing on it, where the path round the body stops', () => {
+    const rig = nearLoot();
+    rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', name: 'Ghost', x: 14, z: 10 }));
+    rig.session.pressLoot('loot-1');
+    tickUntil(rig, 0, 3000, () => pickUps(rig).length > 0);
+
+    expect(pickUps(rig)).toEqual([{ tag: 'pickUp', payload: { lootId: 'loot-1' } }]);
+    expect(away(rig, { x: 14, z: 10 })).toBeLessThanOrEqual(PICKUP_REACH);
+    expect(away(rig, { x: 14, z: 10 })).toBeGreaterThan(0.6);
+  });
+
+  it('is left lying when a body on it keeps the player out of reach', () => {
+    const rig = nearLoot();
+    rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', name: 'Ghost', radius: 1.5, x: 14, z: 10 }));
+    rig.session.pressLoot('loot-1');
+    tickUntil(rig, 0, 4000, () => false);
+
+    expect(rig.session.predictor.walk).toBeUndefined();
+    expect(away(rig, { x: 14, z: 10 })).toBeGreaterThan(PICKUP_REACH);
+    expect(pickUps(rig)).toEqual([]);
+  });
+
+  it('acts on a walk that ends of itself in range, and once only', () => {
+    const rig = nearLoot();
+    let acted = 0;
+    rig.session.predictor.walkTo({ x: 12, z: 10 }, { within: PATH_FOLLOWING.arrivalMetres, act: () => (acted += 1) });
+    tickUntil(rig, 0, 3000, () => rig.session.predictor.walk === undefined);
+    tickUntil(rig, 3000, 3500, () => false);
+    expect(acted).toBe(1);
+  });
+
+  it('is not picked up once a new press lands on the way, though the walk goes on until it lets go', () => {
+    const rig = nearLoot();
+    rig.session.pressLoot('loot-1');
+    const time = tickUntil(rig, 0, 3000, () => away(rig, { x: 14, z: 10 }) < PICKUP_REACH + 0.4);
+    rig.session.pressGround({ x: 14, z: 14 }, time);
+    tickUntil(rig, time + 50, time + 150, () => false);
+    expect(away(rig, { x: 14, z: 10 })).toBeLessThanOrEqual(PICKUP_REACH);
+    rig.session.release({ x: 14, z: 14 });
+    tickUntil(rig, time + 200, time + 3000, () => false);
+
+    expect(pickUps(rig)).toEqual([]);
+  });
+
+  it('says a full bag is full on arriving, and asks for nothing', () => {
+    const rig = nearLoot();
+    const bag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+    rig.controller.dispatch(inventoryFrame(carrying({ bag })));
+    rig.session.pressLoot('loot-1');
+    tickUntil(rig, 0, 3000, () => rig.session.predictor.walk === undefined);
+
+    expect(pickUps(rig)).toEqual([]);
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'bagFull' });
+  });
+
+  it("dropped by a dreamer for anyone is drawn, walked to, and picked up as the player's own is", () => {
+    const rig = nearLoot();
+    const shared = { lootId: 'loot-3', x: 12, z: 10, contents: DAGGER_DROP, shared: true };
+    rig.controller.dispatch({ tag: 'loot', payload: shared });
+    expect(rig.shown.at(-1)).toEqual(['showLoot', shared]);
+    rig.session.pressLoot('loot-3');
+    tickUntil(rig, 0, 3000, () => pickUps(rig).length > 0);
+    expect(pickUps(rig)).toEqual([{ tag: 'pickUp', payload: { lootId: 'loot-3' } }]);
+  });
+
+  it('announces what was picked up, and not the item it adds', () => {
+    const rig = nearLoot();
+    rig.controller.dispatch(inventoryFrame(carrying()));
+    rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('dagger')] }), { pickedUp: DAGGER_DROP }));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'pickedUp', baseId: 'dagger' }]);
   });
 });
 
@@ -999,20 +1191,17 @@ describe('inbound gameplay dispatch', () => {
     expect(repaints).toBe(1);
   });
 
-  it('stores the inventory rows and asks for a repaint', () => {
+  it('stores the inventory and asks for a repaint', () => {
     const rig = makeRig();
     let repaints = 0;
     rig.session.onStateChanged = () => {
       repaints += 1;
     };
-    const rows = [
-      { slot: 0, itemId: 'purse', quantity: 100 },
-      { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: 'right' as const },
-    ];
+    const inventory = carrying({ coins: 100, worn: [item('cudgel')], bag: [item('cap')] });
 
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows } });
+    rig.controller.dispatch(inventoryFrame(inventory));
 
-    expect(rig.session.inventory).toEqual(rows);
+    expect(rig.session.inventory).toEqual(inventory);
     expect(repaints).toBe(1);
   });
 
@@ -1025,20 +1214,6 @@ describe('inbound gameplay dispatch', () => {
       kind: 'adminBroadcast',
       message: 'Server restarting.',
     });
-  });
-});
-
-describe('the Moonstone', () => {
-  it.each([
-    ['takes it in hand when it is put away', {}, { tag: 'equipToggle', payload: { slot: 2, hand: 'right' } }],
-    ['uses it once it is in hand', { equippedHand: 'right' }, { tag: 'useItem', payload: { slot: 2 } }],
-  ] as const)('%s', (_label, equipped, expected) => {
-    const rig = makeRig();
-    rig.controller.connectionState = 'attached';
-
-    rig.session.activateInventoryRow({ slot: 2, itemId: 'moonstone', quantity: 1, ...equipped });
-
-    expect(rig.sent).toEqual([expected]);
   });
 });
 
@@ -1274,7 +1449,7 @@ describe('winded and fallen', () => {
 });
 
 describe('chat lines from what changed', () => {
-  const purse = (quantity: number) => ({ tag: 'inventory' as const, payload: { rows: [{ slot: 0, itemId: 'purse', quantity }] } });
+  const purse = (coins: number) => inventoryFrame(carrying({ coins }));
   const strike = (rank: number, practice = 0) => ({ teachingId: 'strike', rank, practice });
 
   it('says nothing for the first frames after enterSpace, whatever they hold', () => {
@@ -1465,10 +1640,8 @@ describe('the service panel', () => {
 
 describe('the shop', () => {
   const MERCUS = 'npc:Meadow/mercus';
-  const rows = (purse: number, ...weapons: { itemId: string; equippedHand?: 'right' }[]) => [
-    { slot: 0, itemId: 'purse', quantity: purse },
-    ...weapons.map((weapon, index) => ({ slot: index + 1, quantity: 1, ...weapon })),
-  ];
+  const CUDGEL = item('cudgel');
+  const DAGGER = item('dagger');
 
   const trades = (rig: Rig) => rig.sent.filter((message) => message.tag === 'buy' || message.tag === 'sell');
 
@@ -1479,7 +1652,7 @@ describe('the shop', () => {
     rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
     rig.controller.dispatch(entityFrame({ facing: 30 }));
     rig.controller.dispatch(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 10.3, z: 10.6, service: 'shopkeeper' }));
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: rows(100, { itemId: 'cudgel', equippedHand: 'right' }) } });
+    rig.controller.dispatch(inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] })));
     rig.session.pressEntity(MERCUS);
     rig.sent.length = 0;
     let repaints = 0;
@@ -1493,28 +1666,22 @@ describe('the shop', () => {
     const { rig } = atMercus();
     rig.session.buy('dagger');
     rig.now = 5000;
-    rig.session.sell('cudgel');
+    rig.session.sell(CUDGEL.id);
     expect(trades(rig)).toEqual([
-      { tag: 'buy', payload: { npcId: MERCUS, itemId: 'dagger' } },
-      { tag: 'sell', payload: { npcId: MERCUS, itemId: 'cudgel' } },
+      { tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } },
+      { tag: 'sell', payload: { npcId: MERCUS, itemId: CUDGEL.id } },
     ]);
   });
 
   it('announces what a trade bought or sold, and not the coins it moved', () => {
     const { rig } = atMercus();
-    rig.controller.dispatch({
-      tag: 'inventory',
-      payload: { rows: rows(40, { itemId: 'cudgel', equippedHand: 'right' }, { itemId: 'dagger' }), trade: { kind: 'bought', itemId: 'dagger', coins: 60 } },
-    });
-    rig.controller.dispatch({
-      tag: 'inventory',
-      payload: { rows: rows(70, { itemId: 'cudgel', equippedHand: 'right' }), trade: { kind: 'sold', itemId: 'dagger', coins: 30 } },
-    });
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: rows(85), trade: { kind: 'sold', itemId: 'cudgel', coins: 15 } } });
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }),
+    );
+    rig.controller.dispatch(inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: 30 } }));
     expect(rig.controller.chatHistory).toEqual([
-      { kind: 'bought', itemId: 'dagger', coins: 60 },
-      { kind: 'sold', itemId: 'dagger', coins: 30, emptiedHand: false },
-      { kind: 'sold', itemId: 'cudgel', coins: 15, emptiedHand: true },
+      { kind: 'bought', baseId: 'dagger', coins: 60 },
+      { kind: 'sold', baseId: 'dagger', coins: 30 },
     ]);
   });
 
@@ -1524,14 +1691,13 @@ describe('the shop', () => {
     expect(repaints()).toBe(1);
     expect(rig.session.tradeLocked()).toBe(true);
     rig.session.buy('sword');
-    rig.session.sell('cudgel');
+    rig.session.sell(CUDGEL.id);
     expect(trades(rig)).toHaveLength(1);
 
     rig.now = 300;
-    rig.controller.dispatch({
-      tag: 'inventory',
-      payload: { rows: rows(40, { itemId: 'cudgel', equippedHand: 'right' }, { itemId: 'dagger' }), trade: { kind: 'bought', itemId: 'dagger', coins: 60 } },
-    });
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }),
+    );
     const answered = repaints();
     rig.now = 799;
     rig.session.runTick(799);
@@ -1541,7 +1707,7 @@ describe('the shop', () => {
     rig.session.runTick(900);
     expect(rig.session.tradeLocked()).toBe(false);
     expect(repaints() - answered).toBe(1);
-    rig.session.sell('cudgel');
+    rig.session.sell(CUDGEL.id);
     expect(trades(rig)).toHaveLength(2);
   });
 
@@ -1782,6 +1948,7 @@ describe('the target', () => {
 describe('the gaze lock', () => {
   const GHOST = 'monster:1';
   const targets = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'target' ? [message.payload] : []));
+  const engages = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'engage' ? [message.payload] : []));
 
   /** A player at (10, 10) on a fine pointer, a nightmare to the east, Bren to the west, and the cursor far to the north. */
   function locking(): Rig {
@@ -1819,16 +1986,45 @@ describe('the gaze lock', () => {
     expect(facing(rig)).toBeCloseTo(0, 0);
   });
 
-  it('lets go on a second right press on the target and keeps it, and locks again on a third', () => {
+  it('switches slot 1 on at a nightmare with the lock, after the target, and lets go of both on a second right press on the target, keeping it', () => {
     const rig = locking();
     rig.session.toggleGazeOn(GHOST);
-    rig.session.toggleGazeOn(GHOST);
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, false]);
-    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
+    expect(rig.sent.filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
+      { tag: 'target', payload: { targetId: GHOST } },
+      { tag: 'engage', payload: { on: true } },
+    ]);
 
     rig.session.toggleGazeOn(GHOST);
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, true]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, false]);
     expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+    expect(engages(rig)).toEqual([{ on: true }, { on: false }]);
+
+    rig.session.toggleGazeOn(GHOST);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, true]);
+    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+    expect(engages(rig)).toEqual([{ on: true }, { on: false }, { on: true }]);
+  });
+
+  it('leaves the lock alone when the 1 key switches slot 1, and slot 1 alone when a right press on the ground ends the lock', () => {
+    const rig = locking();
+    rig.session.toggleGazeOn(GHOST);
+    rig.session.toggleEngage();
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, false]);
+    rig.session.toggleEngage();
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
+    rig.session.unlockGaze();
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, true]);
+    expect(engages(rig)).toEqual([{ on: true }, { on: false }, { on: true }]);
+  });
+
+  it('sends nothing more for slot 1 when a right press locks on a target it already acts on', () => {
+    const rig = locking();
+    rig.session.pressEntity(GHOST);
+    rig.session.toggleEngage();
+    rig.session.toggleGazeOn(GHOST);
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
+    expect(engages(rig)).toEqual([{ on: true }]);
   });
 
   it('targets another body a right press lands on while locked, and stays locked on it', () => {
@@ -1841,36 +2037,55 @@ describe('the gaze lock', () => {
 
   it('marks the target as locked in the scene from the lock until it ends, and as plain at a new target', () => {
     const rig = locking();
-    const marks = (): [string | undefined, boolean][] => rig.selections.map((id, index) => [id, rig.selectionLocks[index]!]);
+    const marks = (): [string | undefined, TargetMark][] => rig.selections.map((id, index) => [id, rig.selectionMarks[index]!]);
+    const ON = { locked: true, acting: true };
+    const OFF = { locked: false, acting: false };
     rig.selections.length = 0;
-    rig.selectionLocks.length = 0;
+    rig.selectionMarks.length = 0;
 
     rig.session.toggleGazeOn(GHOST);
     expect(marks()).toEqual([
-      [GHOST, false],
-      [GHOST, true],
+      [GHOST, OFF],
+      [GHOST, ON],
     ]);
     rig.session.toggleGazeOn(GHOST);
-    expect(marks().at(-1)).toEqual([GHOST, false]);
+    expect(marks().at(-1)).toEqual([GHOST, OFF]);
     rig.session.toggleGazeOn(GHOST);
     rig.session.unlockGaze();
-    expect(marks().at(-1)).toEqual([GHOST, false]);
+    expect(marks().at(-1)).toEqual([GHOST, { locked: false, acting: true }]);
     rig.session.toggleGazeOn(GHOST);
     rig.session.pressEntity('bren');
-    expect(marks().at(-1)).toEqual(['bren', false]);
+    expect(marks().at(-1)).toEqual(['bren', OFF]);
     rig.session.toggleGazeOn(GHOST);
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
     rig.session.runTick(0);
-    expect(marks().at(-1)).toEqual([GHOST, false]);
+    expect(marks().at(-1)).toEqual([GHOST, OFF]);
   });
 
-  it('locks on an NPC and another dreamer alike, and never on the player themselves', () => {
+  it('marks slot 1 by colour and the lock by the ticks, apart from each other', () => {
+    const rig = locking();
+    rig.session.pressEntity(GHOST);
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: false });
+    rig.session.toggleEngage();
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: true });
+    rig.session.toggleGazeOn(GHOST);
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: true });
+    rig.session.toggleEngage();
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
+    rig.session.toggleEngage();
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
+  });
+
+  it('locks on an NPC and another dreamer alike, switching slot 1 on at neither, and never on the player themselves', () => {
     const rig = locking();
     rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 6 }));
     rig.session.toggleGazeOn('npc:Meadow/guard');
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['npc:Meadow/guard', true]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', true, false]);
     rig.session.toggleGazeOn('bren');
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['bren', true]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', true, false]);
+    rig.session.toggleGazeOn('bren');
+    expect(engages(rig)).toEqual([]);
 
     const own = locking();
     own.session.toggleGazeOn('self');
@@ -1938,7 +2153,7 @@ describe('the own frame', () => {
   it('makes a Healer their own target too, keeping Mend on from the dreamer before, so it mends themselves', () => {
     const rig = standing();
     rig.controller.dispatch(HEALER);
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_IN_HAND] } });
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
     rig.session.pressEntity('bren');
     rig.session.toggleEngage();
     rig.session.pressOwnFrame();
@@ -1968,7 +2183,7 @@ describe('slot 1 at a dreamer', () => {
     rig.controller.dispatch(entityFrame({ id: 'cara', kind: 'player', name: 'Cara', x: 9, z: 10 }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
     rig.controller.dispatch(HEALER);
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_IN_HAND] } });
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
     return rig;
   }
 
@@ -1990,8 +2205,21 @@ describe('slot 1 at a dreamer', () => {
     expect(engages(rig)).toEqual([{ on: true }, { on: false }]);
   });
 
+  it('is switched on as Mend by a right press at a dreamer for a Healer with the Moonstone in hand, and not with it put away', () => {
+    const rig = healer();
+    rig.session.toggleGazeOn('bren');
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.engageAction()]).toEqual(['bren', true, true, 'mend']);
+    expect(engages(rig)).toEqual([{ on: true }]);
+
+    const without = healer();
+    without.controller.dispatch(MOONSTONE_PUT_AWAY);
+    without.session.toggleGazeOn('bren');
+    expect([without.session.gazeLocked, without.session.engaged]).toEqual([true, false]);
+    expect(engages(without)).toEqual([]);
+  });
+
   it.each<[string, (rig: Rig) => void]>([
-    ['for a Healer with the Moonstone put away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_PUT_AWAY] } })],
+    ['for a Healer with the Moonstone put away', (rig) => rig.controller.dispatch(MOONSTONE_PUT_AWAY)],
     ['for a Fighter', (rig) => rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [] } })],
   ])('cannot be switched on %s', (_label, arrange) => {
     const rig = healer();
@@ -2013,7 +2241,7 @@ describe('slot 1 at a dreamer', () => {
     expect(engages(rig)).toEqual([]);
   });
 
-  it('stays on from one dreamer to the next, and goes off at a nightmare, which the Moonstone does not swing at, sending no engage frame', () => {
+  it('stays on from one dreamer to the next, and at a nightmare, which the empty main hand attacks', () => {
     const rig = healer();
     rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 14, z: 10 }));
     mend(rig, 'bren');
@@ -2022,9 +2250,7 @@ describe('slot 1 at a dreamer', () => {
     expect([rig.session.target, rig.session.engaged]).toEqual(['cara', true]);
     rig.session.pressEntity('monster:1');
     rig.session.runTick(100);
-    expect([rig.session.engaged, rig.session.engageAction()]).toEqual([false, undefined]);
-    rig.session.toggleEngage();
-    expect(rig.session.engaged).toBe(false);
+    expect([rig.session.engaged, rig.session.engageAction()]).toEqual([true, 'attack']);
     expect(engages(rig)).toEqual([{ on: true }]);
   });
 
@@ -2039,7 +2265,7 @@ describe('slot 1 at a dreamer', () => {
   /** The server switches it off at each of these on its own, so the client sends nothing for it. */
   it.each<[string, (rig: Rig) => void]>([
     ['the target out of view', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: 'bren', leftGame: false } })],
-    ['the Moonstone put away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_PUT_AWAY] } })],
+    ['the Moonstone put away', (rig) => rig.controller.dispatch(MOONSTONE_PUT_AWAY)],
     ['a fall', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ['a new space', (rig) => rig.controller.dispatch(enterSpaceFrame('Hall'))],
   ])('goes off with %s, sending no engage frame', (_label, end) => {
@@ -2090,7 +2316,7 @@ describe('slot 1 at a dreamer', () => {
     it.each<[string, (rig: Rig) => void]>([
       ['switches Mend off', (rig) => rig.session.toggleEngage()],
       ['targets another dreamer', (rig) => rig.session.pressEntity('cara')],
-      ['puts the Moonstone away', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_PUT_AWAY] } })],
+      ['puts the Moonstone away', (rig) => rig.controller.dispatch(MOONSTONE_PUT_AWAY)],
       ['falls', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ])('says nothing of losing hold when the Healer first %s', (_label, letGo) => {
       for (const end of [raising('broken', ['self', 'cara']), raising('holding', ['cara'])]) {
@@ -2162,7 +2388,6 @@ describe('abilities', () => {
   it.each<[string, (rig: Rig) => void]>([
     ['the ability is not learned', (rig) => rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [] } })],
     ['the Balance is short of its cost', (rig) => rig.controller.dispatch({ tag: 'energy', payload: { ...FULL, balanceCurrent: 11 } })],
-    ['the Moonstone is in hand', (rig) => rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_IN_HAND] } })],
     ['the player lies fallen', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ['the target stands out of reach', (rig) => rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10, z: 2 }))],
     [
@@ -2177,6 +2402,21 @@ describe('abilities', () => {
     rig.session.useAbility('lunge');
     expect(uses(rig)).toEqual([]);
     expect(rig.session.predictor.walk).toBeUndefined();
+  });
+
+  it('keeps the walk under way going through an instant use, which holds nothing still', () => {
+    const rig = fighter();
+    tapGround(rig, { x: 10, z: 14 });
+    const at = (): number => rig.controller.entities.get('self')!.position.z;
+    for (let ms = 0; ms <= 300; ms += 25) rig.session.runTick(ms);
+    rig.session.useAbility('brace');
+    expect(uses(rig)).toEqual(['brace']);
+    const before = at();
+
+    for (let ms = 325; ms <= 600; ms += 25) rig.session.runTick(ms);
+
+    expect(at()).toBeGreaterThan(before + 0.4);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 14 } });
   });
 
   it('keeps the cooldowns the server sends on its own clock, each begun as long before its end as it runs at the rank held, and asks again once they end', () => {
@@ -2308,31 +2548,151 @@ describe('a channel', () => {
     rig.controller.dispatch(entityFrame());
     rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 12, z: 10 }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
-    rig.controller.dispatch({ tag: 'inventory', payload: { rows: [MOONSTONE_IN_HAND] } });
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
     rig.controller.dispatch(HEALER_KIT);
     return rig;
   }
 
-  it('ends the walk under way, a held press included, after the report the heartbeat held back', () => {
-    const rig = healer();
-    for (const ms of [0, 50, 100]) rig.session.runTick(ms);
-    rig.session.pressGround({ x: 14, z: 10 }, 100);
-    for (const ms of [150, 200, 250, 300]) {
+  /** Ticks every 25 ms from `fromMs` to `toMs`, the session's clock with them. */
+  const ticks = (rig: Rig, fromMs: number, toMs: number): void => {
+    for (let ms = fromMs; ms <= toMs; ms += 25) {
       rig.now = ms;
       rig.session.runTick(ms);
     }
-    expect(rig.session.predictor.walk?.kind).toBe('steer');
-    rig.session.runTick(325);
+  };
+  const at = (rig: Rig): { x: number; z: number } => ({ ...rig.controller.entities.get('self')!.position });
+  /** The positions of the moves sent from the `from`th message on. */
+  const movesFrom = (rig: Rig, from: number) =>
+    rig.sent.slice(from).flatMap((message) => (message.tag === 'move' ? [{ x: message.payload.x, z: message.payload.z }] : []));
+  /** The server's answer to a Deep mend it takes: the channel's start, then the cooldowns. */
+  const channelStarts = (rig: Rig): void => {
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'start', seconds: 1.5 } });
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 1.5, cooldowns: [{ abilityId: 'deep-mend', seconds: 6 }] } });
+  };
+  const channelEnds = (rig: Rig, phase: 'done' | 'broken'): void => {
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase } });
+  };
+  const near = (a: { x: number; z: number }, b: { x: number; z: number }): boolean => Math.hypot(a.x - b.x, a.z - b.z) <= PATH_FOLLOWING.arrivalMetres;
 
+  it.each(['done', 'broken'] as const)(
+    'holds a held steer still through the channel, after the report the heartbeat held back, and steers on toward the pointer once it is %s',
+    (phase) => {
+      const rig = healer();
+      rig.session.pressGround({ x: 10, z: 14 }, 0);
+      ticks(rig, 0, 300);
+      expect(rig.session.predictor.walk?.kind).toBe('steer');
+      rig.session.runTick(325);
+
+      rig.session.useAbility('deep-mend');
+      expect(rig.sent.slice(-2)).toEqual([
+        { tag: 'move', payload: expect.objectContaining(rig.controller.entities.get('self')!.position) },
+        { tag: 'useAbility', payload: { abilityId: 'deep-mend' } },
+      ]);
+      const still = at(rig);
+      const sent = rig.sent.length;
+      channelStarts(rig);
+      rig.session.moveHold({ x: 12, z: 14 });
+      ticks(rig, 350, 1800);
+
+      expect(at(rig)).toEqual(still);
+      expect(movesFrom(rig, sent)).toEqual([]);
+      expect(rig.session.predictor.walk).toEqual({ kind: 'steer', toward: { x: 12, z: 14 } });
+
+      channelEnds(rig, phase);
+      ticks(rig, 1825, 2200);
+      expect(at(rig).x).toBeGreaterThan(still.x);
+      expect(at(rig).z).toBeGreaterThan(still.z);
+    },
+  );
+
+  it('walks on to where a press let go during the channel once it lands', () => {
+    const rig = healer();
+    rig.session.pressGround({ x: 10, z: 14 }, 0);
+    ticks(rig, 0, 300);
     rig.session.useAbility('deep-mend');
-    expect(rig.sent.slice(-2)).toEqual([
-      { tag: 'move', payload: expect.objectContaining(rig.controller.entities.get('self')!.position) },
-      { tag: 'useAbility', payload: { abilityId: 'deep-mend' } },
-    ]);
+    channelStarts(rig);
+    const still = at(rig);
+    const sent = rig.sent.length;
+
+    rig.session.release({ x: 11, z: 13 });
+    ticks(rig, 325, 1800);
+    expect(at(rig)).toEqual(still);
+    expect(movesFrom(rig, sent)).toEqual([]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 11, z: 13 } });
+
+    channelEnds(rig, 'done');
+    ticks(rig, 1825, 5000);
+    expect(near(at(rig), { x: 11, z: 13 })).toBe(true);
+  });
+
+  it('walks on along a tapped path once the channel breaks', () => {
+    const rig = healer();
+    tapGround(rig, { x: 10, z: 14 });
+    ticks(rig, 0, 300);
+    expect(at(rig).z).toBeGreaterThan(10);
+    rig.session.useAbility('deep-mend');
+    channelStarts(rig);
+    const still = at(rig);
+    const sent = rig.sent.length;
+
+    ticks(rig, 325, 1800);
+    expect(movesFrom(rig, sent)).toEqual([]);
+    channelEnds(rig, 'broken');
+    ticks(rig, 1825, 5000);
+    expect(at(rig)).not.toEqual(still);
+    expect(near(at(rig), { x: 10, z: 14 })).toBe(true);
+  });
+
+  it('ends the waiting walk on a new press, whose walk moves the player at once and so breaks the channel', () => {
+    const rig = healer();
+    tapGround(rig, { x: 10, z: 14 });
+    ticks(rig, 0, 300);
+    rig.session.useAbility('deep-mend');
+    channelStarts(rig);
+    ticks(rig, 325, 500);
+    const sent = rig.sent.length;
+
+    rig.session.pressGround({ x: 8, z: 12 }, 525);
     expect(rig.session.predictor.walk).toBeUndefined();
-    // The press no longer steers once it is let go of.
-    rig.session.runTick(400);
-    expect(rig.session.predictor.walk).toBeUndefined();
+    rig.session.release({ x: 8, z: 12 });
+    ticks(rig, 525, 700);
+
+    expect(rig.session.channelOf('self')).toBeDefined();
+    expect(movesFrom(rig, sent).length).toBeGreaterThan(0);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 8, z: 12 } });
+  });
+
+  it('ends the waiting walk on a press on a drop, walking the player to it and picking it up while the channel is under way', () => {
+    const rig = healer();
+    rig.controller.dispatch({ tag: 'loot', payload: { lootId: 'loot-1', x: 8, z: 12, contents: { kind: 'item', baseId: 'dagger', rarity: 'magic' } } });
+    tapGround(rig, { x: 10, z: 14 });
+    ticks(rig, 0, 300);
+    rig.session.useAbility('deep-mend');
+    channelStarts(rig);
+    ticks(rig, 325, 500);
+    const sent = rig.sent.length;
+
+    rig.session.pressLoot('loot-1');
+    ticks(rig, 525, 700);
+    expect(rig.session.channelOf('self')).toBeDefined();
+    expect(movesFrom(rig, sent).length).toBeGreaterThan(0);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 8, z: 12 } });
+
+    ticks(rig, 725, 3000);
+    expect(rig.sent.filter((message) => message.tag === 'pickUp')).toEqual([{ tag: 'pickUp', payload: { lootId: 'loot-1' } }]);
+  });
+
+  it('walks on once a use the server never answers has waited as long as any use does', () => {
+    const rig = healer();
+    tapGround(rig, { x: 10, z: 14 });
+    ticks(rig, 0, 300);
+    rig.session.useAbility('deep-mend');
+    const sent = rig.sent.length;
+
+    ticks(rig, 325, 1275);
+    expect(movesFrom(rig, sent)).toEqual([]);
+    ticks(rig, 1300, 1400);
+    expect(movesFrom(rig, sent).length).toBeGreaterThan(0);
   });
 
   it("keeps each user's channel from its start, or from its seconds left, until it lands or breaks", () => {

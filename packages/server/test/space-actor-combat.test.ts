@@ -1,28 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { Character, InventoryRow, Point } from '@somnio/core';
+import type { Character, Inventory, ItemInstance, Point } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
+import { plain } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import { seededRandom } from '../src/world/random.ts';
 import {
   BESIDE_GHOST,
-  CUDGEL_IN_HAND,
+  COINS,
+  CUDGEL,
   GHOST,
   GHOST_AT,
-  MOONSTONE_IN_HAND,
+  MOONSTONE,
   RESPAWN_MS,
   STRIKER,
   arena,
   attackGhost,
+  carrying,
   characterOf,
   energy,
   energyOf,
   engage,
   face,
   lucidity,
-  PURSE,
   payloads,
+  wearing,
 } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, serverSays, vitalsOutbox } from './support/frames.ts';
 import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
@@ -31,8 +35,8 @@ describe('attacking a nightmare', () => {
   const blowsBy = (messages: readonly SomnioMessage[], attackerId: string) => payloads(messages, 'blow').filter((blow) => blow.attackerId === attackerId);
 
   it.each([
-    ['bare hands', [], 8],
-    ['the cudgel', [CUDGEL_IN_HAND], 18],
+    ['bare hands', wearing(), 8],
+    ['the cudgel', wearing(CUDGEL), 18],
   ])(
     'swings at the target once per swing interval while Attack is on, each for the balance %s cost, and a miss costs it too',
     async (_label, inventory, cost) => {
@@ -55,13 +59,10 @@ describe('attacking a nightmare', () => {
     },
   );
 
-  it.each([
-    ['with less balance than the swing costs', { character: { energy: energy({ balanceCurrent: 7 }) } }],
-    ['with the Moonstone in hand', { inventory: [MOONSTONE_IN_HAND] }],
-  ])('does not swing %s', async (_label, options) => {
+  it('does not swing with less balance than the swing costs', async () => {
     const { space, dice } = arena();
     dice.hit = false;
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', options);
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { energy: energy({ balanceCurrent: 7 }) } });
     const before = energyOf(space, alice.entityId);
     attackGhost(space, alice.entityId);
     space.step(0);
@@ -127,7 +128,7 @@ describe('attacking a nightmare', () => {
 
     it('swings at the target alone, never at the nearer one standing in front', async () => {
       const { clock, space } = twoGhosts();
-      const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+      const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
       const watcher = attachPlayer(space, { x: 15, z: 15 }, 'watcher');
       face(space, alice.entityId, TARGET_AT);
       engage(space, GHOST, alice.entityId);
@@ -185,7 +186,7 @@ describe('attacking a nightmare', () => {
 
   it('switches Attack off once its target is driven off, swinging at none that takes its place', async () => {
     const { clock, space, steps } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, alice.entityId);
     for (let swing = 0; swing < 3; swing += 1) {
       space.step(0);
@@ -204,7 +205,7 @@ describe('attacking a nightmare', () => {
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { energy: energy({ healthCurrent: 9 }) } });
     const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', {
       character: { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     });
     attackGhost(space, alice.entityId);
     steps(1);
@@ -221,8 +222,8 @@ describe('attacking a nightmare', () => {
 
   /** A Ghost has 60 health, is grazed by any hit, and is wounded at 45 or less: bare hands take 4 a hit, the cudgel 8. */
   it.each([
-    ['bare hands', [], 4],
-    ['the cudgel', [CUDGEL_IN_HAND], 2],
+    ['bare hands', wearing(), 4],
+    ['the cudgel', wearing(CUDGEL), 2],
   ])('harms by what is in hand: %s', async (_label, inventory, hitsToWound) => {
     const { clock, space } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { inventory });
@@ -245,7 +246,7 @@ describe('attacking a nightmare', () => {
 
   it('fades a nightmare at zero, lets it go after the fade time, and refills its spawn after the respawn time', async () => {
     const { clock, space } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, alice.entityId);
     space.step(0);
     clock.ms += 1000;
@@ -278,16 +279,19 @@ describe('attacking a nightmare', () => {
   it('splits the bounty among the standing dreamers within the share radius, and gives each of them the practice in full', () => {
     const { clock, space } = arena();
     const studying = { lucidity: lucidity('fighter', { strike: 5 }, { study: 'toughening' }) };
-    const striker = attachPlayer(space, BESIDE_GHOST, 'striker', { character: studying, inventory: [PURSE, CUDGEL_IN_HAND] });
-    const near = attachPlayer(space, { x: 10, z: 15.9 }, 'near', { character: studying, inventory: [PURSE] });
-    const far = attachPlayer(space, { x: 10, z: 16.1 }, 'far', { character: studying, inventory: [PURSE] });
-    const fallen = attachPlayer(space, { x: 12, z: 10 }, 'fallen', { character: { ...studying, energy: energy({ healthCurrent: 0 }) }, inventory: [PURSE] });
+    const striker = attachPlayer(space, BESIDE_GHOST, 'striker', { character: studying, inventory: carrying({ coins: COINS, worn: [CUDGEL] }) });
+    const near = attachPlayer(space, { x: 10, z: 15.9 }, 'near', { character: studying, inventory: carrying({ coins: COINS }) });
+    const far = attachPlayer(space, { x: 10, z: 16.1 }, 'far', { character: studying, inventory: carrying({ coins: COINS }) });
+    const fallen = attachPlayer(space, { x: 12, z: 10 }, 'fallen', {
+      character: { ...studying, energy: energy({ healthCurrent: 0 }) },
+      inventory: carrying({ coins: COINS }),
+    });
     attackGhost(space, striker.entityId);
     for (let swing = 0; swing < 3; swing += 1) {
       space.step(0);
       clock.ms += 1000;
     }
-    const coins = (entityId: string) => space.snapshotForPlayer(entityId)!.inventory.find((row) => row.itemId === 'purse')!.quantity;
+    const coins = (entityId: string) => space.snapshotForPlayer(entityId)!.inventory.coins;
     const practice = (entityId: string) => characterOf(space, entityId).lucidity.ranks.find((held) => held.teachingId === 'toughening')?.practice;
     expect([striker, near, far, fallen].map((player) => coins(player.entityId))).toEqual([106, 106, 100, 100]);
     expect([striker, near, far, fallen].map((player) => practice(player.entityId))).toEqual([10, 10, undefined, undefined]);
@@ -297,7 +301,7 @@ describe('attacking a nightmare', () => {
     const { clock, space, steps } = arena();
     const almost = lucidity('fighter', {}, { study: 'toughening' });
     almost.ranks.push({ teachingId: 'toughening', rank: 0, practice: 15 });
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
     // Within the share radius and out of the Ghost's reach, so nothing takes her health.
     const bob = attachPlayer(space, { x: 10, z: 13 }, 'bob', { character: { lucidity: almost } });
     attackGhost(space, alice.entityId);
@@ -321,6 +325,64 @@ describe('a join', () => {
     const stale = energy({ healthCurrent: 150, healthMax: 150, spiritCurrent: 130, spiritMax: 130 });
     const plain = attachPlayer(space, { x: 6, z: 5 }, 'plain', { character: { energy: stale } });
     expect(energyOf(space, plain.entityId)).toEqual(energy());
+  });
+});
+
+describe('what the gear worn adds', () => {
+  const SHIELD: ItemInstance = { id: '00000000-0000-7000-8000-000000000011', ...plain('shield') };
+  const STOUT_SHIELD: ItemInstance = { ...SHIELD, rarity: 'magic', affixes: [{ affixId: 'health', value: 8 }] };
+  const GUARDING_SHIELD: ItemInstance = { ...SHIELD, rarity: 'magic', affixes: [{ affixId: 'guard', value: 3 }] };
+  const AMULET: ItemInstance = {
+    id: '00000000-0000-7000-8000-000000000012',
+    ...plain('amulet'),
+    rarity: 'magic',
+    affixes: [
+      { affixId: 'balance-recovery', value: 15 },
+      { affixId: 'spirit-recovery', value: 15 },
+    ],
+  };
+
+  it('settles the pool maxima as an item that adds to one is put away and worn again, with no more in a pool than its maximum', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', {
+      character: { energy: energy({ healthCurrent: 108, healthMax: 108 }) },
+      inventory: wearing(STOUT_SHIELD),
+    });
+    space.handleUnequip('offHand', alice.entityId);
+    space.handleEquip(STOUT_SHIELD.id, undefined, alice.entityId);
+    const health = payloads(await collectMessages(alice.outbox), 'energy').map(({ healthCurrent, healthMax }) => [healthCurrent, healthMax]);
+    expect(health).toEqual([
+      [108, 108],
+      [100, 100],
+      [100, 108],
+    ]);
+  });
+
+  /** 39 steps are 1.95 s: 23.4 balance and 1.95 spirit at the base rates, and 26.91 and 2.24 at 15% more. */
+  it.each([
+    ['nothing', wearing(), 73, 51],
+    ['an amulet that hastens both', wearing(AMULET), 76, 52],
+  ])('recovers Balance and Spirit by the rates of what is worn: %s', (_label, inventory, balance, spirit) => {
+    const { space, steps } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { character: { energy: energy({ balanceCurrent: 50, spiritCurrent: 50 }) }, inventory });
+    steps(39);
+    expect(energyOf(space, alice.entityId)).toMatchObject({ balanceCurrent: balance, spiritCurrent: spirit });
+  });
+
+  /** A roll of 0.55 lands under a Ghost's 0.6 at full balance, and under it less the plain shield's 4 Guard, but not less 7. */
+  it.each([
+    ['nothing', wearing(), true],
+    ['a plain shield', wearing(SHIELD), true],
+    ['a shield that rolled Guard', wearing(GUARDING_SHIELD), false],
+  ])("lands a Ghost's strike by the Guard worn: %s", async (_label, inventory, hit) => {
+    const sector = makeSector('TestSector', { monsterSpawns: [makeMonsterSpawn(GHOST_AT)] });
+    const { clock, space } = makeClockedSpace(makeWorld([sector]), OUTDOOR_SPACE_ID, { random: { nextUInt32: () => Math.floor(0.55 * 0x1_0000_0000) } });
+    clock.ms = RESPAWN_MS;
+    space.step(0);
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { inventory });
+    clock.ms += 50;
+    space.step(0.05);
+    expect(payloads(await collectMessages(alice.outbox), 'blow')).toEqual([{ attackerId: GHOST, targetId: alice.entityId, hit }]);
   });
 });
 
@@ -409,9 +471,9 @@ describe('threat', () => {
     // Each landed swing takes 11, and each mend restores 15.
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { lucidity: lucidity('fighter', { strike: 1 }), energy: energy({ healthCurrent: 70 }) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
-    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, NEARER, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     attackGhost(space, fighter.entityId);
     engage(space, fighter.entityId, healer.entityId);
     steps(61);
@@ -426,7 +488,7 @@ describe('threat', () => {
     // Out of both nightmares' aggro radius and inside both their grounds, within Challenge's reach of both.
     const fighter = attachPlayer(space, { x: 14, z: 15 }, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1, guard: 1, challenge: 1 }) } });
     // Within the second's aggro radius, and in its reach as it passes on its way to the Fighter.
-    const healer = attachPlayer(space, { x: 11.77, z: 15.16 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 11.77, z: 15.16 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     space.handleUseAbility('challenge', fighter.entityId);
     steps(80);
     const messages = await collectMessages(healer.outbox);
@@ -438,10 +500,10 @@ describe('threat', () => {
     const { space, dice, steps } = withGround();
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
       character: { ...STRIKER, energy: energy({ healthCurrent: 9 }) },
-      inventory: [CUDGEL_IN_HAND],
+      inventory: wearing(CUDGEL),
     });
     const nearer = attachPlayer(space, NEARER, 'nearer');
-    const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     attackGhost(space, fighter.entityId);
     steps(1);
     // The threat of the Fighter's swing turned it on them rather than on the nearer dreamer.
@@ -458,7 +520,7 @@ describe('threat', () => {
 
   it('forgets a dreamer who steps outside its ground, so it strikes a nearer one in its reach there instead', async () => {
     const { space, steps } = withGround();
-    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1 }) }, inventory: [CUDGEL_IN_HAND] });
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1 }) }, inventory: wearing(CUDGEL) });
     // Outside the ground, north-west of the Ghost at its corner, and in its reach.
     const nearer = attachPlayer(space, { x: 9.5, z: 9.6 }, 'nearer');
     attackGhost(space, fighter.entityId);
@@ -582,7 +644,7 @@ describe('a target', () => {
   it('sends a change in its health, to two decimals, no sooner than a quarter second after the last, and nothing while it holds', () => {
     const { clock, space, steps } = arena();
     const alice = vitalsOutbox(clock);
-    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
     const start = clock.ms;
     attackGhost(space, aliceId);
     steps(10);
@@ -595,7 +657,7 @@ describe('a target', () => {
   it('drops a target that is not in the space, keeping the one they had', () => {
     const { clock, space, steps } = arena();
     const alice = vitalsOutbox(clock);
-    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
     space.handleTarget(GHOST, aliceId);
     space.handleTarget('monster:99', aliceId);
     face(space, aliceId, GHOST_AT);
@@ -612,7 +674,7 @@ describe('a target', () => {
     const { clock, space, steps, dice } = arena();
     dice.hit = false;
     const alice = vitalsOutbox(clock);
-    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
     face(space, aliceId, GHOST_AT);
     engage(space, aliceId, aliceId);
     steps(5);
@@ -639,7 +701,7 @@ describe('a target', () => {
   it('sends nothing more once the dreamer clears their target', () => {
     const { clock, space, steps } = arena();
     const alice = vitalsOutbox(clock);
-    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: [CUDGEL_IN_HAND] }).entityId;
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
     space.handleTarget(GHOST, aliceId);
     space.handleTarget(undefined, aliceId);
     face(space, aliceId, GHOST_AT);
@@ -654,7 +716,7 @@ describe('a target', () => {
     const healerId = attachPlayer(space, { x: 5, z: 5 }, 'healer', {
       outbox: healer.outbox,
       character: { lucidity: lucidity('healer', { touch: 2 }) },
-      inventory: [MOONSTONE_IN_HAND],
+      inventory: wearing(MOONSTONE),
     }).entityId;
     const hurt = attachPlayer(space, { x: 5, z: 5.7 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
     space.handleTarget(GHOST, healerId);
@@ -672,10 +734,10 @@ describe('slot 1 at a dreamer', () => {
   const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) };
   const HURT: Partial<Character> = { energy: energy({ healthCurrent: 50 }) };
 
-  it.each<[string, Partial<Character>, InventoryRow[]]>([
-    ['a Fighter, Moonstone in hand or not', STRIKER, [MOONSTONE_IN_HAND]],
-    ['a Healer with the Moonstone put away', HEALER, [{ ...MOONSTONE_IN_HAND, equippedHand: undefined }]],
-    ['a Healer with a weapon in hand', HEALER, [CUDGEL_IN_HAND]],
+  it.each<[string, Partial<Character>, Inventory]>([
+    ['a Fighter, Moonstone in hand or not', STRIKER, wearing(MOONSTONE)],
+    ['a Healer with the Moonstone put away', HEALER, carrying({ bag: [MOONSTONE] })],
+    ['a Healer with a weapon in hand', HEALER, wearing(CUDGEL)],
   ])('is refused to %s', (_label, character, inventory) => {
     const { space, steps } = arena({}, { ghost: false });
     const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character, inventory });
@@ -689,11 +751,11 @@ describe('slot 1 at a dreamer', () => {
   const GUARD = makeNPC('guard', { x: 6, z: 5 }, 'Hello.');
   const GUARD_ID = 'npc:TestSector/guard';
 
-  it.each([GHOST, GUARD_ID])('is refused at %s to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', async (refusedAt) => {
+  it('is refused at an NPC to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', async () => {
     const { space, steps } = arena({ npcs: [GUARD] });
-    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
-    engage(space, refusedAt, healer.entityId);
+    engage(space, GUARD_ID, healer.entityId);
     space.handleTarget(hurt.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
@@ -703,17 +765,17 @@ describe('slot 1 at a dreamer', () => {
 
   it('is refused at an NPC to a Healer with the Moonstone in hand, and the space steps on', () => {
     const { space, steps } = arena({ npcs: [GUARD] }, { ghost: false });
-    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, GUARD_ID, healer.entityId);
     expect(() => steps(60)).not.toThrow();
   });
 
   it.each<[string, (space: SpaceActor, healerId: string) => void, number]>([
     ['stays on from one dreamer to the next', () => {}, 60],
-    ['goes off at a nightmare targeted between them, which the Moonstone does not swing at', (space, healerId) => space.handleTarget(GHOST, healerId), 50],
+    ['stays on through a nightmare targeted between them, which the empty main hand attacks', (space, healerId) => space.handleTarget(GHOST, healerId), 60],
   ])('%s', (_label, between, health) => {
     const { clock, space, steps } = arena();
-    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const bren = attachPlayer(space, { x: 5, z: 6 }, 'bren', { character: { energy: energy({ healthCurrent: 100 }) } });
     const alia = attachPlayer(space, { x: 6, z: 5 }, 'alia', { character: HURT });
     engage(space, bren.entityId, healer.entityId);
@@ -732,7 +794,7 @@ describe('slot 1 at a dreamer', () => {
   ])('from a nightmare to a dreamer goes off for %s, and stays off on changing back', async (_label, character) => {
     const { clock, space, steps, dice } = arena();
     dice.hit = false;
-    const engager = attachPlayer(space, BESIDE_GHOST, 'engager', { character, inventory: [CUDGEL_IN_HAND] });
+    const engager = attachPlayer(space, BESIDE_GHOST, 'engager', { character, inventory: wearing(CUDGEL) });
     const hurt = attachPlayer(space, { x: 10.6, z: 11.2 }, 'hurt', { character: HURT });
     attackGhost(space, engager.entityId);
     steps(1);
@@ -750,12 +812,12 @@ describe('slot 1 at a dreamer', () => {
 
   it('goes off when the target leaves the space, so they are not mended once back and targeted again', () => {
     const { space, steps } = arena({}, { ghost: false });
-    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
     engage(space, hurt.entityId, healer.entityId);
     space.handOver(hurt.entityId, true);
     steps(1);
-    space.attach(hurt.character, [], new ConnectionOutbox(4096), 0, 'en');
+    space.attach(hurt.character, wearing(), new ConnectionOutbox(4096), 0, 'en');
     space.handleTarget(hurt.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
@@ -763,11 +825,11 @@ describe('slot 1 at a dreamer', () => {
 
   it('starts off in a new space, as after a door, though the Healer targets the same dreamer there', () => {
     const { space, steps } = arena({}, { ghost: false });
-    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
     engage(space, hurt.entityId, healer.entityId);
     space.handOver(healer.entityId, false);
-    space.attach(healer.character, [MOONSTONE_IN_HAND], new ConnectionOutbox(4096), 0, 'en');
+    space.attach(healer.character, wearing(MOONSTONE), new ConnectionOutbox(4096), 0, 'en');
     space.handleTarget(hurt.entityId, healer.entityId);
     steps(1);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);
@@ -776,7 +838,7 @@ describe('slot 1 at a dreamer', () => {
   it('stays on when the dreamer mended falls, and raises them once the Healer steps into touch', async () => {
     const { space, steps, dice } = arena();
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { energy: energy({ healthCurrent: 9 }) } });
-    const healer = attachPlayer(space, { x: 10, z: 13.8 }, 'healer', { character: HEALER, inventory: [MOONSTONE_IN_HAND] });
+    const healer = attachPlayer(space, { x: 10, z: 13.8 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
     engage(space, fighter.entityId, healer.entityId);
     steps(1);
     expect(space.isFallen(fighter.entityId)).toBe(true);
@@ -788,12 +850,188 @@ describe('slot 1 at a dreamer', () => {
   });
 });
 
+describe('slot 1 with two hands', () => {
+  const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2 }) };
+  const HURT: Partial<Character> = { energy: energy({ healthCurrent: 50 }) };
+  const MOONSTONE_PUT_AWAY = carrying({ worn: [CUDGEL], bag: [MOONSTONE] });
+  const blowsBy = (messages: readonly SomnioMessage[], attackerId: string) => payloads(messages, 'blow').filter((blow) => blow.attackerId === attackerId);
+
+  it('attacks a nightmare and mends a dreamer, by the target, for a Healer holding a weapon and the Moonstone', async () => {
+    const { clock, space, steps, dice } = arena();
+    dice.hit = false;
+    const healer = attachPlayer(space, BESIDE_GHOST, 'healer', { character: HEALER, inventory: wearing(CUDGEL, MOONSTONE) });
+    const hurt = attachPlayer(space, { x: 10.6, z: 11.2 }, 'hurt', { character: HURT });
+    attackGhost(space, healer.entityId);
+    steps(1);
+    space.handleTarget(hurt.entityId, healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(60);
+    space.handleTarget(GHOST, healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    const miss = { attackerId: healer.entityId, targetId: GHOST, hit: false };
+    expect(blowsBy(await collectMessages(hurt.outbox), healer.entityId)).toEqual([miss, miss]);
+  });
+
+  it('stays on at a nightmare as the Moonstone comes into the off hand and the weapon leaves the main hand', async () => {
+    const { clock, space, steps, dice } = arena();
+    dice.hit = false;
+    const healer = attachPlayer(space, BESIDE_GHOST, 'healer', { character: HEALER, inventory: MOONSTONE_PUT_AWAY });
+    attackGhost(space, healer.entityId);
+    steps(1);
+    space.handleEquip(MOONSTONE.id, undefined, healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    space.handleUnequip('mainHand', healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    expect(blowsBy(await collectMessages(healer.outbox), healer.entityId)).toHaveLength(3);
+  });
+
+  it('goes off at a dreamer once the Moonstone leaves the off hand, and stays off once it is back', () => {
+    const { clock, space, steps } = arena({}, { ghost: false });
+    const healer = attachPlayer(space, { x: 5, z: 5 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
+    const hurt = attachPlayer(space, { x: 5, z: 6 }, 'hurt', { character: HURT });
+    engage(space, hurt.entityId, healer.entityId);
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(60);
+    space.handleUnequip('offHand', healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    space.handleEquip(MOONSTONE.id, undefined, healer.entityId);
+    clock.ms += 1000;
+    steps(1);
+    expect(energyOf(space, hurt.entityId).healthCurrent).toBe(60);
+  });
+});
+
+describe('wearing and putting away', () => {
+  const CAP: ItemInstance = { id: '00000000-0000-7000-8000-000000000021', ...plain('cap') };
+  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000022', ...plain('buckler') };
+  const fullBag = (): ItemInstance[] =>
+    Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
+      ...CAP,
+      id: `00000000-0000-7000-8000-1${String(index).padStart(11, '0')}`,
+    }));
+  const inventoryOf = (space: SpaceActor, entityId: string): Inventory => space.snapshotForPlayer(entityId)!.inventory;
+
+  it('wears an item on the head and puts it away again, as it does an item in the hand', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [CAP] }) });
+    space.handleEquip(CAP.id, undefined, alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual(wearing(CAP));
+    space.handleUnequip('head', alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual(carrying({ bag: [CAP] }));
+    const sent = payloads(await collectMessages(alice.outbox), 'inventory').slice(1);
+    expect(sent.map(({ equipped, bag }) => [equipped.map(({ slot, item }) => [slot, item.id]), bag.map(({ item }) => item.id)])).toEqual([
+      [[['head', CAP.id]], []],
+      [[], [CAP.id]],
+    ]);
+  });
+
+  it('wears a ring in the free ring slot, else in the first, and never round the neck', () => {
+    const rings = [0, 1, 2].map((index): ItemInstance => ({ id: `00000000-0000-7000-8000-00000000003${index}`, ...plain('ring') }));
+    const [first, second, third] = rings as [ItemInstance, ItemInstance, ItemInstance];
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: rings }) });
+    space.handleEquip(first.id, undefined, alice.entityId);
+    space.handleEquip(second.id, undefined, alice.entityId);
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring1: first, ring2: second });
+    space.handleEquip(third.id, undefined, alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual({ coins: 0, equipped: { ring1: third, ring2: second }, bag: [{ place: 2, item: first }] });
+  });
+
+  it('puts what the slot wore into the bag as another item takes it', () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [MOONSTONE], bag: [BUCKLER] }) });
+    space.handleEquip(BUCKLER.id, undefined, alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual(carrying({ worn: [BUCKLER], bag: [MOONSTONE] }));
+  });
+
+  it('shows everyone who sees the dreamer what their hands hold, on joining and on each change of a hand', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [MOONSTONE], bag: [CUDGEL, CAP] }) });
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
+    space.handleEquip(CUDGEL.id, undefined, alice.entityId);
+    space.handleEquip(CAP.id, undefined, alice.entityId);
+    space.handleUnequip('offHand', alice.entityId);
+    const messages = await collectMessages(bob.outbox);
+    expect(entities(messages).find(({ id }) => id === alice.entityId)?.held).toEqual({ offHand: 'moonstone' });
+    expect(payloads(messages, 'held')).toEqual([
+      { entityId: alice.entityId, held: { mainHand: 'cudgel', offHand: 'moonstone' } },
+      { entityId: alice.entityId, held: { mainHand: 'cudgel' } },
+    ]);
+  });
+
+  it('refuses to put a worn item into a full bag', () => {
+    const { space } = arena({}, { ghost: false });
+    const full = carrying({ worn: [CAP, BUCKLER], bag: fullBag() });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: full });
+    space.handleUnequip('head', alice.entityId);
+    space.handleMoveItem(BUCKLER.id, 3, alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual(full);
+  });
+
+  it('wears a ring in the ring slot asked for, and moves a worn one to the other', () => {
+    const ring: ItemInstance = { id: '00000000-0000-7000-8000-000000000040', ...plain('ring') };
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [ring] }) });
+    space.handleEquip(ring.id, 'ring2', alice.entityId);
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring2: ring });
+    space.handleEquip(ring.id, 'ring1', alice.entityId);
+    space.handleEquip(ring.id, 'neck', alice.entityId);
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring1: ring });
+  });
+
+  it('moves a bagged item to the place asked for, swapping with the item there, and answers with the bag at its places', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [CAP, BUCKLER] }) });
+    space.handleMoveItem(CAP.id, 9, alice.entityId);
+    space.handleMoveItem(BUCKLER.id, 9, alice.entityId);
+    space.handleMoveItem(BUCKLER.id, 9, alice.entityId);
+    space.handleMoveItem(CAP.id, SOMNIO_PROTOCOL_CONSTANTS.maxBagItems, alice.entityId);
+    const sent = payloads(await collectMessages(alice.outbox), 'inventory').slice(1);
+    expect(sent.map(({ bag }) => bag.map(({ place, item }) => [place, item.id]))).toEqual([
+      [
+        [1, BUCKLER.id],
+        [9, CAP.id],
+      ],
+      [
+        [1, CAP.id],
+        [9, BUCKLER.id],
+      ],
+    ]);
+  });
+
+  it('puts a worn item away at the place it is dropped on, or changes it for the item there that fits its slot, even in a full bag', () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [CAP], bag: [BUCKLER] }) });
+    space.handleMoveItem(CAP.id, 6, alice.entityId);
+    expect(inventoryOf(space, alice.entityId)).toEqual({
+      coins: 0,
+      equipped: {},
+      bag: [
+        { place: 0, item: BUCKLER },
+        { place: 6, item: CAP },
+      ],
+    });
+    const full = fullBag();
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob', {
+      inventory: carrying({ worn: [{ ...CAP, id: '00000000-0000-7000-8000-000000000050' }], bag: full }),
+    });
+    space.handleMoveItem('00000000-0000-7000-8000-000000000050', 4, bob.entityId);
+    expect(inventoryOf(space, bob.entityId).equipped.head).toEqual(full[4]);
+    expect(inventoryOf(space, bob.entityId).bag[4]).toEqual({ place: 4, item: { ...CAP, id: '00000000-0000-7000-8000-000000000050' } });
+  });
+});
+
 describe('what a dreamer never does', () => {
   it('harms no dreamer, whoever engages them and whatever they hold', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const victim = attachPlayer(space, { x: 5, z: 5 }, 'victim', { character: { energy: energy({ healthCurrent: 50 }) } });
-    const brawler = attachPlayer(space, { x: 5, z: 5.6 }, 'brawler', { character: STRIKER, inventory: [CUDGEL_IN_HAND] });
-    const pretender = attachPlayer(space, { x: 5.6, z: 5 }, 'pretender', { inventory: [MOONSTONE_IN_HAND] });
+    const brawler = attachPlayer(space, { x: 5, z: 5.6 }, 'brawler', { character: STRIKER, inventory: wearing(CUDGEL) });
+    const pretender = attachPlayer(space, { x: 5.6, z: 5 }, 'pretender', { inventory: wearing(MOONSTONE) });
     const before = [victim, pretender].map((player) => energyOf(space, player.entityId));
     engage(space, victim.entityId, brawler.entityId);
     engage(space, victim.entityId, pretender.entityId);
@@ -806,12 +1044,11 @@ describe('what a dreamer never does', () => {
     const { space, steps, dice } = arena({ npcs: [makeNPC('guard', { x: 10, z: 12 }, 'Hello, $name.\n---\nMore.')] });
     dice.hit = false;
     const fallen = { energy: energy({ healthCurrent: 0 }), lucidity: lucidity('healer', { touch: 3 }) };
-    const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: [MOONSTONE_IN_HAND] });
+    const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: wearing(MOONSTONE) });
     const hurt = attachPlayer(space, { x: 10.6, z: 10.85 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
     engage(space, GHOST, alice.entityId);
     space.handleTalk('npc:TestSector/guard', alice.entityId);
     engage(space, hurt.entityId, alice.entityId);
-    space.handleUseItem(MOONSTONE_IN_HAND.slot, alice.entityId);
     steps(1);
     expect(energyOf(space, alice.entityId)).toEqual(fallen.energy);
     expect(energyOf(space, hurt.entityId).healthCurrent).toBe(50);

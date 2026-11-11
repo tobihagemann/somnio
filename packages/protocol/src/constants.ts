@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 19,
+  helloVersion: 20,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `email` on login/registration, for a character's name, for item ids, and for the record ids inside a sector. */
@@ -54,8 +54,10 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxMarkStrokeRadiusMetres: 10,
   /** The most Healers who hold one raise at once, which bounds the list a `raising` frame names. */
   maxRaiseHealers: 32,
-  /** The most rows an `inventory` frame carries, generous over the handful of items a dreamer holds. */
-  maxInventoryRows: 32,
+  /** The most items a dreamer's bag holds, which bounds the bag an `inventory` frame carries. */
+  maxBagItems: 24,
+  /** The most stat lines an item carries, generous over the four a rare item rolls. */
+  maxItemAffixes: 8,
   /** The most ranks a `lucidity` frame carries, generous over the teachings there are. */
   maxLucidityRanks: 32,
   /** The most effects an `effects` frame carries, generous over the effects there are. */

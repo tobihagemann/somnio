@@ -170,8 +170,7 @@
   font-size: 11px;
 }
 
-.hud-unit__clear,
-.hud-window__close {
+.hud-unit__clear {
   display: grid;
   place-items: center;
   padding: 0;
@@ -182,8 +181,7 @@
   cursor: pointer;
 }
 
-.hud-unit__clear:hover,
-.hud-window__close:hover {
+.hud-unit__clear:hover {
   background: rgb(255 255 255 / 0.12);
   color: #fff;
 }
@@ -880,29 +878,48 @@
 }
 
 .hud-window--beside {
-  right: calc(var(--somnio-edge-right) + 280px + 8px);
+  right: calc(var(--somnio-edge-right) + var(--hud-character-width) + 8px);
 }
 
+/* The title alone in its row, centred over the window, clear of the ✕ on the corner. */
 .hud-window__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  padding-inline: 8px;
 }
 
 .hud-window__head .overlay-title {
-  flex: 1;
   margin: 0;
 }
 
-.hud-window__close {
-  flex: none;
-  width: 28px;
-  height: 28px;
+/*
+ * A window's ✕: a small chrome button on the panel's top-right corner, over its ornament, out of
+ * the title's row. The chrome's button sets the 9-slice; this sizes it and fills it flat.
+ */
+.hud-window__close.fantasy-button {
+  --somnio-cap-inset: 10px;
+
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  padding: 0;
+  background-image: linear-gradient(rgb(12 10 16), rgb(12 10 16));
+  background-position: 2px 2px;
+  background-size: calc(100% - 4px) calc(100% - 4px);
+}
+
+.hud-window__close.fantasy-button:hover {
+  background-image: linear-gradient(rgb(40 34 50), rgb(40 34 50));
+  color: #fff;
 }
 
 .hud-window__close .fantasy-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .hud-list {
@@ -921,17 +938,6 @@
 
 .hud-list__row + .hud-list__row {
   border-top: 1px solid rgb(255 255 255 / 0.14);
-}
-
-.hud-list__row--activatable {
-  cursor: pointer;
-}
-
-.hud-list__name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* A press on a name targets that dreamer, and the target's name is marked. */
@@ -953,14 +959,427 @@
   color: var(--hud-key);
 }
 
-/* `[L]` / `[R]` and the purse's coins in a fixed trailing column. */
-.hud-list__marker {
-  width: 32px;
+.hud-list__footer {
+  color: var(--somnio-secondary-text);
+}
+
+/* ---------- The Character window ---------- */
+
+/* What draws an item takes its rarity's colour, which `paintRarityColors` gives the HUD from the loot markers'. */
+.hud-rarity--plain {
+  --hud-rarity: var(--hud-rarity-plain);
+}
+
+.hud-rarity--magic {
+  --hud-rarity: var(--hud-rarity-magic);
+}
+
+.hud-rarity--rare {
+  --hud-rarity: var(--hud-rarity-rare);
+}
+
+/*
+ * One size for the doll's places and the bag's, and the doll is a grid of the bag's columns, so its
+ * outer places stand in the bag's first and last columns and the body spans the ones between. The
+ * window is exactly that many columns wide. `characterWindow.ts` places the doll on the same count.
+ */
+.hud {
+  --hud-cell: 40px;
+  --hud-cell-gap: 4px;
+  --hud-columns: 8;
+}
+
+.hud--fine,
+.hud--coarse {
+  --hud-span: calc(var(--hud-columns) * var(--hud-cell) + (var(--hud-columns) - 1) * var(--hud-cell-gap));
+  --hud-character-width: calc(var(--hud-span) + 2 * var(--somnio-content-padding));
+}
+
+/*
+ * The plate leaves the body's rect open (`CharacterWindow.openBodyHole`), so the body the scene
+ * draws on the canvas under it shows: four bands round the hole, which is empty until it is placed.
+ */
+.hud-window--character {
+  --hud-hole-left: 0px;
+  --hud-hole-top: var(--somnio-plate-inset);
+  --hud-hole-width: 0px;
+  --hud-hole-height: 0px;
+
+  width: var(--hud-character-width);
+  background-image:
+    linear-gradient(var(--somnio-plate), var(--somnio-plate)), linear-gradient(var(--somnio-plate), var(--somnio-plate)),
+    linear-gradient(var(--somnio-plate), var(--somnio-plate)), linear-gradient(var(--somnio-plate), var(--somnio-plate));
+  background-position:
+    var(--somnio-plate-inset) var(--somnio-plate-inset),
+    var(--somnio-plate-inset) calc(var(--hud-hole-top) + var(--hud-hole-height)),
+    var(--somnio-plate-inset) var(--hud-hole-top),
+    calc(var(--hud-hole-left) + var(--hud-hole-width)) var(--hud-hole-top);
+  background-size:
+    calc(100% - 2 * var(--somnio-plate-inset)) calc(var(--hud-hole-top) - var(--somnio-plate-inset)),
+    calc(100% - 2 * var(--somnio-plate-inset)) calc(100% - var(--hud-hole-top) - var(--hud-hole-height) - var(--somnio-plate-inset)),
+    calc(var(--hud-hole-left) - var(--somnio-plate-inset)) var(--hud-hole-height),
+    calc(100% - var(--hud-hole-left) - var(--hud-hole-width) - var(--somnio-plate-inset)) var(--hud-hole-height);
+}
+
+.hud-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: -4px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.18);
+}
+
+.hud-tab {
+  margin-bottom: -1px;
+  padding: 4px 12px 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--somnio-ink-dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hud-tab:hover {
+  color: var(--somnio-ink);
+}
+
+.hud-tab[aria-selected='true'] {
+  border-bottom-color: #fff;
+  color: #fff;
+}
+
+.hud-page {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.hud-page--stats {
+  flex: 1 1 auto;
+  margin-right: -6px;
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.hud-purse {
+  display: flex;
+  justify-content: space-between;
+  cursor: default;
+}
+
+.hud-purse strong {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-doll,
+.hud-bag {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(var(--hud-columns), var(--hud-cell));
+  gap: var(--hud-cell-gap);
+  width: var(--hud-span);
+}
+
+.hud-doll {
+  grid-template-rows: repeat(5, var(--hud-cell));
+}
+
+/* The body's place: the scene draws the body over the backdrop there, turned by a drag. */
+.hud-body {
+  cursor: grab;
+  touch-action: none;
+}
+
+.hud-body:active {
+  cursor: grabbing;
+}
+
+.hud-place {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--hud-cell);
+  height: var(--hud-cell);
+  border: 2px solid rgb(255 255 255 / 0.16);
+  background: var(--hud-well);
+}
+
+.hud-place--slot {
+  border-color: rgb(255 255 255 / 0.28);
+}
+
+.hud-place__name {
+  padding: 0 2px;
+  color: rgb(255 255 255 / 0.4);
+  font-size: 9px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+/* A filled place: its line in its rarity's colour over a plate tinted by it, and its icon inside the edge. */
+.hud-item {
+  position: absolute;
+  inset: -2px;
+  display: block;
+  padding: 0;
+  border: 2px solid var(--hud-rarity);
+  background: color-mix(in srgb, var(--hud-rarity) 16%, rgb(12 10 16));
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The pointer meets the item, not its icon, so resting on it shows its tip once. */
+.hud-item > * {
+  pointer-events: none;
+}
+
+.hud-item .hud-item-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  object-fit: contain;
+}
+
+/* An item whose card is open, or which the pointer rests on, draws a second line just inside its edge. */
+.hud-item[aria-expanded='true'] {
+  box-shadow: inset 0 0 0 2px var(--hud-rarity);
+}
+
+@media (hover: hover) {
+  .hud--fine .hud-item:hover {
+    box-shadow: inset 0 0 0 2px var(--hud-rarity);
+  }
+}
+
+/* While an item is carried, it dims where it lay, and each slot its base fits says it would take it. */
+.hud-item--lifted {
+  opacity: 0.25;
+}
+
+.hud-place--fits {
+  box-shadow: 0 0 0 2px var(--hud-key);
+}
+
+.hud-place--over {
+  background: var(--hud-lit-plate);
+  box-shadow: inset 0 0 0 2px var(--hud-key);
+}
+
+.hud-place--slot.hud-place--over {
+  box-shadow:
+    0 0 0 2px var(--hud-key),
+    inset 0 0 0 2px var(--hud-key);
+}
+
+.hud-place--refuse,
+.hud-place--shake {
+  border-color: var(--somnio-chat-red);
+}
+
+.hud-place--refuse {
+  box-shadow: inset 0 0 0 2px var(--somnio-chat-red);
+}
+
+.hud-place--shake {
+  animation: hud-shake 0.3s;
+}
+
+@keyframes hud-shake {
+  20%,
+  60% {
+    translate: -3px 0;
+  }
+
+  40%,
+  80% {
+    translate: 3px 0;
+  }
+}
+
+/* What follows the pointer while an item is carried: at a fixed offset from it, over everything, taking no pointer. */
+.hud > .hud-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  border: 2px solid var(--hud-rarity);
+  background: color-mix(in srgb, var(--hud-rarity) 16%, rgb(12 10 16));
+  opacity: 0.92;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.5);
+  pointer-events: none;
+}
+
+.hud-ghost .hud-item-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  object-fit: contain;
+}
+
+.hud-ghost__caption {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  display: none;
+  padding: 1px 6px;
+  background: rgb(24 22 30);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translate(-50%, 4px);
+}
+
+.hud-ghost--world .hud-ghost__caption--drop,
+.hud-ghost--refuse .hud-ghost__caption--refuse {
+  display: block;
+}
+
+.hud-ghost--refuse {
+  border-color: var(--somnio-chat-red);
+}
+
+.hud-ghost__caption--refuse {
+  color: var(--somnio-chat-red);
+}
+
+/* A refusal's line, over the tips. */
+.hud > .hud-tip.hud-notice {
+  z-index: 60;
+}
+
+/* ---------- Stats ---------- */
+
+.hud-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-stats__group {
+  margin: 0;
+}
+
+.hud-stats__title {
+  margin: 0 0 2px;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* One line a stat: its name, where it comes from, and its whole total. */
+.hud-stat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 2px 0;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.hud-stat__label {
+  color: var(--somnio-ink);
+}
+
+.hud-stat__value {
+  grid-row: 1;
+  grid-column: 3;
+  min-width: 3ch;
+  color: #fff;
+  font-weight: 700;
   text-align: right;
 }
 
-.hud-list__footer {
-  color: var(--somnio-secondary-text);
+.hud-stat__note {
+  overflow: hidden;
+  color: var(--somnio-ink-dim);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A total that changed since it was last shown flashes in the key's gold. */
+.hud-stat--changed .hud-stat__value {
+  animation: hud-stat-changed 1.8s ease-out;
+}
+
+@keyframes hud-stat-changed {
+  from {
+    color: var(--hud-key);
+  }
+}
+
+/*
+ * An item's card: the tip's panel, which takes the pointer and holds the item's buttons. It
+ * carries `.hud-tip` too, so the compound selector outranks the tip's `pointer-events: none` below.
+ * Fully opaque, since it lies over the window's own text.
+ */
+.hud > .hud-tip.hud-item-card {
+  --somnio-plate: rgb(12 10 16);
+
+  pointer-events: auto;
+}
+
+/* An item's name in its rarity's colour: in its tip and card, and in a row of Mercus's panel. */
+.hud-tip__title[class*='hud-rarity--'],
+.ware-name {
+  color: var(--hud-rarity, inherit);
+}
+
+/* An item's tip and card lead with its icon, edged in its rarity's colour, beside its name and facts. */
+.hud-tip__top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* An item's picture edged in its rarity's colour over a plate tinted by it: in its tip and card, and in a row of Mercus's panel. */
+.hud-tip__top > .hud-item-icon,
+.ware-icon {
+  flex: none;
+  padding: 3px;
+  border: 2px solid var(--hud-rarity, var(--hud-line));
+  background: color-mix(in srgb, var(--hud-rarity, #fff) 16%, rgb(12 10 16));
+  object-fit: contain;
+}
+
+.hud-tip__top > .hud-item-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.ware-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.hud-tip__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-item-card__action {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hud-item-card__action .fantasy-button {
+  min-width: 0;
+  padding: 6px 14px;
 }
 
 /* ---------- A mouse's layout in a narrow window ---------- */
@@ -1009,7 +1428,7 @@
 }
 
 /* Too narrow for two windows side by side: the newer covers the older. */
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .hud--fine .hud-window--beside {
     right: var(--somnio-edge-right);
   }
@@ -1411,29 +1830,57 @@
   max-height: 150px;
 }
 
-.hud--coarse .hud-chat .hud-window__close {
-  width: 44px;
-  height: 44px;
-  margin: -10px -12px -10px 0;
-}
-
-/* One window at a time, as a panel down the right edge. */
+/* One window at a time, as a panel down the right edge, low enough that the ✕ on its corner stays on the screen. */
 .hud--coarse .hud-window {
-  top: 8px;
+  top: 14px;
   bottom: 8px;
   width: min(360px, calc(100% - var(--somnio-edge-left) - var(--somnio-edge-right)));
   max-height: none;
   padding: 16px 20px;
 }
 
-.hud--coarse .hud-window__close {
-  width: 44px;
-  height: 44px;
-  margin: -8px -10px -8px 0;
+.hud--coarse .hud-window__close.fantasy-button {
+  top: -8px;
+  right: -8px;
+  width: 40px;
+  height: 40px;
+}
+
+.hud--coarse .hud-window__close .fantasy-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hud--coarse .hud-window__head {
+  padding-inline: 18px;
+}
+
+/* Every place takes a finger, and the window is six of them wide. */
+.hud.hud--coarse {
+  --hud-cell: 44px;
+  --hud-columns: 6;
+}
+
+.hud--coarse .hud-window--character {
+  width: min(var(--hud-character-width), calc(100% - var(--somnio-edge-left) - var(--somnio-edge-right)));
+}
+
+.hud--coarse .hud-tab {
+  flex: 1;
+  min-height: 38px;
+}
+
+/* The window covers the thumb's slots, which would show through the plate's opening over the body. */
+.hud--coarse.hud--character-open .hud-thumb {
+  visibility: hidden;
 }
 
 .hud--coarse .hud-list__row {
   align-items: center;
+  min-height: 44px;
+}
+
+.hud--coarse .hud-item-card__action .fantasy-button {
   min-height: 44px;
 }
 

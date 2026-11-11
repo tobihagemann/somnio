@@ -1,4 +1,8 @@
 {
+  "Amulet": {
+    "en": "Amulet",
+    "de": "Amulett"
+  },
   "Balance recovery": {
     "en": "Balance recovery",
     "de": "Standfestigkeit"
@@ -10,6 +14,10 @@
   "Brace": {
     "en": "Brace",
     "de": "Gegenstemmen"
+  },
+  "Buckler": {
+    "en": "Buckler",
+    "de": "Faustschild"
   },
   "Calm": {
     "en": "Calm",
@@ -67,6 +75,26 @@
     "en": "Healer",
     "de": "Heiler"
   },
+  "Iron ring": {
+    "en": "Iron ring",
+    "de": "Eisenring"
+  },
+  "Leather boots": {
+    "en": "Leather boots",
+    "de": "Lederstiefel"
+  },
+  "Leather cap": {
+    "en": "Leather cap",
+    "de": "Lederkappe"
+  },
+  "Leather gloves": {
+    "en": "Leather gloves",
+    "de": "Lederhandschuhe"
+  },
+  "Leather trousers": {
+    "en": "Leather trousers",
+    "de": "Lederhose"
+  },
   "Lumina": {
     "en": "Lumina",
     "de": "Lumina"
@@ -91,9 +119,9 @@
     "en": "North Wood",
     "de": "Nordwald"
   },
-  "Purse": {
-    "en": "Purse",
-    "de": "Geldbeutel"
+  "Padded tunic": {
+    "en": "Padded tunic",
+    "de": "Gepolstertes Wams"
   },
   "Radiance": {
     "en": "Radiance",
@@ -106,6 +134,10 @@
   "Renewal": {
     "en": "Renewal",
     "de": "Erneuerung"
+  },
+  "Round shield": {
+    "en": "Round shield",
+    "de": "Rundschild"
   },
   "Sense the fallen": {
     "en": "Sense the fallen",
@@ -146,6 +178,10 @@
   "Vigils": {
     "en": "Vigils",
     "de": "Vigils"
+  },
+  "Wand": {
+    "en": "Wand",
+    "de": "Zauberstab"
   },
   "Ward": {
     "en": "Ward",

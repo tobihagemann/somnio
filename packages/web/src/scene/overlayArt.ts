@@ -296,6 +296,11 @@ export function paintSpeechBubble(context: CanvasRenderingContext2D, lines: read
   context.restore();
 }
 
+/** A colour as the scene holds it, `0xrrggbb`, as CSS writes it, so a canvas or the HUD draws the scene's own colour. */
+export function cssColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
 /**
  * The name label under a player or NPC: black text on a filled box with a 1px black border.
  *

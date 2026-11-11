@@ -3,13 +3,16 @@ import {
   CHARACTER_RESULTS,
   CONDITIONS,
   ENTITY_KINDS,
+  EQUIP_SLOTS,
   GAITS,
   GROUND_SHAPE_KINDS,
   HANDS,
   LOCALES,
   LOGIN_RESULTS,
+  LOOT_KINDS,
   NPC_SERVICES,
   RAISING_STATES,
+  RARITIES,
   ABILITY_PHASES,
   REGISTER_RESULTS,
   ROLES,
@@ -87,6 +90,13 @@ describe('tag discrimination', () => {
     expect(() => decodeSomnioMessage('{"tag":"notAVerb","payload":{}}')).toThrow(UnrecognizedTagError);
   });
 
+  it.each([
+    ['useItem', { slot: 2 }],
+    ['equipToggle', { slot: 1, hand: 'right' }],
+  ])('no longer knows %s', (tag, payload) => {
+    expect(() => decodeSomnioMessage(frame(tag, payload))).toThrow(UnrecognizedTagError);
+  });
+
   it('throws on malformed JSON', () => {
     expect(() => decodeSomnioMessage('{ not json')).toThrow(WireDecodingError);
   });
@@ -116,7 +126,10 @@ describe('runtime validation the erased types cannot do', () => {
     condition: 'hale',
   };
   const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
-  const row = { slot: 0, itemId: 'purse', quantity: 100 };
+  const item = { id: '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', baseId: 'sword', tier: 1, rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
+  const bagged = { place: 0, item };
+  const inventory = { coins: 100, equipped: [], bag: [bagged] };
+  const loot = { lootId: 'loot-1', x: 1, z: 2, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } };
   const character = { id: 'c', name: 'Saibot', people: 'vigils' };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
   const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
@@ -163,7 +176,12 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown gait', 'move', { ...move, gait: 'sprint' }, /unknown value "sprint"/],
     ['a coordinate past the metre cap', 'move', { ...move, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
     ['a negative coordinate past the metre cap', 'correction', { x: 0, z: -10_000.5 }, /z: exceeds 10000 metres/],
-    ['an unknown hand', 'equipToggle', { slot: 1, hand: 'both' }, /unknown value "both"/],
+    ['an item id outside the id alphabet on an equip', 'equip', { itemId: 'Sword 1' }, /itemId: expected an id/],
+    ['an unknown slot on an equip', 'equip', { itemId: 'ring-1', slot: 'charm' }, /slot: unknown value "charm"/],
+    ['a bag place below 0 on a move', 'moveItem', { itemId: 'cap-1', place: -1 }, /place: expected a bag place from 0 to 23, got -1/],
+    ['a bag place past the bag on a move', 'moveItem', { itemId: 'cap-1', place: 24 }, /place: expected a bag place from 0 to 23, got 24/],
+    ['a fractional bag place on a move', 'moveItem', { itemId: 'cap-1', place: 1.5 }, /place: expected Int32/],
+    ['an unknown slot on an unequip', 'unequip', { slot: 'charm' }, /unknown value "charm"/],
     ['an empty entity id', 'talk', { npcId: '' }, /npcId: expected a non-empty string/],
     ['an over-cap entity id', 'talk', { npcId: overCapEntityId }, /npcId: exceeds 320 UTF-8 bytes/],
     ['an empty target', 'target', { targetId: '' }, /targetId: expected a non-empty string/],
@@ -201,27 +219,101 @@ describe('runtime validation the erased types cannot do', () => {
       { moves: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame }, (_, index) => ({ ...move, id: `m${index}` }))] },
       /moves: exceeds 256 records \(got 257\)/,
     ],
-    ['a negative quantity', 'inventory', { rows: [{ ...row, quantity: -1 }] }, /quantity: expected a non-negative quantity/],
+    ['a negative purse', 'inventory', { ...inventory, coins: -1 }, /coins: expected a non-negative number/],
     ['a negative count of other sessions', 'otherSessions', { count: -1 }, /count: expected a non-negative number/],
     ['a negative count of other sessions revoked', 'otherSessionsRevoked', { revoked: true, count: -1 }, /count: expected a non-negative number/],
-    ['an empty item id', 'inventory', { rows: [{ ...row, itemId: '' }] }, /itemId: expected a non-empty string/],
-    ['an over-cap item id', 'inventory', { rows: [{ ...row, itemId: overCapId }] }, /itemId: exceeds 64 UTF-8 bytes/],
-    ['an unknown equipped hand', 'inventory', { rows: [{ ...row, equippedHand: 'none' }] }, /unknown value "none"/],
+    ['an empty item id', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, id: '' } }] }, /bag\[0\]\.item\.id: expected an id/],
+    ['an over-cap base id', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, baseId: overCapId } }] }, /baseId: exceeds 64 UTF-8 bytes/],
+    ['a tier below 1', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, tier: 0 } }] }, /tier: expected a tier of 1 or more/],
+    ['an unknown rarity', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, rarity: 'legendary' } }] }, /unknown value "legendary"/],
     [
-      'more inventory rows than the cap',
+      'a negative affix value',
       'inventory',
-      // The first row is no object, so only a count checked before the rows reports the cap.
-      { rows: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows }, (_, index) => ({ ...row, slot: index }))] },
-      /rows: exceeds 32 records \(got 33\)/,
+      { ...inventory, bag: [{ place: 0, item: { ...item, affixes: [{ affixId: 'damage', value: -1 }] } }] },
+      /value: expected a non-negative number/,
     ],
-    ['an unknown trade', 'inventory', { rows: [row], trade: { kind: 'stolen', itemId: 'dagger', coins: 60 } }, /trade\.kind: unknown value "stolen"/],
+    [
+      'more affixes than the cap',
+      'inventory',
+      // The first affix is no object, so only a count checked before the affixes reports the cap.
+      {
+        ...inventory,
+        bag: [{ place: 0, item: { ...item, affixes: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes }, () => item.affixes[0])] } }],
+      },
+      /affixes: exceeds 8 records \(got 9\)/,
+    ],
+    ['a bag place past the bag', 'inventory', { ...inventory, bag: [{ ...bagged, place: 24 }] }, /bag\[0\]\.place: expected a bag place from 0 to 23, got 24/],
+    [
+      'two items at one bag place',
+      'inventory',
+      { ...inventory, bag: [bagged, { place: 0, item: { ...item, id: 'other' } }] },
+      /bag\[1\]\.place: place 0 held twice/,
+    ],
+    ['an unknown equipped slot', 'inventory', { ...inventory, equipped: [{ slot: 'charm', item }] }, /equipped\[0\]\.slot: unknown value "charm"/],
+    [
+      'a slot worn twice',
+      'inventory',
+      {
+        ...inventory,
+        equipped: [
+          { slot: 'mainHand', item },
+          { slot: 'mainHand', item: { ...item, id: 'b' } },
+        ],
+      },
+      /equipped\[1\]\.slot: slot "mainHand" worn twice/,
+    ],
+    [
+      'more equipped items than there are slots',
+      'inventory',
+      // The first is no object, so only a count checked before the items reports the cap.
+      { ...inventory, equipped: [7, ...EQUIP_SLOTS.map((slot) => ({ slot, item }))] },
+      /equipped: exceeds 10 records \(got 11\)/,
+    ],
+    [
+      'more bag items than the cap',
+      'inventory',
+      // The first item is no object, so only a count checked before the bag reports the cap.
+      {
+        ...inventory,
+        bag: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({ place: index, item: { ...item, id: `i${index}` } }))],
+      },
+      /bag: exceeds 24 records \(got 25\)/,
+    ],
+    [
+      'an unknown trade',
+      'inventory',
+      { ...inventory, trade: { kind: 'stolen', baseId: 'dagger', rarity: 'plain', coins: 60 } },
+      /trade\.kind: unknown value "stolen"/,
+    ],
     [
       'a trade for negative coins',
       'inventory',
-      { rows: [row], trade: { kind: 'sold', itemId: 'dagger', coins: -1 } },
+      { ...inventory, trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: -1 } },
       /trade\.coins: expected a non-negative number/,
     ],
-    ['an over-cap ware on a buy', 'buy', { npcId: 'npc:a/b', itemId: overCapId }, /itemId: exceeds 64 UTF-8 bytes/],
+    ['an unknown kind of pick-up', 'inventory', { ...inventory, pickedUp: { kind: 'trophy', baseId: 'cap' } }, /pickedUp\.kind: unknown value "trophy"/],
+    ['an item id outside the id alphabet on a drop', 'dropItem', { itemId: 'Cap 1', heading: 90 }, /itemId: expected an id/],
+    ['a drop with no heading', 'dropItem', { itemId: 'cap-1' }, /heading: expected a finite number, got nothing/],
+    ['a drop with a heading of text', 'dropItem', { itemId: 'cap-1', heading: 'north' }, /heading: expected a finite number/],
+    ['a drop with a null heading', 'dropItem', { itemId: 'cap-1', heading: null }, /heading: expected a finite number, got null/],
+    ['an unknown kind of drop', 'inventory', { ...inventory, dropped: { kind: 'trophy', baseId: 'cap' } }, /dropped\.kind: unknown value "trophy"/],
+    ['a loot id outside the id alphabet', 'pickUp', { lootId: 'Loot 1' }, /lootId: expected an id/],
+    ['loot of an unknown kind', 'loot', { ...loot, contents: { kind: 'trophy' } }, /contents\.kind: unknown value "trophy"/],
+    ['loot of an unknown rarity', 'loot', { ...loot, contents: { ...loot.contents, rarity: 'legendary' } }, /contents\.rarity: unknown value "legendary"/],
+    ['loot shared by a string', 'loot', { ...loot, shared: 'yes' }, /shared: expected a bool/],
+    ['loot without its contents', 'loot', { lootId: 'loot-1', x: 1, z: 2 }, /contents: expected an object/],
+    ['loot past the metre cap', 'loot', { ...loot, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
+    [
+      'loot thrown from past the metre cap',
+      'loot',
+      { ...loot, from: { x: 0, z: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres - 1 } },
+      /from\.z: exceeds 10000 metres/,
+    ],
+    ['loot thrown by a malformed entity', 'loot', { ...loot, from: { x: 0, z: 0, entityId: 7 } }, /from\.entityId: expected a string/],
+    ['loot thrown from an unknown hand', 'loot', { ...loot, from: { x: 0, z: 0, entityId: 'a', hand: 'head' } }, /from\.hand: unknown value "head"/],
+    ['loot gone without its id', 'lootGone', {}, /lootId: expected a string, got nothing/],
+    ['an over-cap ware on a buy', 'buy', { npcId: 'npc:a/b', baseId: overCapId }, /baseId: exceeds 64 UTF-8 bytes/],
+    ['an unknown held hand item', 'held', { entityId: 'a', held: { mainHand: 'Short Sword' } }, /held\.mainHand: expected an id/],
     ['a ware outside the id alphabet on a sell', 'sell', { npcId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
     ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /npcId: expected a string, got nothing/],
     ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
@@ -333,7 +425,6 @@ describe('runtime validation the erased types cannot do', () => {
       },
       /cooldowns: exceeds 32 records \(got 33\)/,
     ],
-    ['a fractional inventory slot', 'useItem', { slot: 0.5 }, /fractional 0.5/],
     ['an unknown speech kind on a clientSay', 'clientSay', { text: 'hallo', kind: 'sing' }, /unknown value "sing"/],
     ['a clientSay without its kind', 'clientSay', { text: 'hallo' }, /kind: expected a string, got nothing/],
     ['an unknown locale on a login', 'login', { email: 'info@example.com', password: 'hunter2', locale: 'fr' }, /locale: unknown value "fr"/],
@@ -358,9 +449,16 @@ describe('runtime validation the erased types cannot do', () => {
     expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('move', { ...move, x: -SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: 'outdoors', selfId: 'a', people: 'vigils', worldSeconds: 0 }))).not.toThrow();
-    expect(() => decodeSomnioMessage(frame('inventory', { rows: [{ ...row, itemId: atCapId, quantity: 0 }] }))).not.toThrow();
-    const atCapRows = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows }, (_, index) => ({ ...row, slot: index }));
-    expect(() => decodeSomnioMessage(frame('inventory', { rows: atCapRows }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('inventory', { ...inventory, coins: 0, bag: [{ place: 0, item: { ...item, baseId: atCapId } }] }))).not.toThrow();
+    const atCapBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
+      place: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems - 1 - index,
+      item: { ...item, id: `i${index}` },
+    }));
+    expect(() => decodeSomnioMessage(frame('inventory', { ...inventory, bag: atCapBag }))).not.toThrow();
+    const atCapAffixes = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes }, () => item.affixes[0]);
+    expect(() => decodeSomnioMessage(frame('inventory', { ...inventory, bag: [{ place: 0, item: { ...item, affixes: atCapAffixes } }] }))).not.toThrow();
+    const everySlotWorn = EQUIP_SLOTS.map((slot) => ({ slot, item }));
+    expect(() => decodeSomnioMessage(frame('inventory', { ...inventory, equipped: everySlotWorn }))).not.toThrow();
     const atCapMoves = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxMovesPerFrame }, (_, index) => ({ ...move, id: `m${index}` }));
     expect(() => decodeSomnioMessage(frame('moves', { moves: atCapMoves }))).not.toThrow();
     const atCapRanks = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks }, (_, index) => ({ teachingId: `t${index}`, rank: 1, practice: 0 }));
@@ -440,6 +538,7 @@ describe('round trips', () => {
       frame('entity', { id: 'a', kind: 'npc', characterModelId: 'libus', name: 'Libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk', condition: 'hale' }),
     );
     expect('service' in decoded.payload).toBe(false);
+    expect('held' in decoded.payload).toBe(false);
   });
 
   /** A verb with nothing to say still has to carry an object, and whatever a client puts in it is dropped. */
@@ -447,27 +546,18 @@ describe('round trips', () => {
     expect(decodeSomnioMessage(frame(tag, { extra: 1 }))).toEqual({ tag, payload: {} });
   });
 
-  /** An absent hand is the unequip, so it must stay absent rather than decode to a default hand. */
-  it('equipToggle round-trips an unequip without a hand', () => {
-    const message: SomnioMessage = { tag: 'equipToggle', payload: { slot: 1 } };
-    const decoded = roundTrip(message);
-    expect(decoded).toEqual(message);
-    expect('hand' in decoded.payload).toBe(false);
-    expect(decodeSomnioMessage(frame('equipToggle', { slot: 1, hand: null }))).toEqual(message);
-  });
-
   /** Only the frame a trade produced says what was traded, so every other frame must decode without the key. */
   it('inventory decodes a frame no trade produced without a trade key', () => {
-    const decoded = decodeSomnioMessage(frame('inventory', { rows: [{ slot: 0, itemId: 'purse', quantity: 100 }], trade: null }));
-    expect(decoded).toEqual({ tag: 'inventory', payload: { rows: [{ slot: 0, itemId: 'purse', quantity: 100 }] } });
+    const inventory = { coins: 100, equipped: [], bag: [] };
+    const decoded = decodeSomnioMessage(frame('inventory', { ...inventory, trade: null }));
+    expect(decoded).toEqual({ tag: 'inventory', payload: inventory });
     expect('trade' in decoded.payload).toBe(false);
   });
 
-  it('inventory decodes an unequipped row without an equippedHand key', () => {
-    const decoded = decodeSomnioMessage(frame('inventory', { rows: [{ slot: 0, itemId: 'purse', quantity: 100, equippedHand: null }] }));
-    if (decoded.tag !== 'inventory') throw new Error('expected an inventory frame');
-    expect(decoded.payload.rows).toEqual([{ slot: 0, itemId: 'purse', quantity: 100 }]);
-    expect('equippedHand' in decoded.payload.rows[0]!).toBe(false);
+  /** An empty hand is left out, so it must stay absent rather than decode to an empty id. */
+  it('held decodes empty hands without their keys', () => {
+    const decoded = decodeSomnioMessage(frame('held', { entityId: 'a', held: { mainHand: null, offHand: 'moonstone' } }));
+    expect(decoded).toEqual({ tag: 'held', payload: { entityId: 'a', held: { offHand: 'moonstone' } } });
   });
 
   /** World time is fractional and far past what an integer or a narrowed float field could carry. */
@@ -534,8 +624,16 @@ describe('string literal sets', () => {
     expect(GROUND_SHAPE_KINDS).toEqual(['stroke', 'polygon']);
   });
 
+  it('pins EquipSlot', () => {
+    expect(EQUIP_SLOTS).toEqual(['mainHand', 'offHand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2']);
+  });
+
   it('pins Hand', () => {
-    expect(HANDS).toEqual(['left', 'right']);
+    expect(HANDS).toEqual(['mainHand', 'offHand']);
+  });
+
+  it('pins Rarity', () => {
+    expect(RARITIES).toEqual(['plain', 'magic', 'rare']);
   });
 
   it('pins SectorKind', () => {
@@ -585,6 +683,10 @@ describe('string literal sets', () => {
   it('pins TradeKind', () => {
     expect(TRADE_KINDS).toEqual(['bought', 'sold']);
   });
+
+  it('pins LootKind', () => {
+    expect(LOOT_KINDS).toEqual(['item']);
+  });
 });
 
 /**
@@ -593,7 +695,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(19);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(20);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -621,7 +723,8 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.markEdgeNoiseMetres).toBe(0.375);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMarkStrokeRadiusMetres).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
-    expect(SOMNIO_PROTOCOL_CONSTANTS.maxInventoryRows).toBe(32);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems).toBe(24);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns).toBe(32);

@@ -16,3 +16,12 @@ export interface Character {
   lucidity: Lucidity;
   lastSeen: Date;
 }
+
+/**
+ * The `lastSeen` of a character's next write: now, but strictly after `previous`, so the `last_seen`
+ * guard accepts it over the row it follows even when two are taken in one millisecond or the
+ * clock has stepped back.
+ */
+export function nextLastSeen(previous: Date, now: Date): Date {
+  return new Date(Math.max(now.getTime(), previous.getTime() + 1));
+}

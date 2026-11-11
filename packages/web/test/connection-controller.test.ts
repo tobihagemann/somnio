@@ -1086,6 +1086,25 @@ describe('leave removes a departed peer', () => {
   });
 });
 
+describe('what a dreamer holds', () => {
+  it('keeps the hands a peer joined with, and draws what they hold once they change', () => {
+    const drawn: unknown[] = [];
+    const rig = makeRig({ renderSurface: { ...noopRenderSurface, updateHeld: (entityId, held) => drawn.push([entityId, held]) } });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(peer({ held: { mainHand: 'sword' } }));
+    expect(rig.controller.entities.get('peer')?.held).toEqual({ mainHand: 'sword' });
+
+    rig.deliver({ tag: 'held', payload: { entityId: 'peer', held: { offHand: 'moonstone' } } });
+
+    expect(rig.controller.entities.get('peer')?.held).toEqual({ offHand: 'moonstone' });
+    expect(drawn).toEqual([['peer', { offHand: 'moonstone' }]]);
+  });
+});
+
 describe('registration', () => {
   let rig: Rig;
 

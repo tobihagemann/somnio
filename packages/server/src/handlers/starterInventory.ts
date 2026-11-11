@@ -1,7 +1,10 @@
-import type { InventoryRow } from '@somnio/core';
+import { plainInstance } from '@somnio/core';
+import type { BaseItemId, Inventory } from '@somnio/core';
 
-/** A purse holding 100 coins and a cudgel in the secondary slot. */
-export const STARTER_INVENTORY: readonly InventoryRow[] = [
-  { slot: 0, itemId: 'purse', quantity: 100, equippedHand: undefined },
-  { slot: 1, itemId: 'cudgel', quantity: 1, equippedHand: undefined },
-];
+/** What a new character starts with: 100 coins and a cudgel in the bag. */
+const STARTER_KIT = { coins: 100, bag: ['cudgel'] } as const satisfies { coins: number; bag: readonly BaseItemId[] };
+
+/** The starter kit as a new character's inventory, each item plain under an id of its own. */
+export function starterInventory(): Inventory {
+  return { coins: STARTER_KIT.coins, equipped: {}, bag: STARTER_KIT.bag.map((baseId, place) => ({ place, item: plainInstance(baseId) })) };
+}

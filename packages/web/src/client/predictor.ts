@@ -66,10 +66,17 @@ const FACING_DEADZONE_METRES = 0.05;
 /** Less than this nearer a waypoint in a tick is no progress. */
 const PROGRESS_METRES = 1e-3;
 
+/** What a walk does once the player stands within `within` metres of its destination, at most once. */
+export interface Arrival {
+  within: number;
+  act: () => void;
+}
+
 /**
  * Where the player is walking. A path is followed waypoint by waypoint to a destination, and
- * searched again round what stops it. A steer heads straight for a point a held pointer moves. A
- * leap heads straight for its end at a speed of its own, and ends where it stops.
+ * searched again round what stops it. One with an arrival acts as it comes in range, there or short
+ * of it. A steer heads straight for a point a held pointer moves. A leap heads straight for its end
+ * at a speed of its own, and ends where it stops.
  */
 export type Walk =
   | {
@@ -85,6 +92,7 @@ export type Walk =
       searchAtMs: number | undefined;
       /** When the leg under way last brought the player nearer its waypoint. */
       progressAtMs: number;
+      arrive: Arrival | undefined;
     }
   | { kind: 'steer'; toward: Point }
   | { kind: 'leap'; end: Point; metresPerSecond: number };
@@ -157,6 +165,8 @@ export interface PredictorOptions {
   fallen: () => boolean;
   /** Whether a swing is still slowing the player at `nowMs`. */
   slowed: (nowMs: number) => boolean;
+  /** Whether the player's own channel holds them still: the walk under way waits, kept as it is, until it lands or breaks. */
+  heldStill: () => boolean;
 }
 
 export class GameplayPredictor {
@@ -170,6 +180,7 @@ export class GameplayPredictor {
   private readonly effects: () => readonly EffectId[];
   private readonly fallen: () => boolean;
   private readonly slowed: (nowMs: number) => boolean;
+  private readonly heldStill: () => boolean;
 
   private lastTickMs: number | undefined;
   private lastReport: { position: Point; facing: Heading; gait: Gait } | undefined;
@@ -191,14 +202,20 @@ export class GameplayPredictor {
     this.effects = options.effects;
     this.fallen = options.fallen;
     this.slowed = options.slowed;
+    this.heldStill = options.heldStill;
   }
 
   get walk(): Readonly<Walk> | undefined {
     return this.walking;
   }
 
-  /** Walks to `destination` along a path searched on the next tick, in place of any walk under way. */
-  walkTo(destination: Point): void {
+  /**
+   * Walks to `destination` along a path searched on the next tick, in place of any walk under way.
+   * With `arrive`, the walk ends on the first tick the player stands within its range of the
+   * destination, short of it or where the path stops, and `act` runs then, after the report that
+   * brought them there. A walk that ends out of range, or that something else ends first, never acts.
+   */
+  walkTo(destination: Point, arrive?: Arrival): void {
     this.walking = {
       kind: 'path',
       destination,
@@ -207,7 +224,13 @@ export class GameplayPredictor {
       searches: 0,
       searchAtMs: Number.NEGATIVE_INFINITY,
       progressAtMs: Number.NEGATIVE_INFINITY,
+      arrive,
     };
+  }
+
+  /** The walk under way goes on, but does nothing on arriving. */
+  dropArrival(): void {
+    if (this.walking?.kind === 'path') this.walking.arrive = undefined;
   }
 
   /**
@@ -304,6 +327,7 @@ export class GameplayPredictor {
       return;
     }
 
+    const walk = this.walking;
     const selfEntity: ClientEntity = { ...existing };
     const gait = this.winded() ? 'walk' : gaitAllowed(this.running() ? 'run' : 'jog', this.effects());
 
@@ -311,7 +335,10 @@ export class GameplayPredictor {
     const elapsedMs = this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS);
     this.lastTickMs = nowMs;
 
-    const course = this.awaitingDoor ? undefined : this.course(world, selfEntity, nowMs);
+    const heldStill = this.heldStill();
+    // Standing still while held is no stall, so a path's leg is timed afresh from when it lets go.
+    if (heldStill && walk?.kind === 'path') walk.progressAtMs = nowMs;
+    const course = this.awaitingDoor || heldStill ? undefined : this.course(world, selfEntity, nowMs);
     // Intended (pre-collision) travel: the multiplier below sizes the pre-resolution step, so a
     // wall-slide keeps clip and speed mutually consistent. `undefined` on a stationary tick
     // preserves the renderer's held travel direction.
@@ -333,6 +360,22 @@ export class GameplayPredictor {
     // No report while a door is pending: the server answers `useDoor` by moving the player to
     // another space, and a trailing `move` would carry this space's coordinates into it.
     if (!this.awaitingDoor) this.reportIfChanged(selfEntity, nowMs);
+    if (walk?.kind === 'path') this.arriveIfInRange(walk, selfEntity.position);
+  }
+
+  /**
+   * Acts on the walk's arrival once the player stands in range, while the walk goes on or has just
+   * ended of itself. A door asked for ends it without acting, and so does anything that ended it
+   * between ticks or replaced it.
+   */
+  private arriveIfInRange(walk: Extract<Walk, { kind: 'path' }>, position: Point): void {
+    const arrive = walk.arrive;
+    if (arrive === undefined || this.awaitingDoor || (this.walking !== walk && this.walking !== undefined)) return;
+    if (distance(position, walk.destination) > arrive.within) return;
+    walk.arrive = undefined;
+    if (this.walking === walk) this.walking = undefined;
+    this.flush();
+    arrive.act();
   }
 
   /** Moves every gliding remote entity to where it stands at `nowMs`, in the session's entities and on the render surface. */

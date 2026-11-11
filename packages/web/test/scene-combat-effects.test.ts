@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { boltFlightSeconds, effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
 import type { Point } from '@somnio/core';
+import { RARITIES } from '@somnio/protocol';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { COMBAT_EFFECTS_NAME, EFFECT_POOL_SIZES, STRIKE_AT } from '@/scene/combatEffects';
+import { LOOT_BEAM_NAME, LOOT_LABEL_NAME, LOOT_MARKERS_NAME } from '@/scene/lootMarkers';
 import { offsetDirection } from '@/scene/cameraRig';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
@@ -29,6 +31,7 @@ const CLIPS = [
     'Cheering',
     'Ranged_Magic_Shoot',
     'Ranged_Magic_Spellcasting',
+    'Throw',
   ].map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, [])),
   LONG_CAST,
 ];
@@ -65,7 +68,9 @@ function skinnedBody(): THREE.Object3D {
  * clamps what reaches the effects to a tenth of a second. `hide` moves it on with no tick, as a
  * hidden tab's does.
  */
-function combatScene(options: { reducedMotion?: boolean; clipless?: readonly number[] } = {}): {
+function combatScene(
+  options: { reducedMotion?: boolean; clipless?: readonly number[]; ground?: () => THREE.Object3D; hand?: (baseId: string) => THREE.Object3D } = {},
+): {
   scene: WorldScene;
   models: THREE.Object3D[];
   hide: (ms: number) => void;
@@ -75,9 +80,13 @@ function combatScene(options: { reducedMotion?: boolean; clipless?: readonly num
     prewarm: async () => {},
     character: () => {
       const model = skinnedBody();
+      // Bodies hold what a hand holds only where the scene is given hand models.
+      if (options.hand !== undefined) model.add(handSlot('handslotr', -0.25), handSlot('handslotl', 0.25));
       models.push(model);
       return model;
     },
+    hand: (baseId) => options.hand?.(baseId),
+    ground: () => options.ground?.(),
     object: () => undefined,
     clipsFor: (root) => (options.clipless?.includes(models.indexOf(root)) === true ? CLIPS.slice(0, 1) : CLIPS),
     prototypeMeshes: () => undefined,
@@ -90,6 +99,14 @@ function combatScene(options: { reducedMotion?: boolean; clipless?: readonly num
     tick(seconds);
   });
   return { scene, models, hide: (ms) => (wallMs += ms) };
+}
+
+/** A hand's bone, at about the height a hand hangs, turned off the body's axes so a held model's pose is not the body's. */
+function handSlot(name: string, x: number): THREE.Bone {
+  const bone = Object.assign(new THREE.Bone(), { name });
+  bone.position.set(x, 0.6, 0.1);
+  bone.quaternion.setFromEuler(new THREE.Euler(0.4, -0.7, 0.2));
+  return bone;
 }
 
 function place(scene: WorldScene, id: string, position: Point, overrides: Partial<ClientEntity> = {}): void {
@@ -1909,6 +1926,234 @@ describe('Veil', () => {
   });
 });
 
+describe('a thrown drop', () => {
+  const CAP = { kind: 'item', baseId: 'cap', rarity: 'rare' } as const;
+  /** Where the dreamer at (10, 10) throws the cap, east of them. */
+  const LANDS = { x: 11.3, z: 10 };
+
+  /** A scene where `self` stands at (10, 10) and a drop lies on the ground as a flat box, which `item` holds. */
+  function throwing(options: { reducedMotion?: boolean } = {}) {
+    const item = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.1).translate(0, 0.03, 0));
+    const combat = combatScene({ ...options, ground: () => item });
+    place(combat.scene, 'self', { x: 10, z: 10 });
+    combat.scene.tick(0.01);
+    const loot = combat.scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
+    /** Whether the drop's model, its name, and its beam are drawn. */
+    const drawn = () => ({
+      item: isDrawn(item),
+      name: loot.getObjectsByProperty('name', LOOT_LABEL_NAME).some(isDrawn),
+      beam: loot.getObjectsByProperty('name', LOOT_BEAM_NAME).some(isDrawn),
+    });
+    const at = () => item.getWorldPosition(new THREE.Vector3());
+    return { ...combat, item, drawn, at };
+  }
+
+  function isDrawn(object: THREE.Object3D): boolean {
+    for (let node: THREE.Object3D | null = object; node !== null; node = node.parent) if (!node.visible) return false;
+    return true;
+  }
+
+  it('plays the throw on the dreamer who threw it and flies the item from their hand, in an arc, to where it lies, its name and its light shown as it lands', () => {
+    const { scene, drawn, at } = throwing();
+    const played = vi.spyOn(THREE.AnimationMixer.prototype, 'clipAction');
+    scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, shared: true, from: { x: 10, z: 10, entityId: 'self' } });
+    expect(played.mock.calls.map(([clip]) => (clip as THREE.AnimationClip).name)).toContain('Throw');
+    expect(drawn()).toEqual({ item: false, name: false, beam: false });
+
+    // The throw lets go a quarter of a second in, a little over the ground by the thrower.
+    run(scene, 0.26);
+    expect(drawn()).toEqual({ item: true, name: false, beam: false });
+    expect(at().x).toBeLessThan(10.2);
+    expect(at().y).toBeGreaterThan(0.3);
+    run(scene, 0.2);
+    expect(at().x).toBeGreaterThan(10.4);
+    expect(at().x).toBeLessThan(LANDS.x);
+    expect(at().y).toBeGreaterThan(0.1);
+
+    run(scene, 0.3);
+    expect(drawn()).toEqual({ item: true, name: true, beam: true });
+    run(scene, 0.2);
+    expect(at()).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
+  });
+
+  it("bursts a nightmare's drop out of its body at once, with no throw played, higher and longer than a dreamer's throw, and hops higher as it lands", () => {
+    const { scene, drawn, at } = throwing();
+    const played = vi.spyOn(THREE.AnimationMixer.prototype, 'clipAction');
+    scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, from: { x: 10.8, z: 10 } });
+    scene.tick(0.01);
+    expect(played).not.toHaveBeenCalled();
+    expect(drawn().item).toBe(true);
+    expect(at().x).toBeCloseTo(10.8, 1);
+    expect(at().y).toBeCloseTo(0.55, 2);
+
+    // High over the bodies halfway, and still in the air past where a throw has come down.
+    run(scene, 0.32);
+    expect(at().y).toBeGreaterThan(1.2);
+    run(scene, 0.2);
+    expect(drawn().name).toBe(false);
+    expect(at().y).toBeGreaterThan(0.5);
+
+    run(scene, 0.15);
+    expect(drawn().name).toBe(true);
+    run(scene, 0.08);
+    expect(at().y).toBeGreaterThan(0.08);
+    run(scene, 0.2);
+    expect(at()).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
+  });
+
+  it.each<[string, { reducedMotion?: boolean }, (combat: ReturnType<typeof throwing>) => void]>([
+    ['under reduced motion', { reducedMotion: true }, () => {}],
+    ['shown while the tab stalls', {}, ({ hide }) => hide(2000)],
+  ])('lays a thrown drop where it lies at once %s', (_label, options, before) => {
+    const combat = throwing(options);
+    before(combat);
+    combat.scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, shared: true, from: { x: 10, z: 10, entityId: 'self' } });
+    expect([combat.drawn(), combat.at()]).toEqual([{ item: true, name: true, beam: true }, new THREE.Vector3(LANDS.x, 0, LANDS.z)]);
+  });
+
+  it('lays a drop in the air where it lies once the tab stalls', () => {
+    const { scene, hide, drawn, at } = throwing();
+    scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, shared: true, from: { x: 10, z: 10, entityId: 'self' } });
+    run(scene, 0.3);
+    hide(2000);
+    scene.tick(0.01);
+    expect([drawn(), at()]).toEqual([{ item: true, name: true, beam: true }, new THREE.Vector3(LANDS.x, 0, LANDS.z)]);
+  });
+
+  describe('from a hand', () => {
+    const SWORD = { kind: 'item', baseId: 'sword', rarity: 'rare' } as const;
+    const FROM_HAND = { x: 10, z: 10, entityId: 'self', hand: 'mainHand' } as const;
+    /** A blade, as a hand model holds it: its grip half turned in its node, as the pack's are. */
+    const BLADE = new THREE.BoxGeometry(0.08, 1, 0.03).translate(0, 0.4, 0);
+    const GRIP = new THREE.Matrix4().compose(
+      new THREE.Vector3(0, 0.03, 0),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI),
+      new THREE.Vector3(1, 1, 1),
+    );
+    /** How the ground model lays the hand model's piece down: turned onto its side, scaled to the size it is held at, and moved. */
+    const LAID_DOWN = new THREE.Matrix4().compose(
+      new THREE.Vector3(0.05, 0.02, -0.1),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, 1.1, Math.PI / 2)),
+      new THREE.Vector3().setScalar(CHARACTER_SCALE),
+    );
+
+    /**
+     * A scene where `self` stands at (10, 10) holding a sword and a shield, whose hand models are
+     * kept in `props`, and the sword lies on the ground as `lying`, the same blade laid down, or,
+     * `mirrored`, the blade laid down as its mirror image, which is not one piece with it.
+     */
+    function throwingFromHand(options: { reducedMotion?: boolean; mirrored?: boolean } = {}) {
+      const props: Record<string, THREE.Mesh> = {};
+      const hand = (baseId: string): THREE.Object3D => {
+        const mesh = new THREE.Mesh(BLADE);
+        mesh.applyMatrix4(GRIP);
+        props[baseId] = mesh;
+        return new THREE.Group().add(mesh);
+      };
+      const mirror = new THREE.Matrix4().makeScale(options.mirrored === true ? -1 : 1, 1, 1);
+      const lying = new THREE.Mesh(BLADE.clone().applyMatrix4(LAID_DOWN.clone().multiply(mirror).multiply(GRIP)));
+      const combat = combatScene({ ...options, hand, ground: () => new THREE.Group().add(lying) });
+      place(combat.scene, 'self', { x: 10, z: 10 }, { held: { mainHand: 'sword', offHand: 'shield' } });
+      combat.scene.tick(0.01);
+      const bones = { mainHand: combat.models[0]!.getObjectByName('handslotr')!, offHand: combat.models[0]!.getObjectByName('handslotl')! };
+      /** What each hand draws. */
+      const inHands = () => ({ mainHand: bones.mainHand.children.length, offHand: bones.offHand.children.length });
+      /** Where each corner of the blade is drawn, from the given mesh. */
+      const drawnAt = (mesh: THREE.Mesh): THREE.Vector3[] => {
+        combat.scene.scene.updateMatrixWorld(true);
+        const position = mesh.geometry.getAttribute('position');
+        return Array.from({ length: position.count }, (_, index) => new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld));
+      };
+      return { ...combat, props, lying, bones, inHands, drawnAt };
+    }
+
+    /** The farthest any corner of the blade is drawn from where it was. */
+    function farthest(from: readonly THREE.Vector3[], to: readonly THREE.Vector3[]): number {
+      return Math.max(...from.map((corner, index) => corner.distanceTo(to[index]!)));
+    }
+
+    it('keeps the item on the hand through the wind-up, though the hands are shown emptied, and flies it from where and as it was drawn as it leaves the hand, the other hand emptied at once', () => {
+      const { scene, props, lying, inHands, drawnAt } = throwingFromHand();
+      const sword = props.sword!;
+      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
+      scene.updateHeld('self', {});
+      expect(inHands()).toEqual({ mainHand: 1, offHand: 0 });
+
+      run(scene, 0.2);
+      expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 1, offHand: 0 }, false]);
+
+      let held = drawnAt(sword);
+      let ticks = 0;
+      for (; sword.parent!.parent !== null && ticks < 10; ticks += 1) {
+        held = drawnAt(sword);
+        scene.tick(0.01);
+      }
+      expect(ticks).toBeLessThan(10);
+      // On the frame the sword leaves the hand, the drop is drawn where it was, turned as it was.
+      expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 0, offHand: 0 }, true]);
+      expect(farthest(held, drawnAt(lying))).toBeLessThan(1e-5);
+      scene.tick(0.01);
+      expect(farthest(held, drawnAt(lying))).toBeGreaterThan(1e-3);
+
+      run(scene, 1);
+      expect(lying.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
+    });
+
+    it("flies an item whose hand model and ground model are not one piece from the hand's bone, the hand's model gone as it leaves", () => {
+      const { scene, props, lying, bones, inHands } = throwingFromHand({ mirrored: true });
+      const sword = props.sword!;
+      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
+      scene.updateHeld('self', {});
+      run(scene, 0.2);
+      let ticks = 0;
+      for (; sword.parent!.parent !== null && ticks < 10; ticks += 1) scene.tick(0.01);
+      expect(ticks).toBeLessThan(10);
+
+      // On the frame the sword leaves the hand, the drop leaves from the hand's bone, lying level as it lies on the ground, not turned as the hand held it.
+      scene.scene.updateMatrixWorld(true);
+      expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 0, offHand: 0 }, true]);
+      const hand = bones.mainHand.getWorldPosition(new THREE.Vector3());
+      expect(lying.getWorldPosition(new THREE.Vector3()).distanceTo(hand)).toBeLessThan(1e-6);
+      expect(hand.y).toBeGreaterThan(0.2);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(lying.getWorldQuaternion(new THREE.Quaternion()));
+      expect(up.y).toBeCloseTo(1, 9);
+      expect(new THREE.Vector3(0, 1, 0).applyQuaternion(bones.mainHand.getWorldQuaternion(new THREE.Quaternion())).y).toBeLessThan(0.99);
+
+      run(scene, 1);
+      expect(lying.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
+    });
+
+    it.each<[string, { reducedMotion?: boolean }, (combat: ReturnType<typeof throwingFromHand>) => void]>([
+      ['under reduced motion', { reducedMotion: true }, () => {}],
+      ['shown while the tab stalls', {}, ({ hide }) => hide(2000)],
+    ])('empties the hand at once and lays the drop where it lies %s', (_label, options, before) => {
+      const combat = throwingFromHand(options);
+      before(combat);
+      combat.scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
+      combat.scene.updateHeld('self', {});
+      expect([combat.inHands(), isDrawn(combat.lying), combat.lying.getWorldPosition(new THREE.Vector3())]).toEqual([
+        { mainHand: 0, offHand: 0 },
+        true,
+        new THREE.Vector3(LANDS.x, 0, LANDS.z),
+      ]);
+    });
+
+    it('lets go of the hand and lays the drop where it lies once the tab stalls in the wind-up', () => {
+      const { scene, hide, inHands, lying } = throwingFromHand();
+      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
+      scene.updateHeld('self', {});
+      run(scene, 0.1);
+      hide(2000);
+      scene.tick(0.01);
+      expect([inHands(), isDrawn(lying), lying.getWorldPosition(new THREE.Vector3())]).toEqual([
+        { mainHand: 0, offHand: 0 },
+        true,
+        new THREE.Vector3(LANDS.x, 0, LANDS.z),
+      ]);
+    });
+  });
+});
+
 describe('a look the server times', () => {
   const outlinedIn = (scene: WorldScene, color: number) =>
     visible(hulls(scene, THREE.BackSide)).some((mesh) => (mesh.material as THREE.MeshBasicMaterial).color.getHex() === color);
@@ -2043,7 +2288,7 @@ describe('the pools and the programs', () => {
     const scene = fight();
     let compiled = new Set<string>();
     const compileAsync = vi.fn((root: THREE.Object3D) => {
-      compiled = programVariants(root);
+      compiled = new Set([...compiled, ...programVariants(root)]);
       return Promise.resolve(root);
     });
     await scene.prewarm({ compileAsync });
@@ -2051,6 +2296,24 @@ describe('the pools and the programs', () => {
 
     everything(scene);
     expect([...programVariants(effects(scene))].filter((variant) => !compiled.has(variant))).toEqual([]);
+  });
+
+  it('compiles the programs a drop on the ground draws in the prewarm, and adds no light', async () => {
+    const scene = fight();
+    const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
+    let compiled = new Set<string>();
+    const compileAsync = vi.fn((root: THREE.Object3D) => {
+      compiled = new Set([...compiled, ...programVariants(root)]);
+      return Promise.resolve(root);
+    });
+    const lights = (): number => scene.scene.children.filter((child) => (child as THREE.Light).isLight).length;
+    const before = lights();
+    await scene.prewarm({ compileAsync });
+    expect(compileAsync).toHaveBeenCalledWith(loot, scene.camera, scene.scene);
+
+    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
+    expect([...programVariants(loot)].filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(lights()).toBe(before);
   });
 
   /** A disposed material releases its program, which three deletes once no material uses it, so the next flash or brace would compile it again. */
@@ -2116,6 +2379,7 @@ function programVariants(root: THREE.Object3D): Set<string> {
           each.customProgramCacheKey(),
           (each as THREE.ShaderMaterial).vertexShader,
           (each as THREE.ShaderMaterial).fragmentShader,
+          ((each as THREE.MeshBasicMaterial).map ?? null) !== null,
           (object as THREE.SkinnedMesh).isSkinnedMesh === true,
           geometry.hasAttribute('position'),
           geometry.hasAttribute('normal'),

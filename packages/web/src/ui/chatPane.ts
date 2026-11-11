@@ -76,7 +76,7 @@ export class ChatPane {
       this.panel = element('section', {
         className: 'fantasy-panel fantasy-panel--opaque hud-chat hud-chat--open hidden',
         attributes: { 'aria-label': t('Chat') },
-        children: [windowHead(t('Chat'), () => this.closeChat()), this.scrollback, this.input],
+        children: [...windowHead(t('Chat'), () => this.closeChat()), this.scrollback, this.input],
       });
       this.root = element('div', { className: 'hud-chat-corner', children: [this.peek, this.toggle, this.panel] });
     } else {

@@ -1,5 +1,15 @@
-import { ability, abilityChannelSeconds, abilityCooldownSeconds, abilityTeaching, isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
-import type { Ability, AbilityId, AbilityRefusal, EngageAction } from '@somnio/core';
+import {
+  SOMNIO_CONSTANTS,
+  ability,
+  abilityChannelSeconds,
+  abilityCooldownSeconds,
+  abilityTeaching,
+  isTeachingId,
+  poolShare,
+  practiceNeeded,
+  teaching,
+} from '@somnio/core';
+import type { Ability, AbilityId, AbilityRefusal, EngageAction, HandNeed } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
 import { taskIsDone, wholeSecondsLeft } from '@/client';
 import type { AbilitySlotState, CooldownSpan } from '@/client';
@@ -210,11 +220,11 @@ export function runButton(onPress: () => void, orb: boolean): HTMLButtonElement 
 }
 
 /** A number of seconds or metres as the player's language writes it, to two places at most. */
-function decimal(value: number): string {
+export function decimal(value: number): string {
   return new Intl.NumberFormat(currentLocale(), { maximumFractionDigits: 2 }).format(value);
 }
 
-/** Who an ability lands on and how far beyond contact it reaches, from its aim. */
+/** Who an ability lands on and how far it reaches, from its aim: beyond contact, or centre to centre round the caster for dreamers. */
 function abilityReach(used: Ability): string {
   const metres = decimal(used.range);
   switch (used.aim) {
@@ -226,7 +236,21 @@ function abilityReach(used: Ability): string {
       return t('Yourself');
     case 'area':
       if (used.does.kind === 'strike') return t('Nightmares in reach, in front of you');
-      return used.among === 'nightmare' ? t('Nightmares up to %@ m around you', metres) : t('You and dreamers up to %@ m around you', metres);
+      if (used.among === 'nightmare') return t('Nightmares up to %@ m around you', metres);
+      // Every dreamer's body is the same size, so their reach reads as the rule's own number, centre to centre.
+      return t('You and dreamers up to %@ m around you', decimal(used.range + 2 * SOMNIO_CONSTANTS.playerRadius));
+  }
+}
+
+/** What a kit needs in hand that the player does not hold. */
+function handLine(need: HandNeed): string {
+  switch (need) {
+    case 'mainHand':
+      return t('Needs a weapon or an empty main hand');
+    case 'moonstone':
+      return t('Needs the Moonstone in your off hand');
+    case 'focus':
+      return t('Needs a wand in your off hand');
   }
 }
 
@@ -241,7 +265,7 @@ function refusalLine(used: Ability, refusal: AbilityRefusal): string | undefined
     case 'channelling':
       return t('Not while channelling');
     case 'hand':
-      return used.hand === 'moonstone' ? t('Needs the Moonstone in hand') : t('Needs a weapon or empty hands');
+      return handLine(used.hand);
     case 'cost':
       return used.pool === 'spirit' ? t('Not enough Spirit') : t('Not enough Balance');
     case 'recipient':

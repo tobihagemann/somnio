@@ -4,7 +4,7 @@ import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'js
 import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
-  PostgresInventoryRepository,
+  PostgresItemRepository,
   PostgresNPCDialogStateRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
@@ -96,7 +96,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
 
   const accounts = new PostgresAccountRepository(db);
   const characters = new PostgresCharacterRepository(db);
-  const inventories = new PostgresInventoryRepository(db);
+  const items = new PostgresItemRepository(db);
   const npcDialogStates = new PostgresNPCDialogStateRepository(db);
   const worldClocks = new PostgresWorldClockRepository(db);
   const sessions = new PostgresSessionRepository(db);
@@ -117,7 +117,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const dependencies: ConnectionDependencies = {
     accounts,
     characters,
-    inventories,
+    items,
     npcDialogStates,
     sessions,
     worldRouter,
