@@ -188,7 +188,9 @@ describe('gameplay end to end', () => {
         z: libus.z,
       },
     });
-    expect((await talker.client.until('serverSay')).target).toEqual(line(0));
+    // The greeting comes on a space step, which can run before the join's drain is answered.
+    const greeting = talker.join.find((message) => message.tag === 'serverSay') ?? (await talker.client.until('serverSay')).target;
+    expect(greeting).toEqual(line(0));
     const corners = [0, librarySector.size.width].flatMap((x) => [0, librarySector.size.depth].map((z) => ({ x, z })));
     const furthest = corners.reduce((best, corner) => (distance(corner, libus) > distance(best, libus) ? corner : best));
     const listening = standableNear(library(), furthest, 1);
