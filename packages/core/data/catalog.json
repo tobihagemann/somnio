@@ -11,6 +11,10 @@
     "en": "Bind",
     "de": "Fesseln"
   },
+  "Bone dagger": {
+    "en": "Bone dagger",
+    "de": "Knochendolch"
+  },
   "Brace": {
     "en": "Brace",
     "de": "Gegenstemmen"
@@ -75,6 +79,10 @@
     "en": "Healer",
     "de": "Heiler"
   },
+  "Iron buckler": {
+    "en": "Iron buckler",
+    "de": "Eiserner Faustschild"
+  },
   "Iron ring": {
     "en": "Iron ring",
     "de": "Eisenring"
@@ -115,6 +123,10 @@
     "en": "Mystic",
     "de": "Mystiker"
   },
+  "Necromancer": {
+    "en": "Necromancer",
+    "de": "Nekromant"
+  },
   "North Wood": {
     "en": "North Wood",
     "de": "Nordwald"
@@ -139,13 +151,45 @@
     "en": "Round shield",
     "de": "Rundschild"
   },
+  "Sabre": {
+    "en": "Sabre",
+    "de": "Säbel"
+  },
   "Sense the fallen": {
     "en": "Sense the fallen",
     "de": "Gefallene spüren"
   },
+  "Shielded Ghost": {
+    "en": "Shielded Ghost",
+    "de": "Schildbewehrtes Gespenst"
+  },
+  "Shielded Skeleton": {
+    "en": "Shielded Skeleton",
+    "de": "Schildbewehrtes Skelett"
+  },
+  "Shielded Skeleton Warrior": {
+    "en": "Shielded Skeleton Warrior",
+    "de": "Schildbewehrter Skelettkrieger"
+  },
   "Short sword": {
     "en": "Short sword",
     "de": "Kurzschwert"
+  },
+  "Skeleton": {
+    "en": "Skeleton",
+    "de": "Skelett"
+  },
+  "Skeleton Warrior": {
+    "en": "Skeleton Warrior",
+    "de": "Skelettkrieger"
+  },
+  "Skull shield": {
+    "en": "Skull shield",
+    "de": "Schädelschild"
+  },
+  "Skull staff": {
+    "en": "Skull staff",
+    "de": "Schädelstab"
   },
   "Sopors": {
     "en": "Sopors",
@@ -154,6 +198,18 @@
   "Spirit deepening": {
     "en": "Spirit deepening",
     "de": "Geistesstärke"
+  },
+  "Stony Ghost": {
+    "en": "Stony Ghost",
+    "de": "Steinernes Gespenst"
+  },
+  "Stony Skeleton": {
+    "en": "Stony Skeleton",
+    "de": "Steinernes Skelett"
+  },
+  "Stony Skeleton Warrior": {
+    "en": "Stony Skeleton Warrior",
+    "de": "Steinerner Skelettkrieger"
   },
   "Strike": {
     "en": "Strike",
@@ -182,6 +238,10 @@
   "Wand": {
     "en": "Wand",
     "de": "Zauberstab"
+  },
+  "War axe": {
+    "en": "War axe",
+    "de": "Kriegsaxt"
   },
   "Ward": {
     "en": "Ward",

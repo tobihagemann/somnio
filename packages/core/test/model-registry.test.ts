@@ -43,6 +43,9 @@ describe('the committed registry parses', () => {
     expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Kraemer');
     expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('KaempferMeister');
     expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Gespenst');
+    expect(modelForCharacter(registry, 'skeleton-warrior')?.stem).toBe('SkeletonWarrior');
+    expect(modelForCharacter(registry, 'skeleton-minion')?.stem).toBe('SkeletonMinion');
+    expect(modelForCharacter(registry, 'necromancer')?.stem).toBe('Necromancer');
   });
 
   it('returns undefined for an unmapped character so the loader renders a placeholder', () => {
@@ -124,7 +127,7 @@ describe('the committed registry parses', () => {
     expect(objectModel(registry, 'stone-wall-corner')?.colliders).toHaveLength(2);
   });
 
-  it('gives a door anchor to the six buildings with an interior and to the two room thresholds', () => {
+  it('gives a door anchor to the six buildings with an interior, to the crypt, and to the two room thresholds', () => {
     const anchored = registry.objectModels.filter((rule) => rule.doors.length > 0).map((rule) => rule.id);
     expect(anchored.sort()).toEqual([
       'building-barracks',
@@ -133,6 +136,7 @@ describe('the committed registry parses', () => {
       'building-tavern',
       'building-tower',
       'building-townhall',
+      'crypt',
       'stone-room-threshold',
       'timber-room-threshold',
     ]);
@@ -148,6 +152,8 @@ describe('the committed registry parses', () => {
       'standing-torch': 'torch',
       lantern: 'candle',
       'stone-hearth': 'hearth',
+      'skull-candle': 'candle',
+      'candle-shrine': 'candle',
     });
   });
 });

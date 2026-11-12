@@ -16,7 +16,7 @@ import {
 import type { Ability, AbilityBody, AbilityId, AbilityState } from '../src/abilities.ts';
 import { engageAction, handAllows } from '../src/combat.ts';
 import type { EngageTarget } from '../src/combat.ts';
-import { EFFECTS, scaled } from '../src/effects.ts';
+import { effect, scaled } from '../src/effects.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import type { BaseItemId } from '../src/items.ts';
 import { TEACHING_IDS, teaching } from '../src/lucidity.ts';
@@ -180,7 +180,8 @@ describe('the table', () => {
       const deed = ability.does;
       for (let rank = 1; rank <= teaching(abilityTeaching(id)).maxRank; rank += 1) {
         expect(scaled(ability.cooldownSeconds, rank)).toBeGreaterThan(0);
-        if (deed.kind === 'effect') expect(scaled(EFFECTS[deed.effectId].seconds, rank)).toBeGreaterThan(0);
+        // An ability's effect ends: only an elite's trait holds without end.
+        if (deed.kind === 'effect') expect(scaled(effect(deed.effectId).seconds!, rank)).toBeGreaterThan(0);
         if (deed.kind === 'strike') expect(scaled(deed.damageShare, rank)).toBeGreaterThan(0);
         if (deed.kind === 'harm') expect(scaled(deed.damage, rank)).toBeGreaterThan(0);
         if (deed.kind === 'restore' || deed.kind === 'heal') expect(scaled(deed.amount, rank)).toBeGreaterThan(0);
@@ -208,9 +209,18 @@ describe('the hand rule', () => {
     const kits = Object.fromEntries(ABILITY_IDS.map((id) => [teaching(abilityTeaching(id)).role, new Set<string>()]));
     for (const id of ABILITY_IDS) kits[teaching(abilityTeaching(id)).role]!.add(ability(id).hand);
     expect(kits).toEqual({ fighter: new Set(['mainHand']), healer: new Set(['moonstone']), mystic: new Set(['focus']) });
-    expect(allowing((item) => handAllows('mainHand', holding(item, undefined)))).toEqual([undefined, 'dagger', 'cudgel', 'sword', 'mace']);
+    expect(allowing((item) => handAllows('mainHand', holding(item, undefined)))).toEqual([
+      undefined,
+      'dagger',
+      'cudgel',
+      'sword',
+      'mace',
+      'bone-dagger',
+      'sabre',
+      'war-axe',
+    ]);
     expect(allowing((item) => handAllows('moonstone', holding(undefined, item)))).toEqual(['moonstone']);
-    expect(allowing((item) => handAllows('focus', holding(undefined, item)))).toEqual(['wand']);
+    expect(allowing((item) => handAllows('focus', holding(undefined, item)))).toEqual(['wand', 'skull-staff']);
   });
 
   it('reads each need in its own hand alone', () => {

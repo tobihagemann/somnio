@@ -154,9 +154,13 @@ export function requireStringEnum<const T extends readonly string[]>(container: 
 
 /** A record id inside a sector: non-empty, lowercase letters, digits, and hyphens, within the identifier cap. */
 export function requireId(container: Record<string, unknown>, key: string, path: string): string {
-  const value = requireWithinByteCap(requireString(container, key, path), PROTOCOL_BYTE_CAPS.identifier, `${path}.${key}`);
+  return requireIdValue(container[key], `${path}.${key}`);
+}
+
+function requireIdValue(element: unknown, path: string): string {
+  const value = requireWithinByteCap(requireStringValue(element, path), PROTOCOL_BYTE_CAPS.identifier, path);
   if (!ID_PATTERN.test(value)) {
-    throw new WireDecodingError(`${path}.${key}`, `expected an id of lowercase letters, digits, and hyphens, got "${value}"`);
+    throw new WireDecodingError(path, `expected an id of lowercase letters, digits, and hyphens, got "${value}"`);
   }
   return value;
 }
@@ -168,6 +172,23 @@ export function requireEntityId(container: Record<string, unknown>, key: string,
 
 /** A list of at most `maxCount` distinct runtime entity ids, each as `requireEntityId` checks one. The count is capped before any id is decoded. */
 export function requireEntityIds(container: Record<string, unknown>, key: string, path: string, maxCount: number): string[] {
+  return requireDistinctIds(container, key, path, maxCount, (element, elementPath) =>
+    requireBoundedStringValue(element, PROTOCOL_BYTE_CAPS.entityId, elementPath),
+  );
+}
+
+/** A list of at most `maxCount` distinct ids, each as `requireId` checks one. The count is capped before any id is decoded. */
+export function requireIds(container: Record<string, unknown>, key: string, path: string, maxCount: number): string[] {
+  return requireDistinctIds(container, key, path, maxCount, requireIdValue);
+}
+
+function requireDistinctIds(
+  container: Record<string, unknown>,
+  key: string,
+  path: string,
+  maxCount: number,
+  decodeElement: (element: unknown, elementPath: string) => string,
+): string[] {
   const ids = requireArray(container, key, path);
   if (ids.length > maxCount) {
     throw new WireDecodingError(`${path}.${key}`, `exceeds ${maxCount} ids (got ${ids.length})`);
@@ -175,7 +196,7 @@ export function requireEntityIds(container: Record<string, unknown>, key: string
   const seen = new Set<string>();
   return ids.map((element, index) => {
     const elementPath = `${path}.${key}[${index}]`;
-    const id = requireBoundedStringValue(element, PROTOCOL_BYTE_CAPS.entityId, elementPath);
+    const id = decodeElement(element, elementPath);
     if (seen.has(id)) {
       throw new WireDecodingError(elementPath, `duplicate id "${id}"`);
     }

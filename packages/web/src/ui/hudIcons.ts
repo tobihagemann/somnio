@@ -4,10 +4,10 @@ import { element } from './dom';
 /**
  * The HUD's glyphs, white silhouettes in the weight of Kenney's CC0 icons. Most are those icons, in
  * the asset pack's `UI/`, where `Scripts/bundle-web-assets.sh` names each one. Where Kenney has
- * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, and the
- * peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a CSS mask (`.hud-glyph` in
- * `hud.css`), so it takes the ink of the control it sits on. Items are drawn as pictures, not glyphs
- * (`itemIcons.ts`).
+ * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, the
+ * elites' traits, and the peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a
+ * CSS mask (`.hud-glyph` in `hud.css`), so it takes the ink of the control it sits on. Items are
+ * drawn as pictures, not glyphs (`itemIcons.ts`).
  */
 export interface HUDGlyph {
   /** The mask image, a CSS `url()`. */
@@ -73,6 +73,14 @@ export const HUD_ICONS = {
     '<path d="M17 1.5l1.6 3.9 3.9 1.6-3.9 1.6-1.6 3.9-1.6-3.9-3.9-1.6 3.9-1.6z"/>' + line('M2.5 21.5l9.6-9.6M2.8 15.2l5.6-5.6M8.8 21.2l5.6-5.6', 2.6),
   ),
   veil: packed('/assets/UI/icon-veil.png', GAME_ICONS_SIZE),
+  /** A faceted stone with a crack running down it, for an elite's Stony. */
+  stony: drawn('<path d="M7.5 3h8.5l5.5 6.5-2 9L12 21.5 4 18 2.5 9.5zM11.4 4.6l1.7 4.3-2.4 3.1 2.8 4.6-1.2.6-3.2-5.1 2.3-3z"/>'),
+  /** A shield's outline round an arrow that comes back on itself, for an elite's shield that grows back. */
+  shielded: drawn(
+    line('M12 2.6l7.6 2.8v5.8c0 4.9-3.2 8.7-7.6 10.4-4.4-1.7-7.6-5.5-7.6-10.4V5.4z', 2.4) +
+      line('M15 11.6a3.1 3.1 0 1 1-1-2.6', 2.2) +
+      '<path d="M15.9 6.6l.3 4.2-4-1.1z"/>',
+  ),
   /** A dreamer lying fallen on the ground. */
   fallen: drawn('<path d="M7 12.5a2.75 2.75 0 1 1-5.5 0 2.75 2.75 0 1 1 5.5 0zM11 10h9a2.5 2.5 0 0 1 0 5h-9a2.5 2.5 0 0 1 0-5z"/>' + line('M2 19.5h20', 2.2)),
 } as const satisfies Record<string, HUDGlyph>;
@@ -95,7 +103,7 @@ export const ABILITY_GLYPHS: Record<AbilityId, HUDGlyph> = {
   veil: HUD_ICONS.veil,
 };
 
-/** Each effect's glyph on the unit frames: the glyph of the ability that puts it on its holder. */
+/** Each effect's glyph on the unit frames: the glyph of the ability that puts it on its holder, or of the elite's trait it is. */
 export const EFFECT_GLYPHS: Record<EffectId, HUDGlyph> = {
   braced: HUD_ICONS.brace,
   challenged: HUD_ICONS.challenge,
@@ -105,6 +113,8 @@ export const EFFECT_GLYPHS: Record<EffectId, HUDGlyph> = {
   weakened: HUD_ICONS.weaken,
   bound: HUD_ICONS.bind,
   veiled: HUD_ICONS.veil,
+  stony: HUD_ICONS.stony,
+  shielded: HUD_ICONS.shielded,
 };
 
 /** Each people's sigil on the player's own frame: the Waking's open eye, the Deep's closed one, the Shadow's crescent, and the Light's sun. */

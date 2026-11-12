@@ -15,6 +15,7 @@ import type {
   LucidityMessage,
   MoveMessage,
   NPCService,
+  NightmareRank,
   RaisingState,
   SomnioMessage,
   SpeechKind,
@@ -23,9 +24,11 @@ import type {
 import {
   COMBAT,
   EDGE_TOLERANCE,
+  ELITE_TRAIT_IDS,
   FIRST_TEACHING,
   GLOBAL_COOLDOWN_SECONDS,
   MAX_SHARED_DROPS,
+  OUTDOOR_SPACE_ID,
   POOL_FIELDS,
   PRACTICE,
   SHARED_LOOT_SECONDS,
@@ -34,6 +37,7 @@ import {
   THROW_DISTANCE,
   TRIAL_REWARDS,
   SPEECH,
+  TELEGRAPHS,
   ability,
   abilityAllowed,
   abilityChannelSeconds,
@@ -45,6 +49,7 @@ import {
   balancePace,
   balancePerSecond,
   bodiesBlock,
+  bossMoves,
   buildSpaceCollision,
   canBuy,
   canStand,
@@ -57,13 +62,13 @@ import {
   effectAbsorb,
   effectHealthPerSecond,
   effectSeconds,
+  eliteTrait,
   engageAction,
   equipItem,
   gaitAllowed,
   gaitMetresPerSecond,
   grantItem,
   handAllows,
-  harmTaken,
   heading,
   headingFromCardinal,
   headingFromVector,
@@ -79,11 +84,13 @@ import {
   mendAmount,
   mendReaches,
   monsterKind,
+  nightmareHealth,
   moveItem,
   neighbourSectors,
   newItemId,
   nextLastSeen,
   npcBodies,
+  outdoorDoorIds,
   plainInstance,
   placesReached,
   poolShare,
@@ -134,8 +141,10 @@ import type {
   AbilityBody,
   AbilityId,
   Body,
+  BossMoves,
   Character,
   EffectId,
+  EliteTraitId,
   EngageAction,
   EngageTarget,
   Heading,
@@ -274,18 +283,27 @@ interface NPCRuntime {
 interface MonsterRuntime {
   id: string;
   kind: MonsterKind;
+  /** Set on an elite, which spawns with more health and drops better. */
+  trait: EliteTraitId | undefined;
+  /** When a renewing trait whose effect has ended puts it on again. */
+  traitRenewsAt: number | undefined;
   sector: string;
   position: Point;
   /** Toward where it means to go, even when its way is blocked, and toward whoever it strikes. Otherwise it keeps the facing it last had, south until it first turns. */
   facing: Heading;
   health: number;
+  healthMax: number;
   condition: Condition;
   strikeReadyAt: number;
-  /** The spawn keeping it alive, which its end frees a slot of. */
-  timer: MonsterSpawnTimer;
+  /** The spawn keeping it alive, which its end frees a slot of; none for a minion a boss called up. */
+  timer: MonsterSpawnTimer | undefined;
+  /** The boss that called it up, whose fight it lasts no longer than. */
+  summoner: MonsterRuntime | undefined;
+  /** Set on a boss: its moves and how they stand. */
+  boss: Boss | undefined;
   /** Where it spawned, which it walks back to when no one is left to chase. */
   home: Point;
-  /** Its spawn's area in the space: it chases only dreamers standing inside, and never leaves it. */
+  /** Its spawn's area in the space, its summoner's for a minion: it chases only dreamers standing inside, and never leaves it. */
   ground: Rect;
   /** The side it last turned to round something in its way. */
   steerSide: 1 | -1;
@@ -297,6 +315,17 @@ interface MonsterRuntime {
   effects: HeldEffect[];
   /** The threat each dreamer on its table has raised against it, by their entity id. */
   threat: Map<string, number>;
+}
+
+/** A boss's moves, and how they stand: the wail under way, when it may next wail and call up minions, and when it gives its fight up. */
+interface Boss {
+  moves: BossMoves;
+  /** When it gives its fight up, `giveUpSeconds` after it last had someone to chase, and in the past once it has, as from its spawn. None while it has someone to chase. */
+  givesUpAt: number | undefined;
+  /** The wail telegraphed, by its telegraph's id: round where the boss stood as it began, striking at `endsAt`. */
+  wail: { id: string; centre: Point; endsAt: number } | undefined;
+  wailReadyAt: number;
+  callReadyAt: number;
 }
 
 /** What a drop is: a whole item, of which whoever is shown the drop sees only the base and the rarity until they pick it up. */
@@ -420,6 +449,13 @@ const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * 2;
 const REJECTED_MOVE_LOG_INTERVAL_MS = 5000;
 const PLACEMENT_ATTEMPTS = 64;
 /**
+ * The longest a spawn waits to fill at first, when its space starts: a boss's long respawn holds it
+ * back only after it is driven off, not after every restart.
+ */
+const FIRST_FILL_SECONDS = 60;
+/** The nearest a minion is called up to its boss, centre to centre. */
+const MINION_NEAREST_METRES = 1;
+/**
  * How long after an accepted move a dreamer still counts as moving. Reports come ten times a
  * second, so a walking dreamer never falls outside it, and one who stopped does a quarter of a
  * second later.
@@ -457,6 +493,8 @@ export interface SpaceActorOptions {
   speechRandom?: RandomSource;
   /** Rolls each dreamer's drops; separate from `random`, so a drop never shifts the rolls of combat and placement. */
   lootRandom?: RandomSource;
+  /** Rolls whether a nightmare spawns an elite, and its trait; separate from `random`, so an elite never shifts the rolls of combat and placement. */
+  eliteRandom?: RandomSource;
   /** Counts each dreamer's drops from nightmares across the world; one ledger serves every space of it. */
   personalDrops?: PersonalDrops;
   /**
@@ -579,6 +617,16 @@ function heldEffect(
   };
 }
 
+/** A boss's rank by its moves, an elite's by its trait, and none for any other nightmare. */
+function nightmareRankOf({ boss, trait }: Pick<MonsterRuntime, 'boss' | 'trait'>): NightmareRank | undefined {
+  return boss !== undefined ? 'boss' : trait !== undefined ? 'elite' : undefined;
+}
+
+/** The effect an elite's trait puts on it, held as long as it stands. */
+function traitEffect(trait: EliteTraitId, monsterId: string, now: number): HeldEffect {
+  return heldEffect(eliteTrait(trait).effectId, Number.POSITIVE_INFINITY, monsterId, 1, now);
+}
+
 /** Adds the threat a deed of `amount` raises against the nightmare to what it holds against the dreamer. */
 function addThreat(monster: MonsterRuntime, dreamer: PlayerSlot, amount: number): void {
   const id = dreamer.character.id;
@@ -596,7 +644,7 @@ function threatRank(monster: MonsterRuntime, dreamerId: string): number | undefi
 
 /** A dreamer's or a nightmare's health and its maximum. */
 function healthOf(entity: PlayerSlot | MonsterRuntime): [current: number, max: number] {
-  return 'character' in entity ? [entity.character.energy.healthCurrent, entity.character.energy.healthMax] : [entity.health, entity.kind.health];
+  return 'character' in entity ? [entity.character.energy.healthCurrent, entity.character.energy.healthMax] : [entity.health, entity.healthMax];
 }
 
 /**
@@ -613,6 +661,8 @@ export class SpaceActor {
   private readonly playerModel: string;
   /** Per sector, the names of the sectors a player standing in it is sent: itself, then its neighbours. */
   private readonly interest = new Map<string, ReadonlySet<string>>();
+  /** Per sector, the ids of its doors that open to the outdoors, which its `sector` frame names. */
+  private readonly outdoorDoorIds = new Map<string, string[]>();
   private readonly players = new Map<string, PlayerSlot>();
   private readonly npcs = new Map<string, NPCRuntime>();
   private readonly npcBodies: Body[];
@@ -628,11 +678,13 @@ export class SpaceActor {
   private readonly random: RandomSource;
   private readonly speechRandom: RandomSource;
   private readonly lootRandom: RandomSource;
+  private readonly eliteRandom: RandomSource;
   private readonly personalDrops: PersonalDrops;
   private readonly requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   private readonly now: () => number;
   private nextMonsterNumber = 1;
   private nextLootNumber = 1;
+  private nextTelegraphNumber = 1;
   private readonly logger: Logger;
 
   constructor(world: LoadedWorld, spaceId: string, options: SpaceActorOptions) {
@@ -643,13 +695,16 @@ export class SpaceActor {
     this.random = options.random ?? systemRandom;
     this.speechRandom = options.speechRandom ?? systemRandom;
     this.lootRandom = options.lootRandom ?? systemRandom;
+    this.eliteRandom = options.eliteRandom ?? systemRandom;
     this.personalDrops = options.personalDrops ?? new PersonalDrops();
     this.requestDropSave = options.requestDropSave;
     this.now = options.now ?? (() => performance.now());
     for (const sector of this.space.sectors) {
       this.interest.set(sector.name, new Set([sector.name, ...neighbourSectors(this.space, sector.name).map((neighbour) => neighbour.name)]));
+      this.outdoorDoorIds.set(sector.name, outdoorDoorIds(sector, world.spaces.get(OUTDOOR_SPACE_ID)?.sectors ?? []));
       for (const definition of sector.monsterSpawns) {
-        this.spawnTimers.push({ sector, definition, alive: 0, spawnAt: this.now() + monsterKind(definition.kind).respawnSeconds * 1000 });
+        const firstFill = Math.min(monsterKind(definition.kind).respawnSeconds, FIRST_FILL_SECONDS);
+        this.spawnTimers.push({ sector, definition, alive: 0, spawnAt: this.now() + firstFill * 1000 });
       }
       for (const npc of sector.npcs) {
         const id = `npc:${sector.name}/${npc.id}`;
@@ -762,6 +817,9 @@ export class SpaceActor {
     }
     for (const other of this.players.values()) {
       if (other.raise !== undefined && interest.has(other.sector)) messages.push(this.raisingMessage(other, 'holding', other.raise.holders));
+    }
+    for (const monster of this.monsters.values()) {
+      if (monster.boss?.wail !== undefined && interest.has(monster.sector)) messages.push(this.telegraphMessage(monster, monster.boss.wail));
     }
     for (const loot of this.loot.values()) {
       if (this.seesLoot(slot, loot)) messages.push(lootMessage(loot));
@@ -920,6 +978,11 @@ export class SpaceActor {
     for (const [id, other] of this.players) {
       if (id === slot.character.id || other.raise === undefined || !current.has(other.sector) || previous.has(other.sector)) continue;
       slot.outbox.sendEncoded(this.raisingMessage(other, 'holding', other.raise.holders), this.logger);
+    }
+    for (const monster of this.monsters.values()) {
+      const wail = monster.boss?.wail;
+      if (wail !== undefined && current.has(monster.sector) && !previous.has(monster.sector))
+        slot.outbox.sendEncoded(this.telegraphMessage(monster, wail), this.logger);
     }
     for (const loot of this.loot.values()) {
       if (loot.ownerId !== undefined) continue;
@@ -1455,10 +1518,34 @@ export class SpaceActor {
     for (const holder of holders) this.endEffects(holder, (held) => held.endsAt <= now);
   }
 
+  /**
+   * Puts each elite's renewing trait back on it whole, `renewSeconds` after the step that finds its
+   * effect gone, as a spent shield grows back.
+   */
+  private renewTraits(): void {
+    const now = this.now();
+    for (const monster of this.monsters.values()) {
+      const { trait } = monster;
+      if (monster.fadingUntil !== undefined || trait === undefined) continue;
+      const { effectId, renewSeconds } = eliteTrait(trait);
+      if (renewSeconds === undefined || monster.effects.some((held) => held.effectId === effectId)) continue;
+      if (monster.traitRenewsAt === undefined) {
+        monster.traitRenewsAt = now + renewSeconds * 1000;
+      } else if (now >= monster.traitRenewsAt) {
+        monster.traitRenewsAt = undefined;
+        monster.effects = [...monster.effects, traitEffect(trait, monster.id, now)];
+        this.sendEffects(monster);
+      }
+    }
+  }
+
   /** The effects the holder holds now, as the holder and each dreamer whose target it is are shown them. */
   private effectsMessage(holder: PlayerSlot | MonsterRuntime): EffectsMessage {
     const now = this.now();
-    return { entityId: idOf(holder), effects: holder.effects.map(({ effectId, endsAt }) => ({ effectId, seconds: secondsLeft(endsAt, now) })) };
+    return {
+      entityId: idOf(holder),
+      effects: holder.effects.map(({ effectId, endsAt }) => ({ effectId, ...(Number.isFinite(endsAt) ? { seconds: secondsLeft(endsAt, now) } : {}) })),
+    };
   }
 
   /** Tells the holder, and each dreamer whose target it is, every effect it holds now. */
@@ -1502,6 +1589,7 @@ export class SpaceActor {
     this.runNPCs(digest);
     this.runMonsterSpawns();
     this.settleEffects([...this.players.values(), ...this.monsters.values()]);
+    this.renewTraits();
     this.runPlayers(elapsedSeconds);
     this.runMonsters(elapsedSeconds);
     this.expireLoot();
@@ -1535,34 +1623,65 @@ export class SpaceActor {
     }
   }
 
+  /** A nightmare of the spawn's kind at a free point of its area: a boss of a boss's kind, else an elite by the spawn's chance. */
   private spawnMonster(timer: MonsterSpawnTimer): boolean {
     const kind = monsterKind(timer.definition.kind);
     const { sector, definition } = timer;
     const position = this.randomFreePoint(sector, definition, kind.radius);
     if (position === undefined) return false;
+    const moves = bossMoves(definition.kind);
+    const elite = moves === undefined && randomUnit(this.eliteRandom) < definition.eliteChance;
+    const monster = this.addMonster(kind, position, spawnArea(sector, definition), {
+      timer,
+      summoner: undefined,
+      trait: elite ? ELITE_TRAIT_IDS[Math.floor(randomUnit(this.eliteRandom) * ELITE_TRAIT_IDS.length)] : undefined,
+      moves,
+    });
+    this.broadcast({ tag: 'entity', payload: this.monsterEntity(monster) }, monster.sector);
+    return true;
+  }
+
+  /** A nightmare of the kind standing at `position` from now, at home there and keeping to `ground`, as a spawn or a boss brings it. Its arrival is for the caller to show. */
+  private addMonster(
+    kind: MonsterKind,
+    position: Point,
+    ground: Rect,
+    origin: Pick<MonsterRuntime, 'timer' | 'summoner' | 'trait'> & { moves: BossMoves | undefined },
+  ): MonsterRuntime {
+    const id = `monster:${this.nextMonsterNumber}`;
+    this.nextMonsterNumber += 1;
+    const now = this.now();
+    const boss: Boss | undefined =
+      origin.moves === undefined
+        ? undefined
+        : { moves: origin.moves, givesUpAt: now, wail: undefined, wailReadyAt: now + origin.moves.firstWailSeconds * 1000, callReadyAt: 0 };
+    const health = nightmareHealth(kind, nightmareRankOf({ boss, trait: origin.trait }));
     const monster: MonsterRuntime = {
-      id: `monster:${this.nextMonsterNumber}`,
+      id,
       kind,
+      trait: origin.trait,
+      traitRenewsAt: undefined,
       sector: sectorAt(this.space, position)!.name,
       position,
       facing: headingFromCardinal('south'),
-      health: kind.health,
+      health,
+      healthMax: health,
       condition: 'hale',
       strikeReadyAt: 0,
-      timer,
+      timer: origin.timer,
+      summoner: origin.summoner,
+      boss,
       fadingUntil: undefined,
       home: position,
-      ground: spawnArea(sector, definition),
+      ground,
       steerSide: 1,
       homeBest: 0,
-      homeBestAt: this.now(),
-      effects: [],
+      homeBestAt: now,
+      effects: origin.trait === undefined ? [] : [traitEffect(origin.trait, id, now)],
       threat: new Map(),
     };
-    this.nextMonsterNumber += 1;
-    this.monsters.set(monster.id, monster);
-    this.broadcast({ tag: 'entity', payload: this.monsterEntity(monster) }, monster.sector);
-    return true;
+    this.monsters.set(id, monster);
+    return monster;
   }
 
   /**
@@ -1676,16 +1795,16 @@ export class SpaceActor {
    * home. A bound one stays where it stands, turning toward whom it chases, and strikes all the same.
    * On its own rhythm it strikes the dreamer it chases once it has reached them. Otherwise it strikes
    * the foremost such dreamer in its reach, wherever they stand, which can be just outside the
-   * ground. At rest with no one in reach it heals slowly. One driven off does nothing more, and is
-   * gone once its fade is over.
+   * ground. At rest with no one in reach it heals slowly. A boss also wails and calls up minions
+   * (`runBoss`), and holds still while it wails. One driven off does nothing more, and is gone once
+   * its fade is over.
    */
   private runMonsters(elapsedSeconds: number): void {
     const now = this.now();
     for (const monster of this.monsters.values()) {
       if (monster.fadingUntil !== undefined) {
         if (now < monster.fadingUntil) continue;
-        this.monsters.delete(monster.id);
-        this.broadcast({ tag: 'leave', payload: { entityId: monster.id, leftGame: false } }, monster.sector);
+        this.removeMonster(monster, false);
         continue;
       }
       this.forgetThreat(monster);
@@ -1697,6 +1816,8 @@ export class SpaceActor {
           rectContains(monster.ground, slot.character.position, EDGE_TOLERANCE) &&
           (away <= monster.kind.aggroRadius || threatRank(monster, slot.character.id) !== undefined),
       );
+      // A boss holding still for its wail neither moves, turns, nor strikes.
+      if (monster.boss !== undefined && this.runBoss(monster, monster.boss, chased)) continue;
       let moved = false;
       if (rooted(monster)) {
         // Held in place is no lack of progress home, so the walk home sets out afresh once it is free.
@@ -1726,6 +1847,117 @@ export class SpaceActor {
         });
       }
     }
+  }
+
+  /**
+   * A boss's own moves this step, which reports whether it holds still for its wail. From the step it
+   * has no one to chase, wailing or not, it counts `giveUpSeconds`. A wail under way strikes once its
+   * time is up, whoever it then finds in its circle, and the boss is free again from the next step.
+   * With no one to chase, the boss walks home to rest, and once the count has run out it gives its
+   * fight up: the minions it called up crumble, and the first wail of its next fight waits. A dreamer
+   * it chases again before then finds its minions and its timers as they were. Otherwise it calls up
+   * minions when they are due, and when its wail is due and a dreamer stands in the circle it would
+   * strike, it begins one.
+   */
+  private runBoss(monster: MonsterRuntime, boss: Boss, chased: PlayerSlot | undefined): boolean {
+    const now = this.now();
+    if (chased === undefined) boss.givesUpAt ??= now + boss.moves.giveUpSeconds * 1000;
+    else boss.givesUpAt = undefined;
+    if (boss.wail !== undefined) {
+      if (now < boss.wail.endsAt) return true;
+      const { centre } = boss.wail;
+      boss.wail = undefined;
+      boss.wailReadyAt = now + boss.moves.wailEverySeconds * 1000;
+      for (const slot of this.caughtInWail(centre)) this.harmDreamer(slot, TELEGRAPHS.wail.damage, TELEGRAPHS.wail.balanceDamage, monster);
+      // The strike is the step's deed: the dreamer it chose to chase may have fallen to it.
+      return true;
+    }
+    if (boss.givesUpAt !== undefined) {
+      if (now >= boss.givesUpAt) {
+        this.dismissMinions(monster);
+        boss.wailReadyAt = now + boss.moves.firstWailSeconds * 1000;
+      }
+      return false;
+    }
+    if (now >= boss.callReadyAt) {
+      boss.callReadyAt = now + boss.moves.minions.callEverySeconds * 1000;
+      this.callMinions(monster, boss.moves.minions);
+    }
+    if (now < boss.wailReadyAt || this.caughtInWail(monster.position).length === 0) return false;
+    boss.wail = { id: `telegraph-${this.nextTelegraphNumber}`, centre: monster.position, endsAt: now + TELEGRAPHS.wail.seconds * 1000 };
+    this.nextTelegraphNumber += 1;
+    this.broadcast(this.telegraphMessage(monster, boss.wail), monster.sector);
+    return true;
+  }
+
+  /** The dreamers a wail round `centre` strikes: each standing in its circle whom nightmares do not leave alone. */
+  private caughtInWail(centre: Point): PlayerSlot[] {
+    const now = this.now();
+    return [...this.players.values()].filter((slot) => !leftAlone(slot, now) && distance(slot.character.position, centre) <= TELEGRAPHS.wail.radius);
+  }
+
+  /** The boss's wail as it stands, with the seconds left before it strikes. */
+  private telegraphMessage(monster: MonsterRuntime, wail: NonNullable<Boss['wail']>): SomnioMessage {
+    return {
+      tag: 'telegraph',
+      payload: {
+        id: wail.id,
+        casterId: monster.id,
+        kind: 'wail',
+        x: wail.centre.x,
+        z: wail.centre.z,
+        radius: TELEGRAPHS.wail.radius,
+        seconds: secondsLeft(wail.endsAt, this.now()),
+      },
+    };
+  }
+
+  /**
+   * Calls up minions round the boss, as many as `perCall` while fewer than `maxAlive` of its own
+   * stand, each at a free point of its ground near it, sharing that ground and counted against no
+   * spawn. Everyone who sees one arrive is shown that the boss called it, and it waits a strike's
+   * time before its first.
+   */
+  private callMinions(boss: MonsterRuntime, minions: BossMoves['minions']): void {
+    const kind = monsterKind(minions.kind);
+    const standing = [...this.monsters.values()].filter((other) => other.summoner === boss && other.fadingUntil === undefined).length;
+    for (let called = 0; called < Math.min(minions.perCall, minions.maxAlive - standing); called += 1) {
+      const position = this.freePointNear(boss, minions.withinMetres, kind.radius);
+      if (position === undefined) return;
+      const minion = this.addMonster(kind, position, boss.ground, { timer: undefined, summoner: boss, trait: undefined, moves: undefined });
+      minion.strikeReadyAt = this.now() + kind.strikeSeconds * 1000;
+      this.broadcast({ tag: 'entity', payload: { ...this.monsterEntity(minion), summonedBy: boss.id } }, minion.sector);
+    }
+  }
+
+  /** A point of the nightmare's ground between `MINION_NEAREST_METRES` and `within` from it where a body of `radius` stands clear, up to the retry cap. */
+  private freePointNear(monster: MonsterRuntime, within: number, radius: number): Point | undefined {
+    for (let attempt = 0; attempt < PLACEMENT_ATTEMPTS; attempt += 1) {
+      const radians = randomUnit(this.random) * 2 * Math.PI;
+      const away = MINION_NEAREST_METRES + randomUnit(this.random) * (within - MINION_NEAREST_METRES);
+      const candidate = { x: monster.position.x + Math.sin(radians) * away, z: monster.position.z + Math.cos(radians) * away };
+      if (rectContains(monster.ground, candidate) && isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius)) return candidate;
+    }
+    return undefined;
+  }
+
+  /**
+   * The minions the boss called up crumble with its fight. Each standing one is gone at once, paying
+   * no one and never fallen, and its viewers are sent its `leave` marked `crumbled`. One a dreamer
+   * drove off fades as it was.
+   */
+  private dismissMinions(boss: MonsterRuntime): void {
+    for (const minion of this.monsters.values()) {
+      if (minion.summoner !== boss || minion.fadingUntil !== undefined) continue;
+      this.removeMonster(minion, true);
+    }
+  }
+
+  /** Takes the nightmare out of the space, and out of the step's moves, and tells everyone who sees it that it left, crumbling or not. */
+  private removeMonster(monster: MonsterRuntime, crumbled: boolean): void {
+    this.monsters.delete(monster.id);
+    this.moved.delete(monster.id);
+    this.broadcast({ tag: 'leave', payload: { entityId: monster.id, leftGame: false, ...(crumbled ? { crumbled } : {}) } }, monster.sector);
   }
 
   /**
@@ -1841,8 +2073,8 @@ export class SpaceActor {
   }
 
   private rest(monster: MonsterRuntime, elapsedSeconds: number): void {
-    if (monster.health >= monster.kind.health) return;
-    monster.health = Math.min(monster.kind.health, monster.health + monster.kind.restHealthPerSecond * elapsedSeconds);
+    if (monster.health >= monster.healthMax) return;
+    monster.health = Math.min(monster.healthMax, monster.health + monster.kind.restHealthPerSecond * elapsedSeconds);
     this.setCondition(monster);
   }
 
@@ -1856,19 +2088,12 @@ export class SpaceActor {
   }
 
   /**
-   * The one way harm reaches a dreamer. It lands by the effects its source and the dreamer hold, and
-   * takes a little balance besides. A shield the dreamer holds takes what it can first, and ends once
-   * it has taken all it holds. A hit it takes all of lands nothing, balance included. Harm that takes
-   * the last of their health is the only way a dreamer falls, and a fall ends every heal over time
-   * they hold.
+   * The one way harm reaches a dreamer. It lands as `shieldedHit` judges it and takes a little
+   * balance besides, unless a shield took all of it. Harm that takes the last of their health is the
+   * only way a dreamer falls, and a fall ends every heal over time they hold.
    */
   private harmDreamer(target: PlayerSlot, amount: number, balanceAmount: number, source: MonsterRuntime): void {
-    const shield = target.effects.find((held) => held.shield !== undefined);
-    const { landed, absorbed } = shieldedHarm(amount, effectIds(source), effectIds(target), shield?.shield ?? 0);
-    if (shield !== undefined && absorbed > 0) {
-      shield.shield! -= absorbed;
-      if (shield.shield! <= 0) this.endEffects(target, (held) => held === shield);
-    }
+    const landed = this.shieldedHit(target, amount, source);
     if (landed === 0) return;
     const energy = target.character.energy;
     this.setEnergy(target, {
@@ -1890,6 +2115,21 @@ export class SpaceActor {
     );
     // Their client stops reporting at once and may have predicted a little past the last accepted position.
     this.snapBack(target);
+  }
+
+  /**
+   * The harm a hit of `amount` from `source` lands on `taker`, by the effects both hold. A shield the
+   * taker holds takes what it can first, and ends once it has taken all it holds. A hit it takes all
+   * of lands nothing.
+   */
+  private shieldedHit(taker: PlayerSlot | MonsterRuntime, amount: number, source: PlayerSlot | MonsterRuntime): number {
+    const shield = taker.effects.find((held) => held.shield !== undefined);
+    const { landed, absorbed } = shieldedHarm(amount, effectIds(source), effectIds(taker), shield?.shield ?? 0);
+    if (shield !== undefined && absorbed > 0) {
+      shield.shield! -= absorbed;
+      if (shield.shield! <= 0) this.endEffects(taker, (held) => held === shield);
+    }
+    return landed;
   }
 
   /**
@@ -1956,10 +2196,11 @@ export class SpaceActor {
 
   /**
    * The one way harm reaches a nightmare. It lands by the effects its source and the nightmare hold,
-   * raises the source's threat by what landed, and at none the nightmare is driven off.
+   * an elite's trait among them, and a shield the nightmare holds takes what it can first. It raises
+   * the source's threat by what landed, and at none the nightmare is driven off.
    */
   private harmNightmare(monster: MonsterRuntime, amount: number, source: PlayerSlot): void {
-    const landed = harmTaken(amount, effectIds(source), effectIds(monster));
+    const landed = this.shieldedHit(monster, amount, source);
     addThreat(monster, source, landed);
     monster.health = Math.max(0, monster.health - landed);
     this.setCondition(monster);
@@ -1967,17 +2208,24 @@ export class SpaceActor {
   }
 
   /**
-   * The one place a nightmare ends. It fades where it stands, its spawn has a slot to refill after
-   * the kind's respawn time, and the standing dreamers within the share radius, and the standing
-   * dreamer whose harm drove it off from however far, split its bounty and each earn the practice in
-   * full. Each of them rolls for drops of their own, by the nightmare's tier, and all their drops
-   * scatter fanned round where it stood.
+   * The one place a nightmare is driven off. It fades where it stands, and its spawn, if it has one,
+   * has a slot to refill after the kind's respawn time. A boss's wail ends unstruck and its minions
+   * crumble. The standing dreamers within the share radius, and the standing dreamer whose harm drove
+   * it off from however far, split its bounty and each earn the practice in full. Each of them rolls
+   * for drops of their own, by the nightmare's tier and rank, and all their drops scatter fanned round
+   * where it stood.
    */
   private driveOff(monster: MonsterRuntime, finisher: PlayerSlot): void {
     const now = this.now();
     monster.fadingUntil = now + COMBAT.fadeSeconds * 1000;
-    monster.timer.alive -= 1;
-    monster.timer.spawnAt = now + monster.kind.respawnSeconds * 1000;
+    if (monster.timer !== undefined) {
+      monster.timer.alive -= 1;
+      monster.timer.spawnAt = now + monster.kind.respawnSeconds * 1000;
+    }
+    if (monster.boss !== undefined) {
+      monster.boss.wail = undefined;
+      this.dismissMinions(monster);
+    }
     const near = [...this.players.values()].filter(
       (slot) => !isFallen(slot) && (slot === finisher || distance(slot.character.position, monster.position) <= COMBAT.shareRadius),
     );
@@ -1985,7 +2233,7 @@ export class SpaceActor {
     const drops: { owner: PlayerSlot; item: Item }[] = [];
     for (const slot of near) {
       if (share > 0) this.giveCoins(slot, share);
-      for (const item of rollDrops(monster.kind.tier, 'nightmare', slot.character.lucidity.role, () => randomUnit(this.lootRandom)))
+      for (const item of rollDrops(monster.kind.tier, nightmareRankOf(monster) ?? 'nightmare', slot.character.lucidity.role, () => randomUnit(this.lootRandom)))
         drops.push({ owner: slot, item });
       this.addPractice(slot, PRACTICE.nightmare);
       this.advanceTask(
@@ -2610,7 +2858,9 @@ export class SpaceActor {
   }
 
   private sectorMessage(name: string): SomnioMessage {
-    return { tag: 'sector', payload: { sector: sectorView(this.space.sectors.find((sector) => sector.name === name)!) } };
+    const sector = sectorView(this.space.sectors.find((held) => held.name === name)!);
+    const outdoorDoorIds = this.outdoorDoorIds.get(name)!;
+    return { tag: 'sector', payload: { sector, ...(outdoorDoorIds.length === 0 ? {} : { outdoorDoorIds }) } };
   }
 
   /** Every entity but the player `excluding`, with the sector it stands in. */
@@ -2657,6 +2907,7 @@ export class SpaceActor {
   }
 
   private monsterEntity(monster: MonsterRuntime): EntityMessage {
+    const rank = nightmareRankOf(monster);
     return {
       id: monster.id,
       kind: 'monster',
@@ -2668,6 +2919,8 @@ export class SpaceActor {
       facing: monster.facing,
       gait: DEFAULT_GAIT,
       condition: monster.condition,
+      ...(rank === undefined ? {} : { rank }),
+      ...(monster.trait === undefined ? {} : { trait: monster.trait }),
     };
   }
 }

@@ -58,12 +58,12 @@ export function makeNPC(id: string, at: Point, dialogScript: string): SectorNPC 
  * single point makes too small to chase in: it strikes only what comes within its reach.
  */
 export function makeMonsterSpawn(at: Point, size = 0, maxAlive = 1): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'ghost', ...at, width: size, depth: size, maxAlive };
+  return { id: 'spawn-1', kind: 'ghost', ...at, width: size, depth: size, maxAlive, eliteChance: 0 };
 }
 
 /** A spawn whose area, and so its monsters' home ground, is a square of side `2 * half` centred on `at`. */
 export function makeMonsterGround(at: Point, half: number, maxAlive = 1): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'ghost', x: at.x - half, z: at.z - half, width: 2 * half, depth: 2 * half, maxAlive };
+  return { id: 'spawn-1', kind: 'ghost', x: at.x - half, z: at.z - half, width: 2 * half, depth: 2 * half, maxAlive, eliteChance: 0 };
 }
 
 /**

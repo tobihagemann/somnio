@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MONSTER_KIND_IDS, bundledModelRegistry, sectorOrigin } from '@somnio/core';
+import { MONSTER_KIND_IDS, bundledModelRegistry, outdoorDoorIds, sectorOrigin } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { ModelRegistry, Point, Sector } from '@somnio/core';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
@@ -509,7 +509,7 @@ export class EditorShell implements EditorCommandTarget {
       this.drawnNeighbours.add(neighbour.name);
     }
     if (this.document.isUninitialized) return;
-    this.scene.addSector(sector);
+    this.scene.addSector(sector, outdoorDoorIds(sector, this.others));
     this.drawnDocument = sector.name;
   }
 

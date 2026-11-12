@@ -206,6 +206,22 @@ describe('Dream-bolt', () => {
     expect(payloads(await collectMessages(near.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health: 0.8 });
   });
 
+  it.each([
+    // Its 12 harm whole on an ordinary Ghost's 60.
+    ['an ordinary Ghost', undefined, 0.8],
+    // Stony takes 0.6 of it, 7, from the elite's 150.
+    ['a Stony elite', 'stony', 0.95],
+    // The shield takes all of it.
+    ['a Shielded elite', 'shielded', 1],
+  ] as const)('lands on a nightmare by its trait and its health: %s', async (_label, trait, share) => {
+    const { space, steps } = arena({}, trait === undefined ? { ground: 9 } : { ground: 9, elite: trait });
+    const alice = attachPlayer(space, { x: 10, z: 15 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('dream-bolt', alice.entityId);
+    steps(flightSteps(5));
+    expect(payloads(await collectMessages(alice.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health: share });
+  });
+
   it('lands its harm as the bolt arrives, the flight after the use, and not before', async () => {
     const { space, steps } = arena({}, { ground: 9 });
     const alice = attachPlayer(space, { x: 10, z: 15 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });

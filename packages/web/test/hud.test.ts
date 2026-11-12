@@ -490,6 +490,15 @@ describe("a mouse's HUD", () => {
     expect(easing()).toBe('linear(0.4167 0.00%, 1.0000 100.00%)');
   });
 
+  it('names an elite target by its trait and its kind, and again once its trait changes', () => {
+    const { hud, $ } = makeHUD();
+    const ghost = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', rank: 'elite', trait: 'stony' });
+    hud.renderTarget({ entity: ghost, health: 1, effects: [], channel: undefined, raise: undefined }, false);
+    expect($('.hud-unit--target .hud-unit__name').textContent).toBe('Stony Ghost');
+    hud.renderTarget({ entity: { ...ghost, trait: 'shielded' }, health: 1, effects: [], channel: undefined, raise: undefined }, false);
+    expect($('.hud-unit--target .hud-unit__name').textContent).toBe('Shielded Ghost');
+  });
+
   it('frames the target with its name, its health, and a ✕ that clears it, and names its condition and the lock only to assistive tech', () => {
     const { hud, $, button, named } = makeHUD();
     const frame = $('.hud-unit--target');

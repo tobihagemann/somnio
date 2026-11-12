@@ -37,7 +37,7 @@ function body(): Sector {
       ],
       doors: [{ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } }],
       npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 90, dialogScript: 'Hallo' }],
-      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3 }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3, eliteChance: 0 }],
       ground: {
         backgroundMaterialId: 'grass-meadow',
         marks: [
@@ -216,6 +216,7 @@ describe('field commit', () => {
     h.select([{ kind: 'monsterSpawn', id: 'spawn-1' }]);
     h.type('Depth', '6');
     h.type('Max alive', '5');
+    h.type('Elite chance', '0.25');
     h.select([{ kind: 'mark', id: 'road' }]);
     h.type('Opacity', '0.5');
     h.type('Radius', '1.5');
@@ -224,7 +225,7 @@ describe('field commit', () => {
     const sector = h.document.sector;
     expect(sector.placements[0]?.elevation).toBe(0.75);
     expect(sector.npcs[0]?.name).toBe('Quieta');
-    expect(sector.monsterSpawns[0]).toMatchObject({ depth: 6, maxAlive: 5 });
+    expect(sector.monsterSpawns[0]).toMatchObject({ depth: 6, maxAlive: 5, eliteChance: 0.25 });
     expect(sector.ground.marks[0]).toMatchObject({ opacity: 0.5, shape: { radius: 1.5 } });
     expect(sector.spawn).toEqual({ x: 7, z: 12, facing: 0 });
   });
@@ -241,6 +242,18 @@ describe('field commit', () => {
     expect(h.document.sector.ground.marks[0]!.opacity).toBe(1);
     h.select([{ kind: 'mark', id: 'plaza' }]);
     expect(h.panel.root.textContent).not.toContain('Radius');
+  });
+
+  /** The sector file refuses a chance outside 0 to 1, so the field never puts one in the document. */
+  it("holds a monster spawn's elite chance to 0 to 1, in hundredths", () => {
+    const h = harness();
+    h.select([{ kind: 'monsterSpawn', id: 'spawn-1' }]);
+    h.type('Elite chance', '1.5');
+    expect(h.document.sector.monsterSpawns[0]!.eliteChance).toBe(1);
+    h.type('Elite chance', '-0.2');
+    expect(h.document.sector.monsterSpawns[0]!.eliteChance).toBe(0);
+    h.type('Elite chance', '0.333');
+    expect(h.document.sector.monsterSpawns[0]!.eliteChance).toBe(0.33);
   });
 
   it('commits a dialog script on Return and keeps the newline of Shift-Return', () => {

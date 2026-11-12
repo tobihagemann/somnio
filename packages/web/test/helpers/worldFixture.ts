@@ -16,6 +16,8 @@ export function clientEntity(overrides: Partial<ClientEntity> = {}): ClientEntit
     condition: 'hale',
     service: undefined,
     held: undefined,
+    rank: undefined,
+    trait: undefined,
     ...overrides,
   };
 }
@@ -36,8 +38,8 @@ export function enterSpaceFrame(spaceId = 'outdoors', worldSeconds = 0, people =
   return { tag: 'enterSpace', payload: { spaceId, selfId: 'self', people, worldSeconds } };
 }
 
-export function sectorFrame(sector: Sector): SomnioMessage {
-  return { tag: 'sector', payload: { sector: sectorView(sector) } };
+export function sectorFrame(sector: Sector, outdoorDoorIds?: string[]): SomnioMessage {
+  return { tag: 'sector', payload: { sector: sectorView(sector), ...(outdoorDoorIds === undefined ? {} : { outdoorDoorIds }) } };
 }
 
 /** The local player unless overridden, standing where `clientEntity` does. */

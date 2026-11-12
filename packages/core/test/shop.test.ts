@@ -1,17 +1,18 @@
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import type { Inventory } from '../src/domain/inventory.ts';
-import { BASE_ITEMS, plainInstance } from '../src/items.ts';
-import type { ItemInstance } from '../src/items.ts';
+import { BASE_ITEMS, baseItem, plainInstance } from '../src/items.ts';
+import type { BaseItemId, ItemInstance } from '../src/items.ts';
 import { WARES, canBuy, isWare, salePrice, sellableItem } from '../src/shop.ts';
 import { bagOf } from './support/items.ts';
 
 const purse = (coins: number): Inventory => ({ coins, equipped: {}, bag: [] });
 
 describe('the shop', () => {
-  it('shelves every plain base but the Moonstone, in order', () => {
+  it('shelves every base of tier 1 but the Moonstone, in order', () => {
     expect(WARES).toEqual(['dagger', 'cudgel', 'sword', 'mace', 'buckler', 'shield', 'wand', 'cap', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'ring']);
-    expect(Object.keys(BASE_ITEMS).filter((baseId) => !isWare(baseId))).toEqual(['moonstone']);
+    expect((Object.keys(BASE_ITEMS) as BaseItemId[]).filter((baseId) => baseItem(baseId).tier === 1 && !isWare(baseId))).toEqual(['moonstone']);
+    expect(WARES.every((ware) => baseItem(ware).tier === 1)).toBe(true);
   });
 
   it('pays for an item by its rarity, for each tier it rolled at', () => {

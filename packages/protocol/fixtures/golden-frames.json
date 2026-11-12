@@ -269,6 +269,21 @@
     },
     "tag": "effects"
   },
+  "effects-on-an-elite": {
+    "payload": {
+      "effects": [
+        {
+          "effectId": "stony"
+        },
+        {
+          "effectId": "weakened",
+          "seconds": 7.75
+        }
+      ],
+      "entityId": "monster:7"
+    },
+    "tag": "effects"
+  },
   "energy": {
     "payload": {
       "balanceCurrent": 50,
@@ -316,6 +331,39 @@
     },
     "tag": "entity"
   },
+  "entity-boss": {
+    "payload": {
+      "characterModelId": "necromancer",
+      "condition": "hurt",
+      "facing": 0,
+      "gait": "jog",
+      "id": "monster:3",
+      "kind": "monster",
+      "name": "Necromancer",
+      "radius": 0.3,
+      "rank": "boss",
+      "x": 9,
+      "z": 4.5
+    },
+    "tag": "entity"
+  },
+  "entity-elite": {
+    "payload": {
+      "characterModelId": "ghost",
+      "condition": "wounded",
+      "facing": 180,
+      "gait": "jog",
+      "id": "monster:7",
+      "kind": "monster",
+      "name": "Ghost",
+      "radius": 0.3,
+      "rank": "elite",
+      "trait": "shielded",
+      "x": 14.5,
+      "z": 6.25
+    },
+    "tag": "entity"
+  },
   "entity-mystic-master": {
     "payload": {
       "characterModelId": "libus",
@@ -348,6 +396,22 @@
       "radius": 0.3,
       "x": 12.5,
       "z": 7.25
+    },
+    "tag": "entity"
+  },
+  "entity-summoned": {
+    "payload": {
+      "characterModelId": "skeleton-minion",
+      "condition": "hale",
+      "facing": 0,
+      "gait": "jog",
+      "id": "monster:9",
+      "kind": "monster",
+      "name": "Skeleton",
+      "radius": 0.3,
+      "summonedBy": "monster:3",
+      "x": 10.75,
+      "z": 6
     },
     "tag": "entity"
   },
@@ -391,7 +455,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 20
+      "protocolVersion": 21
     },
     "tag": "hello"
   },
@@ -513,6 +577,14 @@
     "payload": {
       "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
       "leftGame": true
+    },
+    "tag": "leave"
+  },
+  "leave-crumbled": {
+    "payload": {
+      "crumbled": true,
+      "entityId": "monster:8",
+      "leftGame": false
     },
     "tag": "leave"
   },
@@ -935,6 +1007,9 @@
   },
   "sector-interior": {
     "payload": {
+      "outdoorDoorIds": [
+        "exit"
+      ],
       "sector": {
         "blockers": [],
         "brightness": 75,
@@ -1068,6 +1143,18 @@
   "target-none": {
     "payload": {},
     "tag": "target"
+  },
+  "telegraph": {
+    "payload": {
+      "casterId": "monster:3",
+      "id": "telegraph-4",
+      "kind": "wail",
+      "radius": 4,
+      "seconds": 1.25,
+      "x": 9,
+      "z": 4.5
+    },
+    "tag": "telegraph"
   },
   "unequip": {
     "payload": {

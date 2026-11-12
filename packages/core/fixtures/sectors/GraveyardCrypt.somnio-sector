@@ -1,0 +1,489 @@
+{
+  "brightness": 40,
+  "doors": [
+    {
+      "anchor": "main",
+      "id": "exit",
+      "placement": "door-1",
+      "target": {
+        "door": "to-graveyardcrypt",
+        "sector": "Graveyard"
+      }
+    },
+    {
+      "anchor": "main",
+      "id": "to-graveyardburialchamber",
+      "placement": "door-2",
+      "target": {
+        "door": "exit",
+        "sector": "GraveyardBurialChamber"
+      }
+    }
+  ],
+  "ground": {
+    "backgroundMaterialId": "stone-arena"
+  },
+  "kind": "interior",
+  "monsterSpawns": [
+    {
+      "depth": 8.96,
+      "eliteChance": 0.25,
+      "id": "skeletons",
+      "kind": "skeleton-minion",
+      "maxAlive": 3,
+      "width": 4.48,
+      "x": 7.68,
+      "z": 0.64
+    },
+    {
+      "depth": 8.96,
+      "eliteChance": 0.3,
+      "id": "skeleton-warriors",
+      "kind": "skeleton-warrior",
+      "maxAlive": 2,
+      "width": 5.12,
+      "x": 2.56,
+      "z": 0.64
+    }
+  ],
+  "placements": [
+    {
+      "id": "door-1",
+      "modelId": "stone-room-threshold",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 5.12
+    },
+    {
+      "id": "door-mat-1",
+      "modelId": "door-mat",
+      "x": 14.61,
+      "yaw": 90,
+      "z": 5.12
+    },
+    {
+      "id": "door-2",
+      "modelId": "stone-room-threshold",
+      "x": -0.216,
+      "yaw": 270,
+      "z": 5.12
+    },
+    {
+      "id": "door-mat-2",
+      "modelId": "door-mat",
+      "x": 0.75,
+      "yaw": 90,
+      "z": 5.12
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-1",
+      "modelId": "wall-torch",
+      "x": 1.92,
+      "z": 0.133
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-2",
+      "modelId": "wall-torch",
+      "x": 5.76,
+      "z": 0.133
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-3",
+      "modelId": "wall-torch",
+      "x": 9.6,
+      "z": 0.133
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-4",
+      "modelId": "wall-torch",
+      "x": 13.44,
+      "z": 0.133
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-5",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "elevation": 0.95,
+      "id": "wall-torch-6",
+      "modelId": "wall-torch",
+      "x": 0.133,
+      "yaw": 90,
+      "z": 8.32
+    },
+    {
+      "id": "candle-shrine-1",
+      "modelId": "candle-shrine",
+      "x": 14.81,
+      "z": 3.5
+    },
+    {
+      "id": "candle-shrine-2",
+      "modelId": "candle-shrine",
+      "x": 14.81,
+      "z": 6.74
+    },
+    {
+      "id": "coffin-1",
+      "modelId": "coffin",
+      "x": 3.84,
+      "z": 0.62
+    },
+    {
+      "id": "coffin-2",
+      "modelId": "coffin",
+      "x": 7.68,
+      "z": 0.62
+    },
+    {
+      "id": "coffin-3",
+      "modelId": "coffin",
+      "x": 11.52,
+      "z": 0.62
+    },
+    {
+      "id": "coffin-open-1",
+      "modelId": "coffin-open",
+      "x": 4.2,
+      "yaw": 180,
+      "z": 9.6
+    },
+    {
+      "id": "coffin-4",
+      "modelId": "coffin",
+      "x": 9,
+      "yaw": 180,
+      "z": 9.6
+    },
+    {
+      "id": "bones-1",
+      "modelId": "bones",
+      "x": 3.4,
+      "yaw": 40,
+      "z": 3.1
+    },
+    {
+      "id": "bone-1",
+      "modelId": "bone",
+      "x": 5.9,
+      "yaw": 110,
+      "z": 6.7
+    },
+    {
+      "id": "skull-1",
+      "modelId": "skull",
+      "x": 8.6,
+      "yaw": 160,
+      "z": 4.3
+    },
+    {
+      "id": "bones-2",
+      "modelId": "bones",
+      "x": 10.4,
+      "yaw": 250,
+      "z": 7.6
+    },
+    {
+      "id": "ribcage-1",
+      "modelId": "ribcage",
+      "x": 6.6,
+      "yaw": 20,
+      "z": 2.4
+    },
+    {
+      "id": "bone-2",
+      "modelId": "bone",
+      "x": 11.2,
+      "yaw": 300,
+      "z": 3
+    },
+    {
+      "id": "wall-north-1",
+      "modelId": "stone-room-wall",
+      "x": 0.64,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-1",
+      "modelId": "stone-room-wall-low",
+      "x": 0.64,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-2",
+      "modelId": "stone-room-wall",
+      "x": 1.92,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-2",
+      "modelId": "stone-room-wall-low",
+      "x": 1.92,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-3",
+      "modelId": "stone-room-wall",
+      "x": 3.2,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-3",
+      "modelId": "stone-room-wall-low",
+      "x": 3.2,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-4",
+      "modelId": "stone-room-wall",
+      "x": 4.48,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-4",
+      "modelId": "stone-room-wall-low",
+      "x": 4.48,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-5",
+      "modelId": "stone-room-wall",
+      "x": 5.76,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-5",
+      "modelId": "stone-room-wall-low",
+      "x": 5.76,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-6",
+      "modelId": "stone-room-wall",
+      "x": 7.04,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-6",
+      "modelId": "stone-room-wall-low",
+      "x": 7.04,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-7",
+      "modelId": "stone-room-wall",
+      "x": 8.32,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-7",
+      "modelId": "stone-room-wall-low",
+      "x": 8.32,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-8",
+      "modelId": "stone-room-wall",
+      "x": 9.6,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-8",
+      "modelId": "stone-room-wall-low",
+      "x": 9.6,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-9",
+      "modelId": "stone-room-wall",
+      "x": 10.88,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-9",
+      "modelId": "stone-room-wall-low",
+      "x": 10.88,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-10",
+      "modelId": "stone-room-wall",
+      "x": 12.16,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-10",
+      "modelId": "stone-room-wall-low",
+      "x": 12.16,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-11",
+      "modelId": "stone-room-wall",
+      "x": 13.44,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-11",
+      "modelId": "stone-room-wall-low",
+      "x": 13.44,
+      "z": 10.456
+    },
+    {
+      "id": "wall-north-12",
+      "modelId": "stone-room-wall",
+      "x": 14.72,
+      "z": -0.216
+    },
+    {
+      "id": "wall-south-12",
+      "modelId": "stone-room-wall-low",
+      "x": 14.72,
+      "z": 10.456
+    },
+    {
+      "id": "wall-west-1",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-east-1",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 0.64
+    },
+    {
+      "id": "wall-west-2",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-east-2",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 1.92
+    },
+    {
+      "id": "wall-west-3",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-east-3",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 3.2
+    },
+    {
+      "id": "wall-west-6",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 7.04
+    },
+    {
+      "id": "wall-east-6",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 7.04
+    },
+    {
+      "id": "wall-west-7",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 8.32
+    },
+    {
+      "id": "wall-east-7",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 8.32
+    },
+    {
+      "id": "wall-west-8",
+      "modelId": "stone-room-wall",
+      "x": -0.216,
+      "yaw": 90,
+      "z": 9.6
+    },
+    {
+      "id": "wall-east-8",
+      "modelId": "stone-room-wall-low",
+      "x": 15.576,
+      "yaw": 90,
+      "z": 9.6
+    },
+    {
+      "id": "post-north-west",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": -0.324
+    },
+    {
+      "id": "post-north-east",
+      "modelId": "stone-room-pillar",
+      "x": 15.684,
+      "z": -0.324
+    },
+    {
+      "id": "post-south-west",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": 10.564
+    },
+    {
+      "id": "post-south-east",
+      "modelId": "stone-room-pillar-low",
+      "x": 15.684,
+      "z": 10.564
+    },
+    {
+      "id": "post-door-1",
+      "modelId": "stone-room-pillar-low",
+      "x": 15.684,
+      "z": 3.84
+    },
+    {
+      "id": "post-door-2",
+      "modelId": "stone-room-pillar-low",
+      "x": 15.684,
+      "z": 6.4
+    },
+    {
+      "id": "post-door-3",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": 3.84
+    },
+    {
+      "id": "post-door-4",
+      "modelId": "stone-room-pillar",
+      "x": -0.324,
+      "z": 6.4
+    }
+  ],
+  "size": {
+    "depth": 10.24,
+    "width": 15.36
+  }
+}

@@ -36,6 +36,8 @@ export interface MonsterSpawn {
   width: number;
   depth: number;
   maxAlive: number;
+  /** The chance, from 0 to 1, that a monster it spawns is an elite. */
+  eliteChance: number;
 }
 
 export interface Sector extends SectorView {

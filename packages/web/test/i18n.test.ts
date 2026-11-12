@@ -97,11 +97,12 @@ describe('catalog coverage', () => {
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item, people, role, teaching, nightmare, and place a trial names, each with its own German', () => {
+  it('are every item, people, role, teaching, nightmare, elite, and place a trial names, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
       'Amulet',
       'Balance recovery',
       'Bind',
+      'Bone dagger',
       'Brace',
       'Buckler',
       'Calm',
@@ -118,6 +119,7 @@ describe('the names rendered through a core label key', () => {
       'Ghost',
       'Guard',
       'Healer',
+      'Iron buckler',
       'Iron ring',
       'Leather boots',
       'Leather cap',
@@ -128,16 +130,28 @@ describe('the names rendered through a core label key', () => {
       'Mace',
       'Moonstone',
       'Mystic',
+      'Necromancer',
       'North Wood',
       'Padded tunic',
       'Radiance',
       'Rally',
       'Renewal',
       'Round shield',
+      'Sabre',
       'Sense the fallen',
+      'Shielded Ghost',
+      'Shielded Skeleton',
+      'Shielded Skeleton Warrior',
       'Short sword',
+      'Skeleton',
+      'Skeleton Warrior',
+      'Skull shield',
+      'Skull staff',
       'Sopors',
       'Spirit deepening',
+      'Stony Ghost',
+      'Stony Skeleton',
+      'Stony Skeleton Warrior',
       'Strike',
       'Touch',
       'Toughening',
@@ -145,6 +159,7 @@ describe('the names rendered through a core label key', () => {
       'Veil',
       'Vigils',
       'Wand',
+      'War axe',
       'Ward',
       'Weaken',
     ]);

@@ -15,12 +15,12 @@ export function scaledOr<F>(value: Scaled | undefined, rank: number, fallback: F
 }
 
 /**
- * A timed effect on a dreamer or a nightmare, and what it changes while it holds. A share left out
- * is 1, so it changes nothing.
+ * An effect on a dreamer or a nightmare, timed or held as long as its holder, and what it changes
+ * while it holds. A share left out is 1, so it changes nothing.
  */
 export interface Effect {
-  /** How long it holds, by the rank of the ability that applied it. */
-  seconds: Scaled;
+  /** How long it holds, by the rank of the ability that applied it; left out for an elite's trait, which holds as long as its holder. */
+  seconds?: Scaled;
   /** The share of the harm that reaches its holder. */
   damageTaken?: number;
   /** The share of its holder's harm that lands. */
@@ -34,8 +34,9 @@ export interface Effect {
   /** The health a second it gives its holder, by the rank of the ability that applied it, which makes it a heal over time, so a fall ends it. */
   healthPerSecond?: Scaled;
   /**
-   * The harm it takes in its holder's place, by the rank of the ability that applied it: a shield,
-   * worn down by each hit it takes and gone once it has taken all it holds.
+   * The harm it takes in its holder's place, by the rank of the ability that applied it, or at rank 1
+   * for an elite's trait: a shield, worn down by each hit it takes and gone once it has taken all it
+   * holds.
    */
   absorb?: Scaled;
   /** Nightmares leave its holder alone: off their tables, and out of whom they chase and strike, while it holds. */
@@ -43,8 +44,9 @@ export interface Effect {
 }
 
 /**
- * The timed effects, by id. An id travels the wire, so it is kebab-case like a teaching id. An
- * effect applied again to a holder that has it starts its seconds over rather than stacking.
+ * The effects, by id: the abilities' timed ones and the elites' traits, which hold as long as their
+ * holder. An id travels the wire, so it is kebab-case like a teaching id. An effect applied again
+ * to a holder that has it starts its seconds over rather than stacking.
  */
 export const EFFECTS = {
   braced: { seconds: { atRank1: 4, perRank: 1 }, damageTaken: 0.5, movement: 'noRun' },
@@ -55,6 +57,8 @@ export const EFFECTS = {
   weakened: { seconds: { atRank1: 8, perRank: 2 }, damageDealt: 0.6 },
   bound: { seconds: { atRank1: 3, perRank: 1 }, movement: 'rooted' },
   veiled: { seconds: 5, unseen: true },
+  stony: { damageTaken: 0.6 },
+  shielded: { absorb: 15 },
 } as const satisfies Record<string, Effect>;
 export type EffectId = keyof typeof EFFECTS;
 
@@ -66,12 +70,12 @@ export function effect(effectId: EffectId): Effect {
   return EFFECTS[effectId];
 }
 
-/** How long the effect holds when an ability of the rank given applies it. */
+/** How long the effect holds when an ability of the rank given applies it; without end for a trait's. */
 export function effectSeconds(effectId: EffectId, rank: number): number {
-  return scaled(effect(effectId).seconds, rank);
+  return scaledOr(effect(effectId).seconds, rank, Number.POSITIVE_INFINITY);
 }
 
-/** The harm the effect takes in its holder's place when an ability of the rank given applies it; 0 for an effect that is no shield. */
+/** The harm the effect takes in its holder's place when an ability of the rank given applies it, or an elite's trait at rank 1; 0 for an effect that is no shield. */
 export function effectAbsorb(effectId: EffectId, rank: number): number {
   return scaledOr(effect(effectId).absorb, rank, 0);
 }

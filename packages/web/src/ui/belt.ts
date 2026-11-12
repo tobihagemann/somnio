@@ -250,7 +250,7 @@ function handLine(need: HandNeed): string {
     case 'moonstone':
       return t('Needs the Moonstone in your off hand');
     case 'focus':
-      return t('Needs a wand in your off hand');
+      return t('Needs a wand or a staff in your off hand');
   }
 }
 

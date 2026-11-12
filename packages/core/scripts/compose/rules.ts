@@ -91,6 +91,7 @@ export const ROADS: Road[] = [
       { x: -10, z: 20.9 },
       { x: -20, z: 19.9 },
       { x: -30.72, z: 20.4 },
+      { x: -39, z: 20.4 },
     ],
   },
   {
@@ -281,6 +282,28 @@ export const LANDS: LandRules[] = [
     trees: ['tree-1-a', 'tree-3-a', 'tree-5-a'],
     bushes: ['bush-2-b', 'bush-3-a'],
     rocks: ['rock-1-a'],
+  },
+  {
+    sector: 'Graveyard',
+    seed: 1702,
+    // The fenced yard, one circle a quarter, so nothing grows among the graves.
+    clearings: [
+      { x: -56.496, z: 14.352, radius: 7.4 },
+      { x: -46.128, z: 14.352, radius: 7.4 },
+      { x: -56.496, z: 24.72, radius: 7.4 },
+      { x: -46.128, z: 24.72, radius: 7.4 },
+    ],
+    worn: [
+      { x: -37.5, z: 22.6, radius: 1.1 },
+      { x: -34.2, z: 18.3, radius: 0.9 },
+    ],
+    clustersPerWindow: 2,
+    clusterTrees: [1, 3],
+    clusterRadius: 2.4,
+    propsPerWindow: 5,
+    trees: ['tree-bare-1-a', 'tree-bare-1-b', 'pine-tree', 'tree-2-c'],
+    bushes: ['bush-2-d', 'bush-4-a'],
+    rocks: ['rock-1-a', 'rock-1-d', 'rock-3-a'],
   },
   {
     sector: 'NorthMeadow',

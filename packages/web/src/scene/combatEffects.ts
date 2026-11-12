@@ -1,17 +1,19 @@
 /**
  * Combat's feedback in the world: the arcs of swings and Cleave, what a landed blow does to the
  * bodies it names, the word over a body a blow missed, the light of a mend and of a raise, the
- * Mystic's shells, bolts, bindings, and mist, and the marks of the abilities. All of it is the
- * client's own: it reads the `blow`, `ability`, `effects`, `mend`, and `raising` frames and changes
- * nothing that is sent.
+ * Mystic's shells, bolts, bindings, and mist, the marks of the abilities, a boss's telegraphed
+ * circles, and its minions arriving and crumbling. All of it is the client's own: it reads the
+ * `blow`, `ability`, `effects`, `mend`, `raising`, and `telegraph` frames, the `summonedBy` of an
+ * `entity` frame, and the `crumbled` of a `leave`, and changes nothing that is sent.
  *
  * The arcs, rings, sparks, trails, motes, bolts, cracks, domes, and miss words come from pools that
  * stop growing at their size and are reused oldest first. What lasts as long as the server says (a
- * Challenge mark, a channel's beam and stream, a raise's ring, a ward's shell, a binding's runes and
- * tethers) waits for a free one instead. A body's flash and outline hulls are built for its model
- * and take the materials of hulls dropped. Each kind of mesh draws with clones of one material, so
- * a kind's program compiles once, in the scene's prewarm, and none adds a light. Everything hangs
- * on the effects' own root, never in a model holder, so no portrait shows it.
+ * Challenge mark, a channel's beam and stream, a raise's ring, a ward's shell, a binding's runes
+ * and tethers, a telegraph's circle) waits for a free one instead. A body's flash and outline hulls
+ * are built for its model and take the materials of hulls dropped. Each kind of mesh draws with
+ * clones of one material, so a kind's program compiles once, in the scene's prewarm, and none adds
+ * a light. Everything hangs on the effects' own root, never in a model holder, so no portrait shows
+ * it.
  */
 import * as THREE from 'three';
 import {
@@ -25,10 +27,12 @@ import {
   effectSeconds,
   headingFromVector,
   headingRadians,
+  TELEGRAPHS,
+  clamp,
   reachDistance,
 } from '@somnio/core';
 import type { AbilityBody, AbilityId, EffectId, Heading } from '@somnio/core';
-import type { Condition } from '@somnio/protocol';
+import type { Condition, TelegraphMessage } from '@somnio/protocol';
 import { abilityBody } from '@/client/clientWorld';
 import type { ClientEntity } from '@/client/clientWorld';
 import { raiseShownAt } from '@/client/renderSurface';
@@ -93,8 +97,8 @@ export interface CombatEffectsHost {
 
 /**
  * The pools' sizes. Past its size a pool hands out its oldest mesh again, but the marks', streams',
- * beams', raise rings', shells', runes', and tethers' pools only a free one, since what they draw
- * lasts as long as the server says.
+ * beams', raise rings', shells', runes', tethers', and telegraphs' pools only a free one, since what
+ * they draw lasts as long as the server says.
  */
 export const EFFECT_POOL_SIZES = {
   swingArcs: 4,
@@ -114,6 +118,7 @@ export const EFFECT_POOL_SIZES = {
   runes: 4,
   tethers: 4,
   domes: 2,
+  telegraphs: 2,
 } as const;
 
 /** The name of the group every effect hangs on. */
@@ -270,6 +275,17 @@ const VEIL_DOME_SECONDS = 1.6;
 /** How strongly the mist dims a veiled body, and how often mist rises off it. */
 const VEIL_SHADE = 0.42;
 const VEIL_PULSE_SECONDS = 1.2;
+
+/** The red a telegraph's circle and its flare are drawn in. */
+export const TELEGRAPH_COLOR = 0xff4d5e;
+/** The rim's width, in metres, whatever the circle's size. */
+const TELEGRAPH_RIM_METRES = 0.07;
+const TELEGRAPH_FLARE_SECONDS = 0.35;
+/** The grave light a minion arrives in. */
+export const SUMMON_COLOR = 0x9fe8b8;
+const SUMMON_SECONDS = 0.55;
+/** How long a minion takes to crumble as its boss's fight ends, which the scene sinks its body over. */
+export const CRUMBLE_SECONDS = 0.9;
 
 const easeOut = (k: number): number => 1 - (1 - k) ** 3;
 
@@ -445,10 +461,28 @@ interface ChannelLook {
   endedAt: number | undefined;
 }
 
-/** A raise's ring as its last snapshot states it, from `anchoredAt` on the effects' clock. */
+/**
+ * A telegraph's circle where it was telegraphed, filling from `startsAtMs` to `untilMs`, when it
+ * strikes. Those are wall time, not the effects' clock, which runs slower than the server's below
+ * ten frames a second, so the circle fills by the server's deadline whatever the frame rate.
+ */
+interface TelegraphLook {
+  casterId: string;
+  x: number;
+  z: number;
+  radius: number;
+  startsAtMs: number;
+  untilMs: number;
+  mesh: THREE.Mesh | undefined;
+}
+
+/**
+ * A raise's ring as its last snapshot states it, from `anchoredAtMs`, when it arrived. That is wall
+ * time, as a telegraph's is, so the ring keeps the raise's pace whatever the frame rate.
+ */
 interface RaiseRing extends RaiseProgress {
   mesh: THREE.Mesh | undefined;
-  anchoredAt: number;
+  anchoredAtMs: number;
 }
 
 export class CombatEffects {
@@ -457,8 +491,9 @@ export class CombatEffects {
   private readonly host: CombatEffectsHost;
   private readonly reducedMotion: boolean;
   /**
-   * The clock every effect runs on, in seconds: each tick moves it on by the frame's time, as the
-   * clips are moved on, and the tick after a stall also by the time the stall lasted.
+   * The clock every effect but a raise's ring and a telegraph's circle runs on, in seconds: each
+   * tick moves it on by the frame's time, as the clips are moved on, and the tick after a stall also
+   * by the time the stall lasted. Those two run on wall time, since a slow frame holds this back.
    */
   private clock = 0;
   /** Work waiting on the effects' clock, and the body a blow among it lands on as a hit. */
@@ -483,6 +518,7 @@ export class CombatEffects {
   private readonly runes: EffectPool<THREE.Mesh>;
   private readonly tethers: EffectPool<THREE.Mesh>;
   private readonly domes: EffectPool<THREE.Mesh>;
+  private readonly telegraphMeshes: EffectPool<THREE.Mesh>;
   private readonly jolts = new Map<string, Jolt>();
   private readonly hulls = new Map<string, Hulls>();
   /**
@@ -502,6 +538,8 @@ export class CombatEffects {
   private readonly weakens = new Map<string, Pulsing>();
   private readonly binds = new Map<string, Binding>();
   private readonly veils = new Map<string, Pulsing>();
+  /** The circles telegraphed and not yet struck, by the telegraph's id. */
+  private readonly telegraphs = new Map<string, TelegraphLook>();
   /** How each effect's look is held to what the server says of it, so an effect with no look is a choice made here. */
   private readonly effectLooks: Record<EffectId, (entityId: string, held: { seconds?: number } | undefined, stalledFor: number) => void> = {
     braced: (entityId, held, stalledFor) => this.timeLook(this.braces, entityId, held, stalledFor, startBrace),
@@ -512,6 +550,9 @@ export class CombatEffects {
     weakened: (entityId, held, stalledFor) => this.timeLook(this.weakens, entityId, held, stalledFor, startPulsing),
     bound: (entityId, held, stalledFor) => this.timeLook(this.binds, entityId, held, stalledFor, startBinding),
     veiled: (entityId, held, stalledFor) => this.timeLook(this.veils, entityId, held, stalledFor, startPulsing),
+    // An elite's trait shows as its aura, which every viewer sees, not only those told of its effects.
+    stony: () => {},
+    shielded: () => {},
   };
   private shakeAmplitude = 0;
 
@@ -539,6 +580,7 @@ export class CombatEffects {
     this.runes = this.pool(ringMesh, EFFECT_POOL_SIZES.runes);
     this.tethers = this.pool(tetherMesh, EFFECT_POOL_SIZES.tethers);
     this.domes = this.pool(domeMesh, EFFECT_POOL_SIZES.domes);
+    this.telegraphMeshes = this.pool(telegraphMesh, EFFECT_POOL_SIZES.telegraphs);
   }
 
   private pool<T extends THREE.Object3D>(make: () => T, size: number): EffectPool<T> {
@@ -670,8 +712,8 @@ export class CombatEffects {
   /**
    * A raise under way on a fallen body, as its last snapshot states it, or `undefined` once it
    * ends: a gold ring round the body, drawn as far round as the raise has gone and running on by its
-   * schedule (`raiseShownAt`). It is the server's state, so it is kept while stalled, and the clock's
-   * catch-up carries it on.
+   * schedule (`raiseShownAt`) from when it arrived, as the bar counts it. It is the server's state,
+   * so it is kept while stalled, and runs on wall time through the stall.
    */
   raising(targetId: string, raise: RaiseProgress | undefined): void {
     const ring = this.raises.get(targetId);
@@ -680,10 +722,67 @@ export class CombatEffects {
       this.raises.delete(targetId);
       return;
     }
+    this.raises.set(targetId, { ...raise, mesh: ring?.mesh, anchoredAtMs: this.host.now() });
+  }
+
+  /**
+   * A circle on the ground its caster strikes once its seconds have run: faint to its rim at first,
+   * it fills from its centre out as they run, its rim beating, and flares as it strikes. One first
+   * told of part-way, to a dreamer who comes into view of it, shows as full as it is. It is the
+   * server's state, so it is taken while stalled too, and runs on wall time through the stall. Its
+   * caster plays the move, its push falling as the circle strikes, unless the tab has stalled. It
+   * ends with its caster, driven off or gone.
+   */
+  telegraph({ id, casterId, kind, x, z, radius, seconds }: TelegraphMessage): void {
     const now = this.host.now();
-    // Counted from when it arrived, between two ticks, as the bar counts it, so a tick does not run it ahead.
-    const anchoredAt = this.clock + (now - this.lastTickMs) / 1000;
-    this.raises.set(targetId, { ...raise, mesh: ring?.mesh, anchoredAt });
+    const untilMs = now + seconds * 1000;
+    const startsAtMs = untilMs - Math.max(seconds, TELEGRAPHS[kind].seconds) * 1000;
+    this.telegraphs.set(id, { casterId, x, z, radius, startsAtMs, untilMs, mesh: this.telegraphs.get(id)?.mesh });
+    if (!this.stalled(now)) this.host.playOneShot(casterId, kind, seconds);
+  }
+
+  /**
+   * A minion arrives at its boss's call: the boss plays its call, and a ring of grave light swells
+   * from the minion's feet as motes rise round it. Under reduced motion the ring fades where it
+   * stands, and no mote rises.
+   */
+  summon(minionId: string, summonerId: string): void {
+    if (this.stalled(this.host.now())) return;
+    this.host.playOneShot(summonerId, 'summon');
+    const minion = this.host.body(minionId);
+    if (minion === undefined) return;
+    this.showRing(minion.node.position, {
+      max: 1,
+      seconds: SUMMON_SECONDS,
+      width: 0.07,
+      color: SUMMON_COLOR,
+      follow: minionId,
+      shape: (k) => ({ radius: this.reducedMotion ? 0.6 : 0.2 + 0.55 * easeOut(k), alpha: 1 - k }),
+    });
+    if (!this.reducedMotion) {
+      this.showMotes(this.motes.take(), minionId, { spread: 0.45, rise: 1.2, life: 0.6, size: 0.07, stream: false, color: SUMMON_COLOR });
+    }
+  }
+
+  /**
+   * A minion whose boss's fight ended crumbles, its arrival run backwards: a ring of grave light
+   * closes in on its feet as motes rise off it where it stood, while the scene sinks the body. Under
+   * reduced motion the ring fades where it stands, and no mote rises.
+   */
+  crumble(minionId: string): void {
+    if (this.stalled(this.host.now())) return;
+    const minion = this.host.body(minionId);
+    if (minion === undefined) return;
+    this.showRing(minion.node.position, {
+      max: 1,
+      seconds: CRUMBLE_SECONDS,
+      width: 0.07,
+      color: SUMMON_COLOR,
+      shape: (k) => ({ radius: this.reducedMotion ? 0.6 : 0.75 - 0.55 * easeOut(k), alpha: 1 - k }),
+    });
+    if (!this.reducedMotion) {
+      this.showMotes(this.motes.take(), minionId, { spread: 0.45, rise: 1.2, life: 0.8, size: 0.07, stream: false, color: SUMMON_COLOR, from: 0.4 });
+    }
   }
 
   /**
@@ -796,6 +895,11 @@ export class CombatEffects {
     return held.seconds === undefined ? Number.POSITIVE_INFINITY : this.clock + stalledFor + held.seconds;
   }
 
+  /** Seconds until the last blow on its way to the body as a hit lands, or 0 with none on its way. */
+  hitsLandIn(entityId: string): number {
+    return this.scheduled.reduce((latest, entry) => (entry.hits === entityId ? Math.max(latest, entry.at - this.clock) : latest), 0);
+  }
+
   /** Whether a hit-pause holds the body's clip where it is. */
   frozen(entityId: string): boolean {
     return this.clock < (this.jolts.get(entityId)?.frozenUntil ?? Number.NEGATIVE_INFINITY);
@@ -804,7 +908,8 @@ export class CombatEffects {
   /** Runs every effect on by `dt` seconds. */
   tick(dt: number): void {
     const now = this.host.now();
-    if (this.stalled(now)) {
+    const stalled = this.stalled(now);
+    if (stalled) {
       this.dropInFlight();
       this.catchUp((now - this.lastTickMs) / 1000);
     }
@@ -830,6 +935,7 @@ export class CombatEffects {
     this.tickWeakens();
     this.tickBinds();
     this.tickVeils();
+    this.tickTelegraphs(stalled);
     this.shakeAmplitude = this.shakeAmplitude > 0.0005 ? this.shakeAmplitude * Math.exp(-dt / SHAKE_DECAY_SECONDS) : 0;
   }
 
@@ -885,6 +991,7 @@ export class CombatEffects {
     this.weakens.clear();
     this.binds.clear();
     this.veils.clear();
+    this.telegraphs.clear();
   }
 
   private after(seconds: number, run: () => void, hits?: string): void {
@@ -898,12 +1005,14 @@ export class CombatEffects {
   /**
    * Ends what a stall left queued or in flight, so none of it plays on the tab's return: the work
    * still queued unrun (a blow, sweep, or wave still to land), and every arc, ring, spark, mote,
-   * bolt, crack, dome, miss word, trail, lunge, stagger, flash, hit-pause, lift, and shake under way.
-   * The marks, a channel's beam and stream, a raise's ring, a ward's shell, and a binding's runes
-   * and tethers stay, because they last as long as the server says, as an outline does; the clock's
-   * catch-up ends those whose time ran out while the tab was hidden. A ward spent by a blow dropped
-   * here shatters now, so the catch-up ends it too. Until a tick runs again, `blow`, `ability`, and
-   * `mend` start nothing, not even a clip, so the queue stays bounded while the tab stays hidden.
+   * bolt, crack, dome, miss word, trail, lunge, stagger, flash, hit-pause, lift, and shake under
+   * way. The marks, a channel's beam and stream, a raise's ring, a ward's shell, a binding's runes
+   * and tethers, and a telegraph's circle stay, because they last as long as the server says, as an
+   * outline does. The clock's catch-up ends those whose time ran out while the tab was hidden. A
+   * circle ends by the wall clock instead, and a raise's ring stays until a snapshot ends it. A ward
+   * spent by a blow dropped here shatters now, so the catch-up ends it too. Until a tick runs again,
+   * `blow`, `ability`, and `mend` start nothing, not even a clip, so the queue stays bounded while
+   * the tab stays hidden.
    */
   private dropInFlight(): void {
     this.scheduled = [];
@@ -915,6 +1024,7 @@ export class CombatEffects {
       ...this.shells.items,
       ...this.runes.items,
       ...this.tethers.items,
+      ...this.telegraphMeshes.items,
     ]);
     for (const object of [...this.running.keys()]) if (!kept.has(object)) this.stop(object);
     for (const ward of this.wards.values()) {
@@ -1404,11 +1514,61 @@ export class CombatEffects {
         const held = this.raises.get(id);
         const at = this.host.body(id)?.node.position;
         if (held?.mesh !== mesh || at === undefined) return false;
-        uniforms['uArc']!.value = raiseShownAt(held, this.clock - held.anchoredAt);
+        uniforms['uArc']!.value = raiseShownAt(held, (this.host.now() - held.anchoredAtMs) / 1000);
         mesh.position.set(at.x, at.y + GROUND_RING_LIFT, at.z);
         return true;
       });
     }
+  }
+
+  /**
+   * Draws each telegraph's circle as full as its time says, giving it a mesh when one is free, and
+   * ends each that struck or whose caster is driven off or gone. One that struck flares, but not on
+   * the tick that ends a stall, since it struck while the tab was hidden, and not under reduced
+   * motion, where its rim does not beat either.
+   */
+  private tickTelegraphs(stalled: boolean): void {
+    const now = this.host.now();
+    for (const [id, look] of this.telegraphs) {
+      const caster = this.host.body(look.casterId);
+      const standing = caster !== undefined && caster.condition !== 'fallen';
+      if (!standing || now >= look.untilMs) {
+        if (look.mesh !== undefined) this.stop(look.mesh);
+        this.telegraphs.delete(id);
+        if (standing && !stalled && !this.reducedMotion) this.flare(look, caster.node.position.y);
+        continue;
+      }
+      if (look.mesh !== undefined && this.running.has(look.mesh)) continue;
+      const mesh = this.takeIdle(this.telegraphMeshes);
+      look.mesh = mesh;
+      if (mesh === undefined) continue;
+      const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
+      uniforms['uRim']!.value = TELEGRAPH_RIM_METRES / look.radius;
+      mesh.scale.set(look.radius, look.radius, 1);
+      this.animate(mesh, () => {
+        const held = this.telegraphs.get(id);
+        const feet = held === undefined ? undefined : this.host.body(held.casterId)?.node.position;
+        if (held?.mesh !== mesh || feet === undefined) return false;
+        const shownMs = this.host.now() - held.startsAtMs;
+        const filled = clamp(shownMs / (held.untilMs - held.startsAtMs), 0, 1);
+        uniforms['uFill']!.value = filled;
+        // The rim beats faster as the strike nears.
+        uniforms['uBeat']!.value = this.reducedMotion ? 0 : 0.5 + 0.5 * Math.sin((shownMs / 1000) * (6 + 10 * filled));
+        mesh.position.set(held.x, feet.y + GROUND_RING_LIFT, held.z);
+        return true;
+      });
+    }
+  }
+
+  /** A struck circle's flare: a ring swelling from inside its rim to past it, and fading. */
+  private flare(look: TelegraphLook, height: number): void {
+    this.showRing(new THREE.Vector3(look.x, height, look.z), {
+      max: look.radius * 1.2,
+      seconds: TELEGRAPH_FLARE_SECONDS,
+      width: 0.12,
+      color: TELEGRAPH_COLOR,
+      shape: (k) => ({ radius: look.radius * (0.85 + 0.3 * easeOut(k)), alpha: 1 - k }),
+    });
   }
 
   /**
@@ -3190,6 +3350,45 @@ const DOME_MATERIAL = new THREE.ShaderMaterial({
   depthTest: false,
   side: THREE.DoubleSide,
 });
+
+/**
+ * A telegraph's circle on one quad, the radius 1: a faint disc to its rim, a firmer rim `uRim` of
+ * the radius wide that `uBeat` brightens, and its fill, a brighter disc out to `uFill` of the radius
+ * with a line at its edge, so the circle says at a glance how near its strike is.
+ */
+const TELEGRAPH_MATERIAL = new THREE.ShaderMaterial({
+  uniforms: {
+    uFill: { value: 0 },
+    uRim: { value: 0.02 },
+    uBeat: { value: 0 },
+    uColor: { value: new THREE.Color(TELEGRAPH_COLOR) },
+  },
+  vertexShader: /* glsl */ `varying vec2 vPlane; void main() { vPlane = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform float uFill, uRim, uBeat; uniform vec3 uColor; varying vec2 vPlane;
+    void main() {
+      float along = length(vPlane);
+      float soft = uRim * 0.5;
+      float edge = 1.0 - smoothstep(1.0 - soft, 1.0, along);
+      if (edge <= 0.0) discard;
+      float rim = smoothstep(1.0 - uRim - soft, 1.0 - uRim, along);
+      float fill = 1.0 - smoothstep(uFill - soft, uFill, along);
+      float front = uFill > 0.0 ? 1.0 - smoothstep(0.0, uRim, abs(along - uFill)) : 0.0;
+      float alpha = max(max(0.1, 0.24 * fill), max(rim * (0.7 + 0.3 * uBeat), 0.65 * front)) * edge;
+      gl_FragColor = vec4(uColor, alpha);
+      #include <colorspace_fragment>
+    }`,
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+function telegraphMesh(): THREE.Mesh {
+  const mesh = new THREE.Mesh(RING_QUAD, TELEGRAPH_MATERIAL.clone());
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 3;
+  return mesh;
+}
 
 function domeMesh(): THREE.Mesh {
   const mesh = new THREE.Mesh(DOME_GEOMETRY, DOME_MATERIAL.clone());

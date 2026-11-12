@@ -7,7 +7,8 @@ import { SpaceActor } from '../src/world/spaceActor.ts';
 import { wearing } from './support/combat.ts';
 import { collectMessages, entities } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
-import { attachPlayer, makeCharacter, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
+import { interiorSector } from '../../core/test/support/worldFixture.ts';
+import { attachPlayer, makeCharacter, makeDoor, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
 function actor(overrides: Partial<Sector> = {}) {
   const sector = makeSector('TestSector', overrides);
@@ -49,6 +50,24 @@ describe('SpaceActor.attach', () => {
     const messages = await collectMessages(alice.outbox);
     expect(messages[1]).toEqual({ tag: 'sector', payload: { sector: sectorView(sector) } });
     expect(entities(messages)[1]).toMatchObject({ id: 'npc:TestSector/guard', kind: 'npc', radius: SOMNIO_CONSTANTS.npcRadius, x: 10, z: 10 });
+  });
+
+  it("names a room's doors that open to the outdoors on its sector frame, and none of a room behind it", async () => {
+    const toCellar = makeDoor('to-cellar', { x: 3, z: 9 }, { sector: 'Cellar', door: 'exit' });
+    const toTown = makeDoor('exit', { x: 7, z: 9 }, { sector: 'Town', door: 'inside' });
+    const world = makeWorld([
+      makeSector('Town', makeDoor('inside', { x: 10, z: 10 }, { sector: 'Hall', door: 'exit' })),
+      interiorSector('Hall', { placements: [...toCellar.placements, ...toTown.placements], doors: [...toCellar.doors, ...toTown.doors] }),
+      interiorSector('Cellar', makeDoor('exit', { x: 5, z: 9 }, { sector: 'Hall', door: 'to-cellar' })),
+    ]);
+    const sectorFrame = async (spaceId: string) => {
+      const space = new SpaceActor(world, spaceId, { logger: testLogger(), requestDropSave: () => {} });
+      return (await collectMessages(attachPlayer(space, { x: 5, z: 5 }, 'alice', { spaceId }).outbox))[1];
+    };
+
+    expect(await sectorFrame('Hall')).toMatchObject({ tag: 'sector', payload: { outdoorDoorIds: ['exit'] } });
+    expect((await sectorFrame('Cellar'))?.payload).not.toHaveProperty('outdoorDoorIds');
+    expect((await sectorFrame(OUTDOOR_SPACE_ID))?.payload).not.toHaveProperty('outdoorDoorIds');
   });
 
   it('with an existing peer emits one self entity to the newcomer and one newcomer entity to the peer', async () => {

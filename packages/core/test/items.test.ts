@@ -3,13 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
 import { BASE_ITEMS, itemLabelKey, newItemId, plainInstance } from '../src/items.ts';
 import { TEACHINGS, TRIALS, roleLabelKey } from '../src/lucidity.ts';
-import { MONSTER_KINDS } from '../src/monsterKinds.ts';
+import { ELITE_TRAITS, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 
 const CORE_KEYS = [
   'Amulet',
   'Balance recovery',
   'Bind',
+  'Bone dagger',
   'Brace',
   'Buckler',
   'Calm',
@@ -26,6 +27,7 @@ const CORE_KEYS = [
   'Ghost',
   'Guard',
   'Healer',
+  'Iron buckler',
   'Iron ring',
   'Leather boots',
   'Leather cap',
@@ -36,16 +38,28 @@ const CORE_KEYS = [
   'Mace',
   'Moonstone',
   'Mystic',
+  'Necromancer',
   'North Wood',
   'Padded tunic',
   'Radiance',
   'Rally',
   'Renewal',
   'Round shield',
+  'Sabre',
   'Sense the fallen',
+  'Shielded Ghost',
+  'Shielded Skeleton',
+  'Shielded Skeleton Warrior',
   'Short sword',
+  'Skeleton',
+  'Skeleton Warrior',
+  'Skull shield',
+  'Skull staff',
   'Sopors',
   'Spirit deepening',
+  'Stony Ghost',
+  'Stony Skeleton',
+  'Stony Skeleton Warrior',
   'Strike',
   'Touch',
   'Toughening',
@@ -53,6 +67,7 @@ const CORE_KEYS = [
   'Veil',
   'Vigils',
   'Wand',
+  'War axe',
   'Ward',
   'Weaken',
 ];
@@ -93,13 +108,14 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, and the places a trial names', () => {
+  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, elites included, and the places a trial names', () => {
     const labels = [
       ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),
       ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),
       ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
+      ...Object.values(ELITE_TRAITS).flatMap((trait) => Object.values(trait.names)),
       ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
     ];
     // Each role's Spirit deepening is its own teaching under one label.

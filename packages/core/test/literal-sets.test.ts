@@ -8,7 +8,7 @@ import { AFFIXES, rollItem } from '../src/affixes.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIALS, isTeachingId, taskSpec, teaching } from '../src/lucidity.ts';
-import { MONSTER_KINDS, MONSTER_KIND_IDS, monsterKind } from '../src/monsterKinds.ts';
+import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { PEOPLES } from '../src/people.ts';
 import { SPEECH } from '../src/speech.ts';
 
@@ -32,6 +32,12 @@ describe('literal sets', () => {
       shield: { labelKey: 'Round shield', slot: 'offHand', tier: 1, implicit: { guard: 4 } },
       moonstone: { labelKey: 'Moonstone', slot: 'offHand', tier: 1, trialOnly: true },
       wand: { labelKey: 'Wand', slot: 'offHand', tier: 1, focus: true },
+      'bone-dagger': { labelKey: 'Bone dagger', slot: 'mainHand', tier: 3, weapon: { damage: 10, balanceCost: 12 } },
+      sabre: { labelKey: 'Sabre', slot: 'mainHand', tier: 3, weapon: { damage: 18, balanceCost: 26 } },
+      'war-axe': { labelKey: 'War axe', slot: 'mainHand', tier: 3, weapon: { damage: 24, balanceCost: 36 } },
+      'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, implicit: { guard: 5 } },
+      'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, implicit: { guard: 9 } },
+      'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, focus: true, implicit: { spiritMax: 10 } },
       cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, implicit: { guard: 1 } },
       tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, implicit: { guard: 3 } },
       gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, implicit: { guard: 1 } },
@@ -44,16 +50,16 @@ describe('literal sets', () => {
 
   it('pins the affixes', () => {
     expect(AFFIXES).toEqual({
-      health: { stat: 'healthMax', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8] } },
-      balance: { stat: 'balanceMax', slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8] } },
-      spirit: { stat: 'spiritMax', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8] } },
-      damage: { stat: 'damage', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3] } },
-      guard: { stat: 'guard', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [1, 3] } },
-      'swing-speed': { stat: 'swingSpeed', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8] } },
-      'balance-recovery': { stat: 'balanceRecovery', slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'], tiers: { 1: [5, 15] } },
-      'spirit-recovery': { stat: 'spiritRecovery', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15] } },
-      'mend-depth': { stat: 'mendDepth', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3] } },
-      'ward-strength': { stat: 'wardStrength', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15] } },
+      health: { stat: 'healthMax', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8], 3: [10, 18] } },
+      balance: { stat: 'balanceMax', slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8], 3: [10, 18] } },
+      spirit: { stat: 'spiritMax', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 3: [10, 18] } },
+      damage: { stat: 'damage', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+      guard: { stat: 'guard', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [1, 3], 3: [4, 7] } },
+      'swing-speed': { stat: 'swingSpeed', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 3: [9, 14] } },
+      'balance-recovery': { stat: 'balanceRecovery', slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+      'spirit-recovery': { stat: 'spiritRecovery', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+      'mend-depth': { stat: 'mendDepth', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+      'ward-strength': { stat: 'wardStrength', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
     });
   });
 
@@ -65,7 +71,7 @@ describe('literal sets', () => {
   });
 
   it('pins the monster kinds', () => {
-    expect(MONSTER_KIND_IDS).toEqual(['ghost']);
+    expect(MONSTER_KIND_IDS).toEqual(['ghost', 'skeleton-minion', 'skeleton-warrior', 'necromancer']);
     expect(MONSTER_KINDS).toEqual({
       ghost: {
         name: 'Ghost',
@@ -83,8 +89,78 @@ describe('literal sets', () => {
         balanceDamage: 5,
         bounty: 12,
       },
+      'skeleton-minion': {
+        name: 'Skeleton',
+        tier: 3,
+        characterModelId: 'skeleton-minion',
+        radius: 0.3,
+        metresPerSecond: 2.6,
+        aggroRadius: 4.5,
+        respawnSeconds: 45,
+        health: 70,
+        restHealthPerSecond: 1,
+        strikeSeconds: 1.2,
+        hitChance: 0.6,
+        damage: 12,
+        balanceDamage: 5,
+        bounty: 14,
+      },
+      'skeleton-warrior': {
+        name: 'Skeleton Warrior',
+        tier: 3,
+        characterModelId: 'skeleton-warrior',
+        radius: 0.3,
+        metresPerSecond: 2.2,
+        aggroRadius: 4.5,
+        respawnSeconds: 75,
+        health: 160,
+        restHealthPerSecond: 2,
+        strikeSeconds: 1.8,
+        hitChance: 0.65,
+        damage: 20,
+        balanceDamage: 10,
+        bounty: 30,
+      },
+      necromancer: {
+        name: 'Necromancer',
+        tier: 3,
+        characterModelId: 'necromancer',
+        radius: 0.3,
+        metresPerSecond: 2,
+        aggroRadius: 6,
+        respawnSeconds: 600,
+        health: 900,
+        restHealthPerSecond: 10,
+        strikeSeconds: 2,
+        hitChance: 0.7,
+        damage: 24,
+        balanceDamage: 12,
+        bounty: 200,
+      },
     });
     expect(monsterKind('ghost')).toBe(MONSTER_KINDS.ghost);
+  });
+
+  /** A spawn of a boss's kind spawns a boss, so a kind renamed out of this table would come back as an ordinary nightmare. */
+  it('pins the bosses', () => {
+    expect(Object.keys(BOSS_MOVES)).toEqual(['necromancer']);
+    expect(bossMoves('necromancer')).toBe(BOSS_MOVES.necromancer);
+    expect(bossMoves('skeleton-minion')).toBeUndefined();
+  });
+
+  /** A trait id travels on an elite's `entity` frame, and its effect id on the `effects` frames. */
+  it('pins the elite traits', () => {
+    expect(ELITE_TRAIT_IDS).toEqual(['stony', 'shielded']);
+    expect(ELITE_TRAITS).toEqual({
+      stony: { effectId: 'stony', names: { ghost: 'Stony Ghost', 'skeleton-minion': 'Stony Skeleton', 'skeleton-warrior': 'Stony Skeleton Warrior' } },
+      shielded: {
+        effectId: 'shielded',
+        renewSeconds: 8,
+        names: { ghost: 'Shielded Ghost', 'skeleton-minion': 'Shielded Skeleton', 'skeleton-warrior': 'Shielded Skeleton Warrior' },
+      },
+    });
+    expect(isEliteTraitId('stony')).toBe(true);
+    expect(isEliteTraitId('toString')).toBe(false);
   });
 
   /** A teaching id is stored with every rank a character holds, beside the character's one role, and a held task is stored by its role and teaching. */

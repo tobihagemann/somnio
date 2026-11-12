@@ -68,6 +68,7 @@ const SERVER_TO_CLIENT_TAGS = [
   'raising',
   'mend',
   'sensed',
+  'telegraph',
   'adminSay',
   'sessionToken',
   'sessionRevoked',

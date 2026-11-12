@@ -90,15 +90,15 @@ function strip(sector: Sector): Sector {
 }
 
 /**
- * A dirt path from each outdoor door's arrival point to the edge of the nearest of the town's
- * streets, routed round whatever blocks the way, an NPC included, since a path through a wall would
- * read as a way through it. The paths come before the roads, so a street paints over where one meets it.
+ * A dirt path from each outdoor door's arrival point to the edge of the nearest road, a street in
+ * the town, routed round whatever blocks the way, an NPC included, since a path through a wall would
+ * read as a way through it. The paths come before the roads, so a road paints over where one meets it.
  */
 function doorPaths(sectors: readonly Sector[], registry: ModelRegistry, route: Route): Road[] {
   return sectors.flatMap((sector) =>
     sector.doors.flatMap((door) => {
       const resolved = resolveDoor(sector, door, registry);
-      const points = resolved === undefined ? undefined : route(resolved.arrival, STREETS);
+      const points = resolved === undefined ? undefined : route(resolved.arrival, ROADS);
       return resolved === undefined || points === undefined ? [] : [{ id: doorPathId(door.id), ...DOOR_PATH, points: [resolved.doorway, ...points] }];
     }),
   );

@@ -1,4 +1,4 @@
-import { MONSTER_KIND_IDS, heading, objectModel } from '@somnio/core';
+import { MONSTER_KIND_IDS, clamp, heading, objectModel } from '@somnio/core';
 import type { ModelRegistry, Sector } from '@somnio/core';
 import { NPC_SERVICES } from '@somnio/protocol';
 import type { NPCService } from '@somnio/protocol';
@@ -70,6 +70,11 @@ const SERVICE_LABELS: Record<NPCService, string> = {
 
 function idOptions(ids: readonly string[]): PickerOption[] {
   return ids.map((id) => ({ value: id, label: id }));
+}
+
+/** A share from 0 to 1, to the hundredth. */
+function unitShare(value: number): number {
+  return Math.round(clamp(value, 0, 1) * 100) / 100;
 }
 
 export class InspectorPanel {
@@ -251,6 +256,7 @@ export class InspectorPanel {
       this.picker('Kind', () => idOptions(MONSTER_KIND_IDS), spawn, 'kind', actionName),
       ...this.numberFields(RECT_FIELDS, spawn, actionName),
       this.numberField('Max alive', spawn, 'maxAlive', actionName, (value) => value),
+      this.numberField('Elite chance', spawn, 'eliteChance', actionName, unitShare),
     ]);
   }
 
@@ -269,7 +275,7 @@ export class InspectorPanel {
     this.setRows([
       this.idField(selection),
       this.picker('Material', () => idOptions(GROUND_MATERIAL_IDS), mark, 'materialId', actionName),
-      this.numberField('Opacity', mark, 'opacity', actionName, (value) => Math.round(Math.min(Math.max(value, 0), 1) * 100) / 100),
+      this.numberField('Opacity', mark, 'opacity', actionName, unitShare),
       ...(stroke(this.shown) === undefined
         ? []
         : [

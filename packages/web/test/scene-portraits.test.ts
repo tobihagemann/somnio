@@ -157,6 +157,14 @@ describe('portrait layers', () => {
     expect(drawnOn(scene, PORTRAIT_LAYERS.target)).toEqual([]);
   });
 
+  it("leaves an elite's aura off its portrait, which shows its body alone", () => {
+    const scene = makeScene();
+    scene.placeEntity(clientEntity({ id: 'b', kind: 'monster', name: 'Ghost', position: { x: 8, z: 5 }, rank: 'elite', trait: 'stony' }));
+    scene.setPortraitSubject('target', 'b');
+    expect(drawnOn(scene, PORTRAIT_LAYERS.target)).toEqual([8]);
+    expect(drawnOn(scene, 0)).toEqual([8, 8]);
+  });
+
   it("lights every portrait with the world's own lights, and nothing else of the world", () => {
     const scene = makeScene();
     const lights: THREE.Light[] = [];

@@ -77,7 +77,8 @@ describe('neighbours', () => {
     ['EdariaSquare', ['AutumnWood', 'NorthMeadow', 'SouthMeadow', 'WestMeadow']],
     ['NorthMeadow', ['EdariaSquare', 'NorthWood']],
     ['NorthWood', ['NorthMeadow']],
-    ['WestMeadow', ['EdariaSquare']],
+    ['WestMeadow', ['EdariaSquare', 'Graveyard']],
+    ['Graveyard', ['WestMeadow']],
     ['SouthMeadow', ['EdariaSquare']],
     ['AutumnWood', ['EdariaSquare']],
     ['EdariaShop', []],
@@ -221,6 +222,19 @@ describe('sun shadow', () => {
   });
 });
 
+describe('the light through a door', () => {
+  it('lights a room through its door to the outdoors, and leaves dark one whose door leads to another room', async () => {
+    stubFixtureAPI();
+    const shell = headlessShell();
+    const spill = shell.scene.scene.getObjectByProperty('isSpotLight', true) as THREE.SpotLight;
+    await open(shell, 'GraveyardCrypt');
+    expect(spill.intensity).toBeGreaterThan(0);
+
+    await open(shell, 'GraveyardBurialChamber');
+    expect(spill.intensity).toBe(0);
+  });
+});
+
 describe('wheel', () => {
   /** happy-dom's `WheelEvent` drops the modifier keys of its init, so they are set on the event itself. */
   function wheel(deltas: WheelEventInit, modifiers: { ctrlKey?: boolean; metaKey?: boolean } = {}): void {
@@ -345,7 +359,7 @@ describe('commands', () => {
       sector.blockers.push({ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 });
       sector.ground.marks.push({ id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: 4, z: 4 }] } });
       sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'fighter-master', x: 14, z: 6, facing: 0, dialogScript: '' });
-      sector.monsterSpawns.push({ id: 'spawn-1', kind: 'ghost', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2 });
+      sector.monsterSpawns.push({ id: 'spawn-1', kind: 'ghost', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2, eliteChance: 0 });
       sector.spawn = { x: 8, z: 8, facing: 0 };
     });
     return shell;

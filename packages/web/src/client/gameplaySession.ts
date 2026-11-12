@@ -14,6 +14,7 @@ import type {
   SensedBearingMessage,
   SomnioMessage,
   TaskMessage,
+  TelegraphMessage,
   TradeMessage,
 } from '@somnio/protocol';
 import {
@@ -267,6 +268,11 @@ export class GameplaySession {
   private readonly raises = new Map<string, ClientRaise>();
   /** Where each fallen dreamer in the space lies, as the server last said; none for a player who does not sense the fallen. */
   sensed: readonly SensedBearingMessage[] = [];
+  /**
+   * The telegraphs told of in this space, by id, each with when it strikes. One goes with its caster
+   * leaving view, and one that struck as the next arrives; `telegraphsUnderWay` reads only those still running.
+   */
+  private readonly telegraphs = new Map<string, TelegraphMessage & { endsAtMs: number }>();
   /** The drops lying on the ground for the player, or for anyone, by id, from each `loot` frame until its `lootGone` or a new space. */
   readonly loot = new Map<string, LootMessage>();
 
@@ -312,6 +318,7 @@ export class GameplaySession {
       if (!this.controller.entities.has(entityId)) {
         this.channels.delete(entityId);
         this.raises.delete(entityId);
+        for (const [id, telegraph] of this.telegraphs) if (telegraph.casterId === entityId) this.telegraphs.delete(id);
       }
       // The player's own entity carries their condition, which is what the fallen notice follows.
       if (entityId === this.controller.selfId) this.onStateChanged?.();
@@ -357,6 +364,7 @@ export class GameplaySession {
     this.channels.clear();
     this.raises.clear();
     this.sensed = [];
+    this.telegraphs.clear();
     // A join sends again the dreamer's own drops lying in the space they enter and what lies for anyone in view.
     this.loot.clear();
     this.cooldowns = NO_COOLDOWNS;
@@ -604,6 +612,15 @@ export class GameplaySession {
         break;
     }
     this.onStateChanged?.();
+  }
+
+  /** The telegraphs under way in view: each whose seconds still run, while its caster stands in view and is not driven off. */
+  telegraphsUnderWay(): (TelegraphMessage & { endsAtMs: number })[] {
+    const now = this.now();
+    return [...this.telegraphs.values()].filter((telegraph) => {
+      const caster = this.controller.entities.get(telegraph.casterId);
+      return telegraph.endsAtMs > now && caster !== undefined && !drivenOff(caster);
+    });
   }
 
   /** The raise under way on the fallen dreamer, as its last snapshot states it. */
@@ -1035,6 +1052,13 @@ export class GameplaySession {
         this.sensed = message.payload.bearings;
         this.controller.renderSurface.showSensed(this.sensed);
         return;
+      case 'telegraph': {
+        const now = this.now();
+        for (const [id, telegraph] of this.telegraphs) if (telegraph.endsAtMs <= now) this.telegraphs.delete(id);
+        this.telegraphs.set(message.payload.id, { ...message.payload, endsAtMs: now + message.payload.seconds * 1000 });
+        this.controller.renderSurface.showTelegraph(message.payload);
+        return;
+      }
       case 'vitals': {
         const { entityId, health } = message.payload;
         if (entityId !== this.target) return;

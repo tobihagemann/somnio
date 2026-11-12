@@ -54,20 +54,23 @@ export function resolveClipName(pose: AnimationPose, available: readonly string[
 
 /**
  * Clips that play once, over whatever pose is looping: the fall, which then holds its last frame
- * for as long as the entity lies fallen, a blow given or taken, an item thrown to the ground, and
- * an ability used, after which the entity returns to its looping pose.
+ * for as long as the entity lies fallen, a blow given or taken, an item thrown to the ground, an
+ * ability used, and a boss's wail and its call to its minions, after which the entity returns to
+ * its looping pose.
  *
  * A table of its own rather than more poses: a pose is what an entity is doing and has to reach a
  * clip on every model, while a one-shot is an event and has no fallback. A model with none of its
  * clips keeps its looping pose.
  */
-export type OneShot = 'fallen' | 'swing' | 'flinch' | 'throw' | AbilityId;
+export type OneShot = 'fallen' | 'swing' | 'flinch' | 'throw' | 'wail' | 'summon' | AbilityId;
 
 export const ONE_SHOT_CLIPS: Record<OneShot, readonly string[]> = {
   fallen: ['Death_A', 'Death'],
   swing: ['Melee_1H_Attack_Slice_Horizontal', 'Punch'],
   flinch: ['Hit_A', 'HitReact'],
   throw: ['Throw'],
+  wail: ['Ranged_Magic_Spellcasting_Long'],
+  summon: ['Ranged_Magic_Summon'],
   cleave: ['Melee_1H_Attack_Slice_Horizontal'],
   challenge: ['Ranged_Magic_Raise'],
   brace: ['Melee_Block'],

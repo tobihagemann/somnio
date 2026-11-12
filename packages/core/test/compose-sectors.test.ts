@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { composeSectors } from '../scripts/compose/composeSectors.ts';
-import { CORRIDOR, DOOR_PATH, LANDS, LINKS, OPENINGS, SPLASH_KEEP_OUTS, STREETS } from '../scripts/compose/rules.ts';
+import { CORRIDOR, DOOR_PATH, LANDS, LINKS, OPENINGS, ROADS, SPLASH_KEEP_OUTS, STREETS } from '../scripts/compose/rules.ts';
 import type { KeepOut } from '../scripts/compose/rules.ts';
 import { buildSpaceCollision, canStand, npcBodies } from '../src/collision.ts';
 import { closestOnSegment, distance, rectContains } from '../src/geometry.ts';
@@ -175,15 +175,15 @@ describe('composing the lands', () => {
     expect(unrouted).toEqual([]);
   });
 
-  it('routes every door path round what blocks, from its doorway to the edge of the nearest street', () => {
-    expectPathsWalkable(compose(loadSectorFixtures()), 'gen-path-', 1, 7);
+  it('routes every door path round what blocks, from its doorway to the edge of the nearest road', () => {
+    expectPathsWalkable(compose(loadSectorFixtures()), 'gen-path-', 1, 8, ROADS);
   });
 
   it('routes a door path round an NPC standing on its way', () => {
     const sectors = loadSectorFixtures();
     const square = sectors.find((sector) => sector.name === 'EdariaSquare')!;
     square.npcs.push({ id: 'loiterer', name: 'Loiterer', characterModelId: 'fighter-master', x: 15.2, z: 8.8, facing: 0, dialogScript: '' });
-    expectPathsWalkable(compose(sectors), 'gen-path-', 1, 7);
+    expectPathsWalkable(compose(sectors), 'gen-path-', 1, 8, ROADS);
   });
 
   it('routes each unused compound opening from the street into its yard', () => {

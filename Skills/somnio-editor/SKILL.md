@@ -132,6 +132,10 @@ Service at None, a door's night flag off), so an absent key is not a lost edit. 
   on the door; unticked, the key is left out of the file. The game opens such a door from 22:00
   to 06:00 world time. Set it on the outer door of a pair only, as on the tower's
   `to-edariamystictower` in `EdariaSquare`, so no dreamer is shut in.
+- A monster spawn's inspector carries `Elite chance` under `Max alive`: the chance, clamped to
+  0 to 1 and rounded to hundredths, that a monster it spawns is an elite. At 0 the key is left
+  out of the file. A spawn of the Necromancer's kind spawns a boss whatever it says. The spawn's
+  label shows only `<kind> x<maxAlive>`, not the chance.
 - Placement tools place on tap; only the Select tool picks. The placement tool stamps the
   model of the placement selected last (the registry's first model until then); change it in
   the placed record's inspector.

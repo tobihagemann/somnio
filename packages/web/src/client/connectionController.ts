@@ -6,13 +6,14 @@ import type {
   EnterSpaceMessage,
   EntityKind,
   Held,
+  LeaveMessage,
   Locale,
   LoginResult,
   RegisterResult,
-  SectorView,
+  SectorMessage,
   SomnioMessage,
 } from '@somnio/protocol';
-import { bundledModelRegistry, heading, isPeople, worldSecondsAt } from '@somnio/core';
+import { bundledModelRegistry, heading, isEliteTraitId, isPeople, worldSecondsAt } from '@somnio/core';
 import type { ModelRegistry, People, WorldClockReading, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
 import { SessionStore } from './sessionStore';
@@ -63,6 +64,7 @@ export type GameplayMessage = Extract<
       | 'ability'
       | 'cooldowns'
       | 'sensed'
+      | 'telegraph'
       | 'adminSay';
   }
 >;
@@ -559,13 +561,13 @@ export class ConnectionController {
         this.handleEnterSpace(message.payload);
         return;
       case 'sector':
-        this.handleSector(message.payload.sector);
+        this.handleSector(message.payload);
         return;
       case 'entity':
         this.handleEntity(message);
         return;
       case 'leave':
-        this.handleLeave(message.payload.entityId, message.payload.leftGame);
+        this.handleLeave(message.payload);
         return;
       case 'condition':
         this.handleCondition(message.payload.entityId, message.payload.condition);
@@ -590,6 +592,7 @@ export class ConnectionController {
       case 'ability':
       case 'cooldowns':
       case 'sensed':
+      case 'telegraph':
       case 'adminSay':
         this.onGameplayMessage?.(message);
         return;
@@ -802,10 +805,10 @@ export class ConnectionController {
     return this.worldClock === undefined ? undefined : worldSecondsAt(this.worldClock, nowMs);
   }
 
-  private handleSector(sector: SectorView): void {
+  private handleSector({ sector, outdoorDoorIds }: SectorMessage): void {
     const world = this.world;
     if (world === undefined) return;
-    world.addSector(sector);
+    world.addSector(sector, outdoorDoorIds);
     const self = this.selfId === undefined ? undefined : this.entities.get(this.selfId);
     if (self !== undefined) world.follow(self.position, this.renderSurface);
   }
@@ -848,6 +851,8 @@ export class ConnectionController {
       condition: payload.condition,
       service: payload.service,
       held: payload.held,
+      rank: payload.rank,
+      trait: payload.trait !== undefined && isEliteTraitId(payload.trait) ? payload.trait : undefined,
     };
     this.entities.set(entity.id, entity);
     this.onEntityReset?.(entity.id);
@@ -855,6 +860,7 @@ export class ConnectionController {
     // space with its ground already under the character.
     if (kind === 'player') this.world?.follow(entity.position, this.renderSurface);
     this.renderSurface.placeEntity(entity);
+    if (payload.summonedBy !== undefined) this.renderSurface.showSummoned(entity.id, payload.summonedBy);
     // Before the roster push below, whose repaint is what shows the world in place of the splash.
     if (kind === 'player') this.inWorld = true;
     if (
@@ -909,9 +915,9 @@ export class ConnectionController {
 
   /**
    * Dropping `leave` leaves departed peers rendered forever, which is why it is called out as
-   * an easy tag to miss.
+   * an easy tag to miss. A minion whose boss's fight ended crumbles on screen before it goes.
    */
-  private handleLeave(entityId: string, leftGame: boolean): void {
+  private handleLeave({ entityId, leftGame, crumbled }: LeaveMessage): void {
     if (entityId === this.selfId && leftGame) {
       // The server ended *our* session, so the world on screen is dead. Recovering rather than
       // tearing down bare: this arrives while attached, so a bare teardown would leave the last
@@ -923,7 +929,8 @@ export class ConnectionController {
     if (leaving === undefined) return;
     this.entities.delete(entityId);
     this.onEntityReset?.(entityId);
-    this.renderSurface.removeEntity(entityId);
+    if (crumbled === true) this.renderSurface.crumbleEntity(entityId);
+    else this.renderSurface.removeEntity(entityId);
     if (leaving.kind === 'peer') {
       this.players = this.players.filter((name) => name !== leaving.name);
       this.onPlayersChanged?.();

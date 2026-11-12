@@ -1,5 +1,5 @@
 import { RARITIES } from '@somnio/protocol';
-import type { Role } from '@somnio/protocol';
+import type { NightmareRank, Role } from '@somnio/protocol';
 import { rollItem } from './affixes.ts';
 import { MOVE_SUBSTEP, isClear, isLegalMove } from './collision.ts';
 import type { Body, SpaceCollision } from './collision.ts';
@@ -102,18 +102,25 @@ interface DropOdds {
 }
 
 /**
- * The drop odds by the rank of the foe driven off. Most drops are of a base the dreamer's role can
- * use (`usableBy`), and the open share is of any, so something to sell or give still turns up. The
- * odds are tuned in play, as `COMBAT`'s numbers are.
+ * The drop odds by the rank of the foe driven off: `nightmare` for an ordinary one, else its
+ * `NightmareRank`. Most drops are of a base the dreamer's role can use (`usableBy`), and the open
+ * share is of any, so something to sell or give still turns up. The odds are tuned in play, as
+ * `COMBAT`'s numbers are.
  */
 export const DROP_ODDS = {
   nightmare: { rolls: 1, chance: 0.3, openShare: 0.2, rarities: { plain: 60, magic: 30, rare: 10 } },
-} as const satisfies Record<string, DropOdds>;
+  elite: { rolls: 2, chance: 0.5, openShare: 0.2, rarities: { plain: 40, magic: 40, rare: 20 } },
+  boss: { rolls: 4, chance: 0.9, openShare: 0.2, rarities: { plain: 10, magic: 50, rare: 40 } },
+} as const satisfies Record<'nightmare' | NightmareRank, DropOdds>;
 export type DropRank = keyof typeof DROP_ODDS;
 
-/** The bases a drop of the tier may be: each of that tier but the Moonstone, which only the Healer's trial gives. */
+/**
+ * The bases a drop of the tier may be: every base of that tier or a lower one but the Moonstone,
+ * which only the Healer's trial gives. Lower tiers count, so a further ring still drops the armour
+ * and jewellery it has no bases of its own for.
+ */
 export function droppableBases(tier: Tier): BaseItemId[] {
-  return (Object.keys(BASE_ITEMS) as BaseItemId[]).filter((baseId) => baseItem(baseId).tier === tier && baseItem(baseId).trialOnly !== true);
+  return (Object.keys(BASE_ITEMS) as BaseItemId[]).filter((baseId) => baseItem(baseId).tier <= tier && baseItem(baseId).trialOnly !== true);
 }
 
 /** The kits that hold the off hand, by what they need there. */
@@ -139,9 +146,9 @@ export function usableBy(baseId: BaseItemId, role: Role | undefined): boolean {
 
 /**
  * What one dreamer of the role finds after a foe of the tier and rank is driven off, rolled apart
- * from every other dreamer's: for each of the rank's rolls, by its chance, an item at a rarity by
- * the weights, of a base of the tier the role can use, or by the open share of any base of the
- * tier. `random` gives rolls in `[0, 1)`.
+ * from every other dreamer's: for each of the rank's rolls, by its chance, an item rolled at the
+ * tier, at a rarity by the weights, of a droppable base the role can use, or by the open share of
+ * any droppable base, each base as likely as any other. `random` gives rolls in `[0, 1)`.
  */
 export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, random: () => number): Item[] {
   const odds: DropOdds = DROP_ODDS[rank];

@@ -136,7 +136,7 @@ export function placeRecord(tool: PlacingTool, bounds: Rect, sector: Sector, def
     }
     case 'monsterSpawn': {
       const id = nextFreeId(ID_PREFIX.monsterSpawn, sector.monsterSpawns);
-      sector.monsterSpawns.push({ id, kind: defaults.monsterKind, ...bounds, maxAlive: 1 });
+      sector.monsterSpawns.push({ id, kind: defaults.monsterKind, ...bounds, maxAlive: 1, eliteChance: 0 });
       return { kind: 'monsterSpawn', id };
     }
     case 'spawn':

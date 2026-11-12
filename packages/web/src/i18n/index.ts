@@ -1,4 +1,4 @@
-import { BASE_ITEMS, MONSTER_KINDS, PEOPLES, TEACHINGS, TRIALS, peopleLabelKey, roleLabelKey } from '@somnio/core';
+import { BASE_ITEMS, ELITE_TRAITS, MONSTER_KINDS, PEOPLES, TEACHINGS, TRIALS, peopleLabelKey, roleLabelKey } from '@somnio/core';
 import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -68,8 +68,8 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
  * item's name in the Character window, every people's name on the character card, every role's and
- * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, and every
- * place a trial sends a dreamer to.
+ * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, an elite's
+ * included, and every place a trial sends a dreamer to.
  */
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
@@ -79,6 +79,7 @@ export const CORE_LABEL_KEYS: readonly string[] = [
     ...ROLES.map(roleLabelKey),
     ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
     ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
+    ...Object.values(ELITE_TRAITS).flatMap((trait) => Object.values(trait.names)),
     ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
   ]),
 ];
@@ -256,7 +257,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Not while channelling',
   'Needs a weapon or an empty main hand',
   'Needs the Moonstone in your off hand',
-  'Needs a wand in your off hand',
+  'Needs a wand or a staff in your off hand',
   'Not enough Spirit',
   'Not enough Balance',
   'Target a nightmare in range',
@@ -271,6 +272,8 @@ export const RENDERED_KEYS: readonly string[] = [
   'Weakened',
   'Bound',
   'Veiled',
+  'Stony',
+  'Shielded',
   'Takes half the harm and cannot run.',
   'Goes after the dreamer who challenged it.',
   'Mends a little every second.',
@@ -279,6 +282,8 @@ export const RENDERED_KEYS: readonly string[] = [
   'Strikes softer.',
   'Cannot move from where it stands.',
   'Nightmares leave this dreamer alone.',
+  'Takes less harm.',
+  'A shield takes the harm and grows back once broken.',
   '%1$@, %2$@ s left',
   'Channelling %@',
   'Being drawn back',
@@ -303,6 +308,9 @@ export const RENDERED_KEYS: readonly string[] = [
   'Mystic Tower',
   'Shop',
   'Edaria Square',
+  'Graveyard',
+  'Burial Chamber',
+  'Crypt',
   'North Meadow',
   'South Meadow',
   'West Meadow',

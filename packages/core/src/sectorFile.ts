@@ -15,6 +15,7 @@ import {
   requirePositiveMetres,
   requireString,
   requireStringEnum,
+  requireUnitInterval,
   utf8ByteLength,
 } from '@somnio/protocol';
 import { SOMNIO_CONSTANTS } from './constants.ts';
@@ -27,8 +28,8 @@ import type { MonsterSpawn, Sector, SectorNPC, SectorSpawn } from './sector.ts';
 /**
  * The `.somnio-sector` disk codec: the sector view the wire carries plus the server-side content,
  * as plain JSON with recursively sorted keys, a 2-space indent, and a trailing newline. Defaults
- * are left out (`yaw` and `elevation` at 0, a mark's `opacity` at 1, empty record arrays and marks,
- * an unset `spawn` or `service`), so an unedited open-and-save is byte-stable.
+ * are left out (`yaw` and `elevation` at 0, a mark's `opacity` at 1, a spawn's `eliteChance` at 0,
+ * empty record arrays and marks, an unset `spawn` or `service`), so an unedited open-and-save is byte-stable.
  *
  * The sector name is never part of the JSON: it is the filename, supplied by the reader.
  */
@@ -119,7 +120,12 @@ function decodeMonsterSpawn(container: Record<string, unknown>, path: string): M
     width: requirePositiveMetres(container, 'width', path),
     depth: requirePositiveMetres(container, 'depth', path),
     maxAlive,
+    eliteChance: isAbsent(container, 'eliteChance') ? 0 : requireUnitInterval(container, 'eliteChance', path),
   };
+}
+
+function encodeMonsterSpawn({ eliteChance, ...spawn }: MonsterSpawn): Record<string, unknown> {
+  return eliteChance === 0 ? spawn : { ...spawn, eliteChance };
 }
 
 /**
@@ -131,7 +137,7 @@ export function writeSectorFile(sector: Sector): string {
     ...encodeSectorView(sector),
     ...(sector.spawn === undefined ? {} : { spawn: sector.spawn }),
     ...(sector.npcs.length === 0 ? {} : { npcs: sector.npcs }),
-    ...(sector.monsterSpawns.length === 0 ? {} : { monsterSpawns: sector.monsterSpawns }),
+    ...(sector.monsterSpawns.length === 0 ? {} : { monsterSpawns: sector.monsterSpawns.map(encodeMonsterSpawn) }),
   };
   delete body['name'];
   const text = `${JSON.stringify(sortedKeys(body), undefined, 2)}\n`;

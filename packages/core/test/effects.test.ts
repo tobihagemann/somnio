@@ -23,6 +23,8 @@ describe('effects', () => {
       weakened: { seconds: { atRank1: 8, perRank: 2 }, damageDealt: 0.6 },
       bound: { seconds: { atRank1: 3, perRank: 1 }, movement: 'rooted' },
       veiled: { seconds: 5, unseen: true },
+      stony: { damageTaken: 0.6 },
+      shielded: { absorb: 15 },
     });
   });
 
@@ -39,6 +41,10 @@ describe('effects', () => {
   it('holds each effect for its seconds at the rank of the ability that applies it', () => {
     expect([1, 2, 3].map((rank) => effectSeconds('braced', rank))).toEqual([4, 5, 6]);
     expect([1, 2, 3].map((rank) => effectSeconds('challenged', rank))).toEqual([6, 6, 6]);
+  });
+
+  it("holds an elite trait's effect without end", () => {
+    expect(effectSeconds('stony', 1)).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('knows the effects, and nothing inherited from an object', () => {

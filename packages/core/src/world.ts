@@ -273,6 +273,13 @@ export function doorOpenAt(door: { nightOnly?: boolean }, worldSeconds: number):
   return door.nightOnly !== true || !sunIsUp(hourOfDay(worldSeconds));
 }
 
+/** The ids of a room's doors whose target sector among `sectors` lies outdoors; an outdoor sector has none. */
+export function outdoorDoorIds(sector: SectorView, sectors: readonly SectorView[]): string[] {
+  if (sector.kind === 'outdoor') return [];
+  const outdoor = new Set(sectors.flatMap((other) => (other.kind === 'outdoor' ? [other.name] : [])));
+  return sector.doors.flatMap((door) => (outdoor.has(door.target.sector) ? [door.id] : []));
+}
+
 /** Whether a dreamer stands within speaking distance of an NPC: where it greets them, answers a `talk`, and keeps a master's offer open. */
 export function withinSpeakingDistance(dreamer: Point, npc: Point): boolean {
   return distance(dreamer, npc) <= SOMNIO_CONSTANTS.npcInteractionRadius;

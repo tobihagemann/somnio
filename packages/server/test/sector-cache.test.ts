@@ -35,7 +35,7 @@ describe('loadSectorCache', () => {
 
   it('returns one entry per loaded sector', () => {
     const sectors = loadSectorCache(DEV_SECTORS_DIRECTORY);
-    expect(sectors.size).toBe(13);
+    expect(sectors.size).toBe(16);
     expect(sectors.get('EdariaArena')?.monsterSpawns.length).toBe(1);
   });
 
@@ -113,6 +113,8 @@ describe('loadWorld', () => {
       'EdariaLibrary',
       'EdariaMysticTower',
       'EdariaShop',
+      'GraveyardBurialChamber',
+      'GraveyardCrypt',
     ]);
     expect(world.starterSpawn).toMatchObject({ space: STARTER_SECTOR });
   });

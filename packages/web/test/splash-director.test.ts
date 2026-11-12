@@ -168,6 +168,7 @@ describe('the splash director', () => {
     expect(d.named('addSector').map((call) => (call.args[0] as { name: string }).name)).toEqual([
       'AutumnWood',
       'EdariaSquare',
+      'Graveyard',
       'NorthMeadow',
       'NorthWood',
       'SouthMeadow',
@@ -238,6 +239,14 @@ describe('the splash director', () => {
     expect(d.director.dipOpacity).toBe(0);
   });
 
+  it('stages a room with the doors of it that open to the outdoors', () => {
+    const d = directing(REEL);
+    while (d.director.currentShotId !== 'indoors') d.director.update(FRAME);
+
+    const [view, outdoorDoorIds] = d.named('addSector').at(-1)!.args as [{ name: string }, string[]];
+    expect([view.name, outdoorDoorIds]).toEqual(['EdariaInn', ['exit']]);
+  });
+
   it('plays a world that never settles after three seconds in the dark', () => {
     const d = directing(REEL);
     d.scene.settled = false;
@@ -288,7 +297,7 @@ describe('the splash director', () => {
     d.director.restart();
     d.director.update(FRAME);
     expect(d.calls[0]?.name).toBe('showSplash');
-    expect(d.named('addSector')).toHaveLength(6);
+    expect(d.named('addSector')).toHaveLength(7);
     expect(d.director.currentShotId).toBe('first');
     expect(d.director.dipOpacity).toBe(0);
   });

@@ -1,8 +1,8 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
 import { inventoryMessage } from '@somnio/core';
-import type { AbilityId, EffectId, EngageAction, Point } from '@somnio/core';
-import type { Energy, Held, InventoryMessage, LucidityMessage, Rarity } from '@somnio/protocol';
+import type { AbilityId, EffectId, EliteTraitId, EngageAction, Point } from '@somnio/core';
+import type { Energy, Held, InventoryMessage, LucidityMessage, NightmareRank, Rarity, TelegraphKind } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 
 /**
@@ -13,7 +13,7 @@ import type { AppShell } from '@/ui/appShell';
  * chat scrollback, the presented overlay, the zoom factor, the player's own pools, lucidity, and
  * inventory, where the Character window draws their body, what each dreamer's hands hold, the walk
  * under way, the target, the belt's abilities with their cooldowns, the frames' effects, channels,
- * and raises, the fallen a Mystic senses, and the drops lying for the player.
+ * and raises, the fallen a Mystic senses, the telegraphs in view, and the drops lying for the player.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -30,8 +30,11 @@ export interface SomnioDebugAPI {
   spaceId(): string | undefined;
   /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
-  /** `held` is what a dreamer's hands hold, as base ids; absent for anything but a dreamer. */
-  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string; held?: Held }[];
+  /**
+   * `held` is what a dreamer's hands hold, as base ids; absent for anything but a dreamer. `rank`
+   * is an elite's or a boss's, and `trait` an elite's; absent for any other entity.
+   */
+  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string; held?: Held; rank?: NightmareRank; trait?: EliteTraitId }[];
   /** The player's own pools, as last sent. */
   energy(): Energy;
   lucidity(): LucidityMessage;
@@ -71,6 +74,11 @@ export interface SomnioDebugAPI {
   raise(entityId: string): { healerNames: string[]; seconds: number } | undefined;
   /** Where each fallen dreamer in the space lies, as the server last told a player who senses the fallen; none for anyone else. */
   sensed(): { name: string; x: number; z: number }[];
+  /**
+   * The circles a nightmare in view has telegraphed and not yet struck, with the seconds left before
+   * each strikes; one whose caster was driven off or left view is gone.
+   */
+  telegraphs(): { id: string; kind: TelegraphKind; casterId: string; x: number; z: number; radius: number; seconds: number }[];
   /**
    * The drops lying on the ground for the player, as the server last said, each with whether it is
    * an item a dreamer dropped for anyone (`shared`) and where on the page its name and its model are
@@ -141,6 +149,8 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         z: entity.position.z,
         condition: entity.condition,
         ...(entity.held === undefined ? {} : { held: { ...entity.held } }),
+        ...(entity.rank === undefined ? {} : { rank: entity.rank }),
+        ...(entity.trait === undefined ? {} : { trait: entity.trait }),
       })),
     energy: () => shell.session.energy,
     lucidity: () => shell.session.lucidity,
@@ -175,6 +185,10 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
       return raise === undefined ? undefined : { healerNames: [...raise.healerNames], seconds: secondsUntil(raise.endsAtMs) };
     },
     sensed: () => shell.session.sensed.map(({ name, x, z }) => ({ name, x, z })),
+    telegraphs: () =>
+      shell.session
+        .telegraphsUnderWay()
+        .map(({ id, kind, casterId, x, z, radius, endsAtMs }) => ({ id, kind, casterId, x, z, radius, seconds: secondsUntil(endsAtMs) })),
     loot: () =>
       [...shell.session.loot.values()].map(({ lootId, x, z, contents, shared }) => ({
         lootId,

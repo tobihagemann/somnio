@@ -17,7 +17,7 @@ function npc(overrides: Partial<SectorNPC> = {}): SectorNPC {
 }
 
 function monsterSpawn(overrides: Partial<MonsterSpawn> = {}): MonsterSpawn {
-  return { id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, ...overrides };
+  return { id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, eliteChance: 0, ...overrides };
 }
 
 /** A committed sector file with one piece of its text replaced, for the reader's refusals. */
@@ -71,6 +71,14 @@ describe('the written form', () => {
     expect(readSectorFile(text, 'Inn')).toEqual(sector);
   });
 
+  it("writes a monster spawn's elite chance and reads it back, and writes none at 0", () => {
+    const sector = interiorSector('Crypt', { monsterSpawns: [monsterSpawn({ eliteChance: 0.15 }), monsterSpawn({ id: 'spawn-2' })] });
+    const text = writeSectorFile(sector);
+    expect(text.match(/"eliteChance"/g)).toHaveLength(1);
+    expect(text).toContain('"eliteChance": 0.15');
+    expect(readSectorFile(text, 'Crypt')).toEqual(sector);
+  });
+
   it('writes what differs from a default', () => {
     const sector = outdoorSector(
       'Town',
@@ -116,6 +124,8 @@ describe('reader validation', () => {
     ['an unknown monster kind', '"kind": "ghost"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
     ['a spawn that keeps nothing alive', '"maxAlive": 3', '"maxAlive": 0', /maxAlive: expected 1 to 16/],
     ['a spawn area without extent', '"width": 5.76', '"width": 0', /expected a positive length/],
+    ['an elite chance above 1', '"maxAlive": 3', '"maxAlive": 3, "eliteChance": 1.5', /monsterSpawns\[0\]\.eliteChance: expected a number from 0 to 1/],
+    ['an elite chance below 0', '"maxAlive": 3', '"maxAlive": 3, "eliteChance": -0.1', /monsterSpawns\[0\]\.eliteChance: expected a number from 0 to 1/],
   ])('rejects %s', (_name, from, to, message) => {
     const text = edited('EdariaArena', from, to);
     expect(() => readSectorFile(text, 'EdariaArena')).toThrow(SectorFileError);

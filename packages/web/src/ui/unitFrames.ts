@@ -1,4 +1,4 @@
-import { clamp, conditionMidpoint, peopleLabelKey, poolShare, roleLabelKey } from '@somnio/core';
+import { clamp, conditionMidpoint, nightmareLabelKey, peopleLabelKey, poolShare, roleLabelKey } from '@somnio/core';
 import type { EffectId, People } from '@somnio/core';
 import type { Condition, Energy, Role } from '@somnio/protocol';
 import { raiseShownAt, wholeSecondsLeft } from '@/client';
@@ -33,6 +33,8 @@ const EFFECT_NAMES: Record<EffectId, () => string> = {
   weakened: () => t('Weakened'),
   bound: () => t('Bound'),
   veiled: () => t('Veiled'),
+  stony: () => t('Stony'),
+  shielded: () => t('Shielded'),
 };
 
 /** What an effect does to whoever holds it, in its tip. */
@@ -45,6 +47,8 @@ const EFFECT_LINES: Record<EffectId, () => string> = {
   weakened: () => t('Strikes softer.'),
   bound: () => t('Cannot move from where it stands.'),
   veiled: () => t('Nightmares leave this dreamer alone.'),
+  stony: () => t('Takes less harm.'),
+  shielded: () => t('A shield takes the harm and grows back once broken.'),
 };
 
 /**
@@ -331,14 +335,22 @@ export class TargetFrame {
     const shown =
       target === undefined
         ? undefined
-        : JSON.stringify([target.entity.id, target.entity.name, target.entity.kind, target.entity.condition, target.health ?? null, gazeLocked]);
+        : JSON.stringify([
+            target.entity.id,
+            target.entity.name,
+            target.entity.trait ?? null,
+            target.entity.kind,
+            target.entity.condition,
+            target.health ?? null,
+            gazeLocked,
+          ]);
     if (shown === this.shown) return;
     this.shown = shown;
     setHidden(this.root, target === undefined);
     if (target === undefined) return;
     const { entity, health } = target;
-    // A nightmare's name is its kind's catalog key; a dreamer's or an NPC's is their own.
-    this.name.textContent = entity.kind === 'monster' ? t(entity.name) : entity.name;
+    // A nightmare's name is its kind's catalog key, or an elite's; a dreamer's or an NPC's is their own.
+    this.name.textContent = entity.kind === 'monster' ? t(nightmareLabelKey(entity.name, entity.trait)) : entity.name;
     const condition = CONDITION_WORDS[entity.condition]();
     this.root.setAttribute('aria-label', gazeLocked ? t('Target, %@, facing locked', condition) : t('Target, %@', condition));
     // Before the server has sent the share itself, the middle of the band.

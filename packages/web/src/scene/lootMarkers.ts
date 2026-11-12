@@ -12,8 +12,8 @@
  * then hops once. A nightmare's drops burst out high and spinning; a dreamer's throw is a low
  * toss. An item thrown from a hand takes the place of the model the hand held: that model stays on
  * the hand until the release and goes from it then, and the drop's model leaves from where it was
- * drawn, turned as it was, and eases into the arc's turning over. A weapon's, a shield's, and the
- * wand's ground model is their hand model's own piece laid down, which the drop finds by matching
+ * drawn, turned as it was, and eases into the arc's turning over. A weapon's, a shield's, and a
+ * focus's ground model is their hand model's own piece laid down, which the drop finds by matching
  * the two models' vertices, so one item leaves the hand.
  *
  * The markers come from a pool of fixed size, which draws the drops nearest the player. A drop lies
@@ -30,6 +30,7 @@ import * as THREE from 'three';
 import type { Rarity } from '@somnio/protocol';
 import { hashString } from '@somnio/core';
 import { GROUND_RING_LIFT } from './combatEffects';
+import { lightMaterial, whiteTexture } from './lightMaterials';
 import { prototypeMeshesOf } from './modelAssets';
 import { OVERLAY_METRES_PER_PIXEL, cssColor, renderNamePlaque } from './overlayArt';
 
@@ -631,19 +632,6 @@ function spanningCorners(points: readonly THREE.Vector3[]): [number, number, num
   return [0, second, third, fourth];
 }
 
-/** Light that adds to what lies behind it and blocks nothing, as a flame's halo does. */
-function lightMaterial(map: THREE.Texture, color: number, opacity: number): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    map,
-    color,
-    opacity,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    toneMapped: false,
-  });
-}
-
 /** A soft pool of light: white at its middle, gone at its rim. */
 function glowTexture(): THREE.Texture {
   return whiteTexture(64, 64, (u, v) => (1 - Math.min(1, Math.hypot(u - 0.5, v - 0.5) * 2)) ** 2);
@@ -652,19 +640,4 @@ function glowTexture(): THREE.Texture {
 /** A shaft of light: brightest down its middle and at its foot, fading out to its sides and its top. */
 function beamTexture(): THREE.Texture {
   return whiteTexture(16, 64, (u, v) => Math.sin(u * Math.PI) ** 2 * (1 - v) ** 1.5);
-}
-
-/** White, as opaque at each texel as `alpha` says at its middle, `u` across from 0 to 1 and `v` up. */
-function whiteTexture(width: number, height: number, alpha: (u: number, v: number) => number): THREE.Texture {
-  const bytes = new Uint8Array(width * height * 4).fill(255);
-  for (let row = 0; row < height; row += 1) {
-    for (let column = 0; column < width; column += 1) {
-      bytes[(row * width + column) * 4 + 3] = Math.round(255 * alpha((column + 0.5) / width, (row + 0.5) / height));
-    }
-  }
-  const texture = new THREE.DataTexture(bytes, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
 }

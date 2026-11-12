@@ -94,6 +94,12 @@ export const BASE_ITEMS = {
   /** The Healer's tool. In the off hand it lets Mend mend the target and the Healer use their abilities. */
   moonstone: { labelKey: 'Moonstone', slot: 'offHand', tier: 1, trialOnly: true },
   wand: { labelKey: 'Wand', slot: 'offHand', tier: 1, focus: true },
+  'bone-dagger': { labelKey: 'Bone dagger', slot: 'mainHand', tier: 3, weapon: { damage: 10, balanceCost: 12 } },
+  sabre: { labelKey: 'Sabre', slot: 'mainHand', tier: 3, weapon: { damage: 18, balanceCost: 26 } },
+  'war-axe': { labelKey: 'War axe', slot: 'mainHand', tier: 3, weapon: { damage: 24, balanceCost: 36 } },
+  'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, implicit: { guard: 5 } },
+  'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, implicit: { guard: 9 } },
+  'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, focus: true, implicit: { spiritMax: 10 } },
   cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, implicit: { guard: 1 } },
   tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, implicit: { guard: 3 } },
   gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, implicit: { guard: 1 } },

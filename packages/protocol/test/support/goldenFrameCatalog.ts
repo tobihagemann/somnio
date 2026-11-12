@@ -161,7 +161,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     message: { tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: PLAYER_ID, people: 'umbrae', worldSeconds: 14_515_243_200.5 } },
   },
   { name: 'sector', message: { tag: 'sector', payload: { sector: outdoorSector } } },
-  { name: 'sector-interior', message: { tag: 'sector', payload: { sector: interiorSector } } },
+  { name: 'sector-interior', message: { tag: 'sector', payload: { sector: interiorSector, outdoorDoorIds: ['exit'] } } },
   {
     name: 'entity',
     message: {
@@ -234,6 +234,64 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         gait: 'jog',
         condition: 'hale',
         service: 'mysticMaster',
+      },
+    },
+  },
+  {
+    name: 'entity-elite',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: 'monster:7',
+        kind: 'monster',
+        characterModelId: 'ghost',
+        name: 'Ghost',
+        radius: 0.3,
+        x: 14.5,
+        z: 6.25,
+        facing: 180,
+        gait: 'jog',
+        condition: 'wounded',
+        rank: 'elite',
+        trait: 'shielded',
+      },
+    },
+  },
+  {
+    name: 'entity-boss',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: 'monster:3',
+        kind: 'monster',
+        characterModelId: 'necromancer',
+        name: 'Necromancer',
+        radius: 0.3,
+        x: 9,
+        z: 4.5,
+        facing: 0,
+        gait: 'jog',
+        condition: 'hurt',
+        rank: 'boss',
+      },
+    },
+  },
+  {
+    name: 'entity-summoned',
+    message: {
+      tag: 'entity',
+      payload: {
+        id: 'monster:9',
+        kind: 'monster',
+        characterModelId: 'skeleton-minion',
+        name: 'Skeleton',
+        radius: 0.3,
+        x: 10.75,
+        z: 6,
+        facing: 0,
+        gait: 'jog',
+        condition: 'hale',
+        summonedBy: 'monster:3',
       },
     },
   },
@@ -373,6 +431,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   },
   { name: 'lootGone', message: { tag: 'lootGone', payload: { lootId: LOOT_ID } } },
   { name: 'leave', message: { tag: 'leave', payload: { entityId: PLAYER_ID, leftGame: true } } },
+  { name: 'leave-crumbled', message: { tag: 'leave', payload: { entityId: 'monster:8', leftGame: false, crumbled: true } } },
   {
     name: 'lucidity',
     message: {
@@ -434,6 +493,10 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       },
     },
   },
+  {
+    name: 'effects-on-an-elite',
+    message: { tag: 'effects', payload: { entityId: 'monster:7', effects: [{ effectId: 'stony' }, { effectId: 'weakened', seconds: 7.75 }] } },
+  },
   { name: 'effects-none', message: { tag: 'effects', payload: { entityId: 'monster:7', effects: [] } } },
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-miss', message: { tag: 'blow', payload: { attackerId: 'monster:7', targetId: PLAYER_ID, hit: false } } },
@@ -487,6 +550,10 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     },
   },
   { name: 'sensed-none', message: { tag: 'sensed', payload: { bearings: [] } } },
+  {
+    name: 'telegraph',
+    message: { tag: 'telegraph', payload: { id: 'telegraph-4', casterId: 'monster:3', kind: 'wail', x: 9, z: 4.5, radius: 4, seconds: 1.25 } },
+  },
   { name: 'adminSay', message: { tag: 'adminSay', payload: { text: 'Server restart in 5 minutes' } } },
   {
     name: 'sessionToken',

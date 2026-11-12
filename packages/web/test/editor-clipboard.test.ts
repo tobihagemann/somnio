@@ -34,7 +34,7 @@ describe('paste placement', () => {
   it('offsets every clone by the fallback step on duplicate and gives it the next free id', () => {
     const body = emptySector({
       npcs: [{ id: 'npc-1', name: 'Libus', characterModelId: 'libus', x: 5.12, z: 5.12, facing: 90, dialogScript: 'Hallo' }],
-      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3 }],
+      monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 2, depth: 2, maxAlive: 3, eliteChance: 0 }],
       ground: {
         backgroundMaterialId: 'grass-meadow',
         marks: [

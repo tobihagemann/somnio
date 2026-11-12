@@ -10,6 +10,7 @@ import {
   LOCALES,
   LOGIN_RESULTS,
   LOOT_KINDS,
+  NIGHTMARE_RANKS,
   NPC_SERVICES,
   RAISING_STATES,
   RARITIES,
@@ -18,6 +19,7 @@ import {
   ROLES,
   SECTOR_KINDS,
   SPEECH_KINDS,
+  TELEGRAPH_KINDS,
   TRADE_KINDS,
   OversizedFrameError,
   SOMNIO_PROTOCOL_CONSTANTS,
@@ -133,6 +135,8 @@ describe('runtime validation the erased types cannot do', () => {
   const character = { id: 'c', name: 'Saibot', people: 'vigils' };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
   const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
+  const telegraph = { id: 'telegraph-1', casterId: 'monster:3', kind: 'wail', x: 4, z: 6, radius: 4, seconds: 2.5 };
+  const room = { name: 'Cellar', kind: 'interior', brightness: 50, size: { width: 10, depth: 10 }, ground: { backgroundMaterialId: 'wood-warm', marks: [] } };
 
   it('rejects a missing required field', () => {
     expect(() => decodeSomnioMessage(frame('energy', { healthCurrent: 100 }))).toThrow(/healthMax: expected Int32, got nothing/);
@@ -317,8 +321,26 @@ describe('runtime validation the erased types cannot do', () => {
     ['a ware outside the id alphabet on a sell', 'sell', { npcId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
     ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /npcId: expected a string, got nothing/],
     ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
+    ['a crumble that is no bool', 'leave', { entityId: 'monster:8', leftGame: false, crumbled: 1 }, /crumbled: expected a bool/],
     ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
     ['an unknown service', 'entity', { ...entity, service: 'banker' }, /unknown value "banker"/],
+    ['an unknown nightmare rank', 'entity', { ...entity, rank: 'champion' }, /rank: unknown value "champion"/],
+    ['an elite trait that is no id', 'entity', { ...entity, rank: 'elite', trait: 'Stony' }, /trait: expected an id/],
+    ['a summoner that is no string', 'entity', { ...entity, summonedBy: 3 }, /summonedBy: expected a string, got number/],
+    ['an over-cap summoner', 'entity', { ...entity, summonedBy: overCapEntityId }, /summonedBy: exceeds 320 UTF-8 bytes/],
+    ['an unknown telegraph kind', 'telegraph', { ...telegraph, kind: 'roar' }, /kind: unknown value "roar"/],
+    ['a telegraph id outside the id alphabet', 'telegraph', { ...telegraph, id: 'Wail 1' }, /id: expected an id/],
+    ['a telegraph without its caster', 'telegraph', { ...telegraph, casterId: undefined }, /casterId: expected a string, got nothing/],
+    ['a telegraph of no size', 'telegraph', { ...telegraph, radius: 0 }, /radius: expected a positive/],
+    ['a telegraph with negative time left', 'telegraph', { ...telegraph, seconds: -1 }, /seconds: expected a non-negative number/],
+    ['a telegraph past the metre cap', 'telegraph', { ...telegraph, x: 1e9 }, /x: /],
+    ['an outdoor door id outside the id alphabet', 'sector', { sector: room, outdoorDoorIds: ['Exit'] }, /outdoorDoorIds\[0\]: expected an id/],
+    [
+      'more outdoor doors than a sector holds doors',
+      'sector',
+      { sector: room, outdoorDoorIds: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors + 1 }, (_, index) => `d${index}`) },
+      /outdoorDoorIds: exceeds \d+ ids/,
+    ],
     ['an unknown condition', 'condition', { entityId: 'monster:7', condition: 'dying' }, /unknown value "dying"/],
     ['an unknown role', 'lucidity', { ...lucidity, role: 'bard' }, /unknown value "bard"/],
     ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'bard', progress: 0 } }, /task\.role: unknown value "bard"/],
@@ -539,6 +561,8 @@ describe('round trips', () => {
     );
     expect('service' in decoded.payload).toBe(false);
     expect('held' in decoded.payload).toBe(false);
+    expect('rank' in decoded.payload).toBe(false);
+    expect('trait' in decoded.payload).toBe(false);
   });
 
   /** A verb with nothing to say still has to carry an object, and whatever a client puts in it is dropped. */
@@ -687,6 +711,14 @@ describe('string literal sets', () => {
   it('pins LootKind', () => {
     expect(LOOT_KINDS).toEqual(['item']);
   });
+
+  it('pins NightmareRank', () => {
+    expect(NIGHTMARE_RANKS).toEqual(['elite', 'boss']);
+  });
+
+  it('pins TelegraphKind', () => {
+    expect(TELEGRAPH_KINDS).toEqual(['wail']);
+  });
 });
 
 /**
@@ -695,7 +727,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(20);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(21);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

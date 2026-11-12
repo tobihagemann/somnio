@@ -378,6 +378,7 @@ export class ConnectionActor {
         case 'raising':
         case 'mend':
         case 'sensed':
+        case 'telegraph':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -454,6 +455,7 @@ export class ConnectionActor {
         case 'raising':
         case 'mend':
         case 'sensed':
+        case 'telegraph':
         case 'adminSay':
         case 'sessionToken':
         case 'sessionRevoked':
@@ -560,6 +562,7 @@ export class ConnectionActor {
       case 'raising':
       case 'mend':
       case 'sensed':
+      case 'telegraph':
       case 'adminSay':
       case 'sessionToken':
       case 'sessionRevoked':

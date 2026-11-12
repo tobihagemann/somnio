@@ -50,17 +50,24 @@ describe('the debug API', () => {
     expect(api.groundScreenPoint(0, 0)).toBeUndefined();
   });
 
-  it('reports the local player once the entity stream has placed it, and what a dreamer holds', () => {
+  it("reports the local player once the entity stream has placed it, what a dreamer holds, and an elite's rank and trait", () => {
     const app = shell();
     app.controller.selfId = 'self';
     app.controller.entities.set('self', clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90, held: { mainHand: 'sword', offHand: 'moonstone' } }));
     app.controller.entities.set('npc:EdariaSquare/libus', clientEntity({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', position: { x: 3, z: 4 } }));
+    app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 6, z: 7 } }));
+    app.controller.entities.set(
+      'monster:2',
+      clientEntity({ id: 'monster:2', kind: 'monster', name: 'Ghost', position: { x: 8, z: 7 }, rank: 'elite', trait: 'shielded' }),
+    );
 
     const api = makeDebugAPI(app);
     expect(api.player()).toEqual({ x: 12.8, z: 9.6, facing: 90, gait: 'jog', name: 'Tester' });
     expect(api.entities()).toEqual([
       { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale', held: { mainHand: 'sword', offHand: 'moonstone' } },
       { id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', x: 3, z: 4, condition: 'hale' },
+      { id: 'monster:1', kind: 'monster', name: 'Ghost', x: 6, z: 7, condition: 'hale' },
+      { id: 'monster:2', kind: 'monster', name: 'Ghost', x: 8, z: 7, condition: 'hale', rank: 'elite', trait: 'shielded' },
     ]);
   });
 
@@ -177,6 +184,30 @@ describe('the debug API', () => {
     expect(api.sensed()).toEqual([]);
     app.controller.dispatch({ tag: 'sensed', payload: { bearings: [{ name: 'Mira', x: 30, z: 10 }] } });
     expect(api.sensed()).toEqual([{ name: 'Mira', x: 30, z: 10 }]);
+  });
+
+  it('reports a telegraph in view with the seconds left before it strikes, until it strikes or its caster is driven off or leaves view', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    const boss = clientEntity({ id: 'monster:1', kind: 'monster', name: 'Necromancer', rank: 'boss' });
+    app.controller.entities.set('monster:1', boss);
+    const api = makeDebugAPI(app);
+    const wail = { id: 'telegraph-1', casterId: 'monster:1', kind: 'wail', x: 10, z: 10, radius: 4 } as const;
+    expect(api.telegraphs()).toEqual([]);
+    app.controller.dispatch({ tag: 'telegraph', payload: { ...wail, seconds: 2.5 } });
+    now.mockReturnValue(2000);
+    expect(api.telegraphs()).toEqual([{ ...wail, seconds: 1.5 }]);
+    now.mockReturnValue(3500);
+    expect(api.telegraphs()).toEqual([]);
+
+    app.controller.dispatch({ tag: 'telegraph', payload: { ...wail, id: 'telegraph-2', seconds: 2.5 } });
+    app.controller.entities.set('monster:1', { ...boss, condition: 'fallen' });
+    expect(api.telegraphs()).toEqual([]);
+    app.controller.entities.set('monster:1', boss);
+    app.controller.dispatch({ tag: 'leave', payload: { entityId: 'monster:1', leftGame: false } });
+    app.controller.entities.set('monster:1', boss);
+    expect(api.telegraphs()).toEqual([]);
   });
 
   it("reports where the Character window draws the player's body and how far it is turned, and nothing while it is not shown", () => {

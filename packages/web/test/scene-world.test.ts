@@ -8,6 +8,7 @@ import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
 import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { STRIKE_AT } from '@/scene/combatEffects';
+import { ELITE_AURA_NAME, ELITE_AURA_POOL_SIZE, ELITE_TRAIT_COLORS } from '@/scene/eliteAuras';
 import { LOOT_BEAM_NAME, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { GrassSpring } from '@/scene/grassSpring';
@@ -1010,12 +1011,13 @@ describe('room lights', () => {
 
   it('lets the light of the hour in through the door, and draws its shadow only in a room', () => {
     const scene = litScene({ now: () => 0 });
-    // A door outdoors resolves as well as a room's, and still lets no light in.
+    // A door outdoors resolves as well as a room's, and still lets no light in, whatever it is said to open to.
     scene.addSector(
       sector({
         placements: [placement('door-1', 'threshold', { x: 5, z: 10 })],
         doors: [{ id: 'to-room', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaInn', door: 'exit' } }],
       }),
+      ['to-room'],
     );
     scene.setClock(12 * 3600);
     expect(spill(scene).intensity).toBe(0);
@@ -1024,7 +1026,7 @@ describe('room lights', () => {
     expect(spill(scene).shadow.needsUpdate).toBe(true);
 
     scene.enterSpace(world('EdariaInn'));
-    scene.addSector(room('EdariaInn'));
+    scene.addSector(room('EdariaInn'), ['exit']);
     scene.placeEntity(player({ position: { x: 5, z: 5 } }));
     expect(spill(scene).intensity).toBe(doorLightState(12).intensity);
     expect(spill(scene).color).toEqual(linearColor(doorLightState(12).color));
@@ -1045,6 +1047,7 @@ describe('room lights', () => {
       room('EdariaInn', {
         placements: [placement('door-1', 'threshold', { x: 10.12, z: 5, yaw: 90 })],
       }),
+      ['exit'],
     );
     const { position, target } = spill(scene);
     expect([position.x, position.y, position.z]).toEqual([expect.closeTo(12.4, 9), 2.6, expect.closeTo(5, 9)]);
@@ -1053,7 +1056,7 @@ describe('room lights', () => {
 
   it('leaves the door dark in a room with no door that resolves, whatever room came before', () => {
     const scene = litScene();
-    scene.addSector(room('EdariaInn'));
+    scene.addSector(room('EdariaInn'), ['exit']);
     expect(spill(scene).intensity).toBeGreaterThan(0);
 
     scene.removeSector('EdariaInn');
@@ -1061,8 +1064,40 @@ describe('room lights', () => {
     expect(spill(scene).intensity).toBe(0);
     expect(spill(scene).shadow.autoUpdate).toBe(false);
 
-    scene.addSector(room('EdariaInn', { doors: [{ id: 'exit', placement: 'door-1', anchor: 'side', target: { sector: 'EdariaSquare', door: 'to-room' } }] }));
+    scene.addSector(room('EdariaInn', { doors: [{ id: 'exit', placement: 'door-1', anchor: 'side', target: { sector: 'EdariaSquare', door: 'to-room' } }] }), [
+      'exit',
+    ]);
     expect(spill(scene).intensity).toBe(0);
+  });
+
+  it('lets no light of the hour into a room whose doors all lead to other rooms', () => {
+    const scene = litScene({ now: () => 0 });
+    scene.setClock(12 * 3600);
+    scene.addSector(room('Chamber', { doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Crypt', door: 'to-chamber' } }] }));
+
+    expect(spill(scene).intensity).toBe(0);
+    expect(spill(scene).shadow.autoUpdate).toBe(false);
+    // Its flames still light it.
+    expect(lit(scene)).toHaveLength(3);
+  });
+
+  it('lets the light in through the first door that opens to the outdoors, past one to another room', () => {
+    const scene = litScene();
+    scene.addSector(
+      room('Crypt', {
+        placements: [...room('Crypt').placements, placement('door-2', 'threshold', { x: 10.12, z: 5, yaw: 90 })],
+        doors: [
+          { id: 'to-chamber', placement: 'door-1', anchor: 'main', target: { sector: 'Chamber', door: 'exit' } },
+          { id: 'exit', placement: 'door-2', anchor: 'main', target: { sector: 'Graveyard', door: 'to-crypt' } },
+        ],
+      }),
+      ['exit'],
+    );
+
+    expect(spill(scene).intensity).toBeGreaterThan(0);
+    // Through the east wall's door, west into the room, not the south wall's.
+    const { position } = spill(scene);
+    expect([position.x, position.z]).toEqual([expect.closeTo(12.4, 9), expect.closeTo(5, 9)]);
   });
 
   it('lights a room drawn with no swap at once, and puts every light out when the splash comes back', () => {
@@ -2587,6 +2622,55 @@ describe('overlay artwork', () => {
   });
 });
 
+describe('elite auras', () => {
+  function auras(scene: WorldScene): THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] {
+    const found: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = [];
+    scene.scene.traverse((object) => {
+      if (object.name === ELITE_AURA_NAME) found.push(object as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>);
+    });
+    return found;
+  }
+  const elite = (id: string, trait: ClientEntity['trait'], x = 4): ClientEntity =>
+    player({ id, kind: 'monster', name: 'Ghost', position: { x, z: 6 }, rank: 'elite', trait });
+
+  it("stands round an elite where it stands, in its trait's colour, and round no ordinary nightmare", () => {
+    const scene = makeScene();
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost' }));
+    expect(auras(scene)).toEqual([]);
+    scene.placeEntity(elite('monster:2', 'shielded'));
+    const [aura] = auras(scene);
+    expect(aura!.material.color.getHex()).toBe(ELITE_TRAIT_COLORS.shielded);
+    const at = aura!.getWorldPosition(new THREE.Vector3());
+    expect([at.x, at.z]).toEqual([4, 6]);
+  });
+
+  it('goes when the elite leaves or loses its trait, and serves the next elite then', () => {
+    const scene = makeScene();
+    for (let index = 0; index < ELITE_AURA_POOL_SIZE + 1; index += 1) scene.placeEntity(elite(`monster:${index}`, 'stony', index));
+    const pool = auras(scene);
+    expect(pool).toHaveLength(ELITE_AURA_POOL_SIZE);
+    scene.removeEntity('monster:0');
+    scene.placeEntity(elite('monster:1', undefined));
+    expect(auras(scene)).toHaveLength(ELITE_AURA_POOL_SIZE - 2);
+    scene.placeEntity(elite('monster:20', 'stony', 20));
+    scene.placeEntity(elite('monster:21', 'stony', 21));
+    expect(new Set(auras(scene))).toEqual(new Set(pool));
+  });
+
+  it.each([
+    [false, true],
+    [true, false],
+  ])('breathes while reduced motion is %s: %s', (reducedMotion, breathes) => {
+    const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, 1, reducedMotion);
+    scene.placeEntity(elite('monster:1', 'stony'));
+    const opacities = [0.4, 0.8, 0.8].map((seconds) => {
+      scene.tick(seconds);
+      return auras(scene)[0]!.material.opacity;
+    });
+    expect(new Set(opacities).size > 1).toBe(breathes);
+  });
+});
+
 describe('name plaques hang off the entity node', () => {
   /** Plaque canvases: screen-aligned planes textured from a canvas. */
   function plaqueCanvases(scene: WorldScene): HTMLCanvasElement[] {
@@ -2636,6 +2720,24 @@ describe('name plaques hang off the entity node', () => {
       scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', condition: 'hurt' }));
       scene.placeEntity(player({ id: 'peer', kind: 'peer', name: 'Ghost' }));
       expect(written).toEqual(['Gespenst', 'Ghost']);
+    } finally {
+      setLocale('en');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("names an elite by its trait and its kind, in the reader's language, and again once its trait changes", () => {
+    const written: string[] = [];
+    const context = { scale() {}, fillRect() {}, strokeRect() {}, measureText: () => ({ width: 40 }), fillText: (text: string) => written.push(text) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    try {
+      const scene = makeScene();
+      const ghost = { id: 'monster:1', kind: 'monster', name: 'Ghost', condition: 'hurt' } as const;
+      scene.placeEntity(player({ ...ghost, rank: 'elite', trait: 'stony' }));
+      setLocale('de');
+      scene.placeEntity(player({ ...ghost, rank: 'elite', trait: 'shielded' }));
+      scene.placeEntity(player({ ...ghost, rank: undefined, trait: undefined }));
+      expect(written).toEqual(['Stony Ghost', 'Schildbewehrtes Gespenst', 'Gespenst']);
     } finally {
       setLocale('en');
       vi.restoreAllMocks();

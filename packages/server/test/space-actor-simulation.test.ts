@@ -9,11 +9,17 @@ import {
   headingRadians,
   monsterKind,
   reachDistance,
+  rectContains,
+  sectorPointInSpace,
+  spawnArea,
 } from '@somnio/core';
 import type { NPCDialogState, Point, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
+import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
 import type { ConnectionOutbox } from '../src/connection/outbox.ts';
+import { loadSectorCache, loadWorld } from '../src/sectors/sectorCache.ts';
 import { seededRandom } from '../src/world/random.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import type { SpaceActorOptions } from '../src/world/spaceActor.ts';
@@ -248,6 +254,25 @@ describe('monster spawn cadence', () => {
     const [monster] = await monstersSeen(alice.outbox);
     expect(monster!.x).toBeLessThanOrEqual(area.x + area.width);
     expect(monster!.z).toBeLessThanOrEqual(area.z + area.depth);
+  });
+
+  /** The Graveyard's skeletons are what a dreamer drives off outdoors there, so its spawns must place them, among its graves. */
+  it("spawns Skeletons and Skeleton Warriors among the committed Graveyard's graves", async () => {
+    const world = loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
+    const graveyard = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'Graveyard')!;
+    const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID, { random: seededRandom(5) });
+    for (let pass = 1; pass <= 4; pass += 1) {
+      clock.ms = pass * monsterKind('skeleton-warrior').respawnSeconds * 1000;
+      space.step(0);
+    }
+    const seen = await monstersSeen(attachPlayer(space, sectorPointInSpace(graveyard, { x: 36, z: 20.4 }), 'watcher').outbox);
+    const names = Object.fromEntries(graveyard.monsterSpawns.map((spawn) => [monsterKind(spawn.kind).name, spawn]));
+    expect(seen.map((monster) => monster.name).toSorted()).toEqual(['Skeleton', 'Skeleton', 'Skeleton', 'Skeleton', 'Skeleton Warrior', 'Skeleton Warrior']);
+    const graves = graveyard.placements.filter((placement) => placement.modelId.startsWith('grave')).map((grave) => sectorPointInSpace(graveyard, grave));
+    for (const monster of seen) {
+      expect(rectContains(spawnArea(graveyard, names[monster.name]!), monster), monster.id).toBe(true);
+      expect(Math.min(...graves.map((grave) => distance(grave, monster))), monster.id).toBeLessThan(2);
+    }
   });
 
   it('a blocked spawn point keeps the timer due and spawns once it frees', async () => {

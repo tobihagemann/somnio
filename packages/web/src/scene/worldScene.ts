@@ -16,6 +16,7 @@ import {
   hourOfDay,
   itemLabelKey,
   neighbourSectors,
+  nightmareLabelKey,
   objectModel,
   paddedRasterRect,
   rectContains,
@@ -27,14 +28,38 @@ import {
   worldSecondsAt,
   worldToModel,
 } from '@somnio/core';
-import type { AbilityId, EffectId, Heading, LightKind, ModelRegistry, Point, Rect, ResolvedDoor, Size, SpaceCollision, WorldClockReading } from '@somnio/core';
+import type {
+  AbilityId,
+  EffectId,
+  EliteTraitId,
+  Heading,
+  LightKind,
+  ModelRegistry,
+  Point,
+  Rect,
+  ResolvedDoor,
+  Size,
+  SpaceCollision,
+  WorldClockReading,
+} from '@somnio/core';
 import { CONDITIONS, HANDS } from '@somnio/protocol';
-import type { Condition, Gait, Hand, Held, LootMessage, Placement, SectorView, SensedBearingMessage, ThrownFromMessage } from '@somnio/protocol';
+import type {
+  Condition,
+  Gait,
+  Hand,
+  Held,
+  LootMessage,
+  Placement,
+  SectorView,
+  SensedBearingMessage,
+  TelegraphMessage,
+  ThrownFromMessage,
+} from '@somnio/protocol';
 import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, HELD_PROP, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
+import { CRUMBLE_SECONDS, CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, HELD_PROP, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -46,6 +71,7 @@ import type { GrassBatch, GrassContact } from './grassSpring';
 import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
 import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
+import { EliteAuras } from './eliteAuras';
 import { BURST_ARC, LootMarkers, THROW_ARC } from './lootMarkers';
 import type { LootThrow } from './lootMarkers';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
@@ -86,6 +112,8 @@ interface EntityRenderState {
   kind: ClientEntity['kind'];
   characterModelId: string;
   name: string;
+  /** The trait an elite carries, which names it and colours its aura. */
+  trait: EliteTraitId | undefined;
   radius: number;
   facing: Heading;
   gait: Gait;
@@ -117,6 +145,8 @@ interface EntityRenderState {
   condition: Condition;
   /** A clip playing once over the looping pose; `held` keeps its last frame until the entity stands again. */
   oneShot: { action: THREE.AnimationAction; held: boolean } | undefined;
+  /** When the fall of a body that lies fallen starts, on the scene's clock, while it waits for the blow that felled it to land. */
+  fallsAt: number | undefined;
   /** What the hands hold, and the models hung on their bones for it. */
   held: Held | undefined;
   heldProps: Partial<Record<Hand, THREE.Object3D>>;
@@ -197,6 +227,8 @@ interface Emitter {
 
 interface DrawnSector {
   view: SectorView;
+  /** The ids of its doors that open to the outdoors. */
+  outdoorDoorIds: readonly string[];
   /** Stands at the sector's origin, so its records keep their sector-relative positions. */
   group: THREE.Object3D;
   placements: PlacedModel[];
@@ -355,6 +387,8 @@ export class WorldScene implements WorldRenderSurface {
   /** The clock the wind sways the grass by. */
   private readonly wind = { value: 0 };
   private readonly entityStates = new Map<string, EntityRenderState>();
+  /** The bodies of minions crumbling out of the scene: `from` is the node's height as it began, `depth` how far it sinks. */
+  private crumbling: { node: THREE.Object3D; mixer: THREE.AnimationMixer | undefined; from: number; depth: number; startedAt: number }[] = [];
   private readonly bubbles = new Map<string, SpeechBubble>();
   /** The bubbles as last laid out. */
   private placed: PlacedBubble[] = [];
@@ -406,6 +440,7 @@ export class WorldScene implements WorldRenderSurface {
   private readonly effects: CombatEffects;
   /** The drops lying on the ground for the player. They hang on the scene and go with each new space. */
   private readonly loot: LootMarkers;
+  private readonly auras: EliteAuras;
   /** Where the screen shake puts the camera off where the rig placed it. */
   private readonly shake = new THREE.Vector3();
 
@@ -437,6 +472,7 @@ export class WorldScene implements WorldRenderSurface {
       () => (this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId)?.position),
       reducedMotion,
     );
+    this.auras = new EliteAuras(reducedMotion);
     this.effects = new CombatEffects(
       {
         body: (entityId) => this.entityStates.get(entityId),
@@ -516,14 +552,15 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
-   * it meanwhile compiles every combat effect's program and a drop's, which a first use would
-   * compile mid-fight.
+   * it meanwhile compiles every combat effect's program, a drop's, and an elite's aura's, which a
+   * first use would compile mid-fight.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     await Promise.all([
       this.assets.prewarm(),
       renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.loot.compile(renderer, this.camera, this.scene),
+      renderer === undefined ? undefined : this.auras.compile(renderer, this.camera, this.scene),
     ]);
     this.refreshResolvedModels();
   }
@@ -560,12 +597,14 @@ export class WorldScene implements WorldRenderSurface {
     this.grass.clear();
     this.bending.clear();
     this.entityStates.clear();
+    this.crumbling = [];
     this.bubbles.clear();
     this.placed = [];
     this.sensed = [];
     this.markers = [];
     this.effects.clear();
     this.loot.clear();
+    this.auras.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
@@ -605,7 +644,7 @@ export class WorldScene implements WorldRenderSurface {
    * Draws a sector at its origin, replacing one already drawn under the same name. Its ground is
    * rasterized off the frame, and the ground drawn so far stays until the new one arrives.
    */
-  addSector(sector: SectorView): void {
+  addSector(sector: SectorView, outdoorDoorIds: readonly string[] = []): void {
     disposeSubtree(this.sectors.get(sector.name)?.group);
     const origin = sectorOrigin(sector);
     const group = new THREE.Object3D();
@@ -615,7 +654,7 @@ export class WorldScene implements WorldRenderSurface {
     for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
     group.add(...placements.map((placed) => placed.node));
     this.spaceRoot.add(group);
-    this.sectors.set(sector.name, { view: sector, group, placements });
+    this.sectors.set(sector.name, { view: sector, outdoorDoorIds, group, placements });
     if (!this.grounds.has(sector.name)) {
       const mesh = groundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
       this.spaceRoot.add(mesh);
@@ -902,6 +941,7 @@ export class WorldScene implements WorldRenderSurface {
         kind: entity.kind,
         characterModelId: entity.characterModelId,
         name: entity.name,
+        trait: entity.trait,
         radius: entity.radius,
         facing: entity.facing,
         gait: entity.gait,
@@ -920,6 +960,7 @@ export class WorldScene implements WorldRenderSurface {
         pose: undefined,
         condition: entity.condition,
         oneShot: undefined,
+        fallsAt: undefined,
         held: entity.held,
         heldProps: {},
       };
@@ -938,11 +979,13 @@ export class WorldScene implements WorldRenderSurface {
       this.resolveEntityModel(state);
       this.refreshPortraitLayers(entity.id, state);
     }
-    // Rebuilt on a kind or name change, because both pick the plaque's fill and its width.
-    if (state.namePlaque === undefined || kindChanged || state.name !== entity.name) {
+    // Rebuilt on a kind, name, or trait change, because each picks the plaque's fill or its text.
+    if (state.namePlaque === undefined || kindChanged || state.name !== entity.name || state.trait !== entity.trait) {
       state.name = entity.name;
+      state.trait = entity.trait;
       this.rebuildNamePlaque(state, this.isTarget(entity.id));
     }
+    this.auras.show(entity.id, state.jolt, entity.radius, entity.trait);
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
     if (!sameHeld(state.held, entity.held)) this.updateHeld(entity.id, entity.held);
 
@@ -985,16 +1028,24 @@ export class WorldScene implements WorldRenderSurface {
     if (state !== undefined) state.gait = gait;
   }
 
-  /** The plaque takes the condition's tint, and a fallen entity drops and stays down until it stands again. */
+  /**
+   * The plaque takes the condition's tint, and a fallen entity drops and stays down until it stands
+   * again. The server sends the blow that fells a body before its fall, so the body drops as the last
+   * hit on its way to it lands (`CombatEffects.hitsLandIn`), as a nightmare's drops burst out
+   * (`burstIn`), and at once with none on its way or under reduced motion.
+   */
   updateCondition(entityId: string, condition: Condition): void {
     const state = this.entityStates.get(entityId);
     if (state === undefined) return;
     state.condition = condition;
     this.rebuildNamePlaque(state, this.isTarget(entityId));
     if (condition === 'fallen') {
-      this.playOneShot(state, 'fallen');
-    } else if (state.oneShot?.held === true) {
-      this.endOneShot(state);
+      const landsIn = this.reducedMotion ? 0 : this.effects.hitsLandIn(entityId);
+      if (landsIn > 0) state.fallsAt = this.sceneClock + landsIn;
+      else this.playOneShot(state, 'fallen');
+    } else {
+      state.fallsAt = undefined;
+      if (state.oneShot?.held === true) this.endOneShot(state);
     }
   }
 
@@ -1027,6 +1078,14 @@ export class WorldScene implements WorldRenderSurface {
     this.effects.mend(targetId);
   }
 
+  showTelegraph(telegraph: TelegraphMessage): void {
+    this.effects.telegraph(telegraph);
+  }
+
+  showSummoned(minionId: string, summonerId: string): void {
+    this.effects.summon(minionId, summonerId);
+  }
+
   showSensed(bearings: readonly SensedBearingMessage[]): void {
     this.sensed = bearings;
     this.layoutSpeechBubbles(0);
@@ -1049,10 +1108,10 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * How a drop leaves for where it falls: tossed from the hand of the dreamer who throws it, who
-   * plays the throw cut short so it lets go within `THROW_WINDUP_SECONDS`, or bursting at once from
-   * the body of the nightmare that stood there. An item that leaves a hand drawn holding it is
-   * handed to the throw: it stays on the hand through the wind-up, whatever the hands are shown
-   * holding meanwhile, and goes from it as the drop flies.
+   * plays the throw cut short so it lets go within `THROW_WINDUP_SECONDS`, or bursting from the body
+   * of the nightmare that stood there as the blow that drove it off lands (`burstIn`). An item that
+   * leaves a hand drawn holding it is handed to the throw: it stays on the hand through the wind-up,
+   * whatever the hands are shown holding meanwhile, and goes from it as the drop flies.
    */
   private throwFrom(from: ThrownFromMessage, baseId: string): LootThrow {
     const thrower = from.entityId === undefined ? undefined : this.entityStates.get(from.entityId);
@@ -1062,11 +1121,27 @@ export class WorldScene implements WorldRenderSurface {
     const ground = new THREE.Vector3(from.x, this.groundHeight(from) + (nightmare ? BURST_FROM_HEIGHT : THROWN_FROM_HEIGHT), from.z);
     const prop = thrower === undefined || from.hand === undefined || this.reducedMotion ? undefined : this.handOver(thrower, from.hand, baseId);
     return {
-      releaseIn: Math.min(strikeDelay(clip), THROW_WINDUP_SECONDS),
+      releaseIn: nightmare ? this.burstIn(from) : Math.min(strikeDelay(clip), THROW_WINDUP_SECONDS),
       from: () => hand?.getWorldPosition(new THREE.Vector3()) ?? ground,
       ...(prop === undefined ? {} : { prop }),
       arc: nightmare ? BURST_ARC : THROW_ARC,
     };
+  }
+
+  /**
+   * Seconds until a nightmare's drops burst out: as the last blow on its way to the fallen nightmare
+   * drawn nearest where it stood lands, so every drop it leaves pops out together as the killing blow
+   * strikes. The server sends the nightmare's fall before its drops, so it already lies fallen. With
+   * no blow on its way, as when a Dream-bolt drove it off, they burst at once.
+   */
+  private burstIn(from: Point): number {
+    let nearest: { id: string; away: number } | undefined;
+    for (const [id, state] of this.entityStates) {
+      if (state.kind !== 'monster' || state.condition !== 'fallen') continue;
+      const away = distance(state.position, from);
+      if (nearest === undefined || away < nearest.away) nearest = { id, away };
+    }
+    return nearest === undefined ? 0 : this.effects.hitsLandIn(nearest.id);
   }
 
   /** Takes the model a hand holds of the base from what the hands hold, for a throw to let go of: `undefined` when the hand draws none of it. */
@@ -1439,12 +1514,51 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   removeEntity(entityId: string): void {
+    disposeSubtree(this.forgetEntity(entityId)?.node);
+  }
+
+  /**
+   * A minion whose boss's fight ended crumbles into grave light where it stands
+   * (`CombatEffects.crumble`) and its body, its plaque taken off, sinks out of sight over
+   * `CRUMBLE_SECONDS`, playing on as it goes, before it is gone. It is no entity of the scene
+   * meanwhile, so nothing picks, marks, or names it. Under reduced motion it is gone at once, and in
+   * a stalled tab on the next tick.
+   */
+  crumbleEntity(entityId: string): void {
+    this.effects.crumble(entityId);
+    const state = this.forgetEntity(entityId);
+    if (state === undefined) return;
+    if (this.reducedMotion) {
+      disposeSubtree(state.node);
+      return;
+    }
+    disposeSubtree(state.namePlaque);
+    this.crumbling.push({ node: state.node, mixer: state.mixer, from: state.node.position.y, depth: state.headHeight, startedAt: this.sceneClock });
+  }
+
+  /** Drops what the scene holds of an entity but its body, and returns its state for the caller to dispose of or sink. */
+  private forgetEntity(entityId: string): EntityRenderState | undefined {
     const state = this.entityStates.get(entityId);
-    disposeSubtree(state?.node);
+    this.auras.forget(entityId);
     this.entityStates.delete(entityId);
     this.bubbles.delete(entityId);
     this.effects.forget(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
+    return state;
+  }
+
+  /** Sinks each crumbling body a step further, easing in, and lets it go once under or once the tab stalled. */
+  private sinkCrumbling(dt: number, stalled: boolean): void {
+    this.crumbling = this.crumbling.filter((body) => {
+      const k = (this.sceneClock - body.startedAt) / CRUMBLE_SECONDS;
+      if (stalled || k >= 1) {
+        disposeSubtree(body.node);
+        return false;
+      }
+      body.node.position.y = body.from - body.depth * k * k;
+      body.mixer?.update(dt);
+      return true;
+    });
   }
 
   showSplash(): void {
@@ -1475,6 +1589,7 @@ export class WorldScene implements WorldRenderSurface {
     this.sceneClock += dt;
     this.relight();
     this.updatePropLights();
+    const stalled = this.effects.stalled(this.now());
 
     for (const [id, state] of this.entityStates) {
       // The simulation's height is discrete, a tread at a time; the rendered one eases after it.
@@ -1495,13 +1610,20 @@ export class WorldScene implements WorldRenderSurface {
         state.modelHolder.rotation.y = state.currentYaw;
       }
 
+      // A stall drops the blow the fall waits for, so the fall goes on without it.
+      if (state.fallsAt !== undefined && (stalled || this.sceneClock >= state.fallsAt)) {
+        state.fallsAt = undefined;
+        this.playOneShot(state, 'fallen');
+      }
       const direction = state.travelHeading === undefined ? 'forward' : relativeDirection(state.travelHeading, state.facing);
       if (!this.oneShotIsPlaying(state)) this.applyPose(isMoving ? movementPose(state.kind, state.gait, direction) : 'idle', state);
       // A hit-pause holds the clip where it is, for the bodies a blow names alone.
       if (!this.effects.frozen(id)) state.mixer?.update(dt);
     }
     // After the clips move on, so a drop leaving a hand leaves it where this frame draws the hand.
-    this.loot.tick(this.sceneClock, this.effects.stalled(this.now()));
+    this.loot.tick(this.sceneClock, stalled);
+    this.sinkCrumbling(dt, stalled);
+    this.auras.tick(this.sceneClock);
     this.effects.tick(dt);
     this.camera.position.sub(this.shake);
     this.effects.shakeOffset(this.camera, this.shake);
@@ -1617,8 +1739,8 @@ export class WorldScene implements WorldRenderSurface {
     const background = namePlaqueBackground(state.kind, state.condition, targeted);
     if (background === undefined) return;
     const ink = state.kind !== 'npc' && state.condition === 'fallen' ? NAME_PLAQUE.fallenInk : NAME_PLAQUE.ink;
-    // A nightmare's name is its kind's catalog key; a dreamer's or an NPC's is their own.
-    const name = state.kind === 'monster' ? t(state.name) : state.name;
+    // A nightmare's name is its kind's catalog key, or an elite's; a dreamer's or an NPC's is their own.
+    const name = state.kind === 'monster' ? t(nightmareLabelKey(state.name, state.trait)) : state.name;
     const { container, plate } = namePlaqueQuad(name, background, state.kind === 'player', ink);
     container.scale.setScalar(this.overlayScale);
     state.node.add(container);
@@ -1774,14 +1896,14 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Gives the pool to the flames of the space on screen, and aims the door's light through the
-   * first of its doors that resolves. Outdoors, or in a room with no such door, the door's light
-   * stays dark, and its shadow map is not drawn: three.js draws one for every light that casts,
-   * whatever its intensity, unless told not to.
+   * first of its doors that opens to the outdoors and resolves. Outdoors, or in a room with no such
+   * door, the door's light stays dark, and its shadow map is not drawn: three.js draws one for every
+   * light that casts, whatever its intensity, unless told not to.
    */
   private lightDrawnSpace(): void {
     const drawn = [...this.sectors.values()];
     this.litEmitters = drawn.flatMap((sector) => sector.placements.flatMap((placed) => placed.emitter ?? [])).slice(0, PROP_LIGHT_POOL_SIZE);
-    const door = this.spillDoor(drawn.map((sector) => sector.view));
+    const door = this.spillDoor(drawn);
     this.litDoor = door !== undefined;
     this.doorSpill.shadow.autoUpdate = this.litDoor;
     if (door !== undefined) {
@@ -1794,10 +1916,11 @@ export class WorldScene implements WorldRenderSurface {
     this.updatePropLights();
   }
 
-  private spillDoor(views: readonly SectorView[]): ResolvedDoor | undefined {
-    for (const view of views) {
+  private spillDoor(drawn: readonly DrawnSector[]): ResolvedDoor | undefined {
+    for (const { view, outdoorDoorIds } of drawn) {
       if (view.kind !== 'interior') continue;
       for (const door of view.doors) {
+        if (!outdoorDoorIds.includes(door.id)) continue;
         const resolved = resolveDoor(view, door, this.registry);
         if (resolved !== undefined) return resolved;
       }

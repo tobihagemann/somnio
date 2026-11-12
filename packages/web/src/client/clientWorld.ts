@@ -1,6 +1,18 @@
 import { buildSpaceCollision, findPath, neighbourSectors, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
-import type { AbilityBody, Body, EngageTarget, FoundPath, ModelRegistry, Point, ResolvedDoor, SpaceCollision, WalkRaster, WorldEntity } from '@somnio/core';
-import type { Condition, Held, NPCService, SectorView } from '@somnio/protocol';
+import type {
+  AbilityBody,
+  Body,
+  EliteTraitId,
+  EngageTarget,
+  FoundPath,
+  ModelRegistry,
+  Point,
+  ResolvedDoor,
+  SpaceCollision,
+  WalkRaster,
+  WorldEntity,
+} from '@somnio/core';
+import type { Condition, Held, NPCService, NightmareRank, SectorView } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 import { defaultWalkRasterizer } from './walkRasterizer';
 import type { WalkRasterizer } from './walkRasterizer';
@@ -13,6 +25,10 @@ export interface ClientEntity extends WorldEntity {
   service: NPCService | undefined;
   /** What a dreamer's hands hold. */
   held: Held | undefined;
+  /** Set on a nightmare above its kind's ordinary run. */
+  rank: NightmareRank | undefined;
+  /** The trait an elite carries, when this build knows it. */
+  trait: EliteTraitId | undefined;
 }
 
 /** Whether the entity is a nightmare driven off: fading, it is nothing to face, act on, or walk round. */
@@ -58,6 +74,8 @@ export class ClientWorld {
 
   private readonly registry: ModelRegistry;
   private readonly sectors: SectorView[] = [];
+  /** The ids of each held sector's doors that open to the outdoors, as its frame named them. */
+  private readonly outdoorDoorIds = new Map<string, readonly string[]>();
   private readonly drawn = new Set<string>();
   private readonly walkRasterizer: WalkRasterizer;
   /** Each sector's walk raster, kept until the raster for its current inputs replaces it. */
@@ -73,10 +91,11 @@ export class ClientWorld {
     this.collision = buildSpaceCollision({ id: spaceId, sectors: this.sectors }, registry);
   }
 
-  addSector(sector: SectorView): void {
+  addSector(sector: SectorView, outdoorDoorIds: readonly string[] = []): void {
     const index = this.sectors.findIndex((held) => held.name === sector.name);
     if (index === -1) this.sectors.push(sector);
     else this.sectors[index] = sector;
+    this.outdoorDoorIds.set(sector.name, outdoorDoorIds);
     this.collision = buildSpaceCollision({ id: this.spaceId, sectors: this.sectors }, this.registry);
     this.doors = this.sectors.flatMap((held) =>
       held.doors.flatMap((door) => {
@@ -126,7 +145,7 @@ export class ClientWorld {
     for (const sector of wanted) {
       if (this.drawn.has(sector.name)) continue;
       this.drawn.add(sector.name);
-      surface.addSector(sector);
+      surface.addSector(sector, this.outdoorDoorIds.get(sector.name));
     }
   }
 }

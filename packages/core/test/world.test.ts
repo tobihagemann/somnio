@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { modelToWorld } from '../src/geometry.ts';
 import type { MonsterSpawn, Sector, SectorNPC } from '../src/sector.ts';
-import { OUTDOOR_SPACE_ID, WorldError, buildWorld, doorContains, doorOpenAt, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
+import { OUTDOOR_SPACE_ID, WorldError, buildWorld, doorContains, doorOpenAt, neighbourSectors, outdoorDoorIds, resolveDoor, sectorAt } from '../src/world.ts';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from './support/worldFixture.ts';
 
 const HALL = { id: 'hall-1', modelId: 'hall', x: 10, z: 10, yaw: 270, elevation: 0 };
@@ -120,7 +120,7 @@ describe('buildWorld', () => {
 
   it("reports a door whose arrival point lies within a nightmare's reach of a monster spawn's area once, and keeps it live", () => {
     // The room's door puts an arriving body at (5, 9.1); a nightmare's reach is 0.85 m.
-    const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'ghost', x: 4, z: 7.5, width: 2, depth, maxAlive: 1 });
+    const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'ghost', x: 4, z: 7.5, width: 2, depth, maxAlive: 1, eliteChance: 0 });
     const spawned = (...monsterSpawns: MonsterSpawn[]): Sector[] => [town(), room({ monsterSpawns })];
     const inReach = {
       sector: 'Room',
@@ -274,5 +274,20 @@ describe('doorOpenAt', () => {
     const hours = [0, 5.5, 6, 12, 21.5, 22, 23.5];
     expect(hours.map((hour) => doorOpenAt(TOWN_DOOR, hour * HOUR))).toEqual([true, true, true, true, true, true, true]);
     expect(hours.map((hour) => doorOpenAt({ ...TOWN_DOOR, nightOnly: true }, hour * HOUR))).toEqual([true, true, false, false, false, true, true]);
+  });
+});
+
+describe('outdoorDoorIds', () => {
+  it("names a room's doors that lead outdoors, and none of an outdoor sector's or a room's that lead to another room", () => {
+    const cellarDoor: Door = { id: 'to-cellar', placement: 'door-1', anchor: 'main', target: { sector: 'Cellar', door: 'exit' } };
+    const hall = room({ doors: [cellarDoor, ROOM_DOOR] });
+    const cellar = interiorSector('Cellar', { doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Room', door: 'to-cellar' } }] });
+    const sectors = [town(), hall, cellar];
+
+    expect(outdoorDoorIds(hall, sectors)).toEqual(['exit']);
+    expect(outdoorDoorIds(cellar, sectors)).toEqual([]);
+    expect(
+      outdoorDoorIds(outdoorSector('Field', { x: 20, z: 0 }, { doors: [{ ...TOWN_DOOR, target: { sector: 'Town', door: 'to-field' } }] }), sectors),
+    ).toEqual([]);
   });
 });

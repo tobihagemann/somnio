@@ -1,5 +1,5 @@
-import { NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
-import type { Character, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
+import { ELITE_TRAIT_IDS, NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
+import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { carrying, plain } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
@@ -46,17 +46,25 @@ export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { str
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
  * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, it
  * keeps to a home ground reaching that many metres each way, where it can chase. With `drops`,
- * every dreamer who shares a nightmare driven off finds a plain dagger where it stood.
+ * every dreamer who shares a nightmare driven off finds a plain dagger where it stood, once for
+ * each of its rank's rolls. With `elite`, the Ghost is an elite carrying that trait.
  */
-export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolean; ground?: number; sectors?: Sector[]; drops?: boolean } = {}) {
+export function arena(
+  overrides: Partial<Sector> = {},
+  options: { ghost?: boolean; ground?: number; sectors?: Sector[]; drops?: boolean; elite?: EliteTraitId } = {},
+) {
   const dice = { hit: true };
   const ghost = options.ghost ?? true;
-  const spawn = options.ground === undefined ? makeMonsterSpawn(GHOST_AT) : makeMonsterGround(GHOST_AT, options.ground);
+  const spawn = {
+    ...(options.ground === undefined ? makeMonsterSpawn(GHOST_AT) : makeMonsterGround(GHOST_AT, options.ground)),
+    eliteChance: options.elite === undefined ? 0 : 1,
+  };
   const sector = makeSector('TestSector', { ...(ghost ? { monsterSpawns: [spawn] } : {}), ...overrides });
   const lands = landsAtCentre(options.ground ?? 0);
   const { clock, space } = makeClockedSpace(makeWorld([sector, ...(options.sectors ?? [])]), OUTDOOR_SPACE_ID, {
     random: { nextUInt32: () => (dice.hit ? lands.nextUInt32() : 0xffff_ffff) },
     ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
+    ...(options.elite === undefined ? {} : { eliteRandom: traitRoll(options.elite) }),
   });
   if (ghost) {
     clock.ms = RESPAWN_MS;
@@ -71,6 +79,12 @@ export function arena(overrides: Partial<Sector> = {}, options: { ghost?: boolea
     }
   };
   return { clock, space, dice, steps };
+}
+
+/** Rolls that make every nightmare spawned an elite carrying `trait`. */
+function traitRoll(trait: EliteTraitId): { nextUInt32: () => number } {
+  const roll = Math.floor(((ELITE_TRAIT_IDS.indexOf(trait) + 0.5) / ELITE_TRAIT_IDS.length) * 0x1_0000_0000);
+  return { nextUInt32: () => roll };
 }
 
 /** Turns the dreamer on the spot toward `point`, as their client reports a turn. */

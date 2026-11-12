@@ -6,8 +6,8 @@ import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } f
 import type { EntityMessage, Locale, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
-import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
-import { enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
+import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
 
 /** In-memory storage so the session tests never touch a real `localStorage`. */
 class MemoryStorage implements SessionStorageLike {
@@ -318,7 +318,7 @@ describe('the render surface during a join', () => {
         ...noopRenderSurface,
         enterSpace: (world) => calls.push(`enterSpace:${world.spaceId}`),
         setClock: (worldSeconds) => calls.push(`setClock:${worldSeconds}`),
-        addSector: (sector) => calls.push(`addSector:${sector.name}`),
+        addSector: (sector, outdoorDoorIds = []) => calls.push(['addSector', sector.name, ...outdoorDoorIds].join(':')),
         removeSector: (name) => calls.push(`removeSector:${name}`),
         placeEntity: (placed) => calls.push(`placeEntity:${placed.id}`),
       },
@@ -360,6 +360,15 @@ describe('the render surface during a join', () => {
 
     expect(calls).toEqual(['addSector:North']);
     expect(rig.controller.world?.collision.sectors).toHaveLength(3);
+  });
+
+  it('hands the scene the doors of a room that its frame says open to the outdoors', () => {
+    const { rig, calls } = joined();
+    rig.deliver(enterSpaceFrame('Hall'));
+    rig.deliver(sectorFrame(interiorSector('Hall', makeDoor('exit', { x: 5, z: 9 }, { sector: 'Town', door: 'inside' })), ['exit']));
+    rig.deliver(entityFrame({ x: 5, z: 5 }));
+
+    expect(calls.slice(2)).toEqual(['addSector:Hall:exit', 'placeEntity:self']);
   });
 });
 
@@ -1102,6 +1111,73 @@ describe('what a dreamer holds', () => {
 
     expect(rig.controller.entities.get('peer')?.held).toEqual({ offHand: 'moonstone' });
     expect(drawn).toEqual([['peer', { offHand: 'moonstone' }]]);
+  });
+});
+
+describe('an elite', () => {
+  it('keeps its rank and its trait when this build knows it, and neither for an ordinary nightmare', () => {
+    const rig = makeRig();
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame({ id: 'monster:1', kind: 'monster', name: 'Ghost', rank: 'elite', trait: 'stony' }));
+    rig.deliver(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Ghost', rank: 'elite', trait: 'frozen' }));
+    rig.deliver(entityFrame({ id: 'monster:3', kind: 'monster', name: 'Ghost' }));
+    expect(rig.controller.entities.get('monster:1')).toMatchObject({ rank: 'elite', trait: 'stony' });
+    expect(rig.controller.entities.get('monster:2')).toMatchObject({ rank: 'elite', trait: undefined });
+    expect(rig.controller.entities.get('monster:3')).toMatchObject({ rank: undefined, trait: undefined });
+  });
+});
+
+describe('a minion a boss calls up', () => {
+  it('is shown arriving at its call once it stands, and one that comes into view plainly', () => {
+    const shown: string[][] = [];
+    const rig = makeRig({
+      renderSurface: {
+        ...noopRenderSurface,
+        placeEntity: (entity) => shown.push(['placed', entity.id]),
+        showSummoned: (minionId, summonerId) => shown.push(['summoned', minionId, summonerId]),
+      },
+    });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Skeleton', summonedBy: 'monster:1' }));
+    rig.deliver(entityFrame({ id: 'monster:3', kind: 'monster', name: 'Skeleton' }));
+    expect(shown).toEqual([
+      ['placed', 'monster:2'],
+      ['summoned', 'monster:2', 'monster:1'],
+      ['placed', 'monster:3'],
+    ]);
+  });
+
+  it('crumbles once its boss gives its fight up, where one that leaves otherwise is removed', () => {
+    const shown: string[][] = [];
+    const rig = makeRig({
+      renderSurface: {
+        ...noopRenderSurface,
+        removeEntity: (entityId) => shown.push(['removed', entityId]),
+        crumbleEntity: (entityId) => shown.push(['crumbled', entityId]),
+      },
+    });
+    rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Skeleton' }));
+    rig.deliver(entityFrame({ id: 'monster:3', kind: 'monster', name: 'Skeleton' }));
+    rig.deliver({ tag: 'leave', payload: { entityId: 'monster:2', leftGame: false, crumbled: true } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'monster:3', leftGame: false } });
+    expect(shown).toEqual([
+      ['crumbled', 'monster:2'],
+      ['removed', 'monster:3'],
+    ]);
+    expect(rig.controller.entities.has('monster:2')).toBe(false);
   });
 });
 

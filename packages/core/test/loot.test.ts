@@ -1,5 +1,6 @@
 import { RARITIES, ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
+import { affix } from '../src/affixes.ts';
 import { buildSpaceCollision, isLegalMove } from '../src/collision.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
@@ -13,20 +14,21 @@ import { TEST_REGISTRY, outdoorSector } from './support/worldFixture.ts';
 
 const SAMPLES = 20_000;
 
-describe('rollDrops', () => {
-  const random = seededSequence(hashString('drops'));
-  const rolled = Array.from({ length: SAMPLES }, () => rollDrops(1, 'nightmare', undefined, random));
+describe.each(['nightmare', 'elite', 'boss'] as const)('rollDrops for a foe of rank %s', (rank) => {
+  const odds = DROP_ODDS[rank];
+  const random = seededSequence(hashString(`drops ${rank}`));
+  const rolled = Array.from({ length: SAMPLES }, () => rollDrops(1, rank, undefined, random));
   const drops = rolled.flat();
 
   it("drops on each roll by the rank's chance, at most once a roll", () => {
-    expect(rolled.every((found) => found.length <= DROP_ODDS.nightmare.rolls)).toBe(true);
-    expect(drops.length / SAMPLES).toBeCloseTo(DROP_ODDS.nightmare.chance, 1);
+    expect(rolled.every((found) => found.length <= odds.rolls)).toBe(true);
+    expect(drops.length / SAMPLES).toBeCloseTo(odds.rolls * odds.chance, 1);
   });
 
   it('weighs each rarity as the odds say', () => {
-    const total = RARITIES.reduce((sum, rarity) => sum + DROP_ODDS.nightmare.rarities[rarity], 0);
+    const total = RARITIES.reduce((sum, rarity) => sum + odds.rarities[rarity], 0);
     for (const rarity of RARITIES) {
-      expect(drops.filter((drop) => drop.rarity === rarity).length / drops.length, rarity).toBeCloseTo(DROP_ODDS.nightmare.rarities[rarity] / total, 1);
+      expect(drops.filter((drop) => drop.rarity === rarity).length / drops.length, rarity).toBeCloseTo(odds.rarities[rarity] / total, 1);
     }
   });
 
@@ -37,12 +39,48 @@ describe('rollDrops', () => {
   });
 });
 
+describe('rollDrops for a foe of tier 3', () => {
+  const random = seededSequence(hashString('drops tier 3'));
+  const drops = Array.from({ length: SAMPLES }, () => rollDrops(3, 'elite', undefined, random)).flat();
+
+  it('drops the bases of tier 3 and of every lower tier, and never the Moonstone', () => {
+    expect(new Set(drops.map((drop) => drop.baseId))).toEqual(new Set(droppableBases(3)));
+    expect(new Set(droppableBases(3).map((baseId) => baseItem(baseId).tier))).toEqual(new Set([1, 3]));
+    expect(droppableBases(3)).not.toContain('moonstone');
+  });
+
+  it("rolls every drop at tier 3, whatever its base's tier, with tier 3's stat lines", () => {
+    expect(drops.every((drop) => drop.tier === 3)).toBe(true);
+    for (const { affixId, value } of drops.flatMap((drop) => drop.affixes)) {
+      const [least, most] = affix(affixId).tiers[3]!;
+      expect(value >= least && value <= most, `${affixId} ${value}`).toBe(true);
+    }
+  });
+});
+
+describe('DROP_ODDS', () => {
+  const rareShare = (rank: keyof typeof DROP_ODDS): number => {
+    const { rarities } = DROP_ODDS[rank];
+    return rarities.rare / RARITIES.reduce((sum, rarity) => sum + rarities[rarity], 0);
+  };
+
+  it('gives an elite more drops than an ordinary nightmare, and more of them rare', () => {
+    expect(DROP_ODDS.elite.rolls * DROP_ODDS.elite.chance).toBeGreaterThan(DROP_ODDS.nightmare.rolls * DROP_ODDS.nightmare.chance);
+    expect(rareShare('elite')).toBeGreaterThan(rareShare('nightmare'));
+  });
+
+  it('gives a boss more drops than an elite, and more of them rare', () => {
+    expect(DROP_ODDS.boss.rolls * DROP_ODDS.boss.chance).toBeGreaterThan(DROP_ODDS.elite.rolls * DROP_ODDS.elite.chance);
+    expect(rareShare('boss')).toBeGreaterThan(rareShare('elite'));
+  });
+});
+
 describe('smart loot', () => {
   it('keeps from each role the off hands its kit has no use for', () => {
-    const unusable = (role: (typeof ROLES)[number] | undefined) => droppableBases(1).filter((baseId) => !usableBy(baseId, role));
-    expect(unusable('fighter')).toEqual(['wand']);
-    expect(unusable('healer')).toEqual(['buckler', 'shield', 'wand']);
-    expect(unusable('mystic')).toEqual(['buckler', 'shield']);
+    const unusable = (role: (typeof ROLES)[number] | undefined) => droppableBases(3).filter((baseId) => !usableBy(baseId, role));
+    expect(unusable('fighter')).toEqual(['wand', 'skull-staff']);
+    expect(unusable('healer')).toEqual(['buckler', 'shield', 'wand', 'iron-buckler', 'skull-shield', 'skull-staff']);
+    expect(unusable('mystic')).toEqual(['buckler', 'shield', 'iron-buckler', 'skull-shield']);
     expect(unusable(undefined)).toEqual([]);
   });
 
@@ -57,8 +95,8 @@ describe('smart loot', () => {
 
   it.each(ROLES)('rolls a %s what they cannot use only by the open share', (role) => {
     const random = seededSequence(hashString(`drops-${role}`));
-    const drops = Array.from({ length: SAMPLES }, () => rollDrops(1, 'nightmare', role, random)).flat();
-    const bases = droppableBases(1);
+    const drops = Array.from({ length: SAMPLES }, () => rollDrops(3, 'nightmare', role, random)).flat();
+    const bases = droppableBases(3);
     const unusable = bases.filter((baseId) => !usableBy(baseId, role));
     const rate = drops.filter((drop) => unusable.includes(drop.baseId)).length / drops.length;
     expect(Math.abs(rate - (DROP_ODDS.nightmare.openShare * unusable.length) / bases.length)).toBeLessThan(0.01);

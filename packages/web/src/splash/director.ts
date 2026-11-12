@@ -187,7 +187,7 @@ export class SplashDirector {
     this.firedBeats = 0;
     if (shot.space !== this.space) {
       this.surface.showSplash();
-      for (const sector of shot.sectors) this.surface.addSector(sectorView(sector));
+      for (const sector of shot.sectors) this.surface.addSector(sectorView(sector), shot.outdoorDoorIds.get(sector.name));
       this.space = shot.space;
       this.settling = 0;
       this.actors.clear();
@@ -218,6 +218,8 @@ export class SplashDirector {
       condition: actor.condition,
       service: undefined,
       held: undefined,
+      rank: undefined,
+      trait: undefined,
     });
     this.actors.set(actor.id, { position: actor.start, facing: actor.facing, condition: actor.condition });
   }

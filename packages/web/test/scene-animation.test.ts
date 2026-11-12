@@ -84,6 +84,11 @@ describe('one-shot clips', () => {
     expect(resolveOneShotClipName(abilityId, clips)).toBeDefined();
   });
 
+  it.each(['wail', 'summon'] as const)("resolves the Necromancer's %s, as the registry expects of it", (oneShot) => {
+    const clips = modelForCharacter(bundledModelRegistry(), 'necromancer')?.expectedClips ?? [];
+    expect(resolveOneShotClipName(oneShot, clips)).toBeDefined();
+  });
+
   /** An event has no fallback: a model without the clip keeps the pose it is looping. */
   it.each(Object.keys(ONE_SHOT_CLIPS) as (keyof typeof ONE_SHOT_CLIPS)[])('resolves nothing for %s on a model that carries only looping clips', (oneShot) => {
     expect(resolveOneShotClipName(oneShot, ['Idle', 'Walking_A', 'Flying_Idle'])).toBeUndefined();

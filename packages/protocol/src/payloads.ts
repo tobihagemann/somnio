@@ -14,6 +14,7 @@ import {
   requireFloat,
   requireFloatValue,
   requireId,
+  requireIds,
   requireInt32,
   requireMetres,
   requireNested,
@@ -82,6 +83,17 @@ export type AbilityPhase = (typeof ABILITY_PHASES)[number];
 /** What a trade did, from the dreamer's side. */
 export const TRADE_KINDS = ['bought', 'sold'] as const;
 export type TradeKind = (typeof TRADE_KINDS)[number];
+
+/**
+ * What sets a nightmare above its kind's ordinary run: an elite carries a trait of its own, more
+ * health, and better drops, and a boss is a kind of its own with moves of its own and the best drops.
+ */
+export const NIGHTMARE_RANKS = ['elite', 'boss'] as const;
+export type NightmareRank = (typeof NIGHTMARE_RANKS)[number];
+
+/** What a nightmare telegraphs as a circle on the ground before it strikes there. */
+export const TELEGRAPH_KINDS = ['wail'] as const;
+export type TelegraphKind = (typeof TELEGRAPH_KINDS)[number];
 
 /** What a drop lying on the ground is. */
 export const LOOT_KINDS = ['item'] as const;
@@ -284,8 +296,14 @@ export interface EnterSpaceMessage {
   worldSeconds: number;
 }
 
+/**
+ * A sector and, for a room, the ids of its doors that open to the outdoors, the first of which that
+ * resolves lets the hour's light in. Left out where there are none. The server derives them from
+ * the world, so they are no part of the sector view or its file.
+ */
 export interface SectorMessage {
   sector: SectorView;
+  outdoorDoorIds?: string[];
 }
 
 export interface EntityMessage {
@@ -304,6 +322,12 @@ export interface EntityMessage {
   service?: NPCService;
   /** Present on a dreamer. */
   held?: Held;
+  /** Present on a nightmare above its kind's ordinary run. */
+  rank?: NightmareRank;
+  /** The trait an elite carries, by id. */
+  trait?: string;
+  /** The boss that has just called the nightmare up, on the frame that shows it arriving and no other. */
+  summonedBy?: string;
 }
 
 /** The bases of what a dreamer's hands hold, which is all anyone else is shown of their gear. */
@@ -444,9 +468,11 @@ export interface LootGoneMessage {
   lootId: string;
 }
 
+/** `crumbled` is set on a minion that crumbles where it stands as its boss's fight ends, rather than falling. */
 export interface LeaveMessage {
   entityId: string;
   leftGame: boolean;
+  crumbled?: boolean;
 }
 
 export interface TeachingRankMessage {
@@ -489,7 +515,7 @@ export interface VitalsMessage {
   health: number;
 }
 
-/** A timed effect its holder holds, with the seconds it has left; without them it lasts as long as its holder. */
+/** An effect its holder holds, with the seconds it has left; without them it lasts as long as its holder. */
 export interface HeldEffectMessage {
   effectId: string;
   seconds?: number;
@@ -560,6 +586,22 @@ export interface RaisingMessage {
  */
 export interface MendMessage {
   targetId: string;
+}
+
+/**
+ * A circle on the ground that `casterId` strikes once `seconds` have run, hitting every dreamer
+ * inside it whom nightmares do not leave alone. It goes to everyone who sees the caster's sector as
+ * it begins, and with the seconds left to a dreamer who comes into view of it under way. Its end
+ * sends nothing: it strikes, or it ends with its caster, driven off or out of view.
+ */
+export interface TelegraphMessage {
+  id: string;
+  casterId: string;
+  kind: TelegraphKind;
+  x: number;
+  z: number;
+  radius: number;
+  seconds: number;
 }
 
 /** Where a fallen dreamer lies, in the coordinates of the space. */
@@ -804,7 +846,12 @@ export function decodeEnterSpaceMessage(container: Record<string, unknown>, path
 }
 
 export function decodeSectorMessage(container: Record<string, unknown>, path: string): SectorMessage {
-  return { sector: decodeSectorView(requireNested(container, 'sector', path), `${path}.sector`) };
+  return {
+    sector: decodeSectorView(requireNested(container, 'sector', path), `${path}.sector`),
+    ...(isAbsent(container, 'outdoorDoorIds')
+      ? {}
+      : { outdoorDoorIds: requireIds(container, 'outdoorDoorIds', path, SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors) }),
+  };
 }
 
 /**
@@ -833,6 +880,9 @@ export function decodeEntityMessage(container: Record<string, unknown>, path: st
     condition: requireStringEnum(container, 'condition', path, CONDITIONS),
     ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, NPC_SERVICES) }),
     ...(isAbsent(container, 'held') ? {} : { held: decodeHeld(requireNested(container, 'held', path), `${path}.held`) }),
+    ...(isAbsent(container, 'rank') ? {} : { rank: requireStringEnum(container, 'rank', path, NIGHTMARE_RANKS) }),
+    ...(isAbsent(container, 'trait') ? {} : { trait: requireId(container, 'trait', path) }),
+    ...(isAbsent(container, 'summonedBy') ? {} : { summonedBy: requireEntityId(container, 'summonedBy', path) }),
   };
 }
 
@@ -1017,6 +1067,7 @@ export function decodeLeaveMessage(container: Record<string, unknown>, path: str
   return {
     entityId: requireEntityId(container, 'entityId', path),
     leftGame: requireBool(container, 'leftGame', path),
+    ...(isAbsent(container, 'crumbled') ? {} : { crumbled: requireBool(container, 'crumbled', path) }),
   };
 }
 
@@ -1158,6 +1209,18 @@ function decodePausedSeconds(container: Record<string, unknown>, path: string, h
 
 export function decodeMendMessage(container: Record<string, unknown>, path: string): MendMessage {
   return { targetId: requireEntityId(container, 'targetId', path) };
+}
+
+export function decodeTelegraphMessage(container: Record<string, unknown>, path: string): TelegraphMessage {
+  return {
+    id: requireId(container, 'id', path),
+    casterId: requireEntityId(container, 'casterId', path),
+    kind: requireStringEnum(container, 'kind', path, TELEGRAPH_KINDS),
+    x: requireMetres(container, 'x', path),
+    z: requireMetres(container, 'z', path),
+    radius: requirePositiveMetres(container, 'radius', path),
+    seconds: requireNonNegative(requireFloat(container, 'seconds', path), `${path}.seconds`),
+  };
 }
 
 function decodeSensedBearingMessage(container: Record<string, unknown>, path: string): SensedBearingMessage {

@@ -1,6 +1,6 @@
 import { clamp, raiseWorkOver } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, Point } from '@somnio/core';
-import type { AbilityPhase, Condition, Gait, Held, LootMessage, SectorView, SensedBearingMessage, SpeechKind } from '@somnio/protocol';
+import type { AbilityPhase, Condition, Gait, Held, LootMessage, SectorView, SensedBearingMessage, SpeechKind, TelegraphMessage } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
 /** A line to show as a bubble: round its speaker's head while that is drawn on screen, and placed toward the voice otherwise. */
@@ -63,7 +63,8 @@ export interface WorldRenderSurface {
    * until the local player is placed, avoiding a frame of the new space with no character in it.
    */
   enterSpace(world: ClientWorld): void;
-  addSector(sector: SectorView): void;
+  /** `outdoorDoorIds` names the sector's doors that open to the outdoors; a room lets the hour's light in through the first that resolves. */
+  addSector(sector: SectorView, outdoorDoorIds?: readonly string[]): void;
   removeSector(name: string): void;
   placeEntity(entity: ClientEntity): void;
   /**
@@ -90,6 +91,13 @@ export interface WorldRenderSurface {
   showRaising(targetId: string, raise: RaiseProgress | undefined): void;
   /** A mend landing on an entity: a ring swells from its feet and fades. */
   showMend(targetId: string): void;
+  /**
+   * A circle its caster strikes once its seconds have run: it fills as they run, and ends with its
+   * caster, driven off or gone from view.
+   */
+  showTelegraph(telegraph: TelegraphMessage): void;
+  /** A minion arriving at the call of the boss that summoned it, which plays its call. */
+  showSummoned(minionId: string, summonerId: string): void;
   /** Where each fallen dreamer in the space lies, for a player who senses the fallen; a new space starts with none. */
   showSensed(bearings: readonly SensedBearingMessage[]): void;
   /** A drop lying on the ground, the player's own or one for anyone: its model, with its name under it in its rarity's colour, until it is removed or a new space begins. */
@@ -106,6 +114,8 @@ export interface WorldRenderSurface {
   /** Whether the bubble was pinned at the screen's edge rather than hung round a head or by the door its voice comes through. */
   showSpeechBubble(request: SpeechBubbleRequest): boolean;
   removeEntity(entityId: string): void;
+  /** A minion whose boss's fight ended: it crumbles into grave light where it stands, sinking out of sight, and is then removed. */
+  crumbleEntity(entityId: string): void;
   showSplash(): void;
 }
 
@@ -124,6 +134,8 @@ export const noopRenderSurface: WorldRenderSurface = {
   showEffects: () => {},
   showRaising: () => {},
   showMend: () => {},
+  showTelegraph: () => {},
+  showSummoned: () => {},
   showSensed: () => {},
   showLoot: () => {},
   removeLoot: () => {},
@@ -133,5 +145,6 @@ export const noopRenderSurface: WorldRenderSurface = {
   setClock: () => {},
   showSpeechBubble: () => false,
   removeEntity: () => {},
+  crumbleEntity: () => {},
   showSplash: () => {},
 };

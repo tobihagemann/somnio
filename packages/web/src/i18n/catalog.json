@@ -235,6 +235,10 @@
     "en": "A newer version is available. Please update your client to keep playing.",
     "de": "Eine neuere Version ist verfügbar. Bitte aktualisiere deinen Client, um weiterzuspielen."
   },
+  "A shield takes the harm and grows back once broken.": {
+    "en": "A shield takes the harm and grows back once broken.",
+    "de": "Ein Schild fängt den Schaden ab und wächst nach, sobald er bricht."
+  },
   "A shield takes the harm of the next blows.": {
     "en": "A shield takes the harm of the next blows.",
     "de": "Ein Schild fängt den Schaden der nächsten Schläge ab."
@@ -339,6 +343,10 @@
     "en": "Broadcast message: %@",
     "de": "Broadcast Nachricht: %@"
   },
+  "Burial Chamber": {
+    "en": "Burial Chamber",
+    "de": "Grabkammer"
+  },
   "Buy %1$@ for %2$@c": {
     "en": "Buy %1$@ for %2$@c",
     "de": "%1$@ für %2$@c kaufen"
@@ -414,6 +422,10 @@
   "Create": {
     "en": "Create",
     "de": "Erstellen"
+  },
+  "Crypt": {
+    "en": "Crypt",
+    "de": "Gruft"
   },
   "Damage a swing": {
     "en": "Damage a swing",
@@ -578,6 +590,10 @@
   "Goes after the dreamer who challenged it.": {
     "en": "Goes after the dreamer who challenged it.",
     "de": "Geht auf den Träumer los, der ihn herausgefordert hat."
+  },
+  "Graveyard": {
+    "en": "Graveyard",
+    "de": "Friedhof"
   },
   "Hands": {
     "en": "Hands",
@@ -763,9 +779,9 @@
     "en": "Needs %1$@ at rank %2$@",
     "de": "Braucht %1$@ auf Rang %2$@"
   },
-  "Needs a wand in your off hand": {
-    "en": "Needs a wand in your off hand",
-    "de": "Braucht einen Zauberstab in deiner Nebenhand"
+  "Needs a wand or a staff in your off hand": {
+    "en": "Needs a wand or a staff in your off hand",
+    "de": "Braucht einen Zauberstab oder einen Stab in deiner Nebenhand"
   },
   "Needs a weapon or an empty main hand": {
     "en": "Needs a weapon or an empty main hand",
@@ -967,6 +983,10 @@
     "en": "Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.",
     "de": "Schirm den Träumer, den du als Ziel gewählt hast, oder dich selbst ab. Der Schild fängt den Schaden der nächsten Schläge ab, bis er bricht. Jeder Rang hält mehr aus."
   },
+  "Shielded": {
+    "en": "Shielded",
+    "de": "Schildbewehrt"
+  },
   "Shift": {
     "en": "Shift",
     "de": "Umschalt"
@@ -1031,6 +1051,10 @@
     "en": "Stirs the nightmares' anger half as much.",
     "de": "Reizt den Zorn der Albträume nur halb so sehr."
   },
+  "Stony": {
+    "en": "Stony",
+    "de": "Steinern"
+  },
   "Strike every nightmare in front of you at once. Each rank hits harder.": {
     "en": "Strike every nightmare in front of you at once. Each rank hits harder.",
     "de": "Triff jeden Albtraum vor dir auf einmal. Jeder Rang trifft härter."
@@ -1062,6 +1086,10 @@
   "Takes half the harm and cannot run.": {
     "en": "Takes half the harm and cannot run.",
     "de": "Nimmt nur halben Schaden und kann nicht rennen."
+  },
+  "Takes less harm.": {
+    "en": "Takes less harm.",
+    "de": "Nimmt weniger Schaden."
   },
   "Talk here. /w to whisper, /y to yell": {
     "en": "Talk here. /w to whisper, /y to yell",

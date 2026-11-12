@@ -3,9 +3,11 @@ import * as THREE from 'three';
 import { boltFlightSeconds, effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
+import type { Condition } from '@somnio/protocol';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
-import { COMBAT_EFFECTS_NAME, EFFECT_POOL_SIZES, STRIKE_AT } from '@/scene/combatEffects';
+import { COMBAT_EFFECTS_NAME, CRUMBLE_SECONDS, EFFECT_POOL_SIZES, STRIKE_AT, SUMMON_COLOR, TELEGRAPH_COLOR } from '@/scene/combatEffects';
+import { ELITE_AURA_NAME } from '@/scene/eliteAuras';
 import { LOOT_BEAM_NAME, LOOT_LABEL_NAME, LOOT_MARKERS_NAME } from '@/scene/lootMarkers';
 import { offsetDirection } from '@/scene/cameraRig';
 import { CHARACTER_SCALE } from '@/scene/placement';
@@ -25,6 +27,7 @@ const CLIPS = [
     SLICE,
     'Punch',
     'Hit_A',
+    'Death_A',
     'Melee_Block',
     'Ranged_Magic_Raise',
     'Melee_1H_Attack_Jump_Chop',
@@ -32,6 +35,7 @@ const CLIPS = [
     'Ranged_Magic_Shoot',
     'Ranged_Magic_Spellcasting',
     'Throw',
+    'Ranged_Magic_Summon',
   ].map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, [])),
   LONG_CAST,
 ];
@@ -216,6 +220,16 @@ function runes(scene: WorldScene): THREE.Mesh[] {
 }
 
 const uniformOf = (mesh: THREE.Mesh, name: string): number => ringUniforms(mesh)![name]!.value as number;
+
+/** The circles telegraphed on the ground. */
+function circles(scene: WorldScene): THREE.Mesh[] {
+  return effects(scene).children.filter((child): child is THREE.Mesh => ringUniforms(child as THREE.Mesh)?.['uFill'] !== undefined);
+}
+
+/** The rings that show in `color`. */
+function ringsIn(scene: WorldScene, color: number): THREE.Mesh[] {
+  return visible(rings(scene)).filter((ring) => (ringUniforms(ring)!['uColor']!.value as THREE.Color).getHex() === color);
+}
 
 function trails(scene: WorldScene): THREE.Mesh[] {
   return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute('aAge') !== undefined);
@@ -1178,13 +1192,25 @@ describe("the Moonstone's light", () => {
     hide(20);
     scene.showRaising('peer', { progress: 0.5, seconds: 3 });
     scene.tick(0.02);
-    expect(arc()).toBe(0.5);
+    expect(arc()).toBeCloseTo(0.5 + (0.5 * 0.02) / 3, 6);
 
     // A snapshot naming no pause lets go of the pauses the one before named, so the ring runs on at once.
     scene.showRaising('peer', { progress: 0.25, seconds: 6, pausedSeconds: [1.5] });
     scene.showRaising('peer', { progress: 0.25, seconds: 4.5 });
     run(scene, 1);
     expect(arc()).toBeCloseTo(0.25 + 0.75 / 4.5, 2);
+  });
+
+  it("fills a raise's ring by the wall clock at five frames a second, though each frame reaches the effects as a tenth of a second", () => {
+    const { scene } = healing();
+    const gold = (): THREE.Mesh[] => visible(rings(scene)).filter((ring) => (ringUniforms(ring)!['uColor']!.value as THREE.Color).getHex() === 0xffd27a);
+    const arc = (): number => ringUniforms(gold()[0]!)!['uArc']!.value as number;
+
+    scene.showRaising('peer', { progress: 0, seconds: 6 });
+    for (let frame = 1; frame <= 10; frame += 1) {
+      scene.tick(0.2);
+      expect(arc()).toBeCloseTo((frame * 0.2) / 6, 5);
+    }
   });
 });
 
@@ -2001,6 +2027,106 @@ describe('a thrown drop', () => {
     expect(at()).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
   });
 
+  describe('from a nightmare driven off', () => {
+    /** Where `monster:1` stood as it was driven off. */
+    const FROM_NIGHTMARE = { x: 10.8, z: 10 };
+    const SOUTH = { x: 10.8, z: 11.4 };
+
+    /**
+     * A scene where `self` stands at (10, 10) by `monster:1` and `monster:2` further east; each drop
+     * lies as a flat box of its own, kept in `items` in the order shown, and `fell` says whether
+     * `monster:1` has started its fall.
+     */
+    function drivenOff(options: { reducedMotion?: boolean } = {}) {
+      const items: THREE.Mesh[] = [];
+      const ground = () => {
+        const item = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.1).translate(0, 0.03, 0));
+        items.push(item);
+        return item;
+      };
+      const combat = combatScene({ ...options, ground });
+      place(combat.scene, 'self', { x: 10, z: 10 });
+      place(combat.scene, 'monster:1', FROM_NIGHTMARE);
+      place(combat.scene, 'monster:2', { x: 13, z: 10 });
+      combat.scene.tick(0.01);
+      const at = (index: number) => items[index]!.getWorldPosition(new THREE.Vector3());
+      const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+      const fell = () =>
+        (play.mock.contexts as THREE.AnimationAction[]).some((action) => action.getRoot() === combat.models[1] && action.getClip().name === 'Death_A');
+      return { ...combat, items, at, play, fell };
+    }
+
+    /** The killing blow on `monster:1`, its fall, and its drops, in the order the server sends them. */
+    function driveOff(scene: WorldScene): void {
+      scene.showBlow('self', 'monster:1', true);
+      scene.updateCondition('monster:1', 'fallen');
+      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, from: FROM_NIGHTMARE });
+      scene.showLoot({ lootId: 'loot-2', ...SOUTH, contents: CAP, from: FROM_NIGHTMARE });
+    }
+
+    it('holds every drop until the blow that drove it off lands, then bursts them all together from its body', () => {
+      const { scene, items, at } = drivenOff();
+      driveOff(scene);
+      run(scene, BLADE_LANDS - 0.02);
+      expect(items.map(isDrawn)).toEqual([false, false]);
+
+      run(scene, 0.04);
+      expect(items.map(isDrawn)).toEqual([true, true]);
+      expect(at(0).x).toBeCloseTo(FROM_NIGHTMARE.x, 1);
+      expect(at(1).z).toBeCloseTo(FROM_NIGHTMARE.z, 1);
+      expect([at(0).y, at(1).y].every((height) => height > 0.55)).toBe(true);
+    });
+
+    it('drops the nightmare in the frame its drops burst, without the flinch of the blow that drove it off', () => {
+      const { scene, models, items, play, fell } = drivenOff();
+      driveOff(scene);
+      const frames: [boolean, boolean][] = [];
+      for (let frame = 0; frame < 40; frame += 1) {
+        scene.tick(0.01);
+        frames.push([isDrawn(items[0]!), fell()]);
+      }
+      const burst = frames.findIndex(([drawn]) => drawn);
+      expect(burst).toBeGreaterThan(0);
+      expect(frames.map(([, fallen]) => fallen)).toEqual(frames.map((_, frame) => frame >= burst));
+      expect(flinched(play, models[1]!)).toBe(false);
+    });
+
+    it.each<[string, Condition, Point]>([
+      ['a standing one drawn nearer where it stood', 'hale', { x: 12, z: 10 }],
+      ['another fallen one further off', 'fallen', FROM_NIGHTMARE],
+    ])('bursts at once with no blow on its way to the nightmare, whatever is on its way to %s', (_label, other, from) => {
+      const { scene, items } = drivenOff();
+      scene.updateCondition('monster:2', other);
+      scene.showBlow('self', 'monster:2', true);
+      scene.updateCondition('monster:1', 'fallen');
+      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: CAP, from });
+      scene.tick(0.01);
+      expect(isDrawn(items[0]!)).toBe(true);
+    });
+
+    it.each<[string, { reducedMotion?: boolean }, (combat: ReturnType<typeof drivenOff>) => void]>([
+      ['under reduced motion', { reducedMotion: true }, () => {}],
+      [
+        'once the tab stalls while they wait for the blow',
+        {},
+        ({ scene, hide }) => {
+          hide(2000);
+          scene.tick(0.01);
+        },
+      ],
+    ])('lays the drops where they lie, and the nightmare down, %s', (_label, options, after) => {
+      const combat = drivenOff(options);
+      driveOff(combat.scene);
+      after(combat);
+      expect([combat.items.map(isDrawn), combat.at(0), combat.at(1), combat.fell()]).toEqual([
+        [true, true],
+        new THREE.Vector3(LANDS.x, 0, LANDS.z),
+        new THREE.Vector3(SOUTH.x, 0, SOUTH.z),
+        true,
+      ]);
+    });
+  });
+
   it.each<[string, { reducedMotion?: boolean }, (combat: ReturnType<typeof throwing>) => void]>([
     ['under reduced motion', { reducedMotion: true }, () => {}],
     ['shown while the tab stalls', {}, ({ hide }) => hide(2000)],
@@ -2194,6 +2320,238 @@ describe('a look the server times', () => {
   );
 });
 
+describe('a telegraph', () => {
+  const WAIL = { id: 'telegraph-1', casterId: 'monster:1', kind: 'wail', x: 10, z: 10, radius: 4, seconds: 2.5 } as const;
+
+  /** A Necromancer drawn a little off the circle's centre, as one still gliding to where it stands, and the player beside it, a frame drawn. */
+  function wailing(options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'self', { x: 12, z: 10 });
+    place(combat.scene, 'monster:1', { x: 10.2, z: 10 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  const fill = (scene: WorldScene): number[] => visible(circles(scene)).map((circle) => uniformOf(circle, 'uFill'));
+
+  it("fills its circle where it was telegraphed over its seconds, plays the caster's cast, and flares as it strikes", () => {
+    const { scene, models } = wailing();
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showTelegraph(WAIL);
+    expect((play.mock.contexts as THREE.AnimationAction[]).some((action) => action.getRoot() === models[1] && action.getClip() === LONG_CAST)).toBe(true);
+    scene.tick(0.01);
+    const [circle] = visible(circles(scene));
+    expect([circle!.position.x, circle!.position.z, circle!.scale.x]).toEqual([10, 10, 4]);
+    expect(fill(scene)[0]).toBeLessThan(0.02);
+    for (const layer of Object.values(PORTRAIT_LAYERS)) expect(circle!.layers.isEnabled(layer)).toBe(false);
+    run(scene, 1.24);
+    expect(fill(scene)[0]).toBeCloseTo(0.5, 1);
+    run(scene, 1.2);
+    expect(fill(scene)[0]).toBeGreaterThan(0.95);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+    run(scene, 0.1);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toHaveLength(1);
+  });
+
+  it('fills by the wall clock at five frames a second, though each frame reaches the effects as a tenth of a second, and strikes on time', () => {
+    const { scene } = wailing();
+    scene.showTelegraph(WAIL);
+    for (let frame = 1; frame <= 12; frame += 1) {
+      scene.tick(0.2);
+      expect(fill(scene)[0]).toBeCloseTo((frame * 0.2) / WAIL.seconds, 5);
+    }
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+    // The first frame past its 2.5 s.
+    scene.tick(0.2);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toHaveLength(1);
+  });
+
+  it('flares as it strikes when frames come 0.4 s apart, short of a stall, and the first past the strike finds it struck', () => {
+    const { scene } = wailing();
+    scene.showTelegraph(WAIL);
+    run(scene, 2.4, 0.4);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+    // 0.3 s past its 2.5 s.
+    scene.tick(0.4);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toHaveLength(1);
+  });
+
+  it('shows one first told of part-way, to a dreamer coming into view, as full as it is', () => {
+    const { scene } = wailing();
+    scene.showTelegraph({ ...WAIL, seconds: 1 });
+    scene.tick(0.01);
+    expect(fill(scene)[0]).toBeCloseTo(0.6, 2);
+  });
+
+  it.each([
+    ['driven off', (scene: WorldScene) => scene.updateCondition('monster:1', 'fallen')],
+    ['gone from view', (scene: WorldScene) => scene.removeEntity('monster:1')],
+  ])('ends at once, with no flare, once its caster is %s', (_label, end) => {
+    const { scene } = wailing();
+    scene.showTelegraph(WAIL);
+    run(scene, 1);
+    end(scene);
+    scene.tick(0.01);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+  });
+
+  it('holds its rim steady under reduced motion, still filling as the strike nears, and strikes with no flare', () => {
+    const { scene } = wailing({ reducedMotion: true });
+    scene.showTelegraph(WAIL);
+    const beats: number[] = [];
+    for (let tick = 0; tick < 100; tick += 1) {
+      scene.tick(0.02);
+      beats.push(uniformOf(visible(circles(scene))[0]!, 'uBeat'));
+    }
+    expect(new Set(beats)).toEqual(new Set([0]));
+    expect(fill(scene)[0]).toBeCloseTo(0.8, 1);
+    run(scene, 0.6);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+  });
+
+  it('beats its rim while motion is allowed', () => {
+    const { scene } = wailing();
+    scene.showTelegraph(WAIL);
+    const beats = new Set<number>();
+    for (let tick = 0; tick < 20; tick += 1) {
+      scene.tick(0.02);
+      beats.add(uniformOf(visible(circles(scene))[0]!, 'uBeat'));
+    }
+    expect(beats.size).toBeGreaterThan(1);
+  });
+
+  it('lasts through a stall as the server says, as full on return as its time says, and is gone with no flare once it struck meanwhile', () => {
+    const { scene, models, hide } = wailing();
+    hide(2000);
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showTelegraph(WAIL);
+    expect((play.mock.contexts as THREE.AnimationAction[]).some((action) => action.getRoot() === models[1])).toBe(false);
+    scene.tick(0.01);
+    expect(fill(scene)[0]).toBeLessThan(0.02);
+    hide(2000);
+    scene.tick(0.01);
+    expect(fill(scene)[0]).toBeCloseTo(0.8, 1);
+    hide(2000);
+    scene.tick(0.01);
+    expect(visible(circles(scene))).toEqual([]);
+    expect(ringsIn(scene, TELEGRAPH_COLOR)).toEqual([]);
+  });
+});
+
+describe('a minion called up', () => {
+  function calling(options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'monster:1', { x: 10, z: 10 });
+    place(combat.scene, 'monster:2', { x: 12, z: 10 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  it("plays its boss's call and arrives in a ring of grave light swelling from its feet, motes rising round it", () => {
+    const { scene, models } = calling();
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.showSummoned('monster:2', 'monster:1');
+    expect((play.mock.contexts as THREE.AnimationAction[]).map((action) => [models.indexOf(action.getRoot()), action.getClip().name])).toEqual([
+      [0, 'Ranged_Magic_Summon'],
+    ]);
+    scene.tick(0.01);
+    const [ring] = ringsIn(scene, SUMMON_COLOR);
+    expect([ring!.position.x, ring!.position.z]).toEqual([12, 10]);
+    const first = uniformOf(ring!, 'uRadius');
+    expect(visible(motes(scene)).filter((mote) => (ringUniforms(mote)!['uColor']!.value as THREE.Color).getHex() === SUMMON_COLOR)).toHaveLength(1);
+    run(scene, 0.3);
+    expect(uniformOf(ring!, 'uRadius')).toBeGreaterThan(first);
+    run(scene, 0.3);
+    expect(ringsIn(scene, SUMMON_COLOR)).toEqual([]);
+  });
+
+  it('fades its ring where it stands under reduced motion, with no mote rising', () => {
+    const { scene } = calling({ reducedMotion: true });
+    scene.showSummoned('monster:2', 'monster:1');
+    scene.tick(0.01);
+    const [ring] = ringsIn(scene, SUMMON_COLOR);
+    const first = uniformOf(ring!, 'uRadius');
+    run(scene, 0.3);
+    expect(uniformOf(ring!, 'uRadius')).toBe(first);
+    expect(visible(motes(scene))).toEqual([]);
+  });
+});
+
+describe('a minion crumbling', () => {
+  function crumbling(options: { reducedMotion?: boolean } = {}) {
+    const combat = combatScene(options);
+    place(combat.scene, 'monster:1', { x: 10, z: 10 });
+    place(combat.scene, 'monster:2', { x: 12, z: 10 });
+    combat.scene.tick(0.01);
+    return combat;
+  }
+
+  const inScene = (scene: WorldScene, model: THREE.Object3D): boolean => scene.scene.getObjectById(model.id) !== undefined;
+  const height = (model: THREE.Object3D): number => model.getWorldPosition(new THREE.Vector3()).y;
+
+  it('closes a ring of grave light in on its feet, motes rising, as its body sinks out of sight with no fall, and is then gone', () => {
+    const { scene, models } = crumbling();
+    const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
+    scene.crumbleEntity('monster:2');
+    scene.tick(0.01);
+    const [ring] = ringsIn(scene, SUMMON_COLOR);
+    expect([ring!.position.x, ring!.position.z]).toEqual([12, 10]);
+    const first = uniformOf(ring!, 'uRadius');
+    expect(visible(motes(scene)).filter((mote) => (ringUniforms(mote)!['uColor']!.value as THREE.Color).getHex() === SUMMON_COLOR)).toHaveLength(1);
+    const standing = height(models[1]!);
+    run(scene, CRUMBLE_SECONDS / 2);
+    expect(uniformOf(ring!, 'uRadius')).toBeLessThan(first);
+    expect(height(models[1]!)).toBeLessThan(standing);
+    expect(inScene(scene, models[1]!)).toBe(true);
+    run(scene, CRUMBLE_SECONDS / 2);
+    expect(inScene(scene, models[1]!)).toBe(false);
+    expect(ringsIn(scene, SUMMON_COLOR)).toEqual([]);
+    expect((play.mock.contexts as THREE.AnimationAction[]).map((action) => action.getClip().name)).not.toContain('Death_A');
+  });
+
+  it('fades its ring where it stands under reduced motion, with no mote rising, and takes the body at once', () => {
+    const { scene, models } = crumbling({ reducedMotion: true });
+    scene.crumbleEntity('monster:2');
+    expect(inScene(scene, models[1]!)).toBe(false);
+    scene.tick(0.01);
+    const [ring] = ringsIn(scene, SUMMON_COLOR);
+    const first = uniformOf(ring!, 'uRadius');
+    run(scene, 0.3);
+    expect(uniformOf(ring!, 'uRadius')).toBe(first);
+    expect(visible(motes(scene))).toEqual([]);
+  });
+
+  it.each([
+    [
+      'in a stalled tab',
+      (scene: WorldScene, hide: (ms: number) => void) => {
+        hide(2000);
+        scene.crumbleEntity('monster:2');
+      },
+    ],
+    [
+      'as a stall begins',
+      (scene: WorldScene, hide: (ms: number) => void) => {
+        scene.crumbleEntity('monster:2');
+        scene.tick(0.01);
+        hide(2000);
+      },
+    ],
+  ] as const)('takes the body and its light at once %s', (_label, crumble) => {
+    const { scene, models, hide } = crumbling();
+    crumble(scene, hide);
+    scene.tick(0.01);
+    expect(inScene(scene, models[1]!)).toBe(false);
+    expect(ringsIn(scene, SUMMON_COLOR)).toEqual([]);
+    expect(visible(motes(scene))).toEqual([]);
+  });
+});
+
 describe('the pools and the programs', () => {
   /** Every ability and a hit, on the same bodies, once through. */
   function everything(scene: WorldScene): void {
@@ -2222,7 +2580,9 @@ describe('the pools and the programs', () => {
     scene.showAbility('self', 'veil', undefined);
     run(scene, 0.4, 0.05);
     scene.showBlow('monster:1', 'peer', true);
-    run(scene, 0.3, 0.05);
+    scene.showTelegraph({ id: 'telegraph-1', casterId: 'monster:1', kind: 'wail', x: 10, z: 10.8, radius: 4, seconds: 0.5 });
+    scene.showSummoned('monster:1', 'monster:1');
+    run(scene, 0.6, 0.05);
   }
 
   function fight(): WorldScene {
@@ -2250,6 +2610,7 @@ describe('the pools and the programs', () => {
     expect(cracks(scene)).toHaveLength(EFFECT_POOL_SIZES.cracks);
     expect(tethers(scene).length).toBeLessThanOrEqual(EFFECT_POOL_SIZES.tethers);
     expect(domes(scene)).toHaveLength(EFFECT_POOL_SIZES.domes);
+    expect(circles(scene).length).toBeLessThanOrEqual(EFFECT_POOL_SIZES.telegraphs);
 
     for (let round = 0; round < 20; round += 1) everything(scene);
     expect(effects(scene).children).toHaveLength(drawn.length);
@@ -2280,7 +2641,7 @@ describe('the pools and the programs', () => {
     scene.showAbility('monster:2', 'brace', undefined);
     run(scene, 0.5, 0.05);
     expect(variants()).toEqual(firstVariants);
-    expect(firstVariants.size).toBeLessThanOrEqual(15);
+    expect(firstVariants.size).toBeLessThanOrEqual(16);
   });
 
   /** A program compiled on its first draw stalls the frame it draws in, which in a browser can take half a second. */
@@ -2313,6 +2674,28 @@ describe('the pools and the programs', () => {
 
     for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
     expect([...programVariants(loot)].filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(lights()).toBe(before);
+  });
+
+  it("compiles the program an elite's aura draws in the prewarm, and adds no light", async () => {
+    const { scene } = combatScene();
+    let compiled = new Set<string>();
+    const compileAsync = vi.fn((root: THREE.Object3D) => {
+      compiled = new Set([...compiled, ...programVariants(root)]);
+      return Promise.resolve(root);
+    });
+    const lights = (): number => scene.scene.children.filter((child) => (child as THREE.Light).isLight).length;
+    const before = lights();
+    await scene.prewarm({ compileAsync });
+
+    place(scene, 'monster:1', { x: 10, z: 10 }, { rank: 'elite', trait: 'stony' });
+    place(scene, 'monster:2', { x: 12, z: 10 }, { rank: 'elite', trait: 'shielded' });
+    const auras: THREE.Object3D[] = [];
+    scene.scene.traverse((object) => {
+      if (object.name === ELITE_AURA_NAME) auras.push(object);
+    });
+    expect(auras).toHaveLength(2);
+    expect(auras.flatMap((aura) => [...programVariants(aura)]).filter((variant) => !compiled.has(variant))).toEqual([]);
     expect(lights()).toBe(before);
   });
 

@@ -7,6 +7,7 @@ import {
   gaitMetresPerSecond,
   localizedDialogLine,
   monsterKind,
+  outdoorDoorIds,
   sectorPointInSpace,
 } from '@somnio/core';
 import type { Heading, ModelRegistry, Point, Sector } from '@somnio/core';
@@ -133,6 +134,8 @@ type StagedBeat = Exclude<SplashBeat, { kind: 'greeting' }>;
 
 export interface StagedShot extends Omit<SplashShot, 'actors' | 'beats'> {
   sectors: Sector[];
+  /** The ids of each sector's doors that open to the outdoors, by sector name. */
+  outdoorDoorIds: Map<string, string[]>;
   actors: StagedActor[];
   beats: StagedBeat[];
 }
@@ -376,9 +379,9 @@ export const SPLASH_REEL: readonly SplashShot[] = [
 ];
 
 /**
- * Resolves every shot against the sectors: its space's sectors, each actor with its model,
- * radius, speed, and where it stands as the shot opens, and each greeting as the line it says.
- * Throws on a reference the sectors or the shot before do not hold.
+ * Resolves every shot against the sectors: its space's sectors with their doors to the outdoors,
+ * each actor with its model, radius, speed, and where it stands as the shot opens, and each
+ * greeting as the line it says. Throws on a reference the sectors or the shot before do not hold.
  */
 export function stageReel(reel: readonly SplashShot[], sectors: readonly Sector[], registry: ModelRegistry): StagedShot[] {
   const staged: StagedShot[] = [];
@@ -399,7 +402,8 @@ export function stageReel(reel: readonly SplashShot[], sectors: readonly Sector[
         text: () => localizedDialogLine(dialogSteps(npc.dialogScript)[0] ?? '', currentLocale(), beat.listener),
       };
     });
-    staged.push({ ...shot, sectors: spaceSectors, actors, beats });
+    const outdoorDoors = new Map(spaceSectors.map((sector) => [sector.name, outdoorDoorIds(sector, sectors)]));
+    staged.push({ ...shot, sectors: spaceSectors, outdoorDoorIds: outdoorDoors, actors, beats });
   }
   return staged;
 }

@@ -53,6 +53,7 @@ import type {
   StudyMessage,
   TalkMessage,
   TargetMessage,
+  TelegraphMessage,
   UnequipMessage,
   UseAbilityMessage,
   UseDoorMessage,
@@ -121,6 +122,7 @@ export type SomnioMessage =
   | { tag: 'raising'; payload: RaisingMessage }
   | { tag: 'mend'; payload: MendMessage }
   | { tag: 'sensed'; payload: SensedMessage }
+  | { tag: 'telegraph'; payload: TelegraphMessage }
   | { tag: 'adminSay'; payload: AdminSayMessage }
   | { tag: 'sessionToken'; payload: SessionTokenMessage }
   | { tag: 'sessionRevoked'; payload: SessionRevokedMessage }

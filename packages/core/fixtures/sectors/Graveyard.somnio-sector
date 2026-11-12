@@ -1,0 +1,2008 @@
+{
+  "doors": [
+    {
+      "anchor": "main",
+      "id": "to-graveyardcrypt",
+      "placement": "crypt-1",
+      "target": {
+        "door": "exit",
+        "sector": "GraveyardCrypt"
+      }
+    }
+  ],
+  "ground": {
+    "backgroundMaterialId": "forest-floor",
+    "marks": [
+      {
+        "id": "gen-path-to-graveyardcrypt",
+        "materialId": "dirt-path",
+        "opacity": 0.9,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 14.496,
+              "z": 20.48
+            },
+            {
+              "x": 15.296,
+              "z": 20.48
+            },
+            {
+              "x": 16.283,
+              "z": 20.475
+            },
+            {
+              "x": 17.269,
+              "z": 20.47
+            },
+            {
+              "x": 18.256,
+              "z": 20.465
+            },
+            {
+              "x": 19.242,
+              "z": 20.46
+            },
+            {
+              "x": 20.229,
+              "z": 20.455
+            },
+            {
+              "x": 21.215,
+              "z": 20.45
+            },
+            {
+              "x": 22.202,
+              "z": 20.445
+            },
+            {
+              "x": 23.188,
+              "z": 20.44
+            },
+            {
+              "x": 24.175,
+              "z": 20.435
+            },
+            {
+              "x": 25.161,
+              "z": 20.43
+            },
+            {
+              "x": 26.148,
+              "z": 20.425
+            },
+            {
+              "x": 27.134,
+              "z": 20.42
+            },
+            {
+              "x": 28.121,
+              "z": 20.415
+            },
+            {
+              "x": 29.107,
+              "z": 20.41
+            },
+            {
+              "x": 30.094,
+              "z": 20.405
+            },
+            {
+              "x": 31.08,
+              "z": 20.4
+            }
+          ],
+          "radius": 0.8
+        }
+      },
+      {
+        "id": "gen-road-west",
+        "materialId": "dirt-path",
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 40.184,
+              "z": 20.355
+            },
+            {
+              "x": 40.184,
+              "z": 20.4
+            },
+            {
+              "x": 40.04,
+              "z": 20.4
+            },
+            {
+              "x": 39.12,
+              "z": 20.4
+            },
+            {
+              "x": 38.2,
+              "z": 20.4
+            },
+            {
+              "x": 37.28,
+              "z": 20.4
+            },
+            {
+              "x": 36.36,
+              "z": 20.4
+            },
+            {
+              "x": 35.44,
+              "z": 20.4
+            },
+            {
+              "x": 34.52,
+              "z": 20.4
+            },
+            {
+              "x": 33.6,
+              "z": 20.4
+            },
+            {
+              "x": 32.68,
+              "z": 20.4
+            }
+          ],
+          "radius": 1.6
+        }
+      },
+      {
+        "id": "gen-worn-1",
+        "materialId": "dirt-path",
+        "opacity": 0.5,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 34.18,
+              "z": 22.6
+            }
+          ],
+          "radius": 1.1
+        }
+      },
+      {
+        "id": "gen-worn-2",
+        "materialId": "dirt-path",
+        "opacity": 0.5,
+        "shape": {
+          "kind": "stroke",
+          "points": [
+            {
+              "x": 37.48,
+              "z": 18.3
+            }
+          ],
+          "radius": 0.9
+        }
+      }
+    ]
+  },
+  "kind": "outdoor",
+  "monsterSpawns": [
+    {
+      "depth": 5.9,
+      "id": "skeletons",
+      "kind": "skeleton-minion",
+      "maxAlive": 4,
+      "width": 18,
+      "x": 11.6,
+      "z": 23.2
+    },
+    {
+      "depth": 6.8,
+      "id": "skeleton-warriors",
+      "kind": "skeleton-warrior",
+      "maxAlive": 2,
+      "width": 5.2,
+      "x": 24.6,
+      "z": 10.4
+    }
+  ],
+  "origin": {
+    "x": -71.68,
+    "z": 0
+  },
+  "placements": [
+    {
+      "id": "fence-north-1",
+      "modelId": "iron-fence",
+      "x": 10.864,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-1",
+      "modelId": "iron-fence",
+      "x": 10.864,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-1",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 10.032
+    },
+    {
+      "id": "fence-east-1",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 10.032
+    },
+    {
+      "id": "fence-north-2",
+      "modelId": "iron-fence",
+      "x": 12.592,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-2",
+      "modelId": "iron-fence",
+      "x": 12.592,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-2",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 11.76
+    },
+    {
+      "id": "fence-east-2",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 11.76
+    },
+    {
+      "id": "fence-north-3",
+      "modelId": "iron-fence",
+      "x": 14.32,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-3",
+      "modelId": "iron-fence",
+      "x": 14.32,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-3",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 13.488
+    },
+    {
+      "id": "fence-east-3",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 13.488
+    },
+    {
+      "id": "fence-north-4",
+      "modelId": "iron-fence-broken",
+      "x": 16.048,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-4",
+      "modelId": "iron-fence",
+      "x": 16.048,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-4",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 15.216
+    },
+    {
+      "id": "fence-east-4",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 15.216
+    },
+    {
+      "id": "fence-north-5",
+      "modelId": "iron-fence",
+      "x": 17.776,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-5",
+      "modelId": "iron-fence",
+      "x": 17.776,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-5",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 16.944
+    },
+    {
+      "id": "fence-east-5",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 16.944
+    },
+    {
+      "id": "fence-north-6",
+      "modelId": "iron-fence",
+      "x": 19.504,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-6",
+      "modelId": "iron-fence",
+      "x": 19.504,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-6",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 18.672
+    },
+    {
+      "id": "fence-east-6",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 18.672
+    },
+    {
+      "id": "fence-north-7",
+      "modelId": "iron-fence",
+      "x": 21.232,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-7",
+      "modelId": "iron-fence",
+      "x": 21.232,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-7",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 20.4
+    },
+    {
+      "id": "fence-north-8",
+      "modelId": "iron-fence",
+      "x": 22.96,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-8",
+      "modelId": "iron-fence",
+      "x": 22.96,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-8",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 22.128
+    },
+    {
+      "id": "fence-east-8",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 22.128
+    },
+    {
+      "id": "fence-north-9",
+      "modelId": "iron-fence",
+      "x": 24.688,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-9",
+      "modelId": "iron-fence",
+      "x": 24.688,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-9",
+      "modelId": "iron-fence-broken",
+      "x": 10,
+      "yaw": 90,
+      "z": 23.856
+    },
+    {
+      "id": "fence-east-9",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 23.856
+    },
+    {
+      "id": "fence-north-10",
+      "modelId": "iron-fence",
+      "x": 26.416,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-10",
+      "modelId": "iron-fence-broken",
+      "x": 26.416,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-10",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 25.584
+    },
+    {
+      "id": "fence-east-10",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 25.584
+    },
+    {
+      "id": "fence-north-11",
+      "modelId": "iron-fence",
+      "x": 28.144,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-11",
+      "modelId": "iron-fence",
+      "x": 28.144,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-11",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 27.312
+    },
+    {
+      "id": "fence-east-11",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 27.312
+    },
+    {
+      "id": "fence-north-12",
+      "modelId": "iron-fence",
+      "x": 29.872,
+      "z": 9.168
+    },
+    {
+      "id": "fence-south-12",
+      "modelId": "iron-fence",
+      "x": 29.872,
+      "z": 29.904
+    },
+    {
+      "id": "fence-west-12",
+      "modelId": "iron-fence",
+      "x": 10,
+      "yaw": 90,
+      "z": 29.04
+    },
+    {
+      "id": "fence-east-12",
+      "modelId": "iron-fence",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 29.04
+    },
+    {
+      "id": "arch-1",
+      "modelId": "arch",
+      "x": 30.736,
+      "yaw": 90,
+      "z": 20.4
+    },
+    {
+      "id": "fence-pillar-north-1",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-1",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-north-2",
+      "modelId": "iron-fence-pillar",
+      "x": 11.728,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-2",
+      "modelId": "iron-fence-pillar",
+      "x": 11.728,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-1",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 10.896
+    },
+    {
+      "id": "fence-pillar-east-1",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 10.896
+    },
+    {
+      "id": "fence-pillar-north-3",
+      "modelId": "iron-fence-pillar",
+      "x": 13.456,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-3",
+      "modelId": "iron-fence-pillar",
+      "x": 13.456,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-2",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 12.624
+    },
+    {
+      "id": "fence-pillar-east-2",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 12.624
+    },
+    {
+      "id": "fence-pillar-north-4",
+      "modelId": "iron-fence-pillar",
+      "x": 15.184,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-4",
+      "modelId": "iron-fence-pillar",
+      "x": 15.184,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-3",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 14.352
+    },
+    {
+      "id": "fence-pillar-east-3",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 14.352
+    },
+    {
+      "id": "fence-pillar-north-5",
+      "modelId": "iron-fence-pillar",
+      "x": 16.912,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-5",
+      "modelId": "iron-fence-pillar",
+      "x": 16.912,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-4",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 16.08
+    },
+    {
+      "id": "fence-pillar-east-4",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 16.08
+    },
+    {
+      "id": "fence-pillar-north-6",
+      "modelId": "iron-fence-pillar",
+      "x": 18.64,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-6",
+      "modelId": "iron-fence-pillar",
+      "x": 18.64,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-5",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 17.808
+    },
+    {
+      "id": "fence-pillar-east-5",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 17.808
+    },
+    {
+      "id": "fence-pillar-north-7",
+      "modelId": "iron-fence-pillar",
+      "x": 20.368,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-7",
+      "modelId": "iron-fence-pillar",
+      "x": 20.368,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-6",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 19.536
+    },
+    {
+      "id": "fence-pillar-north-8",
+      "modelId": "iron-fence-pillar",
+      "x": 22.096,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-8",
+      "modelId": "iron-fence-pillar",
+      "x": 22.096,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-7",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 21.264
+    },
+    {
+      "id": "fence-pillar-north-9",
+      "modelId": "iron-fence-pillar",
+      "x": 23.824,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-9",
+      "modelId": "iron-fence-pillar",
+      "x": 23.824,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-8",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 22.992
+    },
+    {
+      "id": "fence-pillar-east-8",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 22.992
+    },
+    {
+      "id": "fence-pillar-north-10",
+      "modelId": "iron-fence-pillar",
+      "x": 25.552,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-10",
+      "modelId": "iron-fence-pillar",
+      "x": 25.552,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-9",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 24.72
+    },
+    {
+      "id": "fence-pillar-east-9",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 24.72
+    },
+    {
+      "id": "fence-pillar-north-11",
+      "modelId": "iron-fence-pillar",
+      "x": 27.28,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-11",
+      "modelId": "iron-fence-pillar",
+      "x": 27.28,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-10",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 26.448
+    },
+    {
+      "id": "fence-pillar-east-10",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 26.448
+    },
+    {
+      "id": "fence-pillar-north-12",
+      "modelId": "iron-fence-pillar",
+      "x": 29.008,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-12",
+      "modelId": "iron-fence-pillar",
+      "x": 29.008,
+      "z": 29.904
+    },
+    {
+      "id": "fence-pillar-west-11",
+      "modelId": "iron-fence-pillar",
+      "x": 10,
+      "z": 28.176
+    },
+    {
+      "id": "fence-pillar-east-11",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 28.176
+    },
+    {
+      "id": "fence-pillar-north-13",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 9.168
+    },
+    {
+      "id": "fence-pillar-south-13",
+      "modelId": "iron-fence-pillar",
+      "x": 30.736,
+      "z": 29.904
+    },
+    {
+      "id": "building-chapel-1",
+      "modelId": "building-chapel",
+      "x": 21,
+      "yaw": 270,
+      "z": 14.4
+    },
+    {
+      "id": "crypt-1",
+      "modelId": "crypt",
+      "x": 13.2,
+      "z": 20.48
+    },
+    {
+      "id": "skull-candle-1",
+      "modelId": "skull-candle",
+      "x": 15.15,
+      "z": 19.2
+    },
+    {
+      "id": "skull-candle-2",
+      "modelId": "skull-candle",
+      "x": 15.15,
+      "z": 21.76
+    },
+    {
+      "id": "candle-shrine-1",
+      "modelId": "candle-shrine",
+      "x": 18.1,
+      "z": 17.5
+    },
+    {
+      "id": "grave-skull-1",
+      "modelId": "grave-skull",
+      "x": 12.472,
+      "z": 24.108
+    },
+    {
+      "id": "grave-cross-1",
+      "modelId": "grave-cross",
+      "x": 14.519,
+      "yaw": 6,
+      "z": 24.171
+    },
+    {
+      "id": "grave-cross-2",
+      "modelId": "grave-cross",
+      "x": 16.586,
+      "yaw": 3,
+      "z": 24.276
+    },
+    {
+      "id": "grave-skull-2",
+      "modelId": "grave-skull",
+      "x": 18.632,
+      "yaw": 354,
+      "z": 24.139
+    },
+    {
+      "id": "grave-skull-3",
+      "modelId": "grave-skull",
+      "x": 20.897,
+      "yaw": 357,
+      "z": 24.282
+    },
+    {
+      "id": "gravestone-1",
+      "modelId": "gravestone",
+      "x": 22.976,
+      "yaw": 6,
+      "z": 24.23
+    },
+    {
+      "id": "grave-marker-b-1",
+      "modelId": "grave-marker-b",
+      "x": 25.001,
+      "yaw": 2,
+      "z": 24.252
+    },
+    {
+      "id": "grave-skull-broken-1",
+      "modelId": "grave-skull-broken",
+      "x": 27.107,
+      "yaw": 6,
+      "z": 24.113
+    },
+    {
+      "id": "grave-marker-b-2",
+      "modelId": "grave-marker-b",
+      "x": 12.407,
+      "yaw": 354,
+      "z": 26.535
+    },
+    {
+      "id": "grave-cross-3",
+      "modelId": "grave-cross",
+      "x": 14.356,
+      "yaw": 355,
+      "z": 26.588
+    },
+    {
+      "id": "grave-cross-4",
+      "modelId": "grave-cross",
+      "x": 16.628,
+      "yaw": 354,
+      "z": 26.515
+    },
+    {
+      "id": "grave-marker-a-1",
+      "modelId": "grave-marker-a",
+      "x": 18.733,
+      "yaw": 354,
+      "z": 26.508
+    },
+    {
+      "id": "grave-skull-broken-2",
+      "modelId": "grave-skull-broken",
+      "x": 20.77,
+      "yaw": 357,
+      "z": 26.527
+    },
+    {
+      "id": "grave-skull-4",
+      "modelId": "grave-skull",
+      "x": 23.005,
+      "yaw": 1,
+      "z": 26.524
+    },
+    {
+      "id": "grave-skull-5",
+      "modelId": "grave-skull",
+      "x": 24.952,
+      "yaw": 1,
+      "z": 26.592
+    },
+    {
+      "id": "grave-skull-6",
+      "modelId": "grave-skull",
+      "x": 27.077,
+      "yaw": 359,
+      "z": 26.583
+    },
+    {
+      "id": "grave-skull-7",
+      "modelId": "grave-skull",
+      "x": 12.321,
+      "yaw": 359,
+      "z": 28.606
+    },
+    {
+      "id": "grave-marker-a-2",
+      "modelId": "grave-marker-a",
+      "x": 14.646,
+      "yaw": 6,
+      "z": 28.764
+    },
+    {
+      "id": "grave-cross-5",
+      "modelId": "grave-cross",
+      "x": 16.663,
+      "yaw": 355,
+      "z": 28.781
+    },
+    {
+      "id": "gravestone-2",
+      "modelId": "gravestone",
+      "x": 18.81,
+      "yaw": 4,
+      "z": 28.663
+    },
+    {
+      "id": "grave-skull-8",
+      "modelId": "grave-skull",
+      "x": 20.906,
+      "yaw": 4,
+      "z": 28.63
+    },
+    {
+      "id": "grave-cross-6",
+      "modelId": "grave-cross",
+      "x": 22.763,
+      "yaw": 7,
+      "z": 28.8
+    },
+    {
+      "id": "gravestone-3",
+      "modelId": "gravestone",
+      "x": 25.038,
+      "yaw": 4,
+      "z": 28.719
+    },
+    {
+      "id": "grave-cross-7",
+      "modelId": "grave-cross",
+      "x": 27.23,
+      "yaw": 5,
+      "z": 28.747
+    },
+    {
+      "id": "grave-skull-9",
+      "modelId": "grave-skull",
+      "x": 25.318,
+      "yaw": 1,
+      "z": 11.221
+    },
+    {
+      "id": "grave-skull-broken-3",
+      "modelId": "grave-skull-broken",
+      "x": 27.48,
+      "yaw": 358,
+      "z": 11.251
+    },
+    {
+      "id": "grave-skull-broken-4",
+      "modelId": "grave-skull-broken",
+      "x": 29.296,
+      "z": 11.218
+    },
+    {
+      "id": "grave-skull-broken-5",
+      "modelId": "grave-skull-broken",
+      "x": 25.524,
+      "z": 13.461
+    },
+    {
+      "id": "grave-skull-broken-6",
+      "modelId": "grave-skull-broken",
+      "x": 27.303,
+      "yaw": 3,
+      "z": 13.438
+    },
+    {
+      "id": "grave-cross-8",
+      "modelId": "grave-cross",
+      "x": 29.353,
+      "yaw": 356,
+      "z": 13.418
+    },
+    {
+      "id": "grave-cross-9",
+      "modelId": "grave-cross",
+      "x": 25.419,
+      "yaw": 1,
+      "z": 15.777
+    },
+    {
+      "id": "grave-cross-10",
+      "modelId": "grave-cross",
+      "x": 27.36,
+      "yaw": 359,
+      "z": 15.878
+    },
+    {
+      "id": "grave-cross-11",
+      "modelId": "grave-cross",
+      "x": 29.371,
+      "yaw": 356,
+      "z": 15.782
+    },
+    {
+      "id": "grave-skull-broken-7",
+      "modelId": "grave-skull-broken",
+      "x": 11.821,
+      "yaw": 4,
+      "z": 10.957
+    },
+    {
+      "id": "grave-cross-12",
+      "modelId": "grave-cross",
+      "x": 13.584,
+      "yaw": 1,
+      "z": 10.902
+    },
+    {
+      "id": "grave-skull-10",
+      "modelId": "grave-skull",
+      "x": 15.642,
+      "yaw": 4,
+      "z": 10.904
+    },
+    {
+      "id": "grave-cross-13",
+      "modelId": "grave-cross",
+      "x": 11.938,
+      "yaw": 357,
+      "z": 13.209
+    },
+    {
+      "id": "grave-cross-14",
+      "modelId": "grave-cross",
+      "x": 13.625,
+      "yaw": 357,
+      "z": 13.204
+    },
+    {
+      "id": "grave-skull-broken-8",
+      "modelId": "grave-skull-broken",
+      "x": 15.529,
+      "yaw": 1,
+      "z": 13.171
+    },
+    {
+      "id": "gravestone-4",
+      "modelId": "gravestone",
+      "x": 11.885,
+      "yaw": 6,
+      "z": 15.368
+    },
+    {
+      "id": "grave-cross-15",
+      "modelId": "grave-cross",
+      "x": 13.806,
+      "yaw": 6,
+      "z": 15.313
+    },
+    {
+      "id": "grave-marker-a-3",
+      "modelId": "grave-marker-a",
+      "x": 15.642,
+      "yaw": 3,
+      "z": 15.318
+    },
+    {
+      "id": "coffin-open-1",
+      "modelId": "coffin-open",
+      "x": 11.6,
+      "yaw": 8,
+      "z": 23
+    },
+    {
+      "id": "bones-1",
+      "modelId": "bones",
+      "x": 16.6,
+      "yaw": 30,
+      "z": 23.1
+    },
+    {
+      "id": "skull-1",
+      "modelId": "skull",
+      "x": 20.3,
+      "yaw": 200,
+      "z": 25.4
+    },
+    {
+      "id": "bone-1",
+      "modelId": "bone",
+      "x": 23.9,
+      "yaw": 65,
+      "z": 27.6
+    },
+    {
+      "id": "ribcage-1",
+      "modelId": "ribcage",
+      "x": 27,
+      "yaw": 15,
+      "z": 23.6
+    },
+    {
+      "id": "bones-2",
+      "modelId": "bones",
+      "x": 26.3,
+      "yaw": 300,
+      "z": 17.1
+    },
+    {
+      "id": "bone-2",
+      "modelId": "bone",
+      "x": 28.4,
+      "yaw": 120,
+      "z": 12.4
+    },
+    {
+      "id": "gen-tree-bare-1-a-1",
+      "modelId": "tree-bare-1-a",
+      "x": 32.554,
+      "yaw": 197,
+      "z": 36.636
+    },
+    {
+      "id": "gen-tree-bare-1-b-1",
+      "modelId": "tree-bare-1-b",
+      "x": 29.254,
+      "yaw": 67,
+      "z": 37.775
+    },
+    {
+      "id": "gen-tree-bare-1-b-2",
+      "modelId": "tree-bare-1-b",
+      "x": 29.64,
+      "yaw": 218,
+      "z": 35.757
+    },
+    {
+      "id": "gen-bush-2-d-1",
+      "modelId": "bush-2-d",
+      "x": 32.902,
+      "yaw": 94,
+      "z": 38.063
+    },
+    {
+      "id": "gen-bush-4-a-1",
+      "modelId": "bush-4-a",
+      "x": 28.001,
+      "yaw": 219,
+      "z": 38.171
+    },
+    {
+      "id": "gen-tree-bare-1-b-3",
+      "modelId": "tree-bare-1-b",
+      "x": 7.873,
+      "yaw": 110,
+      "z": 35.441
+    },
+    {
+      "id": "gen-tree-bare-1-b-4",
+      "modelId": "tree-bare-1-b",
+      "x": 10.565,
+      "yaw": 142,
+      "z": 33.719
+    },
+    {
+      "id": "gen-tree-bare-1-b-5",
+      "modelId": "tree-bare-1-b",
+      "x": 6.76,
+      "yaw": 351,
+      "z": 32.224
+    },
+    {
+      "id": "gen-bush-2-d-2",
+      "modelId": "bush-2-d",
+      "x": 8.748,
+      "yaw": 320,
+      "z": 30.844
+    },
+    {
+      "id": "gen-pine-tree-1",
+      "modelId": "pine-tree",
+      "x": 28.966,
+      "yaw": 222,
+      "z": 1.447
+    },
+    {
+      "id": "gen-bush-4-a-2",
+      "modelId": "bush-4-a",
+      "x": 25.863,
+      "yaw": 270,
+      "z": 1.301
+    },
+    {
+      "id": "gen-tree-bare-1-a-2",
+      "modelId": "tree-bare-1-a",
+      "x": 38.497,
+      "yaw": 268,
+      "z": 1.405
+    },
+    {
+      "id": "gen-tree-2-c-1",
+      "modelId": "tree-2-c",
+      "x": 40.551,
+      "yaw": 250,
+      "z": 0.391
+    },
+    {
+      "id": "gen-tree-2-c-2",
+      "modelId": "tree-2-c",
+      "x": 38.276,
+      "yaw": 297,
+      "z": 3.409
+    },
+    {
+      "id": "gen-tree-bare-1-b-6",
+      "modelId": "tree-bare-1-b",
+      "x": 16.359,
+      "yaw": 12,
+      "z": 6.311
+    },
+    {
+      "id": "gen-tree-bare-1-a-3",
+      "modelId": "tree-bare-1-a",
+      "x": 18.589,
+      "yaw": 99,
+      "z": 34.422
+    },
+    {
+      "id": "gen-bush-2-d-3",
+      "modelId": "bush-2-d",
+      "x": 22.452,
+      "yaw": 339,
+      "z": 34.806
+    },
+    {
+      "id": "gen-tree-bare-1-a-4",
+      "modelId": "tree-bare-1-a",
+      "x": 20.076,
+      "yaw": 237,
+      "z": 3.655
+    },
+    {
+      "id": "gen-bush-4-a-3",
+      "modelId": "bush-4-a",
+      "x": 19.808,
+      "yaw": 120,
+      "z": 0.736
+    },
+    {
+      "id": "gen-tree-2-c-3",
+      "modelId": "tree-2-c",
+      "x": 6.083,
+      "yaw": 255,
+      "z": 17.269
+    },
+    {
+      "id": "gen-tree-bare-1-b-7",
+      "modelId": "tree-bare-1-b",
+      "x": 4.448,
+      "yaw": 4,
+      "z": 19.262
+    },
+    {
+      "id": "gen-pine-tree-2",
+      "modelId": "pine-tree",
+      "x": 4.567,
+      "yaw": 77,
+      "z": 15.789
+    },
+    {
+      "id": "gen-bush-4-a-4",
+      "modelId": "bush-4-a",
+      "x": 7.27,
+      "yaw": 105,
+      "z": 15.829
+    },
+    {
+      "id": "gen-bush-4-a-5",
+      "modelId": "bush-4-a",
+      "x": 7.93,
+      "yaw": 340,
+      "z": 17.631
+    },
+    {
+      "id": "gen-tree-bare-1-a-5",
+      "modelId": "tree-bare-1-a",
+      "x": 6.937,
+      "yaw": 139,
+      "z": 1.677
+    },
+    {
+      "id": "gen-tree-bare-1-b-8",
+      "modelId": "tree-bare-1-b",
+      "x": 7.583,
+      "yaw": 292,
+      "z": 2.895
+    },
+    {
+      "id": "gen-bush-4-a-6",
+      "modelId": "bush-4-a",
+      "x": 9.118,
+      "yaw": 309,
+      "z": 2.955
+    },
+    {
+      "id": "gen-tree-bare-1-b-9",
+      "modelId": "tree-bare-1-b",
+      "x": 37.807,
+      "yaw": 178,
+      "z": 33.544
+    },
+    {
+      "id": "gen-tree-bare-1-b-10",
+      "modelId": "tree-bare-1-b",
+      "x": 40.151,
+      "yaw": 173,
+      "z": 36.946
+    },
+    {
+      "id": "gen-tree-2-c-4",
+      "modelId": "tree-2-c",
+      "x": 39.598,
+      "yaw": 162,
+      "z": 35.577
+    },
+    {
+      "id": "gen-bush-2-d-4",
+      "modelId": "bush-2-d",
+      "x": 38.407,
+      "yaw": 197,
+      "z": 37.763
+    },
+    {
+      "id": "gen-tree-bare-1-a-6",
+      "modelId": "tree-bare-1-a",
+      "x": 4.977,
+      "yaw": 202,
+      "z": 12.033
+    },
+    {
+      "id": "gen-tree-bare-1-a-7",
+      "modelId": "tree-bare-1-a",
+      "x": 1.434,
+      "yaw": 170,
+      "z": 10.881
+    },
+    {
+      "id": "gen-bush-2-d-5",
+      "modelId": "bush-2-d",
+      "x": 3.799,
+      "yaw": 102,
+      "z": 10.748
+    },
+    {
+      "id": "gen-pine-tree-3",
+      "modelId": "pine-tree",
+      "x": 33.657,
+      "yaw": 89,
+      "z": 39.547
+    },
+    {
+      "id": "gen-tree-bare-1-a-8",
+      "modelId": "tree-bare-1-a",
+      "x": 35.396,
+      "yaw": 358,
+      "z": 37.983
+    },
+    {
+      "id": "gen-tree-2-c-5",
+      "modelId": "tree-2-c",
+      "x": 35.029,
+      "yaw": 60,
+      "z": 39.632
+    },
+    {
+      "id": "gen-bush-4-a-7",
+      "modelId": "bush-4-a",
+      "x": 31.275,
+      "yaw": 298,
+      "z": 37.071
+    },
+    {
+      "id": "gen-tree-bare-1-a-9",
+      "modelId": "tree-bare-1-a",
+      "x": 9.551,
+      "yaw": 278,
+      "z": 37.121
+    },
+    {
+      "id": "gen-pine-tree-4",
+      "modelId": "pine-tree",
+      "x": 9.098,
+      "yaw": 143,
+      "z": 38.874
+    },
+    {
+      "id": "gen-bush-2-d-6",
+      "modelId": "bush-2-d",
+      "x": 7.449,
+      "yaw": 105,
+      "z": 36.958
+    },
+    {
+      "id": "gen-bush-2-d-7",
+      "modelId": "bush-2-d",
+      "x": 10.959,
+      "yaw": 151,
+      "z": 38.261
+    },
+    {
+      "id": "gen-pine-tree-5",
+      "modelId": "pine-tree",
+      "x": 3.481,
+      "yaw": 258,
+      "z": 37.902
+    },
+    {
+      "id": "gen-tree-bare-1-a-10",
+      "modelId": "tree-bare-1-a",
+      "x": 7.219,
+      "yaw": 87,
+      "z": 38.533
+    },
+    {
+      "id": "gen-bush-2-d-8",
+      "modelId": "bush-2-d",
+      "x": 4.423,
+      "yaw": 276,
+      "z": 39.838
+    },
+    {
+      "id": "gen-tree-bare-1-a-11",
+      "modelId": "tree-bare-1-a",
+      "x": 4.93,
+      "yaw": 186,
+      "z": 7.802
+    },
+    {
+      "id": "gen-tree-bare-1-a-12",
+      "modelId": "tree-bare-1-a",
+      "x": 2.786,
+      "yaw": 3,
+      "z": 6.769
+    },
+    {
+      "id": "gen-tree-bare-1-b-11",
+      "modelId": "tree-bare-1-b",
+      "x": 3.642,
+      "yaw": 286,
+      "z": 9.379
+    },
+    {
+      "id": "gen-bush-2-d-9",
+      "modelId": "bush-2-d",
+      "x": 6.463,
+      "yaw": 200,
+      "z": 6.248
+    },
+    {
+      "id": "gen-bush-2-d-10",
+      "modelId": "bush-2-d",
+      "x": 6.305,
+      "yaw": 266,
+      "z": 8.622
+    },
+    {
+      "id": "gen-tree-2-c-6",
+      "modelId": "tree-2-c",
+      "x": 31.252,
+      "yaw": 282,
+      "z": 38.558
+    },
+    {
+      "id": "gen-tree-2-c-7",
+      "modelId": "tree-2-c",
+      "x": 31.837,
+      "yaw": 271,
+      "z": 40.479
+    },
+    {
+      "id": "gen-tree-2-c-8",
+      "modelId": "tree-2-c",
+      "x": 8.735,
+      "yaw": 339,
+      "z": 0.397
+    },
+    {
+      "id": "gen-tree-2-c-9",
+      "modelId": "tree-2-c",
+      "x": 30.346,
+      "yaw": 285,
+      "z": 4.936
+    },
+    {
+      "id": "gen-tree-bare-1-a-13",
+      "modelId": "tree-bare-1-a",
+      "x": 28.751,
+      "yaw": 357,
+      "z": 3.95
+    },
+    {
+      "id": "gen-bush-2-d-11",
+      "modelId": "bush-2-d",
+      "x": 31.272,
+      "yaw": 167,
+      "z": 7.768
+    },
+    {
+      "id": "gen-tree-bare-1-b-12",
+      "modelId": "tree-bare-1-b",
+      "x": 25.225,
+      "yaw": 14,
+      "z": 3.95
+    },
+    {
+      "id": "gen-bush-4-a-8",
+      "modelId": "bush-4-a",
+      "x": 23.817,
+      "yaw": 274,
+      "z": 5.465
+    },
+    {
+      "id": "gen-tree-2-c-10",
+      "modelId": "tree-2-c",
+      "x": 30.387,
+      "yaw": 69,
+      "z": 2.221
+    },
+    {
+      "id": "gen-tree-2-c-11",
+      "modelId": "tree-2-c",
+      "x": 2.459,
+      "yaw": 294,
+      "z": 22.414
+    },
+    {
+      "id": "gen-tree-bare-1-a-14",
+      "modelId": "tree-bare-1-a",
+      "x": 0.641,
+      "yaw": 272,
+      "z": 23.257
+    },
+    {
+      "id": "gen-tree-2-c-12",
+      "modelId": "tree-2-c",
+      "x": 2.276,
+      "yaw": 257,
+      "z": 24.677
+    },
+    {
+      "id": "gen-tree-bare-1-b-13",
+      "modelId": "tree-bare-1-b",
+      "x": 33.674,
+      "yaw": 331,
+      "z": 1.971
+    },
+    {
+      "id": "gen-bush-2-d-12",
+      "modelId": "bush-2-d",
+      "x": 37.001,
+      "yaw": 346,
+      "z": 2.378
+    },
+    {
+      "id": "gen-tree-2-c-13",
+      "modelId": "tree-2-c",
+      "x": 3.078,
+      "yaw": 328,
+      "z": 14.713
+    },
+    {
+      "id": "gen-tree-bare-1-b-14",
+      "modelId": "tree-bare-1-b",
+      "x": 1.934,
+      "yaw": 342,
+      "z": 18.875
+    },
+    {
+      "id": "gen-tree-bare-1-a-15",
+      "modelId": "tree-bare-1-a",
+      "x": 0.77,
+      "yaw": 254,
+      "z": 16.803
+    },
+    {
+      "id": "gen-tree-2-c-14",
+      "modelId": "tree-2-c",
+      "x": 13.317,
+      "yaw": 103,
+      "z": 34.899
+    },
+    {
+      "id": "gen-tree-bare-1-b-15",
+      "modelId": "tree-bare-1-b",
+      "x": 15.104,
+      "yaw": 214,
+      "z": 33.125
+    },
+    {
+      "id": "gen-bush-4-a-9",
+      "modelId": "bush-4-a",
+      "x": 17.257,
+      "yaw": 234,
+      "z": 33.919
+    },
+    {
+      "id": "gen-bush-4-a-10",
+      "modelId": "bush-4-a",
+      "x": 16.653,
+      "yaw": 1,
+      "z": 35.952
+    },
+    {
+      "id": "gen-tree-bare-1-a-16",
+      "modelId": "tree-bare-1-a",
+      "x": 17.954,
+      "yaw": 115,
+      "z": 35.613
+    },
+    {
+      "id": "gen-tree-bare-1-a-17",
+      "modelId": "tree-bare-1-a",
+      "x": 16.526,
+      "yaw": 240,
+      "z": 37.515
+    },
+    {
+      "id": "gen-bush-2-d-13",
+      "modelId": "bush-2-d",
+      "x": 15.287,
+      "yaw": 277,
+      "z": 38.85
+    },
+    {
+      "id": "gen-pine-tree-6",
+      "modelId": "pine-tree",
+      "x": 34.733,
+      "yaw": 110,
+      "z": 32.908
+    },
+    {
+      "id": "gen-tree-bare-1-a-18",
+      "modelId": "tree-bare-1-a",
+      "x": 36.222,
+      "yaw": 179,
+      "z": 30.661
+    },
+    {
+      "id": "gen-bush-2-d-14",
+      "modelId": "bush-2-d",
+      "x": 34.407,
+      "yaw": 181,
+      "z": 34.678
+    },
+    {
+      "id": "gen-tree-bare-1-a-19",
+      "modelId": "tree-bare-1-a",
+      "x": 33.545,
+      "yaw": 197,
+      "z": 8.532
+    },
+    {
+      "id": "gen-pine-tree-7",
+      "modelId": "pine-tree",
+      "x": 30.026,
+      "yaw": 270,
+      "z": 7.36
+    },
+    {
+      "id": "gen-tree-bare-1-a-20",
+      "modelId": "tree-bare-1-a",
+      "x": 9.663,
+      "yaw": 307,
+      "z": 32.395
+    },
+    {
+      "id": "gen-pine-tree-8",
+      "modelId": "pine-tree",
+      "x": 11.292,
+      "yaw": 192,
+      "z": 35.571
+    },
+    {
+      "id": "gen-tree-2-c-15",
+      "modelId": "tree-2-c",
+      "x": 9.621,
+      "yaw": 278,
+      "z": 35.494
+    },
+    {
+      "id": "gen-bush-4-a-11",
+      "modelId": "bush-4-a",
+      "x": 9.674,
+      "yaw": 46,
+      "z": 30.61
+    },
+    {
+      "id": "gen-bush-4-a-12",
+      "modelId": "bush-4-a",
+      "x": 12.182,
+      "yaw": 265,
+      "z": 31.918
+    },
+    {
+      "id": "gen-tree-bare-1-b-16",
+      "modelId": "tree-bare-1-b",
+      "x": 6.957,
+      "yaw": 51,
+      "z": 18.947
+    },
+    {
+      "id": "gen-pine-tree-9",
+      "modelId": "pine-tree",
+      "x": 5.65,
+      "yaw": 111,
+      "z": 18.588
+    },
+    {
+      "id": "gen-tree-bare-1-a-21",
+      "modelId": "tree-bare-1-a",
+      "x": 35.502,
+      "yaw": 147,
+      "z": 16.077
+    },
+    {
+      "id": "gen-bush-2-d-15",
+      "modelId": "bush-2-d",
+      "x": 35.827,
+      "yaw": 195,
+      "z": 13.5
+    },
+    {
+      "id": "gen-tree-2-c-16",
+      "modelId": "tree-2-c",
+      "x": 20.14,
+      "yaw": 17,
+      "z": 32.127
+    },
+    {
+      "id": "gen-tree-bare-1-b-17",
+      "modelId": "tree-bare-1-b",
+      "x": 39.991,
+      "yaw": 338,
+      "z": 2.469
+    },
+    {
+      "id": "gen-tree-bare-1-a-22",
+      "modelId": "tree-bare-1-a",
+      "x": 40.19,
+      "yaw": 95,
+      "z": 4.434
+    },
+    {
+      "id": "gen-rock-1-a-1",
+      "modelId": "rock-1-a",
+      "x": 22.485,
+      "yaw": 207,
+      "z": 37.772
+    },
+    {
+      "id": "gen-rock-1-a-2",
+      "modelId": "rock-1-a",
+      "x": 6.874,
+      "yaw": 137,
+      "z": 14.629
+    },
+    {
+      "id": "gen-bush-4-a-13",
+      "modelId": "bush-4-a",
+      "x": 0.962,
+      "yaw": 49,
+      "z": 6.594
+    },
+    {
+      "id": "gen-rock-1-d-1",
+      "modelId": "rock-1-d",
+      "x": 7.073,
+      "yaw": 64,
+      "z": 28.246
+    },
+    {
+      "id": "gen-bush-4-a-14",
+      "modelId": "bush-4-a",
+      "x": 38.722,
+      "yaw": 139,
+      "z": 8.936
+    },
+    {
+      "id": "gen-rock-1-d-2",
+      "modelId": "rock-1-d",
+      "x": 4.05,
+      "yaw": 163,
+      "z": 30.686
+    },
+    {
+      "id": "gen-bush-2-d-16",
+      "modelId": "bush-2-d",
+      "x": 0.507,
+      "yaw": 309,
+      "z": 3.971
+    },
+    {
+      "id": "gen-rock-3-a-1",
+      "modelId": "rock-3-a",
+      "x": 39.387,
+      "yaw": 283,
+      "z": 34.131
+    },
+    {
+      "id": "gen-rock-3-a-2",
+      "modelId": "rock-3-a",
+      "x": 0.627,
+      "yaw": 252,
+      "z": 26.701
+    },
+    {
+      "id": "gen-bush-2-d-17",
+      "modelId": "bush-2-d",
+      "x": 1.892,
+      "yaw": 296,
+      "z": 39.39
+    },
+    {
+      "id": "gen-rock-3-a-3",
+      "modelId": "rock-3-a",
+      "x": 5.879,
+      "yaw": 65,
+      "z": 23.739
+    },
+    {
+      "id": "gen-rock-1-a-3",
+      "modelId": "rock-1-a",
+      "x": 5.641,
+      "yaw": 137,
+      "z": 1.002
+    },
+    {
+      "id": "gen-bush-4-a-15",
+      "modelId": "bush-4-a",
+      "x": 23.289,
+      "yaw": 344,
+      "z": 38.64
+    },
+    {
+      "id": "gen-bush-2-d-18",
+      "modelId": "bush-2-d",
+      "x": 3.576,
+      "yaw": 27,
+      "z": 7.924
+    },
+    {
+      "id": "gen-bush-2-d-19",
+      "modelId": "bush-2-d",
+      "x": 12.09,
+      "yaw": 284,
+      "z": 33.222
+    },
+    {
+      "id": "gen-bush-2-d-20",
+      "modelId": "bush-2-d",
+      "x": 32.542,
+      "yaw": 257,
+      "z": 7.152
+    },
+    {
+      "id": "gen-rock-3-a-4",
+      "modelId": "rock-3-a",
+      "x": 28.455,
+      "yaw": 111,
+      "z": 40.227
+    },
+    {
+      "id": "gen-bush-4-a-16",
+      "modelId": "bush-4-a",
+      "x": 25.011,
+      "yaw": 94,
+      "z": 32.978
+    },
+    {
+      "id": "gen-rock-1-a-4",
+      "modelId": "rock-1-a",
+      "x": 35.563,
+      "yaw": 48,
+      "z": 36.403
+    },
+    {
+      "id": "gen-rock-3-a-5",
+      "modelId": "rock-3-a",
+      "x": 15.442,
+      "yaw": 335,
+      "z": 36.276
+    },
+    {
+      "id": "gen-bush-2-d-21",
+      "modelId": "bush-2-d",
+      "x": 34.989,
+      "yaw": 224,
+      "z": 1.19
+    },
+    {
+      "id": "gen-bush-2-d-22",
+      "modelId": "bush-2-d",
+      "x": 0.803,
+      "yaw": 326,
+      "z": 38.552
+    },
+    {
+      "id": "gen-rock-1-a-5",
+      "modelId": "rock-1-a",
+      "x": 20.219,
+      "yaw": 300,
+      "z": 37.456
+    },
+    {
+      "id": "gen-bush-4-a-17",
+      "modelId": "bush-4-a",
+      "x": 2.359,
+      "yaw": 161,
+      "z": 28.843
+    },
+    {
+      "id": "gen-bush-2-d-23",
+      "modelId": "bush-2-d",
+      "x": 38.316,
+      "yaw": 270,
+      "z": 30.382
+    },
+    {
+      "id": "gen-rock-1-a-6",
+      "modelId": "rock-1-a",
+      "x": 20.15,
+      "yaw": 22,
+      "z": 1.94
+    },
+    {
+      "id": "gen-bush-2-d-24",
+      "modelId": "bush-2-d",
+      "x": 5.879,
+      "yaw": 251,
+      "z": 14.274
+    },
+    {
+      "id": "gen-rock-3-a-6",
+      "modelId": "rock-3-a",
+      "x": 23.107,
+      "yaw": 346,
+      "z": 39.531
+    }
+  ],
+  "size": {
+    "depth": 40.96,
+    "width": 40.96
+  }
+}
