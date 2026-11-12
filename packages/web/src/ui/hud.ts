@@ -10,7 +10,7 @@ import { RARITY_COLORS } from '@/scene/lootMarkers';
 import { QUEST_MARKER_GOLD, QUEST_MARKER_GREY } from '@/scene/questMarkers';
 import { cssColor } from '@/scene/overlayArt';
 import type { PortraitSlot } from '@/scene/portraits';
-import { AbilitySlot, BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
+import { AbilitySlot, BalanceMeter, GazeLockButton, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
 import { ChatPane } from './chatPane';
 import { element, iconButton, isHidden, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
@@ -50,6 +50,7 @@ export interface HUDCallbacks {
   onMoveItem: (itemId: string, place: number) => void;
   onDropItem: (itemId: string, at?: { clientX: number; clientY: number }) => void;
   onToggleRun: () => void;
+  onToggleGazeLock: () => void;
   onToggleEngage: () => void;
   onUseAbility: (abilityId: AbilityId) => void;
   /** A press on a dreamer's name in the Players window. */
@@ -92,8 +93,20 @@ export interface HUDClock {
   place: string | undefined;
 }
 
-/** The thumb's corner box, in px, and where a finger's slots lie in it: slot 1, then 2 to 6 on an arc round it, and Run at the arc's end. */
-const THUMB = { width: 300, height: 230, act: { x: 262, y: 192 }, run: { x: 58, y: 204 }, radius: 145, firstDegrees: 92, stepDegrees: 22.5 } as const;
+/**
+ * The thumb's corner box, in px, and where a finger's slots lie in it: slot 1, then 2 to 6 on an arc
+ * round it, Run at the arc's end, and the gaze lock beyond Run, a little higher.
+ */
+const THUMB = {
+  width: 388,
+  height: 230,
+  act: { x: 350, y: 192 },
+  run: { x: 146, y: 204 },
+  lock: { x: 58, y: 178 },
+  radius: 145,
+  firstDegrees: 92,
+  stepDegrees: 22.5,
+} as const;
 
 /** The keys of the slots for abilities, after slot 1's. */
 const ABILITY_KEYS = [2, 3, 4, 5, 6] as const;
@@ -103,13 +116,12 @@ const THUMB_ARC_TOP = Math.min(...ABILITY_KEYS.map((_, index) => arcPoint(index)
 
 /**
  * What a mouse's HUD needs of the window, in px, mirroring `hud.css`. Across: the edge and an 8 px
- * gap on each side, unscaled, plus the scaled widths of two own frames round a target frame squeezed
- * to its portrait and a short name, since the target frame centres between them. The 638 px belt fits
- * whenever that does. Down: the top edge, the 10 px under the windows, and a 120 px window,
- * unscaled, plus the scaled band above the windows (92 px) and the belt with the menu above it
- * (170 px).
+ * gap on each side, unscaled, plus the scaled width of the 700 px belt, which is wider than the top
+ * row's two own frames round a target frame squeezed to its portrait and a short name (650 px).
+ * Down: the top edge, the 10 px under the windows, and a 120 px window, unscaled, plus the scaled
+ * band above the windows (92 px) and the belt with the menu above it (170 px).
  */
-const FIT = { across: { fixed: 2 * (12 + 8), scaled: 2 * 250 + 150 }, down: { fixed: 12 + 10 + 120, scaled: 92 + 170 } } as const;
+const FIT = { across: { fixed: 2 * (12 + 8), scaled: 700 }, down: { fixed: 12 + 10 + 120, scaled: 92 + 170 } } as const;
 
 /**
  * The narrowest window, in px, in which a mouse's windows stand beside a carrier's panel, mirroring
@@ -193,6 +205,7 @@ export class GameHUD {
   private readonly emptySlots: HTMLElement[];
   private readonly abilitySlots: (AbilitySlot | undefined)[] = ABILITY_KEYS.map(() => undefined);
   private readonly run: HTMLButtonElement;
+  private readonly gazeLock: GazeLockButton;
   private readonly study: HTMLElement;
   private readonly chat: ChatPane;
   private readonly windows: Record<HUDWindowId, HUDWindow>;
@@ -248,6 +261,7 @@ export class GameHUD {
     this.emptySlots = ABILITY_KEYS.map((key) => emptySlot(key, this.coarse));
     this.abilityPlaces = [...this.emptySlots];
     this.run = runButton(() => callbacks.onToggleRun(), this.coarse);
+    this.gazeLock = new GazeLockButton(() => callbacks.onToggleGazeLock(), this.coarse);
     this.study = element('p', { className: 'hud-study' });
 
     this.chat = new ChatPane(
@@ -316,6 +330,7 @@ export class GameHUD {
           placeOnThumb(this.slotOne.root, THUMB.act),
           ...this.emptySlots.map((slot, index) => placeOnArc(slot, index)),
           placeOnThumb(this.run, THUMB.run),
+          placeOnThumb(this.gazeLock.root, THUMB.lock),
         ],
       });
       layout = [strip, this.sheet, this.tracker.root, this.balance.root, thumb, this.chat.root];
@@ -329,6 +344,7 @@ export class GameHUD {
         this.balance.root,
         this.slotOne.root,
         this.run,
+        this.gazeLock.root,
       ];
       this.trackHover(strip, thumb, this.sheet, this.tracker.root, this.balance.root);
     } else {
@@ -337,7 +353,7 @@ export class GameHUD {
       this.globes = { health: new PoolGlobe('health', t('Health')), spirit: new PoolGlobe('spirit', t('Spirit')) };
       const slots = element('div', {
         className: 'hud-slots',
-        children: [this.slotOne.root, ...this.emptySlots, this.run],
+        children: [this.slotOne.root, ...this.emptySlots, this.gazeLock.root, this.run],
       });
       const panel = element('div', { className: 'fantasy-panel hud-belt__panel', children: [this.balance.root, slots, this.study] });
       const menuButton = (id: HUDWindowId, label: string, art: HUDGlyph): HTMLButtonElement => {
@@ -522,6 +538,11 @@ export class GameHUD {
     else this.run.removeAttribute('aria-description');
   }
 
+  /** The gaze lock lit while the gaze is locked on the target, and greyed out with no target to lock on. */
+  renderGazeLock(locked: boolean, lockable: boolean): void {
+    this.gazeLock.render(locked, lockable);
+  }
+
   renderSlotOne(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean, refusal: AttackRefusal | undefined): void {
     this.slotOne.render(engaged, action, targetFallen, refusal);
   }
@@ -678,14 +699,11 @@ export class GameHUD {
   }
 
   /**
-   * Escape closes what the HUD has open, one thing at a time: the chat, the menu sheet, an item
-   * carried, an item's card, then the newest window. Reports whether it closed anything.
+   * Escape closes what the HUD has open, one thing at a time: the menu sheet, an item carried, an
+   * item's card, then the newest window. Reports whether it closed anything. The chat is the shell's
+   * to close first, since it comes before a walk under way.
    */
   escape(): boolean {
-    if (this.chat.isOpen) {
-      this.chat.closeChat();
-      return true;
-    }
     if (this.sheet !== undefined && !isHidden(this.sheet)) {
       this.setSheetOpen(false);
       return true;

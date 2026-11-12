@@ -204,7 +204,7 @@ interface BubbleEntry {
   wall: ScreenPoint | undefined;
 }
 
-/** The ring a press on the ground drops where it holds. It stays at the destination of the walk the press lets go of, and lifts away when that walk ends. */
+/** The ring a press drops where it holds the ground, or on the body, fixture, or drop it walks the player to. It stays on the walk's destination, following a body as it moves, and lifts away when that walk ends. */
 interface PressMarker {
   mesh: THREE.Mesh;
   /** Where it lies once down: a point of the space, at the height a body there stands at. */

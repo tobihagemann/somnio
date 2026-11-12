@@ -199,7 +199,7 @@ export interface FoundPath {
  */
 export function findPath(grid: PathGrid, from: Point, to: Point, bodies: readonly Body[], excludedEdges: Set<string>): FoundPath {
   const near = bodies.filter((body) => distance(body, from) <= PATHFINDING.bodyRange);
-  const goal = outsideBodies(to, near);
+  const goal = outsideBodies(to, near, from);
   const window = searchWindow(grid.rasters, from, goal);
   const clear = tiledClearance(grid.collision);
   const leg = (a: Point, b: Point): boolean => walkable((point) => clear(point, RADIUS), a, b, near);
@@ -224,27 +224,34 @@ const GOAL_APPROACH = 1;
 /** How far past the edge of a body's margin a goal inside it is moved, so rounding leaves it outside. */
 const GOAL_CLEARANCE = 1e-9;
 
+/** How far apart two points' distances from the goal may lie and still count as as near, so the one nearer the walker wins. */
+const GOAL_TIE = 1e-9;
+
 /**
  * The nearest point to the goal outside the margin round every body. A goal inside margins is moved
  * to just past the edge of one, straight out from its body, or to just past where the edges of two
- * meet, since the nearest point outside them all lies on one of those. Where none of them lies
- * outside every margin, as for a goal at the very centre of a lone body, the goal stays as it is,
- * and the path ends at the cell nearest it.
+ * meet, since the nearest point outside them all lies on one of those. Of points as near the goal,
+ * the one nearest the walker at `from` wins. A goal at a body's very centre, as a walk toward that
+ * body heads, lies as near every point of its edge. So it is moved straight out toward the walker
+ * wherever that point lies outside every margin, whatever bodies stand beside it. Where no such
+ * point lies outside every margin, the goal stays as it is, and the path ends at the cell nearest it.
  */
-function outsideBodies(to: Point, bodies: readonly Body[]): Point {
+function outsideBodies(to: Point, bodies: readonly Body[], from: Point): Point {
   if (outsideMargins(to, bodies)) return to;
   const edge = (body: Body): number => BODY_RADIUS + body.radius + GOAL_CLEARANCE;
   let goal = to;
   let nearest = Number.POSITIVE_INFINITY;
   for (const [index, body] of bodies.entries()) {
-    const away = distance(to, body);
-    const straightOut = away === 0 ? [] : [{ x: body.x + ((to.x - body.x) * edge(body)) / away, z: body.z + ((to.z - body.z) * edge(body)) / away }];
+    const out = distance(to, body) === 0 ? from : to;
+    const away = distance(out, body);
+    const straightOut = away === 0 ? [] : [{ x: body.x + ((out.x - body.x) * edge(body)) / away, z: body.z + ((out.z - body.z) * edge(body)) / away }];
     const crossings = bodies.slice(index + 1).flatMap((other) => edgeCrossings(body, edge(body), other, edge(other)));
     for (const candidate of [...straightOut, ...crossings]) {
       const moved = distance(to, candidate);
-      if (moved >= nearest || !outsideMargins(candidate, bodies)) continue;
+      if (moved > nearest + GOAL_TIE || !outsideMargins(candidate, bodies)) continue;
+      if (moved >= nearest - GOAL_TIE && distance(candidate, from) >= distance(goal, from)) continue;
       goal = candidate;
-      nearest = moved;
+      nearest = Math.min(nearest, moved);
     }
   }
   return goal;

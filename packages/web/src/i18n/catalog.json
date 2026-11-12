@@ -715,6 +715,10 @@
     "en": "Loading the world...",
     "de": "Welt wird geladen..."
   },
+  "Lock facing": {
+    "en": "Lock facing",
+    "de": "Blick fixieren"
+  },
   "Log In": {
     "en": "Log In",
     "de": "Anmelden"

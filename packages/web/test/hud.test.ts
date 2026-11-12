@@ -4,7 +4,6 @@ import { CHAT_IDLE_MS } from '@/ui/chatPane';
 import { TAB_SPRING_MS } from '@/ui/characterWindow';
 import { HUD_ICONS, PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
-import { TIP_HOLD_MS } from '@/ui/hudTooltip';
 import { QUEST_BANNER_MS, QUEST_LINE_MS } from '@/ui/questFeedback';
 import { NAMED_PLACES, placeName } from '@/ui/placeNames';
 import { SensedMarkers } from '@/ui/sensedMarkers';
@@ -12,7 +11,7 @@ import { catalogTables, setLocale } from '@/i18n';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, LucidityMessage } from '@somnio/protocol';
-import { TAP_SLOP_PX } from '@/client';
+import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
 import type { AbilitySlotState, ChatLine, QuestNews, QuestTurnedIn } from '@/client';
 import { bountyIdOf, heldQuest, objectiveLines } from '@somnio/core';
 import type { AbilityId, ActiveQuest, ItemInstance, QuestLog } from '@somnio/core';
@@ -43,6 +42,7 @@ function recording() {
     onMoveItem: record('onMoveItem'),
     onDropItem: record('onDropItem'),
     onToggleRun: record('onToggleRun'),
+    onToggleGazeLock: record('onToggleGazeLock'),
     onToggleEngage: record('onToggleEngage'),
     onUseAbility: record('onUseAbility'),
     onPressPlayer: record('onPressPlayer'),
@@ -157,7 +157,7 @@ const moved = (held: ActiveQuest): QuestNews => ({ kind: 'progress', held, line:
 const ready = (abilityId: AbilityId, rank = 1): AbilitySlotState => ({ abilityId, rank, refusal: undefined, cooldown: undefined });
 
 describe("a mouse's HUD", () => {
-  it('lays out the frames, the clock, the belt with its six slots and Run, the menu, and the chat', () => {
+  it('lays out the frames, the clock, the belt with its six slots, the gaze lock, and Run, the menu, and the chat', () => {
     const { hud, $ } = makeHUD();
 
     expect($('.hud-unit--self').tagName).toBe('BUTTON');
@@ -166,7 +166,7 @@ describe("a mouse's HUD", () => {
     expect([...hud.root.querySelectorAll('.hud-globe')].map((globe) => globe.getAttribute('aria-label'))).toEqual(['Health', 'Spirit']);
     expect($('.hud-balance__arc')).toBeDefined();
     const keys = [...$('.hud-slots').children].map((slot) => slot.querySelector('.hud-slot__key')?.textContent);
-    expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '⇧']);
+    expect(keys).toEqual(['1', '2', '3', '4', '5', '6', 'F', '⇧']);
     // Slots 2 to 6 wait for abilities: nothing to press, and no ability drawn in them.
     for (const slot of hud.root.querySelectorAll('.hud-slot--empty')) {
       expect(slot.tagName).toBe('SPAN');
@@ -243,6 +243,30 @@ describe("a mouse's HUD", () => {
     expect(named('onToggleRun')).toHaveLength(1);
     expect(button('Run').getAttribute('aria-pressed')).toBe('true');
   });
+
+  it.each([false, true])(
+    'draws the gaze lock beside Run, greyed out with nothing to lock on, as the reticle while locked, and reports a press (coarse %s)',
+    (coarse) => {
+      const { hud, $, named } = makeHUD(coarse);
+      const lock = $<HTMLButtonElement>(coarse ? '.hud-orb--lock' : '.hud-slot--lock');
+      const shown = () => [
+        lock.disabled,
+        lock.getAttribute('aria-pressed'),
+        lock.querySelector<HTMLElement>('.hud-glyph')!.style.getPropertyValue('--hud-glyph'),
+      ];
+      expect(lock.getAttribute('aria-label')).toBe('Lock facing');
+      if (!coarse) expect(lock.nextElementSibling).toBe($('.hud-slot--run'));
+      hud.renderGazeLock(false, false);
+      expect(shown()).toEqual([true, 'false', HUD_ICONS.gazeFree.image]);
+      hud.renderGazeLock(false, true);
+      expect(shown()).toEqual([false, 'false', HUD_ICONS.gazeFree.image]);
+      lock.click();
+      expect(named('onToggleGazeLock')).toHaveLength(1);
+      hud.renderGazeLock(true, true);
+      expect(shown()).toEqual([false, 'true', HUD_ICONS.gazeLocked.image]);
+      expect($(coarse ? '.hud-orb--lock' : '.hud-slot--lock')).toBe(lock);
+    },
+  );
 
   it('shows Run held off while an effect keeps the player from running, still lit and still pressable', () => {
     const { hud, button, named } = makeHUD();
@@ -988,14 +1012,11 @@ describe("a mouse's HUD", () => {
     expect(beside()).toBe(undefined);
   });
 
-  it('closes the open chat first on Escape, then the newest window, then reports nothing left to close', () => {
+  it('closes the newest window on Escape, then the next, then reports nothing left to close', () => {
     const { hud, button } = makeHUD();
     button('Players').click();
     button('Character').click();
-    hud.openChat();
 
-    expect(hud.escape()).toBe(true);
-    expect([hud.chatOpen, hud.isWindowOpen('players'), hud.isWindowOpen('character')]).toEqual([false, true, true]);
     expect(hud.escape()).toBe(true);
     expect([hud.isWindowOpen('players'), hud.isWindowOpen('character')]).toEqual([true, false]);
     expect(hud.escape()).toBe(true);
@@ -1096,9 +1117,15 @@ describe("a mouse's HUD", () => {
       hud.setViewport(width, height);
       return hud.root.style.getPropertyValue('--hud-scale');
     };
-    expect([scaleAt(1440, 900), scaleAt(1280, 720), scaleAt(900, 600), scaleAt(690, 404)]).toEqual(['1', '1', '1', '1']);
-    // The top row decides across, and room for a window under it decides down.
-    expect([scaleAt(640, 600), scaleAt(560, 600), scaleAt(560, 360), scaleAt(480, 330), scaleAt(1280, 380)]).toEqual(['0.923', '0.8', '0.8', '0.676', '0.908']);
+    expect([scaleAt(1440, 900), scaleAt(1280, 720), scaleAt(900, 600), scaleAt(740, 404)]).toEqual(['1', '1', '1', '1']);
+    // The belt decides across, and room for a window under it decides down.
+    expect([scaleAt(640, 600), scaleAt(560, 600), scaleAt(560, 360), scaleAt(480, 330), scaleAt(1280, 380)]).toEqual([
+      '0.857',
+      '0.742',
+      '0.742',
+      '0.628',
+      '0.908',
+    ]);
   });
 
   it('names the globes Gestalt and Geist in German', () => {
@@ -1283,7 +1310,7 @@ describe('the Character window', () => {
       hud.openWindow('character');
       hud.root.querySelector<HTMLButtonElement>('[data-tab="items"]')!.click();
       point(itemIn(bagPlace(hud.root, 0)), 'pointerdown', { pointerType: 'touch' });
-      vi.advanceTimersByTime(TIP_HOLD_MS);
+      vi.advanceTimersByTime(FINGER_HOLD_MS);
       expect(tipSays(hud.root)).toEqual(['Wand', 'Plain', 'Off hand', 'In the off hand, it lets a Mystic use their abilities.']);
     } finally {
       vi.useRealTimers();
@@ -1772,17 +1799,25 @@ describe("a finger's HUD", () => {
     expect(hud.root.style.getPropertyValue('--hud-scale')).toBe('');
   });
 
-  it('puts slot 1 under the right thumb, slots 2 to 6 on an arc round it, and Run at its end', () => {
+  it('puts slot 1 under the right thumb, slots 2 to 6 on an arc round it, Run at its end, and the gaze lock beyond Run', () => {
     const { hud, $ } = makeHUD(true);
     const thumb = $('.hud-thumb');
     const orbs = [...thumb.children] as HTMLElement[];
-    expect(orbs.map((orb) => orb.className)).toEqual(['hud-orb hud-orb--act', ...Array(5).fill('hud-orb hud-orb--empty'), 'hud-orb hud-orb--run']);
+    expect(orbs.map((orb) => orb.className)).toEqual([
+      'hud-orb hud-orb--act',
+      ...Array(5).fill('hud-orb hud-orb--empty'),
+      'hud-orb hud-orb--run',
+      'hud-orb hud-orb--lock',
+    ]);
     expect(orbs.slice(1, 6).map((orb) => orb.textContent)).toEqual(['2', '3', '4', '5', '6']);
     // Each orb on the arc lies the arc's radius from slot 1.
     const at = (orb: HTMLElement) => ({ x: Number.parseFloat(orb.style.left), y: Number.parseFloat(orb.style.top) });
     const act = at(orbs[0]!);
     for (const orb of orbs.slice(1, 6)) expect(Math.hypot(at(orb).x - act.x, at(orb).y - act.y)).toBeCloseTo(145, 3);
     expect($('.hud-orb--run').textContent).toBe('Run');
+    // The lock stands beyond Run from slot 1, and among what covers the play field.
+    expect(at(orbs[7]!).x).toBeLessThan(at(orbs[6]!).x);
+    expect(hud.occluders).toContain(orbs[7]);
     hud.renderSlotOne(false, 'mend', false, undefined);
     expect(orbs[0]!.getAttribute('aria-label')).toBe('Mend');
     expect(hud.root.querySelector('.hud-menu')).toBeNull();
@@ -2012,16 +2047,30 @@ describe("the HUD's tip", () => {
       };
 
       point(orb, 'pointerdown', { pointerType: 'touch' });
-      vi.advanceTimersByTime(TIP_HOLD_MS);
+      vi.advanceTimersByTime(FINGER_HOLD_MS);
       expect(tipSays(hud.root)?.[0]).toBe('Cleave');
       point(orb, 'pointerup', { pointerType: 'touch' });
       orb.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
       expect(tipSays(hud.root)).toBeUndefined();
       expect(named('onUseAbility')).toEqual([]);
 
-      tap(TIP_HOLD_MS - 50);
+      tap(FINGER_HOLD_MS - 50);
       expect(tipSays(hud.root)).toBeUndefined();
       expect(named('onUseAbility')).toEqual([['cleave']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("names the gaze lock's round button on a finger's hold, with no key beside it", () => {
+    vi.useFakeTimers();
+    try {
+      const { hud } = makeHUD(true);
+      hud.renderGazeLock(false, true);
+      const orb = hud.root.querySelector<HTMLButtonElement>('.hud-orb--lock')!;
+      point(orb, 'pointerdown', { pointerType: 'touch' });
+      vi.advanceTimersByTime(FINGER_HOLD_MS);
+      expect(tipSays(hud.root)).toEqual(['Lock facing']);
     } finally {
       vi.useRealTimers();
     }
@@ -2036,7 +2085,7 @@ describe("the HUD's tip", () => {
       const press = (slide: number): void => {
         point(orb, 'pointerdown', { pointerType: 'touch', clientX: 100, clientY: 100 });
         point(orb, 'pointermove', { pointerType: 'touch', clientX: 100 + slide, clientY: 100 });
-        vi.advanceTimersByTime(TIP_HOLD_MS);
+        vi.advanceTimersByTime(FINGER_HOLD_MS);
       };
       const release = (): void => {
         point(orb, 'pointerup', { pointerType: 'touch' });

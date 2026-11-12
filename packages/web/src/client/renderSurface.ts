@@ -107,7 +107,7 @@ export interface WorldRenderSurface {
   removeLoot(lootId: string): void;
   /** Marks the target as `mark` says; `undefined` marks none. */
   showSelection(entityId: string | undefined, mark: TargetMark): void;
-  /** A ring where a press holds the ground, or where the walk it let go of heads: it drops onto `point` the first time, and follows it after. */
+  /** A ring where a press holds the ground, or on what the walk a press made heads for, a body it follows included: it drops onto `point` the first time, and follows it after. */
   showPressMarker(point: Point): void;
   /** The ring rises away from where it lies, once it has landed. */
   liftPressMarker(): void;

@@ -939,8 +939,19 @@
   color: rgb(255 217 138 / 0.45);
 }
 
-.hud-slot--run {
+/* Lit in gold while the gaze is locked. */
+.hud-slot--lock,
+.hud-orb--lock {
+  --hud-lit-plate: rgb(64 52 28 / 0.94);
+  --hud-lit-line: rgb(255 207 64);
+}
+
+.hud-slot--lock {
   margin-left: 8px;
+}
+
+.hud-slot--run {
+  margin-left: 6px;
 }
 
 /* An ability waiting on a cooldown is not greyed out: the sweep says it waits. */
@@ -2140,6 +2151,16 @@
   height: 52px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.hud-orb--lock {
+  width: 52px;
+  height: 52px;
+}
+
+.hud-orb--lock .fantasy-icon {
+  width: 24px;
+  height: 24px;
 }
 
 .hud-orb[aria-pressed='true'] {

@@ -252,16 +252,18 @@ function cellCentre(column: number, row: number): Point {
 
 /**
  * The nearest point to the goal outside the margin round every body, as a search moves it there:
- * of the points on each margin's edge nearest the goal and the points where two edges cross, the
- * nearest outside them all, or the goal itself where it lies outside them or none does.
+ * of the points on each margin's edge nearest the goal, or nearest the walker at `from` for a body
+ * the goal is the centre of, and the points where two edges cross, the nearest outside them all, or
+ * the goal itself where it lies outside them or none does.
  */
-function expectedGoal(to: Point, bodies: readonly Body[]): Point {
+function expectedGoal(to: Point, bodies: readonly Body[], from: Point): Point {
   const edge = (body: Body): number => RADIUS + PATHFINDING.bodyMargin + body.radius;
   const outside = (point: Point): boolean => bodies.every((body) => distance(point, body) >= edge(body));
   if (outside(to)) return to;
   const onEdge = (body: Body, angle: number): Point => ({ x: body.x + Math.cos(angle) * edge(body), z: body.z + Math.sin(angle) * edge(body) });
   const candidates = bodies.flatMap((body, index) => {
-    const bearing = Math.atan2(to.z - body.z, to.x - body.x);
+    const out = distance(to, body) > 0 ? to : from;
+    const bearing = Math.atan2(out.z - body.z, out.x - body.x);
     const crossings = bodies.slice(index + 1).flatMap((other) => {
       const apart = distance(body, other);
       if (apart >= edge(body) + edge(other) || apart <= Math.abs(edge(body) - edge(other))) return [];
@@ -270,15 +272,15 @@ function expectedGoal(to: Point, bodies: readonly Body[]): Point {
       const toOther = Math.atan2(other.z - body.z, other.x - body.x);
       return [onEdge(body, toOther - spread), onEdge(body, toOther + spread)];
     });
-    return [...(distance(to, body) > 0 ? [onEdge(body, bearing)] : []), ...crossings];
+    return [...(distance(out, body) > 0 ? [onEdge(body, bearing)] : []), ...crossings];
   });
   const outsideAll = candidates.filter((candidate) => bodies.every((body) => distance(candidate, body) >= edge(body) - 1e-9));
-  return (
-    outsideAll.reduce<Point | undefined>(
-      (best, candidate) => (best === undefined || distance(candidate, to) < distance(best, to) ? candidate : best),
-      undefined,
-    ) ?? to
-  );
+  // Of points as near the goal, the one nearest the walker.
+  const better = (candidate: Point, best: Point): boolean => {
+    const nearer = distance(best, to) - distance(candidate, to);
+    return nearer > 1e-9 || (nearer > -1e-9 && distance(candidate, from) < distance(best, from));
+  };
+  return outsideAll.reduce<Point | undefined>((best, candidate) => (best === undefined || better(candidate, best) ? candidate : best), undefined) ?? to;
 }
 
 function expectNear(actual: Point, expected: Point): void {
@@ -316,7 +318,7 @@ describe('the search against a flood fill over the same edge rule', () => {
         expect(path.capped).toBe(false);
         expect(path.retries).toBe(0);
 
-        const goal = expectedGoal(to, space.npcs);
+        const goal = expectedGoal(to, space.npcs, from);
         const reachable = flood.reachable(from, goal);
         const column = Math.floor(goal.x / CELL);
         const row = Math.floor(goal.z / CELL);
@@ -470,7 +472,7 @@ describe('the edge rule', () => {
 
     expect(path.reached).toBe(true);
     const end = walk(space, from, path, bodies);
-    expectNear(end, expectedGoal(tap, bodies));
+    expectNear(end, expectedGoal(tap, bodies, from));
     for (const body of bodies) expect(distance(end, body)).toBeGreaterThanOrEqual(RADIUS + PATHFINDING.bodyMargin + body.radius);
     expect(reaches(end, fallen)).toBe(true);
   });
@@ -485,7 +487,46 @@ describe('the edge rule', () => {
     const path = search(space, from, tap, bodies);
 
     expect(path.reached).toBe(true);
-    expectNear(walk(space, from, path, bodies), expectedGoal(tap, bodies));
+    expectNear(walk(space, from, path, bodies), expectedGoal(tap, bodies, from));
+  });
+
+  /** A walk toward a body heads for its centre, which lies as near every point of its edge. The body aside must not draw the goal to its own edge. */
+  it('ends a walk toward the centre of a body straight out from it toward the walker, within touch', () => {
+    const space = field();
+    const target = { x: 14, z: 10, radius: RADIUS };
+    const aside = { x: 10, z: 14, radius: RADIUS };
+    const bodies = [target, aside];
+    const from = { x: 8, z: 10 };
+
+    const path = search(space, from, target, bodies);
+
+    expect(path.reached).toBe(true);
+    const end = walk(space, from, path, bodies);
+    expectNear(end, expectedGoal(target, bodies, from));
+    expectNear(end, { x: 14 - (RADIUS + PATHFINDING.bodyMargin + RADIUS), z: 10 });
+    expect(reaches(end, target)).toBe(true);
+  });
+
+  /**
+   * Every point of the target's edge lies as near its centre, where the edges of the two bodies meet too,
+   * so only a preference for the walker's side keeps the goal off the target's flank.
+   */
+  it.each([
+    ['listed first', true],
+    ['listed second', false],
+  ])('ends a walk toward the centre of a body straight out toward the walker though a body close beside it is %s', (_order, targetFirst) => {
+    const space = field();
+    const target = { x: 14, z: 10, radius: RADIUS };
+    const beside = { x: 14.6, z: 10.6, radius: RADIUS };
+    const bodies = targetFirst ? [target, beside] : [beside, target];
+    const from = { x: 8, z: 10 };
+
+    const path = search(space, from, target, bodies);
+
+    expect(path.reached).toBe(true);
+    const end = walk(space, from, path, bodies);
+    expectNear(end, expectedGoal(target, bodies, from));
+    expectNear(end, { x: 14 - (RADIUS + PATHFINDING.bodyMargin + RADIUS), z: 10 });
   });
 
   it('plans round a body standing on the line and still arrives', () => {

@@ -364,13 +364,21 @@ export class GameplayPredictor {
   }
 
   /**
+   * Whether a walk's end may act now. It may not while a door's answer is pending, since the player
+   * is on their way out of the space and reports nothing until it comes.
+   */
+  get arrivalsAct(): boolean {
+    return !this.awaitingDoor;
+  }
+
+  /**
    * Acts on the walk's arrival once the player stands in range, while the walk goes on or has just
    * ended of itself. A door asked for ends it without acting, and so does anything that ended it
    * between ticks or replaced it.
    */
   private arriveIfInRange(walk: Extract<Walk, { kind: 'path' }>, position: Point): void {
     const arrive = walk.arrive;
-    if (arrive === undefined || this.awaitingDoor || (this.walking !== walk && this.walking !== undefined)) return;
+    if (arrive === undefined || !this.arrivalsAct || (this.walking !== walk && this.walking !== undefined)) return;
     if (distance(position, walk.destination) > arrive.within) return;
     walk.arrive = undefined;
     if (this.walking === walk) this.walking = undefined;

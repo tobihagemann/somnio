@@ -222,6 +222,44 @@ export class SlotOneButton {
   }
 }
 
+/** The key that locks the gaze on the target and lets go of it. */
+export const GAZE_LOCK_KEY = 'f';
+
+/**
+ * The gaze lock's toggle, drawn as the target's ring and lit as its reticle while the gaze is locked,
+ * and greyed out while there is nothing to lock on, the player's own body included. It stays one
+ * element, its glyph swapped in place.
+ */
+export class GazeLockButton {
+  readonly root: HTMLButtonElement;
+  private readonly glyph: HTMLElement;
+  private shown: string | undefined;
+
+  /** `orb` is a finger's round button; otherwise a square slot with its key. */
+  constructor(onPress: () => void, orb: boolean) {
+    this.glyph = glyph(HUD_ICONS.gazeFree);
+    this.root = element('button', {
+      className: orb ? 'hud-orb hud-orb--lock' : 'fantasy-button hud-slot hud-slot--lock',
+      attributes: { type: 'button', 'aria-pressed': 'false', 'aria-label': t('Lock facing') },
+      children: [
+        ...(orb ? [] : [element('span', { className: 'hud-slot__key', text: GAZE_LOCK_KEY.toUpperCase(), attributes: { 'aria-hidden': 'true' } })]),
+        this.glyph,
+      ],
+    });
+    this.root.addEventListener('click', onPress);
+    setTip(this.root, () => ({ title: t('Lock facing'), ...(orb ? {} : { aside: GAZE_LOCK_KEY.toUpperCase() }) }));
+  }
+
+  render(locked: boolean, lockable: boolean): void {
+    const shown = JSON.stringify([locked, lockable]);
+    if (shown === this.shown) return;
+    this.shown = shown;
+    this.root.setAttribute('aria-pressed', String(locked));
+    this.root.disabled = !lockable;
+    showGlyph(this.glyph, locked ? HUD_ICONS.gazeLocked : HUD_ICONS.gazeFree);
+  }
+}
+
 /** The Run toggle, lit while Run is on. */
 export function runButton(onPress: () => void, orb: boolean): HTMLButtonElement {
   const node = orb

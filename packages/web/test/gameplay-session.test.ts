@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ConnectionController,
+  FINGER_HOLD_MS,
   GameplaySession,
   HOLD_TO_STEER_MS,
   PATH_FOLLOWING,
@@ -14,7 +15,7 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, bountyIdOf, fullPools, headingFromVector } from '@somnio/core';
+import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, bountyIdOf, fullPools, headingFromVector, reachDistance } from '@somnio/core';
 import type { QuestMarker } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
@@ -144,6 +145,26 @@ function raisingFrame(targetId: string, healerIds: string[], state: RaisingState
 
 /** Five metres from (10, 10) toward the top of the screen, heading 215. */
 const UP_SCREEN = { x: 10 - 5 * Math.sin((35 * Math.PI) / 180), z: 10 - 5 * Math.cos((35 * Math.PI) / 180) };
+
+/** Ticks every 50 ms from `fromMs`, until `done` or `toMs`, and answers the time it stopped at. */
+function tickUntil(rig: Rig, fromMs: number, toMs: number, done: () => boolean): number {
+  let time = fromMs;
+  for (; time <= toMs && !done(); time += 50) rig.session.runTick(time);
+  return time;
+}
+
+/** A player at (10, 10) with full pools, a nightmare (`monster:1`) 6 m east, an NPC (`npc:Meadow/guard`) 6 m south, and Bren 6 m west. */
+function meadowOfBodies(options: { coarsePointer?: boolean } = {}): Rig {
+  const rig = makeRig(options);
+  rig.controller.dispatch(enterSpaceFrame());
+  rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+  rig.controller.dispatch(entityFrame());
+  rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', name: 'Ghost', x: 16, z: 10 }));
+  rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 16 }));
+  rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 4, z: 10 }));
+  rig.controller.dispatch({ tag: 'energy', payload: FULL });
+  return rig;
+}
 
 /** A tap on the ground at `point`: pressed there and let go at once. */
 function tapGround(rig: Rig, point: { x: number; z: number }, timeMs = 0): void {
@@ -415,7 +436,7 @@ describe('walking', () => {
     rig.session.pressGround({ x: 14, z: 10 }, 2000);
     rig.session.letGo();
     rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 10, z: 6 }));
-    rig.session.pressEntity('monster:1');
+    rig.session.selectEntity('monster:1');
     rig.session.release({ x: 10, z: 6 });
     expect(rig.pressMarks).toEqual([['show', { x: 14, z: 10 }], ['lift']]);
   });
@@ -567,13 +588,16 @@ describe('walking', () => {
     expect(coarse.rig.controller.entities.get('self')!.facing).toBeCloseTo(90, 9);
   });
 
-  it('faces its target on a coarse pointer while it walks another way', () => {
+  it('faces its target on a coarse pointer while it walks another way only with the gaze locked on it', () => {
     const { rig, ticks } = standing({ coarsePointer: true });
     rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 10, z: 6 }));
-    rig.session.pressEntity('monster:1');
+    rig.session.selectEntity('monster:1');
     tapGround(rig, { x: 14, z: 10 });
-
     ticks(0, 200);
+    expect(rig.controller.entities.get('self')!.facing).toBeCloseTo(90, 9);
+
+    rig.session.toggleGazeLock();
+    ticks(250, 450);
 
     const self = rig.controller.entities.get('self')!;
     expect(self.position.x).toBeGreaterThan(10.1);
@@ -720,8 +744,11 @@ describe('a press held through a door', () => {
   it('steers on in the space it leads to, toward the ground under the pointer once the player stands there', () => {
     const { rig, ticks, at, doorsAsked } = nearDoor();
     rig.session.pressGround({ x: 9.5, z: 16 }, 0);
+    expect(rig.session.predictor.arrivalsAct).toBe(true);
     ticks(12);
     expect(doorsAsked()).toBe(1);
+    // No walk's end acts while the door's answer is pending, a following walk's included.
+    expect(rig.session.predictor.arrivalsAct).toBe(false);
 
     rig.controller.dispatch(enterSpaceFrame('Hall'));
     rig.controller.dispatch(sectorFrame(hall));
@@ -995,13 +1022,6 @@ describe('a drop', () => {
     return rig;
   }
 
-  /** Ticks every 50 ms from `fromMs`, until `done` or `toMs`, and answers the time it stopped at. */
-  function tickUntil(rig: Rig, fromMs: number, toMs: number, done: () => boolean): number {
-    let time = fromMs;
-    for (; time <= toMs && !done(); time += 50) rig.session.runTick(time);
-    return time;
-  }
-
   it('is drawn as it arrives, and taken away when it is gone or the space is left', () => {
     const rig = nearLoot();
     rig.controller.dispatch(lootFrame('loot-2', { x: 4, z: 4 }));
@@ -1019,6 +1039,7 @@ describe('a drop', () => {
   it('is walked to on a press and picked up as soon as the player stands within reach, after the move that brought them there', () => {
     const rig = nearLoot();
     rig.session.pressLoot('loot-1');
+    expect(rig.pressMarks).toEqual([['show', { x: 14, z: 10 }]]);
     tickUntil(rig, 0, 3000, () => pickUps(rig).length > 0);
 
     expect(away(rig, { x: 14, z: 10 })).toBeLessThanOrEqual(PICKUP_REACH);
@@ -1879,15 +1900,14 @@ describe('the bounty board', () => {
     return rig;
   }
 
-  function tickUntil(rig: Rig, fromMs: number, toMs: number, done: () => boolean): void {
-    for (let time = fromMs; time <= toMs && !done(); time += 50) rig.session.runTick(time);
-  }
-
   it('is walked to on a press from afar, though its centre lies inside what it blocks, and used once in speaking distance, after the move that brought the player there', () => {
     const rig = nearBoard();
     rig.session.pressFixture(BOARD);
     expect(rig.session.servicePanel).toBeUndefined();
+    expect(rig.pressMarks).toEqual([['show', BOARD_AT]]);
     tickUntil(rig, 0, 4000, () => interacts(rig).length > 0);
+    rig.session.runTick(4050);
+    expect(rig.pressMarks).toEqual([['show', BOARD_AT], ['lift']]);
 
     expect(away(rig)).toBeLessThanOrEqual(SOMNIO_CONSTANTS.speakingDistance);
     expect(rig.sent.slice(-2)).toEqual([
@@ -2066,20 +2086,20 @@ describe('slot 1 at a nightmare', () => {
 
   it.each<[string, (rig: Rig) => void]>([
     ['without a target', () => {}],
-    ['with an NPC as the target', (rig) => rig.session.pressEntity(GUARD)],
-    ['with another dreamer as the target', (rig) => rig.session.pressEntity('far')],
+    ['with an NPC as the target', (rig) => rig.session.selectEntity(GUARD)],
+    ['with another dreamer as the target', (rig) => rig.session.selectEntity('far')],
     ['with themselves as the target', (rig) => rig.session.pressOwnFrame()],
     [
       'with the target driven off',
       (rig) => {
-        rig.session.pressEntity(GHOST);
+        rig.session.selectEntity(GHOST);
         rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
       },
     ],
     [
       'while fallen',
       (rig) => {
-        rig.session.pressEntity(GHOST);
+        rig.session.selectEntity(GHOST);
         rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
       },
     ],
@@ -2094,7 +2114,7 @@ describe('slot 1 at a nightmare', () => {
 
   it('is no Attack while a quest held forbids striking, as the server judges it, says so, and goes off as one is taken on', () => {
     const rig = fighter();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.toggleEngage();
     expect([rig.session.engaged, rig.session.attackRefusal()]).toEqual([true, undefined]);
     rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'healer-trial', progress: [0] }], done: [], bounties: [] } });
@@ -2105,9 +2125,9 @@ describe('slot 1 at a nightmare', () => {
     expect(engages(rig)).toEqual([{ on: true }]);
   });
 
-  it('is Attack, switched on and off at a nightmare targeted out of reach, and never walks the player toward it', () => {
+  it('is Attack, switched on and off by the 1 key at a nightmare selected out of reach, and never walks the player toward it', () => {
     const rig = fighter();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     expect(rig.session.engageAction()).toBe('attack');
     let repaints = 0;
     rig.session.onStateChanged = () => (repaints += 1);
@@ -2125,8 +2145,8 @@ describe('slot 1 at a nightmare', () => {
 
   /** The server switches it off at each of these on its own, so the client sends nothing for it. */
   it.each<[string, (rig: Rig) => void]>([
-    ['a change of target to an NPC', (rig) => rig.session.pressEntity(GUARD)],
-    ['a change of target to a dreamer, for one who cannot mend', (rig) => rig.session.pressEntity('far')],
+    ['a change of target to an NPC', (rig) => rig.session.selectEntity(GUARD)],
+    ['a change of target to a dreamer, for one who cannot mend', (rig) => rig.session.selectEntity('far')],
     ['the target cleared', (rig) => rig.session.select(undefined)],
     ['the target driven off', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } })],
     ['the target out of view', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: GHOST, leftGame: false } })],
@@ -2134,7 +2154,7 @@ describe('slot 1 at a nightmare', () => {
     ['a new space', (rig) => rig.controller.dispatch(enterSpaceFrame('Hall'))],
   ])('goes off with %s, sending no engage frame', (_label, end) => {
     const rig = fighter();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.toggleEngage();
     end(rig);
     rig.session.runTick(100);
@@ -2145,9 +2165,9 @@ describe('slot 1 at a nightmare', () => {
   it('stays on from one nightmare to the next, sending no engage frame', () => {
     const rig = fighter();
     rig.controller.dispatch(entityFrame({ id: 'monster:2', kind: 'monster', x: 14, z: 12 }));
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.toggleEngage();
-    rig.session.pressEntity('monster:2');
+    rig.session.selectEntity('monster:2');
     rig.session.runTick(100);
     expect(rig.session.engaged).toBe(true);
     expect(engages(rig)).toEqual([{ on: true }]);
@@ -2194,7 +2214,7 @@ describe('the target', () => {
     const rig = selecting();
     rig.selections.length = 0;
     tapGround(rig, { x: 10, z: 14 });
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.runTick(200);
 
     expect(rig.session.target).toBe(GHOST);
@@ -2203,7 +2223,7 @@ describe('the target', () => {
     expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 14 } });
 
     const idle = selecting();
-    idle.session.pressEntity(GHOST);
+    idle.session.selectEntity(GHOST);
     idle.session.runTick(100);
     expect(idle.session.predictor.walk).toBeUndefined();
   });
@@ -2211,7 +2231,7 @@ describe('the target', () => {
   it('stays the target through a walk on open ground, and is cleared and unringed on request', () => {
     const rig = selecting();
     rig.selections.length = 0;
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.release(undefined);
     tapGround(rig, { x: 10, z: 14 }, 100);
     expect(rig.session.target).toBe(GHOST);
@@ -2224,7 +2244,7 @@ describe('the target', () => {
 
   it('keeps the health the server sends of the target, and of no other', () => {
     const rig = selecting();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     let repaints = 0;
     rig.session.onStateChanged = () => (repaints += 1);
     rig.controller.dispatch({ tag: 'vitals', payload: { entityId: GHOST, health: 0.8 } });
@@ -2254,14 +2274,14 @@ describe('the target', () => {
 
   it('is cleared when it leaves, and with every new space, which tells the server nothing', () => {
     const gone = selecting();
-    gone.session.pressEntity(GHOST);
+    gone.session.selectEntity(GHOST);
     gone.controller.dispatch({ tag: 'leave', payload: { entityId: GHOST, leftGame: false } });
     gone.session.runTick(0);
     expect(gone.session.target).toBeUndefined();
     expect(targets(gone)).toEqual([{ targetId: GHOST }, {}]);
 
     const door = selecting();
-    door.session.pressEntity(GHOST);
+    door.session.selectEntity(GHOST);
     door.controller.dispatch({ tag: 'vitals', payload: { entityId: GHOST, health: 0.5 } });
     door.controller.dispatch(enterSpaceFrame('Hall'));
     expect(door.session.target).toBeUndefined();
@@ -2272,9 +2292,9 @@ describe('the target', () => {
 
   it('stays through a fall, while a press selects nothing', () => {
     const rig = selecting();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
-    rig.session.pressEntity('bren');
+    rig.session.selectEntity('bren');
     expect(rig.session.target).toBe(GHOST);
     expect(targets(rig)).toEqual([{ targetId: GHOST }]);
   });
@@ -2300,74 +2320,73 @@ describe('the gaze lock', () => {
 
   const facing = (rig: Rig): number => rig.controller.entities.get('self')!.facing;
 
-  it('targets the body a right press lands on and faces it whatever the cursor does, and faces the cursor again once a right press lands on the ground', () => {
+  it('locks on the nightmare a left press lands on and faces it whatever the cursor does, and faces the cursor again once the lock toggle lets go', () => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, true]);
     expect(targets(rig)).toEqual([{ targetId: GHOST }]);
     for (let time = 0; time <= 200; time += 50) rig.session.runTick(time);
-    expect(facing(rig)).toBeCloseTo(90, 9);
+    expect(facing(rig)).toBeCloseTo(90, 0);
 
     tapGround(rig, { x: 10, z: 14 }, 250);
     rig.session.aimAt({ x: 10, z: 1000 });
     for (let time = 250; time <= 450; time += 50) rig.session.runTick(time);
     expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 14 } });
     const self = rig.controller.entities.get('self')!;
-    expect(Math.abs(facing(rig) - headingFromVector(14 - self.position.x, 10 - self.position.z))).toBeLessThan(1);
+    // Faced from where the last step began, a few centimetres back.
+    expect(Math.abs(facing(rig) - headingFromVector(14 - self.position.x, 10 - self.position.z))).toBeLessThan(2);
 
-    rig.session.unlockGaze();
+    rig.session.toggleGazeLock();
     for (let time = 500; time <= 600; time += 50) rig.session.runTick(time);
     expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, false]);
-    expect(facing(rig)).toBeCloseTo(0, 0);
+    expect(Math.abs(((facing(rig) + 180) % 360) - 180)).toBeLessThan(0.5);
   });
 
-  it('switches slot 1 on at a nightmare with the lock, after the target, and lets go of both on a second right press on the target, keeping it', () => {
+  it('switches slot 1 on at a nightmare with the lock, after the target, and keeps both through a second left press on it', () => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
     expect(rig.sent.filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
       { tag: 'target', payload: { targetId: GHOST } },
       { tag: 'engage', payload: { on: true } },
     ]);
 
-    rig.session.toggleGazeOn(GHOST);
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, false]);
-    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
-    expect(engages(rig)).toEqual([{ on: true }, { on: false }]);
-
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, true]);
     expect(targets(rig)).toEqual([{ targetId: GHOST }]);
-    expect(engages(rig)).toEqual([{ on: true }, { on: false }, { on: true }]);
+    expect(engages(rig)).toEqual([{ on: true }]);
   });
 
-  it('leaves the lock alone when the 1 key switches slot 1, and slot 1 alone when a right press on the ground ends the lock', () => {
+  it('leaves the lock alone when the 1 key switches slot 1, and slot 1 alone when the lock toggle ends the lock', () => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     rig.session.toggleEngage();
     expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, false]);
     rig.session.toggleEngage();
     expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
-    rig.session.unlockGaze();
+    rig.session.toggleGazeLock();
     expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, true]);
     expect(engages(rig)).toEqual([{ on: true }, { on: false }, { on: true }]);
   });
 
-  it('sends nothing more for slot 1 when a right press locks on a target it already acts on', () => {
+  it('sends nothing more for slot 1 when a left press locks on a target it already acts on', () => {
     const rig = locking();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     rig.session.toggleEngage();
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
     expect(engages(rig)).toEqual([{ on: true }]);
   });
 
-  it('targets another body a right press lands on while locked, and stays locked on it', () => {
+  it('is neither taken nor let go by a right press on the target, which changes nothing', () => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
-    rig.session.toggleGazeOn('bren');
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['bren', true]);
-    expect(targets(rig)).toEqual([{ targetId: GHOST }, { targetId: 'bren' }]);
+    rig.session.selectEntity(GHOST);
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([false, false]);
+    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, true]);
+    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+    expect(engages(rig)).toEqual([{ on: true }]);
   });
 
   it('marks the target as locked in the scene from the lock until it ends, and as plain at a new target', () => {
@@ -2378,20 +2397,18 @@ describe('the gaze lock', () => {
     rig.selections.length = 0;
     rig.selectionMarks.length = 0;
 
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect(marks()).toEqual([
       [GHOST, OFF],
       [GHOST, ON],
     ]);
-    rig.session.toggleGazeOn(GHOST);
-    expect(marks().at(-1)).toEqual([GHOST, OFF]);
-    rig.session.toggleGazeOn(GHOST);
-    rig.session.unlockGaze();
+    rig.session.toggleGazeLock();
     expect(marks().at(-1)).toEqual([GHOST, { locked: false, acting: true }]);
-    rig.session.toggleGazeOn(GHOST);
-    rig.session.pressEntity('bren');
+    rig.session.pressEntity(GHOST);
+    expect(marks().at(-1)).toEqual([GHOST, ON]);
+    rig.session.selectEntity('bren');
     expect(marks().at(-1)).toEqual(['bren', OFF]);
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
     rig.session.runTick(0);
     expect(marks().at(-1)).toEqual([GHOST, OFF]);
@@ -2399,11 +2416,11 @@ describe('the gaze lock', () => {
 
   it('marks slot 1 by colour and the lock by the ticks, apart from each other', () => {
     const rig = locking();
-    rig.session.pressEntity(GHOST);
+    rig.session.selectEntity(GHOST);
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: false });
     rig.session.toggleEngage();
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: true });
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: true });
     rig.session.toggleEngage();
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
@@ -2412,50 +2429,424 @@ describe('the gaze lock', () => {
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
   });
 
-  it('locks on an NPC and another dreamer alike, switching slot 1 on at neither, and never on the player themselves', () => {
+  it('is not taken by a left press on a body slot 1 cannot act on: an NPC, or another dreamer for one who cannot mend', () => {
     const rig = locking();
     rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 6 }));
-    rig.session.toggleGazeOn('npc:Meadow/guard');
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', true, false]);
-    rig.session.toggleGazeOn('bren');
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', true, false]);
-    rig.session.toggleGazeOn('bren');
+    rig.session.pressEntity('npc:Meadow/guard');
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', false, false]);
+    rig.session.pressEntity('bren');
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', false, false]);
     expect(engages(rig)).toEqual([]);
-
-    const own = locking();
-    own.session.toggleGazeOn('self');
-    expect([own.session.target, own.session.gazeLocked]).toEqual([undefined, false]);
-    expect(targets(own)).toEqual([]);
   });
 
   it.each<[string, (rig: Rig) => void]>([
     ['the target is cleared', (rig) => rig.session.select(undefined)],
-    ['a left press on another body makes it the target', (rig) => rig.session.pressEntity('bren')],
+    ['a right press on another body makes it the target', (rig) => rig.session.selectEntity('bren')],
     ['the target leaves', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: GHOST, leftGame: false } })],
     ['the target is driven off', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } })],
     ['a new space is entered', (rig) => rig.controller.dispatch(enterSpaceFrame('Hall'))],
   ])('ends when %s', (_label, end) => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     end(rig);
     rig.session.runTick(0);
     expect(rig.session.gazeLocked).toBe(false);
   });
 
-  it('holds through a left press on the target itself and through a walk', () => {
+  it('holds through a left press on the ground and the walk it makes', () => {
     const rig = locking();
-    rig.session.toggleGazeOn(GHOST);
     rig.session.pressEntity(GHOST);
     tapGround(rig, { x: 10, z: 14 });
     rig.session.runTick(0);
     expect(rig.session.gazeLocked).toBe(true);
   });
 
+  it('is taken and let go by the lock button on any body targeted but the player, leaving slot 1 as it is', () => {
+    const rig = locking();
+    rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 6 }));
+    expect(rig.session.gazeLockable).toBe(false);
+    rig.session.toggleGazeLock();
+    expect(rig.session.gazeLocked).toBe(false);
+
+    rig.session.selectEntity('npc:Meadow/guard');
+    expect(rig.session.gazeLockable).toBe(true);
+    rig.session.toggleGazeLock();
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', true, false]);
+    rig.session.toggleGazeLock();
+    expect(rig.session.gazeLocked).toBe(false);
+
+    rig.session.pressEntity(GHOST);
+    rig.session.toggleGazeLock();
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, true]);
+    rig.session.toggleGazeLock();
+    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
+    expect(engages(rig)).toEqual([{ on: true }]);
+
+    rig.session.pressOwnFrame();
+    expect(rig.session.gazeLockable).toBe(false);
+    rig.session.toggleGazeLock();
+    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['self', false]);
+  });
+
   it('locks nothing at a nightmare already driven off', () => {
     const rig = locking();
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
-    rig.session.toggleGazeOn(GHOST);
+    rig.session.pressEntity(GHOST);
     expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, false]);
+  });
+});
+
+describe('a left press on a body', () => {
+  const GHOST = 'monster:1';
+  const GUARD = 'npc:Meadow/guard';
+  const HEALER = { tag: 'lucidity' as const, payload: { role: 'healer' as const, ranks: [{ teachingId: 'touch', rank: 1, practice: 0 }] } };
+  const at = (rig: Rig) => rig.controller.entities.get('self')!.position;
+  const away = (rig: Rig, entityId: string): number => {
+    const self = at(rig);
+    const body = rig.controller.entities.get(entityId)!.position;
+    return Math.hypot(body.x - self.x, body.z - self.z);
+  };
+  const interacts = (rig: Rig) => rig.sent.filter((message) => message.tag === 'interact');
+
+  it('walks the player into reach of a nightmare and stops there, with slot 1 on', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    tickUntil(rig, 0, 4000, () => rig.session.predictor.walk === undefined);
+
+    const reach = reachDistance(rig.controller.entities.get(GHOST)!.radius);
+    expect(away(rig, GHOST)).toBeLessThanOrEqual(reach);
+    expect(away(rig, GHOST)).toBeGreaterThan(reach - 0.5);
+    expect(rig.session.engaged).toBe(true);
+    tickUntil(rig, 4000, 4500, () => false);
+    expect(away(rig, GHOST)).toBeLessThanOrEqual(reach);
+  });
+
+  it('follows a nightmare that moves on, and stands once in reach though it moves away again', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    let time = tickUntil(rig, 0, 400, () => false);
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 16, z: 16, facing: 0, gait: 'jog' }] } });
+    time = tickUntil(rig, time, 5000, () => rig.session.predictor.walk === undefined);
+
+    expect(rig.controller.entities.get(GHOST)!.position).toEqual({ x: 16, z: 16 });
+    expect(away(rig, GHOST)).toBeLessThanOrEqual(reachDistance(rig.controller.entities.get(GHOST)!.radius));
+
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 22, z: 16, facing: 90, gait: 'jog' }] } });
+    const stood = { ...at(rig) };
+    tickUntil(rig, time, time + 1000, () => false);
+    expect(at(rig)).toEqual(stood);
+  });
+
+  it('drops the press ring on the body it walks the player to, moves it with the body, and lifts it in reach, but drops none from within reach', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    expect(rig.pressMarks).toEqual([['show', { x: 16, z: 10 }]]);
+    const time = tickUntil(rig, 0, 400, () => false);
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 16, z: 13, facing: 0, gait: 'jog' }] } });
+    tickUntil(rig, time, 6000, () => rig.session.predictor.walk === undefined);
+    rig.session.runTick(6050);
+    expect(rig.pressMarks.filter(([kind]) => kind === 'show').at(-1)).toEqual(['show', { x: 16, z: 13 }]);
+    expect(rig.pressMarks.at(-1)).toEqual(['lift']);
+
+    rig.pressMarks.length = 0;
+    rig.session.pressEntity(GHOST);
+    expect(rig.pressMarks).toEqual([]);
+  });
+
+  it('walks on toward a nightmare that stepped back as the player came in range of where it stood', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    const reach = reachDistance(rig.controller.entities.get(GHOST)!.radius);
+    const time = tickUntil(rig, 0, 4000, () => away(rig, GHOST) < reach + 0.3);
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 16.45, z: 10, facing: 90, gait: 'jog' }] } });
+    tickUntil(rig, time, 6000, () => rig.session.predictor.walk === undefined);
+
+    expect(rig.controller.entities.get(GHOST)!.position).toEqual({ x: 16.45, z: 10 });
+    expect(away(rig, GHOST)).toBeLessThanOrEqual(reach);
+  });
+
+  it('stops in reach of a nightmare coming to meet the player, short of where the walk heads', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    const reach = reachDistance(rig.controller.entities.get(GHOST)!.radius);
+    const time = tickUntil(rig, 0, 4000, () => away(rig, GHOST) < reach + 0.8);
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 15.6, z: 10, facing: 270, gait: 'jog' }] } });
+    tickUntil(rig, time, 6000, () => rig.session.predictor.walk === undefined);
+
+    expect(rig.controller.entities.get(GHOST)!.position).toEqual({ x: 15.6, z: 10 });
+    expect(away(rig, GHOST)).toBeLessThanOrEqual(reach);
+    expect(away(rig, GHOST)).toBeGreaterThan(reach - 0.15);
+  });
+
+  it('stops the walk toward a body when a right press makes another body the target', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    tickUntil(rig, 0, 300, () => false);
+    rig.session.selectEntity('bren');
+    expect([rig.session.target, rig.session.predictor.walk]).toEqual(['bren', undefined]);
+    const stood = { ...at(rig) };
+    tickUntil(rig, 350, 1000, () => false);
+    expect(at(rig)).toEqual(stood);
+  });
+
+  it('stops on Escape where the player stands, a walk toward a body as a tap on the ground, lifting the ring, and leaves a leap be', () => {
+    const rig = meadowOfBodies();
+    expect(rig.session.stopWalk()).toBe(false);
+
+    rig.session.pressEntity(GHOST);
+    let time = tickUntil(rig, 0, 300, () => false);
+    expect(rig.session.stopWalk()).toBe(true);
+    expect([rig.session.predictor.walk, rig.pressMarks.at(-1)]).toEqual([undefined, ['lift']]);
+    const stood = { ...at(rig) };
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 16, z: 13, facing: 0, gait: 'jog' }] } });
+    time = tickUntil(rig, time, time + 1000, () => false);
+    expect(at(rig)).toEqual(stood);
+
+    tapGround(rig, { x: 10, z: 4 }, time);
+    tickUntil(rig, time, time + 200, () => false);
+    expect(rig.session.stopWalk()).toBe(true);
+    expect(rig.session.predictor.walk).toBeUndefined();
+
+    rig.session.predictor.leapAt({ x: 16, z: 13, radius: 0.3 }, 3, 12);
+    expect(rig.session.stopWalk()).toBe(false);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'leap' });
+  });
+
+  it('stops the walk under way and walks nowhere from within reach', () => {
+    const rig = meadowOfBodies();
+    rig.controller.dispatch(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Ghost', x: 10.65, z: 10 }));
+    tapGround(rig, { x: 10, z: 4 });
+    tickUntil(rig, 0, 100, () => false);
+    const stood = { ...at(rig) };
+    rig.session.pressEntity('monster:2');
+    expect(rig.session.predictor.walk).toBeUndefined();
+    tickUntil(rig, 150, 1000, () => false);
+    expect(at(rig)).toEqual(stood);
+    expect(rig.session.engaged).toBe(true);
+  });
+
+  it('ends the following on a press on the ground, whose walk goes where it lets go', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    let time = tickUntil(rig, 0, 300, () => false);
+    rig.session.pressGround({ x: 10, z: 4 }, time);
+    rig.now = time;
+    rig.controller.dispatch({ tag: 'moves', payload: { moves: [{ id: GHOST, x: 16, z: 16, facing: 0, gait: 'jog' }] } });
+    time = tickUntil(rig, time, time + 150, () => false);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 16, z: 10 } });
+    rig.session.release({ x: 10, z: 4 });
+    // The gaze stays locked on the nightmare, so the player backs away from it at a walk.
+    tickUntil(rig, time, 12000, () => rig.session.predictor.walk === undefined);
+    expect(Math.hypot(at(rig).x - 10, at(rig).z - 4)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
+  });
+
+  it('only selects a nightmare while a quest held forbids striking, walking nowhere', () => {
+    const rig = meadowOfBodies();
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'healer-trial', progress: [0] }], done: [], bounties: [] } });
+    rig.session.pressEntity(GHOST);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, false, false, undefined]);
+  });
+
+  it('walks one who cannot mend up beside another dreamer, neither locking nor switching slot 1 on', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity('bren');
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', false, false]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
+    tickUntil(rig, 0, 4000, () => rig.session.predictor.walk === undefined);
+    const beside = reachDistance(rig.controller.entities.get('bren')!.radius);
+    expect(away(rig, 'bren')).toBeLessThanOrEqual(beside);
+    expect(away(rig, 'bren')).toBeGreaterThan(beside - 0.5);
+    expect(rig.sent.filter((message) => message.tag === 'engage' || message.tag === 'interact')).toEqual([]);
+  });
+
+  it('walks a Healer with the Moonstone up beside a dreamer with Mend on, a fallen one too', () => {
+    const rig = meadowOfBodies();
+    rig.controller.dispatch(HEALER);
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
+    rig.session.pressEntity('bren');
+    expect([rig.session.engaged, rig.session.gazeLocked, rig.session.engageAction()]).toEqual([true, true, 'mend']);
+    tickUntil(rig, 0, 4000, () => rig.session.predictor.walk === undefined);
+    expect(away(rig, 'bren')).toBeLessThanOrEqual(reachDistance(rig.controller.entities.get('bren')!.radius));
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'bren', condition: 'fallen' } });
+    rig.session.pressEntity('bren');
+    tickUntil(rig, 4050, 8000, () => rig.session.predictor.walk === undefined);
+    expect(away(rig, 'bren')).toBeLessThanOrEqual(reachDistance(rig.controller.entities.get('bren')!.radius));
+  });
+
+  it('walks up beside an NPC and asks it to go on as the player comes within speaking distance, after the move that brought them there', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GUARD);
+    expect(interacts(rig)).toEqual([]);
+    const time = tickUntil(rig, 0, 4000, () => interacts(rig).length > 0);
+
+    expect(away(rig, GUARD)).toBeLessThanOrEqual(SOMNIO_CONSTANTS.speakingDistance);
+    expect(rig.sent.slice(-2)).toEqual([
+      { tag: 'move', payload: expect.objectContaining(at(rig)) },
+      { tag: 'interact', payload: { carrierId: GUARD } },
+    ]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GUARD, false, false]);
+
+    // It asks before the player stands beside the NPC, and the walk goes on there, asking nothing more.
+    expect(away(rig, GUARD)).toBeGreaterThan(reachDistance(rig.controller.entities.get(GUARD)!.radius));
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
+    tickUntil(rig, time + 50, time + 4000, () => rig.session.predictor.walk === undefined);
+    expect(away(rig, GUARD)).toBeLessThanOrEqual(reachDistance(rig.controller.entities.get(GUARD)!.radius));
+    expect(interacts(rig)).toHaveLength(1);
+  });
+
+  it('asks an NPC behind a counter as the walk ends within speaking distance, on the step that brings the player there', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    // The walk's nearest cell to the NPC, short of the counter, lies under 1.9 m from it.
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 }, { blockers: [{ id: 'counter', x: 0, z: 14.55, width: 20, depth: 0.85 }] })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: GUARD, kind: 'npc', name: 'Guard', x: 10, z: 16 }));
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    rig.session.pressEntity(GUARD);
+    let time = 0;
+    for (; away(rig, GUARD) > SOMNIO_CONSTANTS.speakingDistance + 0.05 && time <= 5000; time += 25) rig.session.runTick(time);
+    expect(away(rig, GUARD)).toBeGreaterThan(SOMNIO_CONSTANTS.speakingDistance);
+    expect([interacts(rig), rig.session.predictor.walk?.kind]).toEqual([[], 'path']);
+
+    // One step on, the walk reaches its last cell and ends there, within speaking distance.
+    rig.session.runTick(time + 75);
+
+    expect(rig.session.predictor.walk).toBeUndefined();
+    expect(away(rig, GUARD)).toBeLessThanOrEqual(SOMNIO_CONSTANTS.speakingDistance);
+    expect(interacts(rig)).toEqual([{ tag: 'interact', payload: { carrierId: GUARD } }]);
+  });
+
+  it('asks nothing of an NPC once a press on a drop takes over its walk, though that walk ends within speaking distance in its first step', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: GUARD, kind: 'npc', name: 'Guard', x: 10, z: 12.05 }));
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    rig.controller.dispatch({ tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 11.02, contents: { kind: 'item', baseId: 'dagger', rarity: 'magic' } } });
+    rig.session.runTick(0);
+    rig.session.pressEntity(GUARD);
+    rig.session.pressLoot('loot-1');
+
+    rig.session.runTick(50);
+
+    // The step carries the player within speaking distance of the NPC and pickup reach of the drop at once.
+    expect(away(rig, GUARD)).toBeLessThanOrEqual(SOMNIO_CONSTANTS.speakingDistance);
+    expect(rig.sent.filter((message) => message.tag === 'pickUp')).toEqual([{ tag: 'pickUp', payload: { lootId: 'loot-1' } }]);
+    expect([interacts(rig), rig.session.servicePanel]).toEqual([[], undefined]);
+  });
+
+  it('stops the walk where the player stands once the nightmare it heads for is driven off', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressEntity(GHOST);
+    const time = tickUntil(rig, 0, 500, () => false);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
+    rig.session.runTick(time);
+    const stood = { ...at(rig) };
+    tickUntil(rig, time + 50, time + 1000, () => false);
+
+    expect([rig.session.predictor.walk, at(rig), rig.pressMarks.at(-1)]).toEqual([undefined, stood, ['lift']]);
+    expect(away(rig, GHOST)).toBeGreaterThan(reachDistance(rig.controller.entities.get(GHOST)!.radius) + 2);
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['while the player lies fallen', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
+    ['under an overlay', (rig) => (rig.controller.presentedOverlay = { kind: 'gameMenu' })],
+  ])('neither selects, locks, switches slot 1 on, nor walks on a press on a body %s', (_when, gate) => {
+    const rig = meadowOfBodies();
+    gate(rig);
+
+    rig.session.pressEntity(GHOST);
+    rig.session.pressEntity(GUARD);
+
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([undefined, false, false, undefined]);
+    expect(rig.sent.filter((message) => ['target', 'engage', 'interact'].includes(message.tag))).toEqual([]);
+  });
+
+  it('stops a held press steering on Escape where the player stands, and the press then walks nowhere', () => {
+    const rig = meadowOfBodies();
+    rig.session.pressGround({ x: 10, z: 4 }, 0);
+    const time = tickUntil(rig, 0, HOLD_TO_STEER_MS + 100, () => false);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'steer' });
+
+    expect(rig.session.stopWalk()).toBe(true);
+    const stood = { ...at(rig) };
+    tickUntil(rig, time, time + 500, () => false);
+    rig.session.release({ x: 10, z: 4 });
+
+    expect([rig.session.predictor.walk, at(rig)]).toEqual([undefined, stood]);
+  });
+});
+
+describe("a finger's press on a body", () => {
+  const GHOST = 'monster:1';
+  const engages = (rig: Rig) => rig.sent.filter((message) => message.tag === 'engage');
+
+  it('only selects the body when it lifts after resting there, though no frame has run since', () => {
+    const rig = meadowOfBodies({ coarsePointer: true });
+    rig.session.holdEntity(GHOST, 0);
+    rig.session.runTick(FINGER_HOLD_MS - 10);
+    expect(rig.session.target).toBeUndefined();
+
+    rig.now = FINGER_HOLD_MS + 10;
+    rig.session.release({ x: 16, z: 10 });
+
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, false, false, undefined]);
+    expect(engages(rig)).toEqual([]);
+  });
+
+  it('leaves the ring of the walk under way when a finger resting on a body is let go', () => {
+    const rig = meadowOfBodies({ coarsePointer: true });
+    tapGround(rig, { x: 10, z: 4 });
+    tickUntil(rig, 0, 100, () => false);
+    expect(rig.pressMarks.at(-1)).toEqual(['show', { x: 10, z: 4 }]);
+
+    rig.session.holdEntity(GHOST, 150);
+    rig.session.letGo();
+
+    expect(rig.pressMarks.at(-1)).toEqual(['show', { x: 10, z: 4 }]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
+  });
+
+  it('acts as a left press when it lifts before the hold selects', () => {
+    const rig = meadowOfBodies({ coarsePointer: true });
+    rig.session.holdEntity(GHOST, 0);
+    rig.session.runTick(FINGER_HOLD_MS - 50);
+    expect(rig.session.target).toBeUndefined();
+    rig.session.release({ x: 16, z: 10 });
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, true]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
+  });
+
+  it('only selects the body once it rests there, and the lift then does nothing', () => {
+    const rig = meadowOfBodies({ coarsePointer: true });
+    rig.session.holdEntity(GHOST, 0);
+    rig.session.runTick(FINGER_HOLD_MS);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, false]);
+    rig.session.release({ x: 16, z: 10 });
+    expect([rig.session.engaged, rig.session.predictor.walk]).toEqual([false, undefined]);
+    expect(engages(rig)).toEqual([]);
+  });
+
+  it('steers toward the ground under it once it slides, and walks on to where it lifts, selecting nothing', () => {
+    const rig = meadowOfBodies({ coarsePointer: true });
+    rig.session.holdEntity(GHOST, 0);
+    rig.session.moveHold({ x: 10, z: 4 });
+    rig.session.steer();
+    rig.session.runTick(FINGER_HOLD_MS + 100);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'steer', toward: { x: 10, z: 4 } });
+    rig.session.release({ x: 10, z: 4 });
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 4 } });
+    expect(rig.session.target).toBeUndefined();
   });
 });
 
@@ -2489,7 +2880,7 @@ describe('the own frame', () => {
     const rig = standing();
     rig.controller.dispatch(HEALER);
     rig.controller.dispatch(MOONSTONE_IN_HAND);
-    rig.session.pressEntity('bren');
+    rig.session.selectEntity('bren');
     rig.session.toggleEngage();
     rig.session.pressOwnFrame();
     rig.session.runTick(0);
@@ -2524,14 +2915,14 @@ describe('slot 1 at a dreamer', () => {
 
   /** Targets the dreamer and switches Mend on. */
   function mend(rig: Rig, entityId: string): void {
-    rig.session.pressEntity(entityId);
+    rig.session.selectEntity(entityId);
     rig.session.toggleEngage();
   }
 
-  it('is Mend for a Healer with the Moonstone in hand, whose press at a dreamer only targets them', () => {
+  it('is Mend for a Healer with the Moonstone in hand, whose right press at a dreamer only targets them', () => {
     const rig = healer();
     rig.selections.length = 0;
-    rig.session.pressEntity('bren');
+    rig.session.selectEntity('bren');
     expect([rig.session.target, rig.session.engaged, rig.session.engageAction()]).toEqual(['bren', false, 'mend']);
     expect(rig.selections).toEqual(['bren']);
     rig.session.toggleEngage();
@@ -2540,16 +2931,16 @@ describe('slot 1 at a dreamer', () => {
     expect(engages(rig)).toEqual([{ on: true }, { on: false }]);
   });
 
-  it('is switched on as Mend by a right press at a dreamer for a Healer with the Moonstone in hand, and not with it put away', () => {
+  it('is switched on as Mend by a left press at a dreamer for a Healer with the Moonstone in hand, and not with it put away', () => {
     const rig = healer();
-    rig.session.toggleGazeOn('bren');
+    rig.session.pressEntity('bren');
     expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.engageAction()]).toEqual(['bren', true, true, 'mend']);
     expect(engages(rig)).toEqual([{ on: true }]);
 
     const without = healer();
     without.controller.dispatch(MOONSTONE_PUT_AWAY);
-    without.session.toggleGazeOn('bren');
-    expect([without.session.gazeLocked, without.session.engaged]).toEqual([true, false]);
+    without.session.pressEntity('bren');
+    expect([without.session.gazeLocked, without.session.engaged]).toEqual([false, false]);
     expect(engages(without)).toEqual([]);
   });
 
@@ -2559,7 +2950,7 @@ describe('slot 1 at a dreamer', () => {
   ])('cannot be switched on %s', (_label, arrange) => {
     const rig = healer();
     arrange(rig);
-    rig.session.pressEntity('bren');
+    rig.session.selectEntity('bren');
     expect(rig.session.engageAction()).toBeUndefined();
     rig.session.toggleEngage();
     expect(rig.session.engaged).toBe(false);
@@ -2569,7 +2960,7 @@ describe('slot 1 at a dreamer', () => {
   it('is nothing at an NPC, a master included', () => {
     const rig = healer();
     rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/sana', kind: 'npc', name: 'Sana', x: 14, z: 10, service: 'healerMaster' }));
-    rig.session.pressEntity('npc:Meadow/sana');
+    rig.session.selectEntity('npc:Meadow/sana');
     expect([rig.session.target, rig.session.engageAction()]).toEqual(['npc:Meadow/sana', undefined]);
     rig.session.toggleEngage();
     expect(rig.session.engaged).toBe(false);
@@ -2583,7 +2974,7 @@ describe('slot 1 at a dreamer', () => {
     rig.session.pressPlayerName('Cara');
     rig.session.runTick(0);
     expect([rig.session.target, rig.session.engaged]).toEqual(['cara', true]);
-    rig.session.pressEntity('monster:1');
+    rig.session.selectEntity('monster:1');
     rig.session.runTick(100);
     expect([rig.session.engaged, rig.session.engageAction()]).toEqual([true, 'attack']);
     expect(engages(rig)).toEqual([{ on: true }]);
@@ -2650,7 +3041,7 @@ describe('slot 1 at a dreamer', () => {
 
     it.each<[string, (rig: Rig) => void]>([
       ['switches Mend off', (rig) => rig.session.toggleEngage()],
-      ['targets another dreamer', (rig) => rig.session.pressEntity('cara')],
+      ['targets another dreamer', (rig) => rig.session.selectEntity('cara')],
       ['puts the Moonstone away', (rig) => rig.controller.dispatch(MOONSTONE_PUT_AWAY)],
       ['falls', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } })],
     ])('says nothing of losing hold when the Healer first %s', (_label, letGo) => {

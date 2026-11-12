@@ -1,13 +1,13 @@
 import type { AbilityPool, BaseItemId } from '@somnio/core';
 import type { Rarity } from '@somnio/protocol';
-import { TAP_SLOP_PX } from '@/client';
+import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
 import { element, setHidden } from './dom';
 import { itemIcon } from './itemIcons';
 
 /**
  * The HUD's one tooltip, in place of the browser's slow `title`. A mouse or a pen resting on a part
  * shows it at once, and leaving the part, pressing, scrolling, or resizing hides it. A finger has
- * no hover, so a part held for `TIP_HOLD_MS` shows it until the finger lifts, and that press then
+ * no hover, so a part held for `FINGER_HOLD_MS` shows it until the finger lifts, and that press then
  * presses nothing. A tap, or a hold that slides past `TAP_SLOP_PX` first, presses as usual.
  */
 
@@ -45,9 +45,6 @@ export function setTip<T extends HTMLElement>(node: T, source: TipSource = () =>
   node.removeAttribute('title');
   return node;
 }
-
-/** How long a finger holds a part before its tip shows. */
-export const TIP_HOLD_MS = 400;
 
 /** The room between the tip and its part, and between the tip and the window's edges. */
 const TIP_GAP_PX = 8;
@@ -95,7 +92,7 @@ export class HUDTooltip {
         this.hold = undefined;
         this.heldPointer = event.pointerId;
         this.show(anchor, now());
-      }, TIP_HOLD_MS);
+      }, FINGER_HOLD_MS);
       this.hold = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, timer };
     });
     container.addEventListener('pointermove', (event) => {

@@ -32,6 +32,7 @@ import {
   bagHasRoom,
   bountiesOf,
   carriesQuests,
+  distance,
   doorOpenAt,
   droppableItem,
   engageAction,
@@ -52,6 +53,7 @@ import {
   poolShare,
   quest,
   questComplete,
+  reachDistance,
   questsOf,
   turnInGrant,
   windedAfter,
@@ -217,6 +219,22 @@ function raiseProgress({ progress, seconds, pausedSeconds }: RaisingMessage): Ra
 export const HOLD_TO_STEER_MS = 180;
 /** How far on the page a press may wander and still be a tap; a press that moves further steers at once. */
 export const TAP_SLOP_PX = 12;
+/** How long a finger or a pen rests on a part of the HUD before its tip shows, or on a body before it is selected without walking. */
+export const FINGER_HOLD_MS = 400;
+/** How far a body the player walks toward may move from where the walk heads before the walk is aimed at it again. */
+const FOLLOW_REAIM_METRES = 0.5;
+
+/** The body a press walks the player toward. */
+interface Approach {
+  entityId: string;
+  /** Where the walk heads now: where the body stood when the walk last aimed at it. */
+  destination: Point;
+  /** How near the body the walk ends. */
+  within: number;
+  /** What the press does once the player stands within `actWithin`, at most once. */
+  act: (() => void) | undefined;
+  actWithin: number;
+}
 
 /** How long the shop's buttons wait for a trade's answer. A refused trade gets none, so the lock gives way on its own. */
 const TRADE_ANSWER_TIMEOUT_MS = 1500;
@@ -259,10 +277,10 @@ export class GameplaySession {
   /** The entity the player acts on, as the server was last told. */
   target: string | undefined;
   /**
-   * Whether the player faces their target whatever the cursor does, on a fine pointer. A right
-   * press on a body sets it, and it ends with the target, on a second right press on the target, or
-   * on a right press on the ground. A right press on a body switches slot 1 with it, but the 1 key
-   * switches slot 1 alone, and a right press on the ground ends the lock alone.
+   * Whether the player faces their target: on a fine pointer whatever the cursor does, and on a finger
+   * at all, since a finger otherwise faces the way it walks. A left press on a body slot 1 can act on
+   * sets it, switching slot 1 on with it. The lock's button and its key set it or end it, leaving the
+   * target and slot 1 as they are, and it ends with the target. The 1 key switches slot 1 alone.
    */
   gazeLocked = false;
   /** Whether Run is on. A winded player walks whatever it says, and one an effect holds below a run jogs. */
@@ -287,11 +305,13 @@ export class GameplaySession {
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
   private waking = false;
   /**
-   * A press on the ground still down: where it landed, where on the ground it points now, when it
+   * A press still down: where on the ground it landed, where on the ground it points now, when it
    * began, and whether it steers. It points nowhere from a new space's `enterSpace` until the
-   * player stands there.
+   * player stands there. A finger's or a pen's press on a body names the body instead of where it
+   * landed until it lifts, rests long enough to select it, or slides into a steer.
    */
-  private hold: { landed: Point; point: Point | undefined; startedAtMs: number; steering: boolean } | undefined;
+  private hold: { landed: Point | undefined; point: Point | undefined; startedAtMs: number; steering: boolean; entityId?: string } | undefined;
+  private approach: Approach | undefined;
   /** Whether the press ring lies at the destination of the walk a press let go of, until that walk ends. */
   private destinationMarked = false;
   private slowedUntilMs = 0;
@@ -446,10 +466,15 @@ export class GameplaySession {
 
   /** The per-frame body. Injected timestamp, so a test drives it directly. */
   runTick(timestampMs: number): void {
-    if (this.hold !== undefined && timestampMs - this.hold.startedAtMs >= HOLD_TO_STEER_MS) this.hold.steering = true;
+    const hold = this.hold;
+    if (hold?.entityId !== undefined) {
+      if (timestampMs - hold.startedAtMs >= FINGER_HOLD_MS) this.selectHeldEntity(hold.entityId);
+    } else if (hold !== undefined && timestampMs - hold.startedAtMs >= HOLD_TO_STEER_MS) hold.steering = true;
     if (this.hold?.steering === true && this.hold.point !== undefined) this.predictor.steerToward(this.hold.point);
     if (this.walkWaitsForChannel && !this.channelUnderWay) this.walkWaitsForChannel = false;
+    const walkedOwn = this.walkingOwnApproach;
     this.predictor.runTick(timestampMs);
+    this.followApproach(walkedOwn);
     // However the walk a press let go of ends, its ring goes with it.
     if (this.predictor.walk === undefined) this.liftDestinationMarker();
     this.closeServicePanelBeyondSpeakingDistance();
@@ -481,15 +506,154 @@ export class GameplaySession {
   }
 
   /**
-   * A press on an entity's body, which never walks the player and makes the entity the target. An
-   * NPC within speaking distance is also asked to go on, which opens what it offers.
+   * A left press on an entity's body makes it the target. On an NPC it walks the player up beside it,
+   * and asks it to go on as they come within speaking distance, which opens what it offers. On a body
+   * slot 1 can act on, it locks the gaze on it, switches slot 1 on, and walks the player up beside it,
+   * into touch. On another dreamer slot 1 cannot act on, it walks the player up beside them all the
+   * same. Any other body it only selects.
    */
   pressEntity(entityId: string): void {
-    const self = this.self;
     const entity = this.controller.entities.get(entityId);
-    if (self === undefined || entity === undefined || !this.acting) return;
+    if (this.self === undefined || entity === undefined || !this.acting) return;
     this.select(entityId);
-    if (entity.kind === 'npc' && withinSpeakingDistance(self.position, entity.position)) this.interact(entityId);
+    if (entity.kind === 'npc') {
+      this.approachEntity(entityId, reachDistance(entity.radius), () => this.interact(entityId), SOMNIO_CONSTANTS.speakingDistance);
+      return;
+    }
+    if (!this.engageable) {
+      if (entity.kind === 'peer') this.approachEntity(entityId, reachDistance(entity.radius));
+      return;
+    }
+    this.gazeLocked = true;
+    if (this.engaged) {
+      this.markTarget();
+      this.onStateChanged?.();
+    } else this.toggleEngage();
+    this.approachEntity(entityId, reachDistance(entity.radius));
+  }
+
+  /**
+   * A finger's or a pen's press on an entity's body. Lifted within `FINGER_HOLD_MS`, it presses the
+   * body as a left press does. Resting that long, it only selects the body. Sliding past
+   * `TAP_SLOP_PX` first, it steers as a press on the ground does.
+   */
+  holdEntity(entityId: string, timestampMs: number): void {
+    if (!this.acting || !this.controller.entities.has(entityId)) return;
+    this.hold = { landed: undefined, point: undefined, startedAtMs: timestampMs, steering: false, entityId };
+  }
+
+  /** A finger rested on a body long enough: it becomes the target, and the press then presses nothing. */
+  private selectHeldEntity(entityId: string): void {
+    this.hold = undefined;
+    this.selectEntity(entityId);
+  }
+
+  /** Makes an entity in view the target, without walking: a mouse's right press on its body, or a finger or a pen resting on it. */
+  selectEntity(entityId: string): void {
+    if (this.acting && this.controller.entities.has(entityId)) this.select(entityId);
+  }
+
+  /**
+   * Walks the player within `within` of a body, following it as it moves. On the way, it runs `act`
+   * the first time they stand within `actWithin`, which may be further off. The walk ends the first
+   * time they stand within `within`, and from there already the walk under way stops.
+   */
+  private approachEntity(entityId: string, within: number, act?: () => void, actWithin = within): void {
+    const self = this.self;
+    const body = this.controller.entities.get(entityId);
+    if (self === undefined || body === undefined) return;
+    this.liftDestinationMarker();
+    this.walkWaitsForChannel = false;
+    const approach: Approach = { entityId, destination: { x: body.position.x, z: body.position.z }, within, act, actWithin };
+    this.approach = approach;
+    if (this.reachIn(approach, self.position, body.position)) {
+      this.predictor.stop();
+      return;
+    }
+    this.walkToward(approach, body.position);
+    this.markDestination(body.position);
+  }
+
+  /**
+   * Runs the press's act once the player stands within its range of the body, and answers whether
+   * they stand where the walk ends, which ends the following.
+   */
+  private reachIn(approach: Approach, from: Point, body: Point): boolean {
+    const away = distance(from, body);
+    const act = approach.act;
+    if (act !== undefined && away <= approach.actWithin) {
+      approach.act = undefined;
+      act();
+    }
+    if (away > approach.within) return false;
+    if (this.approach === approach) this.approach = undefined;
+    return true;
+  }
+
+  /** Whether the walk under way is the approach's own, toward where it last aimed at the body. */
+  private get walkingOwnApproach(): boolean {
+    const walk = this.predictor.walk;
+    return this.approach !== undefined && walk?.kind === 'path' && walk.destination === this.approach.destination;
+  }
+
+  /** Ends the following, and stands the player where they are while its walk is still under way. */
+  private endApproach(): void {
+    if (this.walkingOwnApproach) this.predictor.stop();
+    this.approach = undefined;
+  }
+
+  /** Walks toward where the body stands now, in place of the walk under way. */
+  private walkToward(approach: Approach, { x, z }: Point): void {
+    approach.destination = { x, z };
+    this.predictor.walkTo(approach.destination, { within: approach.within, act: () => this.arriveAt(approach) });
+  }
+
+  /**
+   * The walk toward a body came within range of where it headed. The body may have moved on since,
+   * so the walk ends only in range of where the body stands now, and otherwise walks on toward it.
+   */
+  private arriveAt(approach: Approach): void {
+    const self = this.self;
+    const body = this.controller.entities.get(approach.entityId);
+    if (self === undefined || body === undefined) {
+      if (this.approach === approach) this.approach = undefined;
+      return;
+    }
+    if (!this.reachIn(approach, self.position, body.position)) this.walkToward(approach, body.position);
+  }
+
+  /**
+   * Follows the body the press walks the player toward, after the step just taken. As the player first
+   * stands in range of where it stands now, it acts and ends the walk, which a body coming to meet
+   * them can bring about before the walk's own destination. Short of that, the press ring moves with
+   * the body, and the walk is aimed at it again once it has moved `FOLLOW_REAIM_METRES` from where
+   * the walk heads. A walk that gave way to another, and a body gone from view, end the following,
+   * and a nightmare driven off stops the walk where the player stands. The approach's own walk ending
+   * of itself in that step (`walkedOwn`) ends the following too. It first acts where the walk ended
+   * within the act's range, as a walk round a counter does, unless `arrivalsAct` holds it back on the
+   * way through a door. Another walk ending never acts for it.
+   */
+  private followApproach(walkedOwn: boolean): void {
+    const approach = this.approach;
+    if (approach === undefined) return;
+    const body = this.controller.entities.get(approach.entityId);
+    const self = this.self;
+    if (body !== undefined && drivenOff(body)) {
+      this.endApproach();
+      return;
+    }
+    if (walkedOwn && this.predictor.walk === undefined && this.predictor.arrivalsAct && body !== undefined && self !== undefined && this.acting)
+      this.reachIn(approach, self.position, body.position);
+    if (!this.walkingOwnApproach || body === undefined) {
+      this.approach = undefined;
+      return;
+    }
+    if (self !== undefined && this.reachIn(approach, self.position, body.position)) {
+      this.predictor.stop();
+      return;
+    }
+    if (this.destinationMarked) this.controller.renderSurface.showPressMarker(body.position);
+    if (distance(body.position, approach.destination) > FOLLOW_REAIM_METRES) this.walkToward(approach, body.position);
   }
 
   /**
@@ -506,9 +670,15 @@ export class GameplaySession {
       this.interact(carrierId);
       return;
     }
+    this.walkToAct(fixture.position, SOMNIO_CONSTANTS.speakingDistance, () => this.interact(carrierId));
+  }
+
+  /** Walks the player within `within` of a point, running `act` there, with the press ring on the point until the walk ends. */
+  private walkToAct(point: Point, within: number, act: () => void): void {
     this.liftDestinationMarker();
     this.walkWaitsForChannel = false;
-    this.predictor.walkTo(fixture.position, { within: SOMNIO_CONSTANTS.speakingDistance, act: () => this.interact(carrierId) });
+    this.predictor.walkTo(point, { within, act });
+    this.markDestination(point);
   }
 
   /** Acts on a carrier the player stands at, from where they stand, and opens its panel when it offers a service. */
@@ -528,31 +698,25 @@ export class GameplaySession {
     return fixture === undefined ? undefined : { id: carrierId, name: undefined, position: fixture.position, service: fixture.fixture.service };
   }
 
-  /**
-   * A right press on an entity's body makes it the target and locks the player's facing on it, if it
-   * is there to face, and switches slot 1 on wherever it can act on it. A right press on the target
-   * already locked ends the lock and switches slot 1 off, and keeps the target. The player's own
-   * body is ignored.
-   */
-  toggleGazeOn(entityId: string): void {
-    if (!this.acting || entityId === this.controller.selfId || !this.controller.entities.has(entityId)) return;
-    const locking = entityId !== this.target || !this.gazeLocked;
-    if (locking) {
-      this.select(entityId);
-      if (!this.gazeHolds) return;
+  /** Whether the gaze can lock on the target: one there to face, and not the player themselves. */
+  get gazeLockable(): boolean {
+    return this.target !== this.controller.selfId && this.gazeHolds;
+  }
+
+  /** The lock button and its key: locks the gaze on the target, or lets go of it, and leaves slot 1 as it is. */
+  toggleGazeLock(): void {
+    if (this.gazeLocked) {
+      this.unlockGaze();
+      return;
     }
-    this.gazeLocked = locking;
-    const engaging = locking && this.engageable;
-    if (engaging !== this.engaged) {
-      this.engaged = engaging;
-      this.send({ tag: 'engage', payload: { on: engaging } });
-    }
+    if (!this.acting || !this.gazeLockable) return;
+    this.gazeLocked = true;
     this.markTarget();
     this.onStateChanged?.();
   }
 
-  /** Ends the gaze lock: the player faces the cursor again, and keeps the target and slot 1 as they are. */
-  unlockGaze(): void {
+  /** Ends the gaze lock: the player faces the cursor again, or on a finger the way they walk, and keeps the target and slot 1 as they are. */
+  private unlockGaze(): void {
     if (!this.gazeLocked) return;
     this.gazeLocked = false;
     this.markTarget();
@@ -588,16 +752,22 @@ export class GameplaySession {
    */
   pressGround(point: Point, timestampMs: number): void {
     if (!this.acting) return;
+    this.takeOverWalk();
+    this.hold = { landed: point, point, startedAtMs: timestampMs, steering: false };
+    this.controller.renderSurface.showPressMarker(point);
+  }
+
+  /** A press on the ground is to decide where the player walks next. */
+  private takeOverWalk(): void {
     this.liftDestinationMarker();
     // A walk waiting for the player's channel ends, so the walk this press makes breaks the channel.
     if (this.walkWaitsForChannel) {
       this.walkWaitsForChannel = false;
       this.predictor.stop();
     }
-    // The walk under way goes on until the press lets go, but no longer to pick anything up.
+    // The walk under way goes on until the press lets go, but no longer to pick anything up or toward a body.
     this.predictor.dropArrival();
-    this.hold = { landed: point, point, startedAtMs: timestampMs, steering: false };
-    this.controller.renderSurface.showPressMarker(point);
+    this.approach = undefined;
   }
 
   /** Where on the ground the press still down points now. Before the player stands in a space just entered, it points nowhere yet. */
@@ -608,9 +778,17 @@ export class GameplaySession {
     if (hold.steering) this.controller.renderSurface.showPressMarker(point);
   }
 
-  /** The press still down moved too far to be a tap, so the player steers from now on. */
+  /** The press still down moved too far to be a tap, so the player steers from now on, a finger's press on a body as one on the ground. */
   steer(): void {
-    if (this.hold !== undefined) this.hold.steering = true;
+    const hold = this.hold;
+    if (hold === undefined) return;
+    if (hold.entityId !== undefined) {
+      if (!this.acting) return;
+      delete hold.entityId;
+      this.takeOverWalk();
+      if (hold.point !== undefined) this.controller.renderSurface.showPressMarker(hold.point);
+    }
+    hold.steering = true;
   }
 
   /**
@@ -620,9 +798,7 @@ export class GameplaySession {
   pressLoot(lootId: string): void {
     const loot = this.loot.get(lootId);
     if (loot === undefined || !this.acting) return;
-    this.liftDestinationMarker();
-    this.walkWaitsForChannel = false;
-    this.predictor.walkTo({ x: loot.x, z: loot.z }, { within: PICKUP_REACH, act: () => this.pickUp(lootId) });
+    this.walkToAct({ x: loot.x, z: loot.z }, PICKUP_REACH, () => this.pickUp(lootId));
   }
 
   /** Asks for a drop still lying there. A full bag, which the server would refuse an item for, is said in chat instead, and the drop stays. */
@@ -639,12 +815,18 @@ export class GameplaySession {
   /**
    * The press came up, with the pointer over `point` on the ground. A tap walks along a path to
    * where it landed, and a steer walks on to where it let go. The ring stays at that destination
-   * until the walk ends.
+   * until the walk ends. A finger's press on a body lifted within `FINGER_HOLD_MS` presses it, and
+   * one rested that long only selects it, though no frame has run since.
    */
   release(point: Point | undefined): void {
     const hold = this.hold;
     if (hold === undefined) return;
     this.hold = undefined;
+    if (hold.entityId !== undefined) {
+      if (this.now() - hold.startedAtMs >= FINGER_HOLD_MS) this.selectEntity(hold.entityId);
+      else this.pressEntity(hold.entityId);
+      return;
+    }
     const destination = !this.acting ? undefined : hold.steering ? (point ?? hold.point) : hold.landed;
     if (destination === undefined) {
       this.controller.renderSurface.liftPressMarker();
@@ -655,15 +837,37 @@ export class GameplaySession {
     this.destinationMarked = true;
   }
 
+  /** Drops the press ring where a walk a press made heads, until that walk ends. */
+  private markDestination(point: Point): void {
+    this.controller.renderSurface.showPressMarker(point);
+    this.destinationMarked = true;
+  }
+
   private liftDestinationMarker(): void {
     if (!this.destinationMarked) return;
     this.destinationMarked = false;
     this.controller.renderSurface.liftPressMarker();
   }
 
+  /**
+   * Stops the walk under way where the player stands, a held press's steer and a walk toward a body
+   * included, and answers whether there was one. A leap is an ability's, not a walk, and runs on.
+   */
+  stopWalk(): boolean {
+    const walk = this.predictor.walk;
+    if (walk === undefined || walk.kind === 'leap') return false;
+    this.letGo();
+    this.approach = undefined;
+    this.walkWaitsForChannel = false;
+    this.predictor.stop();
+    this.liftDestinationMarker();
+    return true;
+  }
+
   /** The pointer was lost, or the world gave up the input: a held press and a steer stop, and a walk along a path goes on. */
   letGo(): void {
-    if (this.hold !== undefined) this.controller.renderSurface.liftPressMarker();
+    // A finger resting on a body drops no ring of its own, so the ring of the walk under way stays.
+    if (this.hold !== undefined && this.hold.entityId === undefined) this.controller.renderSurface.liftPressMarker();
     this.hold = undefined;
     if (this.predictor.walk?.kind === 'steer') this.predictor.stop();
   }
@@ -876,6 +1080,8 @@ export class GameplaySession {
   /** Acts on `entityId` from now on, or on nothing, marks it, and tells the server when that is a change. */
   select(entityId: string | undefined): void {
     if (entityId === this.target) return;
+    // The walk toward a body is for acting on it as the target, so another target ends it.
+    if (this.approach !== undefined && this.approach.entityId !== entityId) this.endApproach();
     if (this.target !== undefined && this.target !== this.controller.selfId) this.heldEffects.delete(this.target);
     this.targetHealth = undefined;
     this.target = entityId;
@@ -946,12 +1152,12 @@ export class GameplaySession {
   }
 
   /**
-   * What the player faces: the cursor on a fine pointer, unless the gaze is locked on the target. A
-   * finger has no cursor, so on a coarse pointer they face their target where it is drawn, or the
-   * way they walk without one.
+   * What the player faces: their target where it is drawn while the gaze is locked on it, and
+   * otherwise the cursor on a fine pointer. A finger has no cursor, so on a coarse pointer they face
+   * the way they walk.
    */
   private lookAt(): Point | undefined {
-    if (!this.coarsePointer && !this.gazeLocked) return this.aimPoint;
+    if (!this.gazeLocked) return this.coarsePointer ? undefined : this.aimPoint;
     return this.target === undefined ? undefined : this.controller.entities.get(this.target)?.position;
   }
 

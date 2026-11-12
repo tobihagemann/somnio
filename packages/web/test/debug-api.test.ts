@@ -274,7 +274,7 @@ describe('the debug API', () => {
     expect(api.characterBody()).toEqual({ left: 964, top: 182, width: 256, height: 172, turnDegrees: expect.any(Number) });
   });
 
-  it('reports the gaze lock as a second right press on the target lets go of it and a third takes it again', () => {
+  it('reports the gaze lock as a left press on a nightmare takes it and the lock toggle lets go of it', () => {
     const app = shell();
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
     app.controller.entities.set('self', clientEntity());
@@ -282,12 +282,10 @@ describe('the debug API', () => {
     app.controller.presentedOverlay = undefined;
     const api = makeDebugAPI(app);
 
-    app.session.toggleGazeOn('monster:1');
+    app.session.pressEntity('monster:1');
     expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', true]);
-    app.session.toggleGazeOn('monster:1');
+    app.session.toggleGazeLock();
     expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', false]);
-    app.session.toggleGazeOn('monster:1');
-    expect(api.gazeLocked()).toBe(true);
   });
 
   it('reports the walk under way as plain points', () => {

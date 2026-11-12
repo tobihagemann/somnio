@@ -48,6 +48,10 @@ export const HUD_ICONS = {
   menu: packed('/assets/UI/icon-menu.png', GAME_ICONS_SIZE),
   close: packed('/assets/UI/icon-close.png', GAME_ICONS_SIZE),
   run: packed('/assets/UI/icon-run.png', GAME_ICONS_SIZE),
+  /** The target's ring, as the gaze lock's button shows it while the gaze is free. */
+  gazeFree: drawn(line('M12 5.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13z')),
+  /** The ring with four ticks pointing in, the reticle a locked gaze marks the target with. */
+  gazeLocked: drawn(line('M12 5.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13zM12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4')),
   attack: packed('/assets/UI/icon-sword.png'),
   /** The Moonstone: a smooth stone with a crescent cut into it. */
   mend: drawn('<path d="M12 2c5.8 0 9 4.6 9 10.4C21 18 17.2 22 12 22s-9-4-9-9.6C3 6.6 6.2 2 12 2zM10.95 8.4A4.8 4.8 0 1 0 15.48 14.93 4 4 0 0 1 10.95 8.4z"/>'),

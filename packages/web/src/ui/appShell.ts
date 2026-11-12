@@ -19,6 +19,7 @@ import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale,
 import { FallenNotice } from './fallenNotice';
 import { SensedMarkers } from './sensedMarkers';
 import { GameHUD, WINDOW_KEYS } from './hud';
+import { GAZE_LOCK_KEY } from './belt';
 import type { HUDClock, HUDWindowId } from './hud';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
@@ -27,10 +28,16 @@ import { placeName } from './placeNames';
 import { screenOccluders, viewportPoint } from './occluders';
 import { element, prefersReducedMotion, setHidden } from './dom';
 
-/** The window a key press opens and closes, if any: one of a window's keys with no modifier. */
-function windowOnKey(event: KeyboardEvent): HUDWindowId | undefined {
-  if (event.metaKey || event.ctrlKey || event.altKey) return undefined;
-  const key = event.key.toLowerCase();
+/**
+ * The key pressed, in lower case, unless Alt, Ctrl, or Cmd is held with it, since those presses are
+ * the browser's or the system's. Shift is no modifier here, because it is Run's own key.
+ */
+function plainKey(event: KeyboardEvent): string | undefined {
+  return event.metaKey || event.ctrlKey || event.altKey ? undefined : event.key.toLowerCase();
+}
+
+/** The window a plain key opens and closes, if any. */
+function windowOnKey(key: string): HUDWindowId | undefined {
   return (Object.keys(WINDOW_KEYS) as HUDWindowId[]).find((id) => WINDOW_KEYS[id].includes(key));
 }
 
@@ -222,6 +229,7 @@ export class AppShell {
         onMoveItem: (itemId, place) => this.session.moveItem(itemId, place),
         onDropItem: (itemId, at) => this.dropItem(itemId, at),
         onToggleRun: () => this.session.toggleRun(),
+        onToggleGazeLock: () => this.session.toggleGazeLock(),
         onToggleEngage: () => this.session.toggleEngage(),
         onUseAbility: (abilityId) => this.session.useAbility(abilityId),
         onPressPlayer: (name) => this.session.pressPlayerName(name),
@@ -407,9 +415,15 @@ export class AppShell {
         this.hud.openChat();
         return;
       }
-      const windowId = windowOnKey(event);
-      if (event.key === 'Shift') this.session.toggleRun();
-      else if (event.code === 'Digit1') this.session.toggleEngage();
+      if (event.key === 'Shift') {
+        if (plainKey(event) !== undefined) this.session.toggleRun();
+        return;
+      }
+      const key = plainKey(event);
+      if (key === undefined) return;
+      const windowId = windowOnKey(key);
+      if (event.code === 'Digit1') this.session.toggleEngage();
+      else if (key === GAZE_LOCK_KEY) this.session.toggleGazeLock();
       else if (windowId !== undefined) this.hud.toggleWindow(windowId);
       else this.useAbilityOnKey(event.code);
     });
@@ -460,13 +474,13 @@ export class AppShell {
     // player looks back at the world.
     this.canvas.addEventListener('pointerdown', (event) => {
       this.hud.chatInput.blur();
-      if (event.button === 2 && event.pointerType === 'mouse') this.pressGaze(event);
+      if (event.button === 2 && event.pointerType === 'mouse') this.pressSecondary(event);
       else if (event.button === 0) this.pressPrimary(event);
     });
     // A mouse button pressed while another is down fires no `pointerdown`, only a move naming it.
     this.canvas.addEventListener('pointermove', (event) => {
       if (event.pointerType !== 'mouse') return;
-      if (event.button === 2 && (event.buttons & 2) !== 0) this.pressGaze(event);
+      if (event.button === 2 && (event.buttons & 2) !== 0) this.pressSecondary(event);
       else if (event.button === 0 && (event.buttons & 1) !== 0 && !this.downPointers.has(event.pointerId)) this.pressPrimary(event);
     });
     // A pointer is up when its left button is. On the window, because that can happen over a panel
@@ -499,14 +513,13 @@ export class AppShell {
   }
 
   /**
-   * A right press of a mouse: on a body it locks the gaze on it and switches slot 1 on there, or lets
-   * go of both; on the ground, the player's own body's included, it lets go of the lock alone. On a
-   * drop or a fixture it does nothing.
+   * A right press of a mouse: on a body it makes it the target without walking; on the ground, the
+   * player's own body's included, it clears the target. On a drop or a fixture it does nothing.
    */
-  private pressGaze(event: PointerEvent): void {
+  private pressSecondary(event: PointerEvent): void {
     const target = this.pressTargetUnder(event);
-    if (target?.kind === 'entity') this.session.toggleGazeOn(target.entityId);
-    else if (target === undefined || target.kind === 'ground') this.session.unlockGaze();
+    if (target?.kind === 'entity') this.session.selectEntity(target.entityId);
+    else if (target === undefined || target.kind === 'ground') this.session.select(undefined);
   }
 
   /** A press of a mouse's left button, a finger, or a pen. */
@@ -534,7 +547,9 @@ export class AppShell {
         this.session.pressLoot(target.lootId);
         return;
       case 'entity':
-        this.session.pressEntity(target.entityId);
+        // A finger or a pen has no right press, so it selects by resting on the body instead.
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') this.session.holdEntity(target.entityId, performance.now());
+        else this.session.pressEntity(target.entityId);
         return;
       case 'fixture':
         this.session.pressFixture(target.carrierId);
@@ -689,8 +704,18 @@ export class AppShell {
       // Nothing to resume to without a session, so Esc is inert rather than opening a menu whose
       // Resume would drop the player onto the splash.
       if (this.controller.connectionState === 'disconnected') return;
-      // What the HUD has open closes first, one thing at a time.
+      // An open chat closes first, focused or not. A walk under way stops next, ahead of what stands open, since it keeps moving the player meanwhile.
+      if (this.hud.chatOpen) {
+        this.hud.closeChat();
+        return;
+      }
+      if (this.session.stopWalk()) return;
+      // What the HUD has open closes next, one thing at a time, then a carrier's panel.
       if (this.hud.escape()) return;
+      if (this.session.servicePanel !== undefined) {
+        this.session.closeServicePanel();
+        return;
+      }
       // Clearing the target comes before the menu.
       if (this.session.target !== undefined) {
         this.session.select(undefined);
@@ -923,6 +948,7 @@ export class AppShell {
     const target = this.session.target === undefined ? undefined : this.controller.entities.get(this.session.target);
     this.hud.renderPools(this.session.energy, this.session.winded);
     this.hud.renderRun(this.session.running, this.session.runHeldOff);
+    this.hud.renderGazeLock(this.session.gazeLocked, this.session.gazeLockable);
     this.hud.renderSlotOne(this.session.engaged, this.session.engageAction(), target?.condition === 'fallen', this.session.attackRefusal());
     this.hud.renderAbilities(this.session.abilitySlots());
     this.hud.renderLucidity(this.session.lucidity);
