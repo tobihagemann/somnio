@@ -115,10 +115,13 @@ Service at None, a door's night flag off), so an absent key is not a lost edit. 
   spawn's area is reported too, though it stays live. So are walk surfaces of two placements that
   overlap, an `elevation` on a model with walk surfaces, and an unmapped model. What the server logs
   at boot about the rules' named sectors is not among them. That is an `EdariaInn` without a spawn,
-  a missing `NorthWood`, which the Healer trial names, and a missing `WestMeadow`, `AutumnWood`, or
-  `NorthMeadow`. It is also a resize of one of those three that leaves outside it the hidden place
-  the Mystic trial puts there (`TRIALS` in `packages/core/src/lucidity.ts`, sector-relative at
-  `(6.72, 24.88)`, `(9.04, 8)`, and `(6.88, 16.72)`). Tacita's dialog in `EdariaMysticTower` hints
+  and anything a quest in `packages/core/data/quests.json` names that is not loaded. That covers a
+  carrier, such as `npc:Graveyard/memor` or the board's fixture `fixture:EdariaSquare/fixture-1`,
+  and a sector, such as `NorthWood`, which the Healers' trial names, or `WestMeadow`,
+  `AutumnWood`, or `NorthMeadow`. Renaming such an NPC, fixture, or sector breaks the quests that
+  name it. It is also a resize of `WestMeadow`, `AutumnWood`, or `NorthMeadow` that leaves outside
+  it the hidden place the Mystics' trial puts there (sector-relative at `(6.72, 24.88)`,
+  `(9.04, 8)`, and `(6.88, 16.72)`). Tacita's dialog in `EdariaMysticTower` hints
   at each place, so moving one means rewording its hint.
 - Doors, NPCs, and monster spawns carry a text label (`<door id> -> <sector>/<door>`, the
   NPC's name, `<kind> x<maxAlive>`). The labels are DOM elements (`.editor-label`,
@@ -128,6 +131,12 @@ Service at None, a door's night flag off), so an absent key is not a lost edit. 
   an empty target, so it shows as an issue until Target sector and Target door are picked in
   the door's own inspector. Deleting a placement deletes its doors, and a door is copied only
   together with its placement.
+- A fixture has no tool either. A placement's inspector carries a `Service` picker: a service
+  attaches a fixture to the placement (`fixture-<n>`, one to a placement), as the notice board
+  on `EdariaSquare` carries the bounty board's, and None removes it. Renaming the placement
+  re-points its fixture, deleting it deletes the fixture, and copy and paste carries the fixture
+  along under a new id. A fixture has no label of its own and is not selected apart from its
+  placement; read it from the saved file's `fixtures`.
 - A door's inspector carries an `Opens only at night` checkbox under its target pickers, which sets `nightOnly: true`
   on the door; unticked, the key is left out of the file. The game opens such a door from 22:00
   to 06:00 world time. Set it on the outer door of a pair only, as on the tower's

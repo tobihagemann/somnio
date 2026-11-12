@@ -19,11 +19,21 @@ const FALLEN_PLAYER_ID = '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7';
 const NPC_ID = 'npc:EdariaLibrary/libus';
 const MASTER_ID = 'npc:EdariaFighterHall/pugnax';
 const SHOPKEEPER_ID = 'npc:EdariaShop/mercus';
+const BOARD_ID = 'fixture:EdariaSquare/fixture-1';
 const SWORD_ID = '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
 const MOONSTONE_ID = '0190a1b2-c3d5-7a1b-9c2d-3e4f5a6b7c8d';
 const CAP_ID = '0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e';
 const RING_ID = '0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf';
 const LOOT_ID = 'loot-12';
+const BOUNTY_ID = 'bounty:168000:Graveyard:skeleton-warrior:collect';
+const BOUNTY = {
+  day: 168000,
+  land: 'Graveyard',
+  monsterKind: 'skeleton-warrior',
+  objective: 'collect',
+  count: 4,
+  reward: { coins: 120, gear: 3 },
+} as const;
 
 /** Every record array populated at once, both ground mark shapes, and a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
@@ -65,12 +75,14 @@ const outdoorSector: SectorView = {
   placements: [
     { id: 'townhall', modelId: 'building-townhall', x: 36.8, z: 4.48, yaw: 270, elevation: 0.75 },
     { id: 'tower', modelId: 'building-tower', x: 3.6, z: 28.5, yaw: 0, elevation: 0 },
+    { id: 'notice-board-1', modelId: 'notice-board', x: 18.15, z: 18.1, yaw: 35, elevation: 0 },
   ],
   blockers: [{ id: 'north-cliff', x: 0, z: 0, width: 16, depth: 0.64 }],
   doors: [
     { id: 'to-edarialibrary', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } },
     { id: 'to-edariamystictower', placement: 'tower', anchor: 'main', target: { sector: 'EdariaMysticTower', door: 'exit' }, nightOnly: true },
   ],
+  fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
 };
 
 const interiorSector: SectorView = {
@@ -82,6 +94,7 @@ const interiorSector: SectorView = {
   placements: [{ id: 'door-1', modelId: 'timber-room-threshold', x: 5.12, z: 7.36, yaw: 0, elevation: 0 }],
   blockers: [],
   doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'EdariaSquare', door: 'to-edarialibrary' } }],
+  fixtures: [],
 };
 
 /** Every tag must appear, so a new message cannot ship without a fixture. */
@@ -118,20 +131,21 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'moveItem', message: { tag: 'moveItem', payload: { itemId: CAP_ID, place: 7 } } },
   { name: 'dropItem', message: { tag: 'dropItem', payload: { itemId: CAP_ID, heading: 247.5 } } },
   { name: 'pickUp', message: { tag: 'pickUp', payload: { lootId: LOOT_ID } } },
-  { name: 'talk', message: { tag: 'talk', payload: { npcId: NPC_ID } } },
+  { name: 'interact', message: { tag: 'interact', payload: { carrierId: NPC_ID } } },
+  { name: 'interact-fixture', message: { tag: 'interact', payload: { carrierId: BOARD_ID } } },
   { name: 'target', message: { tag: 'target', payload: { targetId: 'monster:7' } } },
   { name: 'target-none', message: { tag: 'target', payload: {} } },
   { name: 'engage-on', message: { tag: 'engage', payload: { on: true } } },
   { name: 'engage-off', message: { tag: 'engage', payload: { on: false } } },
   { name: 'useAbility', message: { tag: 'useAbility', payload: { abilityId: 'brace' } } },
   { name: 'useDoor', message: { tag: 'useDoor', payload: { sector: 'EdariaSquare', doorId: 'to-edarialibrary' } } },
-  { name: 'askTask', message: { tag: 'askTask', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
-  { name: 'askTask-trial', message: { tag: 'askTask', payload: { npcId: MASTER_ID } } },
-  { name: 'completeTask', message: { tag: 'completeTask', payload: { npcId: MASTER_ID } } },
-  { name: 'abandonTask', message: { tag: 'abandonTask', payload: {} } },
-  { name: 'study', message: { tag: 'study', payload: { npcId: MASTER_ID, teachingId: 'follow-through' } } },
-  { name: 'buy', message: { tag: 'buy', payload: { npcId: SHOPKEEPER_ID, baseId: 'dagger' } } },
-  { name: 'sell', message: { tag: 'sell', payload: { npcId: SHOPKEEPER_ID, itemId: CAP_ID } } },
+  { name: 'acceptQuest', message: { tag: 'acceptQuest', payload: { carrierId: MASTER_ID, questId: 'follow-through-task' } } },
+  { name: 'turnInQuest', message: { tag: 'turnInQuest', payload: { carrierId: MASTER_ID, questId: 'follow-through-task' } } },
+  { name: 'abandonQuest', message: { tag: 'abandonQuest', payload: { questId: 'follow-through-task' } } },
+  { name: 'acceptQuest-bounty', message: { tag: 'acceptQuest', payload: { carrierId: BOARD_ID, questId: BOUNTY_ID } } },
+  { name: 'study', message: { tag: 'study', payload: { carrierId: MASTER_ID, teachingId: 'follow-through' } } },
+  { name: 'buy', message: { tag: 'buy', payload: { carrierId: SHOPKEEPER_ID, baseId: 'dagger' } } },
+  { name: 'sell', message: { tag: 'sell', payload: { carrierId: SHOPKEEPER_ID, itemId: CAP_ID } } },
   { name: 'wake', message: { tag: 'wake', payload: {} } },
   { name: 'redeemSession', message: { tag: 'redeemSession', payload: { token: 'tok-abc' } } },
   { name: 'redeemSession-with-locale', message: { tag: 'redeemSession', payload: { token: 'tok-abc', locale: 'de' } } },
@@ -389,7 +403,30 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       },
     },
   },
+  {
+    name: 'inventory-after-turn-in',
+    message: {
+      tag: 'inventory',
+      payload: {
+        coins: 172,
+        equipped: [],
+        bag: [{ place: 0, item: { id: CAP_ID, baseId: 'cap', tier: 3, rarity: 'rare', affixes: [{ affixId: 'guard', value: 5 }] } }],
+        rewarded: [{ kind: 'item', baseId: 'cap', rarity: 'rare' }],
+      },
+    },
+  },
+  {
+    name: 'inventory-after-trophy',
+    message: { tag: 'inventory', payload: { coins: 100, equipped: [], bag: [], pickedUp: { kind: 'trophy', monsterKind: 'skeleton-warrior' } } },
+  },
   { name: 'loot', message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } } } },
+  {
+    name: 'loot-trophy',
+    message: {
+      tag: 'loot',
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'trophy', monsterKind: 'skeleton-warrior' }, from: { x: 31, z: -12 } },
+    },
+  },
   {
     name: 'loot-shared',
     message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' }, shared: true } },
@@ -443,7 +480,6 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
           { teachingId: 'follow-through', rank: 0, practice: 0 },
         ],
         study: 'strike',
-        task: { role: 'fighter', teachingId: 'follow-through', progress: 1 },
       },
     },
   },
@@ -461,8 +497,26 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       },
     },
   },
-  { name: 'lucidity-mystic-trial', message: { tag: 'lucidity', payload: { ranks: [], task: { role: 'mystic', progress: 5 } } } },
   { name: 'lucidity-empty', message: { tag: 'lucidity', payload: { ranks: [] } } },
+  {
+    name: 'quests',
+    message: {
+      tag: 'quests',
+      payload: { active: [{ questId: 'follow-through-task', progress: [2] }], done: ['fighter-trial'], bounties: [] },
+    },
+  },
+  {
+    name: 'quests-bounties',
+    message: {
+      tag: 'quests',
+      payload: {
+        active: [{ questId: BOUNTY_ID, progress: [1], definition: BOUNTY }],
+        done: ['bounty:168000:AutumnWood:ghost:driveOff'],
+        bounties: [BOUNTY, { day: 168000, land: 'AutumnWood', monsterKind: 'ghost', objective: 'driveOff', count: 10, reward: { coins: 120, gear: 1 } }],
+      },
+    },
+  },
+  { name: 'quests-empty', message: { tag: 'quests', payload: { active: [], done: [], bounties: [] } } },
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
   { name: 'held', message: { tag: 'held', payload: { entityId: OTHER_PLAYER_ID, held: { mainHand: 'dagger' } } } },
   { name: 'vitals', message: { tag: 'vitals', payload: { entityId: 'monster:7', health: 0.42 } } },

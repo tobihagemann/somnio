@@ -1,4 +1,4 @@
-import { readSectorFile } from '@somnio/core';
+import { npcEntityId, readSectorFile } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import autumnWood from '@somnio/core/fixtures/sectors/AutumnWood.somnio-sector?raw';
 import edariaArena from '@somnio/core/fixtures/sectors/EdariaArena.somnio-sector?raw';
@@ -39,4 +39,12 @@ const SECTOR_FILES: Record<string, string> = {
 
 export function splashSectors(): Sector[] {
   return Object.entries(SECTOR_FILES).map(([name, text]) => readSectorFile(text, name));
+}
+
+let npcNames: ReadonlyMap<string, string> | undefined;
+
+/** The name of each NPC of the committed world, by its entity id, for one the player has not seen. */
+export function committedNPCNames(): ReadonlyMap<string, string> {
+  npcNames ??= new Map(splashSectors().flatMap((sector) => sector.npcs.map((npc) => [npcEntityId(sector.name, npc.id), npc.name] as const)));
+  return npcNames;
 }

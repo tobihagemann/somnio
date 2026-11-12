@@ -19,6 +19,8 @@ export * from './loot.ts';
 export * from './shop.ts';
 export * from './monsterKinds.ts';
 export * from './lucidity.ts';
+export * from './quests.ts';
+export * from './bounties.ts';
 export * from './combat.ts';
 export * from './effects.ts';
 export * from './abilities.ts';

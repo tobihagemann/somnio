@@ -50,6 +50,11 @@ export function worldSecondsAt(clock: WorldClockReading, nowMs: number): number 
   return clock.worldSeconds + (Math.max(0, nowMs - clock.atMs) / 1000) * WORLD_TIME_RATE;
 }
 
+/** The world day `worldSeconds` falls on, counted from the start of year 0, on which the bounty board's bounties turn over. */
+export function worldDay(worldSeconds: number): number {
+  return Math.floor(worldSeconds / SECONDS_PER_DAY);
+}
+
 /** The fractional hour of the day in `[0, 24)`, which the sun follows. */
 export function hourOfDay(worldSeconds: number): number {
   const secondOfDay = worldSeconds - Math.floor(worldSeconds / SECONDS_PER_DAY) * SECONDS_PER_DAY;

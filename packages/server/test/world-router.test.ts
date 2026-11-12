@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OUTDOOR_SPACE_ID, sectorPointInSpace } from '@somnio/core';
+import { OUTDOOR_SPACE_ID, bountyIdOf, bountyLands, dayBounties, sectorPointInSpace } from '@somnio/core';
 import type { NPCDialogState, Sector } from '@somnio/core';
+import { STARTER_SECTOR } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { collectOutbox } from '../src/connection/outbox.ts';
 import { WorldRouter } from '../src/world/worldRouter.ts';
@@ -64,7 +65,7 @@ function talk(router: WorldRouter, sectorName: string, playerName: string) {
   const sector = world.spaces.get(spaceId)!.sectors.find((candidate) => candidate.name === sectorName)!;
   const space = router.space(spaceId)!;
   const { outbox, entityId } = attachPlayer(space, sectorPointInSpace(sector, { x: 5, z: 6 }), playerName, { spaceId });
-  space.handleTalk(`npc:${sectorName}/guard`, entityId);
+  space.handleInteract(`npc:${sectorName}/guard`, entityId);
   return { outbox, space, entityId };
 }
 
@@ -397,5 +398,32 @@ describe('WorldRouter connections', () => {
     router.register(connections[0]!.actor, connections[0]!.accountId);
     router.characterJoined(connections[0]!.accountId, { id: crypto.randomUUID(), name: 'Ｓａｉｂｏｔ' });
     expect(router.kickByCharacterName('saibot')).toBe(true);
+  });
+});
+
+describe('WorldRouter world day', () => {
+  const SECONDS_PER_DAY = 24 * 60 * 60;
+  const DAY = 168_000;
+  const noon = (day: number): number => day * SECONDS_PER_DAY + SECONDS_PER_DAY / 2;
+
+  it("reaches every space, and tells each dreamer in it the new day's bounties", async () => {
+    const router = await routerOver([makeSector('Meadow', { monsterSpawns: [makeMonsterSpawn({ x: 2, z: 2 })] })]);
+    const offered = (day: number) => dayBounties(day, bountyLands([...router.world.spaces.values()].flatMap((space) => space.sectors)));
+    const outside = recordingOutbox();
+    const inside = recordingOutbox();
+    const turnedIn = { active: [], done: [bountyIdOf(offered(DAY)[0]!)] };
+    attachPlayer(router.space(OUTDOOR_SPACE_ID)!, { x: 10, z: 10 }, 'alice', {
+      outbox: outside.outbox,
+      worldSeconds: noon(DAY),
+      character: { quests: turnedIn },
+    });
+    attachPlayer(router.space(STARTER_SECTOR)!, { x: 5, z: 6 }, 'bob', { outbox: inside.outbox, worldSeconds: noon(DAY), spaceId: STARTER_SECTOR });
+    outside.sent.length = 0;
+    inside.sent.length = 0;
+
+    router.reachWorldDay(noon(DAY + 1));
+    expect(offered(DAY + 1)).toHaveLength(1);
+    expect(payloads(outside.sent, 'quests')).toEqual([{ active: [], done: [], bounties: offered(DAY + 1) }]);
+    expect(payloads(inside.sent, 'quests')).toEqual([{ active: [], done: [], bounties: offered(DAY + 1) }]);
   });
 });

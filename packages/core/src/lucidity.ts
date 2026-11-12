@@ -1,44 +1,23 @@
 import { ROLES } from '@somnio/protocol';
-import type { NPCService, Role, SectorView } from '@somnio/protocol';
+import type { Service, Role } from '@somnio/protocol';
 import type { AbilityId } from './abilities.ts';
 import type { BaseItemId } from './items.ts';
-import { distance } from './geometry.ts';
-import type { Point } from './geometry.ts';
-import { sectorPointInSpace } from './sector.ts';
+import type { QuestId } from './quests.ts';
 
 /**
  * What a dreamer grows into: a role taken for good when a master takes their passed trial as
  * done, and the role's teachings, each a stack of ranks built up by practice out in the world.
  */
 
-/** What a master asks for: before taking a dreamer on, or before teaching a gated teaching. */
-export type TaskSpec =
-  /** Falling sets a `withoutFalling` count back to zero. */
-  | { kind: 'driveOff'; count: number; withoutFalling?: boolean }
-  /** A dreamer holding a `withoutStriking` task cannot swing. `labelKey` is the catalog key of the sector's display name. */
-  | { kind: 'reach'; sector: string; labelKey: string; withoutStriking?: boolean }
-  /** Health mended on other dreamers. */
-  | { kind: 'mend'; amount: number }
-  /** Every place stood in once, in any order. The progress keeps bit `i` for place `i`. */
-  | { kind: 'reachAll'; places: HiddenPlace[] };
-
-/** A spot no map marks, found by standing within `radius` of `x`/`z`, which is sector-relative like every record's position. */
-export interface HiddenPlace {
-  sector: string;
-  x: number;
-  z: number;
-  radius: number;
-}
-
 export interface Teaching {
   role: Role;
   /** The catalog key of the teaching's display name. */
   labelKey: string;
   maxRank: number;
-  /** The rank of another teaching to hold before this one can be studied or its task asked for. */
+  /** The rank of another teaching to hold before this one can be studied or its quest taken on. */
   needs?: { teachingId: string; rank: number };
-  /** The task whose completion teaches the first rank; practice builds only the ranks after it. */
-  gate?: TaskSpec;
+  /** The quest whose turn-in teaches the first rank; practice builds only the ranks after it. */
+  gate?: QuestId;
   /** The ability its first rank teaches, which its further ranks deepen. */
   ability?: AbilityId;
 }
@@ -52,7 +31,7 @@ export const TEACHINGS = {
     labelKey: 'Follow-through',
     maxRank: 3,
     needs: { teachingId: 'strike', rank: 2 },
-    gate: { kind: 'driveOff', count: 3, withoutFalling: true },
+    gate: 'follow-through-task',
   },
   'balance-recovery': { role: 'fighter', labelKey: 'Balance recovery', maxRank: 3 },
   toughening: { role: 'fighter', labelKey: 'Toughening', maxRank: 5 },
@@ -68,7 +47,7 @@ export const TEACHINGS = {
     labelKey: 'Drawing back',
     maxRank: 1,
     needs: { teachingId: 'touch', rank: 2 },
-    gate: { kind: 'mend', amount: 60 },
+    gate: 'drawing-back-task',
   },
   'spirit-deepening': { role: 'healer', labelKey: 'Spirit deepening', maxRank: 5 },
   'deep-mend': { role: 'healer', labelKey: 'Deep mend', maxRank: 3, needs: { teachingId: 'touch', rank: 1 }, ability: 'deep-mend' },
@@ -91,20 +70,8 @@ export function teaching(id: TeachingId): Teaching {
   return TEACHINGS[id];
 }
 
-/** What each master asks of a dreamer before taking them on. Passing it commits nothing. */
-export const TRIALS: Record<Role, TaskSpec> = {
-  fighter: { kind: 'driveOff', count: 1 },
-  healer: { kind: 'reach', sector: 'NorthWood', labelKey: 'North Wood', withoutStriking: true },
-  // Tacita's dialog in EdariaMysticTower is how a dreamer finds these, so a place moves with its hint.
-  mystic: {
-    kind: 'reachAll',
-    places: [
-      { sector: 'WestMeadow', x: 6.72, z: 24.88, radius: 3 },
-      { sector: 'AutumnWood', x: 9.04, z: 8, radius: 3 },
-      { sector: 'NorthMeadow', x: 6.88, z: 16.72, radius: 3 },
-    ],
-  },
-};
+/** The quest each master gives a dreamer with no role. Only its turn-in makes the role theirs. */
+export const TRIAL_QUESTS: Record<Role, QuestId> = { fighter: 'fighter-trial', healer: 'healer-trial', mystic: 'mystic-trial' };
 
 /** The teaching a dreamer is taught, and set to study, on taking the role. */
 export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch', mystic: 'ward' };
@@ -133,24 +100,14 @@ export interface TeachingRank {
 /** A rank as far as a rule reads it, which a rank off the wire satisfies too. */
 export type HeldRank = Pick<TeachingRank, 'rank'> & { teachingId: string };
 
-export interface LucidityTask {
-  /** The role of the master who set it. */
-  role: Role;
-  /** The gated teaching it earns; `undefined` for the role's trial. */
-  teachingId: TeachingId | undefined;
-  progress: number;
-}
-
 export interface Lucidity {
   role: Role | undefined;
   ranks: TeachingRank[];
   /** The one teaching practice builds toward. */
   study: TeachingId | undefined;
-  /** A dreamer holds at most one trial or task. */
-  task: LucidityTask | undefined;
 }
 
-export const NO_LUCIDITY: Lucidity = { role: undefined, ranks: [], study: undefined, task: undefined };
+export const NO_LUCIDITY: Lucidity = { role: undefined, ranks: [], study: undefined };
 
 const ROLE_LABEL_KEYS: Record<Role, string> = { fighter: 'Fighter', healer: 'Healer', mystic: 'Mystic' };
 
@@ -191,8 +148,8 @@ export function unmetNeed(ranks: readonly HeldRank[], teachingId: TeachingId): T
 
 /**
  * Where a teaching stands for a dreamer of its role: `mastered` at its last rank, `later` while a
- * need is unmet, `task` while its first rank waits on its gate's task, and `open` to study
- * otherwise. A master sets a dreamer to study an `open` teaching and sets the task of a `task` one.
+ * need is unmet, `task` while its first rank waits on its gate's quest, and `open` to study
+ * otherwise. A master sets a dreamer to study an `open` teaching and offers the quest of a `task` one.
  */
 export type TeachingStanding = 'mastered' | 'later' | 'task' | 'open';
 
@@ -204,60 +161,10 @@ export function teachingStanding(ranks: readonly HeldRank[], teachingId: Teachin
   return taught.gate !== undefined && rank === 0 ? 'task' : 'open';
 }
 
-/** Whether a master could have set the task: a trial, or the gate of a teaching of the task's own role. */
-export function isSoundTask(task: Pick<LucidityTask, 'role' | 'teachingId'>): boolean {
-  if (task.teachingId === undefined) return true;
-  const taught = teaching(task.teachingId);
-  return taught.gate !== undefined && taught.role === task.role;
-}
-
-/**
- * What a held task asks for. The server holds only sound tasks, but a client whose teachings differ
- * from the server's can read one naming a teaching it knows without a gate, which asks for nothing.
- */
-export function taskSpec(task: Pick<LucidityTask, 'role' | 'teachingId'>): TaskSpec | undefined {
-  return task.teachingId === undefined ? TRIALS[task.role] : teaching(task.teachingId).gate;
-}
-
-/** The progress at which a task is done. */
-export function taskGoal(spec: TaskSpec): number {
-  switch (spec.kind) {
-    case 'driveOff':
-      return spec.count;
-    case 'reach':
-      return 1;
-    case 'mend':
-      return spec.amount;
-    case 'reachAll':
-      return (1 << spec.places.length) - 1;
-  }
-}
-
-/** How many of a `reachAll` task's places its progress holds as found. */
-export function placesFound(progress: number): number {
-  let found = 0;
-  for (let bits = progress; bits !== 0; bits >>>= 1) found += bits & 1;
-  return found;
-}
-
-/** The progress bits of the places of a `reachAll` task that `point`, in the sector's space, stands within; 0 for any other task. */
-export function placesReached(spec: TaskSpec, sector: SectorView, point: Point): number {
-  if (spec.kind !== 'reachAll') return 0;
-  return spec.places.reduce(
-    (bits, place, index) => (place.sector === sector.name && distance(sectorPointInSpace(sector, place), point) <= place.radius ? bits | (1 << index) : bits),
-    0,
-  );
-}
-
-/** Whether a dreamer holding the task cannot swing. */
-export function forbidsStriking(spec: TaskSpec): boolean {
-  return spec.kind === 'reach' && spec.withoutStriking === true;
-}
-
 /** The role a master teaches; `undefined` for a service that is no master's. */
 export function masterRole(service: 'fighterMaster' | 'healerMaster' | 'mysticMaster'): Role;
-export function masterRole(service: NPCService): Role | undefined;
-export function masterRole(service: NPCService): Role | undefined {
+export function masterRole(service: Service): Role | undefined;
+export function masterRole(service: Service): Role | undefined {
   switch (service) {
     case 'fighterMaster':
       return 'fighter';
@@ -266,6 +173,7 @@ export function masterRole(service: NPCService): Role | undefined {
     case 'mysticMaster':
       return 'mystic';
     case 'shopkeeper':
+    case 'bountyBoard':
       return undefined;
   }
 }

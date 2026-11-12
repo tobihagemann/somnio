@@ -96,6 +96,7 @@ describe('session token issuance', () => {
       'inventory',
       'energy',
       'lucidity',
+      'quests',
       'cooldowns',
     ]);
     expect(sessions.isStored(issued.token)).toBe(true);

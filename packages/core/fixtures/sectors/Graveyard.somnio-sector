@@ -203,6 +203,17 @@
       "z": 10.4
     }
   ],
+  "npcs": [
+    {
+      "characterModelId": "libus",
+      "dialogScript": "Walk softly, $name. The dead here do not rest.---I am Memor. I keep the names of all who lie here, so the dream does not forget them.---This is a thin place. The dream wears through here, and what was buried climbs back out. See what stirs among the graves.---The warriors among them carry skulls cracked by something older than this church. Bring me some, and I will learn what wakes them.---Below the tomb lies the crypt, and past it the chamber where the Necromancer keeps the dead from rest. Do not go down alone.",
+      "facing": 0,
+      "id": "memor",
+      "name": "Memor",
+      "x": 19.8,
+      "z": 18
+    }
+  ],
   "origin": {
     "x": -71.68,
     "z": 0

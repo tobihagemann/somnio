@@ -4,11 +4,13 @@ import { Migrator } from 'kysely/migration';
 import type { Migration, MigrationProvider } from 'kysely/migration';
 import { down as dreamersDown, up as dreamersUp } from './migrations/0001_dreamers.ts';
 import { down as itemsDown, up as itemsUp } from './migrations/0002_items.ts';
+import { down as questsDown, up as questsUp } from './migrations/0003_quests.ts';
 
 /** The migration list, in order. In memory rather than a filesystem walk: nothing compiles the tree. */
 const MIGRATIONS: Record<string, Migration> = {
   '0001_dreamers': { up: dreamersUp, down: dreamersDown },
   '0002_items': { up: itemsUp, down: itemsDown },
+  '0003_quests': { up: questsUp, down: questsDown },
 };
 
 const provider: MigrationProvider = {

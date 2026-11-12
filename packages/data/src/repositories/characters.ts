@@ -1,12 +1,13 @@
 import { sql } from 'kysely';
 import type { Kysely } from 'kysely';
-import { NO_LUCIDITY, NO_STATS, fullPools, headingFromCardinal, isPeople, isRole, isSoundTask, isTeachingId } from '@somnio/core';
+import { NO_LUCIDITY, NO_QUESTS, NO_STATS, fullPools, headingFromCardinal, isPeople, isRole, isTeachingId } from '@somnio/core';
 import type { Character, Inventory, Lucidity, People, TeachingRank } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import { confusableSkeleton } from '../namePolicy/namePolicy.ts';
 import type { Database } from '../schema.ts';
 import { RepositoryDecodingError, isUniqueViolation } from './errors.ts';
 import { insertItems } from './items.ts';
+import { insertQuests } from './quests.ts';
 
 /** Surfaced from the unique-name constraint race, so the handler answers `nameExists`. */
 export class CharacterNameTakenError extends Error {
@@ -16,6 +17,7 @@ export class CharacterNameTakenError extends Error {
   }
 }
 
+/** A character read here holds no quests: its quest log is the quest repository's, loaded on joining. */
 export interface CharacterRepository {
   /** Provisions the character with its starting coins and items in one transaction, never played. */
   create(accountId: string, name: string, people: People, starterInventory: Inventory): Promise<Character>;
@@ -29,12 +31,12 @@ export interface CharacterRepository {
    */
   snapshot(character: Character): Promise<boolean>;
   /**
-   * Atomically persists the character with its coins and replaces its rank and item rows in one
-   * transaction, gated by the same `last_seen` skip-if-stale guard. Returns `false` (touching
+   * Atomically persists the character with its coins and replaces its rank, item, and quest rows in
+   * one transaction, gated by the same `last_seen` skip-if-stale guard. Returns `false` (touching
    * neither) when the character update was skipped as stale.
    */
   persistCheckpoint(character: Character, inventory: Inventory): Promise<boolean>;
-  /** Deletes one of the account's characters with its rank and item rows; `false` when the account has no such character. */
+  /** Deletes one of the account's characters with its rank, item, and quest rows; `false` when the account has no such character. */
   delete(accountId: string, characterId: string): Promise<boolean>;
 }
 
@@ -63,9 +65,6 @@ const CHARACTER_COLUMNS = [
   'last_seen',
   'role',
   'study',
-  'task_role',
-  'task_teaching',
-  'task_progress',
 ] as const;
 
 type CharacterRow = {
@@ -85,9 +84,6 @@ type CharacterRow = {
   last_seen: Date;
   role: string | null;
   study: string | null;
-  task_role: string | null;
-  task_teaching: string | null;
-  task_progress: number;
 };
 
 type RankRow = {
@@ -108,6 +104,7 @@ export function newCharacter(id: string, name: string, people: People): Characte
     facing: headingFromCardinal('south'),
     energy: fullPools(NO_STATS),
     lucidity: NO_LUCIDITY,
+    quests: NO_QUESTS,
     lastSeen: new Date(NEVER_PLAYED_MS),
   };
 }
@@ -139,21 +136,11 @@ function decodeTeachingId(field: string, raw: string): TeachingRank['teachingId'
   return raw;
 }
 
-/** A task no master could have set is dropped rather than refused, so it cannot lock the character out. */
 function decodeLucidity(row: CharacterRow, rankRows: readonly RankRow[]): Lucidity {
-  const task =
-    row.task_role === null
-      ? undefined
-      : {
-          role: decodeRole('task_role', row.task_role),
-          teachingId: row.task_teaching === null ? undefined : decodeTeachingId('task_teaching', row.task_teaching),
-          progress: row.task_progress,
-        };
   return {
     role: row.role === null ? undefined : decodeRole('role', row.role),
     ranks: rankRows.map((rank) => ({ teachingId: decodeTeachingId('teaching_id', rank.teaching_id), rank: rank.rank, practice: rank.practice })),
     study: row.study === null ? undefined : decodeTeachingId('study', row.study),
-    task: task !== undefined && isSoundTask(task) ? task : undefined,
   };
 }
 
@@ -175,6 +162,7 @@ function decodeCharacter(row: CharacterRow, rankRows: readonly RankRow[]): Chara
       spiritMax: row.spirit_max,
     },
     lucidity: decodeLucidity(row, rankRows),
+    quests: NO_QUESTS,
     lastSeen: row.last_seen,
   };
 }
@@ -195,9 +183,6 @@ function characterColumns(character: Character) {
     last_seen: character.lastSeen,
     role: character.lucidity.role ?? null,
     study: character.lucidity.study ?? null,
-    task_role: character.lucidity.task?.role ?? null,
-    task_teaching: character.lucidity.task?.teachingId ?? null,
-    task_progress: character.lucidity.task?.progress ?? 0,
   };
 }
 
@@ -296,6 +281,8 @@ export class PostgresCharacterRepository implements CharacterRepository {
       await transaction.updateTable('characters').set({ coins: inventory.coins }).where('id', '=', character.id).execute();
       await transaction.deleteFrom('items').where('character_id', '=', character.id).execute();
       await insertItems(transaction, character.id, inventory);
+      await transaction.deleteFrom('character_quests').where('character_id', '=', character.id).execute();
+      await insertQuests(transaction, character.id, character.quests);
       return true;
     });
   }

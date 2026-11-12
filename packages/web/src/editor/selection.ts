@@ -1,6 +1,7 @@
 import { SOMNIO_CONSTANTS, modelToWorld, objectModel, rectContains, resolveDoor, worldToModel } from '@somnio/core';
 import type { ModelRegistry, Point, Rect, Sector, Size, Transform } from '@somnio/core';
 import { markShapeBounds, requireId } from '@somnio/protocol';
+import type { Service } from '@somnio/protocol';
 import { placeholderFootprint } from '@/scene/placement';
 
 /**
@@ -178,7 +179,7 @@ export function footprintCorners(footprint: Footprint): Point[] {
   return rectCorners(footprint.rect).map((corner) => modelToWorld(footprint.transform, corner));
 }
 
-/** Removes every selected record. A placement takes its doors with it: a door cannot outlive the wall it is in. */
+/** Removes every selected record. A placement takes its doors and its fixtures with it: neither can outlive the model it is attached to. */
 export function removeAllSelections(selections: readonly EditorSelection[], sector: Sector): void {
   for (const selection of selections) {
     if (selection.kind === 'spawn') {
@@ -190,6 +191,7 @@ export function removeAllSelections(selections: readonly EditorSelection[], sect
     if (index >= 0) records.splice(index, 1);
   }
   sector.doors = sector.doors.filter((door) => byId(sector.placements, door.placement) !== undefined);
+  sector.fixtures = sector.fixtures.filter((fixture) => byId(sector.placements, fixture.placement) !== undefined);
 }
 
 /** One record's change of id, as the selection naming it before and after. */
@@ -203,16 +205,27 @@ export function followRename(list: readonly EditorSelection[], rename: RecordRen
   return list.map((entry) => (selectionKey(entry) === selectionKey(rename.from) ? rename.to : entry));
 }
 
-/** Gives the selected record a new id. A placement's doors follow it. */
+/** Gives the selected record a new id. A placement's doors and fixtures follow it. */
 export function renameRecord(selection: EditorSelection, id: string, sector: Sector): void {
   if (selection.kind === 'spawn') return;
   const record = byId(recordList(selection.kind, sector), selection.id);
   if (record === undefined) return;
   record.id = id;
   if (selection.kind !== 'placement') return;
-  for (const door of sector.doors) {
-    if (door.placement === selection.id) door.placement = id;
+  for (const attached of [...sector.doors, ...sector.fixtures]) {
+    if (attached.placement === selection.id) attached.placement = id;
   }
+}
+
+/**
+ * Has the placement carry the service, as the one fixture attached to it, or carry none. A placement
+ * that carried none is given a fixture under a fresh id; one that did keeps its id.
+ */
+export function setFixtureService(sector: Sector, placementId: string, service: Service | undefined): void {
+  const fixture = sector.fixtures.find((candidate) => candidate.placement === placementId);
+  if (service === undefined) sector.fixtures = sector.fixtures.filter((candidate) => candidate.placement !== placementId);
+  else if (fixture !== undefined) fixture.service = service;
+  else sector.fixtures.push({ id: nextFreeId(ID_PREFIX.fixture, sector.fixtures), placement: placementId, service });
 }
 
 /** Whether the sector codec accepts `value` as a record id. */
@@ -226,7 +239,7 @@ export function isValidId(value: string): boolean {
 }
 
 /** What a generated id starts with. A placement's starts with its model id and a door's is `nextDoorId`. */
-export const ID_PREFIX = { blocker: 'blocker', npc: 'npc', monsterSpawn: 'spawn', mark: 'mark' } as const;
+export const ID_PREFIX = { blocker: 'blocker', npc: 'npc', monsterSpawn: 'spawn', mark: 'mark', fixture: 'fixture' } as const;
 
 /** The first `<prefix>-<n>` no record in `taken` carries. */
 export function nextFreeId(prefix: string, taken: readonly { id: string }[]): string {

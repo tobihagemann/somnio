@@ -25,7 +25,7 @@ afterAll(async () => {
 /** The committed library on a clock the test advances, with a player beside Libus. */
 function library(name: string) {
   const { clock, space } = makeClockedSpace(world, STARTER_SECTOR);
-  const beside = standableNear(space, libus, SOMNIO_CONSTANTS.npcInteractionRadius);
+  const beside = standableNear(space, libus, SOMNIO_CONSTANTS.speakingDistance);
   return { clock, space, ...attachPlayer(space, beside, name, { spaceId: STARTER_SECTOR }) };
 }
 
@@ -33,13 +33,13 @@ describe('NPC dialog end to end', () => {
   it('greets on approach, then steps a cooldown apart walk the dialog cursor across the lines after the greeting and wrap', async () => {
     const { clock, space, outbox, entityId } = library('alice');
     const digests: TickDigest[] = [space.step(0.05)];
-    space.handleTalk(LIBUS, entityId);
+    space.handleInteract(LIBUS, entityId);
     for (let step = 1; step < steps.length; step += 1) {
       digests.push(space.step(0.05));
       clock.ms += COOLDOWN_MS;
     }
     // The wrap cleared targeting; talking again restarts past the greeting.
-    space.handleTalk(LIBUS, entityId);
+    space.handleInteract(LIBUS, entityId);
     digests.push(space.step(0.05));
 
     const says = serverSays(await collectMessages(outbox));
@@ -49,10 +49,10 @@ describe('NPC dialog end to end', () => {
     expect(digests.flatMap((digest) => digest.dialogResets)).toEqual([{ sectorName: STARTER_SECTOR, npcId: 'libus' }]);
   });
 
-  it('a talk from beyond speaking distance produces no say or dialog upsert', async () => {
+  it('an interact from beyond speaking distance produces no say or dialog upsert', async () => {
     const { space } = makeClockedSpace(world, STARTER_SECTOR);
     const { outbox, entityId } = attachPlayer(space, world.starterSpawn.position, 'far', { spaceId: STARTER_SECTOR });
-    space.handleTalk(LIBUS, entityId);
+    space.handleInteract(LIBUS, entityId);
     const digests = [space.step(0.05), space.step(0.05)];
     expect(serverSays(await collectMessages(outbox))).toEqual([]);
     expect(digests.every((digest) => digest.dialogUpserts.length === 0)).toBe(true);
@@ -62,9 +62,9 @@ describe('NPC dialog end to end', () => {
     expect(steps.length).toBeGreaterThanOrEqual(3);
     const first = await makeDatabaseDependencies(harness.db);
     const space = first.worldRouter.space(STARTER_SECTOR)!;
-    const beside = standableNear(space, libus, SOMNIO_CONSTANTS.npcInteractionRadius);
+    const beside = standableNear(space, libus, SOMNIO_CONSTANTS.speakingDistance);
     const { entityId } = attachPlayer(space, beside, 'alice', { spaceId: STARTER_SECTOR });
-    space.handleTalk(LIBUS, entityId);
+    space.handleInteract(LIBUS, entityId);
     // One emit through the router, so the persistence path is the production one.
     await first.worldRouter.persistDialogDigest(first.worldRouter.runTickAcrossSpaces(0.05));
     const persisted = await new PostgresNPCDialogStateRepository(harness.db).find(STARTER_SECTOR, 'libus');
@@ -73,7 +73,7 @@ describe('NPC dialog end to end', () => {
     const second = await makeDatabaseDependencies(harness.db);
     const restarted = second.worldRouter.space(STARTER_SECTOR)!;
     const again = attachPlayer(restarted, beside, 'alice', { spaceId: STARTER_SECTOR });
-    restarted.handleTalk(LIBUS, again.entityId);
+    restarted.handleInteract(LIBUS, again.entityId);
     restarted.step(0.05);
     expect(serverSays(await collectMessages(again.outbox))[0]).toBe(steps[2]!.replaceAll('$name', 'alice'));
   });

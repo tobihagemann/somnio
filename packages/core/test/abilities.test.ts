@@ -199,8 +199,8 @@ describe('the hand rule', () => {
     for (const mainHand of held) {
       for (const offHand of held) {
         const hands = holding(mainHand, offHand);
-        expect(handAllows('mainHand', hands)).toBe(engageAction('nightmare', 'fighter', hands) === 'attack');
-        expect(handAllows('moonstone', hands)).toBe(engageAction('dreamer', 'healer', hands) === 'mend');
+        expect(handAllows('mainHand', hands)).toBe(engageAction('nightmare', 'fighter', hands, []) === 'attack');
+        expect(handAllows('moonstone', hands)).toBe(engageAction('dreamer', 'healer', hands, []) === 'mend');
       }
     }
   });

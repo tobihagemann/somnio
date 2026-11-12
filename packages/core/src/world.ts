@@ -280,7 +280,10 @@ export function outdoorDoorIds(sector: SectorView, sectors: readonly SectorView[
   return sector.doors.flatMap((door) => (outdoor.has(door.target.sector) ? [door.id] : []));
 }
 
-/** Whether a dreamer stands within speaking distance of an NPC: where it greets them, answers a `talk`, and keeps a master's offer open. */
-export function withinSpeakingDistance(dreamer: Point, npc: Point): boolean {
-  return distance(dreamer, npc) <= SOMNIO_CONSTANTS.npcInteractionRadius;
+/**
+ * Whether a dreamer stands within speaking distance of a carrier, an NPC or a fixture's placement
+ * centre: where an NPC greets them, where an `interact` is answered, and where a carrier's panel stays open.
+ */
+export function withinSpeakingDistance(dreamer: Point, carrier: Point): boolean {
+  return distance(dreamer, carrier) <= SOMNIO_CONSTANTS.speakingDistance;
 }

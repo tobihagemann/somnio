@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import type { Character, Inventory, ItemInstance, Lucidity } from '@somnio/core';
-import { PostgresCharacterRepository, PostgresItemRepository } from '@somnio/data';
+import { bountyIdOf, bountyLands, dayBounties, worldDay } from '@somnio/core';
+import type { Bounty, Character, Inventory, ItemInstance, Lucidity, QuestLog } from '@somnio/core';
+import { PostgresCharacterRepository, PostgresItemRepository, PostgresQuestRepository } from '@somnio/data';
 import { plain } from '../../../core/test/support/items.ts';
 import { bootTestServer, closeAndAwaitCleanup, drainFrames, frame, joinFreshPlayer, loginOverWire, pollUntil, startDatabase } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
@@ -22,6 +23,11 @@ afterAll(async () => {
 
 const NOTHING: Inventory = { coins: 0, equipped: {}, bag: [] };
 
+/** The world day the test server's clock stands on. */
+function today(): number {
+  return worldDay(server.server.worldClock.currentWorldSeconds());
+}
+
 /** Registers a player, lets them leave, and writes `changes` over their row as a later checkpoint would. */
 async function seeded(prefix: string, changes: Partial<Character>, inventory: Inventory = NOTHING): Promise<Character> {
   const fresh = await joinFreshPlayer(server.url, prefix);
@@ -36,7 +42,7 @@ async function seeded(prefix: string, changes: Partial<Character>, inventory: In
   return character;
 }
 
-it('what a dreamer has grown into and carries joins as it was stored, and a checkpoint stores what changed and nothing else', async () => {
+it('what a dreamer has grown into, carries, and has taken on joins as it was stored, and a checkpoint stores what changed and nothing else', async () => {
   const lucidity: Lucidity = {
     role: 'healer',
     ranks: [
@@ -44,7 +50,6 @@ it('what a dreamer has grown into and carries joins as it was stored, and a chec
       { teachingId: 'touch', rank: 2, practice: 12.5 },
     ],
     study: 'depth',
-    task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
   };
   const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 60, balanceMax: 100, spiritCurrent: 30, spiritMax: 100 };
   // Nothing here adds to a pool, so the stored maxima stand.
@@ -61,7 +66,8 @@ it('what a dreamer has grown into and carries joins as it was stored, and a chec
   };
   const amulet: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a3', ...plain('amulet'), rarity: 'magic', affixes: [{ affixId: 'health', value: 5 }] };
   const inventory: Inventory = { coins: 137, equipped: { mainHand: sword, offHand: moonstone }, bag: [{ place: 0, item: amulet }] };
-  const stored = await seeded('lucid', { lucidity, energy }, inventory);
+  const quests: QuestLog = { active: [{ questId: 'drawing-back-task', progress: [22] }], done: ['healer-trial'] };
+  const stored = await seeded('lucid', { lucidity, energy, quests }, inventory);
 
   const joined = await loginOverWire(server.url, stored.name);
   const sent = (tag: string) => joined.join.find((message) => message.tag === tag)?.payload;
@@ -76,16 +82,16 @@ it('what a dreamer has grown into and carries joins as it was stored, and a chec
     bag: [{ place: 0, item: amulet }],
   });
 
-  joined.client.send(frame({ tag: 'abandonTask', payload: {} }));
-  const withoutTask = { role: lucidity.role, ranks: lucidity.ranks, study: lucidity.study };
-  expect(await drainFrames(joined.client)).toEqual([{ tag: 'lucidity', payload: withoutTask }]);
+  const facing = (stored.facing + 90) % 360;
+  joined.client.send(frame({ tag: 'move', payload: { ...stored.position, facing, gait: 'walk' } }));
   await closeAndAwaitCleanup(joined, server);
   const after = await pollUntil(async () => {
     const row = await characters.findByName(stored.name);
     return row !== undefined && row.lastSeen.getTime() > stored.lastSeen.getTime() ? row : undefined;
   });
-  expect(after).toMatchObject({ lucidity: { ...lucidity, task: undefined }, energy });
+  expect(after).toMatchObject({ lucidity, energy, facing });
   expect(await new PostgresItemRepository(harness.db).load(stored.id)).toEqual(inventory);
+  expect(await new PostgresQuestRepository(harness.db).load(stored.id)).toEqual(quests);
 });
 
 it('a dreamer who left fallen joins fallen, and cannot move', async () => {
@@ -109,7 +115,6 @@ it('a Mystic joins as stored, with the spirit their Spirit deepening gives and t
       { teachingId: 'ward', rank: 2, practice: 4.5 },
     ],
     study: 'ward',
-    task: undefined,
   };
   const energy = { healthCurrent: 100, healthMax: 100, balanceCurrent: 100, balanceMax: 100, spiritCurrent: 115, spiritMax: 120 };
   const stored = await seeded('mystic', { lucidity, energy });
@@ -125,4 +130,24 @@ it('a Mystic joins as stored, with the spirit their Spirit deepening gives and t
     return row !== undefined && row.lastSeen.getTime() > stored.lastSeen.getTime() ? row : undefined;
   });
   expect(after).toMatchObject({ lucidity, energy });
+});
+
+it("a bounty taken on an earlier day joins held by its definition beside the day's bounties, and only today's turned-in bounties block anything", async () => {
+  const day = today();
+  const yesterday = (bounty: Bounty): Bounty => ({ ...bounty, day: day - 1 });
+  const offered = dayBounties(day, bountyLands([...server.server.worldRouter.world.spaces.values()].flatMap((space) => space.sectors)));
+  const [held, turnedIn] = [yesterday(offered[0]!), offered[1]!];
+  const quests: QuestLog = {
+    active: [{ questId: bountyIdOf(held), progress: [1], definition: held }],
+    done: [bountyIdOf(yesterday(turnedIn)), bountyIdOf(turnedIn)],
+  };
+  const stored = await seeded('bounty', { quests });
+  const joined = await loginOverWire(server.url, stored.name);
+  expect(joined.join.find((message) => message.tag === 'quests')?.payload).toEqual({
+    active: [{ questId: bountyIdOf(held), progress: [1], definition: held }],
+    done: [bountyIdOf(turnedIn)],
+    bounties: offered,
+  });
+  expect(offered.map(({ land }) => land)).toEqual(['AutumnWood', 'EdariaArena', 'Graveyard', 'GraveyardCrypt', 'NorthWood']);
+  await closeAndAwaitCleanup(joined, server);
 });

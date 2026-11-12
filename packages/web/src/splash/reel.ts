@@ -7,6 +7,7 @@ import {
   gaitMetresPerSecond,
   localizedDialogLine,
   monsterKind,
+  npcEntityId,
   outdoorDoorIds,
   sectorPointInSpace,
 } from '@somnio/core';
@@ -427,7 +428,7 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
         carried: false,
       };
     case 'npc': {
-      const id = npcId(actor.sector, actor.npc);
+      const id = npcEntityId(actor.sector, actor.npc);
       const sector = sectors.find((candidate) => candidate.name === actor.sector);
       const npc = sector?.npcs.find((candidate) => candidate.id === actor.npc);
       if (sector === undefined || npc === undefined) throw new Error(`splash shot ${shot.id}: no NPC ${id}`);
@@ -484,13 +485,9 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
   }
 }
 
-function npcId(sector: string, npc: string): string {
-  return `npc:${sector}/${npc}`;
-}
-
 function findNPC(sectors: readonly Sector[], id: string): Sector['npcs'][number] | undefined {
   for (const sector of sectors) {
-    const npc = sector.npcs.find((candidate) => npcId(sector.name, candidate.id) === id);
+    const npc = sector.npcs.find((candidate) => npcEntityId(sector.name, candidate.id) === id);
     if (npc !== undefined) return npc;
   }
   return undefined;

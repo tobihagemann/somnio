@@ -1,4 +1,4 @@
-import type { NPCService, SectorView } from '@somnio/protocol';
+import type { Fixture, SectorView, Service } from '@somnio/protocol';
 import type { Point, Rect } from './geometry.ts';
 import type { Heading } from './heading.ts';
 import type { MonsterKindId } from './monsterKinds.ts';
@@ -24,7 +24,7 @@ export interface SectorNPC {
   facing: Heading;
   dialogScript: string;
   /** What asking the NPC offers beyond its dialog. */
-  service?: NPCService;
+  service?: Service;
 }
 
 /** An area that keeps up to `maxAlive` monsters of one kind alive. */
@@ -58,6 +58,7 @@ export function sectorView(sector: Sector): SectorView {
     placements: sector.placements,
     blockers: sector.blockers,
     doors: sector.doors,
+    fixtures: sector.fixtures,
   };
 }
 
@@ -70,6 +71,33 @@ export function sectorOrigin(sector: SectorView): Point {
 export function sectorRect(sector: SectorView): Rect {
   const origin = sectorOrigin(sector);
   return { x: origin.x, z: origin.z, width: sector.size.width, depth: sector.size.depth };
+}
+
+/** The entity id an NPC of the sector goes by, on the wire and as a quest's carrier. */
+export function npcEntityId(sectorName: string, npcId: string): string {
+  return `npc:${sectorName}/${npcId}`;
+}
+
+/** The id a fixture of the sector goes by as a service carrier, on the wire and in `quests.json`. A fixture is never an entity. */
+export function fixtureCarrierId(sectorName: string, fixtureId: string): string {
+  return `fixture:${sectorName}/${fixtureId}`;
+}
+
+/** A fixture by its carrier id, standing at its placement's centre in the coordinates of its sector's space. */
+export interface PlacedFixture {
+  id: string;
+  sector: string;
+  fixture: Fixture;
+  position: Point;
+}
+
+/** The sector's fixtures where they stand. The decoder holds each to a placement of the sector. */
+export function placedFixtures(sector: SectorView): PlacedFixture[] {
+  return sector.fixtures.flatMap((fixture) => {
+    const placement = sector.placements.find((candidate) => candidate.id === fixture.placement);
+    if (placement === undefined) return [];
+    return [{ id: fixtureCarrierId(sector.name, fixture.id), sector: sector.name, fixture, position: sectorPointInSpace(sector, placement) }];
+  });
 }
 
 /** A sector-relative point in the coordinates of the sector's space. */

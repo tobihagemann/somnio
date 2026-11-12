@@ -6,8 +6,8 @@ import { placeBeside, setTip, tipNodes } from './hudTooltip';
 import { itemTip } from './itemText';
 
 /**
- * The windows the HUD's menu opens: Players and Character. Each is a titled panel with a ✕, built
- * once and shown or hidden, its contents kept while what they show is unchanged.
+ * The windows the HUD's menu opens: Players, Character, and the Quest log. Each is a titled panel
+ * with a ✕, built once and shown or hidden, its contents kept while what they show is unchanged.
  */
 
 export class HUDWindow {

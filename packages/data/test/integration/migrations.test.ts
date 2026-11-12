@@ -4,7 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { plain } from '../../../core/test/support/items.ts';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
 import { down as dreamersDown, up as dreamersUp } from '../../src/migrations/0001_dreamers.ts';
+import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { PostgresItemRepository } from '../../src/repositories/items.ts';
+import { PostgresQuestRepository } from '../../src/repositories/quests.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
@@ -27,6 +29,7 @@ describe('migrations', () => {
     `.execute(harness.db);
     expect(tables.rows.map((row) => row.table_name)).toEqual([
       'accounts',
+      'character_quests',
       'character_ranks',
       'characters',
       'items',
@@ -138,6 +141,10 @@ describe('upgrading a database from the first schema', () => {
       }
       await sql`INSERT INTO inventory_rows (character_id, slot, item_id, quantity, equipped_hand) VALUES (${id}, 1, 'mace', 1, 'right')`.execute(harness.db);
     }
+    await sql`UPDATE characters SET task_role = 'healer', task_teaching = 'drawing-back', task_progress = 22.5 WHERE name = 'Hale'`.execute(harness.db);
+    await sql`INSERT INTO character_ranks (character_id, teaching_id, rank, practice) SELECT id, 'touch', 2, 12.5 FROM characters WHERE name = 'Hale'`.execute(
+      harness.db,
+    );
     await migrateToLatest(harness.db);
   });
 
@@ -156,6 +163,16 @@ describe('upgrading a database from the first schema', () => {
     ['a dreamer with no role nothing', 'Plain', 0, {}],
   ])('keeps the coins, gives the starter kit in place of the rows, and puts in hand for %s', async (_label, name, coins, equipped) => {
     expect(await inventoryOf(name)).toEqual({ coins, equipped, bag: [{ place: 0, item: { id: expect.any(String), ...plain('cudgel') } }] });
+  });
+
+  it('keeps the role and the ranks of a dreamer who held a task, and drops the task', async () => {
+    const hale = await new PostgresCharacterRepository(harness.db).findByName('Hale');
+    expect(hale?.lucidity).toEqual({ role: 'healer', ranks: [{ teachingId: 'touch', rank: 2, practice: 12.5 }], study: undefined });
+    expect(await new PostgresQuestRepository(harness.db).load(hale!.id)).toEqual({ active: [], done: [] });
+    const columns = await sql<{ column_name: string }>`
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'characters' AND column_name LIKE 'task%'
+    `.execute(harness.db);
+    expect(columns.rows).toEqual([]);
   });
 
   it('drops the inventory rows', async () => {

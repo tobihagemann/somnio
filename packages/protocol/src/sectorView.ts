@@ -87,6 +87,18 @@ export interface Door {
   nightOnly?: true;
 }
 
+/** What a carrier, an NPC or a fixture, offers beyond an NPC's dialog. */
+export const SERVICES = ['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper', 'bountyBoard'] as const;
+export type Service = (typeof SERVICES)[number];
+
+/** A service carried by a placement of the sector, as the bounty board is carried by its notice board. */
+export interface Fixture {
+  id: string;
+  /** The placement whose model carries the service. */
+  placement: string;
+  service: Service;
+}
+
 export interface SectorView {
   name: string;
   kind: SectorKind;
@@ -99,6 +111,7 @@ export interface SectorView {
   placements: Placement[];
   blockers: Blocker[];
   doors: Door[];
+  fixtures: Fixture[];
 }
 
 function decodeOrigin(container: Record<string, unknown>, path: string): NonNullable<SectorView['origin']> {
@@ -284,6 +297,23 @@ function decodeDoor(container: Record<string, unknown>, path: string): Door {
   };
 }
 
+function decodeFixture(container: Record<string, unknown>, path: string): Fixture {
+  return {
+    id: requireId(container, 'id', path),
+    placement: requireId(container, 'placement', path),
+    service: requireStringEnum(container, 'service', path, SERVICES),
+  };
+}
+
+/** Throws on the first record attached to a placement the sector does not have. */
+function requirePlacementsIn(records: readonly { placement: string }[], placementIds: ReadonlySet<string>, key: string, path: string): void {
+  records.forEach((record, index) => {
+    if (!placementIds.has(record.placement)) {
+      throw new WireDecodingError(`${path}.${key}[${index}].placement`, `no placement "${record.placement}" in this sector`);
+    }
+  });
+}
+
 /**
  * Decodes a sector from the wire or, with `name` injected, from a sector file. `yaw` and
  * `elevation` default to 0, a mark's `opacity` to 1, and the record arrays and the ground's marks
@@ -300,11 +330,9 @@ export function decodeSectorView(container: Record<string, unknown>, path: strin
   const placements = mapRecords(container, 'placements', path, SOMNIO_PROTOCOL_CONSTANTS.maxSectorPlacements, decodePlacement);
   const placementIds = new Set(placements.map((placement) => placement.id));
   const doors = mapRecords(container, 'doors', path, SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors, decodeDoor);
-  doors.forEach((door, index) => {
-    if (!placementIds.has(door.placement)) {
-      throw new WireDecodingError(`${path}.doors[${index}].placement`, `no placement "${door.placement}" in this sector`);
-    }
-  });
+  requirePlacementsIn(doors, placementIds, 'doors', path);
+  const fixtures = mapRecords(container, 'fixtures', path, SOMNIO_PROTOCOL_CONSTANTS.maxSectorFixtures, decodeFixture);
+  requirePlacementsIn(fixtures, placementIds, 'fixtures', path);
   return {
     name: requireBoundedString(container, 'name', path, PROTOCOL_BYTE_CAPS.sectorName),
     kind,
@@ -316,6 +344,7 @@ export function decodeSectorView(container: Record<string, unknown>, path: strin
     placements,
     blockers: mapRecords(container, 'blockers', path, SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers, decodeBlocker),
     doors,
+    fixtures,
   };
 }
 
@@ -340,6 +369,7 @@ export function encodeSectorView(view: SectorView): Record<string, unknown> {
     ...(view.placements.length === 0 ? {} : { placements: view.placements.map(encodePlacement) }),
     ...(view.blockers.length === 0 ? {} : { blockers: view.blockers }),
     ...(view.doors.length === 0 ? {} : { doors: view.doors }),
+    ...(view.fixtures.length === 0 ? {} : { fixtures: view.fixtures }),
   };
 }
 

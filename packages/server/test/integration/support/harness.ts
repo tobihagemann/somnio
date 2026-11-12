@@ -8,6 +8,7 @@ import {
   PostgresCharacterRepository,
   PostgresItemRepository,
   PostgresNPCDialogStateRepository,
+  PostgresQuestRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
 } from '@somnio/data';
@@ -92,6 +93,7 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     accounts: new PostgresAccountRepository(db),
     characters,
     items: new PostgresItemRepository(db),
+    quests: new PostgresQuestRepository(db),
     npcDialogStates,
     sessions: new PostgresSessionRepository(db),
     worldRouter,

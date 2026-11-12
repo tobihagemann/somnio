@@ -1,7 +1,7 @@
-import { SOMNIO_PROTOCOL_CONSTANTS, truncateToUTF8Bytes } from './constants.ts';
+import { SOMNIO_PROTOCOL_CONSTANTS, truncateToUTF8Bytes, utf8ByteLength } from './constants.ts';
 import { WireDecodingError } from './errors.ts';
-import type { SectorView } from './sectorView.ts';
-import { decodeSectorView } from './sectorView.ts';
+import type { SectorView, Service } from './sectorView.ts';
+import { SERVICES, decodeSectorView } from './sectorView.ts';
 import {
   PROTOCOL_BYTE_CAPS,
   isAbsent,
@@ -9,11 +9,14 @@ import {
   requireArray,
   requireBool,
   requireBoundedString,
+  requireBoundedStringValue,
+  requireDistinctIds,
   requireEntityId,
   requireEntityIds,
   requireFloat,
   requireFloatValue,
   requireId,
+  requireIdValue,
   requireIds,
   requireInt32,
   requireMetres,
@@ -65,10 +68,6 @@ export type CharacterResult = (typeof CHARACTER_RESULTS)[number];
 export const ROLES = ['fighter', 'healer', 'mystic'] as const;
 export type Role = (typeof ROLES)[number];
 
-/** What asking an NPC offers beyond its dialog. */
-export const NPC_SERVICES = ['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper'] as const;
-export type NPCService = (typeof NPC_SERVICES)[number];
-
 /** How an entity's health stands: hale at its maximum, by quarters of it below, and fallen at none. It is all another player learns of it, unless it is their target. */
 export const CONDITIONS = ['hale', 'grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const;
 export type Condition = (typeof CONDITIONS)[number];
@@ -95,9 +94,13 @@ export type NightmareRank = (typeof NIGHTMARE_RANKS)[number];
 export const TELEGRAPH_KINDS = ['wail'] as const;
 export type TelegraphKind = (typeof TELEGRAPH_KINDS)[number];
 
-/** What a drop lying on the ground is. */
-export const LOOT_KINDS = ['item'] as const;
+/** What a drop lying on the ground is: an item, or the trophy a nightmare leaves for a dreamer who collects it. */
+export const LOOT_KINDS = ['item', 'trophy'] as const;
 export type LootKind = (typeof LOOT_KINDS)[number];
+
+/** What a bounty asks: driving off nightmares of its kind in its land, or gathering the trophies they leave. */
+export const BOUNTY_OBJECTIVES = ['driveOff', 'collect'] as const;
+export type BountyObjective = (typeof BOUNTY_OBJECTIVES)[number];
 
 /** How loudly a line is spoken, which sets how far it carries. */
 export const SPEECH_KINDS = ['whisper', 'say', 'yell'] as const;
@@ -186,9 +189,12 @@ export interface PickUpMessage {
   lootId: string;
 }
 
-/** Asks an NPC to go on past its greeting. The client opens what a master offers with it. */
-export interface TalkMessage {
-  npcId: string;
+/**
+ * Acts on a carrier, by its id: asks an NPC to go on past its greeting, or uses a fixture.
+ * The client opens what the carrier offers with it.
+ */
+export interface InteractMessage {
+  carrierId: string;
 }
 
 /** The entity the dreamer acts on from now on; absent clears it. */
@@ -215,30 +221,31 @@ export interface UseDoorMessage {
   doorId: string;
 }
 
-/** Asks a master for a task: their trial without a `teachingId`, the task that gates that teaching with one. */
-export interface AskTaskMessage {
-  npcId: string;
-  teachingId?: string;
+/** Takes a quest on from the carrier that gives it, or turns one in at the carrier that takes it. */
+export interface CarrierQuestMessage {
+  carrierId: string;
+  questId: string;
 }
 
-export interface CompleteTaskMessage {
-  npcId: string;
+/** Gives up a quest held, wherever the dreamer is. */
+export interface AbandonQuestMessage {
+  questId: string;
 }
 
 export interface StudyMessage {
-  npcId: string;
+  carrierId: string;
   teachingId: string;
 }
 
 /** Asks the shopkeeper to sell a plain one of a ware, into a bag with room. */
 export interface BuyMessage {
-  npcId: string;
+  carrierId: string;
   baseId: string;
 }
 
 /** Asks the shopkeeper to buy back an item from the dreamer's bag. */
 export interface SellMessage {
-  npcId: string;
+  carrierId: string;
   itemId: string;
 }
 
@@ -319,7 +326,7 @@ export interface EntityMessage {
   gait: Gait;
   condition: Condition;
   /** Present on an NPC that offers one. */
-  service?: NPCService;
+  service?: Service;
   /** Present on a dreamer. */
   held?: Held;
   /** Present on a nightmare above its kind's ordinary run. */
@@ -397,14 +404,10 @@ export interface ItemMessage {
 }
 
 /**
- * What a drop is, as its owner sees it before picking it up: an item of a base at a rarity. The
- * server keeps the item's tier and stat lines until it is picked up.
+ * What a drop is, as its owner sees it before picking it up: an item of a base at a rarity, whose
+ * tier and stat lines the server keeps until it is picked up, or the trophy of a nightmare kind.
  */
-export interface LootContentsMessage {
-  kind: 'item';
-  baseId: string;
-  rarity: Rarity;
-}
+export type LootContentsMessage = { kind: 'item'; baseId: string; rarity: Rarity } | { kind: 'trophy'; monsterKind: string };
 
 export interface EquippedItemMessage {
   slot: EquipSlot;
@@ -436,6 +439,8 @@ export interface InventoryMessage {
   dropped?: LootContentsMessage;
   /** Present only on the frame a pick-up produced: what was picked up. */
   pickedUp?: LootContentsMessage;
+  /** Present only on the frame a quest's turn-in produced that gave items: each item it gave. */
+  rewarded?: LootContentsMessage[];
 }
 
 /**
@@ -482,20 +487,40 @@ export interface TeachingRankMessage {
   practice: number;
 }
 
-export interface TaskMessage {
-  role: Role;
-  /** Absent for the role's trial. */
-  teachingId?: string;
-  progress: number;
-}
-
 /** What a dreamer has grown into, sent to that dreamer alone. */
 export interface LucidityMessage {
   role?: Role;
   ranks: TeachingRankMessage[];
   /** The teaching whose next rank practice builds toward. */
   study?: string;
-  task?: TaskMessage;
+}
+
+/** What a bounty's quest id names: the world day it is offered on, its land (a sector's name), the kind of nightmare, and what it asks. */
+export interface BountyIdParts {
+  day: number;
+  land: string;
+  monsterKind: string;
+  objective: BountyObjective;
+}
+
+/** A bounty as the server generated it from its land's monster spawns, which the client cannot, since a `sector` frame carries no spawns. */
+export interface BountyMessage extends BountyIdParts {
+  count: number;
+  reward: { coins: number; gear: number };
+}
+
+/** A quest a dreamer holds, with what they have done toward each of its objectives, in order, and for a bounty what it is. */
+export interface HeldQuestMessage {
+  questId: string;
+  progress: number[];
+  definition?: BountyMessage;
+}
+
+/** The quests a dreamer holds and those they turned in, and the bounties of the world day, sent to that dreamer alone. */
+export interface QuestsMessage {
+  active: HeldQuestMessage[];
+  done: string[];
+  bounties: BountyMessage[];
 }
 
 export interface ConditionMessage {
@@ -730,8 +755,8 @@ export function decodePickUpMessage(container: Record<string, unknown>, path: st
   return { lootId: requireId(container, 'lootId', path) };
 }
 
-export function decodeTalkMessage(container: Record<string, unknown>, path: string): TalkMessage {
-  return { npcId: requireEntityId(container, 'npcId', path) };
+export function decodeInteractMessage(container: Record<string, unknown>, path: string): InteractMessage {
+  return { carrierId: requireEntityId(container, 'carrierId', path) };
 }
 
 export function decodeTargetMessage(container: Record<string, unknown>, path: string): TargetMessage {
@@ -754,34 +779,63 @@ export function decodeUseDoorMessage(container: Record<string, unknown>, path: s
   };
 }
 
-export function decodeAskTaskMessage(container: Record<string, unknown>, path: string): AskTaskMessage {
+/** A bounty's quest id, `bounty:<day>:<land>:<kind>:<objective>`. */
+export function bountyId({ day, land, monsterKind, objective }: BountyIdParts): string {
+  return `bounty:${day}:${land}:${monsterKind}:${objective}`;
+}
+
+/**
+ * What a bounty's quest id names, or `undefined` for a string that is no bounty's id: a day, a land, and a kind each within its cap, and a known objective.
+ * The land is a sector's name, which may hold a colon, so the kind and the objective are read from the end.
+ */
+export function bountyIdParts(id: string): BountyIdParts | undefined {
+  const parts = /^bounty:(?<day>0|[1-9][0-9]{0,9}):(?<land>.+):(?<monsterKind>[a-z0-9-]+):(?<objective>[A-Za-z]+)$/s.exec(id)?.groups;
+  if (parts === undefined) return undefined;
+  const { day = '', land = '', monsterKind = '', objective = '' } = parts;
+  const known = BOUNTY_OBJECTIVES.find((candidate) => candidate === objective);
+  const sound =
+    Number(day) <= 2_147_483_647 && utf8ByteLength(land) <= PROTOCOL_BYTE_CAPS.sectorName && utf8ByteLength(monsterKind) <= PROTOCOL_BYTE_CAPS.identifier;
+  return sound && known !== undefined ? { day: Number(day), land, monsterKind, objective: known } : undefined;
+}
+
+/** A quest's id: a committed quest's, as `requireId` checks one, or a bounty's, as `bountyIdParts` reads one. */
+function requireQuestIdValue(value: unknown, path: string): string {
+  const id = requireBoundedStringValue(value, PROTOCOL_BYTE_CAPS.questId, path);
+  return bountyIdParts(id) === undefined ? requireIdValue(id, path) : id;
+}
+
+function requireQuestId(container: Record<string, unknown>, key: string, path: string): string {
+  return requireQuestIdValue(container[key], `${path}.${key}`);
+}
+
+export function decodeCarrierQuestMessage(container: Record<string, unknown>, path: string): CarrierQuestMessage {
   return {
-    npcId: requireEntityId(container, 'npcId', path),
-    ...(isAbsent(container, 'teachingId') ? {} : { teachingId: requireId(container, 'teachingId', path) }),
+    carrierId: requireEntityId(container, 'carrierId', path),
+    questId: requireQuestId(container, 'questId', path),
   };
 }
 
-export function decodeCompleteTaskMessage(container: Record<string, unknown>, path: string): CompleteTaskMessage {
-  return { npcId: requireEntityId(container, 'npcId', path) };
+export function decodeAbandonQuestMessage(container: Record<string, unknown>, path: string): AbandonQuestMessage {
+  return { questId: requireQuestId(container, 'questId', path) };
 }
 
 export function decodeStudyMessage(container: Record<string, unknown>, path: string): StudyMessage {
   return {
-    npcId: requireEntityId(container, 'npcId', path),
+    carrierId: requireEntityId(container, 'carrierId', path),
     teachingId: requireId(container, 'teachingId', path),
   };
 }
 
 export function decodeBuyMessage(container: Record<string, unknown>, path: string): BuyMessage {
   return {
-    npcId: requireEntityId(container, 'npcId', path),
+    carrierId: requireEntityId(container, 'carrierId', path),
     baseId: requireId(container, 'baseId', path),
   };
 }
 
 export function decodeSellMessage(container: Record<string, unknown>, path: string): SellMessage {
   return {
-    npcId: requireEntityId(container, 'npcId', path),
+    carrierId: requireEntityId(container, 'carrierId', path),
     itemId: requireId(container, 'itemId', path),
   };
 }
@@ -878,7 +932,7 @@ export function decodeEntityMessage(container: Record<string, unknown>, path: st
     facing: requireFloat(container, 'facing', path),
     gait: requireStringEnum(container, 'gait', path, GAITS),
     condition: requireStringEnum(container, 'condition', path, CONDITIONS),
-    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, NPC_SERVICES) }),
+    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, SERVICES) }),
     ...(isAbsent(container, 'held') ? {} : { held: decodeHeld(requireNested(container, 'held', path), `${path}.held`) }),
     ...(isAbsent(container, 'rank') ? {} : { rank: requireStringEnum(container, 'rank', path, NIGHTMARE_RANKS) }),
     ...(isAbsent(container, 'trait') ? {} : { trait: requireId(container, 'trait', path) }),
@@ -1027,6 +1081,9 @@ export function decodeInventoryMessage(container: Record<string, unknown>, path:
     ...(isAbsent(container, 'trade') ? {} : { trade: decodeTradeMessage(requireNested(container, 'trade', path), `${path}.trade`) }),
     ...(isAbsent(container, 'dropped') ? {} : { dropped: decodeLootContentsMessage(requireNested(container, 'dropped', path), `${path}.dropped`) }),
     ...(isAbsent(container, 'pickedUp') ? {} : { pickedUp: decodeLootContentsMessage(requireNested(container, 'pickedUp', path), `${path}.pickedUp`) }),
+    ...(isAbsent(container, 'rewarded')
+      ? {}
+      : { rewarded: mapArray(container, 'rewarded', path, SOMNIO_PROTOCOL_CONSTANTS.maxBagItems, decodeLootContentsMessage) }),
   };
 }
 
@@ -1036,6 +1093,8 @@ function decodeLootContentsMessage(container: Record<string, unknown>, path: str
   switch (kind) {
     case 'item':
       return { kind, baseId: requireId(container, 'baseId', path), rarity: requireStringEnum(container, 'rarity', path, RARITIES) };
+    case 'trophy':
+      return { kind, monsterKind: requireId(container, 'monsterKind', path) };
   }
 }
 
@@ -1086,20 +1145,55 @@ function decodeTeachingRankMessage(container: Record<string, unknown>, path: str
   };
 }
 
-function decodeTaskMessage(container: Record<string, unknown>, path: string): TaskMessage {
-  return {
-    role: requireStringEnum(container, 'role', path, ROLES),
-    ...(isAbsent(container, 'teachingId') ? {} : { teachingId: requireId(container, 'teachingId', path) }),
-    progress: requireNonNegative(requireFloat(container, 'progress', path), `${path}.progress`),
-  };
-}
-
 export function decodeLucidityMessage(container: Record<string, unknown>, path: string): LucidityMessage {
   return {
     ...(isAbsent(container, 'role') ? {} : { role: requireStringEnum(container, 'role', path, ROLES) }),
     ranks: mapArray(container, 'ranks', path, SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks, decodeTeachingRankMessage),
     ...(isAbsent(container, 'study') ? {} : { study: requireId(container, 'study', path) }),
-    ...(isAbsent(container, 'task') ? {} : { task: decodeTaskMessage(requireNested(container, 'task', path), `${path}.task`) }),
+  };
+}
+
+function decodeHeldQuestMessage(container: Record<string, unknown>, path: string): HeldQuestMessage {
+  const progress = requireArray(container, 'progress', path);
+  if (progress.length > SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives) {
+    throw new WireDecodingError(`${path}.progress`, `exceeds ${SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives} objectives (got ${progress.length})`);
+  }
+  return {
+    questId: requireQuestId(container, 'questId', path),
+    progress: progress.map((value, index) => {
+      const elementPath = `${path}.progress[${index}]`;
+      return requireNonNegative(requireFloatValue(value, elementPath), elementPath);
+    }),
+    ...(isAbsent(container, 'definition') ? {} : { definition: decodeBountyMessage(requireNested(container, 'definition', path), `${path}.definition`) }),
+  };
+}
+
+/** The kind decodes as an id: the kinds are core's, so core's reader checks it. */
+export function decodeBountyMessage(container: Record<string, unknown>, path: string): BountyMessage {
+  const count = requireInt32(container, 'count', path);
+  if (count < 1) {
+    throw new WireDecodingError(`${path}.count`, `expected a count of 1 or more, got ${count}`);
+  }
+  const reward = requireNested(container, 'reward', path);
+  const gear = requireInt32(reward, 'gear', `${path}.reward`);
+  if (gear < 1) {
+    throw new WireDecodingError(`${path}.reward.gear`, `expected a tier of 1 or more, got ${gear}`);
+  }
+  return {
+    day: requireNonNegative(requireInt32(container, 'day', path), `${path}.day`),
+    land: requireBoundedString(container, 'land', path, PROTOCOL_BYTE_CAPS.sectorName),
+    monsterKind: requireId(container, 'monsterKind', path),
+    objective: requireStringEnum(container, 'objective', path, BOUNTY_OBJECTIVES),
+    count,
+    reward: { coins: requireNonNegative(requireInt32(reward, 'coins', `${path}.reward`), `${path}.reward.coins`), gear },
+  };
+}
+
+export function decodeQuestsMessage(container: Record<string, unknown>, path: string): QuestsMessage {
+  return {
+    active: mapArray(container, 'active', path, SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests, decodeHeldQuestMessage),
+    done: requireDistinctIds(container, 'done', path, SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests, requireQuestIdValue),
+    bounties: mapArray(container, 'bounties', path, SOMNIO_PROTOCOL_CONSTANTS.maxBounties, decodeBountyMessage),
   };
 }
 

@@ -73,6 +73,7 @@ UI_FILES=(
   "icon-run.png"
   "icon-players.png"
   "icon-character.png"
+  "icon-quests.png"
   "icon-settings.png"
   "icon-close.png"
   "icon-menu.png"

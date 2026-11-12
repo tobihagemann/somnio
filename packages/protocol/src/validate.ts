@@ -157,7 +157,8 @@ export function requireId(container: Record<string, unknown>, key: string, path:
   return requireIdValue(container[key], `${path}.${key}`);
 }
 
-function requireIdValue(element: unknown, path: string): string {
+/** An id as `requireId` checks one, given the value itself, such as an array's element. */
+export function requireIdValue(element: unknown, path: string): string {
   const value = requireWithinByteCap(requireStringValue(element, path), PROTOCOL_BYTE_CAPS.identifier, path);
   if (!ID_PATTERN.test(value)) {
     throw new WireDecodingError(path, `expected an id of lowercase letters, digits, and hyphens, got "${value}"`);
@@ -182,7 +183,8 @@ export function requireIds(container: Record<string, unknown>, key: string, path
   return requireDistinctIds(container, key, path, maxCount, requireIdValue);
 }
 
-function requireDistinctIds(
+/** A list of at most `maxCount` distinct ids, each as `decodeElement` checks one. The count is capped before any id is decoded. */
+export function requireDistinctIds(
   container: Record<string, unknown>,
   key: string,
   path: string,
@@ -238,6 +240,7 @@ export const PROTOCOL_BYTE_CAPS = {
   say: SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes,
   sessionToken: SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes,
   entityId: SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes,
+  questId: SOMNIO_PROTOCOL_CONSTANTS.maxQuestIdUTF8Bytes,
   sectorName: SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes,
 } as const;
 
@@ -248,7 +251,8 @@ function requireStringValue(value: unknown, path: string): string {
   return value;
 }
 
-function requireBoundedStringValue(value: unknown, maxBytes: number, path: string): string {
+/** A non-empty string within a UTF-8 byte cap, given the value itself. */
+export function requireBoundedStringValue(value: unknown, maxBytes: number, path: string): string {
   const bounded = requireWithinByteCap(requireStringValue(value, path), maxBytes, path);
   if (bounded === '') {
     throw new WireDecodingError(path, 'expected a non-empty string');

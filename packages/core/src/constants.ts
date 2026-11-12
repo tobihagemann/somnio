@@ -8,8 +8,8 @@ export const SOMNIO_CONSTANTS = {
   maxStepHeight: 0.3,
   /** How far a door's trigger reaches out from its anchor: deeper than a body's radius, shallower than the arrival offset. */
   doorTriggerDepth: 0.58,
-  /** Speaking distance: how far from an NPC a dreamer can talk to it, and keep a master's offer open. */
-  npcInteractionRadius: 2,
+  /** How far from a carrier, an NPC or a fixture's placement centre, a dreamer can act on it and keep its panel open. */
+  speakingDistance: 2,
   /** How far outside a door's trigger the server still accepts a `useDoor`. */
   doorUseSlack: 1.0,
 

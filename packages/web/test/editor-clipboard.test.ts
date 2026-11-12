@@ -5,11 +5,13 @@ import { emptySector } from './helpers/editorFixture';
 
 /**
  * The clipboard over the in-page record buffer — anchor placement, duplicate offsets, fresh ids,
- * doors following their placement, and source-order capture.
+ * doors and fixtures following their placement, and source-order capture.
  */
 
 const house = { id: 'house-1', modelId: 'house', x: 6, z: 6, yaw: 90, elevation: 0 };
 const door = { id: 'to-shop', placement: 'house-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } };
+const board = { id: 'notice-board-1', modelId: 'notice-board', x: 3, z: 3, yaw: 35, elevation: 0 };
+const fixture = { id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' } as const;
 
 describe('paste placement', () => {
   it('anchors the payload bounding corner at the cursor, preserving offsets', () => {
@@ -146,6 +148,15 @@ describe('paste placement', () => {
     // The original keeps its own placement and target.
     expect(body.placements.map((placement) => placement.id)).toEqual(['house-1', 'house-2']);
   });
+
+  it("carries a placement's fixture with it, under a fresh id on the pasted placement", () => {
+    const body = emptySector({ placements: [board], fixtures: [fixture] });
+    const clipboard = captureClipboard([{ kind: 'placement', id: 'notice-board-1' }], body);
+    expect(clipboard.fixtures).toEqual([fixture]);
+    insertClipboard(clipboard, body, undefined, 1);
+    expect(body.fixtures).toEqual([fixture, { ...fixture, id: 'fixture-2', placement: 'notice-board-2' }]);
+    expect(new EditorDocument().commit('Paste', body)).toEqual({ accepted: true });
+  });
 });
 
 describe('capture', () => {
@@ -167,7 +178,7 @@ describe('capture', () => {
       ],
       source,
     );
-    expect(clipboard).toEqual({ placements: [], blockers, doors: [], npcs: [], monsterSpawns: [], marks: [] });
+    expect(clipboard).toEqual({ placements: [], blockers, doors: [], fixtures: [], npcs: [], monsterSpawns: [], marks: [] });
   });
 
   it('preserves source-array order so pasted stacking cannot shuffle, and copies rather than aliases', () => {

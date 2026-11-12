@@ -5,21 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { AppShell, FallenNotice, Overlays, ServicePanel, UPRIGHT_PHONE_QUERY, element, field } from '@/ui';
 import { setLocale } from '@/i18n';
+import { makeDebugAPI } from '@/debugApi';
 import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import type { RegistrationForm } from '@/client';
 import { TAP_SLOP_PX } from '@/client';
-import { NO_STATS, clamp, distance, fullPools, headingFromVector } from '@somnio/core';
+import { NO_QUESTS, NO_STATS, bountyIdOf, clamp, distance, fullPools, headingFromVector, quest as questOf } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
-import type { CharacterSummaryMessage, LucidityMessage, NPCService, SomnioMessage } from '@somnio/protocol';
-import type { Inventory, ItemInstance } from '@somnio/core';
+import type { CharacterSummaryMessage, LucidityMessage, Service, SomnioMessage } from '@somnio/protocol';
+import type { Bounty, Inventory, ItemInstance, QuestId, QuestLog, Sector } from '@somnio/core';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
-import type { ChatLine, ClientEntity } from '@/client';
+import type { ChatLine, ClientEntity, ServiceCarrier } from '@/client';
 
 /**
  * The DOM layer, against `happy-dom`.
@@ -1447,17 +1448,20 @@ describe('the service panel', () => {
   function mount() {
     const calls: string[] = [];
     const panel = new ServicePanel({
-      onAskTask: (teachingId) => calls.push(`ask:${teachingId ?? 'trial'}`),
-      onCompleteTask: () => calls.push('complete'),
-      onAbandonTask: () => calls.push('abandon'),
+      onAcceptQuest: (questId) => calls.push(`accept:${questId}`),
+      onTurnInQuest: (questId) => calls.push(`turnIn:${questId}`),
+      onAbandonQuest: (questId) => calls.push(`abandon:${questId}`),
       onStudy: (teachingId) => calls.push(`study:${teachingId}`),
       onBuy: (baseId) => calls.push(`buy:${baseId}`),
       onSell: (itemId) => calls.push(`sell:${itemId}`),
       onClose: () => calls.push('close'),
     });
-    const render = (npc: ClientEntity | undefined, lucidity: LucidityMessage, inventory = NOTHING, tradeLocked = false): void =>
-      panel.render(npc, lucidity, inventory, tradeLocked);
-    const npc = (service: NPCService, id = 'npc:EdariaFighterHall/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
+    const render = (npc: ServiceCarrier | undefined, lucidity: LucidityMessage, inventory = NOTHING, tradeLocked = false): void =>
+      panel.render(npc, lucidity, NO_QUESTS, [], inventory, tradeLocked);
+    /** Renders for a dreamer holding the quest, with that much done toward each of its objectives. */
+    const holding = (npc: ClientEntity, lucidity: LucidityMessage, questId: QuestId, progress: number[], inventory = NOTHING): void =>
+      panel.render(npc, lucidity, { active: [{ questId, progress }], done: [] }, [], inventory, false);
+    const npc = (service: Service, id = 'npc:EdariaFighterHall/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
     const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
     const press = (label: string): void => {
       const node = [...panel.root.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
@@ -1466,16 +1470,17 @@ describe('the service panel', () => {
     };
     const text = (): string => panel.root.textContent ?? '';
     const row = (id: string): string => panel.root.querySelector(`[data-teaching="${id}"]`)?.textContent ?? '';
-    return { panel, render, calls, npc, buttons, press, text, row };
+    const quest = (id: string): string => panel.root.querySelector(`[data-quest="${id}"]`)?.textContent ?? '';
+    return { panel, render, holding, calls, npc, buttons, press, text, row, quest };
   }
 
   beforeEach(() => setLocale('en'));
 
-  it('is hidden with no NPC, and for an NPC with nothing to offer', () => {
+  it('is hidden with no carrier, and for an NPC with neither a service nor a quest to give or take', () => {
     const p = mount();
     p.render(undefined, { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
-    p.render(clientEntity({ id: 'npc:EdariaLibrary/libus', kind: 'npc' }), { ranks: [] });
+    p.render(clientEntity({ id: 'npc:EdariaInn/keeper', kind: 'npc' }), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
   });
 
@@ -1487,14 +1492,16 @@ describe('the service panel', () => {
     expect(p.text()).toContain('Master of the Healers');
     expect(p.text()).toContain('Passing it commits you to nothing');
     expect(p.text()).toContain('Walk to the North Wood and come back.');
-    expect(p.text()).toContain('You cannot strike while you hold this trial.');
+    expect(p.text()).toContain('You cannot strike while you hold this quest.');
+    // At the row's trailing edge, as every quest's button is.
+    expect(p.panel.root.querySelector('.service-body button')?.parentElement?.className).toBe('teaching-action');
     p.press('Ask for the trial');
     p.press('Close');
-    expect(p.calls).toEqual(['ask:trial', 'close']);
+    expect(p.calls).toEqual(['accept:healer-trial', 'close']);
   });
 
   /** The shell renders on every `energy` frame, and a button replaced under a held pointer never gets its click. */
-  it('keeps its controls across a render that changed nothing, and replaces them when the lucidity or the NPC did', () => {
+  it('keeps its controls across a render that changed nothing, and replaces them when the quests or the NPC did', () => {
     const p = mount();
     const lucidity = { ranks: [] };
     const control = (): Element | null => p.panel.root.querySelector('.service-body button');
@@ -1507,7 +1514,7 @@ describe('the service panel', () => {
     p.render(p.npc('fighterMaster'), lucidity, carrying({ coins: 5 }));
     expect(control()).toBe(first);
 
-    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 0 } });
+    p.holding(p.npc('fighterMaster'), lucidity, 'fighter-trial', [0]);
     expect(control()?.textContent).toBe('Give up the trial');
 
     p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
@@ -1526,12 +1533,13 @@ describe('the service panel', () => {
 
   it('shows a trial under way with its progress and a way to give it up', () => {
     const p = mount();
-    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 0 } });
+    p.holding(p.npc('fighterMaster'), { ranks: [] }, 'fighter-trial', [0]);
     expect(p.text()).toContain('Your trial');
     expect(p.text()).toContain('Drive off a nightmare. 0 of 1');
     expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
+    expect(p.panel.root.querySelector('.service-body button')?.parentElement?.className).toBe('teaching-action');
     p.press('Give up the trial');
-    expect(p.calls).toEqual(['abandon']);
+    expect(p.calls).toEqual(['abandon:fighter-trial']);
   });
 
   it("offers the Mystic's trial and counts the places found without naming one", () => {
@@ -1539,50 +1547,82 @@ describe('the service panel', () => {
     const tacita = p.npc('mysticMaster', 'npc:EdariaMysticTower/tacita', 'Tacita');
     p.render(tacita, { ranks: [] });
     expect(p.text()).toContain('Master of the Mystics');
-    expect(p.text()).toContain('Find 3 hidden places and come back.');
-    expect(p.text()).toContain('Talk to Tacita to hear where they lie.');
+    expect(p.panel.root.querySelectorAll('.service-body p.form-note')).toHaveLength(1);
+    expect(p.text()).toContain('Find the hidden places Tacita speaks of.');
     expect(p.buttons()).toEqual(['Ask for the trial', 'Close']);
 
-    p.render(tacita, { ranks: [], task: { role: 'mystic', progress: 0b101 } });
-    expect(p.text()).toContain('Find 3 hidden places and come back. 2 of 3');
+    p.holding(tacita, { ranks: [] }, 'mystic-trial', [1, 0, 1]);
+    expect(p.text()).toContain('Find the hidden places Tacita speaks of. 2 of 3');
     expect(p.text()).not.toMatch(/Meadow|Wood/);
     expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
 
-    p.render(tacita, { ranks: [], task: { role: 'mystic', progress: 0b111 } });
+    p.holding(tacita, { ranks: [] }, 'mystic-trial', [1, 1, 1]);
     expect(p.buttons()).toEqual(['Not yet', 'Become a Mystic', 'Close']);
   });
 
   it("holds back the role while the trial's reward has nowhere to go, as the master does", () => {
     const p = mount();
     const sana = p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana');
-    const passed = { ranks: [], task: { role: 'healer' as const, progress: 1 } };
     const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
-    p.render(sana, passed, carrying({ worn: [item('buckler')], bag: fullBag }));
+    p.holding(sana, { ranks: [] }, 'healer-trial', [1], carrying({ worn: [item('buckler')], bag: fullBag }));
     expect(p.text()).toContain('Your bag is full. Make room in it before you accept.');
     expect(p.buttons()).toEqual(['Not yet', 'Become a Healer (disabled)', 'Close']);
-    p.render(sana, passed, carrying({ bag: fullBag }));
+    p.holding(sana, { ranks: [] }, 'healer-trial', [1], carrying({ bag: fullBag }));
     expect(p.text()).not.toContain('Your bag is full.');
     expect(p.buttons()).toEqual(['Not yet', 'Become a Healer', 'Close']);
-    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 1 } }, carrying({ worn: [item('buckler')], bag: fullBag }));
+    p.holding(p.npc('fighterMaster'), { ranks: [] }, 'fighter-trial', [1], carrying({ worn: [item('buckler')], bag: fullBag }));
     expect(p.buttons()).toEqual(['Not yet', 'Become a Fighter', 'Close']);
   });
 
   it('asks a dreamer who passed the trial before making them the role for good', () => {
     const p = mount();
-    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'fighter', progress: 1 } });
+    p.holding(p.npc('fighterMaster'), { ranks: [] }, 'fighter-trial', [1]);
     expect(p.text()).toContain('Become a Fighter?');
     expect(p.text()).toContain('for good');
     expect(p.buttons()).toEqual(['Not yet', 'Become a Fighter', 'Close']);
     p.press('Not yet');
     p.press('Become a Fighter');
-    expect(p.calls).toEqual(['close', 'complete']);
+    expect(p.calls).toEqual(['close', 'turnIn:fighter-trial']);
+  });
+
+  it('greys out taking a quest on while the quest log is full, and says why', () => {
+    const p = mount();
+    const full = {
+      active: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, () => ({ questId: 'drawing-back-task' as const, progress: [0] })),
+      done: [],
+    };
+    p.panel.render(p.npc('fighterMaster'), { ranks: [] }, full, [], NOTHING, false);
+    expect(p.text()).toContain('Your quest log is full. Give up a quest to take this one.');
+    expect(p.buttons()).toEqual(['Ask for the trial (disabled)', 'Close']);
+    p.panel.render(p.npc('fighterMaster'), { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] }, full, [], NOTHING, false);
+    expect(p.row('follow-through')).toContain('Your quest log is full.');
+    expect(p.buttons()).toContain('Take the task (disabled)');
   });
 
   it("tells a dreamer on the other master's trial that they hold one", () => {
     const p = mount();
-    p.render(p.npc('fighterMaster'), { ranks: [], task: { role: 'healer', progress: 1 } });
+    p.holding(p.npc('fighterMaster'), { ranks: [] }, 'healer-trial', [1]);
     expect(p.text()).toContain("You hold another master's trial.");
     expect(p.buttons()).toEqual(['Give up that trial', 'Close']);
+    p.press('Give up that trial');
+    expect(p.calls).toEqual(['abandon:healer-trial']);
+  });
+
+  it('offers a trial and a task only at the carrier that gives it, and takes them in only at the one that takes them, as the server judges both', () => {
+    const p = mount();
+    // A second master of the Fighters: the trial and the task are Pugnax's, by his id.
+    const other = p.npc('fighterMaster', 'npc:Meadow/drillmaster', 'Drillmaster');
+    p.render(other, { ranks: [] });
+    expect(p.text()).toContain('Drive off a nightmare.');
+    expect(p.buttons()).toEqual(['Close']);
+    p.holding(other, { ranks: [] }, 'fighter-trial', [1]);
+    expect(p.buttons()).toEqual(['Give up the trial', 'Close']);
+    const ready: LucidityMessage = { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] };
+    p.render(other, ready);
+    expect(p.row('follow-through')).toContain('Drive off 3 nightmares.');
+    expect(p.buttons()).not.toContain('Take the task');
+    p.holding(other, ready, 'follow-through-task', [3]);
+    expect(p.buttons()).not.toContain('Learn Follow-through');
   });
 
   it('refuses a dreamer of the other role', () => {
@@ -1641,27 +1681,14 @@ describe('the service panel', () => {
     expect(p.row('follow-through')).toContain('Falling starts the count over.');
     p.press('Take the task');
 
-    p.render(p.npc('fighterMaster'), { ...ready, task: { role: 'fighter', teachingId: 'follow-through', progress: 2 } });
+    p.holding(p.npc('fighterMaster'), ready, 'follow-through-task', [2]);
     expect(p.row('follow-through')).toContain('Drive off 3 nightmares. 2 of 3');
     p.press('Give up the task');
 
-    p.render(p.npc('fighterMaster'), { ...ready, task: { role: 'fighter', teachingId: 'follow-through', progress: 3 } });
+    p.holding(p.npc('fighterMaster'), ready, 'follow-through-task', [3]);
     expect(p.row('follow-through')).toContain('You did what Pugnax asked.');
     p.press('Learn Follow-through');
-    expect(p.calls).toEqual(['ask:follow-through', 'abandon', 'complete']);
-  });
-
-  it('holds back a second task while one is held, and says why', () => {
-    const p = mount();
-    const lucidity: LucidityMessage = {
-      role: 'healer',
-      ranks: [{ teachingId: 'touch', rank: 2, practice: 0 }],
-      task: { role: 'healer', teachingId: 'nothing-this-client-knows', progress: 0 },
-    };
-    p.render(p.npc('healerMaster', 'npc:EdariaHealerHall/sana', 'Sana'), lucidity);
-    expect(p.row('drawing-back')).toContain('Mend 60 health on other dreamers.');
-    expect(p.row('drawing-back')).toContain('Finish your current task first.');
-    expect(p.buttons()).not.toContain('Take the task');
+    expect(p.calls).toEqual(['accept:follow-through-task', 'abandon:follow-through-task', 'turnIn:follow-through-task']);
   });
 
   it('renders in German', () => {
@@ -1670,6 +1697,167 @@ describe('the service panel', () => {
     p.render(p.npc('fighterMaster'), { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' });
     expect(headings(p.panel)).toEqual(['Das lernst du', 'Das kannst du lernen', 'Noch nicht']);
     expect(p.row('follow-through')).toContain('Braucht Schlag auf Rang 2');
+  });
+
+  describe('of a carrier of quests alone', () => {
+    const LIBUS = 'npc:EdariaLibrary/libus';
+    const MEMOR = 'npc:Graveyard/memor';
+    const libus = () => clientEntity({ id: LIBUS, kind: 'npc', name: 'Libus' });
+    const memor = () => clientEntity({ id: MEMOR, kind: 'npc', name: 'Memor' });
+
+    it("offers Libus's errand under his name alone, with what it asks and pays, and takes it on", () => {
+      const p = mount();
+      p.render(libus(), { ranks: [] });
+      expect(p.panel.root.classList.contains('hidden')).toBe(false);
+      expect(p.panel.root.querySelector('h1')?.textContent).toBe('Libus');
+      expect((p.panel.root.querySelector('.service-subtitle') as HTMLElement).classList.contains('hidden')).toBe(true);
+      expect(p.quest('newcomer-errand')).toContain("A newcomer's errand");
+      expect(p.quest('newcomer-errand')).toContain('Visit Mercus in his shop.');
+      expect(p.quest('newcomer-errand')).toContain('Read the bounty board on the square.');
+      expect(p.quest('newcomer-errand')).toContain('Reward: 15c');
+      p.press('Take the quest');
+      expect(p.calls).toEqual(['accept:newcomer-errand']);
+    });
+
+    it('shows the errand under way with its progress, then turns it in once done, and has nothing more after', () => {
+      const p = mount();
+      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 0]);
+      expect(p.quest('newcomer-errand')).toContain('Visit Mercus in his shop. 1 of 1');
+      expect(p.quest('newcomer-errand')).toContain('Read the bounty board on the square. 0 of 1');
+      expect(p.buttons()).toEqual(['Close']);
+      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 1]);
+      expect(p.quest('newcomer-errand')).toContain('You did what Libus asked.');
+      p.press('Turn in');
+      expect(p.calls).toEqual(['turnIn:newcomer-errand']);
+      p.panel.render(libus(), { ranks: [] }, { active: [], done: ['newcomer-errand'] }, [], NOTHING, false);
+      expect(p.text()).toContain('Libus has nothing for you now.');
+      expect(p.buttons()).toEqual(['Close']);
+    });
+
+    it('takes in a quest held at every carrier of the service its turn-in names', () => {
+      const p = mount();
+      const graves = questOf('restless-graves');
+      const turnIn = graves.turnIn;
+      graves.turnIn = 'shopkeeper';
+      try {
+        const mercus = clientEntity({ id: 'npc:EdariaShop/mercus', kind: 'npc', name: 'Mercus', service: 'shopkeeper' });
+        p.holding(mercus, { ranks: [] }, 'restless-graves', [4]);
+        expect(p.quest('restless-graves')).toContain('You did what Mercus asked.');
+        expect(p.buttons()).toContain('Turn in');
+        p.holding(memor(), { ranks: [] }, 'restless-graves', [4]);
+        expect(p.buttons()).toEqual(['Close']);
+      } finally {
+        graves.turnIn = turnIn;
+      }
+    });
+
+    it("offers Memor's chain one quest at a time, and greys out turning in one that pays gear while the bag is full", () => {
+      const p = mount();
+      p.render(memor(), { ranks: [] });
+      expect(p.panel.root.querySelectorAll('[data-quest]')).toHaveLength(1);
+      expect(p.quest('restless-graves')).toContain('Reward: 60c, 30 practiceTake the quest');
+      // The practice goes toward the teaching the dreamer studies, which the reward names.
+      p.render(memor(), { role: 'fighter', ranks: [{ teachingId: 'toughening', rank: 1, practice: 0 }], study: 'toughening' });
+      expect(p.quest('restless-graves')).toContain('Reward: 60c, 30 practice toward Toughening');
+      const done = ['restless-graves', 'cracked-skulls'] as QuestId[];
+      const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+      p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], carrying({ bag: fullBag }), false);
+      expect(p.quest('into-the-crypt')).toContain('Reward: 250c, 60 practice, a piece of gear');
+      expect(p.text()).toContain('Your bag is full. Make room in it before you turn this in.');
+      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Close']);
+      p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], NOTHING, false);
+      expect(p.buttons()).toEqual(['Turn in', 'Close']);
+    });
+  });
+
+  describe('of the bounty board', () => {
+    const board = (): ServiceCarrier => ({ id: 'fixture:EdariaSquare/fixture-1', name: undefined, position: { x: 18.15, z: 18.1 }, service: 'bountyBoard' });
+    const ARENA: Bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } };
+    const GRAVES: Bounty = { day: 3, land: 'Graveyard', monsterKind: 'skeleton-warrior', objective: 'collect', count: 4, reward: { coins: 120, gear: 3 } };
+    const show = (p: ReturnType<typeof mount>, quests: QuestLog, bounties: readonly Bounty[] = [ARENA, GRAVES], inventory = NOTHING): void =>
+      p.panel.render(board(), { ranks: [] }, quests, bounties, inventory, false);
+    const held = (bounty: Bounty, count: number) => ({ questId: bountyIdOf(bounty), progress: [count], definition: bounty });
+
+    it('opens under its service as its title, and says so when it has no bounties', () => {
+      const p = mount();
+      p.render(board(), { ranks: [] });
+      expect(p.panel.root.classList.contains('hidden')).toBe(false);
+      expect(p.panel.root.querySelector('h1')?.textContent).toBe('Bounty board');
+      expect(p.panel.root.getAttribute('aria-label')).toBe('Bounty board');
+      expect((p.panel.root.querySelector('.service-subtitle') as HTMLElement).classList.contains('hidden')).toBe(true);
+      expect(p.text()).toContain('No bounties today.');
+    });
+
+    it("lists the day's bounties by their land with what each asks and pays, and takes one", () => {
+      const p = mount();
+      show(p, NO_QUESTS);
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaDrive off 6 Ghosts there.Reward: 72c, a piece of gearTake the bounty');
+      expect(p.quest(bountyIdOf(GRAVES))).toContain('Gather 4 cracked skulls from Skeleton Warriors.');
+      // With none taken on an earlier day, the day's stand under no heading.
+      expect(p.panel.root.querySelector('.service-heading')).toBeNull();
+      expect(p.panel.root.querySelector('button[aria-label="Take Bounty: Graveyard. Gather 4 cracked skulls from Skeleton Warriors."]')).not.toBeNull();
+      p.press('Take the bounty');
+      expect(p.calls).toEqual([`accept:${bountyIdOf(ARENA)}`]);
+    });
+
+    it('shows one taken with how far it has come, one done with its turn-in, greyed out while the bag is full, and one turned in as such', () => {
+      const p = mount();
+      show(p, { active: [held(ARENA, 2)], done: [bountyIdOf(GRAVES)] });
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, a piece of gear');
+      expect(p.quest(bountyIdOf(GRAVES))).toBe('Bounty: GraveyardTurned in');
+      expect(p.buttons()).toEqual(['Close']);
+
+      const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+      show(p, { active: [held(ARENA, 6)], done: [] }, [ARENA, GRAVES], carrying({ bag: fullBag }));
+      expect(p.quest(bountyIdOf(ARENA))).toContain('Your bag is full. Make room in it before you turn this in.');
+      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Take the bounty', 'Close']);
+      show(p, { active: [held(ARENA, 6)], done: [] });
+      expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 6 Ghosts there."]')).not.toBeNull();
+      p.press('Turn in');
+      expect(p.calls).toEqual([`turnIn:${bountyIdOf(ARENA)}`]);
+    });
+
+    it("still pays for a bounty taken on an earlier day, listed under a heading of its own before the day's, each button named apart", () => {
+      const p = mount();
+      const earlier = { ...GRAVES, day: 2 };
+      show(p, { active: [held(earlier, 4), held(GRAVES, 4)], done: [] });
+      expect([...p.panel.root.querySelectorAll('.service-heading, [data-quest]')].map((node) => node.getAttribute('data-quest') ?? node.textContent)).toEqual([
+        'Taken on an earlier day',
+        bountyIdOf(earlier),
+        "Today's bounties",
+        bountyIdOf(ARENA),
+        bountyIdOf(GRAVES),
+      ]);
+      expect(p.buttons()).toEqual(['Turn in', 'Take the bounty', 'Turn in', 'Close']);
+      // The two Graveyard bounties share their title and what they ask, so the day sets their names apart.
+      const names = [...p.panel.root.querySelectorAll('.service-body button')].map((node) => node.getAttribute('aria-label'));
+      expect(names).toEqual([
+        'Turn in Bounty: Graveyard from an earlier day. Gather 4 cracked skulls from Skeleton Warriors.',
+        'Take Bounty: Arena. Drive off 6 Ghosts there.',
+        'Turn in Bounty: Graveyard. Gather 4 cracked skulls from Skeleton Warriors.',
+      ]);
+    });
+
+    it("says a bounty held as it was taken on, though the day's offer of it asks and pays otherwise since", () => {
+      const p = mount();
+      // The spawns changed since it was taken on: the same id, a different count and reward.
+      const taken: Bounty = { ...ARENA, count: 4, reward: { coins: 48, gear: 1 } };
+      expect(bountyIdOf(taken)).toBe(bountyIdOf(ARENA));
+      show(p, { active: [held(taken, 2)], done: [] });
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, a piece of gear');
+      show(p, { active: [held(taken, 4)], done: [] });
+      expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 4 Ghosts there."]')).not.toBeNull();
+    });
+
+    it('keeps its elements while the bounties and the log are unchanged', () => {
+      const p = mount();
+      const quests: QuestLog = { active: [held(ARENA, 1)], done: [] };
+      const bounties = [ARENA, GRAVES];
+      show(p, quests, bounties);
+      const before = [...p.panel.root.querySelectorAll('*')];
+      show(p, quests, bounties);
+      expect([...p.panel.root.querySelectorAll('*')]).toEqual(before);
+    });
   });
 
   describe('of the shopkeeper', () => {
@@ -1881,7 +2069,8 @@ describe('the fallen notice', () => {
  * button reaches the request it names.
  */
 describe('the play field and the panels through the shell', () => {
-  const PUGNAX = 'npc:Meadow/pugnax';
+  // His committed id, since the trial and the task he gives name him by it.
+  const PUGNAX = 'npc:EdariaFighterHall/pugnax';
   const MERCUS = 'npc:Meadow/mercus';
   let container: HTMLElement;
 
@@ -1897,7 +2086,7 @@ describe('the play field and the panels through the shell', () => {
   });
 
   /** A player in the world beside Pugnax, with another dreamer near, and every frame the client has sent since. */
-  function playing() {
+  function playing(meadow: Sector = outdoorSector('Meadow', { x: 0, z: 0 })) {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
     shell.overlays.loginEmail.value = 'tester@example.com';
@@ -1909,7 +2098,7 @@ describe('the play field and the panels through the shell', () => {
     deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
     deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     deliver(enterSpaceFrame());
-    deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    deliver(sectorFrame(meadow));
     deliver(entityFrame());
     deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'fighterMaster' }));
     deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
@@ -1948,6 +2137,57 @@ describe('the play field and the panels through the shell', () => {
     window.dispatchEvent(new PointerEvent('pointerup'));
     expect(p.shell.session.target).toBe('monster:1');
     expect(p.tags()).not.toContain('engage');
+  });
+
+  describe('the bounty board', () => {
+    const BOARD = 'fixture:Meadow/fixture-1';
+    const boardMeadow = outdoorSector(
+      'Meadow',
+      { x: 0, z: 0 },
+      {
+        placements: [{ id: 'notice-board-1', modelId: 'notice-board', x: 14, z: 10, yaw: 35, elevation: 0 }],
+        fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+      },
+    );
+
+    it('is walked to on a left press at its drawn model and opened in speaking distance, after the move that brought the player there', () => {
+      const p = playing(boardMeadow);
+      const pointer = onCanvas(p);
+      const [board] = makeDebugAPI(p.shell).fixtures();
+      expect(board).toMatchObject({ id: BOARD, service: 'bountyBoard', x: 14, z: 10 });
+      p.canvas.dispatchEvent(pointer('pointerdown', board!.screen!));
+      window.dispatchEvent(new PointerEvent('pointerup'));
+      expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 14, z: 10 } });
+      for (let time = 0; time <= 4000 && !p.tags().includes('interact'); time += 50) p.shell.session.runTick(time);
+
+      expect(p.sent().slice(-2)).toEqual([
+        { tag: 'move', payload: expect.anything() },
+        { tag: 'interact', payload: { carrierId: BOARD } },
+      ]);
+      const panel = container.querySelector('.service-panel')!;
+      expect(panel.classList.contains('hidden')).toBe(false);
+      expect(panel.querySelector('h1')?.textContent).toBe('Bounty board');
+      expect(p.shell.session.target).toBeUndefined();
+    });
+
+    it('shows the pointing hand over the board and none over the ground', () => {
+      const p = playing(boardMeadow);
+      const pointer = onCanvas(p);
+      p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOfFixture(BOARD)!, { pointerType: 'mouse', buttons: 0 }));
+      expect(p.canvas.style.cursor).toBe('pointer');
+      p.canvas.dispatchEvent(pointer('pointermove', { x: 170, y: 60 }, { pointerType: 'mouse', buttons: 0 }));
+      expect(p.canvas.style.cursor).toBe('');
+    });
+
+    it('does nothing on a right press', () => {
+      const p = playing(boardMeadow);
+      const pointer = onCanvas(p);
+      const board = p.shell.pagePointOfFixture(BOARD)!;
+      p.canvas.dispatchEvent(pointer('pointerdown', board, { button: 2, buttons: 2, pointerType: 'mouse' }));
+      expect(p.shell.session.predictor.walk).toBeUndefined();
+      expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual([undefined, false]);
+      expect(p.sent()).toEqual([]);
+    });
   });
 
   it("locks the player's facing on the body a mouse's right button presses, and frees it on the ground, under their own body too", () => {
@@ -2700,7 +2940,7 @@ describe('the play field and the panels through the shell', () => {
     });
   });
 
-  it("sends each of a master's buttons as the request it names, from the trial to a teaching", () => {
+  it("sends each of a master's buttons as the request it names, from taking the trial to turning it in and studying a teaching, as the quests frame feeds the panel", () => {
     const p = playing();
     const panel = container.querySelector('.service-panel')!;
     expect(panel.classList.contains('hidden')).toBe(true);
@@ -2708,24 +2948,42 @@ describe('the play field and the panels through the shell', () => {
     expect(panel.classList.contains('hidden')).toBe(false);
 
     p.press('Ask for the trial');
-    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'fighter', progress: 0 } } });
-    p.press('Give up the trial');
-    p.deliver({ tag: 'lucidity', payload: { ranks: [], task: { role: 'fighter', progress: 1 } } });
+    p.deliver({ tag: 'quests', payload: { active: [{ questId: 'fighter-trial', progress: [0] }], done: [], bounties: [] } });
+    expect(panel.textContent).toContain('Drive off a nightmare. 0 of 1');
+    p.deliver({ tag: 'quests', payload: { active: [{ questId: 'fighter-trial', progress: [1] }], done: [], bounties: [] } });
     p.press('Become a Fighter');
+    p.deliver({ tag: 'quests', payload: { active: [], done: ['fighter-trial'], bounties: [] } });
     p.deliver({ tag: 'lucidity', payload: { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }], study: 'strike' } });
     expect(container.querySelector('.hud-study')?.textContent).toBe('Studying Strike · 0%');
     (panel.querySelector('[data-teaching="toughening"] button') as HTMLButtonElement).click();
 
-    expect(p.sent()).toEqual([
+    // The `interact` sends the player's position before it, which is no request to the master.
+    expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
       { tag: 'target', payload: { targetId: PUGNAX } },
-      { tag: 'talk', payload: { npcId: PUGNAX } },
-      { tag: 'askTask', payload: { npcId: PUGNAX } },
-      { tag: 'abandonTask', payload: {} },
-      { tag: 'completeTask', payload: { npcId: PUGNAX } },
-      { tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } },
+      { tag: 'interact', payload: { carrierId: PUGNAX } },
+      { tag: 'acceptQuest', payload: { carrierId: PUGNAX, questId: 'fighter-trial' } },
+      { tag: 'turnInQuest', payload: { carrierId: PUGNAX, questId: 'fighter-trial' } },
+      { tag: 'study', payload: { carrierId: PUGNAX, teachingId: 'toughening' } },
     ]);
     p.press('Close');
     expect(panel.classList.contains('hidden')).toBe(true);
+  });
+
+  it('gives a quest up from the master who gave it and from the Quest log, which L opens and closes', () => {
+    const p = playing();
+    p.deliver({ tag: 'quests', payload: { active: [{ questId: 'fighter-trial', progress: [0] }], done: [], bounties: [] } });
+    p.shell.session.pressEntity(PUGNAX);
+    p.press('Give up the trial');
+    const press = (key: string): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true }));
+    press('l');
+    expect(p.shell.hud.isWindowOpen('quests')).toBe(true);
+    container.querySelector<HTMLButtonElement>(`.hud-window--quests button[aria-label="Give up The Fighters' trial"]`)!.click();
+    press('L');
+    expect(p.shell.hud.isWindowOpen('quests')).toBe(false);
+    expect(p.sent().filter((message) => message.tag === 'abandonQuest')).toEqual([
+      { tag: 'abandonQuest', payload: { questId: 'fighter-trial' } },
+      { tag: 'abandonQuest', payload: { questId: 'fighter-trial' } },
+    ]);
   });
 
   it("sends the shopkeeper's buttons as the trades they name, and holds them from a trade until a moment after its answer", () => {
@@ -2751,9 +3009,9 @@ describe('the play field and the panels through the shell', () => {
     // The tick reports the player's position too, which is no trade.
     expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
       { tag: 'target', payload: { targetId: MERCUS } },
-      { tag: 'talk', payload: { npcId: MERCUS } },
-      { tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } },
-      { tag: 'sell', payload: { npcId: MERCUS, itemId: cudgel.id } },
+      { tag: 'interact', payload: { carrierId: MERCUS } },
+      { tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } },
+      { tag: 'sell', payload: { carrierId: MERCUS, itemId: cudgel.id } },
     ]);
   });
 

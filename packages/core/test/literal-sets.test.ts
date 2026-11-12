@@ -7,9 +7,10 @@ import { gaitMetresPerSecond } from '../src/gait.ts';
 import { AFFIXES, rollItem } from '../src/affixes.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS } from '../src/items.ts';
-import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIALS, isTeachingId, taskSpec, teaching } from '../src/lucidity.ts';
+import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, teaching } from '../src/lucidity.ts';
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { PEOPLES } from '../src/people.ts';
+import { QUESTS } from '../src/quests.ts';
 import { SPEECH } from '../src/speech.ts';
 
 /**
@@ -163,7 +164,7 @@ describe('literal sets', () => {
     expect(isEliteTraitId('toString')).toBe(false);
   });
 
-  /** A teaching id is stored with every rank a character holds, beside the character's one role, and a held task is stored by its role and teaching. */
+  /** A teaching id is stored with every rank a character holds, beside the character's one role. */
   it('pins the teachings with their roles', () => {
     expect(Object.fromEntries(TEACHING_IDS.map((id) => [id, TEACHINGS[id].role]))).toEqual({
       strike: 'fighter',
@@ -225,17 +226,24 @@ describe('literal sets', () => {
     expect(Object.keys(ABILITIES).length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns);
   });
 
-  /** A task's progress is stored as a bare number, which means something only against the kind of task it counts. */
-  it('pins the kind of every trial and gate', () => {
-    expect(Object.fromEntries(Object.entries(TRIALS).map(([role, trial]) => [role, trial.kind]))).toEqual({
-      fighter: 'driveOff',
-      healer: 'reach',
-      mystic: 'reachAll',
+  /** A quest's id is persisted with the progress of each of its objectives, which means something only against the kind of objective it counts. */
+  it('pins every quest by id with the kinds of its objectives, and the trial and gate each names', () => {
+    expect(Object.fromEntries(Object.entries(QUESTS).map(([id, quest]) => [id, quest.objectives.map((objective) => objective.kind)]))).toEqual({
+      'fighter-trial': ['driveOff'],
+      'healer-trial': ['reach'],
+      'mystic-trial': ['reach', 'reach', 'reach'],
+      'follow-through-task': ['driveOff'],
+      'drawing-back-task': ['mend'],
+      'newcomer-errand': ['visit', 'visit'],
+      'restless-graves': ['driveOff'],
+      'cracked-skulls': ['collect'],
+      'into-the-crypt': ['driveOff'],
     });
+    expect(TRIAL_QUESTS).toEqual({ fighter: 'fighter-trial', healer: 'healer-trial', mystic: 'mystic-trial' });
     const gated = TEACHING_IDS.filter((id) => teaching(id).gate !== undefined);
-    expect(Object.fromEntries(gated.map((id) => [id, taskSpec({ role: TEACHINGS[id].role, teachingId: id })?.kind]))).toEqual({
-      'follow-through': 'driveOff',
-      'drawing-back': 'mend',
+    expect(Object.fromEntries(gated.map((id) => [id, teaching(id).gate]))).toEqual({
+      'follow-through': 'follow-through-task',
+      'drawing-back': 'drawing-back-task',
     });
   });
 
@@ -270,7 +278,7 @@ describe('constants', () => {
       pathTolerance: 0.01,
       maxStepHeight: 0.3,
       doorTriggerDepth: 0.58,
-      npcInteractionRadius: 2,
+      speakingDistance: 2,
       doorUseSlack: 1,
       maxSectorNPCs: 4096,
       maxSectorMonsterSpawns: 4096,

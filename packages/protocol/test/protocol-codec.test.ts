@@ -11,13 +11,14 @@ import {
   LOGIN_RESULTS,
   LOOT_KINDS,
   NIGHTMARE_RANKS,
-  NPC_SERVICES,
   RAISING_STATES,
   RARITIES,
   ABILITY_PHASES,
+  BOUNTY_OBJECTIVES,
   REGISTER_RESULTS,
   ROLES,
   SECTOR_KINDS,
+  SERVICES,
   SPEECH_KINDS,
   TELEGRAPH_KINDS,
   TRADE_KINDS,
@@ -25,6 +26,8 @@ import {
   SOMNIO_PROTOCOL_CONSTANTS,
   UnrecognizedTagError,
   WireDecodingError,
+  bountyId,
+  bountyIdParts,
   decodeSomnioMessage,
   encodeSomnioMessage,
   MAX_WIRE_FRAME_SIZE,
@@ -136,6 +139,7 @@ describe('runtime validation the erased types cannot do', () => {
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
   const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
   const telegraph = { id: 'telegraph-1', casterId: 'monster:3', kind: 'wail', x: 4, z: 6, radius: 4, seconds: 2.5 };
+  const bounty = { day: 3, land: 'Graveyard', monsterKind: 'ghost', objective: 'collect', count: 4, reward: { coins: 48, gear: 1 } };
   const room = { name: 'Cellar', kind: 'interior', brightness: 50, size: { width: 10, depth: 10 }, ground: { backgroundMaterialId: 'wood-warm', marks: [] } };
 
   it('rejects a missing required field', () => {
@@ -186,19 +190,19 @@ describe('runtime validation the erased types cannot do', () => {
     ['a bag place past the bag on a move', 'moveItem', { itemId: 'cap-1', place: 24 }, /place: expected a bag place from 0 to 23, got 24/],
     ['a fractional bag place on a move', 'moveItem', { itemId: 'cap-1', place: 1.5 }, /place: expected Int32/],
     ['an unknown slot on an unequip', 'unequip', { slot: 'charm' }, /unknown value "charm"/],
-    ['an empty entity id', 'talk', { npcId: '' }, /npcId: expected a non-empty string/],
-    ['an over-cap entity id', 'talk', { npcId: overCapEntityId }, /npcId: exceeds 320 UTF-8 bytes/],
+    ['an empty carrier id', 'interact', { carrierId: '' }, /carrierId: expected a non-empty string/],
+    ['an over-cap carrier id', 'interact', { carrierId: overCapEntityId }, /carrierId: exceeds 320 UTF-8 bytes/],
     ['an empty target', 'target', { targetId: '' }, /targetId: expected a non-empty string/],
     ['an over-cap target', 'target', { targetId: overCapEntityId }, /targetId: exceeds 320 UTF-8 bytes/],
     ['an engage that is neither on nor off', 'engage', { on: 'yes' }, /on: expected a bool/],
     ['a door id outside the id alphabet', 'useDoor', { sector: 'EdariaSquare', doorId: 'Main Door' }, /doorId: expected an id/],
     ['an empty door id', 'doorRefused', { sector: 'EdariaSquare', doorId: '' }, /doorId: expected an id/],
     ['an over-cap door id', 'useDoor', { sector: 'EdariaSquare', doorId: overCapId }, /doorId: exceeds 64 UTF-8 bytes/],
-    ['an over-cap sector name on useDoor', 'useDoor', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
+    ['an over-cap sector name on useDoor', 'useDoor', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 247 UTF-8 bytes/],
     ['an empty sector name on useDoor', 'useDoor', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
-    ['an over-cap sector name on doorRefused', 'doorRefused', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 251 UTF-8 bytes/],
+    ['an over-cap sector name on doorRefused', 'doorRefused', { sector: overCapSectorName, doorId: 'main' }, /sector: exceeds 247 UTF-8 bytes/],
     ['an empty sector name on doorRefused', 'doorRefused', { sector: '', doorId: 'main' }, /sector: expected a non-empty string/],
-    ['an over-cap space id', 'enterSpace', { spaceId: overCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }, /spaceId: exceeds 251 UTF-8 bytes/],
+    ['an over-cap space id', 'enterSpace', { spaceId: overCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }, /spaceId: exceeds 247 UTF-8 bytes/],
     ['an empty space id', 'enterSpace', { spaceId: '', selfId: 'a', people: 'vigils', worldSeconds: 0 }, /spaceId: expected a non-empty string/],
     [
       'a negative world time',
@@ -295,14 +299,27 @@ describe('runtime validation the erased types cannot do', () => {
       { ...inventory, trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: -1 } },
       /trade\.coins: expected a non-negative number/,
     ],
-    ['an unknown kind of pick-up', 'inventory', { ...inventory, pickedUp: { kind: 'trophy', baseId: 'cap' } }, /pickedUp\.kind: unknown value "trophy"/],
+    ['an unknown kind of pick-up', 'inventory', { ...inventory, pickedUp: { kind: 'relic', baseId: 'cap' } }, /pickedUp\.kind: unknown value "relic"/],
+    ['an unknown kind of reward', 'inventory', { ...inventory, rewarded: [{ kind: 'relic', baseId: 'cap' }] }, /rewarded\[0\]\.kind: unknown value "relic"/],
+    [
+      'more rewards than a bag holds',
+      'inventory',
+      { ...inventory, rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', rarity: 'magic' })) },
+      /rewarded: exceeds 24 records \(got 25\)/,
+    ],
     ['an item id outside the id alphabet on a drop', 'dropItem', { itemId: 'Cap 1', heading: 90 }, /itemId: expected an id/],
     ['a drop with no heading', 'dropItem', { itemId: 'cap-1' }, /heading: expected a finite number, got nothing/],
     ['a drop with a heading of text', 'dropItem', { itemId: 'cap-1', heading: 'north' }, /heading: expected a finite number/],
     ['a drop with a null heading', 'dropItem', { itemId: 'cap-1', heading: null }, /heading: expected a finite number, got null/],
-    ['an unknown kind of drop', 'inventory', { ...inventory, dropped: { kind: 'trophy', baseId: 'cap' } }, /dropped\.kind: unknown value "trophy"/],
+    ['an unknown kind of drop', 'inventory', { ...inventory, dropped: { kind: 'relic', baseId: 'cap' } }, /dropped\.kind: unknown value "relic"/],
     ['a loot id outside the id alphabet', 'pickUp', { lootId: 'Loot 1' }, /lootId: expected an id/],
-    ['loot of an unknown kind', 'loot', { ...loot, contents: { kind: 'trophy' } }, /contents\.kind: unknown value "trophy"/],
+    ['loot of an unknown kind', 'loot', { ...loot, contents: { kind: 'relic' } }, /contents\.kind: unknown value "relic"/],
+    [
+      'a trophy of a kind outside the id alphabet',
+      'loot',
+      { ...loot, contents: { kind: 'trophy', monsterKind: 'Skeleton Warrior' } },
+      /contents\.monsterKind: expected an id/,
+    ],
     ['loot of an unknown rarity', 'loot', { ...loot, contents: { ...loot.contents, rarity: 'legendary' } }, /contents\.rarity: unknown value "legendary"/],
     ['loot shared by a string', 'loot', { ...loot, shared: 'yes' }, /shared: expected a bool/],
     ['loot without its contents', 'loot', { lootId: 'loot-1', x: 1, z: 2 }, /contents: expected an object/],
@@ -316,10 +333,10 @@ describe('runtime validation the erased types cannot do', () => {
     ['loot thrown by a malformed entity', 'loot', { ...loot, from: { x: 0, z: 0, entityId: 7 } }, /from\.entityId: expected a string/],
     ['loot thrown from an unknown hand', 'loot', { ...loot, from: { x: 0, z: 0, entityId: 'a', hand: 'head' } }, /from\.hand: unknown value "head"/],
     ['loot gone without its id', 'lootGone', {}, /lootId: expected a string, got nothing/],
-    ['an over-cap ware on a buy', 'buy', { npcId: 'npc:a/b', baseId: overCapId }, /baseId: exceeds 64 UTF-8 bytes/],
+    ['an over-cap ware on a buy', 'buy', { carrierId: 'npc:a/b', baseId: overCapId }, /baseId: exceeds 64 UTF-8 bytes/],
     ['an unknown held hand item', 'held', { entityId: 'a', held: { mainHand: 'Short Sword' } }, /held\.mainHand: expected an id/],
-    ['a ware outside the id alphabet on a sell', 'sell', { npcId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
-    ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /npcId: expected a string, got nothing/],
+    ['a ware outside the id alphabet on a sell', 'sell', { carrierId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
+    ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /carrierId: expected a string, got nothing/],
     ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
     ['a crumble that is no bool', 'leave', { entityId: 'monster:8', leftGame: false, crumbled: 1 }, /crumbled: expected a bool/],
     ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
@@ -343,8 +360,62 @@ describe('runtime validation the erased types cannot do', () => {
     ],
     ['an unknown condition', 'condition', { entityId: 'monster:7', condition: 'dying' }, /unknown value "dying"/],
     ['an unknown role', 'lucidity', { ...lucidity, role: 'bard' }, /unknown value "bard"/],
-    ['an unknown role on a task', 'lucidity', { ...lucidity, task: { role: 'bard', progress: 0 } }, /task\.role: unknown value "bard"/],
-    ['a teaching id outside the id alphabet', 'study', { npcId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
+    ['a quest id outside the id alphabet', 'acceptQuest', { carrierId: 'npc:a/b', questId: 'Fighter Trial' }, /questId: expected an id/],
+    ['a quest to give up without its id', 'abandonQuest', {}, /questId/],
+    ['a held quest id outside the id alphabet', 'quests', { active: [{ questId: 'Fighter Trial', progress: [0] }], done: [] }, /questId: expected an id/],
+    ['negative quest progress', 'quests', { active: [{ questId: 'a', progress: [-1] }], done: [] }, /progress\[0\]: expected a non-negative number/],
+    ['quest progress that is no number', 'quests', { active: [{ questId: 'a', progress: ['1'] }], done: [] }, /progress\[0\]: expected a finite number/],
+    [
+      'more objectives than the cap',
+      'quests',
+      // The first count is no number, so only a count checked before the progress reports the cap.
+      { active: [{ questId: 'a', progress: ['x', ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives }, () => 0)] }], done: [] },
+      /progress: exceeds 8 objectives \(got 9\)/,
+    ],
+    [
+      'more held quests than the cap',
+      'quests',
+      { active: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, (_, index) => ({ questId: `q${index}`, progress: [] }))], done: [] },
+      /active: exceeds 10 records \(got 11\)/,
+    ],
+    [
+      'more turned-in quests than the cap',
+      'quests',
+      { active: [], done: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests }, (_, index) => `q${index}`)] },
+      /done: exceeds 256 ids \(got 257\)/,
+    ],
+    ['a quest turned in twice', 'quests', { active: [], done: ['a', 'a'] }, /done\[1\]: duplicate id "a"/],
+    ['a bounty id asking what no bounty asks', 'acceptQuest', { carrierId: 'npc:a/b', questId: 'bounty:3:Graveyard:ghost:slay' }, /questId: expected an id/],
+    ['a bounty id whose day has a leading zero', 'abandonQuest', { questId: 'bounty:03:Graveyard:ghost:collect' }, /questId: expected an id/],
+    ['a bounty id with a kind outside the id alphabet', 'abandonQuest', { questId: 'bounty:3:Graveyard:Ghost:collect' }, /questId: expected an id/],
+    ['a quest id past the quest id cap', 'abandonQuest', { questId: `bounty:3:${'a'.repeat(400)}:ghost:collect` }, /questId: exceeds 352 UTF-8 bytes/],
+    [
+      'a bounty held without what it asks',
+      'quests',
+      { active: [{ questId: 'bounty:3:Graveyard:ghost:collect', progress: [0], definition: { ...bounty, objective: undefined } }], done: [], bounties: [] },
+      /definition\.objective/,
+    ],
+    ['a bounty asking for none', 'quests', { active: [], done: [], bounties: [{ ...bounty, count: 0 }] }, /count: expected a count of 1 or more/],
+    [
+      'a bounty paying an item of no tier',
+      'quests',
+      { active: [], done: [], bounties: [{ ...bounty, reward: { coins: 1, gear: 0 } }] },
+      /gear: expected a tier/,
+    ],
+    [
+      'a bounty paying negative coins',
+      'quests',
+      { active: [], done: [], bounties: [{ ...bounty, reward: { coins: -1, gear: 1 } }] },
+      /coins: expected a non-negative/,
+    ],
+    ['a bounty asking what no bounty asks', 'quests', { active: [], done: [], bounties: [{ ...bounty, objective: 'slay' }] }, /unknown value "slay"/],
+    [
+      'more bounties than the cap',
+      'quests',
+      { active: [], done: [], bounties: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBounties }, () => bounty)] },
+      /bounties: exceeds 32 records \(got 33\)/,
+    ],
+    ['a teaching id outside the id alphabet', 'study', { carrierId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
     ['a studied teaching outside the id alphabet', 'lucidity', { ...lucidity, study: 'Follow Through' }, /study: expected an id/],
     ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
     ['a fractional rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: 1.5, practice: 0 }] }, /fractional 1.5/],
@@ -465,7 +536,8 @@ describe('runtime validation the erased types cannot do', () => {
     const atCapId = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes);
     const atCapSectorName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
     expect(() => decodeSomnioMessage(frame('target', { targetId: atCapEntityId }))).not.toThrow();
-    expect(() => decodeSomnioMessage(frame('talk', { npcId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('interact', { carrierId: `npc:${atCapSectorName}/${atCapId}` }))).not.toThrow();
+    expect(() => decodeSomnioMessage(frame('interact', { carrierId: `fixture:${atCapSectorName}/${atCapId}` }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('useDoor', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('doorRefused', { sector: atCapSectorName, doorId: atCapId }))).not.toThrow();
     expect(() => decodeSomnioMessage(frame('enterSpace', { spaceId: atCapSectorName, selfId: 'a', people: 'vigils', worldSeconds: 0 }))).not.toThrow();
@@ -497,12 +569,33 @@ describe('runtime validation the erased types cannot do', () => {
     expect(() => decodeSomnioMessage(frame('effects', { entityId: 'a', effects: atCapEffects }))).not.toThrow();
     const atCapCooldowns = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxAbilityCooldowns }, (_, index) => ({ abilityId: `a${index}`, seconds: 1 }));
     expect(() => decodeSomnioMessage(frame('cooldowns', { globalSeconds: 0, cooldowns: atCapCooldowns }))).not.toThrow();
+    const atCapQuests = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, (_, index) => ({
+      questId: `q${index}`,
+      progress: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives }, () => 0),
+    }));
+    const atCapDone = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests }, (_, index) => `d${index}`);
+    const atCapBounties = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBounties }, () => bounty);
+    expect(() => decodeSomnioMessage(frame('quests', { active: atCapQuests, done: atCapDone, bounties: atCapBounties }))).not.toThrow();
+    const longest = bountyId({
+      day: 2_147_483_647,
+      land: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes),
+      monsterKind: 'k'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes),
+      objective: 'driveOff',
+    });
+    expect(() => decodeSomnioMessage(frame('abandonQuest', { questId: longest }))).not.toThrow();
     const atCapBearings = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxSensedBearings }, (_, index) => ({ name: `d${index}`, x: 0, z: 0 }));
     expect(() => decodeSomnioMessage(frame('sensed', { bearings: atCapBearings }))).not.toThrow();
   });
 });
 
 describe('round trips', () => {
+  it('reads a bounty id back to what it names, a land holding a colon included', () => {
+    const parts = { day: 168000, land: 'Old:Graves', monsterKind: 'skeleton-warrior', objective: 'driveOff' } as const;
+    expect(bountyId(parts)).toBe('bounty:168000:Old:Graves:skeleton-warrior:driveOff');
+    expect(bountyIdParts(bountyId(parts))).toEqual(parts);
+    expect([bountyIdParts('fighter-trial'), bountyIdParts('bounty:2147483648:Graveyard:ghost:collect')]).toEqual([undefined, undefined]);
+  });
+
   it.each(GOLDEN_FRAME_ENTRIES.map((entry) => [entry.name, entry.message] as const))('%s round-trips', (_name, message) => {
     expect(roundTrip(message)).toEqual(message);
   });
@@ -529,16 +622,8 @@ describe('round trips', () => {
     expect(decodeSomnioMessage(frame(tag, { result: 'throttled' }))).toEqual({ tag, payload: { result: 'throttled' } });
   });
 
-  /** Without a teaching the request is for the master's trial, so the key must stay absent. */
-  it('askTask round-trips a trial request without a teaching', () => {
-    const message: SomnioMessage = { tag: 'askTask', payload: { npcId: 'npc:EdariaFighterHall/pugnax' } };
-    const decoded = roundTrip(message);
-    expect(decoded).toEqual(message);
-    expect('teachingId' in decoded.payload).toBe(false);
-  });
-
-  it('lucidity decodes a dreamer with no role, study, or task without those keys', () => {
-    const decoded = decodeSomnioMessage(frame('lucidity', { role: null, ranks: [], study: null, task: null }));
+  it('lucidity decodes a dreamer with no role or study without those keys', () => {
+    const decoded = decodeSomnioMessage(frame('lucidity', { role: null, ranks: [], study: null }));
     expect(decoded).toEqual({ tag: 'lucidity', payload: { ranks: [] } });
   });
 
@@ -566,7 +651,7 @@ describe('round trips', () => {
   });
 
   /** A verb with nothing to say still has to carry an object, and whatever a client puts in it is dropped. */
-  it.each(['abandonTask', 'wake'] as const)('%s decodes to an empty payload', (tag) => {
+  it.each(['wake', 'revokeOtherSessions'] as const)('%s decodes to an empty payload', (tag) => {
     expect(decodeSomnioMessage(frame(tag, { extra: 1 }))).toEqual({ tag, payload: {} });
   });
 
@@ -680,8 +765,8 @@ describe('string literal sets', () => {
     expect(ROLES).toEqual(['fighter', 'healer', 'mystic']);
   });
 
-  it('pins NPCService', () => {
-    expect(NPC_SERVICES).toEqual(['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper']);
+  it('pins Service', () => {
+    expect(SERVICES).toEqual(['fighterMaster', 'healerMaster', 'mysticMaster', 'shopkeeper', 'bountyBoard']);
   });
 
   it('pins Locale', () => {
@@ -709,11 +794,15 @@ describe('string literal sets', () => {
   });
 
   it('pins LootKind', () => {
-    expect(LOOT_KINDS).toEqual(['item']);
+    expect(LOOT_KINDS).toEqual(['item', 'trophy']);
   });
 
   it('pins NightmareRank', () => {
     expect(NIGHTMARE_RANKS).toEqual(['elite', 'boss']);
+  });
+
+  it('pins BountyObjective', () => {
+    expect(BOUNTY_OBJECTIVES).toEqual(['driveOff', 'collect']);
   });
 
   it('pins TelegraphKind', () => {
@@ -727,7 +816,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(21);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(22);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -740,7 +829,8 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes).toBe(256);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes).toBe(256);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityIdUTF8Bytes).toBe(320);
-    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes).toBe(251);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes).toBe(247);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxQuestIdUTF8Bytes).toBe(352);
   });
 
   it('pins the world caps', () => {
@@ -749,6 +839,7 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorPlacements).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors).toBe(4096);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFixtures).toBe(4096);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorGroundMarks).toBe(512);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxSectorGroundPoints).toBe(8192);
     expect(SOMNIO_PROTOCOL_CONSTANTS.markFeatherMetres).toBe(0.6);
@@ -756,6 +847,10 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMarkStrokeRadiusMetres).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems).toBe(24);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests).toBe(10);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives).toBe(8);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests).toBe(256);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxBounties).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxLucidityRanks).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxEntityEffects).toBe(32);

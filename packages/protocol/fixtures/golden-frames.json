@@ -1,7 +1,9 @@
 {
-  "abandonTask": {
-    "payload": {},
-    "tag": "abandonTask"
+  "abandonQuest": {
+    "payload": {
+      "questId": "follow-through-task"
+    },
+    "tag": "abandonQuest"
   },
   "ability": {
     "payload": {
@@ -72,24 +74,25 @@
     },
     "tag": "ability"
   },
+  "acceptQuest": {
+    "payload": {
+      "carrierId": "npc:EdariaFighterHall/pugnax",
+      "questId": "follow-through-task"
+    },
+    "tag": "acceptQuest"
+  },
+  "acceptQuest-bounty": {
+    "payload": {
+      "carrierId": "fixture:EdariaSquare/fixture-1",
+      "questId": "bounty:168000:Graveyard:skeleton-warrior:collect"
+    },
+    "tag": "acceptQuest"
+  },
   "adminSay": {
     "payload": {
       "text": "Server restart in 5 minutes"
     },
     "tag": "adminSay"
-  },
-  "askTask": {
-    "payload": {
-      "npcId": "npc:EdariaFighterHall/pugnax",
-      "teachingId": "follow-through"
-    },
-    "tag": "askTask"
-  },
-  "askTask-trial": {
-    "payload": {
-      "npcId": "npc:EdariaFighterHall/pugnax"
-    },
-    "tag": "askTask"
   },
   "blow": {
     "payload": {
@@ -110,7 +113,7 @@
   "buy": {
     "payload": {
       "baseId": "dagger",
-      "npcId": "npc:EdariaShop/mercus"
+      "carrierId": "npc:EdariaShop/mercus"
     },
     "tag": "buy"
   },
@@ -151,12 +154,6 @@
       "text": "Hilfe!"
     },
     "tag": "clientSay"
-  },
-  "completeTask": {
-    "payload": {
-      "npcId": "npc:EdariaFighterHall/pugnax"
-    },
-    "tag": "completeTask"
   },
   "condition": {
     "payload": {
@@ -455,9 +452,21 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 21
+      "protocolVersion": 22
     },
     "tag": "hello"
+  },
+  "interact": {
+    "payload": {
+      "carrierId": "npc:EdariaLibrary/libus"
+    },
+    "tag": "interact"
+  },
+  "interact-fixture": {
+    "payload": {
+      "carrierId": "fixture:EdariaSquare/fixture-1"
+    },
+    "tag": "interact"
   },
   "inventory": {
     "payload": {
@@ -570,6 +579,49 @@
         "kind": "sold",
         "rarity": "magic"
       }
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-trophy": {
+    "payload": {
+      "bag": [],
+      "coins": 100,
+      "equipped": [],
+      "pickedUp": {
+        "kind": "trophy",
+        "monsterKind": "skeleton-warrior"
+      }
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-turn-in": {
+    "payload": {
+      "bag": [
+        {
+          "item": {
+            "affixes": [
+              {
+                "affixId": "guard",
+                "value": 5
+              }
+            ],
+            "baseId": "cap",
+            "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+            "rarity": "rare",
+            "tier": 3
+          },
+          "place": 0
+        }
+      ],
+      "coins": 172,
+      "equipped": [],
+      "rewarded": [
+        {
+          "baseId": "cap",
+          "kind": "item",
+          "rarity": "rare"
+        }
+      ]
     },
     "tag": "inventory"
   },
@@ -700,6 +752,22 @@
     },
     "tag": "loot"
   },
+  "loot-trophy": {
+    "payload": {
+      "contents": {
+        "kind": "trophy",
+        "monsterKind": "skeleton-warrior"
+      },
+      "from": {
+        "x": 31,
+        "z": -12
+      },
+      "lootId": "loot-12",
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
   "lootGone": {
     "payload": {
       "lootId": "loot-12"
@@ -721,12 +789,7 @@
         }
       ],
       "role": "fighter",
-      "study": "strike",
-      "task": {
-        "progress": 1,
-        "role": "fighter",
-        "teachingId": "follow-through"
-      }
+      "study": "strike"
     },
     "tag": "lucidity"
   },
@@ -752,16 +815,6 @@
       ],
       "role": "mystic",
       "study": "ward"
-    },
-    "tag": "lucidity"
-  },
-  "lucidity-mystic-trial": {
-    "payload": {
-      "ranks": [],
-      "task": {
-        "progress": 5,
-        "role": "mystic"
-      }
     },
     "tag": "lucidity"
   },
@@ -826,6 +879,82 @@
       "lootId": "loot-12"
     },
     "tag": "pickUp"
+  },
+  "quests": {
+    "payload": {
+      "active": [
+        {
+          "progress": [
+            2
+          ],
+          "questId": "follow-through-task"
+        }
+      ],
+      "bounties": [],
+      "done": [
+        "fighter-trial"
+      ]
+    },
+    "tag": "quests"
+  },
+  "quests-bounties": {
+    "payload": {
+      "active": [
+        {
+          "definition": {
+            "count": 4,
+            "day": 168000,
+            "land": "Graveyard",
+            "monsterKind": "skeleton-warrior",
+            "objective": "collect",
+            "reward": {
+              "coins": 120,
+              "gear": 3
+            }
+          },
+          "progress": [
+            1
+          ],
+          "questId": "bounty:168000:Graveyard:skeleton-warrior:collect"
+        }
+      ],
+      "bounties": [
+        {
+          "count": 4,
+          "day": 168000,
+          "land": "Graveyard",
+          "monsterKind": "skeleton-warrior",
+          "objective": "collect",
+          "reward": {
+            "coins": 120,
+            "gear": 3
+          }
+        },
+        {
+          "count": 10,
+          "day": 168000,
+          "land": "AutumnWood",
+          "monsterKind": "ghost",
+          "objective": "driveOff",
+          "reward": {
+            "coins": 120,
+            "gear": 1
+          }
+        }
+      ],
+      "done": [
+        "bounty:168000:AutumnWood:ghost:driveOff"
+      ]
+    },
+    "tag": "quests"
+  },
+  "quests-empty": {
+    "payload": {
+      "active": [],
+      "bounties": [],
+      "done": []
+    },
+    "tag": "quests"
   },
   "raising": {
     "payload": {
@@ -927,6 +1056,13 @@
             }
           }
         ],
+        "fixtures": [
+          {
+            "id": "fixture-1",
+            "placement": "notice-board-1",
+            "service": "bountyBoard"
+          }
+        ],
         "ground": {
           "backgroundMaterialId": "grass-meadow",
           "marks": [
@@ -995,6 +1131,14 @@
             "x": 3.6,
             "yaw": 0,
             "z": 28.5
+          },
+          {
+            "elevation": 0,
+            "id": "notice-board-1",
+            "modelId": "notice-board",
+            "x": 18.15,
+            "yaw": 35,
+            "z": 18.1
           }
         ],
         "size": {
@@ -1024,6 +1168,7 @@
             }
           }
         ],
+        "fixtures": [],
         "ground": {
           "backgroundMaterialId": "wood-warm",
           "marks": []
@@ -1056,8 +1201,8 @@
   },
   "sell": {
     "payload": {
-      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
-      "npcId": "npc:EdariaShop/mercus"
+      "carrierId": "npc:EdariaShop/mercus",
+      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e"
     },
     "tag": "sell"
   },
@@ -1123,16 +1268,10 @@
   },
   "study": {
     "payload": {
-      "npcId": "npc:EdariaFighterHall/pugnax",
+      "carrierId": "npc:EdariaFighterHall/pugnax",
       "teachingId": "follow-through"
     },
     "tag": "study"
-  },
-  "talk": {
-    "payload": {
-      "npcId": "npc:EdariaLibrary/libus"
-    },
-    "tag": "talk"
   },
   "target": {
     "payload": {
@@ -1155,6 +1294,13 @@
       "z": 4.5
     },
     "tag": "telegraph"
+  },
+  "turnInQuest": {
+    "payload": {
+      "carrierId": "npc:EdariaFighterHall/pugnax",
+      "questId": "follow-through-task"
+    },
+    "tag": "turnInQuest"
   },
   "unequip": {
     "payload": {

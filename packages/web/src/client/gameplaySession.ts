@@ -7,13 +7,14 @@ import type {
   Energy,
   EntityMove,
   EquipSlot,
+  LootContentsMessage,
   LootMessage,
   LucidityMessage,
   RaisingMessage,
   SayMessage,
   SensedBearingMessage,
+  Service,
   SomnioMessage,
-  TaskMessage,
   TelegraphMessage,
   TradeMessage,
 } from '@somnio/protocol';
@@ -21,18 +22,23 @@ import {
   COMBAT,
   GLOBAL_COOLDOWN_SECONDS,
   PICKUP_REACH,
+  SOMNIO_CONSTANTS,
   abilitiesTaught,
   ability,
   abilityCooldownSeconds,
   abilityRefusal,
   abilityRank,
+  attackRefusal,
   bagHasRoom,
+  bountiesOf,
+  carriesQuests,
   doorOpenAt,
   droppableItem,
   engageAction,
   gaitAllowed,
   handAllows,
   heading,
+  heldQuest,
   headingFromVector,
   inventoryOf,
   isAbilityId,
@@ -40,17 +46,37 @@ import {
   isTeachingId,
   moveItem,
   NO_INVENTORY,
-  placesFound,
+  NO_QUESTS,
+  markerFor,
+  objectiveLines,
   poolShare,
-  taskGoal,
-  taskSpec,
+  quest,
+  questComplete,
+  questsOf,
+  turnInGrant,
   windedAfter,
   windedOnJoin,
   withinSpeakingDistance,
 } from '@somnio/core';
-import type { AbilityId, AbilityRefusal, EffectId, EngageAction, Inventory, Point, TaskSpec } from '@somnio/core';
+import type {
+  AbilityId,
+  AbilityRefusal,
+  ActiveQuest,
+  AttackRefusal,
+  Bounty,
+  EffectId,
+  EngageAction,
+  Inventory,
+  ObjectiveLine,
+  Point,
+  QuestCarrier,
+  QuestLog,
+  QuestMarker,
+  QuestOrBountyId,
+} from '@somnio/core';
 import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
+import { committedNPCNames } from '@/splash/sectors';
 import { parseChatInput } from './chatCommand';
 import { abilityBody, drivenOff, engageKind } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
@@ -80,6 +106,25 @@ const ZERO_ENERGY: Energy = {
   spiritCurrent: 0,
   spiritMax: 1,
 };
+
+/**
+ * What the player can act on for a service or a quest: an NPC in view, or a fixture of a held
+ * sector, which is never an entity.
+ */
+export interface ServiceCarrier {
+  id: string;
+  /** An NPC's name; a fixture goes by its service. */
+  name: string | undefined;
+  /** Where it stands, a fixture at its placement's centre: speaking distance is measured from here. */
+  position: Point;
+  /** The service its record names. */
+  service: Service | undefined;
+}
+
+/** Whether a carrier has a panel to open: a service of its own, or quests to give or take. */
+export function offersService(carrier: ServiceCarrier): boolean {
+  return carrier.service !== undefined || carriesQuests(carrier.id);
+}
 
 /** The lucidity frame of a dreamer who has grown into nothing yet, until the server sends theirs. */
 export const NO_LUCIDITY_MESSAGE: LucidityMessage = { ranks: [] };
@@ -124,6 +169,27 @@ export interface ClientRaise extends RaiseProgress {
   endsAtMs: number;
 }
 
+/**
+ * A quest turned in and what it paid, from the frames that answered the turn-in: the coins gained
+ * and each item given, with the teaching studied as it was turned in, which its practice went toward.
+ */
+export interface QuestTurnedIn {
+  held: ActiveQuest;
+  study: string | undefined;
+  coins: number | undefined;
+  items: Extract<LootContentsMessage, { kind: 'item' }>[];
+}
+
+/**
+ * What a `quests` frame after the baseline moved, for the HUD to show over the world: a quest taken
+ * on, a line of a quest held that came further, a quest held that is now done, or one turned in.
+ */
+export type QuestNews =
+  | { kind: 'accepted'; held: ActiveQuest }
+  | { kind: 'progress'; held: ActiveQuest; line: ObjectiveLine }
+  | { kind: 'done'; held: ActiveQuest }
+  | ({ kind: 'turnedIn' } & QuestTurnedIn);
+
 /** An effect an entity holds, as the client keeps it: when it ends on the session's clock, or never while its holder lasts. */
 export interface ClientEffect {
   effectId: EffectId;
@@ -137,12 +203,6 @@ interface Cooldowns {
 
 const NO_COOLDOWNS: Cooldowns = { global: undefined, abilities: {} };
 
-/** What a task as the wire carries it asks for; `undefined` for a teaching this client does not know or one without a gate. */
-export function taskSpecOf(task: TaskMessage): TaskSpec | undefined {
-  if (task.teachingId !== undefined && !isTeachingId(task.teachingId)) return undefined;
-  return taskSpec({ role: task.role, teachingId: task.teachingId });
-}
-
 /** The whole seconds left until `endsAtMs`, rounded up, as a countdown shows them; never below 0. */
 export function wholeSecondsLeft(endsAtMs: number, nowMs: number): number {
   return Math.max(0, Math.ceil((endsAtMs - nowMs) / 1000));
@@ -151,12 +211,6 @@ export function wholeSecondsLeft(endsAtMs: number, nowMs: number): number {
 /** The share done and the schedule a `raising` snapshot states, without its Healers. */
 function raiseProgress({ progress, seconds, pausedSeconds }: RaisingMessage): RaiseProgress {
   return { progress, seconds, ...(pausedSeconds === undefined ? {} : { pausedSeconds }) };
-}
-
-/** Whether a task as the wire carries it is at its goal. A task this client cannot read has no goal to reach. */
-export function taskIsDone(task: TaskMessage): boolean {
-  const spec = taskSpecOf(task);
-  return spec !== undefined && task.progress >= taskGoal(spec);
 }
 
 /** How long a press on the ground is held before the player steers toward the pointer rather than walking to where it lands. */
@@ -192,10 +246,16 @@ export class GameplaySession {
   energy: Energy = ZERO_ENERGY;
   inventory: Inventory = NO_INVENTORY;
   lucidity: LucidityMessage = NO_LUCIDITY_MESSAGE;
+  /** The quests the player holds and turned in, as the last `quests` frame said. */
+  quests: QuestLog = NO_QUESTS;
+  /** The bounties of the world day, as the last `quests` frame said. */
+  bounties: Bounty[] = [];
+  /** The marker each carrier shows the player, by its id, as the scene was last told: in view or not. */
+  questMarkers: ReadonlyMap<string, QuestMarker> = new Map();
   /** Whether the player's balance gave out. Kept as the server keeps it: from each `energy` frame, in order. */
   winded = false;
-  /** The NPC whose service panel is open. It does not close the input gate: the player walks away from it. */
-  servicePanel: ClientEntity | undefined;
+  /** The carrier whose service panel is open. It does not close the input gate: the player walks away from it. */
+  servicePanel: ServiceCarrier | undefined;
   /** The entity the player acts on, as the server was last told. */
   target: string | undefined;
   /**
@@ -219,7 +279,9 @@ export class GameplaySession {
    * so it sets `winded` from the balance alone and announces nothing; every later one is compared
    * with the one before.
    */
-  private seen = { energy: false, inventory: false, lucidity: false };
+  private seen = { energy: false, inventory: false, lucidity: false, quests: false };
+  /** A quest turned in whose news waits for the `inventory` frame of what it paid. */
+  private turningIn: Omit<QuestTurnedIn, 'coins' | 'items'> | undefined;
   /** The fallen dreamers whose raise this player was last told they hold on to. */
   private readonly heldRaises = new Set<string>();
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
@@ -320,10 +382,14 @@ export class GameplaySession {
         this.raises.delete(entityId);
         for (const [id, telegraph] of this.telegraphs) if (telegraph.casterId === entityId) this.telegraphs.delete(id);
       }
+      // An NPC's marker is judged from its entity frame as it comes into view, before the scene places it,
+      // and dropped as a marked carrier leaves.
+      if (this.controller.entities.get(entityId)?.kind === 'npc' || this.questMarkers.has(entityId)) this.showQuestMarkers();
       // The player's own entity carries their condition, which is what the fallen notice follows.
       if (entityId === this.controller.selfId) this.onStateChanged?.();
     };
     this.controller.onSelfConditionChanged = (condition) => this.handleOwnCondition(condition);
+    this.controller.onSectorArrived = () => this.showQuestMarkers();
     this.controller.onTeardown = () => {
       this.letGo();
       this.resetSpaceState();
@@ -331,6 +397,10 @@ export class GameplaySession {
       this.energy = ZERO_ENERGY;
       this.inventory = NO_INVENTORY;
       this.lucidity = NO_LUCIDITY_MESSAGE;
+      this.quests = NO_QUESTS;
+      this.bounties = [];
+      this.questMarkers = new Map();
+      this.controller.renderSurface.showQuestMarkers(this.questMarkers);
       this.winded = false;
       this.waking = false;
     };
@@ -349,7 +419,8 @@ export class GameplaySession {
     this.liftDestinationMarker();
     this.predictor.releaseDoor(true);
     this.interpolation.clear();
-    this.seen = { energy: false, inventory: false, lucidity: false };
+    this.seen = { energy: false, inventory: false, lucidity: false, quests: false };
+    this.turningIn = undefined;
     this.servicePanel = undefined;
     this.heldRaises.clear();
     this.slowedUntilMs = 0;
@@ -418,10 +489,43 @@ export class GameplaySession {
     const entity = this.controller.entities.get(entityId);
     if (self === undefined || entity === undefined || !this.acting) return;
     this.select(entityId);
-    if (entity.kind === 'npc' && withinSpeakingDistance(self.position, entity.position)) {
-      this.send({ tag: 'talk', payload: { npcId: entityId } });
-      if (entity.service !== undefined) this.openServicePanel(entityId);
+    if (entity.kind === 'npc' && withinSpeakingDistance(self.position, entity.position)) this.interact(entityId);
+  }
+
+  /**
+   * A press on a fixture's drawn model. A fixture is no target, so the press walks the player into
+   * speaking distance of its placement's centre and uses it there, after the final `move`. The
+   * centre lies inside what the model blocks, so the walk stops short of it, wherever it comes in
+   * range. From within speaking distance it is used at once.
+   */
+  pressFixture(carrierId: string): void {
+    const self = this.self;
+    const fixture = this.carrierOf(carrierId);
+    if (self === undefined || fixture === undefined || !this.acting) return;
+    if (withinSpeakingDistance(self.position, fixture.position)) {
+      this.interact(carrierId);
+      return;
     }
+    this.liftDestinationMarker();
+    this.walkWaitsForChannel = false;
+    this.predictor.walkTo(fixture.position, { within: SOMNIO_CONSTANTS.speakingDistance, act: () => this.interact(carrierId) });
+  }
+
+  /** Acts on a carrier the player stands at, from where they stand, and opens its panel when it offers a service. */
+  private interact(carrierId: string): void {
+    const carrier = this.carrierOf(carrierId);
+    if (carrier === undefined) return;
+    this.predictor.flush();
+    this.send({ tag: 'interact', payload: { carrierId } });
+    if (offersService(carrier)) this.openServicePanel(carrier);
+  }
+
+  /** The NPC in view or the fixture of a held sector going by the carrier id. */
+  private carrierOf(carrierId: string): ServiceCarrier | undefined {
+    const npc = this.controller.entities.get(carrierId);
+    if (npc?.kind === 'npc') return { id: carrierId, name: npc.name, position: npc.position, service: npc.service };
+    const fixture = this.controller.world?.fixtures.find((candidate) => candidate.id === carrierId);
+    return fixture === undefined ? undefined : { id: carrierId, name: undefined, position: fixture.position, service: fixture.fixture.service };
   }
 
   /**
@@ -521,10 +625,11 @@ export class GameplaySession {
     this.predictor.walkTo({ x: loot.x, z: loot.z }, { within: PICKUP_REACH, act: () => this.pickUp(lootId) });
   }
 
-  /** Asks for a drop still lying there. A full bag, which the server would refuse, is said in chat instead, and the drop stays. */
+  /** Asks for a drop still lying there. A full bag, which the server would refuse an item for, is said in chat instead, and the drop stays. */
   private pickUp(lootId: string): void {
-    if (!this.loot.has(lootId)) return;
-    if (!bagHasRoom(this.inventory)) {
+    const loot = this.loot.get(lootId);
+    if (loot === undefined) return;
+    if (loot.contents.kind === 'item' && !bagHasRoom(this.inventory)) {
       this.controller.appendChat({ kind: 'bagFull' });
       return;
     }
@@ -658,9 +763,19 @@ export class GameplaySession {
    * server judges with; `undefined` for nothing.
    */
   engageAction(): EngageAction | undefined {
-    const target = this.target === undefined ? undefined : this.controller.entities.get(this.target);
-    if (this.fallen || target === undefined) return undefined;
-    return engageAction(engageKind(target), this.lucidity.role, this.inventory.equipped);
+    const target = this.standingTarget();
+    return target === undefined ? undefined : engageAction(engageKind(target), this.lucidity.role, this.inventory.equipped, this.quests.active);
+  }
+
+  /** What keeps slot 1 from attacking the target, a nightmare, by the `attackRefusal` rule `engageAction` reads; `undefined` at anything else. */
+  attackRefusal(): AttackRefusal | undefined {
+    const target = this.standingTarget();
+    return target === undefined || engageKind(target) !== 'nightmare' ? undefined : attackRefusal(this.inventory.equipped, this.quests.active);
+  }
+
+  /** The target while the player stands. */
+  private standingTarget(): ClientEntity | undefined {
+    return this.fallen || this.target === undefined ? undefined : this.controller.entities.get(this.target);
   }
 
   /** Whether slot 1 can be switched on. */
@@ -781,9 +896,9 @@ export class GameplaySession {
     return poolShare(this.energy.healthCurrent, this.energy.healthMax);
   }
 
-  private openServicePanel(npcId: string): void {
-    if (this.servicePanel?.id === npcId) return;
-    this.servicePanel = this.controller.entities.get(npcId);
+  private openServicePanel(carrier: ServiceCarrier): void {
+    if (this.servicePanel?.id === carrier.id) return;
+    this.servicePanel = carrier;
     this.onStateChanged?.();
   }
 
@@ -793,12 +908,12 @@ export class GameplaySession {
     this.onStateChanged?.();
   }
 
-  /** The panel belongs to standing with the NPC: walking out of speaking distance closes it, as the server would drop a request from there. */
+  /** The panel belongs to standing at the carrier: walking out of speaking distance closes it, as the server would drop a request from there. */
   private closeServicePanelBeyondSpeakingDistance(): void {
     const self = this.self;
-    const npc = this.servicePanel;
-    if (npc === undefined) return;
-    if (self === undefined || !withinSpeakingDistance(self.position, npc.position)) this.closeServicePanel();
+    const carrier = this.servicePanel;
+    if (carrier === undefined) return;
+    if (self === undefined || !withinSpeakingDistance(self.position, carrier.position)) this.closeServicePanel();
   }
 
   private handleOwnCondition(condition: Condition): void {
@@ -935,32 +1050,32 @@ export class GameplaySession {
     this.send({ tag: 'dropItem', payload: { itemId, heading: self.facing } });
   }
 
-  /** Asks the master whose panel is open for a task: their trial, or the one that gates `teachingId`. */
-  askTask(teachingId?: string): void {
-    if (this.servicePanel === undefined) return;
-    this.send({ tag: 'askTask', payload: { npcId: this.servicePanel.id, ...(teachingId === undefined ? {} : { teachingId }) } });
+  /** Takes the quest on from the carrier whose panel is open. */
+  acceptQuest(questId: QuestOrBountyId): void {
+    if (this.servicePanel !== undefined) this.send({ tag: 'acceptQuest', payload: { carrierId: this.servicePanel.id, questId } });
   }
 
-  completeTask(): void {
-    if (this.servicePanel !== undefined) this.send({ tag: 'completeTask', payload: { npcId: this.servicePanel.id } });
+  /** Turns the quest in at the carrier whose panel is open. */
+  turnInQuest(questId: QuestOrBountyId): void {
+    if (this.servicePanel !== undefined) this.send({ tag: 'turnInQuest', payload: { carrierId: this.servicePanel.id, questId } });
   }
 
-  abandonTask(): void {
-    this.send({ tag: 'abandonTask', payload: {} });
+  abandonQuest(questId: QuestOrBountyId): void {
+    this.send({ tag: 'abandonQuest', payload: { questId } });
   }
 
   study(teachingId: string): void {
-    if (this.servicePanel !== undefined) this.send({ tag: 'study', payload: { npcId: this.servicePanel.id, teachingId } });
+    if (this.servicePanel !== undefined) this.send({ tag: 'study', payload: { carrierId: this.servicePanel.id, teachingId } });
   }
 
   /** Asks the shopkeeper whose panel is open to sell one of a ware. */
   buy(baseId: string): void {
-    this.trade((npcId) => ({ tag: 'buy', payload: { npcId, baseId } }));
+    this.trade((carrierId) => ({ tag: 'buy', payload: { carrierId, baseId } }));
   }
 
   /** Asks the shopkeeper whose panel is open to buy an item from the bag. */
   sell(itemId: string): void {
-    this.trade((npcId) => ({ tag: 'sell', payload: { npcId, itemId } }));
+    this.trade((carrierId) => ({ tag: 'sell', payload: { carrierId, itemId } }));
   }
 
   /** Whether the shop's buttons are locked, from a trade until a moment after its answer. */
@@ -968,10 +1083,10 @@ export class GameplaySession {
     return this.now() < this.tradeLockedUntilMs;
   }
 
-  private trade(request: (npcId: string) => SomnioMessage): void {
-    const npc = this.servicePanel;
-    if (npc?.service !== 'shopkeeper' || this.tradeLocked()) return;
-    this.send(request(npc.id));
+  private trade(request: (carrierId: string) => SomnioMessage): void {
+    const carrier = this.servicePanel;
+    if (carrier?.service !== 'shopkeeper' || this.tradeLocked()) return;
+    this.send(request(carrier.id));
     this.tradeLockedUntilMs = this.now() + TRADE_ANSWER_TIMEOUT_MS;
     this.onStateChanged?.();
   }
@@ -1005,18 +1120,26 @@ export class GameplaySession {
         this.onStateChanged?.();
         return;
       case 'inventory': {
-        const { trade, dropped, pickedUp } = message.payload;
+        const { trade, dropped, pickedUp, rewarded } = message.payload;
         if (trade !== undefined) {
           // A trade is its own news: the coins it moved are not announced again.
           this.announceTrade(trade);
           this.tradeLockedUntilMs = this.now() + TRADE_SETTLE_MS;
         } else if (dropped !== undefined) {
-          this.controller.appendChat({ kind: 'dropped', baseId: dropped.baseId });
+          this.controller.appendChat({ kind: 'dropped', contents: dropped });
         } else if (pickedUp !== undefined) {
-          this.controller.appendChat({ kind: 'pickedUp', baseId: pickedUp.baseId });
+          this.controller.appendChat({ kind: 'pickedUp', contents: pickedUp });
         } else {
           const gained = message.payload.coins - this.inventory.coins;
           if (this.seen.inventory && gained > 0) this.controller.appendChat({ kind: 'coinsGained', coins: gained });
+          // A turn-in's items after its coins, a line each.
+          for (const contents of rewarded ?? []) this.controller.appendChat({ kind: 'rewarded', contents });
+          const turnedIn = this.turningIn;
+          this.turningIn = undefined;
+          if (turnedIn !== undefined) {
+            const items = (rewarded ?? []).flatMap((contents) => (contents.kind === 'item' ? [contents] : []));
+            this.onQuestNews?.({ kind: 'turnedIn', ...turnedIn, coins: gained > 0 ? gained : undefined, items });
+          }
         }
         this.seen.inventory = true;
         this.inventory = inventoryOf(message.payload);
@@ -1035,8 +1158,19 @@ export class GameplaySession {
         if (this.seen.lucidity) this.announceLucidity(this.lucidity, message.payload);
         this.seen.lucidity = true;
         this.lucidity = message.payload;
+        this.showQuestMarkers();
         this.onStateChanged?.();
         return;
+      case 'quests': {
+        const quests = questsOf(message.payload);
+        if (this.seen.quests) this.announceQuests(this.quests, quests);
+        this.seen.quests = true;
+        this.quests = quests;
+        this.bounties = bountiesOf(message.payload);
+        this.showQuestMarkers();
+        this.onStateChanged?.();
+        return;
+      }
       case 'blow':
         // The server chooses the moment of a swing, so its slow starts when the swing is shown.
         if (message.payload.attackerId === this.controller.selfId) this.slowedUntilMs = this.now() + COMBAT.swingSlow.seconds * 1000;
@@ -1107,6 +1241,8 @@ export class GameplaySession {
   }
 
   onStateChanged: (() => void) | undefined;
+  /** Hears each quest taken on, each line of a quest held that came further, each quest held that is now done, and each quest turned in with what it paid. */
+  onQuestNews: ((news: QuestNews) => void) | undefined;
 
   /**
    * The cooldowns a `cooldowns` frame tells of, on the session's clock. Each began as long before
@@ -1145,23 +1281,85 @@ export class GameplaySession {
     if (door !== undefined && worldSeconds !== undefined && !doorOpenAt(door, worldSeconds)) this.controller.appendChat({ kind: 'doorOpensAtNight' });
   }
 
-  /** The chat lines for what changed from one `lucidity` frame to the next. A hidden place found is told unless it finishes the task. */
+  /** The chat lines for what changed from one `lucidity` frame to the next. */
   private announceLucidity(before: LucidityMessage, after: LucidityMessage): void {
     if (before.role === undefined && after.role !== undefined) this.controller.appendChat({ kind: 'becameRole', role: after.role });
     for (const held of after.ranks) {
       const had = before.ranks.find((other) => other.teachingId === held.teachingId)?.rank ?? 0;
       if (held.rank > had && isTeachingId(held.teachingId)) this.controller.appendChat({ kind: 'rankGained', teachingId: held.teachingId, rank: held.rank });
     }
-    if (before.task === undefined || after.task === undefined) return;
-    if (!taskIsDone(before.task) && taskIsDone(after.task)) {
-      this.controller.appendChat({ kind: 'taskDone' });
-      return;
+  }
+
+  /**
+   * What changed from one `quests` frame to the next: a quest turned in, a quest taken on, a quest
+   * held that is now done, with where to turn it in, and otherwise each line that came further. A
+   * quest taken on says only that, however far it has come. The chat says the hidden places found
+   * among those lines, never which.
+   */
+  private announceQuests(before: QuestLog, after: QuestLog): void {
+    for (const held of before.active) if (after.done.includes(held.questId)) this.announceTurnIn(held);
+    for (const held of after.active) {
+      const had = before.active.find((candidate) => candidate.questId === held.questId);
+      if (had === undefined) {
+        this.onQuestNews?.({ kind: 'accepted', held });
+        continue;
+      }
+      if (questComplete(held)) {
+        if (!questComplete(had)) this.announceDone(held);
+        continue;
+      }
+      const lines = objectiveLines(heldQuest(held), had.progress);
+      for (const [index, line] of objectiveLines(heldQuest(held), held.progress).entries()) {
+        const { objectives, done, goal } = line;
+        if (done <= lines[index]!.done) continue;
+        if (objectives.length > 1 && objectives.every(({ kind }) => kind === 'reach'))
+          this.controller.appendChat({ kind: 'placeFound', found: done, total: goal });
+        this.onQuestNews?.({ kind: 'progress', held, line });
+      }
     }
-    const spec = taskSpecOf(after.task);
-    const found = placesFound(after.task.progress);
-    if (spec?.kind === 'reachAll' && found > placesFound(before.task.progress)) {
-      this.controller.appendChat({ kind: 'placeFound', found, total: spec.places.length });
+  }
+
+  /** A quest held that is now done, with where to turn it in: its carrier, or for a bounty a bounty board. */
+  private announceDone(held: ActiveQuest): void {
+    if (held.definition !== undefined) this.controller.appendChat({ kind: 'bountyDone' });
+    else this.controller.appendChat({ kind: 'questDone', questId: held.questId, turnIn: this.carrierName(quest(held.questId).turnIn) });
+    this.onQuestNews?.({ kind: 'done', held });
+  }
+
+  /**
+   * A quest turned in, told to the HUD once what it paid is known. The server answers a turn-in with
+   * the `quests` frame that marks it done, then any `lucidity` frames, and last, when it pays coins
+   * or an item, the `inventory` frame carrying them, so such a turn-in waits for that frame. What it
+   * teaches follows from the quest, and its practice goes toward the teaching studied now.
+   */
+  private announceTurnIn(held: ActiveQuest): void {
+    const turnedIn = { held, study: this.lucidity.study };
+    if (turnInGrant(held).paysInventory) this.turningIn = turnedIn;
+    else this.onQuestNews?.({ kind: 'turnedIn', ...turnedIn, coins: undefined, items: [] });
+  }
+
+  /**
+   * Marks every carrier by what it has for the player, by the `markerFor` rule: each NPC in view with
+   * the service its entity frame names, and each fixture of the held sectors, a bounty board among them.
+   */
+  private showQuestMarkers(): void {
+    const npcs = [...this.controller.entities.values()].filter((entity) => entity.kind === 'npc');
+    const carriers: QuestCarrier[] = [
+      ...npcs.map(({ id, service }) => ({ id, service })),
+      ...(this.controller.world?.fixtures ?? []).map(({ id, fixture }) => ({ id, service: fixture.service })),
+    ];
+    const markers = new Map<string, QuestMarker>();
+    for (const carrier of carriers) {
+      const marker = markerFor(carrier, this.quests, this.lucidity, this.bounties);
+      if (marker !== undefined) markers.set(carrier.id, marker);
     }
+    this.questMarkers = markers;
+    this.controller.renderSurface.showQuestMarkers(markers);
+  }
+
+  /** A carrier's name, by its entity id: as the entity in view is named, else as the committed world names it, else its id. */
+  carrierName(carrierId: string): string {
+    return this.controller.entities.get(carrierId)?.name ?? committedNPCNames().get(carrierId) ?? carrierId;
   }
 
   /** The scene shows every raise as it stands, and each unit frame shows the raise on whom it frames. */

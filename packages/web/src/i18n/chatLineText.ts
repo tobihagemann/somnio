@@ -1,8 +1,9 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
 import type { CompassPoint } from '@/client/compass';
-import { abilityTeaching, itemLabelKey, roleLabelKey, teaching } from '@somnio/core';
+import { abilityTeaching, itemLabelKey, quest, roleLabelKey, teaching, trophyLabelKey } from '@somnio/core';
 import type { AbilityId } from '@somnio/core';
+import type { LootContentsMessage } from '@somnio/protocol';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 
@@ -53,9 +54,11 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'sold':
       return lookup('%1$@ sold for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
     case 'dropped':
-      return lookup('%@ dropped.', itemName(line.baseId, lookup));
+      return lookup('%@ dropped.', lootName(line.contents, lookup));
     case 'pickedUp':
-      return lookup('%@ picked up.', itemName(line.baseId, lookup));
+      return lookup('%@ picked up.', lootName(line.contents, lookup));
+    case 'rewarded':
+      return lookup('%@ received.', lootName(line.contents, lookup));
     case 'bagFull':
       return lookup('Your bag is full.');
     case 'becameRole':
@@ -64,8 +67,10 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Your %1$@ deepens: rank %2$@.', lookup(teaching(line.teachingId).labelKey), String(line.rank));
     case 'placeFound':
       return lookup('You found a hidden place, %1$@ of %2$@.', String(line.found), String(line.total));
-    case 'taskDone':
-      return lookup('Your task is done. Return to your master.');
+    case 'questDone':
+      return lookup('Quest done: %1$@. Return to %2$@.', lookup(quest(line.questId).labelKey), line.turnIn);
+    case 'bountyDone':
+      return lookup('Bounty done. Return to the bounty board.');
     case 'fell':
       return lookup('Your health gives out. You fall.');
     case 'raised':
@@ -135,6 +140,18 @@ function renderSpoken(line: SpokenLine, lookup: Lookup): string {
 export function itemName(baseId: string, lookup: Lookup): string {
   const key = itemLabelKey(baseId);
   return key === undefined ? baseId : lookup(key);
+}
+
+/** What a drop is called in the lookup's locale: an item's name, or a trophy's. A kind this build does not know renders raw, as an item does. */
+function lootName(contents: LootContentsMessage, lookup: Lookup): string {
+  switch (contents.kind) {
+    case 'item':
+      return itemName(contents.baseId, lookup);
+    case 'trophy': {
+      const key = trophyLabelKey(contents.monsterKind);
+      return key === undefined ? contents.monsterKind : lookup(key);
+    }
+  }
 }
 
 /** An ability's display name in the lookup's locale: the name of the teaching that teaches it. */

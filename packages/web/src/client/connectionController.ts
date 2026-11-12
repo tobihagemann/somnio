@@ -56,6 +56,7 @@ export type GameplayMessage = Extract<
       | 'loot'
       | 'lootGone'
       | 'lucidity'
+      | 'quests'
       | 'blow'
       | 'raising'
       | 'mend'
@@ -584,6 +585,7 @@ export class ConnectionController {
       case 'loot':
       case 'lootGone':
       case 'lucidity':
+      case 'quests':
       case 'blow':
       case 'raising':
       case 'mend':
@@ -811,7 +813,11 @@ export class ConnectionController {
     world.addSector(sector, outdoorDoorIds);
     const self = this.selfId === undefined ? undefined : this.entities.get(this.selfId);
     if (self !== undefined) world.follow(self.position, this.renderSurface);
+    this.onSectorArrived?.();
   }
+
+  /** Fires when a sector arrives, so the owner can mark the fixtures it holds. */
+  onSectorArrived: (() => void) | undefined;
 
   /**
    * Fires on every teardown path so the owner can drop per-session state the controller does not

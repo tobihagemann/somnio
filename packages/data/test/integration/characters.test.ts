@@ -1,12 +1,13 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NO_LUCIDITY, NO_STATS, fullPools, headingFromCardinal, plainInstance } from '@somnio/core';
-import type { Character, Inventory, Lucidity } from '@somnio/core';
+import { NO_LUCIDITY, NO_QUESTS, NO_STATS, fullPools, headingFromCardinal, plainInstance } from '@somnio/core';
+import type { Character, Inventory, Lucidity, QuestLog } from '@somnio/core';
 import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
 import { CharacterNameTakenError, PostgresCharacterRepository, hasBeenPlayed } from '../../src/repositories/characters.ts';
 import { RepositoryDecodingError } from '../../src/repositories/errors.ts';
 import { bagOf } from '../../../core/test/support/items.ts';
 import { PostgresItemRepository } from '../../src/repositories/items.ts';
+import { PostgresQuestRepository } from '../../src/repositories/quests.ts';
 import { startDatabase } from './support/harness.ts';
 import type { DatabaseHarness } from './support/harness.ts';
 
@@ -110,6 +111,7 @@ describe('character repository', () => {
       facing: 0,
       energy: fullPools(NO_STATS),
       lucidity: NO_LUCIDITY,
+      quests: NO_QUESTS,
       lastSeen: new Date(),
     };
     expect(await characters.snapshot(phantom)).toBe(false);
@@ -151,7 +153,7 @@ describe('character repository', () => {
     expect((await characters.findByName('Checkpoint'))?.position).toEqual({ x: 8, z: 8 });
   });
 
-  it('round-trips role, ranks with practice, study, and task through a checkpoint, by name and by account', async () => {
+  it('round-trips role, ranks with practice, and study through a checkpoint, by name and by account', async () => {
     const account = await accounts.create('lucid@example.com', 'stub');
     const original = await characters.create(account.id, 'Lucid', 'lumina', NOTHING);
     const lucidity: Lucidity = {
@@ -161,21 +163,19 @@ describe('character repository', () => {
         { teachingId: 'touch', rank: 2, practice: 12.5 },
       ],
       study: 'depth',
-      task: { role: 'healer', teachingId: 'drawing-back', progress: 22.5 },
     };
     const grown = { ...original, lucidity, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
     expect(await characters.persistCheckpoint(grown, NOTHING)).toBe(true);
     expect(await characters.findByName('Lucid')).toEqual(grown);
     expect(await characters.findByAccount(account.id)).toEqual([grown]);
 
-    // A later checkpoint replaces the rank rows rather than adding to them, and a trial is stored without a teaching.
+    // A later checkpoint replaces the rank rows rather than adding to them.
     const later = {
       ...grown,
       lucidity: {
         ...lucidity,
         ranks: [{ teachingId: 'touch' as const, rank: 3, practice: 0 }],
         study: undefined,
-        task: { role: 'healer' as const, teachingId: undefined, progress: 1 },
       },
       lastSeen: new Date(grown.lastSeen.getTime() + 60_000),
     };
@@ -193,8 +193,18 @@ describe('character repository', () => {
     expect((await characters.findByName('StaleRanks'))?.lucidity.ranks).toEqual(ranks);
   });
 
+  it('leaves the quest rows alone when a checkpoint is skipped as stale', async () => {
+    const account = await accounts.create('stale-quests@example.com', 'stub');
+    const original = await characters.create(account.id, 'StaleQuests', 'vigils', NOTHING);
+    const quests: QuestLog = { active: [{ questId: 'restless-graves', progress: [3] }], done: ['fighter-trial'] };
+    const fresh = { ...original, quests, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
+    expect(await characters.persistCheckpoint(fresh, NOTHING)).toBe(true);
+    const older: QuestLog = { active: [{ questId: 'newcomer-errand', progress: [1, 0] }], done: [] };
+    expect(await characters.persistCheckpoint({ ...original, quests: older, lastSeen: original.lastSeen }, NOTHING)).toBe(false);
+    expect(await new PostgresQuestRepository(harness.db).load(original.id)).toEqual(quests);
+  });
+
   it.each([
-    ['a role', sql`UPDATE characters SET task_role = 'necromancer' WHERE name = 'Odd'`],
     ['a studied teaching', sql`UPDATE characters SET study = 'fireball' WHERE name = 'Odd'`],
     [
       "a rank's teaching",
@@ -205,17 +215,6 @@ describe('character repository', () => {
     await characters.create(account.id, 'Odd', 'vigils', NOTHING);
     await corrupt.execute(harness.db);
     await expect(characters.findByName('Odd')).rejects.toThrow(RepositoryDecodingError);
-    await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
-  });
-
-  it.each([
-    ['a teaching without a gate', sql`UPDATE characters SET task_role = 'healer', task_teaching = 'touch' WHERE name = 'Odd'`],
-    ["another role's gate", sql`UPDATE characters SET task_role = 'fighter', task_teaching = 'drawing-back' WHERE name = 'Odd'`],
-  ])('drops a task naming %s', async (_label, corrupt) => {
-    const account = await accounts.create(`odd-${crypto.randomUUID().slice(0, 6)}@example.com`, 'h');
-    await characters.create(account.id, 'Odd', 'vigils', NOTHING);
-    await corrupt.execute(harness.db);
-    expect((await characters.findByName('Odd'))?.lucidity.task).toBeUndefined();
     await sql`DELETE FROM characters WHERE name = 'Odd'`.execute(harness.db);
   });
 
@@ -268,6 +267,7 @@ describe('character repository', () => {
     const grown = {
       ...doomed,
       lucidity: { ...NO_LUCIDITY, role: 'fighter' as const, ranks: [{ teachingId: 'strike' as const, rank: 1, practice: 0 }] },
+      quests: { active: [{ questId: 'follow-through-task' as const, progress: [1] }], done: ['fighter-trial' as const] },
       lastSeen: new Date(),
     };
     expect(await characters.persistCheckpoint(grown, { coins: 100, equipped: {}, bag: bagOf([plainInstance('dagger')]) })).toBe(true);
@@ -282,5 +282,7 @@ describe('character repository', () => {
     expect(await items.load(kept.id)).toEqual(keptKit);
     const ranks = await sql<{ count: string }>`SELECT COUNT(*) AS count FROM character_ranks WHERE character_id = ${doomed.id}`.execute(harness.db);
     expect(ranks.rows[0]?.count).toBe('0');
+    const quests = await sql<{ count: string }>`SELECT COUNT(*) AS count FROM character_quests WHERE character_id = ${doomed.id}`.execute(harness.db);
+    expect(quests.rows[0]?.count).toBe('0');
   });
 });

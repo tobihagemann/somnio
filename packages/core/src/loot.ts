@@ -164,6 +164,16 @@ export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, ra
   return drops;
 }
 
+/** The rarities a quest's gear reward rolls at, by weight: never plain, since it is paid for a quest done. */
+export const QUEST_GEAR_RARITIES = { plain: 0, magic: 70, rare: 30 } as const satisfies Record<Rarity, number>;
+
+/** The item a quest's gear reward gives a dreamer of the role: one rolled at the tier, of a droppable base the role can use. `random` gives rolls in `[0, 1)`. */
+export function rollQuestGear(tier: Tier, role: Role | undefined, random: () => number): Item {
+  const usable = droppableBases(tier).filter((baseId) => usableBy(baseId, role));
+  const baseId = usable[Math.floor(random() * usable.length)]!;
+  return rollItem(baseId, tier, rarityBy(QUEST_GEAR_RARITIES, random()), random);
+}
+
 /** The item a dreamer can drop to the ground, by its id: anything they carry or wear but the Moonstone. */
 export function droppableItem(inventory: Inventory, itemId: string): ItemInstance | undefined {
   const item = inventory.bag.find((bagged) => bagged.item.id === itemId)?.item ?? Object.values(inventory.equipped).find((worn) => worn.id === itemId);

@@ -1545,7 +1545,7 @@ describe('what a dreamer never does', () => {
     const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: wearing(MOONSTONE) });
     const hurt = attachPlayer(space, { x: 10.6, z: 10.85 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
     engage(space, GHOST, alice.entityId);
-    space.handleTalk('npc:TestSector/guard', alice.entityId);
+    space.handleInteract('npc:TestSector/guard', alice.entityId);
     engage(space, hurt.entityId, alice.entityId);
     steps(1);
     expect(energyOf(space, alice.entityId)).toEqual(fallen.energy);

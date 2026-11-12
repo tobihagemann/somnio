@@ -337,6 +337,29 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
   return { canvas, widthPixels: width, heightPixels: height };
 }
 
+/** The mark over a carrier that has a quest for the player or awaits one of theirs: a flat glyph in `color` inside a dark edge, as the HUD draws its line art. */
+export function renderQuestMark(glyph: string, color: string): RasterArt {
+  const fontSize = 26;
+  const edge = 3;
+  const font = `bold ${fontSize}px system-ui, sans-serif`;
+  const width = Math.max(Math.ceil(measureTextWidth(glyph, font) + 2 * edge), 1);
+  const height = Math.max(Math.ceil(lineBoxHeight(fontSize) + 2 * edge), 1);
+  const { canvas, context } = rasterCanvas(width, height);
+  if (context !== null) {
+    context.font = font;
+    context.textBaseline = 'alphabetic';
+    context.textAlign = 'center';
+    context.lineJoin = 'round';
+    context.lineWidth = 2 * edge;
+    context.strokeStyle = '#000000';
+    const baseline = baselineInCenteredBox(height, fontSize);
+    context.strokeText(glyph, width / 2, baseline);
+    context.fillStyle = color;
+    context.fillText(glyph, width / 2, baseline);
+  }
+  return { canvas, widthPixels: width, heightPixels: height };
+}
+
 /** Shared measuring canvas: creating one per plaque would allocate a context per name change. */
 let measuringContext: CanvasRenderingContext2D | null | undefined;
 

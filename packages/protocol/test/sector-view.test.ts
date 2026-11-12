@@ -41,6 +41,7 @@ const outdoor: SectorView = {
     { id: 'library', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } },
     { id: 'tower', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaMysticTower', door: 'exit' }, nightOnly: true },
   ],
+  fixtures: [{ id: 'board', placement: 'townhall', service: 'bountyBoard' }],
 };
 
 const interior: SectorView = {
@@ -52,6 +53,7 @@ const interior: SectorView = {
   placements: [],
   blockers: [],
   doors: [],
+  fixtures: [],
 };
 
 function decode(json: Record<string, unknown>): SectorView {
@@ -80,6 +82,7 @@ describe('omitted defaults', () => {
     ).toBe(1);
     expect(decoded.blockers).toEqual([]);
     expect(decoded.doors).toEqual([]);
+    expect(decoded.fixtures).toEqual([]);
     expect(decoded.placements).toEqual([{ id: 'well', modelId: 'well', x: 8, z: 8, yaw: 0, elevation: 0 }]);
   });
 
@@ -130,6 +133,7 @@ describe('rejections', () => {
     withMarks([{ id: 'm', materialId: 'dirt-path', shape: { kind: 'stroke', radius, points } }]);
   const placement = { id: 'p', modelId: 'rug', x: 0, z: 0 };
   const door = { id: 'd', placement: 'townhall', anchor: 'main', target: { sector: 'EdariaLibrary', door: 'exit' } };
+  const fixture = { id: 'f', placement: 'townhall', service: 'bountyBoard' };
   const records = <T extends { id: string }>(count: number, record: T): T[] => Array.from({ length: count }, (_, index) => ({ ...record, id: `r-${index}` }));
   const atCapName = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSectorNameUTF8Bytes);
 
@@ -165,6 +169,19 @@ describe('rejections', () => {
       { ...outdoorJSON, doors: records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors + 1, door) },
       /sector\.doors: exceeds 4096 records \(got 4097\)/,
     ],
+    [
+      'more fixtures than the cap',
+      { ...outdoorJSON, fixtures: records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFixtures + 1, fixture) },
+      /sector\.fixtures: exceeds 4096 records \(got 4097\)/,
+    ],
+    ['a duplicate fixture id', { ...outdoorJSON, fixtures: [fixture, fixture] }, /fixtures\[1\]\.id: duplicate id "f"/],
+    [
+      'a fixture on a placement the sector does not have',
+      { ...outdoorJSON, fixtures: [{ ...fixture, placement: 'tavern' }] },
+      /fixtures\[0\]\.placement: no placement "tavern"/,
+    ],
+    ['a fixture with an unknown service', { ...outdoorJSON, fixtures: [{ ...fixture, service: 'tavern' }] }, /fixtures\[0\]\.service: unknown value "tavern"/],
+    ['a fixture without a service', { ...outdoorJSON, fixtures: [{ id: 'f', placement: 'townhall' }] }, /fixtures\[0\]\.service/],
     ['a sector without a ground', { ...interiorJSON, ground: undefined }, /sector\.ground: expected an object/],
     [
       'more ground marks than the cap',
@@ -208,12 +225,12 @@ describe('rejections', () => {
       withMarks([{ id: 'm', materialId: 'dirt-path', shape: { kind: 'circle', points: [{ x: 1, z: 1 }] } }]),
       /shape\.kind: unknown value "circle"/,
     ],
-    ['a name past the sector name cap', { ...interiorJSON, name: `${atCapName}a` }, /sector\.name: exceeds 251 UTF-8 bytes/],
+    ['a name past the sector name cap', { ...interiorJSON, name: `${atCapName}a` }, /sector\.name: exceeds 247 UTF-8 bytes/],
     ['an empty name', { ...interiorJSON, name: '' }, /sector\.name: expected a non-empty string/],
     [
       'a door whose target sector is past the sector name cap',
       { ...outdoorJSON, doors: [{ ...door, target: { sector: `${atCapName}a`, door: 'exit' } }] },
-      /doors\[0\]\.target\.sector: exceeds 251 UTF-8 bytes/,
+      /doors\[0\]\.target\.sector: exceeds 247 UTF-8 bytes/,
     ],
     [
       'a door on a placement the sector does not have',
@@ -237,8 +254,9 @@ describe('rejections', () => {
       placements: [...(outdoorJSON['placements'] as unknown[]), ...records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorPlacements - 2, placement)],
       blockers: records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorBlockers, blocker),
       doors: records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorDoors, door),
+      fixtures: records(SOMNIO_PROTOCOL_CONSTANTS.maxSectorFixtures, fixture),
     });
-    expect([decoded.placements.length, decoded.blockers.length, decoded.doors.length]).toEqual([4096, 4096, 4096]);
+    expect([decoded.placements.length, decoded.blockers.length, decoded.doors.length, decoded.fixtures.length]).toEqual([4096, 4096, 4096, 4096]);
   });
 
   it('accepts the ground at its caps', () => {

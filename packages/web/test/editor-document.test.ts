@@ -193,6 +193,7 @@ describe('dirty checkpoint', () => {
       placements: [],
       blockers: [],
       doors: [],
+      fixtures: [],
       npcs: [],
       monsterSpawns: [],
     });

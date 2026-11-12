@@ -20,6 +20,8 @@
   --somnio-edge-left: max(var(--somnio-edge-padding), env(safe-area-inset-left, 0px));
   --somnio-edge-right: max(var(--somnio-edge-padding), env(safe-area-inset-right, 0px));
   --somnio-edge-bottom: max(var(--somnio-edge-padding), env(safe-area-inset-bottom, 0px));
+  /* The width of a carrier's panel down the right edge, which a mouse's HUD windows stand beside. */
+  --somnio-service-panel-width: 340px;
   /* The width of the player's own frame at the top left, which whatever is centred at the top keeps clear of. */
   --somnio-self-frame-width: 250px;
   --somnio-ink: #f2ead9;
@@ -304,7 +306,7 @@ button {
   bottom: var(--somnio-edge-padding);
   display: flex;
   flex-direction: column;
-  width: 340px;
+  width: var(--somnio-service-panel-width);
 }
 
 .service-panel > * {

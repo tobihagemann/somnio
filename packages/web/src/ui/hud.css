@@ -29,6 +29,8 @@
   --hud-scale: 1;
   /* How far above the belt's foot the windows end: clear of the menu beside the Spirit globe. */
   --hud-belt-reach: 86px;
+  /* How far in from the right edge the windows stand. */
+  --hud-windows-right: var(--somnio-edge-right);
 
   position: absolute;
   inset: 0;
@@ -440,6 +442,287 @@
 .hud-clock__place {
   color: var(--somnio-ink-dim);
   font-size: 11px;
+}
+
+/* ---------- The quests: a line and a banner over the world, the tracker beside it ---------- */
+
+/* Under the target frame, in the gold of the markers over the carriers. The pointer passes through. */
+.hud > :is(.hud-quest-line, .hud-quest-banner) {
+  position: absolute;
+  left: 50%;
+  margin: 0;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transform-origin: 50% 0;
+}
+
+.hud-quest-line {
+  top: 122px;
+  font-size: 18px;
+  font-weight: 600;
+  text-shadow:
+    0 0 2px #000,
+    0 1px 3px #000,
+    0 0 8px rgb(0 0 0 / 0.8);
+}
+
+.hud-quest-line__said {
+  margin: 0;
+  /* Its length is the saying's, set where it is said (`QuestFeedback`). */
+  animation: hud-quest-line ease-out forwards;
+}
+
+.hud-quest-line__count {
+  color: var(--hud-quest-gold);
+}
+
+@keyframes hud-quest-line {
+  0% {
+    opacity: 0;
+    translate: 0 6px;
+  }
+
+  8% {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  75% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.hud-quest-banner {
+  top: 150px;
+  text-shadow:
+    0 0 2px #000,
+    0 1px 3px #000,
+    0 0 10px rgb(0 0 0 / 0.85);
+}
+
+.hud-quest-banner__said {
+  animation: hud-quest-banner ease-out forwards;
+}
+
+/* What the banner says of the quest, small over its title, as a quest taken on is. */
+.hud-quest-banner__kicker {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hud-quest-gold);
+}
+
+/* The window titles' divider flanks, short and slim beside the larger title. */
+.hud-quest-banner .hud-quest-banner__title {
+  gap: 14px;
+  margin: 0;
+  font-size: 28px;
+  color: var(--hud-quest-gold);
+}
+
+.hud-quest-banner__title::before,
+.hud-quest-banner__title::after {
+  flex: none;
+  width: 70px;
+  height: 12px;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.hud-quest-banner__line {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+/* An item a turn-in gave, named in its rarity's colour. */
+.hud-quest-banner__item {
+  color: var(--hud-rarity);
+}
+
+@keyframes hud-quest-banner {
+  0% {
+    opacity: 0;
+    scale: 0.92;
+  }
+
+  7% {
+    opacity: 1;
+    scale: 1.04;
+  }
+
+  12% {
+    scale: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Under the clock at the right edge, left of what is open down that edge (`GameHUD.placeTracker`). */
+.hud-tracker {
+  --hud-tracker-top: 88px;
+  --hud-tracker-scaled-top: calc(var(--somnio-edge-padding) + (var(--hud-tracker-top) - var(--somnio-edge-padding)) * var(--hud-scale));
+
+  position: absolute;
+  top: var(--hud-tracker-scaled-top);
+  right: calc(var(--somnio-edge-right) + var(--hud-tracker-beside, 0px));
+  display: flex;
+  flex-direction: column;
+  width: 270px;
+  /* Ending above the menu, whatever the HUD's scale, as the windows do. */
+  max-height: calc((100% - var(--hud-tracker-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale)) / var(--hud-scale));
+  padding: 14px 18px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.hud-tracker--collapsed {
+  width: auto;
+}
+
+.hud-tracker__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #cfc9dc;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hud-tracker__head:hover,
+.hud-tracker__head:focus-visible {
+  color: #fff;
+}
+
+.hud-tracker--collapsed .hud-tracker__head {
+  margin-bottom: 0;
+}
+
+.hud-tracker__head .hud-glyph {
+  --hud-glyph-size: 100%;
+
+  width: 16px;
+  height: 16px;
+  color: #fff;
+}
+
+.hud-tracker__held {
+  margin-left: 2px;
+  color: #a8a1ba;
+}
+
+.hud-tracker__held:empty {
+  display: none;
+}
+
+/* Up while the list shows, down while it is hidden. */
+.hud-tracker__chevron {
+  width: 9px;
+  height: 9px;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(1px) rotate(-135deg);
+  transition: transform 0.15s;
+}
+
+.hud-tracker--collapsed .hud-tracker__chevron {
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.hud-tracker__list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.hud-tracker__quest + .hud-tracker__quest {
+  margin-top: 8px;
+}
+
+.hud-tracker__quest p {
+  margin: 0;
+}
+
+.hud-tracker__title {
+  color: #fff;
+  font-weight: 600;
+}
+
+.hud-tracker__line,
+.hud-tracker__return {
+  position: relative;
+  padding-left: 10px;
+}
+
+.hud-tracker__line {
+  color: #d9d4e4;
+}
+
+.hud-tracker__line::before {
+  content: '–';
+  position: absolute;
+  left: 0;
+  color: #8d879e;
+}
+
+.hud-tracker__count {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-tracker__line--met,
+.hud-tracker__line--met .hud-tracker__count {
+  color: var(--hud-quest-grey);
+}
+
+.hud-tracker__quest--done :is(.hud-tracker__title, .hud-tracker__return) {
+  color: var(--hud-quest-gold);
+}
+
+/* The quest that just moved flashes its title gold. */
+.hud-tracker__quest--moved .hud-tracker__title {
+  animation: hud-tracker-moved 0.9s ease-out;
+}
+
+@keyframes hud-tracker-moved {
+  0% {
+    color: var(--hud-quest-gold);
+  }
+}
+
+.hud-tracker__fold {
+  flex: none;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #a8a1ba;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
 }
 
 /* ---------- The belt: globes, the Balance arc, the slots ---------- */
@@ -866,7 +1149,7 @@
 
   position: absolute;
   top: var(--hud-window-scaled-top);
-  right: var(--somnio-edge-right);
+  right: var(--hud-windows-right);
   /* Over the open chat and a finger's sheet, the newest on top. */
   z-index: calc(30 + var(--hud-window-order, 0));
   display: flex;
@@ -878,7 +1161,12 @@
 }
 
 .hud-window--beside {
-  right: calc(var(--somnio-edge-right) + var(--hud-character-width) + 8px);
+  right: calc(var(--hud-windows-right) + var(--hud-character-width) + 8px);
+}
+
+/* A mouse's windows stand to the left of a carrier's panel down the right edge (`chrome.css`), so neither hides the other (`GameHUD.setCarrierPanelOpen`). */
+.hud--beside-carrier-panel {
+  --hud-windows-right: calc(var(--somnio-edge-padding) + var(--somnio-service-panel-width) + 8px);
 }
 
 /* The title alone in its row, centred over the window, clear of the ✕ on the corner. */
@@ -957,6 +1245,36 @@
 
 .hud-list__select[aria-pressed='true'] {
   color: var(--hud-key);
+}
+
+/* A quest held: its title beside Give up, what it asks with how far it has come, and where to turn it in once done. */
+.hud-quest {
+  padding: 8px 0;
+}
+
+.hud-quest + .hud-quest {
+  border-top: 1px solid rgb(255 255 255 / 0.14);
+}
+
+.hud-quest__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #fff;
+}
+
+.hud-quest > p {
+  margin: 4px 0 0;
+}
+
+/* In the gold of the ? over whoever takes it. */
+.hud-quest__return {
+  color: var(--hud-quest-gold);
+}
+
+.hud-quests__empty {
+  margin: 0;
 }
 
 .hud-list__footer {
@@ -1406,6 +1724,23 @@
   transform-origin: 50% 100%;
 }
 
+.hud--fine.hud > :is(.hud-quest-line, .hud-quest-banner) {
+  transform: translateX(-50%) scale(var(--hud-scale));
+}
+
+.hud--fine .hud-quest-line {
+  top: calc(var(--somnio-edge-padding) + (122px - var(--somnio-edge-padding)) * var(--hud-scale));
+}
+
+.hud--fine .hud-quest-banner {
+  top: calc(var(--somnio-edge-padding) + (150px - var(--somnio-edge-padding)) * var(--hud-scale));
+}
+
+.hud--fine .hud-tracker {
+  transform: scale(var(--hud-scale));
+  transform-origin: 100% 0;
+}
+
 /* Too narrow for the chat beside the belt: it stands above it. */
 @media (max-width: 1126px) {
   .hud--fine .hud-chat {
@@ -1415,7 +1750,7 @@
 }
 
 /* Too narrow for the menu beside the Spirit globe: it stands above it, and the windows end above it. */
-@media (max-width: 962px) {
+@media (max-width: 1058px) {
   .hud--fine {
     --hud-belt-reach: 170px;
   }
@@ -1430,7 +1765,14 @@
 /* Too narrow for two windows side by side: the newer covers the older. */
 @media (max-width: 720px) {
   .hud--fine .hud-window--beside {
-    right: var(--somnio-edge-right);
+    right: var(--hud-windows-right);
+  }
+}
+
+/* Too narrow for two windows side by side beside a carrier's panel, 12 + 340 + 8 + 388 + 8 + 280 + 12 px: the newer covers the older. */
+@media (max-width: 1047px) {
+  .hud--beside-carrier-panel .hud-window--beside {
+    right: var(--hud-windows-right);
   }
 }
 
@@ -1671,6 +2013,53 @@
   white-space: normal;
 }
 
+/* Lower and smaller than a mouse's, clear of the strip along the top, and wrapping short of the tracker. */
+.hud--coarse.hud > :is(.hud-quest-line, .hud-quest-banner) {
+  max-width: calc(100% - 2 * (var(--somnio-edge-right) + 210px + 8px));
+  width: max-content;
+  white-space: normal;
+}
+
+.hud--coarse .hud-quest-line {
+  top: 92px;
+  font-size: 15px;
+}
+
+.hud--coarse .hud-quest-banner {
+  top: 108px;
+}
+
+.hud--coarse .hud-quest-banner .hud-quest-banner__title {
+  gap: 10px;
+  font-size: 21px;
+}
+
+.hud--coarse .hud-quest-banner__title::before,
+.hud--coarse .hud-quest-banner__title::after {
+  width: 44px;
+}
+
+.hud--coarse .hud-quest-banner__kicker {
+  font-size: 12px;
+}
+
+.hud--coarse .hud-quest-banner__line {
+  font-size: 13px;
+}
+
+/* Flush right under the strip, under the ≡, ending 8 px above the thumb's arc: a list longer than that scrolls. */
+.hud--coarse .hud-tracker {
+  top: 64px;
+  width: 210px;
+  max-height: calc(100% - 64px - var(--somnio-edge-bottom) - var(--hud-thumb-height) + var(--hud-thumb-arc-top) - 8px);
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+.hud--coarse .hud-tracker--collapsed {
+  width: auto;
+}
+
 /* Slot 1 under the right thumb, slots 2 to 6 on an arc round it, and Run at the arc's end. */
 .hud-thumb {
   position: absolute;
@@ -1888,6 +2277,17 @@
   .hud-sensed__badge::after {
     animation: none;
     opacity: 0.6;
+  }
+
+  /* The line and the banner show and go, and nothing slides, pops, or flashes. */
+  .hud-quest-line__said,
+  .hud-quest-banner__said,
+  .hud-tracker__quest--moved .hud-tracker__title {
+    animation: none;
+  }
+
+  .hud-tracker__chevron {
+    transition: none;
   }
 
   .hud-bar__fill,

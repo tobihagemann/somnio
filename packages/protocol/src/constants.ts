@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 21,
+  helloVersion: 22,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `email` on login/registration, for a character's name, for item ids, and for the record ids inside a sector. */
@@ -24,14 +24,21 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * `localStorage` is refused here instead of costing a round trip.
    */
   maxSessionTokenUTF8Bytes: 256,
-  /** UTF-8 byte cap for a runtime entity id, which for an NPC embeds its sector's name. */
+  /** UTF-8 byte cap for a runtime entity id or a carrier id, which for an NPC or a fixture embeds its sector's name. */
   maxEntityIdUTF8Bytes: 320,
   /**
    * UTF-8 byte cap for a sector's name, which is also an interior's space id. It keeps
-   * `npc:<sector>/<id>` inside `maxEntityIdUTF8Bytes` with an npc id at the identifier cap, and
-   * no sector file reaches it: a 255-byte file name leaves 241 for the stem of a `.somnio-sector`.
+   * `fixture:<sector>/<id>`, the longer of a fixture's and an NPC's carrier ids, inside
+   * `maxEntityIdUTF8Bytes` with a record id at the identifier cap, and no sector file reaches it: a
+   * 255-byte file name leaves 241 for the stem of a `.somnio-sector`.
    */
-  maxSectorNameUTF8Bytes: 251,
+  maxSectorNameUTF8Bytes: 247,
+  /**
+   * UTF-8 byte cap for a quest's id. A bounty's names its world day, its land's sector, the kind of
+   * nightmare, and what it asks (`bounty:<day>:<land>:<kind>:<objective>`), which at the longest a
+   * day, a sector name, and a kind id can be comes to 339 bytes.
+   */
+  maxQuestIdUTF8Bytes: 352,
 
   /** Bound on the absolute value of any coordinate, in metres. */
   maxCoordinateMetres: 10_000,
@@ -40,6 +47,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxSectorPlacements: 4096,
   maxSectorBlockers: 4096,
   maxSectorDoors: 4096,
+  maxSectorFixtures: 4096,
   /** The ground marks of one sector, and the points of all of them together, both capped before any mark is decoded. */
   maxSectorGroundMarks: 512,
   maxSectorGroundPoints: 8192,
@@ -56,6 +64,14 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxRaiseHealers: 32,
   /** The most items a dreamer's bag holds, which bounds the bag an `inventory` frame carries. */
   maxBagItems: 24,
+  /** The most quests a dreamer holds at once, which bounds the held quests a `quests` frame carries. */
+  maxActiveQuests: 10,
+  /** The most objectives one quest asks for, generous over the three the most asks for now. */
+  maxQuestObjectives: 8,
+  /** The most turned-in quests a `quests` frame names, generous over the quests there are. */
+  maxDoneQuests: 256,
+  /** The most bounties one world day offers, one a land, generous over the lands there are. */
+  maxBounties: 32,
   /** The most stat lines an item carries, generous over the four a rare item rolls. */
   maxItemAffixes: 8,
   /** The most ranks a `lucidity` frame carries, generous over the teachings there are. */

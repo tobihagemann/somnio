@@ -98,11 +98,12 @@ export async function handleDeleteCharacter(
 }
 
 /**
- * Joins the world as `character`: its inventory, then its `last_seen` written, then the attach. The
- * write makes a resume find it played last, and lets the snapshot's stale-write guard accept a
- * corrected spawn. Its `last_seen` follows the stored one by `nextLastSeen`, so a host clock
- * stepped back since the last save cannot leave the join and every checkpoint after it skipped as
- * stale. `false`, answered `characterResult(failure)`, leaves the player choosing.
+ * Joins the world as `character`: its inventory and its quest log, then its `last_seen` written,
+ * then the attach. The write makes a resume find it played last, and lets the snapshot's
+ * stale-write guard accept a corrected spawn. Its `last_seen` follows the stored one by
+ * `nextLastSeen`, so a host clock stepped back since the last save cannot leave the join and every
+ * checkpoint after it skipped as stale. `false`, answered `characterResult(failure)`, leaves the
+ * player choosing.
  */
 export async function joinCharacter(
   character: Character,
@@ -114,8 +115,9 @@ export async function joinCharacter(
   const logger = dependencies.logger;
   try {
     const inventory = await dependencies.items.load(character.id);
+    const quests = await dependencies.quests.load(character.id);
     const spawn = resolvedSpawn(character, dependencies.worldRouter);
-    const joined: Character = { ...character, ...spawn, lastSeen: nextLastSeen(character.lastSeen, new Date()) };
+    const joined: Character = { ...character, ...spawn, quests, lastSeen: nextLastSeen(character.lastSeen, new Date()) };
     try {
       await dependencies.characters.snapshot(joined);
     } catch (error) {

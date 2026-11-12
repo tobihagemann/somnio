@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BOOT_DEFAULT_WORLD_SECONDS, WORLD_TIME_RATE } from '@somnio/core';
+import { BOOT_DEFAULT_WORLD_SECONDS, WORLD_TIME_RATE, worldDay } from '@somnio/core';
 import type { WorldClockRepository } from '@somnio/data';
 import { WorldClockService } from '../src/services/worldClockService.ts';
 import { testLogger } from './support/logger.ts';
 import { RepositoryFailure } from './support/stubRepositories.ts';
+
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
 class SaveRecorder implements WorldClockRepository {
   readonly saved: number[] = [];
@@ -67,6 +69,22 @@ describe('WorldClockService.tickOnce', () => {
     await clock.tickOnce();
     expect(recorder.attempts).toBe(1);
     expect(clock.currentWorldSeconds()).toBe(start + 1);
+  });
+
+  it('tells its listener once as a tick crosses into a new world day', async () => {
+    const wall = { ms: 0 };
+    const lastSecondOfDay = 3 * SECONDS_PER_DAY - 1;
+    const clock = new WorldClockService(new SaveRecorder(), lastSecondOfDay - WORLD_TIME_RATE / 4, testLogger(), undefined, () => wall.ms);
+    const days: number[] = [];
+    clock.onNewDay((worldSeconds) => days.push(worldDay(worldSeconds)));
+    wall.ms = 250;
+    await clock.tickOnce();
+    expect(days).toEqual([]);
+    wall.ms = 500;
+    await clock.tickOnce();
+    wall.ms = 750;
+    await clock.tickOnce();
+    expect(days).toEqual([3]);
   });
 
   it('graceful shutdown triggers a final save even mid minute', async () => {

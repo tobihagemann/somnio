@@ -1,5 +1,5 @@
 import {
-  NPC_SERVICES,
+  SERVICES,
   SOMNIO_PROTOCOL_CONSTANTS,
   WireDecodingError,
   decodeSectorView,
@@ -103,7 +103,7 @@ function decodeNPC(container: Record<string, unknown>, path: string): SectorNPC 
     z: requireMetres(container, 'z', path),
     facing: heading(requireFloat(container, 'facing', path)),
     dialogScript,
-    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, NPC_SERVICES) }),
+    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, SERVICES) }),
   };
 }
 

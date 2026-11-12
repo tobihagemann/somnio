@@ -9,16 +9,16 @@ import {
   practiceNeeded,
   teaching,
 } from '@somnio/core';
-import type { Ability, AbilityId, AbilityRefusal, EngageAction, HandNeed } from '@somnio/core';
+import type { Ability, AbilityId, AbilityRefusal, AttackRefusal, EngageAction, HandNeed } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
-import { taskIsDone, wholeSecondsLeft } from '@/client';
+import { wholeSecondsLeft } from '@/client';
 import type { AbilitySlotState, CooldownSpan } from '@/client';
 import { abilityName, currentLocale, t } from '@/i18n';
 import { SVG_NAMESPACE, element, setHidden } from './dom';
 import { ABILITY_GLYPHS, HUD_ICONS, glyph, showGlyph } from './hudIcons';
 import { setTip } from './hudTooltip';
 import type { Tip } from './hudTooltip';
-import { TEACHING_BLURB, taskProgressText } from './servicePanel';
+import { TEACHING_BLURB } from './servicePanel';
 import { shareBar, showShare } from './unitFrames';
 import type { ShareBar } from './unitFrames';
 
@@ -167,15 +167,27 @@ const SLOT_ONE_LABELS: Record<SlotOneLook, () => string> = {
   raise: () => t('Raise'),
 };
 
+/** What keeps slot 1 from attacking the nightmare targeted, as its tip says it. */
+function attackRefusalLine(refusal: AttackRefusal): string {
+  switch (refusal) {
+    case 'hand':
+      return handLine('mainHand');
+    case 'striking':
+      return t('Not while a quest forbids striking');
+  }
+}
+
 /**
  * Slot 1's toggle, named and drawn for what it does at the target, lit and pressed while it is on,
- * and greyed out while it can do nothing there, keeping its last look then. It stays one element,
- * its glyph swapped in place, so a click is never lost to a repaint.
+ * and greyed out while it can do nothing there, keeping its last look then. At a nightmare it cannot
+ * attack it looks like Attack, and its tip says why not. It stays one element, its glyph swapped in
+ * place, so a click is never lost to a repaint.
  */
 export class SlotOneButton {
   readonly root: HTMLButtonElement;
   private readonly glyph: HTMLElement;
   private look: SlotOneLook = 'attack';
+  private refusal: AttackRefusal | undefined;
   private shown: string | undefined;
 
   /** `orb` is a finger's big round button; otherwise a square slot with its key number. */
@@ -187,11 +199,18 @@ export class SlotOneButton {
       children: [...(orb ? [] : [element('span', { className: 'hud-slot__key', text: '1', attributes: { 'aria-hidden': 'true' } })]), this.glyph],
     });
     this.root.addEventListener('click', onPress);
-    setTip(this.root, () => ({ title: SLOT_ONE_LABELS[this.look](), ...(orb ? {} : { aside: '1' }) }));
+    setTip(this.root, () => ({
+      title: SLOT_ONE_LABELS[this.look](),
+      ...(orb ? {} : { aside: '1' }),
+      ...(this.refusal === undefined ? {} : { warning: attackRefusalLine(this.refusal) }),
+    }));
   }
 
-  render(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean): void {
+  /** `refusal` is what keeps it from attacking a nightmare targeted, from the `attackRefusal` rule `engageAction` reads. */
+  render(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean, refusal: AttackRefusal | undefined): void {
     if (action !== undefined) this.look = action === 'mend' && targetFallen ? 'raise' : action;
+    else if (refusal !== undefined) this.look = 'attack';
+    this.refusal = refusal;
     const shown = JSON.stringify([engaged, action ?? null, this.look]);
     if (shown === this.shown) return;
     this.shown = shown;
@@ -386,14 +405,10 @@ export function emptySlot(key: number, orb: boolean): HTMLElement {
 }
 
 /**
- * The one line under the slots, the first that applies: a task done, which sends the player back to
- * their master; what they study and how far toward its next rank, as a share; the task they hold;
- * or, for a role holder, that they study nothing. `emphasis` is the teaching's name, to stress.
+ * The one line under the slots: what the player studies and how far toward its next rank, as a
+ * share, or, for a role holder, that they study nothing. `emphasis` is the teaching's name, to stress.
  */
 export function studyLine(lucidity: LucidityMessage): { text: string; emphasis?: string } | undefined {
-  const task = lucidity.task;
-  const progress = task === undefined ? undefined : taskProgressText(task);
-  if (task !== undefined && taskIsDone(task)) return { text: t('Your task is done. Return to your master.') };
   const study = lucidity.study;
   if (study !== undefined && isTeachingId(study)) {
     const held = lucidity.ranks.find((rank) => rank.teachingId === study);
@@ -401,7 +416,6 @@ export function studyLine(lucidity: LucidityMessage): { text: string; emphasis?:
     const name = t(teaching(study).labelKey);
     return { text: t('Studying %1$@ · %2$@%%', name, String(Math.min(share, 100))), emphasis: name };
   }
-  if (progress !== undefined) return { text: t('Task: %@', progress) };
   return lucidity.role === undefined ? undefined : { text: t('Studying nothing') };
 }
 

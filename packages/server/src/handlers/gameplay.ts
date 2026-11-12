@@ -1,18 +1,18 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type {
-  AskTaskMessage,
+  AbandonQuestMessage,
   BuyMessage,
+  CarrierQuestMessage,
   ClientSayMessage,
-  CompleteTaskMessage,
   DropItemMessage,
   EngageMessage,
   EquipMessage,
+  InteractMessage,
   MoveItemMessage,
   MoveMessage,
   PickUpMessage,
   SellMessage,
   StudyMessage,
-  TalkMessage,
   TargetMessage,
   UnequipMessage,
   UseAbilityMessage,
@@ -65,8 +65,8 @@ export function handlePickUp(message: PickUpMessage, entityId: string, spaceId: 
   dependencies.worldRouter.space(spaceId)?.handlePickUp(message.lootId, entityId);
 }
 
-export function handleTalk(message: TalkMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleTalk(message.npcId, entityId);
+export function handleInteract(message: InteractMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleInteract(message.carrierId, entityId);
 }
 
 export function handleTarget(message: TargetMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
@@ -81,28 +81,28 @@ export function handleUseAbility(message: UseAbilityMessage, entityId: string, s
   dependencies.worldRouter.space(spaceId)?.handleUseAbility(message.abilityId, entityId);
 }
 
-export function handleAskTask(message: AskTaskMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleAskTask(message.npcId, message.teachingId, entityId);
+export function handleAcceptQuest(message: CarrierQuestMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleAcceptQuest(message.carrierId, message.questId, entityId);
 }
 
-export function handleCompleteTask(message: CompleteTaskMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleCompleteTask(message.npcId, entityId);
+export function handleTurnInQuest(message: CarrierQuestMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleTurnInQuest(message.carrierId, message.questId, entityId);
 }
 
-export function handleAbandonTask(entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleAbandonTask(entityId);
+export function handleAbandonQuest(message: AbandonQuestMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleAbandonQuest(message.questId, entityId);
 }
 
 export function handleStudy(message: StudyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleStudy(message.npcId, message.teachingId, entityId);
+  dependencies.worldRouter.space(spaceId)?.handleStudy(message.carrierId, message.teachingId, entityId);
 }
 
 export function handleBuy(message: BuyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleBuy(message.npcId, message.baseId, entityId);
+  dependencies.worldRouter.space(spaceId)?.handleBuy(message.carrierId, message.baseId, entityId);
 }
 
 export function handleSell(message: SellMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
-  dependencies.worldRouter.space(spaceId)?.handleSell(message.npcId, message.itemId, entityId);
+  dependencies.worldRouter.space(spaceId)?.handleSell(message.carrierId, message.itemId, entityId);
 }
 
 /**

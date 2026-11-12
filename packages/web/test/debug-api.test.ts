@@ -92,6 +92,62 @@ describe('the debug API', () => {
     expect(api.screenPoint('bren')).toBeUndefined();
   });
 
+  it('reports the quests as the last frame said, and the quest marker of each carrier in view', () => {
+    const app = shell();
+    app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
+    const world = new ClientWorld('outdoors', TEST_REGISTRY);
+    world.addSector(
+      outdoorSector(
+        'Meadow',
+        { x: 0, z: 0 },
+        {
+          placements: [{ id: 'notice-board-1', modelId: 'box', x: 16, z: 10, yaw: 0, elevation: 0 }],
+          fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+        },
+      ),
+    );
+    app.controller.world = world;
+    app.controller.entities.set('npc:EdariaLibrary/libus', clientEntity({ id: 'npc:EdariaLibrary/libus', kind: 'npc', name: 'Libus' }));
+    const bounty = { day: 3, land: 'Meadow', monsterKind: 'ghost', objective: 'driveOff' as const, count: 4, reward: { coins: 20, gear: 1 } };
+    const quests = { active: [{ questId: 'restless-graves', progress: [2] }], done: ['fighter-trial'], bounties: [bounty] };
+    app.controller.dispatch({ tag: 'quests', payload: quests });
+
+    const api = makeDebugAPI(app);
+    expect(api.quests()).toEqual(quests);
+    // Sana and Tacita offer their trials too, but stand out of view; no scene draws anything in this shell.
+    expect(api.questMarkers()).toEqual([
+      { carrierId: 'npc:EdariaLibrary/libus', marker: 'offer', screen: undefined },
+      { carrierId: 'fixture:Meadow/fixture-1', marker: 'offer', screen: undefined },
+    ]);
+    // Before the player's body is placed the HUD shows nothing, the tracker included.
+    expect(api.questTracker()).toEqual({
+      shown: false,
+      listShown: true,
+      folded: false,
+      quests: [{ questId: 'restless-graves', title: 'Restless graves', lines: ['Drive off 4 Skeletons in the Graveyard: 2/4'] }],
+    });
+
+    // A quest taken on is said over the world, and a quest done waits its turn behind it while the tracker lists it first.
+    app.controller.dispatch({ tag: 'quests', payload: { ...quests, active: [{ questId: 'newcomer-errand', progress: [0, 0] }, ...quests.active] } });
+    app.controller.dispatch({
+      tag: 'quests',
+      payload: {
+        ...quests,
+        active: [
+          { questId: 'newcomer-errand', progress: [0, 0] },
+          { questId: 'restless-graves', progress: [4] },
+        ],
+      },
+    });
+    expect(container.querySelector('.hud-quest-banner')?.textContent).toBe(
+      "Quest acceptedA newcomer's errandVisit Mercus in his shop.Read the bounty board on the square.",
+    );
+    expect(api.questTracker().quests).toEqual([
+      { questId: 'restless-graves', title: 'Restless graves', lines: [], returnTo: 'Return to Memor.' },
+      { questId: 'newcomer-errand', title: "A newcomer's errand", lines: ['Visit Mercus in his shop: 0/1', 'Read the bounty board on the square: 0/1'] },
+    ]);
+  });
+
   it('reports the target, its vitals, the gaze lock, Run, and slot 1 with its action', () => {
     const app = shell();
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });

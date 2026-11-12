@@ -1,12 +1,12 @@
 import { MONSTER_KIND_IDS, clamp, heading, objectModel } from '@somnio/core';
 import type { ModelRegistry, Sector } from '@somnio/core';
-import { NPC_SERVICES } from '@somnio/protocol';
-import type { NPCService } from '@somnio/protocol';
+import { SERVICES } from '@somnio/protocol';
+import type { Service } from '@somnio/protocol';
 import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
 import { button, checkbox, element, field, replaceChildren, select } from '@/ui/dom';
 import { maxStrokeRadius } from '../groundMarks';
 import { millimetres } from '../preferences';
-import { byId, isValidId, isValidSelection, selectionKey } from '../selection';
+import { byId, isValidId, isValidSelection, selectionKey, setFixtureService } from '../selection';
 import type { EditorSelection } from '../selection';
 import { issueMessages } from '../surroundings';
 import type { DocumentIssues } from '../surroundings';
@@ -61,11 +61,12 @@ const POSITION_FIELDS = [
 
 const RECT_FIELDS = [...POSITION_FIELDS, ['Width', 'width'], ['Depth', 'depth']] as const;
 
-const SERVICE_LABELS: Record<NPCService, string> = {
+const SERVICE_LABELS: Record<Service, string> = {
   fighterMaster: 'Fighter master',
   healerMaster: 'Healer master',
   mysticMaster: 'Mystic master',
   shopkeeper: 'Shopkeeper',
+  bountyBoard: 'Bounty board',
 };
 
 function idOptions(ids: readonly string[]): PickerOption[] {
@@ -202,6 +203,11 @@ export class InspectorPanel {
       this.numberField('Yaw', placement, 'yaw', actionName, heading),
       this.numberField('Elevation', placement, 'elevation', actionName),
       this.doorList(selection.id),
+      this.servicePicker(
+        (s) => s.fixtures.find((fixture) => fixture.placement === selection.id)?.service,
+        actionName,
+        (draft, service) => setFixtureService(draft, selection.id, service),
+      ),
       this.issueLines(selection),
     ]);
   }
@@ -243,7 +249,16 @@ export class InspectorPanel {
       this.picker('Character', () => idOptions(this.registry.characterModels.map((rule) => rule.id)), npc, 'characterModelId', actionName),
       ...this.numberFields(POSITION_FIELDS, npc, actionName),
       this.numberField('Facing', npc, 'facing', actionName, heading),
-      this.servicePicker(npc, actionName),
+      this.servicePicker(
+        (s) => npc(s)?.service,
+        actionName,
+        (draft, service) => {
+          const record = npc(draft);
+          if (record === undefined) return;
+          if (service === undefined) delete record.service;
+          else record.service = service;
+        },
+      ),
       this.scriptField(selection.id, npc, actionName),
     ]);
   }
@@ -340,28 +355,26 @@ export class InspectorPanel {
   }
 
   /**
-   * What asking the NPC offers. None removes the property rather than writing an empty
-   * value, so an NPC without a service is saved without the key.
+   * What a carrier offers: an NPC's service, or the fixture a placement carries. None is
+   * `undefined` to `apply`, which removes what the record held rather than writing an empty value.
    */
-  private servicePicker(find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
-    const picker = select('Service', [{ value: '', label: 'None' }, ...NPC_SERVICES.map((service) => ({ value: service, label: SERVICE_LABELS[service] }))]);
-    const current = (sector: Sector): string => find(sector)?.service ?? '';
+  private servicePicker(
+    current: (sector: Sector) => Service | undefined,
+    actionName: string,
+    apply: (draft: Sector, service: Service | undefined) => void,
+  ): DraftField {
+    const picker = select('Service', [{ value: '', label: 'None' }, ...SERVICES.map((service) => ({ value: service, label: SERVICE_LABELS[service] }))]);
     let shown = '';
     picker.input.addEventListener('change', () => {
-      const service = NPC_SERVICES.find((candidate) => candidate === picker.input.value);
+      const service = SERVICES.find((candidate) => candidate === picker.input.value);
       if ((service ?? '') === shown) return;
-      const { accepted } = this.callbacks.mutate(actionName, (draft) => {
-        const npc = find(draft);
-        if (npc === undefined) return;
-        if (service === undefined) delete npc.service;
-        else npc.service = service;
-      });
+      const { accepted } = this.callbacks.mutate(actionName, (draft) => apply(draft, service));
       if (!accepted) setSelectValue(picker.input, shown);
     });
     return {
       row: picker.row,
       refresh: (sector) => {
-        shown = current(sector);
+        shown = current(sector) ?? '';
         setSelectValue(picker.input, shown);
       },
     };

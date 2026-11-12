@@ -1,4 +1,4 @@
-import { buildSpaceCollision, findPath, neighbourSectors, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
+import { buildSpaceCollision, findPath, neighbourSectors, placedFixtures, resolveDoor, sectorAt, walkRasterInputs } from '@somnio/core';
 import type {
   AbilityBody,
   Body,
@@ -6,13 +6,14 @@ import type {
   EngageTarget,
   FoundPath,
   ModelRegistry,
+  PlacedFixture,
   Point,
   ResolvedDoor,
   SpaceCollision,
   WalkRaster,
   WorldEntity,
 } from '@somnio/core';
-import type { Condition, Held, NPCService, NightmareRank, SectorView } from '@somnio/protocol';
+import type { Condition, Held, NightmareRank, SectorView, Service } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 import { defaultWalkRasterizer } from './walkRasterizer';
 import type { WalkRasterizer } from './walkRasterizer';
@@ -22,7 +23,7 @@ export interface ClientEntity extends WorldEntity {
   radius: number;
   condition: Condition;
   /** What asking an NPC offers beyond its dialog. */
-  service: NPCService | undefined;
+  service: Service | undefined;
   /** What a dreamer's hands hold. */
   held: Held | undefined;
   /** Set on a nightmare above its kind's ordinary run. */
@@ -69,6 +70,8 @@ export class ClientWorld {
   /** Rebuilt whenever a sector arrives. */
   collision: SpaceCollision;
   doors: ClientDoor[] = [];
+  /** The fixtures of the held sectors, each where its placement stands. */
+  fixtures: PlacedFixture[] = [];
   /** The sector the predicted position was last found in. */
   predictedSector: string | undefined;
 
@@ -103,6 +106,7 @@ export class ClientWorld {
         return resolved === undefined ? [] : [{ sector: held.name, doorId: door.id, resolved, nightOnly: door.nightOnly === true }];
       }),
     );
+    this.fixtures = this.sectors.flatMap(placedFixtures);
     // A sector edge with no held neighbour blocks, so the sectors touching this one walk differently now too.
     this.rasterizeWalkable(sector);
     for (const neighbour of neighbourSectors({ id: this.spaceId, sectors: this.sectors }, sector.name)) this.rasterizeWalkable(neighbour);

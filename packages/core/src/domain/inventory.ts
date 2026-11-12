@@ -129,7 +129,7 @@ function inBagOrder(bag: BaggedItem[]): BaggedItem[] {
 }
 
 /** What changed hands to produce an `inventory` frame, which the frame carries beside what the dreamer now has. */
-export type InventoryChange = Pick<InventoryMessage, 'trade' | 'dropped' | 'pickedUp'>;
+export type InventoryChange = Pick<InventoryMessage, 'trade' | 'dropped' | 'pickedUp' | 'rewarded'>;
 
 /** The `inventory` frame of what the dreamer carries, worn items in slot order and the bag in place order. */
 export function inventoryMessage(inventory: Inventory, change: InventoryChange = {}): InventoryMessage {

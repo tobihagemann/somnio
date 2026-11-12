@@ -1,5 +1,5 @@
 import type { MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
-import type { Blocker, Door, GroundMark, Placement } from '@somnio/protocol';
+import type { Blocker, Door, Fixture, GroundMark, Placement } from '@somnio/protocol';
 import { translateMark } from './groundMarks';
 import { millimetres } from './preferences';
 import { ID_PREFIX, containsSelection, nextDoorId, nextFreeId } from './selection';
@@ -14,13 +14,14 @@ export interface EditorClipboard {
   placements: Placement[];
   blockers: Blocker[];
   doors: Door[];
+  fixtures: Fixture[];
   npcs: SectorNPC[];
   monsterSpawns: MonsterSpawn[];
   marks: GroundMark[];
 }
 
 export function emptyClipboard(): EditorClipboard {
-  return { placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], marks: [] };
+  return { placements: [], blockers: [], doors: [], fixtures: [], npcs: [], monsterSpawns: [], marks: [] };
 }
 
 export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
@@ -31,7 +32,8 @@ export function isClipboardEmpty(clipboard: EditorClipboard): boolean {
  * Snapshots every selected record's value in source-array order — insertion appends each array
  * verbatim and picking treats later records as topmost, so a selection-ordered capture would
  * shuffle overlapping records' stacking on paste. A door is carried only together with its
- * placement: on its own it has no wall to be pasted into.
+ * placement: on its own it has no wall to be pasted into. A placement's fixtures, which are no
+ * record of their own to select, are carried with it.
  */
 export function captureClipboard(selections: readonly EditorSelection[], sector: Sector): EditorClipboard {
   const selected = <R extends { id: string }>(kind: EditorSelection['kind'], records: readonly R[]): R[] =>
@@ -41,6 +43,7 @@ export function captureClipboard(selections: readonly EditorSelection[], sector:
     placements,
     blockers: selected('blocker', sector.blockers),
     doors: selected('door', sector.doors).filter((door) => placements.some((placement) => placement.id === door.placement)),
+    fixtures: structuredClone(sector.fixtures.filter((fixture) => placements.some((placement) => placement.id === fixture.placement))),
     npcs: selected('npc', sector.npcs),
     monsterSpawns: selected('monsterSpawn', sector.monsterSpawns),
     marks: selected('mark', sector.ground.marks),
@@ -50,8 +53,8 @@ export function captureClipboard(selections: readonly EditorSelection[], sector:
 /**
  * Appends clones of every carried record under fresh ids, shifted as a group: with an `anchor`
  * the payload's north-west bounding corner lands there (paste-at-cursor); without one every
- * position shifts by `fallbackOffset` on both axes (duplicate). A carried door is attached to the
- * clone of its placement, and a mark moves whole, stopping where the codec bounds its points.
+ * position shifts by `fallbackOffset` on both axes (duplicate). A carried door or fixture is
+ * attached to the clone of its placement, and a mark moves whole, stopping where the codec bounds its points.
  * Returns the clones' selections.
  */
 export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anchor: Point | undefined, fallbackOffset: number): EditorSelection[] {
@@ -89,6 +92,9 @@ export function insertClipboard(clipboard: EditorClipboard, sector: Sector, anch
     const id = nextDoorId(door.target.sector, sector.doors);
     sector.doors.push({ ...structuredClone(door), id, placement: placementIds.get(door.placement)! });
     inserted.push({ kind: 'door', id });
+  }
+  for (const fixture of clipboard.fixtures) {
+    sector.fixtures.push({ ...structuredClone(fixture), id: nextFreeId(ID_PREFIX.fixture, sector.fixtures), placement: placementIds.get(fixture.placement)! });
   }
   return inserted;
 }

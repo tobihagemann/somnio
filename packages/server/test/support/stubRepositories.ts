@@ -1,11 +1,12 @@
-import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
-import type { Account, Character, Inventory, NPCDialogState, People } from '@somnio/core';
+import { BOOT_DEFAULT_WORLD_SECONDS, NO_QUESTS } from '@somnio/core';
+import type { Account, Character, Inventory, NPCDialogState, People, QuestLog } from '@somnio/core';
 import type {
   AccountRepository,
   CharacterRepository,
   ItemRepository,
   IssuedSession,
   NPCDialogStateRepository,
+  QuestRepository,
   ResolvedSession,
   SessionRepository,
   WorldClockRepository,
@@ -78,6 +79,12 @@ export class StubCharacterRepository implements CharacterRepository {
 export class StubItemRepository implements ItemRepository {
   load(): Promise<Inventory> {
     return Promise.resolve({ coins: 0, equipped: {}, bag: [] });
+  }
+}
+
+export class StubQuestRepository implements QuestRepository {
+  load(): Promise<QuestLog> {
+    return Promise.resolve(NO_QUESTS);
   }
 }
 

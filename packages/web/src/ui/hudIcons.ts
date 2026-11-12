@@ -42,6 +42,8 @@ export const HUD_ICONS = {
   players: packed('/assets/UI/icon-players.png', GAME_ICONS_SIZE),
   /** One dreamer, the player's own, beside the Players' two. */
   character: packed('/assets/UI/icon-character.png', GAME_ICONS_SIZE),
+  /** An open book, the quest log. */
+  quests: packed('/assets/UI/icon-quests.png'),
   settings: packed('/assets/UI/icon-settings.png', GAME_ICONS_SIZE),
   menu: packed('/assets/UI/icon-menu.png', GAME_ICONS_SIZE),
   close: packed('/assets/UI/icon-close.png', GAME_ICONS_SIZE),

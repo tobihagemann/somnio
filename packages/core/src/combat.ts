@@ -10,8 +10,10 @@ import type { Heading } from './heading.ts';
 import { affix } from './affixes.ts';
 import { NO_STATS, baseItem } from './items.ts';
 import type { BaseItemId, Equipment, Hands, Item, StatId, Stats } from './items.ts';
-import { forbidsStriking, rankOf } from './lucidity.ts';
-import type { HeldRank, TaskSpec, TeachingId } from './lucidity.ts';
+import { rankOf } from './lucidity.ts';
+import type { HeldRank, TeachingId } from './lucidity.ts';
+import { forbidsStriking } from './quests.ts';
+import type { ActiveQuest } from './quests.ts';
 import type { MonsterKind } from './monsterKinds.ts';
 
 /**
@@ -182,11 +184,11 @@ export function swingFor(mainHand: Item | undefined, stats: Stats): Swing | unde
 }
 
 /**
- * The swing a dreamer makes now, if they can make one: the task they hold does not forbid
- * striking, what they hold in the main hand swings, and their balance covers its cost.
+ * The swing a dreamer makes now, if they can make one: no quest they hold forbids striking, what
+ * they hold in the main hand swings, and their balance covers its cost.
  */
-export function swingAllowed(task: TaskSpec | undefined, mainHand: Item | undefined, stats: Stats, balance: number): Swing | undefined {
-  if (task !== undefined && forbidsStriking(task)) return undefined;
+export function swingAllowed(quests: readonly Pick<ActiveQuest, 'questId'>[], mainHand: Item | undefined, stats: Stats, balance: number): Swing | undefined {
+  if (forbidsStriking(quests)) return undefined;
   const swing = swingFor(mainHand, stats);
   return swing !== undefined && balance >= swing.balanceCost ? swing : undefined;
 }
@@ -215,14 +217,29 @@ export function handAllows(need: HandNeed, { mainHand, offHand }: Hands): boolea
   }
 }
 
+/** What keeps slot 1 from attacking a nightmare: `hand` something in the main hand that does not swing, `striking` a quest held that forbids striking. */
+export type AttackRefusal = 'hand' | 'striking';
+
+/** Why slot 1 cannot attack a nightmare now, or `undefined` when it can. `engageAction` reads it, and the HUD names it. */
+export function attackRefusal(hands: Hands, quests: readonly Pick<ActiveQuest, 'questId'>[]): AttackRefusal | undefined {
+  if (!handAllows('mainHand', hands)) return 'hand';
+  return forbidsStriking(quests) ? 'striking' : undefined;
+}
+
 /**
  * What slot 1 does at a target. Each hand does its own job: Attack at a nightmare not yet driven
- * off, with the main hand empty or holding a weapon, and Mend at a dreamer, the Healer themselves
- * included, for a Healer with the Moonstone in the off hand. So a Healer holding both does either,
- * by the target. At anything else it does nothing, and cannot be switched on.
+ * off, with the main hand empty or holding a weapon and no quest held that forbids striking, and
+ * Mend at a dreamer, the Healer themselves included, for a Healer with the Moonstone in the off
+ * hand. So a Healer holding both does either, by the target. At anything else it does nothing, and
+ * cannot be switched on.
  */
-export function engageAction(target: EngageTarget | undefined, role: Role | undefined, hands: Hands): EngageAction | undefined {
-  if (target === 'nightmare') return handAllows('mainHand', hands) ? 'attack' : undefined;
+export function engageAction(
+  target: EngageTarget | undefined,
+  role: Role | undefined,
+  hands: Hands,
+  quests: readonly Pick<ActiveQuest, 'questId'>[],
+): EngageAction | undefined {
+  if (target === 'nightmare') return attackRefusal(hands, quests) === undefined ? 'attack' : undefined;
   if (target === 'dreamer' && role === 'healer' && handAllows('moonstone', hands)) return 'mend';
   return undefined;
 }

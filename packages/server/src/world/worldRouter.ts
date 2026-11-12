@@ -153,6 +153,11 @@ export class WorldRouter implements AdminWorldRouter {
     return digest;
   }
 
+  /** Every space reaches the world day `worldSeconds` falls on, and with it that day's bounties. */
+  reachWorldDay(worldSeconds: number): void {
+    for (const space of this.spaceActors.values()) space.reachWorldDay(worldSeconds);
+  }
+
   /** A persistence failure logs and continues (the next emit rewrites the row). */
   async persistDialogDigest(digest: TickDigest): Promise<void> {
     for (const state of digest.dialogUpserts) {

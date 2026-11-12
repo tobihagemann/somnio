@@ -1,5 +1,5 @@
 import type { Door, Locale } from '@somnio/protocol';
-import { NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
+import { NO_LUCIDITY, NO_QUESTS, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
 import type { Character, Inventory, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../../core/test/support/worldFixture.ts';
@@ -85,6 +85,7 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
     facing: headingFromCardinal('south'),
     energy: fullPools(NO_STATS),
     lucidity: NO_LUCIDITY,
+    quests: NO_QUESTS,
     lastSeen: new Date(),
   };
 }
@@ -104,8 +105,8 @@ export interface AttachPlayerOptions {
   spaceId?: string;
   outbox?: ConnectionOutbox;
   worldSeconds?: number;
-  /** What the character differs in from a fresh one: its people, its pools, and what it has grown into. */
-  character?: Partial<Pick<Character, 'people' | 'energy' | 'lucidity'>>;
+  /** What the character differs in from a fresh one: its people, its pools, what it has grown into, and its quests. */
+  character?: Partial<Pick<Character, 'people' | 'energy' | 'lucidity' | 'quests'>>;
   inventory?: Inventory;
   /** The language NPCs speak to the player in; English unless given. */
   locale?: Locale;

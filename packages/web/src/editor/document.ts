@@ -56,6 +56,7 @@ function uninitializedSector(): Sector {
     placements: [],
     blockers: [],
     doors: [],
+    fixtures: [],
     npcs: [],
     monsterSpawns: [],
   };

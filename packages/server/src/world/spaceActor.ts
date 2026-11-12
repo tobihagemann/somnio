@@ -14,9 +14,9 @@ import type {
   LootContentsMessage,
   LucidityMessage,
   MoveMessage,
-  NPCService,
   NightmareRank,
   RaisingState,
+  Service,
   SomnioMessage,
   SpeechKind,
   ThrownFromMessage,
@@ -25,7 +25,6 @@ import {
   COMBAT,
   EDGE_TOLERANCE,
   ELITE_TRAIT_IDS,
-  FIRST_TEACHING,
   GLOBAL_COOLDOWN_SECONDS,
   MAX_SHARED_DROPS,
   OUTDOOR_SPACE_ID,
@@ -35,17 +34,20 @@ import {
   SHOP,
   SOMNIO_CONSTANTS,
   THROW_DISTANCE,
-  TRIAL_REWARDS,
   SPEECH,
   TELEGRAPHS,
   ability,
   abilityAllowed,
+  advancedQuests,
   abilityChannelSeconds,
   abilityCooldownSeconds,
   abilityRank,
   areaRecipients,
   bagHasRoom,
   boltFlightSeconds,
+  bountyIdOf,
+  bountyLands,
+  bountyQuest,
   balancePace,
   balancePerSecond,
   bodiesBlock,
@@ -53,10 +55,13 @@ import {
   buildSpaceCollision,
   canBuy,
   canStand,
+  collectsTrophy,
   conditionOf,
   crumble,
+  dayBounties,
   dialogSteps,
   distance,
+  drivesOff,
   droppableItem,
   effect,
   effectAbsorb,
@@ -70,16 +75,21 @@ import {
   grantItem,
   handAllows,
   heading,
+  heldQuest,
   headingFromCardinal,
   headingFromVector,
   headingRadians,
   inventoryMessage,
   isAbilityId,
+  isBountyId,
   isClear,
   isLegalMove,
+  isQuestId,
   isTeachingId,
   localizedDialogLine,
   masterRole,
+  mayAccept,
+  mayTakeBounty,
   maxPools,
   mendAmount,
   mendReaches,
@@ -90,19 +100,25 @@ import {
   newItemId,
   nextLastSeen,
   npcBodies,
+  npcEntityId,
   outdoorDoorIds,
+  placedFixtures,
   plainInstance,
-  placesReached,
   poolShare,
   practiceNeeded,
   raiseSecondsFor,
   raiseWorkOver,
+  quest,
+  questCarriedBy,
+  questsMessage,
   rankOf,
   reachDistance,
+  reachedAt,
   reaches,
   rectContains,
   resolveDoor,
   rollDrops,
+  rollQuestGear,
   scatterLandings,
   scaled,
   salePrice,
@@ -119,22 +135,28 @@ import {
   swingAllowed,
   swingFor,
   swingMeets,
-  taskGoal,
-  taskSpec,
   teaching,
   teachingStanding,
   threatRaised,
+  turnInFor,
+  turnInGrant,
   unequipItem,
   wardShare,
   wholeAmount,
   windedAfter,
   windedOnJoin,
   withItem,
+  withAccepted,
+  withAcceptedBounty,
   withRank,
+  withTurnedIn,
   withoutItem,
+  withoutPastBounties,
+  withoutQuest,
   throwLanding,
   withinPickupReach,
   withinSpeakingDistance,
+  worldDay,
 } from '@somnio/core';
 import type {
   Ability,
@@ -142,6 +164,8 @@ import type {
   AbilityId,
   Body,
   BossMoves,
+  Bounty,
+  BountyLand,
   Character,
   EffectId,
   EliteTraitId,
@@ -153,16 +177,21 @@ import type {
   Item,
   Lucidity,
   MonsterKind,
+  MonsterKindId,
   MonsterSpawn,
   NPCDialogState,
+  PlacedFixture,
   Point,
+  Quest,
+  QuestCarrier,
+  QuestLog,
+  QuestObjective,
   Rect,
   Sector,
   SectorNPC,
   Space,
   SpaceCollision,
   Stats,
-  TaskSpec,
 } from '@somnio/core';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import { LogThrottle } from '../connection/logThrottle.ts';
@@ -282,6 +311,7 @@ interface NPCRuntime {
 
 interface MonsterRuntime {
   id: string;
+  kindId: MonsterKindId;
   kind: MonsterKind;
   /** Set on an elite, which spawns with more health and drops better. */
   trait: EliteTraitId | undefined;
@@ -328,11 +358,11 @@ interface Boss {
   callReadyAt: number;
 }
 
-/** What a drop is: a whole item, of which whoever is shown the drop sees only the base and the rarity until they pick it up. */
-interface LootContents {
-  kind: 'item';
-  item: Item;
-}
+/**
+ * What a drop is: a whole item, of which whoever is shown the drop sees only the base and the rarity
+ * until they pick it up, or the trophy of a nightmare kind, which never enters the bag.
+ */
+type LootContents = { kind: 'item'; item: Item } | { kind: 'trophy'; monsterKind: MonsterKindId };
 
 /**
  * A drop lying on the ground until it is picked up: one from a nightmare for one dreamer alone,
@@ -514,9 +544,14 @@ function heldOf({ equipped: { mainHand, offHand } }: Inventory): Held {
   return { ...(mainHand === undefined ? {} : { mainHand: mainHand.baseId }), ...(offHand === undefined ? {} : { offHand: offHand.baseId }) };
 }
 
-/** What a drop's viewers are shown of it: its base and rarity, never its stat lines. */
-function lootContentsMessage({ item }: LootContents): LootContentsMessage {
-  return { kind: 'item', baseId: item.baseId, rarity: item.rarity };
+/** What a drop's viewers are shown of it: an item's base and rarity, never its stat lines, or a trophy's kind. */
+function lootContentsMessage(contents: LootContents): LootContentsMessage {
+  switch (contents.kind) {
+    case 'item':
+      return { kind: 'item', baseId: contents.item.baseId, rarity: contents.item.rarity };
+    case 'trophy':
+      return contents;
+  }
 }
 
 /** A drop as it is shown; `from` only as it is thrown, so the viewers who see it fall play its flight. */
@@ -544,14 +579,11 @@ function withinMaxima(energy: Energy, maxima: Pick<Energy, 'healthMax' | 'balanc
   };
 }
 
-function lucidityMessage({ role, ranks, study, task }: Lucidity): LucidityMessage {
+function lucidityMessage({ role, ranks, study }: Lucidity): LucidityMessage {
   return {
     ...(role === undefined ? {} : { role }),
     ranks: ranks.map(({ teachingId, rank, practice }) => ({ teachingId, rank, practice })),
     ...(study === undefined ? {} : { study }),
-    ...(task === undefined
-      ? {}
-      : { task: { role: task.role, ...(task.teachingId === undefined ? {} : { teachingId: task.teachingId }), progress: task.progress } }),
   };
 }
 
@@ -665,6 +697,13 @@ export class SpaceActor {
   private readonly outdoorDoorIds = new Map<string, string[]>();
   private readonly players = new Map<string, PlayerSlot>();
   private readonly npcs = new Map<string, NPCRuntime>();
+  /** The fixtures of the space's sectors, by carrier id. */
+  private readonly fixtures = new Map<string, PlacedFixture>();
+  /** The lands of the whole world, which every bounty board's bounties are set in. */
+  private readonly bountyLands: BountyLand[];
+  /** The world day the space last reached, and the bounties the board offers on it. */
+  private bountyDay: number | undefined;
+  private bounties: Bounty[] = [];
   private readonly npcBodies: Body[];
   private readonly monsters = new Map<string, MonsterRuntime>();
   /** The bolts in flight, in the order they were sent. */
@@ -707,7 +746,7 @@ export class SpaceActor {
         this.spawnTimers.push({ sector, definition, alive: 0, spawnAt: this.now() + firstFill * 1000 });
       }
       for (const npc of sector.npcs) {
-        const id = `npc:${sector.name}/${npc.id}`;
+        const id = npcEntityId(sector.name, npc.id);
         const steps = dialogSteps(npc.dialogScript);
         const persisted = options.initialDialogStates?.find((state) => state.sectorName === sector.name && state.npcId === npc.id);
         this.npcs.set(id, {
@@ -724,9 +763,11 @@ export class SpaceActor {
           scriptStepIndex: this.resolveSeedStepIndex(persisted?.scriptStep, steps.length, id),
         });
       }
+      for (const fixture of placedFixtures(sector)) this.fixtures.set(fixture.id, fixture);
     }
     this.npcBodies = npcBodies(this.space);
     this.doorways = doorwaysOut(world, this.space);
+    this.bountyLands = bountyLands([...world.spaces.values()].flatMap((space) => space.sectors));
   }
 
   /**
@@ -769,9 +810,11 @@ export class SpaceActor {
     const now = this.now();
     const sector = sectorAt(this.space, character.position);
     if (sector === undefined) throw new Error(`no sector of ${this.space.id} holds (${character.position.x}, ${character.position.z})`);
+    this.reachWorldDay(worldSeconds);
     const energy = withinMaxima(character.energy, maxPools(statsOf(inventory.equipped, character.lucidity)));
+    const quests = withoutPastBounties(character.quests, this.bountyDay!);
     const slot: PlayerSlot = {
-      character: { ...character, energy },
+      character: { ...character, energy, quests },
       inventory,
       outbox,
       locale,
@@ -808,6 +851,7 @@ export class SpaceActor {
       { tag: 'inventory', payload: inventoryMessage(inventory) },
       { tag: 'energy', payload: energy },
       { tag: 'lucidity', payload: lucidityMessage(character.lucidity) },
+      { tag: 'quests', payload: questsMessage(quests, this.bounties) },
       { tag: 'cooldowns', payload: this.cooldownsLeft(slot) },
     ];
     if (slot.effects.length > 0) messages.push({ tag: 'effects', payload: this.effectsMessage(slot) });
@@ -929,19 +973,8 @@ export class SpaceActor {
     const sector = sectorAt(this.space, to)!;
     slot.sector = sector.name;
     this.moved.set(entityId, { sector: slot.sector, move: { id: entityId, x: to.x, z: to.z, facing, gait: slot.gait } });
-    if (slot.sector !== previous) {
-      this.playerChangedSector(slot, previous);
-      this.advanceTask(
-        slot,
-        (spec) => spec.kind === 'reach' && spec.sector === slot.sector,
-        (progress) => progress + 1,
-      );
-    }
-    this.advanceTask(
-      slot,
-      (spec) => spec.kind === 'reachAll',
-      (progress, spec) => progress | placesReached(spec, sector, to),
-    );
+    if (slot.sector !== previous) this.playerChangedSector(slot, previous);
+    this.advanceQuests(slot, (objective, progress) => (reachedAt(objective, sector, to) ? 1 : progress));
     // A turn on the spot is reported as a move too, and must not count as moving.
     if (length === 0) return;
     slot.lastMoveAt = now;
@@ -1110,30 +1143,38 @@ export class SpaceActor {
   }
 
   /**
-   * Picks up a drop into the dreamer's bag, from within pickup reach: one of their own, or an item
-   * a dreamer dropped, which the first to ask takes. A fallen dreamer picks up nothing, and a full
-   * bag leaves the drop where it lies. The drop is gone, and the item comes into the bag under a new
-   * id, since a thrown item's old one may still stand in the thrower's rows until their drop save
-   * lands. The inventory goes back to the dreamer saying what was picked up.
+   * Picks up a drop, from within pickup reach: one of their own, or an item a dreamer dropped, which
+   * the first to ask takes. A fallen dreamer picks up nothing, and a full bag leaves an item where it
+   * lies. An item comes into the bag under a new id, since a thrown item's old one may still stand in
+   * the thrower's rows until their drop save lands. A trophy never enters the bag, and counts toward
+   * each quest collecting it once the inventory has gone back to the dreamer saying what was picked
+   * up.
    */
   handlePickUp(lootId: string, entityId: string): void {
     const player = this.players.get(entityId);
     const loot = this.loot.get(lootId);
-    if (player === undefined || loot === undefined || isFallen(player) || !bagHasRoom(player.inventory)) return;
+    if (player === undefined || loot === undefined || isFallen(player)) return;
     if ((loot.ownerId ?? entityId) !== entityId || !withinPickupReach(player.character.position, loot.position)) return;
+    const contents = loot.contents;
+    if (contents.kind === 'item' && !bagHasRoom(player.inventory)) return;
     this.removeLoot(loot);
     if (loot.ownerId !== undefined) this.personalDrops.pickedUp(loot.ownerId, this, lootId);
-    player.inventory = withItem(player.inventory, { id: newItemId(), ...loot.contents.item });
-    this.sendInventory(player, { pickedUp: lootContentsMessage(loot.contents) });
+    if (contents.kind === 'item') player.inventory = withItem(player.inventory, { id: newItemId(), ...contents.item });
+    this.sendInventory(player, { pickedUp: lootContentsMessage(contents) });
+    if (contents.kind === 'trophy') {
+      this.advanceQuests(player, (objective, progress) =>
+        objective.kind === 'collect' && objective.monsterKind === contents.monsterKind ? progress + 1 : progress,
+      );
+    }
   }
 
   /**
    * The drops the dreamers sharing a nightmare find where it was driven off, each sent to its owner
    * alone, scattered from where it stood and fanned round it, so several drops lie apart (`scatterLandings`).
    */
-  private scatter(position: Point, drops: readonly { owner: PlayerSlot; item: Item }[]): void {
+  private scatter(position: Point, drops: readonly { owner: PlayerSlot; contents: LootContents }[]): void {
     const landings = scatterLandings(this.collision, position, drops.length, this.npcBodies, () => randomUnit(this.lootRandom));
-    drops.forEach(({ owner, item }, index) => this.layLoot(owner.character.id, landings[index]!, { kind: 'item', item }, { x: position.x, z: position.z }));
+    drops.forEach(({ owner, contents }, index) => this.layLoot(owner.character.id, landings[index]!, contents, { x: position.x, z: position.z }));
   }
 
   /**
@@ -1197,17 +1238,19 @@ export class SpaceActor {
   }
 
   /**
-   * Asking an NPC to go on: it says the lines after its greeting to the dreamer who asked. Its
-   * targeting flips once. A second `talk` while it is already targeting is a no-op, so it is not
-   * retargeted mid-script. One from outside speaking distance or from a fallen dreamer is
-   * dropped, so it cannot force per-call writes through the step's reset path. An NPC with
-   * nothing beyond its greeting has nothing to go on with.
+   * Acting on a carrier counts as a visit to it. An NPC is asked to go on, and says the lines after
+   * its greeting to the dreamer who asked. One with nothing beyond its greeting has nothing to go on
+   * with. Its targeting flips once: a second ask while it is already targeting is a no-op, so it is
+   * not retargeted mid-script. A fixture is only used, and its panel opens on the client. An ask
+   * from outside speaking distance or from a fallen dreamer is dropped, so it cannot force per-call
+   * writes through the step's reset path.
    */
-  handleTalk(npcId: string, entityId: string): void {
-    const player = this.players.get(entityId);
-    const npc = this.npcs.get(npcId);
-    if (player === undefined || npc === undefined || isFallen(player) || npc.dialogSteps.length < 2) return;
-    if (npc.targetingEntity === undefined && this.inSpeakingDistance(npc, player)) npc.targetingEntity = entityId;
+  handleInteract(carrierId: string, entityId: string): void {
+    const player = this.carrierNear(carrierId, entityId);
+    if (player === undefined) return;
+    this.visit(player, carrierId);
+    const npc = this.npcs.get(carrierId);
+    if (npc !== undefined && npc.targetingEntity === undefined && npc.dialogSteps.length >= 2) npc.targetingEntity = entityId;
   }
 
   /**
@@ -1631,7 +1674,7 @@ export class SpaceActor {
     if (position === undefined) return false;
     const moves = bossMoves(definition.kind);
     const elite = moves === undefined && randomUnit(this.eliteRandom) < definition.eliteChance;
-    const monster = this.addMonster(kind, position, spawnArea(sector, definition), {
+    const monster = this.addMonster(definition.kind, position, spawnArea(sector, definition), {
       timer,
       summoner: undefined,
       trait: elite ? ELITE_TRAIT_IDS[Math.floor(randomUnit(this.eliteRandom) * ELITE_TRAIT_IDS.length)] : undefined,
@@ -1643,7 +1686,7 @@ export class SpaceActor {
 
   /** A nightmare of the kind standing at `position` from now, at home there and keeping to `ground`, as a spawn or a boss brings it. Its arrival is for the caller to show. */
   private addMonster(
-    kind: MonsterKind,
+    kindId: MonsterKindId,
     position: Point,
     ground: Rect,
     origin: Pick<MonsterRuntime, 'timer' | 'summoner' | 'trait'> & { moves: BossMoves | undefined },
@@ -1651,6 +1694,7 @@ export class SpaceActor {
     const id = `monster:${this.nextMonsterNumber}`;
     this.nextMonsterNumber += 1;
     const now = this.now();
+    const kind = monsterKind(kindId);
     const boss: Boss | undefined =
       origin.moves === undefined
         ? undefined
@@ -1658,6 +1702,7 @@ export class SpaceActor {
     const health = nightmareHealth(kind, nightmareRankOf({ boss, trait: origin.trait }));
     const monster: MonsterRuntime = {
       id,
+      kindId,
       kind,
       trait: origin.trait,
       traitRenewsAt: undefined,
@@ -1924,7 +1969,7 @@ export class SpaceActor {
     for (let called = 0; called < Math.min(minions.perCall, minions.maxAlive - standing); called += 1) {
       const position = this.freePointNear(boss, minions.withinMetres, kind.radius);
       if (position === undefined) return;
-      const minion = this.addMonster(kind, position, boss.ground, { timer: undefined, summoner: boss, trait: undefined, moves: undefined });
+      const minion = this.addMonster(minions.kind, position, boss.ground, { timer: undefined, summoner: boss, trait: undefined, moves: undefined });
       minion.strikeReadyAt = this.now() + kind.strikeSeconds * 1000;
       this.broadcast({ tag: 'entity', payload: { ...this.monsterEntity(minion), summonedBy: boss.id } }, minion.sector);
     }
@@ -2108,11 +2153,7 @@ export class SpaceActor {
     this.breakChannel(target);
     this.breakChannelsOn(target);
     this.endEffects(target, (held) => effect(held.effectId).healthPerSecond !== undefined);
-    this.advanceTask(
-      target,
-      (spec) => spec.kind === 'driveOff' && spec.withoutFalling === true,
-      () => 0,
-    );
+    this.advanceQuests(target, (_objective, progress, held) => (held.withoutFalling === true ? 0 : progress));
     // Their client stops reporting at once and may have predicted a little past the last accepted position.
     this.snapBack(target);
   }
@@ -2155,7 +2196,7 @@ export class SpaceActor {
 
   /** What slot 1 does at the dreamer's target as it stands: a nightmare not yet driven off, or a dreamer, in their view. */
   private engagedAction(slot: PlayerSlot): EngageAction | undefined {
-    return engageAction(this.engageKind(slot), slot.character.lucidity.role, slot.inventory.equipped);
+    return engageAction(this.engageKind(slot), slot.character.lucidity.role, slot.inventory.equipped, slot.character.quests.active);
   }
 
   private engageKind(slot: PlayerSlot): EngageTarget | undefined {
@@ -2166,21 +2207,15 @@ export class SpaceActor {
    * A dreamer's swing at the nightmare, at the swing rhythm, for the balance what they hold in the
    * main hand costs. It is made only while the nightmare stands in reach inside the arc of the facing
    * they last reported. With less balance than the cost, with something in the main hand that does not
-   * swing, or while they hold a task that forbids striking, no swing happens. A swing not made costs
+   * swing, or while they hold a quest that forbids striking, no swing happens. A swing not made costs
    * nothing.
    */
   private swing(player: PlayerSlot, monster: MonsterRuntime): void {
     const now = this.now();
     if (now < player.swingReadyAt) return;
     if (!swingMeets(player.character.position, player.character.facing, { ...monster.position, radius: monster.kind.radius })) return;
-    const task = player.character.lucidity.task;
     const energy = player.character.energy;
-    const swing = swingAllowed(
-      task === undefined ? undefined : taskSpec(task),
-      player.inventory.equipped.mainHand,
-      this.statsFor(player),
-      energy.balanceCurrent,
-    );
+    const swing = swingAllowed(player.character.quests.active, player.inventory.equipped.mainHand, this.statsFor(player), energy.balanceCurrent);
     if (swing === undefined) return;
     player.swingReadyAt = now + swing.seconds * 1000;
     this.setEnergy(player, { ...energy, balanceCurrent: energy.balanceCurrent - swing.balanceCost });
@@ -2211,8 +2246,9 @@ export class SpaceActor {
    * The one place a nightmare is driven off. It fades where it stands, and its spawn, if it has one,
    * has a slot to refill after the kind's respawn time. A boss's wail ends unstruck and its minions
    * crumble. The standing dreamers within the share radius, and the standing dreamer whose harm drove
-   * it off from however far, split its bounty and each earn the practice in full. Each of them rolls
-   * for drops of their own, by the nightmare's tier and rank, and all their drops scatter fanned round
+   * it off from however far, split its bounty, and each earn the practice and its count toward their
+   * quests in full. Each of them rolls for drops of their own, by the nightmare's tier and rank, and
+   * finds its kind's trophy while a quest of theirs collects it. All their drops scatter fanned round
    * where it stood.
    */
   private driveOff(monster: MonsterRuntime, finisher: PlayerSlot): void {
@@ -2230,17 +2266,14 @@ export class SpaceActor {
       (slot) => !isFallen(slot) && (slot === finisher || distance(slot.character.position, monster.position) <= COMBAT.shareRadius),
     );
     const share = Math.floor(monster.kind.bounty / near.length);
-    const drops: { owner: PlayerSlot; item: Item }[] = [];
+    const drops: { owner: PlayerSlot; contents: LootContents }[] = [];
     for (const slot of near) {
       if (share > 0) this.giveCoins(slot, share);
       for (const item of rollDrops(monster.kind.tier, nightmareRankOf(monster) ?? 'nightmare', slot.character.lucidity.role, () => randomUnit(this.lootRandom)))
-        drops.push({ owner: slot, item });
+        drops.push({ owner: slot, contents: { kind: 'item', item } });
+      if (collectsTrophy(slot.character.quests, monster.kindId)) drops.push({ owner: slot, contents: { kind: 'trophy', monsterKind: monster.kindId } });
       this.addPractice(slot, PRACTICE.nightmare);
-      this.advanceTask(
-        slot,
-        (spec) => spec.kind === 'driveOff',
-        (progress) => progress + 1,
-      );
+      this.advanceQuests(slot, (objective, progress) => (drivesOff(objective, monster.kindId, monster.sector) ? progress + 1 : progress));
     }
     this.scatter(monster.position, drops);
   }
@@ -2310,7 +2343,7 @@ export class SpaceActor {
    * The one way health reaches a standing dreamer from a Healer: as much of `amount`, made whole, as
    * they miss. Only the raise stands a fallen dreamer up, so a fallen one is given none. The threat
    * it raises against the Healer is shared among the nightmares not driven off that hold threat
-   * against the dreamer, and the Healer earns practice by it: half for mending themselves, and task
+   * against the dreamer, and the Healer earns practice by it: half for mending themselves, and quest
    * progress only for mending another. A Healer no longer in the space raises nothing and earns nothing.
    */
   private heal(healerId: string, target: PlayerSlot, amount: number): void {
@@ -2327,11 +2360,7 @@ export class SpaceActor {
       return;
     }
     this.addPractice(healer, given * PRACTICE.perHealthMended);
-    this.advanceTask(
-      healer,
-      (spec) => spec.kind === 'mend',
-      (progress) => progress + given,
-    );
+    this.advanceQuests(healer, (objective, progress) => (objective.kind === 'mend' ? progress + given : progress));
   }
 
   /**
@@ -2667,15 +2696,35 @@ export class SpaceActor {
     });
   }
 
-  /** Moves the held task's progress to what `next` makes of it, no further than its goal, when the task is one `counts` accepts. */
-  private advanceTask(slot: PlayerSlot, counts: (spec: TaskSpec) => boolean, next: (progress: number, spec: TaskSpec) => number): void {
-    const lucidity = slot.character.lucidity;
-    const task = lucidity.task;
-    if (task === undefined) return;
-    const spec = taskSpec(task);
-    if (spec === undefined || !counts(spec)) return;
-    const progress = Math.min(taskGoal(spec), next(task.progress, spec));
-    if (progress !== task.progress) this.updateLucidity(slot, { ...lucidity, task: { ...task, progress } });
+  /** The one sink of quest progress: moves each objective of each quest the dreamer holds to what `next` makes of it, within its goal. */
+  private advanceQuests(slot: PlayerSlot, next: (objective: QuestObjective, progress: number, held: Quest) => number): void {
+    const quests = advancedQuests(slot.character.quests, next);
+    if (quests !== slot.character.quests) this.updateQuests(slot, quests);
+  }
+
+  /** Replaces the quests the dreamer holds and turned in, and tells them, with the day's bounties. */
+  private updateQuests(slot: PlayerSlot, quests: QuestLog): void {
+    slot.character = { ...slot.character, quests };
+    slot.outbox.sendEncoded({ tag: 'quests', payload: questsMessage(quests, this.bounties) }, this.logger);
+  }
+
+  /**
+   * The world clock reads `worldSeconds`. On a later world day than the space has reached, the board
+   * offers that day's bounties, and every dreamer in the space is told them, with the bounties they
+   * turned in on another day gone from their log, since those block nothing now. A bounty held runs
+   * on by its definition. A reading of a day already passed, taken before the clock moved on, changes nothing.
+   */
+  reachWorldDay(worldSeconds: number): void {
+    const day = worldDay(worldSeconds);
+    if (this.bountyDay !== undefined && day <= this.bountyDay) return;
+    this.bountyDay = day;
+    this.bounties = dayBounties(day, this.bountyLands);
+    for (const slot of this.players.values()) this.updateQuests(slot, withoutPastBounties(slot.character.quests, day));
+  }
+
+  /** The dreamer stands at the carrier, by its id: a quest visiting it counts the visit. */
+  private visit(slot: PlayerSlot, carrierId: string): void {
+    this.advanceQuests(slot, (objective, progress) => (objective.kind === 'visit' && objective.carrier === carrierId ? 1 : progress));
   }
 
   private giveCoins(slot: PlayerSlot, coins: number): void {
@@ -2709,78 +2758,114 @@ export class SpaceActor {
     this.broadcast({ tag: 'held', payload: { entityId: slot.character.id, held } }, slot.sector);
   }
 
-  /**
-   * The service the named NPC offers a dreamer who stands within speaking distance of it. Anything
-   * else (no such NPC, no service, too far, a fallen dreamer) is dropped silently, as a `talk` is.
-   */
-  private serviceFor(npcId: string, entityId: string): { player: PlayerSlot; service: NPCService } | undefined {
-    const player = this.players.get(entityId);
-    const npc = this.npcs.get(npcId);
-    const service = npc?.definition.service;
-    if (player === undefined || npc === undefined || service === undefined) return undefined;
-    if (isFallen(player) || !this.inSpeakingDistance(npc, player)) return undefined;
-    return { player, service };
+  /** The NPC or the fixture of the space by its carrier id: where it stands, and the service its record names. */
+  private carrier(carrierId: string): { position: Point; service: Service | undefined } | undefined {
+    const npc = this.npcs.get(carrierId);
+    if (npc !== undefined) return { position: npc.position, service: npc.definition.service };
+    const fixture = this.fixtures.get(carrierId);
+    return fixture === undefined ? undefined : { position: fixture.position, service: fixture.fixture.service };
   }
 
   /**
-   * A master sets a task for a dreamer who holds none: their trial for one without a role, or the
-   * task gating a teaching of the dreamer's own role, at rank 0 and with its needs met.
+   * The standing dreamer within speaking distance of the named carrier, of a fixture's placement
+   * centre; `undefined` for anything else, which is dropped silently.
    */
-  handleAskTask(npcId: string, teachingId: string | undefined, entityId: string): void {
-    const asked = this.serviceFor(npcId, entityId);
-    if (asked === undefined) return;
-    const role = masterRole(asked.service);
-    const lucidity = asked.player.character.lucidity;
-    if (role === undefined || lucidity.task !== undefined) return;
-    if (teachingId === undefined) {
-      if (lucidity.role === undefined) this.updateLucidity(asked.player, { ...lucidity, task: { role, teachingId: undefined, progress: 0 } });
+  private carrierNear(carrierId: string, entityId: string): PlayerSlot | undefined {
+    const player = this.players.get(entityId);
+    const position = this.carrier(carrierId)?.position;
+    if (player === undefined || position === undefined || isFallen(player) || !withinSpeakingDistance(player.character.position, position)) return undefined;
+    return player;
+  }
+
+  /** The service the named carrier offers a dreamer who stands within speaking distance of it. Anything else is dropped silently. */
+  private serviceFor(carrierId: string, entityId: string): { player: PlayerSlot; service: Service } | undefined {
+    const player = this.carrierNear(carrierId, entityId);
+    const service = this.carrier(carrierId)?.service;
+    return player === undefined || service === undefined ? undefined : { player, service };
+  }
+
+  /** The carrier by its id, as the quest rules see it: a bounty board gives and takes every bounty. */
+  private questCarrier(carrierId: string): QuestCarrier {
+    return { id: carrierId, service: this.carrier(carrierId)?.service };
+  }
+
+  /**
+   * The carrier that gives a quest hands it to a dreamer standing at it who may take it on
+   * (`mayAccept`): a trial to one with no role who holds no other trial, a gate's quest to one whose
+   * teaching waits on it. A bounty board hands on one of the day's bounties, stored by what it is
+   * (`mayTakeBounty`). Nothing is granted on taking a quest on. Asking counts as a visit to the
+   * carrier, whatever the answer.
+   */
+  handleAcceptQuest(carrierId: string, questId: string, entityId: string): void {
+    const player = this.carrierNear(carrierId, entityId);
+    if (player === undefined) return;
+    this.visit(player, carrierId);
+    const carrier = this.questCarrier(carrierId);
+    const { quests, lucidity } = player.character;
+    if (isQuestId(questId)) {
+      if (questCarriedBy(quest(questId).giver, carrier) && mayAccept(questId, quests, lucidity)) this.updateQuests(player, withAccepted(quests, questId));
       return;
     }
-    if (!isTeachingId(teachingId) || lucidity.role !== role) return;
-    if (teaching(teachingId).role !== role || teachingStanding(lucidity.ranks, teachingId) !== 'task') return;
-    this.updateLucidity(asked.player, { ...lucidity, task: { role, teachingId, progress: 0 } });
+    const bounty = this.bounties.find((offered) => bountyIdOf(offered) === questId);
+    if (bounty !== undefined && questCarriedBy(bountyQuest(bounty).giver, carrier) && mayTakeBounty(bounty, quests)) {
+      this.updateQuests(player, withAcceptedBounty(quests, bounty));
+    }
   }
 
   /**
-   * The master who set a task takes it as done once it is at its goal. A trial makes the dreamer
-   * the role for good, teaches the role's first teaching and sets them to study it, and gives a
-   * Healer their Moonstone and a Mystic a focus, into an empty off hand or else the bag. With room
-   * in neither, nothing is granted and the trial waits, done, until there is. A gate teaches the
-   * first rank of its teaching.
+   * The carrier that takes a quest pays for it once every objective is met. A trial makes the
+   * dreamer, still without a role, the role for good, teaches the role's first teaching and sets
+   * them to study it, and gives a Healer their Moonstone and a Mystic a focus, into an empty off hand
+   * or else the bag. A gate teaches the first rank of its teaching. The reward's coins, practice, and
+   * gear are paid besides. While an item it gives has nowhere to go, nothing is granted and the
+   * quest waits, done, until there is room. A bounty pays as its stored definition says, whatever
+   * the day. Asking counts as a visit to the carrier first.
    */
-  handleCompleteTask(npcId: string, entityId: string): void {
-    const asked = this.serviceFor(npcId, entityId);
-    if (asked === undefined) return;
-    const lucidity = asked.player.character.lucidity;
-    const task = lucidity.task;
-    if (task === undefined || task.role !== masterRole(asked.service)) return;
-    const spec = taskSpec(task);
-    if (spec === undefined || task.progress < taskGoal(spec)) return;
-    const reward = task.teachingId === undefined ? TRIAL_REWARDS[task.role] : undefined;
-    const granted = reward === undefined ? undefined : grantItem(asked.player.inventory, plainInstance(reward));
-    if (reward !== undefined && granted === undefined) return;
-    const learned = task.teachingId ?? FIRST_TEACHING[task.role];
-    this.updateLucidity(asked.player, {
-      role: task.role,
-      ranks: withRank(lucidity.ranks, { teachingId: learned, rank: 1, practice: 0 }),
-      study: task.teachingId === undefined ? learned : lucidity.study,
-      task: undefined,
-    });
-    if (granted === undefined) return;
-    asked.player.inventory = granted;
-    this.sendInventory(asked.player);
+  handleTurnInQuest(carrierId: string, questId: string, entityId: string): void {
+    const player = this.carrierNear(carrierId, entityId);
+    if (player === undefined) return;
+    this.visit(player, carrierId);
+    if (!isQuestId(questId) && !isBountyId(questId)) return;
+    const { quests, lucidity } = player.character;
+    const held = turnInFor(questId, quests, lucidity);
+    if (held === undefined || !questCarriedBy(heldQuest(held).turnIn, this.questCarrier(carrierId))) return;
+    const reward = heldQuest(held).reward;
+    const { role, teaches, trialItem, paysInventory } = turnInGrant(held);
+    const trialGift = trialItem === undefined ? undefined : plainInstance(trialItem);
+    const given: Item[] = trialGift === undefined ? [] : [trialGift];
+    let inventory: Inventory | undefined = trialGift === undefined ? player.inventory : grantItem(player.inventory, trialGift);
+    if (inventory !== undefined && reward?.gear !== undefined) {
+      const gear = { id: newItemId(), ...rollQuestGear(reward.gear, role ?? lucidity.role, () => randomUnit(this.lootRandom)) };
+      inventory = bagHasRoom(inventory) ? withItem(inventory, gear) : undefined;
+      given.push(gear);
+    }
+    if (inventory === undefined) return;
+    this.updateQuests(player, withTurnedIn(quests, questId));
+    if (teaches !== undefined) {
+      this.updateLucidity(player, {
+        role: role ?? lucidity.role,
+        ranks: withRank(lucidity.ranks, { teachingId: teaches, rank: 1, practice: 0 }),
+        study: role === undefined ? lucidity.study : teaches,
+      });
+    }
+    if (reward?.practice !== undefined) this.addPractice(player, reward.practice);
+    if (!paysInventory) return;
+    player.inventory = inventory;
+    if (reward?.coins !== undefined) this.addCoins(player, reward.coins);
+    this.sendInventory(player, given.length === 0 ? undefined : { rewarded: given.map((item) => lootContentsMessage({ kind: 'item', item })) });
   }
 
-  /** Clears the task held, wherever the dreamer is. */
-  handleAbandonTask(entityId: string): void {
+  /** Gives up a quest held, wherever the dreamer is, fallen or not; what was done toward it is gone. */
+  handleAbandonQuest(questId: string, entityId: string): void {
     const player = this.players.get(entityId);
-    if (player?.character.lucidity.task === undefined) return;
-    this.updateLucidity(player, { ...player.character.lucidity, task: undefined });
+    const held = player?.character.quests.active.find((candidate) => candidate.questId === questId);
+    if (player === undefined || held === undefined) return;
+    this.updateQuests(player, withoutQuest(player.character.quests, held.questId));
   }
 
   /** A master sets a dreamer of their role to study a teaching they may build on: its needs met, below its last rank, and past its gate if it has one. */
-  handleStudy(npcId: string, teachingId: string, entityId: string): void {
-    const asked = this.serviceFor(npcId, entityId);
+  handleStudy(carrierId: string, teachingId: string, entityId: string): void {
+    const asked = this.serviceFor(carrierId, entityId);
     if (asked === undefined || !isTeachingId(teachingId)) return;
     const lucidity = asked.player.character.lucidity;
     if (lucidity.role === undefined || lucidity.role !== masterRole(asked.service) || teaching(teachingId).role !== lucidity.role) return;
@@ -2793,8 +2878,8 @@ export class SpaceActor {
    * coins and the new item go out together in one `inventory` frame that says what was bought.
    * Anything else is dropped silently.
    */
-  handleBuy(npcId: string, baseId: string, entityId: string): void {
-    const asked = this.serviceFor(npcId, entityId);
+  handleBuy(carrierId: string, baseId: string, entityId: string): void {
+    const asked = this.serviceFor(carrierId, entityId);
     if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, baseId)) return;
     const price = SHOP.prices[baseId];
     const bought = plainInstance(baseId);
@@ -2804,8 +2889,8 @@ export class SpaceActor {
   }
 
   /** The shopkeeper buys an item from the dreamer's bag, for its sale price, but never the Moonstone. Anything else is dropped silently. */
-  handleSell(npcId: string, itemId: string, entityId: string): void {
-    const asked = this.serviceFor(npcId, entityId);
+  handleSell(carrierId: string, itemId: string, entityId: string): void {
+    const asked = this.serviceFor(carrierId, entityId);
     const sold = asked === undefined ? undefined : sellableItem(asked.player.inventory, itemId);
     if (asked?.service !== 'shopkeeper' || sold === undefined) return;
     const coins = salePrice(sold);

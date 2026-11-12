@@ -8,13 +8,14 @@ import {
   compassPoint,
   noopRenderSurface,
 } from '@/client';
-import type { ClientEntity, SpeechBubbleRequest, TargetMark } from '@/client';
+import type { ClientEntity, QuestNews, SpeechBubbleRequest, TargetMark } from '@/client';
 import { GameplayTransport } from '@/transport';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { NO_STATS, PICKUP_REACH, fullPools, headingFromVector } from '@somnio/core';
+import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, bountyIdOf, fullPools, headingFromVector } from '@somnio/core';
+import type { QuestMarker } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
 
@@ -56,6 +57,8 @@ interface Rig {
   selectionMarks: TargetMark[];
   /** Every `showBlow`, `showAbility`, `showEffects`, `showRaising`, `showMend`, `showSensed`, `showLoot`, `removeLoot`, and `updateCondition` call, by name. */
   shown: unknown[][];
+  /** Every `showQuestMarkers` call. */
+  questMarkers: ReadonlyMap<string, QuestMarker>[];
   /** Every `showSpeechBubble` call. */
   bubbles: SpeechBubbleRequest[];
   /** Every `showPressMarker` and `liftPressMarker` call, by name. */
@@ -74,6 +77,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
   const selections: Rig['selections'] = [];
   const selectionMarks: Rig['selectionMarks'] = [];
   const shown: Rig['shown'] = [];
+  const questMarkers: Rig['questMarkers'] = [];
   const bubbles: Rig['bubbles'] = [];
   const pressMarks: Rig['pressMarks'] = [];
 
@@ -93,6 +97,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
       showMend: (...mend) => shown.push(['showMend', ...mend]),
       showSensed: (...sensed) => shown.push(['showSensed', ...sensed]),
+      showQuestMarkers: (markers) => questMarkers.push(markers),
       showLoot: (...loot) => shown.push(['showLoot', ...loot]),
       removeLoot: (...loot) => shown.push(['removeLoot', ...loot]),
       showAbility: (...ability) => shown.push(['showAbility', ...ability]),
@@ -116,6 +121,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
     selections,
     selectionMarks,
     shown,
+    questMarkers,
     bubbles,
     pressMarks,
     pinsBubbles: false,
@@ -967,7 +973,7 @@ describe('the Bag', () => {
     const rig = makeRig();
     rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap')] })));
     rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', rarity: 'plain' } }));
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', baseId: 'cap' }]);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } }]);
   });
 });
 
@@ -1081,6 +1087,16 @@ describe('a drop', () => {
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'bagFull' });
   });
 
+  it('asks for a trophy whatever the bag holds, since it never enters the bag', () => {
+    const rig = nearLoot();
+    const bag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+    rig.controller.dispatch(inventoryFrame(carrying({ bag })));
+    rig.controller.dispatch({ tag: 'loot', payload: { lootId: 'loot-2', x: 12, z: 10, contents: { kind: 'trophy', monsterKind: 'ghost' } } });
+    rig.session.pressLoot('loot-2');
+    tickUntil(rig, 0, 3000, () => pickUps(rig).length > 0);
+    expect(pickUps(rig)).toEqual([{ tag: 'pickUp', payload: { lootId: 'loot-2' } }]);
+  });
+
   it("dropped by a dreamer for anyone is drawn, walked to, and picked up as the player's own is", () => {
     const rig = nearLoot();
     const shared = { lootId: 'loot-3', x: 12, z: 10, contents: DAGGER_DROP, shared: true };
@@ -1095,7 +1111,7 @@ describe('a drop', () => {
     const rig = nearLoot();
     rig.controller.dispatch(inventoryFrame(carrying()));
     rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('dagger')] }), { pickedUp: DAGGER_DROP }));
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'pickedUp', baseId: 'dagger' }]);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'pickedUp', contents: DAGGER_DROP }]);
   });
 });
 
@@ -1462,7 +1478,6 @@ describe('chat lines from what changed', () => {
         role: 'fighter',
         ranks: [strike(3)],
         study: 'strike',
-        task: { role: 'fighter', teachingId: 'follow-through', progress: 3 },
       },
     });
 
@@ -1485,17 +1500,25 @@ describe('chat lines from what changed', () => {
     expect(rig.controller.chatHistory).toEqual([{ kind: 'coinsGained', coins: 6 }]);
   });
 
-  it('reports a new role, a new rank, and a task reaching its goal', () => {
+  it("reports a turn-in's coins, then each item it gave", () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
-    const trial = (progress: number) => ({ role: 'fighter' as const, progress });
-    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: trial(0) } });
+    rig.controller.dispatch(purse(100));
+    const tunic = { kind: 'item', baseId: 'tunic', rarity: 'rare' } as const;
+    rig.controller.dispatch(inventoryFrame(carrying({ coins: 160, bag: [item('tunic')] }), { rewarded: [tunic] }));
+    expect(rig.controller.chatHistory).toEqual([
+      { kind: 'coinsGained', coins: 60 },
+      { kind: 'rewarded', contents: tunic },
+    ]);
+  });
 
-    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [], task: trial(1) } });
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'taskDone' }]);
+  it('reports a new role and a new rank', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [] } });
 
     rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(1)], study: 'strike' } });
-    expect(rig.controller.chatHistory.slice(1)).toEqual([
+    expect(rig.controller.chatHistory).toEqual([
       { kind: 'becameRole', role: 'fighter' },
       { kind: 'rankGained', teachingId: 'strike', rank: 1 },
     ]);
@@ -1503,21 +1526,199 @@ describe('chat lines from what changed', () => {
     // Practice alone is no news; the rank it earns is.
     rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(1, 10)], study: 'strike' } });
     rig.controller.dispatch({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(2, 5)], study: 'strike' } });
-    expect(rig.controller.chatHistory.slice(3)).toEqual([{ kind: 'rankGained', teachingId: 'strike', rank: 2 }]);
+    expect(rig.controller.chatHistory.slice(2)).toEqual([{ kind: 'rankGained', teachingId: 'strike', rank: 2 }]);
   });
 
-  it('reports each hidden place found but the last, which finishes the task, and never which it was', () => {
+  /** A `quests` frame holding the quest, with that much done toward each of its objectives. */
+  const holding = (questId: string, progress: number[]): SomnioMessage => ({
+    tag: 'quests',
+    payload: { active: [{ questId, progress }], done: [], bounties: [] },
+  });
+
+  it("says each hidden place found, never which, and a quest done with where to turn it in, but not the place that finishes it, nor a join's first frame", () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
-    const trial = (progress: number) => ({ tag: 'lucidity' as const, payload: { ranks: [], task: { role: 'mystic' as const, progress } } });
-    rig.controller.dispatch(trial(0));
+    rig.controller.dispatch(holding('mystic-trial', [0, 1, 0]));
+    expect(rig.controller.chatHistory).toEqual([]);
 
-    rig.controller.dispatch(trial(0b100));
-    rig.controller.dispatch(trial(0b100));
-    rig.controller.dispatch(trial(0b101));
-    rig.controller.dispatch(trial(0b111));
+    rig.controller.dispatch(holding('mystic-trial', [1, 1, 0]));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'placeFound', found: 2, total: 3 }]);
+    rig.controller.dispatch(holding('mystic-trial', [1, 1, 1]));
+    // Tacita stands in no sector this client holds, so the committed world names her.
+    expect(rig.controller.chatHistory.slice(1)).toEqual([{ kind: 'questDone', questId: 'mystic-trial', turnIn: 'Tacita' }]);
 
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'placeFound', found: 1, total: 3 }, { kind: 'placeFound', found: 2, total: 3 }, { kind: 'taskDone' }]);
+    // A quest taken on already done says nothing, nor does one given up.
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'fighter-trial', progress: [1] }], done: [], bounties: [] } });
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [] } });
+    expect(rig.controller.chatHistory).toHaveLength(2);
+
+    rig.controller.dispatch(enterSpaceFrame('Hall'));
+    rig.controller.dispatch(holding('mystic-trial', [1, 1, 1]));
+    expect(rig.controller.chatHistory).toHaveLength(2);
+  });
+
+  it("tells the HUD of each line that came further and each quest done, but not of a join's first frame, nor of a count set back", () => {
+    const rig = makeRig();
+    const news: unknown[] = [];
+    rig.session.onQuestNews = (told) =>
+      news.push(told.kind === 'progress' ? [told.held.questId, told.line.done, told.line.goal] : [told.held.questId, told.kind]);
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(holding('restless-graves', [1]));
+    expect(news).toEqual([]);
+
+    rig.controller.dispatch(holding('restless-graves', [2]));
+    rig.controller.dispatch(holding('restless-graves', [2]));
+    rig.controller.dispatch(holding('mystic-trial', [0, 1, 0]));
+    rig.controller.dispatch(holding('mystic-trial', [1, 1, 0]));
+    rig.controller.dispatch(holding('mystic-trial', [1, 1, 1]));
+    rig.controller.dispatch(holding('follow-through-task', [2]));
+    rig.controller.dispatch(holding('follow-through-task', [0]));
+    expect(news).toEqual([
+      ['restless-graves', 2, 4],
+      ['mystic-trial', 'accepted'],
+      ['mystic-trial', 2, 3],
+      ['mystic-trial', 'done'],
+      ['follow-through-task', 'accepted'],
+    ]);
+  });
+
+  it("tells the HUD of each quest taken on, and of no line of it however far it has come, but not of the quests a join's first frame holds", () => {
+    const rig = makeRig();
+    const news: QuestNews[] = [];
+    rig.session.onQuestNews = (told) => news.push(told);
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(holding('restless-graves', [1]));
+    expect(news).toEqual([]);
+
+    // Two taken on in one frame, each its own news in the log's order, the one already part done with no line of it.
+    rig.controller.dispatch({
+      tag: 'quests',
+      payload: {
+        active: [
+          { questId: 'restless-graves', progress: [1] },
+          { questId: 'newcomer-errand', progress: [1, 0] },
+          { questId: 'mystic-trial', progress: [0, 1, 0] },
+        ],
+        done: [],
+        bounties: [],
+      },
+    });
+    expect(news).toEqual([
+      { kind: 'accepted', held: { questId: 'newcomer-errand', progress: [1, 0] } },
+      { kind: 'accepted', held: { questId: 'mystic-trial', progress: [0, 1, 0] } },
+    ]);
+    // Taking a quest on says nothing in the chat, not even a hidden place already found.
+    expect(rig.controller.chatHistory).toEqual([]);
+
+    rig.controller.dispatch(enterSpaceFrame('Hall'));
+    rig.controller.dispatch(holding('follow-through-task', [0]));
+    expect(news).toHaveLength(2);
+  });
+
+  it("tells the HUD of a quest turned in once the frames answering it have arrived, with what it paid and the teaching studied, but not at a join's first frames", () => {
+    const rig = makeRig();
+    const news: QuestNews[] = [];
+    // Each quest held here is taken on after the baseline, which is news of its own.
+    rig.session.onQuestNews = (told) => {
+      if (told.kind === 'turnedIn') news.push(told);
+    };
+    const turnedIn = (questId: string): SomnioMessage => ({ tag: 'quests', payload: { active: [], done: [questId], bounties: [] } });
+    const studying = (practice: number): SomnioMessage => ({ tag: 'lucidity', payload: { role: 'fighter', ranks: [strike(1, practice)], study: 'strike' } });
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(purse(100));
+    rig.controller.dispatch(studying(0));
+    rig.controller.dispatch(holding('into-the-crypt', [1]));
+
+    // The `quests` frame, then the practice's `lucidity` frame, then the `inventory` frame carrying the coins and the item: one turn-in.
+    rig.controller.dispatch(turnedIn('into-the-crypt'));
+    rig.controller.dispatch(studying(60));
+    expect(news).toEqual([]);
+    const sabre = { kind: 'item', baseId: 'sabre', rarity: 'rare' } as const;
+    rig.controller.dispatch(inventoryFrame(carrying({ coins: 350, bag: [item('sabre')] }), { rewarded: [sabre] }));
+    expect(news).toEqual([{ kind: 'turnedIn', held: { questId: 'into-the-crypt', progress: [1] }, study: 'strike', coins: 250, items: [sabre] }]);
+    // The chat says the coins and the item as before.
+    expect(rig.controller.chatHistory).toEqual([
+      { kind: 'coinsGained', coins: 250 },
+      { kind: 'rewarded', contents: sabre },
+    ]);
+
+    // A gate that pays nothing but its teaching sends no `inventory` frame, so its `quests` frame is the turn-in.
+    rig.controller.dispatch(holding('follow-through-task', [3]));
+    rig.controller.dispatch(turnedIn('follow-through-task'));
+    expect(news.slice(1)).toEqual([
+      { kind: 'turnedIn', held: { questId: 'follow-through-task', progress: [3] }, study: 'strike', coins: undefined, items: [] },
+    ]);
+
+    // A turn-in still waiting as the player changes space is never told, nor is the new space's first `quests` frame.
+    rig.controller.dispatch(holding('restless-graves', [4]));
+    rig.controller.dispatch(turnedIn('restless-graves'));
+    rig.controller.dispatch(enterSpaceFrame('Hall'));
+    rig.controller.dispatch(purse(410));
+    rig.controller.dispatch(holding('cracked-skulls', [3]));
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(turnedIn('cracked-skulls'));
+    rig.controller.dispatch(purse(500));
+    expect(news).toHaveLength(2);
+  });
+
+  it('marks every carrier of a quest in view by what it has for the player, and none once the session ends', () => {
+    const rig = makeRig();
+    const marked = () => rig.questMarkers.at(-1);
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [] } });
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [] } });
+    expect(marked()).toEqual(new Map());
+    const npcs = [
+      ['npc:EdariaFighterHall/pugnax', 'fighterMaster'],
+      ['npc:EdariaHealerHall/sana', 'healerMaster'],
+      ['npc:EdariaLibrary/libus', undefined],
+      ['npc:EdariaMysticTower/tacita', 'mysticMaster'],
+      ['npc:Graveyard/memor', undefined],
+      ['npc:EdariaShop/mercus', 'shopkeeper'],
+    ] as const;
+    for (const [id, service] of npcs) rig.controller.dispatch(entityFrame({ id, kind: 'npc', ...(service === undefined ? {} : { service }) }));
+    expect(marked()).toEqual(
+      new Map([
+        ['npc:EdariaFighterHall/pugnax', 'offer'],
+        ['npc:EdariaHealerHall/sana', 'offer'],
+        ['npc:EdariaLibrary/libus', 'offer'],
+        ['npc:EdariaMysticTower/tacita', 'offer'],
+        ['npc:Graveyard/memor', 'offer'],
+      ]),
+    );
+    rig.controller.dispatch(holding('fighter-trial', [0]));
+    expect(marked()).toEqual(
+      new Map([
+        ['npc:EdariaFighterHall/pugnax', 'inProgress'],
+        ['npc:EdariaLibrary/libus', 'offer'],
+        ['npc:Graveyard/memor', 'offer'],
+      ]),
+    );
+    rig.controller.dispatch(holding('fighter-trial', [1]));
+    expect(marked()).toEqual(
+      new Map([
+        ['npc:EdariaFighterHall/pugnax', 'turnIn'],
+        ['npc:EdariaLibrary/libus', 'offer'],
+        ['npc:Graveyard/memor', 'offer'],
+      ]),
+    );
+    rig.controller.onTeardown?.();
+    expect(marked()).toEqual(new Map());
+  });
+
+  it("marks an NPC carrying the bounty board with an offer of the day's bounties as it comes into view, and none once it leaves", () => {
+    const bounty = { day: 3, land: 'Meadow', monsterKind: 'ghost', objective: 'driveOff', count: 2, reward: { coins: 24, gear: 1 } } as const;
+    const crier = 'npc:Meadow/crier';
+    const rig = makeRig();
+    const marked = () => rig.questMarkers.at(-1)?.get(crier);
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [] } });
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [bounty] } });
+    expect(marked()).toBeUndefined();
+    rig.controller.dispatch(entityFrame({ id: crier, kind: 'npc', name: 'Crier', service: 'bountyBoard' }));
+    expect(marked()).toBe('offer');
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: crier, leftGame: false } });
+    expect(marked()).toBeUndefined();
   });
 });
 
@@ -1545,7 +1746,7 @@ describe('the service panel', () => {
 
   it('opens on a click at an NPC with a service, speaking to them, without closing the input gate or stopping the player', () => {
     const { rig, tick } = atMaster();
-    expect(rig.sent).toContainEqual({ tag: 'talk', payload: { npcId: MASTER } });
+    expect(rig.sent).toContainEqual({ tag: 'interact', payload: { carrierId: MASTER } });
     expect(rig.session.servicePanel?.id).toBe(MASTER);
     expect(rig.controller.presentedOverlay).toBeUndefined();
 
@@ -1562,9 +1763,9 @@ describe('the service panel', () => {
     rig.controller.dispatch(entityFrame());
     rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/libus', kind: 'npc', x: 10.3, z: 10.6 }));
     rig.session.pressEntity('npc:Meadow/libus');
-    expect(rig.sent).toEqual([
+    expect(rig.sent.filter((message) => message.tag !== 'move')).toEqual([
       { tag: 'target', payload: { targetId: 'npc:Meadow/libus' } },
-      { tag: 'talk', payload: { npcId: 'npc:Meadow/libus' } },
+      { tag: 'interact', payload: { carrierId: 'npc:Meadow/libus' } },
     ]);
     expect(rig.session.servicePanel).toBeUndefined();
   });
@@ -1585,17 +1786,15 @@ describe('the service panel', () => {
   it('sends each request to the NPC it is open for', () => {
     const { rig } = atMaster();
     rig.sent.length = 0;
-    rig.session.askTask();
-    rig.session.askTask('follow-through');
-    rig.session.completeTask();
+    rig.session.acceptQuest('fighter-trial');
+    rig.session.turnInQuest('follow-through-task');
     rig.session.study('guard');
-    rig.session.abandonTask();
+    rig.session.abandonQuest('fighter-trial');
     expect(rig.sent).toEqual([
-      { tag: 'askTask', payload: { npcId: MASTER } },
-      { tag: 'askTask', payload: { npcId: MASTER, teachingId: 'follow-through' } },
-      { tag: 'completeTask', payload: { npcId: MASTER } },
-      { tag: 'study', payload: { npcId: MASTER, teachingId: 'guard' } },
-      { tag: 'abandonTask', payload: {} },
+      { tag: 'acceptQuest', payload: { carrierId: MASTER, questId: 'fighter-trial' } },
+      { tag: 'turnInQuest', payload: { carrierId: MASTER, questId: 'follow-through-task' } },
+      { tag: 'study', payload: { carrierId: MASTER, teachingId: 'guard' } },
+      { tag: 'abandonQuest', payload: { questId: 'fighter-trial' } },
     ]);
   });
 
@@ -1622,8 +1821,8 @@ describe('the service panel', () => {
     const { rig } = atMaster();
     rig.session.closeServicePanel();
     rig.sent.length = 0;
-    rig.session.askTask();
-    rig.session.completeTask();
+    rig.session.acceptQuest('fighter-trial');
+    rig.session.turnInQuest('fighter-trial');
     rig.session.study('guard');
     expect(rig.sent).toEqual([]);
   });
@@ -1635,6 +1834,129 @@ describe('the service panel', () => {
     rig.session.sell('cudgel');
     expect(rig.sent).toEqual([]);
     expect(rig.session.tradeLocked()).toBe(false);
+  });
+  it.each([
+    ['Libus', 'npc:EdariaLibrary/libus'],
+    ['Memor', 'npc:Graveyard/memor'],
+  ])('opens at %s, who carries no service of his own but gives and takes quests', (name, carrierId) => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: carrierId, kind: 'npc', name, x: 10.3, z: 10.6 }));
+    rig.session.pressEntity(carrierId);
+    expect(rig.sent).toContainEqual({ tag: 'interact', payload: { carrierId } });
+    expect(rig.session.servicePanel).toEqual({ id: carrierId, name, position: { x: 10.3, z: 10.6 }, service: undefined });
+    rig.session.acceptQuest('newcomer-errand');
+    expect(rig.sent.at(-1)).toEqual({ tag: 'acceptQuest', payload: { carrierId, questId: 'newcomer-errand' } });
+  });
+});
+
+describe('the bounty board', () => {
+  const BOARD = 'fixture:Meadow/fixture-1';
+  const BOARD_AT = { x: 16, z: 10 };
+  const interacts = (rig: Rig) => rig.sent.filter((message) => message.tag === 'interact');
+  const at = (rig: Rig) => rig.controller.entities.get('self')!.position;
+  const away = (rig: Rig) => Math.hypot(at(rig).x - BOARD_AT.x, at(rig).z - BOARD_AT.z);
+
+  /** Joins a meadow standing at (10, 10), with the board on a placement at (16, 10) that blocks the ground round its centre. */
+  function nearBoard(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(
+      sectorFrame(
+        outdoorSector(
+          'Meadow',
+          { x: 0, z: 0 },
+          {
+            placements: [{ id: 'notice-board-1', modelId: 'box', ...BOARD_AT, yaw: 0, elevation: 0 }],
+            fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+          },
+        ),
+      ),
+    );
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    return rig;
+  }
+
+  function tickUntil(rig: Rig, fromMs: number, toMs: number, done: () => boolean): void {
+    for (let time = fromMs; time <= toMs && !done(); time += 50) rig.session.runTick(time);
+  }
+
+  it('is walked to on a press from afar, though its centre lies inside what it blocks, and used once in speaking distance, after the move that brought the player there', () => {
+    const rig = nearBoard();
+    rig.session.pressFixture(BOARD);
+    expect(rig.session.servicePanel).toBeUndefined();
+    tickUntil(rig, 0, 4000, () => interacts(rig).length > 0);
+
+    expect(away(rig)).toBeLessThanOrEqual(SOMNIO_CONSTANTS.speakingDistance);
+    expect(rig.sent.slice(-2)).toEqual([
+      { tag: 'move', payload: expect.objectContaining(at(rig)) },
+      { tag: 'interact', payload: { carrierId: BOARD } },
+    ]);
+    expect(rig.session.servicePanel).toEqual({ id: BOARD, name: undefined, position: BOARD_AT, service: 'bountyBoard' });
+    expect(rig.session.target).toBeUndefined();
+    tickUntil(rig, 4000, 5000, () => false);
+    expect(interacts(rig)).toHaveLength(1);
+  });
+
+  it('is used at once on a press from within speaking distance, and closes once the player walks away', () => {
+    const rig = nearBoard();
+    rig.session.pressFixture(BOARD);
+    tickUntil(rig, 0, 4000, () => interacts(rig).length > 0);
+    rig.sent.length = 0;
+    rig.session.closeServicePanel();
+    rig.session.pressFixture(BOARD);
+    expect(interacts(rig)).toEqual([{ tag: 'interact', payload: { carrierId: BOARD } }]);
+    expect(rig.session.servicePanel?.id).toBe(BOARD);
+    expect(rig.session.predictor.walk).toBeUndefined();
+
+    tapGround(rig, { x: 4, z: 10 }, 5000);
+    tickUntil(rig, 5100, 9000, () => rig.session.servicePanel === undefined);
+    expect(rig.session.servicePanel).toBeUndefined();
+  });
+
+  it("is marked with an offer from the day's bounties before it is first opened, as its sector arrives too, and as in progress once they are all taken", () => {
+    const bounty = { day: 3, land: 'Meadow', monsterKind: 'ghost', objective: 'driveOff', count: 2, reward: { coins: 24, gear: 1 } } as const;
+    const questId = bountyIdOf(bounty);
+    const quests = (active: { questId: string; progress: number[]; definition: typeof bounty }[]): SomnioMessage => ({
+      tag: 'quests',
+      payload: { active, done: [], bounties: [bounty] },
+    });
+    const rig = makeRig();
+    const marked = () => rig.questMarkers.at(-1)?.get(BOARD);
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch({ tag: 'lucidity', payload: { ranks: [] } });
+    rig.controller.dispatch(quests([]));
+    expect(marked()).toBeUndefined();
+    rig.controller.dispatch(
+      sectorFrame(
+        outdoorSector(
+          'Meadow',
+          { x: 0, z: 0 },
+          {
+            placements: [{ id: 'notice-board-1', modelId: 'box', ...BOARD_AT, yaw: 0, elevation: 0 }],
+            fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+          },
+        ),
+      ),
+    );
+    expect(marked()).toBe('offer');
+    rig.controller.dispatch(quests([{ questId, progress: [1], definition: bounty }]));
+    expect(marked()).toBe('inProgress');
+    rig.controller.dispatch(quests([{ questId, progress: [2], definition: bounty }]));
+    expect(marked()).toBe('turnIn');
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'bountyDone' }]);
+  });
+
+  it('is not used once a new press lands on the way', () => {
+    const rig = nearBoard();
+    rig.session.pressFixture(BOARD);
+    tickUntil(rig, 0, 300, () => false);
+    rig.session.pressGround({ x: 10, z: 14 }, 350);
+    rig.session.release({ x: 10, z: 14 });
+    tickUntil(rig, 400, 4000, () => false);
+    expect(interacts(rig)).toEqual([]);
   });
 });
 
@@ -1668,8 +1990,8 @@ describe('the shop', () => {
     rig.now = 5000;
     rig.session.sell(CUDGEL.id);
     expect(trades(rig)).toEqual([
-      { tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } },
-      { tag: 'sell', payload: { npcId: MERCUS, itemId: CUDGEL.id } },
+      { tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } },
+      { tag: 'sell', payload: { carrierId: MERCUS, itemId: CUDGEL.id } },
     ]);
   });
 
@@ -1768,6 +2090,19 @@ describe('slot 1 at a nightmare', () => {
     rig.session.toggleEngage();
     expect(rig.session.engaged).toBe(false);
     expect(engages(rig)).toEqual([]);
+  });
+
+  it('is no Attack while a quest held forbids striking, as the server judges it, says so, and goes off as one is taken on', () => {
+    const rig = fighter();
+    rig.session.pressEntity(GHOST);
+    rig.session.toggleEngage();
+    expect([rig.session.engaged, rig.session.attackRefusal()]).toEqual([true, undefined]);
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'healer-trial', progress: [0] }], done: [], bounties: [] } });
+    rig.session.runTick(0);
+    expect([rig.session.engaged, rig.session.engageAction(), rig.session.attackRefusal()]).toEqual([false, undefined, 'striking']);
+    rig.session.toggleEngage();
+    expect(rig.session.engaged).toBe(false);
+    expect(engages(rig)).toEqual([{ on: true }]);
   });
 
   it('is Attack, switched on and off at a nightmare targeted out of reach, and never walks the player toward it', () => {

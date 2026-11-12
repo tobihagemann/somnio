@@ -5,12 +5,12 @@ import type { RawData, WebSocket } from 'ws';
 import { handleCreateCharacter, handleDeleteCharacter, handleSelectCharacter } from '../handlers/characters.ts';
 import {
   TRANSFER_LOST,
-  handleAbandonTask,
-  handleAskTask,
+  handleAbandonQuest,
+  handleAcceptQuest,
   handleBuy,
-  handleCompleteTask,
   handleDropItem,
   handleEngage,
+  handleInteract,
   handleEquip,
   handleMove,
   handleMoveItem,
@@ -18,8 +18,8 @@ import {
   handleSay,
   handleSell,
   handleStudy,
-  handleTalk,
   handleTarget,
+  handleTurnInQuest,
   handleUnequip,
   handleUseAbility,
   handleUseDoor,
@@ -336,14 +336,14 @@ export class ConnectionActor {
         case 'moveItem':
         case 'dropItem':
         case 'pickUp':
-        case 'talk':
+        case 'interact':
         case 'target':
         case 'engage':
         case 'useAbility':
         case 'useDoor':
-        case 'askTask':
-        case 'completeTask':
-        case 'abandonTask':
+        case 'acceptQuest':
+        case 'turnInQuest':
+        case 'abandonQuest':
         case 'study':
         case 'buy':
         case 'sell':
@@ -368,6 +368,7 @@ export class ConnectionActor {
         case 'lootGone':
         case 'leave':
         case 'lucidity':
+        case 'quests':
         case 'condition':
         case 'held':
         case 'vitals':
@@ -415,14 +416,14 @@ export class ConnectionActor {
         case 'moveItem':
         case 'dropItem':
         case 'pickUp':
-        case 'talk':
+        case 'interact':
         case 'target':
         case 'engage':
         case 'useAbility':
         case 'useDoor':
-        case 'askTask':
-        case 'completeTask':
-        case 'abandonTask':
+        case 'acceptQuest':
+        case 'turnInQuest':
+        case 'abandonQuest':
         case 'study':
         case 'buy':
         case 'sell':
@@ -445,6 +446,7 @@ export class ConnectionActor {
         case 'lootGone':
         case 'leave':
         case 'lucidity':
+        case 'quests':
         case 'condition':
         case 'held':
         case 'vitals':
@@ -486,8 +488,8 @@ export class ConnectionActor {
       case 'pickUp':
         handlePickUp(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'talk':
-        handleTalk(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'interact':
+        handleInteract(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'target':
         handleTarget(message.payload, state.entityId, state.spaceId, this.dependencies);
@@ -502,14 +504,14 @@ export class ConnectionActor {
         return this.applyTransfer(handleUseDoor(message.payload, state.entityId, state.spaceId, this, this.dependencies), state.accountId);
       case 'wake':
         return this.applyTransfer(handleWake(state.entityId, state.spaceId, this, this.dependencies), state.accountId);
-      case 'askTask':
-        handleAskTask(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'acceptQuest':
+        handleAcceptQuest(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'completeTask':
-        handleCompleteTask(message.payload, state.entityId, state.spaceId, this.dependencies);
+      case 'turnInQuest':
+        handleTurnInQuest(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
-      case 'abandonTask':
-        handleAbandonTask(state.entityId, state.spaceId, this.dependencies);
+      case 'abandonQuest':
+        handleAbandonQuest(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       case 'study':
         handleStudy(message.payload, state.entityId, state.spaceId, this.dependencies);
@@ -552,6 +554,7 @@ export class ConnectionActor {
       case 'lootGone':
       case 'leave':
       case 'lucidity':
+      case 'quests':
       case 'condition':
       case 'held':
       case 'vitals':

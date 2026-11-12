@@ -65,6 +65,13 @@
       }
     }
   ],
+  "fixtures": [
+    {
+      "id": "fixture-1",
+      "placement": "notice-board-1",
+      "service": "bountyBoard"
+    }
+  ],
   "ground": {
     "backgroundMaterialId": "grass-meadow",
     "marks": [
@@ -1913,6 +1920,13 @@
       "x": 12.6,
       "yaw": 270,
       "z": 30
+    },
+    {
+      "id": "notice-board-1",
+      "modelId": "notice-board",
+      "x": 18.15,
+      "yaw": 35,
+      "z": 18.1
     },
     {
       "id": "gen-tree-3-a-1",

@@ -7,7 +7,18 @@ import { hashString, seededSequence } from '../src/hash.ts';
 import { baseItem } from '../src/items.ts';
 import { distance } from '../src/geometry.ts';
 import { headingFromVector } from '../src/heading.ts';
-import { DROP_ODDS, PICKUP_REACH, SCATTER_DISTANCE, droppableBases, rollDrops, scatterLandings, throwLanding, usableBy } from '../src/loot.ts';
+import {
+  DROP_ODDS,
+  PICKUP_REACH,
+  QUEST_GEAR_RARITIES,
+  SCATTER_DISTANCE,
+  droppableBases,
+  rollDrops,
+  rollQuestGear,
+  scatterLandings,
+  throwLanding,
+  usableBy,
+} from '../src/loot.ts';
 import { MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PATHFINDING } from '../src/pathfinding.ts';
 import { TEST_REGISTRY, outdoorSector } from './support/worldFixture.ts';
@@ -100,6 +111,16 @@ describe('smart loot', () => {
     const unusable = bases.filter((baseId) => !usableBy(baseId, role));
     const rate = drops.filter((drop) => unusable.includes(drop.baseId)).length / drops.length;
     expect(Math.abs(rate - (DROP_ODDS.nightmare.openShare * unusable.length) / bases.length)).toBeLessThan(0.01);
+  });
+});
+
+describe('rollQuestGear', () => {
+  it('rolls an item at the tier, of a base the role can use, at a rarity by the weights, never plain', () => {
+    const random = seededSequence(hashString('quest gear'));
+    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, 'mystic', random));
+    expect(rolled.every((item) => item.tier === 3 && usableBy(item.baseId, 'mystic') && droppableBases(3).includes(item.baseId))).toBe(true);
+    expect(rolled.filter((item) => item.rarity === 'rare').length / SAMPLES).toBeCloseTo(QUEST_GEAR_RARITIES.rare / 100, 1);
+    expect(rolled.some((item) => item.rarity === 'plain')).toBe(false);
   });
 });
 

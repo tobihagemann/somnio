@@ -96,13 +96,14 @@ describe('gameplay end to end', () => {
   it('a fresh player joins the starter sector at its spawn, with the world clock in enterSpace', async () => {
     const joined = await joinFreshPlayer(server.url, 'fresh');
     const tags = joined.join.map((message) => message.tag);
-    expect(tags.slice(tags.indexOf('enterSpace'), tags.indexOf('enterSpace') + 6)).toEqual([
+    expect(tags.slice(tags.indexOf('enterSpace'), tags.indexOf('enterSpace') + 7)).toEqual([
       'enterSpace',
       'sector',
       'entity',
       'inventory',
       'energy',
       'lucidity',
+      'quests',
     ]);
     expect(joined.spaceId).toBe(STARTER_SECTOR);
     expect(selfPosition(joined)).toEqual({ x: librarySector.spawn!.x, z: librarySector.spawn!.z });
@@ -172,9 +173,9 @@ describe('gameplay end to end', () => {
     await cheat.client.close();
   });
 
-  it('an NPC greets the player who comes within speaking distance, answers their talk with its next line, and says none to one who asks from afar', async () => {
+  it('an NPC greets the player who comes within speaking distance, answers their interact with its next line, and says none to one who asks from afar', async () => {
     const libus = librarySector.npcs.find((npc) => npc.id === 'libus')!;
-    const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.npcInteractionRadius);
+    const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.speakingDistance);
     const talker = await joinFreshPlayerAt(server, 'talker', { space: STARTER_SECTOR, position: beside });
     const line = (step: number) => ({
       tag: 'serverSay',
@@ -198,12 +199,12 @@ describe('gameplay end to end', () => {
     expect(selfPosition(afar)).toEqual(listening);
     expect(distance(listening, libus)).toBeGreaterThan(SPEECH.say.clearMetres);
     expect(distance(listening, libus)).toBeLessThan(SPEECH.say.reachMetres);
-    afar.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
-    // The drain is answered behind the `talk`, so the one from afar is handled before the one from beside.
+    afar.client.send(frame({ tag: 'interact', payload: { carrierId: LIBUS } }));
+    // The drain is answered behind the `interact`, so the one from afar is handled before the one from beside.
     expect(await drainFrames(afar.client)).toEqual([]);
-    talker.client.send(frame({ tag: 'talk', payload: { npcId: LIBUS } }));
+    talker.client.send(frame({ tag: 'interact', payload: { carrierId: LIBUS } }));
     expect((await talker.client.until('serverSay')).target).toEqual(line(1));
-    // The one from afar stands past the clear radius of Libus's lines, so they hear the line crumbled, and nothing else since the `talk`.
+    // The one from afar stands past the clear radius of Libus's lines, so they hear the line crumbled, and nothing else since the `interact`.
     const overheard = await drainFrames(afar.client);
     expect(overheard).toMatchObject([{ tag: 'serverSay', payload: { entityId: LIBUS, kind: 'say' } }]);
     const [said] = overheard;

@@ -1,5 +1,5 @@
 import { clamp, raiseWorkOver } from '@somnio/core';
-import type { AbilityId, EffectId, Heading, Point } from '@somnio/core';
+import type { AbilityId, EffectId, Heading, Point, QuestMarker } from '@somnio/core';
 import type { AbilityPhase, Condition, Gait, Held, LootMessage, SectorView, SensedBearingMessage, SpeechKind, TelegraphMessage } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
@@ -98,6 +98,8 @@ export interface WorldRenderSurface {
   showTelegraph(telegraph: TelegraphMessage): void;
   /** A minion arriving at the call of the boss that summoned it, which plays its call. */
   showSummoned(minionId: string, summonerId: string): void;
+  /** The mark each carrier of a quest shows the player, by its carrier id, over an NPC's head or a fixture's model while it is drawn; one not named shows none. */
+  showQuestMarkers(markers: ReadonlyMap<string, QuestMarker>): void;
   /** Where each fallen dreamer in the space lies, for a player who senses the fallen; a new space starts with none. */
   showSensed(bearings: readonly SensedBearingMessage[]): void;
   /** A drop lying on the ground, the player's own or one for anyone: its model, with its name under it in its rarity's colour, until it is removed or a new space begins. */
@@ -136,6 +138,7 @@ export const noopRenderSurface: WorldRenderSurface = {
   showMend: () => {},
   showTelegraph: () => {},
   showSummoned: () => {},
+  showQuestMarkers: () => {},
   showSensed: () => {},
   showLoot: () => {},
   removeLoot: () => {},

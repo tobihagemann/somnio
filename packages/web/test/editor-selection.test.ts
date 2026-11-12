@@ -32,6 +32,7 @@ function populatedSector(overrides: Partial<Sector> = {}): Sector {
     ],
     blockers: [{ id: 'blocker-1', x: 0, z: 0, width: 2, depth: 1 }],
     doors: [{ id: 'exit', placement: 'door-1', anchor: 'main', target: { sector: 'Other', door: 'in' } }],
+    fixtures: [{ id: 'fixture-1', placement: 'box-1', service: 'bountyBoard' }],
     ground: {
       backgroundMaterialId: 'grass-meadow',
       marks: [
@@ -143,7 +144,7 @@ describe('removeAllSelections', () => {
   it('covers every kind', () => {
     const body = populatedSector();
     removeAllSelections([...ALL, { kind: 'placement', id: 'door-1' }], body);
-    expect(body).toMatchObject({ placements: [], blockers: [], doors: [], npcs: [], monsterSpawns: [], ground: { marks: [] } });
+    expect(body).toMatchObject({ placements: [], blockers: [], doors: [], fixtures: [], npcs: [], monsterSpawns: [], ground: { marks: [] } });
     expect(body.spawn).toBeUndefined();
   });
 
@@ -159,6 +160,15 @@ describe('removeAllSelections', () => {
     removeAllSelections([{ kind: 'placement', id: 'door-1' }], body);
     expect(body.placements.map((placement) => placement.id)).toEqual(['box-1']);
     expect(body.doors).toEqual([]);
+    expect(body.fixtures).toHaveLength(1);
+  });
+
+  it('takes a placement and its fixtures together', () => {
+    const body = populatedSector();
+    removeAllSelections([{ kind: 'placement', id: 'box-1' }], body);
+    expect(body.placements.map((placement) => placement.id)).toEqual(['door-1']);
+    expect(body.fixtures).toEqual([]);
+    expect(body.doors).toHaveLength(1);
   });
 });
 
@@ -182,6 +192,13 @@ describe('ids', () => {
     expect(isValidId('Townhall')).toBe(false);
     expect(isValidId('a b')).toBe(false);
     expect(isValidId('a'.repeat(65))).toBe(false);
+  });
+
+  it('re-points the fixtures of a renamed placement', () => {
+    const body = populatedSector();
+    renameRecord({ kind: 'placement', id: 'box-1' }, 'notice-board-1', body);
+    expect(body.fixtures).toEqual([{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }]);
+    expect(body.doors[0]?.placement).toBe('door-1');
   });
 
   it('re-points the doors of a renamed placement and of nothing else', () => {

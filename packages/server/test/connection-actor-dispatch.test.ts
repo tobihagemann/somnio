@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NO_LUCIDITY, OUTDOOR_SPACE_ID } from '@somnio/core';
+import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { Character, Inventory, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
@@ -49,7 +49,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login moveItem', message: { tag: 'moveItem', payload: { itemId: CUDGEL.id, place: 5 } }, state: 'awaitingLogin' },
   { label: 'pre-login dropItem', message: { tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 90 } }, state: 'awaitingLogin' },
   { label: 'pre-login pickUp', message: { tag: 'pickUp', payload: { lootId: 'loot-1' } }, state: 'awaitingLogin' },
-  { label: 'pre-login talk', message: { tag: 'talk', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login interact', message: { tag: 'interact', payload: { carrierId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login target', message: { tag: 'target', payload: { targetId: entity.id } }, state: 'awaitingLogin' },
   { label: 'pre-login engage', message: { tag: 'engage', payload: { on: true } }, state: 'awaitingLogin' },
   { label: 'pre-login useAbility', message: { tag: 'useAbility', payload: { abilityId: 'brace' } }, state: 'awaitingLogin' },
@@ -58,12 +58,12 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
     message: { tag: 'useDoor', payload: { sector: 'EdariaLibrary', doorId: 'exit' } },
     state: 'awaitingLogin',
   },
-  { label: 'pre-login askTask', message: { tag: 'askTask', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
-  { label: 'pre-login completeTask', message: { tag: 'completeTask', payload: { npcId: entity.id } }, state: 'awaitingLogin' },
-  { label: 'pre-login abandonTask', message: { tag: 'abandonTask', payload: {} }, state: 'awaitingLogin' },
-  { label: 'pre-login study', message: { tag: 'study', payload: { npcId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
-  { label: 'pre-login buy', message: { tag: 'buy', payload: { npcId: entity.id, baseId: 'dagger' } }, state: 'awaitingLogin' },
-  { label: 'pre-login sell', message: { tag: 'sell', payload: { npcId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login acceptQuest', message: { tag: 'acceptQuest', payload: { carrierId: entity.id, questId: 'fighter-trial' } }, state: 'awaitingLogin' },
+  { label: 'pre-login turnInQuest', message: { tag: 'turnInQuest', payload: { carrierId: entity.id, questId: 'fighter-trial' } }, state: 'awaitingLogin' },
+  { label: 'pre-login abandonQuest', message: { tag: 'abandonQuest', payload: { questId: 'fighter-trial' } }, state: 'awaitingLogin' },
+  { label: 'pre-login study', message: { tag: 'study', payload: { carrierId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
+  { label: 'pre-login buy', message: { tag: 'buy', payload: { carrierId: entity.id, baseId: 'dagger' } }, state: 'awaitingLogin' },
+  { label: 'pre-login sell', message: { tag: 'sell', payload: { carrierId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
   { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, state: 'awaitingLogin' },
   {
     label: 'post-attach login',
@@ -185,10 +185,12 @@ describe('ConnectionActor.dispatch', () => {
  * its handlers directly, so only this shows that a frame reaches the handler it names.
  */
 describe('an attached connection', () => {
-  const PUGNAX = 'npc:Town/pugnax';
-  const MERCUS = 'npc:Town/mercus';
+  // Pugnax's committed id, since the trial and the task he gives name him by it.
+  const PUGNAX = 'npc:EdariaFighterHall/pugnax';
+  const MERCUS = 'npc:EdariaFighterHall/mercus';
   const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 1 }), energy: energy({ healthCurrent: 50 }) };
-  const TRIAL_PASSED: Partial<Character> = { lucidity: { ...NO_LUCIDITY, task: { role: 'fighter', teachingId: undefined, progress: 1 } } };
+  const TRIAL_PASSED: Partial<Character> = { quests: { active: [{ questId: 'fighter-trial', progress: [1] }], done: [] } };
+  const TRIAL_HELD: Partial<Character> = { quests: { active: [{ questId: 'fighter-trial', progress: [0] }], done: [] } };
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -198,7 +200,7 @@ describe('an attached connection', () => {
       { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'fighterMaster' as const },
       { ...makeNPC('mercus', { x: 8.6, z: 9.5 }, ''), service: 'shopkeeper' as const },
     ];
-    const sectors = [makeSector('Town', { npcs, ...overrides })];
+    const sectors = [makeSector('EdariaFighterHall', { npcs, ...overrides })];
     const dependencies = await makeStubConnectionDependencies({ sectors });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const connection = new ConnectionActor(dependencies);
@@ -245,34 +247,34 @@ describe('an attached connection', () => {
       85,
     ],
     [
-      'a request for the trial',
+      'a quest taken on',
       {},
       carrying(),
-      () => ({ tag: 'askTask', payload: { npcId: PUGNAX } }),
-      (a) => a.own().character.lucidity.task?.role,
-      'fighter',
+      () => ({ tag: 'acceptQuest', payload: { carrierId: PUGNAX, questId: 'fighter-trial' } }),
+      (a) => a.own().character.quests.active,
+      [{ questId: 'fighter-trial', progress: [0] }],
     ],
     [
-      "a request for a teaching's task",
-      { lucidity: lucidity('fighter', { strike: 2 }) },
-      carrying(),
-      () => ({ tag: 'askTask', payload: { npcId: PUGNAX, teachingId: 'follow-through' } }),
-      (a) => a.own().character.lucidity.task?.teachingId,
-      'follow-through',
-    ],
-    [
-      'a trial handed in',
+      'a quest turned in',
       TRIAL_PASSED,
       carrying(),
-      () => ({ tag: 'completeTask', payload: { npcId: PUGNAX } }),
+      () => ({ tag: 'turnInQuest', payload: { carrierId: PUGNAX, questId: 'fighter-trial' } }),
       (a) => a.own().character.lucidity.role,
       'fighter',
+    ],
+    [
+      'a quest given up',
+      TRIAL_HELD,
+      carrying(),
+      () => ({ tag: 'abandonQuest', payload: { questId: 'fighter-trial' } }),
+      (a) => a.own().character.quests.active,
+      [],
     ],
     [
       'a teaching to study',
       { lucidity: lucidity('fighter', { strike: 1 }) },
       carrying(),
-      () => ({ tag: 'study', payload: { npcId: PUGNAX, teachingId: 'toughening' } }),
+      () => ({ tag: 'study', payload: { carrierId: PUGNAX, teachingId: 'toughening' } }),
       (a) => a.own().character.lucidity.study,
       'toughening',
     ],
@@ -280,7 +282,7 @@ describe('an attached connection', () => {
       'a purchase',
       {},
       carrying({ coins: COINS }),
-      () => ({ tag: 'buy', payload: { npcId: MERCUS, baseId: 'dagger' } }),
+      () => ({ tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } }),
       (a) => a.own().inventory,
       { coins: 40, equipped: {}, bag: [{ place: 0, item: { id: expect.any(String), ...plain('dagger') } }] },
     ],
@@ -288,7 +290,7 @@ describe('an attached connection', () => {
       'a sale',
       {},
       carrying({ coins: COINS, bag: [CUDGEL] }),
-      () => ({ tag: 'sell', payload: { npcId: MERCUS, itemId: CUDGEL.id } }),
+      () => ({ tag: 'sell', payload: { carrierId: MERCUS, itemId: CUDGEL.id } }),
       (a) => a.own().inventory,
       carrying({ coins: 110 }),
     ],

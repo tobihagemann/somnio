@@ -3,6 +3,7 @@ import type { Point } from '../geometry.ts';
 import type { Heading } from '../heading.ts';
 import type { Lucidity } from '../lucidity.ts';
 import type { People } from '../people.ts';
+import type { QuestLog } from '../quests.ts';
 
 export interface Character {
   id: string;
@@ -14,6 +15,7 @@ export interface Character {
   facing: Heading;
   energy: Energy;
   lucidity: Lucidity;
+  quests: QuestLog;
   lastSeen: Date;
 }
 

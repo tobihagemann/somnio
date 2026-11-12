@@ -104,6 +104,10 @@ export type MonsterKindId = keyof typeof MONSTER_KINDS;
 
 export const MONSTER_KIND_IDS = Object.keys(MONSTER_KINDS) as MonsterKindId[];
 
+export function isMonsterKindId(value: string): value is MonsterKindId {
+  return Object.hasOwn(MONSTER_KINDS, value);
+}
+
 export function monsterKind(id: MonsterKindId): MonsterKind {
   return MONSTER_KINDS[id];
 }

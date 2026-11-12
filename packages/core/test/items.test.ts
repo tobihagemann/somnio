@@ -2,31 +2,51 @@ import { ROLES } from '@somnio/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
 import { BASE_ITEMS, itemLabelKey, newItemId, plainInstance } from '../src/items.ts';
-import { TEACHINGS, TRIALS, roleLabelKey } from '../src/lucidity.ts';
+import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { ELITE_TRAITS, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
+import { BOUNTY_KINDS, BOUNTY_LABEL_KEY } from '../src/bounties.ts';
+import { QUESTS, TROPHIES } from '../src/quests.ts';
 
 const CORE_KEYS = [
+  "A newcomer's errand",
   'Amulet',
   'Balance recovery',
   'Bind',
   'Bone dagger',
+  'Bounty: %@',
   'Brace',
   'Buckler',
   'Calm',
   'Challenge',
   'Cleave',
+  'Cracked skull',
+  'Cracked skulls',
   'Cudgel',
   'Dagger',
   'Deep mend',
   'Depth',
   'Drawing back',
   'Dream-bolt',
+  'Drive off %@ Ghosts there.',
+  'Drive off %@ Skeleton Warriors there.',
+  'Drive off %@ Skeletons there.',
+  'Drive off 3 nightmares.',
+  'Drive off 4 Skeletons in the Graveyard.',
+  'Drive off a nightmare.',
+  'Drive off the Necromancer in the burial chamber.',
   'Fighter',
+  'Find the hidden places Tacita speaks of.',
   'Follow-through',
+  'Gather %@ cracked skulls from Skeleton Warriors.',
+  'Gather %@ ghostly wisps from Ghosts.',
+  'Gather %@ old bones from Skeletons.',
+  'Gather 3 cracked skulls from Skeleton Warriors.',
   'Ghost',
+  'Ghostly wisp',
   'Guard',
   'Healer',
+  'Into the crypt',
   'Iron buckler',
   'Iron ring',
   'Leather boots',
@@ -36,14 +56,19 @@ const CORE_KEYS = [
   'Lumina',
   'Lunge',
   'Mace',
+  'Mend 60 health on other dreamers.',
+  'Mending others',
   'Moonstone',
   'Mystic',
   'Necromancer',
-  'North Wood',
+  "Necromancer's sigil",
+  'Old bone',
   'Padded tunic',
   'Radiance',
   'Rally',
+  'Read the bounty board on the square.',
   'Renewal',
+  'Restless graves',
   'Round shield',
   'Sabre',
   'Sense the fallen',
@@ -61,11 +86,17 @@ const CORE_KEYS = [
   'Stony Skeleton',
   'Stony Skeleton Warrior',
   'Strike',
+  "The Fighters' trial",
+  "The Healers' trial",
+  "The Mystics' trial",
+  'Three without a fall',
   'Touch',
   'Toughening',
   'Umbrae',
   'Veil',
   'Vigils',
+  'Visit Mercus in his shop.',
+  'Walk to the North Wood and come back.',
   'Wand',
   'War axe',
   'Ward',
@@ -108,7 +139,7 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, elites included, and the places a trial names', () => {
+  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, and the trophies', () => {
     const labels = [
       ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
       ...PEOPLES.map(peopleLabelKey),
@@ -116,9 +147,12 @@ describe('core catalog', () => {
       ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),
       ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
       ...Object.values(ELITE_TRAITS).flatMap((trait) => Object.values(trait.names)),
-      ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
+      ...Object.values(QUESTS).flatMap((quest) => [quest.labelKey, ...quest.objectives.map((objective) => objective.labelKey)]),
+      BOUNTY_LABEL_KEY,
+      ...Object.values(BOUNTY_KINDS).flatMap((lines) => Object.values(lines)),
+      ...Object.values(TROPHIES),
     ];
-    // Each role's Spirit deepening is its own teaching under one label.
+    // Each role's Spirit deepening is its own teaching under one label, and the Mystic's trial says each of its places by one line.
     expect([...new Set(labels)].sort()).toEqual(CORE_KEYS);
   });
 });

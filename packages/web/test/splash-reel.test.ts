@@ -374,7 +374,7 @@ describe('the splash reel', () => {
         expect(pathSeconds(listener), `${shot.id}: ${listener.id} stops first`).toBeLessThanOrEqual(at);
         expect(at, `${shot.id}: the greeting comes before the dip`).toBeLessThan(shot.seconds - DIP_SECONDS);
         expect(distance(pathPoint(listener, at), npc.start), `${shot.id}: ${listener.id} stands near ${npc.id}`).toBeLessThanOrEqual(
-          SOMNIO_CONSTANTS.npcInteractionRadius,
+          SOMNIO_CONSTANTS.speakingDistance,
         );
       }
     }

@@ -89,11 +89,11 @@ const BOUNCE_SECONDS = 0.16;
 const SAME_PIECE_METRES = 1e-4;
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 
-/** A drop as the scene draws it: where it lies, at the height a body there stands at, what it is, its name, and its rarity. */
+/** A drop as the scene draws it: where it lies, at the height a body there stands at, the base of the item it is, none for a trophy, its name, and its rarity. */
 export interface ShownLoot {
   lootId: string;
   at: { x: number; z: number; height: number };
-  baseId: string;
+  baseId: string | undefined;
   name: string;
   rarity: Rarity;
 }
@@ -260,7 +260,7 @@ export class LootMarkers {
    */
   lying(): { baseId: string; model: THREE.Object3D }[] {
     return this.markers.flatMap(({ loot, model, flight }) =>
-      loot === undefined || model === undefined || (flight !== undefined && !this.touchedDown(flight)) ? [] : [{ baseId: loot.baseId, model }],
+      loot?.baseId === undefined || model === undefined || (flight !== undefined && !this.touchedDown(flight)) ? [] : [{ baseId: loot.baseId, model }],
     );
   }
 
@@ -489,7 +489,7 @@ export class LootMarkers {
    */
   private tossOver(marker: Marker, prop: THREE.Object3D): { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 } | undefined {
     const { model, loot } = marker;
-    if (model === undefined || loot === undefined || prop.parent === null) return undefined;
+    if (model === undefined || loot?.baseId === undefined || prop.parent === null) return undefined;
     if (!this.laidDown.has(loot.baseId)) this.laidDown.set(loot.baseId, laidDown(prop, model));
     const fromHand = this.laidDown.get(loot.baseId);
     if (fromHand === undefined) return undefined;
@@ -538,7 +538,7 @@ export class LootMarkers {
    */
   private layModel(marker: Marker, loot: ShownLoot): void {
     marker.model?.removeFromParent();
-    marker.model = this.groundModel(loot.baseId);
+    marker.model = loot.baseId === undefined ? undefined : this.groundModel(loot.baseId);
     if (marker.model !== undefined) {
       marker.holder.add(marker.model);
       // Measured where it lies, not where a flight has it; the next tick poses the flight again.

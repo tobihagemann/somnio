@@ -10,7 +10,7 @@ import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import { TEST_REGISTRY, interiorSector } from '../../core/test/support/worldFixture.ts';
 import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
 import { SectorCacheError, loadSectorCache, loadWorld, requireSectorsLoaded, ruleSectorIssues } from '../src/sectors/sectorCache.ts';
-import { makeSector, makeWorld } from './support/sectorFactory.ts';
+import { makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
 
 const CORRUPT_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/corrupt');
 
@@ -123,17 +123,41 @@ describe('loadWorld', () => {
     expect(ruleSectorIssues(loadSectorCache(DEV_SECTORS_DIRECTORY))).toEqual([]);
     expect(ruleSectorIssues(sectorsOf(starter, interiorSector('EdariaInn')))).toEqual([
       'sector EdariaInn has no spawn to wake at',
-      'the healer trial names sector NorthWood, which is not loaded',
-      'the mystic trial names sector WestMeadow, which is not loaded',
-      'the mystic trial names sector AutumnWood, which is not loaded',
-      'the mystic trial names sector NorthMeadow, which is not loaded',
+      'the fighter-trial quest names carrier npc:EdariaFighterHall/pugnax, which is not loaded',
+      'the healer-trial quest names carrier npc:EdariaHealerHall/sana, which is not loaded',
+      'the healer-trial quest names sector NorthWood, which is not loaded',
+      'the mystic-trial quest names carrier npc:EdariaMysticTower/tacita, which is not loaded',
+      'the mystic-trial quest names sector WestMeadow, which is not loaded',
+      'the mystic-trial quest names sector AutumnWood, which is not loaded',
+      'the mystic-trial quest names sector NorthMeadow, which is not loaded',
+      'the follow-through-task quest names carrier npc:EdariaFighterHall/pugnax, which is not loaded',
+      'the drawing-back-task quest names carrier npc:EdariaHealerHall/sana, which is not loaded',
+      'the newcomer-errand quest names carrier npc:EdariaLibrary/libus, which is not loaded',
+      'the newcomer-errand quest names carrier npc:EdariaShop/mercus, which is not loaded',
+      'the newcomer-errand quest names carrier fixture:EdariaSquare/fixture-1, which is not loaded',
+      'the restless-graves quest names carrier npc:Graveyard/memor, which is not loaded',
+      'the restless-graves quest names sector Graveyard, which is not loaded',
+      'the cracked-skulls quest names carrier npc:Graveyard/memor, which is not loaded',
+      'the into-the-crypt quest names carrier npc:Graveyard/memor, which is not loaded',
     ]);
     const land = { size: { width: 30.72, depth: 30.72 } };
     const inn = interiorSector('EdariaInn', { spawn: { x: 5, z: 5, facing: 0 } });
     const lands = ['NorthWood', 'WestMeadow', 'AutumnWood', 'NorthMeadow'].map((name) => makeSector(name, land));
-    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands))).toEqual([]);
-    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, makeSector('WestMeadow')))).toEqual([
-      'the mystic trial names a place at (6.72, 24.88) outside sector WestMeadow',
+    const halls = (
+      [
+        ['EdariaFighterHall', 'pugnax'],
+        ['EdariaHealerHall', 'sana'],
+        ['EdariaMysticTower', 'tacita'],
+        ['EdariaLibrary', 'libus'],
+        ['EdariaShop', 'mercus'],
+      ] as const
+    ).map(([name, carrier]) => interiorSector(name, { npcs: [makeNPC(carrier, { x: 5, z: 5 }, '')] }));
+    const graveyard = makeSector('Graveyard', { ...land, npcs: [makeNPC('memor', { x: 5, z: 5 }, '')] });
+    const board = { id: 'notice-board-1', modelId: 'notice-board', x: 5, z: 5, yaw: 0, elevation: 0 };
+    const square = makeSector('EdariaSquare', { placements: [board], fixtures: [{ id: 'fixture-1', placement: board.id, service: 'bountyBoard' }] });
+    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, ...halls, graveyard, square))).toEqual([]);
+    expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, ...halls, graveyard, square, makeSector('WestMeadow')))).toEqual([
+      'the mystic-trial quest names a place at (6.72, 24.88) outside sector WestMeadow',
     ]);
   });
 

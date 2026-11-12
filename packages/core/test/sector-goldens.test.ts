@@ -4,10 +4,10 @@ import { reachDistance } from '../src/combat.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { EDGE_TOLERANCE, distance, distanceToRect, rectContains } from '../src/geometry.ts';
 import type { Point } from '../src/geometry.ts';
-import { TRIALS, placesReached } from '../src/lucidity.ts';
 import { bundledModelRegistry, objectModel } from '../src/modelRegistry.ts';
 import { TELEGRAPHS, monsterKind } from '../src/monsterKinds.ts';
 import { findPath, rasterizeWalkable, walkRasterInputs } from '../src/pathfinding.ts';
+import { quest, reachedAt } from '../src/quests.ts';
 import { sectorPointInSpace, spawnArea } from '../src/sector.ts';
 import type { Sector } from '../src/sector.ts';
 import { OUTDOOR_SPACE_ID, buildWorld, doorContains, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
@@ -149,7 +149,7 @@ describe('the committed world', () => {
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 0, z: 0 },
         backgroundMaterialId: 'grass-meadow',
-        counts: { placements: 121, blockers: 0, doors: 7, npcs: 0, monsterSpawns: 0, marks: 21 },
+        counts: { placements: 122, blockers: 0, doors: 7, npcs: 0, monsterSpawns: 0, marks: 21 },
         doors: {
           'to-edarialibrary': 'EdariaLibrary/exit',
           'to-edariaarena': 'EdariaArena/exit',
@@ -166,9 +166,9 @@ describe('the committed world', () => {
         size: { width: 40.96, depth: 40.96 },
         origin: { x: -71.68, z: 0 },
         backgroundMaterialId: 'forest-floor',
-        counts: { placements: 267, blockers: 0, doors: 1, npcs: 0, monsterSpawns: 2, marks: 4 },
+        counts: { placements: 267, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 2, marks: 4 },
         doors: { 'to-graveyardcrypt': 'GraveyardCrypt/exit' },
-        npcs: {},
+        npcs: { memor: 'libus' },
       },
       GraveyardBurialChamber: {
         kind: 'interior',
@@ -329,7 +329,7 @@ describe('the committed world', () => {
       const room = byName.get(name)!;
       const keeper = room.npcs[0]!;
       const reachesKeeper = (start: Point): boolean =>
-        walksInRoom(name, start, (at) => Math.hypot(at.x - keeper.x, at.z - keeper.z) <= SOMNIO_CONSTANTS.npcInteractionRadius);
+        walksInRoom(name, start, (at) => Math.hypot(at.x - keeper.x, at.z - keeper.z) <= SOMNIO_CONSTANTS.speakingDistance);
       expect(reachesKeeper(resolveDoor(room, room.doors[0]!, registry)!.arrival)).toBe(true);
       if (room.spawn !== undefined) expect(reachesKeeper(room.spawn)).toBe(true);
     },
@@ -339,7 +339,7 @@ describe('the committed world', () => {
   it('starts a fresh dreamer beyond the speaking distance of Libus', () => {
     const library = byName.get('EdariaLibrary')!;
     const libus = library.npcs.find((npc) => npc.id === 'libus')!;
-    expect(Math.hypot(library.spawn!.x - libus.x, library.spawn!.z - libus.z)).toBeGreaterThan(SOMNIO_CONSTANTS.npcInteractionRadius);
+    expect(Math.hypot(library.spawn!.x - libus.x, library.spawn!.z - libus.z)).toBeGreaterThan(SOMNIO_CONSTANTS.speakingDistance);
   });
 
   /** The ghosts never leave their spawn area, so a dreamer anywhere on the boarded refuge stands beyond any ghost's reach. */
@@ -395,6 +395,26 @@ describe('the committed world', () => {
     expect(distance(path.waypoints.at(-1) ?? from, crypt.arrival)).toBeLessThan(0.01);
   });
 
+  /** Memor gives his quests to whoever speaks with him, so no skeleton may reach a dreamer standing within his speaking distance. */
+  it("stands Memor by the Graveyard's church, a walk from the road, beyond every skeleton's reach of a dreamer speaking with him", () => {
+    const graveyard = byName.get('Graveyard')!;
+    const memor = graveyard.npcs.find((npc) => npc.id === 'memor')!;
+    for (const spawn of graveyard.monsterSpawns) {
+      const area = { x: spawn.x, z: spawn.z, width: spawn.width, depth: spawn.depth };
+      expect(distanceToRect(memor, area) - SOMNIO_CONSTANTS.speakingDistance - EDGE_TOLERANCE, spawn.id).toBeGreaterThan(
+        reachDistance(monsterKind(spawn.kind).radius),
+      );
+    }
+    const registry = bundledModelRegistry();
+    const outdoors = world.spaces.get(OUTDOOR_SPACE_ID)!;
+    const collision = buildSpaceCollision(outdoors, registry);
+    const grid = { collision, rasters: outdoors.sectors.map((sector) => rasterizeWalkable(walkRasterInputs(collision, sector))) };
+    const from = sectorPointInSpace(byName.get('WestMeadow')!, { x: 6, z: 15.28 });
+    const beforeMemor = sectorPointInSpace(graveyard, { x: memor.x, z: memor.z + 1 });
+    const path = findPath(grid, from, beforeMemor, npcBodies(outdoors), new Set());
+    expect(distance(path.waypoints.at(-1) ?? from, beforeMemor)).toBeLessThan(0.01);
+  });
+
   it('lets a dreamer walk through the crypt hall from the Graveyard to the burial chamber', () => {
     const registry = bundledModelRegistry();
     const hall = byName.get('GraveyardCrypt')!;
@@ -422,13 +442,12 @@ describe('the committed world', () => {
       square.doors.find((door) => door.id === 'to-edarialibrary')!,
       registry,
     )!.arrival;
-    const trial = TRIALS.mystic;
-    if (trial.kind !== 'reachAll') throw new Error('the Mystic trial is no longer a round of places');
-    trial.places.forEach((place, index) => {
-      const path = findPath(grid, from, sectorPointInSpace(byName.get(place.sector)!, place), npcBodies(outdoors), new Set());
+    for (const objective of quest('mystic-trial').objectives) {
+      if (objective.kind !== 'reach' || objective.place === undefined) throw new Error('the Mystic trial is no longer a round of places');
+      const path = findPath(grid, from, sectorPointInSpace(byName.get(objective.sector)!, objective.place), npcBodies(outdoors), new Set());
       const end = path.waypoints.at(-1) ?? from;
-      expect(placesReached(trial, sectorAt(outdoors, end)!, end), place.sector).toBe(1 << index);
-    });
+      expect(reachedAt(objective, sectorAt(outdoors, end)!, end), objective.sector).toBe(true);
+    }
   });
 
   it('builds with every door live, no collision issue, and a clear starter spawn', () => {

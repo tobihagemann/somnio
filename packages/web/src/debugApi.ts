@@ -1,8 +1,8 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
-import { inventoryMessage } from '@somnio/core';
-import type { AbilityId, EffectId, EliteTraitId, EngageAction, Point } from '@somnio/core';
-import type { Energy, Held, InventoryMessage, LucidityMessage, NightmareRank, Rarity, TelegraphKind } from '@somnio/protocol';
+import { inventoryMessage, questsMessage } from '@somnio/core';
+import type { AbilityId, EffectId, EliteTraitId, EngageAction, Point, QuestMarker } from '@somnio/core';
+import type { Energy, Held, InventoryMessage, LootContentsMessage, LucidityMessage, NightmareRank, QuestsMessage, TelegraphKind } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 
 /**
@@ -10,10 +10,11 @@ import type { AppShell } from '@/ui/appShell';
  *
  * It reads through `_`-prefixed test seams on `WorldScene` (`scene/worldScene.ts`) and adds
  * controller and session state the scene never sees — connection state, the space and sector, the
- * chat scrollback, the presented overlay, the zoom factor, the player's own pools, lucidity, and
- * inventory, where the Character window draws their body, what each dreamer's hands hold, the walk
- * under way, the target, the belt's abilities with their cooldowns, the frames' effects, channels,
- * and raises, the fallen a Mystic senses, the telegraphs in view, and the drops lying for the player.
+ * chat scrollback, the presented overlay, the zoom factor, the player's own pools, lucidity,
+ * inventory, and quests, the quest markers in view, what the quest tracker says, where the
+ * Character window draws their body, what each dreamer's hands hold, the walk under way, the
+ * target, the belt's abilities with their cooldowns, the frames' effects, channels, and raises, the
+ * fallen a Mystic senses, the telegraphs in view, and the drops lying for the player.
  *
  * It exists because a WebGL canvas is opaque to a DOM-driving agent: `agent-browser snapshot` can
  * see the panels and the chat input, but nothing about where the character stands, which sector
@@ -41,6 +42,24 @@ export interface SomnioDebugAPI {
   /** What the player carries, as last sent, the bag at its places, without the items this build does not know. */
   inventory(): InventoryMessage;
   /**
+   * The quests the player holds, with what they have done toward each objective, those they turned
+   * in, and the world day's bounties, each with its definition, as the last `quests` frame said,
+   * without the quests this build does not know.
+   */
+  quests(): QuestsMessage;
+  /**
+   * The marker each carrier in view shows the player, an NPC by its entity id and a fixture by its
+   * carrier id, with where on the page the carrier is drawn, in CSS pixels, so a press can be aimed
+   * at it; `screen` is `undefined` for one not drawn.
+   */
+  questMarkers(): { carrierId: string; marker: QuestMarker; screen: { x: number; y: number } | undefined }[];
+  /**
+   * What the quest tracker says, as drawn: whether it shows at all, whether its list shows under the
+   * heading, and whether a finger's list is folded to its first quest, then each quest in its order
+   * with its title and either how far each line has come or where to turn it in.
+   */
+  questTracker(): { shown: boolean; listShown: boolean; folded: boolean; quests: { questId: string; title: string; lines: string[]; returnTo?: string }[] };
+  /**
    * Where the Character window draws the player's body on the page, in CSS pixels, and how far it
    * is turned from its usual view, in degrees; `undefined` while it is not shown.
    */
@@ -52,7 +71,7 @@ export interface SomnioDebugAPI {
   engaged(): boolean;
   /** What slot 1 does at the target, or `undefined` while it cannot be switched on. */
   engageAction(): EngageAction | undefined;
-  /** The id of the NPC whose service panel is open. */
+  /** The id of the carrier, an NPC or a fixture, whose service panel is open. */
   servicePanel(): string | undefined;
   /** The id of the entity the player has selected. */
   target(): string | undefined;
@@ -80,23 +99,28 @@ export interface SomnioDebugAPI {
    */
   telegraphs(): { id: string; kind: TelegraphKind; casterId: string; x: number; z: number; radius: number; seconds: number }[];
   /**
-   * The drops lying on the ground for the player, as the server last said, each with whether it is
-   * an item a dreamer dropped for anyone (`shared`) and where on the page its name and its model are
-   * drawn, in CSS pixels, so a press can be aimed at either; `undefined` for one not drawn, and
-   * `model` for one drawn without its model.
+   * The drops lying on the ground for the player, as the server last said, each with what it is (an
+   * item's base and rarity, or a trophy's kind), whether it is an item a dreamer dropped for anyone
+   * (`shared`), and where on the page its name and its model are drawn, in CSS pixels, so a press
+   * can be aimed at either; `undefined` for one not drawn, and `model` for one drawn without its
+   * model.
    */
-  loot(): {
+  loot(): (LootContentsMessage & {
     lootId: string;
-    baseId: string;
-    rarity: Rarity;
     shared: boolean;
     x: number;
     z: number;
     label: { x: number; y: number } | undefined;
     model: { x: number; y: number } | undefined;
-  }[];
+  })[];
   /** Where on the page an entity's body is drawn, in CSS pixels, so a click can be aimed at it. */
   screenPoint(entityId: string): { x: number; y: number } | undefined;
+  /**
+   * The fixtures of the sectors held, each by its carrier id with the service it carries, where it
+   * stands in the space, and where on the page its model is drawn, in CSS pixels, so a press can be
+   * aimed at it; `screen` is `undefined` for one not drawn.
+   */
+  fixtures(): { id: string; service: string; x: number; z: number; screen: { x: number; y: number } | undefined }[];
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels, so a tap can be aimed at it. */
   groundScreenPoint(x: number, z: number): { x: number; y: number } | undefined;
   /** How many placed objects are still rendering a placeholder rather than a resolved model. */
@@ -155,6 +179,26 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     energy: () => shell.session.energy,
     lucidity: () => shell.session.lucidity,
     inventory: () => inventoryMessage(shell.session.inventory),
+    quests: () => questsMessage(shell.session.quests, shell.session.bounties),
+    questMarkers: () => {
+      const fixtures = new Set((shell.controller.world?.fixtures ?? []).map(({ id }) => id));
+      return [...shell.session.questMarkers].flatMap(([carrierId, marker]) => {
+        if (shell.controller.entities.has(carrierId)) return [{ carrierId, marker, screen: shell.pagePointOf(carrierId) }];
+        return fixtures.has(carrierId) ? [{ carrierId, marker, screen: shell.pagePointOfFixture(carrierId) }] : [];
+      });
+    },
+    questTracker: () => {
+      const { quests, ...shown } = shell.hud.questTracker;
+      return {
+        ...shown,
+        quests: quests.map(({ questId, title, lines, returnTo }) => ({
+          questId,
+          title,
+          lines: lines.map(({ text, count }) => `${text} ${count}`),
+          ...(returnTo === undefined ? {} : { returnTo }),
+        })),
+      };
+    },
     characterBody: () => {
       const { left, top, width, height } = shell.hud.portraits.body.getBoundingClientRect();
       if (width === 0 || height === 0) return undefined;
@@ -192,8 +236,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     loot: () =>
       [...shell.session.loot.values()].map(({ lootId, x, z, contents, shared }) => ({
         lootId,
-        baseId: contents.baseId,
-        rarity: contents.rarity,
+        ...contents,
         shared: shared === true,
         x,
         z,
@@ -201,6 +244,14 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         model: shell.pagePointOfLoot(lootId, 'model'),
       })),
     screenPoint: (entityId) => shell.pagePointOf(entityId),
+    fixtures: () =>
+      (shell.controller.world?.fixtures ?? []).map(({ id, fixture, position }) => ({
+        id,
+        service: fixture.service,
+        x: position.x,
+        z: position.z,
+        screen: shell.pagePointOfFixture(id),
+      })),
     groundScreenPoint: (x, z) => shell.pagePointOfGround({ x, z }),
     placeholderObjectCount: () => shell.scene?._placeholderObjectCount() ?? 0,
     chatHistory: () => shell.controller.chatHistory.map((line) => renderChatLine(line, catalogTables, currentLocale())),

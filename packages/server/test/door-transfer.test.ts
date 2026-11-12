@@ -13,7 +13,7 @@ import { StubCharacterRepository } from './support/stubRepositories.ts';
 
 const WORLD_SECONDS = 123_456.5;
 /** The first join of a player alone in a one-sector view: `enterSpace`, `sector`, `entity`, `inventory`, `energy`, `lucidity`, `cooldowns`. */
-const JOIN_FRAMES = 7;
+const JOIN_FRAMES = 8;
 /** Not the fresh character's default, so a join that dropped the character's people would show. */
 const PEOPLE = 'umbrae';
 
@@ -57,7 +57,7 @@ describe('handleUseDoor', () => {
     const w = await attachedAt(town(), { x: 10, z: 9.7 });
     w.useDoor('Town', 'inside');
     const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns']);
+    expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'quests', 'cooldowns']);
     expect(arrival[0]).toEqual({ tag: 'enterSpace', payload: { spaceId: 'Hall', selfId: w.entityId, people: PEOPLE, worldSeconds: WORLD_SECONDS } });
   });
 
@@ -133,7 +133,7 @@ describe('handleUseDoor', () => {
     expect(w.snapshotIn('Hall')).toBeUndefined();
     // The restoring `enterSpace` is what releases the client's wait for the transfer.
     const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES);
-    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns']);
+    expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'quests', 'cooldowns']);
     expect(restore[0]).toMatchObject({ payload: { spaceId: OUTDOOR_SPACE_ID, people: PEOPLE } });
   });
 
@@ -158,7 +158,17 @@ describe('handleUseDoor', () => {
       const w = await braced(town());
       expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: 'Hall' });
       const arrival = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES + 4);
-      expect(arrival.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns', 'effects']);
+      expect(arrival.map((message) => message.tag)).toEqual([
+        'enterSpace',
+        'sector',
+        'entity',
+        'inventory',
+        'energy',
+        'lucidity',
+        'quests',
+        'cooldowns',
+        'effects',
+      ]);
       expect(arrival.at(-2)).toEqual({ tag: 'cooldowns', payload: RUNNING.cooldowns });
       expect(arrival.at(-1)).toEqual({ tag: 'effects', payload: { entityId: w.entityId, ...RUNNING.effects } });
       const hall = w.dependencies.worldRouter.space('Hall')!;
@@ -172,7 +182,17 @@ describe('handleUseDoor', () => {
       const w = await braced(town({ placements: [...hall.placements, oversized] }));
       expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: OUTDOOR_SPACE_ID });
       const restore = (await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES + 4);
-      expect(restore.map((message) => message.tag)).toEqual(['enterSpace', 'sector', 'entity', 'inventory', 'energy', 'lucidity', 'cooldowns', 'effects']);
+      expect(restore.map((message) => message.tag)).toEqual([
+        'enterSpace',
+        'sector',
+        'entity',
+        'inventory',
+        'energy',
+        'lucidity',
+        'quests',
+        'cooldowns',
+        'effects',
+      ]);
       expect(restore.at(-2)).toEqual({ tag: 'cooldowns', payload: RUNNING.cooldowns });
       expect(restore.at(-1)).toEqual({ tag: 'effects', payload: { entityId: w.entityId, ...RUNNING.effects } });
     });

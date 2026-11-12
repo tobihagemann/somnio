@@ -41,7 +41,7 @@ This single mechanism explains everything else:
 
 A dreamer wakes into the Library, finds their feet in Edaria, then ventures outward to where the dream frays. They face nightmares, grow in lucidity, and return to Edaria's masters and shops before going deeper — always holding the line against the unraveling, always needing others to do it.
 
-Between the masters' trials and teachings, the work never runs out. Nightmares drop gear, rolled stronger the further out they fall, and elites and the crypt under the Graveyard wait for dreamers who come together. Quest givers send a dreamer on errands and chains, and the bounty board on the square posts fresh bounties every world day. *(the quests and the board are being built)*
+Between the masters' trials and teachings, the work never runs out. Nightmares drop gear, rolled stronger the further out they fall, and elites and the crypt under the Graveyard wait for dreamers who come together. Quest givers send a dreamer on errands and chains, and the bounty board on the square posts fresh bounties every world day.
 
 ## Moving and acting
 
@@ -53,7 +53,8 @@ The view looks down from a fixed angle at about fourteen metres of ground, top t
 - **Targets.** A tap on anyone or anything alive makes it the dreamer's target and never walks them, as does a tap on a name in the Players list, and a tap on the dreamer's own frame targets themselves. A frame shows the target's name and a bar of its health. There are no damage numbers.
 - **Slot 1.** The first button on the bar is a toggle like Run, and acts on the target. At a nightmare it is **Attack**, with the main hand empty or holding a weapon: it swings on the swing rhythm at that target alone while it stands in reach in front of the dreamer. At a dreamer, or at themselves, it is **Mend** for a Healer with the Moonstone in the off hand. At anything else it cannot be switched on. It stays on from one target it can act on to the next, and switches off when the target is lost, when the dreamer falls, and through a door.
 - **Abilities.** The bar holds six buttons, keys 1 to 6 on a desktop: slot 1, then the abilities the dreamer's teachings have given them, in the order they were taught. Each costs Balance or Spirit and needs a while before it can be used again, shown as a sweep across its button. Any use holds every ability back for a moment. An ability for a friend lands on the dreamer targeted, or on its user with no dreamer targeted, but never on a fallen dreamer or one too far away. What an ability leaves behind, such as a Brace or a Ward, shows on the frame of whoever holds it, and on the target frame of whoever targets them. Most act at once. Deep mend is a short channel, shown as a bar draining under the frame, that breaks if the Healer moves; slot 1 waits while it runs.
-- **People.** Someone a dreamer comes near greets them unasked. A tap from within speaking distance asks them to go on and opens a master's or the shopkeeper's offer. A quest giver shows a marker over their head *(being built)*.
+- **People.** Someone a dreamer comes near greets them unasked. A tap from within speaking distance asks them to go on and opens what they offer: a master's teachings, Mercus's wares, or their quests. A gold **!** over a head marks someone with a quest the dreamer may take on, a gold **?** someone a quest of theirs is ready to be handed in to, and a grey **?** someone a quest of theirs not finished yet goes back to.
+- **The bounty board.** A tap on the board on the square walks the dreamer to it and opens it. It shows a gold **!** too, while it posts a bounty they have not taken.
 - **Speech.** Words carry by distance. A whisper reaches only those close by, a plain line a little further, and a yell far, even one door into the next room. Further off, a line arrives in pieces.
 
 Walking into someone only stops a dreamer.
@@ -81,7 +82,7 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 ## Naming convention
 
-- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Vigils*, *Sopors*, *Umbrae*, *Lumina*), primordial sites, and Edaria's old souls (*Libus*, *Pugnax*, *Sana*, *Tacita*, *Mercus*, *Quieta*). Names from before the common tongue.
+- **Ancient dream-Latin** for the oldest, deepest things — the world itself (*Somnio*), the peoples (*Vigils*, *Sopors*, *Umbrae*, *Lumina*), primordial sites, Edaria's old souls (*Libus*, *Pugnax*, *Sana*, *Tacita*, *Mercus*, *Quieta*), and the Graveyard's priest (*Memor*). Names from before the common tongue.
 - **English** for everything dreamers say — roles, abilities, and items (*Fighter*, *Healer*, *Mystic*, *Cleave*, *Ward*, *Moonstone*), the nightmares (*Ghost*, *Skeleton*, *Necromancer*), *and the lands dreamers themselves named and walk* (*North Wood*, *the Swamp*, *Troll Village*).
 - In-world logic: Latin is the old dream-tongue, spoken by the world's bones; English is the common tongue the dreamers brought with them. The contrast is itself lore. (*Edaria* is the inherited name of the heart — older than either.)
 - The game reads in English and in German. German translates the common tongue (Fighter is *Kämpfer*, the Moonstone the *Mondstein*, the North Wood the *Nordwald*) and leaves the Latin as it is.
@@ -90,7 +91,7 @@ Somnio's races are **kinds of dreamers**, each born in a different stratum of th
 
 - **Lucidity, not levels.** Progression is horizontal skill-ranks under a **master** ("lucidity-mentor"), built up slowly by doing rather than gained in a rush. Gear is the other half of a dreamer's strength.
 - **Death is a social event, never permanent.** A fallen dreamer is helpless (briefly "waking") until a **Healer** raises them in the field — or they give up and wake at the inn, weakened. No permadeath; falling pulls the community together.
-- **Economy** runs through Edaria's shop and the nightmares. A new dreamer starts with little more than a purse of coins and a humble cudgel. Every nightmare driven off pays coins to the dreamers who stood by, and may leave each of them a piece of gear. The **Moonstone** is the Healer's tool, given by Sana with the role and by no one else: it is never sold, bought, or dropped.
+- **Economy** runs through Edaria's shop and the nightmares. A new dreamer starts with little more than a purse of coins and a humble cudgel. Every nightmare driven off pays coins to the dreamers who stood by, and may leave each of them a piece of gear. Quests and bounties pay coins and gear too. The **Moonstone** is the Healer's tool, given by Sana with the role and by no one else: it is never sold, bought, or dropped.
 
 ### Gear
 
@@ -114,11 +115,11 @@ Three trained pools, carried from the game's legacy heritage (in German Gestalt,
 
 ### Masters and teachings
 
-A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master sets. No experience bar and no rank for sale: depth over rush.
+A master takes on a dreamer who passes their **trial**, and the dreamer then decides whether to take the role, for good. From there a dreamer studies **one teaching at a time**, and what they do out in the world builds practice toward its next rank: a nightmare driven off nearby, Health mended, a fallen dreamer raised. The rank arrives wherever they are when the practice is full, and each rank asks more than the last. The biggest steps are gated by a **task** the master gives, a quest like any other. No experience bar and no rank for sale: depth over rush.
 
 **Abilities are teachings.** Learning a teaching's first rank puts its ability on the bar, and each further rank deepens it: Cleave strikes harder, Brace holds longer, Lunge is ready sooner, Rally gives more back, Deep mend mends more and sooner, a Ward holds more, and a Bind holds longer.
 
-The three trials:
+The three trials are quests. A dreamer holds one trial at a time, and the other masters ask them to finish it or give it up first. Handing a trial in makes the role theirs, and gives a new Healer the Moonstone and a new Mystic a wand.
 
 - **Pugnax's trial** — drive off a nightmare. He sends a dreamer to the Arena to find one, and one driven off anywhere counts.
 - **Sana's trial** — walk to the North Wood and return without striking anything. A dreamer holding it cannot strike.
@@ -134,11 +135,12 @@ A rank's mechanical effect is a **combat or support capability** — hit harder,
 
 A Healer can mend themselves with the Moonstone, for half the practice, so a Healer alone still grows.
 
-### Quests and bounties *(being built)*
+### Quests and bounties
 
-- **The quest log.** The masters' trials are quests in a quest log, beside every errand a dreamer takes on. A dreamer who can take or hand in a quest sees a marker over the giver's head.
-- **The first quests.** Libus gives a newcomer's errand: visit Mercus, then read the bounty board. The priest at the Graveyard's church gives a chain of three: see what stirs among the graves, gather what the skeletons drop, then go down into the crypt and still the Necromancer.
-- **The bounty board** stands on Edaria's square and posts new bounties every world day, made from the nightmares of each land: drive off so many of a kind there, or bring back so many of what they drop. A finished bounty pays coins and a piece of gear, and a bounty taken before the board changes can still be finished and paid after.
+- **The quest log.** Every errand a dreamer takes on goes in their quest log (L on a desktop), up to ten at once, each with what it asks and how far it has come. The masters' trials and the tasks that open a teaching are quests too. A quest is handed in where it was given, and pays then: coins, practice toward the teaching studied, a piece of gear, or for a trial the role itself. One whose reward has nowhere to go waits, done, until the bag has room. A dreamer may give a quest up anywhere, and what they did toward it is gone.
+- **What quests ask.** To drive off nightmares, of a kind or in a land, to gather trophies, to call on someone, to stand somewhere, or to mend other dreamers. A trophy turns up only for a dreamer gathering it, where such a nightmare falls, and never weighs on the bag. Every dreamer who stood by when a nightmare was driven off counts it toward their quests. Some quests forbid striking, and some start over on a fall.
+- **The first quests.** Libus gives a newcomer's errand: call on Mercus in his shop, then read the bounty board on the square. Memor, the priest at the Graveyard's church, gives a chain of three, each opening the next: *Restless graves*, drive off four Skeletons among the graves; *Cracked skulls*, gather three cracked skulls from the Skeleton Warriors; and *Into the crypt*, go down through the crypt into the burial chamber and drive off the Necromancer, which pays a piece of third-ring gear.
+- **The bounty board** stands on Edaria's square and posts one bounty a world day for each land where nightmares keep, the crypt among them: drive off a number of one kind there, or gather that many of their trophies, twice as many as the land keeps alive and never more than ten. Every dreamer reads the same board, and takes each bounty once. A finished bounty pays coins and a piece of gear as strong as the land's strongest nightmares, and one taken before the board changes is still finished and paid as it was posted.
 
 ### Group content
 
@@ -165,10 +167,10 @@ A character chooses a people, not a class. A dreamer grows into a class by passi
 Edaria is Somnio's central town: where every stranger arrives, the calmest place, the one spot the dream never frays. It is a **walled square with four gates** — north, south, east, west — each opening onto a different ring of the lands. Within its walls:
 
 - **The central well** — the heart of the heart, a fountain at the crossing of every path.
-- **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Greetings! This library is still a work in progress. And running is forbidden in here!"*
+- **The Library** — the *threshold* where dreamers arrive; every newcomer first opens their eyes here. Its keeper, **Libus** the gatekeeper-librarian, greets each one: *"Greetings! New here? Then call on Mercus first. His shop is on the square, and the bounty board stands there too. And running is forbidden in here!"*
 - **The three halls** — where the Fighter, Healer, and Mystic masters keep their doors. Pugnax teaches in the Fighters' hall, the old barracks in the south-east quarter. Sana teaches in the Healers' hall, the chapel beside the inn. Tacita teaches in a tower in the south-west quarter, beside the sealed keep. The tower's door opens only at night, from ten in the evening until six in the morning, while the clock shows the moon, and a dreamer who tries it by day is told so. The night is its only lock: the tower opens to every dreamer once it is dark, whatever their ranks. Its door out opens at every hour.
 - **The shop & the inn** — a shop to outfit a dreamer; an inn that is the **wake-point**: a dreamer who gives up wakes here.
-- **The bounty board** — on the square, where each world day's bounties are posted. *(being built)*
+- **The bounty board** — a notice board on the square, near the well, where each world day's bounties are posted.
 - **The sealed door** — the door of the keep in the south-west quarter, which no living dreamer has opened, and none can say what lies behind it. (The deepest mystery; tied to the Sleeper.)
 
 ## The lands of Somnio — a gazetteer
@@ -187,7 +189,7 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 **The mire & the dead** (west, where the dream rots — *Tier 3*)
 - **The Swamp** — a wide swamp of pools and reeds, with a **lake** and a **cave** sunk beneath it. The dream waterlogged and sour.
-- **Church & Graveyard** — a church and graveyard beyond the West Meadow, a *thin place* where the dead don't rest and nightmares pool thickest. The West Meadow's road runs on through bare trees to an arched gate in an iron fence, and within it a small church stands among the graves. Skeletons walk the rows of graves south of the church, and skeleton warriors keep to its east side. South-west of the church, the door of a stone tomb leads down into the **crypt**, Somnio's first lair: a vault of coffins and torchlight held by skeletons, and beyond it the **burial chamber**, where no daylight reaches and the Necromancer waits.
+- **Church & Graveyard** — a church and graveyard beyond the West Meadow, a *thin place* where the dead don't rest and nightmares pool thickest. The West Meadow's road runs on through bare trees to an arched gate in an iron fence, and within it a small church stands among the graves, where the priest Memor keeps watch. Skeletons walk the rows of graves south of the church, and skeleton warriors keep to its east side. South-west of the church, the door of a stone tomb leads down into the **crypt**, Somnio's first lair: a vault of coffins and torchlight held by skeletons, and beyond it the **burial chamber**, where no daylight reaches and the Necromancer waits.
 
 **The wilds** (organized danger — *Tier 4*)
 - **Troll Village** — a troll settlement east beyond the Autumn Wood; a warband of nightmares with a camp of their own.
@@ -203,13 +205,13 @@ The world radiates from Edaria in rings. The further out, the more the dream has
 
 ## People of Edaria
 
-- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers, and the giver of a newcomer's first errand *(being built)*. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
+- **Libus** — the gatekeeper-librarian. The first face every dreamer sees; keeper of the threshold, fond of rules, secretly fond of newcomers, and the giver of a newcomer's first errand. (Edaria's old souls carry dream-Latin names — Libus from *liber*, and the rest below likewise.)
 - **Pugnax, the Fighter master** — master of the Fighters' hall (*pugnax*, combative); blunt, scarred, teaches by sparring.
 - **Sana, the Healer master** (*sanare*, to heal) — mistress of the Healers' hall; keeper of the Moonstone lore, gentle and exacting.
 - **Tacita, the Mystic master** (*tacita*, the silent) — barely seen; teaches the secretive craft, answers questions with questions, and sets her trial in hints. She keeps the tower that opens only at night.
 - **Mercus, the shopkeeper** (*merx*, wares) — deals in gear, from the plain pieces he sells a newcomer to whatever a seasoned dreamer brings back from the edge.
 - **Quieta, the innkeeper** (*quies*, rest) — keeps the wake-point; knows every regular by their falling.
-- **The priest at the church** — tends the thin place by the graveyard; the source of a dreamer's first real errands, as the dead grow restless, down into the crypt. *(being built)*
+- **Memor, the priest at the church** (*memor*, mindful, remembering) — tends the thin place by the graveyard and keeps the names of all who lie there, so the dream does not forget them. The source of a dreamer's first real errands, as the dead grow restless, down into the crypt.
 - **Griswal** — an old hermit in the southwest, longest-dreaming of them all. A lore-keeper, and a master for those who venture past the gentle rings.
 
 ## The nightmares — a bestiary by tier

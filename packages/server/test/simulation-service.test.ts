@@ -69,7 +69,7 @@ describe('SimulationService', () => {
       }
     }
     const { clock, service, space, join } = await simulation(new RecordingDialogRepository());
-    space.handleTalk('npc:Field/guard', join('talker', 10).entityId);
+    space.handleInteract('npc:Field/guard', join('talker', 10).entityId);
     clock.ms += 50;
     await service.runPass();
     expect(upserted).toEqual([{ sectorName: 'Field', npcId: 'guard', scriptStep: 3 }]);

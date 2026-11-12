@@ -1,5 +1,5 @@
-import type { TeachingId } from '@somnio/core';
-import type { Role, SpeechKind } from '@somnio/protocol';
+import type { QuestId, TeachingId } from '@somnio/core';
+import type { LootContentsMessage, Role, SpeechKind } from '@somnio/protocol';
 import type { CompassPoint } from './compass';
 
 /**
@@ -38,13 +38,15 @@ export type ChatLine =
   | { kind: 'coinsGained'; coins: number }
   | { kind: 'bought'; baseId: string; coins: number }
   | { kind: 'sold'; baseId: string; coins: number }
-  | { kind: 'dropped'; baseId: string }
-  | { kind: 'pickedUp'; baseId: string }
+  | { kind: 'dropped'; contents: LootContentsMessage }
+  | { kind: 'pickedUp'; contents: LootContentsMessage }
+  | { kind: 'rewarded'; contents: LootContentsMessage }
   | { kind: 'bagFull' }
   | { kind: 'becameRole'; role: Role }
   | { kind: 'rankGained'; teachingId: TeachingId; rank: number }
   | { kind: 'placeFound'; found: number; total: number }
-  | { kind: 'taskDone' }
+  | { kind: 'questDone'; questId: QuestId; turnIn: string }
+  | { kind: 'bountyDone' }
   | { kind: 'fell' }
   | { kind: 'raised'; healerNames: string[] }
   | { kind: 'raiseBroken'; healerNames: string[] }
@@ -102,11 +104,13 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'sold':
     case 'dropped':
     case 'pickedUp':
+    case 'rewarded':
     case 'bagFull':
     case 'becameRole':
     case 'rankGained':
     case 'placeFound':
-    case 'taskDone':
+    case 'questDone':
+    case 'bountyDone':
     case 'fell':
     case 'raised':
     case 'raiseBroken':

@@ -1,13 +1,13 @@
 import type {
   AbilityMessage,
   AdminSayMessage,
-  AskTaskMessage,
+  AbandonQuestMessage,
   BlowMessage,
   BuyMessage,
   CharacterResultMessage,
   CharactersMessage,
   ClientSayMessage,
-  CompleteTaskMessage,
+  CarrierQuestMessage,
   ConditionMessage,
   CooldownsMessage,
   CorrectionMessage,
@@ -24,6 +24,7 @@ import type {
   EquipMessage,
   HeldMessage,
   HelloMessage,
+  InteractMessage,
   InventoryMessage,
   LeaveMessage,
   LoginMessage,
@@ -31,6 +32,7 @@ import type {
   LootGoneMessage,
   LootMessage,
   LucidityMessage,
+  QuestsMessage,
   MendMessage,
   MoveItemMessage,
   MoveMessage,
@@ -51,7 +53,6 @@ import type {
   SessionRevokedMessage,
   SessionTokenMessage,
   StudyMessage,
-  TalkMessage,
   TargetMessage,
   TelegraphMessage,
   UnequipMessage,
@@ -79,14 +80,14 @@ export type SomnioMessage =
   | { tag: 'moveItem'; payload: MoveItemMessage }
   | { tag: 'dropItem'; payload: DropItemMessage }
   | { tag: 'pickUp'; payload: PickUpMessage }
-  | { tag: 'talk'; payload: TalkMessage }
+  | { tag: 'interact'; payload: InteractMessage }
   | { tag: 'target'; payload: TargetMessage }
   | { tag: 'engage'; payload: EngageMessage }
   | { tag: 'useAbility'; payload: UseAbilityMessage }
   | { tag: 'useDoor'; payload: UseDoorMessage }
-  | { tag: 'askTask'; payload: AskTaskMessage }
-  | { tag: 'completeTask'; payload: CompleteTaskMessage }
-  | { tag: 'abandonTask'; payload: EmptyMessage }
+  | { tag: 'acceptQuest'; payload: CarrierQuestMessage }
+  | { tag: 'turnInQuest'; payload: CarrierQuestMessage }
+  | { tag: 'abandonQuest'; payload: AbandonQuestMessage }
   | { tag: 'study'; payload: StudyMessage }
   | { tag: 'buy'; payload: BuyMessage }
   | { tag: 'sell'; payload: SellMessage }
@@ -112,6 +113,7 @@ export type SomnioMessage =
   | { tag: 'lootGone'; payload: LootGoneMessage }
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'lucidity'; payload: LucidityMessage }
+  | { tag: 'quests'; payload: QuestsMessage }
   | { tag: 'condition'; payload: ConditionMessage }
   | { tag: 'held'; payload: HeldMessage }
   | { tag: 'vitals'; payload: VitalsMessage }

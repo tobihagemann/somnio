@@ -14,6 +14,7 @@ import {
   StubCharacterRepository,
   StubItemRepository,
   StubNPCDialogStateRepository,
+  StubQuestRepository,
   StubSessionRepository,
   StubWorldClockRepository,
 } from './stubRepositories.ts';
@@ -52,6 +53,7 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     accounts: options.accounts ?? new StubAccountRepository(),
     characters,
     items: new StubItemRepository(),
+    quests: new StubQuestRepository(),
     npcDialogStates: new StubNPCDialogStateRepository(),
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,

@@ -227,18 +227,21 @@ export class AppShell {
         onPressPlayer: (name) => this.session.pressPlayerName(name),
         onPressOwnFrame: () => this.session.pressOwnFrame(),
         onClearTarget: () => this.session.select(undefined),
+        onAbandonQuest: (questId) => this.session.abandonQuest(questId),
         onOpenSettings: () => this.present({ kind: 'gameMenu' }),
+        onCloseCarrierPanel: () => this.session.closeServicePanel(),
         onHoverChange: (hovering) => {
           this.hoveringHUD = hovering;
         },
+        carrierName: (carrierId) => this.session.carrierName(carrierId),
       },
       { tables: catalogTables, locale: currentLocale(), coarse: coarsePointer },
     );
 
     this.servicePanel = new ServicePanel({
-      onAskTask: (teachingId) => this.session.askTask(teachingId),
-      onCompleteTask: () => this.session.completeTask(),
-      onAbandonTask: () => this.session.abandonTask(),
+      onAcceptQuest: (questId) => this.session.acceptQuest(questId),
+      onTurnInQuest: (questId) => this.session.turnInQuest(questId),
+      onAbandonQuest: (questId) => this.session.abandonQuest(questId),
       onStudy: (teachingId) => this.session.study(teachingId),
       onBuy: (itemId) => this.session.buy(itemId),
       onSell: (itemId) => this.session.sell(itemId),
@@ -331,6 +334,7 @@ export class AppShell {
       this.render();
     };
     this.session.onStateChanged = () => this.render();
+    this.session.onQuestNews = (news) => this.hud.showQuestNews(news);
     // On success the controller has already switched the presented overlay back to login, which
     // `submitRegistration` pre-filled with the credentials just created. The failures leave the
     // registration overlay up carrying the reason.
@@ -431,9 +435,9 @@ export class AppShell {
       this.aimAt(event);
       // The chat's faded lines let the pointer through to the world, so resting on them is seen here.
       this.hud.revealChatAt(event.clientX, event.clientY);
-      // A pointer over a body, which a click selects or acts on, or over a drop, which a click picks up.
+      // A pointer over a body, which a click selects or acts on, a drop, which a click picks up, or a fixture, which a click uses.
       const kind = this.pressTargetUnder(event)?.kind;
-      this.canvas.style.cursor = kind === 'entity' || kind === 'loot' ? 'pointer' : '';
+      this.canvas.style.cursor = kind === undefined || kind === 'ground' ? '' : 'pointer';
     });
 
     // A wheel event over the HUD scrolls it; only the bare play field zooms.
@@ -496,7 +500,8 @@ export class AppShell {
 
   /**
    * A right press of a mouse: on a body it locks the gaze on it and switches slot 1 on there, or lets
-   * go of both; on the ground, the player's own body's included, it lets go of the lock alone. On a drop it does nothing.
+   * go of both; on the ground, the player's own body's included, it lets go of the lock alone. On a
+   * drop or a fixture it does nothing.
    */
   private pressGaze(event: PointerEvent): void {
     const target = this.pressTargetUnder(event);
@@ -530,6 +535,9 @@ export class AppShell {
         return;
       case 'entity':
         this.session.pressEntity(target.entityId);
+        return;
+      case 'fixture':
+        this.session.pressFixture(target.carrierId);
         return;
       case 'ground':
         this.session.pressGround(target.point, performance.now());
@@ -605,6 +613,11 @@ export class AppShell {
   /** Where on the page a drop's name or model is drawn, in CSS pixels, for an agent that has to press it. */
   pagePointOfLoot(lootId: string, part: 'label' | 'model'): { x: number; y: number } | undefined {
     return this.pagePointAt(this.scene?._viewportPointOfLoot(lootId, part));
+  }
+
+  /** Where on the page a fixture's model is drawn, in CSS pixels, for an agent that has to press it. */
+  pagePointOfFixture(carrierId: string): { x: number; y: number } | undefined {
+    return this.pagePointAt(this.scene?._viewportPointOfFixture(carrierId));
   }
 
   /** Where on the page a point of the space is drawn on the ground, in CSS pixels: the inverse of `groundUnder`, for an agent that has to tap there. */
@@ -910,7 +923,7 @@ export class AppShell {
     const target = this.session.target === undefined ? undefined : this.controller.entities.get(this.session.target);
     this.hud.renderPools(this.session.energy, this.session.winded);
     this.hud.renderRun(this.session.running, this.session.runHeldOff);
-    this.hud.renderSlotOne(this.session.engaged, this.session.engageAction(), target?.condition === 'fallen');
+    this.hud.renderSlotOne(this.session.engaged, this.session.engageAction(), target?.condition === 'fallen', this.session.attackRefusal());
     this.hud.renderAbilities(this.session.abilitySlots());
     this.hud.renderLucidity(this.session.lucidity);
     this.hud.renderSelf({
@@ -923,7 +936,15 @@ export class AppShell {
       channel: this.session.channelOf(selfId),
       raise: this.session.raiseOf(selfId),
     });
-    this.servicePanel.render(this.session.servicePanel, this.session.lucidity, this.session.inventory, this.session.tradeLocked());
+    this.servicePanel.render(
+      this.session.servicePanel,
+      this.session.lucidity,
+      this.session.quests,
+      this.session.bounties,
+      this.session.inventory,
+      this.session.tradeLocked(),
+    );
+    this.hud.setCarrierPanelOpen(this.servicePanel.open);
     // The fallen notice takes the target frame's place while the player lies fallen.
     const framing = inWorld && !this.session.fallen;
     this.hud.renderTarget(framing ? this.framed(this.session.target) : undefined, this.session.gazeLocked);
@@ -931,6 +952,7 @@ export class AppShell {
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
     this.hud.renderCharacter(this.session.inventory, this.session.lucidity);
+    this.hud.renderQuests(this.session.quests, this.session.lucidity.study);
     this.hud.tick(performance.now(), this.clock());
   }
 }

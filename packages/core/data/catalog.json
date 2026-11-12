@@ -1,4 +1,8 @@
 {
+  "A newcomer's errand": {
+    "en": "A newcomer's errand",
+    "de": "Ein Botengang für Neulinge"
+  },
   "Amulet": {
     "en": "Amulet",
     "de": "Amulett"
@@ -14,6 +18,10 @@
   "Bone dagger": {
     "en": "Bone dagger",
     "de": "Knochendolch"
+  },
+  "Bounty: %@": {
+    "en": "Bounty: %@",
+    "de": "Kopfgeld: %@"
   },
   "Brace": {
     "en": "Brace",
@@ -34,6 +42,14 @@
   "Cleave": {
     "en": "Cleave",
     "de": "Rundhieb"
+  },
+  "Cracked skull": {
+    "en": "Cracked skull",
+    "de": "Gesprungener Schädel"
+  },
+  "Cracked skulls": {
+    "en": "Cracked skulls",
+    "de": "Gesprungene Schädel"
   },
   "Cudgel": {
     "en": "Cudgel",
@@ -59,17 +75,69 @@
     "en": "Dream-bolt",
     "de": "Traumgeschoss"
   },
+  "Drive off %@ Ghosts there.": {
+    "en": "Drive off %@ Ghosts there.",
+    "de": "Vertreibe dort %@ Gespenster."
+  },
+  "Drive off %@ Skeleton Warriors there.": {
+    "en": "Drive off %@ Skeleton Warriors there.",
+    "de": "Vertreibe dort %@ Skelettkrieger."
+  },
+  "Drive off %@ Skeletons there.": {
+    "en": "Drive off %@ Skeletons there.",
+    "de": "Vertreibe dort %@ Skelette."
+  },
+  "Drive off 3 nightmares.": {
+    "en": "Drive off 3 nightmares.",
+    "de": "Vertreibe 3 Albträume."
+  },
+  "Drive off 4 Skeletons in the Graveyard.": {
+    "en": "Drive off 4 Skeletons in the Graveyard.",
+    "de": "Vertreibe 4 Skelette auf dem Friedhof."
+  },
+  "Drive off a nightmare.": {
+    "en": "Drive off a nightmare.",
+    "de": "Vertreibe einen Albtraum."
+  },
+  "Drive off the Necromancer in the burial chamber.": {
+    "en": "Drive off the Necromancer in the burial chamber.",
+    "de": "Vertreibe den Nekromanten in der Grabkammer."
+  },
   "Fighter": {
     "en": "Fighter",
     "de": "Kämpfer"
+  },
+  "Find the hidden places Tacita speaks of.": {
+    "en": "Find the hidden places Tacita speaks of.",
+    "de": "Finde die verborgenen Orte, von denen Tacita spricht."
   },
   "Follow-through": {
     "en": "Follow-through",
     "de": "Nachsetzen"
   },
+  "Gather %@ cracked skulls from Skeleton Warriors.": {
+    "en": "Gather %@ cracked skulls from Skeleton Warriors.",
+    "de": "Sammle %@ gesprungene Schädel von Skelettkriegern."
+  },
+  "Gather %@ ghostly wisps from Ghosts.": {
+    "en": "Gather %@ ghostly wisps from Ghosts.",
+    "de": "Sammle %@ Geisterhauche von Gespenstern."
+  },
+  "Gather %@ old bones from Skeletons.": {
+    "en": "Gather %@ old bones from Skeletons.",
+    "de": "Sammle %@ alte Knochen von Skeletten."
+  },
+  "Gather 3 cracked skulls from Skeleton Warriors.": {
+    "en": "Gather 3 cracked skulls from Skeleton Warriors.",
+    "de": "Sammle 3 gesprungene Schädel von Skelettkriegern."
+  },
   "Ghost": {
     "en": "Ghost",
     "de": "Gespenst"
+  },
+  "Ghostly wisp": {
+    "en": "Ghostly wisp",
+    "de": "Geisterhauch"
   },
   "Guard": {
     "en": "Guard",
@@ -78,6 +146,10 @@
   "Healer": {
     "en": "Healer",
     "de": "Heiler"
+  },
+  "Into the crypt": {
+    "en": "Into the crypt",
+    "de": "Hinab in die Gruft"
   },
   "Iron buckler": {
     "en": "Iron buckler",
@@ -115,6 +187,14 @@
     "en": "Mace",
     "de": "Streitkolben"
   },
+  "Mend 60 health on other dreamers.": {
+    "en": "Mend 60 health on other dreamers.",
+    "de": "Heile 60 Gestalt bei anderen Träumern."
+  },
+  "Mending others": {
+    "en": "Mending others",
+    "de": "Andere heilen"
+  },
   "Moonstone": {
     "en": "Moonstone",
     "de": "Mondstein"
@@ -127,9 +207,13 @@
     "en": "Necromancer",
     "de": "Nekromant"
   },
-  "North Wood": {
-    "en": "North Wood",
-    "de": "Nordwald"
+  "Necromancer's sigil": {
+    "en": "Necromancer's sigil",
+    "de": "Siegel des Nekromanten"
+  },
+  "Old bone": {
+    "en": "Old bone",
+    "de": "Alter Knochen"
   },
   "Padded tunic": {
     "en": "Padded tunic",
@@ -143,9 +227,17 @@
     "en": "Rally",
     "de": "Sammelruf"
   },
+  "Read the bounty board on the square.": {
+    "en": "Read the bounty board on the square.",
+    "de": "Lies die Kopfgeldtafel auf dem Platz."
+  },
   "Renewal": {
     "en": "Renewal",
     "de": "Erneuerung"
+  },
+  "Restless graves": {
+    "en": "Restless graves",
+    "de": "Unruhige Gräber"
   },
   "Round shield": {
     "en": "Round shield",
@@ -215,6 +307,22 @@
     "en": "Strike",
     "de": "Schlag"
   },
+  "The Fighters' trial": {
+    "en": "The Fighters' trial",
+    "de": "Die Prüfung der Kämpfer"
+  },
+  "The Healers' trial": {
+    "en": "The Healers' trial",
+    "de": "Die Prüfung der Heiler"
+  },
+  "The Mystics' trial": {
+    "en": "The Mystics' trial",
+    "de": "Die Prüfung der Mystiker"
+  },
+  "Three without a fall": {
+    "en": "Three without a fall",
+    "de": "Drei ohne Sturz"
+  },
   "Touch": {
     "en": "Touch",
     "de": "Berührung"
@@ -234,6 +342,14 @@
   "Vigils": {
     "en": "Vigils",
     "de": "Vigils"
+  },
+  "Visit Mercus in his shop.": {
+    "en": "Visit Mercus in his shop.",
+    "de": "Besuche Mercus in seinem Laden."
+  },
+  "Walk to the North Wood and come back.": {
+    "en": "Walk to the North Wood and come back.",
+    "de": "Geh bis in den Nordwald und kehre zurück."
   },
   "Wand": {
     "en": "Wand",

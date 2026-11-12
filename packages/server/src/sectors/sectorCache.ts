@@ -3,11 +3,14 @@ import type { Stats } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import type { Door } from '@somnio/protocol';
 import {
+  QUEST_IDS,
   SOMNIO_CONSTANTS,
-  TRIALS,
   WorldError,
   buildWorld,
+  fixtureCarrierId,
+  npcEntityId,
   parseModelRegistry,
+  quest,
   readSectorFile,
   rectContains,
   resolveDoor,
@@ -89,29 +92,35 @@ const WAKE_SECTOR = 'EdariaInn';
 
 /**
  * What the rules name that the loaded sectors lack. The world loads all the same: without the
- * inn's spawn a dreamer who gives up wakes at the starter spawn, and a trial that names a sector
- * not loaded, or a place outside the sector it names, cannot be passed.
+ * inn's spawn a dreamer who gives up wakes at the starter spawn, and a quest that names a carrier
+ * or a sector not loaded, or a place outside the sector it names, cannot be taken, passed, or
+ * turned in.
  */
 export function ruleSectorIssues(sectors: ReadonlyMap<string, Sector>): string[] {
   const issues: string[] = [];
   if (sectors.get(WAKE_SECTOR)?.spawn === undefined) issues.push(`sector ${WAKE_SECTOR} has no spawn to wake at`);
-  for (const [role, trial] of Object.entries(TRIALS)) {
-    switch (trial.kind) {
-      case 'reach':
-        if (!sectors.has(trial.sector)) issues.push(`the ${role} trial names sector ${trial.sector}, which is not loaded`);
-        break;
-      case 'reachAll':
-        for (const place of trial.places) {
-          const sector = sectors.get(place.sector);
-          if (sector === undefined) issues.push(`the ${role} trial names sector ${place.sector}, which is not loaded`);
-          else if (!rectContains({ x: 0, z: 0, ...sector.size }, place)) {
-            issues.push(`the ${role} trial names a place at (${place.x}, ${place.z}) outside sector ${place.sector}`);
-          }
-        }
-        break;
-      case 'driveOff':
-      case 'mend':
-        break;
+  const carriers = new Set(
+    [...sectors.values()].flatMap((sector) => [
+      ...sector.npcs.map((npc) => npcEntityId(sector.name, npc.id)),
+      ...sector.fixtures.map((fixture) => fixtureCarrierId(sector.name, fixture.id)),
+    ]),
+  );
+  for (const questId of QUEST_IDS) {
+    const { giver, turnIn, objectives } = quest(questId);
+    const named = new Set([giver, turnIn, ...objectives.flatMap((objective) => (objective.kind === 'visit' ? [objective.carrier] : []))]);
+    for (const carrier of named) {
+      if (!carriers.has(carrier)) issues.push(`the ${questId} quest names carrier ${carrier}, which is not loaded`);
+    }
+    for (const objective of objectives) {
+      if (objective.kind === 'driveOff' && objective.sector !== undefined && !sectors.has(objective.sector)) {
+        issues.push(`the ${questId} quest names sector ${objective.sector}, which is not loaded`);
+      }
+      if (objective.kind !== 'reach') continue;
+      const sector = sectors.get(objective.sector);
+      if (sector === undefined) issues.push(`the ${questId} quest names sector ${objective.sector}, which is not loaded`);
+      else if (objective.place !== undefined && !rectContains({ x: 0, z: 0, ...sector.size }, objective.place)) {
+        issues.push(`the ${questId} quest names a place at (${objective.place.x}, ${objective.place.z}) outside sector ${objective.sector}`);
+      }
     }
   }
   return issues;

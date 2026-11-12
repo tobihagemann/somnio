@@ -32,10 +32,6 @@ export interface CharactersTable {
   name_skeleton: string;
   role: string | null;
   study: string | null;
-  /** Set while the character holds a task, with `task_teaching` null for the role's trial. */
-  task_role: string | null;
-  task_teaching: string | null;
-  task_progress: number;
   coins: number;
 }
 
@@ -57,6 +53,18 @@ export interface ItemsTable {
   affixes: ColumnType<unknown, string, string>;
   equipped_slot: string | null;
   bag_place: number | null;
+}
+
+/** A quest a character holds (`active`) or turned in (`done`), at `place` in the list of its state. */
+export interface CharacterQuestsTable {
+  character_id: string;
+  quest_id: string;
+  state: string;
+  place: number;
+  /** What was done toward each objective, set while `active`: written as JSON text, read back parsed. */
+  progress: ColumnType<unknown, string | null, string | null>;
+  /** A bounty's generated definition, set for a bounty alone: written as JSON text, read back parsed. */
+  definition: ColumnType<unknown, string | null, string | null>;
 }
 
 export interface WorldClockTable {
@@ -82,6 +90,7 @@ export interface Database {
   characters: CharactersTable;
   character_ranks: CharacterRanksTable;
   items: ItemsTable;
+  character_quests: CharacterQuestsTable;
   world_clock: WorldClockTable;
   npc_dialog_states: NPCDialogStatesTable;
   sessions: SessionsTable;

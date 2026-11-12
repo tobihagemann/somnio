@@ -9,6 +9,8 @@ import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
 import { STRIKE_AT } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME, ELITE_AURA_POOL_SIZE, ELITE_TRAIT_COLORS } from '@/scene/eliteAuras';
+import { QUEST_MARKER_NAME, QUEST_MARKER_POOL_SIZE } from '@/scene/questMarkers';
+import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import { LOOT_BEAM_NAME, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { GrassSpring } from '@/scene/grassSpring';
@@ -1688,6 +1690,53 @@ describe('what a pointer is over, and the target', () => {
     }
   });
 
+  describe('a fixture', () => {
+    const BOARD = 'fixture:EdariaSquare/fixture-1';
+    /** A notice board's face: a board 1.4 m wide raised 1 m on its posts, which stand on no more ground than the face is thick. */
+    const boardFace = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(1.4, 1, 0.1).translate(0, 1.5, 0));
+    const boardSector = sector({
+      placements: [placement('notice-board-1', 'box', { x: 4, z: 6 })],
+      fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+    });
+
+    /** The player at (10, 10), and the board standing at (4, 6). */
+    function boardScene(): WorldScene {
+      const scene = makeScene({ ...emptyAssets(), object: boardFace });
+      const entered = world();
+      scene.enterSpace(entered);
+      entered.addSector(boardSector);
+      scene.addSector(boardSector);
+      scene.placeEntity(player());
+      return scene;
+    }
+
+    it('is pressed by its drawn face, whose ray meets the ground well beyond where it stands, and not beside it', () => {
+      const scene = boardScene();
+      const face = scene._viewportPointOfFixture(BOARD)!;
+      expect(scene.pressTargetAt(face.x, face.y)).toEqual({ kind: 'fixture', carrierId: BOARD });
+      const beyond = scene.groundPointAt(face.x, face.y)!;
+      expect(Math.hypot(beyond.x - 4, beyond.z - 6)).toBeGreaterThan(1);
+      const beside = viewportOf(scene, 6, 1.5, 6);
+      expect(scene.pressTargetAt(beside.x, beside.y)).toMatchObject({ kind: 'ground' });
+      expect(scene._viewportPointOfFixture('fixture:EdariaSquare/nothing')).toBeUndefined();
+    });
+
+    it('is pressed after a body drawn over it', () => {
+      const scene = boardScene();
+      const face = scene._viewportPointOfFixture(BOARD)!;
+      const under = scene.groundPointAt(face.x, face.y)!;
+      scene.placeEntity(player({ id: 'bren', kind: 'peer', position: { x: under.x, z: under.z } }));
+      expect(scene.pressTargetAt(face.x, face.y)).toEqual({ kind: 'entity', entityId: 'bren' });
+    });
+
+    it('is no longer pressed once its sector is no longer drawn', () => {
+      const scene = boardScene();
+      const face = scene._viewportPointOfFixture(BOARD)!;
+      scene.removeSector('EdariaSquare');
+      expect(scene.fixtureAt(face.x, face.y)).toBeUndefined();
+    });
+  });
+
   describe('a drop', () => {
     const drop = (lootId: string, x: number, z: number, rarity: Rarity = 'rare'): LootMessage => ({
       lootId,
@@ -2668,6 +2717,115 @@ describe('elite auras', () => {
       return auras(scene)[0]!.material.opacity;
     });
     expect(new Set(opacities).size > 1).toBe(breathes);
+  });
+});
+
+describe('quest marks', () => {
+  function marks(scene: WorldScene): THREE.Mesh[] {
+    const found: THREE.Mesh[] = [];
+    scene.scene.traverse((object) => {
+      if (object.name === QUEST_MARKER_NAME) found.push(object as THREE.Mesh);
+    });
+    return found;
+  }
+  const npc = (id: string, x = 4): ClientEntity => player({ id, kind: 'npc', name: 'Pugnax', position: { x, z: 6 } });
+
+  it('hangs over the head of a carrier the session marks, outside its model holder, whether it comes into view before or after', () => {
+    const scene = makeScene();
+    scene.placeEntity(npc('npc:Hall/pugnax'));
+    expect(marks(scene)).toEqual([]);
+    scene.showQuestMarkers(new Map([['npc:Hall/pugnax', 'offer']]));
+    const [mark] = marks(scene);
+    expect(scene.questMarkerShown('npc:Hall/pugnax')).toBe('offer');
+    scene.tick(0.1);
+    const at = mark!.getWorldPosition(new THREE.Vector3());
+    expect([at.x, at.z]).toEqual([4, 6]);
+    expect(at.y).toBeGreaterThan(0);
+    // No portrait shows it, even of the carrier it marks.
+    scene.setPortraitSubject('target', 'npc:Hall/pugnax');
+    for (const layer of Object.values(PORTRAIT_LAYERS)) expect(mark!.layers.isEnabled(layer)).toBe(false);
+
+    scene.showQuestMarkers(new Map([['npc:Hall/sana', 'turnIn']]));
+    expect(marks(scene)).toEqual([]);
+    scene.placeEntity(npc('npc:Hall/sana', 8));
+    expect([scene.questMarkerShown('npc:Hall/sana'), marks(scene)]).toEqual(['turnIn', [mark]]);
+  });
+
+  it('draws a quest not finished yet as the ? in grey, in a material of its own beside the gold', () => {
+    const scene = makeScene();
+    scene.placeEntity(npc('npc:Hall/pugnax'));
+    scene.placeEntity(npc('npc:Hall/sana', 8));
+    const filled: [string, unknown][] = [];
+    const context = {
+      fillStyle: '',
+      scale() {},
+      strokeText() {},
+      measureText: () => ({ width: 14 }),
+      fillText(glyph: string) {
+        filled.push([glyph, this.fillStyle]);
+      },
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    try {
+      scene.showQuestMarkers(
+        new Map([
+          ['npc:Hall/pugnax', 'inProgress'],
+          ['npc:Hall/sana', 'turnIn'],
+        ]),
+      );
+      expect([scene.questMarkerShown('npc:Hall/pugnax'), scene.questMarkerShown('npc:Hall/sana')]).toEqual(['inProgress', 'turnIn']);
+      expect(filled).toEqual([
+        ['!', '#ffcf40'],
+        ['?', '#ffcf40'],
+        ['?', '#b8b8b8'],
+      ]);
+      const [grey, gold] = marks(scene).map((mesh) => mesh.material as THREE.MeshBasicMaterial);
+      expect(grey).not.toBe(gold);
+      expect((grey!.map!.image as HTMLCanvasElement).width).toBe((gold!.map!.image as HTMLCanvasElement).width);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("stands over the top of a fixture's model the session marks, unturned with it, and goes with its sector", () => {
+    const scene = makeScene({ ...emptyAssets(), object: () => new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.2, 0.1).translate(0, 1.1, 0)) });
+    const boardSector = sector({
+      placements: [placement('notice-board-1', 'box', { x: 4, z: 6, yaw: 35 })],
+      fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
+    });
+    scene.enterSpace(world());
+    scene.showQuestMarkers(new Map([['fixture:EdariaSquare/fixture-1', 'offer']]));
+    scene.addSector(boardSector);
+    expect(scene.questMarkerShown('fixture:EdariaSquare/fixture-1')).toBe('offer');
+    scene.tick(0.1);
+    const [mark] = marks(scene);
+    const at = mark!.getWorldPosition(new THREE.Vector3());
+    expect([at.x, at.z]).toEqual([4, 6]);
+    expect(at.y).toBeGreaterThan(2.2);
+    expect(mark!.getWorldQuaternion(new THREE.Quaternion()).angleTo(npcMarkOrientation())).toBeCloseTo(0, 6);
+
+    scene.removeSector('EdariaSquare');
+    expect(marks(scene)).toEqual([]);
+    expect(scene.questMarkerShown('fixture:EdariaSquare/fixture-1')).toBeUndefined();
+  });
+
+  /** How a mark over a carrier's head is turned: toward the camera, whatever the carrier faces. */
+  function npcMarkOrientation(): THREE.Quaternion {
+    const scene = makeScene();
+    scene.placeEntity(npc('npc:Hall/pugnax'));
+    scene.showQuestMarkers(new Map([['npc:Hall/pugnax', 'offer']]));
+    return marks(scene)[0]!.getWorldQuaternion(new THREE.Quaternion());
+  }
+
+  it('comes from a pool of fixed size, and goes when its carrier leaves view', () => {
+    const scene = makeScene();
+    const ids = Array.from({ length: QUEST_MARKER_POOL_SIZE + 1 }, (_, index) => `npc:Hall/n${index}`);
+    scene.showQuestMarkers(new Map(ids.map((id) => [id, 'offer'])));
+    ids.forEach((id, index) => scene.placeEntity(npc(id, index)));
+    expect(marks(scene)).toHaveLength(QUEST_MARKER_POOL_SIZE);
+    expect(scene.questMarkerShown(ids.at(-1)!)).toBeUndefined();
+    scene.removeEntity(ids[0]!);
+    expect(marks(scene)).toHaveLength(QUEST_MARKER_POOL_SIZE - 1);
   });
 });
 

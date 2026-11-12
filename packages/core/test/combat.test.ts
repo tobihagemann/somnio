@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONDITIONS } from '@somnio/protocol';
 import {
   COMBAT,
+  attackRefusal,
   balancePace,
   balancePerSecond,
   conditionMidpoint,
@@ -31,7 +32,6 @@ import {
 import { heading } from '../src/heading.ts';
 import { NO_STATS } from '../src/items.ts';
 import type { Equipment } from '../src/items.ts';
-import { TRIALS } from '../src/lucidity.ts';
 import type { Lucidity, TeachingId } from '../src/lucidity.ts';
 import { monsterKind } from '../src/monsterKinds.ts';
 import { holding, plain } from './support/items.ts';
@@ -147,18 +147,18 @@ describe('swingAllowed', () => {
   const cudgel = plain('cudgel');
 
   it('is the swing of what is in the main hand while the balance covers its cost, to the last point', () => {
-    expect(swingAllowed(undefined, cudgel, NO_STATS, 18)).toEqual(swingFor(cudgel, NO_STATS));
-    expect(swingAllowed(undefined, cudgel, NO_STATS, 17)).toBeUndefined();
-    expect(swingAllowed(undefined, undefined, NO_STATS, 8)).toEqual(swingFor(undefined, NO_STATS));
+    expect(swingAllowed([], cudgel, NO_STATS, 18)).toEqual(swingFor(cudgel, NO_STATS));
+    expect(swingAllowed([], cudgel, NO_STATS, 17)).toBeUndefined();
+    expect(swingAllowed([], undefined, NO_STATS, 8)).toEqual(swingFor(undefined, NO_STATS));
   });
 
   it('is none with something in the main hand that does not swing', () => {
-    expect(swingAllowed(undefined, plain('moonstone'), NO_STATS, 100)).toBeUndefined();
+    expect(swingAllowed([], plain('moonstone'), NO_STATS, 100)).toBeUndefined();
   });
 
-  it('is none while a task forbids striking, and is not held back by one that does not', () => {
-    expect(swingAllowed(TRIALS.healer, cudgel, NO_STATS, 100)).toBeUndefined();
-    expect(swingAllowed(TRIALS.fighter, cudgel, NO_STATS, 100)).toEqual(swingFor(cudgel, NO_STATS));
+  it('is none while a quest held forbids striking, and is not held back by one that does not', () => {
+    expect(swingAllowed([{ questId: 'fighter-trial' }, { questId: 'healer-trial' }], cudgel, NO_STATS, 100)).toBeUndefined();
+    expect(swingAllowed([{ questId: 'fighter-trial' }], cudgel, NO_STATS, 100)).toEqual(swingFor(cudgel, NO_STATS));
   });
 });
 
@@ -194,35 +194,49 @@ describe('engageAction', () => {
   const moonstone = plain('moonstone');
 
   it('attacks a nightmare with the main hand empty or holding a weapon, whatever the off hand holds and whoever engages it', () => {
-    expect(engageAction('nightmare', undefined, {})).toBe('attack');
-    expect(engageAction('nightmare', 'healer', holding(cudgel, undefined))).toBe('attack');
-    expect(engageAction('nightmare', 'healer', holding(undefined, moonstone))).toBe('attack');
-    expect(engageAction('nightmare', 'mystic', holding(undefined, plain('wand')))).toBe('attack');
-    expect(engageAction('nightmare', 'fighter', holding(cudgel, plain('shield')))).toBe('attack');
+    expect(engageAction('nightmare', undefined, {}, [])).toBe('attack');
+    expect(engageAction('nightmare', 'healer', holding(cudgel, undefined), [])).toBe('attack');
+    expect(engageAction('nightmare', 'healer', holding(undefined, moonstone), [])).toBe('attack');
+    expect(engageAction('nightmare', 'mystic', holding(undefined, plain('wand')), [])).toBe('attack');
+    expect(engageAction('nightmare', 'fighter', holding(cudgel, plain('shield')), [])).toBe('attack');
   });
 
   it('does not attack with something in the main hand that does not swing', () => {
-    expect(engageAction('nightmare', 'healer', holding(moonstone, undefined))).toBeUndefined();
+    expect(engageAction('nightmare', 'healer', holding(moonstone, undefined), [])).toBeUndefined();
   });
 
   it('mends a dreamer only for a Healer with the Moonstone in the off hand', () => {
-    expect(engageAction('dreamer', 'healer', holding(undefined, moonstone))).toBe('mend');
-    expect(engageAction('dreamer', 'healer', holding(cudgel, moonstone))).toBe('mend');
-    expect(engageAction('dreamer', 'healer', {})).toBeUndefined();
-    expect(engageAction('dreamer', 'healer', holding(cudgel, undefined))).toBeUndefined();
-    expect(engageAction('dreamer', 'healer', holding(moonstone, undefined))).toBeUndefined();
-    expect(engageAction('dreamer', 'fighter', holding(undefined, moonstone))).toBeUndefined();
-    expect(engageAction('dreamer', 'mystic', holding(undefined, moonstone))).toBeUndefined();
-    expect(engageAction('dreamer', undefined, holding(undefined, moonstone))).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', holding(undefined, moonstone), [])).toBe('mend');
+    expect(engageAction('dreamer', 'healer', holding(cudgel, moonstone), [])).toBe('mend');
+    expect(engageAction('dreamer', 'healer', {}, [])).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', holding(cudgel, undefined), [])).toBeUndefined();
+    expect(engageAction('dreamer', 'healer', holding(moonstone, undefined), [])).toBeUndefined();
+    expect(engageAction('dreamer', 'fighter', holding(undefined, moonstone), [])).toBeUndefined();
+    expect(engageAction('dreamer', 'mystic', holding(undefined, moonstone), [])).toBeUndefined();
+    expect(engageAction('dreamer', undefined, holding(undefined, moonstone), [])).toBeUndefined();
   });
 
   it('attacks or mends, by the target, for a Healer holding a weapon and the Moonstone', () => {
     const both = holding(cudgel, moonstone);
-    expect([engageAction('nightmare', 'healer', both), engageAction('dreamer', 'healer', both)]).toEqual(['attack', 'mend']);
+    expect([engageAction('nightmare', 'healer', both, []), engageAction('dreamer', 'healer', both, [])]).toEqual(['attack', 'mend']);
+  });
+
+  it('does not attack while a quest held forbids striking, and still mends', () => {
+    const trial = [{ questId: 'healer-trial' as const }];
+    expect(engageAction('nightmare', undefined, {}, trial)).toBeUndefined();
+    expect(engageAction('nightmare', undefined, {}, [{ questId: 'fighter-trial' as const }])).toBe('attack');
+    expect(engageAction('dreamer', 'healer', holding(undefined, moonstone), trial)).toBe('mend');
+  });
+
+  it('names why it cannot attack, the hand before a quest that forbids striking', () => {
+    const trial = [{ questId: 'healer-trial' as const }];
+    expect(attackRefusal({}, [])).toBeUndefined();
+    expect(attackRefusal({}, trial)).toBe('striking');
+    expect(attackRefusal(holding(moonstone, undefined), trial)).toBe('hand');
   });
 
   it('does nothing without a target it can act on', () => {
-    expect(engageAction(undefined, 'healer', holding(cudgel, moonstone))).toBeUndefined();
+    expect(engageAction(undefined, 'healer', holding(cudgel, moonstone), [])).toBeUndefined();
   });
 });
 

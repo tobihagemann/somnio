@@ -11,6 +11,7 @@ import {
   closestOnSegment,
   distance,
   distanceToRect,
+  fixtureCarrierId,
   groundHeightAt,
   headingRadians,
   hourOfDay,
@@ -25,6 +26,7 @@ import {
   sectorAt,
   sectorOrigin,
   sectorRect,
+  trophyLabelKey,
   worldSecondsAt,
   worldToModel,
 } from '@somnio/core';
@@ -36,6 +38,7 @@ import type {
   LightKind,
   ModelRegistry,
   Point,
+  QuestMarker,
   Rect,
   ResolvedDoor,
   Size,
@@ -72,6 +75,7 @@ import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
 import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import { EliteAuras } from './eliteAuras';
+import { QuestMarkers } from './questMarkers';
 import { BURST_ARC, LootMarkers, THROW_ARC } from './lootMarkers';
 import type { LootThrow } from './lootMarkers';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
@@ -187,7 +191,8 @@ export interface PlacedMarkers {
 }
 
 /** What a press on the play field lands on. */
-export type PressTarget = { kind: 'loot'; lootId: string } | { kind: 'entity'; entityId: string } | { kind: 'ground'; point: Point };
+export type PressTarget =
+  { kind: 'loot'; lootId: string } | { kind: 'entity'; entityId: string } | { kind: 'fixture'; carrierId: string } | { kind: 'ground'; point: Point };
 
 /** What the layout is asked about one bubble, and what its tail points at once it is placed. */
 interface BubbleEntry {
@@ -232,6 +237,14 @@ interface DrawnSector {
   /** Stands at the sector's origin, so its records keep their sector-relative positions. */
   group: THREE.Object3D;
   placements: PlacedModel[];
+  fixtures: DrawnFixture[];
+}
+
+/** A fixture as drawn: the node of the placement that carries it, and an unturned point at its foot that a quest mark hangs over. */
+interface DrawnFixture {
+  carrierId: string;
+  node: THREE.Object3D;
+  anchor: THREE.Object3D;
 }
 
 /**
@@ -251,6 +264,9 @@ interface DrawnGround {
 }
 
 const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1 });
+
+/** The heights up a fixture's bounds, as shares from its foot to its top, tried in turn for a point its model is drawn at. */
+const FIXTURE_POINT_SHARES = [0.5, 0.65, 0.8, 0.35, 0.2];
 
 /** Shared zero vector for basis construction; never mutated. */
 const ORIGIN = new THREE.Vector3();
@@ -441,6 +457,11 @@ export class WorldScene implements WorldRenderSurface {
   /** The drops lying on the ground for the player. They hang on the scene and go with each new space. */
   private readonly loot: LootMarkers;
   private readonly auras: EliteAuras;
+  private readonly questMarkers: QuestMarkers;
+  /** The mark each carrier of a quest shows the player, an NPC or a fixture by its carrier id, as the session last said. */
+  private questMarkerOf: ReadonlyMap<string, QuestMarker> = new Map();
+  /** Scratch for measuring a fixture's model as drawn. */
+  private readonly fixtureBounds = new THREE.Box3();
   /** Where the screen shake puts the camera off where the rig placed it. */
   private readonly shake = new THREE.Vector3();
 
@@ -473,6 +494,7 @@ export class WorldScene implements WorldRenderSurface {
       reducedMotion,
     );
     this.auras = new EliteAuras(reducedMotion);
+    this.questMarkers = new QuestMarkers(OVERLAY_ORIENTATION);
     this.effects = new CombatEffects(
       {
         body: (entityId) => this.entityStates.get(entityId),
@@ -548,12 +570,13 @@ export class WorldScene implements WorldRenderSurface {
     this.overlayScale = this.viewportHeight === undefined ? 1 : overlayMagnification(scale, this.viewportHeight);
     for (const state of this.entityStates.values()) state.namePlaque?.scale.setScalar(this.overlayScale);
     this.loot.setOverlayScale(this.overlayScale);
+    this.questMarkers.setOverlayScale(this.overlayScale);
   }
 
   /**
    * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
-   * it meanwhile compiles every combat effect's program, a drop's, and an elite's aura's, which a
-   * first use would compile mid-fight.
+   * it meanwhile compiles every combat effect's program, a drop's, an elite's aura's, and a quest
+   * mark's, which a first use would compile mid-fight.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     await Promise.all([
@@ -561,6 +584,7 @@ export class WorldScene implements WorldRenderSurface {
       renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.loot.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.auras.compile(renderer, this.camera, this.scene),
+      renderer === undefined ? undefined : this.questMarkers.compile(renderer, this.camera, this.scene),
     ]);
     this.refreshResolvedModels();
   }
@@ -605,6 +629,7 @@ export class WorldScene implements WorldRenderSurface {
     this.effects.clear();
     this.loot.clear();
     this.auras.clear();
+    this.questMarkers.clear();
     this.selection = undefined;
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
@@ -645,7 +670,7 @@ export class WorldScene implements WorldRenderSurface {
    * rasterized off the frame, and the ground drawn so far stays until the new one arrives.
    */
   addSector(sector: SectorView, outdoorDoorIds: readonly string[] = []): void {
-    disposeSubtree(this.sectors.get(sector.name)?.group);
+    this.disposeSector(sector.name);
     const origin = sectorOrigin(sector);
     const group = new THREE.Object3D();
     group.position.set(origin.x, 0, origin.z);
@@ -653,8 +678,17 @@ export class WorldScene implements WorldRenderSurface {
     const emitters = placements.flatMap((placed) => placed.emitter ?? []);
     for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
     group.add(...placements.map((placed) => placed.node));
+    const fixtures = sector.fixtures.flatMap((fixture): DrawnFixture[] => {
+      const node = placements.find((placed) => placed.placement.id === fixture.placement)?.node;
+      if (node === undefined) return [];
+      const anchor = new THREE.Object3D();
+      anchor.position.set(node.position.x, 0, node.position.z);
+      group.add(anchor);
+      return [{ carrierId: fixtureCarrierId(sector.name, fixture.id), node, anchor }];
+    });
     this.spaceRoot.add(group);
-    this.sectors.set(sector.name, { view: sector, outdoorDoorIds, group, placements });
+    this.sectors.set(sector.name, { view: sector, outdoorDoorIds, group, placements, fixtures });
+    for (const fixture of fixtures) this.questMarkers.show(fixture.carrierId, fixture.anchor, this.questMarkerOf.get(fixture.carrierId));
     if (!this.grounds.has(sector.name)) {
       const mesh = groundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
       this.spaceRoot.add(mesh);
@@ -674,7 +708,7 @@ export class WorldScene implements WorldRenderSurface {
 
   removeSector(name: string): void {
     const touching = this.touchingSectors(name);
-    disposeSubtree(this.sectors.get(name)?.group);
+    this.disposeSector(name);
     this.sectors.delete(name);
     const ground = this.grounds.get(name);
     disposeSubtree(ground?.mesh);
@@ -986,6 +1020,7 @@ export class WorldScene implements WorldRenderSurface {
       this.rebuildNamePlaque(state, this.isTarget(entity.id));
     }
     this.auras.show(entity.id, state.jolt, entity.radius, entity.trait);
+    this.questMarkers.show(entity.id, state.node, this.questMarkerOf.get(entity.id));
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
     if (!sameHeld(state.held, entity.held)) this.updateHeld(entity.id, entity.held);
 
@@ -1086,22 +1121,35 @@ export class WorldScene implements WorldRenderSurface {
     this.effects.summon(minionId, summonerId);
   }
 
+  showQuestMarkers(markers: ReadonlyMap<string, QuestMarker>): void {
+    this.questMarkerOf = markers;
+    for (const [entityId, state] of this.entityStates) this.questMarkers.show(entityId, state.node, markers.get(entityId));
+    for (const fixture of this.drawnFixtures()) this.questMarkers.show(fixture.carrierId, fixture.anchor, markers.get(fixture.carrierId));
+  }
+
+  /** The mark over a carrier, an entity's head or a fixture's top, by its id, for a test or the debug surface. */
+  questMarkerShown(carrierId: string): QuestMarker | undefined {
+    return this.questMarkers.markerOf(carrierId);
+  }
+
   showSensed(bearings: readonly SensedBearingMessage[]): void {
     this.sensed = bearings;
     this.layoutSpeechBubbles(0);
   }
 
   /**
-   * A drop of a base this build does not know is not drawn, so nothing can be pressed for it. One
-   * shown as it falls is thrown there. Under reduced motion or in a stalled tab it lies there at
-   * once, and a hand it left empties with the `held` that follows.
+   * A drop of a base or a trophy of a kind this build does not know is not drawn, so nothing can be
+   * pressed for it. A trophy has no model, so its name alone is drawn, as plain. One shown as it
+   * falls is thrown there. Under reduced motion or in a stalled tab it lies there at once, and a
+   * hand it left empties with the `held` that follows.
    */
   showLoot({ lootId, x, z, contents, from }: LootMessage): void {
-    const labelKey = itemLabelKey(contents.baseId);
+    const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId) : trophyLabelKey(contents.monsterKind);
     if (labelKey === undefined) return;
-    const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, contents.baseId);
+    const item = contents.kind === 'item' ? contents : undefined;
+    const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, item?.baseId);
     this.loot.show(
-      { lootId, at: { x, z, height: this.groundHeight({ x, z }) }, baseId: contents.baseId, name: t(labelKey), rarity: contents.rarity },
+      { lootId, at: { x, z, height: this.groundHeight({ x, z }) }, baseId: item?.baseId, name: t(labelKey), rarity: item?.rarity ?? 'plain' },
       this.reducedMotion ? undefined : thrown,
     );
   }
@@ -1113,13 +1161,14 @@ export class WorldScene implements WorldRenderSurface {
    * leaves a hand drawn holding it is handed to the throw: it stays on the hand through the wind-up,
    * whatever the hands are shown holding meanwhile, and goes from it as the drop flies.
    */
-  private throwFrom(from: ThrownFromMessage, baseId: string): LootThrow {
+  private throwFrom(from: ThrownFromMessage, baseId: string | undefined): LootThrow {
     const thrower = from.entityId === undefined ? undefined : this.entityStates.get(from.entityId);
     const clip = thrower === undefined ? undefined : this.playOneShot(thrower, 'throw', THROW_WINDUP_SECONDS);
     const hand = thrower?.modelHolder.getObjectByName(HAND_BONES[from.hand ?? 'mainHand']);
     const nightmare = from.entityId === undefined;
     const ground = new THREE.Vector3(from.x, this.groundHeight(from) + (nightmare ? BURST_FROM_HEIGHT : THROWN_FROM_HEIGHT), from.z);
-    const prop = thrower === undefined || from.hand === undefined || this.reducedMotion ? undefined : this.handOver(thrower, from.hand, baseId);
+    const prop =
+      thrower === undefined || from.hand === undefined || baseId === undefined || this.reducedMotion ? undefined : this.handOver(thrower, from.hand, baseId);
     return {
       releaseIn: nightmare ? this.burstIn(from) : Math.min(strikeDelay(clip), THROW_WINDUP_SECONDS),
       from: () => hand?.getWorldPosition(new THREE.Vector3()) ?? ground,
@@ -1219,10 +1268,10 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * What a press at a point of the viewport, in normalized device coordinates, lands on: a drop's
-   * name first, then another body, a drop's model, and the ground. A body is picked up to its feet,
-   * so it covers a drop's model under it, and the name under the model is what a press reaches the
-   * drop by. The player's own body is no part of it: a press there lands on what lies under it.
-   * `undefined` before a space is entered and over nothing.
+   * name first, then another body, a drop's model, a fixture's model, and the ground. A body is
+   * picked up to its feet, so it covers a drop's model under it, and the name under the model is
+   * what a press reaches the drop by. The player's own body is no part of it: a press there lands on
+   * what lies under it. `undefined` before a space is entered and over nothing.
    */
   pressTargetAt(x: number, y: number): PressTarget | undefined {
     const label = this.loot.labelAt(this.raycasterAt(x, y));
@@ -1231,6 +1280,8 @@ export class WorldScene implements WorldRenderSurface {
     if (entityId !== undefined) return { kind: 'entity', entityId };
     const model = this.loot.modelAt(this.rayAt(x, y), this.coarsePointer ? COARSE_PICK_METRES : undefined);
     if (model !== undefined) return { kind: 'loot', lootId: model };
+    const carrierId = this.fixtureAt(x, y);
+    if (carrierId !== undefined) return { kind: 'fixture', carrierId };
     const ground = this.groundPointAt(x, y);
     return ground === undefined ? undefined : { kind: 'ground', point: { x: ground.x, z: ground.z } };
   }
@@ -1255,6 +1306,25 @@ export class WorldScene implements WorldRenderSurface {
       if (along >= nearest) continue;
       picked = id;
       nearest = along;
+    }
+    return picked;
+  }
+
+  /**
+   * The fixture whose model is drawn under a point of the viewport, in normalized device
+   * coordinates, by its carrier id: the meshes of the placement that carries it, as they are drawn,
+   * the one nearest the camera. A footprint would not do, since the camera looks down on a tall
+   * model's face, which is drawn well beyond the ground it stands on.
+   */
+  fixtureAt(x: number, y: number): string | undefined {
+    const raycaster = this.raycasterAt(x, y);
+    let picked: string | undefined;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const fixture of this.drawnFixtures()) {
+      const hit = raycaster.intersectObject(fixture.node, true)[0];
+      if (hit === undefined || hit.distance >= nearest) continue;
+      picked = fixture.carrierId;
+      nearest = hit.distance;
     }
     return picked;
   }
@@ -1540,6 +1610,7 @@ export class WorldScene implements WorldRenderSurface {
   private forgetEntity(entityId: string): EntityRenderState | undefined {
     const state = this.entityStates.get(entityId);
     this.auras.forget(entityId);
+    this.questMarkers.forget(entityId);
     this.entityStates.delete(entityId);
     this.bubbles.delete(entityId);
     this.effects.forget(entityId);
@@ -1624,6 +1695,7 @@ export class WorldScene implements WorldRenderSurface {
     this.loot.tick(this.sceneClock, stalled);
     this.sinkCrumbling(dt, stalled);
     this.auras.tick(this.sceneClock);
+    this.questMarkers.place((carrierId) => this.entityStates.get(carrierId)?.headHeight ?? this.fixtureTop(carrierId));
     this.effects.tick(dt);
     this.camera.position.sub(this.shake);
     this.effects.shakeOffset(this.camera, this.shake);
@@ -1818,6 +1890,23 @@ export class WorldScene implements WorldRenderSurface {
       bone.add(prop);
       state.heldProps[hand] = prop;
     }
+  }
+
+  /** The fixtures of the drawn sectors. */
+  private drawnFixtures(): DrawnFixture[] {
+    return [...this.sectors.values()].flatMap((sector) => sector.fixtures);
+  }
+
+  /** How high over the ground the fixture's model reaches as drawn, which its quest mark stands over; `undefined` for one not drawn. */
+  private fixtureTop(carrierId: string): number | undefined {
+    const fixture = this.drawnFixtures().find((candidate) => candidate.carrierId === carrierId);
+    return fixture === undefined ? undefined : this.fixtureBounds.setFromObject(fixture.node).max.y;
+  }
+
+  /** Takes a drawn sector's group away, after the quest marks over its fixtures, which belong to the pool rather than to the sector. */
+  private disposeSector(name: string): void {
+    for (const fixture of this.sectors.get(name)?.fixtures ?? []) this.questMarkers.forget(fixture.carrierId);
+    disposeSubtree(this.sectors.get(name)?.group);
   }
 
   /**
@@ -2124,6 +2213,24 @@ export class WorldScene implements WorldRenderSurface {
     this.camera.updateMatrixWorld();
     const point = this.loot.pointOf(lootId, part)?.project(this.camera);
     return point === undefined ? undefined : { x: point.x, y: point.y };
+  }
+
+  /**
+   * Where a fixture's model is drawn, in normalized device coordinates: a point up the middle of its
+   * bounds, as drawn, that `fixtureAt` picks it at. `undefined` for a fixture not drawn, or one that
+   * `fixtureAt` picks at none of the heights `FIXTURE_POINT_SHARES` tries.
+   */
+  _viewportPointOfFixture(carrierId: string): { x: number; y: number } | undefined {
+    const fixture = this.drawnFixtures().find((candidate) => candidate.carrierId === carrierId);
+    if (fixture === undefined) return undefined;
+    this.camera.updateMatrixWorld();
+    const bounds = this.fixtureBounds.setFromObject(fixture.node);
+    const centre = bounds.getCenter(new THREE.Vector3());
+    for (const share of FIXTURE_POINT_SHARES) {
+      const point = new THREE.Vector3(centre.x, THREE.MathUtils.lerp(bounds.min.y, bounds.max.y, share), centre.z).project(this.camera);
+      if (this.fixtureAt(point.x, point.y) === carrierId) return { x: point.x, y: point.y };
+    }
+    return undefined;
   }
 
   /** Where a point of the space is drawn, on the ground a body there stands on, in normalized device coordinates. `groundPointAt` at that point picks it again. `undefined` before a space is entered. */

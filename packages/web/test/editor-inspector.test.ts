@@ -378,6 +378,7 @@ describe("an NPC's service", () => {
       'Healer master',
       'Mystic master',
       'Shopkeeper',
+      'Bounty board',
     ]);
 
     choose(h.picker('Service'), 'healerMaster');
@@ -391,6 +392,36 @@ describe("an NPC's service", () => {
     expect(h.picker('Service').value).toBe('healerMaster');
     h.document.undo();
     expect(h.picker('Service').value).toBe('');
+  });
+});
+
+describe("a placement's service", () => {
+  it('attaches a fixture carrying the one chosen, changes it in place, and takes it away by None, each as one undo step', () => {
+    const h = harness();
+    h.select([{ kind: 'placement', id: 'box-1' }]);
+    expect(h.picker('Service').value).toBe('');
+    const depth = h.document.undoDepth;
+
+    choose(h.picker('Service'), 'bountyBoard');
+    expect(h.document.sector.fixtures).toEqual([{ id: 'fixture-1', placement: 'box-1', service: 'bountyBoard' }]);
+    choose(h.picker('Service'), 'shopkeeper');
+    expect(h.document.sector.fixtures).toEqual([{ id: 'fixture-1', placement: 'box-1', service: 'shopkeeper' }]);
+    choose(h.picker('Service'), '');
+    expect(h.document.sector.fixtures).toEqual([]);
+    expect(h.document.undoDepth).toBe(depth + 3);
+
+    h.document.undo();
+    expect(h.picker('Service').value).toBe('shopkeeper');
+    h.select([{ kind: 'placement', id: 'door-1' }]);
+    expect(h.picker('Service').value).toBe('');
+  });
+
+  it('keeps the fixture on the placement through a rename', () => {
+    const h = harness();
+    h.select([{ kind: 'placement', id: 'box-1' }]);
+    choose(h.picker('Service'), 'bountyBoard');
+    h.type('Id', 'notice-board-1');
+    expect(h.document.sector.fixtures).toEqual([{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }]);
   });
 });
 

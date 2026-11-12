@@ -97,28 +97,46 @@ describe('catalog coverage', () => {
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item, people, role, teaching, nightmare, elite, and place a trial names, each with its own German', () => {
+  it('are every item, people, role, teaching, nightmare, elite, quest, objective, bounty, and trophy, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
+      "A newcomer's errand",
       'Amulet',
       'Balance recovery',
       'Bind',
       'Bone dagger',
+      'Bounty: %@',
       'Brace',
       'Buckler',
       'Calm',
       'Challenge',
       'Cleave',
+      'Cracked skull',
+      'Cracked skulls',
       'Cudgel',
       'Dagger',
       'Deep mend',
       'Depth',
       'Drawing back',
       'Dream-bolt',
+      'Drive off %@ Ghosts there.',
+      'Drive off %@ Skeleton Warriors there.',
+      'Drive off %@ Skeletons there.',
+      'Drive off 3 nightmares.',
+      'Drive off 4 Skeletons in the Graveyard.',
+      'Drive off a nightmare.',
+      'Drive off the Necromancer in the burial chamber.',
       'Fighter',
+      'Find the hidden places Tacita speaks of.',
       'Follow-through',
+      'Gather %@ cracked skulls from Skeleton Warriors.',
+      'Gather %@ ghostly wisps from Ghosts.',
+      'Gather %@ old bones from Skeletons.',
+      'Gather 3 cracked skulls from Skeleton Warriors.',
       'Ghost',
+      'Ghostly wisp',
       'Guard',
       'Healer',
+      'Into the crypt',
       'Iron buckler',
       'Iron ring',
       'Leather boots',
@@ -128,14 +146,19 @@ describe('the names rendered through a core label key', () => {
       'Lumina',
       'Lunge',
       'Mace',
+      'Mend 60 health on other dreamers.',
+      'Mending others',
       'Moonstone',
       'Mystic',
       'Necromancer',
-      'North Wood',
+      "Necromancer's sigil",
+      'Old bone',
       'Padded tunic',
       'Radiance',
       'Rally',
+      'Read the bounty board on the square.',
       'Renewal',
+      'Restless graves',
       'Round shield',
       'Sabre',
       'Sense the fallen',
@@ -153,11 +176,17 @@ describe('the names rendered through a core label key', () => {
       'Stony Skeleton',
       'Stony Skeleton Warrior',
       'Strike',
+      "The Fighters' trial",
+      "The Healers' trial",
+      "The Mystics' trial",
+      'Three without a fall',
       'Touch',
       'Toughening',
       'Umbrae',
       'Veil',
       'Vigils',
+      'Visit Mercus in his shop.',
+      'Walk to the North Wood and come back.',
       'Wand',
       'War axe',
       'Ward',
@@ -166,12 +195,12 @@ describe('the names rendered through a core label key', () => {
     expect(translate('de', 'Follow-through')).toBe('Nachsetzen');
     expect(translate('de', 'Cudgel')).toBe('Knüppel');
     expect(translate('de', 'Short sword')).toBe('Kurzschwert');
-    expect(['Fighter', 'Healer', 'Moonstone', 'Ghost', 'North Wood'].map((key) => translate('de', key))).toEqual([
+    expect(['Fighter', 'Healer', 'Moonstone', 'Ghost', 'Cracked skull'].map((key) => translate('de', key))).toEqual([
       'Kämpfer',
       'Heiler',
       'Mondstein',
       'Gespenst',
-      'Nordwald',
+      'Gesprungener Schädel',
     ]);
   });
 });
@@ -276,12 +305,15 @@ describe('renderChatLine', () => {
     { kind: 'coinsGained', coins: 4 },
     { kind: 'bought', baseId: 'dagger', coins: 60 },
     { kind: 'sold', baseId: 'sword', coins: 75 },
-    { kind: 'pickedUp', baseId: 'cap' },
+    { kind: 'pickedUp', contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } },
+    { kind: 'pickedUp', contents: { kind: 'trophy', monsterKind: 'skeleton-warrior' } },
+    { kind: 'rewarded', contents: { kind: 'item', baseId: 'tunic', rarity: 'rare' } },
     { kind: 'bagFull' },
     { kind: 'becameRole', role: 'healer' },
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'placeFound', found: 1, total: 3 },
-    { kind: 'taskDone' },
+    { kind: 'questDone', questId: 'healer-trial', turnIn: 'Sana' },
+    { kind: 'bountyDone' },
     { kind: 'fell' },
     { kind: 'raised', healerNames: ['Lumi'] },
     { kind: 'raised', healerNames: ['Lumi', 'Bren'] },
@@ -336,13 +368,19 @@ describe('renderChatLine', () => {
   });
 
   /** The item is named in the line's own locale, which a lookup through the active one would miss. */
-  it('names the ware traded and the coins, and the item picked up', () => {
+  it('names the ware traded and the coins, the item or the trophy picked up, and the item a turn-in gave', () => {
     expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
     expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
     expect(renderChatLine({ kind: 'sold', baseId: 'sword', coins: 75 }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
     expect(renderChatLine({ kind: 'sold', baseId: 'lantern', coins: 1 }, catalogTables, 'en')).toBe('lantern sold for 1c.');
-    expect(renderChatLine({ kind: 'pickedUp', baseId: 'cap' }, catalogTables, 'en')).toBe('Leather cap picked up.');
-    expect(renderChatLine({ kind: 'pickedUp', baseId: 'cap' }, catalogTables, 'de')).toBe('Lederkappe aufgehoben.');
+    const cap = { kind: 'item', baseId: 'cap', rarity: 'magic' } as const;
+    const skull = { kind: 'trophy', monsterKind: 'skeleton-warrior' } as const;
+    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'en')).toBe('Leather cap picked up.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'de')).toBe('Lederkappe aufgehoben.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: skull }, catalogTables, 'en')).toBe('Cracked skull picked up.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: skull }, catalogTables, 'de')).toBe('Gesprungener Schädel aufgehoben.');
+    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'en')).toBe('Leather cap received.');
+    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'de')).toBe('Lederkappe erhalten.');
   });
 
   it('names several Healers as the language lists them', () => {

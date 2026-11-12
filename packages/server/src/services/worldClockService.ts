@@ -1,4 +1,4 @@
-import { WORLD_TIME_RATE } from '@somnio/core';
+import { WORLD_TIME_RATE, worldDay } from '@somnio/core';
 import type { WorldClockRepository } from '@somnio/data';
 import type { Logger } from '../logging.ts';
 import { runPeriodically } from './periodicLoop.ts';
@@ -19,6 +19,7 @@ export class WorldClockService {
   private readonly now: () => number;
   private worldSeconds: number;
   private advancedAt: number;
+  private newDayListener: ((worldSeconds: number) => void) | undefined;
 
   constructor(
     worldClocks: WorldClockRepository,
@@ -51,12 +52,18 @@ export class WorldClockService {
     const previous = this.worldSeconds;
     this.worldSeconds += ((now - this.advancedAt) / 1000) * WORLD_TIME_RATE;
     this.advancedAt = now;
+    if (worldDay(this.worldSeconds) !== worldDay(previous)) this.newDayListener?.(this.worldSeconds);
     if (Math.floor(this.worldSeconds / SECONDS_PER_MINUTE) === Math.floor(previous / SECONDS_PER_MINUTE)) return;
     try {
       await this.worldClocks.save(this.worldSeconds);
     } catch (error) {
       this.logger.warn({ error: String(error) }, 'world clock save failed');
     }
+  }
+
+  /** Calls `listener` with the clock each time a tick carries it into a new world day. */
+  onNewDay(listener: (worldSeconds: number) => void): void {
+    this.newDayListener = listener;
   }
 
   /** The clock as of the last tick. */

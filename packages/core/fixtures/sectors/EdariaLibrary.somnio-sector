@@ -18,7 +18,7 @@
   "npcs": [
     {
       "characterModelId": "libus",
-      "dialogScript": "Greetings, $name!---This library is still a work in progress.---And running is forbidden in here!",
+      "dialogScript": "Greetings, $name!---New here? Then call on Mercus first. His shop is on the square, and the bounty board stands there too.---And running is forbidden in here!",
       "facing": 0,
       "id": "libus",
       "name": "Libus",

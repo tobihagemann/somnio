@@ -3,9 +3,9 @@
     "en": "Greetings, $name!",
     "de": "Sei gegrüßt, $name!"
   },
-  "This library is still a work in progress.": {
-    "en": "This library is still a work in progress.",
-    "de": "Diese Bibliothek ist immer noch in Arbeit."
+  "New here? Then call on Mercus first. His shop is on the square, and the bounty board stands there too.": {
+    "en": "New here? Then call on Mercus first. His shop is on the square, and the bounty board stands there too.",
+    "de": "Neu hier? Dann geh zuerst zu Mercus. Sein Laden liegt am Platz, und dort steht auch die Kopfgeldtafel."
   },
   "And running is forbidden in here!": {
     "en": "And running is forbidden in here!",
@@ -78,5 +78,25 @@
   "Toward the north, the North Meadow lies open west of the road. Stand in all three, then come back to me.": {
     "en": "Toward the north, the North Meadow lies open west of the road. Stand in all three, then come back to me.",
     "de": "Im Norden liegt die Nordwiese offen, westlich des Weges. Steh in allen dreien und komm dann zu mir zurück."
+  },
+  "Walk softly, $name. The dead here do not rest.": {
+    "en": "Walk softly, $name. The dead here do not rest.",
+    "de": "Tritt leise auf, $name. Die Toten hier finden keine Ruhe."
+  },
+  "I am Memor. I keep the names of all who lie here, so the dream does not forget them.": {
+    "en": "I am Memor. I keep the names of all who lie here, so the dream does not forget them.",
+    "de": "Ich bin Memor. Ich bewahre die Namen aller, die hier liegen, damit der Traum sie nicht vergisst."
+  },
+  "This is a thin place. The dream wears through here, and what was buried climbs back out. See what stirs among the graves.": {
+    "en": "This is a thin place. The dream wears through here, and what was buried climbs back out. See what stirs among the graves.",
+    "de": "Dies ist ein dünner Ort. Hier wird der Traum fadenscheinig, und was begraben war, steigt wieder heraus. Sieh nach, was sich zwischen den Gräbern regt."
+  },
+  "The warriors among them carry skulls cracked by something older than this church. Bring me some, and I will learn what wakes them.": {
+    "en": "The warriors among them carry skulls cracked by something older than this church. Bring me some, and I will learn what wakes them.",
+    "de": "Die Krieger unter ihnen tragen Schädel, gesprungen von etwas, das älter ist als diese Kirche. Bring mir welche, dann finde ich heraus, was sie weckt."
+  },
+  "Below the tomb lies the crypt, and past it the chamber where the Necromancer keeps the dead from rest. Do not go down alone.": {
+    "en": "Below the tomb lies the crypt, and past it the chamber where the Necromancer keeps the dead from rest. Do not go down alone.",
+    "de": "Unter dem Grabmal liegt die Gruft und dahinter die Kammer, in der der Nekromant die Toten nicht ruhen lässt. Steig nicht allein hinab."
   }
 }

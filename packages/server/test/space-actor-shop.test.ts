@@ -123,16 +123,16 @@ describe('selling to the shopkeeper', () => {
 });
 
 describe('the shopkeeper', () => {
-  const passed: Partial<Character> = { lucidity: lucidity(undefined, {}, { task: { role: 'fighter', teachingId: undefined, progress: 1 } }) };
+  const passed: Partial<Character> = { quests: { active: [{ questId: 'fighter-trial', progress: [1] }], done: [] } };
 
   it.each<[string, Partial<Character>, (space: Shop['world']['space'], entityId: string) => void]>([
-    ['sets no trial', {}, (space, entityId) => space.handleAskTask(MERCUS, undefined, entityId)],
-    ['takes no trial as done', passed, (space, entityId) => space.handleCompleteTask(MERCUS, entityId)],
+    ['gives no trial', {}, (space, entityId) => space.handleAcceptQuest(MERCUS, 'fighter-trial', entityId)],
+    ['takes no trial in', passed, (space, entityId) => space.handleTurnInQuest(MERCUS, 'fighter-trial', entityId)],
     ['sets no teaching to study', { lucidity: lucidity('fighter', { strike: 1 }) }, (space, entityId) => space.handleStudy(MERCUS, 'guard', entityId)],
   ])('%s', (_label, character, request) => {
     const s = shop(AT_MERCUS, { character });
-    const before = characterOf(s.world.space, s.dreamer.entityId).lucidity;
+    const { lucidity: before, quests } = characterOf(s.world.space, s.dreamer.entityId);
     request(s.world.space, s.dreamer.entityId);
-    expect(characterOf(s.world.space, s.dreamer.entityId).lucidity).toEqual(before);
+    expect(characterOf(s.world.space, s.dreamer.entityId)).toMatchObject({ lucidity: before, quests });
   });
 });

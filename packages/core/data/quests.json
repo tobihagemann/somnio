@@ -1,0 +1,75 @@
+{
+  "fighter-trial": {
+    "labelKey": "The Fighters' trial",
+    "giver": "npc:EdariaFighterHall/pugnax",
+    "turnIn": "npc:EdariaFighterHall/pugnax",
+    "objectives": [{ "kind": "driveOff", "count": 1, "labelKey": "Drive off a nightmare." }]
+  },
+  "healer-trial": {
+    "labelKey": "The Healers' trial",
+    "giver": "npc:EdariaHealerHall/sana",
+    "turnIn": "npc:EdariaHealerHall/sana",
+    "objectives": [{ "kind": "reach", "sector": "NorthWood", "labelKey": "Walk to the North Wood and come back." }],
+    "withoutStriking": true
+  },
+  "mystic-trial": {
+    "labelKey": "The Mystics' trial",
+    "giver": "npc:EdariaMysticTower/tacita",
+    "turnIn": "npc:EdariaMysticTower/tacita",
+    "objectives": [
+      { "kind": "reach", "sector": "WestMeadow", "place": { "x": 6.72, "z": 24.88, "radius": 3 }, "labelKey": "Find the hidden places Tacita speaks of." },
+      { "kind": "reach", "sector": "AutumnWood", "place": { "x": 9.04, "z": 8, "radius": 3 }, "labelKey": "Find the hidden places Tacita speaks of." },
+      { "kind": "reach", "sector": "NorthMeadow", "place": { "x": 6.88, "z": 16.72, "radius": 3 }, "labelKey": "Find the hidden places Tacita speaks of." }
+    ]
+  },
+  "follow-through-task": {
+    "labelKey": "Three without a fall",
+    "giver": "npc:EdariaFighterHall/pugnax",
+    "turnIn": "npc:EdariaFighterHall/pugnax",
+    "needs": { "role": "fighter" },
+    "objectives": [{ "kind": "driveOff", "count": 3, "labelKey": "Drive off 3 nightmares." }],
+    "withoutFalling": true
+  },
+  "drawing-back-task": {
+    "labelKey": "Mending others",
+    "giver": "npc:EdariaHealerHall/sana",
+    "turnIn": "npc:EdariaHealerHall/sana",
+    "needs": { "role": "healer" },
+    "objectives": [{ "kind": "mend", "amount": 60, "labelKey": "Mend 60 health on other dreamers." }]
+  },
+  "newcomer-errand": {
+    "labelKey": "A newcomer's errand",
+    "giver": "npc:EdariaLibrary/libus",
+    "turnIn": "npc:EdariaLibrary/libus",
+    "objectives": [
+      { "kind": "visit", "carrier": "npc:EdariaShop/mercus", "labelKey": "Visit Mercus in his shop." },
+      { "kind": "visit", "carrier": "fixture:EdariaSquare/fixture-1", "labelKey": "Read the bounty board on the square." }
+    ],
+    "reward": { "coins": 15 }
+  },
+  "restless-graves": {
+    "labelKey": "Restless graves",
+    "giver": "npc:Graveyard/memor",
+    "turnIn": "npc:Graveyard/memor",
+    "objectives": [
+      { "kind": "driveOff", "monsterKind": "skeleton-minion", "sector": "Graveyard", "count": 4, "labelKey": "Drive off 4 Skeletons in the Graveyard." }
+    ],
+    "reward": { "coins": 60, "practice": 30 }
+  },
+  "cracked-skulls": {
+    "labelKey": "Cracked skulls",
+    "giver": "npc:Graveyard/memor",
+    "turnIn": "npc:Graveyard/memor",
+    "needs": { "quest": "restless-graves" },
+    "objectives": [{ "kind": "collect", "monsterKind": "skeleton-warrior", "count": 3, "labelKey": "Gather 3 cracked skulls from Skeleton Warriors." }],
+    "reward": { "coins": 90, "practice": 40 }
+  },
+  "into-the-crypt": {
+    "labelKey": "Into the crypt",
+    "giver": "npc:Graveyard/memor",
+    "turnIn": "npc:Graveyard/memor",
+    "needs": { "quest": "cracked-skulls" },
+    "objectives": [{ "kind": "driveOff", "monsterKind": "necromancer", "count": 1, "labelKey": "Drive off the Necromancer in the burial chamber." }],
+    "reward": { "coins": 250, "practice": 60, "gear": 3 }
+  }
+}

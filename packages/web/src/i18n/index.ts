@@ -1,4 +1,16 @@
-import { BASE_ITEMS, ELITE_TRAITS, MONSTER_KINDS, PEOPLES, TEACHINGS, TRIALS, peopleLabelKey, roleLabelKey } from '@somnio/core';
+import {
+  BASE_ITEMS,
+  BOUNTY_KINDS,
+  BOUNTY_LABEL_KEY,
+  ELITE_TRAITS,
+  MONSTER_KINDS,
+  PEOPLES,
+  QUESTS,
+  TEACHINGS,
+  TROPHIES,
+  peopleLabelKey,
+  roleLabelKey,
+} from '@somnio/core';
 import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -69,7 +81,7 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
  * item's name in the Character window, every people's name on the character card, every role's and
  * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, an elite's
- * included, and every place a trial sends a dreamer to.
+ * included, every quest's title and objective lines, a bounty's included, and every trophy's name.
  */
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
@@ -80,7 +92,10 @@ export const CORE_LABEL_KEYS: readonly string[] = [
     ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
     ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
     ...Object.values(ELITE_TRAITS).flatMap((trait) => Object.values(trait.names)),
-    ...Object.values(TRIALS).flatMap((trial) => (trial.kind === 'reach' ? [trial.labelKey] : [])),
+    ...Object.values(QUESTS).flatMap((quest) => [quest.labelKey, ...quest.objectives.map((objective) => objective.labelKey)]),
+    BOUNTY_LABEL_KEY,
+    ...Object.values(BOUNTY_KINDS).flatMap((lines) => Object.values(lines)),
+    ...Object.values(TROPHIES),
   ]),
 ];
 
@@ -138,10 +153,12 @@ export const RENDERED_KEYS: readonly string[] = [
   '%1$@ sold for %2$@c.',
   '%@ dropped.',
   '%@ picked up.',
+  '%@ received.',
   'You are now a %@.',
   'Your %1$@ deepens: rank %2$@.',
   'You found a hidden place, %1$@ of %2$@.',
-  'Your task is done. Return to your master.',
+  'Quest done: %1$@. Return to %2$@.',
+  'Bounty done. Return to the bounty board.',
   'Your health gives out. You fall.',
   '%@ draws you back into the dream.',
   '%@ draw you back into the dream.',
@@ -163,6 +180,19 @@ export const RENDERED_KEYS: readonly string[] = [
   'Menu',
   'Players',
   'Character',
+  'Quest log',
+  'Give up %@',
+  'Return to %@.',
+  'You hold no quests. A gold ! marks who offers one.',
+  'Quests',
+  'Hide quests',
+  'Show quests (%@)',
+  '+%@ more',
+  'Tap to fold',
+  'Quest accepted',
+  '%@ complete',
+  'You are a %@',
+  '%@, rank 1',
   'Bag',
   'Settings',
   'Close %@',
@@ -256,6 +286,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Not while fallen',
   'Not while channelling',
   'Needs a weapon or an empty main hand',
+  'Not while a quest forbids striking',
   'Needs the Moonstone in your off hand',
   'Needs a wand or a staff in your off hand',
   'Not enough Spirit',
@@ -292,7 +323,6 @@ export const RENDERED_KEYS: readonly string[] = [
   'No role yet',
   'Studying %1$@ · %2$@%%',
   'Studying nothing',
-  'Task: %@',
   'hale',
   'grazed',
   'wounded',
@@ -312,6 +342,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Burial Chamber',
   'Crypt',
   'North Meadow',
+  'North Wood',
   'South Meadow',
   'West Meadow',
   '%1$@ of %2$@',
@@ -342,16 +373,10 @@ export const RENDERED_KEYS: readonly string[] = [
   '%1$@ of %2$@ practice toward rank %3$@',
   'Study this',
   'Needs %1$@ at rank %2$@',
-  'Finish your current task first.',
   'Give up the task',
-  'Drive off a nightmare.',
-  'Drive off %@ nightmares.',
   'Falling starts the count over.',
-  'Walk to the %@ and come back.',
-  'You cannot strike while you hold this trial.',
-  'Mend %@ health on other dreamers.',
-  'Find %@ hidden places and come back.',
-  'Talk to %@ to hear where they lie.',
+  'You cannot strike while you hold this quest.',
+  'Your quest log is full. Give up a quest to take this one.',
   'Each rank adds to every hit you land.',
   'You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.',
   'You study nothing. Choose a teaching below.',
@@ -362,6 +387,32 @@ export const RENDERED_KEYS: readonly string[] = [
   'Take the task',
   'You did what %@ asked.',
   'Learn %@',
+
+  // Quests at a carrier
+  'Take the quest',
+  'Turn in',
+  'Turn in %@',
+  'Your bag is full. Make room in it before you turn this in.',
+  'Reward: %@',
+  '%@ practice',
+  '%1$@ practice toward %2$@',
+  'a piece of gear',
+  '%@ has nothing for you now.',
+
+  // The bounty board
+  'Bounty board',
+  'No bounties today.',
+  'New bounties go up each day.',
+  'Take the bounty',
+  'Take %1$@. %2$@',
+  'Turn in %1$@. %2$@',
+  'Turn in %1$@ from an earlier day. %2$@',
+  'Taken on an earlier day',
+  "Today's bounties",
+  'Taken',
+  'Done',
+  'Turned in',
+  'Return to the bounty board.',
   'Each rank makes nightmares miss you more often.',
   'Each rank shortens the pause between your swings.',
   'Each rank brings your balance back faster.',

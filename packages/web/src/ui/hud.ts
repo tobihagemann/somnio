@@ -1,12 +1,13 @@
-import { calendarFromWorldSeconds, hourOfDay, sunIsUp } from '@somnio/core';
-import type { AbilityId, EngageAction, Inventory } from '@somnio/core';
+import { calendarFromWorldSeconds, heldQuest, hourOfDay, sunIsUp } from '@somnio/core';
+import type { AbilityId, AttackRefusal, EngageAction, Inventory, QuestLog, QuestOrBountyId } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
 import type { Energy, EquipSlot, LucidityMessage } from '@somnio/protocol';
-import type { AbilitySlotState, ChatLine } from '@/client';
+import type { AbilitySlotState, ChatLine, QuestNews } from '@/client';
 import { t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
 import { DREAM_COLOR, MOONLIGHT, RAISE_COLOR } from '@/scene/combatEffects';
 import { RARITY_COLORS } from '@/scene/lootMarkers';
+import { QUEST_MARKER_GOLD, QUEST_MARKER_GREY } from '@/scene/questMarkers';
 import { cssColor } from '@/scene/overlayArt';
 import type { PortraitSlot } from '@/scene/portraits';
 import { AbilitySlot, BalanceMeter, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
@@ -18,6 +19,11 @@ import { HUDTooltip, setTip } from './hudTooltip';
 import { CharacterWindow } from './characterWindow';
 import { HUDWindow, PlayersList } from './hudWindows';
 import type { PlayersSelection } from './hudWindows';
+import { QuestFeedback } from './questFeedback';
+import { QuestLogList } from './questLog';
+import { acceptedSaid, objectiveCount, questTitle, returnLine, turnInSaid } from './questText';
+import { QuestTracker } from './questTracker';
+import type { TrackedQuest } from './questTracker';
 import { OwnFrame, TargetFrame } from './unitFrames';
 import type { FramedEntity, OwnFrameState } from './unitFrames';
 
@@ -25,10 +31,12 @@ import type { FramedEntity, OwnFrameState } from './unitFrames';
  * The in-game HUD, DOM over the WebGL canvas so `agent-browser snapshot` and assistive technology
  * see it. On a mouse: the player's own frame top left and the target's top centre, the world clock
  * top right, the belt at the bottom centre (the Health and Spirit globes, the Balance arc, slot 1,
- * five slots for the abilities the player has learned, Run, and what the player studies), the menu beside the Spirit globe, and the
- * chat bottom left. On a finger: one strip of frames along the top with the clock and ≡, slot 1 and
- * the ability slots in an arc under the right thumb, Balance as a bar at the bottom centre, and the
- * chat behind an icon bottom left.
+ * five slots for the abilities the player has learned, Run, and what the player studies), the menu
+ * beside the Spirit globe, the quests held under the clock, and the chat bottom left. On a finger:
+ * one strip of frames along the top with the clock and ≡, the quests held under it, slot 1 and the
+ * ability slots in an arc under the right thumb, Balance as a bar at the bottom centre, and the
+ * chat behind an icon bottom left. Under the target frame, a line says each count of a quest that
+ * moves, and a banner each quest taken on, done, or turned in.
  *
  * The menu opens windows. A mouse may keep several open, the newest on top, and a finger one at a time.
  */
@@ -49,10 +57,16 @@ export interface HUDCallbacks {
   /** A press on the player's own frame, or their own name in the Players window. */
   onPressOwnFrame: () => void;
   onClearTarget: () => void;
+  /** A press on Give up beside a quest in the Quest log. */
+  onAbandonQuest: (questId: QuestOrBountyId) => void;
   /** The menu's Settings, which is the game menu. */
   onOpenSettings: () => void;
+  /** A window opening where it cannot stand beside a carrier's panel, which closes the panel. */
+  onCloseCarrierPanel: () => void;
   /** Reports whether the pointer rests on the HUD, so a wheel there scrolls rather than zooms. */
   onHoverChange: (hovering: boolean) => void;
+  /** The name of a carrier, by its id, that a done quest is turned in at, asked on each render. */
+  carrierName: (carrierId: string) => string;
 }
 
 export interface HUDOptions {
@@ -64,10 +78,13 @@ export interface HUDOptions {
   now?: () => number;
 }
 
-export type HUDWindowId = 'players' | 'character';
+export type HUDWindowId = 'players' | 'character' | 'quests';
 
-/** The keys that open and close each window, the first named in its menu button's tip: the Character window on Diablo's C and I, the Players window on O. */
-export const WINDOW_KEYS: Readonly<Record<HUDWindowId, readonly [string, ...string[]]>> = { players: ['o'], character: ['c', 'i'] };
+/**
+ * The keys that open and close each window, the first named in its menu button's tip: the
+ * Character window on Diablo's C and I, the Players window on O, and the Quest log on L.
+ */
+export const WINDOW_KEYS: Readonly<Record<HUDWindowId, readonly [string, ...string[]]>> = { players: ['o'], character: ['c', 'i'], quests: ['l'] };
 
 /** Where the world clock stands and where the player stands in it, for the plate at the top right. */
 export interface HUDClock {
@@ -81,6 +98,9 @@ const THUMB = { width: 300, height: 230, act: { x: 262, y: 192 }, run: { x: 58, 
 /** The keys of the slots for abilities, after slot 1's. */
 const ABILITY_KEYS = [2, 3, 4, 5, 6] as const;
 
+/** How far down the thumb's corner box the arc's highest slot reaches, in px: its centre less half of its 48 px (`hud.css`). */
+const THUMB_ARC_TOP = Math.min(...ABILITY_KEYS.map((_, index) => arcPoint(index).y)) - 48 / 2;
+
 /**
  * What a mouse's HUD needs of the window, in px, mirroring `hud.css`. Across: the edge and an 8 px
  * gap on each side, unscaled, plus the scaled widths of two own frames round a target frame squeezed
@@ -90,6 +110,21 @@ const ABILITY_KEYS = [2, 3, 4, 5, 6] as const;
  * (170 px).
  */
 const FIT = { across: { fixed: 2 * (12 + 8), scaled: 2 * 250 + 150 }, down: { fixed: 12 + 10 + 120, scaled: 92 + 170 } } as const;
+
+/**
+ * The narrowest window, in px, in which a mouse's windows stand beside a carrier's panel, mirroring
+ * `hud.css` and `chrome.css`: the edge, the 340 px panel, an 8 px gap, the 388 px Character window,
+ * and the edge again.
+ */
+const BESIDE_CARRIER_PANEL_WIDTH = 12 + 340 + 8 + 388 + 12;
+
+/**
+ * What a mouse's quest tracker needs across, in px, mirroring `hud.css` and `chrome.css`: right of the
+ * window's middle, the right half of the 250 px target frame and its own 270 px, scaled, then an 8 px
+ * gap and the edge, unscaled, and the room each thing open down the right edge takes with its 8 px
+ * gap: a carrier's panel, the Character window, and the Players window.
+ */
+const TRACKER_FIT = { fixed: 8 + 12, scaled: 250 / 2 + 270, carrierPanel: 340 + 8, character: 388 + 8, players: 280 + 8 } as const;
 
 /** How much a mouse's HUD shrinks to fit a window of this size: 1 where it fits whole, to a thousandth, rounded down. */
 function hudScale(width: number, height: number): number {
@@ -103,10 +138,15 @@ function placeOnThumb(node: HTMLElement, at: { x: number; y: number }): HTMLElem
   return node;
 }
 
-/** Puts a finger's slot for an ability at its place on the arc round slot 1, from the first place at 0. */
-function placeOnArc(node: HTMLElement, index: number): HTMLElement {
+/** Where in the thumb's corner box a finger's slot for an ability stands, on the arc round slot 1, from the first place at 0. */
+function arcPoint(index: number): { x: number; y: number } {
   const radians = ((THUMB.firstDegrees + index * THUMB.stepDegrees) * Math.PI) / 180;
-  return placeOnThumb(node, { x: THUMB.act.x + THUMB.radius * Math.cos(radians), y: THUMB.act.y - THUMB.radius * Math.sin(radians) });
+  return { x: THUMB.act.x + THUMB.radius * Math.cos(radians), y: THUMB.act.y - THUMB.radius * Math.sin(radians) };
+}
+
+/** Puts a finger's slot for an ability at its place on the arc round slot 1. */
+function placeOnArc(node: HTMLElement, index: number): HTMLElement {
+  return placeOnThumb(node, arcPoint(index));
 }
 
 function twoDigits(value: number): string {
@@ -123,6 +163,12 @@ export function paintEffectColors(node: HTMLElement): void {
 /** Gives the node each rarity's colour as `--hud-rarity-*`, the colour a drop of it is drawn in on the ground. */
 export function paintRarityColors(node: HTMLElement): void {
   for (const rarity of RARITIES) node.style.setProperty(`--hud-rarity-${rarity}`, cssColor(RARITY_COLORS[rarity]));
+}
+
+/** Gives the node the gold and the grey a carrier's quest marker is drawn in, as `--hud-quest-*`, so the quests the HUD says read as the markers do. */
+function paintQuestColors(node: HTMLElement): void {
+  node.style.setProperty('--hud-quest-gold', cssColor(QUEST_MARKER_GOLD));
+  node.style.setProperty('--hud-quest-grey', cssColor(QUEST_MARKER_GREY));
 }
 
 export class GameHUD {
@@ -152,10 +198,17 @@ export class GameHUD {
   private readonly windows: Record<HUDWindowId, HUDWindow>;
   private readonly players: PlayersList;
   private readonly character: CharacterWindow;
+  private readonly quests: QuestLogList;
+  private readonly tracker: QuestTracker;
+  private readonly questFeedback = new QuestFeedback();
   /** The menu's buttons that open each window, lit while it is open. */
   private readonly windowToggles = new Map<HUDWindowId, HTMLButtonElement>();
   /** The open windows, the newest last. */
   private readonly openWindows: HUDWindowId[] = [];
+  /** Whether a carrier's panel is open down the right edge. */
+  private carrierPanelOpen = false;
+  private viewportWidth = Number.POSITIVE_INFINITY;
+  private scale = 1;
   private readonly sheet: HTMLElement | undefined;
   private readonly sheetToggle: HTMLButtonElement | undefined;
   /** What covers the play field whatever is open, beside the windows, the sheet, and the chat. */
@@ -210,11 +263,18 @@ export class GameHUD {
       (name) => callbacks.onPressPlayer(name),
       () => callbacks.onPressOwnFrame(),
     );
+    this.quests = new QuestLogList(
+      (questId) => callbacks.onAbandonQuest(questId),
+      (carrierId) => callbacks.carrierName(carrierId),
+    );
+    this.tracker = new QuestTracker(this.coarse, (carrierId) => callbacks.carrierName(carrierId));
     this.windows = {
       players: new HUDWindow(t('Players'), () => this.closeWindow('players'), this.players.nodes),
       character: this.character.window,
+      quests: new HUDWindow(t('Quest log'), () => this.closeWindow('quests'), this.quests.nodes),
     };
     this.windows.players.root.classList.add('hud-window--players');
+    this.windows.quests.root.classList.add('hud-window--quests');
 
     let layout: HTMLElement[];
     if (this.coarse) {
@@ -234,6 +294,7 @@ export class GameHUD {
         children: [
           sheetButton(t('Players'), HUD_ICONS.players, () => this.openWindow('players')),
           sheetButton(t('Character'), HUD_ICONS.character, () => this.openWindow('character')),
+          sheetButton(t('Quest log'), HUD_ICONS.quests, () => this.openWindow('quests')),
           sheetButton(t('Settings'), HUD_ICONS.settings, () => this.openSettings()),
           this.study,
         ],
@@ -257,7 +318,7 @@ export class GameHUD {
           placeOnThumb(this.run, THUMB.run),
         ],
       });
-      layout = [strip, this.sheet, this.balance.root, thumb, this.chat.root];
+      layout = [strip, this.sheet, this.tracker.root, this.balance.root, thumb, this.chat.root];
       this.fixedOccluders = [
         this.ownFrame.root,
         this.ownFrame.timed.root,
@@ -269,7 +330,7 @@ export class GameHUD {
         this.slotOne.root,
         this.run,
       ];
-      this.trackHover(strip, thumb, this.sheet, this.balance.root);
+      this.trackHover(strip, thumb, this.sheet, this.tracker.root, this.balance.root);
     } else {
       this.sheet = undefined;
       this.sheetToggle = undefined;
@@ -295,6 +356,7 @@ export class GameHUD {
         children: [
           menuButton('players', t('Players'), HUD_ICONS.players),
           menuButton('character', t('Character'), HUD_ICONS.character),
+          menuButton('quests', t('Quest log'), HUD_ICONS.quests),
           setTip(
             iconButton(t('Settings'), glyph(HUD_ICONS.settings), () => this.openSettings(), {
               className: 'fantasy-button fantasy-button--compact hud-menu__item',
@@ -303,7 +365,7 @@ export class GameHUD {
         ],
       });
       const belt = element('div', { className: 'hud-belt', children: [this.globes.health.root, panel, this.globes.spirit.root, menu] });
-      layout = [this.ownFrame.root, this.targetFrame.root, this.clock, belt, this.chat.root];
+      layout = [this.ownFrame.root, this.targetFrame.root, this.clock, this.tracker.root, belt, this.chat.root];
       this.fixedOccluders = [
         this.ownFrame.root,
         this.ownFrame.timed.root,
@@ -315,20 +377,38 @@ export class GameHUD {
         this.globes.spirit.root,
         menu,
       ];
-      this.trackHover(this.ownFrame.root, this.targetFrame.root, this.clock, belt, this.chat.root);
+      this.trackHover(this.ownFrame.root, this.targetFrame.root, this.clock, this.tracker.root, belt, this.chat.root);
     }
-    this.trackHover(this.windows.players.root, this.windows.character.root, this.character.card.root, ...(this.coarse ? [this.chat.root] : []));
+    this.trackHover(
+      this.windows.players.root,
+      this.windows.character.root,
+      this.windows.quests.root,
+      this.character.card.root,
+      ...(this.coarse ? [this.chat.root] : []),
+    );
 
     this.root = element('div', {
       className: `hud ${this.coarse ? 'hud--coarse' : 'hud--fine'}`,
-      children: [...layout, this.windows.players.root, this.windows.character.root, this.character.card.root, this.character.notice, this.character.ghost],
+      children: [
+        ...layout,
+        this.questFeedback.line,
+        this.questFeedback.banner,
+        this.windows.players.root,
+        this.windows.character.root,
+        this.windows.quests.root,
+        this.character.card.root,
+        this.character.notice,
+        this.character.ghost,
+      ],
     });
     this.tooltip = new HUDTooltip(this.root, now);
     this.root.append(this.tooltip.root);
     this.root.style.setProperty('--hud-thumb-width', `${THUMB.width}px`);
     this.root.style.setProperty('--hud-thumb-height', `${THUMB.height}px`);
+    this.root.style.setProperty('--hud-thumb-arc-top', `${THUMB_ARC_TOP}px`);
     paintEffectColors(this.root);
     paintRarityColors(this.root);
+    paintQuestColors(this.root);
     // A control pressed with the pointer hands the keyboard straight back to the world, so Enter
     // opens the chat and Shift runs rather than pressing the control again. A keyboard press keeps it.
     this.root.addEventListener(
@@ -341,15 +421,17 @@ export class GameHUD {
     );
   }
 
-  /** What covers the play field now: the frames, the belt or the thumb's slots, and whatever window, item card, sheet, or chat is open. */
+  /** What covers the play field now: the frames, the belt or the thumb's slots, the quest tracker, and whatever window, item card, sheet, or chat is open. */
   get occluders(): HTMLElement[] {
     return [
       ...this.fixedOccluders,
+      this.tracker.root,
       // A mouse's ability slots lie within the belt's panel.
       ...(this.coarse ? this.abilityPlaces : []),
       ...this.chat.occluders,
       this.windows.players.root,
       this.windows.character.root,
+      this.windows.quests.root,
       this.character.card.root,
       ...(this.sheet === undefined ? [] : [this.sheet]),
     ];
@@ -362,7 +444,53 @@ export class GameHUD {
   /** A mouse's HUD shrinks evenly to fit a window too small for it. A finger's layout keeps its size. */
   setViewport(width: number, height: number): void {
     if (this.coarse) return;
-    this.root.style.setProperty('--hud-scale', String(hudScale(width, height)));
+    this.viewportWidth = width;
+    this.scale = hudScale(width, height);
+    this.root.style.setProperty('--hud-scale', String(this.scale));
+    this.placeBesideCarrierPanel();
+  }
+
+  /**
+   * Whether a carrier's panel is open down the right edge. On a mouse with room for both, the windows
+   * stand to its left. Elsewhere they take turns, as a finger's windows do: the panel opening closes
+   * every window, and a window opening closes the panel.
+   */
+  setCarrierPanelOpen(open: boolean): void {
+    if (open === this.carrierPanelOpen) return;
+    this.carrierPanelOpen = open;
+    this.placeBesideCarrierPanel();
+  }
+
+  private get windowsBesideCarrierPanel(): boolean {
+    return !this.coarse && this.viewportWidth >= BESIDE_CARRIER_PANEL_WIDTH;
+  }
+
+  private placeBesideCarrierPanel(): void {
+    const beside = this.carrierPanelOpen && this.windowsBesideCarrierPanel;
+    this.root.classList.toggle('hud--beside-carrier-panel', beside);
+    if (this.carrierPanelOpen && !beside) for (const id of [...this.openWindows]) this.closeWindow(id);
+    this.placeTracker();
+  }
+
+  /**
+   * The quest tracker stands under the clock, and on a mouse left of what is open down the right
+   * edge where there is room beside the target frame, as the windows stand beside a carrier's panel.
+   * Elsewhere it gives way to what is open there. It does not show with no quest held, nor while the
+   * Quest log, which says the same, is open.
+   */
+  private placeTracker(): void {
+    const open = (id: HUDWindowId): boolean => this.openWindows.includes(id);
+    let beside = 0;
+    let room = !this.carrierPanelOpen && this.openWindows.length === 0;
+    if (!this.coarse) {
+      if (this.carrierPanelOpen) beside += TRACKER_FIT.carrierPanel;
+      if (open('character')) beside += TRACKER_FIT.character;
+      if (open('players')) beside += TRACKER_FIT.players;
+      room =
+        (!this.carrierPanelOpen || this.windowsBesideCarrierPanel) && TRACKER_FIT.fixed + TRACKER_FIT.scaled * this.scale + beside <= this.viewportWidth / 2;
+    }
+    this.root.style.setProperty('--hud-tracker-beside', `${beside}px`);
+    setHidden(this.tracker.root, this.tracker.empty || open('quests') || !room);
   }
 
   /** Before the player stands in the world nothing of the HUD shows, and whatever was open closes. */
@@ -371,6 +499,7 @@ export class GameHUD {
     setHidden(this.root, !shown);
     if (!shown) {
       this.tooltip.hide();
+      this.questFeedback.clear();
       for (const id of [...this.openWindows]) this.closeWindow(id);
       this.setSheetOpen(false);
     }
@@ -393,8 +522,8 @@ export class GameHUD {
     else this.run.removeAttribute('aria-description');
   }
 
-  renderSlotOne(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean): void {
-    this.slotOne.render(engaged, action, targetFallen);
+  renderSlotOne(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean, refusal: AttackRefusal | undefined): void {
+    this.slotOne.render(engaged, action, targetFallen, refusal);
   }
 
   /**
@@ -451,6 +580,50 @@ export class GameHUD {
     this.character.render(inventory, lucidity);
   }
 
+  /** `study` is the teaching the player studies, which a quest's practice goes toward. */
+  renderQuests(quests: QuestLog, study: string | undefined): void {
+    this.quests.render(quests, study);
+    this.tracker.render(quests);
+    this.placeTracker();
+  }
+
+  /**
+   * Says over the world what a quest taken on asks for, what moved in a quest held, a line's count or
+   * the quest done, which it lists first in the tracker, or what a quest turned in paid.
+   */
+  showQuestNews(news: QuestNews): void {
+    const { held } = news;
+    switch (news.kind) {
+      case 'accepted':
+        this.tracker.moved(held.questId);
+        this.questFeedback.showAccepted(acceptedSaid(held), this.now());
+        return;
+      case 'progress':
+        this.tracker.moved(held.questId);
+        this.questFeedback.showCount(objectiveCount(news.line), this.now());
+        return;
+      case 'done':
+        this.tracker.moved(held.questId);
+        this.questFeedback.showDone(
+          {
+            title: t('%@ complete', questTitle(heldQuest(held), held.definition)),
+            returnTo: returnLine(held, (carrierId) => this.callbacks.carrierName(carrierId)),
+          },
+          this.now(),
+        );
+        return;
+      case 'turnedIn':
+        this.questFeedback.showTurnIn(turnInSaid(news), this.now());
+        return;
+    }
+  }
+
+  /** What the quest tracker says, in its order, and how it shows: at all, its list under the heading, and a finger's list folded to its first quest. */
+  get questTracker(): { shown: boolean; listShown: boolean; folded: boolean; quests: readonly TrackedQuest[] } {
+    const { listShown, folded, quests } = this.tracker;
+    return { shown: !isHidden(this.root) && !isHidden(this.tracker.root), listShown, folded, quests };
+  }
+
   /** How far the Character window's body is turned from its usual view, in radians. */
   bodyTurn(nowMs: number): number {
     return this.character.bodyTurn(nowMs);
@@ -462,11 +635,13 @@ export class GameHUD {
   }
 
   /**
-   * The clock's minute, the chat's fading, and the seconds left on cooldowns and effects, which move
-   * with time rather than with a frame from the server, and the tip shown, which follows its part.
+   * The clock's minute, the chat's fading, the line and the banner over the world ending, and the
+   * seconds left on cooldowns and effects, which move with time rather than with a frame from the
+   * server, and the tip shown, which follows its part.
    */
   tick(nowMs: number, clock: HUDClock): void {
     this.chat.tick(nowMs);
+    this.questFeedback.tick(nowMs);
     for (const slot of this.abilitySlots) slot?.tick(nowMs);
     this.ownFrame.effects.tick(nowMs);
     this.targetFrame.effects.tick(nowMs);
@@ -536,9 +711,10 @@ export class GameHUD {
     else this.openWindow(id);
   }
 
-  /** Opens a window on top of the others. A finger's layout shows one at a time, in the sheet's place. */
+  /** Opens a window on top of the others. A finger's layout shows one at a time, in the sheet's place, and in turn with a carrier's panel. */
   openWindow(id: HUDWindowId): void {
     if (this.coarse) for (const other of [...this.openWindows]) if (other !== id) this.closeWindow(other);
+    if (this.carrierPanelOpen && !this.windowsBesideCarrierPanel) this.callbacks.onCloseCarrierPanel();
     this.setSheetOpen(false);
     const at = this.openWindows.indexOf(id);
     if (at >= 0) this.openWindows.splice(at, 1);
@@ -561,8 +737,9 @@ export class GameHUD {
       this.windowToggles.get(id)?.setAttribute('aria-pressed', String(order >= 0));
       if (order < 0) this.forgetHover(window.root);
     }
-    // On a mouse the Players window stands beside the Character window while both are open. Where the window is too narrow for both, they share a place and the newer covers the older.
-    this.windows.players.root.classList.toggle('hud-window--beside', this.openWindows.includes('character'));
+    this.placeTracker();
+    // On a mouse the Players window and the Quest log stand beside the Character window while it is open. Windows that share a place, as those two do, or as all do where the window is too narrow, stack with the newer over the older.
+    for (const id of ['players', 'quests'] as const) this.windows[id].root.classList.toggle('hud-window--beside', this.openWindows.includes('character'));
     // What the Character window has under way goes with it.
     if (!this.openWindows.includes('character')) this.character.closed();
     // Its plate is open over the body, so a part of the HUD under it would show through.

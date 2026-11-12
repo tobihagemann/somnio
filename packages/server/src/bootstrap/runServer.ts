@@ -5,6 +5,7 @@ import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
   PostgresItemRepository,
+  PostgresQuestRepository,
   PostgresNPCDialogStateRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
@@ -97,6 +98,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const accounts = new PostgresAccountRepository(db);
   const characters = new PostgresCharacterRepository(db);
   const items = new PostgresItemRepository(db);
+  const quests = new PostgresQuestRepository(db);
   const npcDialogStates = new PostgresNPCDialogStateRepository(db);
   const worldClocks = new PostgresWorldClockRepository(db);
   const sessions = new PostgresSessionRepository(db);
@@ -107,6 +109,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
     worldRouter = await WorldRouter.create(world, characters, npcDialogStates, logging.gameplayLogger('world'), logging.gameplayLogger('space'));
     // Pre-loaded synchronously so a login in the first tick sees the persisted clock, not the default.
     worldClock = new WorldClockService(worldClocks, await worldClocks.load(), logging.gameplayLogger('worldclock'), options.worldClockIntervalMs);
+    worldClock.onNewDay((worldSeconds) => worldRouter.reachWorldDay(worldSeconds));
   } catch (error) {
     return failStartup(error);
   }
@@ -118,6 +121,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
     accounts,
     characters,
     items,
+    quests,
     npcDialogStates,
     sessions,
     worldRouter,
