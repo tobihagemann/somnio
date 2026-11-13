@@ -1,4 +1,4 @@
-import { ROLES, SERVICES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { ROLES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { QuestsMessage, Role, SectorView, Service } from '@somnio/protocol';
 import questsJSON from '../data/quests.json' with { type: 'json' };
 import { bountyDay, bountyIdOf, bountyOf, bountyQuest, isBountyId } from './bounties.ts';
@@ -264,16 +264,6 @@ export function objectiveLines(said: Quest, progress: readonly number[]): Object
     if (objectives.length === 1) return { labelKey, objectives, done: Math.floor(reached[0]!), goal: objectiveGoal(objectives[0]!) };
     return { labelKey, objectives, done: objectives.filter((objective, index) => reached[index]! >= objectiveGoal(objective)).length, goal: objectives.length };
   });
-}
-
-/** The carriers that give or take a committed quest by their id, rather than by a service they carry. */
-export const QUEST_CARRIER_IDS: ReadonlySet<string> = new Set(
-  QUEST_IDS.flatMap((questId) => [quest(questId).giver, quest(questId).turnIn]).filter((carrier) => !(SERVICES as readonly string[]).includes(carrier)),
-);
-
-/** Whether the carrier, by its id, gives or takes a committed quest, which gives it a panel whatever service its own record names. */
-export function carriesQuests(carrierId: string): boolean {
-  return QUEST_CARRIER_IDS.has(carrierId);
 }
 
 /** What a carrier shows over its head to a dreamer. */

@@ -74,6 +74,9 @@ export interface EffectBody {
   headHeight: number;
 }
 
+/** The word over a body a blow missed: one mesh whose material the effects fade. */
+export type MissWord = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+
 /** What the effects ask of the scene. */
 export interface CombatEffectsHost {
   body(entityId: string): EffectBody | undefined;
@@ -87,8 +90,8 @@ export interface CombatEffectsHost {
   playOneShot(entityId: string, oneShot: OneShot, landsIn?: number): THREE.AnimationClip | undefined;
   /** Ends the one-shot the body plays, so its looping pose fades back in. */
   endOneShot(entityId: string): void;
-  /** The word over a body a blow missed, drawn as the plaques are; made once for each in its pool. */
-  missWord(): THREE.Object3D;
+  /** The word over a body a blow missed, its foot at its origin; made once for each in its pool. */
+  missWord(): MissWord;
   /** How many times its size in metres the overlay art is drawn, which the miss word follows. */
   overlayScale(): number;
   /** The wall clock, in milliseconds. */
@@ -204,9 +207,10 @@ export const MOONLIGHT = 0xd8e6ff;
 export const RAISE_COLOR = 0xffd27a;
 /** Calm's cool blue, apart from the moonlight of a heal. */
 const CALM_COLOR = 0x9fd8ff;
-/** Gap between a body's head and the word over it a blow missed, and how long the word stays up. */
-const MISS_HEAD_GAP = 0.2;
+/** How far the word over a body a blow missed rises from its head, how long it stays up, and how long of that it fades out over. */
+const MISS_RISE = 0.4;
 const MISS_SECONDS = 0.8;
+const MISS_FADE_SECONDS = 0.35;
 /** A raise's ring lies round a fallen body at this many body radii, clear of it lying down. */
 export const RAISE_RING_RADII = 2;
 /** The width of the rings drawn flat on the ground: the selection ring, the lock's reticle, the press marker, and a raise's ring. */
@@ -511,7 +515,7 @@ export class CombatEffects {
   private readonly streams: EffectPool<THREE.Mesh>;
   private readonly beams: EffectPool<THREE.Mesh>;
   private readonly raiseRingMeshes: EffectPool<THREE.Mesh>;
-  private readonly misses: EffectPool<THREE.Object3D>;
+  private readonly misses: EffectPool<MissWord>;
   private readonly shells: EffectPool<THREE.Mesh>;
   private readonly bolts: EffectPool<THREE.Mesh>;
   private readonly cracks: EffectPool<THREE.Mesh>;
@@ -1450,14 +1454,19 @@ export class CombatEffects {
     });
   }
 
-  /** The word over a body a blow missed, a gap above its standing head, for a moment, as large as the plaques are drawn. */
+  /**
+   * The word over a body a blow missed, as large as the plaques are drawn. It rises from the standing
+   * head and fades out, and holds still and whole under reduced motion.
+   */
   private showMiss(entityId: string): void {
     const word = this.misses.take();
     this.animate(word, (elapsed) => {
       const body = this.host.body(entityId);
       if (body === undefined) return false;
       const feet = body.node.position;
-      word.position.set(feet.x, feet.y + body.headHeight + MISS_HEAD_GAP, feet.z);
+      const rise = this.reducedMotion ? 0 : MISS_RISE * easeOut(Math.min(1, elapsed / MISS_SECONDS));
+      word.position.set(feet.x, feet.y + body.headHeight + rise, feet.z);
+      word.material.opacity = this.reducedMotion ? 1 : Math.min(1, (MISS_SECONDS - elapsed) / MISS_FADE_SECONDS);
       word.scale.setScalar(this.host.overlayScale());
       return elapsed < MISS_SECONDS;
     });

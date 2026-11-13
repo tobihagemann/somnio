@@ -201,7 +201,7 @@ export class ChatPane {
 
   /**
    * Enter sends the line, if it has any text, then closes the chat and hands the keyboard back to
-   * the world.
+   * the world. Shift+Enter and Alt+Enter do nothing here, so Alt+Enter never toggles fullscreen from the field.
    *
    * The close does not depend on the text: Shift toggles Run only while the field lacks the
    * keyboard, so a field that kept it would leave Shift toggling nothing.
@@ -212,7 +212,7 @@ export class ChatPane {
     // tokenizes on spaces only, so a newline the field took would ride inside a word, be measured
     // wrong in the bubble, and be relayed by the server all the same.
     event.preventDefault();
-    if (event.shiftKey) return;
+    if (event.shiftKey || event.altKey) return;
     const text = this.input.value;
     this.input.value = '';
     if (utf8ByteLength(text.trim()) > 0) this.callbacks.onSubmit(text);

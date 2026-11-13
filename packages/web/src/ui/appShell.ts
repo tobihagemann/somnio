@@ -396,13 +396,19 @@ export class AppShell {
     watchViewport(() => this.handleResize());
     this.askToTurnWhileUpright();
 
-    // Esc is bound to the game menu. Fullscreen is never entered automatically,
-    // because the browser gives Esc to "exit fullscreen" first and the key would stop reaching the
-    // menu at all — an explicit toggle in Options is the honest trade.
+    // Fullscreen is never entered automatically, since in fullscreen the browser takes Esc to leave
+    // it and the key would stop reaching the game. The player enters it by the Options toggle or Alt+Enter.
     window.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         this.handleEscape();
+        return;
+      }
+      // Alt+Enter enters and leaves fullscreen, as in many games, since the browser keeps F11 for its own.
+      // It is the page's, not the world's, so it works under an overlay too, though not in the chat field.
+      if (event.key === 'Enter' && event.altKey && !event.ctrlKey && !event.metaKey && !event.repeat && !this.controller.isChatInputFocused) {
+        event.preventDefault();
+        this.toggleFullscreen();
         return;
       }
       // Only while the world has the keyboard: under an overlay or in the chat field, Shift capitalizes and 1 is typed.
@@ -704,19 +710,19 @@ export class AppShell {
       // Nothing to resume to without a session, so Esc is inert rather than opening a menu whose
       // Resume would drop the player onto the splash.
       if (this.controller.connectionState === 'disconnected') return;
-      // An open chat closes first, focused or not. A walk under way stops next, ahead of what stands open, since it keeps moving the player meanwhile.
+      // An open chat closes first, focused or not. What the HUD has open closes next, one thing at a
+      // time, then a carrier's panel, since what stands open is what the player means to put away.
       if (this.hud.chatOpen) {
         this.hud.closeChat();
         return;
       }
-      if (this.session.stopWalk()) return;
-      // What the HUD has open closes next, one thing at a time, then a carrier's panel.
       if (this.hud.escape()) return;
       if (this.session.servicePanel !== undefined) {
         this.session.closeServicePanel();
         return;
       }
-      // Clearing the target comes before the menu.
+      // A walk under way stops next, then the target clears, and only then does the menu open.
+      if (this.session.stopWalk()) return;
       if (this.session.target !== undefined) {
         this.session.select(undefined);
         return;

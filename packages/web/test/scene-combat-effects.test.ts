@@ -7,6 +7,7 @@ import type { Condition } from '@somnio/protocol';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { COMBAT_EFFECTS_NAME, CRUMBLE_SECONDS, EFFECT_POOL_SIZES, STRIKE_AT, SUMMON_COLOR, TELEGRAPH_COLOR } from '@/scene/combatEffects';
+import type { MissWord } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME } from '@/scene/eliteAuras';
 import { LOOT_BEAM_NAME, LOOT_LABEL_NAME, LOOT_MARKERS_NAME } from '@/scene/lootMarkers';
 import { offsetDirection } from '@/scene/cameraRig';
@@ -187,9 +188,12 @@ function beams(scene: WorldScene): THREE.Mesh[] {
   return effects(scene).children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).geometry?.getAttribute('aAlong') !== undefined);
 }
 
-/** The words over bodies a blow missed: the one kind of effect that is no mesh of its own but holds a plaque's. */
-function missWords(scene: WorldScene): THREE.Object3D[] {
-  return effects(scene).children.filter((child) => !(child as THREE.Mesh).isMesh && !(child as THREE.Sprite).isSprite);
+/** The words over bodies a blow missed: the one kind of mesh effect drawn from a canvas, as the plaques are. */
+function missWords(scene: WorldScene): MissWord[] {
+  return effects(scene).children.filter(
+    (child): child is MissWord =>
+      (child as THREE.Mesh).isMesh && ((child as THREE.Mesh).material as THREE.MeshBasicMaterial).map instanceof THREE.CanvasTexture,
+  );
 }
 
 /** The Challenge pulses showing at the nightmares' feet, by their colour. */
@@ -1085,10 +1089,35 @@ describe('a missed blow', () => {
     expect(visible(missWords(scene))).toEqual([]);
     run(scene, 0.05);
     const [word] = visible(missWords(scene));
-    expect([word!.position.x, word!.position.y, word!.position.z]).toEqual([10.5, expect.closeTo(CHARACTER_SCALE + 0.2, 2), 10.6]);
+    const overHead = CHARACTER_SCALE;
+    expect([word!.position.x, word!.position.z]).toEqual([10.5, 10.6]);
+    expect(word!.position.y).toBeGreaterThanOrEqual(overHead);
+    expect(word!.position.y).toBeLessThan(overHead + 0.1);
     expect(word!.scale.x).toBeGreaterThan(0);
-    run(scene, 0.85);
+    expect(word!.material.opacity).toBe(1);
+    // It rises, most of the way in the first half of its moment, and fades out over its end.
+    run(scene, 0.35);
+    expect(word!.position.y).toBeGreaterThan(overHead + 0.3);
+    expect(word!.material.opacity).toBe(1);
+    run(scene, 0.25);
+    expect(word!.material.opacity).toBeGreaterThan(0);
+    expect(word!.material.opacity).toBeLessThan(0.7);
+    run(scene, 0.25);
     expect(visible(missWords(scene))).toEqual([]);
+  });
+
+  it('holds the word still and whole over the head under reduced motion', () => {
+    const { scene } = combatScene({ reducedMotion: true });
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 10.5, z: 10.6 });
+    scene.tick(0.01);
+
+    scene.showBlow('self', 'monster:1', false);
+    run(scene, BLADE_LANDS + 0.03);
+    const [word] = visible(missWords(scene));
+    run(scene, 0.65);
+    expect(word!.position.y).toBeCloseTo(CHARACTER_SCALE, 2);
+    expect(word!.material.opacity).toBe(1);
   });
 });
 

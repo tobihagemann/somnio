@@ -48,7 +48,6 @@ import type {
   Ware,
 } from '@somnio/core';
 import type { LucidityMessage, Role, Service } from '@somnio/protocol';
-import { offersService } from '@/client';
 import type { ServiceCarrier } from '@/client';
 import { itemName, t } from '@/i18n';
 import { button, element, replaceChildren, setHidden } from './dom';
@@ -202,9 +201,8 @@ export class ServicePanel {
     inventory: Inventory,
     tradeLocked: boolean,
   ): void {
-    const open = carrier !== undefined && offersService(carrier);
-    setHidden(this.root, !open);
-    if (!open) {
+    setHidden(this.root, carrier === undefined);
+    if (carrier === undefined) {
       this.shown = undefined;
       return;
     }
@@ -247,7 +245,7 @@ export class ServicePanel {
     if (own !== undefined && !carries) return own;
     // Of what the dreamer carries, the quests read only whether a reward's item has a place to go.
     const roomForGear = bagHasRoom(inventory);
-    const build = (): HTMLElement[] => [...(own?.build() ?? []), ...this.questOffers(carrier, name, lucidity, quests, roomForGear, own === undefined)];
+    const build = (): HTMLElement[] => [...(own?.build() ?? []), ...this.questOffers(carrier, name, lucidity, quests, roomForGear)];
     return { reads: [...(own?.reads ?? []), lucidity, quests, roomForGear], ...(own?.purse === undefined ? {} : { purse: own.purse }), build };
   }
 
@@ -335,16 +333,9 @@ export class ServicePanel {
   /**
    * The quests the carrier gives that the dreamer may take on, and those they hold that it gives or
    * takes, each with what it asks and pays. A trial and a teaching's task are a master's teachings,
-   * shown there. A carrier with no service of its own says so when it has nothing for the dreamer.
+   * shown there.
    */
-  private questOffers(
-    carrier: QuestCarrier,
-    name: string,
-    lucidity: LucidityMessage,
-    quests: QuestLog,
-    roomForGear: boolean,
-    saysNothing: boolean,
-  ): HTMLElement[] {
+  private questOffers(carrier: QuestCarrier, name: string, lucidity: LucidityMessage, quests: QuestLog, roomForGear: boolean): HTMLElement[] {
     const ownQuest = (questId: QuestId): boolean => trialRole(questId) === undefined && gatedTeaching(questId) === undefined;
     const offered = QUEST_IDS.filter((questId) => ownQuest(questId) && questCarriedBy(quest(questId).giver, carrier) && mayAccept(questId, quests, lucidity));
     const held = quests.active.filter(
@@ -353,9 +344,6 @@ export class ServicePanel {
         ownQuest(active.questId) &&
         (questCarriedBy(quest(active.questId).giver, carrier) || questCarriedBy(quest(active.questId).turnIn, carrier)),
     );
-    if (offered.length === 0 && held.length === 0) {
-      return saysNothing ? [paragraph(t('%@ has nothing for you now.', name))] : [];
-    }
     return [
       ...held.map((active) => this.heldQuestRow(carrier, name, active, quests, lucidity, roomForGear)),
       ...offered.map((questId) =>

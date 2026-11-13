@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { WEB_ROOT } from './helpers/paths';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import * as THREE from 'three';
 import { AppShell, FallenNotice, Overlays, ServicePanel, UPRIGHT_PHONE_QUERY, element, field } from '@/ui';
 import { setLocale } from '@/i18n';
@@ -1476,11 +1476,9 @@ describe('the service panel', () => {
 
   beforeEach(() => setLocale('en'));
 
-  it('is hidden with no carrier, and for an NPC with neither a service nor a quest to give or take', () => {
+  it('is hidden with no carrier', () => {
     const p = mount();
     p.render(undefined, { ranks: [] });
-    expect(p.panel.root.classList.contains('hidden')).toBe(true);
-    p.render(clientEntity({ id: 'npc:EdariaInn/keeper', kind: 'npc' }), { ranks: [] });
     expect(p.panel.root.classList.contains('hidden')).toBe(true);
   });
 
@@ -1729,9 +1727,6 @@ describe('the service panel', () => {
       expect(p.quest('newcomer-errand')).toContain('You did what Libus asked.');
       p.press('Turn in');
       expect(p.calls).toEqual(['turnIn:newcomer-errand']);
-      p.panel.render(libus(), { ranks: [] }, { active: [], done: ['newcomer-errand'] }, [], NOTHING, false);
-      expect(p.text()).toContain('Libus has nothing for you now.');
-      expect(p.buttons()).toEqual(['Close']);
     });
 
     it('takes in a quest held at every carrier of the service its turn-in names', () => {
@@ -2554,7 +2549,7 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
   });
 
-  it('stops a walk under way on Escape before it closes a window', () => {
+  it('closes a window on Escape before it stops a walk under way', () => {
     const p = playing();
     const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     container.querySelector<HTMLButtonElement>('button[aria-label="Players"]')!.click();
@@ -2563,9 +2558,9 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path' });
 
     escape();
-    expect([p.shell.session.predictor.walk, p.shell.hud.isWindowOpen('players')]).toEqual([undefined, true]);
+    expect([p.shell.session.predictor.walk?.kind, p.shell.hud.isWindowOpen('players')]).toEqual(['path', false]);
     escape();
-    expect(p.shell.hud.isWindowOpen('players')).toBe(false);
+    expect(p.shell.session.predictor.walk).toBeUndefined();
   });
 
   it('closes an open chat on Escape before it stops a walk, though its field has lost the keyboard', () => {
@@ -2587,7 +2582,7 @@ describe('the play field and the panels through the shell', () => {
     const p = playing();
     const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     p.shell.session.pressEntity(PUGNAX);
-    // The walk runs out first, since Escape would stop a walk under way before closing anything.
+    // The walk runs out first, since Escape would stop a walk under way before clearing the target.
     for (let time = 0; time <= 4000 && p.shell.session.predictor.walk !== undefined; time += 50) p.shell.session.runTick(time);
     container.querySelector<HTMLButtonElement>('button[aria-label="Players"]')!.click();
     const state = () => [p.shell.hud.isWindowOpen('players'), p.shell.session.servicePanel?.id, p.shell.session.target];
@@ -2693,6 +2688,33 @@ describe('the play field and the panels through the shell', () => {
     p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     expect(p.sent()).toContainEqual({ tag: 'clientSay', payload: { text: 'hallo', kind: 'say' } });
     expect([p.shell.hud.chatOpen, p.shell.controller.isChatInputFocused]).toEqual([false, false]);
+  });
+
+  it('asks for fullscreen on Alt+Enter, under an overlay too, without opening the chat, and not from the chat field', () => {
+    const p = playing();
+    // jsdom has no Fullscreen API: nothing is fullscreen, so each toggle asks to enter it.
+    const requestFullscreen = vi.fn(() => Promise.resolve());
+    container.requestFullscreen = requestFullscreen;
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => null });
+    onTestFinished(() => {
+      delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    });
+    const altEnter = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, cancelable: true }));
+
+    expect(altEnter()).toBe(false);
+    expect([requestFullscreen.mock.calls.length, p.shell.hud.chatOpen]).toEqual([1, false]);
+    p.shell.controller.presentedOverlay = { kind: 'options' };
+    altEnter();
+    expect(requestFullscreen).toHaveBeenCalledTimes(2);
+    p.shell.controller.presentedOverlay = undefined;
+    p.shell.hud.openChat();
+    p.shell.hud.chatInput.value = 'hallo';
+    p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, bubbles: true, cancelable: true }));
+    expect([requestFullscreen.mock.calls.length, p.shell.controller.isChatInputFocused, p.sent()]).toEqual([
+      2,
+      true,
+      expect.not.arrayContaining([expect.objectContaining({ tag: 'clientSay' })]),
+    ]);
   });
 
   it('opens the game menu from Settings, and shows the world clock and where the player stands', () => {

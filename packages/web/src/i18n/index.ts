@@ -398,7 +398,6 @@ export const RENDERED_KEYS: readonly string[] = [
   '%@ practice',
   '%1$@ practice toward %2$@',
   'a piece of gear',
-  '%@ has nothing for you now.',
 
   // The bounty board
   'Bounty board',
@@ -527,6 +526,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.',
   'Loading the world...',
   'Fullscreen',
+  'Alt+Enter also enters and leaves fullscreen.',
 
   // The splash reel's dreamers
   'Anyone up for the North Wood?',

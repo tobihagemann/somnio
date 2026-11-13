@@ -81,12 +81,14 @@ import type { LootThrow } from './lootMarkers';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
 import {
+  MISS_WORD,
   NAME_PLAQUE,
   OVERLAY_METRES_PER_PIXEL,
   PLAQUE_FEET_GAP,
   namePlaqueBackground,
   overlayMagnification,
   renderNamePlaque,
+  renderOutlinedText,
   speechBubbleFrameSize,
 } from './overlayArt';
 import type { RasterArt } from './overlayArt';
@@ -2427,6 +2429,9 @@ function disposeSubtree(root: THREE.Object3D | undefined): void {
   root.removeFromParent();
 }
 
+/** A flat quad drawing overlay art: its canvas texture on a plane as large as the art. */
+type OverlayPlate = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+
 /**
  * Overlay quad with a **fixed** screen-aligned orientation rather than a billboard.
  *
@@ -2437,9 +2442,16 @@ function disposeSubtree(root: THREE.Object3D | undefined): void {
  * Returns the container and the plate separately so the caller can position the plate inside the
  * screen-aligned frame, where +Y is camera-up and +Z is toward the camera.
  */
-function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.Mesh; size: THREE.Vector2 } {
+function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: OverlayPlate; size: THREE.Vector2 } {
   const container = new THREE.Object3D();
   container.quaternion.copy(OVERLAY_ORIENTATION);
+  const { plate, size } = overlayPlate(art);
+  container.add(plate);
+  return { container, plate, size };
+}
+
+/** A plane as large as the art in metres, centred on its origin, drawing the art untouched by the scene's lighting. */
+function overlayPlate(art: RasterArt): { plate: OverlayPlate; size: THREE.Vector2 } {
   const texture = new THREE.CanvasTexture(art.canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   // Not tone-mapped, so the plaque's painted colours stay exactly as rasterized.
@@ -2448,8 +2460,7 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: THREE.
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), material);
   // Every overlay quad allocates its own canvas texture, material, and geometry.
   markOwned(plate, { geometry: true, material: true });
-  container.add(plate);
-  return { container, plate, size };
+  return { plate, size };
 }
 
 /**
@@ -2466,15 +2477,16 @@ function namePlaqueQuad(name: string, background: string, bold: boolean, ink: st
   const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
   plate.position.set(0, -(size.y / 2 + PLAQUE_FEET_GAP), drop / Math.tan(pitch) + PLAQUE_FLOOR_CLEARANCE);
   // Never hidden by another plaque's depth; `orderPlaques` decides which shows.
-  (plate.material as THREE.MeshBasicMaterial).depthWrite = false;
+  plate.material.depthWrite = false;
   return { container, plate };
 }
 
-/** The word over an entity a blow missed, its foot at its container's origin, which the effects hang a gap above the head. */
-function missWord(): THREE.Object3D {
-  const { container, plate, size } = overlayQuad(renderNamePlaque(t('miss'), NAME_PLAQUE.playerBackground, false));
-  plate.position.y = size.y / 2;
-  return container;
+/** The word over an entity a blow missed, facing the camera with its foot at its origin. */
+function missWord(): OverlayPlate {
+  const { plate, size } = overlayPlate(renderOutlinedText(t('miss'), MISS_WORD));
+  plate.quaternion.copy(OVERLAY_ORIENTATION);
+  plate.geometry.translate(0, size.y / 2, 0);
+  return plate;
 }
 
 /** The colour with its lightness lowered by `by`, its hue and saturation kept. */

@@ -337,12 +337,16 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
   return { canvas, widthPixels: width, heightPixels: height };
 }
 
-/** The mark over a carrier that has a quest for the player or awaits one of theirs: a flat glyph in `color` inside a dark edge, as the HUD draws its line art. */
-export function renderQuestMark(glyph: string, color: string): RasterArt {
-  const fontSize = 26;
-  const edge = 3;
+/** How a quest mark's glyph is drawn; its ink is the mark's own colour. */
+export const QUEST_MARK = { fontSize: 26, edge: 3 } as const;
+
+/** How the word over a body a blow missed is drawn: bare, so it never reads as a name plaque. */
+export const MISS_WORD = { fontSize: NAME_PLAQUE.fontSize, edge: 2, ink: 'rgb(255, 255, 255)' } as const;
+
+/** Bold text in `ink` inside a dark edge `edge` pixels wide, with no plate behind it, as the HUD draws its line art. */
+export function renderOutlinedText(text: string, { fontSize, edge, ink }: { fontSize: number; edge: number; ink: string }): RasterArt {
   const font = `bold ${fontSize}px system-ui, sans-serif`;
-  const width = Math.max(Math.ceil(measureTextWidth(glyph, font) + 2 * edge), 1);
+  const width = Math.max(Math.ceil(measureTextWidth(text, font) + 2 * edge), 1);
   const height = Math.max(Math.ceil(lineBoxHeight(fontSize) + 2 * edge), 1);
   const { canvas, context } = rasterCanvas(width, height);
   if (context !== null) {
@@ -353,9 +357,9 @@ export function renderQuestMark(glyph: string, color: string): RasterArt {
     context.lineWidth = 2 * edge;
     context.strokeStyle = '#000000';
     const baseline = baselineInCenteredBox(height, fontSize);
-    context.strokeText(glyph, width / 2, baseline);
-    context.fillStyle = color;
-    context.fillText(glyph, width / 2, baseline);
+    context.strokeText(text, width / 2, baseline);
+    context.fillStyle = ink;
+    context.fillText(text, width / 2, baseline);
   }
   return { canvas, widthPixels: width, heightPixels: height };
 }

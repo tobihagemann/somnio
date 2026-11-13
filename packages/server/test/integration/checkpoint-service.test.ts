@@ -29,7 +29,7 @@ it("checkpointAll persists every logged-in player's full character and inventory
     energy: { ...character.energy, healthCurrent: 42 },
   };
   const moonstone = plainInstance('moonstone');
-  space.attach(staged, { ...kit, coins: 60, equipped: { offHand: moonstone } }, new ConnectionOutbox(1024), 0, 'en');
+  space.attach(staged, { ...kit, coins: 60, equipped: { ...kit.equipped, offHand: moonstone } }, new ConnectionOutbox(1024), 0, 'en');
 
   await dependencies.worldRouter.checkpointAll();
 
@@ -37,5 +37,5 @@ it("checkpointAll persists every logged-in player's full character and inventory
   expect(reloaded.position).toEqual({ x: 7.25, z: 5.5 });
   expect(reloaded.facing).toBe(headingFromCardinal('north'));
   expect(reloaded.energy.healthCurrent).toBe(42);
-  expect(await new PostgresItemRepository(harness.db).load(character.id)).toEqual({ ...kit, coins: 60, equipped: { offHand: moonstone } });
+  expect(await new PostgresItemRepository(harness.db).load(character.id)).toEqual({ ...kit, coins: 60, equipped: { ...kit.equipped, offHand: moonstone } });
 });

@@ -1745,6 +1745,7 @@ describe('chat lines from what changed', () => {
 
 describe('the service panel', () => {
   const MASTER = 'npc:Meadow/pugnax';
+  const LIBUS = 'npc:EdariaLibrary/libus';
 
   /** Joins a meadow with a master a step south of the player, and clicks him. */
   function atMaster(): { rig: Rig; tick: (count?: number) => void } {
@@ -1869,6 +1870,30 @@ describe('the service panel', () => {
     expect(rig.session.servicePanel).toEqual({ id: carrierId, name, position: { x: 10.3, z: 10.6 }, service: undefined });
     rig.session.acceptQuest('newcomer-errand');
     expect(rig.sent.at(-1)).toEqual({ tag: 'acceptQuest', payload: { carrierId, questId: 'newcomer-errand' } });
+  });
+
+  it("closes a carrier's panel as its last quest for the player is turned in, when it has no service of its own", () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'newcomer-errand', progress: [1, 1] }], done: [], bounties: [] } });
+    rig.controller.dispatch(entityFrame({ id: LIBUS, kind: 'npc', name: 'Libus', x: 10.3, z: 10.6 }));
+    rig.session.pressEntity(LIBUS);
+    expect(rig.session.servicePanel?.id).toBe(LIBUS);
+
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: ['newcomer-errand'], bounties: [] } });
+    expect(rig.session.servicePanel).toBeUndefined();
+  });
+
+  it('speaks to a carrier of quests with nothing left for the player, and opens nothing', () => {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: ['newcomer-errand'], bounties: [] } });
+    rig.controller.dispatch(entityFrame({ id: LIBUS, kind: 'npc', name: 'Libus', x: 10.3, z: 10.6 }));
+    rig.session.pressEntity(LIBUS);
+    expect(rig.sent).toContainEqual({ tag: 'interact', payload: { carrierId: LIBUS } });
+    expect(rig.session.servicePanel).toBeUndefined();
   });
 });
 

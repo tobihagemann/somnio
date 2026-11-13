@@ -32,40 +32,51 @@ describe('inventory round trip', () => {
     const joined = await joinFreshPlayer(server.url, 'starter');
     expect(joinInventory(joined)).toEqual({
       coins: 100,
-      equipped: [],
-      bag: [{ place: 0, item: { id: expect.any(String), baseId: 'cudgel', tier: 1, rarity: 'plain', affixes: [] } }],
+      equipped: [{ slot: 'mainHand', item: { id: expect.any(String), baseId: 'cudgel', tier: 1, rarity: 'plain', affixes: [] } }],
+      bag: [],
     });
     await joined.client.close();
   });
 
-  it('equip wears the cudgel in the main hand and re-emits the inventory', async () => {
+  it('unequip lays the cudgel in the bag, equip wears it again, and each re-emits the inventory', async () => {
     const joined = await joinFreshPlayer(server.url, 'equipper');
-    const cudgel = joinInventory(joined).bag[0]!.item;
+    const cudgel = joinInventory(joined).equipped[0]!.item;
+    joined.client.send(frame({ tag: 'unequip', payload: { slot: 'mainHand' } }));
+    const unequipped = await joined.client.until('inventory');
+    expect(unequipped.target.tag === 'inventory' ? unequipped.target.payload : undefined).toEqual({
+      coins: 100,
+      equipped: [],
+      bag: [{ place: 0, item: cudgel }],
+    });
     joined.client.send(frame({ tag: 'equip', payload: { itemId: cudgel.id } }));
-    const { target } = await joined.client.until('inventory');
-    expect(target.tag === 'inventory' ? target.payload : undefined).toEqual({ coins: 100, equipped: [{ slot: 'mainHand', item: cudgel }], bag: [] });
+    const equipped = await joined.client.until('inventory');
+    expect(equipped.target.tag === 'inventory' ? equipped.target.payload : undefined).toEqual({
+      coins: 100,
+      equipped: [{ slot: 'mainHand', item: cudgel }],
+      bag: [],
+    });
     await joined.client.close();
   });
 
   it('equip state and bag places are persisted by the close checkpoint and surface on reconnect', async () => {
     const joined = await joinFreshPlayer(server.url, 'persister');
-    const cudgel = joinInventory(joined).bag[0]!.item;
-    joined.client.send(frame({ tag: 'equip', payload: { itemId: cudgel.id } }));
+    const cudgel = joinInventory(joined).equipped[0]!.item;
+    joined.client.send(frame({ tag: 'unequip', payload: { slot: 'mainHand' } }));
+    await joined.client.until('inventory');
+    joined.client.send(frame({ tag: 'moveItem', payload: { itemId: cudgel.id, place: 7 } }));
     await joined.client.until('inventory');
     await closeAndAwaitCleanup(joined, server);
-    expect(await pollUntil(async () => ((await persistedMainHand(joined.name)) === 'cudgel' ? true : undefined))).toBe(true);
-
-    const second = await loginOverWire(server.url, joined.name);
-    expect(joinInventory(second).equipped).toEqual([{ slot: 'mainHand', item: cudgel }]);
-    second.client.send(frame({ tag: 'unequip', payload: { slot: 'mainHand' } }));
-    await second.client.until('inventory');
-    second.client.send(frame({ tag: 'moveItem', payload: { itemId: cudgel.id, place: 7 } }));
-    await second.client.until('inventory');
-    await closeAndAwaitCleanup(second, server);
     expect(await pollUntil(async () => ((await persistedMainHand(joined.name)) === undefined ? true : undefined))).toBe(true);
 
+    const second = await loginOverWire(server.url, joined.name);
+    expect(joinInventory(second)).toMatchObject({ equipped: [], bag: [{ place: 7, item: cudgel }] });
+    second.client.send(frame({ tag: 'equip', payload: { itemId: cudgel.id } }));
+    await second.client.until('inventory');
+    await closeAndAwaitCleanup(second, server);
+    expect(await pollUntil(async () => ((await persistedMainHand(joined.name)) === 'cudgel' ? true : undefined))).toBe(true);
+
     const third = await loginOverWire(server.url, joined.name);
-    expect(joinInventory(third)).toMatchObject({ equipped: [], bag: [{ place: 7, item: cudgel }] });
+    expect(joinInventory(third)).toMatchObject({ equipped: [{ slot: 'mainHand', item: cudgel }], bag: [] });
     await third.client.close();
   });
 });

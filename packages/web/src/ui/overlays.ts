@@ -265,8 +265,7 @@ export class Overlays {
 
     const options = element('div', {
       children: [
-        // Fullscreen lives here rather than being entered automatically: the browser's Esc handling
-        // would otherwise steal the key the game menu owns.
+        element('p', { className: 'service-text', text: t('Alt+Enter also enters and leaves fullscreen.') }),
         element('div', {
           className: 'menu-actions',
           children: [button(t('Fullscreen'), () => this.callbacks.onToggleFullscreen()), button(t('Close'), () => this.callbacks.onDismissOverlay())],

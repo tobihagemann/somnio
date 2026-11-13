@@ -119,10 +119,6 @@
     "en": "%@ entered the game.",
     "de": "%@ hat das Spiel betreten."
   },
-  "%@ has nothing for you now.": {
-    "en": "%@ has nothing for you now.",
-    "de": "%@ hat gerade nichts für dich."
-  },
   "%@ is not a command. Write /w to whisper or /y to yell.": {
     "en": "%@ is not a command. Write /w to whisper or /y to yell.",
     "de": "%@ ist kein Befehl. Schreib /w zum Flüstern oder /y zum Schreien."
@@ -278,6 +274,10 @@
   "Already logged in.": {
     "en": "Already logged in.",
     "de": "Du bist bereits angemeldet."
+  },
+  "Alt+Enter also enters and leaves fullscreen.": {
+    "en": "Alt+Enter also enters and leaves fullscreen.",
+    "de": "Alt+Enter schaltet das Vollbild auch ein und aus."
   },
   "Always see which way each fallen dreamer lies, however far off.": {
     "en": "Always see which way each fallen dreamer lies, however far off.",

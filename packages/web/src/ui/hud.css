@@ -19,14 +19,16 @@
   /* A control that is on: its plate tinted and a second line just inside its edge, both in its colour. */
   --hud-lit-plate: rgb(64 52 28 / 0.94);
   --hud-lit-line: var(--hud-key);
-  /* How far down the windows start, clear of the clock above them. */
-  --hud-window-top: 104px;
+  /* How far down the windows and the quest tracker start, clear of the clock above them, so a window and the tracker beside it line up. */
+  --hud-under-clock-top: 104px;
 }
 
 /* Its own stacking context, so a window's order among the others never lifts it over an overlay. */
 .hud {
   /* How much a mouse's HUD shrinks to fit a small window (`GameHUD.setViewport`): 1 in a window it fits whole. */
   --hud-scale: 1;
+  /* Where the windows and the quest tracker start once scaled, shrinking toward the edge padding. */
+  --hud-under-clock-scaled-top: calc(var(--somnio-edge-padding) + (var(--hud-under-clock-top) - var(--somnio-edge-padding)) * var(--hud-scale));
   /* How far above the belt's foot the windows end: clear of the menu beside the Spirit globe. */
   --hud-belt-reach: 86px;
   /* How far in from the right edge the windows stand. */
@@ -571,17 +573,14 @@
 
 /* Under the clock at the right edge, left of what is open down that edge (`GameHUD.placeTracker`). */
 .hud-tracker {
-  --hud-tracker-top: 88px;
-  --hud-tracker-scaled-top: calc(var(--somnio-edge-padding) + (var(--hud-tracker-top) - var(--somnio-edge-padding)) * var(--hud-scale));
-
   position: absolute;
-  top: var(--hud-tracker-scaled-top);
+  top: var(--hud-under-clock-scaled-top);
   right: calc(var(--somnio-edge-right) + var(--hud-tracker-beside, 0px));
   display: flex;
   flex-direction: column;
   width: 270px;
   /* Ending above the menu, whatever the HUD's scale, as the windows do. */
-  max-height: calc((100% - var(--hud-tracker-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale)) / var(--hud-scale));
+  max-height: calc((100% - var(--hud-under-clock-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale)) / var(--hud-scale));
   padding: 14px 18px;
   font-size: 13px;
   line-height: 1.35;
@@ -798,6 +797,13 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.85);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+/* The fill already says how full a pool is, and colour and place which pool it is, so its number and word show only under the pointer. */
+.hud-globe:hover .hud-globe__value {
+  opacity: 1;
 }
 
 .hud-globe__value small {
@@ -948,10 +954,6 @@
 
 .hud-slot--lock {
   margin-left: 8px;
-}
-
-.hud-slot--run {
-  margin-left: 6px;
 }
 
 /* An ability waiting on a cooldown is not greyed out: the sweep says it waits. */
@@ -1156,10 +1158,8 @@
 .hud-window {
   --somnio-plate: rgb(12 10 16);
 
-  --hud-window-scaled-top: calc(var(--somnio-edge-padding) + (var(--hud-window-top) - var(--somnio-edge-padding)) * var(--hud-scale));
-
   position: absolute;
-  top: var(--hud-window-scaled-top);
+  top: var(--hud-under-clock-scaled-top);
   right: var(--hud-windows-right);
   /* Over the open chat and a finger's sheet, the newest on top. */
   z-index: calc(30 + var(--hud-window-order, 0));
@@ -1168,7 +1168,7 @@
   gap: 10px;
   width: 280px;
   /* Ending above the menu, whatever the HUD's scale. */
-  max-height: calc(100% - var(--hud-window-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale));
+  max-height: calc(100% - var(--hud-under-clock-scaled-top) - 10px - var(--hud-belt-reach) * var(--hud-scale));
 }
 
 .hud-window--beside {
@@ -2313,6 +2313,7 @@
 
   .hud-bar__fill,
   .hud-globe__level,
+  .hud-globe__value,
   .hud-chat .chat-scrollback,
   .hud-chat-peek {
     transition: none;

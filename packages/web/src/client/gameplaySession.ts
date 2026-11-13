@@ -31,7 +31,6 @@ import {
   attackRefusal,
   bagHasRoom,
   bountiesOf,
-  carriesQuests,
   distance,
   doorOpenAt,
   droppableItem,
@@ -121,11 +120,6 @@ export interface ServiceCarrier {
   position: Point;
   /** The service its record names. */
   service: Service | undefined;
-}
-
-/** Whether a carrier has a panel to open: a service of its own, or quests to give or take. */
-export function offersService(carrier: ServiceCarrier): boolean {
-  return carrier.service !== undefined || carriesQuests(carrier.id);
 }
 
 /** The lucidity frame of a dreamer who has grown into nothing yet, until the server sends theirs. */
@@ -681,13 +675,21 @@ export class GameplaySession {
     this.markDestination(point);
   }
 
-  /** Acts on a carrier the player stands at, from where they stand, and opens its panel when it offers a service. */
+  /** Acts on a carrier the player stands at, from where they stand, and opens its panel when it has one. */
   private interact(carrierId: string): void {
     const carrier = this.carrierOf(carrierId);
     if (carrier === undefined) return;
     this.predictor.flush();
     this.send({ tag: 'interact', payload: { carrierId } });
-    if (offersService(carrier)) this.openServicePanel(carrier);
+    if (this.hasPanel(carrier)) this.openServicePanel(carrier);
+  }
+
+  /**
+   * Whether a carrier has a panel for the player: a service of its own, or else a quest marker for
+   * them. The marker stands for the panel's quest rows because every quest's giver is also its turn-in.
+   */
+  private hasPanel(carrier: QuestCarrier): boolean {
+    return carrier.service !== undefined || this.questMarkers.has(carrier.id);
   }
 
   /** The NPC in view or the fixture of a held sector going by the carrier id. */
@@ -1561,6 +1563,7 @@ export class GameplaySession {
     }
     this.questMarkers = markers;
     this.controller.renderSurface.showQuestMarkers(markers);
+    if (this.servicePanel !== undefined && !this.hasPanel(this.servicePanel)) this.closeServicePanel();
   }
 
   /** A carrier's name, by its entity id: as the entity in view is named, else as the committed world names it, else its id. */

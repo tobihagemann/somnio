@@ -700,8 +700,7 @@ export class GameHUD {
 
   /**
    * Escape closes what the HUD has open, one thing at a time: the menu sheet, an item carried, an
-   * item's card, then the newest window. Reports whether it closed anything. The chat is the shell's
-   * to close first, since it comes before a walk under way.
+   * item's card, then the newest window. Reports whether it closed anything. The chat is the shell's to close.
    */
   escape(): boolean {
     if (this.sheet !== undefined && !isHidden(this.sheet)) {
