@@ -95,16 +95,13 @@ function expectPathsWalkable(sectors: readonly Sector[], prefix: string, first: 
 }
 
 describe('composing the lands', () => {
-  /** Composing the whole world twice takes seconds, and longer on a loaded machine. */
-  const TWO_WORLDS = { timeout: 30_000 };
-
-  it('writes the same bytes composing the committed world, and composing that again', TWO_WORLDS, () => {
+  it('writes the same bytes composing the committed world, and composing that again', () => {
     const once = compose(loadSectorFixtures());
     expect(files(compose(once))).toEqual(files(once));
     expect(files(once)).toEqual(files(loadSectorFixtures()));
   });
 
-  it('dresses a land differently from another seed', TWO_WORLDS, () => {
+  it('dresses a land differently from another seed', () => {
     const generated = (sectors: Sector[]): string[] =>
       sectors
         .find((sector) => sector.name === 'NorthWood')!

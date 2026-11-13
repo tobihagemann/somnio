@@ -95,23 +95,24 @@ export function rasterizeWalkable({ sector, rect, collision }: WalkRasterInputs)
   const columns = firstCell(rect.x + rect.width) - column;
   const rows = firstCell(rect.z + rect.depth) - row;
   const clear = tiledClearance(collision);
-  // The ring of cells round the sector too, where the forward edges of its border cells end.
-  const ringColumns = columns + 2;
-  const ring = new Uint8Array(ringColumns * (rows + 2));
-  for (let ringRow = 0; ringRow < rows + 2; ringRow += 1) {
-    for (let ringColumn = 0; ringColumn < ringColumns; ringColumn += 1) {
-      if (clear(cellCentre(column - 1 + ringColumn, row - 1 + ringRow), RADIUS)) ring[ringRow * ringColumns + ringColumn] = 1;
+  // Which cell centres are clear: the sector's, and those beyond it where its border cells' forward
+  // edges end, a column on either side and the row past its far edge. No forward edge leads back a row.
+  const clearColumns = columns + 2;
+  const clearCentres = new Uint8Array(clearColumns * (rows + 1));
+  for (let clearRow = 0; clearRow < rows + 1; clearRow += 1) {
+    for (let clearColumn = 0; clearColumn < clearColumns; clearColumn += 1) {
+      if (clear(cellCentre(column - 1 + clearColumn, row + clearRow), RADIUS)) clearCentres[clearRow * clearColumns + clearColumn] = 1;
     }
   }
   const cells = new Uint8Array(columns * rows);
   for (let cellRow = 0; cellRow < rows; cellRow += 1) {
     for (let cellColumn = 0; cellColumn < columns; cellColumn += 1) {
-      if (ring[(cellRow + 1) * ringColumns + cellColumn + 1] === 0) continue;
+      if (clearCentres[cellRow * clearColumns + cellColumn + 1] === 0) continue;
       const centre = cellCentre(column + cellColumn, row + cellRow);
       const roomy = clear(centre, ROOMY_RADIUS);
       let bits = CLEAR;
       for (const edge of FORWARD_EDGES) {
-        if (ring[(cellRow + 1 + edge.row) * ringColumns + cellColumn + 1 + edge.column] === 0) continue;
+        if (clearCentres[(cellRow + edge.row) * clearColumns + cellColumn + 1 + edge.column] === 0) continue;
         const end = cellCentre(column + cellColumn + edge.column, row + cellRow + edge.row);
         if (roomy || everySample(centre, end, (sample) => clear(sample, RADIUS))) bits |= edge.bit;
       }
