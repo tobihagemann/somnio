@@ -33,8 +33,13 @@ function recording() {
     (...args: unknown[]) => {
       calls.push([name, ...args]);
     };
+  /** Whether the session takes a line the chat sends, as one not said too fast. */
+  const chat = { takes: true };
   const callbacks: HUDCallbacks = {
-    onSubmitChat: record('onSubmitChat'),
+    onSubmitChat: (text) => {
+      calls.push(['onSubmitChat', text]);
+      return chat.takes;
+    },
     onChatFocusChange: record('onChatFocusChange'),
     onTellPurse: record('onTellPurse'),
     onEquip: record('onEquip'),
@@ -54,7 +59,7 @@ function recording() {
     onHoverChange: record('onHoverChange'),
     carrierName: NAMES,
   };
-  return { callbacks, calls, named: (name: keyof HUDCallbacks) => calls.filter(([called]) => called === name).map(([, ...args]) => args) };
+  return { callbacks, calls, chat, named: (name: keyof HUDCallbacks) => calls.filter(([called]) => called === name).map(([, ...args]) => args) };
 }
 
 function point(node: Element, type: string, init: PointerEventInit = {}): void {
@@ -1685,6 +1690,16 @@ describe("a mouse's chat", () => {
     expect(named('onSubmitChat')).toEqual([['/y hallo']]);
     expect([hud.chatOpen, field.value, document.activeElement === field]).toEqual([false, '', false]);
     expect(named('onChatFocusChange')).toEqual([[true], [false]]);
+  });
+
+  it('keeps a line the session did not take in the field, with the chat open and the keyboard there', () => {
+    const { hud, chat, named } = makeHUD();
+    chat.takes = false;
+    hud.openChat();
+    hud.chatInput.value = 'noch einmal';
+    hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(named('onSubmitChat')).toEqual([['noch einmal']]);
+    expect([hud.chatOpen, hud.chatInput.value, document.activeElement === hud.chatInput]).toEqual([true, 'noch einmal', true]);
   });
 
   it('closes on Enter in an empty field, sending nothing', () => {

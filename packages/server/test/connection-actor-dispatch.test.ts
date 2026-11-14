@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
 import type { Character, Inventory, Sector } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
+import { AttemptLimiter } from '../src/connection/attemptLimiter.ts';
 import { CLOSE_PROTOCOL_ERROR, ConnectionActor } from '../src/connection/connectionActor.ts';
 import type { ConnectionState } from '../src/connection/connectionActor.ts';
+import { FRAME_BUDGETS, FRAME_LIMITS } from '../src/connection/frameLimits.ts';
+import { ConnectionOutbox } from '../src/connection/outbox.ts';
+import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { plain } from '../../core/test/support/items.ts';
-import { COINS, CUDGEL, GHOST, MOONSTONE, RESPAWN_MS, carrying, energy, lucidity, payloads, wearing } from './support/combat.ts';
-import { collectMessages } from './support/frames.ts';
-import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector } from './support/sectorFactory.ts';
+import { COINS, CUDGEL, GHOST, MOONSTONE, RESPAWN_MS, WAND, carrying, energy, lucidity, payloads, wearing } from './support/combat.ts';
+import { collectMessages, recordingOutbox } from './support/frames.ts';
+import { testLogger } from './support/logger.ts';
+import { attachPlayer, makeDoor, makeMonsterSpawn, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 
 const move = { x: 10, z: 20, facing: 1, gait: 'run' } as const;
@@ -344,5 +349,174 @@ describe('an attached connection', () => {
 
     const swings = payloads(await collectMessages(a.connection.outbox), 'blow').filter((blow) => blow.attackerId !== GHOST);
     expect(swings).toMatchObject([{ targetId: GHOST }]);
+  });
+});
+
+/**
+ * The frames that fan out to other players spend their account's budget, here on one clock with the
+ * space's, which the test advances. Past the budget a frame is dropped, and nobody else hears of it.
+ */
+describe('the frame budgets of an attached account', () => {
+  async function budgeted(sectors: Sector[]) {
+    const clock = { ms: 0 };
+    const frameLimiter = new AttemptLimiter({ enabled: true, logger: testLogger(), budgets: FRAME_BUDGETS, now: () => clock.ms });
+    const dependencies = await makeStubConnectionDependencies({ sectors, frameLimiter, now: () => clock.ms });
+    const worldRouter = dependencies.worldRouter;
+    const space = worldRouter.space(OUTDOOR_SPACE_ID)!;
+    /** A connection attached as a dreamer at `at`, for `accountId` or a fresh account. */
+    const connect = (at: { x: number; z: number }, inventory: Inventory = carrying(), accountId: string = crypto.randomUUID()) => {
+      const connection = new ConnectionActor(dependencies);
+      const { entityId } = attachPlayer(space, at, 'dreamer', { outbox: connection.outbox, inventory });
+      expect(worldRouter.register(connection, accountId)).toBe(true);
+      connection.markAttached(entityId, OUTDOOR_SPACE_ID, accountId);
+      return { connection, entityId, accountId };
+    };
+    return { clock, dependencies, space, connect };
+  }
+
+  async function dispatchAll(connection: ConnectionActor, messages: readonly SomnioMessage[]): Promise<void> {
+    for (const message of messages) expect(await connection.dispatch(message)).toEqual({ kind: 'keepOpen' });
+  }
+
+  const say = (text: string): SomnioMessage => ({ tag: 'clientSay', payload: { text, kind: 'say' } });
+
+  it('delivers a listener at most a burst of lines from a thousand sent at once, and never overflows their outbox', async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const speaker = b.connect({ x: 5, z: 5 });
+    const listenerOutbox = new ConnectionOutbox(b.dependencies.outboxHighWatermark);
+    attachPlayer(b.space, { x: 6, z: 5 }, 'listener', { outbox: listenerOutbox });
+    await dispatchAll(
+      speaker.connection,
+      Array.from({ length: 1000 }, (_, line) => say(`line ${line}`)),
+    );
+    expect(listenerOutbox.overflowed).toBe(false);
+    expect(payloads(await collectMessages(listenerOutbox), 'serverSay')).toHaveLength(FRAME_LIMITS.speech.burst);
+  });
+
+  it('answers a door past the budget doorRefused, and moves no one', async () => {
+    const town = [
+      makeSector('Town', makeDoor('inside', { x: 10, z: 10 }, { sector: 'Hall', door: 'exit' })),
+      interiorSector('Hall', makeDoor('exit', { x: 5, z: 9 }, { sector: 'Town', door: 'inside' })),
+    ];
+    const b = await budgeted(town);
+    const walker = b.connect({ x: 10, z: 9.7 });
+    const nowhere = { sector: 'Town', doorId: 'cellar' };
+    await dispatchAll(
+      walker.connection,
+      Array.from({ length: FRAME_LIMITS.transfer.burst }, () => ({ tag: 'useDoor', payload: nowhere }) as const),
+    );
+    expect(await walker.connection.dispatch({ tag: 'useDoor', payload: { sector: 'Town', doorId: 'inside' } })).toEqual({ kind: 'keepOpen' });
+    expect(b.space.snapshotForPlayer(walker.entityId)?.character.position).toEqual({ x: 10, z: 9.7 });
+    expect(payloads(await collectMessages(walker.connection.outbox), 'doorRefused').at(-1)).toEqual({ sector: 'Town', doorId: 'inside' });
+  });
+
+  it('shows a viewer no change of hands past the items budget', async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const dreamer = b.connect({ x: 5, z: 5 }, carrying({ bag: [CUDGEL] }));
+    const viewer = recordingOutbox();
+    attachPlayer(b.space, { x: 6, z: 5 }, 'viewer', { outbox: viewer.outbox });
+    const wear: SomnioMessage = { tag: 'equip', payload: { itemId: CUDGEL.id } };
+    const putAway: SomnioMessage = { tag: 'unequip', payload: { slot: 'mainHand' } };
+    const shuffle: SomnioMessage = { tag: 'moveItem', payload: { itemId: CUDGEL.id, place: 3 } };
+    await dispatchAll(
+      dreamer.connection,
+      Array.from({ length: 30 }, (_, frame) => [wear, shuffle, putAway][frame % 3]!),
+    );
+    // Of the 20 admitted, every third shuffles the bag, which no viewer is shown.
+    expect(payloads(viewer.sent, 'held')).toHaveLength(14);
+  });
+
+  it('spends one budget across the bag and the ground, so past it no throw or pick-up reaches a viewer', async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const dreamer = b.connect({ x: 5, z: 5 }, carrying({ bag: [CUDGEL, WAND] }));
+    const viewer = recordingOutbox();
+    attachPlayer(b.space, { x: 6, z: 5 }, 'viewer', { outbox: viewer.outbox });
+    const gear = Array.from({ length: FRAME_LIMITS.items.burst - 1 }, (_, frame): SomnioMessage =>
+      frame % 2 === 0 ? { tag: 'equip', payload: { itemId: WAND.id } } : { tag: 'unequip', payload: { slot: 'offHand' } },
+    );
+    await dispatchAll(dreamer.connection, [
+      ...gear,
+      { tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 90 } },
+      { tag: 'pickUp', payload: { lootId: 'loot-1' } },
+    ]);
+    expect(payloads(viewer.sent, 'loot')).toHaveLength(1);
+    expect(payloads(viewer.sent, 'lootGone')).toEqual([]);
+  });
+
+  it('drops a move past the budget without a correction, leaving the dreamer where the last accepted one put them', async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const dreamer = b.connect({ x: 5, z: 5 });
+    await dispatchAll(
+      dreamer.connection,
+      Array.from(
+        { length: FRAME_LIMITS.move.burst + 1 },
+        (_, step) => ({ tag: 'move', payload: { x: 5 + 0.01 * (step + 1), z: 5, facing: 90, gait: 'jog' } }) as const,
+      ),
+    );
+    expect(b.space.snapshotForPlayer(dreamer.entityId)?.character.position).toEqual({ x: 5 + 0.01 * FRAME_LIMITS.move.burst, z: 5 });
+    expect(payloads(await collectMessages(dreamer.connection.outbox), 'correction')).toEqual([]);
+  });
+
+  /**
+   * A walker heading east and turning north at a corner, whose 74 reports of a 7.4 s stall and the
+   * corner's waypoint all arrive at once. The allowance holds 7.5 m, and the stall stays short of it
+   * because the allowance's own comparison has no tolerance.
+   */
+  it("admits a walker's reports a stall bunched, up to what the allowance and the pace credit accept", async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const dreamer = b.connect({ x: 2, z: 10 });
+    b.clock.ms += 7400;
+    const reports: SomnioMessage[] = [];
+    let at = { x: 2, z: 10 };
+    for (let report = 1; report <= 74; report += 1) {
+      if (report === 38) reports.push({ tag: 'move', payload: { x: at.x + 0.05, z: at.z, facing: 90, gait: 'walk' } });
+      at = report <= 37 ? { x: at.x + 0.1, z: at.z } : report === 38 ? { x: at.x + 0.05, z: at.z - 0.05 } : { x: at.x, z: at.z - 0.1 };
+      reports.push({ tag: 'move', payload: { ...at, facing: report <= 37 ? 90 : 180, gait: 'walk' } });
+    }
+    await dispatchAll(dreamer.connection, reports);
+    expect(b.space.snapshotForPlayer(dreamer.entityId)?.character.position).toEqual(at);
+    expect(b.space.snapshotForPlayer(dreamer.entityId)?.character.energy.balanceCurrent).toBe(100);
+    expect(payloads(await collectMessages(dreamer.connection.outbox), 'correction')).toEqual([]);
+  });
+
+  /** A viewer in West sees Middle but not East, so each crossing of the Middle-East border shows them an entity or a leave. */
+  it('bounds what stepping back and forth across a sector border shows a viewer to the move budget', async () => {
+    const b = await budgeted(makeSectorLine());
+    const dreamer = b.connect({ x: 39.99, z: 10 });
+    const viewer = recordingOutbox();
+    attachPlayer(b.space, { x: 1, z: 10 }, 'viewer', { outbox: viewer.outbox });
+    const joined = viewer.sent.length;
+    await dispatchAll(
+      dreamer.connection,
+      Array.from({ length: 1000 }, (_, step) => ({ tag: 'move', payload: { x: step % 2 === 0 ? 40.01 : 39.99, z: 10, facing: 90, gait: 'jog' } }) as const),
+    );
+    const shown = viewer.sent
+      .slice(joined)
+      .filter(
+        (message) =>
+          (message.tag === 'entity' && message.payload.id === dreamer.entityId) || (message.tag === 'leave' && message.payload.entityId === dreamer.entityId),
+      );
+    expect(shown).toHaveLength(FRAME_LIMITS.move.burst);
+  });
+
+  it('keeps the budget a connection spent for the account, through other accounts coming and going, on its next connection', async () => {
+    const b = await budgeted([makeSector('Field')]);
+    const listenerOutbox = recordingOutbox();
+    attachPlayer(b.space, { x: 6, z: 5 }, 'listener', { outbox: listenerOutbox.outbox });
+    const first = b.connect({ x: 5, z: 5 });
+    await dispatchAll(
+      first.connection,
+      Array.from({ length: FRAME_LIMITS.speech.burst }, (_, line) => say(`line ${line}`)),
+    );
+    await first.connection.drainForShutdown();
+    for (let other = 0; other < 3; other += 1) {
+      const passing = b.connect({ x: 4, z: 5 });
+      await dispatchAll(passing.connection, [say('passing by')]);
+      await passing.connection.drainForShutdown();
+    }
+    const again = b.connect({ x: 5, z: 5 }, carrying(), first.accountId);
+    await dispatchAll(again.connection, [say('still here?')]);
+    expect(payloads(listenerOutbox.sent, 'serverSay').map((line) => line.text)).not.toContain('still here?');
+    expect(payloads(listenerOutbox.sent, 'serverSay').filter((line) => line.text === 'passing by')).toHaveLength(3);
   });
 });

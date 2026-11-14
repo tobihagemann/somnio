@@ -13,6 +13,29 @@ export const SPEECH = {
   doorMuffleMetres: 44,
 } as const;
 
+/** How fast the client lets a player speak: a burst of lines, then `perSecond` more each second. */
+export const SPEECH_PACE = { burst: 8, perSecond: 1 } as const;
+
+/** One speaker held to `SPEECH_PACE`, on a clock of milliseconds. */
+export class SpeechPace {
+  /** The lines the speaker may still say, as of `creditAtMs`. */
+  private credit: number = SPEECH_PACE.burst;
+  private creditAtMs: number;
+
+  constructor(nowMs: number) {
+    this.creditAtMs = nowMs;
+  }
+
+  /** Refills the credit for the time since the last call, then spends a line, or refuses when less than one is left. */
+  spend(nowMs: number): boolean {
+    this.credit = Math.min(SPEECH_PACE.burst, this.credit + ((nowMs - this.creditAtMs) / 1000) * SPEECH_PACE.perSecond);
+    this.creditAtMs = nowMs;
+    if (this.credit < 1) return false;
+    this.credit -= 1;
+    return true;
+  }
+}
+
 /** What stands in for each run of words a listener missed. */
 const MISSED = '...';
 

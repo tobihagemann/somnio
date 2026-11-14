@@ -17,6 +17,7 @@ import {
 import type { Point } from '@somnio/core';
 import { PostgresCharacterRepository, PostgresWorldClockRepository, STARTER_SECTOR } from '@somnio/data';
 import { CLOSE_GOING_AWAY } from '../../src/connection/connectionActor.ts';
+import { FRAME_LIMITS } from '../../src/connection/frameLimits.ts';
 import { TestClient } from '../support/liveServer.ts';
 import {
   bootTestServer,
@@ -127,6 +128,20 @@ describe('gameplay end to end', () => {
     const after = await drainFrames(mover.client);
     expect(after.filter((message) => message.tag === 'moves' || message.tag === 'correction')).toEqual([]);
     await mover.client.close();
+    await listener.client.close();
+  });
+
+  it('a listener hears only the burst of a speaker who floods past the speech budget', async () => {
+    const listener = await joinFreshPlayer(server.url, 'hearer');
+    const speaker = await joinFreshPlayer(server.url, 'flooder');
+    await drainFrames(listener.client);
+    for (let line = 0; line < 2 * FRAME_LIMITS.speech.burst; line += 1) {
+      speaker.client.send(frame({ tag: 'clientSay', payload: { text: `line ${line}`, kind: 'say' } }));
+    }
+    await drainFrames(speaker.client);
+    const heard = (await drainFrames(listener.client)).filter((message) => message.tag === 'serverSay' && message.payload.entityId === speaker.entityId);
+    expect(heard).toHaveLength(FRAME_LIMITS.speech.burst);
+    await speaker.client.close();
     await listener.client.close();
   });
 

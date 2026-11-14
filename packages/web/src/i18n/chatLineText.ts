@@ -39,6 +39,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Error %@ occurred.', line.code);
     case 'unknownCommand':
       return lookup('%@ is not a command. Write /w to whisper or /y to yell.', line.command);
+    case 'speakingTooFast':
+      return lookup("You're speaking too fast.");
     case 'joined':
       return lookup('%@ entered the game.', line.playerName);
     case 'left':

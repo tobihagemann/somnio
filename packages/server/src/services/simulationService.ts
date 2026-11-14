@@ -26,12 +26,20 @@ export class SimulationService {
     this.lastFlushAt = this.lastPassAt;
   }
 
-  run(signal: AbortSignal): Promise<void> {
-    return runPeriodically(this.intervalMs, signal, () => this.runPass());
+  /** Once aborted, it waits for the dialog writes still queued, each bounded by the pool's timeouts. */
+  async run(signal: AbortSignal): Promise<void> {
+    await runPeriodically(this.intervalMs, signal, () => {
+      this.runPass();
+      return Promise.resolve();
+    });
+    await this.worldRouter.settleDialogWrites();
   }
 
-  /** The test seam: one pass. The dialog digest is persisted after the step, so a slow write never holds a space mid-step. */
-  async runPass(): Promise<void> {
+  /**
+   * The test seam: one pass. The dialog digest is queued after the step and written outside it, so
+   * a slow write never holds a space mid-step, nor the next pass.
+   */
+  runPass(): void {
     const now = this.now();
     const digest = this.worldRouter.runTickAcrossSpaces(Math.min(now - this.lastPassAt, MAX_STEP_MS) / 1000);
     this.lastPassAt = now;
@@ -39,6 +47,6 @@ export class SimulationService {
       this.worldRouter.flushMoves();
       this.lastFlushAt = now;
     }
-    await this.worldRouter.persistDialogDigest(digest);
+    this.worldRouter.queueDialogDigest(digest);
   }
 }

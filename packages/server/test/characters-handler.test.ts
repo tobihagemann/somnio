@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { CreateCharacterMessage } from '@somnio/protocol';
-import { headingFromCardinal } from '@somnio/core';
+import { OUTDOOR_SPACE_ID, headingFromCardinal } from '@somnio/core';
 import type { Character, People, Sector } from '@somnio/core';
 import { STARTER_SECTOR, newCharacter } from '@somnio/data';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { handleCreateCharacter, joinCharacter, resolvedSpawn } from '../src/handlers/characters.ts';
+import { MOONSTONE, energyOf, lucidity, payloads, wearing, wounded } from './support/combat.ts';
 import { characterResults, collectMessages } from './support/frames.ts';
-import { makeCharacter, makeNPC, makeSector } from './support/sectorFactory.ts';
+import { attachPlayer, makeCharacter, makeNPC, makeSector } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
@@ -133,5 +134,82 @@ describe('a join', () => {
 
     expect(await joinCharacter(character, crypto.randomUUID(), new ConnectionActor(dependencies), dependencies)).toBe(true);
     expect(snapshot.mock.calls.map(([written]) => written.lastSeen.getTime())).toEqual([joined]);
+  });
+});
+
+/** What a dreamer carried as they left the world runs on while they are away, and is theirs again when they come back. */
+describe('a dreamer who comes back', () => {
+  /** A dreamer joined at (5, 5) of a field on a clock the test advances; `leaveFor` disconnects them and joins them again that much later. */
+  async function returner(character: Partial<Character> = {}) {
+    const clock = { ms: 0 };
+    const characters = new StubCharacterRepository();
+    const saved = vi.spyOn(characters, 'persistCheckpoint');
+    const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('Field')], characters, now: () => clock.ms });
+    const worldRouter = dependencies.worldRouter;
+    const accountId = crypto.randomUUID();
+    const join = async (joining: Character): Promise<ConnectionActor> => {
+      const connection = new ConnectionActor(dependencies);
+      expect(worldRouter.register(connection, accountId)).toBe(true);
+      expect(await joinCharacter(joining, accountId, connection, dependencies)).toBe(true);
+      return connection;
+    };
+    const joined = { ...makeCharacter({ x: 5, z: 5 }, 'returner'), ...character };
+    let connection = await join(joined);
+    const leaveFor = async (ms: number): Promise<ConnectionActor> => {
+      await connection.drainForShutdown();
+      clock.ms += ms;
+      connection = await join(saved.mock.calls.at(-1)![0]);
+      return connection;
+    };
+    return { clock, space: worldRouter.space(OUTDOOR_SPACE_ID)!, id: joined.id, leaveFor };
+  }
+
+  /** Brace's own cooldown is 15 s and its effect 4 s: 2 s on, then 4 s away, leave 9 s and nothing. */
+  it('finds its cooldowns run down by the time away, and an effect that ran out meanwhile gone', async () => {
+    const r = await returner({ lucidity: lucidity('fighter', { brace: 1 }) });
+    r.space.handleUseAbility('brace', r.id);
+    r.clock.ms += 2000;
+    const back = await r.leaveFor(4000);
+    const messages = await collectMessages(back.outbox);
+    expect(payloads(messages, 'cooldowns')).toEqual([{ globalSeconds: 0, cooldowns: [{ abilityId: 'brace', seconds: 9 }] }]);
+    expect(payloads(messages, 'effects')).toEqual([]);
+  });
+
+  /** Renewal's first tick falls a second after it was put on. Left 2.5 s in, its next is half a second off. */
+  it('keeps a heal over time with what it had left, paying no tick that fell due while away', async () => {
+    const r = await returner(wounded(40));
+    const healer = attachPlayer(r.space, { x: 6, z: 5 }, 'healer', {
+      character: { lucidity: lucidity('healer', { touch: 2, renewal: 1 }) },
+      inventory: wearing(MOONSTONE),
+    });
+    r.space.handleTarget(r.id, healer.entityId);
+    r.space.handleUseAbility('renewal', healer.entityId);
+    for (const ms of [1000, 1000]) {
+      r.clock.ms += ms;
+      r.space.step(0);
+    }
+    r.clock.ms += 500;
+    const back = await r.leaveFor(4000);
+    expect(payloads(await collectMessages(back.outbox), 'effects')).toEqual([{ entityId: r.id, effects: [{ effectId: 'renewing', seconds: 3.5 }] }]);
+    const health: number[] = [];
+    for (const ms of [0, 499, 1]) {
+      r.clock.ms += ms;
+      r.space.step(0);
+      health.push(energyOf(r.space, r.id).healthCurrent);
+    }
+    expect(health[1]).toBe(health[0]);
+    expect(health[2]).toBeGreaterThan(health[1]!);
+  });
+
+  /** A second away refills 3.75 m of the allowance and 1.25 s of the pace credit, so a 3.7 m walk runs 2.45 m of it. */
+  it('finds the allowance and the pace credit refilled by the time away, not whole', async () => {
+    const r = await returner();
+    r.space.handleMove({ x: 12.5, z: 5, facing: 90, gait: 'walk' }, r.id);
+    const back = await r.leaveFor(1000);
+    r.space.handleMove({ x: 16.2, z: 5, facing: 90, gait: 'walk' }, r.id);
+    r.space.handleMove({ x: 16.3, z: 5, facing: 90, gait: 'walk' }, r.id);
+    expect(r.space.snapshotForPlayer(r.id)?.character.position).toEqual({ x: 16.2, z: 5 });
+    expect(payloads(await collectMessages(back.outbox), 'correction')).toEqual([{ x: 16.2, z: 5 }]);
+    expect(energyOf(r.space, r.id).balanceCurrent).toBe(92);
   });
 });

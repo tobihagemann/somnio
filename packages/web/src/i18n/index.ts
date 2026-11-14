@@ -130,6 +130,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'west',
   'north-west',
   '%@ is not a command. Write /w to whisper or /y to yell.',
+  "You're speaking too fast.",
   'Broadcast message: %@',
   'The connection was lost.',
   'The server is currently not reachable. Try again later.',

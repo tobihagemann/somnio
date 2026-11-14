@@ -216,8 +216,9 @@ export class AppShell {
     this.hud = new GameHUD(
       {
         onSubmitChat: (text) => {
-          this.session.submitChat(text);
+          const taken = this.session.submitChat(text);
           this.render();
+          return taken;
         },
         onChatFocusChange: (focused) => this.controller.setChatInputFocused(focused),
         onTellPurse: () => {

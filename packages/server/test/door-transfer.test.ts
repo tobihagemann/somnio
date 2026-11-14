@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import { OUTDOOR_SPACE_ID, headingFromCardinal } from '@somnio/core';
+import { OUTDOOR_SPACE_ID, headingFromCardinal, monsterKind } from '@somnio/core';
 import type { Character, Point, Sector } from '@somnio/core';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { TRANSFER_LOST, handleUseDoor } from '../src/handlers/gameplay.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { MOONSTONE, characterOf, lucidity, payloads, wearing, wounded } from './support/combat.ts';
+import { MOONSTONE, characterOf, energyOf, engage, face, lucidity, payloads, wearing, wounded } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
-import { attachPlayer, makeDoor, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
+import { attachPlayer, makeDoor, makeMonsterSpawn, makeNPC, makeSector, makeSectorLine } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 import { StubCharacterRepository } from './support/stubRepositories.ts';
 
@@ -31,8 +31,9 @@ async function attachedAt(
   characters = new StubCharacterRepository(),
   character: Partial<Character> = {},
   worldSeconds = WORLD_SECONDS,
+  now?: () => number,
 ) {
-  const dependencies = await makeStubConnectionDependencies({ sectors, characters, initialWorldSeconds: worldSeconds });
+  const dependencies = await makeStubConnectionDependencies({ sectors, characters, initialWorldSeconds: worldSeconds, now });
   const connection = new ConnectionActor(dependencies);
   const { entityId } = attachPlayer(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, at, 'walker', {
     outbox: connection.outbox,
@@ -240,6 +241,63 @@ describe('handleUseDoor', () => {
       expect(persistCheckpoint.mock.calls).toEqual([
         [expect.objectContaining({ id: w.entityId, energy: expect.objectContaining({ healthCurrent: 42 }) }), wearing()],
       ]);
+    });
+  });
+
+  describe('carrying what runs on the server clock', () => {
+    /** Town and Hall on one clock the test advances, with the walker attached at `at` in Town. */
+    async function onOneClock(sectors: Sector[], at: Point) {
+      const clock = { ms: 0 };
+      const w = await attachedAt(sectors, at, new StubCharacterRepository(), {}, WORLD_SECONDS, () => clock.ms);
+      return { clock, ...w, town: w.dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, hall: w.dependencies.worldRouter.space('Hall')! };
+    }
+
+    /** A Ghost before each door: in Town north of where the walker stands, and in Hall north of where they arrive. */
+    it('carries the swing timer, so a dreamer who swung just before the door swings again only once it is up', async () => {
+      const ghosts = town({ monsterSpawns: [makeMonsterSpawn({ x: 5, z: 7.5 })] });
+      const sectors = [{ ...ghosts[0]!, monsterSpawns: [makeMonsterSpawn({ x: 10, z: 9 })] }, ghosts[1]!];
+      const w = await onOneClock(sectors, { x: 10, z: 9.7 });
+      w.clock.ms = monsterKind('ghost').respawnSeconds * 1000;
+      w.town.step(0);
+      w.hall.step(0);
+      face(w.town, w.entityId, { x: 10, z: 9 });
+      engage(w.town, 'monster:1', w.entityId);
+      w.town.step(0);
+
+      expect(w.useDoor('Town', 'inside')).toEqual({ spaceId: 'Hall' });
+      engage(w.hall, 'monster:1', w.entityId);
+      // A second after the swing in Town, and not before, the next lands in Hall.
+      for (const ms of [0, 950, 50]) {
+        w.clock.ms += ms;
+        w.hall.step(0);
+      }
+      const swings = payloads(await collectMessages(w.connection.outbox), 'blow').filter((blow) => blow.attackerId === w.entityId);
+      expect(swings).toHaveLength(2);
+    });
+
+    it('refills neither the allowance nor the pace credit on arrival', async () => {
+      const w = await onOneClock(town(), { x: 10, z: 3 });
+      // 6.7 m walked to the door leaves 0.8 m of allowance and 0.8 s of pace credit.
+      w.town.handleMove({ x: 10, z: 9.7, facing: 180, gait: 'walk' }, w.entityId);
+      w.useDoor('Town', 'inside');
+      w.hall.handleMove({ x: 5, z: 7, facing: 0, gait: 'walk' }, w.entityId);
+      expect(w.snapshotIn('Hall')).toMatchObject({ position: { x: 5, z: 8.2 } });
+      // 2 s refill the allowance to its cap and the credit to 3.3 s, so 6.1 m walked runs 2.8 m of them.
+      w.clock.ms += 2000;
+      w.hall.handleMove({ x: 5, z: 2.1, facing: 0, gait: 'walk' }, w.entityId);
+      expect(w.snapshotIn('Hall')).toMatchObject({ position: { x: 5, z: 2.1 } });
+      expect(energyOf(w.hall, w.entityId).balanceCurrent).toBe(91);
+    });
+
+    it('counts the rest taken before the door into the allowance and the pace credit', async () => {
+      const w = await onOneClock(town(), { x: 10, z: 3 });
+      w.town.handleMove({ x: 10, z: 9.7, facing: 180, gait: 'walk' }, w.entityId);
+      // 2 s at the door refill the allowance to its cap and the credit to 3.3 s, which 3 m walked on arrival fits.
+      w.clock.ms += 2000;
+      w.useDoor('Town', 'inside');
+      w.hall.handleMove({ x: 5, z: 5.2, facing: 0, gait: 'walk' }, w.entityId);
+      expect(w.snapshotIn('Hall')).toMatchObject({ position: { x: 5, z: 5.2 } });
+      expect(energyOf(w.hall, w.entityId).balanceCurrent).toBe(100);
     });
   });
 

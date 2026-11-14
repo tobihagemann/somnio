@@ -549,7 +549,7 @@ describe('raising', () => {
     expect((await holds(target.outbox)).at(-1)).toEqual({ state: 'done', healerIds: [healer.entityId] });
   });
 
-  it('lets a Healer take hold again once their touch interval has passed, and at once with a fresh touch', async () => {
+  it('lets a Healer take hold again once their touch interval has passed, a door carrying what is left of it', async () => {
     const { space, steps } = arena({}, { ghost: false });
     const { healer, target } = pair(space);
     const other = addHealer(space, BESIDE_TARGET[0]!, 'other');
@@ -570,14 +570,19 @@ describe('raising', () => {
     expect((await holds(other.outbox)).at(-1)).toEqual({ state: 'holding', healerIds: [other.entityId, healer.entityId] });
 
     const watching = attachPlayer(space, { x: 8, z: 8 }, 'watching');
-    space.handOver(healer.entityId, false);
+    // Out through a door and back a step later, as the touch just spent has its whole interval left.
+    const { transient } = space.handOver(healer.entityId, false)!;
     steps(1);
-    const back = new ConnectionOutbox(4096);
-    space.attach(healer.character, wearing(MOONSTONE), back, 0, 'en');
+    space.attach(healer.character, wearing(MOONSTONE), new ConnectionOutbox(4096), 0, 'en', transient);
     engage(space, target.entityId, healer.entityId);
-    steps(1);
+    steps(19);
     expect(await holds(watching.outbox)).toEqual([
       { state: 'holding', healerIds: [other.entityId, healer.entityId] },
+      { state: 'holding', healerIds: [other.entityId] },
+    ]);
+    const later = attachPlayer(space, { x: 8, z: 8 }, 'later');
+    steps(1);
+    expect(await holds(later.outbox)).toEqual([
       { state: 'holding', healerIds: [other.entityId] },
       { state: 'holding', healerIds: [other.entityId, healer.entityId] },
     ]);

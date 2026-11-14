@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { decodeSomnioMessage, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { decodeSomnioMessage, isClientOnlyTag, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Locale, SomnioMessage } from '@somnio/protocol';
 import type { RawData, WebSocket } from 'ws';
 import { handleCreateCharacter, handleDeleteCharacter, handleSelectCharacter } from '../handlers/characters.ts';
@@ -32,6 +32,7 @@ import { handleRedeem, handleRevoke, handleRevokeOthers } from '../handlers/sess
 import type { Logger } from '../logging.ts';
 import { persistPlayerCheckpoint } from '../world/checkpointWriter.ts';
 import type { ConnectionDependencies } from './dependencies.ts';
+import { FRAME_KINDS } from './frameLimits.ts';
 import { ConnectionOutbox } from './outbox.ts';
 import type { SocketReservation } from './socketAdmission.ts';
 
@@ -466,6 +467,7 @@ export class ConnectionActor {
           return this.protocolErrorClose('unexpected tag while choosing a character', 0);
       }
     }
+    if (!this.admitFrame(message, state.accountId)) return { kind: 'keepOpen' };
     switch (message.tag) {
       case 'move':
         handleMove(message.payload, state.entityId, state.spaceId, this.dependencies);
@@ -576,6 +578,19 @@ export class ConnectionActor {
   }
 
   /**
+   * Spends the account's budget for a frame that fans out to other players. Past it the frame is
+   * dropped, and nobody else hears of it. A dropped move gets no `correction`: the next move
+   * accepted is measured from the last one, under the allowance as ever. A dropped `useDoor` is
+   * answered `doorRefused`, as a closed door is, which releases the client waiting on it.
+   */
+  private admitFrame(message: SomnioMessage, accountId: string): boolean {
+    const kind = isClientOnlyTag(message.tag) ? FRAME_KINDS[message.tag] : undefined;
+    if (kind === undefined || this.dependencies.frameLimiter.admit(kind, accountId)) return true;
+    if (message.tag === 'useDoor') this.outbox.sendEncoded({ tag: 'doorRefused', payload: message.payload }, this.logger);
+    return false;
+  }
+
+  /**
    * The login deadline gives way to the card's, which each request on the card starts again. The
    * socket trades its place among those not yet logged in for one among those choosing. When those
    * are full nothing changes, and the answer is the close the connection ends with.
@@ -623,7 +638,9 @@ export class ConnectionActor {
    * due as they left. A drop save still pending for them is dropped, since this snapshot is newer,
    * and one in flight is waited for before this one is written. The account stays registered until
    * the write has landed, so a login racing it is answered `alreadyLoggedIn` rather than reading the
-   * row from before, or rows a drop save is about to replace. A connection still choosing a
+   * row from before, or rows a drop save is about to replace. A write that fails, one the pool timed
+   * out included, is logged and releases the account all the same, so a stalled database holds a
+   * dreamer out of the world only as long as the pool's timeouts. A connection still choosing a
    * character has nothing to write.
    */
   private async snapshotAndCleanup(leftGame: boolean): Promise<void> {
@@ -636,6 +653,7 @@ export class ConnectionActor {
     if (state.kind !== 'attached') return;
     const handedOver = this.dependencies.worldRouter.space(state.spaceId)?.handOver(state.entityId, leftGame);
     if (handedOver !== undefined) {
+      this.dependencies.worldRouter.departed(state.entityId, handedOver.transient);
       await this.dependencies.worldRouter.settleDropSaves(state.entityId);
       await persistPlayerCheckpoint(handedOver.checkpoint, this.dependencies.characters, this.logger, {
         origin: 'disconnect',

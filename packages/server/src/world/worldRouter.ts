@@ -7,9 +7,11 @@ import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { DropSaves, persistPlayerCheckpoint } from './checkpointWriter.ts';
+import { Departures } from './departures.ts';
+import { DialogWrites } from './dialogWrites.ts';
 import { PersonalDrops } from './personalDrops.ts';
 import { SpaceActor } from './spaceActor.ts';
-import type { DoorVoice, PlayerCheckpoint, TickDigest } from './spaceActor.ts';
+import type { DoorVoice, PlayerCheckpoint, PlayerTransient, TickDigest } from './spaceActor.ts';
 
 /** The surface of the router the admin dispatcher consumes, so its tests can substitute a stub. */
 export interface AdminWorldRouter {
@@ -34,8 +36,9 @@ export class WorldRouter implements AdminWorldRouter {
   private readonly loggedIn = new Map<string, LoggedInEntry>();
   private readonly personalDrops: PersonalDrops;
   private readonly dropSaves: DropSaves;
+  private readonly departures: Departures;
+  private readonly dialogWrites: DialogWrites;
   private readonly characters: CharacterRepository;
-  private readonly npcDialogStates: NPCDialogStateRepository;
   private readonly logger: Logger;
 
   private constructor(
@@ -43,26 +46,32 @@ export class WorldRouter implements AdminWorldRouter {
     spaceActors: Map<string, SpaceActor>,
     personalDrops: PersonalDrops,
     dropSaves: DropSaves,
+    departures: Departures,
+    dialogWrites: DialogWrites,
     characters: CharacterRepository,
-    npcDialogStates: NPCDialogStateRepository,
     logger: Logger,
   ) {
     this.world = world;
     this.spaceActors = spaceActors;
     this.personalDrops = personalDrops;
     this.dropSaves = dropSaves;
+    this.departures = departures;
+    this.dialogWrites = dialogWrites;
     this.characters = characters;
-    this.npcDialogStates = npcDialogStates;
     this.logger = logger;
   }
 
-  /** Seeds each space's dialog cursors from the repository, sector by sector, before any connection arrives. */
+  /**
+   * Seeds each space's dialog cursors from the repository, sector by sector, before any connection
+   * arrives. `now`, monotonic milliseconds, is every space's clock and the departures'.
+   */
   static async create(
     world: LoadedWorld,
     characters: CharacterRepository,
     npcDialogStates: NPCDialogStateRepository,
     logger: Logger,
     spaceLogger: Logger = logger,
+    now: () => number = () => performance.now(),
   ): Promise<WorldRouter> {
     const actors = new Map<string, SpaceActor>();
     const personalDrops = new PersonalDrops();
@@ -71,9 +80,9 @@ export class WorldRouter implements AdminWorldRouter {
       const initialDialogStates: NPCDialogState[] = [];
       for (const sector of space.sectors) initialDialogStates.push(...(await npcDialogStates.loadAll(sector.name)));
       const requestDropSave = (snapshot: PlayerCheckpoint): void => dropSaves.request(snapshot, id);
-      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave }));
+      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave, now }));
     }
-    return new WorldRouter(world, actors, personalDrops, dropSaves, characters, npcDialogStates, logger);
+    return new WorldRouter(world, actors, personalDrops, dropSaves, new Departures(now), new DialogWrites(npcDialogStates, logger), characters, logger);
   }
 
   space(id: string): SpaceActor | undefined {
@@ -112,6 +121,16 @@ export class WorldRouter implements AdminWorldRouter {
     return this.dropSaves.settle(characterId);
   }
 
+  /** Keeps what the character carried as they left the world, for their return. */
+  departed(characterId: string, transient: PlayerTransient): void {
+    this.departures.leave(characterId, transient);
+  }
+
+  /** What the returning character carried as they left, run on by the time away, or a first join's start (`NO_TRANSIENT`) when no departure of theirs is kept. */
+  takeReturning(characterId: string): PlayerTransient {
+    return this.departures.takeReturning(characterId);
+  }
+
   /** Logged-in *and attached* connections, so the post-register / pre-attach window is excluded. */
   loggedInPlayerCount(): number {
     let count = 0;
@@ -133,7 +152,11 @@ export class WorldRouter implements AdminWorldRouter {
     return kicked;
   }
 
-  /** Every logged-in player's full checkpoint, per space, through the guarded transaction. */
+  /**
+   * Every logged-in player's full checkpoint, per space, through the guarded transaction, one at a
+   * time. Each write is bounded by the pool's timeouts, so a stalled database holds a pass up for at
+   * most the players times that bound.
+   */
   async checkpointAll(): Promise<void> {
     for (const [spaceId, space] of this.spaceActors) {
       for (const snapshot of space.snapshotForCheckpoint()) {
@@ -158,22 +181,14 @@ export class WorldRouter implements AdminWorldRouter {
     for (const space of this.spaceActors.values()) space.reachWorldDay(worldSeconds);
   }
 
-  /** A persistence failure logs and continues (the next emit rewrites the row). */
-  async persistDialogDigest(digest: TickDigest): Promise<void> {
-    for (const state of digest.dialogUpserts) {
-      try {
-        await this.npcDialogStates.upsert(state);
-      } catch (error) {
-        this.logger.warn({ error: String(error), sector: state.sectorName, npc: state.npcId }, 'npc dialog upsert failed');
-      }
-    }
-    for (const { sectorName, npcId } of digest.dialogResets) {
-      try {
-        await this.npcDialogStates.reset(sectorName, npcId);
-      } catch (error) {
-        this.logger.warn({ error: String(error), sector: sectorName, npc: npcId }, 'npc dialog reset failed');
-      }
-    }
+  /** Queues the digest's dialog writes behind the one in flight, never awaited by a pass. */
+  queueDialogDigest(digest: TickDigest): void {
+    this.dialogWrites.request(digest);
+  }
+
+  /** Resolves once every dialog write queued so far has settled. */
+  settleDialogWrites(): Promise<void> {
+    return this.dialogWrites.settle();
   }
 
   /** A line said in a space, and a yell carried one door further into each space beyond. */

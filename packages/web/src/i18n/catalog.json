@@ -1459,6 +1459,10 @@
     "en": "You will wake at the inn, weakened.",
     "de": "Du wachst geschwächt im Gasthaus auf."
   },
+  "You're speaking too fast.": {
+    "en": "You're speaking too fast.",
+    "de": "Du sprichst zu schnell."
+  },
   "Your %1$@ deepens: rank %2$@.": {
     "en": "Your %1$@ deepens: rank %2$@.",
     "de": "Deine Lehre %1$@ vertieft sich: Rang %2$@."

@@ -15,7 +15,7 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, bountyIdOf, fullPools, headingFromVector, reachDistance } from '@somnio/core';
+import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, SPEECH_PACE, bountyIdOf, fullPools, headingFromVector, reachDistance } from '@somnio/core';
 import type { QuestMarker } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
@@ -878,6 +878,20 @@ describe('outbound chat', () => {
     rig.session.submitChat('   ');
 
     expect(rig.sent).toEqual([]);
+  });
+
+  it('sends nothing past the pace the client holds a speaker to, says so, and keeps the line for the field', () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+
+    const taken = Array.from({ length: SPEECH_PACE.burst + 1 }, (_, line) => rig.session.submitChat(`line ${line}`));
+
+    expect(taken).toEqual([...Array<boolean>(SPEECH_PACE.burst).fill(true), false]);
+    expect(rig.sent).toHaveLength(SPEECH_PACE.burst);
+    expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'speakingTooFast' });
+    rig.now += 1000 / SPEECH_PACE.perSecond;
+    expect(rig.session.submitChat('again')).toBe(true);
+    expect(rig.sent.at(-1)).toEqual({ tag: 'clientSay', payload: { text: 'again', kind: 'say' } });
   });
 
   /** The cap is in UTF-8 bytes, so a string of multi-byte characters truncates well before 256 of them. */

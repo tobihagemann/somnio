@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
-import { crumble, speechClarity } from '../src/speech.ts';
+import { SPEECH_PACE, SpeechPace, crumble, speechClarity } from '../src/speech.ts';
 
 const TEN_WORDS = 'one two three four five six seven eight nine ten';
 
@@ -73,5 +73,14 @@ describe('crumble', () => {
     const crumbled = crumble(`${'x'.repeat(254)} a`, 0.9, () => 0.99);
     expect(utf8ByteLength(crumbled)).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes);
     expect(crumbled.split(' ').every((word) => word === '...' || word === 'x'.repeat(254))).toBe(true);
+  });
+});
+
+describe('SpeechPace', () => {
+  it('lets a burst through after a long pause, never more, then one line a second', () => {
+    const pace = new SpeechPace(0);
+    const burst = Array.from({ length: SPEECH_PACE.burst + 1 }, () => pace.spend(20_000));
+    expect(burst).toEqual([...Array<boolean>(SPEECH_PACE.burst).fill(true), false]);
+    expect([pace.spend(20_999), pace.spend(21_000), pace.spend(21_000)]).toEqual([false, true, false]);
   });
 });

@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Gait } from '@somnio/protocol';
-import { MOVE_SUBSTEP, OUTDOOR_SPACE_ID, SOMNIO_CONSTANTS, buildSpaceCollision, gaitMetresPerSecond, isLegalMove, resolveMove } from '@somnio/core';
+import {
+  MOVE_SUBSTEP,
+  OUTDOOR_SPACE_ID,
+  SOMNIO_CONSTANTS,
+  buildSpaceCollision,
+  gaitMetresPerSecond,
+  isLegalMove,
+  monsterKind,
+  resolveMove,
+} from '@somnio/core';
 import type { Point, Sector } from '@somnio/core';
-import type { ConnectionOutbox } from '../src/connection/outbox.ts';
+import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
+import { GHOST, GHOST_AT, arena, energy, energyOf, lucidity } from './support/combat.ts';
 import { collectMessages, entities, entityMoves } from './support/frames.ts';
 import { recordingLogger, testLogger } from './support/logger.ts';
 import { attachPlayer, makeClockedSpace, makeNPC, makeSector, makeSectorLine, makeWorld } from './support/sectorFactory.ts';
@@ -264,6 +274,383 @@ describe('SpaceActor.handleMove', () => {
     space.handleMove(move(15, 5), mover.entityId);
     expect(rejected()).toHaveLength(2);
     expect(rejected()[1]).toMatchObject({ suppressed_since_last: 3 });
+  });
+});
+
+/**
+ * A walk or a jog spends a credit of seconds at its gait's speed. The credit refills at 1.25 s a
+ * second whatever gait is reported and holds 7.5 s, what the allowance covers at a walk. Metres
+ * past it were run.
+ */
+describe('SpaceActor.handleMove against the reported gait', () => {
+  /** A dreamer at `at` whose balance stands at `balance`, on a field wide enough to run across. */
+  function walker(balance: number, at: Point = { x: 2, z: 10 }) {
+    const { clock, space } = field({ size: { width: 100, depth: 20 } });
+    const mover = attachPlayer(space, at, 'walker', { character: { energy: energy({ balanceCurrent: balance }) } });
+    const balanceNow = () => energyOf(space, mover.entityId).balanceCurrent;
+    return { clock, space, mover, balanceNow };
+  }
+
+  /** Walks 7.5 m east in one report, which spends the whole allowance and the whole pace credit. */
+  function spendBoth(space: SpaceActor, entityId: string): void {
+    const at = positionOf(space, entityId)!;
+    space.handleMove(move(at.x + 7.5, at.z, 90, 'walk'), entityId);
+  }
+
+  it('drains balance and holds recovery for a client that runs while reporting a walk', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    for (let report = 1; report <= 200; report += 1) {
+      clock.ms += 100;
+      space.handleMove(move(2 + 0.3 * report, 10, 90, 'walk'), mover.entityId);
+      space.step(0.1);
+    }
+    expect(positionOf(space, mover.entityId)).toEqual({ x: 2 + 0.3 * 200, z: 10 });
+    expect(balanceNow()).toBeLessThan(50);
+  });
+
+  it('charges nothing for an honest walk a stall bunched by just under the credit', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    let x = 2;
+    const report = () => {
+      x += 0.1;
+      space.handleMove(move(x, 10, 90, 'walk'), mover.entityId);
+    };
+    for (let onTime = 0; onTime < 20; onTime += 1) {
+      clock.ms += 100;
+      report();
+    }
+    clock.ms += 7400;
+    for (let held = 0; held < 74; held += 1) report();
+    expect(positionOf(space, mover.entityId)).toEqual({ x, z: 10 });
+    expect(balanceNow()).toBe(100);
+  });
+
+  /** After 2 s the allowance is back at its 7.5 m cap, the credit only at 2.5 s, so the credit binds first. */
+  it('charges a walk past the credit once the credit, not the allowance, has run out', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    spendBoth(space, mover.entityId);
+    clock.ms += 2000;
+    let x = positionOf(space, mover.entityId)!.x;
+    for (let report = 0; report < 25; report += 1) {
+      x += 0.1;
+      space.handleMove(move(x, 10, 90, 'walk'), mover.entityId);
+    }
+    expect(balanceNow()).toBe(100);
+    space.handleMove(move(x + 0.4, 10, 90, 'walk'), mover.entityId);
+    expect(positionOf(space, mover.entityId)).toEqual({ x: x + 0.4, z: 10 });
+    expect(balanceNow()).toBe(99);
+  });
+
+  /**
+   * 0.55 m walked against 0.25 s of credit runs 0.3 m, which drains a whole unit. A 1 mm jog a
+   * millisecond later fits the credit, and must not bring jog recovery back inside the window.
+   */
+  it('holds recovery at the running pace for the window after a charged move, whatever the next move reports', () => {
+    const { clock, space, mover, balanceNow } = walker(50);
+    spendBoth(space, mover.entityId);
+    clock.ms += 200;
+    const at = positionOf(space, mover.entityId)!;
+    space.handleMove(move(at.x + 0.55, 10, 90, 'walk'), mover.entityId);
+    expect(balanceNow()).toBe(49);
+    clock.ms += 1;
+    space.handleMove(move(at.x + 0.551, 10, 90, 'jog'), mover.entityId);
+    clock.ms += 239;
+    space.step(0.24);
+    expect(balanceNow()).toBe(49);
+  });
+
+  it('carries the running hold through a hand-over, so recovery on arrival waits for its window to end', () => {
+    const { clock, space, mover, balanceNow } = walker(50);
+    spendBoth(space, mover.entityId);
+    clock.ms += 200;
+    space.handleMove(move(positionOf(space, mover.entityId)!.x + 0.55, 10, 90, 'walk'), mover.entityId);
+    const { checkpoint, transient } = space.handOver(mover.entityId, false)!;
+    space.attach(checkpoint.character, checkpoint.inventory, new ConnectionOutbox(4096), 0, 'en', transient);
+    const recovered: number[] = [];
+    for (let step = 0; step < 2; step += 1) {
+      clock.ms += 240;
+      space.step(0.24);
+      recovered.push(balanceNow());
+    }
+    // 12 balance a second standing for 0.24 s is 2.88, so the second step recovers two whole units.
+    expect(recovered).toEqual([49, 51]);
+  });
+
+  /** Ten seconds of jogging on time leave the credit full, so it covers a stall's bunch of just under the allowance after them. */
+  it('charges nothing for an honest jog a stall bunched by just under the allowance', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    let x = 2;
+    const report = () => {
+      x += 0.2;
+      space.handleMove(move(x, 10, 90, 'jog'), mover.entityId);
+    };
+    for (let onTime = 0; onTime < 100; onTime += 1) {
+      clock.ms += 100;
+      report();
+    }
+    clock.ms += 3700;
+    for (let held = 0; held < 37; held += 1) report();
+    expect(positionOf(space, mover.entityId)).toEqual({ x, z: 10 });
+    expect(balanceNow()).toBe(100);
+  });
+
+  /** A blow winds the jogger as a stall begins: 1 s of jogging and 4 s of winded walking arrive together, 6 m the allowance accepts and 5 s of credit. */
+  it('charges nothing for an honest bunch that turns from a jog to a walk', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    let x = 2;
+    const report = (gait: Gait, metres: number) => {
+      x += metres;
+      space.handleMove(move(x, 10, 90, gait), mover.entityId);
+    };
+    for (let onTime = 0; onTime < 100; onTime += 1) {
+      clock.ms += 100;
+      report('jog', 0.2);
+    }
+    clock.ms += 5000;
+    for (let held = 0; held < 10; held += 1) report('jog', 0.2);
+    for (let held = 0; held < 40; held += 1) report('walk', 0.1);
+    expect(positionOf(space, mover.entityId)).toEqual({ x, z: 10 });
+    expect(balanceNow()).toBe(100);
+  });
+
+  /**
+   * 3.75 m a second reported as a jog spends 1.875 s of credit a second against the 1.25 s
+   * refilled, so the 7.5 s of credit last 12 s; the 4 s after them cover 15 m against 5 s of
+   * credit, and the 5 m past it were run.
+   */
+  it("charges a client that covers the allowance's pace while reporting a jog once its credit is spent", () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    for (let report = 1; report <= 160; report += 1) {
+      clock.ms += 100;
+      space.handleMove(move(2 + 0.375 * report, 10, 90, 'jog'), mover.entityId);
+      if (report === 120) expect(balanceNow()).toBe(100);
+    }
+    expect(positionOf(space, mover.entityId)).toEqual({ x: 2 + 0.375 * 160, z: 10 });
+    // 5 m run drains 16.7.
+    expect(balanceNow()).toBe(83);
+  });
+
+  /**
+   * The credit refills the same whatever gait is reported, so tiny reports at a faster gait buy
+   * nothing for the walk reports beside them: each schedule below covers 2.4 m a second reported
+   * as walking for 10 s, 24 s of credit against the 20 s refilled and held, and is charged the 4 m
+   * past it, as walking alone is.
+   */
+  it.each([
+    { schedule: 'nothing', reports: [] },
+    { schedule: 'a jog, pausing before it', reports: [{ afterMs: 99, gait: 'jog' }] },
+    { schedule: 'a jog, pausing before the walk', reports: [{ afterMs: 1, gait: 'jog' }] },
+    {
+      schedule: 'a run, then a jog',
+      reports: [
+        { afterMs: 98, gait: 'run' },
+        { afterMs: 1, gait: 'jog' },
+      ],
+    },
+    {
+      schedule: 'two jogs',
+      reports: [
+        { afterMs: 51, gait: 'jog' },
+        { afterMs: 48, gait: 'jog' },
+      ],
+    },
+  ] as const)('charges a client that slips $schedule beside each walk', ({ reports }) => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    let x = 2;
+    for (let cycle = 0; cycle < 100; cycle += 1) {
+      for (const { afterMs, gait } of reports) {
+        clock.ms += afterMs;
+        x += 0.000_001;
+        space.handleMove(move(x, 10, 90, gait), mover.entityId);
+      }
+      clock.ms += 100 - reports.reduce((spent, { afterMs }) => spent + afterMs, 0);
+      x += 0.24 - 0.000_001 * reports.length;
+      space.handleMove(move(x, 10, 90, 'walk'), mover.entityId);
+    }
+    expect(positionOf(space, mover.entityId)).toEqual({ x, z: 10 });
+    // 4 m run drains 13.3.
+    expect(balanceNow()).toBe(87);
+  });
+
+  /** A turn on the spot reported as a run does not change how fast the credit refilled since the last move, before a door or a disconnect. */
+  it('carries through a hand-over the credit the time since the last move refilled, whatever a turn reported', () => {
+    const carried = (turn: Gait | undefined) => {
+      const { clock, space, mover } = walker(100);
+      spendBoth(space, mover.entityId);
+      clock.ms += 2000;
+      const at = positionOf(space, mover.entityId)!;
+      if (turn !== undefined) space.handleMove(move(at.x, at.z, 0, turn), mover.entityId);
+      return space.handOver(mover.entityId, false)!.transient.paceCredit;
+    };
+    expect([carried(undefined), carried('jog'), carried('run')]).toEqual([2.5, 2.5, 2.5]);
+  });
+
+  /** A run reported once a second holds recovery at the running pace for the second it covers, as a run reported every 100 ms does: 4 runs of 3 m drain 40, and only the step at each second's end recovers. */
+  it('recovers next to nothing between run reports however seldom the client sends them', () => {
+    const { clock, space, mover, balanceNow } = walker(50);
+    for (let second = 1; second <= 4; second += 1) {
+      space.handleMove(move(2 + 3 * second, 10, 90, 'run'), mover.entityId);
+      for (let step = 0; step < 20; step += 1) {
+        clock.ms += 50;
+        space.step(0.05);
+      }
+    }
+    expect(balanceNow()).toBe(12);
+  });
+
+  /**
+   * Each use adds the way to the target at a walk to the credit past its cap, but no more than one
+   * way's past it, however often Lunge is used standing still. 24 s at the allowance's pace
+   * reported as a jog spend 45 s of credit against the 7.5 s and one way held and what refills once
+   * the credit is back under its cap: about 6.3 s past it, 12.7 m run, which drains 42.
+   */
+  it("banks no more than one leap's credit from Lunge used again and again", () => {
+    const { clock, space } = arena({ size: { width: 150, depth: 30 } });
+    const contact = monsterKind('ghost').radius + SOMNIO_CONSTANTS.playerRadius;
+    const from = GHOST_AT.z - contact - 2.9;
+    const fighter = attachPlayer(space, { x: GHOST_AT.x, z: from }, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }), energy: energy({ balanceCurrent: 100 }) },
+    });
+    space.handleTarget(GHOST, fighter.entityId);
+    for (let use = 0; use < 4; use += 1) {
+      clock.ms += 10_000;
+      space.handleUseAbility('lunge', fighter.entityId);
+    }
+    const balance = () => energyOf(space, fighter.entityId).balanceCurrent;
+    expect(balance()).toBe(100 - 4 * 12);
+    for (let report = 1; report <= 240; report += 1) {
+      clock.ms += 100;
+      space.handleMove(move(GHOST_AT.x + 0.375 * report, from, 90, 'jog'), fighter.entityId);
+    }
+    expect(positionOf(space, fighter.entityId)).toEqual({ x: GHOST_AT.x + 0.375 * 240, z: from });
+    expect(balance()).toBe(10);
+  });
+
+  /** The whole way to the target at a walk goes into the credit, so the credit right after a Lunge from a full credit reads its cap and that many seconds. */
+  it("adds the way to Lunge's target at a walk to the pace credit", () => {
+    const { space } = arena({ size: { width: 30, depth: 30 } });
+    const contact = monsterKind('ghost').radius + SOMNIO_CONSTANTS.playerRadius;
+    const fighter = attachPlayer(space, { x: GHOST_AT.x, z: GHOST_AT.z - contact - 2.9 }, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }), energy: energy({ balanceCurrent: 100 }) },
+    });
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    expect(space.handOver(fighter.entityId, false)!.transient.paceCredit).toBeCloseTo(7.5 + contact + 2.9, 9);
+  });
+
+  /** 1.5 m walked leave 6 s of credit, which the 2 s before Lunge refill to the cap, so the way is added to 7.5 s, not to the 6 s last counted. */
+  it("adds the way to Lunge's target to the credit the time since the last move refilled", () => {
+    const { clock, space } = arena({ size: { width: 30, depth: 30 } });
+    const contact = monsterKind('ghost').radius + SOMNIO_CONSTANTS.playerRadius;
+    const from = GHOST_AT.z - contact - 2.9;
+    const fighter = attachPlayer(space, { x: GHOST_AT.x - 1.5, z: from }, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }), energy: energy({ balanceCurrent: 100 }) },
+    });
+    space.handleMove(move(GHOST_AT.x, from, 90, 'walk'), fighter.entityId);
+    clock.ms += 2000;
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    expect(space.handOver(fighter.entityId, false)!.transient.paceCredit).toBeCloseTo(7.5 + contact + 2.9, 9);
+  });
+
+  /** The leap's 2.9 m reported at a walk over half a second, with the allowance refilled a second and the credit spent. */
+  it("charges nothing for Lunge's leap that a winded client reports at a walk", async () => {
+    const { clock, space } = arena({ size: { width: 30, depth: 30 } });
+    const contact = monsterKind('ghost').radius + SOMNIO_CONSTANTS.playerRadius;
+    const from = GHOST_AT.z - contact - 2.9;
+    const fighter = attachPlayer(space, { x: GHOST_AT.x - 7.5, z: from }, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }), energy: energy({ balanceCurrent: 14 }) },
+    });
+    space.handleMove(move(GHOST_AT.x, from, 180, 'walk'), fighter.entityId);
+    clock.ms += 1000;
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    expect(energyOf(space, fighter.entityId).balanceCurrent).toBe(2);
+    for (let report = 1; report <= 5; report += 1) {
+      clock.ms += 100;
+      space.handleMove(move(GHOST_AT.x, from + 0.58 * report, 0, 'walk'), fighter.entityId);
+    }
+    expect(positionOf(space, fighter.entityId)).toEqual({ x: GHOST_AT.x, z: from + 0.58 * 5 });
+    expect(energyOf(space, fighter.entityId).balanceCurrent).toBe(2);
+    expect(await corrections(fighter.outbox)).toEqual([]);
+  });
+
+  /**
+   * A leap reported as a run holds recovery at the running pace for as long as its metres take at
+   * the leap's 6 m a second, not at a run's 3: by its last report, held only for the window after it.
+   */
+  it("holds recovery for Lunge's leap reported as a run only as long as the leap takes", () => {
+    const { clock, space } = arena({ size: { width: 30, depth: 30 } });
+    const contact = monsterKind('ghost').radius + SOMNIO_CONSTANTS.playerRadius;
+    const from = GHOST_AT.z - contact - 2.9;
+    const fighter = attachPlayer(space, { x: GHOST_AT.x, z: from }, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }), energy: energy({ balanceCurrent: 100 }) },
+    });
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    for (let report = 1; report <= 5; report += 1) {
+      clock.ms += 100;
+      space.handleMove(move(GHOST_AT.x, from + 0.58 * report, 0, 'run'), fighter.entityId);
+    }
+    expect(space.handOver(fighter.entityId, false)!.transient.runningSeconds).toBeCloseTo(0.25, 9);
+  });
+
+  /** Ten 0.3 m runs reported in the same millisecond: the first holds for the window, and each after it adds its 0.1 s at a run, however the reports bunch. */
+  it('holds recovery for every run of a bunch, one after another', () => {
+    const { space, mover } = walker(100);
+    for (let report = 1; report <= 10; report += 1) space.handleMove(move(2 + 0.3 * report, 10, 90, 'run'), mover.entityId);
+    expect(space.handOver(mover.entityId, false)!.transient.runningSeconds).toBeCloseTo(1.15, 9);
+  });
+
+  /** 3 m run hold recovery for a second; a 4 m walk right after, past the 2.5 s of credit 2 s refilled, is charged but leaves that second whole. */
+  it('keeps a run hold whole through a charged walk after it', () => {
+    const { clock, space, mover, balanceNow } = walker(100);
+    spendBoth(space, mover.entityId);
+    clock.ms += 2000;
+    const at = positionOf(space, mover.entityId)!;
+    space.handleMove(move(at.x + 3, 10, 90, 'run'), mover.entityId);
+    space.handleMove(move(at.x + 7, 10, 90, 'walk'), mover.entityId);
+    expect(balanceNow()).toBeLessThan(90);
+    expect(space.handOver(mover.entityId, false)!.transient.runningSeconds).toBeCloseTo(1, 9);
+  });
+
+  /**
+   * Reports however seldom hold recovery at their gait for as long as their metres take at it, and
+   * a slower gait's report beside them cannot cut that short. Over 4 s of 50 ms steps, standing
+   * would recover 48.
+   */
+  it.each([
+    // Jogging recovers 4.8 a second; the step that ends each second's hold recovers standing.
+    { schedule: 'a jog of 2 m once a second', balance: 50, reports: [{ atMs: 0, gait: 'jog', metres: 2 }], recovered: 20 },
+    // Moving while winded recovers nothing; the step that ends each second's hold recovers standing.
+    { schedule: 'a winded walk of 1 m once a second', balance: 5, reports: [{ atMs: 0, gait: 'walk', metres: 1 }], recovered: 2 },
+    {
+      schedule: 'a jog of 0.2 m with a 1 µm walk after it every 100 ms',
+      balance: 50,
+      reports: Array.from({ length: 10 }, (_, report) => [
+        { atMs: 100 * report, gait: 'jog' as const, metres: 0.2 },
+        { atMs: 100 * report + 1, gait: 'walk' as const, metres: 0.000_001 },
+      ]).flat(),
+      recovered: 19,
+    },
+  ] as const)('recovers at the gait of $schedule, not as standing', ({ balance, reports, recovered }) => {
+    const { clock, space, mover, balanceNow } = walker(balance);
+    let x = 2;
+    for (let second = 0; second < 4; second += 1) {
+      let next = 0;
+      for (let step = 1; step <= 20; step += 1) {
+        const stepAt = 1000 * second + 50 * step;
+        for (; next < reports.length && 1000 * second + reports[next]!.atMs < stepAt; next += 1) {
+          const { atMs, gait, metres } = reports[next]!;
+          clock.ms = 1000 * second + atMs;
+          x += metres;
+          space.handleMove(move(x, 10, 90, gait), mover.entityId);
+        }
+        clock.ms = stepAt;
+        space.step(0.05);
+      }
+    }
+    expect(balanceNow()).toBe(balance + recovered);
   });
 });
 

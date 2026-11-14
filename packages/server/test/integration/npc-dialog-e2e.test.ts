@@ -66,7 +66,8 @@ describe('NPC dialog end to end', () => {
     const { entityId } = attachPlayer(space, beside, 'alice', { spaceId: STARTER_SECTOR });
     space.handleInteract(LIBUS, entityId);
     // One emit through the router, so the persistence path is the production one.
-    await first.worldRouter.persistDialogDigest(first.worldRouter.runTickAcrossSpaces(0.05));
+    first.worldRouter.queueDialogDigest(first.worldRouter.runTickAcrossSpaces(0.05));
+    await first.worldRouter.settleDialogWrites();
     const persisted = await new PostgresNPCDialogStateRepository(harness.db).find(STARTER_SECTOR, 'libus');
     expect(persisted?.scriptStep).toBe(3);
 

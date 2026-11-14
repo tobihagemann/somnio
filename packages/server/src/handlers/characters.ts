@@ -102,7 +102,8 @@ export async function handleDeleteCharacter(
  * then the attach. The write makes a resume find it played last, and lets the snapshot's
  * stale-write guard accept a corrected spawn. Its `last_seen` follows the stored one by
  * `nextLastSeen`, so a host clock stepped back since the last save cannot leave the join and every
- * checkpoint after it skipped as stale. `false`, answered `characterResult(failure)`, leaves the
+ * checkpoint after it skipped as stale. What the character carried as they last left the world
+ * runs on from there, by the time away. `false`, answered `characterResult(failure)`, leaves the
  * player choosing.
  */
 export async function joinCharacter(
@@ -123,7 +124,8 @@ export async function joinCharacter(
     } catch (error) {
       logger.warn({ error: String(error), name: character.name, spawn: `${spawn.position.x},${spawn.position.z}` }, 'failed to persist the join');
     }
-    dependencies.worldRouter.space(spawn.space)!.attach(joined, inventory, outbox, dependencies.worldClock.currentWorldSeconds(), connection.locale);
+    const transient = dependencies.worldRouter.takeReturning(character.id);
+    dependencies.worldRouter.space(spawn.space)!.attach(joined, inventory, outbox, dependencies.worldClock.currentWorldSeconds(), connection.locale, transient);
     connection.markAttached(character.id, spawn.space, accountId);
     dependencies.worldRouter.characterJoined(accountId, character);
     logger.info({ name: character.name, space: spawn.space }, 'player joined');

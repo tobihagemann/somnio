@@ -54,7 +54,7 @@ class RecordingDialogRepository extends StubNPCDialogStateRepository {
 
 const guard = (dialogScript: string) => ({ npcs: [makeNPC('guard', { x: 5, z: 5 }, dialogScript)] });
 
-async function routerOver(sectors: Sector[], dialogRepo = new RecordingDialogRepository()) {
+async function routerOver(sectors: Sector[], dialogRepo: StubNPCDialogStateRepository = new RecordingDialogRepository()) {
   return WorldRouter.create(makeWorld(sectors), new StubCharacterRepository(), dialogRepo, testLogger());
 }
 
@@ -70,7 +70,8 @@ function talk(router: WorldRouter, sectorName: string, playerName: string) {
 }
 
 async function tick(router: WorldRouter): Promise<void> {
-  await router.persistDialogDigest(router.runTickAcrossSpaces(0.05));
+  router.queueDialogDigest(router.runTickAcrossSpaces(0.05));
+  await router.settleDialogWrites();
 }
 
 async function emptyRouterConnections(count: number, sectors: Sector[] = []) {
@@ -140,6 +141,50 @@ describe('WorldRouter ticks', () => {
     await tick(router);
     await tick(router);
     expect(dialogRepo.resetCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('holds one write per NPC behind the one in flight, however many digests arrive, and ends each row at the latest cursor', async () => {
+    class HeldDialogRepository extends StubNPCDialogStateRepository {
+      readonly started: NPCDialogState[] = [];
+      readonly stored = new Map<string, number>();
+      private releases: (() => void)[] = [];
+
+      override upsert(state: NPCDialogState): Promise<void> {
+        this.started.push(state);
+        return new Promise<void>((resolve) => {
+          this.releases.push(() => {
+            this.stored.set(state.npcId, state.scriptStep);
+            resolve();
+          });
+        });
+      }
+
+      release(): void {
+        const held = this.releases;
+        this.releases = [];
+        for (const release of held) release();
+      }
+    }
+    const dialogRepo = new HeldDialogRepository();
+    const router = await routerOver([], dialogRepo);
+    const cursor = (npcId: string, scriptStep: number): NPCDialogState => ({ sectorName: 'A', npcId, scriptStep });
+    router.queueDialogDigest({ dialogUpserts: [cursor('a', 2)], dialogResets: [] });
+    for (let step = 3; step <= 20; step += 1) router.queueDialogDigest({ dialogUpserts: [cursor('a', step), cursor('b', step)], dialogResets: [] });
+    expect(dialogRepo.started).toEqual([cursor('a', 2)]);
+
+    let settled = false;
+    void router.settleDialogWrites().then(() => (settled = true));
+    while (!settled) {
+      dialogRepo.release();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(dialogRepo.started).toEqual([cursor('a', 2), cursor('a', 20), cursor('b', 20)]);
+    expect(dialogRepo.stored).toEqual(
+      new Map([
+        ['a', 20],
+        ['b', 20],
+      ]),
+    );
   });
 
   it('one space holds every outdoor sector and each interior is a space of its own', async () => {

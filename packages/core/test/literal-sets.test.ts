@@ -11,7 +11,7 @@ import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, te
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { PEOPLES } from '../src/people.ts';
 import { QUESTS } from '../src/quests.ts';
-import { SPEECH } from '../src/speech.ts';
+import { SPEECH, SPEECH_PACE } from '../src/speech.ts';
 
 /**
  * Literal pins for the string sets and tables this package owns. Their members are persisted
@@ -262,6 +262,10 @@ describe('literal sets', () => {
       yell: { clearMetres: 40, reachMetres: 80 },
       doorMuffleMetres: 44,
     });
+  });
+
+  it('pins the pace a speaker is held to', () => {
+    expect(SPEECH_PACE).toEqual({ burst: 8, perSecond: 1 });
   });
 
   it('gives every gait a speed', () => {

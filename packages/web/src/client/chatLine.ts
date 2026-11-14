@@ -31,6 +31,7 @@ export type ChatLine =
   | { kind: 'throttled' }
   | { kind: 'errorCode'; code: string }
   | { kind: 'unknownCommand'; command: string }
+  | { kind: 'speakingTooFast' }
   | { kind: 'joined'; playerName: string }
   | { kind: 'left'; playerName: string }
   | { kind: 'startupGreeting' }
@@ -88,6 +89,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'throttled':
     case 'errorCode':
     case 'unknownCommand':
+    case 'speakingTooFast':
     case 'credentialSaveFailed':
     case 'logOutOtherBrowsersFailed':
     case 'sessionExpired':

@@ -21,7 +21,8 @@ export const CHAT_IDLE_MS = 8000;
 const PEEK_LINES = 3;
 
 export interface ChatPaneCallbacks {
-  onSubmit: (text: string) => void;
+  /** `false` when the line was not taken, which keeps it in the field and the chat open. */
+  onSubmit: (text: string) => boolean;
   onFocusChange: (focused: boolean) => void;
 }
 
@@ -201,7 +202,9 @@ export class ChatPane {
 
   /**
    * Enter sends the line, if it has any text, then closes the chat and hands the keyboard back to
-   * the world. Shift+Enter and Alt+Enter do nothing here, so Alt+Enter never toggles fullscreen from the field.
+   * the world. A line the session does not take stays in the field with the chat open, to be sent
+   * again. Shift+Enter and Alt+Enter do nothing here, so Alt+Enter never toggles fullscreen from
+   * the field.
    *
    * The close does not depend on the text: Shift toggles Run only while the field lacks the
    * keyboard, so a field that kept it would leave Shift toggling nothing.
@@ -214,8 +217,8 @@ export class ChatPane {
     event.preventDefault();
     if (event.shiftKey || event.altKey) return;
     const text = this.input.value;
+    if (utf8ByteLength(text.trim()) > 0 && !this.callbacks.onSubmit(text)) return;
     this.input.value = '';
-    if (utf8ByteLength(text.trim()) > 0) this.callbacks.onSubmit(text);
     this.closeChat();
   }
 

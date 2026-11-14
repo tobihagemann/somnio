@@ -23,6 +23,7 @@ import {
   GLOBAL_COOLDOWN_SECONDS,
   PICKUP_REACH,
   SOMNIO_CONSTANTS,
+  SpeechPace,
   abilitiesTaught,
   ability,
   abilityCooldownSeconds,
@@ -331,6 +332,8 @@ export class GameplaySession {
   private cooldowns: Cooldowns = NO_COOLDOWNS;
   /** Until when no ability is used again, from a use until the `cooldowns` frame that answers it, or 0 with none awaited. */
   private awaitingUseUntilMs = 0;
+  /** The pace the client holds the player's lines to, within the server's speech budget. */
+  private readonly speechPace: SpeechPace;
   /**
    * Whether the walk under way waits for the player's own channel, from its use until it lands or
    * breaks, or until its answer is overdue. A new press lets it go.
@@ -358,6 +361,7 @@ export class GameplaySession {
     this.coarsePointer = options.coarsePointer ?? false;
     this.measureText = options.measureText ?? canvasWidthMeasurer();
     this.now = options.now ?? (() => performance.now());
+    this.speechPace = new SpeechPace(this.now());
     this.predictor = new GameplayPredictor({
       session: this.controller,
       renderSurface: this.controller.renderSurface,
@@ -1184,15 +1188,23 @@ export class GameplaySession {
    * Says a chat line plainly, or as the whisper or yell its command names. The text is capped in
    * **UTF-8 bytes**, not code units: the server rejects on byte length, so a string of 200 emoji
    * passes a `.length <= 256` check and is then refused. An unknown command sends nothing and is answered in chat.
+   *
+   * A line past `SPEECH_PACE` is not sent either: chat says
+   * the player speaks too fast, and `false` tells the field to keep the line. Every other line is
+   * taken, `true`.
    */
-  submitChat(rawText: string): void {
+  submitChat(rawText: string): boolean {
     const self = this.self;
-    if (this.controller.connectionState !== 'attached' || self === undefined) return;
+    if (this.controller.connectionState !== 'attached' || self === undefined) return true;
     const input = parseChatInput(rawText);
-    if (input === undefined) return;
+    if (input === undefined) return true;
     if ('unknownCommand' in input) {
       this.controller.appendChat({ kind: 'unknownCommand', command: input.unknownCommand });
-      return;
+      return true;
+    }
+    if (!this.speechPace.spend(this.now())) {
+      this.controller.appendChat({ kind: 'speakingTooFast' });
+      return false;
     }
     const text = truncateToUTF8Bytes(input.text, PROTOCOL_BYTE_CAPS.say);
     this.send({ tag: 'clientSay', payload: { text, kind: input.kind } });
@@ -1211,6 +1223,7 @@ export class GameplaySession {
       kind: input.kind,
       clarity: 1,
     });
+    return true;
   }
 
   /** Says the purse's coins in the chat. */

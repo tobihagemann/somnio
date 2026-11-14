@@ -14,10 +14,11 @@ import {
   migrateToLatest,
   resolvePostgresConfiguration,
 } from '@somnio/data';
-import type { SomnioDatabase } from '@somnio/data';
+import type { DatabaseTimeouts, SomnioDatabase } from '@somnio/data';
 import { resolveServerConfiguration } from '../config.ts';
-import { AttemptLimiter } from '../connection/attemptLimiter.ts';
+import { AttemptLimiter, PRELOGIN_BUDGETS } from '../connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
+import { FRAME_BUDGETS } from '../connection/frameLimits.ts';
 import { SocketAdmission } from '../connection/socketAdmission.ts';
 import type { AdminDependencies } from '../handlers/adminDispatcher.ts';
 import { createApp } from '../http/app.ts';
@@ -46,6 +47,7 @@ export interface BootOptions {
   simulationIntervalMs?: number;
   checkpointIntervalMs?: number;
   loginDeadlineMs?: number;
+  databaseTimeouts?: Partial<DatabaseTimeouts>;
 }
 
 export interface BootedServer {
@@ -67,7 +69,7 @@ export async function bootServer(env: Record<string, string | undefined>, option
   const lifecycle = logging.serverLogger('lifecycle');
   const configuration = resolveServerConfiguration(env);
   const postgresConfiguration = resolvePostgresConfiguration(env, configuration.devDefaults);
-  const db = createDatabase(postgresConfiguration, (error) => lifecycle.warn({ error: String(error) }, 'postgres pool error'));
+  const db = createDatabase(postgresConfiguration, (error) => lifecycle.warn({ error: String(error) }, 'postgres pool error'), options.databaseTimeouts);
   const failStartup = async (error: unknown): Promise<never> => {
     lifecycle.error({ error: String(error) }, 'startup failed; shutting down');
     await db.destroy();
@@ -127,12 +129,25 @@ export async function bootServer(env: Record<string, string | undefined>, option
     worldRouter,
     worldClock,
     // An `/admin` attempt costs no hash, so new addresses can arrive fast enough to need a cap.
-    attemptLimiter: new AttemptLimiter({ enabled: preloginLimitOn, logger: preloginLogger, maxKeys: configuration.addressLimitKeys }),
+    attemptLimiter: new AttemptLimiter({
+      enabled: preloginLimitOn,
+      logger: preloginLogger,
+      budgets: PRELOGIN_BUDGETS,
+      maxKeys: configuration.addressLimitKeys,
+    }),
     // Always on: it counts emails, not addresses. Each new key waits on an Argon2 hash or,
     // with control characters refused, a database error. During an outage those return fast, so
     // `maxKeys` caps the table. An entry with one attempt spent is evicted within about six
     // minutes: the one-minute refill plus the five-minute pass.
-    accountLimiter: new AttemptLimiter({ enabled: true, logger: preloginLogger, logKey: false, maxKeys: configuration.accountLimitKeys }),
+    accountLimiter: new AttemptLimiter({
+      enabled: true,
+      logger: preloginLogger,
+      budgets: PRELOGIN_BUDGETS,
+      logKey: false,
+      maxKeys: configuration.accountLimitKeys,
+    }),
+    // Keyed by accounts that logged in, so no `maxKeys`: an entry is a few numbers per account active in the last few minutes.
+    frameLimiter: new AttemptLimiter({ enabled: true, logger: logging.gameplayLogger('frames'), budgets: FRAME_BUDGETS }),
     outboxHighWatermark: configuration.outboxHighWatermark,
     loginDeadlineMs: options.loginDeadlineMs ?? configuration.loginDeadlineMs,
     cardDeadlineMs: configuration.cardDeadlineMs,

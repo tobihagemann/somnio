@@ -4,6 +4,7 @@ import type { Character, Inventory } from '@somnio/core';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { handleUseDoor } from '../src/handlers/gameplay.ts';
+import type { Logger } from '../src/logging.ts';
 import { DropSaves } from '../src/world/checkpointWriter.ts';
 import type { PlayerCheckpoint } from '../src/world/spaceActor.ts';
 import { CUDGEL, WAND, carrying } from './support/combat.ts';
@@ -98,9 +99,9 @@ const TOWN = [
 const WAND_LEFT: Inventory = { coins: 0, equipped: {}, bag: [{ place: 1, item: WAND }] };
 
 /** A dreamer at Town's door, carrying a cudgel and a wand, over a repository whose writes the test settles. */
-async function dreamerAtTheDoor() {
+async function dreamerAtTheDoor(logger: Logger = testLogger()) {
   const characters = new DeferredCharacterRepository();
-  const dependencies = await makeStubConnectionDependencies({ sectors: TOWN, characters });
+  const dependencies = await makeStubConnectionDependencies({ sectors: TOWN, characters, logger });
   const connection = new ConnectionActor(dependencies);
   const accountId = crypto.randomUUID();
   const town = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
@@ -151,5 +152,25 @@ describe('the saves of throws to the ground', () => {
     await drained;
     expect(d.characters.writes).toHaveLength(2);
     expect(d.dependencies.worldRouter.register(new ConnectionActor(d.dependencies), d.accountId)).toBe(true);
+  });
+
+  /** A write the pool timed out rejects, as these do by hand. */
+  it('let the account go once the drop save in flight and the disconnect write have both failed, logging each', async () => {
+    const { logger, records } = recordingLogger();
+    const d = await dreamerAtTheDoor(logger);
+    await d.connection.dispatch({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } });
+    const drained = d.connection.drainForShutdown();
+    await settle();
+    expect(d.dependencies.worldRouter.register(new ConnectionActor(d.dependencies), d.accountId)).toBe(false);
+
+    d.characters.writes[0]!.reject();
+    await settle();
+    expect(d.characters.writes).toHaveLength(2);
+    expect(d.dependencies.worldRouter.register(new ConnectionActor(d.dependencies), d.accountId)).toBe(false);
+
+    d.characters.writes[1]!.reject();
+    await drained;
+    expect(d.dependencies.worldRouter.register(new ConnectionActor(d.dependencies), d.accountId)).toBe(true);
+    expect(records.filter((record) => record['msg'] === 'failed to persist player snapshot').map((record) => record['origin'])).toEqual(['drop', 'disconnect']);
   });
 });

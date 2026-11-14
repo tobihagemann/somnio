@@ -42,7 +42,8 @@ import type { FramedEntity, OwnFrameState } from './unitFrames';
  */
 
 export interface HUDCallbacks {
-  onSubmitChat: (text: string) => void;
+  /** `false` when the line was not taken, which keeps it in the chat's field. */
+  onSubmitChat: (text: string) => boolean;
   onChatFocusChange: (focused: boolean) => void;
   onTellPurse: () => void;
   onEquip: (itemId: string, slot?: EquipSlot) => void;

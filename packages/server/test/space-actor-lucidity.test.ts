@@ -131,9 +131,13 @@ function framed(log: QuestLog) {
   return { ...log, bounties: expect.any(Array) };
 }
 
-/** Puts the player at `to`, however far, by way of `via`: a fresh allowance covers a few metres at a time. */
+/**
+ * Puts the player at `to`, however far, by way of `via`: a fresh allowance covers a few metres at a
+ * time. Then it waits out the 2.5 s a 5 m stride at a jog holds recovery.
+ */
 function walk(world: Town, entityId: string, to: Point, ...via: Point[]): void {
   for (const point of [...via, to]) walkStraight(world, entityId, point);
+  world.clock.ms += 2500;
 }
 
 function walkStraight(world: Town, entityId: string, to: Point): void {

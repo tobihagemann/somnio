@@ -2,8 +2,11 @@ import { BOOT_DEFAULT_WORLD_SECONDS } from '@somnio/core';
 import type { Sector } from '@somnio/core';
 import type { SessionRepository } from '@somnio/data';
 import { DEFAULT_CARD_DEADLINE_MS, DEFAULT_LOGIN_DEADLINE_MS } from '../../src/config.ts';
-import { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
+import { AttemptLimiter, PRELOGIN_BUDGETS } from '../../src/connection/attemptLimiter.ts';
+import type { AttemptKind } from '../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../src/connection/dependencies.ts';
+import { FRAME_BUDGETS } from '../../src/connection/frameLimits.ts';
+import type { FrameKind } from '../../src/connection/frameLimits.ts';
 import type { Logger } from '../../src/logging.ts';
 import { WorldClockService } from '../../src/services/worldClockService.ts';
 import { WorldRouter } from '../../src/world/worldRouter.ts';
@@ -19,8 +22,8 @@ import {
   StubWorldClockRepository,
 } from './stubRepositories.ts';
 
-export function enabledAttemptLimiter(): AttemptLimiter {
-  return new AttemptLimiter({ enabled: true, logger: testLogger() });
+export function enabledAttemptLimiter(): AttemptLimiter<AttemptKind> {
+  return new AttemptLimiter({ enabled: true, logger: testLogger(), budgets: PRELOGIN_BUDGETS });
 }
 
 export interface StubDependencyOptions {
@@ -32,10 +35,14 @@ export interface StubDependencyOptions {
   accounts?: StubAccountRepository;
   initialWorldSeconds?: number;
   worldRouter?: WorldRouter;
+  /** The clock of the router built when `worldRouter` is not given, monotonic milliseconds. */
+  now?: (() => number) | undefined;
   /** Defaults to a disabled limiter, so a suite that never asks for the limit is never throttled. */
-  attemptLimiter?: AttemptLimiter;
+  attemptLimiter?: AttemptLimiter<AttemptKind>;
   /** Defaults to a disabled limiter, like `attemptLimiter`. */
-  accountLimiter?: AttemptLimiter;
+  accountLimiter?: AttemptLimiter<AttemptKind>;
+  /** Defaults to a disabled limiter over the frame budgets, like `attemptLimiter`. */
+  frameLimiter?: AttemptLimiter<FrameKind>;
   loginDeadlineMs?: number;
   cardDeadlineMs?: number;
 }
@@ -47,7 +54,8 @@ export interface StubDependencyOptions {
 export async function makeStubConnectionDependencies(options: StubDependencyOptions = {}): Promise<ConnectionDependencies> {
   const logger = options.logger ?? testLogger();
   const characters = options.characters ?? new StubCharacterRepository();
-  const worldRouter = options.worldRouter ?? (await WorldRouter.create(makeWorld(options.sectors), characters, new StubNPCDialogStateRepository(), logger));
+  const worldRouter =
+    options.worldRouter ?? (await WorldRouter.create(makeWorld(options.sectors), characters, new StubNPCDialogStateRepository(), logger, logger, options.now));
   const worldClock = new WorldClockService(new StubWorldClockRepository(), options.initialWorldSeconds ?? BOOT_DEFAULT_WORLD_SECONDS, logger);
   return {
     accounts: options.accounts ?? new StubAccountRepository(),
@@ -58,8 +66,9 @@ export async function makeStubConnectionDependencies(options: StubDependencyOpti
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,
     worldClock,
-    attemptLimiter: options.attemptLimiter ?? new AttemptLimiter({ enabled: false, logger }),
-    accountLimiter: options.accountLimiter ?? new AttemptLimiter({ enabled: false, logger }),
+    attemptLimiter: options.attemptLimiter ?? new AttemptLimiter({ enabled: false, logger, budgets: PRELOGIN_BUDGETS }),
+    accountLimiter: options.accountLimiter ?? new AttemptLimiter({ enabled: false, logger, budgets: PRELOGIN_BUDGETS }),
+    frameLimiter: options.frameLimiter ?? new AttemptLimiter({ enabled: false, logger, budgets: FRAME_BUDGETS }),
     outboxHighWatermark: options.outboxHighWatermark ?? 1024,
     loginDeadlineMs: options.loginDeadlineMs ?? DEFAULT_LOGIN_DEADLINE_MS,
     cardDeadlineMs: options.cardDeadlineMs ?? DEFAULT_CARD_DEADLINE_MS,

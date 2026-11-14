@@ -37,3 +37,21 @@ export async function startDatabase(options: { migrate?: boolean } = {}): Promis
     },
   };
 }
+
+/** A transaction on its own connection that holds what `lock` takes until the returned release is called. */
+export async function holdLock(db: SomnioDatabase, lock: (transaction: SomnioDatabase) => Promise<unknown>): Promise<() => Promise<void>> {
+  let release = (): void => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let markHeld = (): void => {};
+  const held = new Promise<void>((resolve) => (markHeld = resolve));
+  const holder = db.transaction().execute(async (transaction) => {
+    await lock(transaction);
+    markHeld();
+    await released;
+  });
+  await held;
+  return async () => {
+    release();
+    await holder;
+  };
+}

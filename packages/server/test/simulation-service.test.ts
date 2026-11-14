@@ -35,12 +35,12 @@ describe('SimulationService', () => {
     const { clock, service, space, join } = await simulation();
     const mover = join('mover', 5);
     const watcher = join('watcher', 15);
-    const step = async (x: number) => {
+    const step = (x: number) => {
       space.handleMove({ x, z: 11.2, facing: 90, gait: 'walk' }, mover.entityId);
       clock.ms += 50;
-      await service.runPass();
+      service.runPass();
     };
-    for (const x of [5.1, 5.2, 5.3, 5.4, 5.5]) await step(x);
+    for (const x of [5.1, 5.2, 5.3, 5.4, 5.5]) step(x);
     const frames = (await collectMessages(watcher.outbox)).flatMap((message) => (message.tag === 'moves' ? [message.payload.moves] : []));
     // Five passes over 250 ms: the flushes fall on the second and the fourth.
     expect(frames).toEqual([
@@ -54,9 +54,9 @@ describe('SimulationService', () => {
     const { clock, router, service } = await simulation();
     const stepped = vi.spyOn(router, 'runTickAcrossSpaces');
     clock.ms += 50;
-    await service.runPass();
+    service.runPass();
     clock.ms += 10_000;
-    await service.runPass();
+    service.runPass();
     expect(stepped.mock.calls).toEqual([[0.05], [0.25]]);
   });
 
@@ -68,10 +68,40 @@ describe('SimulationService', () => {
         return Promise.resolve();
       }
     }
-    const { clock, service, space, join } = await simulation(new RecordingDialogRepository());
+    const { clock, router, service, space, join } = await simulation(new RecordingDialogRepository());
     space.handleInteract('npc:Field/guard', join('talker', 10).entityId);
     clock.ms += 50;
-    await service.runPass();
+    service.runPass();
+    await router.settleDialogWrites();
     expect(upserted).toEqual([{ sectorName: 'Field', npcId: 'guard', scriptStep: 3 }]);
+  });
+
+  it('steps the world at its interval while a dialog write is held, and once aborted waits for it', async () => {
+    /** Every upsert waits until `release`. */
+    class HeldDialogRepository extends StubNPCDialogStateRepository {
+      upserts = 0;
+      release = (): void => {};
+      private readonly released = new Promise<void>((resolve) => (this.release = resolve));
+      override upsert(): Promise<void> {
+        this.upserts += 1;
+        return this.released;
+      }
+    }
+    const held = new HeldDialogRepository();
+    const { router, space, join } = await simulation(held);
+    const service = new SimulationService(router, 5);
+    const stepped = vi.spyOn(router, 'runTickAcrossSpaces');
+    space.handleInteract('npc:Field/guard', join('talker', 10).entityId);
+    const control = new AbortController();
+    const run = service.run(control.signal);
+    await vi.waitFor(() => expect(stepped.mock.calls.length).toBeGreaterThanOrEqual(5));
+    expect(held.upserts).toBe(1);
+    control.abort();
+    let ended = false;
+    void run.then(() => (ended = true));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(ended).toBe(false);
+    held.release();
+    await run;
   });
 });

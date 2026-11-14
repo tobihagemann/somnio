@@ -468,6 +468,69 @@ describe('a nightmare striking', () => {
   });
 });
 
+/**
+ * A blow struck from within a nightmare's reach is answered at its next step, wherever its striker
+ * has stepped since. The Ghost here keeps to a single point, so it chases no one, and only that
+ * rule can bring a strike on a dreamer who stepped back out of its reach.
+ */
+describe('a blow struck between two steps', () => {
+  const OUT_OF_REACH: Point = { x: 10, z: 12 };
+  const CLEAVER = { lucidity: lucidity('fighter', { strike: 1, cleave: 1 }) };
+
+  /** A Fighter who steps up to the Ghost from out of its reach, cleaves, and steps back out, all before the next step. */
+  function cleaveAndStepBack(space: SpaceActor, entityId: string, sent: readonly SomnioMessage[]): void {
+    space.handleMove({ ...BESIDE_GHOST, facing: 180, gait: 'jog' }, entityId);
+    space.handleUseAbility('cleave', entityId);
+    expect(payloads(sent, 'blow').filter((blow) => blow.attackerId === entityId)).toEqual([{ attackerId: entityId, targetId: GHOST, hit: true }]);
+    space.handleMove({ ...OUT_OF_REACH, facing: 180, gait: 'jog' }, entityId);
+  }
+
+  const ghostBlows = (sent: readonly SomnioMessage[]) => payloads(sent, 'blow').filter((blow) => blow.attackerId === GHOST);
+
+  it('is answered by a nightmare whose strike is ready, though its striker stands out of reach by then', () => {
+    const { space } = arena();
+    const { outbox, sent } = recordingOutbox();
+    const fighter = attachPlayer(space, OUT_OF_REACH, 'fighter', { outbox, character: CLEAVER });
+    cleaveAndStepBack(space, fighter.entityId, sent);
+    space.step(0);
+    expect(ghostBlows(sent)).toEqual([{ attackerId: GHOST, targetId: fighter.entityId, hit: true }]);
+  });
+
+  it('is forgotten by a nightmare whose strike is not ready at that step', () => {
+    const { clock, space } = arena();
+    const { outbox, sent } = recordingOutbox();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { outbox, character: CLEAVER });
+    space.step(0);
+    expect(ghostBlows(sent)).toHaveLength(1);
+    space.handleMove({ ...OUT_OF_REACH, facing: 180, gait: 'jog' }, fighter.entityId);
+    clock.ms += 1000;
+    cleaveAndStepBack(space, fighter.entityId, sent);
+    space.step(0);
+    clock.ms += monsterKind('ghost').strikeSeconds * 1000;
+    space.step(0);
+    expect(ghostBlows(sent)).toHaveLength(1);
+  });
+
+  /** Its home ground reaches 2 m each way, so the Mystic bolts from inside it, where the Ghost does not evade, and steps out of it. */
+  it('is not a bolt, which strikes no blow to answer', () => {
+    const { clock, space } = arena({}, { ground: 2 });
+    const { outbox, sent } = recordingOutbox();
+    const mystic = attachPlayer(space, { x: 10, z: 12.5 }, 'mystic', {
+      outbox,
+      character: { lucidity: lucidity('mystic', { ward: 1, 'dream-bolt': 1 }) },
+      inventory: wearing(WAND),
+    });
+    space.handleMove({ ...BESIDE_GHOST, facing: 180, gait: 'jog' }, mystic.entityId);
+    space.handleTarget(GHOST, mystic.entityId);
+    space.handleUseAbility('dream-bolt', mystic.entityId);
+    expect(payloads(sent, 'ability')).toMatchObject([{ entityId: mystic.entityId, abilityId: 'dream-bolt', targetId: GHOST }]);
+    space.handleMove({ x: 10, z: 12.5, facing: 180, gait: 'jog' }, mystic.entityId);
+    clock.ms += 50;
+    space.step(0.05);
+    expect(ghostBlows(sent)).toEqual([]);
+  });
+});
+
 describe('threat', () => {
   /** A Ghost at `GHOST_AT`, keeping to ground reaching 6 m south and east of it. */
   const withGround = () => arena({ monsterSpawns: [makeMonsterSpawn(GHOST_AT, 6)] });

@@ -215,6 +215,13 @@ interface PlayerSlot {
   /** The metres the player may still move, as of `allowanceAt`. */
   allowance: number;
   allowanceAt: number;
+  /** The seconds the player may still walk or jog, as of `paceCreditAt`; metres past it are charged as running. */
+  paceCredit: number;
+  paceCreditAt: number;
+  /** Until when recovery reads the player at each gait, as `holdMotion` holds it, and as `payPace` holds a run for metres charged as running. */
+  movingUntil: Record<Gait, number>;
+  /** The metres of a leap still to come, which take the leap's time whatever gait the client reports them at. */
+  leap: { metres: number; metresPerSecond: number };
   rejectionLog: LogThrottle;
   /**
    * What recovery and the running drain have not yet moved into `character.energy`, which holds
@@ -223,9 +230,6 @@ interface PlayerSlot {
   carry: { health: number; balance: number; spirit: number };
   /** Kept with `windedAfter` over every balance the dreamer is sent, as their client keeps it. */
   winded: boolean;
-  /** When a move of non-zero length was last accepted, and at what gait. */
-  lastMoveAt: number;
-  lastGait: Gait;
   swingReadyAt: number;
   mendReadyAt: number;
   /** Nightmares leave the dreamer alone until this moment. */
@@ -345,6 +349,8 @@ interface MonsterRuntime {
   effects: HeldEffect[];
   /** The threat each dreamer on its table has raised against it, by their entity id. */
   threat: Map<string, number>;
+  /** The dreamers who struck it from within its reach since its last turn. At its next it may answer one, and forgets the rest. */
+  answerDue: Set<string>;
 }
 
 /** A boss's moves, and how they stand: the wail under way, when it may next wail and call up minions, and when it gives its fight up. */
@@ -432,8 +438,10 @@ export interface YellThroughDoors {
 }
 
 /**
- * What a dreamer carries through a door but is never saved: each effect they hold and each
- * cooldown running, with the seconds it has left.
+ * What a dreamer carries through a door or a wake, and back after a disconnect, but is never
+ * saved. Each effect they hold, each cooldown running, the swing and touch timers, and how long
+ * recovery still reads them as running come with the seconds each has left. The movement
+ * allowance and the pace credit come as they stood.
  */
 export interface PlayerTransient {
   /**
@@ -444,9 +452,16 @@ export interface PlayerTransient {
   effects: { effectId: EffectId; seconds: number; sourceId: string; rank: number; shield?: number; heal?: { seconds: number; owed: number } }[];
   globalSeconds: number;
   cooldowns: { abilityId: AbilityId; seconds: number }[];
+  swingSeconds: number;
+  mendSeconds: number;
+  runningSeconds: number;
+  /** Metres. */
+  allowance: number;
+  /** Seconds. */
+  paceCredit: number;
+  /** How long the dreamer was out of the world, which refills the allowance and the pace credit on arrival: 0 for a door. */
+  awaySeconds: number;
 }
-
-const NO_TRANSIENT: PlayerTransient = { effects: [], globalSeconds: 0, cooldowns: [] };
 
 export interface PlayerCheckpoint {
   character: Character;
@@ -475,6 +490,51 @@ const DEFAULT_GAIT: Gait = 'jog';
  */
 const ALLOWANCE_METRES_PER_SECOND = gaitMetresPerSecond('run') * 1.25;
 const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * 2;
+/**
+ * The seconds a player may still walk or jog accrue with the allowance's quarter to spare,
+ * whatever gait is reported, so no report buys credit faster than another. Each walked or jogged
+ * move spends its length over its own gait's speed.
+ */
+const PACE_CREDIT_SECONDS_PER_SECOND = 1.25;
+/**
+ * The most the pace credit refills to: what the allowance covers at a walk, the slowest gait, so
+ * reports a stall bunched are never charged where the allowance accepts them. A Lunge can lift the
+ * credit past it (`handleUseAbility`).
+ */
+const PACE_CREDIT_CAP_SECONDS = ALLOWANCE_CAP_METRES / gaitMetresPerSecond('walk');
+/** How far a move's cost may pass the pace credit uncharged, so a bunch of exactly the cap summed in floating point is not charged an ulp. */
+const PACE_CREDIT_TOLERANCE_SECONDS = 1e-6;
+
+/** What a first join starts from: nothing running, and a full allowance and pace credit. */
+export const NO_TRANSIENT: PlayerTransient = {
+  effects: [],
+  globalSeconds: 0,
+  cooldowns: [],
+  swingSeconds: 0,
+  mendSeconds: 0,
+  runningSeconds: 0,
+  allowance: ALLOWANCE_CAP_METRES,
+  paceCredit: PACE_CREDIT_CAP_SECONDS,
+  awaySeconds: 0,
+};
+
+/**
+ * How long away until a dreamer who left with `transient` comes back as a first join would: every
+ * timer and effect run out, and the allowance and pace credit refilled as `attach` refills them.
+ * A pace credit past its cap, the unspent part of a leap, is not counted.
+ */
+export function settledAfterSeconds(transient: PlayerTransient): number {
+  return Math.max(
+    transient.globalSeconds,
+    transient.swingSeconds,
+    transient.mendSeconds,
+    transient.runningSeconds,
+    ...transient.effects.map((held) => held.seconds),
+    ...transient.cooldowns.map((cooldown) => cooldown.seconds),
+    (ALLOWANCE_CAP_METRES - transient.allowance) / ALLOWANCE_METRES_PER_SECOND,
+    (PACE_CREDIT_CAP_SECONDS - transient.paceCredit) / PACE_CREDIT_SECONDS_PER_SECOND,
+  );
+}
 /** Minimum gap between one player's rejected-move warnings. */
 const REJECTED_MOVE_LOG_INTERVAL_MS = 5000;
 const PLACEMENT_ATTEMPTS = 64;
@@ -596,6 +656,13 @@ function leftAlone(slot: PlayerSlot, now: number): boolean {
   return isFallen(slot) || now < slot.graceUntil || unseen(slot);
 }
 
+const GAITS_FASTEST_FIRST: readonly Gait[] = ['run', 'jog', 'walk'];
+
+/** How recovery reads the player: at the fastest gait still held, else standing, so a report at a slower gait cannot cut a faster one short. */
+function motionOf(slot: PlayerSlot, now: number): Gait | 'standing' {
+  return GAITS_FASTEST_FIRST.find((gait) => now < slot.movingUntil[gait]) ?? 'standing';
+}
+
 /** Whether an effect the dreamer holds hides them from nightmares. */
 function unseen(slot: PlayerSlot): boolean {
   return slot.effects.some((held) => effect(held.effectId).unseen === true);
@@ -622,6 +689,11 @@ function effectIds(holder: PlayerSlot | MonsterRuntime): EffectId[] {
 /** The seconds from `now` until the moment, none once it is past. */
 function secondsLeft(until: number, now: number): number {
   return Math.max(0, (until - now) / 1000);
+}
+
+/** `amount` refilled for `seconds` at `perSecond` up to `cap`, never lowering an amount already past the cap. */
+function refilled(amount: number, seconds: number, perSecond: number, cap: number): number {
+  return Math.max(amount, Math.min(cap, amount + seconds * perSecond));
 }
 
 /**
@@ -795,9 +867,11 @@ export class SpaceActor {
    * them. The player's entity id is the character's. Throws when no sector holds the position
    * or the join sequence cannot be encoded; a throw leaves no slot and no frame behind.
    *
-   * The pools' maxima are what the character's role, ranks, and worn gear give, whatever the row held. NPCs
-   * speak to the player in `locale`. The effects and cooldowns a transfer carries run on from
-   * `transient`. The player is sent their cooldowns, and their effects when they hold any.
+   * The pools' maxima are what the character's role, ranks, and worn gear give, whatever the row
+   * held. NPCs speak to the player in `locale`. The effects, cooldowns, and timers a transfer or a
+   * reconnect carries run on from `transient`, and its allowance and pace credit refill by the time
+   * away.
+   * The player is sent their cooldowns, and their effects when they hold any.
    */
   attach(
     character: Character,
@@ -820,15 +894,17 @@ export class SpaceActor {
       locale,
       gait: DEFAULT_GAIT,
       sector: sector.name,
-      allowance: ALLOWANCE_CAP_METRES,
+      allowance: refilled(transient.allowance, transient.awaySeconds, ALLOWANCE_METRES_PER_SECOND, ALLOWANCE_CAP_METRES),
       allowanceAt: now,
+      paceCredit: refilled(transient.paceCredit, transient.awaySeconds, PACE_CREDIT_SECONDS_PER_SECOND, PACE_CREDIT_CAP_SECONDS),
+      paceCreditAt: now,
+      movingUntil: { walk: Number.NEGATIVE_INFINITY, jog: Number.NEGATIVE_INFINITY, run: now + transient.runningSeconds * 1000 },
+      leap: { metres: 0, metresPerSecond: gaitMetresPerSecond('run') },
       rejectionLog: new LogThrottle(REJECTED_MOVE_LOG_INTERVAL_MS),
       carry: { health: 0, balance: 0, spirit: 0 },
       winded: windedOnJoin(energy.balanceCurrent),
-      lastMoveAt: Number.NEGATIVE_INFINITY,
-      lastGait: DEFAULT_GAIT,
-      swingReadyAt: 0,
-      mendReadyAt: 0,
+      swingReadyAt: now + transient.swingSeconds * 1000,
+      mendReadyAt: now + transient.mendSeconds * 1000,
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
       held: heldOf(inventory),
@@ -878,9 +954,9 @@ export class SpaceActor {
 
   /**
    * Takes the player out of the space, `leftGame` `true` for a disconnect and `false` for a
-   * transfer: a door, or waking. Hands back their checkpoint and the effects and cooldowns they
-   * carry on, as of now. Their effects are settled before the checkpoint is read, so a heal tick
-   * that fell due as they leave is in it, whoever then saves it or attaches it elsewhere.
+   * transfer: a door, or waking. Hands back their checkpoint and what they carry on, as of now.
+   * Their effects are settled before the checkpoint is read, so a heal tick that fell due as they
+   * leave is in it, whoever then saves it or attaches it elsewhere.
    */
   handOver(entityId: string, leftGame: boolean): PlayerHandOver | undefined {
     const slot = this.players.get(entityId);
@@ -904,6 +980,8 @@ export class SpaceActor {
     for (const [target, raise] of this.raisesHeldBy(entityId)) this.releaseRaise(target, raise);
     if (isFallen(slot)) this.fallenChanged();
     const now = this.now();
+    this.refillAllowance(slot, now);
+    this.refillPaceCredit(slot, now);
     return {
       effects: slot.effects.map(({ effectId, endsAt, sourceId, rank, shield, heal }) => ({
         effectId,
@@ -914,6 +992,12 @@ export class SpaceActor {
         ...(heal === undefined ? {} : { heal: { seconds: secondsLeft(heal.nextAt, now), owed: heal.owed } }),
       })),
       ...this.cooldownsLeft(slot),
+      swingSeconds: secondsLeft(slot.swingReadyAt, now),
+      mendSeconds: secondsLeft(slot.mendReadyAt, now),
+      runningSeconds: secondsLeft(slot.movingUntil.run, now),
+      allowance: slot.allowance,
+      paceCredit: slot.paceCredit,
+      awaySeconds: 0,
     };
   }
 
@@ -936,7 +1020,9 @@ export class SpaceActor {
    * moment ago, so that comparison would only ever correct an honest client.
    *
    * Running drains balance by the distance run, at the gait `gaitAllowed` leaves the one reported.
-   * A winded dreamer's allowance is not shortened: their client holds the slow gait, and running at
+   * A walk or a jog spends the pace credit, and the metres past it are charged as running
+   * (`payPace`), so a client that runs while reporting a slower gait still pays for the run. A
+   * winded dreamer's allowance is not shortened: their client holds the slow gait, and running at
    * empty buys nothing but staying empty, so a late `energy` frame never gets an honest player
    * corrected. Nor is a braced one's, so a client a frame late to apply Brace is not corrected either.
    * A fallen dreamer does not move. A move away from where the dreamer stands breaks their channel,
@@ -950,8 +1036,7 @@ export class SpaceActor {
       return;
     }
     const now = this.now();
-    slot.allowance = Math.min(ALLOWANCE_CAP_METRES, slot.allowance + ((now - slot.allowanceAt) / 1000) * ALLOWANCE_METRES_PER_SECOND);
-    slot.allowanceAt = now;
+    this.refillAllowance(slot, now);
     const from = slot.character.position;
     const to = { x: message.x, z: message.z };
     const length = distance(from, to);
@@ -977,9 +1062,54 @@ export class SpaceActor {
     this.advanceQuests(slot, (objective, progress) => (reachedAt(objective, sector, to) ? 1 : progress));
     // A turn on the spot is reported as a move too, and must not count as moving.
     if (length === 0) return;
-    slot.lastMoveAt = now;
-    slot.lastGait = slot.gait;
-    if (slot.gait === 'run') this.drainBalance(slot, length * (COMBAT.runDrainPerSecond / gaitMetresPerSecond('run')));
+    this.holdMotion(slot, length, now);
+    if (slot.gait === 'run') this.drainRun(slot, length);
+    else this.payPace(slot, length, now);
+  }
+
+  /**
+   * Holds recovery at the move's gait for as long as its metres take at that gait, counted on from
+   * what the gait already holds, and for at least `MOVING_WINDOW_MS`. A leap's metres take the leap's time.
+   */
+  private holdMotion(slot: PlayerSlot, length: number, now: number): void {
+    const leapt = Math.min(length, slot.leap.metres);
+    slot.leap.metres -= leapt;
+    const seconds = leapt / slot.leap.metresPerSecond + (length - leapt) / gaitMetresPerSecond(slot.gait);
+    const held = slot.movingUntil[slot.gait];
+    slot.movingUntil[slot.gait] = Math.max(Math.max(held, now) + seconds * 1000, now + MOVING_WINDOW_MS);
+  }
+
+  private refillAllowance(slot: PlayerSlot, now: number): void {
+    slot.allowance = refilled(slot.allowance, (now - slot.allowanceAt) / 1000, ALLOWANCE_METRES_PER_SECOND, ALLOWANCE_CAP_METRES);
+    slot.allowanceAt = now;
+  }
+
+  private refillPaceCredit(slot: PlayerSlot, now: number): void {
+    slot.paceCredit = refilled(slot.paceCredit, (now - slot.paceCreditAt) / 1000, PACE_CREDIT_SECONDS_PER_SECOND, PACE_CREDIT_CAP_SECONDS);
+    slot.paceCreditAt = now;
+  }
+
+  /**
+   * Spends the seconds a walked or jogged move takes at its gait from the pace credit. The metres
+   * past what the credit covers were run, so they drain balance as running does and hold recovery
+   * at the running pace for at least `MOVING_WINDOW_MS`, whatever gait the next moves report.
+   */
+  private payPace(slot: PlayerSlot, length: number, now: number): void {
+    const metresPerSecond = gaitMetresPerSecond(slot.gait);
+    this.refillPaceCredit(slot, now);
+    const cost = length / metresPerSecond;
+    if (cost - slot.paceCredit <= PACE_CREDIT_TOLERANCE_SECONDS) {
+      slot.paceCredit = Math.max(0, slot.paceCredit - cost);
+      return;
+    }
+    const excess = (cost - slot.paceCredit) * metresPerSecond;
+    slot.paceCredit = 0;
+    slot.movingUntil.run = Math.max(slot.movingUntil.run, now + MOVING_WINDOW_MS);
+    this.drainRun(slot, excess);
+  }
+
+  private drainRun(slot: PlayerSlot, metres: number): void {
+    this.drainBalance(slot, metres * (COMBAT.runDrainPerSecond / gaitMetresPerSecond('run')));
   }
 
   private rejectMove(slot: PlayerSlot, to: Point, now: number): void {
@@ -1316,6 +1446,15 @@ export class SpaceActor {
     this.setEnergy(player, { ...energy, [pool]: energy[pool] - used.cost });
     player.globalReadyAt = now + GLOBAL_COOLDOWN_SECONDS * 1000;
     player.readyAt = { ...player.readyAt, [abilityId]: now + abilityCooldownSeconds(abilityId, rank) * 1000 };
+    // The client reports a leap's moves at the gait it holds, toward where it draws the target.
+    // So the way to the target at a walk goes into the pace credit, past its cap by one leap at most
+    // however often Lunge is used, and recovery is held for the leap's time, not the reported gait's.
+    if (used.does.kind === 'leap') {
+      const metres = distance(player.character.position, recipient);
+      this.refillPaceCredit(player, now);
+      player.paceCredit = Math.min(player.paceCredit, PACE_CREDIT_CAP_SECONDS) + metres / gaitMetresPerSecond('walk');
+      player.leap = { metres, metresPerSecond: used.does.metresPerSecond };
+    }
     const channelSeconds = abilityChannelSeconds(abilityId, rank);
     const monster = this.monsters.get(recipient.id);
     const evaded = used.does.kind === 'harm' && monster !== undefined && this.evades(monster, player);
@@ -1454,7 +1593,8 @@ export class SpaceActor {
    * it also puts the caster on its table, so it turns on them unless it holds more against another.
    * A restore gives each standing dreamer back some of a pool, and a heal gives each one health. A
    * calm cuts the caster's threat on every table and puts its effect on them. A leap does nothing
-   * here: the caster's client moves them, and each move is judged as every move is.
+   * here: the caster's client moves them, and each move is judged as every move is, against the
+   * pace credit the use granted.
    */
   private deed(caster: PlayerSlot, ability: Ability, rank: number, bodies: readonly (AbilityBody & { id: string })[], evaded = false): void {
     const does = ability.does;
@@ -1724,6 +1864,7 @@ export class SpaceActor {
       homeBestAt: now,
       effects: origin.trait === undefined ? [] : [traitEffect(origin.trait, id, now)],
       threat: new Map(),
+      answerDue: new Set(),
     };
     this.monsters.set(id, monster);
     return monster;
@@ -1840,13 +1981,17 @@ export class SpaceActor {
    * home. A bound one stays where it stands, turning toward whom it chases, and strikes all the same.
    * On its own rhythm it strikes the dreamer it chases once it has reached them. Otherwise it strikes
    * the foremost such dreamer in its reach, wherever they stand, which can be just outside the
-   * ground. At rest with no one in reach it heals slowly. A boss also wails and calls up minions
-   * (`runBoss`), and holds still while it wails. One driven off does nothing more, and is gone once
-   * its fade is over.
+   * ground. Failing them, it strikes the foremost who struck it from within its reach since its last
+   * turn, so a step in, a blow, and a step out between two turns is still answered. A blow it cannot
+   * answer this turn it forgets. At rest with no one in reach it heals slowly. A boss also wails and
+   * calls up minions (`runBoss`), and holds still while it wails. One driven off does nothing more,
+   * and is gone once its fade is over.
    */
   private runMonsters(elapsedSeconds: number): void {
     const now = this.now();
     for (const monster of this.monsters.values()) {
+      const answerDue = monster.answerDue;
+      monster.answerDue = new Set();
       if (monster.fadingUntil !== undefined) {
         if (now < monster.fadingUntil) continue;
         this.removeMonster(monster, false);
@@ -1878,7 +2023,8 @@ export class SpaceActor {
       const struck =
         chased !== undefined && reaches(chased.character.position, body())
           ? chased
-          : this.foremostDreamer(monster, (slot) => reaches(slot.character.position, body()));
+          : (this.foremostDreamer(monster, (slot) => reaches(slot.character.position, body())) ??
+            this.foremostDreamer(monster, (slot) => answerDue.has(slot.character.id)));
       if (struck !== undefined && now >= monster.strikeReadyAt) {
         monster.facing = headingFromVector(struck.character.position.x - monster.position.x, struck.character.position.z - monster.position.z);
         this.strike(monster, struck);
@@ -2222,8 +2368,13 @@ export class SpaceActor {
     this.blow(player, monster, swing.damage);
   }
 
-  /** A dreamer's blow at a nightmare, shown to everyone who sees the dreamer, which harms it by `damage` through `harmNightmare` when it hits. */
+  /**
+   * A dreamer's blow at a nightmare, shown to everyone who sees the dreamer, which harms it by
+   * `damage` through `harmNightmare` when it hits. A blow struck from within the nightmare's reach
+   * may be answered at its next turn, wherever the dreamer has stepped meanwhile (`runMonsters`).
+   */
   private blow(player: PlayerSlot, monster: MonsterRuntime, damage: number): void {
+    if (reaches(player.character.position, { ...monster.position, radius: monster.kind.radius })) monster.answerDue.add(player.character.id);
     const hit = randomUnit(this.random) < COMBAT.hitChance;
     this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, targetId: monster.id, hit } }, player.sector);
     if (hit) this.harmNightmare(monster, damage, player);
@@ -2395,9 +2546,9 @@ export class SpaceActor {
 
   private recover(slot: PlayerSlot, elapsedSeconds: number): void {
     const energy = slot.character.energy;
-    const motion = this.now() - slot.lastMoveAt < MOVING_WINDOW_MS ? slot.lastGait : 'standing';
+    const now = this.now();
     const stats = this.statsFor(slot);
-    const balance = balancePerSecond(stats) * balancePace(motion, slot.winded);
+    const balance = balancePerSecond(stats) * balancePace(motionOf(slot, now), slot.winded);
     const recovered: Energy = {
       ...energy,
       healthCurrent: accrue(slot.carry, 'health', COMBAT.healthPerSecond * elapsedSeconds, energy.healthCurrent, energy.healthMax),

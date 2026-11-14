@@ -2,7 +2,7 @@ import type { Placement } from '@somnio/protocol';
 import type { SectorNPC } from '@somnio/core';
 import { hashPassword } from '@somnio/data';
 import type { SessionRepository } from '@somnio/data';
-import type { AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
+import type { AttemptKind, AttemptLimiter } from '../../src/connection/attemptLimiter.ts';
 import type { Logger } from '../../src/logging.ts';
 import { emailFor } from './characterCard.ts';
 import { makeCharacter, makeSector } from './sectorFactory.ts';
@@ -19,8 +19,8 @@ export interface OneSectorWorldOptions {
   placements?: Placement[];
   npcs?: SectorNPC[];
   logger?: Logger;
-  attemptLimiter?: AttemptLimiter;
-  accountLimiter?: AttemptLimiter;
+  attemptLimiter?: AttemptLimiter<AttemptKind>;
+  accountLimiter?: AttemptLimiter<AttemptKind>;
 }
 
 /** A world of one outdoor sector (`A`) holding one character: the minimum a join needs. */

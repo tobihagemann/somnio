@@ -13,13 +13,14 @@ import {
   PostgresWorldClockRepository,
 } from '@somnio/data';
 import type { SomnioDatabase } from '@somnio/data';
-import { startDatabase } from '../../../../data/test/integration/support/harness.ts';
+import { holdLock, startDatabase } from '../../../../data/test/integration/support/harness.ts';
 import type { DatabaseHarness } from '../../../../data/test/integration/support/harness.ts';
 import { bootServer } from '../../../src/bootstrap/runServer.ts';
 import type { BootOptions, BootedServer } from '../../../src/bootstrap/runServer.ts';
 import { DEFAULT_CARD_DEADLINE_MS, DEFAULT_LOGIN_DEADLINE_MS, DEV_SECTORS_DIRECTORY } from '../../../src/config.ts';
-import { AttemptLimiter } from '../../../src/connection/attemptLimiter.ts';
+import { AttemptLimiter, PRELOGIN_BUDGETS } from '../../../src/connection/attemptLimiter.ts';
 import type { ConnectionDependencies } from '../../../src/connection/dependencies.ts';
+import { FRAME_BUDGETS } from '../../../src/connection/frameLimits.ts';
 import { starterInventory } from '../../../src/handlers/starterInventory.ts';
 import { loadSectorCache, loadWorld } from '../../../src/sectors/sectorCache.ts';
 import type { LoadedWorld } from '../../../src/sectors/sectorCache.ts';
@@ -32,7 +33,7 @@ import { testLogger } from '../../support/logger.ts';
 import { tempLogging } from '../../support/tempLogging.ts';
 import type { TempLogging } from '../../support/tempLogging.ts';
 
-export { emailFor, startDatabase };
+export { emailFor, holdLock, startDatabase };
 export type { DatabaseHarness };
 
 export const TEST_ADMIN_TOKEN = 'secret';
@@ -98,8 +99,9 @@ export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<Conn
     sessions: new PostgresSessionRepository(db),
     worldRouter,
     worldClock: new WorldClockService(worldClocks, await worldClocks.load(), logger),
-    attemptLimiter: new AttemptLimiter({ enabled: false, logger }),
-    accountLimiter: new AttemptLimiter({ enabled: false, logger }),
+    attemptLimiter: new AttemptLimiter({ enabled: false, logger, budgets: PRELOGIN_BUDGETS }),
+    accountLimiter: new AttemptLimiter({ enabled: false, logger, budgets: PRELOGIN_BUDGETS }),
+    frameLimiter: new AttemptLimiter({ enabled: false, logger, budgets: FRAME_BUDGETS }),
     outboxHighWatermark: 1024,
     loginDeadlineMs: DEFAULT_LOGIN_DEADLINE_MS,
     cardDeadlineMs: DEFAULT_CARD_DEADLINE_MS,

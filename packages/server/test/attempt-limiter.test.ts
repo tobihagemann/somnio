@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AttemptLimiter } from '../src/connection/attemptLimiter.ts';
-import type { ATTEMPT_LIMITS, AttemptLimiterOptions } from '../src/connection/attemptLimiter.ts';
+import { AttemptLimiter, PRELOGIN_BUDGETS } from '../src/connection/attemptLimiter.ts';
+import type { AttemptKind, AttemptLimiterOptions } from '../src/connection/attemptLimiter.ts';
 import { recordingLogger } from './support/logger.ts';
 
 const ADDRESS = '203.0.113.7';
@@ -8,14 +8,14 @@ const OTHER = '203.0.113.8';
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 
-function makeLimiter(enabled = true, options: Pick<AttemptLimiterOptions, 'logKey' | 'maxKeys'> = {}) {
+function makeLimiter(enabled = true, options: Pick<AttemptLimiterOptions<AttemptKind>, 'logKey' | 'maxKeys'> = {}) {
   const clock = { ms: 0 };
   const { logger, records } = recordingLogger();
-  const limiter = new AttemptLimiter({ enabled, logger, now: () => clock.ms, ...options });
+  const limiter = new AttemptLimiter({ enabled, logger, budgets: PRELOGIN_BUDGETS, now: () => clock.ms, ...options });
   return { limiter, clock, records };
 }
 
-function admits(limiter: AttemptLimiter, kind: keyof typeof ATTEMPT_LIMITS, key: string, count: number): boolean[] {
+function admits(limiter: AttemptLimiter<AttemptKind>, kind: AttemptKind, key: string, count: number): boolean[] {
   return Array.from({ length: count }, () => limiter.admit(kind, key));
 }
 
@@ -235,5 +235,22 @@ describe('AttemptLimiter key cap', () => {
     clock.ms = 61 * SECOND;
     limiter.admit('login', '198.51.100.20');
     expect(fullRecords(records).map((record) => record['suppressed_since_last'])).toEqual([0, 19]);
+  });
+});
+
+describe('AttemptLimiter over budgets of its own', () => {
+  it('spends and refills by the limits it is given, and names the key and the refusal as it is told', () => {
+    const clock = { ms: 0 };
+    const { logger, records } = recordingLogger();
+    const limiter = new AttemptLimiter({
+      enabled: true,
+      logger,
+      now: () => clock.ms,
+      budgets: { limits: { shout: { burst: 2, refillMs: 100 } }, keyField: 'account_id', throttleMessage: 'shout throttled' },
+    });
+    expect(Array.from({ length: 3 }, () => limiter.admit('shout', 'alice'))).toEqual([true, true, false]);
+    clock.ms = 100;
+    expect(Array.from({ length: 2 }, () => limiter.admit('shout', 'alice'))).toEqual([true, false]);
+    expect(records.filter((record) => record['msg'] === 'shout throttled')).toMatchObject([{ account_id: 'alice', budget: 'shout', suppressed_since_last: 0 }]);
   });
 });
