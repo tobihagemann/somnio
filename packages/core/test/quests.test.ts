@@ -1,4 +1,4 @@
-import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { ROLES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { NO_LUCIDITY, TRIAL_QUESTS, teaching } from '../src/lucidity.ts';
 import type { Lucidity } from '../src/lucidity.ts';
@@ -42,16 +42,20 @@ function holding(...active: [QuestId, number[]][]): QuestLog {
 }
 
 describe('the quest table', () => {
-  it("gives each trial at its master and to no need, and each gate at its master to its teaching's role", () => {
-    for (const role of ['fighter', 'healer', 'mystic'] as const) {
-      const trial = quest(TRIAL_QUESTS[role]);
-      expect([trialRole(TRIAL_QUESTS[role]), trial.needs, trial.turnIn]).toEqual([role, undefined, trial.giver]);
+  it("gives each role's trial to no need, and each gate to its teaching's role", () => {
+    for (const role of ROLES) {
+      expect([trialRole(TRIAL_QUESTS[role]), quest(TRIAL_QUESTS[role]).needs]).toEqual([role, undefined]);
     }
     for (const questId of QUEST_IDS) {
       const taught = gatedTeaching(questId);
       if (taught === undefined) continue;
-      expect([quest(questId).needs, quest(questId).turnIn]).toEqual([{ role: teaching(taught).role }, quest(questId).giver]);
+      expect(quest(questId).needs).toEqual({ role: teaching(taught).role });
     }
+  });
+
+  // A carrier with no service of its own opens its panel by its quest marker alone (`GameplaySession.hasPanel`).
+  it('takes every quest back where it gives it', () => {
+    for (const questId of QUEST_IDS) expect(quest(questId).turnIn, questId).toBe(quest(questId).giver);
   });
 
   it('fits every quest in a `quests` frame', () => {

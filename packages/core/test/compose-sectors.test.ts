@@ -18,6 +18,10 @@ const registry = bundledModelRegistry();
 const compose = (sectors: readonly Sector[], lands = LANDS): Sector[] => composeSectors(sectors, lands, registry);
 const files = (sectors: readonly Sector[]): Record<string, string> => Object.fromEntries(sectors.map((sector) => [sector.name, writeSectorFile(sector)]));
 
+let cachedWorld: readonly Sector[] | undefined;
+/** The committed world composed once and shared, so a test that reads it must leave it as it is. */
+const composedWorld = (): readonly Sector[] => (cachedWorld ??= compose(loadSectorFixtures()));
+
 function nearestOnLine(points: readonly Point[], point: Point): number {
   if (points.length === 1) return distance(point, points[0]!);
   return Math.min(...points.slice(1).map((to, index) => distance(point, closestOnSegment(point, { a: points[index]!, b: to }))));
@@ -96,23 +100,23 @@ function expectPathsWalkable(sectors: readonly Sector[], prefix: string, first: 
 
 describe('composing the lands', () => {
   it('writes the same bytes composing the committed world, and composing that again', () => {
-    const once = compose(loadSectorFixtures());
+    const once = composedWorld();
     expect(files(compose(once))).toEqual(files(once));
     expect(files(once)).toEqual(files(loadSectorFixtures()));
   });
 
   it('dresses a land differently from another seed', () => {
-    const generated = (sectors: Sector[]): string[] =>
+    const generated = (sectors: readonly Sector[]): string[] =>
       sectors
         .find((sector) => sector.name === 'NorthWood')!
         .placements.filter((placement) => placement.id.startsWith('gen-'))
         .map((placement) => JSON.stringify(placement));
     const reseeded = LANDS.map((land) => (land.sector === 'NorthWood' ? { ...land, seed: land.seed + 1 } : land));
-    expect(generated(compose(loadSectorFixtures(), reseeded))).not.toEqual(generated(compose(loadSectorFixtures())));
+    expect(generated(compose(loadSectorFixtures(), reseeded))).not.toEqual(generated(composedWorld()));
   });
 
   it('keeps every crown off every corridor, clearing, and monster spawn area', () => {
-    const composed = compose(loadSectorFixtures());
+    const composed = composedWorld();
     const keepOuts = corridors(composed);
     const clearings = LANDS.flatMap((land) => land.clearings);
     const spawnAreas = composed
@@ -131,7 +135,7 @@ describe('composing the lands', () => {
   });
 
   it('thins the dressing beside every corridor', () => {
-    const composed = compose(loadSectorFixtures());
+    const composed = composedWorld();
     const keepOuts = corridors(composed);
     const near = { placements: 0, cells: 0 };
     const far = { placements: 0, cells: 0 };
@@ -167,13 +171,13 @@ describe('composing the lands', () => {
       { x: 31.68, z: 25.28 },
       { x: 25.28, z: 31.68 },
     ];
-    const painted = routes(compose(loadSectorFixtures()));
+    const painted = routes(composedWorld());
     const unrouted = gaps.filter((gap) => !painted.some((route) => nearestOnLine(route.points, gap) <= route.radius));
     expect(unrouted).toEqual([]);
   });
 
   it('routes every door path round what blocks, from its doorway to the edge of the nearest road', () => {
-    expectPathsWalkable(compose(loadSectorFixtures()), 'gen-path-', 1, 8, ROADS);
+    expectPathsWalkable(composedWorld(), 'gen-path-', 1, 8, ROADS);
   });
 
   it('routes a door path round an NPC standing on its way', () => {
@@ -184,7 +188,7 @@ describe('composing the lands', () => {
   });
 
   it('routes each unused compound opening from the street into its yard', () => {
-    const composed = compose(loadSectorFixtures());
+    const composed = composedWorld();
     expectPathsWalkable(composed, 'gen-opening-', 0, OPENINGS.length);
     const painted = routes(composed);
     const byId = (id: string): KeepOut | undefined => painted.find((route) => route.id === id);
@@ -201,7 +205,7 @@ describe('composing the lands', () => {
   });
 
   it("joins a compound's two doors whose paths do not meet, from one's arrival point to the edge of the other's path", () => {
-    const composed = compose(loadSectorFixtures());
+    const composed = composedWorld();
     const painted = routes(composed);
     const byId = (id: string): KeepOut => painted.find((route) => route.id === id)!;
     expectPathsWalkable(
