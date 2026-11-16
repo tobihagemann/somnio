@@ -9,7 +9,7 @@ Serves the browser client against the local dev server and drives it with `agent
 
 ## Step 1: Start the dev server
 
-The client needs a running backend. Stand up the local server on port 17662 first — run the `/somnio-server` skill.
+The client needs a running backend. Stand up the local server on port 17662 first — run the `/somnio-server` skill. When another session already holds that port, run beside it instead (see Step 2).
 
 ## Step 2: Serve the client
 
@@ -25,6 +25,8 @@ npm ci && npm run dev --workspace packages/web
 ```
 
 Vite serves on `http://localhost:17669` and proxies `/ws` to `127.0.0.1:17662`. The proxy is what matters: the client derives its gameplay endpoint from the page origin, so `/` and `/ws` have to share one. Point the proxy elsewhere with `SOMNIO_DEV_GAMEPLAY_ORIGIN`.
+
+Another session may already hold 17662 and 17669. To run beside it, start a server of your own on a free port with a database of its own, as the `/somnio-server` skill's notes describe, then start Vite from `packages/web` with `SOMNIO_DEV_GAMEPLAY_ORIGIN=http://127.0.0.1:<server port> npx vite --port <port> --strictPort`. `--strictPort` makes a taken port fail rather than move Vite to the next one, which would leave the page you open served by the other session's Vite. Use those two ports wherever a step below names 17662 or 17669, or a registration or a page lands on the other session's server.
 
 The destination is `packages/web/public/assets` for the dev server only. Vite serves `packages/web/public` and `packages/web/` and never `dist/`, so writing the pack to `packages/web/dist/assets` leaves every model and texture 404ing with no error but a placeholder world. The image build uses `dist` because nginx serves that directory.
 
