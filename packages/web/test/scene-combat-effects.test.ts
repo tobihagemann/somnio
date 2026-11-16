@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { boltFlightSeconds, effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
-import type { Point } from '@somnio/core';
+import type { ModelRegistry, Point } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
 import type { Condition } from '@somnio/protocol';
+import { t } from '@/i18n';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { COMBAT_EFFECTS_NAME, CRUMBLE_SECONDS, EFFECT_POOL_SIZES, STRIKE_AT, SUMMON_COLOR, TELEGRAPH_COLOR } from '@/scene/combatEffects';
@@ -11,6 +12,7 @@ import type { MissWord } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME } from '@/scene/eliteAuras';
 import { LOOT_BEAM_NAME, LOOT_LABEL_NAME, LOOT_MARKERS_NAME } from '@/scene/lootMarkers';
 import { offsetDirection } from '@/scene/cameraRig';
+import { MISS_WORD, renderOutlinedText } from '@/scene/overlayArt';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import type { ClientEntity } from '@/client';
@@ -74,7 +76,13 @@ function skinnedBody(): THREE.Object3D {
  * hidden tab's does.
  */
 function combatScene(
-  options: { reducedMotion?: boolean; clipless?: readonly number[]; ground?: () => THREE.Object3D; hand?: (baseId: string) => THREE.Object3D } = {},
+  options: {
+    reducedMotion?: boolean;
+    clipless?: readonly number[];
+    ground?: () => THREE.Object3D;
+    hand?: (baseId: string) => THREE.Object3D;
+    registry?: ModelRegistry;
+  } = {},
 ): {
   scene: WorldScene;
   models: THREE.Object3D[];
@@ -97,7 +105,7 @@ function combatScene(
     prototypeMeshes: () => undefined,
   };
   let wallMs = 0;
-  const scene = new WorldScene(assets, TEST_REGISTRY, 1, options.reducedMotion ?? false, () => wallMs);
+  const scene = new WorldScene(assets, options.registry ?? TEST_REGISTRY, 1, options.reducedMotion ?? false, () => wallMs);
   const tick = scene.tick.bind(scene);
   vi.spyOn(scene, 'tick').mockImplementation((seconds) => {
     wallMs += seconds * 1000;
@@ -194,6 +202,12 @@ function missWords(scene: WorldScene): MissWord[] {
     (child): child is MissWord =>
       (child as THREE.Mesh).isMesh && ((child as THREE.Mesh).material as THREE.MeshBasicMaterial).map instanceof THREE.CanvasTexture,
   );
+}
+
+/** Which of `words` say `key`, told apart by the width of the canvas each is drawn on. */
+function saying(words: MissWord[], key: 'miss' | 'evaded'): MissWord[] {
+  const width = renderOutlinedText(t(key), MISS_WORD).canvas.width;
+  return words.filter((word) => (word.material.map!.image as HTMLCanvasElement).width === width);
 }
 
 /** The Challenge pulses showing at the nightmares' feet, by their colour. */
@@ -1106,6 +1120,25 @@ describe('a missed blow', () => {
     expect(visible(missWords(scene))).toEqual([]);
   });
 
+  it('says evaded rather than miss over a nightmare that evaded the blow', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 10.5, z: 10.6 });
+    scene.tick(0.01);
+
+    scene.showBlow('self', 'monster:1', false);
+    run(scene, BLADE_LANDS + 0.03);
+    expect(saying(visible(missWords(scene)), 'miss')).toHaveLength(1);
+    run(scene, 1);
+
+    scene.showBlow('self', 'monster:1', false, true);
+    run(scene, BLADE_LANDS + 0.03);
+    const shown = visible(missWords(scene));
+    expect(shown).toHaveLength(1);
+    expect(saying(shown, 'evaded')).toEqual(shown);
+    expect([shown[0]!.position.x, shown[0]!.position.z]).toEqual([10.5, 10.6]);
+  });
+
   it('holds the word still and whole over the head under reduced motion', () => {
     const { scene } = combatScene({ reducedMotion: true });
     place(scene, 'self', { x: 10, z: 10 });
@@ -1828,7 +1861,7 @@ describe('Dream-bolt', () => {
     expect(flight(6, 0.1).elapsed).toBeCloseTo(flight(6).elapsed, 0);
   });
 
-  it('shows the miss word where it would have burst on a nightmare that evaded it, with no burst, flash, stagger, or hold', () => {
+  it('shows the evaded word where it would have burst on a nightmare that evaded it, with no burst, flash, stagger, or hold', () => {
     const { scene, models } = combatScene();
     place(scene, 'self', { x: 10, z: 10 });
     place(scene, 'monster:1', { x: 16, z: 10 });
@@ -1845,6 +1878,7 @@ describe('Dream-bolt', () => {
     }
     expect(flew).toBe(true);
     expect(elapsed).toBeCloseTo(boltFlightSeconds(6), 1);
+    expect(saying(visible(missWords(scene)), 'evaded')).toHaveLength(1);
     expect(visible(cracks(scene))).toEqual([]);
     expect(visible(sparks(scene))).toEqual([]);
     expect(flinched(play, models[1]!)).toBe(false);
@@ -1907,6 +1941,21 @@ describe('Weaken', () => {
     run(scene, effectSeconds('weakened', 1) - 1.5);
     expect(outlined()).toBe(1);
   });
+
+  it('says evaded over a nightmare that evaded it as the cast lands, and outlines nothing', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    scene.showAbility('self', 'weaken', 'monster:1', { evaded: true });
+    run(scene, STRIKE_AT['Ranged_Magic_Spellcasting']! - 0.05);
+    expect(visible(missWords(scene))).toEqual([]);
+    run(scene, 0.1);
+    const shown = visible(missWords(scene));
+    expect(saying(shown, 'evaded')).toHaveLength(1);
+    expect([shown[0]!.position.x, shown[0]!.position.z]).toEqual([13, 10]);
+    expect(visible(hulls(scene, THREE.BackSide))).toEqual([]);
+  });
 });
 
 describe('Bind', () => {
@@ -1938,6 +1987,18 @@ describe('Bind', () => {
     run(scene, 0.5);
     scene.updateCondition('monster:1', 'fallen');
     scene.tick(0.01);
+    expect(visible(tethers(scene))).toEqual([]);
+  });
+
+  it('says evaded over a nightmare that evaded it as the cast lands, and binds nothing', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 13, z: 10 });
+    scene.tick(0.01);
+    scene.showAbility('self', 'bind', 'monster:1', { evaded: true });
+    run(scene, STRIKE_AT['Ranged_Magic_Spellcasting']! + 0.05);
+    expect(saying(visible(missWords(scene)), 'evaded')).toHaveLength(1);
+    expect(visible(runes(scene))).toEqual([]);
     expect(visible(tethers(scene))).toEqual([]);
   });
 });
@@ -2706,6 +2767,25 @@ describe('the pools and the programs', () => {
     expect(lights()).toBe(before);
   });
 
+  it("compiles the programs a nightmare's body and a drop, its name and light with it, fade with in the prewarm, once the models are cached", async () => {
+    const lying = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshLambertMaterial());
+    const { scene, models } = combatScene({ ground: lying, registry: { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }] } });
+    let compiled = new Set<string>();
+    const compileAsync = vi.fn((root: THREE.Object3D) => {
+      compiled = new Set([...compiled, ...programVariants(root)]);
+      return Promise.resolve(root);
+    });
+    await scene.prewarm({ compileAsync });
+
+    place(scene, 'monster:1', { x: 10, z: 10 });
+    scene.fadeEntity('monster:1');
+    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
+    for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`);
+    scene.tick(0.01);
+    const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
+    expect([...programVariants(models.at(-1)!), ...programVariants(loot)].filter((variant) => !compiled.has(variant))).toEqual([]);
+  });
+
   it("compiles the program an elite's aura draws in the prewarm, and adds no light", async () => {
     const { scene } = combatScene();
     let compiled = new Set<string>();
@@ -2788,6 +2868,7 @@ function programVariants(root: THREE.Object3D): Set<string> {
         [
           each.type,
           each.side,
+          each.transparent,
           each.customProgramCacheKey(),
           (each as THREE.ShaderMaterial).vertexShader,
           (each as THREE.ShaderMaterial).fragmentShader,

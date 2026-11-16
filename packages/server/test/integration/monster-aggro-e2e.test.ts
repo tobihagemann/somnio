@@ -25,29 +25,48 @@ const GHOST = monsterKind('ghost');
 /** In the North Meadow, which sees the North Wood from well outside any aggro radius. */
 const SCOUT_AT: Point = { x: 20.48, z: -15 };
 const NORTH_WOOD = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'NorthWood')!;
-/** The North Wood spawn's area, its Ghosts' home ground: they chase only dreamers standing in it. */
+/** The North Wood spawn's area, where its Ghosts spawn, wander, and walk back to after a chase, which it does not bound. */
 const GROUND = spawnArea(NORTH_WOOD, NORTH_WOOD.monsterSpawns[0]!);
 
 /** The committed outdoor space with the North Wood's first Ghost already spawned, and where it stands. */
 async function northWood() {
-  const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID, { random: seededRandom(11) });
+  const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID, { random: seededRandom(11), wanderRandom: seededRandom(11) });
   clock.ms = RESPAWN_MS;
   const scout = attachPlayer(space, SCOUT_AT, 'scout');
   space.step(0);
   space.handOver(scout.entityId, true);
   const [monster] = entities(await collectMessages(scout.outbox)).filter((entity) => entity.kind === 'monster');
   if (monster === undefined) throw new Error('no Ghost spawned in the North Wood');
-  return { space, monster: { x: monster.x, z: monster.z } };
+  return { clock, space, monster: { id: monster.id, x: monster.x, z: monster.z } };
 }
 
-/** A point of its ground `away` metres from the monster that a player can stand on with a clear line between the two, searched from compass step `first`. */
+/** The point `away` metres from `from` at compass step `step` of 16. */
+function toward(from: Point, step: number, away: number): Point {
+  const angle = (step * Math.PI) / 8;
+  return { x: from.x + away * Math.sin(angle), z: from.z + away * Math.cos(angle) };
+}
+
+/** Whether the Ghost could walk straight from `from` to `to`, and a player stand at `to`. */
+function clearLine(space: SpaceActor, from: Point, to: Point): boolean {
+  return space.canStand(to) && isLegalMove(collision, from, to, GHOST.radius, []);
+}
+
+/** A point `away` metres from the monster that a player can stand on with a clear line between the two, searched from compass step `first`. */
 function clearLineFrom(space: SpaceActor, monster: Point, away: number, first = 0): Point {
   for (let step = first; step < first + 16; step += 1) {
-    const angle = (step * Math.PI) / 8;
-    const candidate = { x: monster.x + away * Math.sin(angle), z: monster.z + away * Math.cos(angle) };
-    if (rectContains(GROUND, candidate) && space.canStand(candidate) && isLegalMove(collision, monster, candidate, GHOST.radius, [])) return candidate;
+    const candidate = toward(monster, step, away);
+    if (clearLine(space, monster, candidate)) return candidate;
   }
   throw new Error('the Ghost is walled in');
+}
+
+/** The first compass step along which a player can lead the monster straight out past its leash, every point of the way clear. */
+function leashLine(space: SpaceActor, monster: Point): number {
+  for (let step = 0; step < 16; step += 1) {
+    const far = toward(monster, step, GHOST.leashMetres + 2);
+    if (clearLine(space, monster, far) && rectContains(GROUND, far) === false) return step;
+  }
+  throw new Error('no clear line out of the North Wood');
 }
 
 /** Seven 50 ms steps, each flushed, as the simulation service would run them, and everything the outbox's dreamer was sent. */
@@ -64,6 +83,7 @@ async function chase(space: SpaceActor, outbox: ConnectionOutbox) {
 }
 
 describe('monster aggro end to end', () => {
+  /** Seven steps end long before its first wander, 6 s at the soonest after it stands. */
   it('idles when no player is within the aggro radius', async () => {
     const { space } = await northWood();
     const messages = await sevenSteps(space, attachPlayer(space, SCOUT_AT, 'far').outbox);
@@ -98,5 +118,30 @@ describe('monster aggro end to end', () => {
     const moves = await chase(space, attachPlayer(space, player, 'caught').outbox);
     const contact = GHOST.radius + SOMNIO_CONSTANTS.playerRadius;
     for (const move of moves) expect(distance(move, player)).toBeGreaterThanOrEqual(contact);
+  });
+
+  it('chases a player it noticed out of its area, and gives its fight up past its leash', async () => {
+    const { clock, space, monster } = await northWood();
+    const step = leashLine(space, monster);
+    const leader = attachPlayer(space, toward(monster, step, 3), 'leader');
+    // She jogs straight out, slower than it walks, so it closes on her and follows at her pace.
+    for (let away = 3.1; away <= GHOST.leashMetres + 2; away += 0.1) {
+      space.handleMove({ ...toward(monster, step, away), facing: step * 22.5, gait: 'jog' }, leader.entityId);
+      clock.ms += 50;
+      space.step(0.05);
+      space.flushMoves();
+    }
+    for (let pass = 0; pass < 10; pass += 1) {
+      clock.ms += 50;
+      space.step(0.05);
+      space.flushMoves();
+    }
+    const moves = entityMoves(await collectMessages(leader.outbox)).filter((move) => move.id === monster.id);
+    expect(moves.some((move) => !rectContains(GROUND, move))).toBe(true);
+    const aways = moves.map((move) => distance(move, monster));
+    const farthest = Math.max(...aways);
+    expect(farthest).toBeGreaterThan(GHOST.leashMetres);
+    expect(farthest).toBeLessThanOrEqual(GHOST.leashMetres + 0.05 * GHOST.metresPerSecond);
+    expect(aways.at(-1)!).toBeLessThan(farthest);
   });
 });

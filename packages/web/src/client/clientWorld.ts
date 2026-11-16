@@ -32,7 +32,7 @@ export interface ClientEntity extends WorldEntity {
   trait: EliteTraitId | undefined;
 }
 
-/** Whether the entity is a nightmare driven off: fading, it is nothing to face, act on, or walk round. */
+/** Whether the entity is a nightmare driven off: lying inert, it is nothing to face, act on, or walk round. */
 export function drivenOff(entity: Pick<ClientEntity, 'kind' | 'condition'>): boolean {
   return entity.kind === 'monster' && entity.condition === 'fallen';
 }

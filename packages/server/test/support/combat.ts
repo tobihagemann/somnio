@@ -4,7 +4,7 @@ import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { carrying, plain } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
 import type { SpaceActor } from '../../src/world/spaceActor.ts';
-import { landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
+import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
 
 export const GHOST_AT: Point = { x: 10, z: 10 };
 /** In reach of the nightmare at `GHOST_AT`, and south of it. */
@@ -44,8 +44,8 @@ export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { str
 
 /**
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
- * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, it
- * keeps to a home ground reaching that many metres each way, where it can chase. With `drops`,
+ * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, its
+ * spawn area reaches that many metres each way, and every wander lands where it stands. With `drops`,
  * every dreamer who shares a nightmare driven off finds a plain dagger where it stood, once for
  * each of its rank's rolls. With `elite`, the Ghost is an elite carrying that trait.
  */
@@ -65,6 +65,7 @@ export function arena(
     random: { nextUInt32: () => (dice.hit ? lands.nextUInt32() : 0xffff_ffff) },
     ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
     ...(options.elite === undefined ? {} : { eliteRandom: traitRoll(options.elite) }),
+    wanderRandom: lands,
   });
   if (ghost) {
     clock.ms = RESPAWN_MS;
@@ -79,6 +80,19 @@ export function arena(
     }
   };
   return { clock, space, dice, steps };
+}
+
+/**
+ * Has a Fighter beside the Ghost strike it twice and leave, so its table empties and it gives up
+ * where it stands with 14 of its 60 health. It waits there, evading everything, until it has healed
+ * whole about 6 s later.
+ */
+export function strikeAndLeave(space: SpaceActor, steps: (count: number) => void): void {
+  const striker = attachPlayer(space, BESIDE_GHOST, 'striker', { character: STRIKER, inventory: wearing(CUDGEL) });
+  attackGhost(space, striker.entityId);
+  steps(21);
+  space.handOver(striker.entityId, false);
+  steps(1);
 }
 
 /** Rolls that make every nightmare spawned an elite carrying `trait`. */

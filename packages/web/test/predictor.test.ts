@@ -554,12 +554,12 @@ describe('collision resolution', () => {
     expect(blockers.bodies.map((body) => body.radius)).toEqual([0.3, 0.4]);
   });
 
-  it('keeps a fallen peer solid, and drops a nightmare that is fading', () => {
+  it('keeps a fallen peer solid, and drops a nightmare lying driven off', () => {
     const player = self();
     const fallen = clientEntity({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 }, condition: 'fallen' });
-    const fading = clientEntity({ id: 'monster:1', kind: 'monster', position: { x: 14, z: 10 }, condition: 'fallen' });
+    const drivenOff = clientEntity({ id: 'monster:1', kind: 'monster', position: { x: 14, z: 10 }, condition: 'fallen' });
 
-    const blockers = entityBlockers([player, fallen, fading], player);
+    const blockers = entityBlockers([player, fallen, drivenOff], player);
 
     expect(blockers.bodies).toEqual([{ x: 12, z: 10, radius: 0.3 }]);
   });

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { monsterKind, reachDistance } from '@somnio/core';
+import { COMBAT, monsterKind, reachDistance } from '@somnio/core';
 import { seededRandom } from '../../src/world/random.ts';
 import { CUDGEL, RESPAWN_MS, STRIKER, engage, face, payloads, wearing } from '../support/combat.ts';
 import { collectMessages, entities } from '../support/frames.ts';
@@ -14,7 +14,7 @@ const REFUGE_AT = { x: 8.5, z: 8 };
  * The committed Arena on a clock and a seeded roll: a booted server has neither seam, and its
  * first Ghost spawns a minute after boot.
  */
-it('a Ghost of the committed Arena is fought to its fade, and its spawn then keeps a full count alive again', async () => {
+it('a Ghost of the committed Arena is fought until it falls and lies its lie time, and its spawn then keeps a full count alive again', async () => {
   const { clock, space } = makeClockedSpace(fixtureWorld(), 'EdariaArena', { random: seededRandom(3) });
   clock.ms = RESPAWN_MS;
   space.step(0);
@@ -36,8 +36,8 @@ it('a Ghost of the committed Arena is fought to its fade, and its spawn then kee
     space.step(0.05);
   };
   for (let count = 0; count < 400 && space.snapshotForPlayer(fighter.entityId)!.inventory.coins === 0; count += 1) step();
-  // Its fade.
-  for (let count = 0; count < 20; count += 1) step();
+  // Its lie.
+  for (let count = 0; count < COMBAT.lieSeconds.nightmare / 0.05; count += 1) step();
   // Its bounty is what put coins in her purse.
   expect(space.snapshotForPlayer(fighter.entityId)!.inventory.coins).toBe(GHOST.bounty);
   expect(space.isFallen(fighter.entityId)).toBe(false);

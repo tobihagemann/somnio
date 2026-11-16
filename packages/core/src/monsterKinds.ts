@@ -12,11 +12,14 @@ export interface MonsterKind {
   metresPerSecond: number;
   /** How close a player has to come for the monster to give chase. */
   aggroRadius: number;
+  /**
+   * The farthest it chases from where its fight began before giving up. A boss's is 0, unread: a
+   * boss and its minions are leashed to the boss's chamber instead.
+   */
+  leashMetres: number;
   /** How long a spawn waits before it fills a free slot, though at most a minute for its first fill after its space starts. */
   respawnSeconds: number;
   health: number;
-  /** The health it recovers each second while at rest. */
-  restHealthPerSecond: number;
   /** The gap between two of its strikes. */
   strikeSeconds: number;
   /** Its chance to land a strike on a dreamer at full balance with no Guard. */
@@ -24,7 +27,7 @@ export interface MonsterKind {
   damage: number;
   /** The balance a landed strike takes besides the health. */
   balanceDamage: number;
-  /** Coins split among the standing dreamers near it when it fades. */
+  /** Coins split among the standing dreamers near it when it is driven off. */
   bounty: number;
 }
 
@@ -42,9 +45,9 @@ export const MONSTER_KINDS = {
     radius: 0.3,
     metresPerSecond: 2.4,
     aggroRadius: 3.84,
+    leashMetres: 12,
     respawnSeconds: 60,
     health: 60,
-    restHealthPerSecond: 1,
     strikeSeconds: 1.5,
     hitChance: 0.6,
     damage: 9,
@@ -58,9 +61,9 @@ export const MONSTER_KINDS = {
     radius: 0.3,
     metresPerSecond: 2.6,
     aggroRadius: 4.5,
+    leashMetres: 15,
     respawnSeconds: 45,
     health: 70,
-    restHealthPerSecond: 1,
     strikeSeconds: 1.2,
     hitChance: 0.6,
     damage: 12,
@@ -74,9 +77,9 @@ export const MONSTER_KINDS = {
     radius: 0.3,
     metresPerSecond: 2.2,
     aggroRadius: 4.5,
+    leashMetres: 15,
     respawnSeconds: 75,
     health: 160,
-    restHealthPerSecond: 2,
     strikeSeconds: 1.8,
     hitChance: 0.65,
     damage: 20,
@@ -90,9 +93,9 @@ export const MONSTER_KINDS = {
     radius: 0.3,
     metresPerSecond: 2,
     aggroRadius: 6,
+    leashMetres: 0,
     respawnSeconds: 600,
     health: 900,
-    restHealthPerSecond: 10,
     strikeSeconds: 2,
     hitChance: 0.7,
     damage: 24,
@@ -111,6 +114,21 @@ export function isMonsterKindId(value: string): value is MonsterKindId {
 export function monsterKind(id: MonsterKindId): MonsterKind {
   return MONSTER_KINDS[id];
 }
+
+/**
+ * How a pack stirs. A nightmare at rest or wandering within `radiusMetres` of one that sets off,
+ * starting a fight or starting to follow, becomes aware of it `delaySeconds` later and follows it, not
+ * knowing whom or why. It starts a fight of its own only once a dreamer comes within its own notice,
+ * and stirs its own neighbours as it starts following, each hop as much later.
+ */
+export const NIGHTMARE_AWARENESS = { radiusMetres: 4, delaySeconds: 1 } as const;
+
+/**
+ * How a nightmare at rest moves while some dreamer sees its sector: every `everySeconds`, a random
+ * span between `min` and `max`, it walks at `speedShare` of its speed to a random point of its spawn
+ * area. A boss and its minions never wander.
+ */
+export const NIGHTMARE_WANDER = { everySeconds: { min: 6, max: 15 }, speedShare: 0.5 } as const;
 
 /**
  * A move a nightmare telegraphs as a circle round where it stands. Once `seconds` have run it strikes
@@ -199,7 +217,7 @@ export function eliteTrait(id: EliteTraitId): EliteTrait {
 /** How many times its kind's health an elite has. */
 export const ELITE_HEALTH_SHARE = 2.5;
 
-/** The health a nightmare of the kind spawns with, and rests back up to: more for an elite, and a boss's own kind's health. */
+/** The health a nightmare of the kind spawns with, and heals back up to after giving up: more for an elite, and a boss's own kind's health. */
 export function nightmareHealth(kind: MonsterKind, rank: NightmareRank | undefined): number {
   return rank === 'elite' ? Math.round(kind.health * ELITE_HEALTH_SHARE) : kind.health;
 }

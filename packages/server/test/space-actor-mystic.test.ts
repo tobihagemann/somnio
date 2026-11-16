@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SOMNIO_CONSTANTS, ability, boltFlightSeconds, monsterKind } from '@somnio/core';
+import { EDGE_TOLERANCE, SOMNIO_CONSTANTS, ability, boltFlightSeconds, monsterKind, rectContains } from '@somnio/core';
 import type { Character, ItemInstance, Point, TeachingRank } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Condition, SomnioMessage } from '@somnio/protocol';
@@ -10,6 +10,7 @@ import {
   COINS,
   CUDGEL,
   GHOST,
+  GHOST_AT,
   MOONSTONE,
   STRIKER,
   WAND,
@@ -19,13 +20,15 @@ import {
   characterOf,
   energyOf,
   engage,
+  face,
   lucidity,
   payloads,
+  strikeAndLeave,
   wearing,
   wounded,
 } from './support/combat.ts';
 import { collectMessages, entities } from './support/frames.ts';
-import { attachPlayer, makeNPC } from './support/sectorFactory.ts';
+import { attachPlayer, makeMonsterSpawn, makeNPC } from './support/sectorFactory.ts';
 
 /** A Mystic who has learned every ability and Sense the fallen at rank 1. */
 const MYSTIC: Partial<Character> = {
@@ -109,8 +112,13 @@ describe('Ward', () => {
   });
 });
 
+/** The area of a Ghost in `arena({}, { ground: 4 })`. */
+const GROUND_4 = { x: 6, z: 6, width: 8, depth: 8 };
+/** Beyond the aggro radius of the Ghost at `GHOST_AT`, and within the range of every ability at it. */
+const FIVE_OFF: Point = { x: 10, z: 15 };
+
 describe('an effect on a nightmare', () => {
-  it.each(['weaken', 'bind'] as const)('from %s turns it on the Mystic who stands in its ground beyond its aggro radius', async (abilityId) => {
+  it.each(['weaken', 'bind'] as const)('from %s turns it on the Mystic who stands beyond its aggro radius', async (abilityId) => {
     const field = arena({}, { ground: 4 });
     const alice = attachPlayer(field.space, { x: 13.9, z: 10 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
     field.steps(10);
@@ -119,6 +127,37 @@ describe('an effect on a nightmare', () => {
     field.space.handleUseAbility(abilityId, alice.entityId);
     field.steps(4 * 20);
     expect((await ghostNow(field.space)).x).toBeGreaterThan(10);
+  });
+
+  it.each(['weaken', 'bind'] as const)(
+    'from %s is evaded by a nightmare giving up, which takes neither the effect nor the Mystic onto its table',
+    async (abilityId) => {
+      const { space, steps } = arena();
+      strikeAndLeave(space, steps);
+      const alice = attachPlayer(space, FIVE_OFF, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+      space.handleTarget(GHOST, alice.entityId);
+      space.handleUseAbility(abilityId, alice.entityId);
+      steps(8 * 20);
+      const messages = await collectMessages(alice.outbox);
+      expect(payloads(messages, 'ability')).toEqual([{ entityId: alice.entityId, abilityId, targetId: GHOST, evaded: true }]);
+      expect(payloads(messages, 'effects')).toEqual([{ entityId: GHOST, effects: [] }]);
+      expect(await ghostNow(space)).toMatchObject({ x: 10, z: 10, condition: 'hale' });
+    },
+  );
+
+  it('from weaken lands on a boss at rest from outside its chamber, which evades only harm from there', async () => {
+    // Its chamber is the one point it stands on, so the Mystic 4 m south of it stands outside it, within Weaken's range.
+    const { space, steps } = arena({ monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT), kind: 'necromancer' }] });
+    const alice = attachPlayer(space, { x: 10, z: 14 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('weaken', alice.entityId);
+    steps(1);
+    const messages = await collectMessages(alice.outbox);
+    expect(payloads(messages, 'ability')).toEqual([{ entityId: alice.entityId, abilityId: 'weaken', targetId: GHOST }]);
+    expect(payloads(messages, 'effects')).toEqual([
+      { entityId: GHOST, effects: [] },
+      { entityId: GHOST, effects: [{ effectId: 'weakened', seconds: 8 }] },
+    ]);
   });
 });
 
@@ -159,25 +198,36 @@ describe('Bind', () => {
     expect((await ghostNow(field.space)).x).toBeGreaterThan(10);
   });
 
-  it('sends it home afresh once it is free, round a body in its way, however long it was held', async () => {
+  it('sends it home afresh once it is free, still evading, round a body in its way, however long it was held', async () => {
     const field = arena({}, { ground: 4 });
     const bob = attachPlayer(field.space, { x: 13.5, z: 10 }, 'bob');
-    field.steps(30);
+    field.steps(10);
+    field.space.handleMove({ x: 16, z: 10, facing: 0, gait: 'jog' }, bob.entityId);
+    field.steps(40);
+    // Out of its area, with a body across the straight step home.
     const chaseEnd = await ghostNow(field.space);
+    expect(rectContains(GROUND_4, chaseEnd, EDGE_TOLERANCE)).toBe(false);
     attachPlayer(field.space, { x: chaseEnd.x - 0.65, z: 10 }, 'fallen', { character: wounded(0) });
-    // Outside its ground, so it chases neither of them.
-    const alice = attachPlayer(field.space, { x: 10, z: 15 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
-    field.space.handleMove({ x: 15, z: 10, facing: 0, gait: 'jog' }, bob.entityId);
-    // Bound while it steers home round the body, where the straight step home is still blocked.
-    field.steps(3);
-    const bound = await ghostNow(field.space);
-    expect(bound.z).toBeGreaterThan(chaseEnd.z);
+    const alice = attachPlayer(field.space, { x: chaseEnd.x, z: 15 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
     field.space.handleTarget(GHOST, alice.entityId);
     field.space.handleUseAbility('bind', alice.entityId);
+    // Bound, it gives up as both leave, and holds through the Bind.
+    field.space.handOver(bob.entityId, false);
+    field.space.handOver(alice.entityId, false);
     field.steps(3 * 20 - 1);
-    expect(await ghostNow(field.space)).toMatchObject({ x: bound.x, z: bound.z });
-    field.steps(100);
-    expect(await ghostNow(field.space)).toMatchObject({ x: 10, z: 10 });
+    expect(await ghostNow(field.space)).toMatchObject({ x: chaseEnd.x, z: chaseEnd.z });
+    // Free, it is still evading: the Bind's seconds were no stall on its way home.
+    field.steps(1);
+    const carol = attachPlayer(field.space, { x: chaseEnd.x + 0.7, z: 10 }, 'carol', {
+      character: { lucidity: lucidity('fighter', { strike: 1, cleave: 1 }) },
+      inventory: wearing(CUDGEL),
+    });
+    face(field.space, carol.entityId, chaseEnd);
+    field.space.handleUseAbility('cleave', carol.entityId);
+    field.space.handOver(carol.entityId, false);
+    expect(payloads(await collectMessages(carol.outbox), 'blow')).toEqual([{ attackerId: carol.entityId, targetId: GHOST, hit: false, evaded: true }]);
+    field.steps(60);
+    expect(rectContains(GROUND_4, await ghostNow(field.space), EDGE_TOLERANCE)).toBe(true);
   });
 
   it('leaves it striking whoever stands in its reach', () => {
@@ -308,22 +358,51 @@ describe('Dream-bolt', () => {
     expect(characterOf(space, alice.entityId).lucidity.ranks.some(({ practice }) => practice > 0)).toBe(shares);
   });
 
-  it('is evaded by a nightmare whose ground the Mystic stands outside, landing nothing, for its cost all the same', async () => {
-    const { space, steps } = arena({}, { ground: 4 });
-    const outside = attachPlayer(space, { x: 10, z: 14.5 }, 'outside', { character: MYSTIC, inventory: wearing(WAND) });
-    const inside = attachPlayer(space, { x: 10, z: 13.9 }, 'inside', { character: MYSTIC, inventory: wearing(WAND) });
-    for (const { entityId } of [outside, inside]) space.handleTarget(GHOST, entityId);
-    space.handleUseAbility('dream-bolt', outside.entityId);
-    expect(energyOf(space, outside.entityId).spiritCurrent).toBe(88);
-    steps(flightSteps(4.5));
-    expect((await ghostNow(space)).condition).toBe('hale');
-    space.handleUseAbility('dream-bolt', inside.entityId);
-    steps(flightSteps(3.9));
+  it('lands from outside the spawn area of a nightmare at rest, which then chases the Mystic', async () => {
+    const { space, steps } = arena({}, { ground: 1 });
+    // 7 m off, outside its area and its aggro radius.
+    const alice = attachPlayer(space, { x: 10, z: 17 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('dream-bolt', alice.entityId);
+    steps(flightSteps(7));
     expect((await ghostNow(space)).condition).toBe('grazed');
-    expect(payloads(await collectMessages(inside.outbox), 'ability')).toEqual([
-      { entityId: outside.entityId, abilityId: 'dream-bolt', targetId: GHOST, evaded: true },
-      { entityId: inside.entityId, abilityId: 'dream-bolt', targetId: GHOST },
+    steps(10);
+    expect((await ghostNow(space)).z).toBeGreaterThan(10);
+    expect(payloads(await collectMessages(alice.outbox), 'ability')).toEqual([{ entityId: alice.entityId, abilityId: 'dream-bolt', targetId: GHOST }]);
+  });
+
+  it('is evaded by a nightmare giving up, landing nothing, its threat included, for its cost all the same', async () => {
+    const { space, steps } = arena();
+    strikeAndLeave(space, steps);
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('dream-bolt', alice.entityId);
+    expect(energyOf(space, alice.entityId).spiritCurrent).toBe(88);
+    steps(8 * 20);
+    expect(payloads(await collectMessages(alice.outbox), 'ability')).toEqual([
+      { entityId: alice.entityId, abilityId: 'dream-bolt', targetId: GHOST, evaded: true },
     ]);
+    expect(await ghostNow(space)).toMatchObject({ x: 10, z: 10, condition: 'hale' });
+  });
+
+  /** It gives up 2.8 m from home, a longer walk back than the bolt's flight. */
+  it('lands nothing on a nightmare that gave up while it flew, which then chases no one', async () => {
+    const { space, steps } = arena();
+    // Within its notice, east of it, where it closes on him and fights him.
+    const bob = attachPlayer(space, { x: 13.5, z: 10 }, 'bob');
+    steps(30);
+    const fighting = await ghostNow(space);
+    expect(fighting.x).toBeGreaterThan(12.5);
+    // 7 m off, beyond its aggro radius.
+    const alice = attachPlayer(space, { x: fighting.x, z: fighting.z + 7 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('dream-bolt', alice.entityId);
+    space.handOver(bob.entityId, false);
+    steps(flightSteps(7));
+    expect(await ghostNow(space)).toMatchObject({ condition: 'hale' });
+    steps(60);
+    expect(await ghostNow(space)).toMatchObject({ x: 10, z: 10, condition: 'hale' });
+    expect(payloads(await collectMessages(alice.outbox), 'ability')).toEqual([{ entityId: alice.entityId, abilityId: 'dream-bolt', targetId: GHOST }]);
   });
 
   it('lands nothing once its caster has left the space', async () => {
@@ -355,19 +434,20 @@ describe('Veil', () => {
     expect(healthOf(space, bob.entityId)).toBe(84);
   });
 
-  it('takes the dreamers it veils off every table, so a nightmare that chased one from beyond its aggro radius walks home after', async () => {
+  it('takes the dreamers it veils off every table, so a nightmare that chased one out of its area gives up and walks back into it', async () => {
     const field = arena({}, { ground: 4 });
-    const alice = attachPlayer(field.space, { x: 11, z: 13.9 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
     const bob = attachPlayer(field.space, BESIDE_GHOST, 'bob', { inventory: wearing(CUDGEL) });
     attackGhost(field.space, bob.entityId);
     field.steps(1);
     field.space.handleEngage(false, bob.entityId);
-    field.space.handleMove({ x: 10, z: 13.9, facing: 0, gait: 'jog' }, bob.entityId);
-    field.steps(10);
-    expect((await ghostNow(field.space)).z).toBeGreaterThan(10);
+    field.space.handleMove({ x: 10, z: 15.5, facing: 0, gait: 'jog' }, bob.entityId);
+    field.steps(40);
+    expect(rectContains(GROUND_4, await ghostNow(field.space), EDGE_TOLERANCE)).toBe(false);
+    // Within a Veil's reach of Bob, joining as the Veil goes up.
+    const alice = attachPlayer(field.space, { x: 11, z: 15.5 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
     field.space.handleUseAbility('veil', alice.entityId);
-    field.steps(6 * 20);
-    expect(await ghostNow(field.space)).toMatchObject({ x: 10, z: 10 });
+    field.steps(3 * 20);
+    expect(rectContains(GROUND_4, await ghostNow(field.space), EDGE_TOLERANCE)).toBe(true);
   });
 
   it('leaves alone a dreamer beyond its reach', () => {

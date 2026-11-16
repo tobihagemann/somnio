@@ -749,8 +749,9 @@ export class AppShell {
         this.session.closeServicePanel();
         return;
       }
-      // A walk under way stops next, then the target clears, and only then does the menu open.
-      if (this.session.stopWalk()) return;
+      // A walk under way stops next, then the target clears, and only then does the menu open. A press
+      // held on the ground is the player walking on purpose, so Escape passes over it to the target.
+      if (!this.session.groundPressHeld && this.session.stopWalk()) return;
       if (this.session.target !== undefined) {
         this.session.select(undefined);
         return;

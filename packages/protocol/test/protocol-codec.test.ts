@@ -462,6 +462,7 @@ describe('runtime validation the erased types cannot do', () => {
     ['a negative pause', 'raising', { ...raising, pausedSeconds: [-1] }, /pausedSeconds\[0\]: expected a non-negative number/],
     ['a blow without its outcome', 'blow', { attackerId: 'a', targetId: 'b' }, /hit: expected a bool/],
     ['a blow without its target', 'blow', { attackerId: 'a', hit: false }, /targetId: expected a string, got nothing/],
+    ['an evaded blow that is no bool', 'blow', { attackerId: 'a', targetId: 'b', hit: false, evaded: 1 }, /evaded: expected a bool/],
     ['a mend without its target', 'mend', {}, /targetId: expected/],
     ['a sensed bearing without its name', 'sensed', { bearings: [{ x: 1, z: 2 }] }, /name: expected a string, got nothing/],
     ['an over-cap sensed name', 'sensed', { bearings: [{ name: overCapId, x: 1, z: 2 }] }, /name: exceeds 64 UTF-8 bytes/],
@@ -826,7 +827,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(23);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(24);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

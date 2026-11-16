@@ -15,6 +15,7 @@ import {
   face,
   lucidity,
   payloads,
+  strikeAndLeave,
   wearing,
 } from './support/combat.ts';
 import { collectMessages, entityMoves } from './support/frames.ts';
@@ -280,6 +281,15 @@ describe('Lunge', () => {
     expect(payloads(messages, 'ability')).toHaveLength(1);
     expect(payloads(messages, 'correction')).toEqual([]);
     expect(characterOf(space, fighter.entityId).position).toEqual(CONTACT);
+  });
+
+  it('carries no evaded at a nightmare giving up, which evades only harm and effects', async () => {
+    const { space, steps } = arena();
+    strikeAndLeave(space, steps);
+    const fighter = attachPlayer(space, LUNGE_FROM, 'fighter', { character: LUNGER });
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    expect(payloads(await collectMessages(fighter.outbox), 'ability')).toEqual([{ entityId: fighter.entityId, abilityId: 'lunge', targetId: GHOST }]);
   });
 });
 

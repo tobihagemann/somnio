@@ -1,4 +1,4 @@
-import type { Condition, Energy, Gait, Role } from '@somnio/protocol';
+import type { Condition, Energy, Gait, NightmareRank, Role } from '@somnio/protocol';
 import type { Body } from './collision.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { effect } from './effects.ts';
@@ -65,10 +65,12 @@ export const COMBAT = {
 
   /** How far beyond contact a swing, a strike, or a Moonstone still reaches. */
   reachSlack: 0.25,
-  /** How far from a fading nightmare a dreamer still shares its bounty and earns practice. */
+  /** How far from a nightmare driven off a dreamer still shares its bounty and earns practice. */
   shareRadius: 6,
-  /** How long a nightmare driven off lingers before it is gone. */
-  fadeSeconds: 1,
+  /** How long a nightmare driven off lies before it is gone, by its rank: `nightmare` for an ordinary one, else its `NightmareRank`. */
+  lieSeconds: { nightmare: 30, elite: 60, boss: 120 } satisfies Record<'nightmare' | NightmareRank, number>,
+  /** A nightmare that gave up recovers its maximum health over this long, from the moment it gives up. */
+  giveUpHealSeconds: 8,
 } as const;
 
 /** The bands between the maximum and none, from the top, each above its share of the maximum. */

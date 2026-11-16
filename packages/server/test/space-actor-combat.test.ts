@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOSS_MOVES, OUTDOOR_SPACE_ID, TELEGRAPHS, monsterKind } from '@somnio/core';
+import { BOSS_MOVES, COMBAT, NIGHTMARE_WANDER, OUTDOOR_SPACE_ID, TELEGRAPHS, monsterKind, reachDistance } from '@somnio/core';
 import type { Character, EliteTraitId, Inventory, ItemInstance, Point, Sector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
@@ -7,6 +7,7 @@ import { plain } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import { seededRandom } from '../src/world/random.ts';
+import type { RandomSource } from '../src/world/random.ts';
 import {
   BESIDE_GHOST,
   COINS,
@@ -27,6 +28,7 @@ import {
   face,
   lucidity,
   payloads,
+  strikeAndLeave,
   wearing,
 } from './support/combat.ts';
 import { collectMessages, entities, entityMoves, recordingOutbox, serverSays, vitalsOutbox } from './support/frames.ts';
@@ -41,6 +43,26 @@ import {
   makeSectorLine,
   makeWorld,
 } from './support/sectorFactory.ts';
+
+/** A Fighter whose one landed cudgel swing drives off any nightmare short of a boss. */
+const SLAYER: Partial<Character> = { lucidity: lucidity('fighter', { strike: 100 }) };
+
+/**
+ * From the moment it is called, a probe that sets the clock `ms` past that moment, steps the space
+ * once, and reports what `sent` holds by then of the Ghost leaving and of `monster:2`, the nightmare
+ * that takes its place, arriving.
+ */
+function ends(clock: { ms: number }, space: SpaceActor, sent: readonly SomnioMessage[]) {
+  const from = clock.ms;
+  return (ms: number) => {
+    clock.ms = from + ms;
+    space.step(0.05);
+    return {
+      left: payloads(sent, 'leave').filter((leave) => leave.entityId === GHOST),
+      next: entities(sent).flatMap(({ id, condition }) => (id === 'monster:2' ? [{ id, condition }] : [])),
+    };
+  };
+}
 
 describe('attacking a nightmare', () => {
   const blowsBy = (messages: readonly SomnioMessage[], attackerId: string) => payloads(messages, 'blow').filter((blow) => blow.attackerId === attackerId);
@@ -214,7 +236,8 @@ describe('attacking a nightmare', () => {
   it('switches Attack off when the dreamer falls, so once raised they swing no more until they switch it on', async () => {
     const { space, steps } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: { energy: energy({ healthCurrent: 9 }) } });
-    const healer = attachPlayer(space, { x: 10, z: 11.4 }, 'healer', {
+    // In the Ghost's reach as well as in Alice's touch, so it fights the Healer where it stands, in Alice's swing.
+    const healer = attachPlayer(space, { x: 10.5, z: 10.5 }, 'healer', {
       character: { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1 }) },
       inventory: wearing(MOONSTONE),
     });
@@ -255,36 +278,29 @@ describe('attacking a nightmare', () => {
     ]);
   });
 
-  it('fades a nightmare at zero, lets it go after the fade time, and refills its spawn after the respawn time', async () => {
+  it('lets a nightmare driven off lie for its lie time, and refills its spawn after the respawn time from its fall', () => {
     const { clock, space } = arena();
-    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
+    const { outbox, sent } = recordingOutbox();
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox, character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, alice.entityId);
     space.step(0);
     clock.ms += 1000;
     space.step(0);
     clock.ms += 1000;
     space.step(0);
-    const fadedAt = clock.ms;
-    clock.ms = fadedAt + 999;
-    space.step(0.05);
-    clock.ms = fadedAt + 1000;
-    space.step(0.05);
-    clock.ms = fadedAt + RESPAWN_MS - 1;
-    space.step(0.05);
-    clock.ms = fadedAt + RESPAWN_MS;
-    space.step(0.05);
-    const messages = await collectMessages(alice.outbox);
     expect(
-      payloads(messages, 'condition')
-        .filter((sent) => sent.entityId === GHOST)
+      payloads(sent, 'condition')
+        .filter((condition) => condition.entityId === GHOST)
         .at(-1),
     ).toEqual({ entityId: GHOST, condition: 'fallen' });
-    const tags = messages.map((message) =>
-      message.tag === 'leave' || (message.tag === 'entity' && message.payload.kind === 'monster') ? message.tag : undefined,
-    );
-    expect(tags.filter((tag) => tag !== undefined)).toEqual(['entity', 'leave', 'entity']);
-    expect(payloads(messages, 'leave')).toEqual([{ entityId: GHOST, leftGame: false }]);
-    expect(entities(messages).at(-1)).toMatchObject({ id: 'monster:2', condition: 'hale' });
+    const lie = COMBAT.lieSeconds.nightmare * 1000;
+    const after = ends(clock, space, sent);
+    expect([after(lie - 50), after(lie), after(RESPAWN_MS - 50), after(RESPAWN_MS)]).toEqual([
+      { left: [], next: [] },
+      { left: [{ entityId: GHOST, leftGame: false }], next: [] },
+      { left: [{ entityId: GHOST, leftGame: false }], next: [] },
+      { left: [{ entityId: GHOST, leftGame: false }], next: [{ id: 'monster:2', condition: 'hale' }] },
+    ]);
   });
 
   it('splits the bounty among the standing dreamers within the share radius, and gives each of them the practice in full', () => {
@@ -397,7 +413,7 @@ describe('what the gear worn adds', () => {
   });
 });
 
-/** The ghost's ground is its one point, so every dreamer it strikes here stands outside it, within its reach. */
+/** Every dreamer the Ghost strikes here stands in its reach, so it strikes them where it stands. */
 describe('a nightmare striking', () => {
   it('takes health and a little balance, both there in a snapshot taken at once', async () => {
     const { space, steps } = arena();
@@ -470,8 +486,8 @@ describe('a nightmare striking', () => {
 
 /**
  * A blow struck from within a nightmare's reach is answered at its next step, wherever its striker
- * has stepped since. The Ghost here keeps to a single point, so it chases no one, and only that
- * rule can bring a strike on a dreamer who stepped back out of its reach.
+ * has stepped since. The steps here take no time, so the Ghost comes no nearer, and only that rule
+ * can bring a strike on a dreamer who stepped back out of its reach.
  */
 describe('a blow struck between two steps', () => {
   const OUT_OF_REACH: Point = { x: 10, z: 12 };
@@ -511,9 +527,8 @@ describe('a blow struck between two steps', () => {
     expect(ghostBlows(sent)).toHaveLength(1);
   });
 
-  /** Its home ground reaches 2 m each way, so the Mystic bolts from inside it, where the Ghost does not evade, and steps out of it. */
   it('is not a bolt, which strikes no blow to answer', () => {
-    const { clock, space } = arena({}, { ground: 2 });
+    const { clock, space } = arena();
     const { outbox, sent } = recordingOutbox();
     const mystic = attachPlayer(space, { x: 10, z: 12.5 }, 'mystic', {
       outbox,
@@ -532,9 +547,9 @@ describe('a blow struck between two steps', () => {
 });
 
 describe('threat', () => {
-  /** A Ghost at `GHOST_AT`, keeping to ground reaching 6 m south and east of it. */
+  /** A Ghost at `GHOST_AT`, at the corner of a spawn area reaching 6 m south and east of it. */
   const withGround = () => arena({ monsterSpawns: [makeMonsterSpawn(GHOST_AT, 6)] });
-  /** In the Ghost's reach and its ground, and nearer to it than `BESIDE_GHOST`. */
+  /** In the Ghost's reach, and nearer to it than `BESIDE_GHOST`. */
   const NEARER: Point = { x: 10.6, z: 10.2 };
   const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 2, 'drawing-back': 1, depth: 1 }) };
   const targetsOf = (messages: readonly SomnioMessage[], attackerId: string) =>
@@ -559,7 +574,7 @@ describe('threat', () => {
   it('turns every nightmare the Fighter challenged on them, and one passing a Healer in reach on its way strikes the Fighter once it reaches them', async () => {
     const second = { ...makeMonsterSpawn({ x: 10, z: 14 }, 6), id: 'spawn-2' };
     const { space, steps } = arena({ monsterSpawns: [makeMonsterSpawn({ x: 11, z: 11 }, 6), second] });
-    // Out of both nightmares' aggro radius and inside both their grounds, within Challenge's reach of both.
+    // Out of both nightmares' aggro radius, within Challenge's reach of both.
     const fighter = attachPlayer(space, { x: 14, z: 15 }, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1, guard: 1, challenge: 1 }) } });
     // Within the second's aggro radius, and in its reach as it passes on its way to the Fighter.
     const healer = attachPlayer(space, { x: 11.77, z: 15.16 }, 'healer', { character: HEALER, inventory: wearing(MOONSTONE) });
@@ -568,6 +583,20 @@ describe('threat', () => {
     const messages = await collectMessages(healer.outbox);
     expect(targetsOf(messages, GHOST)).toEqual([fighter.entityId, fighter.entityId]);
     expect(targetsOf(messages, 'monster:2')).toEqual([healer.entityId, fighter.entityId, fighter.entityId]);
+  });
+
+  it('passes over a nightmare giving up with a Challenge, which neither turns it nor puts the Fighter on its table', async () => {
+    const { space, steps } = arena();
+    strikeAndLeave(space, steps);
+    // Beyond its aggro radius, within Challenge's reach.
+    const fighter = attachPlayer(space, { x: 10, z: 14.5 }, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1, guard: 1, challenge: 1 }) } });
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('challenge', fighter.entityId);
+    steps(8 * 20);
+    space.flushMoves();
+    const messages = await collectMessages(fighter.outbox);
+    expect(payloads(messages, 'effects')).toEqual([{ entityId: GHOST, effects: [] }]);
+    expect(entityMoves(messages).filter((move) => move.id === GHOST)).toEqual([]);
   });
 
   it('forgets a dreamer who fell, so once raised they are struck no sooner than a nearer one', async () => {
@@ -592,15 +621,16 @@ describe('threat', () => {
     expect(targetsOf(await collectMessages(watcher.outbox), GHOST)).toEqual([nearer.entityId, nearer.entityId]);
   });
 
-  it('forgets a dreamer who steps outside its ground, so it strikes a nearer one in its reach there instead', async () => {
-    const { space, steps } = withGround();
+  it('forgets, as a boss, a dreamer who steps outside its chamber, so it strikes a nearer one in its reach there instead', async () => {
+    // A Necromancer at the north-west corner of its chamber, which reaches 6 m south and east of it.
+    const { space, steps } = arena({ monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT, 6), kind: 'necromancer' }] });
     const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', { character: { lucidity: lucidity('fighter', { strike: 1 }) }, inventory: wearing(CUDGEL) });
-    // Outside the ground, north-west of the Ghost at its corner, and in its reach.
+    // Outside the chamber, north-west of the Necromancer at its corner, and in its reach.
     const nearer = attachPlayer(space, { x: 9.5, z: 9.6 }, 'nearer');
     attackGhost(space, fighter.entityId);
     steps(1);
     space.handleEngage(false, fighter.entityId);
-    // Outside the ground too, still in the Ghost's reach, and further from it than the nearer dreamer.
+    // Outside the chamber too, still in its reach, and further from it than the nearer dreamer.
     space.handleMove({ x: 9.3, z: 10.3, facing: 0, gait: 'walk' }, fighter.entityId);
     steps(40);
     expect(targetsOf(await collectMessages(nearer.outbox), GHOST)).toEqual([fighter.entityId, nearer.entityId]);
@@ -890,17 +920,39 @@ describe('an elite', () => {
     expect(payloads(sent, 'effects').slice(4)).toEqual([{ entityId: GHOST, effects: [{ effectId: 'shielded' }] }]);
   });
 
-  it("rests back up to its own maximum, more than its kind's", () => {
+  it("heals back up to its own maximum after giving up, more than its kind's", () => {
     const { clock, space, steps } = arena({}, { elite: 'stony' });
-    const alice = vitalsOutbox(clock);
-    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox, character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
+    const watcher = vitalsOutbox(clock);
+    // Beyond its notice.
+    space.handleTarget(GHOST, attachPlayer(space, { x: 5, z: 5 }, 'watcher', { outbox: watcher.outbox }).entityId);
+    const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) }).entityId;
     attackGhost(space, aliceId);
     steps(30);
-    space.handleEngage(false, aliceId);
-    space.handleMove({ x: 10, z: 12, facing: 180, gait: 'walk' }, aliceId);
-    expect(alice.sent.at(-1)!.health).toBeLessThan(0.9);
-    steps(1200);
-    expect(alice.sent.at(-1)!.health).toBe(1);
+    space.handOver(aliceId, false);
+    expect(watcher.sent.at(-1)!.health).toBeLessThan(0.9);
+    steps(40);
+    expect(watcher.sent.at(-1)!.health).toBe(1);
+  });
+
+  it("lies for an elite's lie time once driven off, its spawn refilling meanwhile after its kind's respawn time from the fall", () => {
+    const { clock, space } = arena({ monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT), kind: 'skeleton-minion', eliteChance: 1 }] }, { elite: 'stony' });
+    const { outbox, sent } = recordingOutbox();
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox, character: SLAYER, inventory: wearing(CUDGEL) });
+    attackGhost(space, alice.entityId);
+    space.step(0);
+    expect(payloads(sent, 'condition')).toContainEqual({ entityId: GHOST, condition: 'fallen' });
+    const respawn = monsterKind('skeleton-minion').respawnSeconds * 1000;
+    const lie = COMBAT.lieSeconds.elite * 1000;
+    expect(respawn).toBeLessThan(lie);
+    const after = ends(clock, space, sent);
+    const left = [{ entityId: GHOST, leftGame: false }];
+    const next = [{ id: 'monster:2', condition: 'hale' }];
+    expect([after(respawn - 50), after(respawn), after(lie - 50), after(lie)]).toEqual([
+      { left: [], next: [] },
+      { left: [], next },
+      { left: [], next },
+      { left, next },
+    ]);
   });
 
   it('leaves each dreamer who shares it a drop for each of its two rolls', () => {
@@ -936,9 +988,10 @@ describe('the Necromancer', () => {
    * advances in 50 ms steps. Once it stands, every roll falls between `odds.low` and `odds.high`,
    * which a test may move: from 0.7 no strike of a nightmare lands, below 0.75 every swing of a
    * dreamer does, and minions are called up west of it. The wail rolls nothing. With `line`, the
-   * chamber lies in the west of three sectors in a line.
+   * chamber lies in the west of three sectors in a line. Every wander would land on the chamber's
+   * middle, unless `wanderRandom` says otherwise.
    */
-  function lair(options: { high?: number; line?: boolean; drops?: boolean } = {}) {
+  function lair(options: { high?: number; line?: boolean; drops?: boolean; wanderRandom?: RandomSource } = {}) {
     const spawn = { ...makeMonsterGround(LAIR_AT, 6), kind: 'necromancer' as const };
     const sectors: Sector[] = options.line === true ? makeSectorLine({ west: { monsterSpawns: [spawn] } }) : [makeSector('Lair', { monsterSpawns: [spawn] })];
     const placing = landsAtCentre(6);
@@ -948,6 +1001,7 @@ describe('the Necromancer', () => {
     const roll = (): number => Math.floor((odds.low + ((odds.high - odds.low) * rolls.nextUInt32()) / 0x1_0000_0000) * 0x1_0000_0000);
     const { clock, space } = makeClockedSpace(makeWorld(sectors), OUTDOOR_SPACE_ID, {
       random: { nextUInt32: () => (standing ? roll() : placing.nextUInt32()) },
+      wanderRandom: options.wanderRandom ?? placing,
       ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
     });
     // A spawn first fills a minute after its space starts, however long its kind's respawn.
@@ -963,8 +1017,8 @@ describe('the Necromancer', () => {
     return { clock, space, steps, odds };
   }
 
-  /** Steps until the Necromancer has begun its first wail, 4 s into the fight. */
-  const untilWail = (steps: (count: number) => void) => steps(80);
+  /** Steps until the Necromancer has begun its first wail, 4 s into the fight that begins at the first step. */
+  const untilWail = (steps: (count: number) => void) => steps(81);
 
   const minionsIn = (messages: readonly SomnioMessage[]) => entities(messages).filter((entity) => entity.summonedBy === BOSS);
 
@@ -991,6 +1045,35 @@ describe('the Necromancer', () => {
       engage(space, BOSS, entityId);
       return { entityId, sent: striker.sent };
     });
+
+  it('neither moves, calls up minions, nor wails while no dreamer stands in its chamber, though one sees it', () => {
+    // Every draw would put a wander on the chamber's north-west corner.
+    const { space, steps } = lair({ wanderRandom: { nextUInt32: () => 0 } });
+    const watcher = recordingOutbox();
+    attachPlayer(space, OUTSIDE, 'watcher', { outbox: watcher.outbox });
+    steps(60 * 20);
+    space.flushMoves();
+    expect(entityMoves(watcher.sent)).toEqual([]);
+    expect(minionsIn(watcher.sent)).toEqual([]);
+    expect(payloads(watcher.sent, 'telegraph')).toEqual([]);
+  });
+
+  it('strikes at rest a dreamer in its reach just outside its chamber, who strikes it back unevaded, and heals nothing between their blows', () => {
+    // Its chamber is the one point it stands on, so every dreamer stands outside it.
+    const { space, steps } = arena({ monsterSpawns: [{ ...makeMonsterSpawn(LAIR_AT), kind: 'necromancer' }] });
+    const { outbox, sent } = recordingOutbox();
+    const alice = attachPlayer(space, BESIDE_BOSS, 'alice', { outbox, character: TOUGH, inventory: wearing(CUDGEL) }).entityId;
+    attackGhost(space, alice);
+    // Past the 5 s a boss counts with no one to chase before it gives a fight up, which it never began.
+    steps(120);
+    const blows = payloads(sent, 'blow');
+    expect(blows.filter((blow) => blow.attackerId === BOSS)).toEqual(Array.from({ length: 3 }, () => ({ attackerId: BOSS, targetId: alice, hit: true })));
+    expect(blows.filter((blow) => blow.attackerId === alice)).toEqual(Array.from({ length: 6 }, () => ({ attackerId: alice, targetId: BOSS, hit: true })));
+    const health = payloads(sent, 'vitals').map((vitals) => vitals.health);
+    expect(health).toEqual(health.toSorted((one, other) => other - one));
+    expect(minionsIn(sent)).toEqual([]);
+    expect(payloads(sent, 'telegraph')).toEqual([]);
+  });
 
   it('stands as a boss, carrying its rank and no trait', async () => {
     const { space } = lair();
@@ -1044,7 +1127,7 @@ describe('the Necromancer', () => {
     const { space, steps } = lair();
     const alice = recordingOutbox();
     const aliceId = attachPlayer(space, BESIDE_BOSS, 'alice', { outbox: alice.outbox, character: TOUGH }).entityId;
-    steps(79);
+    steps(80);
     // Inside the chamber and its aggro radius, so it chases her, but more than 4 m from it as its wail falls due.
     space.handleMove({ x: 10, z: 15.5, facing: 0, gait: 'run' }, aliceId);
     steps(1);
@@ -1173,10 +1256,45 @@ describe('the Necromancer', () => {
     space.handleMove({ ...STEPPED_OUT, facing: 270, gait: 'run' }, alice.entityId);
     steps(GIVE_UP_STEPS + 1);
     space.handleMove({ ...BESIDE_BOSS, facing: 90, gait: 'run' }, alice.entityId);
-    steps(79);
+    // Whole, it rests the step after giving up, and its next fight begins the step after that.
+    steps(81);
     expect(payloads(watcher.sent, 'telegraph')).toEqual([]);
     steps(1);
     expect(payloads(watcher.sent, 'telegraph')).toHaveLength(1);
+  });
+
+  it('calls up minions again on the first step of a fight after one it gave up', () => {
+    const { space, steps } = lair();
+    const alice = attachPlayer(space, BESIDE_BOSS, 'alice', { character: TOUGH });
+    const watcher = recordingOutbox();
+    attachPlayer(space, OUTSIDE, 'watcher', { outbox: watcher.outbox });
+    steps(1);
+    expect(minionsIn(watcher.sent)).toHaveLength(2);
+    space.handleMove({ ...STEPPED_OUT, facing: 270, gait: 'run' }, alice.entityId);
+    steps(GIVE_UP_STEPS + 1);
+    space.handleMove({ ...BESIDE_BOSS, facing: 90, gait: 'run' }, alice.entityId);
+    // Whole, it rests the step after giving up, and its next fight begins the step after that.
+    steps(1);
+    expect(minionsIn(watcher.sent)).toHaveLength(2);
+    steps(1);
+    expect(minionsIn(watcher.sent)).toHaveLength(4);
+  });
+
+  it('has the minions it called up stand still while they notice no one, though dreamers see them', () => {
+    const { space, steps } = lair();
+    // In its chamber and its notice, east of it, and beyond the notice of every minion it calls up west of it.
+    const alice = attachPlayer(space, { x: 15.5, z: 10 }, 'alice', { character: TOUGH });
+    const watcher = recordingOutbox();
+    attachPlayer(space, OUTSIDE, 'watcher', { outbox: watcher.outbox });
+    steps(1);
+    const minions = minionsIn(watcher.sent).map((minion) => minion.id);
+    expect(minions).toHaveLength(2);
+    // Past the longest a nightmare at rest waits before it wanders.
+    steps(NIGHTMARE_WANDER.everySeconds.max * 20 + 1);
+    space.flushMoves();
+    expect(space.isFallen(alice.entityId)).toBe(false);
+    expect(entityMoves(watcher.sent).some((move) => move.id === BOSS)).toBe(true);
+    expect(entityMoves(watcher.sent).filter((move) => minions.includes(move.id))).toEqual([]);
   });
 
   it('crumbles its minions, paying no one and dropping nothing, once it has had no one to chase for 5 s', () => {
@@ -1216,6 +1334,64 @@ describe('the Necromancer', () => {
     expect(endsOf(watcher.sent, minions)).toEqual(minions.map(() => CRUMBLED));
   });
 
+  it('evades a swing once it has given its fight up, and heals whole where it stands', () => {
+    const { space, steps } = lair({ high: 0.75 });
+    const { outbox, sent } = recordingOutbox();
+    const alice = attachPlayer(space, BESIDE_BOSS, 'alice', { outbox, character: TOUGH, inventory: wearing(CUDGEL) }).entityId;
+    face(space, alice, LAIR_AT);
+    engage(space, BOSS, alice);
+    steps(41);
+    space.handleEngage(false, alice);
+    expect(payloads(sent, 'vitals').at(-1)!.health).toBeLessThan(1);
+    space.handleMove({ ...STEPPED_OUT, facing: 270, gait: 'run' }, alice);
+    steps(GIVE_UP_STEPS + 1);
+    space.handleMove({ ...BESIDE_BOSS, facing: 0, gait: 'run' }, alice);
+    face(space, alice, LAIR_AT);
+    space.handleEngage(true, alice);
+    steps(1);
+    expect(
+      payloads(sent, 'blow')
+        .filter((blow) => blow.attackerId === alice)
+        .at(-1),
+    ).toEqual({ attackerId: alice, targetId: BOSS, hit: false, evaded: true });
+    space.handleEngage(false, alice);
+    steps(20);
+    expect(payloads(sent, 'vitals').at(-1)!.health).toBe(1);
+  });
+
+  it('has its minions strike a dreamer in their reach who stepped out of its chamber, and take their blows, until it gives its fight up', async () => {
+    const { space, steps } = lair({ high: 0.75 });
+    const { outbox, sent } = recordingOutbox();
+    // With 150 health, enough to take a wail, and a plain cudgel's swing, which drives no minion off in 5 s.
+    const character = { lucidity: lucidity('fighter', { toughening: 5 }), energy: energy({ healthCurrent: 150, healthMax: 150 }) };
+    const alice = attachPlayer(space, BESIDE_BOSS, 'alice', { outbox, character, inventory: wearing(CUDGEL) }).entityId;
+    steps(1);
+    // On the chamber's west edge, where the Necromancer and its minions come to her.
+    space.handleMove({ x: LAIR_AT.x - 6, z: LAIR_AT.z, facing: 270, gait: 'run' }, alice);
+    steps(79);
+    const seer = attachPlayer(space, { x: 18, z: 18 }, 'seer');
+    space.handOver(seer.entityId, false);
+    const minion = entities(await collectMessages(seer.outbox)).find((entity) => entity.characterModelId === 'skeleton-minion')!;
+    // Two swings while she stands in the chamber, so a minion that gave up would have health to heal back first.
+    face(space, alice, minion);
+    engage(space, minion.id, alice);
+    steps(21);
+    // Just out of the chamber, 1 cm past its west edge, level with the minion that reached her, so still in its reach.
+    const out = { x: LAIR_AT.x - 6 - 0.01, z: minion.z };
+    space.handleMove({ ...out, facing: 90, gait: 'walk' }, alice);
+    expect(Math.hypot(minion.x - out.x, minion.z - out.z)).toBeLessThanOrEqual(reachDistance(minion.radius));
+    const struckBy = (attackerId: string) => payloads(sent, 'blow').filter((blow) => blow.attackerId === attackerId);
+    const before = struckBy(minion.id).length;
+    steps(GIVE_UP_STEPS);
+    expect(struckBy(minion.id).slice(before).length).toBeGreaterThanOrEqual(3);
+    expect(struckBy(minion.id).every((blow) => blow.targetId === alice)).toBe(true);
+    expect(struckBy(alice).length).toBeGreaterThanOrEqual(6);
+    expect(struckBy(alice).every((blow) => blow.targetId === minion.id && blow.hit && blow.evaded === undefined)).toBe(true);
+    expect(endsOf(sent, [minion.id])).toEqual([STANDING]);
+    steps(1);
+    expect(endsOf(sent, [minion.id])).toEqual([CRUMBLED]);
+  });
+
   it('crumbles its minions as it is driven off, and pays only its own bounty', () => {
     const { space, steps } = lair({ high: 0.75 });
     const strikers = ringOfStrikers(space);
@@ -1231,7 +1407,21 @@ describe('the Necromancer', () => {
     expect(payloads(watcher.sent, 'inventory').map((inventory) => inventory.coins)).toEqual([0]);
   });
 
-  it.each(COMING_INTO_VIEW)('sends a dreamer who comes into view of it by %s while it fades no wail it was driven off in', async (_label, comeIntoView) => {
+  it("lies for a boss's lie time once driven off", () => {
+    const { clock, space, steps } = lair({ high: 0.75 });
+    const { sent } = ringOfStrikers(space)[0]!;
+    for (let step = 0; step < 400 && !endsOf(sent, [BOSS])[0]!.fallen; step += 1) steps(1);
+    const fellAt = clock.ms;
+    const lie = COMBAT.lieSeconds.boss * 1000;
+    clock.ms = fellAt + lie - STEP_MS;
+    space.step(STEP_MS / 1000);
+    expect(endsOf(sent, [BOSS])).toEqual([{ fallen: true, left: false, crumbled: false }]);
+    clock.ms = fellAt + lie;
+    space.step(STEP_MS / 1000);
+    expect(endsOf(sent, [BOSS])).toEqual([{ fallen: true, left: true, crumbled: false }]);
+  });
+
+  it.each(COMING_INTO_VIEW)('sends a dreamer who comes into view of it by %s while it lies no wail it was driven off in', async (_label, comeIntoView) => {
     const { space, steps } = lair({ high: 0.75, line: true });
     const strikers = ringOfStrikers(space);
     const carol = attachPlayer(space, { x: 41, z: 10 }, 'carol');

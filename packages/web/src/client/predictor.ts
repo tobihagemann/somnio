@@ -116,7 +116,7 @@ export interface EntityBlockers {
  * Other players are always solid; monsters are *soft-solid* — a monster the player is clear of
  * blocks the step, but one already overlapping the player is dropped so the player can always
  * walk free. Monsters chase on the server's tick and can lag onto the player, and a block there
- * would hold them in place. A fallen player still blocks; a nightmare driven off is fading and
+ * would hold them in place. A fallen player still blocks; a nightmare driven off lies inert and
  * blocks nothing.
  */
 export function entityBlockers(entities: Iterable<ClientEntity>, self: ClientEntity): EntityBlockers {

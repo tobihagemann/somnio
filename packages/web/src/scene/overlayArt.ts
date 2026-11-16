@@ -2,6 +2,7 @@ import { SOMNIO_CONSTANTS, clamp } from '@somnio/core';
 import type { WorldEntityKind } from '@somnio/core';
 import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol';
 import type { Condition, SpeechKind } from '@somnio/protocol';
+import { drivenOff } from '@/client/clientWorld';
 import { BUBBLE_FONT, BUBBLE_TEXT_INSET, BUBBLE_TEXT_WIDTH } from './speechBubbleText';
 
 /**
@@ -429,11 +430,11 @@ export function baselineInCenteredBox(height: number, fontSize: number): number 
  * Background for an entity's plaque, or `undefined` for one that gets none. A player's plaque is
  * tinted by their condition, the local player's included. An NPC's never changes. A nightmare has
  * a plaque only while it is not hale or it is the target, so one that has taken harm stands out
- * from the rest.
+ * from the rest, and none once it is driven off.
  */
 export function namePlaqueBackground(kind: WorldEntityKind, condition: Condition, targeted: boolean): string | undefined {
   if (kind === 'npc') return NAME_PLAQUE.npcBackground;
-  if (kind === 'monster' && condition === 'hale' && !targeted) return undefined;
+  if (drivenOff({ kind, condition }) || (kind === 'monster' && condition === 'hale' && !targeted)) return undefined;
   return playerPlaqueBackground(condition);
 }
 

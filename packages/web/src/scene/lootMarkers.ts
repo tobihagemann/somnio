@@ -25,11 +25,18 @@
  * there without a flight. Every name draws with a clone of one material, every beam with one
  * material, and every glow with one of two that differ only in colour, so each program compiles
  * once, in the scene's prewarm, and none adds a light. A flight moves the model alone, so it compiles nothing.
+ *
+ * A drop that goes fades out where it lay over `LOOT_FADE_SECONDS`, drawn with clones of its
+ * materials (`fadeOut`), its name and its light with it, and casts no shadow from halfway out.
+ * Meanwhile it takes no press and presses no grass, and its marker draws nothing else until the fade
+ * ends, which frees it for a drop waiting. Under reduced motion, and in a stalled tab, it goes at once.
  */
 import * as THREE from 'three';
 import type { Rarity } from '@somnio/protocol';
 import { hashString } from '@somnio/core';
 import { GROUND_RING_LIFT } from './combatEffects';
+import { fadeOut } from './fadeOut';
+import type { FadeOut } from './fadeOut';
 import { lightMaterial, whiteTexture } from './lightMaterials';
 import { prototypeMeshesOf } from './modelAssets';
 import { OVERLAY_METRES_PER_PIXEL, cssColor, renderNamePlaque } from './overlayArt';
@@ -83,6 +90,8 @@ interface Arc {
 export const THROW_ARC: Arc = { seconds: 0.45, rise: 0.35, turns: 1, bounce: 0.06 };
 /** A nightmare's drops bursting out of it as it falls, as Diablo's loot does: high over the bodies, spinning, and longer. */
 export const BURST_ARC: Arc = { seconds: 0.65, rise: 1, turns: 2, bounce: 0.1 };
+/** How long a drop that goes takes to fade out. */
+export const LOOT_FADE_SECONDS = 0.5;
 /** How long a drop hops as it lands. */
 const BOUNCE_SECONDS = 0.16;
 /** How near each vertex of a ground model must come to its hand model's, moved by one transform, for the two to be one piece. */
@@ -142,9 +151,11 @@ interface Marker {
   beam: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   label: THREE.Object3D;
   plate: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-  /** The drop it draws, or `undefined` while it is free. */
+  /** The drop it draws, or `undefined` while it is free or fading. */
   loot: ShownLoot | undefined;
   flight: Flight | undefined;
+  /** The fade of a drop gone, begun at `since` on the markers' clock, or `undefined` while none runs. */
+  fading: { since: number; fade: FadeOut } | undefined;
 }
 
 /**
@@ -216,7 +227,13 @@ export class LootMarkers {
     this.shown.delete(lootId);
     const marker = this.markerOf(lootId);
     if (marker === undefined) return;
-    this.free(marker);
+    if (this.reducedMotion) {
+      this.free(marker);
+    } else {
+      this.rest(marker);
+      marker.loot = undefined;
+      marker.fading = { since: this.clock, fade: fadeOut(marker.root) };
+    }
     this.drawNearest();
   }
 
@@ -237,19 +254,30 @@ export class LootMarkers {
   }
 
   /**
-   * Flies the drops in the air and brightens and dims the beams, `seconds` into the scene's clock;
-   * under reduced motion the beams hold steady. After a `stalled` tab, every drop in the air lies
-   * where it falls. Then, with drops waiting, chooses the pool again where one lies nearer
-   * than a drawn drop, a drop that has just landed included.
+   * Flies the drops in the air, fades the drops gone, and brightens and dims the beams, `seconds`
+   * into the scene's clock; under reduced motion the beams hold steady. After a `stalled` tab, every
+   * drop in the air lies where it falls, and every drop fading is gone. Then, with drops waiting,
+   * chooses the pool again where a fade freed a marker or one lies nearer than a drawn drop, a drop
+   * that has just landed included.
    */
   tick(seconds: number, stalled: boolean): void {
     this.clock = seconds;
+    let freed = false;
     for (const marker of this.markers) {
-      if (marker.flight === undefined) continue;
-      if (stalled) this.land(marker);
-      else this.fly(marker, marker.flight);
+      if (marker.fading !== undefined) {
+        const k = (seconds - marker.fading.since) / LOOT_FADE_SECONDS;
+        if (stalled || k >= 1) {
+          this.free(marker);
+          freed = true;
+        } else {
+          marker.fading.fade.to(k);
+        }
+      } else if (marker.flight !== undefined) {
+        if (stalled) this.land(marker);
+        else this.fly(marker, marker.flight);
+      }
     }
-    if (this.waitingLiesNearer()) this.drawNearest();
+    if (freed || this.waitingLiesNearer()) this.drawNearest();
     const pulse = this.reducedMotion ? 0 : (1 - Math.cos((seconds / BEAM_PULSE_SECONDS) * Math.PI * 2)) / 2;
     this.beamMaterial.opacity = BEAM_OPACITY * (1 - BEAM_PULSE_DEPTH * pulse);
   }
@@ -353,7 +381,7 @@ export class LootMarkers {
     for (const marker of this.markers) if (marker.loot !== undefined && !chosen.has(marker.loot.lootId)) this.free(marker);
     for (const lootId of chosen) {
       if (this.markerOf(lootId) !== undefined) continue;
-      const marker = this.markers.find((candidate) => candidate.loot === undefined) ?? this.grow();
+      const marker = this.markers.find((candidate) => candidate.loot === undefined && candidate.fading === undefined) ?? this.grow();
       if (marker === undefined) return;
       this.draw(marker, this.shown.get(lootId)!);
     }
@@ -390,7 +418,7 @@ export class LootMarkers {
     label.add(plate);
     root.add(toss, glow, beam, label);
     this.root.add(root);
-    return { root, toss, holder, model: undefined, bounds: new THREE.Box3(), glow, beam, label, plate, loot: undefined, flight: undefined };
+    return { root, toss, holder, model: undefined, bounds: new THREE.Box3(), glow, beam, label, plate, loot: undefined, flight: undefined, fading: undefined };
   }
 
   private draw(marker: Marker, loot: ShownLoot): void {
@@ -564,7 +592,10 @@ export class LootMarkers {
     marker.label.position.copy(this.screenUp).multiplyScalar(-(below + LOOT_LABEL_GAP));
   }
 
+  /** Lets the marker go, first ending any fade with every material it drew with put back, so the next drop draws whole. */
   private free(marker: Marker): void {
+    marker.fading?.fade.end(true);
+    marker.fading = undefined;
     this.rest(marker);
     marker.model?.removeFromParent();
     marker.model = undefined;

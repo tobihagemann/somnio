@@ -2,10 +2,12 @@
  * The Three.js world scene.
  */
 import * as THREE from 'three';
+import { drivenOff } from '@/client/clientWorld';
 import type { ClientEntity, ClientWorld } from '@/client/clientWorld';
 import type { AbilityShown, RaiseProgress, SpeechBubbleRequest, TargetMark, WorldRenderSurface } from '@/client/renderSurface';
 import {
   EDGE_TOLERANCE,
+  MONSTER_KINDS,
   clamp,
   closestOnRect,
   closestOnSegment,
@@ -63,6 +65,7 @@ import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movement
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
 import { CRUMBLE_SECONDS, CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, HELD_PROP, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
+import type { MissWordKind } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -75,6 +78,7 @@ import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
 import type { ScatterTuft } from './scatter';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import { EliteAuras } from './eliteAuras';
+import { compileFadeOut, fadeOut } from './fadeOut';
 import { QuestMarkers } from './questMarkers';
 import { BURST_ARC, LootMarkers, THROW_ARC } from './lootMarkers';
 import type { LootThrow } from './lootMarkers';
@@ -156,6 +160,18 @@ interface EntityRenderState {
   /** What the hands hold, and the models hung on their bones for it. */
   held: Held | undefined;
   heldProps: Partial<Record<Hand, THREE.Object3D>>;
+}
+
+/** A body leaving the scene, no entity of it any more, taken out over `seconds` from `startedAt` (`WorldScene.depart`). */
+interface DepartingBody {
+  node: THREE.Object3D;
+  mixer: THREE.AnimationMixer | undefined;
+  startedAt: number;
+  seconds: number;
+  /** Takes it `k` of the way out: 0 as it was, 1 gone. */
+  step(k: number): void;
+  /** Lets go of what its going made, once its node is disposed. */
+  end?(): void;
 }
 
 /** A speech bubble, with what it was asked to show, so every frame can place it again. */
@@ -273,6 +289,9 @@ const FIXTURE_POINT_SHARES = [0.5, 0.65, 0.8, 0.35, 0.2];
 /** Shared zero vector for basis construction; never mutated. */
 const ORIGIN = new THREE.Vector3();
 
+/** How long the body of a nightmare leaving without crumbling takes to fade out. */
+const BODY_FADE_SECONDS = 1.5;
+
 /** The renderer a world scene draws through. */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -320,6 +339,12 @@ function watchPixelRatio(onChange: () => void): void {
     },
     { once: true },
   );
+}
+
+/** Disposes a departing body, then what its going made. */
+function letGo(body: DepartingBody): void {
+  disposeSubtree(body.node);
+  body.end?.();
 }
 
 /**
@@ -405,8 +430,8 @@ export class WorldScene implements WorldRenderSurface {
   /** The clock the wind sways the grass by. */
   private readonly wind = { value: 0 };
   private readonly entityStates = new Map<string, EntityRenderState>();
-  /** The bodies of minions crumbling out of the scene: `from` is the node's height as it began, `depth` how far it sinks. */
-  private crumbling: { node: THREE.Object3D; mixer: THREE.AnimationMixer | undefined; from: number; depth: number; startedAt: number }[] = [];
+  /** The bodies crumbling or fading out of the scene, no entities of it any more (`depart`). */
+  private departing: DepartingBody[] = [];
   private readonly bubbles = new Map<string, SpeechBubble>();
   /** The bubbles as last laid out. */
   private placed: PlacedBubble[] = [];
@@ -578,7 +603,8 @@ export class WorldScene implements WorldRenderSurface {
   /**
    * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
    * it meanwhile compiles every combat effect's program, a drop's, an elite's aura's, and a quest
-   * mark's, which a first use would compile mid-fight.
+   * mark's, which a first use would compile mid-fight. Once the models are cached, it compiles the
+   * programs a fade draws each nightmare's body and each drop's model with, as `fadeOut` clones them.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     await Promise.all([
@@ -588,7 +614,18 @@ export class WorldScene implements WorldRenderSurface {
       renderer === undefined ? undefined : this.auras.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.questMarkers.compile(renderer, this.camera, this.scene),
     ]);
+    if (renderer !== undefined) await this.compileFades(renderer);
     this.refreshResolvedModels();
+  }
+
+  /** Each model on its own meshes: a nightmare's skinned, as its body draws, and a drop's rigid. */
+  private async compileFades(renderer: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
+    const models = [
+      ...[...new Set(Object.values(MONSTER_KINDS).map((kind) => kind.characterModelId))].map((id) => this.assets.character(id)),
+      ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+    ].filter((model) => model !== undefined);
+    await compileFadeOut(renderer, models, this.camera, this.scene);
+    for (const model of models) disposeSubtree(model);
   }
 
   /**
@@ -623,7 +660,10 @@ export class WorldScene implements WorldRenderSurface {
     this.grass.clear();
     this.bending.clear();
     this.entityStates.clear();
-    this.crumbling = [];
+    // Detached before a fade's clones go, since a held swap keeps the outgoing root on screen, and a
+    // disposed material still drawn is acquired again.
+    for (const body of this.departing) letGo(body);
+    this.departing = [];
     this.bubbles.clear();
     this.placed = [];
     this.sensed = [];
@@ -1021,7 +1061,8 @@ export class WorldScene implements WorldRenderSurface {
       state.trait = entity.trait;
       this.rebuildNamePlaque(state, this.isTarget(entity.id));
     }
-    this.auras.show(entity.id, state.jolt, entity.radius, entity.trait);
+    // A state placed new takes the entity's condition without `updateCondition`, so one placed lying is kept from its aura here.
+    if (!drivenOff(entity)) this.auras.show(entity.id, state.jolt, entity.radius, entity.trait);
     this.questMarkers.show(entity.id, state.node, this.questMarkerOf.get(entity.id));
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
     if (!sameHeld(state.held, entity.held)) this.updateHeld(entity.id, entity.held);
@@ -1067,15 +1108,17 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * The plaque takes the condition's tint, and a fallen entity drops and stays down until it stands
-   * again. The server sends the blow that fells a body before its fall, so the body drops as the last
-   * hit on its way to it lands (`CombatEffects.hitsLandIn`), as a nightmare's drops burst out
-   * (`burstIn`), and at once with none on its way or under reduced motion.
+   * again. A nightmare driven off loses its plaque and its aura as it falls. The server sends the
+   * blow that fells a body before its fall, so the body drops as the last hit on its way to it lands
+   * (`CombatEffects.hitsLandIn`), as a nightmare's drops burst out (`burstIn`), and at once with
+   * none on its way or under reduced motion.
    */
   updateCondition(entityId: string, condition: Condition): void {
     const state = this.entityStates.get(entityId);
     if (state === undefined) return;
     state.condition = condition;
     this.rebuildNamePlaque(state, this.isTarget(entityId));
+    if (drivenOff(state)) this.auras.forget(entityId);
     if (condition === 'fallen') {
       const landsIn = this.reducedMotion ? 0 : this.effects.hitsLandIn(entityId);
       if (landsIn > 0) state.fallsAt = this.sceneClock + landsIn;
@@ -1095,8 +1138,8 @@ export class WorldScene implements WorldRenderSurface {
     this.refreshPortraitLayers(entityId, state);
   }
 
-  showBlow(attackerId: string, targetId: string, hit: boolean): void {
-    this.effects.blow(attackerId, targetId, hit);
+  showBlow(attackerId: string, targetId: string, hit: boolean, evaded = false): void {
+    this.effects.blow(attackerId, targetId, hit, evaded ? 'evaded' : 'miss');
   }
 
   showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined, shown?: AbilityShown): void {
@@ -1290,8 +1333,9 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * The entity drawn under a point of the viewport, in normalized device coordinates, other than
-   * the one the camera follows. An entity is picked as a capsule from its feet to its head as drawn,
-   * by the radius its body is drawn with, wider under a finger, and the one nearest the camera wins.
+   * the one the camera follows and a nightmare driven off, which a press passes through. An entity
+   * is picked as a capsule from its feet to its head as drawn, by the radius its body is drawn with,
+   * wider under a finger, and the one nearest the camera wins.
    */
   entityAt(x: number, y: number): string | undefined {
     const ray = this.rayAt(x, y);
@@ -1299,7 +1343,7 @@ export class WorldScene implements WorldRenderSurface {
     let picked: string | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
-      if (id === this.cameraFollowId) continue;
+      if (id === this.cameraFollowId || drivenOff(state)) continue;
       const feet = state.node.position;
       const top = this.headPoint(state);
       const reach = this.coarsePointer ? Math.max(state.radius, COARSE_PICK_METRES) : state.radius;
@@ -1591,13 +1635,35 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * A minion whose boss's fight ended crumbles into grave light where it stands
-   * (`CombatEffects.crumble`) and its body, its plaque taken off, sinks out of sight over
-   * `CRUMBLE_SECONDS`, playing on as it goes, before it is gone. It is no entity of the scene
-   * meanwhile, so nothing picks, marks, or names it. Under reduced motion it is gone at once, and in
-   * a stalled tab on the next tick.
+   * (`CombatEffects.crumble`) and its body sinks out of sight over `CRUMBLE_SECONDS` (`depart`).
    */
   crumbleEntity(entityId: string): void {
     this.effects.crumble(entityId);
+    this.depart(entityId, CRUMBLE_SECONDS, ({ node, headHeight }) => {
+      const from = node.position.y;
+      return { step: (k) => (node.position.y = from - headHeight * k * k) };
+    });
+  }
+
+  /**
+   * A nightmare that leaves without crumbling fades from opaque to clear where it is over
+   * `BODY_FADE_SECONDS` (`depart`). Its fade draws it with clones of its materials, so no other body
+   * of its kind changes.
+   */
+  fadeEntity(entityId: string): void {
+    this.depart(entityId, BODY_FADE_SECONDS, ({ node }) => {
+      const fade = fadeOut(node);
+      return { step: (k) => fade.to(k), end: () => fade.end(false) };
+    });
+  }
+
+  /**
+   * Takes the entity out of the scene and lets its body, its plaque taken off, go over `seconds` as
+   * `departure` has it, playing on as it goes, before it is gone. It is no entity of the scene
+   * meanwhile, so nothing picks, marks, names, or portrays it. Under reduced motion it is gone at
+   * once, and in a stalled tab on the next tick.
+   */
+  private depart(entityId: string, seconds: number, departure: (state: EntityRenderState) => Pick<DepartingBody, 'step' | 'end'>): void {
     const state = this.forgetEntity(entityId);
     if (state === undefined) return;
     if (this.reducedMotion) {
@@ -1605,10 +1671,10 @@ export class WorldScene implements WorldRenderSurface {
       return;
     }
     disposeSubtree(state.namePlaque);
-    this.crumbling.push({ node: state.node, mixer: state.mixer, from: state.node.position.y, depth: state.headHeight, startedAt: this.sceneClock });
+    this.departing.push({ node: state.node, mixer: state.mixer, startedAt: this.sceneClock, seconds, ...departure(state) });
   }
 
-  /** Drops what the scene holds of an entity but its body, and returns its state for the caller to dispose of or sink. */
+  /** Drops what the scene holds of an entity but its body, and returns its state for the caller to dispose of, sink, or fade. */
   private forgetEntity(entityId: string): EntityRenderState | undefined {
     const state = this.entityStates.get(entityId);
     this.auras.forget(entityId);
@@ -1617,18 +1683,19 @@ export class WorldScene implements WorldRenderSurface {
     this.bubbles.delete(entityId);
     this.effects.forget(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
+    if (state !== undefined) for (const slot of PORTRAIT_SLOTS) setPortraitLayer(state.modelHolder, PORTRAIT_LAYERS[slot], false);
     return state;
   }
 
-  /** Sinks each crumbling body a step further, easing in, and lets it go once under or once the tab stalled. */
-  private sinkCrumbling(dt: number, stalled: boolean): void {
-    this.crumbling = this.crumbling.filter((body) => {
-      const k = (this.sceneClock - body.startedAt) / CRUMBLE_SECONDS;
+  /** Takes each departing body a step further out, and lets it go once out or once the tab stalled. */
+  private stepDeparting(dt: number, stalled: boolean): void {
+    this.departing = this.departing.filter((body) => {
+      const k = (this.sceneClock - body.startedAt) / body.seconds;
       if (stalled || k >= 1) {
-        disposeSubtree(body.node);
+        letGo(body);
         return false;
       }
-      body.node.position.y = body.from - body.depth * k * k;
+      body.step(k);
       body.mixer?.update(dt);
       return true;
     });
@@ -1695,7 +1762,7 @@ export class WorldScene implements WorldRenderSurface {
     }
     // After the clips move on, so a drop leaving a hand leaves it where this frame draws the hand.
     this.loot.tick(this.sceneClock, stalled);
-    this.sinkCrumbling(dt, stalled);
+    this.stepDeparting(dt, stalled);
     this.auras.tick(this.sceneClock);
     this.questMarkers.place((carrierId) => this.entityStates.get(carrierId)?.headHeight ?? this.fixtureTop(carrierId));
     this.effects.tick(dt);
@@ -1805,7 +1872,10 @@ export class WorldScene implements WorldRenderSurface {
     return id === this.cameraFollowId ? PLAQUE_ORDER.own : PLAQUE_ORDER.rest;
   }
 
-  /** Players and NPCs get a plaque, and a nightmare one only while it is not hale or is the target; the local player's text is bold. */
+  /**
+   * Players and NPCs get a plaque, and a nightmare one only while it is not hale or is the target,
+   * and never once driven off; the local player's text is bold.
+   */
   private rebuildNamePlaque(state: EntityRenderState, targeted: boolean): void {
     disposeSubtree(state.namePlaque);
     state.namePlaque = undefined;
@@ -2481,9 +2551,9 @@ function namePlaqueQuad(name: string, background: string, bold: boolean, ink: st
   return { container, plate };
 }
 
-/** The word over an entity a blow missed, facing the camera with its foot at its origin. */
-function missWord(): OverlayPlate {
-  const { plate, size } = overlayPlate(renderOutlinedText(t('miss'), MISS_WORD));
+/** The word over an entity a blow missed, or that evaded it, facing the camera with its foot at its origin. */
+function missWord(word: MissWordKind): OverlayPlate {
+  const { plate, size } = overlayPlate(renderOutlinedText(word === 'evaded' ? t('evaded') : t('miss'), MISS_WORD));
   plate.quaternion.copy(OVERLAY_ORIENTATION);
   plate.geometry.translate(0, size.y / 2, 0);
   return plate;

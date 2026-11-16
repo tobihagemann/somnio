@@ -22,7 +22,7 @@ interface AbilityChannel {
   seconds?: number;
 }
 
-/** What an `ability` frame says beyond who used what on whom: a channel's phase, or harm its nightmare evaded. */
+/** What an `ability` frame says beyond who used what on whom: a channel's phase, or that its nightmare evaded it. */
 export type AbilityShown = AbilityChannel | { evaded: true };
 
 /** How the target is marked: in gold while slot 1 acts on it, and as a reticle while the player's facing is locked on it. */
@@ -77,12 +77,15 @@ export interface WorldRenderSurface {
   updateCondition(entityId: string, condition: Condition): void;
   /** What a dreamer's hands hold, drawn in them. */
   updateHeld(entityId: string, held: Held | undefined): void;
-  /** One swing or strike: the attacker swings, and as the swing lands the target flinches or is missed. */
-  showBlow(attackerId: string, targetId: string, hit: boolean): void;
+  /**
+   * One swing or strike: the attacker swings, and as the swing lands the target flinches or is
+   * missed, or, with `evaded`, is evaded by the nightmare struck.
+   */
+  showBlow(attackerId: string, targetId: string, hit: boolean, evaded?: boolean): void;
   /**
    * An ability used: its user plays it, and it shows where it lands. `targetId` is whom it landed
    * on, `undefined` for its user or an ability that lands round them. A channelled one comes once
-   * per phase it reaches, with `shown.phase`, and harm its nightmare evaded comes with `evaded`.
+   * per phase it reaches, with `shown.phase`, and one its nightmare evaded comes with `evaded`.
    */
   showAbility(entityId: string, abilityId: AbilityId, targetId: string | undefined, shown?: AbilityShown): void;
   /** Every effect an entity holds, with the seconds each has left; told only of the player's own and their target's. */
@@ -118,6 +121,8 @@ export interface WorldRenderSurface {
   removeEntity(entityId: string): void;
   /** A minion whose boss's fight ended: it crumbles into grave light where it stands, sinking out of sight, and is then removed. */
   crumbleEntity(entityId: string): void;
+  /** A nightmare whose `leave` carries no `crumbled`, its lie over, out of view, or gone from the space standing: it fades out where it is, and is then removed. */
+  fadeEntity(entityId: string): void;
   showSplash(): void;
 }
 
@@ -149,5 +154,6 @@ export const noopRenderSurface: WorldRenderSurface = {
   showSpeechBubble: () => false,
   removeEntity: () => {},
   crumbleEntity: () => {},
+  fadeEntity: () => {},
   showSplash: () => {},
 };

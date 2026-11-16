@@ -118,34 +118,38 @@ describe('buildWorld', () => {
     expect(doorsOf(sectors, 'Town')).toEqual([]);
   });
 
-  it("reports a door whose arrival point lies within a nightmare's reach of a monster spawn's area once, and keeps it live", () => {
-    // The room's door puts an arriving body at (5, 9.1); a nightmare's reach is 0.85 m.
+  it("reports a door whose arrival point lies within a nightmare's notice of a monster spawn's area once, and keeps it live", () => {
+    // The room's door puts an arriving body at (5, 9.1); a Ghost notices within 3.84 m.
     const spawn = (id: string, depth: number): MonsterSpawn => ({ id, kind: 'ghost', x: 4, z: 7.5, width: 2, depth, maxAlive: 1, eliteChance: 0 });
     const spawned = (...monsterSpawns: MonsterSpawn[]): Sector[] => [town(), room({ monsterSpawns })];
-    const inReach = {
+    const inNotice = {
       sector: 'Room',
       record: 'door',
       id: 'exit',
-      message: 'the arrival point (5.00, 9.10) lies within reach of monster spawn "spawn-1" in Room',
+      message: 'the arrival point (5.00, 9.10) lies within notice of monster spawn "spawn-1" in Room',
     };
-    expect(buildWorld(spawned(spawn('spawn-1', 1)), TEST_REGISTRY).issues).toEqual([inReach]);
+    expect(buildWorld(spawned(spawn('spawn-1', 1)), TEST_REGISTRY).issues).toEqual([inNotice]);
     expect(doorsOf(spawned(spawn('spawn-1', 1)), 'Room')).toEqual(['exit']);
-    expect(buildWorld(spawned(spawn('spawn-1', 1), spawn('spawn-2', 1)), TEST_REGISTRY).issues).toEqual([inReach]);
-    expect(buildWorld(spawned(spawn('spawn-1', 0.7)), TEST_REGISTRY).issues).toEqual([]);
-    // A spawn in another sector of the space reaches the door too, measured in the space's coordinates:
+    expect(buildWorld(spawned(spawn('spawn-1', 1), spawn('spawn-2', 1)), TEST_REGISTRY).issues).toEqual([inNotice]);
+    // 0.9 m from the area is beyond a strike's 0.85 m reach, and within notice all the same.
+    expect(buildWorld(spawned(spawn('spawn-1', 0.7)), TEST_REGISTRY).issues).toEqual([inNotice]);
+    // A spawn in another sector of the space notices the door too, measured in the space's coordinates:
     // the hall's door puts an arriving body 0.28 m north of Field.
     const field = outdoorSector('Field', { x: 100, z: -30 }, { monsterSpawns: [{ ...spawn('spawn-1', 1), x: 8.5, z: 0, width: 1 }] });
     const hallTown = town({ origin: { x: 100, z: -50 }, placements: [{ ...HALL, z: 17.5 }] });
     expect(buildWorld([hallTown, field, room()], TEST_REGISTRY).issues).toEqual([
-      { sector: 'Town', record: 'door', id: 'to-room', message: 'the arrival point (109.10, -30.28) lies within reach of monster spawn "spawn-1" in Field' },
+      { sector: 'Town', record: 'door', id: 'to-room', message: 'the arrival point (109.10, -30.28) lies within notice of monster spawn "spawn-1" in Field' },
     ]);
-    // A nightmare's centre may stand EDGE_TOLERANCE past its area on either axis, so the reach is
+    // A nightmare's centre may stand EDGE_TOLERANCE past its area on either axis, so the notice is
     // measured from the widened area: along a side and diagonally off a corner, just within it and just beyond.
     const issueCount = (monsterSpawn: MonsterSpawn): number => buildWorld(spawned(monsterSpawn), TEST_REGISTRY).issues.length;
-    const southEdge = (z: number): MonsterSpawn => ({ ...spawn('spawn-1', z - 7.5), x: 4, z: 7.5 });
-    expect([issueCount(southEdge(9.1 - 0.8505)), issueCount(southEdge(9.1 - 0.8515))]).toEqual([1, 0]);
-    const cornerOff = (away: number): MonsterSpawn => ({ ...spawn('spawn-1', 9.1 - away - 6), x: 2, z: 6, width: 5 - away - 2 });
-    expect([issueCount(cornerOff(0.6018)), issueCount(cornerOff(0.6023))]).toEqual([1, 0]);
+    const southEdge = (z: number): MonsterSpawn => ({ ...spawn('spawn-1', z - 1), z: 1 });
+    expect([issueCount(southEdge(9.1 - 3.8405)), issueCount(southEdge(9.1 - 3.8415))]).toEqual([1, 0]);
+    const cornerOff = (away: number): MonsterSpawn => ({ ...spawn('spawn-1', 9.1 - away), x: 0, z: 0, width: 5 - away });
+    expect([issueCount(cornerOff(2.716)), issueCount(cornerOff(2.7166))]).toEqual([1, 0]);
+    // A boss notices only inside its area, so an arrival outside it counts only within a strike's reach.
+    const boss = (depth: number): MonsterSpawn => ({ ...spawn('spawn-1', depth), kind: 'necromancer' });
+    expect([issueCount(boss(1)), issueCount(boss(0.7))]).toEqual([1, 0]);
     // An inert door is reported for what makes it inert, and for nothing more.
     expect(buildWorld([room({ monsterSpawns: [spawn('spawn-1', 1)] })], TEST_REGISTRY).issues).toEqual([
       { sector: 'Room', record: 'door', id: 'exit', message: 'target door "to-room" in Town does not exist' },

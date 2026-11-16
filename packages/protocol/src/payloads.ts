@@ -560,18 +560,19 @@ export interface EffectsMessage {
   effects: HeldEffectMessage[];
 }
 
-/** One swing or strike, landed or not. */
+/** One swing or strike, landed or not. `evaded` is set on a swing its nightmare evaded, landing nothing. */
 export interface BlowMessage {
   attackerId: string;
   targetId: string;
   hit: boolean;
+  evaded?: boolean;
 }
 
 /**
  * An entity used an ability. `targetId` is whom it landed on, absent when that is the user or the
  * ability lands round them. A channelled ability carries its `phase`, and an instant one none.
  * `seconds` is the channel's length on `start` and the seconds left on `channel`, and is carried
- * with no other phase. `evaded` is set when the nightmare it flies at evades it, landing nothing.
+ * with no other phase. `evaded` is set on harm or an effect its nightmare evaded, landing nothing.
  */
 export interface AbilityMessage {
   entityId: string;
@@ -1268,6 +1269,7 @@ export function decodeBlowMessage(container: Record<string, unknown>, path: stri
     attackerId: requireEntityId(container, 'attackerId', path),
     targetId: requireEntityId(container, 'targetId', path),
     hit: requireBool(container, 'hit', path),
+    ...(isAbsent(container, 'evaded') ? {} : { evaded: requireBool(container, 'evaded', path) }),
   };
 }
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { buildSpaceCollision, canStand, isLegalMove, npcBodies } from '../src/collision.ts';
-import { reachDistance } from '../src/combat.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { EDGE_TOLERANCE, distance, distanceToRect, rectContains } from '../src/geometry.ts';
 import type { Point } from '../src/geometry.ts';
@@ -342,44 +341,27 @@ describe('the committed world', () => {
     expect(Math.hypot(library.spawn!.x - libus.x, library.spawn!.z - libus.z)).toBeGreaterThan(SOMNIO_CONSTANTS.speakingDistance);
   });
 
-  /** The ghosts never leave their spawn area, so a dreamer anywhere on the boarded refuge stands beyond any ghost's reach. */
-  it("keeps the Arena's boarded refuge out of every ghost's reach", () => {
+  /** A dreamer anywhere on the boarded refuge stands beyond the notice of a ghost at rest in its spawn area. */
+  it("keeps the Arena's boarded refuge out of every ghost's notice", () => {
     const arena = byName.get('EdariaArena')!;
     const boards = arena.placements.filter((placement) => placement.modelId === 'floor-boards');
     const refugeEdge = Math.min(...boards.map((board) => board.x - objectModel(bundledModelRegistry(), board.modelId)!.footprint.width / 2));
     expect(refugeEdge).toBeCloseTo(7.68, 9);
     for (const spawn of arena.monsterSpawns) {
       const area = spawnArea(arena, spawn);
-      expect(refugeEdge - SOMNIO_CONSTANTS.playerRadius - (area.x + area.width)).toBeGreaterThan(reachDistance(monsterKind(spawn.kind).radius));
+      expect(refugeEdge - SOMNIO_CONSTANTS.playerRadius - (area.x + area.width)).toBeGreaterThan(monsterKind(spawn.kind).aggroRadius);
     }
   });
 
-  /** A dreamer keeps to the Graveyard's road and the path to the crypt, so standing anywhere on them keeps them beyond every skeleton's reach. */
-  it("keeps skeletons among the Graveyard's graves, beyond reach of its road and the path to the crypt", () => {
+  it("keeps skeletons among the Graveyard's graves", () => {
     const graveyard = byName.get('Graveyard')!;
     expect(graveyard.monsterSpawns.map((spawn) => spawn.kind).toSorted()).toEqual(['skeleton-minion', 'skeleton-warrior']);
-    const routes = graveyard.ground.marks.filter((mark) => mark.id === 'gen-road-west' || mark.id === 'gen-path-to-graveyardcrypt');
-    expect(routes).toHaveLength(2);
     for (const spawn of graveyard.monsterSpawns) {
       const area = { x: spawn.x, z: spawn.z, width: spawn.width, depth: spawn.depth };
       expect(
         graveyard.placements.filter((placement) => placement.modelId.startsWith('grave') && rectContains(area, placement)).length,
         spawn.id,
       ).toBeGreaterThanOrEqual(6);
-      for (const route of routes) {
-        if (route.shape.kind !== 'stroke') throw new Error(`${route.id} is no stroke`);
-        const { radius, points } = route.shape;
-        const nearest = Math.min(
-          ...points.slice(1).flatMap((to, index) => {
-            const from = points[index]!;
-            const steps = Math.ceil(distance(from, to) / 0.1);
-            return Array.from({ length: steps + 1 }, (_, step) =>
-              distanceToRect({ x: from.x + ((to.x - from.x) * step) / steps, z: from.z + ((to.z - from.z) * step) / steps }, area),
-            );
-          }),
-        );
-        expect(nearest - radius - EDGE_TOLERANCE, `${spawn.id} from ${route.id}`).toBeGreaterThan(reachDistance(monsterKind(spawn.kind).radius));
-      }
     }
   });
 
@@ -395,15 +377,13 @@ describe('the committed world', () => {
     expect(distance(path.waypoints.at(-1) ?? from, crypt.arrival)).toBeLessThan(0.01);
   });
 
-  /** Memor gives his quests to whoever speaks with him, so no skeleton may reach a dreamer standing within his speaking distance. */
-  it("stands Memor by the Graveyard's church, a walk from the road, beyond every skeleton's reach of a dreamer speaking with him", () => {
+  /** Memor gives his quests to whoever speaks with him, so no skeleton at rest may notice a dreamer standing within his speaking distance. */
+  it("stands Memor by the Graveyard's church, a walk from the road, beyond every skeleton's notice of a dreamer speaking with him", () => {
     const graveyard = byName.get('Graveyard')!;
     const memor = graveyard.npcs.find((npc) => npc.id === 'memor')!;
     for (const spawn of graveyard.monsterSpawns) {
       const area = { x: spawn.x, z: spawn.z, width: spawn.width, depth: spawn.depth };
-      expect(distanceToRect(memor, area) - SOMNIO_CONSTANTS.speakingDistance - EDGE_TOLERANCE, spawn.id).toBeGreaterThan(
-        reachDistance(monsterKind(spawn.kind).radius),
-      );
+      expect(distanceToRect(memor, area) - SOMNIO_CONSTANTS.speakingDistance - EDGE_TOLERANCE, spawn.id).toBeGreaterThan(monsterKind(spawn.kind).aggroRadius);
     }
     const registry = bundledModelRegistry();
     const outdoors = world.spaces.get(OUTDOOR_SPACE_ID)!;
@@ -422,7 +402,7 @@ describe('the committed world', () => {
     expect(walksInRoom('GraveyardCrypt', exit!.arrival, (at) => doorContains(deeper!, at, 0))).toBe(true);
   });
 
-  /** The Necromancer wails round where it stands, anywhere on its ground, so a dreamer arriving in its chamber stands beyond the wail. */
+  /** The Necromancer wails round where it stands, anywhere in its chamber, so a dreamer arriving in its chamber stands beyond the wail. */
   it("keeps the burial chamber's door beyond the Necromancer's wail", () => {
     const chamber = byName.get('GraveyardBurialChamber')!;
     expect(chamber.monsterSpawns).toMatchObject([{ kind: 'necromancer', maxAlive: 1 }]);

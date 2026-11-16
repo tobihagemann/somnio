@@ -1456,6 +1456,7 @@ describe('winded and fallen', () => {
 
     rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'monster:1', targetId: 'peer', hit: true } });
     rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: false } });
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'peer', targetId: 'monster:1', hit: false, evaded: true } });
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } });
     rig.controller.dispatch(raisingFrame('peer', ['self'], 'holding', 0.25, 4.5));
     rig.controller.dispatch({
@@ -1466,8 +1467,9 @@ describe('winded and fallen', () => {
     rig.controller.dispatch({ tag: 'mend', payload: { targetId: 'peer' } });
 
     expect(rig.shown).toEqual([
-      ['showBlow', 'monster:1', 'peer', true],
-      ['showBlow', 'peer', 'monster:1', false],
+      ['showBlow', 'monster:1', 'peer', true, false],
+      ['showBlow', 'peer', 'monster:1', false, false],
+      ['showBlow', 'peer', 'monster:1', false, true],
       ['updateCondition', 'peer', 'fallen'],
       ['showRaising', 'peer', { progress: 0.25, seconds: 4.5 }],
       ['showRaising', 'peer', { progress: 0.25, seconds: 6, pausedSeconds: [1.5] }],
@@ -2355,6 +2357,15 @@ describe('the target', () => {
     expect(door.selections.at(-1)).toBeUndefined();
   });
 
+  it('is let go as the nightmare is driven off, which tells the server', () => {
+    const rig = selecting();
+    rig.session.selectEntity(GHOST);
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
+    expect(rig.session.target).toBeUndefined();
+    expect(targets(rig)).toEqual([{ targetId: GHOST }, {}]);
+    expect(rig.selections.at(-1)).toBeUndefined();
+  });
+
   it('stays through a fall, while a press selects nothing', () => {
     const rig = selecting();
     rig.session.selectEntity(GHOST);
@@ -2473,10 +2484,6 @@ describe('the gaze lock', () => {
     expect(marks().at(-1)).toEqual([GHOST, ON]);
     rig.session.selectEntity('bren');
     expect(marks().at(-1)).toEqual(['bren', OFF]);
-    rig.session.pressEntity(GHOST);
-    rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } });
-    rig.session.runTick(0);
-    expect(marks().at(-1)).toEqual([GHOST, OFF]);
   });
 
   it('marks slot 1 by colour and the lock by the ticks, apart from each other', () => {

@@ -185,13 +185,13 @@
   "kind": "outdoor",
   "monsterSpawns": [
     {
-      "depth": 5.9,
+      "depth": 4,
       "id": "skeletons",
       "kind": "skeleton-minion",
       "maxAlive": 4,
       "width": 18,
       "x": 11.6,
-      "z": 23.2
+      "z": 25.1
     },
     {
       "depth": 6.8,
@@ -199,8 +199,8 @@
       "kind": "skeleton-warrior",
       "maxAlive": 2,
       "width": 5.2,
-      "x": 24.6,
-      "z": 10.4
+      "x": 26.5,
+      "z": 9.9
     }
   ],
   "npcs": [

@@ -9,7 +9,7 @@ import { heading, headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
 import { objectModel } from './modelRegistry.ts';
 import type { ModelRegistry } from './modelRegistry.ts';
-import { monsterKind } from './monsterKinds.ts';
+import { bossMoves, monsterKind } from './monsterKinds.ts';
 import { sectorPointInSpace, sectorRect, spawnArea } from './sector.ts';
 import type { Sector } from './sector.ts';
 import { hourOfDay, sunIsUp } from './worldClock.ts';
@@ -45,7 +45,7 @@ export interface World {
   /**
    * What loading reported. A door reported for not being half of a sound pair is inert, and the
    * sectors in `spaces` do not carry it. A door reported because its arrival point lies within a
-   * nightmare's reach stays live.
+   * nightmare's notice stays live.
    */
   issues: WorldIssue[];
 }
@@ -64,7 +64,8 @@ export class WorldError extends Error {
  * outdoor space, and a `spawn` a body cannot stand on. A door is live only as half of a sound
  * pair: both doors resolve, point at each other, and have an arrival point a body can stand on.
  * Any other door is reported and dropped from its sector. A live door whose arrival point lies
- * within a nightmare's reach of a monster spawn's area in its space is reported and kept. The
+ * within a nightmare's notice of a monster spawn's area in its space is reported and kept: its
+ * aggro radius, or a boss's reach, since a boss notices only inside its area. The
  * collision issues of each space are reported too, and so is every pair of outdoor sectors that
  * stand too close to blend their grounds evenly without touching. Standing means clear of
  * colliders, blockers, ledges, and the space's NPCs.
@@ -143,17 +144,19 @@ export function buildWorld(sectors: readonly Sector[], registry: ModelRegistry):
         const area = spawnArea(sector, spawn);
         const width = area.width + 2 * EDGE_TOLERANCE;
         const depth = area.depth + 2 * EDGE_TOLERANCE;
-        return { sector: sector.name, spawn, standing: { x: area.x - EDGE_TOLERANCE, z: area.z - EDGE_TOLERANCE, width, depth } };
+        const kind = monsterKind(spawn.kind);
+        const notice = bossMoves(spawn.kind) === undefined ? kind.aggroRadius : reachDistance(kind.radius);
+        return { sector: sector.name, spawn, notice, standing: { x: area.x - EDGE_TOLERANCE, z: area.z - EDGE_TOLERANCE, width, depth } };
       }),
     );
     for (const sector of space.sectors) {
       for (const door of sector.doors) {
         const arrival = arrivals.get(door);
         if (arrival === undefined || inert.has(door)) continue;
-        // One issue a door, however many spawns reach it, so the issues grow with the doors and not with doors times spawns.
-        const near = grounds.find(({ spawn, standing }) => distanceToRect(arrival, standing) <= reachDistance(monsterKind(spawn.kind).radius));
+        // One issue a door, however many spawns notice it, so the issues grow with the doors and not with doors times spawns.
+        const near = grounds.find(({ notice, standing }) => distanceToRect(arrival, standing) <= notice);
         if (near === undefined) continue;
-        const message = `the arrival point (${arrival.x.toFixed(2)}, ${arrival.z.toFixed(2)}) lies within reach of monster spawn "${near.spawn.id}" in ${near.sector}`;
+        const message = `the arrival point (${arrival.x.toFixed(2)}, ${arrival.z.toFixed(2)}) lies within notice of monster spawn "${near.spawn.id}" in ${near.sector}`;
         issues.push({ sector: sector.name, record: 'door', id: door.id, message });
       }
     }

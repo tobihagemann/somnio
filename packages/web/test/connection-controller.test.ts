@@ -1155,13 +1155,14 @@ describe('a minion a boss calls up', () => {
     ]);
   });
 
-  it('crumbles once its boss gives its fight up, where one that leaves otherwise is removed', () => {
+  it('crumbles once its boss gives its fight up, where any other nightmare that leaves fades, fallen or standing, and any other body is removed', () => {
     const shown: string[][] = [];
     const rig = makeRig({
       renderSurface: {
         ...noopRenderSurface,
         removeEntity: (entityId) => shown.push(['removed', entityId]),
         crumbleEntity: (entityId) => shown.push(['crumbled', entityId]),
+        fadeEntity: (entityId) => shown.push(['faded', entityId]),
       },
     });
     rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
@@ -1170,12 +1171,18 @@ describe('a minion a boss calls up', () => {
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver(enterSpaceFrame());
     rig.deliver(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Skeleton' }));
-    rig.deliver(entityFrame({ id: 'monster:3', kind: 'monster', name: 'Skeleton' }));
+    rig.deliver(entityFrame({ id: 'monster:3', kind: 'monster', name: 'Skeleton', condition: 'fallen' }));
+    rig.deliver(entityFrame({ id: 'monster:4', kind: 'monster', name: 'Skeleton' }));
+    rig.deliver(entityFrame({ id: 'npc:Square/wirt', kind: 'npc', name: 'Wirt' }));
     rig.deliver({ tag: 'leave', payload: { entityId: 'monster:2', leftGame: false, crumbled: true } });
     rig.deliver({ tag: 'leave', payload: { entityId: 'monster:3', leftGame: false } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'monster:4', leftGame: false } });
+    rig.deliver({ tag: 'leave', payload: { entityId: 'npc:Square/wirt', leftGame: false } });
     expect(shown).toEqual([
       ['crumbled', 'monster:2'],
-      ['removed', 'monster:3'],
+      ['faded', 'monster:3'],
+      ['faded', 'monster:4'],
+      ['removed', 'npc:Square/wirt'],
     ]);
     expect(rig.controller.entities.has('monster:2')).toBe(false);
   });

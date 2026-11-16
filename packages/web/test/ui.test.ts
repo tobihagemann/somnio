@@ -10,7 +10,7 @@ import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import type { RegistrationForm } from '@/client';
-import { FINGER_HOLD_MS, MAX_TICK_ELAPSED_MS, TAP_SLOP_PX } from '@/client';
+import { FINGER_HOLD_MS, HOLD_TO_STEER_MS, MAX_TICK_ELAPSED_MS, TAP_SLOP_PX } from '@/client';
 import {
   MOVE_ALLOWANCE_SECONDS,
   NO_QUESTS,
@@ -2742,6 +2742,34 @@ describe('the play field and the panels through the shell', () => {
     expect([p.shell.session.predictor.walk?.kind, p.shell.hud.isWindowOpen('players')]).toEqual(['path', false]);
     escape();
     expect(p.shell.session.predictor.walk).toBeUndefined();
+  });
+
+  it('clears the target on Escape while a press held on the ground steers, and leaves the steer be', () => {
+    const p = playing();
+    const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    p.shell.session.selectEntity('bren');
+    p.shell.session.pressGround({ x: 10, z: 4 }, 0);
+    for (let ms = 0; ms <= HOLD_TO_STEER_MS + 100; ms += 50) p.shell.session.runTick(ms);
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'steer' });
+
+    escape();
+    expect([p.shell.session.predictor.walk?.kind, p.shell.session.target]).toEqual(['steer', undefined]);
+  });
+
+  it('stops the walk on Escape while a finger rests on a body, unlike a press held on the ground, then clears the target, then opens the menu', () => {
+    const p = playing();
+    const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    p.deliver(entityFrame({ id: 'wren', name: 'Wren', x: 16, z: 10 }));
+    p.shell.session.pressEntity('wren');
+    p.shell.session.holdEntity('wren', 0);
+    expect([p.shell.session.predictor.walk?.kind, p.shell.session.target]).toEqual(['path', 'wren']);
+
+    escape();
+    expect([p.shell.session.predictor.walk, p.shell.session.target]).toEqual([undefined, 'wren']);
+    escape();
+    expect([p.shell.session.target, p.shell.controller.presentedOverlay]).toEqual([undefined, undefined]);
+    escape();
+    expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
   });
 
   it('closes an open chat on Escape before it stops a walk, though its field has lost the keyboard', () => {

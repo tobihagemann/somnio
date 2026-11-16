@@ -102,6 +102,15 @@
     },
     "tag": "blow"
   },
+  "blow-evaded": {
+    "payload": {
+      "attackerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
+      "evaded": true,
+      "hit": false,
+      "targetId": "monster:7"
+    },
+    "tag": "blow"
+  },
   "blow-miss": {
     "payload": {
       "attackerId": "monster:7",
@@ -459,7 +468,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 23
+      "protocolVersion": 24
     },
     "tag": "hello"
   },

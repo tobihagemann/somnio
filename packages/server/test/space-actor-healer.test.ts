@@ -489,9 +489,9 @@ describe('Radiance', () => {
 });
 
 describe("a Healer's threat", () => {
-  /** A Ghost at `GHOST_AT`, keeping to ground reaching 6 m south and east of it. */
+  /** A Ghost at `GHOST_AT`, at the corner of a spawn area reaching 6 m south and east of it. */
   const withGround = () => arena({ monsterSpawns: [makeMonsterSpawn(GHOST_AT, 6)] });
-  /** In the Ghost's reach and its ground, and nearer to it than `BESIDE_GHOST`. */
+  /** In the Ghost's reach, and nearer to it than `BESIDE_GHOST`. */
   const NEARER: Point = { x: 10.6, z: 10.2 };
   const struckBy = (messages: readonly SomnioMessage[]) => payloads(messages, 'blow').flatMap((blow) => (blow.attackerId === GHOST ? [blow.targetId] : []));
 

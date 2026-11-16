@@ -123,7 +123,7 @@ describe('reader validation', () => {
     ['a door on a placement the sector lacks', '"placement": "door-1"', '"placement": "door-9"', /no placement "door-9"/],
     ['an unknown monster kind', '"kind": "ghost"', '"kind": "drache"', /monsterSpawns\[0\]\.kind/],
     ['a spawn that keeps nothing alive', '"maxAlive": 3', '"maxAlive": 0', /maxAlive: expected 1 to 16/],
-    ['a spawn area without extent', '"width": 5.76', '"width": 0', /expected a positive length/],
+    ['a spawn area without extent', '"width": 2.84', '"width": 0', /expected a positive length/],
     ['an elite chance above 1', '"maxAlive": 3', '"maxAlive": 3, "eliteChance": 1.5', /monsterSpawns\[0\]\.eliteChance: expected a number from 0 to 1/],
     ['an elite chance below 0', '"maxAlive": 3', '"maxAlive": 3, "eliteChance": -0.1', /monsterSpawns\[0\]\.eliteChance: expected a number from 0 to 1/],
   ])('rejects %s', (_name, from, to, message) => {

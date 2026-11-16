@@ -396,7 +396,9 @@ export class GameplaySession {
       this.interpolation.delete(entityId);
       // The server lets go of a target leaving view as it leaves, so it is let go here on the same frame,
       // not on the next tick, by which time it may be back in view though no longer targeted there.
-      if (entityId === this.target && !this.controller.entities.has(entityId)) this.select(undefined);
+      // A nightmare driven off lies a while before it leaves, nothing to act on, so it is let go as it falls.
+      const entity = this.controller.entities.get(entityId);
+      if (entityId === this.target && (entity === undefined || drivenOff(entity))) this.select(undefined);
       // A fallen dreamer who leaves takes their raise along without a `raising` frame, so the player holds it no more.
       this.heldRaises.delete(entityId);
       if (!this.controller.entities.has(entityId)) {
@@ -858,6 +860,11 @@ export class GameplaySession {
     if (!this.destinationMarked) return;
     this.destinationMarked = false;
     this.controller.renderSurface.liftPressMarker();
+  }
+
+  /** Whether a press on the ground is held, steering or about to, rather than a finger resting on a body. */
+  get groundPressHeld(): boolean {
+    return this.hold !== undefined && this.hold.entityId === undefined;
   }
 
   /**
@@ -1406,7 +1413,7 @@ export class GameplaySession {
       case 'blow':
         // The server chooses the moment of a swing, so its slow starts when the swing is shown.
         if (message.payload.attackerId === this.controller.selfId) this.slowedUntilMs = this.now() + COMBAT.swingSlow.seconds * 1000;
-        this.controller.renderSurface.showBlow(message.payload.attackerId, message.payload.targetId, message.payload.hit);
+        this.controller.renderSurface.showBlow(message.payload.attackerId, message.payload.targetId, message.payload.hit, message.payload.evaded === true);
         return;
       case 'raising':
         this.handleRaising(message.payload);

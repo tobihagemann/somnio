@@ -28,6 +28,8 @@ import {
   GLOBAL_COOLDOWN_SECONDS,
   MAX_SHARED_DROPS,
   MOVE_ALLOWANCE_SECONDS,
+  NIGHTMARE_AWARENESS,
+  NIGHTMARE_WANDER,
   OUTDOOR_SPACE_ID,
   POOL_FIELDS,
   PRACTICE,
@@ -164,6 +166,7 @@ import {
 import type {
   Ability,
   AbilityBody,
+  AbilityDeed,
   AbilityId,
   Body,
   BossMoves,
@@ -335,23 +338,43 @@ interface MonsterRuntime {
   healthMax: number;
   condition: Condition;
   strikeReadyAt: number;
-  /** The spawn keeping it alive, which its end frees a slot of; none for a minion a boss called up. */
+  /** The spawn keeping it alive, a slot of which its fall, or its leaving walled off, frees; none for a minion a boss called up. */
   timer: MonsterSpawnTimer | undefined;
   /** The boss that called it up, whose fight it lasts no longer than. */
   summoner: MonsterRuntime | undefined;
   /** Set on a boss: its moves and how they stand. */
   boss: Boss | undefined;
-  /** Where it spawned, which it walks back to when no one is left to chase. */
+  /**
+   * Its spawn's area in the space, its summoner's for a minion: where it spawns, wanders, and goes
+   * back to. A confined nightmare (`confined`) chases only dreamers standing inside, and never leaves it.
+   */
+  area: Rect;
+  phase: MonsterPhase;
+  /** When it may next pick a point of its area to wander to. */
+  wanderAt: number;
+  /**
+   * Where it last stood at rest or wandering before it set off, to fight or to follow: where a return
+   * walks it back to. Always inside its area, since it rests and wanders only there, and a return
+   * held up outside the area by a body on it takes a free point of the area near it instead (`rehome`).
+   */
   home: Point;
-  /** Its spawn's area in the space, its summoner's for a minion: it chases only dreamers standing inside, and never leaves it. */
-  ground: Rect;
   /** The side it last turned to round something in its way. */
   steerSide: 1 | -1;
-  /** The closest it has come to `home` on the current walk back, and when. */
+  /**
+   * The closest it has come to `home` on the current return, and when. A new home (`rehome`) sets
+   * both afresh, and once `homeBestAt` is `HOME_PROGRESS_SECONDS` past, `walkHome` tries only the
+   * straight step.
+   */
   homeBest: number;
   homeBestAt: number;
-  /** Set once it is driven off: it lingers until this moment and does nothing. */
-  fadingUntil: number | undefined;
+  /**
+   * When it last came `HOME_PROGRESS_METRES` nearer home on the current return, or set out on it:
+   * what `STUCK_RETURN_SECONDS` counts from. A new home leaves it be, so no number of them puts off
+   * the leaving of one walled off from home.
+   */
+  homeNearedAt: number;
+  /** Set once it is driven off: it lies until this moment and does nothing. */
+  lyingUntil: number | undefined;
   effects: HeldEffect[];
   /** The threat each dreamer on its table has raised against it, by their entity id. */
   threat: Map<string, number>;
@@ -359,13 +382,32 @@ interface MonsterRuntime {
   answerDue: Set<string>;
 }
 
+/**
+ * What a nightmare is about. At `rest` it stands, noticing. On a `wander` it walks at half speed to
+ * a point of its area, noticing. On a `follow` it is aware of a leader that set off, still until
+ * `from` and then following it, and `alerted` once it has stirred its own neighbours. In a `fight`
+ * it chases, leashed to `from`, where the fight began, unless confined. On a `return` it walks back
+ * to its `home`, `evading` everything after a give-up until stalled outside its area, and nothing
+ * after a lead it lost.
+ */
+type MonsterPhase =
+  | { at: 'rest' }
+  | { at: 'wander'; to: Point }
+  | { at: 'follow'; leaderId: string; from: number; alerted: boolean }
+  | { at: 'fight'; from: Point }
+  | { at: 'return'; evading: boolean };
+
 /** A boss's moves, and how they stand: the wail under way, when it may next wail and call up minions, and when it gives its fight up. */
 interface Boss {
   moves: BossMoves;
-  /** When it gives its fight up, `giveUpSeconds` after it last had someone to chase, and in the past once it has, as from its spawn. None while it has someone to chase. */
+  /**
+   * When it gives its fight up, `giveUpSeconds` after it last had someone to chase in a fight. None
+   * while it has someone to chase, and none outside a fight, so it gives up once per fight.
+   */
   givesUpAt: number | undefined;
   /** The wail telegraphed, by its telegraph's id: round where the boss stood as it began, striking at `endsAt`. */
   wail: { id: string; centre: Point; endsAt: number } | undefined;
+  /** When it may next wail; armed afresh with `callReadyAt` as each fight begins. */
   wailReadyAt: number;
   callReadyAt: number;
 }
@@ -552,6 +594,13 @@ const FIRST_FILL_SECONDS = 60;
 /** The nearest a minion is called up to its boss, centre to centre. */
 const MINION_NEAREST_METRES = 1;
 /**
+ * How far out from a home with a body on it a returning nightmare looks for another (`rehome`), in
+ * rings `REHOME_RING_METRES` apart of `REHOME_RING_POINTS` points each.
+ */
+const REHOME_METRES = 3;
+const REHOME_RING_METRES = 0.25;
+const REHOME_RING_POINTS = 16;
+/**
  * How long after an accepted move a dreamer still counts as moving. Reports come ten times a
  * second, so a walking dreamer never falls outside it, and one who stopped does a quarter of a
  * second later.
@@ -560,10 +609,16 @@ const MOVING_WINDOW_MS = 250;
 /**
  * A nightmare walking home that has come no `HOME_PROGRESS_METRES` nearer for this long stops
  * steering and tries only the straight step home, as when a body lies on its home or bodies wall
- * it off.
+ * it off. Its way home is then blocked: inside its area it rests where it stands once whole, and
+ * outside it stops evading, and takes another home when a body is on its own.
  */
 const HOME_PROGRESS_SECONDS = 1;
 const HOME_PROGRESS_METRES = 0.01;
+/**
+ * A nightmare outside its area that has come no `HOME_PROGRESS_METRES` nearer for this long is walled
+ * off from home, behind a wall it chased round, and leaves the space, freeing its spawn's slot.
+ */
+const STUCK_RETURN_SECONDS = 10;
 /**
  * How far inside its stop distance a nightmare's step ends. A step ending exactly at reach can
  * land a rounding error outside it, and the strides left would then be too small to close it.
@@ -591,6 +646,8 @@ export interface SpaceActorOptions {
   lootRandom?: RandomSource;
   /** Rolls whether a nightmare spawns an elite, and its trait; separate from `random`, so an elite never shifts the rolls of combat and placement. */
   eliteRandom?: RandomSource;
+  /** Picks where each nightmare wanders and when; separate from `random`, so a wander never shifts the rolls of combat and placement. */
+  wanderRandom?: RandomSource;
   /** Counts each dreamer's drops from nightmares across the world; one ledger serves every space of it. */
   personalDrops?: PersonalDrops;
   /**
@@ -679,6 +736,16 @@ function rooted(monster: MonsterRuntime): boolean {
   return monster.effects.some((held) => effect(held.effectId).movement === 'rooted');
 }
 
+/** Whether the nightmare keeps to its area: a boss and its minions chase only inside their chamber, and never leave it. */
+function confined(monster: MonsterRuntime): boolean {
+  return monster.boss !== undefined || monster.summoner !== undefined;
+}
+
+/** Whether the nightmare evades everything a dreamer sends at it: on a return after giving up, until it is stalled outside its area. */
+function evadesAll({ phase }: MonsterRuntime): boolean {
+  return phase.at === 'return' && phase.evading;
+}
+
 /** Whether the dreamer senses the fallen in the space, a passive of the Mystic's. */
 function sensesFallen(slot: PlayerSlot): boolean {
   return rankOf(slot.character.lucidity.ranks, 'sense-the-fallen') >= 1;
@@ -752,6 +819,15 @@ function threatRank(monster: MonsterRuntime, dreamerId: string): number | undefi
   return challenged ? Number.POSITIVE_INFINITY : monster.threat.get(dreamerId);
 }
 
+/**
+ * Whether the nightmare notices the dreamer standing `away` from it: within its aggro radius or on
+ * its table, wherever they stand, though a confined one notices only dreamers inside its area.
+ */
+function notices(monster: MonsterRuntime, dreamer: PlayerSlot, away: number): boolean {
+  const near = away <= monster.kind.aggroRadius || threatRank(monster, dreamer.character.id) !== undefined;
+  return near && (!confined(monster) || rectContains(monster.area, dreamer.character.position, EDGE_TOLERANCE));
+}
+
 /** A dreamer's or a nightmare's health and its maximum. */
 function healthOf(entity: PlayerSlot | MonsterRuntime): [current: number, max: number] {
   return 'character' in entity ? [entity.character.energy.healthCurrent, entity.character.energy.healthMax] : [entity.health, entity.healthMax];
@@ -796,6 +872,7 @@ export class SpaceActor {
   private readonly speechRandom: RandomSource;
   private readonly lootRandom: RandomSource;
   private readonly eliteRandom: RandomSource;
+  private readonly wanderRandom: RandomSource;
   private readonly personalDrops: PersonalDrops;
   private readonly requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   private readonly now: () => number;
@@ -813,6 +890,7 @@ export class SpaceActor {
     this.speechRandom = options.speechRandom ?? systemRandom;
     this.lootRandom = options.lootRandom ?? systemRandom;
     this.eliteRandom = options.eliteRandom ?? systemRandom;
+    this.wanderRandom = options.wanderRandom ?? systemRandom;
     this.personalDrops = options.personalDrops ?? new PersonalDrops();
     this.requestDropSave = options.requestDropSave;
     this.now = options.now ?? (() => performance.now());
@@ -1425,9 +1503,9 @@ export class SpaceActor {
    * Uses an ability on the belt where `abilityAllowed` lands it, by the dreamer's one target. Its
    * cost is spent, its own cooldown and the global one start, everyone who sees the dreamer is shown
    * it, and it does its deed, a channelled one only once its channel lands (`runChannels`). Slot 1 is
-   * left as it was. A refusal is dropped silently. Harm at a nightmare that evades it is shown so: it
-   * is judged here, where the dreamer stands as they use it, so the bolt their client flies already
-   * knows it will miss.
+   * left as it was. A refusal is dropped silently. What a nightmare evades of it, harm or an effect,
+   * is shown so (`evadesUse`). It is judged here, where the dreamer stands as they use it, so the
+   * bolt or flick their client draws already knows it will miss.
    */
   handleUseAbility(abilityId: string, entityId: string): void {
     const player = this.players.get(entityId);
@@ -1464,7 +1542,7 @@ export class SpaceActor {
     }
     const channelSeconds = abilityChannelSeconds(abilityId, rank);
     const monster = this.monsters.get(recipient.id);
-    const evaded = used.does.kind === 'harm' && monster !== undefined && this.evades(monster, player);
+    const evaded = monster !== undefined && this.evadesUse(monster, used.does, player);
     if (channelSeconds !== undefined) {
       this.accrueRaisesHeldBy(player);
       player.channel = { abilityId, recipientId: recipient.id, rank, endsAt: now + channelSeconds * 1000 };
@@ -1550,16 +1628,20 @@ export class SpaceActor {
 
   /**
    * Lands each bolt that has arrived on its nightmare through `harmNightmare`. One whose nightmare was
-   * driven off or is gone, or whose caster has left the space, lands nothing. A caster who fell
-   * meanwhile still lands theirs, since it was already flying, and the nightmare forgets them at its
-   * next step as it forgets every fallen dreamer.
+   * driven off, is gone, or walks home evading, or whose caster has left the space, lands nothing. A
+   * caster who fell meanwhile still lands theirs, since it was already flying, and the nightmare
+   * forgets them at its next step as it forgets every fallen dreamer.
    */
   private runBolts(): void {
     const now = this.now();
     const arrived = this.bolts.filter((bolt) => bolt.landsAt <= now);
     this.bolts = this.bolts.filter((bolt) => bolt.landsAt > now);
     for (const { caster, monster, damage } of arrived) {
-      const lands = this.players.get(caster.character.id) === caster && this.monsters.get(monster.id) === monster && monster.fadingUntil === undefined;
+      const lands =
+        this.players.get(caster.character.id) === caster &&
+        this.monsters.get(monster.id) === monster &&
+        monster.lyingUntil === undefined &&
+        !evadesAll(monster);
       if (lands) this.harmNightmare(monster, damage, caster);
     }
   }
@@ -1580,7 +1662,7 @@ export class SpaceActor {
         id: entityId,
         ...monster.position,
         radius: monster.kind.radius,
-        kind: monster.fadingUntil === undefined ? 'nightmare' : undefined,
+        kind: monster.lyingUntil === undefined ? 'nightmare' : undefined,
         fallen: false,
       };
     }
@@ -1598,6 +1680,7 @@ export class SpaceActor {
    * swing meets, for its share of the caster's swing. Harm flies at each nightmare among them as a
    * bolt and lands as it arrives, unless `evaded`. An effect goes on each of them, and on a nightmare
    * it also puts the caster on its table, so it turns on them unless it holds more against another.
+   * A nightmare that evades everything (`evadesAll`) takes no effect and no threat.
    * A restore gives each standing dreamer back some of a pool, and a heal gives each one health. A
    * calm cuts the caster's threat on every table and puts its effect on them. A leap does nothing
    * here: the caster's client moves them, and each move is judged as every move is, against the
@@ -1628,7 +1711,10 @@ export class SpaceActor {
       case 'effect':
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
-          if (monster !== undefined) addThreat(monster, caster, 0);
+          if (monster !== undefined) {
+            if (evadesAll(monster)) continue;
+            addThreat(monster, caster, 0);
+          }
           this.applyEffect(this.players.get(body.id) ?? monster!, does.effectId, rank, caster);
         }
         return;
@@ -1716,7 +1802,7 @@ export class SpaceActor {
     const now = this.now();
     for (const monster of this.monsters.values()) {
       const { trait } = monster;
-      if (monster.fadingUntil !== undefined || trait === undefined) continue;
+      if (monster.lyingUntil !== undefined || trait === undefined) continue;
       const { effectId, renewSeconds } = eliteTrait(trait);
       if (renewSeconds === undefined || monster.effects.some((held) => held.effectId === effectId)) continue;
       if (monster.traitRenewsAt === undefined) {
@@ -1817,11 +1903,12 @@ export class SpaceActor {
   private spawnMonster(timer: MonsterSpawnTimer): boolean {
     const kind = monsterKind(timer.definition.kind);
     const { sector, definition } = timer;
-    const position = this.randomFreePoint(sector, definition, kind.radius);
+    const area = spawnArea(sector, definition);
+    const position = this.randomFreePoint(area, kind.radius, this.random);
     if (position === undefined) return false;
     const moves = bossMoves(definition.kind);
     const elite = moves === undefined && randomUnit(this.eliteRandom) < definition.eliteChance;
-    const monster = this.addMonster(definition.kind, position, spawnArea(sector, definition), {
+    const monster = this.addMonster(definition.kind, position, area, {
       timer,
       summoner: undefined,
       trait: elite ? ELITE_TRAIT_IDS[Math.floor(randomUnit(this.eliteRandom) * ELITE_TRAIT_IDS.length)] : undefined,
@@ -1831,11 +1918,11 @@ export class SpaceActor {
     return true;
   }
 
-  /** A nightmare of the kind standing at `position` from now, at home there and keeping to `ground`, as a spawn or a boss brings it. Its arrival is for the caller to show. */
+  /** A nightmare of the kind standing at rest at `position` from now, at home in `area`, as a spawn or a boss brings it. Its arrival is for the caller to show. */
   private addMonster(
     kindId: MonsterKindId,
     position: Point,
-    ground: Rect,
+    area: Rect,
     origin: Pick<MonsterRuntime, 'timer' | 'summoner' | 'trait'> & { moves: BossMoves | undefined },
   ): MonsterRuntime {
     const id = `monster:${this.nextMonsterNumber}`;
@@ -1843,9 +1930,7 @@ export class SpaceActor {
     const now = this.now();
     const kind = monsterKind(kindId);
     const boss: Boss | undefined =
-      origin.moves === undefined
-        ? undefined
-        : { moves: origin.moves, givesUpAt: now, wail: undefined, wailReadyAt: now + origin.moves.firstWailSeconds * 1000, callReadyAt: 0 };
+      origin.moves === undefined ? undefined : { moves: origin.moves, givesUpAt: undefined, wail: undefined, wailReadyAt: 0, callReadyAt: 0 };
     const health = nightmareHealth(kind, nightmareRankOf({ boss, trait: origin.trait }));
     const monster: MonsterRuntime = {
       id,
@@ -1863,12 +1948,15 @@ export class SpaceActor {
       timer: origin.timer,
       summoner: origin.summoner,
       boss,
-      fadingUntil: undefined,
+      lyingUntil: undefined,
+      area,
+      phase: { at: 'rest' },
+      wanderAt: this.nextWanderAt(),
       home: position,
-      ground,
       steerSide: 1,
       homeBest: 0,
       homeBestAt: now,
+      homeNearedAt: now,
       effects: origin.trait === undefined ? [] : [traitEffect(origin.trait, id, now)],
       threat: new Map(),
       answerDue: new Set(),
@@ -1878,19 +1966,25 @@ export class SpaceActor {
   }
 
   /**
-   * Centimetre-grid sampling inside the spawn's area, validated against the world and live
-   * entities, up to the retry cap. Rounding can carry a size with a fraction of a centimetre past
-   * itself, so the offset is held to the size, which keeps a nightmare's home inside its ground.
+   * Centimetre-grid sampling inside an area of the space, validated against the world and live
+   * entities but `except`, up to the retry cap. Rounding can carry a size with a fraction of a
+   * centimetre past itself, so the offset is held to the size, which keeps the point inside the area.
    */
-  private randomFreePoint(sector: Sector, area: MonsterSpawn, radius: number): Point | undefined {
+  private randomFreePoint(area: Rect, radius: number, random: RandomSource, except?: MonsterRuntime): Point | undefined {
     for (let attempt = 0; attempt < PLACEMENT_ATTEMPTS; attempt += 1) {
-      const candidate = sectorPointInSpace(sector, {
-        x: area.x + Math.min(area.width, randomInRange(this.random, 0, Math.round(area.width * 100)) / 100),
-        z: area.z + Math.min(area.depth, randomInRange(this.random, 0, Math.round(area.depth * 100)) / 100),
-      });
-      if (isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius)) return candidate;
+      const candidate = {
+        x: area.x + Math.min(area.width, randomInRange(random, 0, Math.round(area.width * 100)) / 100),
+        z: area.z + Math.min(area.depth, randomInRange(random, 0, Math.round(area.depth * 100)) / 100),
+      };
+      if (isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius, except)) return candidate;
     }
     return undefined;
+  }
+
+  /** When a nightmare settling now may next pick a point to wander to. */
+  private nextWanderAt(): number {
+    const { min, max } = NIGHTMARE_WANDER.everySeconds;
+    return this.now() + randomInRange(this.wanderRandom, min, max) * 1000;
   }
 
   private runNPCs(digest: TickDigest): void {
@@ -1980,84 +2074,271 @@ export class SpaceActor {
   }
 
   /**
-   * Each monster keeps to its home ground, the area of the spawn that made it. It forgets the threat
-   * of every dreamer who left the space or that ground, fell, or is unseen. Of the dreamers who stand
-   * past the grace after a raise inside that ground and are not unseen, it may chase those within its
-   * aggro radius, on its table, or who challenged it. It chases the foremost of them: the challenger,
-   * else the one it holds the most threat against, else the nearest. With none to chase it walks back
-   * home. A bound one stays where it stands, turning toward whom it chases, and strikes all the same.
-   * On its own rhythm it strikes the dreamer it chases once it has reached them. Otherwise it strikes
-   * the foremost such dreamer in its reach, wherever they stand, which can be just outside the
-   * ground. Failing them, it strikes the foremost who struck it from within its reach since its last
-   * turn, so a step in, a blow, and a step out between two turns is still answered. A blow it cannot
-   * answer this turn it forgets. At rest with no one in reach it heals slowly. A boss also wails and
-   * calls up minions (`runBoss`), and holds still while it wails. One driven off does nothing more,
-   * and is gone once its fade is over.
+   * Each nightmare acts by its phase (`MonsterPhase`), then is shown moved only when its position or
+   * facing changed, so one standing still sends nothing.
    */
   private runMonsters(elapsedSeconds: number): void {
-    const now = this.now();
     for (const monster of this.monsters.values()) {
-      const answerDue = monster.answerDue;
-      monster.answerDue = new Set();
-      if (monster.fadingUntil !== undefined) {
-        if (now < monster.fadingUntil) continue;
-        this.removeMonster(monster, false);
-        continue;
-      }
-      this.forgetThreat(monster);
       const { position, facing } = monster;
-      const body = (): Body => ({ ...monster.position, radius: monster.kind.radius });
-      const chased = this.foremostDreamer(
-        monster,
-        (slot, away) =>
-          rectContains(monster.ground, slot.character.position, EDGE_TOLERANCE) &&
-          (away <= monster.kind.aggroRadius || threatRank(monster, slot.character.id) !== undefined),
-      );
-      // A boss holding still for its wail neither moves, turns, nor strikes.
-      if (monster.boss !== undefined && this.runBoss(monster, monster.boss, chased)) continue;
-      let moved = false;
-      if (rooted(monster)) {
-        // Held in place is no lack of progress home, so the walk home sets out afresh once it is free.
-        monster.homeBestAt = now;
-        if (chased !== undefined) monster.facing = headingFromVector(chased.character.position.x - position.x, chased.character.position.z - position.z);
-      } else if (chased === undefined) {
-        moved = this.walkHome(monster, elapsedSeconds);
-      } else {
-        monster.homeBest = Number.POSITIVE_INFINITY;
-        monster.homeBestAt = now;
-        moved = this.stepToward(monster, chased.character.position, elapsedSeconds, reachDistance(monster.kind.radius), false);
-      }
-      const struck =
-        chased !== undefined && reaches(chased.character.position, body())
-          ? chased
-          : (this.foremostDreamer(monster, (slot) => reaches(slot.character.position, body())) ??
-            this.foremostDreamer(monster, (slot) => answerDue.has(slot.character.id)));
-      if (struck !== undefined && now >= monster.strikeReadyAt) {
-        monster.facing = headingFromVector(struck.character.position.x - monster.position.x, struck.character.position.z - monster.position.z);
-        this.strike(monster, struck);
-      } else if (chased === undefined && struck === undefined && !moved) {
-        this.rest(monster, elapsedSeconds);
-      }
-      if (monster.position !== position || monster.facing !== facing) {
-        this.moved.set(monster.id, {
-          sector: monster.sector,
-          move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
-        });
-      }
+      this.runMonster(monster, elapsedSeconds);
+      if (this.monsters.get(monster.id) !== monster || (monster.position === position && monster.facing === facing)) continue;
+      this.moved.set(monster.id, {
+        sector: monster.sector,
+        move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
+      });
     }
   }
 
   /**
-   * A boss's own moves this step, which reports whether it holds still for its wail. From the step it
-   * has no one to chase, wailing or not, it counts `giveUpSeconds`. A wail under way strikes once its
-   * time is up, whoever it then finds in its circle, and the boss is free again from the next step.
-   * With no one to chase, the boss walks home to rest, and once the count has run out it gives its
-   * fight up: the minions it called up crumble, and the first wail of its next fight waits. A dreamer
-   * it chases again before then finds its minions and its timers as they were. Otherwise it calls up
-   * minions when they are due, and when its wail is due and a dreamer stands in the circle it would
-   * strike, it begins one.
+   * One nightmare's step. One driven off lies, doing nothing, and is gone once its lie is over. One
+   * walking home evading (`evadesAll`) notices and strikes no one (`returnStep`).
+   *
+   * Any other forgets from its table every dreamer who left the space, fell, or is unseen, and a
+   * confined one also those outside its area. It chases the foremost dreamer it notices (`notices`):
+   * the challenger, else the one it holds the most threat against, else the nearest. Chasing puts the
+   * dreamer on its table, so stepping out of its aggro radius ends nothing. The step a fight begins,
+   * where it stands becomes the leash's anchor, and its neighbours at rest or wandering become aware
+   * of it (`alertNeighbours`). One that is not confined gives up once its table is empty or it stands
+   * farther from that anchor than its kind's leash. A boss gives up as `runBoss` says, and a minion
+   * never does on its own: with no one to chase it holds where it stands. A bound one stays where it
+   * stands, turning toward whom it chases.
+   *
+   * A follower stays still until its awareness comes, then follows its leader while its chain of
+   * leaders leads to a fight (`leadsToFight`), and otherwise walks back to its home. At rest, one
+   * that is not confined now and then wanders to a point of its area at half speed while some dreamer
+   * sees its sector. With no one seeing it, it stands still.
+   *
+   * In a fight, on its own rhythm it strikes the dreamer it chases once it has reached them.
+   * Otherwise it strikes the foremost dreamer in its reach, wherever they stand. Failing them, it
+   * strikes the foremost who struck it from within its reach since its last turn, so a step in, a
+   * blow, and a step out between two turns is still answered. A blow it cannot answer this turn it
+   * forgets. A confined one at rest strikes the same way across its chamber's edge, without entering
+   * a fight. No other strikes. It heals only on a return. A boss also wails and calls up minions
+   * (`runBoss`), and holds still while it wails.
+   */
+  private runMonster(monster: MonsterRuntime, elapsedSeconds: number): void {
+    const now = this.now();
+    const answerDue = monster.answerDue;
+    monster.answerDue = new Set();
+    if (monster.lyingUntil !== undefined) {
+      if (now >= monster.lyingUntil) this.removeMonster(monster, false);
+      return;
+    }
+    if (monster.phase.at === 'return' && monster.phase.evading) {
+      this.returnStep(monster, monster.phase, elapsedSeconds);
+      return;
+    }
+    this.forgetThreat(monster);
+    const chased = this.foremostDreamer(monster, (slot, away) => notices(monster, slot, away));
+    if (chased !== undefined) {
+      addThreat(monster, chased, 0);
+      if (monster.phase.at !== 'fight') {
+        if (monster.phase.at === 'rest' || monster.phase.at === 'wander') monster.home = monster.position;
+        monster.phase = { at: 'fight', from: monster.position };
+        if (monster.boss !== undefined) {
+          monster.boss.wailReadyAt = now + monster.boss.moves.firstWailSeconds * 1000;
+          monster.boss.callReadyAt = now;
+        }
+        this.alertNeighbours(monster);
+      }
+    }
+    // A boss holding still for its wail neither moves, turns, nor strikes.
+    if (monster.boss !== undefined && this.runBoss(monster, monster.boss, chased)) return;
+    if (
+      monster.phase.at === 'fight' &&
+      !confined(monster) &&
+      (chased === undefined || distance(monster.position, monster.phase.from) > monster.kind.leashMetres)
+    ) {
+      this.giveUp(monster);
+    }
+    const phase = monster.phase;
+    switch (phase.at) {
+      case 'fight':
+        if (chased === undefined) break;
+        if (rooted(monster))
+          monster.facing = headingFromVector(chased.character.position.x - monster.position.x, chased.character.position.z - monster.position.z);
+        else this.stepToward(monster, chased.character.position, elapsedSeconds, reachDistance(monster.kind.radius), false);
+        break;
+      case 'follow': {
+        if (now < phase.from) break;
+        if (!this.leadsToFight(monster)) {
+          this.enterReturn(monster, false);
+          break;
+        }
+        if (!phase.alerted) {
+          phase.alerted = true;
+          this.alertNeighbours(monster);
+        }
+        const leader = this.monsters.get(phase.leaderId)!;
+        if (!rooted(monster)) this.stepToward(monster, leader.position, elapsedSeconds, monster.kind.radius + leader.kind.radius, false);
+        break;
+      }
+      case 'return':
+        if (!phase.evading) this.returnStep(monster, phase, elapsedSeconds);
+        break;
+      case 'wander': {
+        if (rooted(monster)) break;
+        const speed = monster.kind.metresPerSecond * NIGHTMARE_WANDER.speedShare;
+        if (!this.inView(monster.sector) || !this.stepToward(monster, phase.to, elapsedSeconds, 0, false, speed)) this.settle(monster);
+        break;
+      }
+      case 'rest': {
+        if (confined(monster) || now < monster.wanderAt || !this.inView(monster.sector)) break;
+        const to = this.randomFreePoint(monster.area, monster.kind.radius, this.wanderRandom, monster);
+        if (to === undefined) this.settle(monster);
+        else monster.phase = { at: 'wander', to };
+        break;
+      }
+    }
+    if (monster.phase.at !== 'fight' && !(monster.phase.at === 'rest' && confined(monster))) return;
+    const body: Body = { ...monster.position, radius: monster.kind.radius };
+    const struck =
+      chased !== undefined && reaches(chased.character.position, body)
+        ? chased
+        : (this.foremostDreamer(monster, (slot) => reaches(slot.character.position, body)) ??
+          this.foremostDreamer(monster, (slot) => answerDue.has(slot.character.id)));
+    if (struck !== undefined && now >= monster.strikeReadyAt) {
+      monster.facing = headingFromVector(struck.character.position.x - monster.position.x, struck.character.position.z - monster.position.z);
+      this.strike(monster, struck);
+    }
+  }
+
+  /**
+   * A step of the nightmare's return to its `home`, which lies inside its area. A bound one holds,
+   * which is no lack of progress.
+   *
+   * Outside the area, once it has come no nearer for `HOME_PROGRESS_SECONDS`, it stops evading and
+   * keeps to the straight step, as `walkHome` does. With a body on its home it then takes the free
+   * point of its area nearest that home as its home instead (`rehome`). Outside the area too, once it
+   * has come no nearer home, the first or any it took, for `STUCK_RETURN_SECONDS`, it is walled off:
+   * it leaves, and its spawn has a slot to refill.
+   *
+   * It heals a `giveUpHealSeconds`th of its maximum health a second all the while. The return ends,
+   * back at rest, the step it stands whole at home, or whole inside its area with the way home
+   * blocked for `HOME_PROGRESS_SECONDS`, so a body on its home never keeps it from resting.
+   */
+  private returnStep(monster: MonsterRuntime, phase: { evading: boolean }, elapsedSeconds: number): void {
+    const now = this.now();
+    const atHome = (): boolean => distance(monster.position, monster.home) <= EDGE_TOLERANCE;
+    const inside = (): boolean => rectContains(monster.area, monster.position, EDGE_TOLERANCE);
+    if (rooted(monster)) {
+      monster.homeBestAt = now;
+      monster.homeNearedAt = now;
+    } else if (!atHome()) {
+      if (!inside() && now - monster.homeNearedAt >= STUCK_RETURN_SECONDS * 1000) {
+        this.freeSpawnSlot(monster);
+        this.removeMonster(monster, false);
+        return;
+      }
+      if (!inside() && now - monster.homeBestAt >= HOME_PROGRESS_SECONDS * 1000) {
+        phase.evading = false;
+        if (this.overlapsEntity(monster.home, monster.kind.radius, monster)) this.rehome(monster);
+      }
+      this.walkHome(monster, elapsedSeconds);
+    }
+    if (monster.health < monster.healthMax) {
+      monster.health = Math.min(monster.healthMax, monster.health + (monster.healthMax / COMBAT.giveUpHealSeconds) * elapsedSeconds);
+      this.setCondition(monster);
+    }
+    const blocked = !rooted(monster) && now - monster.homeBestAt >= HOME_PROGRESS_SECONDS * 1000;
+    if (monster.health >= monster.healthMax && (atHome() || (inside() && blocked))) this.settle(monster);
+  }
+
+  /**
+   * Gives a returning nightmare the free point of its area nearest its home as its home: of the
+   * nearest ring out from home that holds one, the point nearest where it stands, so it need not walk
+   * round what lies on its home. It steers for it afresh from now, from as far as it stands, while
+   * `homeNearedAt` runs on. With none within `REHOME_METRES` its home stays as it was.
+   */
+  private rehome(monster: MonsterRuntime): void {
+    const { home, position } = monster;
+    const radius = monster.kind.radius;
+    for (let ring = 1; ring * REHOME_RING_METRES <= REHOME_METRES; ring += 1) {
+      let best: Point | undefined;
+      for (let index = 0; index < REHOME_RING_POINTS; index += 1) {
+        const radians = (index / REHOME_RING_POINTS) * 2 * Math.PI;
+        const point = { x: home.x + Math.sin(radians) * ring * REHOME_RING_METRES, z: home.z + Math.cos(radians) * ring * REHOME_RING_METRES };
+        if (!rectContains(monster.area, point, EDGE_TOLERANCE) || !isClear(this.collision, point, radius) || this.overlapsEntity(point, radius, monster))
+          continue;
+        if (best === undefined || distance(point, position) < distance(best, position)) best = point;
+      }
+      if (best !== undefined) {
+        monster.home = best;
+        monster.homeBest = distance(position, best);
+        monster.homeBestAt = this.now();
+        return;
+      }
+    }
+  }
+
+  /** Sets the nightmare walking back to its home, with its progress home counted afresh from now. */
+  private enterReturn(monster: MonsterRuntime, evading: boolean): void {
+    monster.phase = { at: 'return', evading };
+    monster.homeBest = Number.POSITIVE_INFINITY;
+    monster.homeBestAt = this.now();
+    monster.homeNearedAt = monster.homeBestAt;
+  }
+
+  /** The nightmare gives its fight up: it forgets everyone and walks home evading. */
+  private giveUp(monster: MonsterRuntime): void {
+    monster.threat.clear();
+    monster.answerDue.clear();
+    this.enterReturn(monster, true);
+  }
+
+  /** The nightmare rests, and may wander again once a fresh while has passed. */
+  private settle(monster: MonsterRuntime): void {
+    monster.phase = { at: 'rest' };
+    monster.wanderAt = this.nextWanderAt();
+  }
+
+  /**
+   * Every other nightmare at rest or wandering within `NIGHTMARE_AWARENESS.radiusMetres` of the one
+   * setting off, and not confined, becomes aware of it, and follows it once `delaySeconds` have passed.
+   */
+  private alertNeighbours(leader: MonsterRuntime): void {
+    const from = this.now() + NIGHTMARE_AWARENESS.delaySeconds * 1000;
+    for (const other of this.monsters.values()) {
+      if (other === leader || confined(other) || other.lyingUntil !== undefined || (other.phase.at !== 'rest' && other.phase.at !== 'wander')) continue;
+      if (distance(other.position, leader.position) > NIGHTMARE_AWARENESS.radiusMetres) continue;
+      other.home = other.position;
+      other.phase = { at: 'follow', leaderId: leader.id, from, alerted: false };
+    }
+  }
+
+  /**
+   * Whether the follower's chain of leaders, followed from leader to leader, reaches one in a fight.
+   * It does not once a leader is gone, lying, or doing anything but following or fighting, or once
+   * the chain comes back to a nightmare already in it.
+   */
+  private leadsToFight(follower: MonsterRuntime): boolean {
+    const chain = new Set([follower]);
+    let phase = follower.phase;
+    while (phase.at === 'follow') {
+      const leader = this.monsters.get(phase.leaderId);
+      if (leader === undefined || chain.has(leader)) return false;
+      chain.add(leader);
+      phase = leader.phase;
+    }
+    return phase.at === 'fight';
+  }
+
+  private inView(sector: string): boolean {
+    return [...this.players.values()].some((viewer) => this.sees(viewer, sector));
+  }
+
+  /**
+   * A boss's own moves this step, which reports whether it holds still for its wail. Outside a fight
+   * it has none. From the step it has no one to chase, wailing or not, it counts `giveUpSeconds`. A
+   * wail under way strikes once its time is up, whoever it then finds in its circle, and the boss is
+   * free again from the next step. With no one to chase, the boss holds where it stands, and once
+   * the count has run out it gives its fight up: the minions it called up crumble, and it walks home
+   * evading (`giveUp`). A dreamer it chases again before then finds its minions and its timers as
+   * they were. Otherwise it calls up minions when they are due, and when its wail is due and a
+   * dreamer stands in the circle it would strike, it begins one.
    */
   private runBoss(monster: MonsterRuntime, boss: Boss, chased: PlayerSlot | undefined): boolean {
+    if (monster.phase.at !== 'fight') return false;
     const now = this.now();
     if (chased === undefined) boss.givesUpAt ??= now + boss.moves.giveUpSeconds * 1000;
     else boss.givesUpAt = undefined;
@@ -2073,7 +2354,8 @@ export class SpaceActor {
     if (boss.givesUpAt !== undefined) {
       if (now >= boss.givesUpAt) {
         this.dismissMinions(monster);
-        boss.wailReadyAt = now + boss.moves.firstWailSeconds * 1000;
+        boss.givesUpAt = undefined;
+        this.giveUp(monster);
       }
       return false;
     }
@@ -2112,29 +2394,29 @@ export class SpaceActor {
 
   /**
    * Calls up minions round the boss, as many as `perCall` while fewer than `maxAlive` of its own
-   * stand, each at a free point of its ground near it, sharing that ground and counted against no
+   * stand, each at a free point of its area near it, sharing that area and counted against no
    * spawn. Everyone who sees one arrive is shown that the boss called it, and it waits a strike's
    * time before its first.
    */
   private callMinions(boss: MonsterRuntime, minions: BossMoves['minions']): void {
     const kind = monsterKind(minions.kind);
-    const standing = [...this.monsters.values()].filter((other) => other.summoner === boss && other.fadingUntil === undefined).length;
+    const standing = [...this.monsters.values()].filter((other) => other.summoner === boss && other.lyingUntil === undefined).length;
     for (let called = 0; called < Math.min(minions.perCall, minions.maxAlive - standing); called += 1) {
       const position = this.freePointNear(boss, minions.withinMetres, kind.radius);
       if (position === undefined) return;
-      const minion = this.addMonster(minions.kind, position, boss.ground, { timer: undefined, summoner: boss, trait: undefined, moves: undefined });
+      const minion = this.addMonster(minions.kind, position, boss.area, { timer: undefined, summoner: boss, trait: undefined, moves: undefined });
       minion.strikeReadyAt = this.now() + kind.strikeSeconds * 1000;
       this.broadcast({ tag: 'entity', payload: { ...this.monsterEntity(minion), summonedBy: boss.id } }, minion.sector);
     }
   }
 
-  /** A point of the nightmare's ground between `MINION_NEAREST_METRES` and `within` from it where a body of `radius` stands clear, up to the retry cap. */
+  /** A point of the nightmare's area between `MINION_NEAREST_METRES` and `within` from it where a body of `radius` stands clear, up to the retry cap. */
   private freePointNear(monster: MonsterRuntime, within: number, radius: number): Point | undefined {
     for (let attempt = 0; attempt < PLACEMENT_ATTEMPTS; attempt += 1) {
       const radians = randomUnit(this.random) * 2 * Math.PI;
       const away = MINION_NEAREST_METRES + randomUnit(this.random) * (within - MINION_NEAREST_METRES);
       const candidate = { x: monster.position.x + Math.sin(radians) * away, z: monster.position.z + Math.cos(radians) * away };
-      if (rectContains(monster.ground, candidate) && isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius)) return candidate;
+      if (rectContains(monster.area, candidate) && isClear(this.collision, candidate, radius) && !this.overlapsEntity(candidate, radius)) return candidate;
     }
     return undefined;
   }
@@ -2142,11 +2424,11 @@ export class SpaceActor {
   /**
    * The minions the boss called up crumble with its fight. Each standing one is gone at once, paying
    * no one and never fallen, and its viewers are sent its `leave` marked `crumbled`. One a dreamer
-   * drove off fades as it was.
+   * drove off lies as it was.
    */
   private dismissMinions(boss: MonsterRuntime): void {
     for (const minion of this.monsters.values()) {
-      if (minion.summoner !== boss || minion.fadingUntil !== undefined) continue;
+      if (minion.summoner !== boss || minion.lyingUntil !== undefined) continue;
       this.removeMonster(minion, true);
     }
   }
@@ -2180,61 +2462,93 @@ export class SpaceActor {
   }
 
   /**
-   * Whether the nightmare evades harm from afar by the dreamer: it does whenever they stand outside
-   * its ground, where it would not chase them. A blow never asks, since the nightmare strikes back at
-   * whoever stands in its reach.
+   * Whether the nightmare evades harm from afar by the dreamer: it does while it walks home evading
+   * everything (`evadesAll`), and a confined one whenever they stand outside its area, where it would
+   * not chase them. A blow asks `evadesAll` alone, since the nightmare strikes back at whoever stands
+   * in its reach.
    */
   private evades(monster: MonsterRuntime, source: PlayerSlot): boolean {
-    return !rectContains(monster.ground, source.character.position, EDGE_TOLERANCE);
+    return evadesAll(monster) || (confined(monster) && !rectContains(monster.area, source.character.position, EDGE_TOLERANCE));
   }
 
-  /** Drops from the nightmare's table every dreamer no longer in the space, fallen, unseen, or outside its ground; a Challenge it holds runs on until it ends. */
+  /**
+   * Whether the nightmare evades what a use by the dreamer does to it: harm from afar as `evades`
+   * judges it, and an effect while it evades everything. A Cleave's blows ask `blow` instead.
+   */
+  private evadesUse(monster: MonsterRuntime, does: AbilityDeed, source: PlayerSlot): boolean {
+    switch (does.kind) {
+      case 'harm':
+        return this.evades(monster, source);
+      case 'effect':
+        return evadesAll(monster);
+      case 'strike':
+      case 'leap':
+      case 'restore':
+      case 'heal':
+      case 'calm':
+        return false;
+    }
+  }
+
+  /**
+   * Drops from the nightmare's table every dreamer no longer in the space, fallen, or unseen, and for
+   * a confined one also outside its area; a Challenge it holds runs on until it ends.
+   */
   private forgetThreat(monster: MonsterRuntime): void {
     for (const id of monster.threat.keys()) {
       const slot = this.players.get(id);
-      if (slot === undefined || isFallen(slot) || unseen(slot) || !rectContains(monster.ground, slot.character.position, EDGE_TOLERANCE)) {
+      if (slot === undefined || isFallen(slot) || unseen(slot) || (confined(monster) && !rectContains(monster.area, slot.character.position, EDGE_TOLERANCE))) {
         monster.threat.delete(id);
       }
     }
   }
 
   /**
-   * A step back toward home, which reports whether it moved. Once it has come no nearer for a
-   * while it rests, trying only the straight step home, and sets out again once that is free.
+   * A step toward the nightmare's home. Once it has come no nearer for a while it holds, trying
+   * only the straight step, and sets out again once that is free.
    */
-  private walkHome(monster: MonsterRuntime, elapsedSeconds: number): boolean {
+  private walkHome(monster: MonsterRuntime, elapsedSeconds: number): void {
     const now = this.now();
     const resting = now - monster.homeBestAt >= HOME_PROGRESS_SECONDS * 1000;
     const moved = this.stepToward(monster, monster.home, elapsedSeconds, 0, resting);
     const away = distance(monster.position, monster.home);
-    if ((moved && resting) || away <= monster.homeBest - HOME_PROGRESS_METRES) {
+    const neared = away <= monster.homeBest - HOME_PROGRESS_METRES;
+    if (neared) monster.homeNearedAt = now;
+    if (neared || (moved && resting)) {
       monster.homeBest = away;
       monster.homeBestAt = now;
     }
-    return moved;
   }
 
   /**
    * One step toward `goal`, ending no nearer than `stopWithin` less the stop slack. Reports whether
    * it moved. When the straight step is blocked and `straightOnly` is unset, it tries headings turned
-   * off the bearing, every angle on the side it last turned to before any on the other. It keeps to
-   * its ground and steps round every body, the fallen too. A step that leaves its overlap with the
-   * bodies no deeper is never refused for them. At its ground's edge or corner, though, every
-   * candidate can still deepen it, and then it stays. It faces its bearing to `goal` even when
-   * blocked, except within `stopWithin` of it, where it does not turn.
+   * off the bearing, every angle on the side it last turned to before any on the other. A confined
+   * one, and one wandering, keeps to its area. It steps round every body, the fallen too. A step that
+   * leaves its overlap with the bodies no deeper is never refused for them. At its area's edge or
+   * corner, though, every candidate can still deepen it, and then it stays. It faces its bearing to
+   * `goal` even when blocked, except within `stopWithin` of it, where it does not turn.
    */
-  private stepToward(monster: MonsterRuntime, goal: Point, elapsedSeconds: number, stopWithin: number, straightOnly: boolean): boolean {
+  private stepToward(
+    monster: MonsterRuntime,
+    goal: Point,
+    elapsedSeconds: number,
+    stopWithin: number,
+    straightOnly: boolean,
+    metresPerSecond = monster.kind.metresPerSecond,
+  ): boolean {
     const from = monster.position;
     const away = distance(from, goal);
     if (away <= stopWithin) return false;
     const bearing = headingFromVector(goal.x - from.x, goal.z - from.z);
     monster.facing = bearing;
-    const stride = Math.min(monster.kind.metresPerSecond * elapsedSeconds, away - Math.max(0, stopWithin - STOP_SLACK));
+    const stride = Math.min(metresPerSecond * elapsedSeconds, away - Math.max(0, stopWithin - STOP_SLACK));
     if (stride <= 0) return false;
     const radius = monster.kind.radius;
     const bodies = this.bodiesAround(monster);
+    const keepsToArea = confined(monster) || monster.phase.at === 'wander';
     const legal = (end: Point): boolean =>
-      rectContains(monster.ground, end, EDGE_TOLERANCE) &&
+      (!keepsToArea || rectContains(monster.area, end, EDGE_TOLERANCE)) &&
       isLegalMove(this.collision, from, end, radius, this.npcBodies) &&
       !bodiesBlock(from, end, radius, bodies);
     const straight = stride === away ? goal : { x: from.x + ((goal.x - from.x) * stride) / away, z: from.z + ((goal.z - from.z) * stride) / away };
@@ -2260,20 +2574,14 @@ export class SpaceActor {
     return true;
   }
 
-  /** Every body a nightmare steps round: each dreamer, fallen or standing, and every other nightmare not fading. */
+  /** Every body a nightmare steps round: each dreamer, fallen or standing, and every other nightmare not lying. */
   private bodiesAround(monster: MonsterRuntime): Body[] {
     const bodies: Body[] = [];
     for (const slot of this.players.values()) bodies.push({ ...slot.character.position, radius: SOMNIO_CONSTANTS.playerRadius });
     for (const other of this.monsters.values()) {
-      if (other !== monster && other.fadingUntil === undefined) bodies.push({ ...other.position, radius: other.kind.radius });
+      if (other !== monster && other.lyingUntil === undefined) bodies.push({ ...other.position, radius: other.kind.radius });
     }
     return bodies;
-  }
-
-  private rest(monster: MonsterRuntime, elapsedSeconds: number): void {
-    if (monster.health >= monster.healthMax) return;
-    monster.health = Math.min(monster.healthMax, monster.health + monster.kind.restHealthPerSecond * elapsedSeconds);
-    this.setCondition(monster);
   }
 
   /** A nightmare's strike at a dreamer it has reached. A hit takes health and a little balance. */
@@ -2378,9 +2686,14 @@ export class SpaceActor {
   /**
    * A dreamer's blow at a nightmare, shown to everyone who sees the dreamer, which harms it by
    * `damage` through `harmNightmare` when it hits. A blow struck from within the nightmare's reach
-   * may be answered at its next turn, wherever the dreamer has stepped meanwhile (`runMonsters`).
+   * may be answered at its next turn, wherever the dreamer has stepped meanwhile (`runMonster`). One
+   * at a nightmare that evades everything (`evadesAll`) is shown evaded, and harms and answers nothing.
    */
   private blow(player: PlayerSlot, monster: MonsterRuntime, damage: number): void {
+    if (evadesAll(monster)) {
+      this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, targetId: monster.id, hit: false, evaded: true } }, player.sector);
+      return;
+    }
     if (reaches(player.character.position, { ...monster.position, radius: monster.kind.radius })) monster.answerDue.add(player.character.id);
     const hit = randomUnit(this.random) < COMBAT.hitChance;
     this.broadcast({ tag: 'blow', payload: { attackerId: player.character.id, targetId: monster.id, hit } }, player.sector);
@@ -2401,21 +2714,20 @@ export class SpaceActor {
   }
 
   /**
-   * The one place a nightmare is driven off. It fades where it stands, and its spawn, if it has one,
-   * has a slot to refill after the kind's respawn time. A boss's wail ends unstruck and its minions
-   * crumble. The standing dreamers within the share radius, and the standing dreamer whose harm drove
-   * it off from however far, split its bounty, and each earn the practice and its count toward their
-   * quests in full. Each of them rolls for drops of their own, by the nightmare's tier and rank, and
-   * finds its kind's trophy while a quest of theirs collects it. All their drops scatter fanned round
-   * where it stood.
+   * The one place a nightmare is driven off. It lies where it fell for its rank's `lieSeconds`. It is
+   * set at rest, so whoever follows it goes back (`leadsToFight`). Its spawn, if it has one, has a
+   * slot to refill after the kind's respawn time, counted from the fall. A boss's wail ends unstruck
+   * and its minions crumble. The standing dreamers within the share radius, and the standing dreamer
+   * whose harm drove it off from however far, split its bounty, and each earn the practice and its
+   * count toward their quests in full. Each of them rolls for drops of their own, by the nightmare's
+   * tier and rank, and finds its kind's trophy while a quest of theirs collects it. All their drops
+   * scatter fanned round where it stood.
    */
   private driveOff(monster: MonsterRuntime, finisher: PlayerSlot): void {
     const now = this.now();
-    monster.fadingUntil = now + COMBAT.fadeSeconds * 1000;
-    if (monster.timer !== undefined) {
-      monster.timer.alive -= 1;
-      monster.timer.spawnAt = now + monster.kind.respawnSeconds * 1000;
-    }
+    monster.lyingUntil = now + COMBAT.lieSeconds[nightmareRankOf(monster) ?? 'nightmare'] * 1000;
+    monster.phase = { at: 'rest' };
+    this.freeSpawnSlot(monster);
     if (monster.boss !== undefined) {
       monster.boss.wail = undefined;
       this.dismissMinions(monster);
@@ -2434,6 +2746,13 @@ export class SpaceActor {
       this.advanceQuests(slot, (objective, progress) => (drivesOff(objective, monster.kindId, monster.sector) ? progress + 1 : progress));
     }
     this.scatter(monster.position, drops);
+  }
+
+  /** Frees a slot of the nightmare's spawn, if it has one, to refill after the kind's respawn time from now. */
+  private freeSpawnSlot({ timer, kind }: MonsterRuntime): void {
+    if (timer === undefined) return;
+    timer.alive -= 1;
+    timer.spawnAt = this.now() + kind.respawnSeconds * 1000;
   }
 
   /**
@@ -2511,7 +2830,7 @@ export class SpaceActor {
     this.setEnergy(target, { ...energy, healthCurrent: energy.healthCurrent + given });
     const healer = this.players.get(healerId);
     if (healer === undefined) return;
-    const fighting = [...this.monsters.values()].filter((monster) => monster.fadingUntil === undefined && monster.threat.has(target.character.id));
+    const fighting = [...this.monsters.values()].filter((monster) => monster.lyingUntil === undefined && monster.threat.has(target.character.id));
     for (const monster of fighting) addThreat(monster, healer, (given * COMBAT.threatPerHealthMended) / fighting.length);
     if (healer === target) {
       this.addPractice(healer, given * PRACTICE.perHealthMended * PRACTICE.selfMendShare);
@@ -3093,14 +3412,14 @@ export class SpaceActor {
     return { character: slot.character, inventory: slot.inventory };
   }
 
-  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster. A fallen body still counts; a fading monster does not. */
-  private overlapsEntity(point: Point, radius: number): boolean {
+  /** Whether a body of `radius` at the point would overlap a player, an NPC, or a monster but `except`. A fallen body still counts; a lying monster does not. */
+  private overlapsEntity(point: Point, radius: number, except?: MonsterRuntime): boolean {
     for (const slot of this.players.values()) {
       if (distance(point, slot.character.position) < radius + SOMNIO_CONSTANTS.playerRadius) return true;
     }
     if (this.npcBodies.some((npc) => distance(point, npc) < radius + npc.radius)) return true;
     for (const monster of this.monsters.values()) {
-      if (monster.fadingUntil !== undefined) continue;
+      if (monster === except || monster.lyingUntil !== undefined) continue;
       if (distance(point, monster.position) < radius + monster.kind.radius) return true;
     }
     return false;

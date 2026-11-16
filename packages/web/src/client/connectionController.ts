@@ -18,7 +18,7 @@ import type { ModelRegistry, People, WorldClockReading, WorldEntityKind } from '
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
 import { SessionStore } from './sessionStore';
 import type { ChatLine } from './chatLine';
-import { ClientWorld } from './clientWorld';
+import { ClientWorld, drivenOff } from './clientWorld';
 import type { ClientEntity } from './clientWorld';
 import { noopRenderSurface } from './renderSurface';
 import type { WorldRenderSurface } from './renderSurface';
@@ -834,8 +834,8 @@ export class ConnectionController {
   onSessionIdentityEnded: (() => void) | undefined;
 
   /**
-   * Fires when an entity is placed or removed, so the owner can drop the glide it was drawing
-   * that entity along.
+   * Fires when an entity is placed, removed, or driven off, so the owner can drop the glide it was
+   * drawing that entity along, and let go of a target no longer there to act on.
    */
   onEntityReset: ((entityId: string) => void) | undefined;
 
@@ -900,8 +900,10 @@ export class ConnectionController {
   private handleCondition(entityId: string, condition: Condition): void {
     const entity = this.entities.get(entityId);
     if (entity === undefined) return;
-    this.entities.set(entityId, { ...entity, condition });
+    const changed = { ...entity, condition };
+    this.entities.set(entityId, changed);
     this.renderSurface.updateCondition(entityId, condition);
+    if (drivenOff(changed)) this.onEntityReset?.(entityId);
     if (entityId === this.selfId) this.onSelfConditionChanged?.(condition);
   }
 
@@ -921,7 +923,8 @@ export class ConnectionController {
 
   /**
    * Dropping `leave` leaves departed peers rendered forever, which is why it is called out as
-   * an easy tag to miss. A minion whose boss's fight ended crumbles on screen before it goes.
+   * an easy tag to miss. A minion whose boss's fight ended crumbles on screen before it goes, and
+   * any other nightmare fades out, its lie over, out of view, or gone from the space standing.
    */
   private handleLeave({ entityId, leftGame, crumbled }: LeaveMessage): void {
     if (entityId === this.selfId && leftGame) {
@@ -936,6 +939,7 @@ export class ConnectionController {
     this.entities.delete(entityId);
     this.onEntityReset?.(entityId);
     if (crumbled === true) this.renderSurface.crumbleEntity(entityId);
+    else if (leaving.kind === 'monster') this.renderSurface.fadeEntity(entityId);
     else this.renderSurface.removeEntity(entityId);
     if (leaving.kind === 'peer') {
       this.players = this.players.filter((name) => name !== leaving.name);

@@ -111,7 +111,7 @@ Service at None, a door's night flag off), so an absent key is not a lost edit. 
   outline in purple, and a polygon in progress in yellow.
 - The overlay marks in red what `buildWorld` would report at the server's boot, and `issues()`
   lists the same: a door that does not resolve, has no sound counterpart, or arrives on
-  something solid (an NPC included). A door that arrives within a nightmare's reach of a monster
+  something solid (an NPC included). A door that arrives within a nightmare's notice of a monster
   spawn's area is reported too, though it stays live. So are walk surfaces of two placements that
   overlap, an `elevation` on a model with walk surfaces, and an unmapped model. What the server logs
   at boot about the rules' named sectors is not among them. That is an `EdariaInn` without a spawn,

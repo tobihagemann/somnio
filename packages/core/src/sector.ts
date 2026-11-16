@@ -106,7 +106,7 @@ export function sectorPointInSpace(sector: SectorView, point: Point): Point {
   return { x: origin.x + point.x, z: origin.z + point.z };
 }
 
-/** A monster spawn's area in the coordinates of its sector's space: the home ground its monsters keep to. */
+/** A monster spawn's area in the coordinates of its sector's space: where its monsters spawn, wander, and walk back into. */
 export function spawnArea(sector: SectorView, spawn: MonsterSpawn): Rect {
   return { ...sectorPointInSpace(sector, spawn), width: spawn.width, depth: spawn.depth };
 }

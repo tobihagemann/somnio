@@ -1587,6 +1587,10 @@
     "en": "miss",
     "de": "daneben"
   },
+  "evaded": {
+    "en": "evaded",
+    "de": "ausgewichen"
+  },
   "north": {
     "en": "north",
     "de": "Norden"

@@ -64,7 +64,7 @@ describe('interest on a line of three sectors', () => {
   });
 
   it('a stationary observer gets entity when a monster crosses from the third sector into the second, and leave when it crosses back', async () => {
-    // Its ground reaches 4 m past East's west edge, into Middle.
+    // Its spawn area reaches 4 m past East's west edge, into Middle.
     const { clock, space, join, walk } = line({ east: { monsterSpawns: [makeMonsterGround({ x: 1, z: 10 }, 5)] } }, { random: landsAtCentre(5) });
     const observer = join('observer', 5);
     const bait = join('bait', 38.5);

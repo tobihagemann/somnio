@@ -568,6 +568,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'effects-none', message: { tag: 'effects', payload: { entityId: 'monster:7', effects: [] } } },
   { name: 'blow', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: true } } },
   { name: 'blow-miss', message: { tag: 'blow', payload: { attackerId: 'monster:7', targetId: PLAYER_ID, hit: false } } },
+  { name: 'blow-evaded', message: { tag: 'blow', payload: { attackerId: PLAYER_ID, targetId: 'monster:7', hit: false, evaded: true } } },
   { name: 'ability', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'lunge', targetId: 'monster:7' } } },
   { name: 'ability-dream-bolt', message: { tag: 'ability', payload: { entityId: PLAYER_ID, abilityId: 'dream-bolt', targetId: 'monster:7' } } },
   {

@@ -6,7 +6,7 @@ import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { plain } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { BESIDE_GHOST, GHOST, MOONSTONE, arena, carrying, characterOf, energy, energyOf, engage, lucidity, payloads, wearing } from './support/combat.ts';
-import { collectMessages } from './support/frames.ts';
+import { collectMessages, recordingOutbox } from './support/frames.ts';
 import { attachPlayer, makeSectorLine } from './support/sectorFactory.ts';
 
 const HEALER_AT: Point = { x: 5, z: 5 };
@@ -691,20 +691,22 @@ describe('raising', () => {
     expect(energyOf(space, healer.entityId).spiritCurrent).toBeGreaterThanOrEqual(spirit);
   });
 
-  it('keeps nightmares off the raised dreamer for the grace time', async () => {
+  it('keeps nightmares off the raised dreamer for the grace time', () => {
     const { clock, space, steps } = arena();
-    // The fallen body stands between the nightmare and the healer, who is out of its reach behind it.
     const target = attachPlayer(space, BESIDE_GHOST, 'target', { character: FALLEN });
+    // Within the Ghost's notice, so it fights the healer until they leave as the raise is done.
     const healer = addHealer(space, { x: 10, z: 11.4 }, 'healer');
     engage(space, target.entityId, healer.entityId);
     steps(121);
     expect(space.isFallen(target.entityId)).toBe(false);
     const raisedAt = clock.ms;
+    space.handOver(healer.entityId, false);
+    const { outbox, sent } = recordingOutbox();
+    attachPlayer(space, { x: 2, z: 2 }, 'watcher', { outbox });
     steps(99);
     expect(energyOf(space, target.entityId).healthCurrent).toBeGreaterThanOrEqual(25);
     steps(2);
-    const blows = payloads(await collectMessages(healer.outbox), 'blow');
-    expect(blows).toEqual([{ attackerId: GHOST, targetId: target.entityId, hit: true }]);
+    expect(payloads(sent, 'blow')).toEqual([{ attackerId: GHOST, targetId: target.entityId, hit: true }]);
     expect(clock.ms - raisedAt).toBeGreaterThanOrEqual(COMBAT.raise.graceSeconds * 1000);
   });
 

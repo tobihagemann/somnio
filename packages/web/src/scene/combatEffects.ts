@@ -77,6 +77,9 @@ export interface EffectBody {
 /** The word over a body a blow missed: one mesh whose material the effects fade. */
 export type MissWord = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 
+/** Which word rises over a body missed: "miss", or "evaded" over a nightmare that evaded what reached it. */
+export type MissWordKind = 'miss' | 'evaded';
+
 /** What the effects ask of the scene. */
 export interface CombatEffectsHost {
   body(entityId: string): EffectBody | undefined;
@@ -90,8 +93,8 @@ export interface CombatEffectsHost {
   playOneShot(entityId: string, oneShot: OneShot, landsIn?: number): THREE.AnimationClip | undefined;
   /** Ends the one-shot the body plays, so its looping pose fades back in. */
   endOneShot(entityId: string): void;
-  /** The word over a body a blow missed, its foot at its origin; made once for each in its pool. */
-  missWord(): MissWord;
+  /** The `word` over a body missed or a nightmare that evaded, its foot at its origin; made once for each in its pool. */
+  missWord(word: MissWordKind): MissWord;
   /** How many times its size in metres the overlay art is drawn, which the miss word follows. */
   overlayScale(): number;
   /** The wall clock, in milliseconds. */
@@ -115,6 +118,7 @@ export const EFFECT_POOL_SIZES = {
   beams: 4,
   raiseRings: 6,
   misses: 6,
+  evasions: 4,
   shells: 6,
   bolts: 4,
   cracks: 4,
@@ -516,6 +520,7 @@ export class CombatEffects {
   private readonly beams: EffectPool<THREE.Mesh>;
   private readonly raiseRingMeshes: EffectPool<THREE.Mesh>;
   private readonly misses: EffectPool<MissWord>;
+  private readonly evasions: EffectPool<MissWord>;
   private readonly shells: EffectPool<THREE.Mesh>;
   private readonly bolts: EffectPool<THREE.Mesh>;
   private readonly cracks: EffectPool<THREE.Mesh>;
@@ -577,7 +582,8 @@ export class CombatEffects {
     this.streams = this.pool(moteMesh, EFFECT_POOL_SIZES.streams);
     this.beams = this.pool(beamMesh, EFFECT_POOL_SIZES.beams);
     this.raiseRingMeshes = this.pool(raiseRingMesh, EFFECT_POOL_SIZES.raiseRings);
-    this.misses = this.pool(() => host.missWord(), EFFECT_POOL_SIZES.misses);
+    this.misses = this.pool(() => host.missWord('miss'), EFFECT_POOL_SIZES.misses);
+    this.evasions = this.pool(() => host.missWord('evaded'), EFFECT_POOL_SIZES.evasions);
     this.shells = this.pool(shellMesh, EFFECT_POOL_SIZES.shells);
     this.bolts = this.pool(boltMesh, EFFECT_POOL_SIZES.bolts);
     this.cracks = this.pool(crackMesh, EFFECT_POOL_SIZES.cracks);
@@ -621,14 +627,14 @@ export class CombatEffects {
   /**
    * One swing or strike. A Cleave's blows land as its sweep passes each body. Any other blow plays
    * the attacker's swing and lands when the clip's blade or fist does, and a dreamer's also draws its
-   * arc. With no clip to time it by, it lands at once.
+   * arc. With no clip to time it by, it lands at once. One that misses shows `word` over the target.
    */
-  blow(attackerId: string, targetId: string, hit: boolean): void {
+  blow(attackerId: string, targetId: string, hit: boolean, word: MissWordKind): void {
     if (this.stalled(this.host.now())) return;
     const cleaveDelay = this.cleaveDelay(attackerId, targetId);
     const hits = hit ? targetId : undefined;
     if (cleaveDelay !== undefined) {
-      this.after(cleaveDelay, () => this.land(attackerId, targetId, hit, CLEAVE_LANDING), hits);
+      this.after(cleaveDelay, () => this.land(attackerId, targetId, hit, word, CLEAVE_LANDING), hits);
       return;
     }
     const strikeIn = strikeDelay(this.host.playOneShot(attackerId, 'swing'));
@@ -638,7 +644,7 @@ export class CombatEffects {
       const heading = headingBetween(attacker, target);
       this.after(strikeIn - Math.min(strikeIn, ARC_SHAPES.swing.sweep * 0.7), () => this.showArc('swing', attackerId, heading));
     }
-    this.after(strikeIn, () => this.land(attackerId, targetId, hit, attacker?.kind === 'monster' ? STRIKE_LANDING : SWING_LANDING), hits);
+    this.after(strikeIn, () => this.land(attackerId, targetId, hit, word, attacker?.kind === 'monster' ? STRIKE_LANDING : SWING_LANDING), hits);
   }
 
   /**
@@ -648,6 +654,7 @@ export class CombatEffects {
    */
   ability(casterId: string, abilityId: AbilityId, targetId: string | undefined, shown?: AbilityShown): void {
     const channel = shown !== undefined && 'phase' in shown ? shown : undefined;
+    const evaded = shown !== undefined && 'evaded' in shown;
     const stalled = this.stalled(this.host.now());
     if (channel?.phase === 'done' || channel?.phase === 'broken') {
       this.endChannel(casterId, targetId ?? casterId, channel.phase === 'done', !stalled);
@@ -688,13 +695,15 @@ export class CombatEffects {
         this.ward(casterId, targetId ?? casterId, strikeIn);
         return;
       case 'weaken':
-        this.weaken(casterId, targetId, strikeIn);
+        if (evaded) this.evadedCurse(casterId, targetId, strikeIn);
+        else this.weaken(casterId, targetId, strikeIn);
         return;
       case 'bind':
-        this.bind(casterId, targetId, strikeIn);
+        if (evaded) this.evadedCurse(casterId, targetId, strikeIn);
+        else this.bind(casterId, targetId, strikeIn);
         return;
       case 'dream-bolt':
-        this.dreamBolt(casterId, targetId, strikeIn, shown !== undefined && 'evaded' in shown);
+        this.dreamBolt(casterId, targetId, strikeIn, evaded);
         return;
       case 'veil':
         this.veil(casterId, strikeIn);
@@ -1087,15 +1096,15 @@ export class CombatEffects {
   }
 
   /**
-   * A blow lands on the target or misses it. A warded dreamer's shell, or a braced one's brace, takes
-   * a landed blow instead of the body, unless the blow spent the ward: it cracks the shell a last
-   * time, shatters it, and lands on the body.
+   * A blow lands on the target, or misses it and shows `word` over it. A warded dreamer's shell, or a
+   * braced one's brace, takes a landed blow instead of the body, unless the blow spent the ward: it
+   * cracks the shell a last time, shatters it, and lands on the body.
    */
-  private land(attackerId: string, targetId: string, hit: boolean, landing: Landing): void {
+  private land(attackerId: string, targetId: string, hit: boolean, word: MissWordKind, landing: Landing): void {
     const target = this.host.body(targetId);
     if (target === undefined) return;
     if (!hit) {
-      this.showMiss(targetId);
+      this.showMiss(targetId, word);
       return;
     }
     const attacker = this.host.body(attackerId);
@@ -1455,11 +1464,12 @@ export class CombatEffects {
   }
 
   /**
-   * The word over a body a blow missed, as large as the plaques are drawn. It rises from the standing
-   * head and fades out, and holds still and whole under reduced motion.
+   * The word over a body a blow missed, or "evaded" over a nightmare that evaded it, as large as the
+   * plaques are drawn. It rises from the standing head and fades out, and holds still and whole under
+   * reduced motion.
    */
-  private showMiss(entityId: string): void {
-    const word = this.misses.take();
+  private showMiss(entityId: string, kind: MissWordKind): void {
+    const word = (kind === 'evaded' ? this.evasions : this.misses).take();
     this.animate(word, (elapsed) => {
       const body = this.host.body(entityId);
       if (body === undefined) return false;
@@ -1822,6 +1832,16 @@ export class CombatEffects {
   }
 
   /**
+   * Weaken or Bind its nightmare evaded: the violet flick leaps to it all the same, and the evaded
+   * word rises over it where the curse would have taken hold.
+   */
+  private evadedCurse(casterId: string, targetId: string | undefined, strikeIn: number): void {
+    if (targetId === undefined) return;
+    this.castFlick(casterId, targetId, strikeIn);
+    this.after(strikeIn, () => this.showMiss(targetId, 'evaded'));
+  }
+
+  /**
    * Bind: a violet flick to the nightmare as the circling hands sink, a ring slams down round its
    * feet, and runes lie there while tethers snap up from them to hold it, for as long as it is bound.
    */
@@ -1848,7 +1868,7 @@ export class CombatEffects {
    * Dream-bolt: as the casting hand pushes out, a shard of dream flies from it to the nightmare,
    * crackling, and bursts on it as the server lands its harm: `boltFlightSeconds` after the use, by
    * the distance between the bodies as the ability arrives. One the nightmare `evaded` flies all the
-   * same and shows the miss word where it would have burst.
+   * same and shows the evaded word where it would have burst.
    */
   private dreamBolt(casterId: string, targetId: string | undefined, strikeIn: number, evaded: boolean): void {
     if (targetId === undefined) return;
@@ -1895,7 +1915,7 @@ export class CombatEffects {
       uniforms['uAlpha']!.value = 1 - tail ** 4;
       if (head >= 1 && !landed) {
         landed = true;
-        if (evaded) this.showMiss(targetId);
+        if (evaded) this.showMiss(targetId, 'evaded');
         else this.boltBurst(casterId, targetId, heading);
       }
       return tail < 1;

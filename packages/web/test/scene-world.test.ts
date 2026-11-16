@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene, configureWorldRenderer, watchViewport } from '@/scene/worldScene';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { HttpModelAssets, prototypeMeshesOf } from '@/scene/modelAssets';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { ORTHO_RIG, PLAYER_ZOOM, cameraPosition, frustumBounds, offsetDirection, scaleForZoomFactor } from '@/scene/cameraRig';
@@ -11,7 +12,7 @@ import { STRIKE_AT } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME, ELITE_AURA_POOL_SIZE, ELITE_TRAIT_COLORS } from '@/scene/eliteAuras';
 import { QUEST_MARKER_NAME, QUEST_MARKER_POOL_SIZE } from '@/scene/questMarkers';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
-import { LOOT_BEAM_NAME, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
+import { LOOT_BEAM_NAME, LOOT_FADE_SECONDS, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { GrassSpring } from '@/scene/grassSpring';
 import { rasterizeGround } from '@/scene/groundField';
@@ -1661,6 +1662,18 @@ describe('what a pointer is over, and the target', () => {
     expect(scene.entityAt(ground.x, ground.y)).toBeUndefined();
   });
 
+  it('passes over a nightmare driven off to the ground it lies on', () => {
+    const scene = makeScene();
+    scene.enterSpace(world());
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
+    scene.updateCondition('monster:1', 'fallen');
+
+    const feet = viewportOf(scene, 12, 0, 10);
+    expect(scene.entityAt(feet.x, feet.y)).toBeUndefined();
+    expect(scene.pressTargetAt(feet.x, feet.y)).toMatchObject({ kind: 'ground' });
+  });
+
   /**
    * A point beside a body's middle by `metres` across the screen, which lies that far from the
    * capsule a body is picked by: the camera's right is level, so it crosses both the ray and the body.
@@ -1872,23 +1885,149 @@ describe('what a pointer is over, and the target', () => {
       }
     });
 
-    it('is pressed no more once it is gone', () => {
-      const scene = dropsAround();
-      const open = scene._viewportPointOfLoot('open', 'model')!;
+    /** `dropsAround`, its ground models in `laid` ('under' first, then 'open'), on a wall clock that `tick` moves in steps of 50 ms and `hide` moves alone. */
+    function fading(reducedMotion = false): {
+      scene: WorldScene;
+      laid: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[];
+      tick: (seconds: number) => void;
+      hide: (ms: number) => void;
+    } {
+      let wallMs = 0;
+      const laid: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = [];
+      const ground = (): THREE.Mesh => laid[laid.push(lyingDagger() as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>) - 1]!;
+      const scene = dropsAround(new WorldScene({ ...emptyAssets(), ground }, TEST_REGISTRY, 1, reducedMotion, () => wallMs));
+      const tick = (seconds: number): void => {
+        for (let elapsed = 0; elapsed < seconds - 1e-9; elapsed += 0.05) {
+          wallMs += 50;
+          scene.tick(0.05);
+        }
+      };
+      return { scene, laid, tick, hide: (ms) => (wallMs += ms) };
+    }
+
+    /** Whether `object` is drawn among the drops. */
+    function drawn(scene: WorldScene, object: THREE.Object3D): boolean {
+      let found = false;
+      scene.scene.getObjectByName(LOOT_MARKERS_NAME)!.traverseVisible((each) => {
+        if (each === object) found = true;
+      });
+      return found;
+    }
+
+    /** The marker a drop's model lies in: the model's holder's toss's parent. */
+    const markerOf = (model: THREE.Object3D): THREE.Object3D => model.parent!.parent!.parent!;
+
+    /** Every mesh drawn in a marker, by name, with its material's opacity. */
+    function opacities(marker: THREE.Object3D): [string, number][] {
+      const meshes: [string, number][] = [];
+      marker.traverseVisible((object) => {
+        const mesh = object as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+        if (mesh.isMesh) meshes.push([mesh.name, mesh.material.opacity]);
+      });
+      return meshes;
+    }
+
+    it('fades out where it lay once gone, taking no press meanwhile, and is gone once clear', () => {
+      const { scene, laid, tick } = fading();
+      const model = laid[1]!;
+      const { material } = model;
+      const pressed = [scene._viewportPointOfLoot('open', 'model')!, scene._viewportPointOfLoot('open', 'label')!];
       scene.removeLoot('open');
       expect(scene._viewportPointOfLoot('open', 'model')).toBeUndefined();
-      expect(scene.pressTargetAt(open.x, open.y)).toMatchObject({ kind: 'ground' });
+      for (const point of pressed) expect(scene.pressTargetAt(point.x, point.y)).toMatchObject({ kind: 'ground' });
+      const clone = model.material;
+      expect(clone).not.toBe(material);
+
+      tick(LOOT_FADE_SECONDS - 0.05);
+      expect(drawn(scene, model)).toBe(true);
+      expect(shown(scene, LOOT_BEAM_NAME)).toHaveLength(2);
+      expect(clone.opacity).toBeGreaterThan(0);
+      expect(clone.opacity).toBeLessThan(1);
+      expect(material.opacity).toBe(1);
+      for (const point of pressed) expect(scene.pressTargetAt(point.x, point.y)).toMatchObject({ kind: 'ground' });
+
+      tick(0.1);
+      expect(drawn(scene, model)).toBe(false);
+      expect(shown(scene, LOOT_BEAM_NAME)).toHaveLength(1);
+      expect(model.material).toBe(material);
     });
 
-    it('waits for a free marker beyond the pool, the newer of two drops as far from the player, and takes the first one freed', () => {
-      const scene = makeScene();
-      scene.enterSpace(world());
+    it('draws a drop shown again under the same id while it fades whole, beside the fading one', () => {
+      const { scene, laid, tick } = fading();
+      const faded = markerOf(laid[0]!);
+      scene.removeLoot('under');
+      tick(0.25);
+      scene.showLoot(drop('under', 13, 10));
+      const again = markerOf(laid.at(-1)!);
+      expect(again).not.toBe(faded);
+      expect(opacities(again)).toEqual(opacities(markerOf(laid[1]!)));
+
+      tick(LOOT_FADE_SECONDS);
+      expect(opacities(again)).toEqual(opacities(markerOf(laid[1]!)));
+      expect(scene._viewportPointOfLoot('under', 'label')).toBeDefined();
+    });
+
+    it('is gone on the tick a stall ends', () => {
+      const { scene, laid, tick, hide } = fading();
+      const { material } = laid[1]!;
+      scene.removeLoot('open');
+      tick(0.2);
+      const cloneDispose = vi.spyOn(laid[1]!.material, 'dispose');
+      hide(2000);
+      scene.tick(0.01);
+      expect(drawn(scene, laid[1]!)).toBe(false);
+      expect(cloneDispose).toHaveBeenCalled();
+      expect(laid[1]!.material).toBe(material);
+    });
+
+    it('puts back what a fading drop drew with and disposes its clones as a new space starts, so the next drop in its marker draws whole', () => {
+      const { scene, laid, tick } = fading();
+      const marker = markerOf(laid[0]!);
+      const parts = [laid[0]!, marker.getObjectByName(LOOT_BEAM_NAME)!, marker.getObjectByName(LOOT_GLOW_NAME)!] as THREE.Mesh<
+        THREE.BufferGeometry,
+        THREE.Material
+      >[];
+      marker.traverse((object) => {
+        const mesh = object as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+        if (mesh.isMesh && mesh.material.depthTest === false) parts.push(mesh);
+      });
+      expect(parts).toHaveLength(4);
+      const materials = parts.map((part) => part.material);
+      scene.removeLoot('under');
+      tick(0.25);
+      const disposes = parts.map((part) => vi.spyOn(part.material, 'dispose'));
+
+      const restored = (): boolean => parts.every((part, index) => part.material === materials[index]);
+
+      scene.enterSpace(world('EdariaInn'));
+      expect(restored()).toBe(true);
+      for (const dispose of disposes) expect(dispose).toHaveBeenCalled();
+
       scene.placeEntity(player());
-      for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(drop(`loot-${index}`, 2 + index, 4));
-      const waiting = `loot-${LOOT_MARKER_POOL_SIZE}`;
-      expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
-      scene.removeLoot('loot-3');
-      expect(scene._viewportPointOfLoot(waiting, 'label')).toBeDefined();
+      scene.showLoot(drop('next', 10, 12));
+      expect(markerOf(laid.at(-1)!)).toBe(marker);
+      expect(drawn(scene, parts[1]!)).toBe(true);
+      expect(restored()).toBe(true);
+    });
+
+    it('waits for a free marker beyond the pool, the newer of two drops as far from the player, and takes the first one freed, once its drop has faded or at once under reduced motion', () => {
+      for (const reducedMotion of [false, true]) {
+        const scene = new WorldScene(emptyAssets(), TEST_REGISTRY, 1, reducedMotion, () => 0);
+        scene.enterSpace(world());
+        scene.placeEntity(player());
+        for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(drop(`loot-${index}`, 2 + index, 4));
+        const waiting = `loot-${LOOT_MARKER_POOL_SIZE}`;
+        expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
+        scene.removeLoot('loot-3');
+        expect(scene._viewportPointOfLoot('loot-3', 'label')).toBeUndefined();
+        if (!reducedMotion) {
+          expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
+          for (let elapsed = 0; elapsed < LOOT_FADE_SECONDS - 0.1; elapsed += 0.05) scene.tick(0.05);
+          expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
+          scene.tick(0.1);
+        }
+        expect(scene._viewportPointOfLoot(waiting, 'label'), `reduced motion ${reducedMotion}`).toBeDefined();
+      }
     });
 
     it('draws the drops nearest the player while more lie than the pool holds, and chooses them again as the player walks', () => {
@@ -2629,16 +2768,21 @@ describe('overlay artwork', () => {
     expect(namePlaqueBackground('monster', 'hale', true)).toBe(NAME_PLAQUE.playerBackground);
   });
 
-  it.each(['grazed', 'wounded', 'hurt', 'failing', 'fallen'] as const)(
-    'tints a %s player, peer, and monster alike, and leaves an NPC as it is',
-    (condition) => {
-      const tint = NAME_PLAQUE.conditionBackground[condition];
-      expect(namePlaqueBackground('player', condition, false)).toBe(tint);
-      expect(namePlaqueBackground('peer', condition, false)).toBe(tint);
-      expect(namePlaqueBackground('monster', condition, false)).toBe(tint);
-      expect(namePlaqueBackground('npc', condition, false)).toBe(NAME_PLAQUE.npcBackground);
-    },
-  );
+  it.each(['grazed', 'wounded', 'hurt', 'failing'] as const)('tints a %s player, peer, and monster alike, and leaves an NPC as it is', (condition) => {
+    const tint = NAME_PLAQUE.conditionBackground[condition];
+    expect(namePlaqueBackground('player', condition, false)).toBe(tint);
+    expect(namePlaqueBackground('peer', condition, false)).toBe(tint);
+    expect(namePlaqueBackground('monster', condition, false)).toBe(tint);
+    expect(namePlaqueBackground('npc', condition, false)).toBe(NAME_PLAQUE.npcBackground);
+  });
+
+  it('tints a fallen player and peer, leaves an NPC as it is, and gives a nightmare driven off no plaque', () => {
+    const tint = NAME_PLAQUE.conditionBackground.fallen;
+    expect(namePlaqueBackground('player', 'fallen', false)).toBe(tint);
+    expect(namePlaqueBackground('peer', 'fallen', false)).toBe(tint);
+    expect(namePlaqueBackground('npc', 'fallen', false)).toBe(NAME_PLAQUE.npcBackground);
+    expect(namePlaqueBackground('monster', 'fallen', true)).toBeUndefined();
+  });
 
   it('gives each band its own tint', () => {
     expect(new Set(Object.values(NAME_PLAQUE.conditionBackground)).size).toBe(5);
@@ -2704,6 +2848,19 @@ describe('elite auras', () => {
     scene.placeEntity(elite('monster:20', 'stony', 20));
     scene.placeEntity(elite('monster:21', 'stony', 21));
     expect(new Set(auras(scene))).toEqual(new Set(pool));
+  });
+
+  it('goes as the elite is driven off', () => {
+    const scene = makeScene();
+    scene.placeEntity(elite('monster:1', 'stony'));
+    scene.updateCondition('monster:1', 'fallen');
+    expect(auras(scene)).toEqual([]);
+  });
+
+  it('stands round no elite first seen lying driven off', () => {
+    const scene = makeScene();
+    scene.placeEntity({ ...elite('monster:1', 'stony'), condition: 'fallen' });
+    expect(auras(scene)).toEqual([]);
   });
 
   it.each([
@@ -3409,14 +3566,17 @@ describe('scatter', () => {
     ...overrides,
   });
 
-  it('presses the grass under a lying drop flat, and lets it spring back once the drop is gone', () => {
+  it('presses the grass under a lying drop flat, and lets it spring back as the drop starts to fade', () => {
     const { scene, root, tilt } = grown({ ground: lyingDagger });
     scene.showLoot(dagger('loot-1', root));
     for (let frame = 0; frame < 30; frame += 1) scene.tick(1 / 60);
     expect(tilt()).toBeGreaterThan(1.45);
 
     scene.removeLoot('loot-1');
-    for (let frame = 0; frame < 180; frame += 1) scene.tick(1 / 60);
+    // Half way through the fade, the drop still drawn.
+    for (let frame = 0; frame < 15; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeLessThan(1);
+    for (let frame = 0; frame < 165; frame += 1) scene.tick(1 / 60);
     expect(tilt()).toBeLessThan(0.05);
   });
 
@@ -3544,6 +3704,148 @@ describe('GPU resource disposal', () => {
 
     scene.placeEntity(player());
     expect(skeletonDispose).toHaveBeenCalled();
+  });
+});
+
+describe('a nightmare fading out', () => {
+  /**
+   * Two Ghosts cloned from one prototype, as the pack hands them out: each clone shares the
+   * prototype's material and its map. The wall clock runs on with each tick, and `hide` moves it on
+   * with no tick, as a hidden tab's does.
+   */
+  function haunted(reducedMotion = false) {
+    const prototype = skinnedModel().root;
+    const material = new THREE.MeshStandardMaterial({ map: new THREE.DataTexture() });
+    (prototype.children[0] as THREE.SkinnedMesh).material = material;
+    const models: THREE.Object3D[] = [];
+    let wallMs = 0;
+    const scene = new WorldScene(
+      {
+        ...emptyAssets(),
+        character: () => {
+          const model = cloneSkinned(prototype);
+          models.push(model);
+          return model;
+        },
+      },
+      TEST_REGISTRY,
+      1,
+      reducedMotion,
+      () => wallMs,
+    );
+    const tick = (seconds: number): void => {
+      for (let elapsed = 0; elapsed < seconds - 1e-9; elapsed += 0.05) {
+        wallMs += 50;
+        scene.tick(0.05);
+      }
+    };
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', characterModelId: 'ghost', condition: 'fallen' }));
+    scene.placeEntity(player({ id: 'monster:2', kind: 'monster', name: 'Ghost', characterModelId: 'ghost', position: { x: 12, z: 10 } }));
+    tick(0.05);
+    const meshOf = (model: THREE.Object3D): THREE.SkinnedMesh => model.children[0] as THREE.SkinnedMesh;
+    return { scene, material, models, meshOf, tick, hide: (ms: number) => (wallMs += ms) };
+  }
+
+  const inScene = (scene: WorldScene, model: THREE.Object3D): boolean => scene.scene.getObjectById(model.id) !== undefined;
+
+  it('fades its body to clear where it lies over the seconds, leaving every other body of its kind as it is, and is then gone', () => {
+    const { scene, material, models, meshOf, tick } = haunted();
+    scene.fadeEntity('monster:1');
+    const clone = meshOf(models[0]!).material as THREE.MeshStandardMaterial;
+    const cloneDispose = vi.spyOn(clone, 'dispose');
+    expect(clone).not.toBe(material);
+    expect(clone.transparent).toBe(true);
+    expect(clone.map).toBe(material.map);
+
+    const opacities: number[] = [];
+    while (opacities.length < 28) {
+      tick(0.05);
+      opacities.push(clone.opacity);
+      expect([material.transparent, material.opacity]).toEqual([false, 1]);
+    }
+    expect(inScene(scene, models[0]!)).toBe(true);
+    expect(opacities.every((opacity, index) => opacity < (opacities[index - 1] ?? 1))).toBe(true);
+    expect(clone.opacity).toBeGreaterThan(0);
+    expect(clone.opacity).toBeLessThan(1);
+    expect(meshOf(models[1]!).material).toBe(material);
+
+    tick(0.2);
+    expect(inScene(scene, models[0]!)).toBe(false);
+    expect(cloneDispose).toHaveBeenCalled();
+    expect([material.transparent, material.opacity]).toEqual([false, 1]);
+    expect(meshOf(models[1]!).material).toBe(material);
+  });
+
+  it('takes the body at once under reduced motion', () => {
+    const { scene, material, models, meshOf } = haunted(true);
+    scene.fadeEntity('monster:1');
+    expect(inScene(scene, models[0]!)).toBe(false);
+    expect(meshOf(models[0]!).material).toBe(material);
+  });
+
+  it('takes the body on the tick a stall ends', () => {
+    const { scene, models, meshOf, tick, hide } = haunted();
+    scene.fadeEntity('monster:1');
+    tick(0.5);
+    const cloneDispose = vi.spyOn(meshOf(models[0]!).material as THREE.Material, 'dispose');
+    hide(2000);
+    scene.tick(0.01);
+    expect(inScene(scene, models[0]!)).toBe(false);
+    expect(cloneDispose).toHaveBeenCalled();
+  });
+
+  it("disposes its clones as a new space starts, and leaves the prototype's material and map", () => {
+    const { scene, material, models, meshOf, tick } = haunted();
+    scene.fadeEntity('monster:1');
+    tick(0.5);
+    const cloneDispose = vi.spyOn(meshOf(models[0]!).material as THREE.Material, 'dispose');
+    const materialDispose = vi.spyOn(material, 'dispose');
+    const mapDispose = vi.spyOn(material.map!, 'dispose');
+
+    scene.enterSpace(world('EdariaInn'));
+
+    expect(cloneDispose).toHaveBeenCalled();
+    expect(inScene(scene, models[0]!)).toBe(false);
+    expect(materialDispose).not.toHaveBeenCalled();
+    expect(mapDispose).not.toHaveBeenCalled();
+  });
+
+  it('takes a crumbling body as well as a fading one as a new space starts', () => {
+    const { scene, models, tick } = haunted();
+    const height = (model: THREE.Object3D): number => model.getWorldPosition(new THREE.Vector3()).y;
+    const standing = height(models[1]!);
+    scene.fadeEntity('monster:1');
+    scene.crumbleEntity('monster:2');
+    tick(0.3);
+    expect(models.map((model) => inScene(scene, model))).toEqual([true, true]);
+    const sunk = height(models[1]!);
+    expect(sunk).toBeLessThan(standing);
+
+    scene.enterSpace(world('EdariaInn'));
+
+    expect(models.map((model) => inScene(scene, model))).toEqual([false, false]);
+    tick(0.3);
+    expect(height(models[1]!)).toBe(sunk);
+  });
+
+  it.each([
+    ['fades', (scene: WorldScene) => scene.fadeEntity('monster:1')],
+    ['crumbles', (scene: WorldScene) => scene.crumbleEntity('monster:1')],
+  ] as const)('takes the portrait off the body of a target that %s as it leaves', (_label, depart) => {
+    const { scene, models, tick } = haunted();
+    const layersOf = (model: THREE.Object3D): boolean[] => {
+      const enabled: boolean[] = [];
+      model.traverse((object) => enabled.push(...Object.values(PORTRAIT_LAYERS).map((layer) => object.layers.isEnabled(layer))));
+      return enabled;
+    };
+    scene.setPortraitSubject('target', 'monster:1');
+    expect(models[0]!.layers.isEnabled(PORTRAIT_LAYERS.target)).toBe(true);
+
+    depart(scene);
+    tick(0.1);
+
+    expect(inScene(scene, models[0]!)).toBe(true);
+    expect(layersOf(models[0]!).some(Boolean)).toBe(false);
   });
 });
 

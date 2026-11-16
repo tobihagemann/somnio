@@ -353,6 +353,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'West Meadow',
   '%1$@ of %2$@',
   'miss',
+  'evaded',
   'Target',
   'Target, %@',
   'Target, %@, facing locked',
