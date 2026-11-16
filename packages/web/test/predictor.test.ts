@@ -67,6 +67,8 @@ interface Rig {
   slowed: boolean;
   /** Whether a channel of the player's holds them still. */
   heldStill: boolean;
+  /** The timestamp of the latest tick, or `undefined` before the first. */
+  lastTickMs: number | undefined;
   self(): ClientEntity;
   moves(): Point[];
   /** Steers toward a point far along `direction` from where the player stands. */
@@ -81,7 +83,6 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
   const world = options.world ?? new ClientWorld('outdoors', TEST_REGISTRY);
   if (options.world === undefined) world.addSector(outdoorSector('Meadow', { x: 0, z: 0 }, options.sector));
   const interpolation = new RemoteInterpolation();
-  let tickTime = 0;
 
   // Typed through the mutable shape the rig exposes, so a test assigning a bogus state or overlay is
   // a compile error rather than a silently-closed gate.
@@ -107,6 +108,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     fallen: false,
     slowed: false,
     heldStill: false,
+    lastTickMs: undefined,
     self: () => {
       const found = entities.get('self');
       if (found === undefined) throw new Error('self entity missing');
@@ -122,7 +124,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
     interpolation,
     send: (message) => {
       sent.push(message);
-      if (message.tag === 'move') moveTimes.push(tickTime);
+      if (message.tag === 'move') moveTimes.push(rig.lastTickMs ?? 0);
     },
     lookAt: () => rig.lookAt,
     running: () => rig.running,
@@ -135,17 +137,23 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
   rig.predictor = predictor;
   const runTick = predictor.runTick.bind(predictor);
   predictor.runTick = (nowMs: number): void => {
-    tickTime = nowMs;
+    rig.lastTickMs = nowMs;
     runTick(nowMs);
   };
   return rig;
 }
 
-/** Runs the priming tick plus `steps` further ticks spaced `stepMs` apart. */
+/**
+ * Runs a priming tick at the rig's latest tick (0 before the first), then `steps` ticks `stepMs`
+ * apart from it. The predictor's clock never runs back, so a tick before its latest would walk
+ * nothing. The priming tick walks nothing either: it repeats the latest tick, or starts the clock
+ * where a reset cleared it or only fallen ticks have run.
+ */
 function runTicks(rig: Rig, steps: number, stepMs: number): void {
-  rig.predictor.runTick(0);
+  const fromMs = rig.lastTickMs ?? 0;
+  rig.predictor.runTick(fromMs);
   for (let index = 1; index <= steps; index += 1) {
-    rig.predictor.runTick(index * stepMs);
+    rig.predictor.runTick(fromMs + index * stepMs);
   }
 }
 

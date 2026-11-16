@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ABILITIES } from '../src/abilities.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { EFFECTS } from '../src/effects.ts';
-import { gaitMetresPerSecond } from '../src/gait.ts';
+import { MOVE_ALLOWANCE_SECONDS, gaitMetresPerSecond } from '../src/gait.ts';
 import { AFFIXES, rollItem } from '../src/affixes.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS } from '../src/items.ts';
@@ -270,6 +270,10 @@ describe('literal sets', () => {
 
   it('gives every gait a speed', () => {
     expect(GAITS.map(gaitMetresPerSecond)).toEqual([1, 2, 3]);
+  });
+
+  it('pins how much travel the movement allowance holds', () => {
+    expect(MOVE_ALLOWANCE_SECONDS).toBe(2);
   });
 });
 

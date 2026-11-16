@@ -27,6 +27,7 @@ import {
   ELITE_TRAIT_IDS,
   GLOBAL_COOLDOWN_SECONDS,
   MAX_SHARED_DROPS,
+  MOVE_ALLOWANCE_SECONDS,
   OUTDOOR_SPACE_ID,
   POOL_FIELDS,
   PRACTICE,
@@ -485,11 +486,11 @@ export interface TickDigest {
 const DEFAULT_GAIT: Gait = 'jog';
 /**
  * A player's movement budget accrues on the server's clock at running speed with a quarter to
- * spare, and holds two seconds' worth: the reports a stalled connection held back arrive together,
- * and a client that never outran its gait is not to be corrected for them.
+ * spare, and holds `MOVE_ALLOWANCE_SECONDS` of it: the reports a stalled connection held back arrive
+ * together, and a client that never outran its gait is not to be corrected for them.
  */
 const ALLOWANCE_METRES_PER_SECOND = gaitMetresPerSecond('run') * 1.25;
-const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * 2;
+const ALLOWANCE_CAP_METRES = ALLOWANCE_METRES_PER_SECOND * MOVE_ALLOWANCE_SECONDS;
 /**
  * The seconds a player may still walk or jog accrue with the allowance's quarter to spare,
  * whatever gait is reported, so no report buys credit faster than another. Each walked or jogged

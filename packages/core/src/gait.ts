@@ -9,6 +9,13 @@ export function gaitMetresPerSecond(gait: Gait): number {
 }
 
 /**
+ * How many seconds' accrual the server's movement allowance holds. It accrues faster than running,
+ * so reports sent together, a stalled connection's or a hidden tab's catch-up, are accepted while
+ * they cover no more than that many seconds of travel.
+ */
+export const MOVE_ALLOWANCE_SECONDS = 2;
+
+/**
  * Relative movement direction. A single value drives both the
  * movement clip and the speed penalty, so the clip you see and the speed you move at can never
  * disagree.

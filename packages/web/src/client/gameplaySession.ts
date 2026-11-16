@@ -462,7 +462,7 @@ export class GameplaySession {
     this.markTarget();
   }
 
-  /** The per-frame body. Injected timestamp, so a test drives it directly. */
+  /** The per-tick body, run on each frame and, in a hidden tab, by its timer. Injected timestamp, so a test drives it directly. */
   runTick(timestampMs: number): void {
     const hold = this.hold;
     if (hold?.entityId !== undefined) {
@@ -1144,7 +1144,7 @@ export class GameplaySession {
 
   /**
    * Lets go of a press whose `pointerup` a hidden page would never see, and resets the tick clock
-   * so the first tick back measures no elapsed time, as a session's first tick does. A pending door
+   * so the next tick measures no elapsed time, as a session's first tick does. A pending door
    * stays pending, since the server is still answering it.
    */
   handleVisibilityLoss(): void {
@@ -1640,8 +1640,8 @@ export class GameplaySession {
    * the speaker's body when the client has one, and otherwise from where the server says (a speaker
    * out of view, or behind a door). The bubble follows the body once it arrives. When the scene pins
    * the bubble at the screen's edge, the chat line names the direction of the voice. The voice and
-   * the direction are both taken from where the bodies stand as the line arrives. A hidden tab runs
-   * no tick, so the positions last drawn there are stale.
+   * the direction are both taken from where the bodies stand as the line arrives. A hidden tab ticks
+   * only when its timer wakes, so the positions last drawn there may be a second old or more.
    */
   private handleServerSay(say: SayMessage): void {
     this.predictor.drawRemoteEntities(this.now());

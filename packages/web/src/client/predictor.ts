@@ -24,12 +24,12 @@ import type { WorldRenderSurface } from './renderSurface';
 /**
  * One client-predicted gameplay tick.
  *
- * The local player moves by client-side prediction at frame rate and reports to the server on a
- * 10 Hz heartbeat; the server checks each report with `isLegalMove` from `@somnio/core` over the
- * same sectors and registry. The rule that keeps a client whose reports arrive in time from being
- * corrected is that nothing is reported which this side's own `isLegalMove` refuses: every step is taken
- * through `resolveMove`, and the segment from the last report to each new position is tested
- * before the position is committed.
+ * The local player moves by client-side prediction at frame rate, or in 0.1 s ticks while the tab
+ * is hidden, and reports to the server on a 10 Hz heartbeat; the server checks each report with
+ * `isLegalMove` from `@somnio/core` over the same sectors and registry. The rule that keeps a client
+ * whose reports arrive in time from being corrected is that nothing is reported which this side's
+ * own `isLegalMove` refuses: every step is taken through `resolveMove`, and the segment from the
+ * last report to each new position is tested before the position is committed.
  *
  * Time is injected — `runTick` takes the timestamp rather than reading a clock — so the whole
  * tick is drivable from a test without a frame loop. That is the repo's testable-time
@@ -331,9 +331,10 @@ export class GameplayPredictor {
     const selfEntity: ClientEntity = { ...existing };
     const gait = this.winded() ? 'walk' : gaitAllowed(this.running() ? 'run' : 'jog', this.effects());
 
-    // The lower bound guards a misbehaving injected timestamp; `performance.now()` is monotonic.
+    // A frame's timestamp can precede the last tick a hidden tab's timer ran, so an older timestamp
+    // walks nothing and leaves the clock where it stands rather than walking that time again.
     const elapsedMs = this.lastTickMs === undefined ? 0 : clamp(nowMs - this.lastTickMs, 0, MAX_TICK_ELAPSED_MS);
-    this.lastTickMs = nowMs;
+    this.lastTickMs = Math.max(nowMs, this.lastTickMs ?? nowMs);
 
     const heldStill = this.heldStill();
     // Standing still while held is no stall, so a path's leg is timed afresh from when it lets go.

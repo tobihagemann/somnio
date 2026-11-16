@@ -1,6 +1,6 @@
-import { bundledModelRegistry, clamp } from '@somnio/core';
+import { MOVE_ALLOWANCE_SECONDS, bundledModelRegistry, clamp } from '@somnio/core';
 import type { Point } from '@somnio/core';
-import { ConnectionController, GameplaySession, TAP_SLOP_PX } from '@/client';
+import { ConnectionController, GameplaySession, MAX_TICK_ELAPSED_MS, TAP_SLOP_PX } from '@/client';
 import type { CharacterRequest, OverlayKind } from '@/client';
 import { assertNever } from '@somnio/protocol';
 import type { CharacterResult, CharacterSummaryMessage, RegisterResult } from '@somnio/protocol';
@@ -92,6 +92,13 @@ function detectWebGL(): boolean {
 export const UPRIGHT_PHONE_QUERY = '(pointer: coarse) and (orientation: portrait) and (max-width: 600px)';
 
 /**
+ * One wake of a hidden tab's timer walks at most this much time, what the server's allowance holds,
+ * so that wake's reports fit it. They arrive together, as a stalled connection's do, so a stall on
+ * top of them leaves less room before a correction.
+ */
+const MAX_CATCH_UP_MS = MOVE_ALLOWANCE_SECONDS * 1000;
+
+/**
  * What the registration overlay says for each failing register result. Thunks rather than
  * constants so `t` runs after the locale resolves, and so each key sits in a literal `t('...')`
  * the catalog test's source scan can find.
@@ -159,6 +166,10 @@ export class AppShell {
   private renderer: THREE.WebGLRenderer | undefined;
   private hoveringHUD = false;
   private lastFrameMs: number | undefined;
+  /** The timer that ticks the session while the tab is hidden, since a hidden tab draws no frames. */
+  private hiddenTicker: ReturnType<typeof setInterval> | undefined;
+  /** The timestamp of the last tick that timer ran. */
+  private hiddenTickMs = 0;
   /** The pointer of the press in progress on the play field: a mouse's left button, a finger, or a pen. */
   private pressPointerId: number | undefined;
   /** Where on the page that pointer is while its button is down. */
@@ -435,14 +446,16 @@ export class AppShell {
       else this.useAbilityOnKey(event.code);
     });
 
-    // `requestAnimationFrame` does not fire in a hidden tab, and the tick already clamps its
-    // elapsed time, so the integrated delta is not the hazard. Stale input is: a `pointerup` missed
-    // while hidden leaves a press held and the character steering on return.
+    // A `pointerup` missed while hidden would leave a press held and the character steering on
+    // return, so a hidden tab lets go of every press. A path walks on, ticked by a timer, since
+    // `requestAnimationFrame` does not fire in a hidden tab.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         this.forgetDownPointers();
         this.session.handleVisibilityLoss();
+        this.startHiddenTicks();
       } else {
+        this.stopHiddenTicks();
         this.lastFrameMs = undefined;
         this.splash?.replayShot();
       }
@@ -847,11 +860,46 @@ export class AppShell {
     requestAnimationFrame(step);
   }
 
-  private onFrame(timestamp: number): void {
-    if (this.controller.connectionState !== 'disconnected') {
-      this.followPointer();
-      this.session.runTick(timestamp);
+  /**
+   * Ticks the session while the tab is hidden. A hidden tab's timers wake about once a second, and
+   * Chrome's about once a minute after five minutes, so each wake catches up on the time it slept.
+   */
+  private startHiddenTicks(): void {
+    this.hiddenTickMs = performance.now();
+    this.tickSession(this.hiddenTickMs);
+    this.hiddenTicker = setInterval(() => this.catchUpHiddenTicks(), MAX_TICK_ELAPSED_MS);
+  }
+
+  /** Walks the time since the timer's last tick, which the first frame would clamp to one tick, so the frames take over from where the player stands now. */
+  private stopHiddenTicks(): void {
+    if (this.hiddenTicker === undefined) return;
+    clearInterval(this.hiddenTicker);
+    this.hiddenTicker = undefined;
+    this.catchUpHiddenTicks();
+  }
+
+  /**
+   * Walks the time since the last tick in ticks of 0.1 s, each reported as a drawn tab reports, but
+   * at most `MAX_CATCH_UP_MS` of it. What a wake leaves short of a whole tick walks on the next.
+   */
+  private catchUpHiddenTicks(): void {
+    const now = performance.now();
+    let tickMs = Math.max(this.hiddenTickMs, now - MAX_CATCH_UP_MS);
+    while (tickMs + MAX_TICK_ELAPSED_MS <= now) {
+      tickMs += MAX_TICK_ELAPSED_MS;
+      this.tickSession(tickMs);
     }
+    this.hiddenTickMs = tickMs;
+  }
+
+  private tickSession(timestamp: number): void {
+    if (this.controller.connectionState === 'disconnected') return;
+    this.followPointer();
+    this.session.runTick(timestamp);
+  }
+
+  private onFrame(timestamp: number): void {
+    this.tickSession(timestamp);
     const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
     this.lastFrameMs = timestamp;
     // Before the world is on screen the card and the wordmark cover it, so the staged bubbles keep clear of them.

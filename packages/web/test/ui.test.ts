@@ -10,12 +10,24 @@ import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import type { RegistrationForm } from '@/client';
-import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
-import { NO_QUESTS, NO_STATS, bountyIdOf, clamp, distance, fullPools, headingFromVector, quest as questOf } from '@somnio/core';
+import { FINGER_HOLD_MS, MAX_TICK_ELAPSED_MS, TAP_SLOP_PX } from '@/client';
+import {
+  MOVE_ALLOWANCE_SECONDS,
+  NO_QUESTS,
+  NO_STATS,
+  bountyIdOf,
+  clamp,
+  distance,
+  fullPools,
+  gaitMetresPerSecond,
+  headingFromVector,
+  quest as questOf,
+} from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import type { CharacterSummaryMessage, LucidityMessage, Service, SomnioMessage } from '@somnio/protocol';
 import type { Bounty, Inventory, ItemInstance, QuestId, QuestLog, Sector } from '@somnio/core';
 import { fakeSocketFactory } from './helpers/fakeSocket';
+import { tabTo } from './helpers/visibility';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
@@ -673,10 +685,6 @@ describe('the login overlay across an authentication attempt', () => {
     const { shell, socket } = loginShell();
     const splash = shell.splash!;
     const deliver = (message: SomnioMessage): void => socket().deliverText(encodeSomnioMessage(message));
-    const tabTo = (state: 'hidden' | 'visible'): void => {
-      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    };
     splash.update(0.05);
     expect(splash.currentShotId).toBe('town');
     tabTo('hidden');
@@ -2117,6 +2125,111 @@ describe('the play field and the panels through the shell', () => {
     return (type: string, at: { x: number; y: number }, init: PointerEventInit = {}): PointerEvent =>
       new PointerEvent(type, { button: 0, clientX: at.x, clientY: at.y, bubbles: true, ...init });
   }
+
+  /** A hidden tab draws no frames, and its timer wakes only when the browser lets it, which `wake` stands for. */
+  describe('in a hidden tab', () => {
+    const JOG_TICK_METRES = gaitMetresPerSecond('jog') * (MAX_TICK_ELAPSED_MS / 1000);
+    const ALLOWANCE_TICKS = (MOVE_ALLOWANCE_SECONDS * 1000) / MAX_TICK_ELAPSED_MS;
+    let clock: number;
+    let wake: () => void;
+    let ticker: number;
+
+    beforeEach(() => {
+      clock = 1000;
+      ticker = 0;
+      vi.spyOn(performance, 'now').mockImplementation(() => clock);
+      vi.spyOn(globalThis, 'setInterval').mockImplementation(((handler: () => void) => {
+        wake = handler;
+        ticker += 1;
+        return ticker;
+      }) as typeof setInterval);
+      vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => {});
+    });
+
+    // Shown here rather than when the test finishes, so the shell stops its timer while the timer mocks still stand.
+    afterEach(() => tabTo('visible'));
+
+    /** A player walking a path south from (10, 10) to (10, 16), where they stand, and the moves they have reported. */
+    function walkingSouth() {
+      const p = playing();
+      p.shell.session.predictor.walkTo({ x: 10, z: 16 });
+      const self = (): { x: number; z: number } => p.shell.controller.entities.get('self')!.position;
+      const moves = (): { x: number; z: number }[] => p.sent().flatMap((message) => (message.tag === 'move' ? [message.payload] : []));
+      return { p, self, moves };
+    }
+
+    it('walks a path on a wake at a time, reporting every tick as a drawn tab would', () => {
+      const { p, self, moves } = walkingSouth();
+      tabTo('hidden');
+
+      for (let wakes = 0; wakes < 4; wakes += 1) {
+        clock += 1000;
+        wake();
+      }
+
+      expect(p.shell.session.predictor.walk).toBeUndefined();
+      expect(self()).toEqual({ x: 10, z: 16 });
+      const reported = moves();
+      expect(reported.length).toBeGreaterThanOrEqual(30);
+      for (const [index, move] of reported.slice(1).entries()) expect(distance(reported[index]!, move)).toBeLessThanOrEqual(JOG_TICK_METRES + 1e-9);
+    });
+
+    it('walks no more of a minute the timer slept through than the allowance holds', () => {
+      const { self, moves } = walkingSouth();
+      tabTo('hidden');
+
+      clock += 60_000;
+      wake();
+
+      expect(self().z).toBeCloseTo(10 + ALLOWANCE_TICKS * JOG_TICK_METRES, 9);
+      expect(moves().length).toBeLessThanOrEqual(ALLOWANCE_TICKS + 1);
+    });
+
+    it('walks the time since the last wake on its return, and hands the walk to the frames without stepping twice', () => {
+      const { p, self } = walkingSouth();
+      tabTo('hidden');
+      const hiddenTicker = ticker;
+      // Off the 0.1 s grid, as a real timer wakes, so the 50 ms the first wake leaves over count on return.
+      clock += 1050;
+      wake();
+      clock += 450;
+
+      tabTo('visible');
+      expect(clearInterval).toHaveBeenCalledWith(hiddenTicker);
+      expect(self().z).toBeCloseTo(10 + 15 * JOG_TICK_METRES, 9);
+      // A frame's timestamp can precede the last tick the timer ran.
+      p.shell.session.runTick(clock - 5);
+      expect(self().z).toBeCloseTo(10 + 15 * JOG_TICK_METRES, 9);
+      p.shell.session.runTick(clock + 16);
+      expect(self().z).toBeCloseTo(10 + 15 * JOG_TICK_METRES + gaitMetresPerSecond('jog') * 0.016, 9);
+    });
+
+    it('takes the door a path ends at, and reports nothing more until the server answers', () => {
+      // A threshold's door faces north, so its trigger is the ground just north of z = 11.88.
+      const doorMeadow = outdoorSector(
+        'Meadow',
+        { x: 0, z: 0 },
+        {
+          placements: [{ id: 'threshold-1', modelId: 'timber-room-threshold', x: 10, z: 12, yaw: 0, elevation: 0 }],
+          doors: [{ id: 'exit', placement: 'threshold-1', anchor: 'main', target: { sector: 'Hall', door: 'entry' } }],
+        },
+      );
+      const p = playing(doorMeadow);
+      p.shell.session.predictor.walkTo({ x: 10, z: 11.6 });
+      tabTo('hidden');
+
+      clock += 1000;
+      wake();
+      const asked = p.tags().indexOf('useDoor');
+      clock += 1000;
+      wake();
+
+      expect(p.sent().filter((message) => message.tag === 'useDoor')).toEqual([{ tag: 'useDoor', payload: { sector: 'Meadow', doorId: 'exit' } }]);
+      expect(p.tags().slice(0, asked)).toContain('move');
+      expect(p.tags().slice(asked + 1)).not.toContain('move');
+      expect(p.shell.session.predictor.walk).toBeUndefined();
+    });
+  });
 
   it("walks toward a nightmare a mouse's left button presses with slot 1 on, as it goes down, and does nothing on the middle button", () => {
     const p = playing();

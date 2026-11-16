@@ -5,6 +5,7 @@ import { ORTHO_RIG, PLAYER_ZOOM, WHEEL_NOTCH, frustumBounds, wheelDeltaToZoomDel
 import { WorldScene } from '@/scene/worldScene';
 import { AppShell, element } from '@/ui';
 import type { ModelAssets } from '@/scene/modelAssets';
+import { tabTo } from './helpers/visibility';
 
 /**
  * Browser-host correctness: a hidden tab, a lost window focus, Esc colliding with the browser's
@@ -269,14 +270,9 @@ describe('host handlers', () => {
   it('lets go of a held press when the tab is hidden', () => {
     const app = steering();
 
-    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    // Restored immediately: the property is redefined on the shared `document`, so leaving it
-    // hidden makes every later test in this file read the wrong state and become order-dependent.
-    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    tabTo('hidden');
 
-    // The tick already clamps the integrated delta, so the real hazard of a hidden tab is a
-    // `pointerup` missed while hidden, which would leave the player steering on return.
+    // A `pointerup` missed while hidden would leave the player steering on return.
     expect(app.session.predictor.walk).toBeUndefined();
   });
 
