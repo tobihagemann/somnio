@@ -134,7 +134,7 @@ export interface DeviceRect {
   height: number;
 }
 
-/** Where a portrait's circle lies in the canvas's drawing buffer; `undefined` while it is not shown or lies off the canvas. */
+/** Where a rect on the page lies in the canvas's drawing buffer; `undefined` while it is empty or lies off the canvas. */
 export function portraitViewport(slot: PageRect, canvas: PageRect, pixelRatio: number): DeviceRect | undefined {
   if (slot.width <= 0 || slot.height <= 0) return undefined;
   const left = Math.round((slot.left - canvas.left) * pixelRatio);
@@ -147,10 +147,20 @@ export function portraitViewport(slot: PageRect, canvas: PageRect, pixelRatio: n
   return { x: left, y: bufferHeight - bottom, width: right - left, height: bottom - top };
 }
 
-/** What a portrait draws: where, and the body's framing, `undefined` for the backdrop alone. */
+/** The part of `rect` that lies inside `within`, empty where none does. */
+export function visiblePart(rect: PageRect, within: PageRect): PageRect {
+  const left = Math.max(rect.left, within.left);
+  const top = Math.max(rect.top, within.top);
+  const width = Math.max(0, Math.min(rect.left + rect.width, within.left + within.width) - left);
+  const height = Math.max(0, Math.min(rect.top + rect.height, within.top + within.height) - top);
+  return { left, top, width, height };
+}
+
+/** What a portrait draws: where it is framed, the part of that it draws in, and the body's framing, `undefined` for the backdrop alone. */
 export interface PortraitShot {
   slot: PortraitSlot;
   viewport: DeviceRect;
+  scissor: DeviceRect;
   framing: PortraitFraming | undefined;
 }
 
@@ -164,7 +174,8 @@ export type PortraitRenderer = Pick<
  * Draws the portraits over the world just rendered. A frame's is clipped to its circle by depth: a
  * square with the circle cut out is laid at the front, a disc of backdrop at the back, and the body
  * between them draws only inside the circle. Outside it, the world drawn under the frame stays. The
- * Character window's body fills its rect, whose backdrop covers all of it.
+ * Character window's body is framed to its whole rect, and its backdrop covers the part of it its
+ * page shows.
  *
  * The world's render drew the shadow maps this frame, so they are not drawn again. It also brought
  * the scene's matrices up to date.
@@ -208,10 +219,10 @@ export class PortraitPass {
     scene.matrixWorldAutoUpdate = false;
     const ratio = renderer.getPixelRatio();
     renderer.setScissorTest(true);
-    for (const { slot, viewport, framing } of shots) {
+    for (const { slot, viewport, scissor, framing } of shots) {
       const { x, y, width, height } = viewport;
       renderer.setViewport(x / ratio, y / ratio, width / ratio, height / ratio);
-      renderer.setScissor(x / ratio, y / ratio, width / ratio, height / ratio);
+      renderer.setScissor(scissor.x / ratio, scissor.y / ratio, scissor.width / ratio, scissor.height / ratio);
       // The world's last draw may have left depth writes off, which a clear obeys.
       renderer.state.buffers.depth.setMask(true);
       renderer.clearDepth();

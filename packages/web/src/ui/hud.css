@@ -1378,20 +1378,25 @@
   color: #fff;
 }
 
+/*
+ * A page scrolls in a window too short for it. The scene draws the body only where its page shows
+ * (`visiblePart`). The page's scrollbar stands in the window's right padding, out to the plate, so
+ * what the page holds keeps the span's width beside any scrollbar no wider than that padding.
+ */
 .hud-page {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
-}
-
-.hud-page--stats {
-  flex: 1 1 auto;
-  margin-right: -6px;
-  padding-right: 6px;
+  margin-right: calc(var(--somnio-plate-inset) - var(--somnio-content-padding));
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.hud-page > * {
+  max-width: var(--hud-span);
 }
 
 .hud-purse {

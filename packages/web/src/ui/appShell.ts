@@ -11,7 +11,7 @@ import { MAX_TICK_DELTA } from '@/scene/animation';
 import { WorldScene, createWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import type { PressTarget } from '@/scene/worldScene';
 import { paintBubbles } from '@/scene/bubbleLayer';
-import { PORTRAIT_SLOTS, portraitViewport } from '@/scene/portraits';
+import { PORTRAIT_SLOTS, portraitViewport, visiblePart } from '@/scene/portraits';
 import { HttpModelAssets } from '@/scene/modelAssets';
 import { canvasWidthMeasurer } from '@/scene/speechBubbleText';
 import { SplashDirector } from '@/splash/director';
@@ -924,8 +924,12 @@ export class AppShell {
       .map((node) => node.getBoundingClientRect());
     const canvasRect = this.canvas.getBoundingClientRect();
     // Read with the panels', so a frame lays the page out once.
-    const portraitRects = PORTRAIT_SLOTS.map((slot) => ({ slot, rect: this.hud.portraits[slot].getBoundingClientRect() }));
-    this.hud.openBodyHole(portraitRects.find(({ slot }) => slot === 'body')!.rect);
+    const bodyPage = this.hud.bodyPage.getBoundingClientRect();
+    const portraitRects = PORTRAIT_SLOTS.map((slot) => {
+      const rect = this.hud.portraits[slot].getBoundingClientRect();
+      return { slot, rect, shown: slot === 'body' ? visiblePart(rect, bodyPage) : rect };
+    });
+    this.hud.openBodyHole(portraitRects.find(({ slot }) => slot === 'body')!.shown);
     this.scene?.setScreenOccluders(screenOccluders(canvasRect, covering));
     this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
     const dipOpacity = this.splash?.dipOpacity ?? 0;
@@ -944,9 +948,10 @@ export class AppShell {
       const ratio = this.renderer.getPixelRatio();
       this.scene.drawPortraits(
         this.renderer,
-        portraitRects.flatMap(({ slot, rect }) => {
+        portraitRects.flatMap(({ slot, rect, shown }) => {
           const viewport = portraitViewport(rect, canvasRect, ratio);
-          return viewport === undefined ? [] : [{ slot, viewport }];
+          const scissor = portraitViewport(shown, canvasRect, ratio);
+          return viewport === undefined || scissor === undefined ? [] : [{ slot, viewport, scissor }];
         }),
         this.hud.bodyTurn(performance.now()),
       );

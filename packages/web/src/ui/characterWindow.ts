@@ -4,6 +4,7 @@ import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, itemAtPlace, salePri
 import type { Inventory, ItemInstance } from '@somnio/core';
 import { NO_LUCIDITY_MESSAGE, TAP_SLOP_PX } from '@/client';
 import { t } from '@/i18n';
+import type { PageRect } from '@/scene/portraits';
 import { element, prefersReducedMotion, setHidden } from './dom';
 import { HUDWindow, ItemCard } from './hudWindows';
 import type { ItemAction } from './hudWindows';
@@ -131,6 +132,8 @@ export class CharacterWindow {
   readonly window: HUDWindow;
   /** Where the scene draws the dreamer's body, on the canvas under the window. */
   readonly body: HTMLElement;
+  /** The page the body is laid on. It scrolls in a short window, and the body shows only where it does. */
+  readonly bodyPage: HTMLElement;
   readonly card: ItemCard;
   /** A refusal's line, beside the part refused. */
   readonly notice: HTMLElement;
@@ -228,12 +231,13 @@ export class CharacterWindow {
         ];
     this.tab = pages[0]![0];
     for (const [id, label, children] of pages) {
-      const page = element('div', { className: `hud-page hud-page--${id}`, attributes: { role: 'tabpanel', 'aria-label': label }, children });
+      const page = element('div', { className: 'hud-page', attributes: { role: 'tabpanel', 'aria-label': label }, children });
       const tab = element('button', { className: 'hud-tab', text: label, attributes: { type: 'button', role: 'tab', 'data-tab': id } });
       tab.addEventListener('click', () => this.showTab(id));
       this.tabs.set(id, tab);
       this.pages.set(id, page);
     }
+    this.bodyPage = doll.parentElement!;
     const tablist = element('div', { className: 'hud-tabs', attributes: { role: 'tablist' }, children: [...this.tabs.values()] });
     this.window = new HUDWindow(t('Character'), onClose, [tablist, ...this.pages.values()]);
     this.window.root.classList.add('hud-window--character');
@@ -300,9 +304,9 @@ export class CharacterWindow {
 
   /**
    * Leaves the window's plate open over the body's rect, so the body the scene draws on the canvas
-   * under it shows. `body` is the body's rect on the page, empty while it is not shown.
+   * under it shows. `body` is the part of the body's rect on the page that shows, empty while none does.
    */
-  openBodyHole(body: DOMRect): void {
+  openBodyHole(body: PageRect): void {
     const frame = this.root.getBoundingClientRect();
     const hole = body.width > 0 && body.height > 0 ? [body.left - frame.left, body.top - frame.top, body.width, body.height].map(Math.round) : undefined;
     const shown = JSON.stringify(hole ?? null);

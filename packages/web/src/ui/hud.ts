@@ -9,7 +9,7 @@ import { DREAM_COLOR, MOONLIGHT, RAISE_COLOR } from '@/scene/combatEffects';
 import { RARITY_COLORS } from '@/scene/lootMarkers';
 import { QUEST_MARKER_GOLD, QUEST_MARKER_GREY } from '@/scene/questMarkers';
 import { cssColor } from '@/scene/overlayArt';
-import type { PortraitSlot } from '@/scene/portraits';
+import type { PageRect, PortraitSlot } from '@/scene/portraits';
 import { AbilitySlot, BalanceMeter, GazeLockButton, PoolGlobe, SlotOneButton, emptySlot, runButton, showStudyLine, studyLine } from './belt';
 import { ChatPane } from './chatPane';
 import { element, iconButton, isHidden, setHidden } from './dom';
@@ -662,8 +662,13 @@ export class GameHUD {
     return this.character.bodyTurn(nowMs);
   }
 
-  /** Leaves the Character window's plate open over the body's rect on the page, read with the other rects of the frame. */
-  openBodyHole(body: DOMRect): void {
+  /** The Character window's page the body is laid on, past whose edges the body does not show. */
+  get bodyPage(): HTMLElement {
+    return this.character.bodyPage;
+  }
+
+  /** Leaves the Character window's plate open over the part of the body's rect that shows. */
+  openBodyHole(body: PageRect): void {
     this.character.openBodyHole(body);
   }
 

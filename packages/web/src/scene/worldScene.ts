@@ -101,7 +101,7 @@ import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POO
 import { prototypeMeshesOf } from './modelAssets';
 import type { ModelAssets, PrototypeMesh } from './modelAssets';
 import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, bodyFraming, portraitFraming, setPortraitLayer } from './portraits';
-import type { DeviceRect, PortraitRenderer, PortraitSlot, PortraitSubject } from './portraits';
+import type { PortraitRenderer, PortraitShot, PortraitSlot, PortraitSubject } from './portraits';
 import { yawStep } from './yawSlew';
 
 /**
@@ -2197,13 +2197,13 @@ export class WorldScene implements WorldRenderSurface {
    * turned `bodyTurn` radians round from its usual view. The hemisphere fill is lifted to a floor for
    * them alone, a uniform and not a light, so a body in a dim room still reads.
    */
-  drawPortraits(renderer: PortraitRenderer, views: readonly { slot: PortraitSlot; viewport: DeviceRect }[], bodyTurn = 0): void {
+  drawPortraits(renderer: PortraitRenderer, views: readonly Omit<PortraitShot, 'framing'>[], bodyTurn = 0): void {
     if (views.length === 0) return;
     this.portraitPass ??= new PortraitPass();
-    const shots = views.map(({ slot, viewport }) => {
-      const subject = this.portraitSubjectOf(this.portraitSubjects[slot]);
-      const framing = subject === undefined ? undefined : slot === 'body' ? bodyFraming(subject, bodyTurn) : portraitFraming(subject);
-      return { slot, viewport, framing };
+    const shots = views.map((view) => {
+      const subject = this.portraitSubjectOf(this.portraitSubjects[view.slot]);
+      const framing = subject === undefined ? undefined : view.slot === 'body' ? bodyFraming(subject, bodyTurn) : portraitFraming(subject);
+      return { ...view, framing };
     });
     const fill = this.fill.intensity;
     this.fill.intensity = Math.max(fill, PORTRAIT.fillFloor);

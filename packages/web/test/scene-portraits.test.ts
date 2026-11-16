@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
-import { BODY_VIEW, PORTRAIT, PORTRAIT_LAYERS, bodyFraming, portraitFraming, portraitViewport, setPortraitLayer } from '@/scene/portraits';
-import type { PortraitRenderer } from '@/scene/portraits';
+import { BODY_VIEW, PORTRAIT, PORTRAIT_LAYERS, bodyFraming, portraitFraming, portraitViewport, setPortraitLayer, visiblePart } from '@/scene/portraits';
+import type { DeviceRect, PortraitRenderer, PortraitSlot } from '@/scene/portraits';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
 import { clientEntity } from './helpers/worldFixture';
@@ -123,6 +123,13 @@ describe('portrait viewports', () => {
     });
   });
 
+  it('takes the part of a rect inside another, empty where none is', () => {
+    const page = { left: 100, top: 100, width: 300, height: 200 };
+    expect(visiblePart({ left: 150, top: 50, width: 100, height: 100 }, page)).toEqual({ left: 150, top: 100, width: 100, height: 50 });
+    expect(visiblePart({ left: 150, top: 150, width: 100, height: 100 }, page)).toEqual({ left: 150, top: 150, width: 100, height: 100 });
+    expect(visiblePart({ left: 150, top: 350, width: 100, height: 100 }, page)).toMatchObject({ width: 100, height: 0 });
+  });
+
   it('draws nothing for a hidden frame or one off the canvas', () => {
     expect(portraitViewport({ left: 0, top: 0, width: 0, height: 0 }, canvas, 2)).toBeUndefined();
     expect(portraitViewport({ left: 1300, top: 24, width: 52, height: 52 }, canvas, 2)).toBeUndefined();
@@ -217,6 +224,9 @@ describe('what a portrait shows in hand', () => {
 
 describe('drawing portraits', () => {
   /** Stands in for the renderer, and records what each render was drawn with. */
+  /** A portrait drawn in the whole of where it is framed, as a frame's circle is. */
+  const whole = (slot: PortraitSlot, viewport: DeviceRect) => ({ slot, viewport, scissor: viewport });
+
   function fakeRenderer(scene: WorldScene) {
     const fill = scene.scene.children.find((object) => object instanceof THREE.HemisphereLight)!;
     const calls: unknown[][] = [];
@@ -259,7 +269,7 @@ describe('drawing portraits', () => {
     const background = scene.scene.background;
     fill.intensity = 0.1;
 
-    scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'target', viewport: { x: 100, y: 600, width: 104, height: 104 } }]);
+    scene.drawPortraits(renderer as unknown as PortraitRenderer, [whole('target', { x: 100, y: 600, width: 104, height: 104 })]);
 
     const renders = calls.filter(([name]) => name === 'render').map(([, drawn]) => drawn as Record<string, unknown>);
     expect(renders.map((drawn) => drawn['world'])).toEqual([false, true]);
@@ -305,10 +315,19 @@ describe('drawing portraits', () => {
     const { renderer, calls } = fakeRenderer(scene);
     const draw = (turn: number) => {
       calls.length = 0;
-      scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'body', viewport: { x: 100, y: 200, width: 512, height: 344 } }], turn);
+      scene.drawPortraits(
+        renderer as unknown as PortraitRenderer,
+        [{ slot: 'body', viewport: { x: 100, y: 200, width: 512, height: 344 }, scissor: { x: 100, y: 300, width: 512, height: 244 } }],
+        turn,
+      );
       return calls.filter(([name]) => name === 'render').map(([, drawn]) => drawn as Record<string, unknown>);
     };
     const renders = draw(0);
+    // Framed to its whole rect, and drawn only in the part of it its page shows.
+    expect(calls.filter(([name]) => name === 'viewport' || name === 'scissor').slice(0, 2)).toEqual([
+      ['viewport', 50, 100, 256, 172],
+      ['scissor', 50, 150, 256, 122],
+    ]);
     // One backdrop and no circle cut out of it, then the body.
     expect(renders.map((drawn) => [drawn['world'], drawn['clip']])).toEqual([
       [false, 1],
@@ -322,7 +341,7 @@ describe('drawing portraits', () => {
     expect(bearing(eye(Math.PI / 2)) - bearing(eye(0))).toBeCloseTo(90, 4);
     // A frame's portrait keeps its circle.
     scene.setPortraitSubject('own', 'self');
-    scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'own', viewport: { x: 0, y: 0, width: 80, height: 80 } }]);
+    scene.drawPortraits(renderer as unknown as PortraitRenderer, [whole('own', { x: 0, y: 0, width: 80, height: 80 })]);
     expect(calls.filter(([name]) => name === 'render').at(-2)?.[1]).toMatchObject({ clip: 2 });
   });
 
@@ -330,7 +349,7 @@ describe('drawing portraits', () => {
     const scene = makeScene();
     scene.setPortraitSubject('own', 'gone');
     const { renderer, calls } = fakeRenderer(scene);
-    scene.drawPortraits(renderer as unknown as PortraitRenderer, [{ slot: 'own', viewport: { x: 0, y: 0, width: 80, height: 80 } }]);
+    scene.drawPortraits(renderer as unknown as PortraitRenderer, [whole('own', { x: 0, y: 0, width: 80, height: 80 })]);
     expect(calls.filter(([name]) => name === 'render').map(([, drawn]) => (drawn as Record<string, unknown>)['world'])).toEqual([false]);
     calls.length = 0;
     scene.drawPortraits(renderer as unknown as PortraitRenderer, []);
