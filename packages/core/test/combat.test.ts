@@ -355,7 +355,8 @@ describe('statsOf', () => {
     };
     expect(statsOf(equipment, { role: 'fighter', ranks: ranks({ guard: 1, 'follow-through': 1, toughening: 1 }) })).toEqual({
       ...NO_STATS,
-      healthMax: 10 + 6 + 5,
+      healthMax: 10 + 6,
+      spiritMax: 5,
       guard: 8 + 4 + 3 + 2,
       swingSpeed: 10 + 4,
       balanceRecovery: 9,

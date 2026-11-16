@@ -32,7 +32,6 @@ import {
   POOL_FIELDS,
   PRACTICE,
   SHARED_LOOT_SECONDS,
-  SHOP,
   SOMNIO_CONSTANTS,
   THROW_DISTANCE,
   SPEECH,
@@ -53,6 +52,7 @@ import {
   balancePerSecond,
   bodiesBlock,
   bossMoves,
+  buyBackable,
   buildSpaceCollision,
   canBuy,
   canStand,
@@ -112,6 +112,7 @@ import {
   quest,
   questCarriedBy,
   questsMessage,
+  price,
   rankOf,
   reachDistance,
   reachedAt,
@@ -128,6 +129,7 @@ import {
   sectorPointInSpace,
   sectorView,
   shieldedHarm,
+  soldToShopAfterSale,
   spawnArea,
   speechClarity,
   spiritPerSecond,
@@ -176,6 +178,7 @@ import type {
   Inventory,
   InventoryChange,
   Item,
+  ItemInstance,
   Lucidity,
   MonsterKind,
   MonsterKindId,
@@ -207,6 +210,8 @@ import type { RandomSource } from './random.ts';
 interface PlayerSlot {
   character: Character;
   inventory: Inventory;
+  /** What the dreamer sold the shopkeeper here, newest first, to buy back until they leave the space. It is never saved. */
+  soldToShop: ItemInstance[];
   outbox: ConnectionOutbox;
   /** The language NPCs speak to this player in. */
   locale: Locale;
@@ -891,6 +896,7 @@ export class SpaceActor {
     const slot: PlayerSlot = {
       character: { ...character, energy, quests },
       inventory,
+      soldToShop: [],
       outbox,
       locale,
       gait: DEFAULT_GAIT,
@@ -2897,7 +2903,7 @@ export class SpaceActor {
 
   /** Every change to what a dreamer carries goes out here. Their pool maxima follow what they wear, and what others see in their hands follows the hands. */
   private sendInventory(slot: PlayerSlot, change?: InventoryChange): void {
-    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, change) }, this.logger);
+    slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, change, slot.soldToShop) }, this.logger);
     this.settleMaxima(slot);
     this.setHeld(slot);
   }
@@ -3033,22 +3039,41 @@ export class SpaceActor {
   handleBuy(carrierId: string, baseId: string, entityId: string): void {
     const asked = this.serviceFor(carrierId, entityId);
     if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, baseId)) return;
-    const price = SHOP.prices[baseId];
+    const coins = price(baseId);
     const bought = plainInstance(baseId);
-    this.addCoins(asked.player, -price);
+    this.addCoins(asked.player, -coins);
     asked.player.inventory = withItem(asked.player.inventory, bought);
-    this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, rarity: bought.rarity, coins: price } });
+    this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, rarity: bought.rarity, coins } });
   }
 
-  /** The shopkeeper buys an item from the dreamer's bag, for its sale price, but never the Moonstone. Anything else is dropped silently. */
+  /**
+   * The shopkeeper buys an item from the dreamer's bag, for its sale price, but never the Moonstone,
+   * and holds it for them to buy back. Anything else is dropped silently.
+   */
   handleSell(carrierId: string, itemId: string, entityId: string): void {
     const asked = this.serviceFor(carrierId, entityId);
     const sold = asked === undefined ? undefined : sellableItem(asked.player.inventory, itemId);
     if (asked?.service !== 'shopkeeper' || sold === undefined) return;
     const coins = salePrice(sold);
     asked.player.inventory = withoutItem(asked.player.inventory, sold.id);
+    asked.player.soldToShop = soldToShopAfterSale(asked.player.soldToShop, sold);
     this.addCoins(asked.player, coins);
     this.sendInventory(asked.player, { trade: { kind: 'sold', baseId: sold.baseId, rarity: sold.rarity, coins } });
+  }
+
+  /**
+   * The shopkeeper sells a dreamer back an item they sold him, as it was and under its own id, for
+   * what he paid, into a bag with room. Anything else is dropped silently.
+   */
+  handleBuyBack(carrierId: string, itemId: string, entityId: string): void {
+    const asked = this.serviceFor(carrierId, entityId);
+    const item = asked === undefined ? undefined : buyBackable(asked.player.inventory, asked.player.soldToShop, itemId);
+    if (asked?.service !== 'shopkeeper' || item === undefined) return;
+    const coins = salePrice(item);
+    asked.player.soldToShop = asked.player.soldToShop.filter((sold) => sold !== item);
+    this.addCoins(asked.player, -coins);
+    asked.player.inventory = withItem(asked.player.inventory, item);
+    this.sendInventory(asked.player, { trade: { kind: 'boughtBack', baseId: item.baseId, rarity: item.rarity, coins } });
   }
 
   /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing snapshot of theirs. */

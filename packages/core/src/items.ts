@@ -70,6 +70,8 @@ interface BaseItem {
   labelKey: string;
   slot: SlotKind;
   tier: Tier;
+  /** The coins an item of the base is worth before its rolls. The Moonstone, never sold, is worth nothing. */
+  value: number;
   /** What a weapon in the main hand swings as. */
   weapon?: Weapon;
   /** The stats every item of the base carries before its affixes. */
@@ -85,28 +87,28 @@ interface BaseItem {
  * saved with every item, so it is kebab-case like a teaching id.
  */
 export const BASE_ITEMS = {
-  dagger: { labelKey: 'Dagger', slot: 'mainHand', tier: 1, weapon: { damage: 6, balanceCost: 10 } },
-  cudgel: { labelKey: 'Cudgel', slot: 'mainHand', tier: 1, weapon: { damage: 8, balanceCost: 18 } },
-  sword: { labelKey: 'Short sword', slot: 'mainHand', tier: 1, weapon: { damage: 11, balanceCost: 24 } },
-  mace: { labelKey: 'Mace', slot: 'mainHand', tier: 1, weapon: { damage: 14, balanceCost: 32 } },
-  buckler: { labelKey: 'Buckler', slot: 'offHand', tier: 1, implicit: { guard: 2 } },
-  shield: { labelKey: 'Round shield', slot: 'offHand', tier: 1, implicit: { guard: 4 } },
+  dagger: { labelKey: 'Dagger', slot: 'mainHand', tier: 1, value: 60, weapon: { damage: 6, balanceCost: 10 } },
+  cudgel: { labelKey: 'Cudgel', slot: 'mainHand', tier: 1, value: 30, weapon: { damage: 8, balanceCost: 18 } },
+  sword: { labelKey: 'Short sword', slot: 'mainHand', tier: 1, value: 150, weapon: { damage: 11, balanceCost: 24 } },
+  mace: { labelKey: 'Mace', slot: 'mainHand', tier: 1, value: 240, weapon: { damage: 14, balanceCost: 32 } },
+  buckler: { labelKey: 'Buckler', slot: 'offHand', tier: 1, value: 40, implicit: { guard: 2 } },
+  shield: { labelKey: 'Round shield', slot: 'offHand', tier: 1, value: 90, implicit: { guard: 4 } },
   /** The Healer's tool. In the off hand it lets Mend mend the target and the Healer use their abilities. */
-  moonstone: { labelKey: 'Moonstone', slot: 'offHand', tier: 1, trialOnly: true },
-  wand: { labelKey: 'Wand', slot: 'offHand', tier: 1, focus: true },
-  'bone-dagger': { labelKey: 'Bone dagger', slot: 'mainHand', tier: 3, weapon: { damage: 10, balanceCost: 12 } },
-  sabre: { labelKey: 'Sabre', slot: 'mainHand', tier: 3, weapon: { damage: 18, balanceCost: 26 } },
-  'war-axe': { labelKey: 'War axe', slot: 'mainHand', tier: 3, weapon: { damage: 24, balanceCost: 36 } },
-  'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, implicit: { guard: 5 } },
-  'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, implicit: { guard: 9 } },
-  'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, focus: true, implicit: { spiritMax: 10 } },
-  cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, implicit: { guard: 1 } },
-  tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, implicit: { guard: 3 } },
-  gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, implicit: { guard: 1 } },
-  trousers: { labelKey: 'Leather trousers', slot: 'legs', tier: 1, implicit: { guard: 2 } },
-  boots: { labelKey: 'Leather boots', slot: 'feet', tier: 1, implicit: { guard: 1 } },
-  amulet: { labelKey: 'Amulet', slot: 'neck', tier: 1, implicit: { healthMax: 5 } },
-  ring: { labelKey: 'Iron ring', slot: 'ring', tier: 1, implicit: { healthMax: 2 } },
+  moonstone: { labelKey: 'Moonstone', slot: 'offHand', tier: 1, value: 0, trialOnly: true },
+  wand: { labelKey: 'Wand', slot: 'offHand', tier: 1, value: 80, focus: true },
+  'bone-dagger': { labelKey: 'Bone dagger', slot: 'mainHand', tier: 3, value: 150, weapon: { damage: 10, balanceCost: 12 } },
+  sabre: { labelKey: 'Sabre', slot: 'mainHand', tier: 3, value: 360, weapon: { damage: 18, balanceCost: 26 } },
+  'war-axe': { labelKey: 'War axe', slot: 'mainHand', tier: 3, value: 600, weapon: { damage: 24, balanceCost: 36 } },
+  'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, value: 100, implicit: { guard: 5 } },
+  'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, value: 225, implicit: { guard: 9 } },
+  'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, value: 200, focus: true, implicit: { spiritMax: 10 } },
+  cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, value: 25, implicit: { spiritRecovery: 5 } },
+  tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, value: 50, implicit: { guard: 3 } },
+  gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, value: 25, implicit: { swingSpeed: 4 } },
+  trousers: { labelKey: 'Leather trousers', slot: 'legs', tier: 1, value: 40, implicit: { healthMax: 6 } },
+  boots: { labelKey: 'Leather boots', slot: 'feet', tier: 1, value: 25, implicit: { balanceMax: 5 } },
+  amulet: { labelKey: 'Amulet', slot: 'neck', tier: 1, value: 70, implicit: { spiritMax: 5 } },
+  ring: { labelKey: 'Iron ring', slot: 'ring', tier: 1, value: 50, implicit: { damage: 1 } },
 } as const satisfies Record<string, BaseItem>;
 export type BaseItemId = keyof typeof BASE_ITEMS;
 

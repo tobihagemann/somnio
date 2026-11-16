@@ -177,7 +177,11 @@ export class HUDTooltip {
   }
 }
 
-/** Places `node`, shown in `container`, centred over `anchor`, or under it where there is no room above, and inside the container. */
+/**
+ * Places `node`, shown in `container`, centred over `anchor`, or under it where there is no room
+ * above, and inside the container: where it fits neither way, it rises over the anchor rather than
+ * past the container's foot.
+ */
 export function placeBeside(node: HTMLElement, anchor: HTMLElement, container: HTMLElement): void {
   const bounds = container.getBoundingClientRect();
   const part = anchor.getBoundingClientRect();
@@ -186,7 +190,8 @@ export function placeBeside(node: HTMLElement, anchor: HTMLElement, container: H
   const centred = part.left + part.width / 2 - width / 2 - bounds.left;
   const left = Math.max(TIP_GAP_PX, Math.min(centred, bounds.width - width - TIP_GAP_PX));
   const above = part.top - bounds.top - TIP_GAP_PX - height;
-  const top = above >= TIP_GAP_PX ? above : part.bottom - bounds.top + TIP_GAP_PX;
+  const below = part.bottom - bounds.top + TIP_GAP_PX;
+  const top = above >= TIP_GAP_PX ? above : Math.max(TIP_GAP_PX, Math.min(below, bounds.height - height - TIP_GAP_PX));
   node.style.left = `${Math.round(left)}px`;
   node.style.top = `${Math.round(top)}px`;
 }

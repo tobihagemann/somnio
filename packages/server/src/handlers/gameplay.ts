@@ -1,6 +1,7 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type {
   AbandonQuestMessage,
+  BuyBackMessage,
   BuyMessage,
   CarrierQuestMessage,
   ClientSayMessage,
@@ -103,6 +104,10 @@ export function handleBuy(message: BuyMessage, entityId: string, spaceId: string
 
 export function handleSell(message: SellMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleSell(message.carrierId, message.itemId, entityId);
+}
+
+export function handleBuyBack(message: BuyBackMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleBuyBack(message.carrierId, message.itemId, entityId);
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { inventoryMessage } from '@somnio/core';
 import type { Character, Inventory, ItemInstance, Point, Sector } from '@somnio/core';
 import { plain } from '../../core/test/support/items.ts';
 import { COINS, CUDGEL, MOONSTONE, arena, carrying, characterOf, energy, lucidity, payloads } from './support/combat.ts';
@@ -88,18 +89,36 @@ describe('buying from the shopkeeper', () => {
 });
 
 describe('selling to the shopkeeper', () => {
-  it('buys a plain item from the bag for the plain price, in one frame that says what was sold', async () => {
+  it('buys a plain item from the bag for half its value, in one frame that says what was sold and holds it to buy back', async () => {
     const s = shop(AT_MERCUS, { inventory: CUDGEL_IN_BAG });
     s.world.space.handleSell(MERCUS, CUDGEL.id, s.dreamer.entityId);
-    expect(s.inventory()).toEqual({ coins: 110, equipped: {}, bag: [] });
-    expect(await s.framesAfterJoin()).toEqual([{ coins: 110, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 10 } }]);
+    expect(s.inventory()).toEqual({ coins: 115, equipped: {}, bag: [] });
+    expect(await s.framesAfterJoin()).toEqual([
+      { coins: 115, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 }, buyBack: [CUDGEL] },
+    ]);
   });
 
-  it('buys a rare item for the rare price, and leaves the weapon in hand where it is', async () => {
+  it('pays a plain sword 75', () => {
+    const sword: ItemInstance = { id: '00000000-0000-7000-8000-000000000006', ...plain('sword') };
+    const s = shop(AT_MERCUS, { inventory: carrying({ bag: [sword] }) });
+    s.world.space.handleSell(MERCUS, sword.id, s.dreamer.entityId);
+    expect(s.inventory().coins).toBe(75);
+  });
+
+  it('pays for a rare item by its value, its rolled lines with it, and leaves the weapon in hand where it is', async () => {
     const s = shop(AT_MERCUS, { inventory: carrying({ coins: COINS, worn: [CUDGEL], bag: [DAGGER, RARE_AMULET] }) });
     s.world.space.handleSell(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
-    expect(s.inventory()).toEqual(carrying({ coins: 175, worn: [CUDGEL], bag: [DAGGER] }));
-    expect((await s.framesAfterJoin()).map((frame) => frame.trade)).toEqual([{ kind: 'sold', baseId: 'amulet', rarity: 'rare', coins: 75 }]);
+    expect(s.inventory()).toEqual(carrying({ coins: 173, worn: [CUDGEL], bag: [DAGGER] }));
+    expect((await s.framesAfterJoin()).map((frame) => frame.trade)).toEqual([{ kind: 'sold', baseId: 'amulet', rarity: 'rare', coins: 73 }]);
+  });
+
+  it('holds what was sold newest first, and no more than the cap', async () => {
+    const caps = FULL_BAG.slice(0, SOMNIO_PROTOCOL_CONSTANTS.maxBuyBackItems + 1);
+    const s = shop(AT_MERCUS, { inventory: carrying({ bag: caps }) });
+    for (const cap of caps) s.world.space.handleSell(MERCUS, cap.id, s.dreamer.entityId);
+    const frames = await s.framesAfterJoin();
+    expect(frames[0]!.buyBack).toEqual([caps[0]]);
+    expect(frames.at(-1)!.buyBack).toEqual(caps.slice(1).reverse());
   });
 
   it.each<[string, Point, string, string, Inventory]>([
@@ -119,6 +138,95 @@ describe('selling to the shopkeeper', () => {
     const s = shop(AT_MERCUS, { inventory: CUDGEL_IN_BAG, character: { energy: energy({ healthCurrent: 0 }) } });
     s.world.space.handleSell(MERCUS, CUDGEL.id, s.dreamer.entityId);
     expect(s.inventory()).toEqual(CUDGEL_IN_BAG);
+  });
+});
+
+describe('buying back from the shopkeeper', () => {
+  /** A dreamer who sold the rare amulet and the dagger, the dagger last. */
+  function sold(inventory: Inventory = carrying({ coins: COINS, worn: [CUDGEL], bag: [DAGGER, RARE_AMULET] })) {
+    const s = shop(AT_MERCUS, { inventory });
+    s.world.space.handleSell(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
+    s.world.space.handleSell(MERCUS, DAGGER.id, s.dreamer.entityId);
+    return s;
+  }
+
+  it('gives the item back as it was, under its own id, for what he paid, in one frame that says so', async () => {
+    const s = sold();
+    s.world.space.handleBuyBack(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
+    expect(s.inventory()).toEqual(carrying({ coins: 130, worn: [CUDGEL], bag: [RARE_AMULET] }));
+    const frames = await s.framesAfterJoin();
+    expect(frames.at(-1)).toEqual({
+      coins: 130,
+      equipped: [{ slot: 'mainHand', item: CUDGEL }],
+      bag: [{ place: 0, item: RARE_AMULET }],
+      trade: { kind: 'boughtBack', baseId: 'amulet', rarity: 'rare', coins: 73 },
+      buyBack: [DAGGER],
+    });
+  });
+
+  it('leaves the frame without the list once he holds nothing to buy back', async () => {
+    const s = sold();
+    s.world.space.handleBuyBack(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
+    s.world.space.handleBuyBack(MERCUS, DAGGER.id, s.dreamer.entityId);
+    expect((await s.framesAfterJoin()).at(-1)).not.toHaveProperty('buyBack');
+  });
+
+  /**
+   * Asks for an item back and expects nothing to change and no frame to answer: the `inventory`
+   * frames after the join's are the `before` ones the setup sent. Returns them.
+   */
+  async function refused(s: Shop, before: number, carrierId = MERCUS, itemId = RARE_AMULET.id) {
+    const held = s.inventory();
+    s.world.space.handleBuyBack(carrierId, itemId, s.dreamer.entityId);
+    expect(s.inventory()).toEqual(held);
+    const frames = await s.framesAfterJoin();
+    expect(frames).toHaveLength(before);
+    return frames;
+  }
+
+  it('changes nothing and sends nothing into a full bag', async () => {
+    const s = sold(carrying({ coins: COINS, bag: [...FULL_BAG.slice(2), DAGGER, RARE_AMULET] }));
+    s.world.space.handleBuy(MERCUS, 'cap', s.dreamer.entityId);
+    s.world.space.handleBuy(MERCUS, 'cap', s.dreamer.entityId);
+    await refused(s, 4);
+  });
+
+  it('changes nothing and sends nothing for a purse too short', async () => {
+    const s = sold(carrying({ bag: [DAGGER, RARE_AMULET] }));
+    s.world.space.handleBuy(MERCUS, 'dagger', s.dreamer.entityId);
+    await refused(s, 3);
+  });
+
+  it('changes nothing and sends nothing for an item he does not hold', async () => {
+    await refused(sold(), 2, MERCUS, CUDGEL.id);
+  });
+
+  it('changes nothing and sends nothing at a master', async () => {
+    const world = arena({ npcs: [...SHOP_FLOOR.npcs!.slice(0, 1), { ...makeNPC('pugnax', { x: 5, z: 4 }, ''), service: 'fighterMaster' }] }, { ghost: false });
+    const dreamer = attachPlayer(world.space, AT_MERCUS, 'dreamer', { inventory: carrying({ coins: COINS, bag: [RARE_AMULET] }) });
+    world.space.handleSell(MERCUS, RARE_AMULET.id, dreamer.entityId);
+    const s: Shop = {
+      world,
+      dreamer,
+      inventory: () => world.space.snapshotForPlayer(dreamer.entityId)!.inventory,
+      framesAfterJoin: async () => payloads(await collectMessages(dreamer.outbox), 'inventory').slice(1),
+    };
+    await refused(s, 1, PUGNAX);
+  });
+
+  it('holds nothing for a dreamer who left the space and came back', async () => {
+    const s = sold();
+    const { checkpoint, transient } = s.world.space.handOver(s.dreamer.entityId, false)!;
+    s.world.space.attach(checkpoint.character, checkpoint.inventory, s.dreamer.outbox, 0, 'en', transient);
+    expect((await refused(s, 3, MERCUS, DAGGER.id)).at(-1)).toEqual(inventoryMessage(checkpoint.inventory));
+  });
+
+  it('checkpoints the purse and the bag as a sale and a buy-back left them', () => {
+    const s = sold();
+    const checkpointed = () => s.world.space.snapshotForCheckpoint().find(({ character }) => character.id === s.dreamer.entityId)!.inventory;
+    expect(checkpointed()).toEqual(carrying({ coins: 203, worn: [CUDGEL] }));
+    s.world.space.handleBuyBack(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
+    expect(checkpointed()).toEqual(carrying({ coins: 130, worn: [CUDGEL], bag: [RARE_AMULET] }));
   });
 });
 

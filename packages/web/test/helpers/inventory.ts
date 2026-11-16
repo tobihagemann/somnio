@@ -9,7 +9,7 @@ export function item(baseId: BaseItemId, id = `${baseId}-1`): ItemInstance {
   return { id, baseId, tier: 1, rarity: 'plain', affixes: [] };
 }
 
-/** The `inventory` frame the server sends for the inventory, with what changed hands to produce it. */
-export function inventoryFrame(inventory: Inventory, change?: InventoryChange): SomnioMessage {
-  return { tag: 'inventory', payload: inventoryMessage(inventory, change) };
+/** The `inventory` frame the server sends for the inventory, with what changed hands to produce it and what the shopkeeper holds to buy back. */
+export function inventoryFrame(inventory: Inventory, change?: InventoryChange, buyBack?: readonly ItemInstance[]): SomnioMessage {
+  return { tag: 'inventory', payload: inventoryMessage(inventory, change, buyBack) };
 }

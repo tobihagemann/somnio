@@ -39,6 +39,7 @@ export type ChatLine =
   | { kind: 'coinsGained'; coins: number }
   | { kind: 'bought'; baseId: string; coins: number }
   | { kind: 'sold'; baseId: string; coins: number }
+  | { kind: 'boughtBack'; baseId: string; coins: number }
   | { kind: 'dropped'; contents: LootContentsMessage }
   | { kind: 'pickedUp'; contents: LootContentsMessage }
   | { kind: 'rewarded'; contents: LootContentsMessage }
@@ -104,6 +105,7 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'coinsGained':
     case 'bought':
     case 'sold':
+    case 'boughtBack':
     case 'dropped':
     case 'pickedUp':
     case 'rewarded':

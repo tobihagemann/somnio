@@ -1,15 +1,15 @@
 import { EQUIP_SLOTS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { EquipSlot, LucidityMessage } from '@somnio/protocol';
-import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, itemAtPlace, slotsFor, unequipItem } from '@somnio/core';
+import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, itemAtPlace, salePrice, sellable, slotsFor, unequipItem } from '@somnio/core';
 import type { Inventory, ItemInstance } from '@somnio/core';
 import { NO_LUCIDITY_MESSAGE, TAP_SLOP_PX } from '@/client';
-import { itemName, t } from '@/i18n';
+import { t } from '@/i18n';
 import { element, prefersReducedMotion, setHidden } from './dom';
 import { HUDWindow, ItemCard } from './hudWindows';
 import type { ItemAction } from './hudWindows';
 import { placeBeside, setTip } from './hudTooltip';
 import { itemIcon } from './itemIcons';
-import { itemTip, slotName } from './itemText';
+import { itemTip, itemTitle, slotName } from './itemText';
 import { statGroups } from './characterStats';
 
 /** What a press in the Character window does. */
@@ -20,11 +20,13 @@ export interface CharacterCallbacks {
   onMoveItem: (itemId: string, place: number) => void;
   /** `at` is where on the page a drag let the item go over the world, which it is thrown toward. */
   onDropItem: (itemId: string, at?: { clientX: number; clientY: number }) => void;
+  /** Sells an item from the bag to the shopkeeper whose panel is open. */
+  onSell: (itemId: string) => void;
 }
 
 /** The window's tabs: a mouse's two, and a finger's three, the doll on a tab of its own. */
 const CHARACTER_TABS = ['gear', 'items', 'stats'] as const;
-type CharacterTab = (typeof CHARACTER_TABS)[number];
+export type CharacterTab = (typeof CHARACTER_TABS)[number];
 
 /** Where an item lies: at a place in the bag, or worn in a slot. */
 type ItemSource = { place: number } | { slot: EquipSlot };
@@ -151,7 +153,8 @@ export class CharacterWindow {
   private tab: CharacterTab;
   private inventory: Inventory = NO_INVENTORY;
   private lucidity: LucidityMessage = NO_LUCIDITY_MESSAGE;
-  private shown: { inventory: Inventory; lucidity: LucidityMessage } | undefined;
+  private shopLocked: boolean | undefined;
+  private shown: { inventory: Inventory; lucidity: LucidityMessage; shopLocked: boolean | undefined } | undefined;
   /** The totals the Stats tab last showed, by line, so one that changed since is marked. */
   private shownStats: Map<string, string> | undefined;
   private statsStale = true;
@@ -227,14 +230,14 @@ export class CharacterWindow {
     for (const [id, label, children] of pages) {
       const page = element('div', { className: `hud-page hud-page--${id}`, attributes: { role: 'tabpanel', 'aria-label': label }, children });
       const tab = element('button', { className: 'hud-tab', text: label, attributes: { type: 'button', role: 'tab', 'data-tab': id } });
-      tab.addEventListener('click', () => this.selectTab(id));
+      tab.addEventListener('click', () => this.showTab(id));
       this.tabs.set(id, tab);
       this.pages.set(id, page);
     }
     const tablist = element('div', { className: 'hud-tabs', attributes: { role: 'tablist' }, children: [...this.tabs.values()] });
     this.window = new HUDWindow(t('Character'), onClose, [tablist, ...this.pages.values()]);
     this.window.root.classList.add('hud-window--character');
-    this.selectTab(this.tab);
+    this.showTab(this.tab);
 
     const root = this.window.root;
     root.addEventListener('pointerdown', (event) => this.press(event));
@@ -253,13 +256,15 @@ export class CharacterWindow {
     return this.window.root;
   }
 
-  render(inventory: Inventory, lucidity: LucidityMessage): void {
+  /** `shopLocked` is whether the shop's trades are locked while the shop is open, and `undefined` with no shop open. */
+  render(inventory: Inventory, lucidity: LucidityMessage, shopLocked: boolean | undefined): void {
     // The shell renders on every `energy` frame. An item rebuilt between the two clicks of a double
     // click, or while it holds the keyboard focus, would lose the press.
-    if (this.shown?.inventory === inventory && this.shown.lucidity === lucidity) return;
+    if (this.shown?.inventory === inventory && this.shown.lucidity === lucidity && this.shown.shopLocked === shopLocked) return;
     this.inventory = inventory;
     this.lucidity = lucidity;
-    this.shown = { inventory, lucidity };
+    this.shopLocked = shopLocked;
+    this.shown = { inventory, lucidity, shopLocked };
     const opened = this.card.itemId;
     const refocus = this.card.root.contains(document.activeElement);
     const items = new Map<string, HTMLButtonElement>();
@@ -325,7 +330,7 @@ export class CharacterWindow {
     this.clearRefusal();
   }
 
-  private selectTab(id: CharacterTab): void {
+  showTab(id: CharacterTab): void {
     this.tab = id;
     for (const [tabId, tab] of this.tabs) {
       tab.setAttribute('aria-selected', String(tabId === id));
@@ -368,7 +373,7 @@ export class CharacterWindow {
 
   /** An item's part of the window: its icon, edged in its rarity's colour, its tip, and its name for assistive tech. */
   private itemButton(item: ItemInstance, source: ItemSource, items: Map<string, HTMLButtonElement>): HTMLButtonElement {
-    const name = itemName(item.baseId, t);
+    const name = itemTitle(item);
     const node = element('button', {
       className: `hud-item hud-rarity--${item.rarity}`,
       attributes: {
@@ -383,8 +388,10 @@ export class CharacterWindow {
     });
     const worn = 'slot' in source;
     const warning = worn && !bagHasRoom(this.inventory) ? { warning: t('Your bag is full.') } : {};
-    const hint = this.coarse ? [] : [worn ? t('Right-click or double-click to unequip.') : t('Right-click or double-click to equip.')];
-    setTip(node, () => itemTip(item, { lines: hint, ...warning }));
+    let hint = t('Right-click or double-click to equip.');
+    if (worn) hint = t('Right-click or double-click to unequip.');
+    else if (this.sellsAtShop(item)) hint = t('Right-click or double-click to sell.');
+    setTip(node, () => itemTip(item, { lines: this.coarse ? [] : [hint], ...warning }));
     items.set(item.id, node);
     return node;
   }
@@ -407,7 +414,15 @@ export class CharacterWindow {
     return node === null || source === undefined || item === undefined ? undefined : { node, source, item };
   }
 
-  /** What the item's card offers: Equip, plus Drop for a droppable item, on an item in the bag, or Unequip on a worn one, which a full bag refuses. */
+  /** Whether an item in the bag sells to the shopkeeper whose panel is open. */
+  private sellsAtShop(item: ItemInstance): boolean {
+    return this.shopLocked !== undefined && sellable(item);
+  }
+
+  /**
+   * What the item's card offers: Equip, plus Drop for a droppable item and Sell at the shop for one
+   * the shopkeeper buys, on an item in the bag, or Unequip on a worn one, which a full bag refuses.
+   */
   private actionFor(item: ItemInstance, source: ItemSource): ItemAction {
     if ('slot' in source) {
       return bagHasRoom(this.inventory)
@@ -415,7 +430,17 @@ export class CharacterWindow {
         : { label: t('Unequip'), run: undefined, warning: t('Your bag is full.') };
     }
     const drop = droppableItem(this.inventory, item.id) === undefined ? {} : { drop: () => this.callbacks.onDropItem(item.id) };
-    return { label: t('Equip'), run: () => this.callbacks.onEquip(item.id), ...drop };
+    const coins = String(salePrice(item));
+    const sell = this.sellsAtShop(item)
+      ? {
+          sell: {
+            label: t('Sell for %@c', coins),
+            ariaLabel: t('Sell %1$@ for %2$@c', itemTitle(item), coins),
+            run: this.shopLocked === true ? undefined : () => this.callbacks.onSell(item.id),
+          },
+        }
+      : {};
+    return { label: t('Equip'), run: () => this.callbacks.onEquip(item.id), ...drop, ...sell };
   }
 
   private openCard(node: HTMLButtonElement, focus: boolean): void {
@@ -439,16 +464,22 @@ export class CharacterWindow {
     else this.openCard(pressed.node, keyboard);
   }
 
-  /** A mouse's double click or right click wears an item from the bag, a ring in a free ring slot, else the first, or puts a worn one away. */
+  /**
+   * A mouse's double click or right click wears an item from the bag, a ring in a free ring slot,
+   * else the first, or puts a worn one away. At the shop it sells an item from the bag he buys
+   * instead, and does nothing while a trade holds the lock.
+   */
   private act(event: MouseEvent): void {
     if (this.lastPointerType !== 'mouse') return;
     const pressed = this.itemNodeOf(event.target);
     if (pressed === undefined) return;
     this.card.close();
     const { item, source, node } = pressed;
-    if (!('slot' in source)) this.callbacks.onEquip(item.id);
-    else if (bagHasRoom(this.inventory)) this.callbacks.onUnequip(source.slot);
-    else this.refuse(node.parentElement ?? node, t('Your bag is full.'));
+    if ('slot' in source) {
+      if (bagHasRoom(this.inventory)) this.callbacks.onUnequip(source.slot);
+      else this.refuse(node.parentElement ?? node, t('Your bag is full.'));
+    } else if (!this.sellsAtShop(item)) this.callbacks.onEquip(item.id);
+    else if (this.shopLocked === false) this.callbacks.onSell(item.id);
   }
 
   private press(event: PointerEvent): void {
@@ -567,7 +598,7 @@ export class CharacterWindow {
     const tab = target.kind === 'tab' && target.id !== this.tab ? target.id : undefined;
     if (tab === carry.tab?.id) return;
     if (carry.tab !== undefined) clearTimeout(carry.tab.timer);
-    carry.tab = tab === undefined ? undefined : { id: tab, timer: setTimeout(() => this.selectTab(tab), TAB_SPRING_MS) };
+    carry.tab = tab === undefined ? undefined : { id: tab, timer: setTimeout(() => this.showTab(tab), TAB_SPRING_MS) };
   }
 
   /**

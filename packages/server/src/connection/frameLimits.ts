@@ -58,6 +58,7 @@ export const FRAME_KINDS: Record<ClientToServerTag, FrameKind | undefined> = {
   study: undefined,
   buy: undefined,
   sell: undefined,
+  buyBack: undefined,
   wake: undefined,
   redeemSession: undefined,
   revokeSession: undefined,

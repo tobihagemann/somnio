@@ -8,6 +8,7 @@ import {
   handleAbandonQuest,
   handleAcceptQuest,
   handleBuy,
+  handleBuyBack,
   handleDropItem,
   handleEngage,
   handleInteract,
@@ -348,6 +349,7 @@ export class ConnectionActor {
         case 'study':
         case 'buy':
         case 'sell':
+        case 'buyBack':
         case 'wake':
         case 'revokeSession':
         case 'revokeOtherSessions':
@@ -428,6 +430,7 @@ export class ConnectionActor {
         case 'study':
         case 'buy':
         case 'sell':
+        case 'buyBack':
         case 'wake':
         case 'hello':
         case 'loginResult':
@@ -523,6 +526,9 @@ export class ConnectionActor {
         return { kind: 'keepOpen' };
       case 'sell':
         handleSell(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'buyBack':
+        handleBuyBack(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
       // Revocation is accepted only once authenticated; the connection's own account scopes the delete.
       case 'revokeSession':

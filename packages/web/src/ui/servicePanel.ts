@@ -1,13 +1,13 @@
 import {
   COMBAT,
   QUEST_IDS,
-  SHOP,
   TEACHINGS,
   TEACHING_IDS,
   TRIAL_QUESTS,
   TRIAL_REWARDS,
   WARES,
   bagHasRoom,
+  buyBackable,
   bountyIdOf,
   bountyQuest,
   canBuy,
@@ -19,13 +19,13 @@ import {
   mayAccept,
   plainItem,
   practiceNeeded,
+  price,
   quest,
   questCarriedBy,
   questComplete,
   questLogFull,
   roleLabelKey,
   salePrice,
-  sellableItem,
   teaching,
   teachingStanding,
   trialRole,
@@ -53,7 +53,7 @@ import { itemName, t } from '@/i18n';
 import { button, element, replaceChildren, setHidden } from './dom';
 import { itemIcon } from './itemIcons';
 import { paintRarityColors } from './hud';
-import { itemLines, rarityName } from './itemText';
+import { itemLines, itemTitle, rarityName } from './itemText';
 import { questAsks, questLines, questTitle, rewardNote } from './questText';
 
 /**
@@ -70,7 +70,9 @@ export interface ServicePanelCallbacks {
   onAbandonQuest: (questId: QuestOrBountyId) => void;
   onStudy: (teachingId: string) => void;
   onBuy: (baseId: string) => void;
-  onSell: (itemId: string) => void;
+  onBuyBack: (itemId: string) => void;
+  /** The shopkeeper's "Sell from bag", where the Character window cannot stand beside the panel. */
+  onSellFromBag: () => void;
   onClose: () => void;
 }
 
@@ -145,7 +147,7 @@ function tradeRow(attributes: Record<string, string>, item: Item, notes: readonl
         className: 'ware-head',
         children: [
           icon,
-          element('strong', { className: `ware-name hud-rarity--${item.rarity}`, text: itemName(item.baseId, t) }),
+          element('strong', { className: `ware-name hud-rarity--${item.rarity}`, text: itemTitle(item) }),
           ...(item.rarity === 'plain' ? [] : [element('span', { className: 'ware-tag', text: rarityName(item.rarity) })]),
         ],
       }),
@@ -154,6 +156,13 @@ function tradeRow(attributes: Record<string, string>, item: Item, notes: readonl
       element('div', { className: 'ware-action', children: [action] }),
     ],
   });
+}
+
+/** Why a trade for `coins` cannot go ahead: the coins the purse lacks, else a bag with no room. */
+function tradeNotes(coins: number, inventory: Inventory): HTMLElement[] {
+  const short = coins - inventory.coins;
+  if (short > 0) return [paragraph(t('You need %@c more.', String(short)), 'form-note')];
+  return bagHasRoom(inventory) ? [] : [paragraph(t('Your bag is full.'), 'form-note')];
 }
 
 export class ServicePanel {
@@ -188,11 +197,15 @@ export class ServicePanel {
     paintRarityColors(this.root);
   }
 
-  /** Whether the panel shows a carrier's offer. */
+  /** Whether the panel holds a carrier's offer, shown or stepped aside for the Character window. */
   get open(): boolean {
     return this.shown !== undefined;
   }
 
+  /**
+   * `beside` says whether the windows stand beside the panel, and `steppedAside` that the shop's
+   * panel is hidden while the Character window stands in its place.
+   */
   render(
     carrier: ServiceCarrier | undefined,
     lucidity: LucidityMessage,
@@ -200,8 +213,11 @@ export class ServicePanel {
     bounties: readonly Bounty[],
     inventory: Inventory,
     tradeLocked: boolean,
+    buyBack: readonly ItemInstance[],
+    beside: boolean,
+    steppedAside: boolean,
   ): void {
-    setHidden(this.root, carrier === undefined);
+    setHidden(this.root, carrier === undefined || steppedAside);
     if (carrier === undefined) {
       this.shown = undefined;
       return;
@@ -211,7 +227,7 @@ export class ServicePanel {
     const name = carrier.name ?? serviceTitle ?? '';
     // The shell renders on every state change, each `energy` frame of a recovering pool included,
     // and a button replaced while the pointer is held on it never gets its click.
-    const { reads, purse, build } = this.bodyFor(carrier, name, lucidity, quests, bounties, inventory, tradeLocked);
+    const { reads, purse, build } = this.bodyFor(carrier, name, lucidity, quests, bounties, inventory, tradeLocked, buyBack, beside);
     const shown = this.shown;
     if (shown?.carrierId === carrier.id && reads.every((read, index) => read === shown.reads[index])) return;
     this.shown = { carrierId: carrier.id, reads };
@@ -238,9 +254,13 @@ export class ServicePanel {
     bounties: readonly Bounty[],
     inventory: Inventory,
     tradeLocked: boolean,
+    buyBack: readonly ItemInstance[],
+    beside: boolean,
   ): { reads: readonly unknown[]; purse?: number; build: () => HTMLElement[] } {
     const own =
-      carrier.service === undefined ? undefined : this.serviceBody(carrier, name, carrier.service, lucidity, quests, bounties, inventory, tradeLocked);
+      carrier.service === undefined
+        ? undefined
+        : this.serviceBody(carrier, name, carrier.service, lucidity, quests, bounties, inventory, tradeLocked, buyBack, beside);
     const carries = QUEST_IDS.some((questId) => questCarriedBy(quest(questId).giver, carrier) || questCarriedBy(quest(questId).turnIn, carrier));
     if (own !== undefined && !carries) return own;
     // Of what the dreamer carries, the quests read only whether a reward's item has a place to go.
@@ -258,6 +278,8 @@ export class ServicePanel {
     bounties: readonly Bounty[],
     inventory: Inventory,
     tradeLocked: boolean,
+    buyBack: readonly ItemInstance[],
+    beside: boolean,
   ): { reads: readonly unknown[]; purse?: number; build: () => HTMLElement[] } {
     switch (service) {
       case 'fighterMaster':
@@ -270,7 +292,11 @@ export class ServicePanel {
         return { reads: [lucidity, quests, rewardFits], build: () => this.master(carrier, name, role, lucidity, quests, rewardFits) };
       }
       case 'shopkeeper':
-        return { reads: [inventory, tradeLocked], purse: inventory.coins, build: () => this.shop(name, inventory, tradeLocked) };
+        return {
+          reads: [inventory, tradeLocked, buyBack, beside],
+          purse: inventory.coins,
+          build: () => this.shop(name, inventory, tradeLocked, buyBack, beside),
+        };
       case 'bountyBoard': {
         // Of what the dreamer carries, the board reads only whether a bounty's item has a place to go.
         const roomForGear = bagHasRoom(inventory);
@@ -398,40 +424,44 @@ export class ServicePanel {
     });
   }
 
-  /** Every ware, to buy, and every item in the dreamer's bag the shopkeeper buys, to sell. Every button is disabled while a trade holds the lock. */
-  private shop(name: string, inventory: Inventory, tradeLocked: boolean): HTMLElement[] {
-    const sellable = inventory.bag.flatMap(({ item }) => sellableItem(inventory, item.id) ?? []);
+  /**
+   * Every ware, to buy, and what the shopkeeper still holds that the dreamer sold him, newest
+   * first, to buy back. They sell from their own bag in the Character window, which a "Sell from bag" button
+   * brings in where it cannot stand beside the panel. Every trade's button is disabled while a
+   * trade holds the lock.
+   */
+  private shop(name: string, inventory: Inventory, tradeLocked: boolean, buyBack: readonly ItemInstance[], beside: boolean): HTMLElement[] {
     return [
-      paragraph(t('%@ sells plain gear and buys what you find. Rarer finds fetch more.', name)),
+      paragraph(t('%@ sells plain gear and buys what you find.', name)),
+      ...(beside ? [] : [actionRow(button(t('Sell from bag'), () => this.callbacks.onSellFromBag()))]),
       element('h2', { className: 'service-heading', text: t('For sale') }),
       ...WARES.map((ware) => this.wareRow(ware, inventory, tradeLocked)),
-      element('h2', { className: 'service-heading', text: t('Sell') }),
-      ...(sellable.length === 0
-        ? [paragraph(t('Your bag holds nothing %@ buys.', name), 'form-note')]
-        : sellable.map((item) => this.saleRow(item, tradeLocked))),
+      ...(buyBack.length === 0
+        ? []
+        : [
+            element('h2', { className: 'service-heading', text: t('Buy back') }),
+            ...buyBack.map((item) => this.buyBackRow(item, inventory, tradeLocked, buyBack)),
+          ]),
     ];
   }
 
   /** A ware to buy, a plain one at its base's tier. */
   private wareRow(ware: Ware, inventory: Inventory, tradeLocked: boolean): HTMLElement {
-    const price = SHOP.prices[ware];
-    const short = price - inventory.coins;
-    const action = button(t('Buy for %@c', String(price)), () => this.callbacks.onBuy(ware));
+    const coins = price(ware);
+    const action = button(t('Buy for %@c', String(coins)), () => this.callbacks.onBuy(ware));
     // Several wares share a price, so the button's accessible name says which one it buys.
-    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, t), String(price)));
+    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, t), String(coins)));
     action.disabled = tradeLocked || !canBuy(inventory, ware);
-    let notes: HTMLElement[] = [];
-    if (short > 0) notes = [paragraph(t('You need %@c more.', String(short)), 'form-note')];
-    else if (!bagHasRoom(inventory)) notes = [paragraph(t('Your bag is full.'), 'form-note')];
-    return tradeRow({ 'data-ware': ware }, plainItem(ware), notes, action);
+    return tradeRow({ 'data-ware': ware }, plainItem(ware), tradeNotes(coins, inventory), action);
   }
 
-  /** An item in the bag to sell, for what its tier and rarity fetch. */
-  private saleRow(item: ItemInstance, tradeLocked: boolean): HTMLElement {
-    const action = button(t('Sell for %@c', String(salePrice(item))), () => this.callbacks.onSell(item.id));
-    action.setAttribute('aria-label', t('Sell %1$@ for %2$@c', itemName(item.baseId, t), String(salePrice(item))));
-    action.disabled = tradeLocked;
-    return tradeRow({ 'data-item': item.id }, item, [], action);
+  /** An item the dreamer sold, to buy back for what it fetched. */
+  private buyBackRow(item: ItemInstance, inventory: Inventory, tradeLocked: boolean, buyBack: readonly ItemInstance[]): HTMLElement {
+    const coins = salePrice(item);
+    const action = button(t('Buy back for %@c', String(coins)), () => this.callbacks.onBuyBack(item.id));
+    action.setAttribute('aria-label', t('Buy back %1$@ for %2$@c', itemTitle(item), String(coins)));
+    action.disabled = tradeLocked || buyBackable(inventory, buyBack, item.id) === undefined;
+    return tradeRow({ 'data-item': item.id }, item, tradeNotes(coins, inventory), action);
   }
 
   /**

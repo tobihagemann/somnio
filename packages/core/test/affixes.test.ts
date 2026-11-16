@@ -1,6 +1,6 @@
 import { RARITIES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
-import { AFFIXES, affix, rollItem } from '../src/affixes.ts';
+import { AFFIXES, affix, itemNameKeys, rollItem } from '../src/affixes.ts';
 import type { AffixId } from '../src/affixes.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS, baseItem } from '../src/items.ts';
@@ -76,5 +76,46 @@ describe('AFFIXES', () => {
       const [least3, most3] = affix(affixId).tiers[3]!;
       expect([least3 > least1, most3 > most1], affixId).toEqual([true, true]);
     }
+  });
+});
+
+describe('itemNameKeys', () => {
+  const trousers = (tier: Tier, affixes: Item['affixes']): Item => ({ baseId: 'trousers', tier, rarity: 'magic', affixes });
+
+  it('names a plain item after its base alone', () => {
+    expect(itemNameKeys({ baseId: 'trousers', tier: 1, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Leather trousers' });
+  });
+
+  it('adds the suffix of the line rolled nearest the most it rolls at the item tier', () => {
+    expect(
+      itemNameKeys(
+        trousers(1, [
+          { affixId: 'health', value: 5 },
+          { affixId: 'guard', value: 2 },
+        ]),
+      ),
+    ).toEqual({
+      labelKey: 'Leather trousers',
+      suffixKey: '%@ of the Bulwark',
+    });
+    expect(
+      itemNameKeys(
+        trousers(3, [
+          { affixId: 'health', value: 12 },
+          { affixId: 'guard', value: 4 },
+        ]),
+      ).suffixKey,
+    ).toBe('%@ of Vigour');
+  });
+
+  it('breaks a tie by the order the lines are declared in, whatever the order the item holds them in', () => {
+    const health = { affixId: 'health', value: 8 } as const;
+    const guard = { affixId: 'guard', value: 3 } as const;
+    expect(itemNameKeys(trousers(1, [health, guard])).suffixKey).toBe('%@ of Vigour');
+    expect(itemNameKeys(trousers(1, [guard, health])).suffixKey).toBe('%@ of Vigour');
+  });
+
+  it('passes over a line with no range at the item tier', () => {
+    expect(itemNameKeys(trousers(2, [{ affixId: 'health', value: 8 }]))).toEqual({ labelKey: 'Leather trousers' });
   });
 });

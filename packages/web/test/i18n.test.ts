@@ -97,8 +97,18 @@ describe('catalog coverage', () => {
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item, people, role, teaching, nightmare, elite, quest, objective, bounty, and trophy, each with its own German', () => {
+  it('are every item and item suffix, people, role, teaching, nightmare, elite, quest, objective, bounty, and trophy, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
+      '%@ of Haste',
+      '%@ of Mending',
+      '%@ of Might',
+      '%@ of Poise',
+      '%@ of Reverie',
+      '%@ of Steadiness',
+      '%@ of Stillness',
+      '%@ of Vigour',
+      '%@ of Warding',
+      '%@ of the Bulwark',
       "A newcomer's errand",
       'Amulet',
       'Balance recovery',

@@ -55,6 +55,8 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('%1$@ bought for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
     case 'sold':
       return lookup('%1$@ sold for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
+    case 'boughtBack':
+      return lookup('%1$@ bought back for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
     case 'dropped':
       return lookup('%@ dropped.', lootName(line.contents, lookup));
     case 'pickedUp':

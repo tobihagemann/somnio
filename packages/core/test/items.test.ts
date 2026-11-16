@@ -1,6 +1,7 @@
 import { ROLES } from '@somnio/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
+import { AFFIXES } from '../src/affixes.ts';
 import { BASE_ITEMS, itemLabelKey, newItemId, plainInstance } from '../src/items.ts';
 import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { ELITE_TRAITS, MONSTER_KINDS } from '../src/monsterKinds.ts';
@@ -9,6 +10,16 @@ import { BOUNTY_KINDS, BOUNTY_LABEL_KEY } from '../src/bounties.ts';
 import { QUESTS, TROPHIES } from '../src/quests.ts';
 
 const CORE_KEYS = [
+  '%@ of Haste',
+  '%@ of Mending',
+  '%@ of Might',
+  '%@ of Poise',
+  '%@ of Reverie',
+  '%@ of Steadiness',
+  '%@ of Stillness',
+  '%@ of Vigour',
+  '%@ of Warding',
+  '%@ of the Bulwark',
   "A newcomer's errand",
   'Amulet',
   'Balance recovery',
@@ -139,9 +150,10 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, and the trophies', () => {
+  it('holds exactly the labels of the items and their suffixes, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, and the trophies', () => {
     const labels = [
       ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
+      ...Object.values(AFFIXES).map((line) => line.nameKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),
       ...Object.values(TEACHINGS).map((teaching) => teaching.labelKey),

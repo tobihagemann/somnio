@@ -1,9 +1,9 @@
 import type { ItemInstance } from '@somnio/core';
-import { itemName, t } from '@/i18n';
+import { t } from '@/i18n';
 import { button, element, iconButton, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
 import { placeBeside, setTip, tipNodes } from './hudTooltip';
-import { itemTip } from './itemText';
+import { itemTip, itemTitle } from './itemText';
 
 /**
  * The windows the HUD's menu opens: Players, Character, and the Quest log. Each is a titled panel
@@ -76,12 +76,17 @@ export class PlayersList {
   }
 }
 
-/** An item card's main action and, while it cannot run, why not. A droppable item in the bag also gets a drop. */
+/**
+ * An item card's main action and, while it cannot run, why not. A droppable item in the bag also
+ * gets a drop. One the shopkeeper buys also gets a sale while his shop is open, whose `run` is
+ * `undefined` while a trade holds the lock.
+ */
 export interface ItemAction {
   label: string;
   run: (() => void) | undefined;
   warning?: string;
   drop?: () => void;
+  sell?: { label: string; ariaLabel: string; run: (() => void) | undefined };
 }
 
 /**
@@ -130,22 +135,23 @@ export class ItemCard {
   /** Opens the item's card beside `anchor`, the part it was pressed on, and gives its button the keyboard when `focus` says so. */
   open(anchor: HTMLElement, item: ItemInstance, action: ItemAction, focus: boolean): void {
     this.close();
-    const { run, drop } = action;
-    const press = button(action.label, () => {
-      this.close();
-      run?.();
-    });
-    press.disabled = run === undefined;
-    const buttons = [press];
-    if (drop !== undefined) {
-      buttons.unshift(
-        button(t('Drop'), () => {
-          this.close();
-          drop();
-        }),
-      );
+    const { drop, sell } = action;
+    const cardButton = (label: string, run: (() => void) | undefined): HTMLButtonElement => {
+      const press = button(label, () => {
+        this.close();
+        run?.();
+      });
+      press.disabled = run === undefined;
+      return press;
+    };
+    const press = cardButton(action.label, action.run);
+    const buttons = [...(drop === undefined ? [] : [cardButton(t('Drop'), drop)]), press];
+    if (sell !== undefined) {
+      const sale = cardButton(sell.label, sell.run);
+      sale.setAttribute('aria-label', sell.ariaLabel);
+      buttons.push(sale);
     }
-    this.root.setAttribute('aria-label', itemName(item.baseId, t));
+    this.root.setAttribute('aria-label', itemTitle(item));
     this.root.replaceChildren(
       ...tipNodes(itemTip(item, action.warning === undefined ? {} : { warning: action.warning })),
       element('div', { className: 'hud-item-card__action', children: buttons }),

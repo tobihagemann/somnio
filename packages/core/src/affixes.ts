@@ -5,6 +5,10 @@ import type { BaseItemId, Item, Rarity, RolledAffix, SlotKind, StatId, Tier } fr
 interface Affix {
   /** The stat it adds to. */
   stat: StatId;
+  /** The coins each point of it adds to an item's value. */
+  worth: number;
+  /** The catalog key of the name of an item whose strongest roll it is, with `%@` for the base's name. */
+  nameKey: string;
   /** The kinds of slot of the items it may roll on. */
   slots: readonly SlotKind[];
   /** The least and the most it adds, by the tier it rolls at. A tier left out rolls none of it. */
@@ -18,16 +22,40 @@ interface Affix {
  * is kebab-case like a teaching id. The ranges are tuned in play, as `COMBAT`'s numbers are.
  */
 export const AFFIXES = {
-  health: { stat: 'healthMax', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8], 3: [10, 18] } },
-  balance: { stat: 'balanceMax', slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [3, 8], 3: [10, 18] } },
-  spirit: { stat: 'spiritMax', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 3: [10, 18] } },
-  damage: { stat: 'damage', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
-  guard: { stat: 'guard', slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'], tiers: { 1: [1, 3], 3: [4, 7] } },
-  'swing-speed': { stat: 'swingSpeed', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 3: [9, 14] } },
-  'balance-recovery': { stat: 'balanceRecovery', slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
-  'spirit-recovery': { stat: 'spiritRecovery', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
-  'mend-depth': { stat: 'mendDepth', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
-  'ward-strength': { stat: 'wardStrength', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+  health: {
+    stat: 'healthMax',
+    worth: 5,
+    nameKey: '%@ of Vigour',
+    slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+    tiers: { 1: [3, 8], 3: [10, 18] },
+  },
+  balance: {
+    stat: 'balanceMax',
+    worth: 5,
+    nameKey: '%@ of Poise',
+    slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+    tiers: { 1: [3, 8], 3: [10, 18] },
+  },
+  spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 3: [10, 18] } },
+  damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+  guard: {
+    stat: 'guard',
+    worth: 13,
+    nameKey: '%@ of the Bulwark',
+    slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+    tiers: { 1: [1, 3], 3: [4, 7] },
+  },
+  'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 3: [9, 14] } },
+  'balance-recovery': {
+    stat: 'balanceRecovery',
+    worth: 3,
+    nameKey: '%@ of Steadiness',
+    slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'],
+    tiers: { 1: [5, 15], 3: [16, 30] },
+  },
+  'spirit-recovery': { stat: 'spiritRecovery', worth: 3, nameKey: '%@ of Stillness', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+  'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+  'ward-strength': { stat: 'wardStrength', worth: 3, nameKey: '%@ of Warding', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
 } as const satisfies Record<string, Affix>;
 export type AffixId = keyof typeof AFFIXES;
 
@@ -66,4 +94,30 @@ export function rollItem(baseId: BaseItemId, tier: Tier, rarity: Rarity, random:
     affixes.push({ affixId, value: rollWithin(affix(affixId).tiers[tier]!, random) });
   }
   return { baseId, tier, rarity, affixes };
+}
+
+/**
+ * The line an item rolled highest: the largest share of the most its affix rolls at the item's
+ * tier. A line with no range at that tier does not count. Of two as high, the one `AFFIXES` lists
+ * first wins, so the order of the item's lines changes nothing.
+ */
+function strongestRoll(item: Item): RolledAffix | undefined {
+  let strongest: { line: RolledAffix; most: number } | undefined;
+  for (const line of item.affixes) {
+    const most = affix(line.affixId).tiers[item.tier]?.[1];
+    if (most === undefined) continue;
+    if (strongest !== undefined) {
+      const ahead = line.value * strongest.most - strongest.line.value * most;
+      if (ahead < 0 || (ahead === 0 && AFFIX_IDS.indexOf(line.affixId) > AFFIX_IDS.indexOf(strongest.line.affixId))) continue;
+    }
+    strongest = { line, most };
+  }
+  return strongest?.line;
+}
+
+/** The catalog keys of an item's name: its base's, and the suffix of its strongest roll when it has one. */
+export function itemNameKeys(item: Item): { labelKey: string; suffixKey?: string } {
+  const strongest = strongestRoll(item);
+  const labelKey = baseItem(item.baseId).labelKey;
+  return strongest === undefined ? { labelKey } : { labelKey, suffixKey: affix(strongest.affixId).nameKey };
 }

@@ -165,6 +165,12 @@ export class AppShell {
   private readonly transport: GameplayTransport;
   private renderer: THREE.WebGLRenderer | undefined;
   private hoveringHUD = false;
+  /** Whether a render pass is running, and whether a call during it asked for one more. */
+  private rendering = false;
+  private renderAgain = false;
+  /** Whether the last render pass found the shopkeeper's panel open, and room for the windows beside a carrier's panel, so the next one sees either change. */
+  private lastShop = false;
+  private lastBeside = true;
   private lastFrameMs: number | undefined;
   /** The timer that ticks the session while the tab is hidden, since a hidden tab draws no frames. */
   private hiddenTicker: ReturnType<typeof setInterval> | undefined;
@@ -240,6 +246,7 @@ export class AppShell {
         onUnequip: (slot) => this.session.unequip(slot),
         onMoveItem: (itemId, place) => this.session.moveItem(itemId, place),
         onDropItem: (itemId, at) => this.dropItem(itemId, at),
+        onSell: (itemId) => this.session.sell(itemId),
         onToggleRun: () => this.session.toggleRun(),
         onToggleGazeLock: () => this.session.toggleGazeLock(),
         onToggleEngage: () => this.session.toggleEngage(),
@@ -249,7 +256,8 @@ export class AppShell {
         onClearTarget: () => this.session.select(undefined),
         onAbandonQuest: (questId) => this.session.abandonQuest(questId),
         onOpenSettings: () => this.present({ kind: 'gameMenu' }),
-        onCloseCarrierPanel: () => this.session.closeServicePanel(),
+        onWindowOpened: (id) => this.windowOpened(id),
+        onWindowClosed: () => this.render(),
         onHoverChange: (hovering) => {
           this.hoveringHUD = hovering;
         },
@@ -264,7 +272,8 @@ export class AppShell {
       onAbandonQuest: (questId) => this.session.abandonQuest(questId),
       onStudy: (teachingId) => this.session.study(teachingId),
       onBuy: (itemId) => this.session.buy(itemId),
-      onSell: (itemId) => this.session.sell(itemId),
+      onBuyBack: (itemId) => this.session.buyBack(itemId),
+      onSellFromBag: () => this.openBag(),
       onClose: () => this.session.closeServicePanel(),
     });
     this.fallenNotice = new FallenNotice(() => this.session.wake());
@@ -405,7 +414,12 @@ export class AppShell {
   }
 
   private installHostHandlers(): void {
-    watchViewport(() => this.handleResize());
+    watchViewport(() => {
+      this.handleResize();
+      // Room for the windows beside a carrier's panel decides whether the shop's panel stands aside,
+      // or the Character window opens beside it.
+      this.render();
+    });
     this.askToTurnWhileUpright();
 
     // Fullscreen is never entered automatically, since in fullscreen the browser takes Esc to leave
@@ -980,8 +994,47 @@ export class AppShell {
     if (abilityId !== undefined) this.session.useAbility(abilityId);
   }
 
-  /** Pushes controller and session state into the DOM. Cheap enough to run per frame. */
+  /**
+   * Pushes controller and session state into the DOM. Cheap enough to run per frame. A call made
+   * while a pass runs, by a window it opens or closes or by a panel it closes, runs one pass more
+   * once that pass ends.
+   */
   render(): void {
+    if (this.rendering) {
+      this.renderAgain = true;
+      return;
+    }
+    this.rendering = true;
+    try {
+      do {
+        this.renderAgain = false;
+        this.renderPass();
+      } while (this.renderAgain);
+    } finally {
+      this.rendering = false;
+    }
+  }
+
+  /**
+   * A window opening where the windows cannot stand beside a carrier's panel ends that panel, as the
+   * two take turns, but for the Character window at the shopkeeper's, which stands in for his panel
+   * while the shop stays open.
+   */
+  private windowOpened(id: HUDWindowId): void {
+    const carrier = this.session.servicePanel;
+    if (carrier !== undefined && !this.hud.windowsBesideCarrierPanel && !(id === 'character' && carrier.service === 'shopkeeper')) {
+      this.session.closeServicePanel();
+    }
+    this.render();
+  }
+
+  /** Opens the Character window on its bag, where the shop's sales are made. */
+  private openBag(): void {
+    this.hud.openWindow('character');
+    this.hud.showCharacterTab('items');
+  }
+
+  private renderPass(): void {
     const overlay = this.controller.presentedOverlay;
     this.overlays.present(overlay);
     this.overlays.renderCharacters(this.controller.characters ?? NO_CHARACTERS, this.controller.awaitingCharacterAnswer);
@@ -1017,6 +1070,11 @@ export class AppShell {
       channel: this.session.channelOf(selfId),
       raise: this.session.raiseOf(selfId),
     });
+    // Once the shop has been open a pass, a Character window open where it cannot stand beside the
+    // panel can only have been brought in for it, since the panel showing closes every window there.
+    const shop = this.session.servicePanel?.service === 'shopkeeper';
+    const beside = this.hud.windowsBesideCarrierPanel;
+    const steppedAside = shop && this.lastShop && this.hud.isWindowOpen('character') && !beside;
     this.servicePanel.render(
       this.session.servicePanel,
       this.session.lucidity,
@@ -1024,15 +1082,26 @@ export class AppShell {
       this.session.bounties,
       this.session.inventory,
       this.session.tradeLocked(),
+      this.session.buyBackItems,
+      beside,
+      steppedAside,
     );
-    this.hud.setCarrierPanelOpen(this.servicePanel.open);
+    this.hud.setCarrierPanelOpen(this.servicePanel.open && !steppedAside);
+    // With room for both, the shop stands the Character window beside its panel: as it opens, and as
+    // the window widens again with it closed.
+    const widened = beside && !this.lastBeside && !this.hud.isWindowOpen('character');
+    if (shop && beside && (!this.lastShop || widened)) this.openBag();
+    // The shop closed, by walking off, a door, or another window, while the Character window stood in for it.
+    if (!shop && this.lastShop && !beside && this.hud.isWindowOpen('character')) this.hud.closeWindow('character');
+    this.lastShop = shop;
+    this.lastBeside = beside;
     // The fallen notice takes the target frame's place while the player lies fallen.
     const framing = inWorld && !this.session.fallen;
     this.hud.renderTarget(framing ? this.framed(this.session.target) : undefined, this.session.gazeLocked);
     this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raiseOf(selfId) }, performance.now());
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
-    this.hud.renderCharacter(this.session.inventory, this.session.lucidity);
+    this.hud.renderCharacter(this.session.inventory, this.session.lucidity, shop ? this.session.tradeLocked() : undefined);
     this.hud.renderQuests(this.session.quests, this.session.lucidity.study);
     this.hud.tick(performance.now(), this.clock());
   }

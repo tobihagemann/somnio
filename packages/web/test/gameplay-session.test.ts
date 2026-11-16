@@ -6,6 +6,7 @@ import {
   HOLD_TO_STEER_MS,
   PATH_FOLLOWING,
   REMOTE_INTERPOLATION_SECONDS,
+  chatLineCategory,
   compassPoint,
   noopRenderSurface,
 } from '@/client';
@@ -2024,7 +2025,7 @@ describe('the shop', () => {
   const CUDGEL = item('cudgel');
   const DAGGER = item('dagger');
 
-  const trades = (rig: Rig) => rig.sent.filter((message) => message.tag === 'buy' || message.tag === 'sell');
+  const trades = (rig: Rig) => rig.sent.filter((message) => message.tag === 'buy' || message.tag === 'sell' || message.tag === 'buyBack');
 
   /** Joins a meadow holding a cudgel, with Mercus a step south, and clicks him. */
   function atMercus(): { rig: Rig; repaints: () => number } {
@@ -2048,22 +2049,46 @@ describe('the shop', () => {
     rig.session.buy('dagger');
     rig.now = 5000;
     rig.session.sell(CUDGEL.id);
+    rig.now = 10_000;
+    rig.session.buyBack(CUDGEL.id);
     expect(trades(rig)).toEqual([
       { tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } },
       { tag: 'sell', payload: { carrierId: MERCUS, itemId: CUDGEL.id } },
+      { tag: 'buyBack', payload: { carrierId: MERCUS, itemId: CUDGEL.id } },
     ]);
   });
 
-  it('announces what a trade bought or sold, and not the coins it moved', () => {
+  it('announces what a trade bought, sold, or bought back, and not the coins it moved, among the item lines', () => {
     const { rig } = atMercus();
     rig.controller.dispatch(
       inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }),
     );
     rig.controller.dispatch(inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: 30 } }));
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'boughtBack', baseId: 'dagger', rarity: 'plain', coins: 30 } }),
+    );
     expect(rig.controller.chatHistory).toEqual([
       { kind: 'bought', baseId: 'dagger', coins: 60 },
       { kind: 'sold', baseId: 'dagger', coins: 30 },
+      { kind: 'boughtBack', baseId: 'dagger', coins: 30 },
     ]);
+    expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo', 'itemInfo', 'itemInfo']);
+  });
+
+  it('holds what the shopkeeper sells back as each inventory frame says, and nothing once a frame leaves it out', () => {
+    const { rig } = atMercus();
+    expect(rig.session.buyBackItems).toEqual([]);
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 115 }), { trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 } }, [
+        CUDGEL,
+        { ...DAGGER, baseId: 'lantern' as 'dagger' },
+      ]),
+    );
+    expect(rig.session.buyBackItems).toEqual([CUDGEL]);
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] }), { trade: { kind: 'boughtBack', baseId: 'cudgel', rarity: 'plain', coins: 15 } }),
+    );
+    expect(rig.session.buyBackItems).toEqual([]);
   });
 
   it('locks every trade from the request until a moment after its answer, and redraws once it gives way', () => {
@@ -2073,6 +2098,7 @@ describe('the shop', () => {
     expect(rig.session.tradeLocked()).toBe(true);
     rig.session.buy('sword');
     rig.session.sell(CUDGEL.id);
+    rig.session.buyBack(CUDGEL.id);
     expect(trades(rig)).toHaveLength(1);
 
     rig.now = 300;

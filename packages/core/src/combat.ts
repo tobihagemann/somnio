@@ -155,10 +155,18 @@ export function statsOf(equipment: Equipment, { role, ranks }: { role?: Role | u
     mendDepth: COMBAT.mend.healthPerDepthRank * rankOf(ranks, 'depth'),
   };
   for (const item of Object.values(equipment)) {
-    const implicit: Partial<Stats> = baseItem(item.baseId).implicit ?? {};
-    for (const stat of Object.keys(implicit) as StatId[]) stats[stat] += implicit[stat]!;
-    for (const { affixId, value } of item.affixes) stats[affix(affixId).stat] += value;
+    const added = itemStats(item);
+    for (const stat of Object.keys(added) as StatId[]) stats[stat] += added[stat];
   }
+  return stats;
+}
+
+/** What one item adds to a dreamer's stats: its base's own stats and every line it rolled. */
+export function itemStats(item: Item): Stats {
+  const stats: Stats = { ...NO_STATS };
+  const implicit: Partial<Stats> = baseItem(item.baseId).implicit ?? {};
+  for (const stat of Object.keys(implicit) as StatId[]) stats[stat] += implicit[stat]!;
+  for (const { affixId, value } of item.affixes) stats[affix(affixId).stat] += value;
   return stats;
 }
 

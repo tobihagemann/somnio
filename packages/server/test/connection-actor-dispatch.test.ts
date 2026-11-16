@@ -69,6 +69,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login study', message: { tag: 'study', payload: { carrierId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
   { label: 'pre-login buy', message: { tag: 'buy', payload: { carrierId: entity.id, baseId: 'dagger' } }, state: 'awaitingLogin' },
   { label: 'pre-login sell', message: { tag: 'sell', payload: { carrierId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
+  { label: 'pre-login buyBack', message: { tag: 'buyBack', payload: { carrierId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
   { label: 'pre-login wake', message: { tag: 'wake', payload: {} }, state: 'awaitingLogin' },
   {
     label: 'post-attach login',
@@ -297,7 +298,19 @@ describe('an attached connection', () => {
       carrying({ coins: COINS, bag: [CUDGEL] }),
       () => ({ tag: 'sell', payload: { carrierId: MERCUS, itemId: CUDGEL.id } }),
       (a) => a.own().inventory,
-      carrying({ coins: 110 }),
+      carrying({ coins: 115 }),
+    ],
+    [
+      'a buy-back',
+      {},
+      carrying({ coins: COINS, bag: [CUDGEL, WAND] }),
+      (a) => {
+        a.space.handleSell(MERCUS, CUDGEL.id, a.own().character.id);
+        a.space.handleSell(MERCUS, WAND.id, a.own().character.id);
+        return { tag: 'buyBack', payload: { carrierId: MERCUS, itemId: CUDGEL.id } };
+      },
+      (a) => a.own().inventory,
+      carrying({ coins: COINS + 40, bag: [CUDGEL] }),
     ],
   ])('takes %s to the space', async (_label, character, inventory, message, read, expected) => {
     const a = await attached(character, inventory);

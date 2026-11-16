@@ -131,8 +131,11 @@ function inBagOrder(bag: BaggedItem[]): BaggedItem[] {
 /** What changed hands to produce an `inventory` frame, which the frame carries beside what the dreamer now has. */
 export type InventoryChange = Pick<InventoryMessage, 'trade' | 'dropped' | 'pickedUp' | 'rewarded'>;
 
-/** The `inventory` frame of what the dreamer carries, worn items in slot order and the bag in place order. */
-export function inventoryMessage(inventory: Inventory, change: InventoryChange = {}): InventoryMessage {
+/**
+ * The `inventory` frame of what the dreamer carries, worn items in slot order and the bag in place
+ * order, and what the shopkeeper holds for them to buy back while he holds anything.
+ */
+export function inventoryMessage(inventory: Inventory, change: InventoryChange = {}, buyBack: readonly ItemInstance[] = []): InventoryMessage {
   return {
     coins: inventory.coins,
     equipped: EQUIP_SLOTS.flatMap((slot) => {
@@ -141,6 +144,7 @@ export function inventoryMessage(inventory: Inventory, change: InventoryChange =
     }),
     bag: inventory.bag.map(({ place, item }) => ({ place, item: itemMessage(item) })),
     ...change,
+    ...(buyBack.length === 0 ? {} : { buyBack: buyBack.map(itemMessage) }),
   };
 }
 
@@ -156,6 +160,11 @@ export function inventoryOf(message: InventoryMessage): Inventory {
     return known === undefined ? [] : [{ place, item: known }];
   });
   return { coins: message.coins, equipped, bag: inBagOrder(bag) };
+}
+
+/** What an `inventory` frame says the shopkeeper holds for the dreamer to buy back, newest first, without any item this build does not know. */
+export function buyBackOf(message: InventoryMessage): ItemInstance[] {
+  return (message.buyBack ?? []).flatMap((item) => knownItem(item) ?? []);
 }
 
 function itemMessage({ id, baseId, tier, rarity, affixes }: ItemInstance): ItemMessage {

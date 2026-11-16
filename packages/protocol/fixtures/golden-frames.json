@@ -117,6 +117,13 @@
     },
     "tag": "buy"
   },
+  "buyBack": {
+    "payload": {
+      "carrierId": "npc:EdariaShop/mercus",
+      "itemId": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e"
+    },
+    "tag": "buyBack"
+  },
   "characterResult": {
     "payload": {
       "result": "nameExists"
@@ -452,7 +459,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 22
+      "protocolVersion": 23
     },
     "tag": "hello"
   },
@@ -526,6 +533,36 @@
     },
     "tag": "inventory"
   },
+  "inventory-after-buy-back": {
+    "payload": {
+      "bag": [
+        {
+          "item": {
+            "affixes": [
+              {
+                "affixId": "guard",
+                "value": 2
+              }
+            ],
+            "baseId": "cap",
+            "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+            "rarity": "magic",
+            "tier": 1
+          },
+          "place": 0
+        }
+      ],
+      "coins": 80,
+      "equipped": [],
+      "trade": {
+        "baseId": "cap",
+        "coins": 25,
+        "kind": "boughtBack",
+        "rarity": "magic"
+      }
+    },
+    "tag": "inventory"
+  },
   "inventory-after-drop": {
     "payload": {
       "bag": [],
@@ -571,11 +608,25 @@
   "inventory-after-trade": {
     "payload": {
       "bag": [],
+      "buyBack": [
+        {
+          "affixes": [
+            {
+              "affixId": "guard",
+              "value": 2
+            }
+          ],
+          "baseId": "cap",
+          "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+          "rarity": "magic",
+          "tier": 1
+        }
+      ],
       "coins": 105,
       "equipped": [],
       "trade": {
         "baseId": "cap",
-        "coins": 5,
+        "coins": 25,
         "kind": "sold",
         "rarity": "magic"
       }

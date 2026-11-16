@@ -31,6 +31,7 @@ import {
   abilityRank,
   attackRefusal,
   bagHasRoom,
+  buyBackOf,
   bountiesOf,
   distance,
   doorOpenAt,
@@ -69,6 +70,7 @@ import type {
   EffectId,
   EngageAction,
   Inventory,
+  ItemInstance,
   ObjectiveLine,
   Point,
   QuestCarrier,
@@ -231,7 +233,7 @@ interface Approach {
   actWithin: number;
 }
 
-/** How long the shop's buttons wait for a trade's answer. A refused trade gets none, so the lock gives way on its own. */
+/** How long the shop's trades wait for an answer. A refused trade gets none, so the lock gives way on its own. */
 const TRADE_ANSWER_TIMEOUT_MS = 1500;
 /** How long they stay locked after the answer, so a double click trades once. */
 const TRADE_SETTLE_MS = 500;
@@ -258,6 +260,8 @@ export class GameplaySession {
 
   energy: Energy = ZERO_ENERGY;
   inventory: Inventory = NO_INVENTORY;
+  /** What the shopkeeper holds for the player to buy back, newest first, as the last `inventory` frame said. */
+  buyBackItems: readonly ItemInstance[] = [];
   lucidity: LucidityMessage = NO_LUCIDITY_MESSAGE;
   /** The quests the player holds and turned in, as the last `quests` frame said. */
   quests: QuestLog = NO_QUESTS;
@@ -310,7 +314,7 @@ export class GameplaySession {
   /** Whether the press ring lies at the destination of the walk a press let go of, until that walk ends. */
   private destinationMarked = false;
   private slowedUntilMs = 0;
-  /** When the shop's buttons give way, or 0 once the tick has redrawn them free. */
+  /** When the shop's trades give way, or 0 once the tick has redrawn them free. */
   private tradeLockedUntilMs = 0;
 
   private readonly controller: ConnectionController;
@@ -414,6 +418,7 @@ export class GameplaySession {
       this.running = false;
       this.energy = ZERO_ENERGY;
       this.inventory = NO_INVENTORY;
+      this.buyBackItems = [];
       this.lucidity = NO_LUCIDITY_MESSAGE;
       this.quests = NO_QUESTS;
       this.bounties = [];
@@ -1299,7 +1304,12 @@ export class GameplaySession {
     this.trade((carrierId) => ({ tag: 'sell', payload: { carrierId, itemId } }));
   }
 
-  /** Whether the shop's buttons are locked, from a trade until a moment after its answer. */
+  /** Asks the shopkeeper whose panel is open to sell back an item the player sold him. */
+  buyBack(itemId: string): void {
+    this.trade((carrierId) => ({ tag: 'buyBack', payload: { carrierId, itemId } }));
+  }
+
+  /** Whether the shop's trades are locked, from a trade until a moment after its answer. */
   tradeLocked(): boolean {
     return this.now() < this.tradeLockedUntilMs;
   }
@@ -1364,6 +1374,7 @@ export class GameplaySession {
         }
         this.seen.inventory = true;
         this.inventory = inventoryOf(message.payload);
+        this.buyBackItems = buyBackOf(message.payload);
         this.onStateChanged?.();
         return;
       }

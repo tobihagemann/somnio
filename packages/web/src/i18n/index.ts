@@ -1,4 +1,5 @@
 import {
+  AFFIXES,
   BASE_ITEMS,
   BOUNTY_KINDS,
   BOUNTY_LABEL_KEY,
@@ -79,14 +80,16 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 
 /**
  * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name in the Character window, every people's name on the character card, every role's and
- * teaching's name in the HUD and a master's panel, every nightmare's name on its plaque, an elite's
- * included, every quest's title and objective lines, a bounty's included, and every trophy's name.
+ * item's name, and the suffix of its strongest roll, in the Character window and Mercus's panel,
+ * every people's name on the character card, every role's and teaching's name in the HUD and a
+ * master's panel, every nightmare's name on its plaque, an elite's included, every quest's title
+ * and objective lines, a bounty's included, and every trophy's name.
  */
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
   ...new Set([
     ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
+    ...Object.values(AFFIXES).map((line) => line.nameKey),
     ...PEOPLES.map(peopleLabelKey),
     ...ROLES.map(roleLabelKey),
     ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
@@ -152,6 +155,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'You receive %@c.',
   '%1$@ bought for %2$@c.',
   '%1$@ sold for %2$@c.',
+  '%1$@ bought back for %2$@c.',
   '%@ dropped.',
   '%@ picked up.',
   '%@ received.',
@@ -452,17 +456,21 @@ export const RENDERED_KEYS: readonly string[] = [
   'Shopkeeper',
   'Your purse',
   '%@c',
-  '%@ sells plain gear and buys what you find. Rarer finds fetch more.',
+  '%@ sells plain gear and buys what you find.',
+  'Sell from bag',
   'For sale',
-  'Sell',
+  'Buy back',
   '%1$@ damage, %2$@ balance a swing',
+  'Sells for %@c',
   'Buy for %@c',
   'Buy %1$@ for %2$@c',
+  'Buy back for %@c',
+  'Buy back %1$@ for %2$@c',
   'Sell for %@c',
   'Sell %1$@ for %2$@c',
+  'Right-click or double-click to sell.',
   'You need %@c more.',
   'Your bag is full.',
-  'Your bag holds nothing %@ buys.',
 
   // Login and registration
   'Somnio',

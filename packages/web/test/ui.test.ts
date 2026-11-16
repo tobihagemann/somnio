@@ -1461,14 +1461,21 @@ describe('the service panel', () => {
       onAbandonQuest: (questId) => calls.push(`abandon:${questId}`),
       onStudy: (teachingId) => calls.push(`study:${teachingId}`),
       onBuy: (baseId) => calls.push(`buy:${baseId}`),
-      onSell: (itemId) => calls.push(`sell:${itemId}`),
+      onBuyBack: (itemId) => calls.push(`buyBack:${itemId}`),
+      onSellFromBag: () => calls.push('sellFromBag'),
       onClose: () => calls.push('close'),
     });
-    const render = (npc: ServiceCarrier | undefined, lucidity: LucidityMessage, inventory = NOTHING, tradeLocked = false): void =>
-      panel.render(npc, lucidity, NO_QUESTS, [], inventory, tradeLocked);
+    /** Renders with the windows beside the panel unless `shop` says otherwise. */
+    const render = (
+      npc: ServiceCarrier | undefined,
+      lucidity: LucidityMessage,
+      inventory = NOTHING,
+      tradeLocked = false,
+      shop: { buyBack?: readonly ItemInstance[]; beside?: boolean; steppedAside?: boolean } = {},
+    ): void => panel.render(npc, lucidity, NO_QUESTS, [], inventory, tradeLocked, shop.buyBack ?? [], shop.beside ?? true, shop.steppedAside ?? false);
     /** Renders for a dreamer holding the quest, with that much done toward each of its objectives. */
     const holding = (npc: ClientEntity, lucidity: LucidityMessage, questId: QuestId, progress: number[], inventory = NOTHING): void =>
-      panel.render(npc, lucidity, { active: [{ questId, progress }], done: [] }, [], inventory, false);
+      panel.render(npc, lucidity, { active: [{ questId, progress }], done: [] }, [], inventory, false, [], true, false);
     const npc = (service: Service, id = 'npc:EdariaFighterHall/pugnax', name = 'Pugnax') => clientEntity({ id, kind: 'npc', name, service });
     const buttons = (): string[] => [...panel.root.querySelectorAll('button')].map((node) => `${node.textContent}${node.disabled ? ' (disabled)' : ''}`);
     const press = (label: string): void => {
@@ -1597,10 +1604,20 @@ describe('the service panel', () => {
       active: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, () => ({ questId: 'drawing-back-task' as const, progress: [0] })),
       done: [],
     };
-    p.panel.render(p.npc('fighterMaster'), { ranks: [] }, full, [], NOTHING, false);
+    p.panel.render(p.npc('fighterMaster'), { ranks: [] }, full, [], NOTHING, false, [], true, false);
     expect(p.text()).toContain('Your quest log is full. Give up a quest to take this one.');
     expect(p.buttons()).toEqual(['Ask for the trial (disabled)', 'Close']);
-    p.panel.render(p.npc('fighterMaster'), { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] }, full, [], NOTHING, false);
+    p.panel.render(
+      p.npc('fighterMaster'),
+      { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 2, practice: 0 }] },
+      full,
+      [],
+      NOTHING,
+      false,
+      [],
+      true,
+      false,
+    );
     expect(p.row('follow-through')).toContain('Your quest log is full.');
     expect(p.buttons()).toContain('Take the task (disabled)');
   });
@@ -1764,11 +1781,21 @@ describe('the service panel', () => {
       expect(p.quest('restless-graves')).toContain('Reward: 60c, 30 practice toward Toughening');
       const done = ['restless-graves', 'cracked-skulls'] as QuestId[];
       const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
-      p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], carrying({ bag: fullBag }), false);
+      p.panel.render(
+        memor(),
+        { ranks: [] },
+        { active: [{ questId: 'into-the-crypt', progress: [1] }], done },
+        [],
+        carrying({ bag: fullBag }),
+        false,
+        [],
+        true,
+        false,
+      );
       expect(p.quest('into-the-crypt')).toContain('Reward: 250c, 60 practice, a piece of gear');
       expect(p.text()).toContain('Your bag is full. Make room in it before you turn this in.');
       expect(p.buttons()).toEqual(['Turn in (disabled)', 'Close']);
-      p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], NOTHING, false);
+      p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], NOTHING, false, [], true, false);
       expect(p.buttons()).toEqual(['Turn in', 'Close']);
     });
   });
@@ -1778,7 +1805,7 @@ describe('the service panel', () => {
     const ARENA: Bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } };
     const GRAVES: Bounty = { day: 3, land: 'Graveyard', monsterKind: 'skeleton-warrior', objective: 'collect', count: 4, reward: { coins: 120, gear: 3 } };
     const show = (p: ReturnType<typeof mount>, quests: QuestLog, bounties: readonly Bounty[] = [ARENA, GRAVES], inventory = NOTHING): void =>
-      p.panel.render(board(), { ranks: [] }, quests, bounties, inventory, false);
+      p.panel.render(board(), { ranks: [] }, quests, bounties, inventory, false, [], true, false);
     const held = (bounty: Bounty, count: number) => ({ questId: bountyIdOf(bounty), progress: [count], definition: bounty });
 
     it('opens under its service as its title, and says so when it has no bounties', () => {
@@ -1869,15 +1896,16 @@ describe('the service panel', () => {
     const ware = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-ware="${id}"]`)?.textContent ?? '';
     const sold = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-item]')].map((node) => node.getAttribute('data-item'));
     const sale = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-item="${id}"]`)?.textContent ?? '';
+    const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
 
-    it('offers every ware, says what each costs and does, and buys what the bag holds for what its rarity fetches', () => {
+    it('offers every ware, says what each costs and does, and lists no bag to sell from', () => {
       const p = mount();
-      const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100, worn: [item('dagger')], bag: [item('cudgel'), rare, item('moonstone')] }));
       expect(p.text()).toContain('Shopkeeper');
+      expect(p.text()).toContain('Mercus sells plain gear and buys what you find.');
       expect(p.panel.root.querySelector('.shop-purse')?.textContent).toBe('Your purse100c');
       expect(p.panel.root.querySelector('.service-body .shop-purse')).toBeNull();
-      expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
+      expect(headings(p.panel)).toEqual(['For sale']);
       expect(wares(p.panel)).toEqual([
         'dagger',
         'cudgel',
@@ -1897,26 +1925,64 @@ describe('the service panel', () => {
       expect(ware(p.panel, 'dagger')).toContain('6 damage, 10 balance a swing');
       expect(ware(p.panel, 'dagger')).not.toContain('more.');
       expect(ware(p.panel, 'shield')).toContain('+4 Guard');
+      expect(ware(p.panel, 'cap')).toContain('+5% Spirit recovery');
+      expect(ware(p.panel, 'amulet')).toContain('+5 Spirit');
       expect(ware(p.panel, 'wand')).toContain('In the off hand, it lets a Mystic use their abilities.');
       expect(ware(p.panel, 'sword')).toContain('You need 50c more.');
       expect(ware(p.panel, 'mace')).toContain('You need 140c more.');
-      // The Moonstone is never bought, so it has no row to sell it from.
-      expect(sold(p.panel)).toEqual(['cudgel-1', 'amulet-rare']);
-      expect(sale(p.panel, 'amulet-rare')).toBe('AmuletRare+5 Health+6 SpiritSell for 75c');
-      expect(p.panel.root.querySelector('[data-item="amulet-rare"] .ware-name')?.classList.contains('hud-rarity--rare')).toBe(true);
-      expect(sale(p.panel, 'cudgel-1')).toBe('Cudgel8 damage, 18 balance a swingSell for 10c');
-      expect(p.buttons().filter((label) => !label.startsWith('Buy'))).toEqual(['Sell for 10c', 'Sell for 75c', 'Close']);
+      expect(sold(p.panel)).toEqual([]);
+      expect(p.buttons().filter((label) => !label.startsWith('Buy'))).toEqual(['Close']);
       // Two wares can share a price, so each trade button's accessible name says which item it trades.
-      expect(p.panel.root.querySelector('[data-item="amulet-rare"] button')?.getAttribute('aria-label')).toBe('Sell Amulet for 75c');
       expect(p.panel.root.querySelector('[data-ware="gloves"] button')?.getAttribute('aria-label')).toBe('Buy Leather gloves for 25c');
-      p.press('Sell for 75c');
-      expect(p.calls).toEqual(['sell:amulet-rare']);
+      p.press('Buy for 60c');
+      expect(p.calls).toEqual(['buy:dagger']);
     });
 
-    it("draws each ware's and each sale's item as its icon, edged in its rarity's colour", () => {
+    it('lists what the dreamer sold, newest first, each to buy back under its name for what it fetched', () => {
       const p = mount();
-      const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
-      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, bag: [rare] }));
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, item('cudgel')] });
+      expect(headings(p.panel)).toEqual(['For sale', 'Buy back']);
+      expect(sold(p.panel)).toEqual(['amulet-rare', 'cudgel-1']);
+      expect(sale(p.panel, 'amulet-rare')).toBe('Amulet of ReverieRare+11 SpiritBuy back for 50c');
+      expect(p.panel.root.querySelector('[data-item="amulet-rare"] .ware-name')?.classList.contains('hud-rarity--rare')).toBe(true);
+      expect(sale(p.panel, 'cudgel-1')).toBe('Cudgel8 damage, 18 balance a swingBuy back for 15c');
+      expect(p.panel.root.querySelector('[data-item="amulet-rare"] button')?.getAttribute('aria-label')).toBe('Buy back Amulet of Reverie for 50c');
+      p.press('Buy back for 50c');
+      expect(p.calls).toEqual(['buyBack:amulet-rare']);
+    });
+
+    it('greys out buying back what the purse does not cover or the bag has no room for, and says why', () => {
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 20 }), false, { buyBack: [rare, item('cudgel')] });
+      expect([sale(p.panel, 'amulet-rare'), p.buttons()]).toEqual([
+        'Amulet of ReverieRare+11 SpiritYou need 30c more.Buy back for 50c',
+        expect.arrayContaining(['Buy back for 50c (disabled)', 'Buy back for 15c']),
+      ]);
+      const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 500, bag: fullBag }), false, { buyBack: [rare] });
+      expect([sale(p.panel, 'amulet-rare'), p.buttons()]).toEqual([
+        'Amulet of ReverieRare+11 SpiritYour bag is full.Buy back for 50c',
+        expect.arrayContaining(['Buy back for 50c (disabled)']),
+      ]);
+    });
+
+    it('offers to sell from the bag only where the windows cannot stand beside it, and steps aside for them', () => {
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, NOTHING, false, { beside: false });
+      expect(p.buttons().slice(0, 1)).toEqual(['Sell from bag']);
+      p.press('Sell from bag');
+      expect(p.calls).toEqual(['sellFromBag']);
+      p.render(mercus(), { ranks: [] }, NOTHING, false, { beside: true });
+      expect(p.buttons()).not.toContain('Sell from bag');
+      p.render(mercus(), { ranks: [] }, NOTHING, false, { beside: false, steppedAside: true });
+      expect([p.panel.root.classList.contains('hidden'), p.panel.open]).toEqual([true, true]);
+      p.render(mercus(), { ranks: [] }, NOTHING, false, { beside: false });
+      expect([p.panel.root.classList.contains('hidden'), p.panel.open]).toEqual([false, true]);
+    });
+
+    it("draws each ware's and each item's to buy back as its icon, edged in its rarity's colour", () => {
+      const p = mount();
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare] });
       const icon = (row: string) => {
         const node = p.panel.root.querySelector<HTMLImageElement>(`${row} .ware-head > img`);
         return [
@@ -1943,12 +2009,10 @@ describe('the service panel', () => {
       ).toBe(true);
     });
 
-    it('sells another of a ware the dreamer carries, and says when the bag holds nothing to sell', () => {
+    it('sells another of a ware the dreamer carries', () => {
       const p = mount();
       p.render(mercus(), { ranks: [] }, carrying({ coins: 500, worn: [item('cudgel')], bag: [item('moonstone')] }));
       expect(p.buttons()).toContain('Buy for 30c');
-      expect(headings(p.panel)).toEqual(['For sale', 'Sell']);
-      expect(p.text()).toContain('Your bag holds nothing Mercus buys.');
     });
 
     it('keeps the purse current through a trade, and hides it at a master', () => {
@@ -1966,33 +2030,37 @@ describe('the service panel', () => {
     it('keeps its buttons across a render that changed nothing, and locks every trade while one is under way', () => {
       const p = mount();
       const lucidity = { ranks: [] };
-      const inventory = carrying({ coins: 100, bag: [item('cudgel')] });
-      const sell = (): Element | null => p.panel.root.querySelector('[data-item="cudgel-1"] button');
-      p.render(mercus(), lucidity, inventory);
-      const first = sell();
-      p.render(mercus(), lucidity, inventory);
-      expect(sell()).toBe(first);
+      const inventory = carrying({ coins: 100 });
+      const buyBack = [item('cudgel')];
+      const back = (): Element | null => p.panel.root.querySelector('[data-item="cudgel-1"] button');
+      p.render(mercus(), lucidity, inventory, false, { buyBack });
+      const first = back();
+      p.render(mercus(), lucidity, inventory, false, { buyBack });
+      expect(back()).toBe(first);
       // The shop reads no lucidity, so a frame of practice leaves its buttons standing.
-      p.render(mercus(), { ranks: [{ teachingId: 'strike', rank: 1, practice: 1 }] }, inventory);
-      expect(sell()).toBe(first);
+      p.render(mercus(), { ranks: [{ teachingId: 'strike', rank: 1, practice: 1 }] }, inventory, false, { buyBack });
+      expect(back()).toBe(first);
+      p.render(mercus(), lucidity, inventory, false, { buyBack: [item('cudgel')] });
+      expect(back()).not.toBe(first);
 
-      p.render(mercus(), lucidity, inventory, true);
+      p.render(mercus(), lucidity, inventory, true, { buyBack });
       expect(
         p
           .buttons()
           .filter((label) => label !== 'Close')
           .every((label) => label.endsWith('(disabled)')),
       ).toBe(true);
-      expect(p.buttons()).toContain('Sell for 10c (disabled)');
+      expect(p.buttons()).toContain('Buy back for 15c (disabled)');
     });
 
-    it('renders in German, naming each ware in the locale', () => {
+    it('renders in German, naming each ware and each item to buy back in the locale', () => {
       setLocale('de');
       const p = mount();
-      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, bag: [{ ...item('cap'), rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] }] }));
-      expect(headings(p.panel)).toEqual(['Im Angebot', 'Verkaufen']);
+      const cap: ItemInstance = { ...item('cap'), rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] };
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [cap] });
+      expect(headings(p.panel)).toEqual(['Im Angebot', 'Zurückkaufen']);
       expect(ware(p.panel, 'sword')).toContain('Kurzschwert');
-      expect(sale(p.panel, 'cap-1')).toBe('LederkappeMagisch+1 Deckung+2 DeckungFür 30c verkaufen');
+      expect(sale(p.panel, 'cap-1')).toBe('Lederkappe des BollwerksMagisch+2 Deckung+5 % Erholung des GeistesFür 25c zurückkaufen');
     });
   });
 });
@@ -3247,7 +3315,14 @@ describe('the play field and the panels through the shell', () => {
     clock += 600;
     p.shell.session.runTick(clock);
     expect(action('cudgel').disabled).toBe(false);
-    p.press('Sell for 10c');
+    // Sold from the bag in the Character window, which stands beside his panel.
+    const bagged = container.querySelector('.hud-window--character [data-item="cudgel-1"]')!;
+    bagged.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 2 }));
+    bagged.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    p.deliver(inventoryFrame(carrying({ coins: 55, bag: [dagger] }), { trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 } }, [cudgel]));
+    clock += 600;
+    p.shell.session.runTick(clock);
+    p.press('Buy back for 15c');
 
     // The tick reports the player's position too, which is no trade.
     expect(p.sent().filter((message) => message.tag !== 'move')).toEqual([
@@ -3255,7 +3330,147 @@ describe('the play field and the panels through the shell', () => {
       { tag: 'interact', payload: { carrierId: MERCUS } },
       { tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } },
       { tag: 'sell', payload: { carrierId: MERCUS, itemId: cudgel.id } },
+      { tag: 'buyBack', payload: { carrierId: MERCUS, itemId: cudgel.id } },
     ]);
+  });
+
+  describe('at the shop, with the Character window to sell from', () => {
+    const { innerWidth, innerHeight } = window;
+
+    afterEach(() => {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
+      layOut(innerWidth, innerHeight);
+    });
+
+    /** A player beside Mercus with a cap in the bag, on a mouse in a window `width` px wide or on a finger, before his panel opens. */
+    function shopping(pointer: 'mouse' | 'finger', width = 1024) {
+      if (pointer === 'finger') Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
+      const p = playing();
+      layOut(width, 600);
+      p.deliver(entityFrame({ id: MERCUS, kind: 'npc', name: 'Mercus', x: 9, z: 9, service: 'shopkeeper' }));
+      p.deliver(inventoryFrame(carrying({ coins: 100, bag: [item('cap')] })));
+      const panel = container.querySelector('.service-panel')!;
+      const open = (): void => p.shell.session.pressEntity(MERCUS);
+      /** What stands open: the panel shown, the shop held open, the Character window and the tab it shows, and the Quest log. */
+      const state = () => ({
+        panel: !panel.classList.contains('hidden'),
+        shop: p.shell.session.servicePanel !== undefined,
+        character: p.shell.hud.isWindowOpen('character'),
+        tab: container.querySelector('.hud-window--character [role="tab"][aria-selected="true"]')?.getAttribute('data-tab'),
+        quests: p.shell.hud.isWindowOpen('quests'),
+      });
+      /** The state now, and again after an `energy` frame renders the shell once more. */
+      const settled = () => {
+        const now = state();
+        p.deliver({ tag: 'energy', payload: fullPools(NO_STATS) });
+        expect(state()).toEqual(now);
+        return now;
+      };
+      const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      return { ...p, panel, open, state, settled, escape };
+    }
+
+    const SWAPPED = { panel: false, shop: true, character: true, tab: 'items', quests: false };
+    const PANEL = { panel: true, shop: true, character: false, tab: 'items', quests: false };
+
+    it.each([
+      ['on a finger', 'finger', 1024],
+      ['on a narrow mouse window', 'mouse', 700],
+    ] as const)('brings the Character window in on its bag for the panel %s, and the panel back as it closes', (_label, pointer, width) => {
+      const s = shopping(pointer, width);
+      s.open();
+      expect(s.settled()).toMatchObject({ panel: true, shop: true, character: false });
+      s.press('Sell from bag');
+      expect(s.settled()).toEqual(SWAPPED);
+      container.querySelector<HTMLButtonElement>('button[aria-label="Close Character"]')!.click();
+      expect(s.settled()).toEqual(PANEL);
+    });
+
+    it('keeps the window brought in for the panel through a resize that leaves the window narrow', () => {
+      const s = shopping('mouse', 700);
+      s.open();
+      s.press('Sell from bag');
+      layOut(700, 500);
+      expect(s.settled()).toEqual(SWAPPED);
+    });
+
+    it('ends the shop and the window brought in for it as another window opens', () => {
+      const s = shopping('mouse', 700);
+      s.open();
+      s.press('Sell from bag');
+      s.shell.hud.openWindow('quests');
+      expect(s.settled()).toEqual({ panel: false, shop: false, character: false, tab: 'items', quests: true });
+    });
+
+    it('closes the window brought in on Escape, then the panel', () => {
+      const s = shopping('finger');
+      s.open();
+      s.press('Sell from bag');
+      s.escape();
+      expect(s.settled()).toEqual(PANEL);
+      s.escape();
+      expect(s.settled()).toMatchObject({ panel: false, shop: false, character: false });
+    });
+
+    it('ends both as the player walks out of speaking distance', () => {
+      const s = shopping('mouse', 700);
+      s.open();
+      s.press('Sell from bag');
+      s.deliver({ tag: 'correction', payload: { x: 30, z: 30 } });
+      s.shell.session.runTick(performance.now());
+      expect(s.settled()).toMatchObject({ panel: false, shop: false, character: false });
+    });
+
+    it('brings the panel back beside the window as the window widens, and closes the window as it narrows again', () => {
+      const s = shopping('mouse', 700);
+      s.open();
+      s.press('Sell from bag');
+      layOut(800, 600);
+      expect(s.settled()).toEqual({ ...SWAPPED, panel: true });
+      layOut(700, 600);
+      expect(s.settled()).toEqual(PANEL);
+      expect(s.panel.textContent).toContain('Sell from bag');
+    });
+
+    it('closes the Character window beside the panel as the window narrows, and opens it on its bag again as it widens', () => {
+      const s = shopping('mouse', 800);
+      s.open();
+      layOut(700, 600);
+      expect(s.settled()).toEqual(PANEL);
+      layOut(800, 600);
+      expect(s.settled()).toEqual({ ...SWAPPED, panel: true });
+    });
+
+    it('opens the Character window on its bag beside the panel in a wide window, and leaves it open as the shop closes', () => {
+      const s = shopping('mouse', 800);
+      s.open();
+      expect(s.settled()).toEqual({ ...SWAPPED, panel: true });
+      expect(s.panel.textContent).not.toContain('Sell from bag');
+      s.press('Close');
+      expect(s.settled()).toEqual({ ...SWAPPED, shop: false });
+    });
+
+    it('leaves the Character window closed beside the panel in a wide window once the player closes it', () => {
+      const s = shopping('mouse', 800);
+      s.open();
+      container.querySelector<HTMLButtonElement>('button[aria-label="Close Character"]')!.click();
+      expect(s.settled()).toMatchObject({ panel: true, shop: true, character: false });
+    });
+
+    it('shows the panel and closes a Character window already open as the shop opens in a narrow window', () => {
+      const s = shopping('mouse', 700);
+      s.shell.hud.openWindow('character');
+      s.open();
+      expect(s.settled()).toMatchObject({ panel: true, shop: true, character: false });
+    });
+
+    it("lets a master's panel and a window take turns in a narrow window", () => {
+      const s = shopping('mouse', 700);
+      s.shell.session.pressEntity(PUGNAX);
+      expect(s.settled()).toMatchObject({ panel: true, shop: true });
+      s.shell.hud.openWindow('character');
+      expect(s.settled()).toMatchObject({ panel: false, shop: false, character: true });
+    });
   });
 
   it("counts a fallen player's raise down on the notice frame by frame, between the server's snapshots", () => {

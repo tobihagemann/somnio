@@ -3,6 +3,7 @@ import type {
   AdminSayMessage,
   AbandonQuestMessage,
   BlowMessage,
+  BuyBackMessage,
   BuyMessage,
   CharacterResultMessage,
   CharactersMessage,
@@ -91,6 +92,7 @@ export type SomnioMessage =
   | { tag: 'study'; payload: StudyMessage }
   | { tag: 'buy'; payload: BuyMessage }
   | { tag: 'sell'; payload: SellMessage }
+  | { tag: 'buyBack'; payload: BuyBackMessage }
   | { tag: 'wake'; payload: EmptyMessage }
   | { tag: 'redeemSession'; payload: RedeemSessionMessage }
   | { tag: 'revokeSession'; payload: RevokeSessionMessage }

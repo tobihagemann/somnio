@@ -2,6 +2,7 @@ import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   bagHasRoom,
+  buyBackOf,
   equipItem,
   firstFreePlace,
   grantItem,
@@ -218,5 +219,14 @@ describe('the inventory frame', () => {
       ],
     });
     expect(read).toEqual(inventory);
+  });
+
+  it('carries what the shopkeeper holds to buy back while he holds anything, and reads back the items it knows, in order', () => {
+    expect(inventoryMessage(inventory).buyBack).toBeUndefined();
+    expect(buyBackOf(inventoryMessage(inventory))).toEqual([]);
+    const cap = plainInstance('cap');
+    const message = inventoryMessage(inventory, {}, [sword, cap]);
+    expect(buyBackOf(message)).toEqual([sword, cap]);
+    expect(buyBackOf({ ...message, buyBack: [...message.buyBack!, { ...message.buyBack![1]!, id: 'other', baseId: 'longsword' }] })).toEqual([sword, cap]);
   });
 });

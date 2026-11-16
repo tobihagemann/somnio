@@ -11,6 +11,10 @@
     "en": "%1$@ asks, \"%2$@\"",
     "de": "%1$@ fragt, \"%2$@\""
   },
+  "%1$@ bought back for %2$@c.": {
+    "en": "%1$@ bought back for %2$@c.",
+    "de": "%1$@ für %2$@c zurückgekauft."
+  },
   "%1$@ bought for %2$@c.": {
     "en": "%1$@ bought for %2$@c.",
     "de": "%1$@ für %2$@c gekauft."
@@ -163,9 +167,9 @@
     "en": "%@ s cooldown",
     "de": "%@ s Abklingzeit"
   },
-  "%@ sells plain gear and buys what you find. Rarer finds fetch more.": {
-    "en": "%@ sells plain gear and buys what you find. Rarer finds fetch more.",
-    "de": "%@ verkauft schlichte Ausrüstung und kauft, was du findest. Seltenere Funde bringen mehr."
+  "%@ sells plain gear and buys what you find.": {
+    "en": "%@ sells plain gear and buys what you find.",
+    "de": "%@ verkauft schlichte Ausrüstung und kauft, was du findest."
   },
   "%@ strikes land": {
     "en": "%@ strikes land",
@@ -386,6 +390,18 @@
   "Buy %1$@ for %2$@c": {
     "en": "Buy %1$@ for %2$@c",
     "de": "%1$@ für %2$@c kaufen"
+  },
+  "Buy back": {
+    "en": "Buy back",
+    "de": "Zurückkaufen"
+  },
+  "Buy back %1$@ for %2$@c": {
+    "en": "Buy back %1$@ for %2$@c",
+    "de": "%1$@ für %2$@c zurückkaufen"
+  },
+  "Buy back for %@c": {
+    "en": "Buy back for %@c",
+    "de": "Für %@c zurückkaufen"
   },
   "Buy for %@c": {
     "en": "Buy for %@c",
@@ -1015,6 +1031,10 @@
     "en": "Right-click or double-click to equip.",
     "de": "Rechtsklick oder Doppelklick zum Anlegen."
   },
+  "Right-click or double-click to sell.": {
+    "en": "Right-click or double-click to sell.",
+    "de": "Rechtsklick oder Doppelklick zum Verkaufen."
+  },
   "Right-click or double-click to unequip.": {
     "en": "Right-click or double-click to unequip.",
     "de": "Rechtsklick oder Doppelklick zum Ablegen."
@@ -1035,10 +1055,6 @@
     "en": "Run",
     "de": "Rennen"
   },
-  "Sell": {
-    "en": "Sell",
-    "de": "Verkaufen"
-  },
   "Sell %1$@ for %2$@c": {
     "en": "Sell %1$@ for %2$@c",
     "de": "%1$@ für %2$@c verkaufen"
@@ -1046,6 +1062,14 @@
   "Sell for %@c": {
     "en": "Sell for %@c",
     "de": "Für %@c verkaufen"
+  },
+  "Sell from bag": {
+    "en": "Sell from bag",
+    "de": "Aus der Tasche verkaufen"
+  },
+  "Sells for %@c": {
+    "en": "Sells for %@c",
+    "de": "Verkaufswert: %@c"
   },
   "Send a bolt of dream at the nightmare you target, even from afar. Each rank hits harder.": {
     "en": "Send a bolt of dream at the nightmare you target, even from afar. Each rank hits harder.",
@@ -1470,10 +1494,6 @@
   "Your Dreamers": {
     "en": "Your Dreamers",
     "de": "Deine Träumer"
-  },
-  "Your bag holds nothing %@ buys.": {
-    "en": "Your bag holds nothing %@ buys.",
-    "de": "In deiner Tasche ist nichts, was %@ kauft."
   },
   "Your bag is full.": {
     "en": "Your bag is full.",

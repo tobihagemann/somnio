@@ -1,4 +1,44 @@
 {
+  "%@ of Haste": {
+    "en": "%@ of Haste",
+    "de": "%@ der Eile"
+  },
+  "%@ of Mending": {
+    "en": "%@ of Mending",
+    "de": "%@ der Heilung"
+  },
+  "%@ of Might": {
+    "en": "%@ of Might",
+    "de": "%@ der Wucht"
+  },
+  "%@ of Poise": {
+    "en": "%@ of Poise",
+    "de": "%@ der Standfestigkeit"
+  },
+  "%@ of Reverie": {
+    "en": "%@ of Reverie",
+    "de": "%@ der Träumerei"
+  },
+  "%@ of Steadiness": {
+    "en": "%@ of Steadiness",
+    "de": "%@ der Fassung"
+  },
+  "%@ of Stillness": {
+    "en": "%@ of Stillness",
+    "de": "%@ der Stille"
+  },
+  "%@ of Vigour": {
+    "en": "%@ of Vigour",
+    "de": "%@ der Lebenskraft"
+  },
+  "%@ of Warding": {
+    "en": "%@ of Warding",
+    "de": "%@ des Schutzbanns"
+  },
+  "%@ of the Bulwark": {
+    "en": "%@ of the Bulwark",
+    "de": "%@ des Bollwerks"
+  },
   "A newcomer's errand": {
     "en": "A newcomer's errand",
     "de": "Ein Botengang für Neulinge"

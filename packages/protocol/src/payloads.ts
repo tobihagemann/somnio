@@ -80,7 +80,7 @@ export const ABILITY_PHASES = ['start', 'channel', 'done', 'broken'] as const;
 export type AbilityPhase = (typeof ABILITY_PHASES)[number];
 
 /** What a trade did, from the dreamer's side. */
-export const TRADE_KINDS = ['bought', 'sold'] as const;
+export const TRADE_KINDS = ['bought', 'sold', 'boughtBack'] as const;
 export type TradeKind = (typeof TRADE_KINDS)[number];
 
 /**
@@ -243,8 +243,14 @@ export interface BuyMessage {
   baseId: string;
 }
 
-/** Asks the shopkeeper to buy back an item from the dreamer's bag. */
+/** Asks the shopkeeper to buy an item from the dreamer's bag. */
 export interface SellMessage {
+  carrierId: string;
+  itemId: string;
+}
+
+/** Asks the shopkeeper to sell back an item the dreamer sold him, for what he paid, into a bag with room. */
+export interface BuyBackMessage {
   carrierId: string;
   itemId: string;
 }
@@ -441,6 +447,8 @@ export interface InventoryMessage {
   pickedUp?: LootContentsMessage;
   /** Present only on the frame a quest's turn-in produced that gave items: each item it gave. */
   rewarded?: LootContentsMessage[];
+  /** What the shopkeeper holds that the dreamer sold him, newest first, whole on every frame while he holds anything. */
+  buyBack?: ItemMessage[];
 }
 
 /**
@@ -840,6 +848,13 @@ export function decodeSellMessage(container: Record<string, unknown>, path: stri
   };
 }
 
+export function decodeBuyBackMessage(container: Record<string, unknown>, path: string): BuyBackMessage {
+  return {
+    carrierId: requireEntityId(container, 'carrierId', path),
+    itemId: requireId(container, 'itemId', path),
+  };
+}
+
 export function decodeEmptyMessage(): EmptyMessage {
   return {};
 }
@@ -1057,23 +1072,37 @@ function decodeTradeMessage(container: Record<string, unknown>, path: string): T
   };
 }
 
+/** Refuses the first element whose key an earlier element of `list` already holds. */
+function refuseRepeats<T, K>(list: readonly T[], keyOf: (element: T) => K, refusal: (key: K, index: number) => WireDecodingError): void {
+  const seen = new Set<K>();
+  list.forEach((element, index) => {
+    const key = keyOf(element);
+    if (seen.has(key)) throw refusal(key, index);
+    seen.add(key);
+  });
+}
+
 export function decodeInventoryMessage(container: Record<string, unknown>, path: string): InventoryMessage {
   const equipped = mapArray(container, 'equipped', path, EQUIP_SLOTS.length, decodeEquippedItemMessage);
-  const worn = new Set<EquipSlot>();
-  equipped.forEach(({ slot }, index) => {
-    if (worn.has(slot)) {
-      throw new WireDecodingError(`${path}.equipped[${index}].slot`, `slot "${slot}" worn twice`);
-    }
-    worn.add(slot);
-  });
+  refuseRepeats(
+    equipped,
+    ({ slot }) => slot,
+    (slot, index) => new WireDecodingError(`${path}.equipped[${index}].slot`, `slot "${slot}" worn twice`),
+  );
   const bag = mapArray(container, 'bag', path, SOMNIO_PROTOCOL_CONSTANTS.maxBagItems, decodeBaggedItemMessage);
-  const taken = new Set<number>();
-  bag.forEach(({ place }, index) => {
-    if (taken.has(place)) {
-      throw new WireDecodingError(`${path}.bag[${index}].place`, `place ${place} held twice`);
-    }
-    taken.add(place);
-  });
+  refuseRepeats(
+    bag,
+    ({ place }) => place,
+    (place, index) => new WireDecodingError(`${path}.bag[${index}].place`, `place ${place} held twice`),
+  );
+  const buyBack = isAbsent(container, 'buyBack')
+    ? undefined
+    : mapArray(container, 'buyBack', path, SOMNIO_PROTOCOL_CONSTANTS.maxBuyBackItems, decodeItemMessage);
+  refuseRepeats(
+    buyBack ?? [],
+    ({ id }) => id,
+    (id, index) => new WireDecodingError(`${path}.buyBack[${index}].id`, `item "${id}" held twice`),
+  );
   return {
     coins: requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`),
     equipped,
@@ -1084,6 +1113,7 @@ export function decodeInventoryMessage(container: Record<string, unknown>, path:
     ...(isAbsent(container, 'rewarded')
       ? {}
       : { rewarded: mapArray(container, 'rewarded', path, SOMNIO_PROTOCOL_CONSTANTS.maxBagItems, decodeLootContentsMessage) }),
+    ...(buyBack === undefined ? {} : { buyBack }),
   };
 }
 

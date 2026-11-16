@@ -17,6 +17,7 @@ import { HUD_ICONS, glyph } from './hudIcons';
 import type { HUDGlyph } from './hudIcons';
 import { HUDTooltip, setTip } from './hudTooltip';
 import { CharacterWindow } from './characterWindow';
+import type { CharacterTab } from './characterWindow';
 import { HUDWindow, PlayersList } from './hudWindows';
 import type { PlayersSelection } from './hudWindows';
 import { QuestFeedback } from './questFeedback';
@@ -50,6 +51,7 @@ export interface HUDCallbacks {
   onUnequip: (slot: EquipSlot) => void;
   onMoveItem: (itemId: string, place: number) => void;
   onDropItem: (itemId: string, at?: { clientX: number; clientY: number }) => void;
+  onSell: (itemId: string) => void;
   onToggleRun: () => void;
   onToggleGazeLock: () => void;
   onToggleEngage: () => void;
@@ -63,8 +65,10 @@ export interface HUDCallbacks {
   onAbandonQuest: (questId: QuestOrBountyId) => void;
   /** The menu's Settings, which is the game menu. */
   onOpenSettings: () => void;
-  /** A window opening where it cannot stand beside a carrier's panel, which closes the panel. */
-  onCloseCarrierPanel: () => void;
+  /** A window opened, after the HUD shows it, so the shell decides what that does to a carrier's panel. */
+  onWindowOpened: (id: HUDWindowId) => void;
+  /** A window closed, after the HUD hides it. */
+  onWindowClosed: (id: HUDWindowId) => void;
   /** Reports whether the pointer rests on the HUD, so a wheel there scrolls rather than zooms. */
   onHoverChange: (hovering: boolean) => void;
   /** The name of a carrier, by its id, that a done quest is turned in at, asked on each render. */
@@ -469,8 +473,8 @@ export class GameHUD {
 
   /**
    * Whether a carrier's panel is open down the right edge. On a mouse with room for both, the windows
-   * stand to its left. Elsewhere they take turns, as a finger's windows do: the panel opening closes
-   * every window, and a window opening closes the panel.
+   * stand to its left. Elsewhere the panel opening closes every window, as a finger's windows take
+   * turns. What a window opening does to the panel is the shell's to decide (`onWindowOpened`).
    */
   setCarrierPanelOpen(open: boolean): void {
     if (open === this.carrierPanelOpen) return;
@@ -478,7 +482,8 @@ export class GameHUD {
     this.placeBesideCarrierPanel();
   }
 
-  private get windowsBesideCarrierPanel(): boolean {
+  /** Whether the windows stand beside a carrier's panel: on a mouse in a window wide enough for both. */
+  get windowsBesideCarrierPanel(): boolean {
     return !this.coarse && this.viewportWidth >= BESIDE_CARRIER_PANEL_WIDTH;
   }
 
@@ -598,8 +603,14 @@ export class GameHUD {
     this.players.render(players, selection);
   }
 
-  renderCharacter(inventory: Inventory, lucidity: LucidityMessage): void {
-    this.character.render(inventory, lucidity);
+  /** `shopLocked` is whether the shop's trades are locked while the shop is open, and `undefined` with no shop open. */
+  renderCharacter(inventory: Inventory, lucidity: LucidityMessage, shopLocked: boolean | undefined): void {
+    this.character.render(inventory, lucidity, shopLocked);
+  }
+
+  /** Shows a tab of the Character window. */
+  showCharacterTab(tab: CharacterTab): void {
+    this.character.showTab(tab);
   }
 
   /** `study` is the teaching the player studies, which a quest's practice goes toward. */
@@ -729,15 +740,15 @@ export class GameHUD {
     else this.openWindow(id);
   }
 
-  /** Opens a window on top of the others. A finger's layout shows one at a time, in the sheet's place, and in turn with a carrier's panel. */
+  /** Opens a window on top of the others. A finger's layout shows one at a time, in the sheet's place. */
   openWindow(id: HUDWindowId): void {
     if (this.coarse) for (const other of [...this.openWindows]) if (other !== id) this.closeWindow(other);
-    if (this.carrierPanelOpen && !this.windowsBesideCarrierPanel) this.callbacks.onCloseCarrierPanel();
     this.setSheetOpen(false);
     const at = this.openWindows.indexOf(id);
     if (at >= 0) this.openWindows.splice(at, 1);
     this.openWindows.push(id);
     this.showWindows();
+    this.callbacks.onWindowOpened(id);
   }
 
   closeWindow(id: HUDWindowId): void {
@@ -745,6 +756,7 @@ export class GameHUD {
     if (at < 0) return;
     this.openWindows.splice(at, 1);
     this.showWindows();
+    this.callbacks.onWindowClosed(id);
   }
 
   private showWindows(): void {

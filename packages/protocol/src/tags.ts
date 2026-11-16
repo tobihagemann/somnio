@@ -28,6 +28,7 @@ const CLIENT_TO_SERVER_TAGS = [
   'study',
   'buy',
   'sell',
+  'buyBack',
   'wake',
   // Remembered sessions. `redeemSession` is accepted pre-login: it is an alternative to a password
   // login and reuses `loginResult` for its outcome. `revokeSession` and `revokeOtherSessions` are

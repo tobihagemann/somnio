@@ -307,6 +307,14 @@ describe('runtime validation the erased types cannot do', () => {
       { ...inventory, rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', rarity: 'magic' })) },
       /rewarded: exceeds 24 records \(got 25\)/,
     ],
+    [
+      'more items to buy back than the shopkeeper holds',
+      'inventory',
+      // The first item is no object, so only a count checked before the items reports the cap.
+      { ...inventory, buyBack: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBuyBackItems }, (_, index) => ({ ...item, id: `i${index}` }))] },
+      /buyBack: exceeds 8 records \(got 9\)/,
+    ],
+    ['one item to buy back held twice', 'inventory', { ...inventory, buyBack: [item, item] }, /buyBack\[1\]\.id: item "[^"]+" held twice/],
     ['an item id outside the id alphabet on a drop', 'dropItem', { itemId: 'Cap 1', heading: 90 }, /itemId: expected an id/],
     ['a drop with no heading', 'dropItem', { itemId: 'cap-1' }, /heading: expected a finite number, got nothing/],
     ['a drop with a heading of text', 'dropItem', { itemId: 'cap-1', heading: 'north' }, /heading: expected a finite number/],
@@ -337,6 +345,8 @@ describe('runtime validation the erased types cannot do', () => {
     ['an unknown held hand item', 'held', { entityId: 'a', held: { mainHand: 'Short Sword' } }, /held\.mainHand: expected an id/],
     ['a ware outside the id alphabet on a sell', 'sell', { carrierId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
     ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /carrierId: expected a string, got nothing/],
+    ['an item id outside the id alphabet on a buy-back', 'buyBack', { carrierId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
+    ['a buy-back without its shopkeeper', 'buyBack', { itemId: 'cap-1' }, /carrierId: expected a string, got nothing/],
     ['an over-cap leaving entity id', 'leave', { entityId: overCapEntityId, leftGame: true }, /entityId: exceeds 320 UTF-8 bytes/],
     ['a crumble that is no bool', 'leave', { entityId: 'monster:8', leftGame: false, crumbled: 1 }, /crumbled: expected a bool/],
     ['an unknown condition on an entity', 'entity', { ...entity, condition: 'dying' }, /unknown value "dying"/],
@@ -790,7 +800,7 @@ describe('string literal sets', () => {
   });
 
   it('pins TradeKind', () => {
-    expect(TRADE_KINDS).toEqual(['bought', 'sold']);
+    expect(TRADE_KINDS).toEqual(['bought', 'sold', 'boughtBack']);
   });
 
   it('pins LootKind', () => {
@@ -816,7 +826,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(22);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(23);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);
@@ -847,6 +857,7 @@ describe('protocol constants', () => {
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxMarkStrokeRadiusMetres).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxRaiseHealers).toBe(32);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems).toBe(24);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.maxBuyBackItems).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests).toBe(10);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives).toBe(8);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests).toBe(256);
