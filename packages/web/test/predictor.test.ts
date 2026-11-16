@@ -157,9 +157,10 @@ function runTicks(rig: Rig, steps: number, stepMs: number): void {
   }
 }
 
-/** Ticks every `stepMs` from `fromMs` until the walk ends, failing past `limitMs`; answers when it ended. */
-function tickUntilWalkEnds(rig: Rig, stepMs: number, fromMs = 0, limitMs = 30_000): number {
-  for (let time = fromMs; time <= limitMs; time += stepMs) {
+/** Ticks every `stepMs` from the rig's latest tick (0 before the first) until the walk ends, and answers when it ended. Fails 30 s past that first tick. */
+function tickUntilWalkEnds(rig: Rig, stepMs: number): number {
+  const fromMs = rig.lastTickMs ?? 0;
+  for (let time = fromMs; time <= fromMs + 30_000; time += stepMs) {
     rig.predictor.runTick(time);
     if (rig.predictor.walk === undefined) return time;
   }
@@ -275,7 +276,7 @@ describe('facing', () => {
     runTicks(rig, 1, 100);
     expect(rig.self().facing).toBeCloseTo(35, 9);
 
-    tickUntilWalkEnds(rig, 100, 200);
+    tickUntilWalkEnds(rig, 100);
     rig.predictor.runTick(10_000);
     expect(rig.self().facing).toBeCloseTo(35, 9);
   });
@@ -346,7 +347,7 @@ describe('a path', () => {
 
     const destination = along(DOWN_SCREEN, 1, rig.self().position);
     rig.predictor.walkTo(destination);
-    tickUntilWalkEnds(rig, 50, 300);
+    tickUntilWalkEnds(rig, 50);
 
     expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
   });
@@ -374,7 +375,7 @@ describe('a path', () => {
     expect(rig.predictor.walk).toMatchObject({ kind: 'path', waypoints: [], searchAtMs: PATH_FOLLOWING.retryMs });
 
     for (const answer of answers) answer();
-    tickUntilWalkEnds(rig, 50, 250);
+    tickUntilWalkEnds(rig, 50);
     expect(distance(rig.self().position, along(UP_SCREEN, 1))).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
   });
 });
@@ -437,7 +438,7 @@ describe('re-planning', () => {
     runTicks(rig, 6, 50);
     for (let index = 0; index < 8; index += 1) rig.session.entities.delete(`peer-${index}`);
 
-    tickUntilWalkEnds(rig, 50, 350);
+    tickUntilWalkEnds(rig, 50);
 
     expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(PATH_FOLLOWING.arrivalMetres);
   });
@@ -824,7 +825,7 @@ describe('a channel holding the player still', () => {
     expect(acted).toBe(0);
 
     rig.heldStill = false;
-    tickUntilWalkEnds(rig, 100, 600);
+    tickUntilWalkEnds(rig, 100);
 
     expect(distance(rig.self().position, destination)).toBeLessThanOrEqual(0.5);
     expect(acted).toBe(1);
@@ -954,7 +955,7 @@ describe('a leap', () => {
     expectAt(rig.self().position, along(UP_SCREEN, 1.2));
     expect(rig.predictor.walk?.kind).toBe('leap');
 
-    const ended = tickUntilWalkEnds(rig, 100, 300);
+    const ended = tickUntilWalkEnds(rig, 100);
     expect(ended).toBe(500);
     expectAt(rig.self().position, along(UP_SCREEN, 2.4));
     expectLegalReports(rig, START);
