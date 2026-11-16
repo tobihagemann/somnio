@@ -5,6 +5,9 @@
 .DS_Store
 ._*
 
+# Agent scratch: plans, handoffs, and throwaway scripts.
+/.turbo/
+
 # Test credentials
 .env.test
 
