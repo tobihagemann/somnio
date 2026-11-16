@@ -5,6 +5,9 @@ import { defaultWalkRasterizer } from '@/client/walkRasterizer';
 import { rasterizeGround } from '@/scene/groundField';
 import type { GroundField } from '@/scene/groundField';
 import { defaultGroundRasterizer } from '@/scene/groundRasterizer';
+import { scatterSector } from '@/scene/scatter';
+import type { Scatter } from '@/scene/scatter';
+import { defaultScatterer } from '@/scene/scatterer';
 import { serveWorkerJobs, workerJobs } from '@/workerJobs';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 
@@ -119,6 +122,21 @@ describe('worker jobs', () => {
 
     expect(fields).toEqual([rasterizeGround(inputs)]);
     expect(transfer).toEqual(fields[0]!.weights.map((bytes) => bytes.buffer));
+  });
+
+  it('places what grows on a sector in the scatter worker', async () => {
+    workerScope();
+    await import('@/scene/scatter.worker');
+    const sector = outdoorSector('Field', { x: 0, z: 0 });
+    const inputs = { sector, neighbours: [], field: rasterizeGround({ sector, neighbours: [] }), registry: TEST_REGISTRY };
+    const scatters: Scatter[] = [];
+
+    defaultScatterer().scatter(inputs, (scatter) => scatters.push(scatter));
+    expect(scatters).toEqual([]);
+    const [transfer] = FakeWorker.last!.answer();
+
+    expect(scatters).toEqual([scatterSector(inputs)]);
+    expect(transfer).toEqual([]);
   });
 
   it('rasterizes where a body can walk in the walk worker', async () => {

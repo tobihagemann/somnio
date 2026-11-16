@@ -5,7 +5,7 @@ The instructions are split by package, and a section named in a "see ..." lives 
 - `AGENTS.md` (repository root): tech stack, package graph, build and test, logging, deployment, lint and format, code conventions, localization.
 - `packages/protocol/AGENTS.md`: the wire protocol's framing, the pre-login limit, characters, joining, interest, and what breaks the wire.
 - `packages/core/AGENTS.md`: the gameplay rules and their frames (movement, doors, acting, abilities, threat, elites, bosses, gear, trading, drops, speech, pools, raising, fixtures, lucidity, quests, the bounty board), the sector format, and the model registry.
-- `packages/web/AGENTS.md`: the browser client, the web map editor, the web asset pack, and hosting.
+- `packages/web/AGENTS.md`: the browser client, the frame budget, the web map editor, the web asset pack, and hosting.
 
 ## Gameplay rules
 

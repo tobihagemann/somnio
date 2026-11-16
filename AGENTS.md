@@ -62,7 +62,7 @@ This file holds what every package shares. The rest lives beside the code it des
 
 - `packages/protocol/AGENTS.md`: the wire protocol. Framing and frame sizes, the pre-login limit, characters, joining, interest, and what breaks the wire (`helloVersion`).
 - `packages/core/AGENTS.md`: the gameplay rules and their frames (movement, doors, acting, abilities and effects, threat, elites, bosses, gear, trading, drops, speech, pools and condition, falling and raising, fixtures and services, lucidity, quests, the bounty board), the sector format, and the model registry.
-- `packages/web/AGENTS.md`: the browser client (golden frames and wire conformance, the HUD, input, the scene, the splash reel, `window.somnio`), the web map editor, the web asset pack, and hosting.
+- `packages/web/AGENTS.md`: the browser client (golden frames and wire conformance, the HUD, input, the scene, the splash reel, `window.somnio`), the frame budget, the web map editor, the web asset pack, and hosting.
 
 ## Logging
 

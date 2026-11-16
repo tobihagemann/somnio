@@ -75,7 +75,9 @@ import type { GroundRasterizer } from './groundRasterizer';
 import { FLAT_TILT, GrassSpring, IMPACT_PRESS_RATE } from './grassSpring';
 import type { GrassBatch, GrassContact } from './grassSpring';
 import { GRASS_MODEL_IDS, PEBBLE_MODEL_ID, scatterSector } from './scatter';
-import type { ScatterTuft } from './scatter';
+import type { Scatter, ScatterTuft } from './scatter';
+import { defaultScatterer } from './scatterer';
+import type { Scatterer } from './scatterer';
 import { layoutBubbles, tailTip } from './bubbleLayout';
 import { EliteAuras } from './eliteAuras';
 import { compileFadeOut, fadeOut } from './fadeOut';
@@ -103,6 +105,7 @@ import type { ModelAssets, PrototypeMesh } from './modelAssets';
 import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, bodyFraming, portraitFraming, setPortraitLayer } from './portraits';
 import type { PortraitRenderer, PortraitShot, PortraitSlot, PortraitSubject } from './portraits';
 import { yawStep } from './yawSlew';
+import { guardDirectLights } from './lightGuard';
 
 /**
  * Per-entity render state the scene mutates each frame.
@@ -279,6 +282,8 @@ interface DrawnGround {
   pending: string | undefined;
   /** What grows on the ground, and what it was placed from: the field and the placements and doors here and next door. */
   scatter: { group: THREE.Object3D; key: string; batches: GrassBatch[] } | undefined;
+  /** What the scatter asked for last was placed from; a scatter placed from anything else is stale. */
+  scatterPending: string | undefined;
 }
 
 const PLACEHOLDER_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1 });
@@ -294,6 +299,7 @@ const BODY_FADE_SECONDS = 1.5;
 
 /** The renderer a world scene draws through. */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
+  guardDirectLights();
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   configureWorldRenderer(renderer);
   return renderer;
@@ -313,9 +319,17 @@ export function configureWorldRenderer(renderer: Pick<THREE.WebGLRenderer, 'shad
   renderer.toneMappingExposure = 1;
 }
 
-export function sizeWorldRenderer(renderer: THREE.WebGLRenderer, width: number, height: number): void {
+/**
+ * The finest the world is drawn, in pixels per CSS pixel. A phone at 3 would shade 2.25 times the
+ * pixels of a cap at 2, for detail its screen barely shows. The speech bubbles' 2D canvas keeps the
+ * display's own ratio, since its text costs little and blurs when scaled.
+ */
+const MAX_PIXEL_RATIO = 2;
+
+export function sizeWorldRenderer(renderer: Pick<THREE.WebGLRenderer, 'getPixelRatio' | 'setPixelRatio' | 'setSize'>, width: number, height: number): void {
+  const ratio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
   // `setPixelRatio` resizes the drawing buffer at the old size, so it runs only when the ratio changed.
-  if (renderer.getPixelRatio() !== window.devicePixelRatio) renderer.setPixelRatio(window.devicePixelRatio);
+  if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
   renderer.setSize(width, height, false);
 }
 
@@ -420,10 +434,21 @@ export class WorldScene implements WorldRenderSurface {
   private groundGeneration = 0;
   /** Sectors whose scatter may no longer match what it was placed from. */
   private readonly scatterDue = new Set<string>();
+  private readonly scatterer: Scatterer;
   private readonly grass = new GrassSpring();
   private readonly bending = new Map<GrassBatch, THREE.InstancedBufferAttribute[]>();
   /** One bending copy of each prototype material grass is drawn with, shared by every batch and never freed. */
   private readonly bendingMaterials = new Map<THREE.Material, THREE.Material>();
+  /**
+   * One mesh of each kind play builds with a material of its own and disposes, a ground and a ring,
+   * drawn nowhere and kept for its program. three frees a program with the last material that drew
+   * with it. Without these, a door would compile the ground's shader again, since it disposes the old
+   * space's grounds before the new ones draw, and so would a ring dropped after the last one went.
+   */
+  private readonly programKeepers = [
+    groundMesh(UNIT_RECT, UNIT_RECT, { columns: 1, rows: 1 }, [new Uint8Array(4), new Uint8Array(4)]),
+    groundRingMesh(PRESS_MARKER_RADIUS, SELECTION_RING_COLOR),
+  ];
   /** By base, how a hand's model and a ground model reach into grass, measured once each; `undefined` for a model with no mesh. */
   private readonly heldReaches = new Map<string, GrassReach | undefined>();
   private readonly lyingReaches = new Map<string, GrassReach | undefined>();
@@ -499,12 +524,14 @@ export class WorldScene implements WorldRenderSurface {
     reducedMotion: boolean,
     now: () => number = () => performance.now(),
     groundRasterizer: GroundRasterizer = defaultGroundRasterizer(),
+    scatterer: Scatterer = defaultScatterer(),
   ) {
     this.assets = assets;
     this.registry = registry;
     this.reducedMotion = reducedMotion;
     this.now = now;
     this.groundRasterizer = groundRasterizer;
+    this.scatterer = scatterer;
     this.aspect = aspect;
     const bounds = frustumBounds(ORTHO_RIG.defaultScale, aspect);
     this.camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, ORTHO_RIG.nearClip, ORTHO_RIG.farClip);
@@ -602,9 +629,10 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Warms the cache, then re-resolves everything still rendering a placeholder. Given the renderer,
-   * it meanwhile compiles every combat effect's program, a drop's, an elite's aura's, and a quest
-   * mark's, which a first use would compile mid-fight. Once the models are cached, it compiles the
-   * programs a fade draws each nightmare's body and each drop's model with, as `fadeOut` clones them.
+   * it meanwhile compiles every combat effect's program, a drop's, an elite's aura's, a quest mark's,
+   * the ground's, and a ground ring's, which a first use would compile mid-play. Once the models are
+   * cached, it compiles every model and the scatter as play draws them, and the programs a fade
+   * draws each nightmare's body and each drop's model with, as `fadeOut` clones them.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     await Promise.all([
@@ -613,9 +641,41 @@ export class WorldScene implements WorldRenderSurface {
       renderer === undefined ? undefined : this.loot.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.auras.compile(renderer, this.camera, this.scene),
       renderer === undefined ? undefined : this.questMarkers.compile(renderer, this.camera, this.scene),
+      ...(renderer === undefined ? [] : this.programKeepers.map((keeper) => renderer.compileAsync(keeper, this.camera, this.scene))),
     ]);
-    if (renderer !== undefined) await this.compileFades(renderer);
+    if (renderer !== undefined) await Promise.all([this.compileModels(renderer), this.compileFades(renderer)]);
     this.refreshResolvedModels();
+  }
+
+  /**
+   * Every model and each kind of scatter as play draws them, in the world's light, so the first sight
+   * of a body, a held item, a drop, a prop, or a meadow compiles nothing mid-play. The models' and
+   * the pebbles' materials are the cache's, and the grass's and the flowers' the scene's bending
+   * copies, so each program outlives what drew it here. The scatter compiles after the models: a
+   * pebble draws one material both placed and instanced, and `compileAsync` waits for the program
+   * it compiled last for each material. The shadow pass's programs are left to three, which compiles
+   * each on the frame it first draws.
+   */
+  private async compileModels(renderer: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
+    const models = new THREE.Group();
+    const loaded = [
+      ...this.registry.characterModels.map((rule) => this.assets.character(rule.id)),
+      ...this.registry.handModels.map((rule) => this.assets.hand(rule.id)),
+      ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+      ...this.registry.objectModels.map((rule) => this.assets.object(rule.id)),
+    ].filter((model) => model !== undefined);
+    if (loaded.length > 0) models.add(...loaded);
+    enableShadows(models);
+    await renderer.compileAsync(models, this.camera, this.scene);
+    disposeSubtree(models);
+
+    const scatter = new THREE.Group();
+    const one = (modelId: string): ScatterTuft[] => [{ modelId, x: 0, z: 0, yaw: 0 }];
+    for (const id of GRASS_MODEL_IDS) this.instanced(scatter, this.assets.prototypeMeshes(id) ?? [], one(id), true);
+    this.instanced(scatter, this.assets.prototypeMeshes(PEBBLE_MODEL_ID) ?? [], one(PEBBLE_MODEL_ID), false);
+    this.flowers(scatter, [{ x: 0, z: 0, colour: 0xffffff, height: 0.1 }]);
+    await renderer.compileAsync(scatter, this.camera, this.scene);
+    disposeSubtree(scatter);
   }
 
   /** Each model on its own meshes: a nightmare's skinned, as its body draws, and a drop's rigid. */
@@ -687,7 +747,8 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Atomic swap once the local player lands: drop the held space and show the new one. The ground
-   * under the player is painted first, here and now, so the space never appears on a flat floor.
+   * under the player and what grows on it are placed first, here and now, so the space never appears
+   * on a flat or bare floor.
    */
   private revealHeldSpaceIfPending(at: Point): void {
     if (!this.pendingPlayerReveal) return;
@@ -732,9 +793,9 @@ export class WorldScene implements WorldRenderSurface {
     this.sectors.set(sector.name, { view: sector, outdoorDoorIds, group, placements, fixtures });
     for (const fixture of fixtures) this.questMarkers.show(fixture.carrierId, fixture.anchor, this.questMarkerOf.get(fixture.carrierId));
     if (!this.grounds.has(sector.name)) {
-      const mesh = groundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
+      const mesh = sectorGroundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
       this.spaceRoot.add(mesh);
-      this.grounds.set(sector.name, { mesh, key: undefined, field: undefined, pending: undefined, scatter: undefined });
+      this.grounds.set(sector.name, { mesh, key: undefined, field: undefined, pending: undefined, scatter: undefined, scatterPending: undefined });
     }
     this.markGroundDirty(sector.name);
     if (sector.kind === 'interior') this.room = sectorRect(sector);
@@ -766,7 +827,7 @@ export class WorldScene implements WorldRenderSurface {
     return (
       this.dirtyGrounds.size === 0 &&
       this.scatterDue.size === 0 &&
-      [...this.grounds.values()].every((ground) => ground.field !== undefined && ground.pending === undefined)
+      [...this.grounds.values()].every((ground) => ground.field !== undefined && ground.pending === undefined && ground.scatterPending === undefined)
     );
   }
 
@@ -810,7 +871,7 @@ export class WorldScene implements WorldRenderSurface {
     }
   }
 
-  /** Rasterizes the ground under `at` on the spot, when what is drawn there is not for its current inputs. */
+  /** Rasterizes the ground under `at` and places its scatter on the spot, where what is drawn there is not for its current inputs. */
   private paintGroundNow(at: Point): void {
     const views = [...this.sectors.values()].map((drawn) => drawn.view);
     const sector = sectorAt({ id: '', sectors: views }, at);
@@ -818,12 +879,12 @@ export class WorldScene implements WorldRenderSurface {
     if (sector === undefined || ground === undefined) return;
     const inputs = this.groundInputs(sector);
     const key = groundFieldKey(inputs);
-    if (key === ground.key) return;
-    this.installGround(sector.name, ground, key, rasterizeGround(inputs));
+    if (key !== ground.key) this.installGround(sector.name, ground, key, rasterizeGround(inputs));
+    this.updateScatter(sector.name, ground, true);
   }
 
   private installGround(name: string, ground: DrawnGround, key: string, field: GroundField): void {
-    const mesh = groundMesh(this.sectors.get(name)!.view, field.raster, field.weights);
+    const mesh = sectorGroundMesh(this.sectors.get(name)!.view, field.raster, field.weights);
     this.spaceRoot.add(mesh);
     disposeSubtree(ground.mesh);
     ground.mesh = mesh;
@@ -834,8 +895,9 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * Places the scatter of one sector that is due, the nearest the camera first. One a frame,
-   * because a sector's scatter takes milliseconds, and a border crossing makes several due at once.
+   * Asks for the scatter of one sector that is due, the nearest the camera first. One a frame,
+   * because where there is no worker a sector's scatter is placed inline and takes milliseconds, and
+   * a border crossing makes several due at once.
    */
   private growScatter(): void {
     const names = [...this.scatterDue].filter((name) => this.grounds.has(name));
@@ -853,18 +915,40 @@ export class WorldScene implements WorldRenderSurface {
   /**
    * Places the sector's scatter again when anything it was placed from changed: its field, or the
    * placements and doors of the sector and its touching neighbours, whose footprints and triggers it
-   * keeps off. It waits for the field and for the scatter models to be cached.
+   * keeps off. It waits for the field and for the scatter models to be cached, and the last scatter
+   * stays drawn until the next is placed. `now` places it on the spot, even when the scatterer
+   * already holds the same one, whose answer is then dropped.
    */
-  private updateScatter(name: string, ground: DrawnGround): void {
+  private updateScatter(name: string, ground: DrawnGround, now = false): void {
     const field = ground.field;
     if (field === undefined) return;
     const sector = this.sectors.get(name)!.view;
     const neighbours = this.touchingSectors(name).map((neighbour) => this.sectors.get(neighbour)!.view);
     const key = JSON.stringify([ground.key, [sector, ...neighbours].map((each) => [each.name, sectorOrigin(each), each.placements, each.doors])]);
-    if (key === ground.scatter?.key) return;
-    const prototypes = new Map([...GRASS_MODEL_IDS, PEBBLE_MODEL_ID].map((id) => [id, this.assets.prototypeMeshes(id)] as const));
-    if ([...prototypes.values()].some((meshes) => meshes === undefined)) return;
-    const scatter = scatterSector({ sector, neighbours, field, registry: this.registry });
+    if (key === ground.scatter?.key) {
+      ground.scatterPending = undefined;
+      return;
+    }
+    if (key === ground.scatterPending && !now) return;
+    const prototypes = new Map<string, PrototypeMesh[]>();
+    for (const id of [...GRASS_MODEL_IDS, PEBBLE_MODEL_ID]) {
+      const meshes = this.assets.prototypeMeshes(id);
+      if (meshes === undefined) return;
+      prototypes.set(id, meshes);
+    }
+    ground.scatterPending = key;
+    const generation = this.groundGeneration;
+    const inputs = { sector, neighbours, field, registry: this.registry };
+    const done = (scatter: Scatter): void => {
+      if (generation !== this.groundGeneration || this.grounds.get(name) !== ground || ground.scatterPending !== key) return;
+      ground.scatterPending = undefined;
+      this.drawScatter(ground, key, scatter, prototypes);
+    };
+    if (now) done(scatterSector(inputs));
+    else this.scatterer.scatter(inputs, done);
+  }
+
+  private drawScatter(ground: DrawnGround, key: string, scatter: Scatter, prototypes: ReadonlyMap<string, PrototypeMesh[]>): void {
     const group = new THREE.Group();
     group.name = SCATTER_NAME;
     const batches: GrassBatch[] = [];
@@ -2646,11 +2730,16 @@ function addScatterMesh(group: THREE.Group, mesh: THREE.InstancedMesh): THREE.In
 const GROUND_PALETTE = GROUND_MATERIAL_IDS.flatMap((id) => GROUND_RECIPES[id].palette.map((hex) => new THREE.Color(hex)));
 const GROUND_FRAGMENT = groundFragmentChunks();
 
+/** A sector's ground, painted by its weights over its padded raster. */
+function sectorGroundMesh(sector: SectorView, size: { columns: number; rows: number }, weights: readonly [Uint8Array, Uint8Array]): THREE.Mesh {
+  return groundMesh(sectorRect(sector), paddedRasterRect(sector), size, weights);
+}
+
 /**
- * One plane over the sector's rect, painted by the floor recipes from the weight textures, which
- * cover the sector's padded raster. Every sector's ground shares one shader program.
+ * One plane over `rect`, painted by the floor recipes from the weight textures, which cover
+ * `padded`. Every ground shares one shader program.
  */
-function groundMesh(sector: SectorView, size: { columns: number; rows: number }, weights: readonly [Uint8Array, Uint8Array]): THREE.Mesh {
+function groundMesh(rect: Rect, padded: Rect, size: { columns: number; rows: number }, weights: readonly [Uint8Array, Uint8Array]): THREE.Mesh {
   const textures = weights.map((bytes) => {
     const texture = new THREE.DataTexture(bytes, size.columns, size.rows, THREE.RGBAFormat, THREE.UnsignedByteType);
     texture.magFilter = THREE.LinearFilter;
@@ -2658,7 +2747,6 @@ function groundMesh(sector: SectorView, size: { columns: number; rows: number },
     texture.needsUpdate = true;
     return texture;
   });
-  const padded = paddedRasterRect(sector);
   const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
   material.userData[OWNED_TEXTURES] = textures;
   material.onBeforeCompile = (shader) => {
@@ -2674,13 +2762,15 @@ function groundMesh(sector: SectorView, size: { columns: number; rows: number },
     shader.fragmentShader = `${GROUND_FRAGMENT.declarations}\n${shader.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', GROUND_FRAGMENT.colour)}`;
   };
   material.customProgramCacheKey = () => GROUND_NAME;
-  const rect = sectorRect(sector);
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rect.width, rect.depth), material);
   markOwned(mesh, { geometry: true, material: true });
   mesh.name = GROUND_NAME;
   // Receives but does not cast: a ground plane casting into its own depth comparison is the
   // classic source of shadow acne, and there is nothing below it to catch a shadow anyway.
   mesh.receiveShadow = true;
+  // Drawn after every other opaque mesh, so the depth test drops the ground wherever a body or a prop
+  // already stands before its costly shader runs. three sorts opaque meshes by material before depth.
+  mesh.renderOrder = 1;
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set(rect.x + rect.width / 2, 0, rect.z + rect.depth / 2);
   return mesh;
@@ -2692,6 +2782,7 @@ const GROUND_NAME = 'somnio-ground';
 const SCATTER_NAME = 'somnio-scatter';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const UNIT_RECT: Rect = { x: 0, z: 0, width: 1, depth: 1 };
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 /** A flower head's radius, which is also how far a body reaches it to bend the flower. */
 const FLOWER_HEAD_RADIUS = 0.03;

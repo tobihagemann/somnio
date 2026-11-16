@@ -4,6 +4,7 @@ import { inventoryMessage, questsMessage } from '@somnio/core';
 import type { AbilityId, EffectId, EliteTraitId, EngageAction, Point, QuestMarker } from '@somnio/core';
 import type { Energy, Held, InventoryMessage, LootContentsMessage, LucidityMessage, NightmareRank, QuestsMessage, TelegraphKind } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
+import type { FrameStatsSummary } from '@/ui/frameStats';
 
 /**
  * Read-only introspection surface for automated verification.
@@ -132,6 +133,8 @@ export interface SomnioDebugAPI {
   zoomFactor(): number;
   /** The id of the splash shot playing, or `undefined` while none is. */
   splashShot(): string | undefined;
+  /** What the last few seconds of frames cost the main thread, by part, and what they drew; `undefined` until a second frame is drawn. */
+  frameStats(): FrameStatsSummary | undefined;
 }
 
 /** The seconds from now until a moment on the session's clock, which is the page's `performance.now()`. */
@@ -259,6 +262,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     overlay: () => shell.controller.presentedOverlay?.kind,
     zoomFactor: () => shell.session.zoom.factor,
     splashShot: () => shell.splash?.currentShotId,
+    frameStats: () => shell.frameStats.summary(),
   };
 }
 

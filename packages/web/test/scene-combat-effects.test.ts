@@ -17,6 +17,7 @@ import { CHARACTER_SCALE } from '@/scene/placement';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import type { ClientEntity } from '@/client';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
+import { programVariants, recordingCompiler } from './helpers/programVariants';
 import { clientEntity } from './helpers/worldFixture';
 
 const CLIP_SECONDS = 1;
@@ -2737,44 +2738,32 @@ describe('the pools and the programs', () => {
   /** A program compiled on its first draw stalls the frame it draws in, which in a browser can take half a second. */
   it("compiles every program a fight draws in the prewarm, in the world's light, before any of it draws", async () => {
     const scene = fight();
-    let compiled = new Set<string>();
-    const compileAsync = vi.fn((root: THREE.Object3D) => {
-      compiled = new Set([...compiled, ...programVariants(root)]);
-      return Promise.resolve(root);
-    });
+    const { compileAsync, uncompiled } = recordingCompiler();
     await scene.prewarm({ compileAsync });
     expect(compileAsync).toHaveBeenCalledWith(effects(scene), scene.camera, scene.scene);
 
     everything(scene);
-    expect([...programVariants(effects(scene))].filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(uncompiled(effects(scene))).toEqual([]);
   });
 
   it('compiles the programs a drop on the ground draws in the prewarm, and adds no light', async () => {
     const scene = fight();
     const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
-    let compiled = new Set<string>();
-    const compileAsync = vi.fn((root: THREE.Object3D) => {
-      compiled = new Set([...compiled, ...programVariants(root)]);
-      return Promise.resolve(root);
-    });
+    const { compileAsync, uncompiled } = recordingCompiler();
     const lights = (): number => scene.scene.children.filter((child) => (child as THREE.Light).isLight).length;
     const before = lights();
     await scene.prewarm({ compileAsync });
     expect(compileAsync).toHaveBeenCalledWith(loot, scene.camera, scene.scene);
 
     for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
-    expect([...programVariants(loot)].filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(uncompiled(loot)).toEqual([]);
     expect(lights()).toBe(before);
   });
 
   it("compiles the programs a nightmare's body and a drop, its name and light with it, fade with in the prewarm, once the models are cached", async () => {
     const lying = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshLambertMaterial());
     const { scene, models } = combatScene({ ground: lying, registry: { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }] } });
-    let compiled = new Set<string>();
-    const compileAsync = vi.fn((root: THREE.Object3D) => {
-      compiled = new Set([...compiled, ...programVariants(root)]);
-      return Promise.resolve(root);
-    });
+    const { compileAsync, uncompiled } = recordingCompiler();
     await scene.prewarm({ compileAsync });
 
     place(scene, 'monster:1', { x: 10, z: 10 });
@@ -2783,16 +2772,24 @@ describe('the pools and the programs', () => {
     for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`);
     scene.tick(0.01);
     const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
-    expect([...programVariants(models.at(-1)!), ...programVariants(loot)].filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(uncompiled(models.at(-1)!, loot)).toEqual([]);
+  });
+
+  it('compiles the programs a body and what its hands hold draw in the prewarm, once the models are cached', async () => {
+    const hand = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshPhongMaterial());
+    const { scene, models } = combatScene({ hand, registry: { ...TEST_REGISTRY, handModels: [{ id: 'sword', stem: 'Sword' }] } });
+    const { compileAsync, uncompiled } = recordingCompiler();
+    await scene.prewarm({ compileAsync });
+
+    place(scene, 'monster:1', { x: 10, z: 10 });
+    place(scene, 'peer', { x: 12, z: 10 }, { held: { mainHand: 'sword' } });
+    scene.tick(0.01);
+    expect(uncompiled(...models.slice(-2))).toEqual([]);
   });
 
   it("compiles the program an elite's aura draws in the prewarm, and adds no light", async () => {
     const { scene } = combatScene();
-    let compiled = new Set<string>();
-    const compileAsync = vi.fn((root: THREE.Object3D) => {
-      compiled = new Set([...compiled, ...programVariants(root)]);
-      return Promise.resolve(root);
-    });
+    const { compileAsync, uncompiled } = recordingCompiler();
     const lights = (): number => scene.scene.children.filter((child) => (child as THREE.Light).isLight).length;
     const before = lights();
     await scene.prewarm({ compileAsync });
@@ -2804,7 +2801,7 @@ describe('the pools and the programs', () => {
       if (object.name === ELITE_AURA_NAME) auras.push(object);
     });
     expect(auras).toHaveLength(2);
-    expect(auras.flatMap((aura) => [...programVariants(aura)]).filter((variant) => !compiled.has(variant))).toEqual([]);
+    expect(uncompiled(...auras)).toEqual([]);
     expect(lights()).toBe(before);
   });
 
@@ -2852,33 +2849,4 @@ function materialsOf(root: THREE.Object3D): THREE.Material[] {
     if (material !== undefined) materials.push(...(Array.isArray(material) ? material : [material]));
   });
   return materials;
-}
-
-/**
- * The program variant of each mesh drawn under `root`, keyed as three.js keys it: what its material
- * is, how its shaders read, and what of its geometry and skeleton they read.
- */
-function programVariants(root: THREE.Object3D): Set<string> {
-  const variants = new Set<string>();
-  root.traverse((object) => {
-    const { material, geometry } = object as THREE.Mesh;
-    if (material === undefined) return;
-    for (const each of Array.isArray(material) ? material : [material]) {
-      variants.add(
-        [
-          each.type,
-          each.side,
-          each.transparent,
-          each.customProgramCacheKey(),
-          (each as THREE.ShaderMaterial).vertexShader,
-          (each as THREE.ShaderMaterial).fragmentShader,
-          ((each as THREE.MeshBasicMaterial).map ?? null) !== null,
-          (object as THREE.SkinnedMesh).isSkinnedMesh === true,
-          geometry.hasAttribute('position'),
-          geometry.hasAttribute('normal'),
-        ].join('|'),
-      );
-    }
-  });
-  return variants;
 }

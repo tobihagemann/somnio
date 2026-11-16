@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { isClear, rasterizeWalkable } from '@somnio/core';
-import type { WalkRaster, WalkRasterInputs } from '@somnio/core';
 import { ClientWorld } from '@/client';
-import type { WalkRasterizer } from '@/client/walkRasterizer';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { heldJobs } from './helpers/heldJobs';
 import { makeDoor } from './helpers/worldFixture';
 
 /**
@@ -166,28 +165,18 @@ describe('sector data', () => {
 });
 
 describe('walk rasters', () => {
-  /** A rasterizer that holds every raster asked of it until the test answers it, as a worker would answer later. */
-  function heldRasterizer(): { rasterizer: WalkRasterizer; jobs: { inputs: WalkRasterInputs; done: (raster: WalkRaster) => void }[] } {
-    const jobs: { inputs: WalkRasterInputs; done: (raster: WalkRaster) => void }[] = [];
-    return { rasterizer: { rasterize: (inputs, done) => jobs.push({ inputs, done }) }, jobs };
-  }
-
-  function answer(job: { inputs: WalkRasterInputs; done: (raster: WalkRaster) => void }): void {
-    job.done(rasterizeWalkable(job.inputs));
-  }
-
   const ACROSS = { from: IN_SOUTH, to: IN_MIDDLE };
 
   it('rasterizes a sector again when a sector touching it arrives, so a path crosses the border it once blocked', () => {
-    const held = heldRasterizer();
-    const world = new ClientWorld('outdoors', TEST_REGISTRY, held.rasterizer);
+    const held = heldJobs(rasterizeWalkable);
+    const world = new ClientWorld('outdoors', TEST_REGISTRY, { rasterize: held.run });
     world.addSector(south);
-    for (const job of held.jobs.splice(0)) answer(job);
+    held.release();
     expect(world.findPath(ACROSS.from, ACROSS.to, [], new Set()).reached).toBe(false);
 
     world.addSector(middle);
     expect(held.jobs.map((job) => job.inputs.sector)).toEqual(['Middle', 'South']);
-    for (const job of held.jobs.splice(0)) answer(job);
+    held.release();
 
     const path = world.findPath(ACROSS.from, ACROSS.to, [], new Set());
     expect(path.reached).toBe(true);
@@ -195,14 +184,14 @@ describe('walk rasters', () => {
   });
 
   it('drops a raster asked for before the one the sector waits for', () => {
-    const held = heldRasterizer();
-    const world = new ClientWorld('outdoors', TEST_REGISTRY, held.rasterizer);
+    const held = heldJobs(rasterizeWalkable);
+    const world = new ClientWorld('outdoors', TEST_REGISTRY, { rasterize: held.run });
     world.addSector(south);
     const stale = held.jobs.splice(0);
     world.addSector(middle);
-    for (const job of held.jobs.splice(0)) answer(job);
+    held.release();
 
-    for (const job of stale) answer(job);
+    for (const job of stale) job.done(rasterizeWalkable(job.inputs));
 
     expect(world.findPath(ACROSS.from, ACROSS.to, [], new Set()).reached).toBe(true);
   });

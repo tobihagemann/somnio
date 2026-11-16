@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { allModelEntries, groundModelStem, handModelStem, missingClips, modelForCharacter, modelForObjectId } from '@somnio/core';
@@ -105,6 +105,10 @@ export class HttpModelAssets implements ModelAssets {
     const prototype = this.prototypes.get(stem);
     if (prototype === undefined) return undefined;
     const copy = cloneSkinned(prototype.scene);
+    // A clone does not copy a mesh's depth material.
+    copy.traverse((object) => {
+      if ((object as THREE.SkinnedMesh).isSkinnedMesh && usesSharedDepth(object as THREE.SkinnedMesh)) object.customDepthMaterial = SKINNED_DEPTH_MATERIAL;
+    });
     this.clipsByRoot.set(copy, prototype.clips);
     return copy;
   }
@@ -123,12 +127,52 @@ export class HttpModelAssets implements ModelAssets {
       if (missing.length > 0) {
         console.error(`model "${stem}" is missing expected animation clips: ${missing.join(', ')} — the export likely dropped them`);
       }
+      unshareSkinnedMaterials(gltf.scene);
       this.prototypes.set(stem, { scene: gltf.scene, clips });
     } catch {
       this.misses.add(stem);
       console.warn(`model "${stem}" unavailable; rendering a placeholder`);
     }
   }
+}
+
+/**
+ * The shadow pass draws every caster with three's one depth material, and each switch between a
+ * skinned and a rigid caster makes three rebuild that material's program parameters, as many times
+ * a frame as the casters alternate. So skinned casters share this one instead. A material that needs
+ * a depth variant of its own (an alpha test, alpha to coverage, an alpha map, or a displacement map)
+ * is left to three, which makes one for it.
+ */
+const SKINNED_DEPTH_MATERIAL = new THREE.MeshDepthMaterial();
+
+function usesSharedDepth(mesh: THREE.SkinnedMesh): boolean {
+  const material = mesh.material as THREE.Material & { alphaMap?: unknown; displacementMap?: unknown };
+  return !Array.isArray(mesh.material) && material.alphaTest === 0 && !material.alphaToCoverage && !material.alphaMap && !material.displacementMap;
+}
+
+/**
+ * Gives the rigid meshes of a model their own copy of a material its skinned meshes draw with, as a
+ * helmet on a bone shares the body's texture. three keeps one program per material and checks it
+ * against each mesh drawn, so a material drawn on both rebuilds its program parameters at every
+ * switch, in the world's pass and each portrait, and for a cut-out in the shadow pass too.
+ */
+function unshareSkinnedMaterials(root: THREE.Object3D): void {
+  const skinned = new Set<THREE.Material>();
+  root.traverse((object) => {
+    const mesh = object as THREE.SkinnedMesh;
+    if (mesh.isSkinnedMesh) for (const material of [mesh.material].flat()) skinned.add(material);
+  });
+  const copies = new Map<THREE.Material, THREE.Material>();
+  const copyOf = (material: THREE.Material): THREE.Material => {
+    if (!skinned.has(material)) return material;
+    if (!copies.has(material)) copies.set(material, material.clone());
+    return copies.get(material)!;
+  };
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh) return;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(copyOf) : copyOf(mesh.material);
+  });
 }
 
 /** A model's meshes with their transforms relative to its root, the pipeline's normalizing parent included. */

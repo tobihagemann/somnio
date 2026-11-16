@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { WorldScene, configureWorldRenderer, watchViewport } from '@/scene/worldScene';
+import { WorldScene, configureWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { HttpModelAssets, prototypeMeshesOf } from '@/scene/modelAssets';
 import type { ModelAssets } from '@/scene/modelAssets';
@@ -16,8 +16,9 @@ import { LOOT_BEAM_NAME, LOOT_FADE_SECONDS, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, L
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { GrassSpring } from '@/scene/grassSpring';
 import { rasterizeGround } from '@/scene/groundField';
-import type { GroundField, GroundFieldInputs } from '@/scene/groundField';
 import type { GroundRasterizer } from '@/scene/groundRasterizer';
+import { PEBBLE_MODEL_ID, scatterSector } from '@/scene/scatter';
+import type { Scatterer } from '@/scene/scatterer';
 import {
   NAME_PLAQUE,
   OVERLAY_METRES_PER_PIXEL,
@@ -42,6 +43,8 @@ import type { LootMessage, Rarity, SectorView, SpeechKind } from '@somnio/protoc
 import { ClientWorld } from '@/client';
 import type { ClientEntity, SpeechBubbleRequest, TargetMark } from '@/client';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { heldJobs } from './helpers/heldJobs';
+import { recordingCompiler } from './helpers/programVariants';
 import { clientEntity } from './helpers/worldFixture';
 import { setLocale } from '@/i18n';
 
@@ -75,20 +78,8 @@ function resolvingAssets(): ModelAssets {
   };
 }
 
-function makeScene(assets: ModelAssets = emptyAssets(), now?: () => number, rasterizer?: GroundRasterizer): WorldScene {
-  return new WorldScene(assets, TEST_REGISTRY, 1, false, now, rasterizer);
-}
-
-/** A rasterizer that holds every field asked of it until the test releases it, as a worker would answer later. */
-function heldRasterizer(): { rasterizer: GroundRasterizer; jobs: { inputs: GroundFieldInputs; done: (field: GroundField) => void }[]; release: () => void } {
-  const jobs: { inputs: GroundFieldInputs; done: (field: GroundField) => void }[] = [];
-  return {
-    rasterizer: { rasterize: (inputs, done) => jobs.push({ inputs, done }) },
-    jobs,
-    release: () => {
-      for (const job of jobs.splice(0)) job.done(rasterizeGround(job.inputs));
-    },
-  };
+function makeScene(assets: ModelAssets = emptyAssets(), now?: () => number, rasterizer?: GroundRasterizer, scatterer?: Scatterer): WorldScene {
+  return new WorldScene(assets, TEST_REGISTRY, 1, false, now, rasterizer, scatterer);
 }
 
 function sector(overrides: Partial<SectorView> = {}): SectorView {
@@ -441,8 +432,8 @@ describe('the painted ground', () => {
   const east = (): SectorView => outdoorSector('East', { x: 20, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } });
 
   it('rasterizes a new sector and each sector it joins, once each, nearest the camera first', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.tick(0.016);
     held.release();
@@ -456,8 +447,8 @@ describe('the painted ground', () => {
   });
 
   it('draws the field it has until the next one arrives, and drops a field for inputs that changed since it was asked', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.tick(0.016);
     const flat = groundAt(scene, 10, 10)!;
@@ -479,8 +470,8 @@ describe('the painted ground', () => {
   });
 
   it('re-rasterizes a sector and its neighbour when a mark reaches across their border, and again when it is undone', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.addSector(east());
     scene.tick(0.016);
@@ -497,8 +488,8 @@ describe('the painted ground', () => {
   });
 
   it('asks nothing again for a sector re-added with its ground and its neighbours unchanged', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.tick(0.016);
     held.release();
@@ -520,8 +511,8 @@ describe('the painted ground', () => {
   });
 
   it('draws a new sector flat in its own background until its field arrives, in the first recipe for one with none', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(outdoorSector('Forest', { x: 0, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } }));
     scene.addSector(outdoorSector('Lava', { x: 40, z: 0 }, { ground: { backgroundMaterialId: 'lava', marks: [] } }));
     scene.addSector(outdoorSector('Wood', { x: 80, z: 0 }, { ground: { backgroundMaterialId: 'wood-warm', marks: [] } }));
@@ -543,8 +534,8 @@ describe('the painted ground', () => {
   });
 
   it('drops a field that arrives for a sector no longer drawn', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.tick(0.016);
     expect(held.jobs).toHaveLength(1);
@@ -555,8 +546,8 @@ describe('the painted ground', () => {
   });
 
   it('asks nothing again for a sector re-added unchanged while its field is still on the way', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(west());
     scene.tick(0.016);
     scene.addSector(west());
@@ -567,8 +558,8 @@ describe('the painted ground', () => {
 
   /** A door transfer or a login shows painted ground at once: the field under the player is rasterized on the spot. */
   it('reveals a held space with the ground under the player painted, and drops the field the worker answers later', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(emptyAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(emptyAssets(), undefined, { rasterize: held.run });
     scene.addSector(sector());
     scene.placeEntity(player());
     scene.tick(0.016);
@@ -1436,7 +1427,98 @@ describe('the model pack', () => {
     expect(requested.length).toBeGreaterThan(0);
     expect(requested.every((url) => url.includes('/assets/Models/'))).toBe(true);
   });
+
+  /**
+   * three keeps one program per material and checks it against each mesh it draws, and the shadow
+   * pass draws every caster with one depth material, so a switch between a skinned and a rigid mesh
+   * rebuilds a program's parameters, as many times a frame as they alternate.
+   */
+  it("gives a model's rigid meshes their own copy of a material its skinned meshes draw with, and its skinned meshes one depth material", async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(skinnedGLB())));
+    const registry = { ...TEST_REGISTRY, characterModels: [{ id: 'hero', model: { stem: 'Hero', expectedClips: [] } }], objectModels: [] };
+    const assets = new HttpModelAssets(registry);
+    await assets.prewarm();
+
+    const meshes = (root: THREE.Object3D): THREE.Mesh[] => {
+      const found: THREE.Mesh[] = [];
+      root.traverse((object) => {
+        if ((object as THREE.Mesh).isMesh) found.push(object as THREE.Mesh);
+      });
+      return found;
+    };
+    const [first, second] = [assets.character('hero')!, assets.character('hero')!].map(meshes);
+    const [body, helmet, cape] = first!;
+    expect([(body as THREE.SkinnedMesh).isSkinnedMesh, (helmet as THREE.SkinnedMesh).isSkinnedMesh, (cape as THREE.SkinnedMesh).isSkinnedMesh]).toEqual([
+      true,
+      undefined,
+      true,
+    ]);
+    expect(helmet!.material).not.toBe(body!.material);
+    expect((helmet!.material as THREE.Material).type).toBe((body!.material as THREE.Material).type);
+    expect(body!.customDepthMaterial).toBeInstanceOf(THREE.MeshDepthMaterial);
+    expect(second![0]!.customDepthMaterial).toBe(body!.customDepthMaterial);
+    expect(helmet!.customDepthMaterial).toBeUndefined();
+    // A cut-out's depth must test its alpha, which three's own depth variant for it does.
+    expect(cape!.customDepthMaterial).toBeUndefined();
+  });
 });
+
+/**
+ * A binary glTF of one bone and three meshes over one triangle: a body skinned to the bone, a
+ * helmet that is not, sharing the body's material, and a skinned cape whose material cuts out.
+ */
+function skinnedGLB(): ArrayBuffer {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const joints = new Uint8Array(12);
+  const weights = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+  const inverseBind = new Float32Array(new THREE.Matrix4().toArray());
+  const binary = new Uint8Array(positions.byteLength + joints.byteLength + weights.byteLength + inverseBind.byteLength);
+  const views = [positions, joints, weights, inverseBind].map((array) => new Uint8Array(array.buffer));
+  let offset = 0;
+  const bufferViews = views.map((view) => {
+    binary.set(view, offset);
+    const entry = { buffer: 0, byteOffset: offset, byteLength: view.byteLength };
+    offset += view.byteLength;
+    return entry;
+  });
+  const skinned = { attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 } };
+  const document = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ children: [1, 2, 3, 4] }, { name: 'bone' }, { mesh: 0, skin: 0 }, { mesh: 1 }, { mesh: 2, skin: 0 }],
+    meshes: [
+      { primitives: [{ ...skinned, material: 0 }] },
+      { primitives: [{ attributes: { POSITION: 0 }, material: 0 }] },
+      { primitives: [{ ...skinned, material: 1 }] },
+    ],
+    materials: [{ name: 'body' }, { name: 'cape', alphaMode: 'MASK' }],
+    skins: [{ joints: [1], inverseBindMatrices: 3 }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5121, count: 3, type: 'VEC4' },
+      { bufferView: 2, componentType: 5126, count: 3, type: 'VEC4' },
+      { bufferView: 3, componentType: 5126, count: 1, type: 'MAT4' },
+    ],
+    bufferViews,
+    buffers: [{ byteLength: binary.byteLength }],
+  };
+  // A chunk's length is a multiple of 4 bytes, the JSON padded with spaces.
+  const text = JSON.stringify(document);
+  const json = new TextEncoder().encode(text.padEnd(Math.ceil(text.length / 4) * 4, ' '));
+  const glb = new Uint8Array(12 + 8 + json.byteLength + 8 + binary.byteLength);
+  const header = new DataView(glb.buffer);
+  header.setUint32(0, 0x46546c67, true);
+  header.setUint32(4, 2, true);
+  header.setUint32(8, glb.byteLength, true);
+  header.setUint32(12, json.byteLength, true);
+  header.setUint32(16, 0x4e4f534a, true);
+  glb.set(json, 20);
+  header.setUint32(20 + json.byteLength, binary.byteLength, true);
+  header.setUint32(24 + json.byteLength, 0x004e4942, true);
+  glb.set(binary, 28 + json.byteLength);
+  return glb.buffer;
+}
 
 describe('an entity placed again', () => {
   /** Where every entity placeholder reachable from the scene's root stands. */
@@ -3338,8 +3420,8 @@ describe('scatter', () => {
   }
 
   it('is settled only once every sector it draws has its field and its scatter placed', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(scatterAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(scatterAssets(), undefined, { rasterize: held.run });
     scene.addSector(sector());
     scene.addSector(outdoorSector('NorthMeadow', { x: 0, z: -20 }));
     expect(scene.isSettled()).toBe(false);
@@ -3354,6 +3436,138 @@ describe('scatter', () => {
     scene.tick(0.016);
     expect(scatterGroups(scene)).toHaveLength(2);
     expect(scene.isSettled()).toBe(true);
+  });
+
+  /** A sector's scatter takes milliseconds, so it is placed off the frame, as the ground's field is. */
+  it('keeps the last scatter drawn, and the scene unsettled, until the next is placed, asking once', () => {
+    const held = heldJobs(scatterSector);
+    const scene = makeScene(scatterAssets(), undefined, undefined, { scatter: held.run });
+    const west = outdoorSector('West', { x: 0, z: 0 });
+    scene.addSector(west);
+    scene.tick(0.016);
+    expect(scatterGroups(scene)).toEqual([]);
+    expect(scene.isSettled()).toBe(false);
+    held.release();
+    const [first] = scatterGroups(scene);
+    expect(first).toBeDefined();
+    expect(scene.isSettled()).toBe(true);
+
+    const boxed = { ...west, placements: [placement('box-1', 'box', { x: 10, z: 10 })] };
+    scene.addSector(boxed);
+    scene.tick(0.016);
+    // The same sector again while its scatter is still on the way asks for nothing more.
+    scene.addSector(boxed);
+    scene.tick(0.016);
+    expect(held.jobs).toHaveLength(1);
+    expect(scatterGroups(scene)).toEqual([first]);
+    expect(scene.isSettled()).toBe(false);
+    held.release();
+    expect(scatterGroups(scene)).toHaveLength(1);
+    expect(scatterGroups(scene)[0]).not.toBe(first);
+    expect(instancesNear(scatterGroups(scene)[0]!, { x: 10, z: 10 }, 0.4)).toBe(0);
+  });
+
+  /** A door transfer or a login shows what grows under the player at once, as it does the ground. */
+  it("reveals a held space with the player's own sector's scatter placed, and drops the one the worker answers later", () => {
+    const held = heldJobs(scatterSector);
+    const scene = makeScene(scatterAssets(), undefined, undefined, { scatter: held.run });
+    scene.enterSpace(world());
+    scene.addSector(outdoorSector('West', { x: 0, z: 0 }));
+    scene.tick(0.016);
+    expect(held.jobs).toHaveLength(1);
+    expect(scatterGroups(scene)).toEqual([]);
+
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    const [placed] = scatterGroups(scene);
+    expect(placed?.parent?.visible).toBe(true);
+    held.release();
+    expect(scatterGroups(scene)).toEqual([placed]);
+  });
+
+  it("places the player's own sector's scatter at a reveal whose field the worker still holds", () => {
+    const fields = heldJobs(rasterizeGround);
+    const scatters = heldJobs(scatterSector);
+    const scene = makeScene(scatterAssets(), undefined, { rasterize: fields.run }, { scatter: scatters.run });
+    scene.enterSpace(world());
+    scene.addSector(outdoorSector('West', { x: 0, z: 0 }));
+    scene.tick(0.016);
+    expect([fields.jobs.length, scatters.jobs.length, scatterGroups(scene).length]).toEqual([1, 0, 0]);
+
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    const [placed] = scatterGroups(scene);
+    expect(placed?.parent?.visible).toBe(true);
+    fields.release();
+    scene.tick(0.016);
+    scatters.release();
+    expect(scatterGroups(scene)).toEqual([placed]);
+  });
+
+  /** A program compiled on its first draw stalls the frame it draws in. */
+  it("compiles the programs the ground, what grows on it, a prop, a drop lying on it, and a tap's ring draw in the prewarm, and keeps them past a door", async () => {
+    // Each kind drawn with a material of its own type, so each is a program of its own.
+    const model = (material: THREE.Material): THREE.Object3D => new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), material));
+    const grass = model(new THREE.MeshLambertMaterial());
+    const pebble = model(new THREE.MeshPhongMaterial());
+    const lying = model(new THREE.MeshToonMaterial());
+    const assets = {
+      ...scatterAssets(),
+      ground: () => lying.clone(),
+      prototypeMeshes: (id: string) => prototypeMeshesOf(id === PEBBLE_MODEL_ID ? pebble : grass),
+    };
+    const scene = new WorldScene(assets, { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }] }, 1, false);
+    const { compileAsync, uncompiled, released } = recordingCompiler();
+    await scene.prewarm({ compileAsync });
+
+    // A meadow grows grass and flowers, a wood grass and pebbles.
+    scene.addSector(outdoorSector('West', { x: 0, z: 0 }, { placements: [placement('box-1', 'box', { x: 10, z: 10 })] }));
+    scene.addSector(outdoorSector('Wood', { x: 20, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } }));
+    scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } });
+    scene.showPressMarker({ x: 5, z: 5 });
+    for (let frame = 0; frame < 3; frame += 1) scene.tick(0.016);
+    expect(scatterGroups(scene)).toHaveLength(2);
+    expect(uncompiled(scene.scene)).toEqual([]);
+
+    // A door disposes every ground of the space left, and a lifted ring its own material.
+    scene.liftPressMarker();
+    for (let frame = 0; frame < 30; frame += 1) scene.tick(0.016);
+    scene.enterSpace(world());
+    scene.addSector(outdoorSector('West', { x: 0, z: 0 }));
+    scene.placeEntity(player({ position: { x: 5, z: 5 } }));
+    scene.showPressMarker({ x: 6, z: 6 });
+    scene.tick(0.016);
+    expect(groundMeshes(scene).length).toBeGreaterThan(0);
+    expect(released(scene.scene)).toEqual([]);
+  });
+
+  it('drops a scatter placed for what its ground no longer is, or for a sector gone', () => {
+    const held = heldJobs(scatterSector);
+    const scene = makeScene(scatterAssets(), undefined, undefined, { scatter: held.run });
+    const west = outdoorSector('West', { x: 0, z: 0 });
+    scene.addSector(west);
+    scene.tick(0.016);
+    const stale = held.jobs.splice(0);
+    scene.addSector({ ...west, placements: [placement('box-1', 'box', { x: 10, z: 10 })] });
+    scene.tick(0.016);
+    for (const job of stale) job.done(scatterSector(job.inputs));
+    expect(scatterGroups(scene)).toEqual([]);
+    held.release();
+    const boxed = scatterGroups(scene)[0]!;
+    expect(instancesNear(boxed, { x: 10, z: 10 }, 0.4)).toBe(0);
+
+    // Changed and changed back before the scatter for the change is placed.
+    scene.addSector(west);
+    scene.tick(0.016);
+    scene.addSector({ ...west, placements: [placement('box-1', 'box', { x: 10, z: 10 })] });
+    scene.tick(0.016);
+    held.release();
+    expect(scatterGroups(scene)).toEqual([boxed]);
+
+    scene.addSector(west);
+    scene.tick(0.016);
+    expect(held.jobs).toHaveLength(1);
+    scene.removeSector('West');
+    held.release();
+    expect(scatterGroups(scene)).toEqual([]);
   });
 
   it('bends every mesh of a batch over one set of tilts, and lets every scatter mesh take shadows', () => {
@@ -3438,8 +3652,8 @@ describe('scatter', () => {
   });
 
   it('grows again away from a moved placement without rasterizing either ground again', () => {
-    const held = heldRasterizer();
-    const scene = makeScene(scatterAssets(), undefined, held.rasterizer);
+    const held = heldJobs(rasterizeGround);
+    const scene = makeScene(scatterAssets(), undefined, { rasterize: held.run });
     const west = outdoorSector('West', { x: 0, z: 0 });
     const east = outdoorSector('East', { x: 20, z: 0 });
     scene.addSector(west);
@@ -4654,5 +4868,17 @@ describe('the device pixel ratio', () => {
     queries.get('(resolution: 2dppx)')!.dispatchEvent(new Event('change'));
 
     expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws the world at the display's ratio, up to the cap", () => {
+    let pixelRatio = 1;
+    const renderer = { getPixelRatio: () => pixelRatio, setPixelRatio: (ratio: number) => (pixelRatio = ratio), setSize: () => {} };
+    const drawnAt = (deviceRatio: number): number => {
+      vi.stubGlobal('devicePixelRatio', deviceRatio);
+      sizeWorldRenderer(renderer, 400, 300);
+      return pixelRatio;
+    };
+
+    expect([drawnAt(1), drawnAt(1.5), drawnAt(2), drawnAt(3)]).toEqual([1, 1.5, 2, 2]);
   });
 });

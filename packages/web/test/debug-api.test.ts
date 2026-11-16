@@ -322,6 +322,35 @@ describe('the debug API', () => {
     expect(makeDebugAPI(app).chatHistory()).toEqual(['Peer entered the game.']);
   });
 
+  it("reports nothing before the first frame, then the last few seconds' frames, their script by part, and what they drew", () => {
+    const app = shell();
+    const api = makeDebugAPI(app);
+    expect(api.frameStats()).toBeUndefined();
+
+    const drawn = { drawCalls: 300, triangles: 1_000_000, programs: 40, canvas: { width: 2880, height: 1800, pixelRatio: 2 } };
+    const frame = (intervalMs: number, worldMs: number, drew = drawn) => ({
+      intervalMs,
+      parts: { session: 0.1, layout: 0.1, hud: 0.1, scene: 0.2, world: worldMs, portraits: 0.2, overlays: 0.1 },
+      ...drew,
+    });
+    // A slow frame the window has scrolled past, then 150 frames at 60 a second, one long one, and
+    // 149 at 120 a second, the last on a smaller canvas with a program more.
+    app.frameStats.record(frame(500, 50));
+    for (let index = 0; index < 150; index += 1) app.frameStats.record(frame(1000 / 60, 0.8));
+    app.frameStats.record(frame(50, 8.8));
+    for (let index = 0; index < 148; index += 1) app.frameStats.record(frame(1000 / 120, 0.8));
+    app.frameStats.record(frame(1000 / 120, 0.8, { drawCalls: 600, triangles: 1_300_000, programs: 41, canvas: { width: 1440, height: 900, pixelRatio: 1 } }));
+
+    const stats = api.frameStats()!;
+    expect(stats.frames).toBe(300);
+    expect(stats.intervalMs).toEqual({ p50: 16.67, p95: 16.67, max: 50 });
+    expect(stats.scriptMs).toEqual({ p50: 1.6, p95: 1.6, max: 9.6 });
+    expect(stats.partsMs.world).toBeCloseTo((299 * 0.8 + 8.8) / 300, 2);
+    expect(stats.fps).toBeCloseTo(1000 / ((150 * 1000) / 60 / 300 + 50 / 300 + (149 * 1000) / 120 / 300), 1);
+    // Draw calls and triangles are the window's mean, the programs and the canvas the last frame's.
+    expect([stats.drawCalls, stats.triangles, stats.programs, stats.canvas]).toEqual([301, 1_001_000, 41, { width: 1440, height: 900, pixelRatio: 1 }]);
+  });
+
   it('installs unconditionally in a dev build', () => {
     expect(installDebugAPI(shell(), { isDevelopment: true, search: '' })).toBe(true);
     expect((window as unknown as Record<string, unknown>).somnio).toBeDefined();

@@ -141,6 +141,7 @@ Positions are metres in the coordinates of the current space: `x` runs east, `z`
 | `overlay()` | `'login'` \| `'registration'` \| `'characters'` (the card) \| `'newCharacter'` \| `'deleteCharacter'` \| `'about'` \| `'updateRequired'` \| `'options'` \| `'gameMenu'` \| `'logOutOtherBrowsers'` \| `undefined` |
 | `zoomFactor()` | session zoom, 0.78–1.4; the camera's half-height is 7 divided by it |
 | `splashShot()` | the id of the splash shot playing behind the pre-login screens (`'town'`, `'follow-dreamer'`, ... `'time-lapse'`), or `undefined` while none plays |
+| `frameStats()` | what the last 300 frames cost (about 5 s): `{ frames, fps, intervalMs, scriptMs, partsMs, drawCalls, triangles, programs, canvas }`. `intervalMs` (between frames, by their `requestAnimationFrame` timestamps) and `scriptMs` are `{ p50, p95, max }` in milliseconds. `partsMs` is each part's mean (`session`, `layout`, `hud`, `scene`, `world`, `portraits`, `overlays`), which together make the script. `drawCalls` and `triangles` are a frame's mean, the portraits' renders included. `programs` is how many shader programs three holds, and `canvas` is `{ width, height, pixelRatio }` of the drawing buffer, both as of the last frame. `undefined` until a second frame is drawn |
 
 `<html data-somnio-build>` carries the build stamp (`somnio-web <version>`) with no `?debug=1` gate, so any loaded page identifies its build. It is set by `main.ts` once the bundle runs, not baked into the served HTML — read it with `agent-browser eval 'document.documentElement.dataset.somnioBuild'`, since `curl` of the same URL returns a bare `<html lang="en">`.
 
@@ -503,6 +504,41 @@ Relocate with the recipe below. Its `sectorName()` check cannot confirm a move w
 
 **Portraits.** The HUD frames' portraits are drawn on the world canvas, in the circles the frames leave open (`.hud-portrait`, `GameHUD.portraits`), so only a screenshot shows them. To time the pass, wrap `WorldScene.prototype.drawPortraits` as the bubble recipe wraps `placedBubbles`, and repeat the pass inside the wrapper until frames slow. On Apple's ANGLE Metal renderer, `EXT_disjoint_timer_query_webgl2` overstates the pass many times over, so do not time it that way.
 
+**Frame time.** Check a change against the frame budget in `packages/web/AGENTS.md` ("Frame budget"). Check the load first (`uptime`): simulators or a build running beside the browser make every part of the frame about 2.5 times slower, so compare only figures taken in one sitting. Read the script's share with `frameStats()` after standing about five seconds in the scene, since its window starts with the page load's frames. For the GPU, `gl.finish()` returns before the GPU does on ANGLE Metal, and `EXT_disjoint_timer_query_webgl2` overstates. Instead, capture the shell once and time bursts of renders, each closed by a one-pixel `readPixels`, which waits for the GPU:
+
+```js
+(async () => {
+  // After an edit Vite stamps the module with `?t=`, so import the URL the page loaded.
+  const url = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.includes('/src/ui/appShell.ts')).pop();
+  const { AppShell } = await import(url);
+  const shell = await new Promise((resolve) => {
+    const onFrame = AppShell.prototype.onFrame;
+    AppShell.prototype.onFrame = function (ts) {
+      AppShell.prototype.onFrame = onFrame;
+      resolve(this);
+      return onFrame.call(this, ts);
+    };
+  });
+  const { renderer: r, scene: s } = shell;
+  const gl = r.getContext();
+  const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const burst = () => {
+    r.render(s.scene, s.camera);
+    sync();
+    const t = performance.now();
+    for (let i = 0; i < 60; i++) r.render(s.scene, s.camera);
+    sync();
+    return (performance.now() - t) / 60;
+  };
+  const runs = Array.from({ length: 7 }, burst).sort((a, b) => a - b);
+  return runs[3].toFixed(2) + ' ms a frame';
+})()
+```
+
+To weigh a scene change, toggle it between bursts in the same `eval`, A, B, A, B, rather than across reloads. To catch a program compiled at first sight, read `frameStats().programs` before and after walking somewhere new. A rise means something `WorldScene.prewarm` should have compiled.
+
+**Throttle and sample.** `agent-browser` has no CPU throttle, so go through CDP from a node script with Node's global `WebSocket`. `agent-browser get cdp-url` gives the browser's socket: find the game page with `Target.getTargets`, attach to it with `Target.attachToTarget` (`flatten: true`), and send `Emulation.setCPUThrottlingRate` with that `sessionId`. Keep the socket open for the whole measurement, since the emulation ends with its session. To see allocation churn rather than what survives, sample with `HeapProfiler.startSampling` and `includeObjectsCollectedByMajorGC` and `includeObjectsCollectedByMinorGC` both true, then read the tree from `profile.head` in what `HeapProfiler.stopSampling` returns. The dev server loads more than the 250 entries a page's resource timing keeps by default, so a module loaded late, such as a worker, is missing from `performance.getEntriesByType('resource')`. Raise the limit with `performance.setResourceTimingBufferSize(5000)` in an init script, installed with `--init-script` as Step 4 describes.
+
 **Relocate the character.** The server holds the gameplay session for a few seconds after the page goes away, because the Vite proxy keeps the upstream WebSocket alive. Both the disconnect checkpoint and the periodic 30 s checkpoint write the character row, so a DB `UPDATE` issued too early is silently overwritten, and an immediate re-login fails with "Du bist bereits angemeldet." / "Already logged in." on the login card. When a re-login still fails that way after the wait, restart Vite: its proxy can keep the old upstream socket open. Order matters, and the post-login `sectorName()` read is the success predicate. The Notes' no-sleep rule is suspended here only because no page exists to poll between close and login:
 
 ```bash
@@ -638,7 +674,7 @@ A held quest's row is `state='active'` with `progress` a JSON array of a count p
 - **Figures.** Call `scene.placeEntity({ id, kind, characterModelId, name, position: { x, z }, facing, gait: 'walk', radius: 0.3, condition: 'hale', service: undefined })`. Stage dreamers as `'peer'`: the camera follows a `'player'` every tick and overrides the framing. With no `enterSpace` the scene has no walk surfaces, so every figure stands at height 0, even on stairs or a plinth.
 - **Framing.** Set `scene.camera`'s `left`/`right`/`top`/`bottom` from the rig's `frustumBounds(scale, aspect)`, its position from `cameraPosition({ x, y: 0, z })`, then `lookAt`, `updateProjectionMatrix`, and `scene.anchorSunShadow({ x, z })`.
 - **Light.** Call `scene.setClock(worldSeconds)`, counting from the 07:00 value in the recipe above: subtract or add 3600 per hour.
-- **Capture.** Call `scene.tick(dt)` and `renderer.render(scene.scene, scene.camera)` once per `requestAnimationFrame` until `scene.isSettled()` is true, then for about 30 frames more, before the screenshot. The ground is painted in a worker, which answers between frames, and the grass grows one sector a tick, so a fixed run of frames in one turn of the event loop captures flat ground. The extra frames let models resolve and pose.
+- **Capture.** Call `scene.tick(dt)` and `renderer.render(scene.scene, scene.camera)` once per `requestAnimationFrame` until `scene.isSettled()` is true, then for about 30 frames more, before the screenshot. The ground is painted and its grass placed in workers, which answer between frames, one sector's grass sent a tick, so a fixed run of frames in one turn of the event loop captures a flat, bare floor. The extra frames let models resolve and pose.
 
 **Verify the asset pack resolved.** `agent-browser eval 'window.somnio.placeholderObjectCount()'` — non-zero means models are missing or a registry id has no matching stem. Read it only once Step 4's gate has passed: with no scene it returns `0`, which is indistinguishable from success.
 

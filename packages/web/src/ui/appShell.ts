@@ -18,6 +18,8 @@ import { SplashDirector } from '@/splash/director';
 import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
 import { SensedMarkers } from './sensedMarkers';
+import { FrameStats } from './frameStats';
+import type { FramePart } from './frameStats';
 import { GameHUD, WINDOW_KEYS } from './hud';
 import { GAZE_LOCK_KEY } from './belt';
 import type { HUDClock, HUDWindowId } from './hud';
@@ -145,6 +147,8 @@ export class AppShell {
   private readonly sensedMarkers = new SensedMarkers();
   readonly overlays: Overlays;
   readonly notices: BlockingNotices;
+  /** What the last frames cost, for `window.somnio.frameStats()`. */
+  readonly frameStats = new FrameStats();
 
   private readonly container: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -847,6 +851,8 @@ export class AppShell {
     const scene = this.scene;
     if (scene === undefined) return;
     this.renderer = createWorldRenderer(this.canvas);
+    // Counted over the whole frame, the portraits' renders with the world's.
+    this.renderer.info.autoReset = false;
     this.bubbleContext = this.bubbleCanvas.getContext('2d');
     this.bubbleScratchContext = this.bubbleScratch.getContext('2d');
     this.handleResize();
@@ -914,7 +920,16 @@ export class AppShell {
   }
 
   private onFrame(timestamp: number): void {
+    let partStart = performance.now();
+    const lap = (): number => {
+      const now = performance.now();
+      const ms = now - partStart;
+      partStart = now;
+      return ms;
+    };
+    this.renderer?.info.reset();
     this.tickSession(timestamp);
+    const session = lap();
     const delta = this.lastFrameMs === undefined ? 0 : (timestamp - this.lastFrameMs) / 1000;
     this.lastFrameMs = timestamp;
     // Before the world is on screen the card and the wordmark cover it, so the staged bubbles keep clear of them.
@@ -931,17 +946,21 @@ export class AppShell {
     });
     this.hud.openBodyHole(portraitRects.find(({ slot }) => slot === 'body')!.shown);
     this.scene?.setScreenOccluders(screenOccluders(canvasRect, covering));
+    const layout = lap();
+    this.hud.tick(performance.now(), this.clock());
+    this.fallenNotice.tick(performance.now());
+    const hud = lap();
     this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
     const dipOpacity = this.splash?.dipOpacity ?? 0;
     if (dipOpacity !== this.shownDipOpacity) {
       this.shownDipOpacity = dipOpacity;
       this.splashDip.style.opacity = String(dipOpacity);
     }
-    this.hud.tick(performance.now(), this.clock());
-    this.fallenNotice.tick(performance.now());
     this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
+    const scene = lap();
     if (this.scene !== undefined && this.renderer !== undefined) {
       this.renderer.render(this.scene.scene, this.scene.camera);
+      const world = lap();
       this.scene.setPortraitSubject('own', this.controller.selfId);
       this.scene.setPortraitSubject('target', this.session.target);
       this.scene.setPortraitSubject('body', this.controller.selfId);
@@ -955,14 +974,31 @@ export class AppShell {
         }),
         this.hud.bodyTurn(performance.now()),
       );
+      const portraits = lap();
       paintBubbles(this.bubbleContext, this.bubbleScratchContext, this.scene.placedBubbles(), this.bubbleCanvas);
       const self = this.controller.selfId === undefined ? undefined : this.controller.entities.get(this.controller.selfId);
       this.sensedMarkers.render(this.controller.inWorld ? this.scene.placedMarkers() : undefined, canvasRect, self?.position);
+      const overlays = lap();
+      this.recordFrame(this.renderer, delta * 1000, { session, layout, hud, scene, world, portraits, overlays });
     }
     // Deliberately not re-rendering the DOM here beyond what moves with time or the camera: the HUD's
     // clock, its seconds left on cooldowns and effects, and its tip, the chat's fading, the fallen
     // notice's countdown, and the sensed markers. The controller's and the session's state hooks
     // cover every path that changes what the rest shows.
+  }
+
+  /** Keeps what the frame cost and what it drew, skipping the first frame, which has no interval to time. */
+  private recordFrame(renderer: THREE.WebGLRenderer, intervalMs: number, parts: Record<FramePart, number>): void {
+    if (intervalMs === 0) return;
+    const { width, height } = renderer.domElement;
+    this.frameStats.record({
+      intervalMs,
+      parts,
+      drawCalls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      programs: renderer.info.programs?.length ?? 0,
+      canvas: { width, height, pixelRatio: renderer.getPixelRatio() },
+    });
   }
 
   /**
