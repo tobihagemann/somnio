@@ -1068,9 +1068,12 @@ describe('a drop', () => {
     expect(rig.shown).toEqual([
       ['showLoot', { lootId: 'loot-1', x: 14, z: 10, contents: DAGGER_DROP }],
       ['showLoot', { lootId: 'loot-2', x: 4, z: 4, contents: DAGGER_DROP }],
-      ['removeLoot', 'loot-1'],
+      ['removeLoot', 'loot-1', false],
     ]);
     expect([...rig.session.loot.keys()]).toEqual(['loot-2']);
+    rig.controller.dispatch(lootFrame('loot-3', { x: 6, z: 6 }));
+    rig.controller.dispatch({ tag: 'lootGone', payload: { lootId: 'loot-3', taken: true } });
+    expect(rig.shown.at(-1)).toEqual(['removeLoot', 'loot-3', true]);
     rig.controller.dispatch(enterSpaceFrame());
     expect(rig.session.loot.size).toBe(0);
   });

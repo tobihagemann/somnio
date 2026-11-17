@@ -491,9 +491,13 @@ export interface LootMessage {
   from?: ThrownFromMessage;
 }
 
-/** A drop is gone from the dreamer's view: picked up, expired, taken away by a newer drop past the cap, or its sector out of view. */
+/**
+ * A drop is gone from the dreamer's view: picked up, expired, taken away by a newer drop past the cap,
+ * or its sector out of view. `taken` is set on a drop a dreamer picked up, which goes at once rather than fading.
+ */
 export interface LootGoneMessage {
   lootId: string;
+  taken?: boolean;
 }
 
 /** `crumbled` is set on a minion that crumbles where it stands as its boss's fight ends, rather than falling. */
@@ -1202,7 +1206,10 @@ function decodeThrownFromMessage(container: Record<string, unknown>, path: strin
 }
 
 export function decodeLootGoneMessage(container: Record<string, unknown>, path: string): LootGoneMessage {
-  return { lootId: requireId(container, 'lootId', path) };
+  return {
+    lootId: requireId(container, 'lootId', path),
+    ...(isAbsent(container, 'taken') ? {} : { taken: requireBool(container, 'taken', path) }),
+  };
 }
 
 export function decodeLeaveMessage(container: Record<string, unknown>, path: string): LeaveMessage {

@@ -1923,7 +1923,7 @@ describe('what a pointer is over, and the target', () => {
       const scene = dropsAround(makeScene({ ...emptyAssets(), ground: () => laid[laid.push(lyingDagger()) - 1] }));
       const [under, open] = laid.map((model) => model.parent!.rotation.y);
       expect(Math.abs(under! - open!)).toBeGreaterThan(0.1);
-      scene.removeLoot('under');
+      scene.removeLoot('under', false);
       scene.showLoot(drop('under', 13, 10));
       expect(laid.at(-1)!.parent!.rotation.y).toBe(under);
     });
@@ -2014,7 +2014,7 @@ describe('what a pointer is over, and the target', () => {
       const model = laid[1]!;
       const { material } = model;
       const pressed = [scene._viewportPointOfLoot('open', 'model')!, scene._viewportPointOfLoot('open', 'label')!];
-      scene.removeLoot('open');
+      scene.removeLoot('open', false);
       expect(scene._viewportPointOfLoot('open', 'model')).toBeUndefined();
       for (const point of pressed) expect(scene.pressTargetAt(point.x, point.y)).toMatchObject({ kind: 'ground' });
       const clone = model.material;
@@ -2034,10 +2034,21 @@ describe('what a pointer is over, and the target', () => {
       expect(model.material).toBe(material);
     });
 
+    it('is gone at once, with nothing fading, once a dreamer picks it up', () => {
+      const { scene, laid } = fading();
+      const model = laid[1]!;
+      const { material } = model;
+      scene.removeLoot('open', true);
+      expect(scene._viewportPointOfLoot('open', 'model')).toBeUndefined();
+      expect(drawn(scene, model)).toBe(false);
+      expect(shown(scene, LOOT_BEAM_NAME)).toHaveLength(1);
+      expect(model.material).toBe(material);
+    });
+
     it('draws a drop shown again under the same id while it fades whole, beside the fading one', () => {
       const { scene, laid, tick } = fading();
       const faded = markerOf(laid[0]!);
-      scene.removeLoot('under');
+      scene.removeLoot('under', false);
       tick(0.25);
       scene.showLoot(drop('under', 13, 10));
       const again = markerOf(laid.at(-1)!);
@@ -2052,7 +2063,7 @@ describe('what a pointer is over, and the target', () => {
     it('is gone on the tick a stall ends', () => {
       const { scene, laid, tick, hide } = fading();
       const { material } = laid[1]!;
-      scene.removeLoot('open');
+      scene.removeLoot('open', false);
       tick(0.2);
       const cloneDispose = vi.spyOn(laid[1]!.material, 'dispose');
       hide(2000);
@@ -2075,7 +2086,7 @@ describe('what a pointer is over, and the target', () => {
       });
       expect(parts).toHaveLength(4);
       const materials = parts.map((part) => part.material);
-      scene.removeLoot('under');
+      scene.removeLoot('under', false);
       tick(0.25);
       const disposes = parts.map((part) => vi.spyOn(part.material, 'dispose'));
 
@@ -2100,7 +2111,7 @@ describe('what a pointer is over, and the target', () => {
         for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(drop(`loot-${index}`, 2 + index, 4));
         const waiting = `loot-${LOOT_MARKER_POOL_SIZE}`;
         expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
-        scene.removeLoot('loot-3');
+        scene.removeLoot('loot-3', false);
         expect(scene._viewportPointOfLoot('loot-3', 'label')).toBeUndefined();
         if (!reducedMotion) {
           expect(scene._viewportPointOfLoot(waiting, 'label')).toBeUndefined();
@@ -3786,7 +3797,7 @@ describe('scatter', () => {
     for (let frame = 0; frame < 30; frame += 1) scene.tick(1 / 60);
     expect(tilt()).toBeGreaterThan(1.45);
 
-    scene.removeLoot('loot-1');
+    scene.removeLoot('loot-1', false);
     // Half way through the fade, the drop still drawn.
     for (let frame = 0; frame < 15; frame += 1) scene.tick(1 / 60);
     expect(tilt()).toBeLessThan(1);

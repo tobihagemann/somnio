@@ -107,7 +107,8 @@ export interface WorldRenderSurface {
   showSensed(bearings: readonly SensedBearingMessage[]): void;
   /** A drop lying on the ground, the player's own or one for anyone: its model, with its name under it in its rarity's colour, until it is removed or a new space begins. */
   showLoot(loot: LootMessage): void;
-  removeLoot(lootId: string): void;
+  /** Takes a drop away: one picked up (`taken`) goes at once, and any other fades out where it lay unless motion is reduced. */
+  removeLoot(lootId: string, taken: boolean): void;
   /** Marks the target as `mark` says; `undefined` marks none. */
   showSelection(entityId: string | undefined, mark: TargetMark): void;
   /** A ring where a press holds the ground, or on what the walk a press made heads for, a body it follows included: it drops onto `point` the first time, and follows it after. */

@@ -109,7 +109,7 @@ describe('a drop', () => {
 
     space.handleMove(BY_STRIKERS_DROP, striker.entityId);
     space.handlePickUp(lootOf(striker), striker.entityId);
-    expect(gone(striker)).toEqual([{ lootId: lootOf(striker) }]);
+    expect(gone(striker)).toEqual([{ lootId: lootOf(striker), taken: true }]);
     expect(pickedUp(striker)).toEqual([DAGGER_DROP]);
     expect(space.snapshotForPlayer(striker.entityId)!.inventory.bag).toEqual([
       { place: 0, item: expect.objectContaining({ baseId: 'dagger', tier: 1, rarity: 'plain', affixes: [] }) },
@@ -290,9 +290,9 @@ describe("a drop from a nightmare across the world's spaces", () => {
     expect(pickedUp(striker)).toEqual([DAGGER_DROP]);
 
     driveOffIn(outdoors);
-    expect(gone(striker)).toEqual([{ lootId: 'loot-2' }]);
+    expect(gone(striker)).toEqual([{ lootId: 'loot-2', taken: true }]);
     driveOffIn(outdoors);
-    expect(gone(striker)).toEqual([{ lootId: 'loot-2' }, { lootId: 'loot-1' }]);
+    expect(gone(striker)).toEqual([{ lootId: 'loot-2', taken: true }, { lootId: 'loot-1' }]);
   });
 });
 
@@ -477,7 +477,7 @@ describe('an item dropped to the ground', () => {
     const taken = space.snapshotForPlayer(beside.entityId)!.inventory.bag[0]?.item;
     expect(taken).toEqual({ ...MAGIC_CAP, id: expect.any(String) });
     expect(taken!.id).not.toBe(MAGIC_CAP.id);
-    for (const dreamer of [dropper, beside, middle]) expect(gone(dreamer)).toEqual([{ lootId }]);
+    for (const dreamer of [dropper, beside, middle]) expect(gone(dreamer)).toEqual([{ lootId, taken: true }]);
     expect(gone(east)).toEqual([]);
   });
 

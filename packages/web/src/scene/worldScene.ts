@@ -1329,8 +1329,8 @@ export class WorldScene implements WorldRenderSurface {
     return prop;
   }
 
-  removeLoot(lootId: string): void {
-    this.loot.remove(lootId);
+  removeLoot(lootId: string, taken: boolean): void {
+    this.loot.remove(lootId, taken);
   }
 
   /** A hale nightmare has a plaque only while it is the target, so the plaques of the old target and the new are rebuilt. */

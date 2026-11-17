@@ -1459,7 +1459,7 @@ export class GameplaySession {
         return;
       case 'lootGone':
         this.loot.delete(message.payload.lootId);
-        this.controller.renderSurface.removeLoot(message.payload.lootId);
+        this.controller.renderSurface.removeLoot(message.payload.lootId, message.payload.taken === true);
         return;
       case 'lucidity':
         if (this.seen.lucidity) this.announceLucidity(this.lucidity, message.payload);

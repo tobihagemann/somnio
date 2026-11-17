@@ -1405,7 +1405,7 @@ export class SpaceActor {
     if ((loot.ownerId ?? entityId) !== entityId || !withinPickupReach(player.character.position, loot.position)) return;
     const contents = loot.contents;
     if (contents.kind === 'item' && !bagHasRoom(player.inventory)) return;
-    this.removeLoot(loot);
+    this.removeLoot(loot, true);
     if (loot.ownerId !== undefined) this.personalDrops.pickedUp(loot.ownerId, this, lootId);
     if (contents.kind === 'item') player.inventory = withItem(player.inventory, { id: newItemId(), ...contents.item });
     this.sendInventory(player, { pickedUp: lootContentsMessage(contents) });
@@ -1473,10 +1473,10 @@ export class SpaceActor {
     if (loot !== undefined) this.removeLoot(loot);
   }
 
-  /** The drop is gone from the ground, and everyone it was shown to is told so. */
-  private removeLoot(loot: Loot): void {
+  /** The drop is gone from the ground, and everyone it was shown to is told so, `taken` when a dreamer picked it up. */
+  private removeLoot(loot: Loot, taken = false): void {
     this.loot.delete(loot.lootId);
-    this.sendToLootViewers(loot, { tag: 'lootGone', payload: { lootId: loot.lootId } });
+    this.sendToLootViewers(loot, { tag: 'lootGone', payload: { lootId: loot.lootId, ...(taken ? { taken } : {}) } });
   }
 
   /** Whether the dreamer is shown the drop: their own wherever it lies, and one for anyone while they see its sector. */

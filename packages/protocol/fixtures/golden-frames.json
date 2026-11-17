@@ -854,6 +854,13 @@
     },
     "tag": "lootGone"
   },
+  "lootGone-taken": {
+    "payload": {
+      "lootId": "loot-12",
+      "taken": true
+    },
+    "tag": "lootGone"
+  },
   "lucidity": {
     "payload": {
       "ranks": [

@@ -26,8 +26,9 @@
  * material, and every glow with one of two that differ only in colour, so each program compiles
  * once, in the scene's prewarm, and none adds a light. A flight moves the model alone, so it compiles nothing.
  *
- * A drop that goes fades out where it lay over `LOOT_FADE_SECONDS`, drawn with clones of its
- * materials (`fadeOut`), its name and its light with it, and casts no shadow from halfway out.
+ * A drop picked up goes at once. Any other that goes fades out where it lay over
+ * `LOOT_FADE_SECONDS`, drawn with clones of its materials (`fadeOut`), its name and its light with
+ * it, and casts no shadow from halfway out.
  * Meanwhile it takes no press and presses no grass, and its marker draws nothing else until the fade
  * ends, which frees it for a drop waiting. Under reduced motion, and in a stalled tab, it goes at once.
  */
@@ -223,11 +224,12 @@ export class LootMarkers {
     else thrown?.prop?.removeFromParent();
   }
 
-  remove(lootId: string): void {
+  /** Takes a drop away: at once when `taken` up, under reduced motion, or undrawn, and otherwise fading out where it lay. */
+  remove(lootId: string, taken: boolean): void {
     this.shown.delete(lootId);
     const marker = this.markerOf(lootId);
     if (marker === undefined) return;
-    if (this.reducedMotion) {
+    if (taken || this.reducedMotion) {
       this.free(marker);
     } else {
       this.rest(marker);

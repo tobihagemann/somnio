@@ -485,6 +485,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     },
   },
   { name: 'lootGone', message: { tag: 'lootGone', payload: { lootId: LOOT_ID } } },
+  { name: 'lootGone-taken', message: { tag: 'lootGone', payload: { lootId: LOOT_ID, taken: true } } },
   { name: 'leave', message: { tag: 'leave', payload: { entityId: PLAYER_ID, leftGame: true } } },
   { name: 'leave-crumbled', message: { tag: 'leave', payload: { entityId: 'monster:8', leftGame: false, crumbled: true } } },
   {

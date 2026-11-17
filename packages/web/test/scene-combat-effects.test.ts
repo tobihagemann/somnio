@@ -2769,7 +2769,7 @@ describe('the pools and the programs', () => {
     place(scene, 'monster:1', { x: 10, z: 10 });
     scene.fadeEntity('monster:1');
     for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
-    for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`);
+    for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`, false);
     scene.tick(0.01);
     const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
     expect(uncompiled(models.at(-1)!, loot)).toEqual([]);

@@ -754,7 +754,7 @@ describe('a quest', () => {
     expect(progressOf(world.space, alice.entityId, 'cracked-skulls')).toEqual([1]);
     expect(inventoryOf(world, alice.entityId).bag).toHaveLength(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems);
     expect(sent.slice(before)).toEqual([
-      { tag: 'lootGone', payload: { lootId: trophy!.lootId } },
+      { tag: 'lootGone', payload: { lootId: trophy!.lootId, taken: true } },
       { tag: 'inventory', payload: expect.objectContaining({ pickedUp: { kind: 'trophy', monsterKind: 'skeleton-warrior' } }) },
       { tag: 'quests', payload: framed(holding('cracked-skulls', [1], ['restless-graves'])) },
     ]);
