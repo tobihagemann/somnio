@@ -10,7 +10,7 @@ import { DropSaves, persistPlayerCheckpoint } from './checkpointWriter.ts';
 import { Departures } from './departures.ts';
 import { DialogWrites } from './dialogWrites.ts';
 import { PersonalDrops } from './personalDrops.ts';
-import { SpaceActor } from './spaceActor.ts';
+import { SpaceActor, offerIds } from './spaceActor.ts';
 import type { DoorVoice, PlayerCheckpoint, PlayerTransient, TickDigest } from './spaceActor.ts';
 
 /** The surface of the router the admin dispatcher consumes, so its tests can substitute a stub. */
@@ -63,7 +63,10 @@ export class WorldRouter implements AdminWorldRouter {
 
   /**
    * Seeds each space's dialog cursors from the repository, sector by sector, before any connection
-   * arrives. `now`, monotonic milliseconds, is every space's clock and the departures'.
+   * arrives. `now`, monotonic milliseconds, is every space's clock and the departures'. `wallNow`,
+   * epoch milliseconds, is the clock every space reads the bounty board's day from. Every space hands
+   * out quest offer ids from one counter, so an answer sent before a door never settles an offer made
+   * after it.
    */
   static async create(
     world: LoadedWorld,
@@ -72,15 +75,17 @@ export class WorldRouter implements AdminWorldRouter {
     logger: Logger,
     spaceLogger: Logger = logger,
     now: () => number = () => performance.now(),
+    wallNow: () => number = () => Date.now(),
   ): Promise<WorldRouter> {
     const actors = new Map<string, SpaceActor>();
     const personalDrops = new PersonalDrops();
     const dropSaves = new DropSaves(characters, logger);
+    const newOfferId = offerIds();
     for (const [id, space] of world.spaces) {
       const initialDialogStates: NPCDialogState[] = [];
       for (const sector of space.sectors) initialDialogStates.push(...(await npcDialogStates.loadAll(sector.name)));
       const requestDropSave = (snapshot: PlayerCheckpoint): void => dropSaves.request(snapshot, id);
-      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave, now }));
+      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave, now, wallNow, newOfferId }));
     }
     return new WorldRouter(world, actors, personalDrops, dropSaves, new Departures(now), new DialogWrites(npcDialogStates, logger), characters, logger);
   }
@@ -174,11 +179,6 @@ export class WorldRouter implements AdminWorldRouter {
       digest.dialogResets.push(...stepped.dialogResets);
     }
     return digest;
-  }
-
-  /** Every space reaches the world day `worldSeconds` falls on, and with it that day's bounties. */
-  reachWorldDay(worldSeconds: number): void {
-    for (const space of this.spaceActors.values()) space.reachWorldDay(worldSeconds);
   }
 
   /** Queues the digest's dialog writes behind the one in flight, never awaited by a pass. */

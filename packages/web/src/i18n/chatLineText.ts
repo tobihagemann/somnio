@@ -1,11 +1,14 @@
 import { chatVerb } from '@/client/chatLine';
 import type { ChatLine } from '@/client/chatLine';
 import type { CompassPoint } from '@/client/compass';
-import { abilityTeaching, itemLabelKey, quest, roleLabelKey, teaching, trophyLabelKey } from '@somnio/core';
-import type { AbilityId } from '@somnio/core';
+import { abilityTeaching, isQuestId, itemLabelKey, quest, roleLabelKey, teaching, trophyLabelKey } from '@somnio/core';
+import type { AbilityId, QuestOrBountyId } from '@somnio/core';
+import { bountyIdParts } from '@somnio/protocol';
 import type { LootContentsMessage } from '@somnio/protocol';
 import { lookupIn } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
+import { bountyTitleIn } from './placeNames';
+import type { Lookup } from './placeNames';
 
 /**
  * Renders a chat line to its localized text. Exhaustive over every `ChatLine`
@@ -71,10 +74,27 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
       return lookup('Your %1$@ deepens: rank %2$@.', lookup(teaching(line.teachingId).labelKey), String(line.rank));
     case 'placeFound':
       return lookup('You found a hidden place, %1$@ of %2$@.', String(line.found), String(line.total));
-    case 'questDone':
-      return lookup('Quest done: %1$@. Return to %2$@.', lookup(quest(line.questId).labelKey), line.turnIn);
+    case 'questDone': {
+      const { labelKey, giver, turnIn } = quest(line.questId);
+      return turnIn === giver
+        ? lookup('Quest done: %1$@. Return to %2$@.', lookup(labelKey), line.turnIn)
+        : lookup('Quest done: %1$@. Turn it in to %2$@.', lookup(labelKey), line.turnIn);
+    }
     case 'bountyDone':
       return lookup('Bounty done. Return to the bounty board.');
+    case 'questShared':
+      if (line.reached === 0) return lookup('No dreamer is near enough to share with.');
+      return line.reached === 1
+        ? lookup('You shared a quest with one dreamer near you.')
+        : lookup('You shared a quest with %@ dreamers near you.', String(line.reached));
+    case 'questShareAnswer':
+      return renderShareAnswer(line, lookup);
+    case 'questTakenFrom':
+      return lookup('You took on %1$@ from %2$@.', questName(line.questId, lookup), line.fromName);
+    case 'bountiesRanOut':
+      return line.count === 1
+        ? lookup('Your bounty ran out as the board turned.')
+        : lookup('Your %@ bounties ran out as the board turned.', String(line.count));
     case 'fell':
       return lookup('Your health gives out. You fall.');
     case 'raised':
@@ -112,8 +132,32 @@ export function formatNameList(names: readonly string[], locale: CatalogLocale):
   return new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
 }
 
-type Lookup = (key: string, ...args: string[]) => string;
 type SpokenLine = Extract<ChatLine, { kind: 'spokenByOwn' | 'spokenByPeer' | 'spokenByNPC' }>;
+type ShareAnswerLine = Extract<ChatLine, { kind: 'questShareAnswer' }>;
+
+/** How a dreamer a quest was shared with came out of it, the quest by its title. */
+function renderShareAnswer({ name, questId, outcome }: ShareAnswerLine, lookup: Lookup): string {
+  const title = questName(questId, lookup);
+  switch (outcome) {
+    case 'took':
+      return lookup('%1$@ took on %2$@.', name, title);
+    case 'didNotTake':
+      return lookup("%1$@ didn't take %2$@.", name, title);
+    case 'logFull':
+      return lookup("%@'s quest log is full.", name);
+    case 'holds':
+      return lookup('%1$@ already holds %2$@.', name, title);
+    case 'done':
+      return lookup('%1$@ turned in %2$@ before.', name, title);
+    case 'cannotYet':
+      return lookup("%1$@ can't take %2$@ yet.", name, title);
+  }
+}
+
+/** A quest's title in the lookup's locale: a bounty's names the land it is set in. */
+function questName(questId: QuestOrBountyId, lookup: Lookup): string {
+  return isQuestId(questId) ? lookup(quest(questId).labelKey) : bountyTitleIn(bountyIdParts(questId)!.land, lookup);
+}
 
 /** A whisper and a yell keep their verb whatever the punctuation; a line said plainly takes its verb from it. */
 function renderSpoken(line: SpokenLine, lookup: Lookup): string {

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OUTDOOR_SPACE_ID, bountyIdOf, bountyLands, dayBounties, sectorPointInSpace } from '@somnio/core';
+import { OUTDOOR_SPACE_ID, boardTurnsAt, bountyIdOf, bountyLands, dayBounties, sectorPointInSpace } from '@somnio/core';
 import type { NPCDialogState, Sector } from '@somnio/core';
+import type { SomnioMessage } from '@somnio/protocol';
 import { STARTER_SECTOR } from '@somnio/data';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { collectOutbox } from '../src/connection/outbox.ts';
 import { WorldRouter } from '../src/world/worldRouter.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
+import { DAY } from './support/bountyBoard.ts';
 import { collectMessages, recordingOutbox, serverSays } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
 import { BESIDE_GHOST, CUDGEL, GHOST_AT, RESPAWN_MS, STRIKER, attackGhost, payloads, wearing } from './support/combat.ts';
@@ -446,29 +448,43 @@ describe('WorldRouter connections', () => {
   });
 });
 
-describe('WorldRouter world day', () => {
-  const SECONDS_PER_DAY = 24 * 60 * 60;
-  const DAY = 168_000;
-  const noon = (day: number): number => day * SECONDS_PER_DAY + SECONDS_PER_DAY / 2;
-
-  it("reaches every space, and tells each dreamer in it the new day's bounties", async () => {
-    const router = await routerOver([makeSector('Meadow', { monsterSpawns: [makeMonsterSpawn({ x: 2, z: 2 })] })]);
+describe('WorldRouter board day', () => {
+  it("turns the board in every space on one step across 00:00 UTC, telling each dreamer the new day's bounties", async () => {
+    const wall = { ms: boardTurnsAt(DAY) - 1 };
+    const world = makeWorld([makeSector('Meadow', { monsterSpawns: [makeMonsterSpawn({ x: 2, z: 2 })] })]);
+    const router = await WorldRouter.create(
+      world,
+      new StubCharacterRepository(),
+      new RecordingDialogRepository(),
+      testLogger(),
+      undefined,
+      undefined,
+      () => wall.ms,
+    );
     const offered = (day: number) => dayBounties(day, bountyLands([...router.world.spaces.values()].flatMap((space) => space.sectors)));
     const outside = recordingOutbox();
     const inside = recordingOutbox();
-    const turnedIn = { active: [], done: [bountyIdOf(offered(DAY)[0]!)] };
+    const bounty = offered(DAY)[0]!;
     attachPlayer(router.space(OUTDOOR_SPACE_ID)!, { x: 10, z: 10 }, 'alice', {
       outbox: outside.outbox,
-      worldSeconds: noon(DAY),
-      character: { quests: turnedIn },
+      character: { quests: { active: [], done: [bountyIdOf(bounty)] } },
     });
-    attachPlayer(router.space(STARTER_SECTOR)!, { x: 5, z: 6 }, 'bob', { outbox: inside.outbox, worldSeconds: noon(DAY), spaceId: STARTER_SECTOR });
+    attachPlayer(router.space(STARTER_SECTOR)!, { x: 5, z: 6 }, 'bob', {
+      outbox: inside.outbox,
+      spaceId: STARTER_SECTOR,
+      character: { quests: { active: [{ questId: bountyIdOf(bounty), progress: [0], definition: bounty }], done: [] } },
+    });
     outside.sent.length = 0;
     inside.sent.length = 0;
 
-    router.reachWorldDay(noon(DAY + 1));
+    wall.ms = boardTurnsAt(DAY);
+    await tick(router);
     expect(offered(DAY + 1)).toHaveLength(1);
-    expect(payloads(outside.sent, 'quests')).toEqual([{ active: [], done: [], bounties: offered(DAY + 1) }]);
-    expect(payloads(inside.sent, 'quests')).toEqual([{ active: [], done: [], bounties: offered(DAY + 1) }]);
+    const boardFrames = (sent: readonly SomnioMessage[]) => sent.filter(({ tag }) => tag === 'quests' || tag === 'bountiesRanOut');
+    expect(boardFrames(outside.sent)).toEqual([{ tag: 'quests', payload: { active: [], done: [], bounties: offered(DAY + 1) } }]);
+    expect(boardFrames(inside.sent)).toEqual([
+      { tag: 'quests', payload: { active: [], done: [], bounties: offered(DAY + 1) } },
+      { tag: 'bountiesRanOut', payload: { count: 1 } },
+    ]);
   });
 });

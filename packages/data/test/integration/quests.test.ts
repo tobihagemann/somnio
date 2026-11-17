@@ -11,7 +11,7 @@ import type { DatabaseHarness } from './support/harness.ts';
 
 const NOTHING: Inventory = { coins: 0, equipped: {}, bag: [] };
 
-/** The world day `TODAYS` is offered on. `BOUNTY` is the day before's. */
+/** The board's day `TODAYS` is offered on. `BOUNTY` is the day before's. */
 const TODAY = 168_000;
 
 const BOUNTY: Bounty = {

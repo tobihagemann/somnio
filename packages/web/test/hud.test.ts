@@ -5,16 +5,17 @@ import { TAB_SPRING_MS } from '@/ui/characterWindow';
 import { HUD_ICONS, PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
 import { QUEST_BANNER_MS, QUEST_LINE_MS } from '@/ui/questFeedback';
-import { NAMED_PLACES, placeName } from '@/ui/placeNames';
+import { placeName } from '@/ui/placeNames';
+import { TRACKER_SHOWN } from '@/ui/questTracker';
 import { SensedMarkers } from '@/ui/sensedMarkers';
 import { placeBeside } from '@/ui/hudTooltip';
-import { catalogTables, setLocale } from '@/i18n';
+import { NAMED_PLACES, catalogTables, setLocale } from '@/i18n';
 import { SECTOR_FIXTURE_NAMES } from '../../core/test/support/sectorFixture.ts';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, LucidityMessage } from '@somnio/protocol';
 import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
 import type { AbilitySlotState, ChatLine, QuestNews, QuestTurnedIn } from '@/client';
-import { bountyIdOf, heldQuest, objectiveLines } from '@somnio/core';
+import { boardTurnsAt, bountyIdOf, heldQuest, objectiveLines } from '@somnio/core';
 import type { AbilityId, ActiveQuest, ItemInstance, QuestLog } from '@somnio/core';
 import type { HUDCallbacks } from '@/ui/hud';
 import { carrying, item } from './helpers/inventory';
@@ -55,6 +56,7 @@ function recording() {
     onPressPlayer: record('onPressPlayer'),
     onPressOwnFrame: record('onPressOwnFrame'),
     onClearTarget: record('onClearTarget'),
+    onShareQuest: record('onShareQuest'),
     onAbandonQuest: record('onAbandonQuest'),
     onOpenSettings: record('onOpenSettings'),
     onWindowOpened: record('onWindowOpened'),
@@ -114,14 +116,18 @@ function drawnIcon(node: Element | null): string | undefined {
   return node?.querySelector<HTMLImageElement>('.hud-item-icon')?.getAttribute('src') ?? undefined;
 }
 
+const HOUR_MS = 60 * 60 * 1000;
 let clock = 0;
+/** The time now in epoch milliseconds, as the HUD reads it, five hours before the board turns after day 3. */
+let wall = 0;
 const mounted: HTMLElement[] = [];
 
-/** A HUD in the document, so focus and blur behave as in a browser, on a clock the test moves. */
+/** A HUD in the document, so focus and blur behave as in a browser, on clocks the test moves. */
 function makeHUD(coarse = false) {
   const record = recording();
   clock = 1000;
-  const hud = new GameHUD(record.callbacks, { tables: catalogTables, locale: 'en', coarse, now: () => clock });
+  wall = boardTurnsAt(3) - 5 * HOUR_MS;
+  const hud = new GameHUD(record.callbacks, { tables: catalogTables, locale: 'en', coarse, now: () => clock, wallNow: () => wall });
   document.body.append(hud.root);
   mounted.push(hud.root);
   hud.setShown(true);
@@ -156,7 +162,9 @@ const FIGHTER: LucidityMessage = { role: 'fighter', ranks: [] };
 
 /** The carriers the quests in these tests are turned in at, by name. */
 const NAMES = (carrierId: string): string =>
-  ({ 'npc:EdariaLibrary/libus': 'Libus', 'npc:EdariaFighterHall/pugnax': 'Pugnax', 'npc:EdariaHealerHall/sana': 'Sana' })[carrierId] ?? carrierId;
+  ({ 'npc:EdariaLibrary/libus': 'Libus', 'npc:EdariaFighterHall/pugnax': 'Pugnax', 'npc:EdariaHealerHall/sana': 'Sana', 'npc:Graveyard/memor': 'Memor' })[
+    carrierId
+  ] ?? carrierId;
 
 /** The news of a quest held whose first line came as far as `progress` says. */
 const moved = (held: ActiveQuest): QuestNews => ({ kind: 'progress', held, line: objectiveLines(heldQuest(held), held.progress)[0]! });
@@ -709,12 +717,14 @@ describe("a mouse's HUD", () => {
     const empty = $('.hud-quests__empty');
     hud.renderQuests({ active: [], done: [] }, undefined);
     expect([empty.classList.contains('hidden'), empty.textContent, entries()]).toEqual([false, 'You hold no quests. A gold ! marks who offers one.', []]);
+    expect($('.hud-window--quests .overlay-title').textContent).toBe('Quest log0/10');
 
     hud.renderQuests(
       {
         active: [
           { questId: 'mystic-trial', progress: [1, 0, 1] },
           { questId: 'follow-through-task', progress: [3] },
+          { questId: 'word-for-memor-fighter', progress: [1] },
         ],
         done: ['fighter-trial'],
       },
@@ -724,9 +734,36 @@ describe("a mouse's HUD", () => {
     expect(entries()).toEqual([
       ["The Mystics' trial", 'Find the hidden places Tacita speaks of. 2 of 3'],
       ['Three without a fall', 'Drive off 3 nightmares. 3 of 3', 'Falling starts the count over.', 'Return to Pugnax.'],
+      ['A word for Memor', 'Find Memor in the Graveyard. 1 of 1', 'Turn it in to Memor.'],
     ]);
+    expect($('.hud-window--quests .overlay-title').textContent).toBe('Quest log3/10');
     button('Give up Three without a fall').click();
     expect(named('onAbandonQuest')).toEqual([['follow-through-task']]);
+  });
+
+  it('shares every quest held but a trial, from a row under the quest beside Give up', () => {
+    const { hud, $, button, named } = makeHUD();
+    const actions = () =>
+      [...$('.hud-list--quests').querySelectorAll('[role="listitem"]')].map((node) => [
+        node.getAttribute('data-quest'),
+        [...node.querySelectorAll('.hud-quest__actions button')].map((action) => action.textContent),
+      ]);
+    hud.renderQuests(
+      {
+        active: [
+          { questId: 'fighter-trial', progress: [0] },
+          { questId: 'restless-graves', progress: [2] },
+        ],
+        done: [],
+      },
+      undefined,
+    );
+    expect(actions()).toEqual([
+      ['fighter-trial', ['Give up']],
+      ['restless-graves', ['Share quest', 'Give up']],
+    ]);
+    button('Share Restless graves with dreamers near you').click();
+    expect(named('onShareQuest')).toEqual([['restless-graves']]);
   });
 
   it('lists a bounty held by its definition, naming its land, and says to return to the bounty board once it is done', () => {
@@ -736,9 +773,17 @@ describe("a mouse's HUD", () => {
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } } as const;
     const holding = (count: number) => ({ active: [{ questId: bountyIdOf(bounty), progress: [count], definition: bounty }], done: [] });
     hud.renderQuests(holding(2), undefined);
-    expect(entries()).toEqual([['Bounty: Arena', 'Drive off 6 Ghosts there. 2 of 6', 'Reward: 72c, a piece of gear']]);
+    expect(entries()).toEqual([['Bounty: Arena', 'Drive off 6 Ghosts there. 2 of 6', 'Runs out in 5 h, when the board turns.', 'Reward: 72c, a magic item']]);
     hud.renderQuests(holding(6), undefined);
-    expect(entries()).toEqual([['Bounty: Arena', 'Drive off 6 Ghosts there. 6 of 6', 'Reward: 72c, a piece of gear', 'Return to the bounty board.']]);
+    expect(entries()).toEqual([
+      [
+        'Bounty: Arena',
+        'Drive off 6 Ghosts there. 6 of 6',
+        'Runs out in 5 h, when the board turns.',
+        'Reward: 72c, a magic item',
+        'Return to the bounty board.',
+      ],
+    ]);
     button('Give up Bounty: Arena').click();
     expect(named('onAbandonQuest')).toEqual([[bountyIdOf(bounty)]]);
   });
@@ -813,7 +858,7 @@ describe("a mouse's HUD", () => {
     const banner = $('.hud-quest-banner');
     const shown = () => [line, banner].map((node) => (node.classList.contains('hidden') ? undefined : node.textContent));
     hud.showQuestNews(moved({ questId: 'restless-graves', progress: [3] }));
-    hud.showQuestNews({ kind: 'done', held: { questId: 'newcomer-errand', progress: [1, 1] } });
+    hud.showQuestNews({ kind: 'done', held: { questId: 'newcomer-errand', progress: [1, 1, 1, 1, 1] } });
     expect(shown()).toEqual([undefined, "A newcomer's errand completeReturn to Libus."]);
     expect(banner.querySelector('.hud-quest-banner__title')?.classList.contains('overlay-title')).toBe(true);
 
@@ -835,7 +880,7 @@ describe("a mouse's HUD", () => {
     expect(shown()).toEqual([undefined, undefined]);
 
     // Hiding the HUD takes away what shows and what waits.
-    hud.showQuestNews({ kind: 'done', held: { questId: 'newcomer-errand', progress: [1, 1] } });
+    hud.showQuestNews({ kind: 'done', held: { questId: 'newcomer-errand', progress: [1, 1, 1, 1, 1] } });
     hud.showQuestNews(moved({ questId: 'drawing-back-task', progress: [30] }));
     hud.setShown(false);
     hud.setShown(true);
@@ -852,12 +897,19 @@ describe("a mouse's HUD", () => {
     const TITLE = 'overlay-title hud-quest-banner__title';
     const LINE = 'hud-quest-banner__line';
 
-    hud.showQuestNews({ kind: 'accepted', held: { questId: 'newcomer-errand', progress: [0, 0] } });
+    hud.showQuestNews({ kind: 'accepted', held: { questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] } });
     // The hidden places are one line, and a bounty is titled by its land.
     hud.showQuestNews({ kind: 'accepted', held: { questId: 'mystic-trial', progress: [0, 0, 0] } });
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } } as const;
     hud.showQuestNews({ kind: 'accepted', held: { questId: bountyIdOf(bounty), progress: [0], definition: bounty } });
-    expect(said()).toEqual([KICKER, [TITLE, "A newcomer's errand"], [LINE, 'Visit Mercus in his shop.'], [LINE, 'Read the bounty board on the square.']]);
+    expect(said()).toEqual([
+      KICKER,
+      [TITLE, "A newcomer's errand"],
+      [LINE, 'Visit Mercus in his shop.'],
+      [LINE, 'Read the bounty board on the square.'],
+      [LINE, 'Meet Pugnax and Sana in their halls.'],
+      [LINE, "Find the Mystics' tower on the square."],
+    ]);
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
     expect(said()).toEqual([KICKER, [TITLE, "The Mystics' trial"], [LINE, 'Find the hidden places Tacita speaks of.']]);
@@ -931,7 +983,7 @@ describe("a mouse's HUD", () => {
 
   it('tracks a quest just taken on first', () => {
     const { hud, $ } = makeHUD();
-    const taken: ActiveQuest = { questId: 'newcomer-errand', progress: [0, 0] };
+    const taken: ActiveQuest = { questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] };
     hud.showQuestNews({ kind: 'accepted', held: taken });
     hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }, taken], done: [] }, undefined);
     expect($('.hud-tracker [role="listitem"]').getAttribute('data-quest')).toBe('newcomer-errand');
@@ -948,7 +1000,7 @@ describe("a mouse's HUD", () => {
     const log: QuestLog = {
       active: [
         { questId: 'restless-graves', progress: [2] },
-        { questId: 'newcomer-errand', progress: [1, 1] },
+        { questId: 'newcomer-errand', progress: [1, 1, 1, 1, 1] },
       ],
       done: [],
     };
@@ -966,13 +1018,15 @@ describe("a mouse's HUD", () => {
     ]);
     expect(tracker.querySelector('[data-quest="newcomer-errand"]')?.classList.contains('hud-tracker__quest--done')).toBe(true);
 
-    const errand: ActiveQuest = { questId: 'newcomer-errand', progress: [1, 0] };
+    const errand: ActiveQuest = { questId: 'newcomer-errand', progress: [1, 0, 0, 0, 0] };
     hud.showQuestNews(moved(errand));
     hud.renderQuests({ active: [log.active[0]!, errand], done: [] }, undefined);
     expect(says()[0]).toEqual([
       ['hud-tracker__title', "A newcomer's errand"],
       ['hud-tracker__line hud-tracker__line--met', 'Visit Mercus in his shop: 1/1'],
       ['hud-tracker__line', 'Read the bounty board on the square: 0/1'],
+      ['hud-tracker__line', 'Meet Pugnax and Sana in their halls: 0/2'],
+      ['hud-tracker__line', "Find the Mystics' tower on the square: 0/1"],
     ]);
     expect(tracker.querySelector('[data-quest="newcomer-errand"]')?.classList.contains('hud-tracker__quest--moved')).toBe(true);
     // Given up, the quest that moved leaves the log's order as it was.
@@ -989,9 +1043,9 @@ describe("a mouse's HUD", () => {
     const { hud, $ } = makeHUD();
     hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
     const head = $<HTMLButtonElement>('.hud-tracker__head');
-    expect([head.getAttribute('aria-label'), head.getAttribute('aria-expanded'), head.textContent]).toEqual(['Hide quests', 'true', 'Quests']);
+    expect([head.getAttribute('aria-label'), head.getAttribute('aria-expanded'), head.textContent]).toEqual(['Hide quests', 'true', 'Quests1/10']);
     head.click();
-    expect([head.getAttribute('aria-label'), head.getAttribute('aria-expanded'), head.textContent]).toEqual(['Show quests (1)', 'false', 'Quests· 1']);
+    expect([head.getAttribute('aria-label'), head.getAttribute('aria-expanded'), head.textContent]).toEqual(['Show quests (1)', 'false', 'Quests1/10']);
     expect([$('.hud-tracker__list').classList.contains('hidden'), hud.questTracker.listShown]).toEqual([true, false]);
 
     const next = makeHUD();
@@ -1012,6 +1066,58 @@ describe("a mouse's HUD", () => {
     const quest = $('.hud-tracker__quest');
     hud.renderQuests(holding(2), undefined);
     expect([$('.hud-tracker__head') === head, $('.hud-tracker__quest') === quest]).toEqual([true, false]);
+  });
+
+  it('tracks the 3 quests that moved most recently, the latest first, then "+N more", which opens the Quest log', () => {
+    const { hud, $, named } = makeHUD();
+    const listed = () => hud.questTracker.quests.map(({ questId }) => questId);
+    const more = $<HTMLButtonElement>('.hud-tracker__more');
+    const log: QuestLog = {
+      active: [
+        { questId: 'restless-graves', progress: [1] },
+        { questId: 'cracked-skulls', progress: [1] },
+        { questId: 'into-the-crypt', progress: [0] },
+        { questId: 'follow-through-task', progress: [1] },
+      ],
+      done: [],
+    };
+    hud.renderQuests(log, undefined);
+    expect([listed(), $('.hud-tracker__held').textContent, more.classList.contains('hidden'), more.textContent]).toEqual([
+      ['restless-graves', 'cracked-skulls', 'into-the-crypt'],
+      '4/10',
+      false,
+      '+1 more',
+    ]);
+    expect(TRACKER_SHOWN).toBe(3);
+
+    hud.showQuestNews(moved({ questId: 'follow-through-task', progress: [2] }));
+    hud.showQuestNews(moved({ questId: 'cracked-skulls', progress: [2] }));
+    hud.renderQuests(log, undefined);
+    expect(listed()).toEqual(['cracked-skulls', 'follow-through-task', 'restless-graves']);
+
+    more.click();
+    expect([hud.isWindowOpen('quests'), named('onWindowOpened')]).toEqual([true, [['quests']]]);
+    hud.closeWindow('quests');
+    hud.renderQuests({ active: log.active.slice(0, 3), done: [] }, undefined);
+    expect([$('.hud-tracker__held').textContent, more.classList.contains('hidden')]).toEqual(['3/10', true]);
+  });
+
+  it("moves a bounty's time left in the tracker and the log with time alone, from hours to minutes down to the turn", () => {
+    const { hud, $ } = makeHUD();
+    const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72 } } as const;
+    wall = boardTurnsAt(3) - HOUR_MS;
+    hud.renderQuests({ active: [{ questId: bountyIdOf(bounty), progress: [2], definition: bounty }], done: [] }, undefined);
+    const tracker = $('.hud-tracker__expires');
+    const log = $('.hud-quest__expires');
+    const says = () => [tracker.textContent, log.textContent];
+    expect(says()).toEqual(['Runs out in 1 h', 'Runs out in 1 h, when the board turns.']);
+    wall += 1;
+    hud.tick(clock, NO_CLOCK);
+    expect(says()).toEqual(['Runs out in 59 min', 'Runs out in 59 min, when the board turns.']);
+    wall = boardTurnsAt(3) + 5000;
+    hud.tick(clock, NO_CLOCK);
+    expect(says()).toEqual(['Runs out in 0 min', 'Runs out in 0 min, when the board turns.']);
+    expect([$('.hud-tracker__expires'), $('.hud-quest__expires')]).toEqual([tracker, log]);
   });
 
   it("stands the tracker left of a carrier's panel and the windows open down the right edge where there is room beside the target frame, and else hides it", () => {
@@ -1037,6 +1143,17 @@ describe("a mouse's HUD", () => {
     expect(beside()).toBe('0px');
     hud.setCarrierPanelOpen(true);
     expect(beside()).toBe(undefined);
+  });
+
+  it('marks the HUD while the tracker shows, so what stands under the target frame keeps clear of it', () => {
+    const { hud } = makeHUD();
+    const marked = () => hud.root.classList.contains('hud--tracker-shown');
+    hud.setViewport(1280, 720);
+    expect(marked()).toBe(false);
+    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
+    expect(marked()).toBe(true);
+    hud.setCarrierPanelOpen(true);
+    expect(marked()).toBe(false);
   });
 
   it('closes the newest window on Escape, then the next, then reports nothing left to close', () => {
@@ -1892,7 +2009,7 @@ describe("a finger's HUD", () => {
       active: [
         { questId: 'restless-graves', progress: [2] },
         { questId: 'cracked-skulls', progress: [1] },
-        { questId: 'newcomer-errand', progress: [0, 1] },
+        { questId: 'newcomer-errand', progress: [0, 1, 0, 0, 0] },
       ],
       done: [],
     };
@@ -1917,6 +2034,17 @@ describe("a finger's HUD", () => {
     // One quest held has nothing more to unfold.
     hud.renderQuests({ active: [log.active[0]!], done: [] }, undefined);
     expect(fold.classList.contains('hidden')).toBe(true);
+
+    // Past the 3 quests listed, unfolding shows the 3 and "+N more" for the rest.
+    hud.renderQuests({ active: [...log.active, { questId: 'into-the-crypt', progress: [0] }], done: [] }, undefined);
+    const more = $('.hud-tracker__more');
+    expect([shownQuests(), fold.textContent, more.classList.contains('hidden')]).toEqual([['restless-graves'], '+2 more', true]);
+    fold.click();
+    expect([shownQuests(), more.classList.contains('hidden'), more.textContent]).toEqual([
+      ['restless-graves', 'cracked-skulls', 'newcomer-errand'],
+      false,
+      '+1 more',
+    ]);
 
     hud.openWindow('players');
     expect($('.hud-tracker').classList.contains('hidden')).toBe(true);

@@ -7,7 +7,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    * Strict equality at the hello gate on both sides: a mismatch in either direction rejects the
    * connection rather than degrading it. Bump it when the wire breaks.
    */
-  helloVersion: 24,
+  helloVersion: 25,
   maxFrameLength: 1 << 20,
 
   /** UTF-8 byte cap for `email` on login/registration, for a character's name, for item ids, and for the record ids inside a sector. */
@@ -34,7 +34,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
    */
   maxSectorNameUTF8Bytes: 247,
   /**
-   * UTF-8 byte cap for a quest's id. A bounty's names its world day, its land's sector, the kind of
+   * UTF-8 byte cap for a quest's id. A bounty's names its day, its land's sector, the kind of
    * nightmare, and what it asks (`bounty:<day>:<land>:<kind>:<objective>`), which at the longest a
    * day, a sector name, and a kind id can be comes to 339 bytes.
    */
@@ -72,7 +72,7 @@ export const SOMNIO_PROTOCOL_CONSTANTS = {
   maxQuestObjectives: 8,
   /** The most turned-in quests a `quests` frame names, generous over the quests there are. */
   maxDoneQuests: 256,
-  /** The most bounties one world day offers, one a land, generous over the lands there are. */
+  /** The most bounties one day offers, generous over the three the board posts. */
   maxBounties: 32,
   /** The most stat lines an item carries, generous over the four a rare item rolls. */
   maxItemAffixes: 8,

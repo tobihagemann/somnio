@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { plain } from '../../../core/test/support/items.ts';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
 import { down as dreamersDown, up as dreamersUp } from '../../src/migrations/0001_dreamers.ts';
+import { down as itemsDown, up as itemsUp } from '../../src/migrations/0002_items.ts';
+import { down as questsDown, up as questsUp } from '../../src/migrations/0003_quests.ts';
 import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { PostgresItemRepository } from '../../src/repositories/items.ts';
 import { PostgresQuestRepository } from '../../src/repositories/quests.ts';
@@ -178,5 +180,49 @@ describe('upgrading a database from the first schema', () => {
   it('drops the inventory rows', async () => {
     const rows = await sql<{ exists: string | null }>`SELECT to_regclass('inventory_rows') AS exists`.execute(harness.db);
     expect(rows.rows[0]?.exists).toBeNull();
+  });
+});
+
+describe('upgrading a database from the first quest log', () => {
+  let harness: DatabaseHarness;
+  let characterId: string;
+
+  beforeAll(async () => {
+    harness = await startDatabase({ migrate: false });
+    const questLog = new Migrator({
+      db: harness.db,
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({
+            '0001_dreamers': { up: dreamersUp, down: dreamersDown },
+            '0002_items': { up: itemsUp, down: itemsDown },
+            '0003_quests': { up: questsUp, down: questsDown },
+          }),
+      },
+    });
+    expect((await questLog.migrateToLatest()).error).toBeUndefined();
+    const accountId = crypto.randomUUID();
+    characterId = crypto.randomUUID();
+    await sql`INSERT INTO accounts (id, password_hash, email) VALUES (${accountId}, 'h', 'errand@example.com')`.execute(harness.db);
+    await sql`INSERT INTO characters (
+      id, account_id, name, people, space, position_x, position_z, facing,
+      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton, coins
+    ) VALUES (
+      ${characterId}, ${accountId}, 'Errand', 'vigils', 'EdariaLibrary', 0, 0, 0, 100, 100, 100, 100, 100, 100, NOW(), 'errand', 0
+    )`.execute(harness.db);
+    await sql`INSERT INTO character_quests (character_id, quest_id, state, place, progress)
+      VALUES (${characterId}, 'newcomer-errand', 'active', 0, '[1, 1]')`.execute(harness.db);
+    await migrateToLatest(harness.db);
+  });
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  it("keeps a held errand's two visits and opens its new objectives", async () => {
+    expect(await new PostgresQuestRepository(harness.db).load(characterId)).toEqual({
+      active: [{ questId: 'newcomer-errand', progress: [1, 1, 0, 0, 0] }],
+      done: [],
+    });
   });
 });

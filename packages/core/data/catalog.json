@@ -43,6 +43,10 @@
     "en": "A newcomer's errand",
     "de": "Ein Botengang für Neulinge"
   },
+  "A word for Memor": {
+    "en": "A word for Memor",
+    "de": "Ein Wort an Memor"
+  },
   "Amulet": {
     "en": "Amulet",
     "de": "Amulett"
@@ -147,6 +151,14 @@
     "en": "Fighter",
     "de": "Kämpfer"
   },
+  "Find Memor in the Graveyard.": {
+    "en": "Find Memor in the Graveyard.",
+    "de": "Finde Memor auf dem Friedhof."
+  },
+  "Find the Mystics' tower on the square.": {
+    "en": "Find the Mystics' tower on the square.",
+    "de": "Finde den Turm der Mystiker auf dem Platz."
+  },
   "Find the hidden places Tacita speaks of.": {
     "en": "Find the hidden places Tacita speaks of.",
     "de": "Finde die verborgenen Orte, von denen Tacita spricht."
@@ -226,6 +238,10 @@
   "Mace": {
     "en": "Mace",
     "de": "Streitkolben"
+  },
+  "Meet Pugnax and Sana in their halls.": {
+    "en": "Meet Pugnax and Sana in their halls.",
+    "de": "Triff Pugnax und Sana in ihren Hallen."
   },
   "Mend 60 health on other dreamers.": {
     "en": "Mend 60 health on other dreamers.",

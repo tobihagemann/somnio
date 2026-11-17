@@ -9,7 +9,7 @@ import { RepositoryDecodingError } from './errors.ts';
 export interface QuestRepository {
   /**
    * The quests the character holds and those they turned in, each list in the order it was stored.
-   * The bounties turned in on an earlier day are dropped as the character joins a space.
+   * The bounties of an earlier day, held or turned in, are dropped as the character joins a space.
    */
   load(characterId: string): Promise<QuestLog>;
 }

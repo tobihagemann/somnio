@@ -43,9 +43,33 @@
     "turnIn": "npc:EdariaLibrary/libus",
     "objectives": [
       { "kind": "visit", "carrier": "npc:EdariaShop/mercus", "labelKey": "Visit Mercus in his shop." },
-      { "kind": "visit", "carrier": "fixture:EdariaSquare/fixture-1", "labelKey": "Read the bounty board on the square." }
+      { "kind": "visit", "carrier": "fixture:EdariaSquare/fixture-1", "labelKey": "Read the bounty board on the square." },
+      { "kind": "visit", "carrier": "npc:EdariaFighterHall/pugnax", "labelKey": "Meet Pugnax and Sana in their halls." },
+      { "kind": "visit", "carrier": "npc:EdariaHealerHall/sana", "labelKey": "Meet Pugnax and Sana in their halls." },
+      { "kind": "reach", "sector": "EdariaSquare", "place": { "x": 12.6, "z": 31.43, "radius": 3 }, "labelKey": "Find the Mystics' tower on the square." }
     ],
     "reward": { "coins": 15 }
+  },
+  "word-for-memor-fighter": {
+    "labelKey": "A word for Memor",
+    "giver": "npc:EdariaFighterHall/pugnax",
+    "turnIn": "npc:Graveyard/memor",
+    "needs": { "role": "fighter" },
+    "objectives": [{ "kind": "visit", "carrier": "npc:Graveyard/memor", "labelKey": "Find Memor in the Graveyard." }]
+  },
+  "word-for-memor-healer": {
+    "labelKey": "A word for Memor",
+    "giver": "npc:EdariaHealerHall/sana",
+    "turnIn": "npc:Graveyard/memor",
+    "needs": { "role": "healer" },
+    "objectives": [{ "kind": "visit", "carrier": "npc:Graveyard/memor", "labelKey": "Find Memor in the Graveyard." }]
+  },
+  "word-for-memor-mystic": {
+    "labelKey": "A word for Memor",
+    "giver": "npc:EdariaMysticTower/tacita",
+    "turnIn": "npc:Graveyard/memor",
+    "needs": { "role": "mystic" },
+    "objectives": [{ "kind": "visit", "carrier": "npc:Graveyard/memor", "labelKey": "Find Memor in the Graveyard." }]
   },
   "restless-graves": {
     "labelKey": "Restless graves",

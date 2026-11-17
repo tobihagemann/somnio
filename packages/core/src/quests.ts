@@ -1,11 +1,11 @@
 import { ROLES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import type { QuestsMessage, Role, SectorView, Service } from '@somnio/protocol';
+import type { QuestShareOutcome, QuestsMessage, Role, SectorView, Service } from '@somnio/protocol';
 import questsJSON from '../data/quests.json' with { type: 'json' };
 import { bountyDay, bountyIdOf, bountyOf, bountyQuest, isBountyId } from './bounties.ts';
 import type { Bounty, BountyId } from './bounties.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
-import type { BaseItemId, Tier } from './items.ts';
+import type { BaseItemId, Rarity, Tier } from './items.ts';
 import { FIRST_TEACHING, TEACHING_IDS, TRIAL_QUESTS, TRIAL_REWARDS, teaching, teachingStanding } from './lucidity.ts';
 import type { HeldRank, TeachingId } from './lucidity.ts';
 import { isMonsterKindId } from './monsterKinds.ts';
@@ -41,6 +41,8 @@ export interface QuestReward {
   coins?: number;
   practice?: number;
   gear?: Tier;
+  /** The one rarity the item is rolled at, as a bounty's is magic; without it, `QUEST_GEAR_RARITIES` rolls one. */
+  gearRarity?: Rarity;
 }
 
 export interface Quest {
@@ -197,7 +199,7 @@ export function turnInFor(questId: QuestOrBountyId, log: QuestLog, lucidity: Que
   return trialRole(questId) !== undefined && lucidity.role !== undefined ? undefined : held;
 }
 
-/** The `quests` frame of what the dreamer holds and turned in, and of the world day's bounties. */
+/** The `quests` frame of what the dreamer holds and turned in, and of the day's bounties. */
 export function questsMessage({ active, done }: QuestLog, bounties: readonly Bounty[]): QuestsMessage {
   return {
     active: active.map(({ questId, progress, definition }) => ({
@@ -230,10 +232,37 @@ export function bountiesOf(message: QuestsMessage): Bounty[] {
   return message.bounties.flatMap((bounty) => bountyOf(bounty) ?? []);
 }
 
-/** The log without the bounties turned in on a day other than `day`, which block nothing since a bounty is offered on its own day alone. */
-export function withoutPastBounties(log: QuestLog, day: number): QuestLog {
-  const done = log.done.filter((questId) => !isBountyId(questId) || bountyDay(questId) === day);
-  return done.length === log.done.length ? log : { ...log, done };
+/**
+ * The log on the board's day `day`, without the bounties of any other day, held or turned in, and
+ * how many held ones ran out. A bounty runs out as the board turns, finished or not.
+ */
+export function withBoardDay(log: QuestLog, day: number): { log: QuestLog; ranOut: number } {
+  const ofDay = (questId: QuestOrBountyId): boolean => !isBountyId(questId) || bountyDay(questId) === day;
+  const active = log.active.filter((held) => ofDay(held.questId));
+  const done = log.done.filter(ofDay);
+  const ranOut = log.active.length - active.length;
+  return { log: ranOut === 0 && done.length === log.done.length ? log : { active, done }, ranOut };
+}
+
+/** How long a dreamer a quest is shared with has to answer. */
+export const QUEST_OFFER_SECONDS = 30;
+
+/** Whether a held quest may be shared with the dreamers nearby: any but a trial. */
+export function mayShare(questId: QuestOrBountyId): boolean {
+  return trialRole(questId) === undefined;
+}
+
+/**
+ * Why a dreamer cannot take on the quest shared with them, or `undefined` when they can: they hold
+ * it, turned it in, have a full log, or may not take it on yet. `bounty` is the bounty the id names
+ * among the day's, `undefined` for a committed quest or a bounty no longer offered.
+ */
+export function shareOutcomeFor(questId: QuestOrBountyId, bounty: Bounty | undefined, log: QuestLog, lucidity: QuestReader): QuestShareOutcome | undefined {
+  if (log.active.some((held) => held.questId === questId)) return 'holds';
+  if (log.done.includes(questId)) return 'done';
+  if (questLogFull(log)) return 'logFull';
+  const mayTake = bounty === undefined ? isQuestId(questId) && mayAccept(questId, log, lucidity) : mayTakeBounty(bounty, log);
+  return mayTake ? undefined : 'cannotYet';
 }
 
 /** A line a quest is said in: one objective, or a run of objectives said by one line, with how many of the run are met. */

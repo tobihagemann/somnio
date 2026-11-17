@@ -9,12 +9,16 @@ import { makeDebugAPI } from '@/debugApi';
 import { PEOPLE_SIGILS } from '@/ui/hudIcons';
 import { ITEM_ICONS } from '@/ui/itemIcons';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
+import { committedNPCNames } from '@/splash/sectors';
 import type { RegistrationForm } from '@/client';
 import { FINGER_HOLD_MS, HOLD_TO_STEER_MS, MAX_TICK_ELAPSED_MS, TAP_SLOP_PX } from '@/client';
 import {
   MOVE_ALLOWANCE_SECONDS,
   NO_QUESTS,
   NO_STATS,
+  QUEST_IDS,
+  QUEST_OFFER_SECONDS,
+  boardTurnsAt,
   bountyIdOf,
   clamp,
   distance,
@@ -1453,18 +1457,23 @@ describe('overlay focus moves on entry, not on every repaint', () => {
 describe('the service panel', () => {
   const NOTHING: Inventory = carrying();
 
-  function mount() {
+  /** `wall` is the time now in epoch milliseconds, by default five hours before the board turns after day 3. */
+  function mount(wall = boardTurnsAt(3) - 5 * 60 * 60 * 1000) {
     const calls: string[] = [];
-    const panel = new ServicePanel({
-      onAcceptQuest: (questId) => calls.push(`accept:${questId}`),
-      onTurnInQuest: (questId) => calls.push(`turnIn:${questId}`),
-      onAbandonQuest: (questId) => calls.push(`abandon:${questId}`),
-      onStudy: (teachingId) => calls.push(`study:${teachingId}`),
-      onBuy: (baseId) => calls.push(`buy:${baseId}`),
-      onBuyBack: (itemId) => calls.push(`buyBack:${itemId}`),
-      onSellFromBag: () => calls.push('sellFromBag'),
-      onClose: () => calls.push('close'),
-    });
+    const panel = new ServicePanel(
+      {
+        onAcceptQuest: (questId) => calls.push(`accept:${questId}`),
+        onTurnInQuest: (questId) => calls.push(`turnIn:${questId}`),
+        onAbandonQuest: (questId) => calls.push(`abandon:${questId}`),
+        onStudy: (teachingId) => calls.push(`study:${teachingId}`),
+        onBuy: (baseId) => calls.push(`buy:${baseId}`),
+        onBuyBack: (itemId) => calls.push(`buyBack:${itemId}`),
+        onSellFromBag: () => calls.push('sellFromBag'),
+        onClose: () => calls.push('close'),
+        carrierName: (carrierId) => committedNPCNames().get(carrierId) ?? carrierId,
+      },
+      () => wall,
+    );
     /** Renders with the windows beside the panel unless `shop` says otherwise. */
     const render = (
       npc: ServiceCarrier | undefined,
@@ -1687,10 +1696,17 @@ describe('the service panel', () => {
     expect(p.row('guard')).toContain('Study this');
     expect(p.row('follow-through')).toContain('Needs Strike at rank 2');
     expect(p.row('toughening')).toContain('Rank 5 of 5');
-    // One control per teaching that has something to do, and none for the rest.
-    expect(p.buttons()).toEqual(['Study this', 'Study this', 'Study this', 'Close']);
+    // One control per teaching that has something to do, none for the rest, and the word for Memor to take.
+    expect(p.buttons()).toEqual(['Take the quest', 'Study this', 'Study this', 'Study this', 'Close']);
     p.press('Study this');
     expect(p.calls).toEqual(['study:guard']);
+  });
+
+  it('lists the quests a master gives above its teachings, so they are in view on opening', () => {
+    const p = mount();
+    p.render(p.npc('fighterMaster'), { role: 'fighter', ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] });
+    const first = p.panel.root.querySelector('.service-body')!.firstElementChild!;
+    expect([first.getAttribute('data-quest'), first.textContent]).toEqual(['word-for-memor-fighter', expect.stringContaining('A word for Memor')]);
   });
 
   it('walks a teaching earned by a task from taking the task to learning it, saying what the task is before it is taken', () => {
@@ -1737,6 +1753,8 @@ describe('the service panel', () => {
       expect(p.quest('newcomer-errand')).toContain("A newcomer's errand");
       expect(p.quest('newcomer-errand')).toContain('Visit Mercus in his shop.');
       expect(p.quest('newcomer-errand')).toContain('Read the bounty board on the square.');
+      expect(p.quest('newcomer-errand')).toContain('Meet Pugnax and Sana in their halls.');
+      expect(p.quest('newcomer-errand')).toContain("Find the Mystics' tower on the square.");
       expect(p.quest('newcomer-errand')).toContain('Reward: 15c');
       p.press('Take the quest');
       expect(p.calls).toEqual(['accept:newcomer-errand']);
@@ -1744,14 +1762,24 @@ describe('the service panel', () => {
 
     it('shows the errand under way with its progress, then turns it in once done, and has nothing more after', () => {
       const p = mount();
-      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 0]);
+      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 0, 0, 0, 0]);
       expect(p.quest('newcomer-errand')).toContain('Visit Mercus in his shop. 1 of 1');
       expect(p.quest('newcomer-errand')).toContain('Read the bounty board on the square. 0 of 1');
+      expect(p.quest('newcomer-errand')).toContain('Meet Pugnax and Sana in their halls. 0 of 2');
+      expect(p.quest('newcomer-errand')).toContain("Find the Mystics' tower on the square. 0 of 1");
       expect(p.buttons()).toEqual(['Close']);
-      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 1]);
+      p.holding(libus(), { ranks: [] }, 'newcomer-errand', [1, 1, 1, 1, 1]);
       expect(p.quest('newcomer-errand')).toContain('You did what Libus asked.');
       p.press('Turn in');
       expect(p.calls).toEqual(['turnIn:newcomer-errand']);
+    });
+
+    it('takes in a quest given elsewhere under the name of the master who gave it', () => {
+      const p = mount();
+      p.holding(memor(), { role: 'fighter', ranks: [] }, 'word-for-memor-fighter', [1]);
+      expect(p.quest('word-for-memor-fighter')).toContain('You did what Pugnax asked.');
+      p.press('Turn in');
+      expect(p.calls).toEqual(['turnIn:word-for-memor-fighter']);
     });
 
     it('takes in a quest held at every carrier of the service its turn-in names', () => {
@@ -1762,7 +1790,7 @@ describe('the service panel', () => {
       try {
         const mercus = clientEntity({ id: 'npc:EdariaShop/mercus', kind: 'npc', name: 'Mercus', service: 'shopkeeper' });
         p.holding(mercus, { ranks: [] }, 'restless-graves', [4]);
-        expect(p.quest('restless-graves')).toContain('You did what Mercus asked.');
+        expect(p.quest('restless-graves')).toContain('You did what Memor asked.');
         expect(p.buttons()).toContain('Turn in');
         p.holding(memor(), { ranks: [] }, 'restless-graves', [4]);
         expect(p.buttons()).toEqual(['Close']);
@@ -1821,51 +1849,40 @@ describe('the service panel', () => {
     it("lists the day's bounties by their land with what each asks and pays, and takes one", () => {
       const p = mount();
       show(p, NO_QUESTS);
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaDrive off 6 Ghosts there.Reward: 72c, a piece of gearTake the bounty');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaDrive off 6 Ghosts there.Reward: 72c, a magic itemTake the quest');
       expect(p.quest(bountyIdOf(GRAVES))).toContain('Gather 4 cracked skulls from Skeleton Warriors.');
-      // With none taken on an earlier day, the day's stand under no heading.
       expect(p.panel.root.querySelector('.service-heading')).toBeNull();
       expect(p.panel.root.querySelector('button[aria-label="Take Bounty: Graveyard. Gather 4 cracked skulls from Skeleton Warriors."]')).not.toBeNull();
-      p.press('Take the bounty');
+      p.press('Take the quest');
       expect(p.calls).toEqual([`accept:${bountyIdOf(ARENA)}`]);
     });
 
     it('shows one taken with how far it has come, one done with its turn-in, greyed out while the bag is full, and one turned in as such', () => {
       const p = mount();
       show(p, { active: [held(ARENA, 2)], done: [bountyIdOf(GRAVES)] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, a piece of gear');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, a magic item');
       expect(p.quest(bountyIdOf(GRAVES))).toBe('Bounty: GraveyardTurned in');
       expect(p.buttons()).toEqual(['Close']);
 
       const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
       show(p, { active: [held(ARENA, 6)], done: [] }, [ARENA, GRAVES], carrying({ bag: fullBag }));
       expect(p.quest(bountyIdOf(ARENA))).toContain('Your bag is full. Make room in it before you turn this in.');
-      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Take the bounty', 'Close']);
+      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Take the quest', 'Close']);
       show(p, { active: [held(ARENA, 6)], done: [] });
       expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 6 Ghosts there."]')).not.toBeNull();
       p.press('Turn in');
       expect(p.calls).toEqual([`turnIn:${bountyIdOf(ARENA)}`]);
     });
 
-    it("still pays for a bounty taken on an earlier day, listed under a heading of its own before the day's, each button named apart", () => {
+    it('says when the board turns, in whole hours or under an hour whole minutes, and that every bounty held runs out then', () => {
       const p = mount();
-      const earlier = { ...GRAVES, day: 2 };
-      show(p, { active: [held(earlier, 4), held(GRAVES, 4)], done: [] });
-      expect([...p.panel.root.querySelectorAll('.service-heading, [data-quest]')].map((node) => node.getAttribute('data-quest') ?? node.textContent)).toEqual([
-        'Taken on an earlier day',
-        bountyIdOf(earlier),
-        "Today's bounties",
-        bountyIdOf(ARENA),
-        bountyIdOf(GRAVES),
-      ]);
-      expect(p.buttons()).toEqual(['Turn in', 'Take the bounty', 'Turn in', 'Close']);
-      // The two Graveyard bounties share their title and what they ask, so the day sets their names apart.
-      const names = [...p.panel.root.querySelectorAll('.service-body button')].map((node) => node.getAttribute('aria-label'));
-      expect(names).toEqual([
-        'Turn in Bounty: Graveyard from an earlier day. Gather 4 cracked skulls from Skeleton Warriors.',
-        'Take Bounty: Arena. Drive off 6 Ghosts there.',
-        'Turn in Bounty: Graveyard. Gather 4 cracked skulls from Skeleton Warriors.',
-      ]);
+      show(p, NO_QUESTS);
+      expect(p.panel.root.querySelector('.service-text')?.textContent).toBe(
+        'Three new bounties go up every day at 00:00 UTC, in 5 h. Any bounty you hold runs out then, done or not.',
+      );
+      const soon = mount(boardTurnsAt(3) - 40 * 60 * 1000 - 1);
+      show(soon, NO_QUESTS);
+      expect(soon.text()).toContain('Three new bounties go up every day at 00:00 UTC, in 40 min.');
     });
 
     it("says a bounty held as it was taken on, though the day's offer of it asks and pays otherwise since", () => {
@@ -1874,7 +1891,7 @@ describe('the service panel', () => {
       const taken: Bounty = { ...ARENA, count: 4, reward: { coins: 48, gear: 1 } };
       expect(bountyIdOf(taken)).toBe(bountyIdOf(ARENA));
       show(p, { active: [held(taken, 2)], done: [] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, a piece of gear');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, a magic item');
       show(p, { active: [held(taken, 4)], done: [] });
       expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 4 Ghosts there."]')).not.toBeNull();
     });
@@ -3527,5 +3544,92 @@ describe('the play field and the panels through the shell', () => {
     expect(p.tags()).toEqual([]);
     p.press('Wake there');
     expect(p.sent()).toEqual([{ tag: 'wake', payload: {} }]);
+  });
+
+  describe('a quest shared with the player', () => {
+    const offered: SomnioMessage = { tag: 'questOffer', payload: { offerId: 7, fromName: 'Bren', questId: 'restless-graves' } };
+    const prompt = (): HTMLElement => container.querySelector('.quest-offer-prompt')!;
+    const shown = (): boolean => !prompt().classList.contains('hidden');
+    const take = (): HTMLButtonElement => [...prompt().querySelectorAll('button')].find((node) => node.textContent === 'Take the quest')!;
+
+    it('names who shares it, the quest with what it asks and pays and where it is turned in, and takes it by its offer', () => {
+      const p = playing();
+      expect(shown()).toBe(false);
+      p.deliver(offered);
+      expect(shown()).toBe(true);
+      expect([...prompt().querySelectorAll('h1, p')].filter((node) => !node.classList.contains('hidden')).map((node) => node.textContent)).toEqual([
+        'Bren shares a quest',
+        'Restless graves',
+        'Drive off 4 Skeletons in the Graveyard.',
+        'Reward: 60c, 30 practice',
+        'Turn it in to Memor.',
+        '30 s to answer',
+      ]);
+      expect(take().disabled).toBe(false);
+      p.press('Take the quest');
+      expect(p.sent()).toEqual([{ tag: 'answerQuestOffer', payload: { offerId: 7, take: true } }]);
+      expect(shown()).toBe(false);
+    });
+
+    it('answers only the offer a button was shown for, so one replaced as it is pressed answers nothing', () => {
+      const p = playing();
+      p.deliver(offered);
+      const pressed = take();
+      p.deliver({ tag: 'questOffer', payload: { offerId: 8, fromName: 'Cara', questId: 'restless-graves' } });
+      pressed.click();
+      expect(p.sent()).toEqual([]);
+      p.press('Take the quest');
+      expect(p.sent()).toEqual([{ tag: 'answerQuestOffer', payload: { offerId: 8, take: true } }]);
+    });
+
+    it('stands under the target frame in the HUD, with the quest line and the banner under it', () => {
+      playing();
+      const column = prompt().parentElement!;
+      expect(column.matches('.hud > .hud-under-target')).toBe(true);
+      expect([...column.children]).toEqual([prompt(), container.querySelector('.hud-quest-line'), container.querySelector('.hud-quest-banner')]);
+    });
+
+    const held = QUEST_IDS.filter((questId) => questId !== 'restless-graves')
+      .slice(0, SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests)
+      .map((questId) => ({ questId, progress: questOf(questId).objectives.map(() => 0) }));
+
+    it('greys out taking it, saying why, while the quest log is full', () => {
+      const p = playing();
+      p.deliver({ tag: 'quests', payload: { active: held, done: [], bounties: [] } });
+      p.deliver(offered);
+      expect([take().disabled, prompt().textContent]).toEqual([true, expect.stringContaining('Your quest log is full. Give up a quest to take this one.')]);
+      p.press('Not now');
+      expect(p.sent()).toEqual([{ tag: 'answerQuestOffer', payload: { offerId: 7, take: false } }]);
+    });
+
+    it('lets the offer shown be taken once the quest log has room again', () => {
+      const p = playing();
+      p.deliver({ tag: 'quests', payload: { active: held, done: [], bounties: [] } });
+      p.deliver(offered);
+      const shownTake = take();
+      p.deliver({ tag: 'quests', payload: { active: held.slice(1), done: [], bounties: [] } });
+      expect(take()).toBe(shownTake);
+      expect([take().disabled, prompt().querySelector('.form-error')!.classList.contains('hidden')]).toEqual([false, true]);
+    });
+
+    it('counts its seconds down frame by frame and goes once they run out, and goes at a new space', () => {
+      let clock = 1000;
+      vi.spyOn(performance, 'now').mockImplementation(() => clock);
+      const p = playing();
+      const frame = (): void => (p.shell as unknown as { onFrame(timestamp: number): void }).onFrame(clock);
+      p.deliver(offered);
+      clock += 1001;
+      frame();
+      expect(prompt().textContent).toContain('29 s to answer');
+      clock = 1000 + QUEST_OFFER_SECONDS * 1000;
+      frame();
+      expect(shown()).toBe(false);
+
+      p.deliver(offered);
+      expect(shown()).toBe(true);
+      p.deliver(enterSpaceFrame('Hall'));
+      p.deliver(entityFrame());
+      expect(shown()).toBe(false);
+    });
   });
 });

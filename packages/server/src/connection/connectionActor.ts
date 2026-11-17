@@ -7,6 +7,7 @@ import {
   TRANSFER_LOST,
   handleAbandonQuest,
   handleAcceptQuest,
+  handleAnswerQuestOffer,
   handleBuy,
   handleBuyBack,
   handleDropItem,
@@ -18,6 +19,7 @@ import {
   handlePickUp,
   handleSay,
   handleSell,
+  handleShareQuest,
   handleStudy,
   handleTarget,
   handleTurnInQuest,
@@ -346,6 +348,8 @@ export class ConnectionActor {
         case 'acceptQuest':
         case 'turnInQuest':
         case 'abandonQuest':
+        case 'shareQuest':
+        case 'answerQuestOffer':
         case 'study':
         case 'buy':
         case 'sell':
@@ -372,6 +376,10 @@ export class ConnectionActor {
         case 'leave':
         case 'lucidity':
         case 'quests':
+        case 'questOffer':
+        case 'questShared':
+        case 'questShareAnswer':
+        case 'bountiesRanOut':
         case 'condition':
         case 'held':
         case 'vitals':
@@ -427,6 +435,8 @@ export class ConnectionActor {
         case 'acceptQuest':
         case 'turnInQuest':
         case 'abandonQuest':
+        case 'shareQuest':
+        case 'answerQuestOffer':
         case 'study':
         case 'buy':
         case 'sell':
@@ -451,6 +461,10 @@ export class ConnectionActor {
         case 'leave':
         case 'lucidity':
         case 'quests':
+        case 'questOffer':
+        case 'questShared':
+        case 'questShareAnswer':
+        case 'bountiesRanOut':
         case 'condition':
         case 'held':
         case 'vitals':
@@ -518,6 +532,12 @@ export class ConnectionActor {
       case 'abandonQuest':
         handleAbandonQuest(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
+      case 'shareQuest':
+        handleShareQuest(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
+      case 'answerQuestOffer':
+        handleAnswerQuestOffer(message.payload, state.entityId, state.spaceId, this.dependencies);
+        return { kind: 'keepOpen' };
       case 'study':
         handleStudy(message.payload, state.entityId, state.spaceId, this.dependencies);
         return { kind: 'keepOpen' };
@@ -563,6 +583,10 @@ export class ConnectionActor {
       case 'leave':
       case 'lucidity':
       case 'quests':
+      case 'questOffer':
+      case 'questShared':
+      case 'questShareAnswer':
+      case 'bountiesRanOut':
       case 'condition':
       case 'held':
       case 'vitals':

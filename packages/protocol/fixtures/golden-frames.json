@@ -94,6 +94,20 @@
     },
     "tag": "adminSay"
   },
+  "answerQuestOffer-not-now": {
+    "payload": {
+      "offerId": 7,
+      "take": false
+    },
+    "tag": "answerQuestOffer"
+  },
+  "answerQuestOffer-take": {
+    "payload": {
+      "offerId": 7,
+      "take": true
+    },
+    "tag": "answerQuestOffer"
+  },
   "blow": {
     "payload": {
       "attackerId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
@@ -118,6 +132,12 @@
       "targetId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c"
     },
     "tag": "blow"
+  },
+  "bountiesRanOut": {
+    "payload": {
+      "count": 2
+    },
+    "tag": "bountiesRanOut"
   },
   "buy": {
     "payload": {
@@ -468,7 +488,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 24
+      "protocolVersion": 25
     },
     "tag": "hello"
   },
@@ -940,6 +960,50 @@
     },
     "tag": "pickUp"
   },
+  "questOffer": {
+    "payload": {
+      "fromName": "Ida",
+      "offerId": 7,
+      "questId": "follow-through-task"
+    },
+    "tag": "questOffer"
+  },
+  "questOffer-bounty": {
+    "payload": {
+      "fromName": "Ida",
+      "offerId": 8,
+      "questId": "bounty:168000:Graveyard:skeleton-warrior:collect"
+    },
+    "tag": "questOffer"
+  },
+  "questShareAnswer": {
+    "payload": {
+      "name": "Mira",
+      "outcome": "took",
+      "questId": "follow-through-task"
+    },
+    "tag": "questShareAnswer"
+  },
+  "questShareAnswer-log-full": {
+    "payload": {
+      "name": "Mira",
+      "outcome": "logFull",
+      "questId": "bounty:168000:Graveyard:skeleton-warrior:collect"
+    },
+    "tag": "questShareAnswer"
+  },
+  "questShared": {
+    "payload": {
+      "reached": 2
+    },
+    "tag": "questShared"
+  },
+  "questShared-none": {
+    "payload": {
+      "reached": 0
+    },
+    "tag": "questShared"
+  },
   "quests": {
     "payload": {
       "active": [
@@ -1005,6 +1069,25 @@
       "done": [
         "bounty:168000:AutumnWood:ghost:driveOff"
       ]
+    },
+    "tag": "quests"
+  },
+  "quests-coin-only-bounty": {
+    "payload": {
+      "active": [],
+      "bounties": [
+        {
+          "count": 10,
+          "day": 168000,
+          "land": "AutumnWood",
+          "monsterKind": "ghost",
+          "objective": "driveOff",
+          "reward": {
+            "coins": 120
+          }
+        }
+      ],
+      "done": []
     },
     "tag": "quests"
   },
@@ -1325,6 +1408,18 @@
       "token": "tok-abc"
     },
     "tag": "sessionToken"
+  },
+  "shareQuest": {
+    "payload": {
+      "questId": "follow-through-task"
+    },
+    "tag": "shareQuest"
+  },
+  "shareQuest-bounty": {
+    "payload": {
+      "questId": "bounty:168000:Graveyard:skeleton-warrior:collect"
+    },
+    "tag": "shareQuest"
   },
   "study": {
     "payload": {

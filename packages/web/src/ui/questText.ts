@@ -1,14 +1,14 @@
-import { heldQuest, isTeachingId, objectiveLines, roleLabelKey, teaching, turnInGrant } from '@somnio/core';
+import { boardTurnsAt, heldQuest, isTeachingId, objectiveLines, roleLabelKey, teaching, turnInGrant } from '@somnio/core';
 import type { ActiveQuest, Bounty, ObjectiveLine, Quest, QuestReward } from '@somnio/core';
+import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { QuestTurnedIn } from '@/client';
-import { itemName, t } from '@/i18n';
+import { bountyTitleIn, itemName, t } from '@/i18n';
 import { element } from './dom';
-import { placeName } from './placeNames';
 import type { QuestAccepted, QuestTurnIn } from './questFeedback';
 
 /** A quest's title: a bounty's names the land it is set in. */
 export function questTitle(said: Quest, bounty?: Bounty): string {
-  return bounty === undefined ? t(said.labelKey) : t(said.labelKey, placeName(bounty.land));
+  return bounty === undefined ? t(said.labelKey) : bountyTitleIn(bounty.land, t);
 }
 
 /**
@@ -36,9 +36,11 @@ export function objectiveCount({ labelKey, done, goal }: ObjectiveLine): { text:
   return { text: `${t(labelKey, String(goal)).replace(/\.$/, '')}:`, count: `${done}/${goal}` };
 }
 
-/** Where a done quest is turned in: its carrier, or for a bounty any bounty board. */
+/** Where a done quest is turned in: its carrier, back where it was given or on to another, or for a bounty any bounty board. */
 export function returnLine(held: ActiveQuest, carrierName: (carrierId: string) => string): string {
-  return held.definition === undefined ? t('Return to %@.', carrierName(heldQuest(held).turnIn)) : t('Return to the bounty board.');
+  if (held.definition !== undefined) return t('Return to the bounty board.');
+  const { giver, turnIn } = heldQuest(held);
+  return turnIn === giver ? t('Return to %@.', carrierName(turnIn)) : t('Turn it in to %@.', carrierName(turnIn));
 }
 
 /** What a quest asks for, its lines run together, without how far it has come. */
@@ -52,10 +54,49 @@ export function acceptedSaid(held: ActiveQuest): QuestAccepted {
   return { title: questTitle(said, held.definition), lines: askedLines(said) };
 }
 
-/** What a quest pays, as a carrier's panel and the Quest log say it under what it asks: "Reward: 60c, 30 practice toward Toughening, a piece of gear". */
+/**
+ * What a quest pays, as a carrier's panel and the Quest log say it under what it asks: "Reward: 60c,
+ * 30 practice toward Toughening, a piece of gear", or a bounty's "a magic item".
+ */
 export function rewardNote(reward: QuestReward | undefined, study: string | undefined): HTMLElement[] {
-  const parts = [...paidParts(reward?.coins, reward?.practice, study), ...(reward?.gear === undefined ? [] : [t('a piece of gear')])];
+  const item = reward?.gear === undefined ? [] : [reward.gearRarity === 'magic' ? t('a magic item') : t('a piece of gear')];
+  const parts = [...paidParts(reward?.coins, reward?.practice, study), ...item];
   return parts.length === 0 ? [] : [note(t('Reward: %@', parts.join(', ')))];
+}
+
+/** How full the quest log is, the quests held against its room, as the tracker and the Quest log say it: "4/10". */
+export function questLogCount(held: number): string {
+  return `${held}/${SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests}`;
+}
+
+/** When the board turns on a bounty held, in epoch milliseconds; `undefined` for any other quest. */
+export function runsOutAt(held: ActiveQuest): number | undefined {
+  return held.definition === undefined ? undefined : boardTurnsAt(held.definition.day);
+}
+
+/** How long until `untilMs`, both in epoch milliseconds, as the board's turn is counted down: whole hours, and under an hour whole minutes, both rounded down. */
+export function timeLeft(untilMs: number, nowMs: number): string {
+  const minutes = Math.floor(Math.max(0, untilMs - nowMs) / 60_000);
+  return minutes < 60 ? t('%@ min', String(minutes)) : t('%@ h', String(Math.floor(minutes / 60)));
+}
+
+/** A line saying how long a bounty held has left before the board turns, whose text `tickCountdowns` moves with time. */
+export interface Countdown {
+  node: HTMLElement;
+  turnsAtMs: number;
+  say: (left: string) => string;
+}
+
+export function countdown(className: string, turnsAtMs: number, say: (left: string) => string): Countdown {
+  return { node: element('p', { className }), turnsAtMs, say };
+}
+
+/** Says each countdown's time left at `wallMs`, epoch milliseconds, touching a line only when its text changes. */
+export function tickCountdowns(countdowns: readonly Countdown[], wallMs: number): void {
+  for (const { node, turnsAtMs, say } of countdowns) {
+    const text = say(timeLeft(turnsAtMs, wallMs));
+    if (node.textContent !== text) node.textContent = text;
+  }
 }
 
 /**

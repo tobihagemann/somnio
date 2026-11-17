@@ -61,6 +61,8 @@ export interface HUDCallbacks {
   /** A press on the player's own frame, or their own name in the Players window. */
   onPressOwnFrame: () => void;
   onClearTarget: () => void;
+  /** A press on Share quest beside a quest in the Quest log. */
+  onShareQuest: (questId: QuestOrBountyId) => void;
   /** A press on Give up beside a quest in the Quest log. */
   onAbandonQuest: (questId: QuestOrBountyId) => void;
   /** The menu's Settings, which is the game menu. */
@@ -82,6 +84,8 @@ export interface HUDOptions {
   coarse: boolean;
   /** The clock the chat's fading, the cooldowns, and the effects' seconds are timed on. */
   now?: () => number;
+  /** The time now in epoch milliseconds, which a bounty's time left before the board turns is counted from. */
+  wallNow?: () => number;
 }
 
 export type HUDWindowId = 'players' | 'character' | 'quests';
@@ -137,9 +141,10 @@ const BESIDE_CARRIER_PANEL_WIDTH = 12 + 340 + 8 + 388 + 12;
 
 /**
  * What a mouse's quest tracker needs across, in px, mirroring `hud.css` and `chrome.css`: right of the
- * window's middle, the right half of the 250 px target frame and its own 270 px, scaled, then an 8 px
- * gap and the edge, unscaled, and the room each thing open down the right edge takes with its 8 px
- * gap: a carrier's panel, the Character window, and the Players window.
+ * window's middle, the right half of the 250 px target frame and its own 270 px
+ * (`--hud-tracker-width`), scaled, then an 8 px gap and the edge, unscaled, and the room each thing
+ * open down the right edge takes with its 8 px gap: a carrier's panel, the Character window, and the
+ * Players window.
  */
 const TRACKER_FIT = { fixed: 8 + 12, scaled: 250 / 2 + 270, carrierPanel: 340 + 8, character: 388 + 8, players: 280 + 8 } as const;
 
@@ -219,6 +224,8 @@ export class GameHUD {
   private readonly quests: QuestLogList;
   private readonly tracker: QuestTracker;
   private readonly questFeedback = new QuestFeedback();
+  /** Under the target frame: what `standUnderTarget` puts there, then the quest line and the banner, which stand under it while it shows. */
+  private readonly underTarget: HTMLElement;
   /** The menu's buttons that open each window, lit while it is open. */
   private readonly windowToggles = new Map<HUDWindowId, HTMLButtonElement>();
   /** The open windows, the newest last. */
@@ -234,6 +241,7 @@ export class GameHUD {
   private readonly hovered = new Set<HTMLElement>();
   private readonly tooltip: HUDTooltip;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
   private shownStudy: string | undefined;
   private shownClock: string | undefined;
 
@@ -242,6 +250,7 @@ export class GameHUD {
     this.coarse = options.coarse;
     const now = options.now ?? (() => performance.now());
     this.now = now;
+    this.wallNow = options.wallNow ?? (() => Date.now());
 
     this.ownFrame = new OwnFrame(() => callbacks.onPressOwnFrame(), this.coarse);
     this.targetFrame = new TargetFrame(() => callbacks.onClearTarget());
@@ -283,14 +292,19 @@ export class GameHUD {
       () => callbacks.onPressOwnFrame(),
     );
     this.quests = new QuestLogList(
+      (questId) => callbacks.onShareQuest(questId),
       (questId) => callbacks.onAbandonQuest(questId),
       (carrierId) => callbacks.carrierName(carrierId),
     );
-    this.tracker = new QuestTracker(this.coarse, (carrierId) => callbacks.carrierName(carrierId));
+    this.tracker = new QuestTracker(
+      this.coarse,
+      (carrierId) => callbacks.carrierName(carrierId),
+      () => this.openWindow('quests'),
+    );
     this.windows = {
       players: new HUDWindow(t('Players'), () => this.closeWindow('players'), this.players.nodes),
       character: this.character.window,
-      quests: new HUDWindow(t('Quest log'), () => this.closeWindow('quests'), this.quests.nodes),
+      quests: new HUDWindow(t('Quest log'), () => this.closeWindow('quests'), this.quests.nodes, this.quests.count),
     };
     this.windows.players.root.classList.add('hud-window--players');
     this.windows.quests.root.classList.add('hud-window--quests');
@@ -408,12 +422,12 @@ export class GameHUD {
       ...(this.coarse ? [this.chat.root] : []),
     );
 
+    this.underTarget = element('div', { className: 'hud-under-target', children: [this.questFeedback.line, this.questFeedback.banner] });
     this.root = element('div', {
       className: `hud ${this.coarse ? 'hud--coarse' : 'hud--fine'}`,
       children: [
         ...layout,
-        this.questFeedback.line,
-        this.questFeedback.banner,
+        this.underTarget,
         this.windows.players.root,
         this.windows.character.root,
         this.windows.quests.root,
@@ -462,6 +476,11 @@ export class GameHUD {
     return this.chat.isOpen;
   }
 
+  /** Stands a prompt at the head of the column under the target frame, which scales with the HUD and stands over the windows. */
+  standUnderTarget(prompt: HTMLElement): void {
+    this.underTarget.prepend(prompt);
+  }
+
   /** A mouse's HUD shrinks evenly to fit a window too small for it. A finger's layout keeps its size. */
   setViewport(width: number, height: number): void {
     if (this.coarse) return;
@@ -498,7 +517,8 @@ export class GameHUD {
    * The quest tracker stands under the clock, and on a mouse left of what is open down the right
    * edge where there is room beside the target frame, as the windows stand beside a carrier's panel.
    * Elsewhere it gives way to what is open there. It does not show with no quest held, nor while the
-   * Quest log, which says the same, is open.
+   * Quest log, which says the same, is open. While it shows, what stands under the target frame
+   * keeps clear of it.
    */
   private placeTracker(): void {
     const open = (id: HUDWindowId): boolean => this.openWindows.includes(id);
@@ -512,7 +532,9 @@ export class GameHUD {
         (!this.carrierPanelOpen || this.windowsBesideCarrierPanel) && TRACKER_FIT.fixed + TRACKER_FIT.scaled * this.scale + beside <= this.viewportWidth / 2;
     }
     this.root.style.setProperty('--hud-tracker-beside', `${beside}px`);
-    setHidden(this.tracker.root, this.tracker.empty || open('quests') || !room);
+    const shown = !this.tracker.empty && !open('quests') && room;
+    setHidden(this.tracker.root, !shown);
+    this.root.classList.toggle('hud--tracker-shown', shown);
   }
 
   /** Before the player stands in the world nothing of the HUD shows, and whatever was open closes. */
@@ -615,8 +637,9 @@ export class GameHUD {
 
   /** `study` is the teaching the player studies, which a quest's practice goes toward. */
   renderQuests(quests: QuestLog, study: string | undefined): void {
-    this.quests.render(quests, study);
-    this.tracker.render(quests);
+    const wallMs = this.wallNow();
+    this.quests.render(quests, study, wallMs);
+    this.tracker.render(quests, wallMs);
     this.placeTracker();
   }
 
@@ -673,11 +696,14 @@ export class GameHUD {
   }
 
   /**
-   * The clock's minute, the chat's fading, the line and the banner over the world ending, and the
-   * seconds left on cooldowns and effects, which move with time rather than with a frame from the
-   * server, and the tip shown, which follows its part.
+   * The clock's minute, the chat's fading, the line and the banner over the world ending, the
+   * seconds left on cooldowns and effects, and the time a bounty held has left, which move with
+   * time rather than with a frame from the server, and the tip shown, which follows its part.
    */
   tick(nowMs: number, clock: HUDClock): void {
+    const wallMs = this.wallNow();
+    this.tracker.tick(wallMs);
+    this.quests.tick(wallMs);
     this.chat.tick(nowMs);
     this.questFeedback.tick(nowMs);
     for (const slot of this.abilitySlots) slot?.tick(nowMs);

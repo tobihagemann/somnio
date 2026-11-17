@@ -111,7 +111,6 @@ export async function bootServer(env: Record<string, string | undefined>, option
     worldRouter = await WorldRouter.create(world, characters, npcDialogStates, logging.gameplayLogger('world'), logging.gameplayLogger('space'));
     // Pre-loaded synchronously so a login in the first tick sees the persisted clock, not the default.
     worldClock = new WorldClockService(worldClocks, await worldClocks.load(), logging.gameplayLogger('worldclock'), options.worldClockIntervalMs);
-    worldClock.onNewDay((worldSeconds) => worldRouter.reachWorldDay(worldSeconds));
   } catch (error) {
     return failStartup(error);
   }

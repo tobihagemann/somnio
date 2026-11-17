@@ -15,6 +15,7 @@ import type {
   LucidityMessage,
   MoveMessage,
   NightmareRank,
+  QuestShareOutcome,
   RaisingState,
   Service,
   SomnioMessage,
@@ -33,6 +34,7 @@ import {
   OUTDOOR_SPACE_ID,
   POOL_FIELDS,
   PRACTICE,
+  QUEST_OFFER_SECONDS,
   SHARED_LOOT_SECONDS,
   SOMNIO_CONSTANTS,
   THROW_DISTANCE,
@@ -46,8 +48,8 @@ import {
   abilityRank,
   areaRecipients,
   bagHasRoom,
+  boardDay,
   boltFlightSeconds,
-  bountyIdOf,
   bountyLands,
   bountyQuest,
   balancePace,
@@ -92,6 +94,7 @@ import {
   localizedDialogLine,
   masterRole,
   mayAccept,
+  mayShare,
   mayTakeBounty,
   maxPools,
   mendAmount,
@@ -104,6 +107,7 @@ import {
   nextLastSeen,
   npcBodies,
   npcEntityId,
+  offeredBounty,
   outdoorDoorIds,
   placedFixtures,
   plainInstance,
@@ -127,6 +131,7 @@ import {
   scaled,
   salePrice,
   sellableItem,
+  shareOutcomeFor,
   sectorAt,
   sectorPointInSpace,
   sectorView,
@@ -153,15 +158,14 @@ import {
   withItem,
   withAccepted,
   withAcceptedBounty,
+  withBoardDay,
   withRank,
   withTurnedIn,
   withoutItem,
-  withoutPastBounties,
   withoutQuest,
   throwLanding,
   withinPickupReach,
   withinSpeakingDistance,
-  worldDay,
 } from '@somnio/core';
 import type {
   Ability,
@@ -193,6 +197,7 @@ import type {
   QuestCarrier,
   QuestLog,
   QuestObjective,
+  QuestOrBountyId,
   Rect,
   Sector,
   SectorNPC,
@@ -248,6 +253,8 @@ interface PlayerSlot {
   held: Held;
   /** The raise this fallen dreamer is being given, by every Healer holding on. */
   raise: Raise | undefined;
+  /** The quest another dreamer here shared with this one, awaiting their answer. */
+  questOffer: QuestOffer | undefined;
   /** The entity the dreamer chose to act on. It is let go once it is out of their view. */
   target: string | undefined;
   /** Whether slot 1 is on: the dreamer attacks their target, a nightmare, or a Healer mends or raises their target, a dreamer. */
@@ -299,6 +306,14 @@ interface Raise {
   holders: string[];
   /** Each Healer who has held on, also after they dropped out: the seconds held and the spirit paid for them. */
   shares: Map<string, { seconds: number; charged: number }>;
+}
+
+/** A quest shared with a dreamer: by whom, and until when they may take it on. */
+interface QuestOffer {
+  offerId: number;
+  questId: QuestOrBountyId;
+  fromId: string;
+  endsAt: number;
 }
 
 interface NPCRuntime {
@@ -658,6 +673,16 @@ export interface SpaceActorOptions {
   requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   /** Monotonic milliseconds, for the movement allowance and the dialog and spawn deadlines. */
   now?: () => number;
+  /** Epoch milliseconds, for the bounty board's day. */
+  wallNow?: () => number;
+  /** Hands out the id of each quest offer. The router passes one to every space, so no two offers in the world share an id. */
+  newOfferId?: () => number;
+}
+
+/** Hands out ids from 1 up, each once. */
+export function offerIds(): () => number {
+  let last = 0;
+  return () => (last += 1);
 }
 
 type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string };
@@ -855,7 +880,7 @@ export class SpaceActor {
   private readonly fixtures = new Map<string, PlacedFixture>();
   /** The lands of the whole world, which every bounty board's bounties are set in. */
   private readonly bountyLands: BountyLand[];
-  /** The world day the space last reached, and the bounties the board offers on it. */
+  /** The board's day the space last reached, and the bounties the board offers on it. */
   private bountyDay: number | undefined;
   private bounties: Bounty[] = [];
   private readonly npcBodies: Body[];
@@ -876,6 +901,8 @@ export class SpaceActor {
   private readonly personalDrops: PersonalDrops;
   private readonly requestDropSave: (checkpoint: PlayerCheckpoint) => void;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
+  private readonly newOfferId: () => number;
   private nextMonsterNumber = 1;
   private nextLootNumber = 1;
   private nextTelegraphNumber = 1;
@@ -894,6 +921,8 @@ export class SpaceActor {
     this.personalDrops = options.personalDrops ?? new PersonalDrops();
     this.requestDropSave = options.requestDropSave;
     this.now = options.now ?? (() => performance.now());
+    this.wallNow = options.wallNow ?? (() => Date.now());
+    this.newOfferId = options.newOfferId ?? offerIds();
     for (const sector of this.space.sectors) {
       this.interest.set(sector.name, new Set([sector.name, ...neighbourSectors(this.space, sector.name).map((neighbour) => neighbour.name)]));
       this.outdoorDoorIds.set(sector.name, outdoorDoorIds(sector, world.spaces.get(OUTDOOR_SPACE_ID)?.sectors ?? []));
@@ -955,7 +984,8 @@ export class SpaceActor {
    * held. NPCs speak to the player in `locale`. The effects, cooldowns, and timers a transfer or a
    * reconnect carries run on from `transient`, and its allowance and pace credit refill by the time
    * away.
-   * The player is sent their cooldowns, and their effects when they hold any.
+   * The player is sent their cooldowns, and their effects when they hold any. A bounty of another
+   * board day goes from their log, and they are told right after their quests how many they held.
    */
   attach(
     character: Character,
@@ -968,9 +998,9 @@ export class SpaceActor {
     const now = this.now();
     const sector = sectorAt(this.space, character.position);
     if (sector === undefined) throw new Error(`no sector of ${this.space.id} holds (${character.position.x}, ${character.position.z})`);
-    this.reachWorldDay(worldSeconds);
+    this.reachBoardDay(boardDay(this.wallNow()));
     const energy = withinMaxima(character.energy, maxPools(statsOf(inventory.equipped, character.lucidity)));
-    const quests = withoutPastBounties(character.quests, this.bountyDay!);
+    const { log: quests, ranOut } = withBoardDay(character.quests, this.bountyDay!);
     const slot: PlayerSlot = {
       character: { ...character, energy, quests },
       inventory,
@@ -994,6 +1024,7 @@ export class SpaceActor {
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
       held: heldOf(inventory),
       raise: undefined,
+      questOffer: undefined,
       target: undefined,
       engaged: false,
       vitals: undefined,
@@ -1013,6 +1044,7 @@ export class SpaceActor {
       { tag: 'energy', payload: energy },
       { tag: 'lucidity', payload: lucidityMessage(character.lucidity) },
       { tag: 'quests', payload: questsMessage(quests, this.bounties) },
+      ...(ranOut > 0 ? [{ tag: 'bountiesRanOut' as const, payload: { count: ranOut } }] : []),
       { tag: 'cooldowns', payload: this.cooldownsLeft(slot) },
     ];
     if (slot.effects.length > 0) messages.push({ tag: 'effects', payload: this.effectsMessage(slot) });
@@ -1055,6 +1087,7 @@ export class SpaceActor {
     this.settleEffects([slot]);
     this.breakChannelsOn(slot);
     this.breakChannel(slot);
+    this.endOffer(slot, 'didNotTake');
     // A leaver's raises are charged and, once full, completed now, since no step charges one who is gone.
     for (const [target, raise] of [...this.raisesHeldBy(entityId)]) this.advanceRaise(target, raise);
     this.players.delete(entityId);
@@ -1423,6 +1456,14 @@ export class SpaceActor {
     const now = this.now();
     for (const loot of this.loot.values()) {
       if (loot.expiresAt !== undefined && now >= loot.expiresAt) this.removeLoot(loot);
+    }
+  }
+
+  /** Ends every quest offer left unanswered past its time. */
+  private expireOffers(): void {
+    const now = this.now();
+    for (const slot of this.players.values()) {
+      if (slot.questOffer !== undefined && now >= slot.questOffer.endsAt) this.endOffer(slot, 'didNotTake');
     }
   }
 
@@ -1861,6 +1902,7 @@ export class SpaceActor {
   }
 
   step(elapsedSeconds: number): TickDigest {
+    this.reachBoardDay(boardDay(this.wallNow()));
     const digest: TickDigest = { dialogUpserts: [], dialogResets: [] };
     this.runNPCs(digest);
     this.runMonsterSpawns();
@@ -1869,6 +1911,7 @@ export class SpaceActor {
     this.runPlayers(elapsedSeconds);
     this.runMonsters(elapsedSeconds);
     this.expireLoot();
+    this.expireOffers();
     this.dropUnseenTargets();
     for (const slot of this.players.values()) this.sendVitals(slot);
     return digest;
@@ -2609,6 +2652,7 @@ export class SpaceActor {
     });
     if (!isFallen(target)) return;
     this.fallenChanged();
+    this.endOffer(target, 'didNotTake');
     // Falling switches slot 1 off here and on their client alike, with no frame between them.
     target.engaged = false;
     this.breakChannel(target);
@@ -3186,17 +3230,22 @@ export class SpaceActor {
   }
 
   /**
-   * The world clock reads `worldSeconds`. On a later world day than the space has reached, the board
-   * offers that day's bounties, and every dreamer in the space is told them, with the bounties they
-   * turned in on another day gone from their log, since those block nothing now. A bounty held runs
-   * on by its definition. A reading of a day already passed, taken before the clock moved on, changes nothing.
+   * On a later board day than the space has reached, the board offers that day's bounties, and every
+   * dreamer in the space is told them. Every bounty of another day goes from their log, held or
+   * turned in, and they are told how many they held ran out. An offer of a bounty the board no longer
+   * offers ends untaken. A day already reached changes nothing.
    */
-  reachWorldDay(worldSeconds: number): void {
-    const day = worldDay(worldSeconds);
+  private reachBoardDay(day: number): void {
     if (this.bountyDay !== undefined && day <= this.bountyDay) return;
     this.bountyDay = day;
     this.bounties = dayBounties(day, this.bountyLands);
-    for (const slot of this.players.values()) this.updateQuests(slot, withoutPastBounties(slot.character.quests, day));
+    for (const slot of this.players.values()) {
+      const offered = slot.questOffer?.questId;
+      if (offered !== undefined && isBountyId(offered) && offeredBounty(this.bounties, offered) === undefined) this.endOffer(slot, 'didNotTake');
+      const { log, ranOut } = withBoardDay(slot.character.quests, day);
+      this.updateQuests(slot, log);
+      if (ranOut > 0) slot.outbox.sendEncoded({ tag: 'bountiesRanOut', payload: { count: ranOut } }, this.logger);
+    }
   }
 
   /** The dreamer stands at the carrier, by its id: a quest visiting it counts the visit. */
@@ -3283,7 +3332,7 @@ export class SpaceActor {
       if (questCarriedBy(quest(questId).giver, carrier) && mayAccept(questId, quests, lucidity)) this.updateQuests(player, withAccepted(quests, questId));
       return;
     }
-    const bounty = this.bounties.find((offered) => bountyIdOf(offered) === questId);
+    const bounty = offeredBounty(this.bounties, questId);
     if (bounty !== undefined && questCarriedBy(bountyQuest(bounty).giver, carrier) && mayTakeBounty(bounty, quests)) {
       this.updateQuests(player, withAcceptedBounty(quests, bounty));
     }
@@ -3296,7 +3345,7 @@ export class SpaceActor {
    * or else the bag. A gate teaches the first rank of its teaching. The reward's coins, practice, and
    * gear are paid besides. While an item it gives has nowhere to go, nothing is granted and the
    * quest waits, done, until there is room. A bounty pays as its stored definition says, whatever
-   * the day. Asking counts as a visit to the carrier first.
+   * the spawns did since. Asking counts as a visit to the carrier first.
    */
   handleTurnInQuest(carrierId: string, questId: string, entityId: string): void {
     const player = this.carrierNear(carrierId, entityId);
@@ -3312,7 +3361,7 @@ export class SpaceActor {
     const given: Item[] = trialGift === undefined ? [] : [trialGift];
     let inventory: Inventory | undefined = trialGift === undefined ? player.inventory : grantItem(player.inventory, trialGift);
     if (inventory !== undefined && reward?.gear !== undefined) {
-      const gear = { id: newItemId(), ...rollQuestGear(reward.gear, role ?? lucidity.role, () => randomUnit(this.lootRandom)) };
+      const gear = { id: newItemId(), ...rollQuestGear(reward.gear, role ?? lucidity.role, () => randomUnit(this.lootRandom), reward.gearRarity) };
       inventory = bagHasRoom(inventory) ? withItem(inventory, gear) : undefined;
       given.push(gear);
     }
@@ -3338,6 +3387,79 @@ export class SpaceActor {
     const held = player?.character.quests.active.find((candidate) => candidate.questId === questId);
     if (player === undefined || held === undefined) return;
     this.updateQuests(player, withoutQuest(player.character.quests, held.questId));
+  }
+
+  /**
+   * Shares a quest the dreamer holds, any but a trial, with every other standing dreamer of the
+   * space within a said line's reach. A bounty is shared only while the board offers it today. Each
+   * who cannot take it on is answered for at once. Each who can is offered it for
+   * `QUEST_OFFER_SECONDS`, in place of any offer they held, but one still waiting on this sharer's
+   * offer of it is left as they are and not counted. The sharer is told how many were offered it,
+   * ahead of the answers, or that none were when no other dreamer stands near. Otherwise nothing more
+   * is said than the answers, if any. Anything else is dropped silently.
+   */
+  handleShareQuest(questId: string, entityId: string): void {
+    const sharer = this.players.get(entityId);
+    const held = sharer?.character.quests.active.find((candidate) => candidate.questId === questId);
+    if (sharer === undefined || held === undefined || isFallen(sharer) || !mayShare(held.questId)) return;
+    const bounty = offeredBounty(this.bounties, held.questId);
+    if (isBountyId(held.questId) && bounty === undefined) return;
+    const { name, position } = sharer.character;
+    const near = [...this.players.values()].filter(
+      (other) => other !== sharer && !isFallen(other) && distance(other.character.position, position) < SPEECH.say.reachMetres,
+    );
+    const answered = near
+      .filter(({ questOffer }) => !(questOffer?.questId === held.questId && questOffer.fromId === entityId))
+      .map((recipient) => ({ recipient, refused: shareOutcomeFor(held.questId, bounty, recipient.character.quests, recipient.character.lucidity) }));
+    const offered = answered.filter(({ refused }) => refused === undefined).length;
+    if (near.length === 0 || offered > 0) sharer.outbox.sendEncoded({ tag: 'questShared', payload: { reached: offered } }, this.logger);
+    const endsAt = this.now() + QUEST_OFFER_SECONDS * 1000;
+    for (const { recipient, refused } of answered) {
+      if (refused !== undefined) {
+        sharer.outbox.sendEncoded(
+          { tag: 'questShareAnswer', payload: { questId: held.questId, name: recipient.character.name, outcome: refused } },
+          this.logger,
+        );
+        continue;
+      }
+      this.endOffer(recipient, 'didNotTake');
+      const offerId = this.newOfferId();
+      recipient.questOffer = { offerId, questId: held.questId, fromId: entityId, endsAt };
+      recipient.outbox.sendEncoded({ tag: 'questOffer', payload: { offerId, fromName: name, questId: held.questId } }, this.logger);
+    }
+  }
+
+  /**
+   * Settles the quest offer the dreamer holds under `offerId`, and no other. Taken, the quest goes
+   * into their log as the share's rules still allow, a bounty only while the board offers it today;
+   * otherwise the offer ends as those rules say. Let pass, or answered past its time, it ends
+   * untaken. An answer to an offer already ended or replaced changes nothing.
+   */
+  handleAnswerQuestOffer(offerId: number, take: boolean, entityId: string): void {
+    const receiver = this.players.get(entityId);
+    const offer = receiver?.questOffer;
+    if (receiver === undefined || offer?.offerId !== offerId) return;
+    if (!take || this.now() >= offer.endsAt) {
+      this.endOffer(receiver, 'didNotTake');
+      return;
+    }
+    const { questId } = offer;
+    const bounty = offeredBounty(this.bounties, questId);
+    const { quests, lucidity } = receiver.character;
+    const refused = shareOutcomeFor(questId, bounty, quests, lucidity);
+    if (refused === undefined && isQuestId(questId)) this.updateQuests(receiver, withAccepted(quests, questId));
+    if (refused === undefined && bounty !== undefined) this.updateQuests(receiver, withAcceptedBounty(quests, bounty));
+    this.endOffer(receiver, refused ?? 'took');
+  }
+
+  /** The one end of a quest offer: the dreamer holds it no longer, and its sharer, while still here, is told how it came out. */
+  private endOffer(receiver: PlayerSlot, outcome: QuestShareOutcome): void {
+    const offer = receiver.questOffer;
+    if (offer === undefined) return;
+    receiver.questOffer = undefined;
+    this.players
+      .get(offer.fromId)
+      ?.outbox.sendEncoded({ tag: 'questShareAnswer', payload: { questId: offer.questId, name: receiver.character.name, outcome } }, this.logger);
   }
 
   /** A master sets a dreamer of their role to study a teaching they may build on: its needs met, below its last rank, and past its gate if it has one. */

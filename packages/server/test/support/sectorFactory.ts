@@ -92,11 +92,19 @@ export function makeCharacter(position: Point, name = 'tester', space: string = 
 /** Rolls that never drop anything, so a nightmare driven off leaves nothing on the ground unless a test asks for drops. */
 const NO_DROPS: RandomSource = { nextUInt32: () => 0xffff_ffff };
 
-/** One space of the world on a clock the test advances. */
+/** One space of the world on a clock the test advances, and on a wall clock it sets for the bounty board's day. */
 export function makeClockedSpace(world: LoadedWorld, spaceId: string = OUTDOOR_SPACE_ID, options: Partial<SpaceActorOptions> = {}) {
   const clock = { ms: 0 };
-  const space = new SpaceActor(world, spaceId, { logger: testLogger(), now: () => clock.ms, lootRandom: NO_DROPS, requestDropSave: () => {}, ...options });
-  return { clock, space };
+  const wall = { ms: 0 };
+  const space = new SpaceActor(world, spaceId, {
+    logger: testLogger(),
+    now: () => clock.ms,
+    wallNow: () => wall.ms,
+    lootRandom: NO_DROPS,
+    requestDropSave: () => {},
+    ...options,
+  });
+  return { clock, wall, space };
 }
 
 export interface AttachPlayerOptions {

@@ -10,6 +10,7 @@ import type {
   LootContentsMessage,
   LootMessage,
   LucidityMessage,
+  QuestOfferMessage,
   RaisingMessage,
   SayMessage,
   SensedBearingMessage,
@@ -22,6 +23,7 @@ import {
   COMBAT,
   GLOBAL_COOLDOWN_SECONDS,
   PICKUP_REACH,
+  QUEST_OFFER_SECONDS,
   SOMNIO_CONSTANTS,
   SpeechPace,
   abilitiesTaught,
@@ -33,6 +35,7 @@ import {
   bagHasRoom,
   buyBackOf,
   bountiesOf,
+  bountyIdOf,
   distance,
   doorOpenAt,
   droppableItem,
@@ -44,13 +47,16 @@ import {
   headingFromVector,
   inventoryOf,
   isAbilityId,
+  isBountyId,
   isEffectId,
+  isQuestId,
   isTeachingId,
   moveItem,
   NO_INVENTORY,
   NO_QUESTS,
   markerFor,
   objectiveLines,
+  offeredBounty,
   poolShare,
   quest,
   questComplete,
@@ -67,6 +73,7 @@ import type {
   ActiveQuest,
   AttackRefusal,
   Bounty,
+  BountyId,
   EffectId,
   EngageAction,
   Inventory,
@@ -74,6 +81,7 @@ import type {
   ObjectiveLine,
   Point,
   QuestCarrier,
+  QuestId,
   QuestLog,
   QuestMarker,
   QuestOrBountyId,
@@ -167,6 +175,14 @@ export interface ClientRaise extends RaiseProgress {
   atMs: number;
   endsAtMs: number;
 }
+
+/**
+ * A quest a dreamer nearby shared with the player, kept on the session's clock: the offer it answers
+ * by, who shared it, when it ends unanswered, and the quest, for a bounty with what it is.
+ */
+export type ClientQuestOffer = { offerId: number; fromName: string; endsAtMs: number } & (
+  { questId: QuestId; bounty: undefined } | { questId: BountyId; bounty: Bounty }
+);
 
 /**
  * A quest turned in and what it paid, from the frames that answered the turn-in: the coins gained
@@ -265,7 +281,7 @@ export class GameplaySession {
   lucidity: LucidityMessage = NO_LUCIDITY_MESSAGE;
   /** The quests the player holds and turned in, as the last `quests` frame said. */
   quests: QuestLog = NO_QUESTS;
-  /** The bounties of the world day, as the last `quests` frame said. */
+  /** The bounties of the day, as the last `quests` frame said. */
   bounties: Bounty[] = [];
   /** The marker each carrier shows the player, by its id, as the scene was last told: in view or not. */
   questMarkers: ReadonlyMap<string, QuestMarker> = new Map();
@@ -301,6 +317,13 @@ export class GameplaySession {
   private turningIn: Omit<QuestTurnedIn, 'coins' | 'items'> | undefined;
   /** The fallen dreamers whose raise this player was last told they hold on to. */
   private readonly heldRaises = new Set<string>();
+  /** The quest last shared with the player, until they answer it, a fall, a new space, or a board no longer offering its bounty. */
+  private offer: ClientQuestOffer | undefined;
+  /**
+   * The quest shared with the player that they last took, and who shared it, until a `quests` frame
+   * adds it, one arrives after its seconds to answer ran out, or a new space.
+   */
+  private takenOffer: Pick<ClientQuestOffer, 'questId' | 'fromName' | 'endsAtMs'> | undefined;
   /** Set from sending `wake` until the `enterSpace` that answers it, or until the player stands again because a raise came first. */
   private waking = false;
   /**
@@ -448,6 +471,8 @@ export class GameplaySession {
     this.turningIn = undefined;
     this.servicePanel = undefined;
     this.heldRaises.clear();
+    this.offer = undefined;
+    this.takenOffer = undefined;
     this.slowedUntilMs = 0;
     this.tradeLockedUntilMs = 0;
     // The server holds the target per space, so a new space starts with nothing targeted there either.
@@ -697,7 +722,8 @@ export class GameplaySession {
 
   /**
    * Whether a carrier has a panel for the player: a service of its own, or else a quest marker for
-   * them. The marker stands for the panel's quest rows because every quest's giver is also its turn-in.
+   * them. The marker stands for the panel's quest rows, since it shows wherever a quest of theirs is
+   * given or turned in.
    */
   private hasPanel(carrier: QuestCarrier): boolean {
     return carrier.service !== undefined || this.questMarkers.has(carrier.id);
@@ -1143,6 +1169,8 @@ export class GameplaySession {
   private handleOwnCondition(condition: Condition): void {
     if (condition === 'fallen') {
       this.servicePanel = undefined;
+      // The server ends a quest shared with a dreamer as they fall.
+      this.offer = undefined;
       // Falling switches slot 1 off here as it does on the server, which sends no frame to say so.
       this.engaged = false;
       this.markTarget();
@@ -1297,6 +1325,46 @@ export class GameplaySession {
     this.send({ tag: 'abandonQuest', payload: { questId } });
   }
 
+  /** Shares a quest held with the dreamers near. The server judges who is near from where the player stands, so the report the heartbeat holds back goes first. */
+  shareQuest(questId: QuestOrBountyId): void {
+    this.predictor.flush();
+    this.send({ tag: 'shareQuest', payload: { questId } });
+  }
+
+  /** The quest shared with the player still waiting for their answer, until its seconds to answer run out. */
+  questOffer(): ClientQuestOffer | undefined {
+    return this.offer !== undefined && this.now() < this.offer.endsAtMs ? this.offer : undefined;
+  }
+
+  /**
+   * Takes on the quest shared with the player, or lets it go, by the offer the answer was given to:
+   * one already replaced or ended is answered no more. One taken is said in chat once a `quests` frame holds it.
+   */
+  answerQuestOffer(offerId: number, take: boolean): void {
+    const offer = this.questOffer();
+    if (offer?.offerId !== offerId) return;
+    this.offer = undefined;
+    if (take) this.takenOffer = { questId: offer.questId, fromName: offer.fromName, endsAtMs: offer.endsAtMs };
+    this.send({ tag: 'answerQuestOffer', payload: { offerId, take } });
+    this.onStateChanged?.();
+  }
+
+  /**
+   * Keeps a quest shared with the player in place of any before it, which the server ended as it
+   * shared this one. A bounty is the one of that id among the day's; one not there is not shown, nor
+   * is a quest this build does not know.
+   */
+  private receiveQuestOffer({ offerId, fromName, questId }: QuestOfferMessage): void {
+    const offer = { offerId, fromName, endsAtMs: this.now() + QUEST_OFFER_SECONDS * 1000 };
+    if (isQuestId(questId)) {
+      this.offer = { ...offer, questId, bounty: undefined };
+    } else {
+      const bounty = offeredBounty(this.bounties, questId);
+      this.offer = bounty === undefined ? undefined : { ...offer, questId: bountyIdOf(bounty), bounty };
+    }
+    this.onStateChanged?.();
+  }
+
   study(teachingId: string): void {
     if (this.servicePanel !== undefined) this.send({ tag: 'study', payload: { carrierId: this.servicePanel.id, teachingId } });
   }
@@ -1406,10 +1474,26 @@ export class GameplaySession {
         this.seen.quests = true;
         this.quests = quests;
         this.bounties = bountiesOf(message.payload);
+        // The server ends an offer of a bounty as the board turns away from it.
+        if (this.offer?.bounty !== undefined && offeredBounty(this.bounties, this.offer.questId) === undefined) this.offer = undefined;
         this.showQuestMarkers();
         this.onStateChanged?.();
         return;
       }
+      case 'questOffer':
+        this.receiveQuestOffer(message.payload);
+        return;
+      case 'questShared':
+        this.controller.appendChat({ kind: 'questShared', reached: message.payload.reached });
+        return;
+      case 'questShareAnswer': {
+        const { questId, name, outcome } = message.payload;
+        if (isQuestId(questId) || isBountyId(questId)) this.controller.appendChat({ kind: 'questShareAnswer', name, questId, outcome });
+        return;
+      }
+      case 'bountiesRanOut':
+        this.controller.appendChat({ kind: 'bountiesRanOut', count: message.payload.count });
+        return;
       case 'blow':
         // The server chooses the moment of a swing, so its slow starts when the swing is shown.
         if (message.payload.attackerId === this.controller.selfId) this.slowedUntilMs = this.now() + COMBAT.swingSlow.seconds * 1000;
@@ -1532,14 +1616,22 @@ export class GameplaySession {
   /**
    * What changed from one `quests` frame to the next: a quest turned in, a quest taken on, a quest
    * held that is now done, with where to turn it in, and otherwise each line that came further. A
-   * quest taken on says only that, however far it has come. The chat says the hidden places found
-   * among those lines, never which.
+   * quest taken on says only that, however far it has come. When it is the shared quest the player
+   * took, the chat also says who shared it. That take is forgotten once said, or, never said, once a
+   * frame arrives after its seconds to answer ran out, since the server then refused it. The chat
+   * says the hidden places found among those lines, never which.
    */
   private announceQuests(before: QuestLog, after: QuestLog): void {
+    if (this.takenOffer !== undefined && this.now() >= this.takenOffer.endsAtMs) this.takenOffer = undefined;
     for (const held of before.active) if (after.done.includes(held.questId)) this.announceTurnIn(held);
     for (const held of after.active) {
       const had = before.active.find((candidate) => candidate.questId === held.questId);
       if (had === undefined) {
+        const taken = this.takenOffer;
+        if (held.questId === taken?.questId) {
+          this.takenOffer = undefined;
+          this.controller.appendChat({ kind: 'questTakenFrom', questId: held.questId, fromName: taken.fromName });
+        }
         this.onQuestNews?.({ kind: 'accepted', held });
         continue;
       }

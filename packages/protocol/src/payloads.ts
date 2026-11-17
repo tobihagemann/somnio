@@ -102,6 +102,10 @@ export type LootKind = (typeof LOOT_KINDS)[number];
 export const BOUNTY_OBJECTIVES = ['driveOff', 'collect'] as const;
 export type BountyObjective = (typeof BOUNTY_OBJECTIVES)[number];
 
+/** How a dreamer a quest was shared with came out of it: took it on, let it pass, or could not take it, and why. */
+export const QUEST_SHARE_OUTCOMES = ['took', 'didNotTake', 'logFull', 'holds', 'done', 'cannotYet'] as const;
+export type QuestShareOutcome = (typeof QUEST_SHARE_OUTCOMES)[number];
+
 /** How loudly a line is spoken, which sets how far it carries. */
 export const SPEECH_KINDS = ['whisper', 'say', 'yell'] as const;
 export type SpeechKind = (typeof SPEECH_KINDS)[number];
@@ -230,6 +234,17 @@ export interface CarrierQuestMessage {
 /** Gives up a quest held, wherever the dreamer is. */
 export interface AbandonQuestMessage {
   questId: string;
+}
+
+/** Offers a quest held to every dreamer near enough to hear a say. */
+export interface ShareQuestMessage {
+  questId: string;
+}
+
+/** Takes the quest of a shared offer on, or lets it pass. It settles only the offer `offerId` names. */
+export interface AnswerQuestOfferMessage {
+  offerId: number;
+  take: boolean;
 }
 
 export interface StudyMessage {
@@ -503,7 +518,7 @@ export interface LucidityMessage {
   study?: string;
 }
 
-/** What a bounty's quest id names: the world day it is offered on, its land (a sector's name), the kind of nightmare, and what it asks. */
+/** What a bounty's quest id names: the UTC day it is offered on, its land (a sector's name), the kind of nightmare, and what it asks. */
 export interface BountyIdParts {
   day: number;
   land: string;
@@ -514,7 +529,8 @@ export interface BountyIdParts {
 /** A bounty as the server generated it from its land's monster spawns, which the client cannot, since a `sector` frame carries no spawns. */
 export interface BountyMessage extends BountyIdParts {
   count: number;
-  reward: { coins: number; gear: number };
+  /** `gear` is the tier of the item it pays, absent when it pays coins alone. */
+  reward: { coins: number; gear?: number };
 }
 
 /** A quest a dreamer holds, with what they have done toward each of its objectives, in order, and for a bounty what it is. */
@@ -524,11 +540,38 @@ export interface HeldQuestMessage {
   definition?: BountyMessage;
 }
 
-/** The quests a dreamer holds and those they turned in, and the bounties of the world day, sent to that dreamer alone. */
+/** The quests a dreamer holds and those they turned in, and the bounties of the day, sent to that dreamer alone. */
 export interface QuestsMessage {
   active: HeldQuestMessage[];
   done: string[];
   bounties: BountyMessage[];
+}
+
+/** `fromName`, a dreamer near this one, shared a quest with them. They answer it by `offerId`. */
+export interface QuestOfferMessage {
+  offerId: number;
+  fromName: string;
+  questId: string;
+}
+
+/**
+ * Answers a `shareQuest` that offered the quest to anyone, with how many, or with 0 when no other
+ * dreamer stands near. A share every near dreamer refused gets only their `questShareAnswer`s.
+ */
+export interface QuestSharedMessage {
+  reached: number;
+}
+
+/** How one dreamer a quest was shared with came out of it, told to the sharer. */
+export interface QuestShareAnswerMessage {
+  questId: string;
+  name: string;
+  outcome: QuestShareOutcome;
+}
+
+/** How many bounties the dreamer held ran out as the board turned. */
+export interface BountiesRanOutMessage {
+  count: number;
 }
 
 export interface ConditionMessage {
@@ -828,6 +871,18 @@ export function decodeAbandonQuestMessage(container: Record<string, unknown>, pa
   return { questId: requireQuestId(container, 'questId', path) };
 }
 
+export function decodeShareQuestMessage(container: Record<string, unknown>, path: string): ShareQuestMessage {
+  return { questId: requireQuestId(container, 'questId', path) };
+}
+
+function requireOfferId(container: Record<string, unknown>, path: string): number {
+  return requireAtLeastOne(requireInt32(container, 'offerId', path), `${path}.offerId`, 'an offer id');
+}
+
+export function decodeAnswerQuestOfferMessage(container: Record<string, unknown>, path: string): AnswerQuestOfferMessage {
+  return { offerId: requireOfferId(container, path), take: requireBool(container, 'take', path) };
+}
+
 export function decodeStudyMessage(container: Record<string, unknown>, path: string): StudyMessage {
   return {
     carrierId: requireEntityId(container, 'carrierId', path),
@@ -1028,10 +1083,7 @@ function decodeAffixMessage(container: Record<string, unknown>, path: string): A
 
 /** Item, base, and affix ids decode as ids: the items are core's, so core's reader checks them. */
 function decodeItemMessage(container: Record<string, unknown>, path: string): ItemMessage {
-  const tier = requireInt32(container, 'tier', path);
-  if (tier < 1) {
-    throw new WireDecodingError(`${path}.tier`, `expected a tier of 1 or more, got ${tier}`);
-  }
+  const tier = requireAtLeastOne(requireInt32(container, 'tier', path), `${path}.tier`, 'a tier');
   return {
     id: requireId(container, 'id', path),
     baseId: requireId(container, 'baseId', path),
@@ -1168,6 +1220,13 @@ function requireNonNegative(value: number, path: string): number {
   return value;
 }
 
+function requireAtLeastOne(value: number, path: string, noun: string): number {
+  if (value < 1) {
+    throw new WireDecodingError(path, `expected ${noun} of 1 or more, got ${value}`);
+  }
+  return value;
+}
+
 function decodeTeachingRankMessage(container: Record<string, unknown>, path: string): TeachingRankMessage {
   return {
     teachingId: requireId(container, 'teachingId', path),
@@ -1201,23 +1260,21 @@ function decodeHeldQuestMessage(container: Record<string, unknown>, path: string
 
 /** The kind decodes as an id: the kinds are core's, so core's reader checks it. */
 export function decodeBountyMessage(container: Record<string, unknown>, path: string): BountyMessage {
-  const count = requireInt32(container, 'count', path);
-  if (count < 1) {
-    throw new WireDecodingError(`${path}.count`, `expected a count of 1 or more, got ${count}`);
-  }
-  const reward = requireNested(container, 'reward', path);
-  const gear = requireInt32(reward, 'gear', `${path}.reward`);
-  if (gear < 1) {
-    throw new WireDecodingError(`${path}.reward.gear`, `expected a tier of 1 or more, got ${gear}`);
-  }
+  const count = requireAtLeastOne(requireInt32(container, 'count', path), `${path}.count`, 'a count');
   return {
     day: requireNonNegative(requireInt32(container, 'day', path), `${path}.day`),
     land: requireBoundedString(container, 'land', path, PROTOCOL_BYTE_CAPS.sectorName),
     monsterKind: requireId(container, 'monsterKind', path),
     objective: requireStringEnum(container, 'objective', path, BOUNTY_OBJECTIVES),
     count,
-    reward: { coins: requireNonNegative(requireInt32(reward, 'coins', `${path}.reward`), `${path}.reward.coins`), gear },
+    reward: decodeBountyReward(requireNested(container, 'reward', path), `${path}.reward`),
   };
+}
+
+function decodeBountyReward(container: Record<string, unknown>, path: string): BountyMessage['reward'] {
+  const coins = requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`);
+  if (isAbsent(container, 'gear')) return { coins };
+  return { coins, gear: requireAtLeastOne(requireInt32(container, 'gear', path), `${path}.gear`, 'a tier') };
 }
 
 export function decodeQuestsMessage(container: Record<string, unknown>, path: string): QuestsMessage {
@@ -1226,6 +1283,30 @@ export function decodeQuestsMessage(container: Record<string, unknown>, path: st
     done: requireDistinctIds(container, 'done', path, SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests, requireQuestIdValue),
     bounties: mapArray(container, 'bounties', path, SOMNIO_PROTOCOL_CONSTANTS.maxBounties, decodeBountyMessage),
   };
+}
+
+export function decodeQuestOfferMessage(container: Record<string, unknown>, path: string): QuestOfferMessage {
+  return {
+    offerId: requireOfferId(container, path),
+    fromName: requireBoundedString(container, 'fromName', path, PROTOCOL_BYTE_CAPS.identifier),
+    questId: requireQuestId(container, 'questId', path),
+  };
+}
+
+export function decodeQuestSharedMessage(container: Record<string, unknown>, path: string): QuestSharedMessage {
+  return { reached: requireNonNegative(requireInt32(container, 'reached', path), `${path}.reached`) };
+}
+
+export function decodeQuestShareAnswerMessage(container: Record<string, unknown>, path: string): QuestShareAnswerMessage {
+  return {
+    questId: requireQuestId(container, 'questId', path),
+    name: requireBoundedString(container, 'name', path, PROTOCOL_BYTE_CAPS.identifier),
+    outcome: requireStringEnum(container, 'outcome', path, QUEST_SHARE_OUTCOMES),
+  };
+}
+
+export function decodeBountiesRanOutMessage(container: Record<string, unknown>, path: string): BountiesRanOutMessage {
+  return { count: requireAtLeastOne(requireInt32(container, 'count', path), `${path}.count`, 'a count') };
 }
 
 export function decodeConditionMessage(container: Record<string, unknown>, path: string): ConditionMessage {

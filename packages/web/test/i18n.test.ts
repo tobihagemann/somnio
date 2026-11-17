@@ -18,6 +18,9 @@ import {
 } from '@/i18n';
 import { COMPASS_POINTS } from '@/client';
 import type { ChatLine } from '@/client';
+import { QUEST_SHARE_OUTCOMES } from '@somnio/protocol';
+import type { QuestShareOutcome } from '@somnio/protocol';
+import type { BountyId, QuestOrBountyId } from '@somnio/core';
 
 /**
  * The catalog discipline: `RENDERED_KEYS` is checked for en/de presence, placeholder parity, and
@@ -110,6 +113,7 @@ describe('the names rendered through a core label key', () => {
       '%@ of Warding',
       '%@ of the Bulwark',
       "A newcomer's errand",
+      'A word for Memor',
       'Amulet',
       'Balance recovery',
       'Bind',
@@ -136,6 +140,8 @@ describe('the names rendered through a core label key', () => {
       'Drive off a nightmare.',
       'Drive off the Necromancer in the burial chamber.',
       'Fighter',
+      'Find Memor in the Graveyard.',
+      "Find the Mystics' tower on the square.",
       'Find the hidden places Tacita speaks of.',
       'Follow-through',
       'Gather %@ cracked skulls from Skeleton Warriors.',
@@ -156,6 +162,7 @@ describe('the names rendered through a core label key', () => {
       'Lumina',
       'Lunge',
       'Mace',
+      'Meet Pugnax and Sana in their halls.',
       'Mend 60 health on other dreamers.',
       'Mending others',
       'Moonstone',
@@ -288,6 +295,9 @@ describe('resolveLocale', () => {
   });
 });
 
+/** A bounty set in Autumn Wood. */
+const BOUNTY: BountyId = 'bounty:20000:AutumnWood:ghost:driveOff';
+
 describe('renderChatLine', () => {
   const lines: ChatLine[] = [
     { kind: 'spokenByOwn', senderName: 'Ich', message: 'Hallo', speech: 'say' },
@@ -323,7 +333,16 @@ describe('renderChatLine', () => {
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
     { kind: 'placeFound', found: 1, total: 3 },
     { kind: 'questDone', questId: 'healer-trial', turnIn: 'Sana' },
+    { kind: 'questDone', questId: 'word-for-memor-fighter', turnIn: 'Memor' },
     { kind: 'bountyDone' },
+    { kind: 'questShared', reached: 0 },
+    { kind: 'questShared', reached: 1 },
+    { kind: 'questShared', reached: 2 },
+    ...QUEST_SHARE_OUTCOMES.map((outcome): ChatLine => ({ kind: 'questShareAnswer', name: 'Bren', questId: 'restless-graves', outcome })),
+    { kind: 'questShareAnswer', name: 'Bren', questId: BOUNTY, outcome: 'took' },
+    { kind: 'questTakenFrom', questId: 'restless-graves', fromName: 'Bren' },
+    { kind: 'bountiesRanOut', count: 1 },
+    { kind: 'bountiesRanOut', count: 2 },
     { kind: 'fell' },
     { kind: 'raised', healerNames: ['Lumi'] },
     { kind: 'raised', healerNames: ['Lumi', 'Bren'] },
@@ -391,6 +410,46 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'pickedUp', contents: skull }, catalogTables, 'de')).toBe('Gesprungener Schädel aufgehoben.');
     expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'en')).toBe('Leather cap received.');
     expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'de')).toBe('Lederkappe erhalten.');
+  });
+
+  it('says how many dreamers a share reached, one of them by its own line, and how many bounties ran out', () => {
+    const render = (line: ChatLine) => renderChatLine(line, catalogTables, 'en');
+    expect(render({ kind: 'questShared', reached: 0 })).toBe('No dreamer is near enough to share with.');
+    expect(render({ kind: 'questShared', reached: 1 })).toBe('You shared a quest with one dreamer near you.');
+    expect(render({ kind: 'questShared', reached: 3 })).toBe('You shared a quest with 3 dreamers near you.');
+    expect(render({ kind: 'bountiesRanOut', count: 1 })).toBe('Your bounty ran out as the board turned.');
+    expect(render({ kind: 'bountiesRanOut', count: 2 })).toBe('Your 2 bounties ran out as the board turned.');
+  });
+
+  it('says how each dreamer a quest was shared with came out of it, the quest by its title, a bounty by its land', () => {
+    const answer = (outcome: QuestShareOutcome, questId: QuestOrBountyId = 'restless-graves', locale: 'en' | 'de' = 'en') =>
+      renderChatLine({ kind: 'questShareAnswer', name: 'Bren', questId, outcome }, catalogTables, locale);
+    expect(QUEST_SHARE_OUTCOMES.map((outcome) => answer(outcome))).toEqual([
+      'Bren took on Restless graves.',
+      "Bren didn't take Restless graves.",
+      "Bren's quest log is full.",
+      'Bren already holds Restless graves.',
+      'Bren turned in Restless graves before.',
+      "Bren can't take Restless graves yet.",
+    ]);
+    expect(answer('took', BOUNTY)).toBe('Bren took on Bounty: Autumn Wood.');
+    expect(answer('took', BOUNTY, 'de')).toBe('Bren hat Kopfgeld: Herbstwald angenommen.');
+  });
+
+  it('says which quest the player took on from whom, a bounty by its land', () => {
+    const taken = (questId: QuestOrBountyId, locale: 'en' | 'de') =>
+      renderChatLine({ kind: 'questTakenFrom', questId, fromName: 'Bren' }, catalogTables, locale);
+    expect(taken('restless-graves', 'en')).toBe('You took on Restless graves from Bren.');
+    expect(taken(BOUNTY, 'de')).toBe('Du hast Kopfgeld: Herbstwald von Bren angenommen.');
+  });
+
+  it('says to return a quest done where it was given, and to turn one given elsewhere in where it goes', () => {
+    expect(renderChatLine({ kind: 'questDone', questId: 'restless-graves', turnIn: 'Memor' }, catalogTables, 'en')).toBe(
+      'Quest done: Restless graves. Return to Memor.',
+    );
+    expect(renderChatLine({ kind: 'questDone', questId: 'word-for-memor-fighter', turnIn: 'Memor' }, catalogTables, 'en')).toBe(
+      'Quest done: A word for Memor. Turn it in to Memor.',
+    );
   });
 
   it('names several Healers as the language lists them', () => {

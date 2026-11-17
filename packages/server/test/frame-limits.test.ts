@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { SPEECH_PACE, SpeechPace } from '@somnio/core';
 import { AttemptLimiter } from '../src/connection/attemptLimiter.ts';
-import { FRAME_BUDGETS } from '../src/connection/frameLimits.ts';
+import { FRAME_BUDGETS, FRAME_KINDS } from '../src/connection/frameLimits.ts';
 import { testLogger } from './support/logger.ts';
+
+describe('the share budget', () => {
+  it('lets four shares through at once, then one every 5 s, and spends nothing of the speech budget', () => {
+    const clock = { ms: 0 };
+    const limiter = new AttemptLimiter({ enabled: true, logger: testLogger(), budgets: FRAME_BUDGETS, now: () => clock.ms });
+    const share = (): boolean => limiter.admit(FRAME_KINDS.shareQuest!, 'alice');
+    expect([share(), share(), share(), share(), share()]).toEqual([true, true, true, true, false]);
+    clock.ms = 4999;
+    expect(share()).toBe(false);
+    clock.ms = 5000;
+    expect([share(), share()]).toEqual([true, false]);
+    expect(Array.from({ length: SPEECH_PACE.burst }, () => limiter.admit('speech', 'alice'))).not.toContain(false);
+  });
+});
 
 describe('the speech budget', () => {
   /** A player who sends as fast as the client lets them: a burst, a line a second, a pause, and a burst again. */

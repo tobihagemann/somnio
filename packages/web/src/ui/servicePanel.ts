@@ -8,6 +8,7 @@ import {
   WARES,
   bagHasRoom,
   buyBackable,
+  boardTurnsAt,
   bountyIdOf,
   bountyQuest,
   canBuy,
@@ -54,7 +55,7 @@ import { button, element, replaceChildren, setHidden } from './dom';
 import { itemIcon } from './itemIcons';
 import { paintRarityColors } from './hud';
 import { itemLines, itemTitle, rarityName } from './itemText';
-import { questAsks, questLines, questTitle, rewardNote } from './questText';
+import { questAsks, questLines, questTitle, rewardNote, timeLeft } from './questText';
 
 /**
  * What a carrier offers: a master, the shopkeeper, or the bounty board, and the quests a carrier
@@ -74,6 +75,8 @@ export interface ServicePanelCallbacks {
   /** The shopkeeper's "Sell from bag", where the Character window cannot stand beside the panel. */
   onSellFromBag: () => void;
   onClose: () => void;
+  /** The name of a carrier, by its id, that gave a quest handed off to another. */
+  carrierName: (carrierId: string) => string;
 }
 
 /** Thunks rather than constants so `t` runs after the locale resolves, each key in a literal `t('...')` the catalog test can find. */
@@ -169,6 +172,8 @@ export class ServicePanel {
   readonly root: HTMLElement;
 
   private readonly callbacks: ServicePanelCallbacks;
+  /** The time now in epoch milliseconds, from which the board counts down to its turn. */
+  private readonly wallNow: () => number;
   private readonly title: HTMLElement;
   private readonly subtitle: HTMLElement;
   private readonly purse: HTMLElement;
@@ -176,8 +181,9 @@ export class ServicePanel {
   private readonly body: HTMLElement;
   private shown: { carrierId: string; reads: readonly unknown[] } | undefined;
 
-  constructor(callbacks: ServicePanelCallbacks) {
+  constructor(callbacks: ServicePanelCallbacks, wallNow: () => number = () => Date.now()) {
     this.callbacks = callbacks;
+    this.wallNow = wallNow;
     this.title = element('h1', { className: 'overlay-title' });
     this.subtitle = element('p', { className: 'form-note service-subtitle' });
     this.purseAmount = element('strong');
@@ -243,8 +249,9 @@ export class ServicePanel {
 
   /**
    * The body a carrier shows, with the inputs it reads, so a frame it does not read leaves it
-   * standing: its own service's, then the quests it gives or takes that no master's teachings show.
-   * The shopkeeper's also carries the purse shown above it.
+   * standing: the quests it gives or takes that no master's teachings show, then its own service's,
+   * so a quest stands in view above a master's long list of teachings. The shopkeeper's also carries
+   * the purse shown above it.
    */
   private bodyFor(
     carrier: ServiceCarrier,
@@ -265,7 +272,7 @@ export class ServicePanel {
     if (own !== undefined && !carries) return own;
     // Of what the dreamer carries, the quests read only whether a reward's item has a place to go.
     const roomForGear = bagHasRoom(inventory);
-    const build = (): HTMLElement[] => [...(own?.build() ?? []), ...this.questOffers(carrier, name, lucidity, quests, roomForGear)];
+    const build = (): HTMLElement[] => [...this.questOffers(carrier, name, lucidity, quests, roomForGear), ...(own?.build() ?? [])];
     return { reads: [...(own?.reads ?? []), lucidity, quests, roomForGear], ...(own?.purse === undefined ? {} : { purse: own.purse }), build };
   }
 
@@ -305,31 +312,27 @@ export class ServicePanel {
     }
   }
 
-  /**
-   * The day's bounties. The bounties the dreamer took on an earlier day, which the board still pays
-   * for, come first under a heading of their own, since one may be set in the same land as the day's.
-   */
+  /** The day's bounties, after how long until the board turns, worked out as the panel is built. */
   private bountyBoard(lucidity: LucidityMessage, quests: QuestLog, bounties: readonly Bounty[], roomForGear: boolean): HTMLElement[] {
-    const offered = new Set(bounties.map(bountyIdOf));
-    const earlier = quests.active.flatMap((held) => (held.definition === undefined || offered.has(held.questId) ? [] : [held.definition]));
-    if (earlier.length === 0 && bounties.length === 0) return [paragraph(t('No bounties today.'), 'form-note')];
-    const today = bounties.map((bounty) => this.bountyRow(bounty, lucidity, quests, roomForGear, false));
-    if (earlier.length === 0) return [paragraph(t('New bounties go up each day.')), ...today];
+    const day = bounties[0]?.day;
+    if (day === undefined) return [paragraph(t('No bounties today.'), 'form-note')];
     return [
-      paragraph(t('New bounties go up each day.')),
-      element('h2', { className: 'service-heading', text: t('Taken on an earlier day') }),
-      ...earlier.map((bounty) => this.bountyRow(bounty, lucidity, quests, roomForGear, true)),
-      element('h2', { className: 'service-heading', text: t("Today's bounties") }),
-      ...(today.length === 0 ? [paragraph(t('No bounties today.'), 'form-note')] : today),
+      paragraph(
+        t(
+          'Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.',
+          timeLeft(boardTurnsAt(day), this.wallNow()),
+        ),
+      ),
+      ...bounties.map((bounty) => this.bountyRow(bounty, lucidity, quests, roomForGear)),
     ];
   }
 
   /**
    * A bounty: what it asks and pays, and the way to take it, how far it has come, the way to turn it
-   * in once done, or that it is turned in. Bounties share a title per land, so each button's
-   * accessible name also says what the bounty asks, and whether it was taken on an earlier day.
+   * in once done, or that it is turned in. A bounty's title names only its land, so each button's
+   * accessible name also says what the bounty asks.
    */
-  private bountyRow(bounty: Bounty, lucidity: LucidityMessage, quests: QuestLog, roomForGear: boolean, earlier: boolean): HTMLElement {
+  private bountyRow(bounty: Bounty, lucidity: LucidityMessage, quests: QuestLog, roomForGear: boolean): HTMLElement {
     const questId = bountyIdOf(bounty);
     const held = quests.active.find((candidate) => candidate.questId === questId);
     // A bounty held is said as it was taken on: its id leaves out its count and its reward, which
@@ -339,19 +342,18 @@ export class ServicePanel {
     const title = questTitle(said, taken);
     if (quests.done.includes(questId)) return this.questRow(questId, title, [], undefined, t('Turned in'));
     if (held === undefined) {
-      const take = this.offerButton(t('Take the bounty'), questId, quests);
+      const take = this.offerButton(t('Take the quest'), questId, quests);
       take.setAttribute('aria-label', t('Take %1$@. %2$@', title, questAsks(said)));
       return this.questRow(questId, title, [...questLines(said, undefined), ...rewardNote(said.reward, lucidity.study), ...this.logFullNote(quests)], take);
     }
     if (turnInFor(questId, quests, lucidity) === undefined) {
       return this.questRow(questId, title, [...questLines(said, held), ...rewardNote(said.reward, lucidity.study)], undefined, t('Taken'));
     }
-    const name = earlier ? t('Turn in %1$@ from an earlier day. %2$@', title, questAsks(said)) : t('Turn in %1$@. %2$@', title, questAsks(said));
     return this.questRow(
       questId,
       title,
       [...questLines(said, held), ...this.turnInNotes(said.reward, lucidity.study, roomForGear)],
-      this.turnInButton(held, name, said.reward, roomForGear),
+      this.turnInButton(held, t('Turn in %1$@. %2$@', title, questAsks(said)), said.reward, roomForGear),
       t('Done'),
     );
   }
@@ -383,14 +385,18 @@ export class ServicePanel {
     ];
   }
 
-  /** A quest held: how far it has come, and the way to turn it in once it is done here, greyed out while the item it pays has nowhere to go. */
+  /**
+   * A quest held: how far it has come, and the way to turn it in once it is done here, greyed out
+   * while the item it pays has nowhere to go. A quest given elsewhere names who gave it.
+   */
   private heldQuestRow(carrier: QuestCarrier, name: string, held: ActiveQuest, quests: QuestLog, lucidity: LucidityMessage, roomForGear: boolean): HTMLElement {
     const said = heldQuest(held);
     const title = questTitle(said);
     if (!questCarriedBy(said.turnIn, carrier) || turnInFor(held.questId, quests, lucidity) === undefined) {
       return this.questRow(held.questId, title, questLines(said, held), undefined);
     }
-    const notes = [paragraph(t('You did what %@ asked.', name), 'form-note'), ...this.turnInNotes(said.reward, lucidity.study, roomForGear)];
+    const asker = said.giver === said.turnIn ? name : this.callbacks.carrierName(said.giver);
+    const notes = [paragraph(t('You did what %@ asked.', asker), 'form-note'), ...this.turnInNotes(said.reward, lucidity.study, roomForGear)];
     return this.questRow(held.questId, title, notes, this.turnInButton(held, t('Turn in %@', title), said.reward, roomForGear));
   }
 

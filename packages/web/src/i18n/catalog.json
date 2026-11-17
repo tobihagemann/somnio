@@ -1,4 +1,8 @@
 {
+  "%1$@ already holds %2$@.": {
+    "en": "%1$@ already holds %2$@.",
+    "de": "%1$@ hat %2$@ bereits angenommen."
+  },
   "%1$@ are drawing you back: %2$@ s": {
     "en": "%1$@ are drawing you back: %2$@ s",
     "de": "%1$@ holen dich zurück: %2$@ s"
@@ -19,9 +23,17 @@
     "en": "%1$@ bought for %2$@c.",
     "de": "%1$@ für %2$@c gekauft."
   },
+  "%1$@ can't take %2$@ yet.": {
+    "en": "%1$@ can't take %2$@ yet.",
+    "de": "%1$@ kann %2$@ noch nicht annehmen."
+  },
   "%1$@ damage, %2$@ balance a swing": {
     "en": "%1$@ damage, %2$@ balance a swing",
     "de": "%1$@ Schaden, %2$@ Gleichgewicht je Schlag"
+  },
+  "%1$@ didn't take %2$@.": {
+    "en": "%1$@ didn't take %2$@.",
+    "de": "%1$@ hat %2$@ nicht angenommen."
   },
   "%1$@ exclaims from the %2$@, \"%3$@\"": {
     "en": "%1$@ exclaims from the %2$@, \"%3$@\"",
@@ -66,6 +78,14 @@
   "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.": {
     "en": "%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.",
     "de": "%1$@ nimmt auf, wer eine Prüfung besteht. Sie verpflichtet dich zu nichts: Du entscheidest danach, ob du %2$@ wirst."
+  },
+  "%1$@ took on %2$@.": {
+    "en": "%1$@ took on %2$@.",
+    "de": "%1$@ hat %2$@ angenommen."
+  },
+  "%1$@ turned in %2$@ before.": {
+    "en": "%1$@ turned in %2$@ before.",
+    "de": "%1$@ hat %2$@ schon einmal abgegeben."
   },
   "%1$@ whispers from the %2$@, \"%3$@\"": {
     "en": "%1$@ whispers from the %2$@, \"%3$@\"",
@@ -123,6 +143,10 @@
     "en": "%@ entered the game.",
     "de": "%@ hat das Spiel betreten."
   },
+  "%@ h": {
+    "en": "%@ h",
+    "de": "%@ h"
+  },
   "%@ is not a command. Write /w to whisper or /y to yell.": {
     "en": "%@ is not a command. Write /w to whisper or /y to yell.",
     "de": "%@ ist kein Befehl. Schreib /w zum Flüstern oder /y zum Schreien."
@@ -138,6 +162,10 @@
   "%@ loses hold of you.": {
     "en": "%@ loses hold of you.",
     "de": "%@ verliert den Halt an dir."
+  },
+  "%@ min": {
+    "en": "%@ min",
+    "de": "%@ min"
   },
   "%@ only": {
     "en": "%@ only",
@@ -167,9 +195,17 @@
     "en": "%@ s cooldown",
     "de": "%@ s Abklingzeit"
   },
+  "%@ s to answer": {
+    "en": "%@ s to answer",
+    "de": "Noch %@ s zum Antworten"
+  },
   "%@ sells plain gear and buys what you find.": {
     "en": "%@ sells plain gear and buys what you find.",
     "de": "%@ verkauft schlichte Ausrüstung und kauft, was du findest."
+  },
+  "%@ shares a quest": {
+    "en": "%@ shares a quest",
+    "de": "%@ teilt einen Auftrag"
   },
   "%@ strikes land": {
     "en": "%@ strikes land",
@@ -186,6 +222,10 @@
   "%@%%": {
     "en": "%@%%",
     "de": "%@ %%"
+  },
+  "%@'s quest log is full.": {
+    "en": "%@'s quest log is full.",
+    "de": "Das Auftragsbuch von %@ ist voll."
   },
   "%@, rank 1": {
     "en": "%@, rank 1",
@@ -843,10 +883,6 @@
     "en": "New Dreamer",
     "de": "Neuer Träumer"
   },
-  "New bounties go up each day.": {
-    "en": "New bounties go up each day.",
-    "de": "Jeden Tag hängen neue Kopfgelder aus."
-  },
   "Nightmares in reach, in front of you": {
     "en": "Nightmares in reach, in front of you",
     "de": "Albträume in Reichweite vor dir"
@@ -862,6 +898,10 @@
   "No bounties today.": {
     "en": "No bounties today.",
     "de": "Heute gibt es keine Kopfgelder."
+  },
+  "No dreamer is near enough to share with.": {
+    "en": "No dreamer is near enough to share with.",
+    "de": "Kein Träumer ist nah genug, um mit ihm zu teilen."
   },
   "No dreamers yet. Create one to enter the world.": {
     "en": "No dreamers yet. Create one to enter the world.",
@@ -890,6 +930,10 @@
   "Not enough Spirit": {
     "en": "Not enough Spirit",
     "de": "Nicht genug Geist"
+  },
+  "Not now": {
+    "en": "Not now",
+    "de": "Jetzt nicht"
   },
   "Not while a quest forbids striking": {
     "en": "Not while a quest forbids striking",
@@ -962,6 +1006,10 @@
   "Quest done: %1$@. Return to %2$@.": {
     "en": "Quest done: %1$@. Return to %2$@.",
     "de": "Auftrag erfüllt: %1$@. Kehre zu %2$@ zurück."
+  },
+  "Quest done: %1$@. Turn it in to %2$@.": {
+    "en": "Quest done: %1$@. Turn it in to %2$@.",
+    "de": "Auftrag erfüllt: %1$@. Gib ihn bei %2$@ ab."
   },
   "Quest log": {
     "en": "Quest log",
@@ -1055,6 +1103,14 @@
     "en": "Run",
     "de": "Rennen"
   },
+  "Runs out in %@": {
+    "en": "Runs out in %@",
+    "de": "Verfällt in %@"
+  },
+  "Runs out in %@, when the board turns.": {
+    "en": "Runs out in %@, when the board turns.",
+    "de": "Verfällt in %@, wenn die Tafel wechselt."
+  },
   "Sell %1$@ for %2$@c": {
     "en": "Sell %1$@ for %2$@c",
     "de": "%1$@ für %2$@c verkaufen"
@@ -1078,6 +1134,14 @@
   "Settings": {
     "en": "Settings",
     "de": "Einstellungen"
+  },
+  "Share %@ with dreamers near you": {
+    "en": "Share %@ with dreamers near you",
+    "de": "%@ mit Träumern in deiner Nähe teilen"
+  },
+  "Share quest": {
+    "en": "Share quest",
+    "de": "Auftrag teilen"
   },
   "Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.": {
     "en": "Shield the dreamer you target, or yourself. The shield takes the harm of the next blows until it breaks. Each rank holds more.",
@@ -1187,10 +1251,6 @@
     "en": "Take half the harm for a few seconds, but you cannot run. Each rank holds it longer.",
     "de": "Nimm ein paar Sekunden lang nur halben Schaden, kannst aber nicht rennen. Jeder Rang hält länger."
   },
-  "Take the bounty": {
-    "en": "Take the bounty",
-    "de": "Kopfgeld annehmen"
-  },
   "Take the quest": {
     "en": "Take the quest",
     "de": "Auftrag annehmen"
@@ -1202,10 +1262,6 @@
   "Taken": {
     "en": "Taken",
     "de": "Angenommen"
-  },
-  "Taken on an earlier day": {
-    "en": "Taken on an earlier day",
-    "de": "An einem früheren Tag angenommen"
   },
   "Takes half the harm and cannot run.": {
     "en": "Takes half the harm and cannot run.",
@@ -1287,13 +1343,13 @@
     "en": "This stays with you.",
     "de": "Das bleibt bei dir."
   },
+  "Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.": {
+    "en": "Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.",
+    "de": "Jeden Tag um 00:00 UTC hängen drei neue Kopfgelder aus, in %@. Jedes Kopfgeld, das du hältst, verfällt dann, ob erfüllt oder nicht."
+  },
   "Time between swings": {
     "en": "Time between swings",
     "de": "Zeit zwischen Schlägen"
-  },
-  "Today's bounties": {
-    "en": "Today's bounties",
-    "de": "Heutige Kopfgelder"
   },
   "Too many attempts. Wait a little before trying again.": {
     "en": "Too many attempts. Wait a little before trying again.",
@@ -1311,10 +1367,6 @@
     "en": "Turn in",
     "de": "Abgeben"
   },
-  "Turn in %1$@ from an earlier day. %2$@": {
-    "en": "Turn in %1$@ from an earlier day. %2$@",
-    "de": "%1$@ von einem früheren Tag abgeben. %2$@"
-  },
   "Turn in %1$@. %2$@": {
     "en": "Turn in %1$@. %2$@",
     "de": "%1$@ abgeben. %2$@"
@@ -1322,6 +1374,14 @@
   "Turn in %@": {
     "en": "Turn in %@",
     "de": "%@ abgeben"
+  },
+  "Turn it in at the bounty board.": {
+    "en": "Turn it in at the bounty board.",
+    "de": "Gib ihn an der Kopfgeldtafel ab."
+  },
+  "Turn it in to %@.": {
+    "en": "Turn it in to %@.",
+    "de": "Gib ihn bei %@ ab."
   },
   "Turn the nightmares' anger from you: they forget half of it, and your mending stirs them less for a while.": {
     "en": "Turn the nightmares' anger from you: they forget half of it, and your mending stirs them less for a while.",
@@ -1471,6 +1531,14 @@
     "en": "You receive %@c.",
     "de": "Du erhältst %@c."
   },
+  "You shared a quest with %@ dreamers near you.": {
+    "en": "You shared a quest with %@ dreamers near you.",
+    "de": "Du hast einen Auftrag mit %@ Träumern in deiner Nähe geteilt."
+  },
+  "You shared a quest with one dreamer near you.": {
+    "en": "You shared a quest with one dreamer near you.",
+    "de": "Du hast einen Auftrag mit einem Träumer in deiner Nähe geteilt."
+  },
   "You study nothing. Choose a teaching below.": {
     "en": "You study nothing. Choose a teaching below.",
     "de": "Du lernst nichts. Wähle unten eine Lehre."
@@ -1478,6 +1546,10 @@
   "You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.": {
     "en": "You study one teaching at a time. What you do out there fills its practice, and full practice is its next rank.",
     "de": "Du lernst immer nur eine Lehre. Was du draußen tust, füllt ihre Übung, und volle Übung ist ihr nächster Rang."
+  },
+  "You took on %1$@ from %2$@.": {
+    "en": "You took on %1$@ from %2$@.",
+    "de": "Du hast %1$@ von %2$@ angenommen."
   },
   "You will wake at the inn, weakened.": {
     "en": "You will wake at the inn, weakened.",
@@ -1490,6 +1562,10 @@
   "Your %1$@ deepens: rank %2$@.": {
     "en": "Your %1$@ deepens: rank %2$@.",
     "de": "Deine Lehre %1$@ vertieft sich: Rang %2$@."
+  },
+  "Your %@ bounties ran out as the board turned.": {
+    "en": "Your %@ bounties ran out as the board turned.",
+    "de": "Deine %@ Kopfgelder sind verfallen, als die Tafel wechselte."
   },
   "Your Dreamers": {
     "en": "Your Dreamers",
@@ -1506,6 +1582,10 @@
   "Your bag is full. Make room in it before you turn this in.": {
     "en": "Your bag is full. Make room in it before you turn this in.",
     "de": "Deine Tasche ist voll. Schaffe darin Platz, bevor du das abgibst."
+  },
+  "Your bounty ran out as the board turned.": {
+    "en": "Your bounty ran out as the board turned.",
+    "de": "Dein Kopfgeld ist verfallen, als die Tafel wechselte."
   },
   "Your dreamer, wearing what is equipped. Drag to turn.": {
     "en": "Your dreamer, wearing what is equipped. Drag to turn.",
@@ -1546,6 +1626,10 @@
   "Yourself": {
     "en": "Yourself",
     "de": "Du selbst"
+  },
+  "a magic item": {
+    "en": "a magic item",
+    "de": "ein magisches Ausrüstungsstück"
   },
   "a piece of gear": {
     "en": "a piece of gear",

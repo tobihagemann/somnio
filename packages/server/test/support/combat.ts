@@ -61,7 +61,7 @@ export function arena(
   };
   const sector = makeSector('TestSector', { ...(ghost ? { monsterSpawns: [spawn] } : {}), ...overrides });
   const lands = landsAtCentre(options.ground ?? 0);
-  const { clock, space } = makeClockedSpace(makeWorld([sector, ...(options.sectors ?? [])]), OUTDOOR_SPACE_ID, {
+  const { clock, wall, space } = makeClockedSpace(makeWorld([sector, ...(options.sectors ?? [])]), OUTDOOR_SPACE_ID, {
     random: { nextUInt32: () => (dice.hit ? lands.nextUInt32() : 0xffff_ffff) },
     ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
     ...(options.elite === undefined ? {} : { eliteRandom: traitRoll(options.elite) }),
@@ -79,7 +79,7 @@ export function arena(
       space.step(STEP_SECONDS);
     }
   };
-  return { clock, space, dice, steps };
+  return { clock, wall, space, dice, steps };
 }
 
 /**

@@ -16,7 +16,17 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
-import { NO_STATS, PICKUP_REACH, SOMNIO_CONSTANTS, SPEECH_PACE, bountyIdOf, fullPools, headingFromVector, reachDistance } from '@somnio/core';
+import {
+  NO_STATS,
+  PICKUP_REACH,
+  QUEST_OFFER_SECONDS,
+  SOMNIO_CONSTANTS,
+  SPEECH_PACE,
+  bountyIdOf,
+  fullPools,
+  headingFromVector,
+  reachDistance,
+} from '@somnio/core';
 import type { QuestMarker } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { RaisingState, SomnioMessage } from '@somnio/protocol';
@@ -487,6 +497,20 @@ describe('walking', () => {
     expect(rig.sent.slice(-2)).toEqual([
       { tag: 'move', payload: expect.objectContaining(at()) },
       { tag: 'useAbility', payload: { abilityId: 'brace' } },
+    ]);
+  });
+
+  it('shares a quest after the move the heartbeat held back, since the server judges who is near from where the player stands', () => {
+    const { rig, ticks, at } = standing();
+    tapGround(rig, { x: 14, z: 10 });
+    ticks(0, 50);
+    rig.session.runTick(75);
+
+    rig.session.shareQuest('restless-graves');
+
+    expect(rig.sent.slice(-2)).toEqual([
+      { tag: 'move', payload: expect.objectContaining(at()) },
+      { tag: 'shareQuest', payload: { questId: 'restless-graves' } },
     ]);
   });
 
@@ -1634,7 +1658,7 @@ describe('chat lines from what changed', () => {
       payload: {
         active: [
           { questId: 'restless-graves', progress: [1] },
-          { questId: 'newcomer-errand', progress: [1, 0] },
+          { questId: 'newcomer-errand', progress: [1, 0, 0, 0, 0] },
           { questId: 'mystic-trial', progress: [0, 1, 0] },
         ],
         done: [],
@@ -1642,7 +1666,7 @@ describe('chat lines from what changed', () => {
       },
     });
     expect(news).toEqual([
-      { kind: 'accepted', held: { questId: 'newcomer-errand', progress: [1, 0] } },
+      { kind: 'accepted', held: { questId: 'newcomer-errand', progress: [1, 0, 0, 0, 0] } },
       { kind: 'accepted', held: { questId: 'mystic-trial', progress: [0, 1, 0] } },
     ]);
     // Taking a quest on says nothing in the chat, not even a hidden place already found.
@@ -1757,6 +1781,143 @@ describe('chat lines from what changed', () => {
     expect(marked()).toBe('offer');
     rig.controller.dispatch({ tag: 'leave', payload: { entityId: crier, leftGame: false } });
     expect(marked()).toBeUndefined();
+  });
+});
+
+describe('a quest shared with the player', () => {
+  const BOUNTY = { day: 3, land: 'Meadow', monsterKind: 'ghost', objective: 'driveOff', count: 2, reward: { coins: 24 } } as const;
+  const offered = (questId: string, offerId = 7): SomnioMessage => ({ tag: 'questOffer', payload: { offerId, fromName: 'Bren', questId } });
+
+  /** A player standing in a space whose `quests` frame offers `BOUNTY` as the day's. */
+  function joined(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [BOUNTY] } });
+    return rig;
+  }
+
+  it('keeps the offer with who shared it and when it ends, and answers it by its id, once', () => {
+    const rig = joined();
+    rig.now = 1000;
+    rig.controller.dispatch(offered('restless-graves'));
+    expect(rig.session.questOffer()).toEqual({
+      offerId: 7,
+      fromName: 'Bren',
+      questId: 'restless-graves',
+      bounty: undefined,
+      endsAtMs: 1000 + QUEST_OFFER_SECONDS * 1000,
+    });
+
+    rig.session.answerQuestOffer(7, true);
+    expect(rig.sent.at(-1)).toEqual({ tag: 'answerQuestOffer', payload: { offerId: 7, take: true } });
+    expect(rig.session.questOffer()).toBeUndefined();
+    rig.sent.length = 0;
+    rig.session.answerQuestOffer(7, false);
+    expect(rig.sent).toEqual([]);
+  });
+
+  it("finds a shared bounty among the day's, and leaves one not there or a quest it does not know unshown, in place of the offer before", () => {
+    const rig = joined();
+    rig.controller.dispatch(offered(bountyIdOf(BOUNTY), 1));
+    expect(rig.session.questOffer()).toMatchObject({ offerId: 1, questId: bountyIdOf(BOUNTY), bounty: BOUNTY });
+
+    rig.controller.dispatch(offered(bountyIdOf({ ...BOUNTY, day: 2 }), 2));
+    expect(rig.session.questOffer()).toBeUndefined();
+    rig.controller.dispatch(offered('restless-graves', 3));
+    rig.controller.dispatch(offered('no-such-quest', 4));
+    expect(rig.session.questOffer()).toBeUndefined();
+  });
+
+  it("lets the offer go at a new space, at a fall, and at a quests frame whose board no longer offers its bounty, which keeps a quest's", () => {
+    const door = joined();
+    door.controller.dispatch(offered('restless-graves'));
+    door.controller.dispatch(enterSpaceFrame('Hall'));
+    expect(door.session.questOffer()).toBeUndefined();
+
+    const fall = joined();
+    fall.controller.dispatch(offered('restless-graves'));
+    fall.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    expect(fall.session.questOffer()).toBeUndefined();
+
+    const [turned, kept] = [joined(), joined()];
+    turned.controller.dispatch(offered(bountyIdOf(BOUNTY)));
+    kept.controller.dispatch(offered('restless-graves'));
+    for (const rig of [turned, kept]) rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [BOUNTY] } });
+    expect([turned.session.questOffer()?.offerId, kept.session.questOffer()?.offerId]).toEqual([7, 7]);
+    for (const rig of [turned, kept]) rig.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [] } });
+    expect([turned.session.questOffer(), kept.session.questOffer()?.offerId]).toEqual([undefined, 7]);
+  });
+
+  it('holds the offer for its seconds to answer, and answers nothing after', () => {
+    const rig = joined();
+    rig.controller.dispatch(offered('restless-graves'));
+    rig.now = QUEST_OFFER_SECONDS * 1000 - 1;
+    expect(rig.session.questOffer()?.offerId).toBe(7);
+    rig.now += 1;
+    expect(rig.session.questOffer()).toBeUndefined();
+    rig.sent.length = 0;
+    rig.session.answerQuestOffer(7, true);
+    expect(rig.sent).toEqual([]);
+  });
+
+  it('says in chat how far a share reached, how each dreamer came out of it, and how many bounties ran out', () => {
+    const rig = joined();
+    rig.controller.dispatch({ tag: 'questShared', payload: { reached: 2 } });
+    rig.controller.dispatch({ tag: 'questShareAnswer', payload: { questId: 'restless-graves', name: 'Cara', outcome: 'took' } });
+    rig.controller.dispatch({ tag: 'questShareAnswer', payload: { questId: bountyIdOf(BOUNTY), name: 'Dov', outcome: 'logFull' } });
+    rig.controller.dispatch({ tag: 'questShareAnswer', payload: { questId: 'no-such-quest', name: 'Eli', outcome: 'didNotTake' } });
+    rig.controller.dispatch({ tag: 'bountiesRanOut', payload: { count: 1 } });
+    expect(rig.controller.chatHistory).toEqual([
+      { kind: 'questShared', reached: 2 },
+      { kind: 'questShareAnswer', name: 'Cara', questId: 'restless-graves', outcome: 'took' },
+      { kind: 'questShareAnswer', name: 'Dov', questId: bountyIdOf(BOUNTY), outcome: 'logFull' },
+      { kind: 'bountiesRanOut', count: 1 },
+    ]);
+    expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo', 'itemInfo', 'itemInfo', 'itemInfo']);
+  });
+
+  const holding = (questId: string): SomnioMessage => ({ tag: 'quests', payload: { active: [{ questId, progress: [0] }], done: [], bounties: [BOUNTY] } });
+
+  it('says in chat which quest the player took on from whom once a quests frame holds it, after any frame that does not, and once only', () => {
+    const rig = joined();
+    const graves = (progress: number) => ({ questId: 'restless-graves', progress: [progress] });
+    const withBounty: SomnioMessage = {
+      tag: 'quests',
+      payload: { active: [graves(1), { questId: bountyIdOf(BOUNTY), progress: [0], definition: BOUNTY }], done: [], bounties: [BOUNTY] },
+    };
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [graves(0)], done: [], bounties: [BOUNTY] } });
+    rig.controller.dispatch(offered(bountyIdOf(BOUNTY)));
+    rig.session.answerQuestOffer(7, true);
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [graves(1)], done: [], bounties: [BOUNTY] } });
+    expect(rig.controller.chatHistory).toEqual([]);
+    rig.controller.dispatch(withBounty);
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [graves(1)], done: [], bounties: [BOUNTY] } });
+    rig.controller.dispatch(withBounty);
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'questTakenFrom', questId: bountyIdOf(BOUNTY), fromName: 'Bren' }]);
+    expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo']);
+  });
+
+  it('says nothing of a take the server refused once its seconds to answer ran out, nor of one a new space ended, when the quest is later taken on elsewhere', () => {
+    const refused = joined();
+    refused.controller.dispatch(offered('restless-graves'));
+    refused.session.answerQuestOffer(7, true);
+    refused.controller.dispatch(holding('cracked-skulls'));
+    refused.now = QUEST_OFFER_SECONDS * 1000;
+    refused.controller.dispatch(holding('restless-graves'));
+
+    const door = joined();
+    door.controller.dispatch(offered('restless-graves'));
+    door.session.answerQuestOffer(7, true);
+    door.controller.dispatch(enterSpaceFrame('Hall'));
+    door.controller.dispatch({ tag: 'quests', payload: { active: [], done: [], bounties: [BOUNTY] } });
+    door.controller.dispatch(holding('restless-graves'));
+
+    const passed = joined();
+    passed.controller.dispatch(offered('restless-graves'));
+    passed.session.answerQuestOffer(7, false);
+    passed.controller.dispatch(holding('restless-graves'));
+    expect([refused, door, passed].flatMap((rig) => rig.controller.chatHistory)).toEqual([]);
   });
 });
 
@@ -1893,7 +2054,7 @@ describe('the service panel', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
-    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'newcomer-errand', progress: [1, 1] }], done: [], bounties: [] } });
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'newcomer-errand', progress: [1, 1, 1, 1, 1] }], done: [], bounties: [] } });
     rig.controller.dispatch(entityFrame({ id: LIBUS, kind: 'npc', name: 'Libus', x: 10.3, z: 10.6 }));
     rig.session.pressEntity(LIBUS);
     expect(rig.session.servicePanel?.id).toBe(LIBUS);

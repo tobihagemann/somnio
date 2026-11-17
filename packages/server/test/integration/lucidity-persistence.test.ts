@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { bountyIdOf, bountyLands, dayBounties, worldDay } from '@somnio/core';
+import { boardDay, bountyIdOf, bountyLands, dayBounties } from '@somnio/core';
 import type { Bounty, Character, Inventory, ItemInstance, Lucidity, QuestLog } from '@somnio/core';
 import { PostgresCharacterRepository, PostgresItemRepository, PostgresQuestRepository } from '@somnio/data';
 import { plain } from '../../../core/test/support/items.ts';
@@ -22,11 +22,6 @@ afterAll(async () => {
 });
 
 const NOTHING: Inventory = { coins: 0, equipped: {}, bag: [] };
-
-/** The world day the test server's clock stands on. */
-function today(): number {
-  return worldDay(server.server.worldClock.currentWorldSeconds());
-}
 
 /** Registers a player, lets them leave, and writes `changes` over their row as a later checkpoint would. */
 async function seeded(prefix: string, changes: Partial<Character>, inventory: Inventory = NOTHING): Promise<Character> {
@@ -132,22 +127,22 @@ it('a Mystic joins as stored, with the spirit their Spirit deepening gives and t
   expect(after).toMatchObject({ lucidity, energy });
 });
 
-it("a bounty taken on an earlier day joins held by its definition beside the day's bounties, and only today's turned-in bounties block anything", async () => {
-  const day = today();
-  const yesterday = (bounty: Bounty): Bounty => ({ ...bounty, day: day - 1 });
-  const offered = dayBounties(day, bountyLands([...server.server.worldRouter.world.spaces.values()].flatMap((space) => space.sectors)));
-  const [held, turnedIn] = [yesterday(offered[0]!), offered[1]!];
+it("a bounty of an earlier day loads, and joining drops it and says so right after the quests, while today's turned-in bounties stay", async () => {
+  const lands = bountyLands([...server.server.worldRouter.world.spaces.values()].flatMap((space) => space.sectors));
+  const offered = dayBounties(boardDay(Date.now()), lands);
+  const [first, second] = dayBounties(0, lands);
+  const held: Bounty = { ...first!, reward: { coins: first!.reward.coins } };
+  const turnedIn = offered[0]!;
   const quests: QuestLog = {
     active: [{ questId: bountyIdOf(held), progress: [1], definition: held }],
-    done: [bountyIdOf(yesterday(turnedIn)), bountyIdOf(turnedIn)],
+    done: [bountyIdOf(second!), bountyIdOf(turnedIn)],
   };
   const stored = await seeded('bounty', { quests });
   const joined = await loginOverWire(server.url, stored.name);
-  expect(joined.join.find((message) => message.tag === 'quests')?.payload).toEqual({
-    active: [{ questId: bountyIdOf(held), progress: [1], definition: held }],
-    done: [bountyIdOf(turnedIn)],
-    bounties: offered,
-  });
-  expect(offered.map(({ land }) => land)).toEqual(['AutumnWood', 'EdariaArena', 'Graveyard', 'GraveyardCrypt', 'NorthWood']);
+  const at = joined.join.findIndex((message) => message.tag === 'quests');
+  expect(joined.join.slice(at, at + 2)).toEqual([
+    { tag: 'quests', payload: { active: [], done: [bountyIdOf(turnedIn)], bounties: offered } },
+    { tag: 'bountiesRanOut', payload: { count: 1 } },
+  ]);
   await closeAndAwaitCleanup(joined, server);
 });

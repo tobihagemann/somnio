@@ -15,6 +15,7 @@ import {
   RARITIES,
   ABILITY_PHASES,
   BOUNTY_OBJECTIVES,
+  QUEST_SHARE_OUTCOMES,
   REGISTER_RESULTS,
   ROLES,
   SECTOR_KINDS,
@@ -418,6 +419,13 @@ describe('runtime validation the erased types cannot do', () => {
       { active: [], done: [], bounties: [{ ...bounty, reward: { coins: -1, gear: 1 } }] },
       /coins: expected a non-negative/,
     ],
+    [
+      'a bounty paying an item that is no number',
+      'quests',
+      { active: [], done: [], bounties: [{ ...bounty, reward: { coins: 1, gear: '1' } }] },
+      /reward\.gear: expected Int32/,
+    ],
+    ['a bounty paying no coins at all', 'quests', { active: [], done: [], bounties: [{ ...bounty, reward: { gear: 1 } }] }, /reward\.coins: expected Int32/],
     ['a bounty asking what no bounty asks', 'quests', { active: [], done: [], bounties: [{ ...bounty, objective: 'slay' }] }, /unknown value "slay"/],
     [
       'more bounties than the cap',
@@ -425,6 +433,20 @@ describe('runtime validation the erased types cannot do', () => {
       { active: [], done: [], bounties: [7, ...Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBounties }, () => bounty)] },
       /bounties: exceeds 32 records \(got 33\)/,
     ],
+    ['a quest to share outside the id alphabet', 'shareQuest', { questId: 'Fighter Trial' }, /questId: expected an id/],
+    ['a share of no quest', 'shareQuest', {}, /questId: expected a string, got nothing/],
+    ['an answer to offer 0', 'answerQuestOffer', { offerId: 0, take: true }, /offerId: expected an offer id of 1 or more, got 0/],
+    ['a fractional offer id', 'answerQuestOffer', { offerId: 1.5, take: true }, /offerId: expected Int32/],
+    ['an answer that is neither take nor not', 'answerQuestOffer', { offerId: 1, take: 'yes' }, /take: expected a bool/],
+    ['an offer of id 0', 'questOffer', { offerId: 0, fromName: 'Ida', questId: 'a' }, /offerId: expected an offer id of 1 or more, got 0/],
+    ['an offer from no one', 'questOffer', { offerId: 1, questId: 'a' }, /fromName: expected a string, got nothing/],
+    ['an offer from an over-cap name', 'questOffer', { offerId: 1, fromName: overCapId, questId: 'a' }, /fromName: exceeds 64 UTF-8 bytes/],
+    ['an offer of a quest outside the id alphabet', 'questOffer', { offerId: 1, fromName: 'Ida', questId: 'Fighter Trial' }, /questId: expected an id/],
+    ['a share reaching fewer than none', 'questShared', { reached: -1 }, /reached: expected a non-negative number/],
+    ['an unknown share outcome', 'questShareAnswer', { questId: 'a', name: 'Mira', outcome: 'refused' }, /outcome: unknown value "refused"/],
+    ['a share answer from an over-cap name', 'questShareAnswer', { questId: 'a', name: overCapId, outcome: 'took' }, /name: exceeds 64 UTF-8 bytes/],
+    ['a share answer without its quest', 'questShareAnswer', { name: 'Mira', outcome: 'took' }, /questId: expected a string, got nothing/],
+    ['no bounty running out', 'bountiesRanOut', { count: 0 }, /count: expected a count of 1 or more, got 0/],
     ['a teaching id outside the id alphabet', 'study', { carrierId: 'npc:a/b', teachingId: 'followThrough' }, /teachingId: expected an id/],
     ['a studied teaching outside the id alphabet', 'lucidity', { ...lucidity, study: 'Follow Through' }, /study: expected an id/],
     ['a negative rank', 'lucidity', { ranks: [{ teachingId: 'strike', rank: -1, practice: 0 }] }, /rank: expected a non-negative number/],
@@ -633,6 +655,13 @@ describe('round trips', () => {
     expect(decodeSomnioMessage(frame(tag, { result: 'throttled' }))).toEqual({ tag, payload: { result: 'throttled' } });
   });
 
+  /** A bounty that pays coins alone must stay without an item rather than decode to a tier. */
+  it('quests decodes a bounty that pays no item without a gear key', () => {
+    const bounty = { day: 3, land: 'Graveyard', monsterKind: 'ghost', objective: 'collect', count: 4, reward: { coins: 48, gear: null } };
+    const decoded = decodeSomnioMessage(frame('quests', { active: [], done: [], bounties: [bounty] }));
+    expect(decoded).toEqual({ tag: 'quests', payload: { active: [], done: [], bounties: [{ ...bounty, reward: { coins: 48 } }] } });
+  });
+
   it('lucidity decodes a dreamer with no role or study without those keys', () => {
     const decoded = decodeSomnioMessage(frame('lucidity', { role: null, ranks: [], study: null }));
     expect(decoded).toEqual({ tag: 'lucidity', payload: { ranks: [] } });
@@ -816,6 +845,10 @@ describe('string literal sets', () => {
     expect(BOUNTY_OBJECTIVES).toEqual(['driveOff', 'collect']);
   });
 
+  it('pins QuestShareOutcome', () => {
+    expect(QUEST_SHARE_OUTCOMES).toEqual(['took', 'didNotTake', 'logFull', 'holds', 'done', 'cannotYet']);
+  });
+
   it('pins TelegraphKind', () => {
     expect(TELEGRAPH_KINDS).toEqual(['wail']);
   });
@@ -827,7 +860,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(24);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(25);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

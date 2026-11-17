@@ -14,12 +14,16 @@ import type { Budgets } from './attemptLimiter.ts';
  * - `speech` lets the shipped client's lines through bunched by up to 8 s.
  * - `items` is one budget over every frame that can change what others see the dreamer hold or
  *   what lies on the ground, so interleaving them buys nothing.
+ * - `share` paces the quest offers a dreamer puts before everyone near them: four shares, then one
+ *   every 5 s. It is a budget of its own, so sharing never spends what the speech budget holds for
+ *   the client's own pace.
  */
 export const FRAME_LIMITS = {
   move: { burst: 100, refillMs: 33 },
   speech: { burst: SPEECH_PACE.burst + 8 * SPEECH_PACE.perSecond, refillMs: 1000 / SPEECH_PACE.perSecond },
   transfer: { burst: 8, refillMs: 1000 },
   items: { burst: 20, refillMs: 200 },
+  share: { burst: 4, refillMs: 5000 },
 } as const;
 
 export type FrameKind = keyof typeof FRAME_LIMITS;
@@ -32,7 +36,8 @@ export const FRAME_BUDGETS: Budgets<FrameKind> = { limits: FRAME_LIMITS, keyFiel
  * the player is in the world, or something else already paces what it shows others: the global
  * cooldown paces `useAbility`, an NPC's own cooldown `interact`, the swing and touch timers
  * `engage`, having to fall first `wake`, and a quest turned in only once the gift a trial's
- * `turnInQuest` hands.
+ * `turnInQuest` hands. The budgeted `shareQuest` paces `answerQuestOffer`, since each answer
+ * settles one offer a share made.
  */
 export const FRAME_KINDS: Record<ClientToServerTag, FrameKind | undefined> = {
   login: undefined,
@@ -55,6 +60,8 @@ export const FRAME_KINDS: Record<ClientToServerTag, FrameKind | undefined> = {
   acceptQuest: undefined,
   turnInQuest: undefined,
   abandonQuest: undefined,
+  shareQuest: 'share',
+  answerQuestOffer: undefined,
   study: undefined,
   buy: undefined,
   sell: undefined,

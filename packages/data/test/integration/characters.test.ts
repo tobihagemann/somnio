@@ -199,7 +199,7 @@ describe('character repository', () => {
     const quests: QuestLog = { active: [{ questId: 'restless-graves', progress: [3] }], done: ['fighter-trial'] };
     const fresh = { ...original, quests, lastSeen: new Date(original.lastSeen.getTime() + 60_000) };
     expect(await characters.persistCheckpoint(fresh, NOTHING)).toBe(true);
-    const older: QuestLog = { active: [{ questId: 'newcomer-errand', progress: [1, 0] }], done: [] };
+    const older: QuestLog = { active: [{ questId: 'newcomer-errand', progress: [1, 0, 0, 0, 0] }], done: [] };
     expect(await characters.persistCheckpoint({ ...original, quests: older, lastSeen: original.lastSeen }, NOTHING)).toBe(false);
     expect(await new PostgresQuestRepository(harness.db).load(original.id)).toEqual(quests);
   });

@@ -1,6 +1,7 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type {
   AbandonQuestMessage,
+  AnswerQuestOfferMessage,
   BuyBackMessage,
   BuyMessage,
   CarrierQuestMessage,
@@ -13,6 +14,7 @@ import type {
   MoveMessage,
   PickUpMessage,
   SellMessage,
+  ShareQuestMessage,
   StudyMessage,
   TargetMessage,
   UnequipMessage,
@@ -92,6 +94,14 @@ export function handleTurnInQuest(message: CarrierQuestMessage, entityId: string
 
 export function handleAbandonQuest(message: AbandonQuestMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
   dependencies.worldRouter.space(spaceId)?.handleAbandonQuest(message.questId, entityId);
+}
+
+export function handleShareQuest(message: ShareQuestMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleShareQuest(message.questId, entityId);
+}
+
+export function handleAnswerQuestOffer(message: AnswerQuestOfferMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {
+  dependencies.worldRouter.space(spaceId)?.handleAnswerQuestOffer(message.offerId, message.take, entityId);
 }
 
 export function handleStudy(message: StudyMessage, entityId: string, spaceId: string, dependencies: ConnectionDependencies): void {

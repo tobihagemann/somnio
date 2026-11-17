@@ -19,6 +19,7 @@ import webCatalogJSON from './catalog.json' with { type: 'json' };
 
 export * from '@somnio/core/catalog';
 export * from './chatLineText';
+export * from './placeNames';
 
 /**
  * The browser client's localization surface: the core catalog (people names, item labels) merged
@@ -163,7 +164,20 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your %1$@ deepens: rank %2$@.',
   'You found a hidden place, %1$@ of %2$@.',
   'Quest done: %1$@. Return to %2$@.',
+  'Quest done: %1$@. Turn it in to %2$@.',
   'Bounty done. Return to the bounty board.',
+  'You shared a quest with one dreamer near you.',
+  'You shared a quest with %@ dreamers near you.',
+  'No dreamer is near enough to share with.',
+  '%1$@ took on %2$@.',
+  "%1$@ didn't take %2$@.",
+  "%@'s quest log is full.",
+  '%1$@ already holds %2$@.',
+  '%1$@ turned in %2$@ before.',
+  "%1$@ can't take %2$@ yet.",
+  'You took on %1$@ from %2$@.',
+  'Your bounty ran out as the board turned.',
+  'Your %@ bounties ran out as the board turned.',
   'Your health gives out. You fall.',
   '%@ draws you back into the dream.',
   '%@ draw you back into the dream.',
@@ -187,7 +201,14 @@ export const RENDERED_KEYS: readonly string[] = [
   'Character',
   'Quest log',
   'Give up %@',
+  'Share quest',
+  'Share %@ with dreamers near you',
+  'Runs out in %@',
+  'Runs out in %@, when the board turns.',
+  '%@ h',
+  '%@ min',
   'Return to %@.',
+  'Turn it in to %@.',
   'You hold no quests. A gold ! marks who offers one.',
   'Quests',
   'Hide quests',
@@ -404,17 +425,14 @@ export const RENDERED_KEYS: readonly string[] = [
   '%@ practice',
   '%1$@ practice toward %2$@',
   'a piece of gear',
+  'a magic item',
 
   // The bounty board
   'Bounty board',
   'No bounties today.',
-  'New bounties go up each day.',
-  'Take the bounty',
+  'Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.',
   'Take %1$@. %2$@',
   'Turn in %1$@. %2$@',
-  'Turn in %1$@ from an earlier day. %2$@',
-  'Taken on an earlier day',
-  "Today's bounties",
   'Taken',
   'Done',
   'Turned in',
@@ -452,6 +470,10 @@ export const RENDERED_KEYS: readonly string[] = [
   'You will wake at the inn, weakened.',
   'Wake there',
   'Stay',
+  '%@ shares a quest',
+  '%@ s to answer',
+  'Not now',
+  'Turn it in at the bounty board.',
 
   // Shop
   'Shopkeeper',

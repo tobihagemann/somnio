@@ -135,6 +135,15 @@ describe('loadWorld', () => {
       'the newcomer-errand quest names carrier npc:EdariaLibrary/libus, which is not loaded',
       'the newcomer-errand quest names carrier npc:EdariaShop/mercus, which is not loaded',
       'the newcomer-errand quest names carrier fixture:EdariaSquare/fixture-1, which is not loaded',
+      'the newcomer-errand quest names carrier npc:EdariaFighterHall/pugnax, which is not loaded',
+      'the newcomer-errand quest names carrier npc:EdariaHealerHall/sana, which is not loaded',
+      'the newcomer-errand quest names sector EdariaSquare, which is not loaded',
+      'the word-for-memor-fighter quest names carrier npc:EdariaFighterHall/pugnax, which is not loaded',
+      'the word-for-memor-fighter quest names carrier npc:Graveyard/memor, which is not loaded',
+      'the word-for-memor-healer quest names carrier npc:EdariaHealerHall/sana, which is not loaded',
+      'the word-for-memor-healer quest names carrier npc:Graveyard/memor, which is not loaded',
+      'the word-for-memor-mystic quest names carrier npc:EdariaMysticTower/tacita, which is not loaded',
+      'the word-for-memor-mystic quest names carrier npc:Graveyard/memor, which is not loaded',
       'the restless-graves quest names carrier npc:Graveyard/memor, which is not loaded',
       'the restless-graves quest names sector Graveyard, which is not loaded',
       'the cracked-skulls quest names carrier npc:Graveyard/memor, which is not loaded',
@@ -154,7 +163,11 @@ describe('loadWorld', () => {
     ).map(([name, carrier]) => interiorSector(name, { npcs: [makeNPC(carrier, { x: 5, z: 5 }, '')] }));
     const graveyard = makeSector('Graveyard', { ...land, npcs: [makeNPC('memor', { x: 5, z: 5 }, '')] });
     const board = { id: 'notice-board-1', modelId: 'notice-board', x: 5, z: 5, yaw: 0, elevation: 0 };
-    const square = makeSector('EdariaSquare', { placements: [board], fixtures: [{ id: 'fixture-1', placement: board.id, service: 'bountyBoard' }] });
+    const square = makeSector('EdariaSquare', {
+      size: { width: 40.96, depth: 40.96 },
+      placements: [board],
+      fixtures: [{ id: 'fixture-1', placement: board.id, service: 'bountyBoard' }],
+    });
     expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, ...halls, graveyard, square))).toEqual([]);
     expect(ruleSectorIssues(sectorsOf(starter, inn, ...lands, ...halls, graveyard, square, makeSector('WestMeadow')))).toEqual([
       'the mystic-trial quest names a place at (6.72, 24.88) outside sector WestMeadow',

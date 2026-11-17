@@ -1,21 +1,40 @@
-import { BOUNTY_OBJECTIVES, SOMNIO_PROTOCOL_CONSTANTS, bountyId, bountyIdParts, decodeBountyMessage, requireObject } from '@somnio/protocol';
+import { BOUNTY_OBJECTIVES, bountyId, bountyIdParts, decodeBountyMessage, requireObject } from '@somnio/protocol';
 import type { BountyMessage, BountyObjective } from '@somnio/protocol';
 import { hashString, seededSequence } from './hash.ts';
 import { isTier } from './items.ts';
 import type { Tier } from './items.ts';
 import { monsterKind } from './monsterKinds.ts';
 import type { BossKindId, MonsterKindId } from './monsterKinds.ts';
-import type { Quest, QuestObjective } from './quests.ts';
+import type { Quest, QuestObjective, QuestReward } from './quests.ts';
 import type { Sector } from './sector.ts';
 
 /**
- * The bounty board's bounties: each world day, one for each land, a sector that keeps nightmares
- * alive, asking a dreamer to drive off nightmares of one of its kinds there or to gather the
- * trophies they leave. They follow from the day and the spawns alone, so every dreamer is offered
- * the same, and the server generates them from its sectors, since a `sector` frame carries no spawns.
- * A bounty taken is held by what it was on its day, so it is finished and paid as it was offered
- * whatever the board, the server, or the spawns do meanwhile.
+ * The bounty board's bounties. Each UTC day offers three, in lands shuffled from the day. A land is
+ * a sector that keeps nightmares alive, and its bounty asks a dreamer to drive off nightmares of one
+ * of its kinds there or to gather the trophies they leave. They follow from the day and the spawns
+ * alone, so every dreamer is offered the same, and the server generates them from its sectors, since a `sector` frame
+ * carries no spawns. A bounty taken is held by what it was on its day, so it is finished and paid as
+ * it was offered whatever the server or the spawns do meanwhile, until the board turns and it runs out.
  */
+
+/** How long the board's day lasts: a UTC day, in milliseconds. */
+export const BOARD_DAY_MS = 86_400_000;
+
+/** The board's day at a moment, in epoch milliseconds: the UTC days since the epoch. */
+export function boardDay(epochMs: number): number {
+  return Math.floor(epochMs / BOARD_DAY_MS);
+}
+
+/** When the board turns after its day, in epoch milliseconds: 00:00 UTC of the next day. */
+export function boardTurnsAt(day: number): number {
+  return (day + 1) * BOARD_DAY_MS;
+}
+
+/** How many bounties the board offers a day, at most. */
+const BOARD_SIZE = 3;
+
+/** The chance that a bounty pays an item besides its coins. */
+const ITEM_CHANCE = 0.25;
 
 /**
  * The kinds a bounty names: every kind but a boss, which its one spawn keeps a single one of, long
@@ -53,7 +72,8 @@ export interface Bounty {
   monsterKind: BountyKindId;
   objective: BountyObjective;
   count: number;
-  reward: { coins: number; gear: Tier };
+  /** Its coins, and the tier of the magic item it pays besides when its roll granted one. */
+  reward: { coins: number; gear?: Tier };
 }
 
 /** A bounty's quest id, which names its day and what it asks, so it never turns into another bounty. */
@@ -61,6 +81,10 @@ export type BountyId = `bounty:${string}`;
 
 export function bountyIdOf(bounty: Bounty): BountyId {
   return bountyId(bounty) as BountyId;
+}
+
+export function offeredBounty(bounties: readonly Bounty[], questId: string): Bounty | undefined {
+  return bounties.find((offered) => bountyIdOf(offered) === questId);
 }
 
 export function isBountyId(value: string): value is BountyId {
@@ -92,39 +116,61 @@ export function bountyLands(sectors: readonly Pick<Sector, 'name' | 'monsterSpaw
 }
 
 /**
- * The bounties of a world day, one for each land, at most as many as a `quests` frame carries.
- * Each rolls one of its land's kinds and an objective from the day and the land. It asks twice as
- * many as the land keeps alive of the kind, at most `MOST_ASKED`, and pays the kind's bounty in
- * coins for each it asks and an item at the highest tier among the land's kinds.
+ * The bounties of a day: `BOARD_SIZE` lands shuffled from the day alone, or every land when there
+ * are fewer. Each rolls one of its land's kinds, an objective, and whether it pays an item, from the
+ * day and the land. A drive-off counts only in its land and a trophy wherever its kind left it, so
+ * a `collect` of a kind another of the day's lands rolled too becomes a `driveOff`, and no nightmare
+ * advances two of them. Each asks twice as many as the land keeps alive of the kind, at
+ * most `MOST_ASKED`, and pays the kind's bounty in coins for each it asks, and by `ITEM_CHANCE` an
+ * item at the highest tier among the land's kinds.
  */
 export function dayBounties(day: number, lands: readonly BountyLand[]): Bounty[] {
-  return lands.slice(0, SOMNIO_PROTOCOL_CONSTANTS.maxBounties).map((land) => {
+  const shuffle = seededSequence(hashString(`board:${day}`));
+  const shuffled = [...lands];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(shuffle() * (index + 1));
+    [shuffled[index], shuffled[other]] = [shuffled[other]!, shuffled[index]!];
+  }
+  const rolled = shuffled.slice(0, BOARD_SIZE).map((land) => {
     const roll = seededSequence(hashString(`${day}:${land.name}`));
     const { kind, alive } = land.kinds[Math.floor(roll() * land.kinds.length)]!;
     const objective = BOUNTY_OBJECTIVES[Math.floor(roll() * BOUNTY_OBJECTIVES.length)]!;
+    return { land, kind, alive, objective, paysItem: roll() < ITEM_CHANCE };
+  });
+  return rolled.map(({ land, kind, alive, objective, paysItem }) => {
+    const kindShared = rolled.some((other) => other.land !== land && other.kind === kind);
     const count = Math.min(2 * alive, MOST_ASKED);
     const gear = Math.max(...land.kinds.map((candidate) => monsterKind(candidate.kind).tier)) as Tier;
-    return { day, land: land.name, monsterKind: kind, objective, count, reward: { coins: count * monsterKind(kind).bounty, gear } };
+    return {
+      day,
+      land: land.name,
+      monsterKind: kind,
+      objective: kindShared ? 'driveOff' : objective,
+      count,
+      reward: { coins: count * monsterKind(kind).bounty, ...(paysItem ? { gear } : {}) },
+    };
   });
 }
 
 /**
  * The quest a bounty is: one objective, counted as a quest's are, given and taken by any bounty
- * board, and paying coins and an item.
+ * board, and paying coins and, when it pays one, a magic item.
  */
 export function bountyQuest(bounty: Bounty): Quest {
   const { land, monsterKind: kind, objective, count, reward } = bounty;
   const labelKey = BOUNTY_KINDS[kind][objective];
   const asked: QuestObjective =
     objective === 'driveOff' ? { kind: 'driveOff', count, monsterKind: kind, sector: land, labelKey } : { kind: 'collect', count, monsterKind: kind, labelKey };
-  return { labelKey: BOUNTY_LABEL_KEY, giver: BOUNTY_BOARD, turnIn: BOUNTY_BOARD, objectives: [asked], reward: { ...reward } };
+  const paid: QuestReward = reward.gear === undefined ? { coins: reward.coins } : { coins: reward.coins, gear: reward.gear, gearRarity: 'magic' };
+  return { labelKey: BOUNTY_LABEL_KEY, giver: BOUNTY_BOARD, turnIn: BOUNTY_BOARD, objectives: [asked], reward: paid };
 }
 
 /** The bounty a frame or a stored row says, or `undefined` for one of a kind or a tier this build does not know. */
 export function bountyOf(message: BountyMessage): Bounty | undefined {
   const { day, land, monsterKind: kind, objective, count, reward } = message;
-  if (!isBountyKindId(kind) || !isTier(reward.gear)) return undefined;
-  return { day, land, monsterKind: kind, objective, count, reward: { coins: reward.coins, gear: reward.gear } };
+  const { gear } = reward;
+  if (!isBountyKindId(kind) || (gear !== undefined && !isTier(gear))) return undefined;
+  return { day, land, monsterKind: kind, objective, count, reward: { coins: reward.coins, ...(gear === undefined ? {} : { gear }) } };
 }
 
 /** The bounty a stored definition holds, read as the wire reads one, or `undefined` for anything else. */

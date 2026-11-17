@@ -2,6 +2,8 @@ import type {
   AbilityMessage,
   AdminSayMessage,
   AbandonQuestMessage,
+  AnswerQuestOfferMessage,
+  BountiesRanOutMessage,
   BlowMessage,
   BuyBackMessage,
   BuyMessage,
@@ -33,6 +35,9 @@ import type {
   LootGoneMessage,
   LootMessage,
   LucidityMessage,
+  QuestOfferMessage,
+  QuestShareAnswerMessage,
+  QuestSharedMessage,
   QuestsMessage,
   MendMessage,
   MoveItemMessage,
@@ -53,6 +58,7 @@ import type {
   SensedMessage,
   SessionRevokedMessage,
   SessionTokenMessage,
+  ShareQuestMessage,
   StudyMessage,
   TargetMessage,
   TelegraphMessage,
@@ -89,6 +95,8 @@ export type SomnioMessage =
   | { tag: 'acceptQuest'; payload: CarrierQuestMessage }
   | { tag: 'turnInQuest'; payload: CarrierQuestMessage }
   | { tag: 'abandonQuest'; payload: AbandonQuestMessage }
+  | { tag: 'shareQuest'; payload: ShareQuestMessage }
+  | { tag: 'answerQuestOffer'; payload: AnswerQuestOfferMessage }
   | { tag: 'study'; payload: StudyMessage }
   | { tag: 'buy'; payload: BuyMessage }
   | { tag: 'sell'; payload: SellMessage }
@@ -116,6 +124,10 @@ export type SomnioMessage =
   | { tag: 'leave'; payload: LeaveMessage }
   | { tag: 'lucidity'; payload: LucidityMessage }
   | { tag: 'quests'; payload: QuestsMessage }
+  | { tag: 'questOffer'; payload: QuestOfferMessage }
+  | { tag: 'questShared'; payload: QuestSharedMessage }
+  | { tag: 'questShareAnswer'; payload: QuestShareAnswerMessage }
+  | { tag: 'bountiesRanOut'; payload: BountiesRanOutMessage }
   | { tag: 'condition'; payload: ConditionMessage }
   | { tag: 'held'; payload: HeldMessage }
   | { tag: 'vitals'; payload: VitalsMessage }

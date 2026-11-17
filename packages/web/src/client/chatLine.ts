@@ -1,5 +1,5 @@
-import type { QuestId, TeachingId } from '@somnio/core';
-import type { LootContentsMessage, Role, SpeechKind } from '@somnio/protocol';
+import type { QuestId, QuestOrBountyId, TeachingId } from '@somnio/core';
+import type { LootContentsMessage, QuestShareOutcome, Role, SpeechKind } from '@somnio/protocol';
 import type { CompassPoint } from './compass';
 
 /**
@@ -49,6 +49,10 @@ export type ChatLine =
   | { kind: 'placeFound'; found: number; total: number }
   | { kind: 'questDone'; questId: QuestId; turnIn: string }
   | { kind: 'bountyDone' }
+  | { kind: 'questShared'; reached: number }
+  | { kind: 'questShareAnswer'; name: string; questId: QuestOrBountyId; outcome: QuestShareOutcome }
+  | { kind: 'questTakenFrom'; questId: QuestOrBountyId; fromName: string }
+  | { kind: 'bountiesRanOut'; count: number }
   | { kind: 'fell' }
   | { kind: 'raised'; healerNames: string[] }
   | { kind: 'raiseBroken'; healerNames: string[] }
@@ -115,6 +119,10 @@ export function chatLineCategory(line: ChatLine): ChatLineCategory {
     case 'placeFound':
     case 'questDone':
     case 'bountyDone':
+    case 'questShared':
+    case 'questShareAnswer':
+    case 'questTakenFrom':
+    case 'bountiesRanOut':
     case 'fell':
     case 'raised':
     case 'raiseBroken':

@@ -44,7 +44,7 @@ export interface SomnioDebugAPI {
   inventory(): InventoryMessage;
   /**
    * The quests the player holds, with what they have done toward each objective, those they turned
-   * in, and the world day's bounties, each with its definition, as the last `quests` frame said,
+   * in, and the day's bounties, each with its definition, as the last `quests` frame said,
    * without the quests this build does not know.
    */
   quests(): QuestsMessage;

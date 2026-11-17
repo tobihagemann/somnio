@@ -17,6 +17,7 @@ import { canvasWidthMeasurer } from '@/scene/speechBubbleText';
 import { SplashDirector } from '@/splash/director';
 import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
+import { QuestOfferPrompt } from './questOfferPrompt';
 import { SensedMarkers } from './sensedMarkers';
 import { FrameStats } from './frameStats';
 import type { FramePart } from './frameStats';
@@ -144,6 +145,7 @@ export class AppShell {
   readonly hud: GameHUD;
   readonly servicePanel: ServicePanel;
   readonly fallenNotice: FallenNotice;
+  private readonly questOfferPrompt: QuestOfferPrompt;
   private readonly sensedMarkers = new SensedMarkers();
   readonly overlays: Overlays;
   readonly notices: BlockingNotices;
@@ -258,6 +260,7 @@ export class AppShell {
         onPressPlayer: (name) => this.session.pressPlayerName(name),
         onPressOwnFrame: () => this.session.pressOwnFrame(),
         onClearTarget: () => this.session.select(undefined),
+        onShareQuest: (questId) => this.session.shareQuest(questId),
         onAbandonQuest: (questId) => this.session.abandonQuest(questId),
         onOpenSettings: () => this.present({ kind: 'gameMenu' }),
         onWindowOpened: (id) => this.windowOpened(id),
@@ -279,8 +282,14 @@ export class AppShell {
       onBuyBack: (itemId) => this.session.buyBack(itemId),
       onSellFromBag: () => this.openBag(),
       onClose: () => this.session.closeServicePanel(),
+      carrierName: (carrierId) => this.session.carrierName(carrierId),
     });
     this.fallenNotice = new FallenNotice(() => this.session.wake());
+    this.questOfferPrompt = new QuestOfferPrompt(
+      (offerId, take) => this.session.answerQuestOffer(offerId, take),
+      (carrierId) => this.session.carrierName(carrierId),
+    );
+    this.hud.standUnderTarget(this.questOfferPrompt.root);
 
     this.overlays = new Overlays({
       // The overlay stays up until the world actually arrives: `submitLogin` does not touch
@@ -934,7 +943,7 @@ export class AppShell {
     this.lastFrameMs = timestamp;
     // Before the world is on screen the card and the wordmark cover it, so the staged bubbles keep clear of them.
     const splashCovering = this.controller.inWorld ? [] : [this.overlays.presentedCard, this.wordmarkImage];
-    const covering = [...this.hud.occluders, this.servicePanel.root, this.fallenNotice.root, ...splashCovering]
+    const covering = [...this.hud.occluders, this.servicePanel.root, this.fallenNotice.root, this.questOfferPrompt.root, ...splashCovering]
       .filter((node) => node !== undefined)
       .map((node) => node.getBoundingClientRect());
     const canvasRect = this.canvas.getBoundingClientRect();
@@ -949,6 +958,7 @@ export class AppShell {
     const layout = lap();
     this.hud.tick(performance.now(), this.clock());
     this.fallenNotice.tick(performance.now());
+    this.questOfferPrompt.tick(performance.now());
     const hud = lap();
     this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
     const dipOpacity = this.splash?.dipOpacity ?? 0;
@@ -1141,6 +1151,7 @@ export class AppShell {
     const framing = inWorld && !this.session.fallen;
     this.hud.renderTarget(framing ? this.framed(this.session.target) : undefined, this.session.gazeLocked);
     this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raiseOf(selfId) }, performance.now());
+    this.questOfferPrompt.render(inWorld ? this.session.questOffer() : undefined, this.session.quests, this.session.lucidity.study, performance.now());
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
     this.hud.renderCharacter(this.session.inventory, this.session.lucidity, shop ? this.session.tradeLocked() : undefined);

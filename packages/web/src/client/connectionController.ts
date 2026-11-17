@@ -57,6 +57,10 @@ export type GameplayMessage = Extract<
       | 'lootGone'
       | 'lucidity'
       | 'quests'
+      | 'questOffer'
+      | 'questShared'
+      | 'questShareAnswer'
+      | 'bountiesRanOut'
       | 'blow'
       | 'raising'
       | 'mend'
@@ -586,6 +590,10 @@ export class ConnectionController {
       case 'lootGone':
       case 'lucidity':
       case 'quests':
+      case 'questOffer':
+      case 'questShared':
+      case 'questShareAnswer':
+      case 'bountiesRanOut':
       case 'blow':
       case 'raising':
       case 'mend':

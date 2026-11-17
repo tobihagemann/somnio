@@ -1,24 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { NO_LUCIDITY, NO_QUESTS, bountyIdOf, dayBounties, monsterKind } from '@somnio/core';
-import type {
-  BaseItemId,
-  Bounty,
-  BountyLand,
-  Character,
-  Inventory,
-  ItemInstance,
-  Lucidity,
-  MonsterKindId,
-  MonsterSpawn,
-  Point,
-  QuestId,
-  QuestLog,
-  Sector,
-} from '@somnio/core';
+import { NO_LUCIDITY, NO_QUESTS, OUTDOOR_SPACE_ID, boardTurnsAt, bountyIdOf, doorOpenAt, monsterKind, parseModelRegistry, resolveDoor } from '@somnio/core';
+import type { BaseItemId, Character, Inventory, ItemInstance, Lucidity, MonsterKindId, MonsterSpawn, Point, QuestId, QuestLog, Sector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import type { BountyObjective, Role, SomnioMessage } from '@somnio/protocol';
+import type { Role, SomnioMessage } from '@somnio/protocol';
+import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
 import { plain } from '../../core/test/support/items.ts';
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
+import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
+import { loadSectorCache, loadWorld } from '../src/sectors/sectorCache.ts';
+import { DAY, dayAsking, noon, offered } from './support/bountyBoard.ts';
 import {
   BESIDE_GHOST,
   COINS,
@@ -40,7 +30,7 @@ import {
   wearing,
 } from './support/combat.ts';
 import { collectMessages, recordingOutbox } from './support/frames.ts';
-import { attachPlayer, makeMonsterSpawn, makeNPC } from './support/sectorFactory.ts';
+import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeNPC } from './support/sectorFactory.ts';
 
 const PUGNAX = 'npc:EdariaFighterHall/pugnax';
 const SANA = 'npc:EdariaHealerHall/sana';
@@ -56,6 +46,10 @@ const AT_LIBUS: Point = { x: 24, z: 17 };
 const AT_MERCUS: Point = { x: 44, z: 17 };
 const BOARD = 'fixture:EdariaSquare/fixture-1';
 const AT_BOARD: Point = { x: 64, z: 17.5 };
+/** Where Pugnax and Sana stand to be met in the Graveyard world, and the Mystics' tower door on its square. */
+const AT_PUGNAX_NORTH: Point = { x: 24, z: -15 };
+const AT_SANA_NORTH: Point = { x: 44, z: -15 };
+const AT_TOWER_DOOR: Point = { x: 72.6, z: 32.23 };
 
 /**
  * The town round a Ghost, with the North Meadow north of it, the North Wood east, the Autumn Wood
@@ -85,8 +79,10 @@ type Town = ReturnType<typeof town>;
 /**
  * The Graveyard round a nightmare of `kind`, standing where the town's Ghost does, with Memor by
  * its church, the Library east of it, where Libus stands and a new dreamer starts, Mercus's shop
- * east of that, and the square with the bounty board east of that. Named as the committed ones, so
- * the first quests are theirs, though none of the three NPCs carries a service.
+ * east of that, and the square with the bounty board east of that, as large as the committed one.
+ * The Fighter Hall lies north of the Library and the Healer Hall north of the shop. Named as the
+ * committed ones, so the first quests are theirs, though none of Memor, Libus, and Mercus carries a
+ * service.
  */
 function graveyard(kind: MonsterKindId = 'skeleton-minion', ...more: MonsterSpawn[]): Town {
   return arena(
@@ -95,10 +91,13 @@ function graveyard(kind: MonsterKindId = 'skeleton-minion', ...more: MonsterSpaw
       sectors: [
         outdoorSector('EdariaLibrary', { x: 20, z: 0 }, { spawn: { x: 10, z: 4, facing: 0 }, npcs: [makeNPC('libus', { x: 4, z: 16 }, '')] }),
         outdoorSector('EdariaShop', { x: 40, z: 0 }, { npcs: [makeNPC('mercus', { x: 4, z: 16 }, '')] }),
+        outdoorSector('EdariaFighterHall', { x: 20, z: -20 }, { npcs: [{ ...makeNPC('pugnax', { x: 4, z: 4 }, ''), service: 'fighterMaster' }] }),
+        outdoorSector('EdariaHealerHall', { x: 40, z: -20 }, { npcs: [{ ...makeNPC('sana', { x: 4, z: 4 }, ''), service: 'healerMaster' }] }),
         outdoorSector(
           'EdariaSquare',
           { x: 60, z: 0 },
           {
+            size: { width: 40.96, depth: 40.96 },
             placements: [{ id: 'notice-board-1', modelId: 'notice-board', x: 4, z: 16, yaw: 0, elevation: 0 }],
             fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
           },
@@ -578,48 +577,82 @@ describe('a quest', () => {
 
   it('counts a visit to a carrier asked to go on, or asked for a quest, from within speaking distance', () => {
     const world = graveyard();
-    const alice = attachPlayer(world.space, { x: 44, z: 18.5 }, 'alice', { character: { quests: holding('newcomer-errand', [0]) } });
+    const alice = attachPlayer(world.space, { x: 44, z: 18.5 }, 'alice', { character: { quests: holding('newcomer-errand', [0, 0, 0, 0, 0]) } });
     world.space.handleInteract(MERCUS, alice.entityId);
-    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([0]);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([0, 0, 0, 0, 0]);
     walk(world, alice.entityId, AT_MERCUS);
     world.space.handleInteract(MERCUS, alice.entityId);
-    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 0]);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 0, 0, 0, 0]);
 
-    const bob = attachPlayer(world.space, AT_MERCUS, 'bob', { character: { quests: holding('newcomer-errand', [0]) } });
+    const bob = attachPlayer(world.space, AT_MERCUS, 'bob', { character: { quests: holding('newcomer-errand', [0, 0, 0, 0, 0]) } });
     world.space.handleAcceptQuest(MERCUS, 'restless-graves', bob.entityId);
-    expect(progressOf(world.space, bob.entityId, 'newcomer-errand')).toEqual([1, 0]);
+    expect(progressOf(world.space, bob.entityId, 'newcomer-errand')).toEqual([1, 0, 0, 0, 0]);
   });
 
   it("counts a read of the bounty board, a fixture, from within speaking distance of its placement's centre, and serves nothing it does not carry", () => {
     const world = graveyard();
     const alice = attachPlayer(world.space, AT_MERCUS, 'alice', {
-      character: { quests: holding('newcomer-errand', [1, 0]) },
+      character: { quests: holding('newcomer-errand', [1, 0, 0, 0, 0]) },
       inventory: carrying({ coins: COINS }),
     });
     world.space.handleInteract(BOARD, alice.entityId);
-    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 0]);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 0, 0, 0, 0]);
     walk(world, alice.entityId, AT_BOARD);
     world.space.handleBuy(BOARD, 'dagger', alice.entityId);
     world.space.handleStudy(BOARD, 'strike', alice.entityId);
     expect(inventoryOf(world, alice.entityId)).toEqual(carrying({ coins: COINS }));
     world.space.handleInteract(BOARD, alice.entityId);
-    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 1]);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 1, 0, 0, 0]);
   });
 
-  it("is Libus's errand to a newcomer: taken at Libus, done by a visit to Mercus and a read of the bounty board, and paid for at Libus, though neither NPC carries a service", async () => {
+  it("counts meeting Pugnax and Sana in their halls toward Libus's errand, each asked to go on", () => {
+    const world = graveyard();
+    const alice = attachPlayer(world.space, AT_PUGNAX_NORTH, 'alice', { character: { quests: holding('newcomer-errand', [1, 1, 0, 0, 0]) } });
+    world.space.handleInteract(PUGNAX, alice.entityId);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 1, 1, 0, 0]);
+    walk(world, alice.entityId, AT_SANA_NORTH);
+    world.space.handleInteract(SANA, alice.entityId);
+    expect(progressOf(world.space, alice.entityId, 'newcomer-errand')).toEqual([1, 1, 1, 1, 0]);
+  });
+
+  it("counts standing at the Mystics' tower door on the committed square by day, while the door stays shut", () => {
+    const world = loadWorld(loadSectorCache(DEV_SECTORS_DIRECTORY), registryJSON);
+    const square = world.spaces.get(OUTDOOR_SPACE_ID)!.sectors.find((sector) => sector.name === 'EdariaSquare')!;
+    const door = square.doors.find((candidate) => candidate.placement === 'building-tower-1')!;
+    const { arrival } = resolveDoor(square, door, parseModelRegistry(registryJSON))!;
+    const noon = 12 * 60 * 60;
+    expect(doorOpenAt(door, noon)).toBe(false);
+    const { clock, space } = makeClockedSpace(world, OUTDOOR_SPACE_ID);
+    const alice = attachPlayer(space, { x: arrival.x, z: arrival.z + 4 }, 'alice', {
+      worldSeconds: noon,
+      character: { quests: holding('newcomer-errand', [1, 1, 1, 1, 0]) },
+    });
+    expect(progressOf(space, alice.entityId, 'newcomer-errand')).toEqual([1, 1, 1, 1, 0]);
+    clock.ms += 2000;
+    space.handleMove({ ...arrival, facing: 180, gait: 'jog' }, alice.entityId);
+    expect(characterOf(space, alice.entityId).position).toEqual(arrival);
+    expect(progressOf(space, alice.entityId, 'newcomer-errand')).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("is Libus's errand to a newcomer: taken at Libus, done by a visit to Mercus, a read of the bounty board, a meeting with Pugnax and Sana, and a stand at the Mystics' tower door, and paid for at Libus, though none of Libus, Mercus, and the board carries a service", async () => {
     const world = graveyard();
     const alice = attachPlayer(world.space, AT_LIBUS, 'alice', { inventory: carrying({ coins: COINS }) });
     world.space.handleAcceptQuest(LIBUS, 'newcomer-errand', alice.entityId);
     world.space.handleTurnInQuest(LIBUS, 'newcomer-errand', alice.entityId);
-    expect(questsOf(world.space, alice.entityId)).toEqual(holding('newcomer-errand', [0, 0]));
+    expect(questsOf(world.space, alice.entityId)).toEqual(holding('newcomer-errand', [0, 0, 0, 0, 0]));
     walk(world, alice.entityId, AT_MERCUS);
     world.space.handleInteract(MERCUS, alice.entityId);
     walk(world, alice.entityId, AT_LIBUS);
     world.space.handleTurnInQuest(LIBUS, 'newcomer-errand', alice.entityId);
-    expect(questsOf(world.space, alice.entityId)).toEqual(holding('newcomer-errand', [1, 0]));
+    expect(questsOf(world.space, alice.entityId)).toEqual(holding('newcomer-errand', [1, 0, 0, 0, 0]));
     walk(world, alice.entityId, AT_BOARD);
     world.space.handleInteract(BOARD, alice.entityId);
-    walk(world, alice.entityId, AT_LIBUS);
+    walk(world, alice.entityId, AT_TOWER_DOOR);
+    walk(world, alice.entityId, AT_SANA_NORTH, { x: 55, z: 10 });
+    world.space.handleInteract(SANA, alice.entityId);
+    walk(world, alice.entityId, AT_PUGNAX_NORTH);
+    world.space.handleInteract(PUGNAX, alice.entityId);
+    walk(world, alice.entityId, AT_LIBUS, { x: 28, z: 17 });
     world.space.handleTurnInQuest(LIBUS, 'newcomer-errand', alice.entityId);
     expect(questsOf(world.space, alice.entityId)).toEqual({ active: [], done: ['newcomer-errand'] });
     expect(inventoryOf(world, alice.entityId).coins).toBe(COINS + 15);
@@ -729,45 +762,110 @@ describe('a quest', () => {
 });
 
 describe('the bounty board', () => {
-  const SECONDS_PER_DAY = 24 * 60 * 60;
-  const DAY = 168_000;
-  /** Noon of the world day. */
-  const noon = (day: number): number => day * SECONDS_PER_DAY + SECONDS_PER_DAY / 2;
-  const SKELETONS: BountyLand = { name: 'Graveyard', kinds: [{ kind: 'skeleton-minion', alive: 1 }] };
-  /** The bounties the Graveyard gets on the day, keeping one Skeleton alive as `graveyard()` has it, or what `land` says. */
-  const offered = (day: number, land = SKELETONS): Bounty[] => dayBounties(day, [land]);
-  /** The first day from `DAY` whose bounty asks `objective`. */
-  const dayAsking = (objective: BountyObjective): number => {
-    let day = DAY;
-    while (offered(day)[0]!.objective !== objective) day += 1;
-    return day;
+  /** The Graveyard at noon of the board's day. */
+  const graveyardOn = (day: number): Town => {
+    const world = graveyard();
+    world.wall.ms = noon(day);
+    return world;
   };
   const striker = { lucidity: lucidity('fighter', { strike: 5 }) };
   const bountiesSent = (messages: readonly SomnioMessage[]) => payloads(messages, 'quests').map(({ bounties }) => bounties);
+  /** The `quests` frame among `messages` and the frame right after it. */
+  const questsAndNext = (messages: readonly SomnioMessage[]): SomnioMessage[] => {
+    const at = messages.findIndex(({ tag }) => tag === 'quests');
+    return messages.slice(at, at + 2);
+  };
   /** Runs the simulation until the Skeleton driven off is back, which gives the striker their balance back too. */
   const awaitNextSkeleton = (world: Town): void => world.steps(Math.ceil(monsterKind('skeleton-minion').respawnSeconds / 0.05) + 1);
 
-  it("offers every dreamer the same bounties on one world day, and each the next day's as the day turns", () => {
-    const world = graveyard();
+  it("offers every dreamer the same bounties on one board day, and each the next day's once, in the step that finds 00:00 UTC passed", () => {
+    const world = graveyardOn(DAY);
     const alice = recordingOutbox();
     const bob = recordingOutbox();
-    attachPlayer(world.space, AT_BOARD, 'alice', { outbox: alice.outbox, worldSeconds: noon(DAY) });
-    attachPlayer(world.space, AT_MEMOR, 'bob', { outbox: bob.outbox, worldSeconds: noon(DAY) + 3600 });
+    attachPlayer(world.space, AT_BOARD, 'alice', { outbox: alice.outbox });
+    world.wall.ms += 3_600_000;
+    attachPlayer(world.space, AT_MEMOR, 'bob', { outbox: bob.outbox });
     expect([bountiesSent(alice.sent.splice(0)), bountiesSent(bob.sent.splice(0))]).toEqual([[offered(DAY)], [offered(DAY)]]);
     expect(offered(DAY)).toHaveLength(1);
 
-    world.space.reachWorldDay(noon(DAY) + 7200);
-    // A reading from before the day turned, as a join's taken before the clock moved on, changes nothing.
-    world.space.reachWorldDay(noon(DAY + 1));
-    world.space.reachWorldDay(noon(DAY));
+    world.wall.ms = boardTurnsAt(DAY) - 1;
+    world.space.step(0);
+    expect([bountiesSent(alice.sent), bountiesSent(bob.sent)]).toEqual([[], []]);
+    world.wall.ms = boardTurnsAt(DAY);
+    world.space.step(0);
+    world.wall.ms += 3_600_000;
+    world.space.step(0);
     expect([bountiesSent(alice.sent), bountiesSent(bob.sent)]).toEqual([[offered(DAY + 1)], [offered(DAY + 1)]]);
+    expect(payloads([...alice.sent, ...bob.sent], 'bountiesRanOut')).toEqual([]);
+  });
+
+  it('lets a bounty held run out as the board turns, and tells its holder once', () => {
+    const world = graveyardOn(DAY);
+    const questId = bountyIdOf(offered(DAY)[0]!);
+    const { outbox, sent } = recordingOutbox();
+    const alice = attachPlayer(world.space, AT_BOARD, 'alice', { outbox });
+    world.space.handleAcceptQuest(BOARD, questId, alice.entityId);
+    expect(questsOf(world.space, alice.entityId).active.map((held) => held.questId)).toEqual([questId]);
+    sent.length = 0;
+
+    world.wall.ms = boardTurnsAt(DAY);
+    world.space.step(0);
+    world.wall.ms += 3_600_000;
+    world.space.step(0);
+    expect(questsOf(world.space, alice.entityId)).toEqual(NO_QUESTS);
+    expect(sent.filter(({ tag }) => tag === 'quests' || tag === 'bountiesRanOut')).toEqual([
+      { tag: 'quests', payload: { ...NO_QUESTS, bounties: offered(DAY + 1) } },
+      { tag: 'bountiesRanOut', payload: { count: 1 } },
+    ]);
+  });
+
+  it('changes nothing in a step whose clock went back to a day before the one the board turned to', () => {
+    const world = graveyardOn(DAY + 1);
+    const todays = offered(DAY + 1)[0]!;
+    const held: QuestLog = { active: [{ questId: bountyIdOf(todays), progress: [1], definition: todays }], done: [] };
+    const turnedIn: QuestLog = { active: [], done: [bountyIdOf(todays)] };
+    const alice = recordingOutbox();
+    const bob = recordingOutbox();
+    const aliceId = attachPlayer(world.space, AT_BOARD, 'alice', { outbox: alice.outbox, character: { quests: held } }).entityId;
+    const bobId = attachPlayer(world.space, AT_MEMOR, 'bob', { outbox: bob.outbox, character: { quests: turnedIn } }).entityId;
+    alice.sent.length = 0;
+    bob.sent.length = 0;
+
+    world.wall.ms = noon(DAY);
+    world.space.step(0);
+    const carol = recordingOutbox();
+    attachPlayer(world.space, AT_MEMOR, 'carol', { outbox: carol.outbox });
+    const boardFrames = ({ sent }: { sent: readonly SomnioMessage[] }) => sent.filter(({ tag }) => tag === 'quests' || tag === 'bountiesRanOut');
+    expect([boardFrames(alice), boardFrames(bob)]).toEqual([[], []]);
+    expect([questsOf(world.space, aliceId), questsOf(world.space, bobId)]).toEqual([held, turnedIn]);
+    expect(bountiesSent(carol.sent)).toEqual([[todays]]);
+  });
+
+  it('drops a bounty of an earlier day as its holder joins, and tells them right after their quests', () => {
+    const world = graveyardOn(DAY + 1);
+    const yesterdays = offered(DAY)[0]!;
+    const todays = offered(DAY + 1)[0]!;
+    const alice = recordingOutbox();
+    const bob = recordingOutbox();
+    attachPlayer(world.space, AT_BOARD, 'alice', {
+      outbox: alice.outbox,
+      character: { quests: { active: [{ questId: bountyIdOf(yesterdays), progress: [1], definition: yesterdays }], done: [] } },
+    });
+    const kept: QuestLog = { active: [{ questId: bountyIdOf(todays), progress: [1], definition: todays }], done: [] };
+    attachPlayer(world.space, AT_MEMOR, 'bob', { outbox: bob.outbox, character: { quests: kept } });
+    expect(questsAndNext(alice.sent)).toEqual([
+      { tag: 'quests', payload: { ...NO_QUESTS, bounties: [todays] } },
+      { tag: 'bountiesRanOut', payload: { count: 1 } },
+    ]);
+    expect(payloads(bob.sent, 'quests')).toEqual([{ ...kept, bounties: [todays] }]);
+    expect(payloads(bob.sent, 'bountiesRanOut')).toEqual([]);
   });
 
   it('gives a bounty of the day at the board alone, by its definition, once a day', () => {
-    const world = graveyard();
+    const world = graveyardOn(DAY);
     const bounty = offered(DAY)[0]!;
     const questId = bountyIdOf(bounty);
-    const alice = attachPlayer(world.space, AT_MEMOR, 'alice', { worldSeconds: noon(DAY) });
+    const alice = attachPlayer(world.space, AT_MEMOR, 'alice');
     world.space.handleAcceptQuest(BOARD, questId, alice.entityId);
     walk(world, alice.entityId, AT_BOARD);
     world.space.handleAcceptQuest(BOARD, bountyIdOf(offered(DAY + 1)[0]!), alice.entityId);
@@ -776,26 +874,23 @@ describe('the bounty board', () => {
     world.space.handleAcceptQuest(BOARD, questId, alice.entityId);
     expect(questsOf(world.space, alice.entityId)).toEqual({ active: [{ questId, progress: [0], definition: bounty }], done: [] });
 
-    const bob = attachPlayer(world.space, AT_MEMOR, 'bob', { worldSeconds: noon(DAY) });
+    const bob = attachPlayer(world.space, AT_MEMOR, 'bob');
     world.space.handleAcceptQuest(MEMOR, questId, bob.entityId);
     expect(questsOf(world.space, bob.entityId)).toEqual(NO_QUESTS);
-    const carol = attachPlayer(world.space, AT_BOARD, 'carol', { worldSeconds: noon(DAY), character: { quests: { active: [], done: [questId] } } });
+    const carol = attachPlayer(world.space, AT_BOARD, 'carol', { character: { quests: { active: [], done: [questId] } } });
     world.space.handleAcceptQuest(BOARD, questId, carol.entityId);
     expect(questsOf(world.space, carol.entityId)).toEqual({ active: [], done: [questId] });
-    world.space.reachWorldDay(noon(DAY + 1));
+    world.wall.ms = noon(DAY + 1);
+    world.space.step(0);
     expect(questsOf(world.space, carol.entityId)).toEqual(NO_QUESTS);
   });
 
-  it('counts a drive-off of its kind in its land, and pays its coins and an item at the board once', () => {
+  it('counts a drive-off of its kind in its land, and pays its coins and a magic item at the board once', () => {
     const day = dayAsking('driveOff');
-    const world = graveyard();
+    const world = graveyardOn(day);
     const bounty = offered(day)[0]!;
     const questId = bountyIdOf(bounty);
-    const alice = attachPlayer(world.space, AT_BOARD, 'alice', {
-      worldSeconds: noon(day),
-      character: striker,
-      inventory: carrying({ coins: COINS, worn: [CUDGEL] }),
-    });
+    const alice = attachPlayer(world.space, AT_BOARD, 'alice', { character: striker, inventory: carrying({ coins: COINS, worn: [CUDGEL] }) });
     world.space.handleAcceptQuest(BOARD, questId, alice.entityId);
     walk(world, alice.entityId, BESIDE_GHOST);
     // A Skeleton's 70 health takes a fourth cudgel swing.
@@ -814,63 +909,18 @@ describe('the bounty board', () => {
     expect(questsOf(world.space, alice.entityId)).toEqual({ active: [], done: [questId] });
     const { coins, bag } = inventoryOf(world, alice.entityId);
     expect(coins).toBe(before.coins + bounty.reward.coins);
-    expect(bag.slice(before.bag.length).map(({ item }) => item.tier)).toEqual([bounty.reward.gear]);
-  });
-
-  it('finishes a bounty taken before the day turns by its stored definition, after the board turns over, a reconnect the next day, and a change to the spawns, and pays it once', () => {
-    const day = dayAsking('driveOff');
-    const first = graveyard();
-    const bounty = offered(day)[0]!;
-    const questId = bountyIdOf(bounty);
-    const alice = attachPlayer(first.space, AT_BOARD, 'alice', {
-      worldSeconds: noon(day),
-      character: striker,
-      inventory: carrying({ coins: COINS, worn: [CUDGEL] }),
-    });
-    first.space.handleAcceptQuest(BOARD, questId, alice.entityId);
-    first.space.reachWorldDay(noon(day + 1));
-    expect(questsOf(first.space, alice.entityId).active).toEqual([{ questId, progress: [0], definition: bounty }]);
-    const left = first.space.snapshotForPlayer(alice.entityId)!;
-
-    // The Graveyard now keeps a Skeleton Warrior too, far off, so the board offers what the new spawns give.
-    const warriors = { ...makeMonsterSpawn({ x: 2, z: 2 }), id: 'spawn-2', kind: 'skeleton-warrior' as const };
-    const second = graveyard('skeleton-minion', warriors);
-    const { outbox, sent } = recordingOutbox();
-    const back = attachPlayer(second.space, BESIDE_GHOST, 'alice', {
-      outbox,
-      worldSeconds: noon(day + 1),
-      character: { lucidity: left.character.lucidity, quests: left.character.quests },
-      inventory: left.inventory,
-    });
-    const [joined] = payloads(sent.splice(0), 'quests');
-    expect(joined?.active).toEqual([{ questId, progress: [0], definition: bounty }]);
-    expect(joined?.bounties).toEqual(offered(day + 1, { name: 'Graveyard', kinds: [...SKELETONS.kinds, { kind: 'skeleton-warrior', alive: 1 }] }));
-
-    strike(second, GHOST, 4, back.entityId);
-    awaitNextSkeleton(second);
-    strike(second, 'monster:3', 4, back.entityId);
-    expect(progressOf(second.space, back.entityId, questId)).toEqual([bounty.count]);
-    walk(second, back.entityId, AT_BOARD);
-    const before = inventoryOf(second, back.entityId);
-    second.space.handleTurnInQuest(BOARD, questId, back.entityId);
-    second.space.handleTurnInQuest(BOARD, questId, back.entityId);
-    expect(questsOf(second.space, back.entityId)).toEqual({ active: [], done: [questId] });
-    expect(inventoryOf(second, back.entityId).coins).toBe(before.coins + bounty.reward.coins);
-    expect(inventoryOf(second, back.entityId).bag).toHaveLength(before.bag.length + 1);
+    // The space's loot rolls land at the top of every range, which a quest's own odds make rare.
+    expect(bag.slice(before.bag.length).map(({ item }) => [item.tier, item.rarity])).toEqual([[bounty.reward.gear, 'magic']]);
   });
 
   it('with a full bag waits, granting nothing, until there is room', () => {
     const day = dayAsking('collect');
-    const world = graveyard();
+    const world = graveyardOn(day);
     const bounty = offered(day)[0]!;
     const questId = bountyIdOf(bounty);
     const caps = fullBag();
     const quests: QuestLog = { active: [{ questId, progress: [bounty.count], definition: bounty }], done: [] };
-    const alice = attachPlayer(world.space, AT_BOARD, 'alice', {
-      worldSeconds: noon(day),
-      character: { quests },
-      inventory: carrying({ coins: COINS, bag: caps }),
-    });
+    const alice = attachPlayer(world.space, AT_BOARD, 'alice', { character: { quests }, inventory: carrying({ coins: COINS, bag: caps }) });
     world.space.handleTurnInQuest(BOARD, questId, alice.entityId);
     expect(questsOf(world.space, alice.entityId)).toEqual(quests);
     expect(inventoryOf(world, alice.entityId)).toEqual(carrying({ coins: COINS, bag: caps }));
@@ -884,13 +934,12 @@ describe('the bounty board', () => {
 
   it("leaves a Skeleton's trophy for a dreamer gathering them for a bounty, which a pick-up counts", () => {
     const day = dayAsking('collect');
-    const world = graveyard();
+    const world = graveyardOn(day);
     const bounty = offered(day)[0]!;
     const questId = bountyIdOf(bounty);
     const { outbox, sent } = recordingOutbox();
     const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', {
       outbox,
-      worldSeconds: noon(day),
       character: { ...striker, quests: { active: [{ questId, progress: [0], definition: bounty }], done: [] } },
       inventory: wearing(CUDGEL),
     });

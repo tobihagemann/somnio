@@ -128,23 +128,32 @@ describe('the debug API', () => {
     });
 
     // A quest taken on is said over the world, and a quest done waits its turn behind it while the tracker lists it first.
-    app.controller.dispatch({ tag: 'quests', payload: { ...quests, active: [{ questId: 'newcomer-errand', progress: [0, 0] }, ...quests.active] } });
+    app.controller.dispatch({ tag: 'quests', payload: { ...quests, active: [{ questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] }, ...quests.active] } });
     app.controller.dispatch({
       tag: 'quests',
       payload: {
         ...quests,
         active: [
-          { questId: 'newcomer-errand', progress: [0, 0] },
+          { questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] },
           { questId: 'restless-graves', progress: [4] },
         ],
       },
     });
     expect(container.querySelector('.hud-quest-banner')?.textContent).toBe(
-      "Quest acceptedA newcomer's errandVisit Mercus in his shop.Read the bounty board on the square.",
+      "Quest acceptedA newcomer's errandVisit Mercus in his shop.Read the bounty board on the square.Meet Pugnax and Sana in their halls.Find the Mystics' tower on the square.",
     );
     expect(api.questTracker().quests).toEqual([
       { questId: 'restless-graves', title: 'Restless graves', lines: [], returnTo: 'Return to Memor.' },
-      { questId: 'newcomer-errand', title: "A newcomer's errand", lines: ['Visit Mercus in his shop: 0/1', 'Read the bounty board on the square: 0/1'] },
+      {
+        questId: 'newcomer-errand',
+        title: "A newcomer's errand",
+        lines: [
+          'Visit Mercus in his shop: 0/1',
+          'Read the bounty board on the square: 0/1',
+          'Meet Pugnax and Sana in their halls: 0/2',
+          "Find the Mystics' tower on the square: 0/1",
+        ],
+      },
     ]);
   });
 

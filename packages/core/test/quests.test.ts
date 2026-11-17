@@ -1,4 +1,5 @@
-import { ROLES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import { ROLES, SERVICES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import type { QuestShareOutcome } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { NO_LUCIDITY, TRIAL_QUESTS, teaching } from '../src/lucidity.ts';
 import type { Lucidity } from '../src/lucidity.ts';
@@ -12,6 +13,7 @@ import {
   gatedTeaching,
   markerFor,
   mayAccept,
+  mayShare,
   objectiveGoal,
   objectiveLines,
   quest,
@@ -19,18 +21,23 @@ import {
   questsMessage,
   questsOf,
   reachedAt,
+  shareOutcomeFor,
   trialRole,
   trophyLabelKey,
   turnInFor,
   turnInGrant,
   withAccepted,
+  withAcceptedBounty,
+  withBoardDay,
   withTurnedIn,
   withoutQuest,
 } from '../src/quests.ts';
-import type { QuestId, QuestLog, QuestObjective } from '../src/quests.ts';
+import type { QuestId, QuestLog, QuestObjective, QuestOrBountyId } from '../src/quests.ts';
 import { bountyIdOf } from '../src/bounties.ts';
 import type { Bounty } from '../src/bounties.ts';
+import { fixtureCarrierId, npcEntityId } from '../src/sector.ts';
 import { ranks } from './support/ranks.ts';
+import { loadSectorFixtures } from './support/sectorFixture.ts';
 import { outdoorSector } from './support/worldFixture.ts';
 
 function lucidity(role: Lucidity['role'], held: Parameters<typeof ranks>[0] = {}): Lucidity {
@@ -53,14 +60,28 @@ describe('the quest table', () => {
     }
   });
 
-  // A carrier with no service of its own opens its panel by its quest marker alone (`GameplaySession.hasPanel`).
-  it('takes every quest back where it gives it', () => {
-    for (const questId of QUEST_IDS) expect(quest(questId).turnIn, questId).toBe(quest(questId).giver);
+  it('gives and takes back every quest at a committed carrier or a service', () => {
+    const carriers = new Set<string>([
+      ...SERVICES,
+      ...loadSectorFixtures().flatMap((sector) => [
+        ...sector.npcs.map((npc) => npcEntityId(sector.name, npc.id)),
+        ...sector.fixtures.map((fixture) => fixtureCarrierId(sector.name, fixture.id)),
+      ]),
+    ]);
+    for (const questId of QUEST_IDS)
+      expect(
+        [quest(questId).giver, quest(questId).turnIn].filter((named) => !carriers.has(named)),
+        questId,
+      ).toEqual([]);
   });
 
   it('fits every quest in a `quests` frame', () => {
     expect(QUEST_IDS.length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxDoneQuests);
     for (const questId of QUEST_IDS) expect(quest(questId).objectives.length).toBeLessThanOrEqual(SOMNIO_PROTOCOL_CONSTANTS.maxQuestObjectives);
+  });
+
+  it("keeps Libus's errand at the five objectives the stored errands were migrated to", () => {
+    expect(quest('newcomer-errand').objectives.length).toBe(5);
   });
 
   it('forbids striking under the Healer trial alone', () => {
@@ -176,7 +197,7 @@ describe('turning a quest in', () => {
       trialItem: undefined,
       paysInventory: false,
     });
-    expect(turnInGrant({ questId: 'newcomer-errand', progress: [1, 1] })).toEqual({
+    expect(turnInGrant({ questId: 'newcomer-errand', progress: [1, 1, 1, 1, 1] })).toEqual({
       role: undefined,
       teaches: undefined,
       trialItem: undefined,
@@ -188,6 +209,34 @@ describe('turning a quest in', () => {
       trialItem: undefined,
       paysInventory: true,
     });
+  });
+});
+
+describe('sharing a quest', () => {
+  const bounty: Bounty = { day: 3, land: 'Graveyard', monsterKind: 'skeleton-warrior', objective: 'collect', count: 4, reward: { coins: 120 } };
+  const full: QuestLog = {
+    active: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, () => ({ questId: 'into-the-crypt' as const, progress: [0] })),
+    done: [],
+  };
+
+  it('is open for any quest held but a trial, a bounty included', () => {
+    for (const role of ROLES) expect(mayShare(TRIAL_QUESTS[role]), role).toBe(false);
+    expect([mayShare('restless-graves'), mayShare('follow-through-task'), mayShare(bountyIdOf(bounty))]).toEqual([true, true, true]);
+  });
+
+  it.each<[string, QuestOrBountyId, Bounty | undefined, QuestLog, QuestShareOutcome | undefined]>([
+    ['takes a quest they may take on', 'restless-graves', undefined, NO_QUESTS, undefined],
+    ['holds it', 'restless-graves', undefined, holding(['restless-graves', [0]]), 'holds'],
+    ['holds it in a full log', 'into-the-crypt', undefined, full, 'holds'],
+    ['turned it in before', 'restless-graves', undefined, { active: [], done: ['restless-graves'] }, 'done'],
+    ['has a full log', 'restless-graves', undefined, full, 'logFull'],
+    ['has not met its needs', 'cracked-skulls', undefined, NO_QUESTS, 'cannotYet'],
+    ["takes one of the day's bounties", bountyIdOf(bounty), bounty, NO_QUESTS, undefined],
+    ['holds the bounty', bountyIdOf(bounty), bounty, withAcceptedBounty(NO_QUESTS, bounty), 'holds'],
+    ['turned the bounty in before', bountyIdOf(bounty), bounty, { active: [], done: [bountyIdOf(bounty)] }, 'done'],
+    ['is offered a bounty no longer up', bountyIdOf(bounty), undefined, NO_QUESTS, 'cannotYet'],
+  ])('answers a dreamer who %s', (_label, questId, offered, log, outcome) => {
+    expect(shareOutcomeFor(questId, offered, log, NO_LUCIDITY)).toBe(outcome);
   });
 });
 
@@ -226,6 +275,27 @@ describe('the quests frame', () => {
   });
 });
 
+describe("the board's day", () => {
+  const today: Bounty = { day: 3, land: 'Graveyard', monsterKind: 'skeleton-warrior', objective: 'collect', count: 4, reward: { coins: 120 } };
+  const yesterday: Bounty = { ...today, day: 2 };
+
+  it('drops the bounties of every other day, held or turned in, and counts the held ones that ran out', () => {
+    const log: QuestLog = {
+      active: [
+        { questId: 'restless-graves', progress: [1] },
+        { questId: bountyIdOf(yesterday), progress: [4], definition: yesterday },
+        { questId: bountyIdOf(today), progress: [0], definition: today },
+      ],
+      done: ['fighter-trial', bountyIdOf({ ...today, day: 1 }), bountyIdOf({ ...today, land: 'NorthWood' })],
+    };
+    const onDay = withBoardDay(log, 3);
+    expect(onDay).toEqual({ log: { active: [log.active[0], log.active[2]], done: ['fighter-trial', bountyIdOf({ ...today, land: 'NorthWood' })] }, ranOut: 1 });
+    expect(withBoardDay(log, 4).ranOut).toBe(2);
+    const again = withBoardDay(onDay.log, 3);
+    expect([again.log === onDay.log, again.ranOut]).toEqual([true, 0]);
+  });
+});
+
 describe('the lines a quest is said in', () => {
   it('say a single objective with its count toward the goal', () => {
     expect(objectiveLines(quest('drawing-back-task'), [22.5]).map(({ labelKey, done, goal }) => [labelKey, done, goal])).toEqual([
@@ -242,11 +312,13 @@ describe('the lines a quest is said in', () => {
 
 describe('the marker over a carrier', () => {
   const pugnax = { id: quest('fighter-trial').giver };
+  const memor = { id: quest('restless-graves').giver };
+  const wordPassed = (log: QuestLog): QuestLog => ({ ...log, done: [...log.done, 'word-for-memor-fighter'] });
 
   it('offers what the carrier gives a dreamer who may take it on', () => {
     expect(markerFor(pugnax, NO_QUESTS, NO_LUCIDITY, [])).toBe('offer');
-    expect(markerFor(pugnax, NO_QUESTS, lucidity('fighter', { strike: 2 }), [])).toBe('offer');
-    expect(markerFor(pugnax, NO_QUESTS, lucidity('fighter', { strike: 1 }), [])).toBeUndefined();
+    expect(markerFor(pugnax, wordPassed(NO_QUESTS), lucidity('fighter', { strike: 2 }), [])).toBe('offer');
+    expect(markerFor(pugnax, wordPassed(NO_QUESTS), lucidity('fighter', { strike: 1 }), [])).toBeUndefined();
     expect(markerFor(pugnax, NO_QUESTS, lucidity('healer', { touch: 1 }), [])).toBeUndefined();
     expect(markerFor(pugnax, holding(['healer-trial', [0]]), NO_LUCIDITY, [])).toBeUndefined();
   });
@@ -258,8 +330,20 @@ describe('the marker over a carrier', () => {
 
   it('shows where to return a quest held that is not finished yet', () => {
     expect(markerFor(pugnax, holding(['fighter-trial', [0]]), NO_LUCIDITY, [])).toBe('inProgress');
-    expect(markerFor(pugnax, holding(['follow-through-task', [1]]), lucidity('fighter', { strike: 2 }), [])).toBe('inProgress');
+    expect(markerFor(pugnax, wordPassed(holding(['follow-through-task', [1]])), lucidity('fighter', { strike: 2 }), [])).toBe('inProgress');
     expect(markerFor({ id: quest('healer-trial').turnIn }, holding(['fighter-trial', [0]]), NO_LUCIDITY, [])).toBeUndefined();
+  });
+
+  it("hands a master's word on to Memor, where it is turned in", () => {
+    const fighter = lucidity('fighter', { strike: 1 });
+    const chainDone = (log: QuestLog): QuestLog => ({ ...log, done: [...log.done, 'restless-graves', 'cracked-skulls', 'into-the-crypt'] });
+    expect(markerFor(memor, chainDone(holding(['word-for-memor-fighter', [0]])), fighter, [])).toBe('inProgress');
+    expect(markerFor(memor, chainDone(NO_QUESTS), fighter, [])).toBeUndefined();
+    expect(markerFor(memor, chainDone(holding(['word-for-memor-fighter', [1]])), fighter, [])).toBe('turnIn');
+    expect(markerFor(pugnax, NO_QUESTS, fighter, [])).toBe('offer');
+    expect(markerFor(pugnax, holding(['word-for-memor-fighter', [0]]), fighter, [])).toBeUndefined();
+    expect(markerFor(pugnax, wordPassed(NO_QUESTS), fighter, [])).toBeUndefined();
+    expect(markerFor({ id: quest('healer-trial').giver }, NO_QUESTS, fighter, [])).toBeUndefined();
   });
 
   it('shows nothing over a carrier that gives and takes nothing', () => {

@@ -122,6 +122,12 @@ describe('rollQuestGear', () => {
     expect(rolled.filter((item) => item.rarity === 'rare').length / SAMPLES).toBeCloseTo(QUEST_GEAR_RARITIES.rare / 100, 1);
     expect(rolled.some((item) => item.rarity === 'plain')).toBe(false);
   });
+
+  it('rolls at the rarity given in place of the weights, as a bounty pays a magic item', () => {
+    const random = seededSequence(hashString('bounty gear'));
+    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, 'fighter', random, 'magic'));
+    expect(rolled.every((item) => item.tier === 3 && item.rarity === 'magic' && usableBy(item.baseId, 'fighter'))).toBe(true);
+  });
 });
 
 describe('PICKUP_REACH', () => {

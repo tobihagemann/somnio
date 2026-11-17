@@ -66,6 +66,8 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login acceptQuest', message: { tag: 'acceptQuest', payload: { carrierId: entity.id, questId: 'fighter-trial' } }, state: 'awaitingLogin' },
   { label: 'pre-login turnInQuest', message: { tag: 'turnInQuest', payload: { carrierId: entity.id, questId: 'fighter-trial' } }, state: 'awaitingLogin' },
   { label: 'pre-login abandonQuest', message: { tag: 'abandonQuest', payload: { questId: 'fighter-trial' } }, state: 'awaitingLogin' },
+  { label: 'pre-login shareQuest', message: { tag: 'shareQuest', payload: { questId: 'restless-graves' } }, state: 'awaitingLogin' },
+  { label: 'pre-login answerQuestOffer', message: { tag: 'answerQuestOffer', payload: { offerId: 1, take: true } }, state: 'awaitingLogin' },
   { label: 'pre-login study', message: { tag: 'study', payload: { carrierId: entity.id, teachingId: 'strike' } }, state: 'awaitingLogin' },
   { label: 'pre-login buy', message: { tag: 'buy', payload: { carrierId: entity.id, baseId: 'dagger' } }, state: 'awaitingLogin' },
   { label: 'pre-login sell', message: { tag: 'sell', payload: { carrierId: entity.id, itemId: CUDGEL.id } }, state: 'awaitingLogin' },
@@ -102,6 +104,18 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
     state: 'attached',
   },
   { label: 'post-attach mend', message: { tag: 'mend', payload: { targetId: 'player' } }, state: 'attached' },
+  {
+    label: 'post-attach questOffer',
+    message: { tag: 'questOffer', payload: { offerId: 1, fromName: 'peer', questId: 'restless-graves' } },
+    state: 'attached',
+  },
+  { label: 'post-attach questShared', message: { tag: 'questShared', payload: { reached: 1 } }, state: 'attached' },
+  {
+    label: 'post-attach questShareAnswer',
+    message: { tag: 'questShareAnswer', payload: { questId: 'restless-graves', name: 'peer', outcome: 'took' } },
+    state: 'attached',
+  },
+  { label: 'post-attach bountiesRanOut', message: { tag: 'bountiesRanOut', payload: { count: 1 } }, state: 'attached' },
   {
     label: 'pre-login revokeSession',
     message: { tag: 'revokeSession', payload: { token: 'tok' } },
@@ -197,10 +211,12 @@ describe('an attached connection', () => {
   const HEALER: Partial<Character> = { lucidity: lucidity('healer', { touch: 1 }), energy: energy({ healthCurrent: 50 }) };
   const TRIAL_PASSED: Partial<Character> = { quests: { active: [{ questId: 'fighter-trial', progress: [1] }], done: [] } };
   const TRIAL_HELD: Partial<Character> = { quests: { active: [{ questId: 'fighter-trial', progress: [0] }], done: [] } };
+  const GRAVES_HELD: Partial<Character> = { quests: { active: [{ questId: 'restless-graves', progress: [0] }], done: [] } };
+  const ERRAND_HELD: Partial<Character> = { quests: { active: [{ questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] }], done: [] } };
 
   afterEach(() => vi.restoreAllMocks());
 
-  /** A dreamer beside Pugnax and Mercus, with a hurt dreamer in a Moonstone's reach. */
+  /** A dreamer beside Pugnax and Mercus, with a hurt dreamer holding Libus's errand in a Moonstone's reach. */
   async function attached(character: Partial<Character>, inventory: Inventory, overrides: Partial<Sector> = {}) {
     const npcs = [
       { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'fighterMaster' as const },
@@ -212,7 +228,11 @@ describe('an attached connection', () => {
     const connection = new ConnectionActor(dependencies);
     const { entityId } = attachPlayer(space, { x: 10, z: 9.5 }, 'dreamer', { outbox: connection.outbox, character, inventory });
     connection.markAttached(entityId, OUTDOOR_SPACE_ID, crypto.randomUUID());
-    const hurt = attachPlayer(space, { x: 10.6, z: 9.5 }, 'hurt', { character: { energy: energy({ healthCurrent: 50 }) } });
+    const hurtOutbox = recordingOutbox();
+    const hurt = attachPlayer(space, { x: 10.6, z: 9.5 }, 'hurt', {
+      outbox: hurtOutbox.outbox,
+      character: { energy: energy({ healthCurrent: 50 }), ...ERRAND_HELD },
+    });
     return {
       connection,
       dependencies,
@@ -220,6 +240,7 @@ describe('an attached connection', () => {
       own: () => space.snapshotForPlayer(entityId)!,
       hurt: () => space.snapshotForPlayer(hurt.entityId)!.character,
       hurtId: hurt.entityId,
+      hurtSent: hurtOutbox.sent,
     };
   }
 
@@ -275,6 +296,26 @@ describe('an attached connection', () => {
       () => ({ tag: 'abandonQuest', payload: { questId: 'fighter-trial' } }),
       (a) => a.own().character.quests.active,
       [],
+    ],
+    [
+      'a quest shared',
+      GRAVES_HELD,
+      carrying(),
+      () => ({ tag: 'shareQuest', payload: { questId: 'restless-graves' } }),
+      (a) => payloads(a.hurtSent, 'questOffer').map(({ questId }) => questId),
+      ['restless-graves'],
+    ],
+    [
+      'a quest shared taken on',
+      {},
+      carrying(),
+      (a) => {
+        a.space.handleShareQuest('newcomer-errand', a.hurtId);
+        // The world's first offer.
+        return { tag: 'answerQuestOffer', payload: { offerId: 1, take: true } };
+      },
+      (a) => a.own().character.quests.active.map(({ questId }) => questId),
+      ['newcomer-errand'],
     ],
     [
       'a teaching to study',

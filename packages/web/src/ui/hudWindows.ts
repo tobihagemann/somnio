@@ -13,22 +13,25 @@ import { itemTip, itemTitle } from './itemText';
 export class HUDWindow {
   readonly root: HTMLElement;
 
-  constructor(title: string, onClose: () => void, body: readonly Node[]) {
+  /** `count`, when given, stands after the title, as the Quest log's "4/10". */
+  constructor(title: string, onClose: () => void, body: readonly Node[], count?: HTMLElement) {
     this.root = element('section', {
       className: 'fantasy-panel fantasy-panel--opaque hud-window hidden',
       attributes: { 'aria-label': title },
-      children: [...windowHead(title, onClose), ...body],
+      children: [...windowHead(title, onClose, count), ...body],
     });
   }
 }
 
 /**
- * A window's title, centred over its whole width, and the ✕ that closes it, a small chrome button
- * on the panel's top-right corner. The ✕ is returned beside the head, not in it, so the panel positions it.
+ * A window's title, centred over its whole width, with `count` after it when given, and the ✕ that
+ * closes it, a small chrome button on the panel's top-right corner. The ✕ is returned beside the
+ * head, not in it, so the panel positions it.
  */
-export function windowHead(title: string, onClose: () => void): HTMLElement[] {
+export function windowHead(title: string, onClose: () => void, count?: HTMLElement): HTMLElement[] {
   const close = setTip(iconButton(t('Close %@', title), glyph(HUD_ICONS.close), onClose, { className: 'fantasy-button hud-window__close' }));
-  return [element('div', { className: 'hud-window__head', children: [element('h2', { className: 'overlay-title', text: title })] }), close];
+  const heading = element('h2', { className: 'overlay-title', text: title, children: count === undefined ? [] : [count] });
+  return [element('div', { className: 'hud-window__head', children: [heading] }), close];
 }
 
 /** What the Players list marks: the player's own name, and the target's. */
