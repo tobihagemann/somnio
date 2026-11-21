@@ -1,12 +1,6 @@
 import { clamp } from '@somnio/core';
 import type { ScreenRect } from '@/scene/bubbleLayout';
-
-interface PageRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
+import type { PageRect } from '@/scene/portraits';
 
 /** A point on the page in the canvas's normalized device coordinates, or `undefined` while the canvas has no size. */
 export function viewportPoint(canvas: PageRect, x: number, y: number): { x: number; y: number } | undefined {
