@@ -222,18 +222,21 @@ export class SlotOneButton {
   }
 }
 
-/** The key that locks the gaze on the target and lets go of it. */
+/** The key that frees the facing and holds it again. */
 export const GAZE_LOCK_KEY = 'f';
 
+/** The key that turns Run on and off. */
+export const RUN_KEY = 'r';
+
 /**
- * The gaze lock's toggle, drawn as the target's ring and lit as its reticle while the gaze is locked,
- * and greyed out while there is nothing to lock on, the player's own body included. It stays one
- * element, its glyph swapped in place.
+ * The facing lock's toggle, drawn as the target's ring and lit as its reticle while the facing is held.
+ * It is never disabled, since what it holds decides how the next target is faced. It stays one element,
+ * its glyph swapped in place.
  */
 export class GazeLockButton {
   readonly root: HTMLButtonElement;
   private readonly glyph: HTMLElement;
-  private shown: string | undefined;
+  private shown: boolean | undefined;
 
   /** `orb` is a finger's round button; otherwise a square slot with its key. */
   constructor(onPress: () => void, orb: boolean) {
@@ -250,13 +253,11 @@ export class GazeLockButton {
     setTip(this.root, () => ({ title: t('Lock facing'), ...(orb ? {} : { aside: GAZE_LOCK_KEY.toUpperCase() }) }));
   }
 
-  render(locked: boolean, lockable: boolean): void {
-    const shown = JSON.stringify([locked, lockable]);
-    if (shown === this.shown) return;
-    this.shown = shown;
-    this.root.setAttribute('aria-pressed', String(locked));
-    this.root.disabled = !lockable;
-    showGlyph(this.glyph, locked ? HUD_ICONS.gazeLocked : HUD_ICONS.gazeFree);
+  render(held: boolean): void {
+    if (held === this.shown) return;
+    this.shown = held;
+    this.root.setAttribute('aria-pressed', String(held));
+    showGlyph(this.glyph, held ? HUD_ICONS.gazeLocked : HUD_ICONS.gazeFree);
   }
 }
 
@@ -268,9 +269,9 @@ export function runButton(onPress: () => void, orb: boolean): HTMLButtonElement 
         element('button', {
           className: 'fantasy-button hud-slot hud-slot--run',
           attributes: { type: 'button', 'aria-pressed': 'false', 'aria-label': t('Run') },
-          children: [element('span', { className: 'hud-slot__key', text: '⇧', attributes: { 'aria-hidden': 'true' } }), glyph(HUD_ICONS.run)],
+          children: [element('span', { className: 'hud-slot__key', text: RUN_KEY.toUpperCase(), attributes: { 'aria-hidden': 'true' } }), glyph(HUD_ICONS.run)],
         }),
-        () => ({ title: t('Run'), aside: t('Shift') }),
+        () => ({ title: t('Run'), aside: RUN_KEY.toUpperCase() }),
       );
   node.addEventListener('click', onPress);
   return node;

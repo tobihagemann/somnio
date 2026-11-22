@@ -321,28 +321,28 @@ describe('the Run key', () => {
     return app;
   }
 
-  function pressShift(init: KeyboardEventInit = {}): void {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', cancelable: true, ...init }));
+  function pressR(init: KeyboardEventInit = {}): void {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR', cancelable: true, ...init }));
   }
 
-  it('toggles Run on each press of Shift, and lights the Run button while it is on', () => {
+  it('toggles Run on each press of R, and lights the Run button while it is on', () => {
     const app = inWorld();
     const runButton = container.querySelector<HTMLButtonElement>('button[aria-label="Run"]')!;
 
-    pressShift();
+    pressR();
     expect(app.session.running).toBe(true);
     expect(runButton.getAttribute('aria-pressed')).toBe('true');
 
-    pressShift({ code: 'ShiftRight' });
+    pressR({ key: 'R', shiftKey: true });
     expect(app.session.running).toBe(false);
     expect(runButton.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('does not toggle again while Shift is held down and repeats', () => {
+  it('does not toggle again while R is held down and repeats', () => {
     const app = inWorld();
 
-    pressShift();
-    pressShift({ repeat: true });
+    pressR();
+    pressR({ repeat: true });
 
     expect(app.session.running).toBe(true);
   });
@@ -350,11 +350,11 @@ describe('the Run key', () => {
   it.each<[string, (app: AppShell) => void]>([
     ['an overlay is up', (app) => (app.controller.presentedOverlay = { kind: 'gameMenu' })],
     ['the chat input has focus', (app) => app.hud.chatInput.dispatchEvent(new FocusEvent('focus'))],
-  ])('leaves Run alone while %s, where Shift capitalizes', (_label, arrange) => {
+  ])('leaves Run alone while %s, where R is typed', (_label, arrange) => {
     const app = inWorld();
     arrange(app);
 
-    pressShift();
+    pressR();
 
     expect(app.session.running).toBe(false);
   });

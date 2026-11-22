@@ -445,7 +445,7 @@ export class GameHUD {
     paintRarityColors(this.root);
     paintQuestColors(this.root);
     // A control pressed with the pointer hands the keyboard straight back to the world, so Enter
-    // opens the chat and Shift runs rather than pressing the control again. A keyboard press keeps it.
+    // opens the chat rather than pressing the control again. A keyboard press keeps it.
     this.root.addEventListener(
       'click',
       (event) => {
@@ -566,9 +566,9 @@ export class GameHUD {
     else this.run.removeAttribute('aria-description');
   }
 
-  /** The gaze lock lit while the gaze is locked on the target, and greyed out with no target to lock on. */
-  renderGazeLock(locked: boolean, lockable: boolean): void {
-    this.gazeLock.render(locked, lockable);
+  /** The facing lock lit while the facing is held, on the target or the walk. */
+  renderGazeLock(held: boolean): void {
+    this.gazeLock.render(held);
   }
 
   renderSlotOne(engaged: boolean, action: EngageAction | undefined, targetFallen: boolean, refusal: AttackRefusal | undefined): void {

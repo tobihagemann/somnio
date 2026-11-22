@@ -55,6 +55,18 @@ const FIGHTER_KIT: SomnioMessage = {
     ],
   },
 };
+/** A Healer who has learned Deep mend and Renewal. */
+const HEALER_KIT: SomnioMessage = {
+  tag: 'lucidity',
+  payload: {
+    role: 'healer',
+    ranks: [
+      { teachingId: 'touch', rank: 2, practice: 0 },
+      { teachingId: 'deep-mend', rank: 1, practice: 0 },
+      { teachingId: 'renewal', rank: 1, practice: 0 },
+    ],
+  },
+};
 
 interface Rig {
   session: GameplaySession;
@@ -67,6 +79,8 @@ interface Rig {
   selections: (string | undefined)[];
   /** Every `showSelection` call's mark, in step with `selections`. */
   selectionMarks: TargetMark[];
+  /** Every `showQueue` call. */
+  queues: (readonly string[])[];
   /** Every `showBlow`, `showAbility`, `showEffects`, `showRaising`, `showMend`, `showSensed`, `showLoot`, `removeLoot`, and `updateCondition` call, by name. */
   shown: unknown[][];
   /** Every `showQuestMarkers` call. */
@@ -88,6 +102,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
   const gaits: Rig['gaits'] = [];
   const selections: Rig['selections'] = [];
   const selectionMarks: Rig['selectionMarks'] = [];
+  const queues: Rig['queues'] = [];
   const shown: Rig['shown'] = [];
   const questMarkers: Rig['questMarkers'] = [];
   const bubbles: Rig['bubbles'] = [];
@@ -105,6 +120,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
         selections.push(id);
         selectionMarks.push(mark);
       },
+      showQueue: (queued) => queues.push([...queued]),
       showBlow: (...blow) => shown.push(['showBlow', ...blow]),
       showRaising: (...raising) => shown.push(['showRaising', ...raising]),
       showMend: (...mend) => shown.push(['showMend', ...mend]),
@@ -132,6 +148,7 @@ function makeRig(options: { coarsePointer?: boolean } = {}): Rig {
     gaits,
     selections,
     selectionMarks,
+    queues,
     shown,
     questMarkers,
     bubbles,
@@ -181,6 +198,20 @@ function meadowOfBodies(options: { coarsePointer?: boolean } = {}): Rig {
 function tapGround(rig: Rig, point: { x: number; z: number }, timeMs = 0): void {
   rig.session.pressGround(point, timeMs);
   rig.session.release(point);
+}
+
+/** A player with full pools who tapped into the trigger of a meadow's door at (10, 12) and stands there, waiting for the server's answer. */
+function waitingOnDoor(): Rig {
+  const rig = makeRig();
+  rig.controller.dispatch(enterSpaceFrame());
+  rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 }, makeDoor('exit', { x: 10, z: 12 }, { sector: 'Hall', door: 'entry' }))));
+  rig.controller.dispatch(entityFrame({ x: 9.5, z: 11 }));
+  rig.controller.dispatch({ tag: 'energy', payload: FULL });
+  tapGround(rig, { x: 9.5, z: 11.8 });
+  tickUntil(rig, 0, 2000, () => rig.session.predictor.walk === undefined);
+  expect(rig.sent.filter((message) => message.tag === 'useDoor')).toHaveLength(1);
+  expect(rig.session.predictor.arrivalsAct).toBe(false);
+  return rig;
 }
 
 function attach(rig: Rig, entities: readonly ClientEntity[]): void {
@@ -598,36 +629,57 @@ describe('walking', () => {
     expect(gaits().at(-1)).toBe('jog');
   });
 
-  it('faces the cursor on a fine pointer, and the way it walks on a coarse one', () => {
-    const fine = standing();
-    const coarse = standing({ coarsePointer: true });
-    for (const { rig } of [fine, coarse]) {
-      rig.session.aimAt({ x: 10, z: -1000 });
-      tapGround(rig, { x: 14, z: 10 });
-    }
+  it.each<[string, boolean, boolean, number]>([
+    ['the way it walks with the facing held, on a fine pointer', false, false, 90],
+    ['the way it walks with the facing held, on a coarse pointer', true, false, 90],
+    ['the cursor with the facing freed, on a fine pointer', false, true, 180],
+    ['the way it walks with the facing freed, on a coarse pointer', true, true, 90],
+  ])('faces %s', (_label, coarsePointer, freed, facing) => {
+    const { rig, ticks } = standing({ coarsePointer });
+    if (freed) rig.session.toggleGazeLock();
+    rig.session.faceCursorAt({ x: 10, z: -1000 });
+    tapGround(rig, { x: 14, z: 10 });
 
-    fine.ticks(0, 200);
-    coarse.ticks(0, 200);
+    ticks(0, 200);
 
-    expect(fine.rig.controller.entities.get('self')!.facing).toBeCloseTo(180, 0);
-    expect(coarse.rig.controller.entities.get('self')!.facing).toBeCloseTo(90, 9);
+    expect(rig.controller.entities.get('self')!.facing).toBeCloseTo(facing, 0);
   });
 
-  it('faces its target on a coarse pointer while it walks another way only with the gaze locked on it', () => {
+  it('keeps its facing where it stands with the facing held and nothing targeted, wherever the cursor goes', () => {
+    const { rig, ticks, at } = standing();
+    rig.session.faceCursorAt({ x: 10, z: -1000 });
+    ticks(0, 100);
+    expect(rig.controller.entities.get('self')!.facing).toBe(0);
+
+    tapGround(rig, { x: 12, z: 10 }, 150);
+    ticks(150, 2000);
+    expect(near(at(), { x: 12, z: 10 })).toBe(true);
+    rig.session.faceCursorAt({ x: 12, z: 1000 });
+    ticks(2050, 2300);
+
+    expect(rig.controller.entities.get('self')!.facing).toBeCloseTo(90, 9);
+  });
+
+  it.each<[string, boolean]>([
+    ['faces a nightmare a finger rested on while it walks another way with the facing held', false],
+    ['faces the way it walks past a nightmare a finger rested on with the facing freed', true],
+  ])('%s, on a coarse pointer', (_label, freed) => {
     const { rig, ticks } = standing({ coarsePointer: true });
     rig.controller.dispatch(entityFrame({ id: 'monster:1', kind: 'monster', x: 10, z: 6 }));
-    rig.session.selectEntity('monster:1');
-    tapGround(rig, { x: 14, z: 10 });
-    ticks(0, 200);
-    expect(rig.controller.entities.get('self')!.facing).toBeCloseTo(90, 9);
+    if (freed) rig.session.toggleGazeLock();
+    rig.session.holdEntity('monster:1', 0);
+    rig.session.runTick(FINGER_HOLD_MS);
+    rig.session.release({ x: 10, z: 6 });
+    expect([rig.session.target, rig.session.engaged]).toEqual(['monster:1', false]);
 
-    rig.session.toggleGazeLock();
-    ticks(250, 450);
+    tapGround(rig, { x: 14, z: 10 }, FINGER_HOLD_MS + 50);
+    ticks(FINGER_HOLD_MS + 50, FINGER_HOLD_MS + 250);
 
     const self = rig.controller.entities.get('self')!;
     expect(self.position.x).toBeGreaterThan(10.1);
     // Faced from where the last step began, a few centimetres back.
-    expect(Math.abs(self.facing - headingFromVector(10 - self.position.x, 6 - self.position.z))).toBeLessThan(1);
+    const facing = freed ? 90 : headingFromVector(10 - self.position.x, 6 - self.position.z);
+    expect(Math.abs(self.facing - facing)).toBeLessThan(1);
   });
 });
 
@@ -997,25 +1049,25 @@ describe('the Bag', () => {
     expect(rig.sent.filter((message) => message.tag === 'dropItem')).toEqual([{ tag: 'dropItem', payload: { itemId: 'cap-1', heading: 0 } }]);
   });
 
-  it.each<[string, boolean, number]>([
-    ['toward the cursor on a fine pointer', false, 180],
-    ['the way the player faces on a coarse pointer', true, 90],
-  ])('throws toward where a drag lets go, else %s, facing the throw as it reports', (_label, coarsePointer, second) => {
+  it.each<[string, boolean]>([
+    ['on a fine pointer, with the facing freed to the cursor', false],
+    ['on a coarse pointer', true],
+  ])('throws toward where a drag lets go, else the way the player faces %s, facing the throw as it reports', (_label, coarsePointer) => {
     const rig = makeRig({ coarsePointer });
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(entityFrame());
     rig.controller.connectionState = 'attached';
     rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap', 'cap-1'), item('cap', 'cap-2')] })));
+    rig.session.toggleGazeLock();
 
     rig.session.dropItem('cap-1', { x: 12, z: 10 });
-    rig.session.aimAt({ x: 10, z: 7 });
+    rig.session.faceCursorAt({ x: 10, z: 7 });
     rig.session.dropItem('cap-2');
 
     expect(rig.sent.filter((message) => message.tag === 'move' || message.tag === 'dropItem')).toEqual([
       { tag: 'move', payload: { x: 10, z: 10, facing: 90, gait: 'jog' } },
       { tag: 'dropItem', payload: { itemId: 'cap-1', heading: 90 } },
-      ...(second === 90 ? [] : [{ tag: 'move', payload: { x: 10, z: 10, facing: second, gait: 'jog' } }]),
-      { tag: 'dropItem', payload: { itemId: 'cap-2', heading: second } },
+      { tag: 'dropItem', payload: { itemId: 'cap-2', heading: 90 } },
     ]);
   });
 
@@ -2006,7 +2058,8 @@ describe('the service panel', () => {
     tapGround(rig, UP_SCREEN);
     tick(4);
     expect(rig.session.servicePanel?.id).toBe(MASTER);
-    tick(8);
+    // Facing the master they leave, the player backs away at half pace.
+    tick(12);
     expect(rig.session.servicePanel).toBeUndefined();
   });
 
@@ -2542,10 +2595,11 @@ describe('the target', () => {
 
 describe('the gaze lock', () => {
   const GHOST = 'monster:1';
+  const GUARD = 'npc:Meadow/guard';
   const targets = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'target' ? [message.payload] : []));
   const engages = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'engage' ? [message.payload] : []));
 
-  /** A player at (10, 10) on a fine pointer, a nightmare to the east, Bren to the west, and the cursor far to the north. */
+  /** A player at (10, 10) on a fine pointer facing south, a nightmare to the east, Bren to the west, an NPC to the north, and the cursor far to the north. */
   function locking(): Rig {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
@@ -2553,23 +2607,23 @@ describe('the gaze lock', () => {
     rig.controller.dispatch(entityFrame());
     rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 14, z: 10 }));
     rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 7, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: GUARD, kind: 'npc', name: 'Guard', x: 10, z: 6 }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
-    rig.session.aimAt({ x: 10, z: -1000 });
+    rig.session.faceCursorAt({ x: 10, z: -1000 });
     return rig;
   }
 
   const facing = (rig: Rig): number => rig.controller.entities.get('self')!.facing;
 
-  it('locks on the nightmare a left press lands on and faces it whatever the cursor does, and faces the cursor again once the lock toggle lets go', () => {
+  it('holds the facing on the target by default, whatever the cursor does, walking too, and the lock toggle frees it to the cursor and holds it again', () => {
     const rig = locking();
-    rig.session.pressEntity(GHOST);
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, true]);
-    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+    rig.session.selectEntity(GHOST);
+    expect([rig.session.target, rig.session.facingFree, rig.session.gazeLocked]).toEqual([GHOST, false, true]);
     for (let time = 0; time <= 200; time += 50) rig.session.runTick(time);
     expect(facing(rig)).toBeCloseTo(90, 0);
 
     tapGround(rig, { x: 10, z: 14 }, 250);
-    rig.session.aimAt({ x: 10, z: 1000 });
+    rig.session.faceCursorAt({ x: 10, z: 1000 });
     for (let time = 250; time <= 450; time += 50) rig.session.runTick(time);
     expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 14 } });
     const self = rig.controller.entities.get('self')!;
@@ -2578,14 +2632,40 @@ describe('the gaze lock', () => {
 
     rig.session.toggleGazeLock();
     for (let time = 500; time <= 600; time += 50) rig.session.runTick(time);
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual([GHOST, false]);
+    expect([rig.session.target, rig.session.facingFree, rig.session.gazeLocked]).toEqual([GHOST, true, false]);
     expect(Math.abs(((facing(rig) + 180) % 360) - 180)).toBeLessThan(0.5);
+
+    rig.session.toggleGazeLock();
+    for (let time = 650; time <= 750; time += 50) rig.session.runTick(time);
+    const turned = rig.controller.entities.get('self')!.position;
+    expect([rig.session.facingFree, rig.session.gazeLocked]).toEqual([false, true]);
+    expect(Math.abs(facing(rig) - headingFromVector(14 - turned.x, 10 - turned.z))).toBeLessThan(2);
   });
 
-  it('switches slot 1 on at a nightmare with the lock, after the target, and keeps both through a second left press on it', () => {
+  it('turns the player to a target a right press makes behind them, reporting the turn before slot 1 is switched on', () => {
     const rig = locking();
+    rig.controller.dispatch(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Ghost', x: 10, z: 9.4 }));
+    rig.session.faceCursorAt({ x: -1000, z: 10 });
+    rig.session.runTick(0);
+    expect(facing(rig)).toBe(0);
+
+    rig.sent.length = 0;
+    rig.session.selectEntity('monster:2');
+    rig.session.runTick(100);
+    rig.session.toggleEngage();
+
+    expect(rig.sent.filter((message) => ['target', 'move', 'engage'].includes(message.tag))).toEqual([
+      { tag: 'target', payload: { targetId: 'monster:2' } },
+      { tag: 'move', payload: expect.objectContaining({ facing: 180 }) },
+      { tag: 'engage', payload: { on: true } },
+    ]);
+  });
+
+  it('is held again by a left press on a nightmare, which switches slot 1 on after the target, and keeps both through a second left press on it', () => {
+    const rig = locking();
+    rig.session.toggleGazeLock();
     rig.session.pressEntity(GHOST);
-    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
+    expect([rig.session.facingFree, rig.session.gazeLocked, rig.session.engaged]).toEqual([false, true, true]);
     expect(rig.sent.filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
       { tag: 'target', payload: { targetId: GHOST } },
       { tag: 'engage', payload: { on: true } },
@@ -2597,7 +2677,7 @@ describe('the gaze lock', () => {
     expect(engages(rig)).toEqual([{ on: true }]);
   });
 
-  it('leaves the lock alone when the 1 key switches slot 1, and slot 1 alone when the lock toggle ends the lock', () => {
+  it('leaves the lock alone when the 1 key switches slot 1, and slot 1 alone when the lock toggle frees the facing', () => {
     const rig = locking();
     rig.session.pressEntity(GHOST);
     rig.session.toggleEngage();
@@ -2609,37 +2689,39 @@ describe('the gaze lock', () => {
     expect(engages(rig)).toEqual([{ on: true }, { on: false }, { on: true }]);
   });
 
-  it('sends nothing more for slot 1 when a left press locks on a target it already acts on', () => {
+  it('sends nothing more for slot 1 when a left press holds the facing on a target it already acts on', () => {
     const rig = locking();
     rig.session.selectEntity(GHOST);
     rig.session.toggleEngage();
+    rig.session.toggleGazeLock();
     rig.session.pressEntity(GHOST);
     expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([true, true]);
     expect(engages(rig)).toEqual([{ on: true }]);
   });
 
-  it('is neither taken nor let go by a right press on the target, which changes nothing', () => {
+  it('is neither held nor freed by a right press, on the target or another body', () => {
     const rig = locking();
+    rig.session.toggleGazeLock();
     rig.session.selectEntity(GHOST);
-    expect([rig.session.gazeLocked, rig.session.engaged]).toEqual([false, false]);
+    expect([rig.session.facingFree, rig.session.gazeLocked, rig.session.engaged]).toEqual([true, false, false]);
     rig.session.pressEntity(GHOST);
     rig.session.selectEntity(GHOST);
     expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, true]);
-    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
-    expect(engages(rig)).toEqual([{ on: true }]);
+    rig.session.selectEntity('bren');
+    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['bren', true]);
+    expect(targets(rig)).toEqual([{ targetId: GHOST }, { targetId: 'bren' }]);
   });
 
-  it('marks the target as locked in the scene from the lock until it ends, and as plain at a new target', () => {
+  it('marks the target as locked in the scene while the facing is held on it, and as plain while it is freed', () => {
     const rig = locking();
     const marks = (): [string | undefined, TargetMark][] => rig.selections.map((id, index) => [id, rig.selectionMarks[index]!]);
     const ON = { locked: true, acting: true };
-    const OFF = { locked: false, acting: false };
     rig.selections.length = 0;
     rig.selectionMarks.length = 0;
 
     rig.session.pressEntity(GHOST);
     expect(marks()).toEqual([
-      [GHOST, OFF],
+      [GHOST, { locked: true, acting: false }],
       [GHOST, ON],
     ]);
     rig.session.toggleGazeLock();
@@ -2647,46 +2729,47 @@ describe('the gaze lock', () => {
     rig.session.pressEntity(GHOST);
     expect(marks().at(-1)).toEqual([GHOST, ON]);
     rig.session.selectEntity('bren');
-    expect(marks().at(-1)).toEqual(['bren', OFF]);
+    expect(marks().at(-1)).toEqual(['bren', { locked: true, acting: false }]);
   });
 
   it('marks slot 1 by colour and the lock by the ticks, apart from each other', () => {
     const rig = locking();
     rig.session.selectEntity(GHOST);
-    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: false });
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
     rig.session.toggleEngage();
-    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: true });
-    rig.session.pressEntity(GHOST);
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: true });
+    rig.session.toggleGazeLock();
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: true });
     rig.session.toggleEngage();
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: false, acting: false });
+    rig.session.toggleGazeLock();
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
     rig.session.toggleEngage();
     rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
     expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: false });
   });
 
-  it('is not taken by a left press on a body slot 1 cannot act on: an NPC, or another dreamer for one who cannot mend', () => {
+  it('faces an NPC or another dreamer a left press targets while held, but a left press there does not hold a freed facing, and switches slot 1 on at neither', () => {
     const rig = locking();
-    rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 6 }));
-    rig.session.pressEntity('npc:Meadow/guard');
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', false, false]);
+    rig.session.pressEntity(GUARD);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GUARD, true, false]);
+    rig.session.toggleGazeLock();
     rig.session.pressEntity('bren');
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', false, false]);
+    expect([rig.session.target, rig.session.facingFree, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', true, false, false]);
     expect(engages(rig)).toEqual([]);
   });
 
   it.each<[string, (rig: Rig) => void]>([
-    ['the target is cleared', (rig) => rig.session.select(undefined)],
-    ['a right press on another body makes it the target', (rig) => rig.session.selectEntity('bren')],
+    ['the target is cleared', (rig) => rig.session.clearTarget()],
     ['the target leaves', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: GHOST, leftGame: false } })],
     ['the target is driven off', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: GHOST, condition: 'fallen' } })],
     ['a new space is entered', (rig) => rig.controller.dispatch(enterSpaceFrame('Hall'))],
-  ])('ends when %s', (_label, end) => {
+  ])('ends when %s, the facing still held', (_label, end) => {
     const rig = locking();
     rig.session.pressEntity(GHOST);
     end(rig);
     rig.session.runTick(0);
-    expect(rig.session.gazeLocked).toBe(false);
+    expect([rig.session.facingFree, rig.session.gazeLocked]).toEqual([false, false]);
   });
 
   it('holds through a left press on the ground and the walk it makes', () => {
@@ -2697,19 +2780,14 @@ describe('the gaze lock', () => {
     expect(rig.session.gazeLocked).toBe(true);
   });
 
-  it('is taken and let go by the lock button on any body targeted but the player, leaving slot 1 as it is', () => {
+  it('is freed and held again by the lock toggle with nothing targeted, with any body targeted, and while fallen, leaving the target and slot 1 as they are', () => {
     const rig = locking();
-    rig.controller.dispatch(entityFrame({ id: 'npc:Meadow/guard', kind: 'npc', name: 'Guard', x: 10, z: 6 }));
-    expect(rig.session.gazeLockable).toBe(false);
+    let repaints = 0;
+    rig.session.onStateChanged = () => (repaints += 1);
     rig.session.toggleGazeLock();
-    expect(rig.session.gazeLocked).toBe(false);
-
-    rig.session.selectEntity('npc:Meadow/guard');
-    expect(rig.session.gazeLockable).toBe(true);
+    expect([rig.session.facingFree, rig.session.gazeLocked, repaints]).toEqual([true, false, 1]);
     rig.session.toggleGazeLock();
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['npc:Meadow/guard', true, false]);
-    rig.session.toggleGazeLock();
-    expect(rig.session.gazeLocked).toBe(false);
+    expect([rig.session.facingFree, rig.session.gazeLocked, repaints]).toEqual([false, false, 2]);
 
     rig.session.pressEntity(GHOST);
     rig.session.toggleGazeLock();
@@ -2719,9 +2797,23 @@ describe('the gaze lock', () => {
     expect(engages(rig)).toEqual([{ on: true }]);
 
     rig.session.pressOwnFrame();
-    expect(rig.session.gazeLockable).toBe(false);
+    expect([rig.session.facingFree, rig.session.gazeLocked]).toEqual([false, false]);
     rig.session.toggleGazeLock();
-    expect([rig.session.target, rig.session.gazeLocked]).toEqual(['self', false]);
+    expect([rig.session.target, rig.session.facingFree, rig.session.gazeLocked]).toEqual(['self', true, false]);
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    rig.session.toggleGazeLock();
+    expect(rig.session.facingFree).toBe(false);
+    expect(targets(rig)).toEqual([{ targetId: GHOST }, { targetId: 'self' }]);
+  });
+
+  it('stays freed through a new space, and is held again once the session ends', () => {
+    const rig = locking();
+    rig.session.toggleGazeLock();
+    rig.controller.dispatch(enterSpaceFrame('Hall'));
+    expect(rig.session.facingFree).toBe(true);
+    rig.controller.onTeardown?.();
+    expect(rig.session.facingFree).toBe(false);
   });
 
   it('locks nothing at a nightmare already driven off', () => {
@@ -2886,13 +2978,13 @@ describe('a left press on a body', () => {
     const rig = meadowOfBodies();
     rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'healer-trial', progress: [0] }], done: [], bounties: [] } });
     rig.session.pressEntity(GHOST);
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, false, false, undefined]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, true, false, undefined]);
   });
 
-  it('walks one who cannot mend up beside another dreamer, neither locking nor switching slot 1 on', () => {
+  it('walks one who cannot mend up beside another dreamer, facing them without switching slot 1 on', () => {
     const rig = meadowOfBodies();
     rig.session.pressEntity('bren');
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', false, false]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual(['bren', true, false]);
     expect(rig.session.predictor.walk).toMatchObject({ kind: 'path' });
     tickUntil(rig, 0, 4000, () => rig.session.predictor.walk === undefined);
     const beside = reachDistance(rig.controller.entities.get('bren')!.radius);
@@ -2927,7 +3019,7 @@ describe('a left press on a body', () => {
       { tag: 'move', payload: expect.objectContaining(at(rig)) },
       { tag: 'interact', payload: { carrierId: GUARD } },
     ]);
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GUARD, false, false]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GUARD, true, false]);
 
     // It asks before the player stands beside the NPC, and the walk goes on there, asking nothing more.
     expect(away(rig, GUARD)).toBeGreaterThan(reachDistance(rig.controller.entities.get(GUARD)!.radius));
@@ -3036,7 +3128,7 @@ describe("a finger's press on a body", () => {
     rig.now = FINGER_HOLD_MS + 10;
     rig.session.release({ x: 16, z: 10 });
 
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, false, false, undefined]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.predictor.walk]).toEqual([GHOST, true, false, undefined]);
     expect(engages(rig)).toEqual([]);
   });
 
@@ -3067,7 +3159,7 @@ describe("a finger's press on a body", () => {
     const rig = meadowOfBodies({ coarsePointer: true });
     rig.session.holdEntity(GHOST, 0);
     rig.session.runTick(FINGER_HOLD_MS);
-    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, false]);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, false]);
     rig.session.release({ x: 16, z: 10 });
     expect([rig.session.engaged, rig.session.predictor.walk]).toEqual([false, undefined]);
     expect(engages(rig)).toEqual([]);
@@ -3083,6 +3175,449 @@ describe("a finger's press on a body", () => {
     rig.session.release({ x: 10, z: 4 });
     expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 4 } });
     expect(rig.session.target).toBeUndefined();
+  });
+});
+
+describe('a strike', () => {
+  const GHOST = 'monster:1';
+  const targets = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'target' ? [message.payload] : []));
+  const engages = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'engage' ? [message.payload] : []));
+  const facings = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'move' ? [message.payload.facing] : []));
+
+  /** A player standing at (10, 10) with nothing targeted, a nightmare beside them to the east and another to the south, Bren to the west, and the facing freed to a cursor far to the west. */
+  function struck(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10.6, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: 'monster:2', kind: 'monster', name: 'Ghost', x: 10, z: 10.6 }));
+    rig.controller.dispatch(entityFrame({ id: 'bren', kind: 'player', name: 'Bren', x: 7, z: 10 }));
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    rig.session.toggleGazeLock();
+    rig.session.faceCursorAt({ x: -1000, z: 10 });
+    rig.session.runTick(0);
+    expect(facings(rig)).toEqual([270]);
+    return rig;
+  }
+
+  it.each<[string, boolean]>([
+    ['a hit', true],
+    ['a miss', false],
+  ])('makes a nightmare whose blow at the standing player is %s the target, held faced with slot 1 on, repainting last after the lock', (_label, hit) => {
+    const rig = struck();
+    const repaints: [string | undefined, boolean, boolean][] = [];
+    rig.session.onStateChanged = () => repaints.push([rig.session.target, rig.session.gazeLocked, rig.session.engaged]);
+
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: GHOST, targetId: 'self', hit } });
+
+    expect([rig.session.target, rig.session.facingFree, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, false, true, true]);
+    expect(rig.sent.filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
+      { tag: 'target', payload: { targetId: GHOST } },
+      { tag: 'engage', payload: { on: true } },
+    ]);
+    expect(repaints.at(-1)).toEqual([GHOST, true, true]);
+    expect(rig.selectionMarks.at(-1)).toEqual({ locked: true, acting: true });
+    rig.session.runTick(100);
+    expect(facings(rig)).toEqual([270, 90]);
+  });
+
+  it.each<[string, (rig: Rig) => void, { attackerId: string; targetId: string }]>([
+    ['walking', (rig) => tapGround(rig, { x: 10, z: 4 }, 50), { attackerId: GHOST, targetId: 'self' }],
+    [
+      'steering',
+      (rig) => {
+        rig.session.pressGround({ x: 10, z: 4 }, 50);
+        rig.session.runTick(50 + HOLD_TO_STEER_MS);
+      },
+      { attackerId: GHOST, targetId: 'self' },
+    ],
+    ['pressing the ground', (rig) => rig.session.pressGround({ x: 10, z: 4 }, 50), { attackerId: GHOST, targetId: 'self' }],
+    ['with a target', (rig) => rig.session.selectEntity('bren'), { attackerId: GHOST, targetId: 'self' }],
+    ['under an overlay', (rig) => (rig.controller.presentedOverlay = { kind: 'gameMenu' }), { attackerId: GHOST, targetId: 'self' }],
+    ['by a blow at another dreamer', () => {}, { attackerId: GHOST, targetId: 'bren' }],
+    ["by a dreamer's blow", () => {}, { attackerId: 'bren', targetId: 'self' }],
+  ])('leaves the player as they are when struck %s', (_label, arrange, blow) => {
+    const rig = struck();
+    arrange(rig);
+    const target = rig.session.target;
+    rig.sent.length = 0;
+
+    rig.controller.dispatch({ tag: 'blow', payload: { ...blow, hit: true } });
+
+    expect([rig.session.target, rig.session.facingFree, rig.session.engaged]).toEqual([target, true, false]);
+    expect(rig.sent.filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([]);
+  });
+
+  it('leaves the player as they are when struck waiting at a door', () => {
+    const rig = waitingOnDoor();
+    rig.controller.dispatch(entityFrame({ id: GHOST, kind: 'monster', name: 'Ghost', x: 10.1, z: 11.8 }));
+    rig.session.toggleGazeLock();
+
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: GHOST, targetId: 'self', hit: true } });
+
+    expect([rig.session.target, rig.session.facingFree, rig.session.engaged]).toEqual([undefined, true, false]);
+    expect(targets(rig)).toEqual([]);
+  });
+
+  it('keeps the first nightmare to strike as the target when a second strikes', () => {
+    const rig = struck();
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: GHOST, targetId: 'self', hit: true } });
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: 'monster:2', targetId: 'self', hit: false } });
+    expect(rig.session.target).toBe(GHOST);
+    expect(targets(rig)).toEqual([{ targetId: GHOST }]);
+  });
+
+  it('makes the nightmare the target with slot 1 off for a player whose quest forbids striking', () => {
+    const rig = struck();
+    rig.controller.dispatch({ tag: 'quests', payload: { active: [{ questId: 'healer-trial', progress: [0] }], done: [], bounties: [] } });
+
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: GHOST, targetId: 'self', hit: true } });
+
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged]).toEqual([GHOST, true, false]);
+    expect(engages(rig)).toEqual([]);
+  });
+});
+
+describe('the queue', () => {
+  const [EAST, SOUTH, WEST, NORTH] = ['monster:1', 'monster:2', 'monster:3', 'monster:4'];
+  const GUARD = 'npc:Meadow/guard';
+  const targets = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'target' ? [message.payload] : []));
+
+  /** A player at (10, 10) with full pools, a nightmare 6 m off to each side, and an NPC to the south-east. */
+  function lined(): Rig {
+    const rig = makeRig();
+    rig.controller.dispatch(enterSpaceFrame());
+    rig.controller.dispatch(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+    rig.controller.dispatch(entityFrame());
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 16, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: SOUTH, kind: 'monster', name: 'Ghost', x: 10, z: 16 }));
+    rig.controller.dispatch(entityFrame({ id: WEST, kind: 'monster', name: 'Ghost', x: 4, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: NORTH, kind: 'monster', name: 'Ghost', x: 10, z: 4 }));
+    rig.controller.dispatch(entityFrame({ id: GUARD, kind: 'npc', name: 'Guard', x: 13, z: 13 }));
+    rig.controller.dispatch({ tag: 'energy', payload: FULL });
+    return rig;
+  }
+
+  /** Fights the nightmare to the east with the ones to the south and the west lined up behind it. */
+  function fighting(): Rig {
+    const rig = lined();
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    rig.session.queueEntity(WEST);
+    expect(rig.session.queue).toEqual([SOUTH, WEST]);
+    return rig;
+  }
+
+  it('lines a nightmare up behind the target and takes it off again, leaves the target and what slot 1 cannot attack out, and presses a nightmare with nothing targeted', () => {
+    const rig = lined();
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: NORTH, condition: 'fallen' } });
+
+    rig.session.queueEntity(EAST);
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.queue]).toEqual([EAST, true, true, []]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 16, z: 10 } });
+
+    rig.session.queueEntity(SOUTH);
+    rig.session.queueEntity(WEST);
+    rig.session.queueEntity(EAST);
+    rig.session.queueEntity(NORTH);
+    rig.session.queueEntity(GUARD);
+    expect(rig.session.queue).toEqual([SOUTH, WEST]);
+    rig.session.queueEntity(SOUTH);
+    expect(rig.session.queue).toEqual([WEST]);
+    expect(rig.queues).toEqual([[SOUTH], [SOUTH, WEST], [WEST]]);
+    expect(targets(rig)).toEqual([{ targetId: EAST }]);
+
+    rig.controller.presentedOverlay = { kind: 'gameMenu' };
+    rig.session.queueEntity(SOUTH);
+    expect(rig.session.queue).toEqual([WEST]);
+  });
+
+  it('lets go of a nightmare a right press makes the target, keeping the rest in order', () => {
+    const rig = fighting();
+    rig.session.queueEntity(NORTH);
+    rig.session.selectEntity(WEST);
+    expect([rig.session.target, rig.session.queue]).toEqual([WEST, [SOUTH, NORTH]]);
+    expect(rig.queues.at(-1)).toEqual([SOUTH, NORTH]);
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['driven off', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } })],
+    ['out of view', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: EAST, leftGame: false } })],
+  ])('takes up the first nightmare lined up in the frame the target is %s, held faced and walked to with slot 1 on', (_label, lose) => {
+    const rig = fighting();
+    const time = tickUntil(rig, 0, 300, () => false);
+    rig.session.toggleGazeLock();
+    rig.sent.length = 0;
+
+    lose(rig);
+
+    const fightsSouth = (): void => {
+      expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, true, [WEST]]);
+      expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 16 } });
+    };
+    fightsSouth();
+    expect(targets(rig)).toEqual([{}, { targetId: SOUTH }]);
+    expect(rig.queues.at(-1)).toEqual([WEST]);
+    rig.session.runTick(time);
+    fightsSouth();
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['driven off', (rig) => rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } })],
+    ['out of view', (rig) => rig.controller.dispatch({ tag: 'leave', payload: { entityId: EAST, leftGame: false } })],
+  ])('takes up the next nightmare as the target is %s before a strike in the same frame can claim the player', (_label, lose) => {
+    const rig = lined();
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 10.6, z: 10 }));
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    rig.session.runTick(0);
+    expect(rig.session.predictor.walk).toBeUndefined();
+
+    lose(rig);
+    rig.controller.dispatch({ tag: 'blow', payload: { attackerId: NORTH, targetId: 'self', hit: true } });
+
+    expect([rig.session.target, rig.session.queue]).toEqual([SOUTH, []]);
+    expect(targets(rig)).toEqual([{ targetId: EAST }, {}, { targetId: SOUTH }]);
+  });
+
+  it.each<[string, (rig: Rig) => number, object]>([
+    [
+      'before the press steers, a walk under way',
+      (rig) => {
+        const time = tickUntil(rig, 0, 300, () => false);
+        rig.session.pressGround({ x: 10, z: 4 }, time);
+        return time;
+      },
+      { kind: 'path', destination: { x: 16, z: 10 } },
+    ],
+    [
+      'steering',
+      (rig) => {
+        rig.session.pressGround({ x: 10, z: 4 }, 0);
+        return tickUntil(rig, 0, HOLD_TO_STEER_MS + 100, () => false);
+      },
+      { kind: 'steer', toward: { x: 10, z: 4 } },
+    ],
+  ])('takes up the next nightmare with a press held on the ground %s, leaving the feet to the press', (_label, press, walk) => {
+    const rig = fighting();
+    const time = press(rig);
+    expect(rig.session.predictor.walk).toMatchObject(walk);
+    const before = rig.session.predictor.walk;
+    const marks = [...rig.pressMarks];
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } });
+
+    expect([rig.session.target, rig.session.gazeLocked, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, true, [WEST]]);
+    expect(rig.session.predictor.walk).toBe(before);
+    expect(rig.pressMarks).toEqual(marks);
+    rig.session.runTick(time);
+    expect(rig.session.predictor.walk).toMatchObject(walk);
+    rig.session.runTick(time + HOLD_TO_STEER_MS);
+    expect(rig.session.predictor.walk).toEqual({ kind: 'steer', toward: { x: 10, z: 4 } });
+    expect(rig.session.target).toBe(SOUTH);
+  });
+
+  it("takes up the next nightmare during the player's own channel, and walks to it only once the channel lands", () => {
+    const rig = lined();
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
+    rig.controller.dispatch(HEALER_KIT);
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 10.6, z: 10 }));
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    rig.session.runTick(0);
+    rig.session.useAbility('deep-mend');
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'start', seconds: 1.5 } });
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 1.5, cooldowns: [{ abilityId: 'deep-mend', seconds: 6 }] } });
+    const sent = rig.sent.length;
+    const at = (): { x: number; z: number } => ({ ...rig.controller.entities.get('self')!.position });
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } });
+    const time = tickUntil(rig, 50, 1500, () => false);
+
+    expect([rig.session.target, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, []]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 16 } });
+    expect([at(), rig.sent.slice(sent).filter((message) => message.tag === 'move' && (message.payload.x !== 10 || message.payload.z !== 10))]).toEqual([
+      { x: 10, z: 10 },
+      [],
+    ]);
+
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'done' } });
+    tickUntil(rig, time, time + 500, () => false);
+    expect(at().z).toBeGreaterThan(10);
+  });
+
+  it("takes up the next nightmare during the player's own channel after Escape stopped the walk it held, and walks to it only once the channel lands", () => {
+    const rig = lined();
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
+    rig.controller.dispatch(HEALER_KIT);
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    const walked = tickUntil(rig, 0, 300, () => false);
+    rig.session.useAbility('deep-mend');
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'start', seconds: 1.5 } });
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 1.5, cooldowns: [{ abilityId: 'deep-mend', seconds: 6 }] } });
+    expect(rig.session.stopWalk()).toBe(true);
+    const sent = rig.sent.length;
+    const at = (): { x: number; z: number } => ({ ...rig.controller.entities.get('self')!.position });
+    const stood = at();
+    expect(stood.x).toBeGreaterThan(10);
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } });
+    const time = tickUntil(rig, walked, walked + 1500, () => false);
+
+    expect([rig.session.target, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, []]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 16 } });
+    expect([
+      at(),
+      rig.sent.slice(sent).filter((message) => message.tag === 'move' && (message.payload.x !== stood.x || message.payload.z !== stood.z)),
+    ]).toEqual([stood, []]);
+
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'done' } });
+    tickUntil(rig, time, time + 500, () => false);
+    expect(at().z).toBeGreaterThan(stood.z);
+  });
+
+  it('takes up the next nightmare before the answer to an ability that channels nothing, and walks to it at once', () => {
+    const rig = lined();
+    rig.controller.dispatch(FIGHTER_KIT);
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 10.6, z: 10 }));
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    rig.session.runTick(0);
+    const sent = rig.sent.length;
+    rig.session.useAbility('brace');
+    const at = (): { x: number; z: number } => ({ ...rig.controller.entities.get('self')!.position });
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } });
+    tickUntil(rig, 50, 500, () => false);
+
+    expect([rig.session.target, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, []]);
+    expect(at().z).toBeGreaterThan(10);
+    const outbox = rig.sent.slice(sent);
+    expect(outbox[0]).toEqual({ tag: 'useAbility', payload: { abilityId: 'brace' } });
+    expect(outbox.filter((message) => message.tag === 'move' && message.payload.z > 10)).not.toEqual([]);
+  });
+
+  it("takes up the next nightmare before the answer to the player's own channel, and walks to it only once the channel lands", () => {
+    const rig = lined();
+    rig.controller.dispatch(MOONSTONE_IN_HAND);
+    rig.controller.dispatch(HEALER_KIT);
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 10.6, z: 10 }));
+    rig.session.pressEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    rig.session.runTick(0);
+    rig.session.useAbility('deep-mend');
+    const sent = rig.sent.length;
+    const at = (): { x: number; z: number } => ({ ...rig.controller.entities.get('self')!.position });
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: EAST, condition: 'fallen' } });
+    const time = tickUntil(rig, 50, 500, () => false);
+
+    expect([rig.session.target, rig.session.engaged, rig.session.queue]).toEqual([SOUTH, true, []]);
+    expect(rig.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 10, z: 16 } });
+    expect([at(), rig.sent.slice(sent).filter((message) => message.tag === 'move' && (message.payload.x !== 10 || message.payload.z !== 10))]).toEqual([
+      { x: 10, z: 10 },
+      [],
+    ]);
+
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'start', seconds: 1.5 } });
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 1.5, cooldowns: [{ abilityId: 'deep-mend', seconds: 6 }] } });
+    rig.controller.dispatch({ tag: 'ability', payload: { entityId: 'self', abilityId: 'deep-mend', phase: 'done' } });
+    tickUntil(rig, time, time + 500, () => false);
+    expect(at().z).toBeGreaterThan(10);
+  });
+
+  it('takes up no nightmare that left view and came back while lined up, though no tick has run since', () => {
+    const rig = fighting();
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: SOUTH, leftGame: false } });
+    rig.controller.dispatch(entityFrame({ id: SOUTH, kind: 'monster', name: 'Ghost', x: 10, z: 16 }));
+    expect(rig.session.queue).toEqual([WEST]);
+
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: EAST, leftGame: false } });
+
+    expect([rig.session.target, rig.session.queue]).toEqual([WEST, []]);
+  });
+
+  it('is cleared as the target is lost under an overlay', () => {
+    const rig = fighting();
+    rig.controller.presentedOverlay = { kind: 'gameMenu' };
+
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: EAST, leftGame: false } });
+
+    expect([rig.session.target, rig.session.queue]).toEqual([undefined, []]);
+    expect(rig.queues.at(-1)).toEqual([]);
+  });
+
+  it('is cleared as the target is lost while the player waits at a door', () => {
+    const rig = waitingOnDoor();
+    rig.controller.dispatch(entityFrame({ id: EAST, kind: 'monster', name: 'Ghost', x: 16, z: 10 }));
+    rig.controller.dispatch(entityFrame({ id: SOUTH, kind: 'monster', name: 'Ghost', x: 10, z: 16 }));
+    rig.session.selectEntity(EAST);
+    rig.session.queueEntity(SOUTH);
+    expect(rig.session.queue).toEqual([SOUTH]);
+
+    rig.controller.dispatch({ tag: 'leave', payload: { entityId: EAST, leftGame: false } });
+
+    expect([rig.session.target, rig.session.queue, rig.session.predictor.walk]).toEqual([undefined, [], undefined]);
+  });
+
+  it('lets go on the next tick of every nightmare a quest taken on forbids striking, and takes none back once it ends', () => {
+    const rig = fighting();
+    const quests = (active: { questId: string; progress: number[] }[]): SomnioMessage => ({ tag: 'quests', payload: { active, done: [], bounties: [] } });
+
+    rig.controller.dispatch(quests([{ questId: 'healer-trial', progress: [0] }]));
+    rig.session.runTick(0);
+    expect(rig.session.queue).toEqual([]);
+    expect(rig.queues.at(-1)).toEqual([]);
+
+    rig.controller.dispatch(quests([]));
+    rig.session.runTick(100);
+    expect(rig.session.queue).toEqual([]);
+  });
+
+  it('is cleared by a fall, and a player raised from it has none', () => {
+    const rig = fighting();
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'fallen' } });
+    expect(rig.session.queue).toEqual([]);
+    expect(rig.queues.at(-1)).toEqual([]);
+
+    rig.controller.dispatch({ tag: 'condition', payload: { entityId: 'self', condition: 'hurt' } });
+    rig.session.runTick(0);
+    expect([rig.session.target, rig.session.queue]).toEqual([EAST, []]);
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['the target cleared', (rig) => rig.session.clearTarget()],
+    ['a left press on another nightmare', (rig) => rig.session.pressEntity(NORTH)],
+    ['a left press on a nightmare lined up', (rig) => rig.session.pressEntity(WEST)],
+    ['a left press on an NPC', (rig) => rig.session.pressEntity(GUARD)],
+    ['a new space', (rig) => rig.controller.dispatch(enterSpaceFrame('Hall'))],
+  ])('is cleared by %s', (_label, cancel) => {
+    const rig = fighting();
+    cancel(rig);
+    rig.session.runTick(0);
+    expect(rig.session.queue).toEqual([]);
+    expect(rig.queues.at(-1)).toEqual([]);
+  });
+
+  it.each<[string, (rig: Rig) => void]>([
+    ['a tap on the ground', (rig) => tapGround(rig, { x: 10, z: 4 })],
+    [
+      'a steer',
+      (rig) => {
+        rig.session.pressGround({ x: 10, z: 4 }, 0);
+        rig.session.runTick(HOLD_TO_STEER_MS + 100);
+      },
+    ],
+    ['a right press on another body', (rig) => rig.session.selectEntity(GUARD)],
+    ['a left press on the target', (rig) => rig.session.pressEntity(EAST)],
+    ['the lock toggle', (rig) => rig.session.toggleGazeLock()],
+  ])('is kept through %s', (_label, keep) => {
+    const rig = fighting();
+    keep(rig);
+    rig.session.runTick(HOLD_TO_STEER_MS + 150);
+    expect(rig.session.queue).toEqual([SOUTH, WEST]);
   });
 });
 
@@ -3176,7 +3711,7 @@ describe('slot 1 at a dreamer', () => {
     const without = healer();
     without.controller.dispatch(MOONSTONE_PUT_AWAY);
     without.session.pressEntity('bren');
-    expect([without.session.gazeLocked, without.session.engaged]).toEqual([false, false]);
+    expect([without.session.gazeLocked, without.session.engaged]).toEqual([true, false]);
     expect(engages(without)).toEqual([]);
   });
 
@@ -3489,20 +4024,9 @@ describe('abilities', () => {
 });
 
 describe('a channel', () => {
-  /** A Healer who has learned Deep mend and Renewal, the Moonstone in hand, at (10, 10), with Bren beside them. */
-  const HEALER_KIT: SomnioMessage = {
-    tag: 'lucidity',
-    payload: {
-      role: 'healer',
-      ranks: [
-        { teachingId: 'touch', rank: 2, practice: 0 },
-        { teachingId: 'deep-mend', rank: 1, practice: 0 },
-        { teachingId: 'renewal', rank: 1, practice: 0 },
-      ],
-    },
-  };
   const uses = (rig: Rig) => rig.sent.flatMap((message) => (message.tag === 'useAbility' ? [message.payload.abilityId] : []));
 
+  /** A Healer who has learned Deep mend and Renewal, the Moonstone in hand, at (10, 10), with Bren beside them. */
   function healer(): Rig {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());

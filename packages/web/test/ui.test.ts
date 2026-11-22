@@ -2352,7 +2352,7 @@ describe('the play field and the panels through the shell', () => {
 
     p.canvas.dispatchEvent(pointer('pointerdown', ghost, { pointerType: 'pen', pointerId: 2, isPrimary: true }));
     p.shell.session.runTick(pressed + FINGER_HOLD_MS + 50);
-    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
     window.dispatchEvent(pointer('pointerup', ghost, { pointerType: 'pen', pointerId: 2 }));
     expect([p.shell.session.engaged, p.shell.session.predictor.walk]).toEqual([false, undefined]);
     expect(p.tags()).not.toContain('engage');
@@ -2409,15 +2409,17 @@ describe('the play field and the panels through the shell', () => {
     });
   });
 
-  it("targets the body a mouse's right button presses without walking or locking the facing, and clears the target on the ground, under their own body too", () => {
+  it("targets the body a mouse's right button presses without walking, facing it, and clears the target on the ground, under their own body too", () => {
     const p = playing();
     const pointer = onCanvas(p);
     p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
     const right = { button: 2, buttons: 2, pointerType: 'mouse' };
     const ghost = p.shell.pagePointOf('monster:1')!;
+    const selection = vi.spyOn(p.shell.scene!, 'showSelection');
 
     p.canvas.dispatchEvent(pointer('pointerdown', ghost, right));
-    expect([p.shell.session.target, p.shell.session.gazeLocked, p.shell.session.engaged]).toEqual(['monster:1', false, false]);
+    expect([p.shell.session.target, p.shell.session.gazeLocked, p.shell.session.engaged]).toEqual(['monster:1', true, false]);
+    expect(selection.mock.calls.at(-1)).toEqual(['monster:1', { locked: true, acting: false }]);
     expect(p.shell.session.predictor.walk).toBeUndefined();
 
     p.canvas.dispatchEvent(pointer('pointerdown', ghost, { pointerType: 'mouse' }));
@@ -2458,13 +2460,52 @@ describe('the play field and the panels through the shell', () => {
     expect(selection.mock.calls.at(-1)).toEqual(['monster:1', { locked: true, acting: true }]);
 
     press('bren', right);
-    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['bren', false]);
-    expect(selection.mock.calls.at(-1)).toEqual(['bren', { locked: false, acting: false }]);
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['bren', true]);
+    expect(selection.mock.calls.at(-1)).toEqual(['bren', { locked: true, acting: false }]);
     expect(p.sent().filter((message) => message.tag === 'target' || message.tag === 'engage')).toEqual([
       { tag: 'target', payload: { targetId: 'monster:1' } },
       { tag: 'engage', payload: { on: true } },
       { tag: 'target', payload: { targetId: 'bren' } },
     ]);
+  });
+
+  it("queues a nightmare a mouse's left button presses with Shift held behind the target, without walking to it, and takes it off the queue on another", () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    p.deliver(entityFrame({ id: 'monster:2', kind: 'monster', x: 12, z: 12 }));
+    const shiftPress = (id: string): void => {
+      const at = p.shell.pagePointOf(id)!;
+      p.canvas.dispatchEvent(pointer('pointerdown', at, { pointerType: 'mouse', shiftKey: true }));
+      window.dispatchEvent(pointer('pointerup', at, { pointerType: 'mouse', shiftKey: true }));
+    };
+
+    shiftPress('monster:1');
+    expect([p.shell.session.target, p.shell.session.engaged, p.shell.session.queue]).toEqual(['monster:1', true, []]);
+    shiftPress('monster:2');
+    expect([p.shell.session.target, p.shell.session.queue]).toEqual(['monster:1', ['monster:2']]);
+    expect(p.shell.session.predictor.walk).toMatchObject({ kind: 'path', destination: { x: 12, z: 10 } });
+    shiftPress('monster:1');
+    expect(p.shell.session.queue).toEqual(['monster:2']);
+    shiftPress('monster:2');
+    expect(p.shell.session.queue).toEqual([]);
+    expect(p.sent().filter((message) => message.tag === 'target')).toEqual([{ tag: 'target', payload: { targetId: 'monster:1' } }]);
+  });
+
+  it.each([
+    ['an NPC', PUGNAX],
+    ['a dreamer', 'bren'],
+  ])("presses %s a mouse's left button presses with Shift held as a plain press does, with a nightmare targeted", (_label, id) => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    p.shell.session.selectEntity('monster:1');
+    const at = p.shell.pagePointOf(id)!;
+
+    p.canvas.dispatchEvent(pointer('pointerdown', at, { pointerType: 'mouse', shiftKey: true }));
+    window.dispatchEvent(pointer('pointerup', at, { pointerType: 'mouse', shiftKey: true }));
+
+    expect([p.shell.session.target, p.shell.session.queue, p.shell.session.predictor.walk?.kind]).toEqual([id, [], 'path']);
   });
 
   /** A button pressed while another is down fires no `pointerdown`, only a move naming it. */
@@ -2477,7 +2518,7 @@ describe('the play field and the panels through the shell', () => {
     p.canvas.dispatchEvent(pointer('pointerdown', { x: 170, y: 60 }, { ...mouse, buttons: 1 }));
     p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOf('monster:1')!, { ...mouse, button: 2, buttons: 3 }));
 
-    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', false]);
+    expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual(['monster:1', true]);
   });
 
   /** With another button still down, the left one coming up fires no `pointerup`, only a move naming it. */
@@ -2514,15 +2555,25 @@ describe('the play field and the panels through the shell', () => {
     expect([p.shell.session.target, p.shell.session.gazeLocked]).toEqual([undefined, false]);
   });
 
-  it('faces the point a press lands on, with no move before it', () => {
+  it('turns a held facing along the walk a press starts, and a freed one to the point a press lands on, with no move before it', () => {
     const p = playing();
     const pointer = onCanvas(p);
-    const at = p.shell.pagePointOfGround({ x: 10.45, z: 10.45 })!;
-    p.canvas.dispatchEvent(pointer('pointerdown', at));
+    const self = (): ClientEntity => p.shell.controller.entities.get('self')!;
+    const walkTo = p.shell.pagePointOfGround({ x: 10.45, z: 10.45 })!;
+    p.canvas.dispatchEvent(pointer('pointerdown', walkTo, { pointerType: 'mouse' }));
     p.shell.session.runTick(performance.now());
+    expect(self().facing).toBe(0);
+    window.dispatchEvent(pointer('pointerup', walkTo, { pointerType: 'mouse' }));
+    p.shell.session.runTick(performance.now());
+    expect(self().facing).toBeCloseTo(45, 6);
 
-    const aim = p.shell.scene!.aimPointAt(at.x / 100 - 1, 1 - at.y / 50)!;
-    expect(p.shell.controller.entities.get('self')!.facing).toBeCloseTo(headingFromVector(aim.x - 10, aim.z - 10), 6);
+    p.shell.session.stopWalk();
+    p.shell.session.toggleGazeLock();
+    const faceTo = p.shell.pagePointOfGround({ x: 10.45, z: 9.55 })!;
+    p.canvas.dispatchEvent(pointer('pointerdown', faceTo, { pointerType: 'mouse' }));
+    p.shell.session.runTick(performance.now());
+    const aim = p.shell.scene!.cursorFacingAt(faceTo.x / 100 - 1, 1 - faceTo.y / 50)!;
+    expect(self().facing).toBeCloseTo(headingFromVector(aim.x - self().position.x, aim.z - self().position.z), 6);
   });
 
   /** With another button still down, the left one coming up fires no `pointerup`, only a move, wherever the pointer is by then. */
@@ -2719,19 +2770,243 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.session.target).toBeUndefined();
   });
 
-  it('aims the player at the point under the cursor at body height', () => {
-    const p = playing();
-    const pointer = onCanvas(p);
-    const at = { x: 30, y: 20 };
+  describe('the facing', () => {
+    const HERE = { x: 10, z: 10 };
+    const mouse = { pointerType: 'mouse' };
+    let clock: number;
 
-    p.canvas.dispatchEvent(pointer('pointermove', at));
-    p.shell.session.runTick(performance.now());
+    beforeEach(() => {
+      clock = 1000;
+      vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    });
 
-    const aim = p.shell.scene!.aimPointAt(-0.7, 0.6)!;
-    const ground = p.shell.scene!.groundPointAt(-0.7, 0.6)!;
-    const self = p.shell.controller.entities.get('self')!;
-    expect(distance(aim, ground)).toBeGreaterThan(0.5);
-    expect(self.facing).toBeCloseTo(headingFromVector(aim.x - 10, aim.z - 10), 6);
+    /** A frame drawn 0.1 s after the last, which takes what the cursor points at again before it ticks, as the browser's frames do. */
+    const frame = (p: ReturnType<typeof playing>): void => {
+      clock += 100;
+      (p.shell as unknown as { onFrame(timestamp: number): void }).onFrame(clock);
+    };
+    const pressF = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', cancelable: true }));
+    const self = (p: ReturnType<typeof playing>): ClientEntity => p.shell.controller.entities.get('self')!;
+    /** The ground under a page point of the canvas `onCanvas` lays out. */
+    const groundUnder = (p: ReturnType<typeof playing>, at: { x: number; y: number }): { x: number; z: number } =>
+      p.shell.scene!.groundPointAt(at.x / 100 - 1, 1 - at.y / 50)!;
+    const heading = (from: { x: number; z: number }, to: { x: number; z: number }): number => headingFromVector(to.x - from.x, to.z - from.z);
+    const facings = (p: ReturnType<typeof playing>): number[] => p.sent().flatMap((message) => (message.tag === 'move' ? [message.payload.facing] : []));
+
+    it('aims the freed facing at the ground under the cursor, the point the walk steers to', () => {
+      const p = playing();
+      const pointer = onCanvas(p);
+      const at = { x: 30, y: 20 };
+
+      pressF();
+      p.canvas.dispatchEvent(pointer('pointermove', at, mouse));
+      frame(p);
+
+      expect(self(p).facing).toBeCloseTo(heading(HERE, groundUnder(p, at)), 6);
+    });
+
+    it('faces the walk at full pace with the facing freed and the cursor on the lower body of a player walking up the screen', () => {
+      const p = playing();
+      const pointer = onCanvas(p);
+      const feet = p.shell.pagePointOfGround(HERE)!;
+      // A diagonal of the path's grid, so the path runs straight, and up the screen.
+      const upScreen = { x: 6, z: 6 };
+      self(p).facing = heading(upScreen, HERE);
+
+      pressF();
+      p.canvas.dispatchEvent(pointer('pointermove', { x: feet.x, y: feet.y - 1 }, mouse));
+      p.shell.session.predictor.walkTo(upScreen);
+      frame(p);
+      for (let frames = 0; frames < 5; frames += 1) {
+        frame(p);
+        expect(self(p).facing).toBeCloseTo(heading(HERE, upScreen), 6);
+      }
+
+      expect(distance(self(p).position, HERE)).toBeCloseTo(5 * gaitMetresPerSecond('jog') * 0.1, 6);
+    });
+
+    it('keeps a freed facing with the cursor over their own body, though a body drawn behind it lies under the cursor too', () => {
+      const p = playing();
+      const pointer = onCanvas(p);
+      const feet = p.shell.pagePointOfGround(HERE)!;
+      const behind = groundUnder(p, { x: feet.x, y: feet.y - 3 });
+      p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: behind.x, z: behind.z }));
+      const own = p.shell.pagePointOf('self')!;
+      expect(p.shell.scene!.entityAt(own.x / 100 - 1, 1 - own.y / 50)).toBe('monster:1');
+
+      pressF();
+      p.canvas.dispatchEvent(pointer('pointermove', own, mouse));
+      frame(p);
+
+      expect(self(p).facing).toBe(0);
+    });
+
+    /** A player with a cap in the bag and the Character window open, and a throw of it from its card, as a mouse opens one from the keyboard. */
+    function throwing() {
+      const p = playing();
+      const pointer = onCanvas(p);
+      p.deliver(inventoryFrame(carrying({ bag: [item('cap')] })));
+      p.shell.hud.openWindow('character');
+      const throwCap = (): void => {
+        container.querySelector<HTMLButtonElement>('.hud-window--character [data-place="0"] button')!.click();
+        p.press('Drop');
+      };
+      const thrown = (): number | undefined =>
+        p
+          .sent()
+          .flatMap((message) => (message.tag === 'dropItem' ? [message.payload.heading] : []))
+          .at(-1);
+      return { p, pointer, throwCap, thrown };
+    }
+
+    it("throws from the item card toward the ground or the body under the cursor's last place over the world, reporting the turn first", () => {
+      const { p, pointer, throwCap, thrown } = throwing();
+      const open = { x: 30, y: 20 };
+      const toGround = heading(HERE, groundUnder(p, open));
+
+      pressF();
+      p.canvas.dispatchEvent(pointer('pointermove', open, mouse));
+      throwCap();
+      expect(p.sent().slice(-2)).toEqual([
+        { tag: 'move', payload: { x: 10, z: 10, facing: expect.closeTo(toGround, 6), gait: 'jog' } },
+        { tag: 'dropItem', payload: { itemId: 'cap-1', heading: expect.closeTo(toGround, 6) } },
+      ]);
+
+      p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOf('bren')!, mouse));
+      throwCap();
+      expect(thrown()).toBeCloseTo(heading(HERE, { x: 11, z: 10 }), 6);
+    });
+
+    it('throws from the item card on a finger along the facing, not toward where the finger last touched the world', () => {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
+      onTestFinished(() => {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
+      });
+      const { p, pointer, throwCap, thrown } = throwing();
+      const touched = { x: 30, y: 20 };
+      const finger = { pointerType: 'touch', pointerId: 1 };
+
+      p.canvas.dispatchEvent(pointer('pointerdown', touched, finger));
+      window.dispatchEvent(pointer('pointerup', touched, finger));
+      const facing = self(p).facing;
+      throwCap();
+
+      expect(thrown()).toBe(facing);
+    });
+
+    it('throws an item dragged out of the Character window toward the ground or the body under where it is let go, and along the facing over their own body, reporting the turn first', () => {
+      const { p, pointer } = throwing();
+      const cap = container.querySelector<HTMLButtonElement>('.hud-window--character [data-place="0"] button')!;
+      const carried = { pointerType: 'mouse', pointerId: 1 };
+      const dragCap = (onto: { x: number; y: number }): void => {
+        const under = vi.spyOn(document, 'elementFromPoint').mockReturnValue(p.canvas);
+        cap.dispatchEvent(pointer('pointerdown', { x: 0, y: 0 }, carried));
+        document.body.dispatchEvent(pointer('pointermove', onto, carried));
+        window.dispatchEvent(pointer('pointerup', onto, carried));
+        under.mockRestore();
+      };
+      const open = { x: 30, y: 20 };
+      const toGround = heading(HERE, groundUnder(p, open));
+      const toBren = heading(HERE, { x: 11, z: 10 });
+      const dropped = (toward: number): SomnioMessage => ({ tag: 'dropItem', payload: { itemId: 'cap-1', heading: expect.closeTo(toward, 6) } });
+
+      dragCap(open);
+      expect(p.sent().slice(-2)).toEqual([{ tag: 'move', payload: { x: 10, z: 10, facing: expect.closeTo(toGround, 6), gait: 'jog' } }, dropped(toGround)]);
+      dragCap(p.shell.pagePointOf('bren')!);
+      expect(p.sent().slice(-2)).toEqual([{ tag: 'move', payload: { x: 10, z: 10, facing: expect.closeTo(toBren, 6), gait: 'jog' } }, dropped(toBren)]);
+      dragCap(p.shell.pagePointOf('self')!);
+      expect(p.sent().slice(-2)).toEqual([dropped(toBren), dropped(toBren)]);
+    });
+
+    it("keeps a held facing on the throw's heading with nothing targeted as the cursor moves, and turns it back to a target", () => {
+      const { p, pointer, throwCap, thrown } = throwing();
+      const open = { x: 30, y: 20 };
+      const toGround = heading(HERE, groundUnder(p, open));
+
+      p.canvas.dispatchEvent(pointer('pointermove', open, mouse));
+      throwCap();
+      p.canvas.dispatchEvent(pointer('pointermove', p.shell.pagePointOf('bren')!, mouse));
+      frame(p);
+      expect([thrown(), self(p).facing]).toEqual([expect.closeTo(toGround, 6), expect.closeTo(toGround, 6)]);
+
+      p.shell.session.selectEntity('bren');
+      p.canvas.dispatchEvent(pointer('pointermove', open, mouse));
+      throwCap();
+      frame(p);
+      expect([thrown(), self(p).facing]).toEqual([expect.closeTo(toGround, 6), expect.closeTo(heading(HERE, { x: 11, z: 10 }), 6)]);
+    });
+
+    it('frees the facing to the cursor on F and holds it again on the lock button, with nothing targeted, the next frame reporting each turn', () => {
+      const p = playing();
+      const pointer = onCanvas(p);
+      const lock = container.querySelector<HTMLButtonElement>('.hud-slot--lock')!;
+      const [first, second] = [
+        { x: 30, y: 20 },
+        { x: 170, y: 60 },
+      ];
+      frame(p);
+      expect(facings(p)).toEqual([0]);
+      p.canvas.dispatchEvent(pointer('pointermove', first, mouse));
+      frame(p);
+      expect(facings(p)).toEqual([0]);
+
+      pressF();
+      frame(p);
+      expect(facings(p)).toEqual([0, expect.closeTo(heading(HERE, groundUnder(p, first)), 6)]);
+      expect([lock.disabled, lock.getAttribute('aria-pressed')]).toEqual([false, 'false']);
+
+      lock.click();
+      p.canvas.dispatchEvent(pointer('pointermove', second, mouse));
+      frame(p);
+      expect(facings(p)).toHaveLength(2);
+      expect(lock.getAttribute('aria-pressed')).toBe('true');
+
+      lock.click();
+      frame(p);
+      expect(facings(p).slice(1)).toEqual([expect.closeTo(heading(HERE, groundUnder(p, first)), 6), expect.closeTo(heading(HERE, groundUnder(p, second)), 6)]);
+    });
+
+    it("frees and holds a finger's facing on the lock orb, enabled with nothing targeted, turning to the target only while held", () => {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
+      onTestFinished(() => {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
+      });
+      const p = playing();
+      p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 8, z: 12 }));
+      const orb = container.querySelector<HTMLButtonElement>('.hud-orb--lock')!;
+      frame(p);
+      expect([orb.disabled, orb.getAttribute('aria-pressed'), facings(p)]).toEqual([false, 'true', [0]]);
+
+      orb.click();
+      expect([p.shell.session.facingFree, orb.getAttribute('aria-pressed')]).toEqual([true, 'false']);
+      p.shell.session.selectEntity('monster:1');
+      frame(p);
+      expect([p.shell.session.gazeLocked, p.tags()]).toEqual([false, ['move', 'target']]);
+
+      orb.click();
+      frame(p);
+      expect([p.shell.session.gazeLocked, orb.getAttribute('aria-pressed')]).toEqual([true, 'true']);
+      expect(facings(p)).toEqual([0, expect.closeTo(heading(HERE, { x: 8, z: 12 }), 6)]);
+    });
+
+    it('keeps a freed facing through a door, facing the cursor in the space it leads to', () => {
+      const p = playing();
+      const pointer = onCanvas(p);
+      const lock = container.querySelector<HTMLButtonElement>('.hud-slot--lock')!;
+      const at = { x: 30, y: 20 };
+      pressF();
+      p.canvas.dispatchEvent(pointer('pointermove', at, mouse));
+      frame(p);
+
+      p.deliver(enterSpaceFrame('Hall'));
+      p.deliver(sectorFrame(interiorSector('Hall')));
+      p.deliver(entityFrame({ x: 5, z: 5 }));
+      frame(p);
+      frame(p);
+
+      expect([p.shell.session.facingFree, lock.getAttribute('aria-pressed')]).toEqual([true, 'false']);
+      expect(self(p).facing).toBeCloseTo(heading({ x: 5, z: 5 }, groundUnder(p, at)), 6);
+    });
   });
 
   it('clears the target on Escape, and opens the menu only on the next', () => {
@@ -2745,6 +3020,33 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.controller.presentedOverlay).toBeUndefined();
     escape();
     expect(p.shell.controller.presentedOverlay?.kind).toBe('gameMenu');
+  });
+
+  it("clears the queue with the target on Escape, on the target frame's ✕, and on a right press on the ground, and keeps it on a right press on another body", () => {
+    const p = playing();
+    const pointer = onCanvas(p);
+    p.deliver(entityFrame({ id: 'monster:1', kind: 'monster', x: 12, z: 10 }));
+    p.deliver(entityFrame({ id: 'monster:2', kind: 'monster', x: 12, z: 12 }));
+    const escape = (): boolean => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    const clearTarget = (): void =>
+      container.querySelector('.hud-unit--target')!.querySelector<HTMLButtonElement>('button[aria-label="Clear target"]')!.click();
+    const rightPress = (at: { x: number; y: number }): boolean =>
+      p.canvas.dispatchEvent(pointer('pointerdown', at, { button: 2, buttons: 2, pointerType: 'mouse' }));
+    const lineUp = (): void => {
+      p.shell.session.selectEntity('monster:1');
+      p.shell.session.queueEntity('monster:2');
+      expect(p.shell.session.queue).toEqual(['monster:2']);
+    };
+
+    for (const clear of [escape, clearTarget, () => rightPress({ x: 170, y: 60 })]) {
+      lineUp();
+      clear();
+      expect([p.shell.session.target, p.shell.session.queue, p.shell.controller.presentedOverlay]).toEqual([undefined, [], undefined]);
+    }
+
+    lineUp();
+    rightPress(p.shell.pagePointOf('bren')!);
+    expect([p.shell.session.target, p.shell.session.queue]).toEqual(['bren', ['monster:2']]);
   });
 
   it('closes a window on Escape before it stops a walk under way', () => {
@@ -2907,8 +3209,8 @@ describe('the play field and the panels through the shell', () => {
     expect(p.shell.hud.chatOpen).toBe(true);
     expect(document.activeElement).toBe(p.shell.hud.chatInput);
 
-    // Shift types into the open field rather than toggling Run.
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', cancelable: true }));
+    // R types into the open field rather than toggling Run.
+    p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR', bubbles: true, cancelable: true }));
     expect(p.shell.session.running).toBe(false);
     p.shell.hud.chatInput.value = 'hallo';
     p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
@@ -2988,26 +3290,28 @@ describe('the play field and the panels through the shell', () => {
       expect(engageButton().disabled).toBe(false);
     });
 
-    it('leaves the gaze lock to its own button and the F key, under the same gates as the 1 key, greyed out with nothing to lock on', () => {
+    it('leaves the gaze lock to its own button and the F key, under the same gates as the 1 key, enabled with nothing targeted and pressed while the facing is held', () => {
       const p = withGhost();
       const lock = container.querySelector<HTMLButtonElement>('.hud-slot--lock')!;
       const pressF = (init: KeyboardEventInit = {}): boolean =>
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', cancelable: true, ...init }));
-      expect(lock.disabled).toBe(true);
+      expect([lock.disabled, lock.getAttribute('aria-pressed')]).toEqual([false, 'true']);
       pressF();
-      expect(p.shell.session.gazeLocked).toBe(false);
+      expect([p.shell.session.facingFree, lock.getAttribute('aria-pressed')]).toEqual([true, 'false']);
+      pressF();
+      expect([p.shell.session.facingFree, lock.getAttribute('aria-pressed')]).toEqual([false, 'true']);
 
       p.shell.session.selectEntity(GHOST);
-      expect(lock.disabled).toBe(false);
-      pressF();
-      expect([p.shell.session.gazeLocked, p.shell.session.engaged, lock.getAttribute('aria-pressed')]).toEqual([true, false, 'true']);
-      pressF({ ctrlKey: true });
       expect(p.shell.session.gazeLocked).toBe(true);
+      pressF();
+      expect([p.shell.session.gazeLocked, p.shell.session.engaged, lock.getAttribute('aria-pressed')]).toEqual([false, false, 'false']);
+      pressF({ ctrlKey: true });
+      expect(p.shell.session.gazeLocked).toBe(false);
       lock.click();
-      expect([p.shell.session.gazeLocked, lock.getAttribute('aria-pressed')]).toEqual([false, 'false']);
+      expect([p.shell.session.gazeLocked, lock.getAttribute('aria-pressed')]).toEqual([true, 'true']);
       p.shell.controller.setChatInputFocused(true);
       pressF();
-      expect(p.shell.session.gazeLocked).toBe(false);
+      expect(p.shell.session.gazeLocked).toBe(true);
       expect(engages(p)).toEqual([]);
     });
 
@@ -3044,13 +3348,14 @@ describe('the play field and the panels through the shell', () => {
       expect(engages(p)).toEqual([{ on: true }, { on: false }, { on: true }, { on: false }]);
     });
 
-    it('switches Run on Shift, but not on Shift with Alt, Ctrl, or Cmd held, a chord of the system', () => {
+    it('switches Run on R, but not on R with Alt, Ctrl, or Cmd held, a chord of the system, nor on Shift alone', () => {
       const p = playing();
-      const shift = (init: KeyboardEventInit = {}): boolean =>
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', cancelable: true, ...init }));
-      for (const modifier of ['altKey', 'ctrlKey', 'metaKey']) shift({ [modifier]: true, shiftKey: true });
+      const pressR = (init: KeyboardEventInit = {}): boolean =>
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR', cancelable: true, ...init }));
+      for (const modifier of ['altKey', 'ctrlKey', 'metaKey']) pressR({ [modifier]: true });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', code: 'ShiftLeft', shiftKey: true, cancelable: true }));
       expect(p.shell.session.running).toBe(false);
-      shift({ shiftKey: true });
+      pressR();
       expect(p.shell.session.running).toBe(true);
     });
 
@@ -3247,17 +3552,17 @@ describe('the play field and the panels through the shell', () => {
       p.shell.session.selectEntity(GHOST);
       const before = elements();
       const text = frames()[0]!.textContent;
-      expect(label()).toBe('Target, hale');
-
-      p.shell.session.pressEntity(GHOST);
       expect(label()).toBe('Target, hale, facing locked');
+
+      p.shell.session.toggleGazeLock();
+      expect(label()).toBe('Target, hale');
       expect(frames()[0]!.textContent).toBe(text);
       for (const balanceCurrent of [90, 91]) p.deliver({ tag: 'energy', payload: { ...fullPools(NO_STATS), balanceCurrent } });
       p.deliver({ tag: 'condition', payload: { entityId: GHOST, condition: 'failing' } });
       p.deliver({ tag: 'vitals', payload: { entityId: GHOST, health: 0.2 } });
-      expect(label()).toBe('Target, failing, facing locked');
-      p.shell.session.toggleGazeLock();
       expect(label()).toBe('Target, failing');
+      p.shell.session.toggleGazeLock();
+      expect(label()).toBe('Target, failing, facing locked');
       elements().forEach((node, index) => expect(node).toBe(before[index]));
       expect(elements()).toHaveLength(before.length);
     });

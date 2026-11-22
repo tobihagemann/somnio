@@ -76,8 +76,10 @@ export interface SomnioDebugAPI {
   servicePanel(): string | undefined;
   /** The id of the entity the player has selected. */
   target(): string | undefined;
-  /** Whether the player's facing is locked on the target, whatever the cursor does. */
+  /** Whether the player faces their target: their facing held, and a target there to face that is not themselves. */
   gazeLocked(): boolean;
+  /** The nightmares lined up behind the target, in the order they will be taken up. */
+  queue(): readonly string[];
   /** The share of its health the server last sent for the target, or from the player's own pools when that is themselves. */
   vitals(entityId: string): number | undefined;
   /**
@@ -214,6 +216,7 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
     servicePanel: () => shell.session.servicePanel?.id,
     target: () => shell.session.target,
     gazeLocked: () => shell.session.gazeLocked,
+    queue: () => [...shell.session.queue],
     vitals: (entityId) => shell.session.vitalsOf(entityId),
     abilities: () =>
       shell.session.abilitySlots().map(({ abilityId, refusal, cooldown }) => ({

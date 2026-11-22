@@ -182,7 +182,7 @@ describe("a mouse's HUD", () => {
     expect([...hud.root.querySelectorAll('.hud-globe')].map((globe) => globe.getAttribute('aria-label'))).toEqual(['Health', 'Spirit']);
     expect($('.hud-balance__arc')).toBeDefined();
     const keys = [...$('.hud-slots').children].map((slot) => slot.querySelector('.hud-slot__key')?.textContent);
-    expect(keys).toEqual(['1', '2', '3', '4', '5', '6', 'F', '⇧']);
+    expect(keys).toEqual(['1', '2', '3', '4', '5', '6', 'F', 'R']);
     // Slots 2 to 6 wait for abilities: nothing to press, and no ability drawn in them.
     for (const slot of hud.root.querySelectorAll('.hud-slot--empty')) {
       expect(slot.tagName).toBe('SPAN');
@@ -260,29 +260,24 @@ describe("a mouse's HUD", () => {
     expect(button('Run').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it.each([false, true])(
-    'draws the gaze lock beside Run, greyed out with nothing to lock on, as the reticle while locked, and reports a press (coarse %s)',
-    (coarse) => {
-      const { hud, $, named } = makeHUD(coarse);
-      const lock = $<HTMLButtonElement>(coarse ? '.hud-orb--lock' : '.hud-slot--lock');
-      const shown = () => [
-        lock.disabled,
-        lock.getAttribute('aria-pressed'),
-        lock.querySelector<HTMLElement>('.hud-glyph')!.style.getPropertyValue('--hud-glyph'),
-      ];
-      expect(lock.getAttribute('aria-label')).toBe('Lock facing');
-      if (!coarse) expect(lock.nextElementSibling).toBe($('.hud-slot--run'));
-      hud.renderGazeLock(false, false);
-      expect(shown()).toEqual([true, 'false', HUD_ICONS.gazeFree.image]);
-      hud.renderGazeLock(false, true);
-      expect(shown()).toEqual([false, 'false', HUD_ICONS.gazeFree.image]);
-      lock.click();
-      expect(named('onToggleGazeLock')).toHaveLength(1);
-      hud.renderGazeLock(true, true);
-      expect(shown()).toEqual([false, 'true', HUD_ICONS.gazeLocked.image]);
-      expect($(coarse ? '.hud-orb--lock' : '.hud-slot--lock')).toBe(lock);
-    },
-  );
+  it.each([false, true])('draws the gaze lock beside Run, always enabled, as the reticle while locked, and reports a press (coarse %s)', (coarse) => {
+    const { hud, $, named } = makeHUD(coarse);
+    const lock = $<HTMLButtonElement>(coarse ? '.hud-orb--lock' : '.hud-slot--lock');
+    const shown = () => [
+      lock.disabled,
+      lock.getAttribute('aria-pressed'),
+      lock.querySelector<HTMLElement>('.hud-glyph')!.style.getPropertyValue('--hud-glyph'),
+    ];
+    expect(lock.getAttribute('aria-label')).toBe('Lock facing');
+    if (!coarse) expect(lock.nextElementSibling).toBe($('.hud-slot--run'));
+    hud.renderGazeLock(false);
+    expect(shown()).toEqual([false, 'false', HUD_ICONS.gazeFree.image]);
+    lock.click();
+    expect(named('onToggleGazeLock')).toHaveLength(1);
+    hud.renderGazeLock(true);
+    expect(shown()).toEqual([false, 'true', HUD_ICONS.gazeLocked.image]);
+    expect($(coarse ? '.hud-orb--lock' : '.hud-slot--lock')).toBe(lock);
+  });
 
   it('shows Run held off while an effect keeps the player from running, still lit and still pressable', () => {
     const { hud, button, named } = makeHUD();
@@ -2227,7 +2222,7 @@ describe("the HUD's tip", () => {
     hover($('.hud-slot--act'));
     expect(tipSays(hud.root)).toEqual(['Attack', '1']);
     hover(button('Run'));
-    expect(tipSays(hud.root)).toEqual(['Run', 'Shift']);
+    expect(tipSays(hud.root)).toEqual(['Run', 'R']);
     hover($('.hud-slot--empty'));
     expect(tipSays(hud.root)).toEqual(['Empty slot', '2', 'An ability you learn takes this slot.']);
 
@@ -2330,7 +2325,7 @@ describe("the HUD's tip", () => {
     vi.useFakeTimers();
     try {
       const { hud } = makeHUD(true);
-      hud.renderGazeLock(false, true);
+      hud.renderGazeLock(false);
       const orb = hud.root.querySelector<HTMLButtonElement>('.hud-orb--lock')!;
       point(orb, 'pointerdown', { pointerType: 'touch' });
       vi.advanceTimersByTime(FINGER_HOLD_MS);

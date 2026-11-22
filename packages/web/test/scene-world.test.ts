@@ -1321,7 +1321,7 @@ describe('the ground under a point of the viewport', () => {
   });
 
   /** The cursor 0.8 m over a body's feet, once with both bodies on the floor and once with both up on the porch. */
-  it('aims at the body drawn under the cursor, at the height the player stands at', () => {
+  it('faces the feet of the body drawn under the cursor, on the floor and up on the porch', () => {
     const pairs: [Point, Point][] = [
       [FOCUS, { x: 12, z: 9 }],
       [
@@ -1335,11 +1335,60 @@ describe('the ground under a point of the viewport', () => {
       scene.placeEntity(player({ id: 'peer', kind: 'peer', position: other }));
       const drawn = viewportOf(scene, other.x, groundHeightAt(entered.collision, other) + 0.8, other.z);
 
-      const aimed = scene.aimPointAt(drawn.x, drawn.y)!;
+      const aimed = scene.cursorFacingAt(drawn.x, drawn.y)!;
 
       expect(aimed.x).toBeCloseTo(other.x, 9);
       expect(aimed.z).toBeCloseTo(other.z, 9);
     }
+  });
+
+  /** The cursor 0.8 m over the player's feet passes 0.4 m over the feet of a body standing 0.4 m behind them. */
+  it("faces nothing over the player's own body though a body is drawn behind it, and over no body the ground the walk steers to", () => {
+    const { scene } = framed(hallSector);
+    scene.placeEntity(player({ position: FOCUS }));
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: floorBehind(FOCUS, 0.4) }));
+    const own = viewportOf(scene, FOCUS.x, 0.8, FOCUS.z);
+
+    expect(scene.entityAt(own.x, own.y)).toBe('peer');
+    expect(scene.cursorFacingAt(own.x, own.y)).toBeUndefined();
+
+    const onPorch = viewportOf(scene, 11.9, 1.03, 9.8);
+    const ground = scene.groundPointAt(onPorch.x, onPorch.y)!;
+    expect(ground.height).toBe(1.03);
+    expect(scene.cursorFacingAt(onPorch.x, onPorch.y)).toEqual({ x: ground.x, z: ground.z });
+  });
+
+  /** Where a Ghost overlapping a body at `FOCUS` stands: 0.28 m to its right and 0.1 m nearer the camera. */
+  function overlappingGhost(scene: WorldScene): Point {
+    scene.camera.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(scene.camera.matrixWorld, 0);
+    const toCamera = new THREE.Vector2(offsetDirection().x, offsetDirection().z).normalize();
+    return { x: FOCUS.x + 0.28 * right.x + 0.1 * toCamera.x, z: FOCUS.z + 0.28 * right.z + 0.1 * toCamera.y };
+  }
+
+  /**
+   * A Ghost overlaps the player. The cursor 0.4 m over the player's feet passes the Ghost's middle
+   * nearer the camera than the player's. But across the ground it meets the Ghost's front only
+   * 0.21 m before the player's middle, and the player's front 0.3 m before it.
+   */
+  it("faces nothing over the player's own body where an overlapping body's middle lies nearer the camera but its front lies behind theirs", () => {
+    const { scene } = framed(sector());
+    scene.placeEntity(player({ position: FOCUS }));
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: overlappingGhost(scene) }));
+    const own = viewportOf(scene, FOCUS.x, 0.4, FOCUS.z);
+
+    expect(scene.cursorFacingAt(own.x, own.y)).toBeUndefined();
+  });
+
+  /** As above with a peer where the player stood, and the player, whom a press passes through, well away. */
+  it("presses the body whose front lies first where an overlapping body's middle lies nearer the camera", () => {
+    const { scene } = framed(sector());
+    scene.placeEntity(player({ position: { x: 6, z: 6 } }));
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: FOCUS }));
+    scene.placeEntity(player({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: overlappingGhost(scene) }));
+    const peer = viewportOf(scene, FOCUS.x, 0.4, FOCUS.z);
+
+    expect(scene.entityAt(peer.x, peer.y)).toBe('peer');
   });
 
   it('draws a point of the space where the pick finds it again, on the floor and on a raised tread', () => {
@@ -1688,13 +1737,18 @@ describe('overlay quads', () => {
       expectTailAt(scene, standing);
     });
 
-    it('is picked where the head lies, and not where its head would stand', () => {
+    /** A point 0.25 m on past the head along the body lies in the round end of its capsule alone. */
+    it('is picked where the head lies and a little past it, and not where its head would stand', () => {
       const { scene, head } = fallenPeer();
       scene.camera.updateMatrixWorld();
-      const lying = lyingHead(head).project(scene.camera);
+      const lyingAt = lyingHead(head);
+      const lying = lyingAt.clone().project(scene.camera);
+      const alongBody = new THREE.Vector3().subVectors(lyingAt, new THREE.Vector3(12, 0, 10)).normalize();
+      const past = lyingAt.clone().addScaledVector(alongBody, 0.25).project(scene.camera);
       const upright = new THREE.Vector3(12, CHARACTER_SCALE, 10).project(scene.camera);
 
       expect(scene.entityAt(lying.x, lying.y)).toBe('peer');
+      expect(scene.entityAt(past.x, past.y)).toBe('peer');
       expect(scene.entityAt(upright.x, upright.y)).toBeUndefined();
     });
 
@@ -1742,6 +1796,50 @@ describe('what a pointer is over, and the target', () => {
     expect(scene.entityAt(own.x, own.y)).toBeUndefined();
     const ground = viewportOf(scene, 12, 0, 13);
     expect(scene.entityAt(ground.x, ground.y)).toBeUndefined();
+  });
+
+  /**
+   * A point `metres` up the screen from a point of the world, which lies that far from it beside the
+   * camera's ray: the camera's up crosses the ray.
+   */
+  function upScreenOf(scene: WorldScene, point: THREE.Vector3, metres: number): THREE.Vector3 {
+    scene.camera.updateMatrixWorld();
+    const up = new THREE.Vector3().setFromMatrixColumn(scene.camera.matrixWorld, 1);
+    return point.clone().addScaledVector(up, metres).project(scene.camera);
+  }
+
+  /**
+   * The capsule's side reaches 0.21 m up the screen past the top of the head, and down past the feet,
+   * the rim of its end seen at the camera's 45° pitch. Its round ends reach the radius, 0.3 m.
+   */
+  it('picks a body by the round ends of its capsule, past the top of its head and below its feet', () => {
+    const scene = makeScene();
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 } }));
+
+    const overHead = upScreenOf(scene, new THREE.Vector3(12, CHARACTER_SCALE, 10), 0.25);
+    expect(scene.entityAt(overHead.x, overHead.y)).toBe('peer');
+    const underFeet = upScreenOf(scene, new THREE.Vector3(12, 0, 10), -0.25);
+    expect(scene.entityAt(underFeet.x, underFeet.y)).toBe('peer');
+  });
+
+  /**
+   * A body twice as tall stands 0.48 m behind a peer. The cursor 0.25 m up the screen past the top of
+   * the peer's head passes over the peer's side, enters its head's round end 0.17 m before it passes
+   * nearest that head, and enters the tall body's side as it passes there, before leaving the peer's head.
+   */
+  it("picks a body the ray enters by its head's round end ahead of the side of a taller body behind it", () => {
+    const { root } = skinnedModel();
+    root.scale.y = 2;
+    const scene = makeScene({ ...emptyAssets(), character: (id) => (id === 'tall' ? root : undefined) });
+    scene.placeEntity(player());
+    scene.camera.updateMatrixWorld();
+    const away = new THREE.Vector3().setFromMatrixColumn(scene.camera.matrixWorld, 2).setY(0).normalize().multiplyScalar(-0.48);
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', position: { x: 12, z: 10 } }));
+    scene.placeEntity(player({ id: 'tall', kind: 'peer', characterModelId: 'tall', position: { x: 12 + away.x, z: 10 + away.z } }));
+
+    const overHead = upScreenOf(scene, new THREE.Vector3(12, CHARACTER_SCALE, 10), 0.25);
+    expect(scene.entityAt(overHead.x, overHead.y)).toBe('peer');
   });
 
   it('passes over a nightmare driven off to the ground it lies on', () => {
@@ -2322,6 +2420,257 @@ describe('what a pointer is over, and the target', () => {
     expect(colorOf(rings(scene)[0]!)).toBe(colorOf(acting!));
     expect(disposeTicks).toHaveBeenCalled();
     expect(disposeMaterial).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the queue behind the target', () => {
+  /** A dot of the trail is a flat octagon 0.05 m in radius, drawn as six triangles. */
+  const DOT_VERTICES = 18;
+  const DOT_RADIUS = 0.05;
+  const LIFT = 0.03;
+
+  const colorOf = (mesh: THREE.Mesh): number => (mesh.material as THREE.MeshBasicMaterial).color.getHex();
+
+  /** A scene over `daisSector` with the player at (10, 10) and a Ghost at each of `ghosts`, by id. */
+  function queueing(ghosts: Record<string, Point>): WorldScene {
+    const scene = sceneWithGround();
+    scene.placeEntity(player());
+    for (const [id, position] of Object.entries(ghosts)) scene.placeEntity(player({ id, kind: 'monster', name: 'Ghost', position }));
+    return scene;
+  }
+
+  /** The trail from the target through the queue: a mesh hung straight on the scene whose dots are written in place. */
+  function trails(scene: WorldScene): THREE.Mesh[] {
+    return scene.scene.children.filter(
+      (child): child is THREE.Mesh =>
+        (child as THREE.Mesh).isMesh && ((child as THREE.Mesh).geometry.getAttribute('position') as THREE.BufferAttribute).usage === THREE.DynamicDrawUsage,
+    );
+  }
+
+  /** How far a ring reaches from its middle: its outer edge, or for a reticle the tips of its ticks. */
+  function reachOf(ring: THREE.Mesh): number {
+    const tick = ring.children[0] as THREE.Mesh | undefined;
+    if (tick === undefined) return (ring.geometry as THREE.RingGeometry).parameters.outerRadius;
+    const corners = tick.geometry.getAttribute('position');
+    let reach = 0;
+    for (let vertex = 0; vertex < corners.count; vertex += 1) reach = Math.max(reach, Math.hypot(corners.getX(vertex), corners.getY(vertex)));
+    return reach;
+  }
+
+  /**
+   * Whether the trail's bounding sphere, which three culls it by, holds every corner the trail draws,
+   * and stands at the middle of its dots, which three sorts it by.
+   */
+  function expectBoundedByDots(trail: THREE.Mesh): void {
+    const sphere = trail.geometry.boundingSphere!;
+    const centre = new THREE.Box3().setFromPoints(dots(trail)).getCenter(new THREE.Vector3());
+    expect(sphere.center.distanceTo(centre)).toBeCloseTo(0, 5);
+    const position = trail.geometry.getAttribute('position');
+    const { start, count } = trail.geometry.drawRange;
+    for (let vertex = start; vertex < start + count; vertex += 1) {
+      expect(new THREE.Vector3().fromBufferAttribute(position, vertex).distanceTo(sphere.center)).toBeLessThanOrEqual(sphere.radius + 1e-5);
+    }
+  }
+
+  /** The middle of each dot the trail draws, its octagon's corners lying round it at its height. */
+  function dots(trail: THREE.Mesh): THREE.Vector3[] {
+    const position = trail.geometry.getAttribute('position');
+    const { start, count } = trail.geometry.drawRange;
+    const found: THREE.Vector3[] = [];
+    for (let first = start; first < start + count; first += DOT_VERTICES) {
+      const box = new THREE.Box3();
+      for (let vertex = first; vertex < first + DOT_VERTICES; vertex += 1) box.expandByPoint(new THREE.Vector3().fromBufferAttribute(position, vertex));
+      found.push(box.getCenter(new THREE.Vector3()));
+    }
+    return found;
+  }
+
+  it("rings each queued nightmare faintly in the target ring's colour, keeping the ring of one still queued", () => {
+    const scene = queueing({ 'monster:1': { x: 12, z: 10 }, 'monster:2': { x: 12, z: 13 }, 'monster:3': { x: 8, z: 13 } });
+    const drawn = (): { at: number[]; opacity: number; color: number }[] =>
+      rings(scene).map((ring) => ({
+        at: [ring.parent!.position.x, ring.parent!.position.z],
+        opacity: (ring.material as THREE.MeshBasicMaterial).opacity,
+        color: colorOf(ring),
+      }));
+    scene.showSelection('monster:1', PLAIN_MARK);
+    const green = colorOf(rings(scene)[0]!);
+
+    scene.showQueue(['monster:2', 'monster:3']);
+    expect(drawn()).toEqual([
+      { at: [12, 10], opacity: 0.9, color: green },
+      { at: [12, 13], opacity: expect.closeTo(0.36, 9), color: green },
+      { at: [8, 13], opacity: expect.closeTo(0.36, 9), color: green },
+    ]);
+
+    const [, dropped, kept] = rings(scene);
+    const disposeDropped = vi.spyOn(dropped!.geometry, 'dispose');
+    scene.showQueue(['monster:3']);
+    expect(rings(scene).slice(1)).toEqual([kept]);
+    expect(disposeDropped).toHaveBeenCalled();
+
+    scene.tick(0.016);
+    const [trail] = trails(scene);
+    expect(colorOf(trail!)).toBe(green);
+    scene.showSelection('monster:1', { locked: false, acting: true });
+    const gold = colorOf(rings(scene)[0]!);
+    expect(gold).not.toBe(green);
+    expect(colorOf(kept!)).toBe(gold);
+    expect(colorOf(trail!)).toBe(gold);
+    scene.showSelection('monster:1', PLAIN_MARK);
+    expect(colorOf(kept!)).toBe(green);
+    expect(colorOf(trail!)).toBe(green);
+  });
+
+  /**
+   * The leg runs 5.8 m along z = 5 across the dais at x 4..6, from a locked target, whose reticle's
+   * ticks reach 0.7 m out, to a queued nightmare, whose faint ring ends 0.5 m out.
+   */
+  it("lays the trail as one mesh drawing and bounded by only its dots, each on the ground under it and clear of the reticle's ticks", () => {
+    const scene = queueing({ 'monster:1': { x: 2, z: 5 }, 'monster:2': { x: 7.8, z: 5 } });
+    scene.showSelection('monster:1', { locked: true, acting: false });
+    scene.showQueue(['monster:2']);
+    expect(trails(scene)).toEqual([]);
+
+    scene.tick(0.016);
+
+    expect(trails(scene)).toHaveLength(1);
+    const [trail] = trails(scene);
+    expect(trail!.geometry.drawRange.start).toBe(0);
+    expect(trail!.geometry.drawRange.count).toBe(15 * DOT_VERTICES);
+    const laid = dots(trail!);
+    for (const [index, dot] of laid.entries()) {
+      expect(dot.z).toBeCloseTo(5, 5);
+      expect(dot.y).toBeCloseTo((dot.x > 4 && dot.x < 6 ? 0.2 : 0) + LIFT, 5);
+      if (index > 0) expect(dot.x - laid[index - 1]!.x).toBeCloseTo(0.3, 5);
+    }
+    expect(laid.filter((dot) => dot.y > 0.1)).toHaveLength(7);
+    expect(laid[0]!.x - 2 - DOT_RADIUS).toBeGreaterThan(reachOf(rings(scene)[0]!));
+    expectBoundedByDots(trail!);
+
+    scene.updatePosition('monster:2', { x: 11, z: 8 }, 0, 0);
+    scene.tick(0.016);
+
+    expectBoundedByDots(trail!);
+  });
+
+  it("moves the trail's first dot clear of the reticle's ticks as the target's lock comes, and back as it goes, with no body moving", () => {
+    const scene = queueing({ 'monster:1': { x: 2, z: 5 }, 'monster:2': { x: 7.8, z: 5 } });
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.showQueue(['monster:2']);
+    scene.tick(0.016);
+    const firstEdge = (): number => dots(trails(scene)[0]!)[0]!.x - 2 - DOT_RADIUS;
+    const plain = firstEdge();
+
+    scene.showSelection('monster:1', { locked: true, acting: false });
+    scene.tick(0.016);
+
+    const reach = reachOf(rings(scene)[0]!);
+    expect(plain).toBeLessThan(reach);
+    expect(firstEdge()).toBeGreaterThan(reach);
+
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.tick(0.016);
+
+    expect(firstEdge()).toBeCloseTo(plain, 9);
+  });
+
+  /** The leg from the target at x 1 to the nightmare queued first, at x 9, runs through the one queued after it, at x 5. */
+  it('keeps the trail clear of a queued ring standing on a leg between two other marks', () => {
+    const scene = queueing({ 'monster:1': { x: 1, z: 15 }, 'monster:2': { x: 9, z: 15 }, 'monster:3': { x: 5, z: 15 } });
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.showQueue(['monster:2', 'monster:3']);
+    scene.tick(0.016);
+
+    const middle = rings(scene).find((ring) => ring.parent!.position.x === 5)!;
+    const laid = dots(trails(scene)[0]!);
+    expect(laid.length).toBeGreaterThan(0);
+    for (const dot of laid) expect(Math.hypot(dot.x - 5, dot.z - 15) - DOT_RADIUS).toBeGreaterThan(reachOf(middle));
+  });
+
+  /**
+   * The 1.44 m from a locked target to the nightmare queued behind it are their two clearances, 0.82 m and 0.62 m, end to end.
+   * From x 10 to x 11.44 the leg rounds to a hair under them, about 4.4e-16 m.
+   */
+  it.each([
+    [1, 2.44],
+    [10, 11.44],
+  ])('lays the one dot that fits on the edge of both ends of a leg from x %d to x %d', (from, to) => {
+    const scene = queueing({ 'monster:1': { x: from, z: 15 }, 'monster:2': { x: to, z: 15 } });
+    scene.showSelection('monster:1', { locked: true, acting: false });
+    scene.showQueue(['monster:2']);
+
+    scene.tick(0.016);
+
+    expect(trails(scene)).toHaveLength(1);
+    expect(dots(trails(scene)[0]!)).toHaveLength(1);
+  });
+
+  /** 25 m between the target and the nightmare queued behind it take more dots than the 64 the trail's buffer first holds. */
+  it("grows the trail's buffer to hold every dot of a long leg", () => {
+    const scene = queueing({ 'monster:1': { x: 0, z: 15 }, 'monster:2': { x: 25, z: 15 } });
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.showQueue(['monster:2']);
+    scene.tick(0.016);
+
+    const [trail] = trails(scene);
+    const laid = dots(trail!);
+    expect(laid.length).toBeGreaterThan(64);
+    expect(trail!.geometry.drawRange.count).toBe(laid.length * DOT_VERTICES);
+    const last = laid.at(-1)!;
+    expect(last.z).toBeCloseTo(15, 5);
+    expect(25 - last.x - DOT_RADIUS).toBeGreaterThan(reachOf(rings(scene)[1]!));
+    expect(25 - last.x).toBeLessThan(reachOf(rings(scene)[1]!) + 0.5);
+  });
+
+  /** From an unlocked target at x 1.2, a dot of the leg lies at x 3.98 until the queued end moves 0.08 m on, shifting it to 4.02. */
+  it('lifts a dot onto the dais on the frame a moved end of its leg carries it across the edge', () => {
+    const scene = queueing({ 'monster:1': { x: 1.2, z: 5 }, 'monster:2': { x: 8.26, z: 5 } });
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.showQueue(['monster:2']);
+    scene.tick(0.016);
+    const nearEdge = (from: number, to: number): THREE.Vector3[] => dots(trails(scene)[0]!).filter((dot) => dot.x > from && dot.x < to);
+    expect(nearEdge(3.9, 4).map((dot) => [dot.x, dot.y])).toEqual([[expect.closeTo(3.98, 5), expect.closeTo(LIFT, 5)]]);
+    expect(nearEdge(4, 4.1)).toEqual([]);
+
+    scene.updatePosition('monster:2', { x: 8.34, z: 5 }, 0, 0);
+    scene.tick(0.016);
+
+    expect(nearEdge(4, 4.1).map((dot) => [dot.x, dot.y])).toEqual([[expect.closeTo(4.02, 5), expect.closeTo(0.2 + LIFT, 5)]]);
+  });
+
+  it('lets a queued ring go with its nightmare, and every ring and the trail with the space', () => {
+    const scene = queueing({ 'monster:1': { x: 12, z: 10 }, 'monster:2': { x: 12, z: 13 }, 'monster:3': { x: 8, z: 13 } });
+    scene.showSelection('monster:1', PLAIN_MARK);
+    scene.showQueue(['monster:2', 'monster:3']);
+    scene.tick(0.016);
+    const [, gone, kept] = rings(scene);
+    const disposeGone = vi.spyOn(gone!.geometry, 'dispose');
+
+    scene.removeEntity('monster:2');
+    scene.tick(0.016);
+
+    expect(rings(scene).slice(1)).toEqual([kept]);
+    expect(disposeGone).toHaveBeenCalled();
+    // The trail now runs straight from the target to the one left queued.
+    const straight = dots(trails(scene)[0]!);
+    expect(straight.length).toBeGreaterThan(0);
+    for (const dot of straight) expect(Math.abs(3 * (dot.x - 12) + 4 * (dot.z - 10))).toBeLessThan(1e-4);
+
+    const disposeKept = vi.spyOn(kept!.geometry, 'dispose');
+    scene.enterSpace(world());
+    expect(trails(scene)).toEqual([]);
+    scene.placeEntity(player());
+    expect(disposeKept).toHaveBeenCalled();
+    expect(rings(scene)).toEqual([]);
+
+    scene.placeEntity(player({ id: 'monster:3', kind: 'monster', name: 'Ghost', position: { x: 8, z: 13 } }));
+    scene.showQueue(['monster:3']);
+    const [again] = rings(scene);
+    expect(rings(scene)).toHaveLength(1);
+    expect(again).not.toBe(kept);
+    scene.tick(0.016);
+    expect(trails(scene)).toEqual([]);
   });
 });
 

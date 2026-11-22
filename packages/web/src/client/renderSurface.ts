@@ -111,6 +111,8 @@ export interface WorldRenderSurface {
   removeLoot(lootId: string, taken: boolean): void;
   /** Marks the target as `mark` says; `undefined` marks none. */
   showSelection(entityId: string | undefined, mark: TargetMark): void;
+  /** Marks the nightmares lined up behind the target, in order: a faint ring under each, and a dotted trail from the target through them. An empty list marks none. */
+  showQueue(queued: readonly string[]): void;
   /** A ring where a press holds the ground, or on what the walk a press made heads for, a body it follows included: it drops onto `point` the first time, and follows it after. */
   showPressMarker(point: Point): void;
   /** The ring rises away from where it lies, once it has landed. */
@@ -149,6 +151,7 @@ export const noopRenderSurface: WorldRenderSurface = {
   showLoot: () => {},
   removeLoot: () => {},
   showSelection: () => {},
+  showQueue: () => {},
   showPressMarker: () => {},
   liftPressMarker: () => {},
   setClock: () => {},

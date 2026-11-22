@@ -22,7 +22,7 @@ import { SensedMarkers } from './sensedMarkers';
 import { FrameStats } from './frameStats';
 import type { FramePart } from './frameStats';
 import { GameHUD, WINDOW_KEYS } from './hud';
-import { GAZE_LOCK_KEY } from './belt';
+import { GAZE_LOCK_KEY, RUN_KEY } from './belt';
 import type { HUDClock, HUDWindowId } from './hud';
 import { BlockingNotices, Overlays } from './overlays';
 import { ServicePanel } from './servicePanel';
@@ -33,7 +33,7 @@ import { element, prefersReducedMotion, setHidden } from './dom';
 
 /**
  * The key pressed, in lower case, unless Alt, Ctrl, or Cmd is held with it, since those presses are
- * the browser's or the system's. Shift is no modifier here, because it is Run's own key.
+ * the browser's or the system's. Shift is no modifier here, so a key held with Shift does what it does alone.
  */
 function plainKey(event: KeyboardEvent): string | undefined {
   return event.metaKey || event.ctrlKey || event.altKey ? undefined : event.key.toLowerCase();
@@ -169,6 +169,8 @@ export class AppShell {
   private readonly wordmarkImage: HTMLImageElement;
   private readonly wordmarkStatus: HTMLElement;
   private readonly transport: GameplayTransport;
+  /** Whether the primary pointer is coarse, a finger, which leaves no cursor over the world to face. */
+  private readonly coarsePointer: boolean;
   private renderer: THREE.WebGLRenderer | undefined;
   private hoveringHUD = false;
   /** Whether a render pass is running, and whether a call during it asked for one more. */
@@ -212,6 +214,7 @@ export class AppShell {
     const registry = bundledModelRegistry();
     const reducedMotion = prefersReducedMotion();
     const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    this.coarsePointer = coarsePointer;
     this.scene = capabilities.hasWebGL ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect(), reducedMotion) : undefined;
     if (this.scene !== undefined) this.scene.coarsePointer = coarsePointer;
     this.splash =
@@ -259,7 +262,7 @@ export class AppShell {
         onUseAbility: (abilityId) => this.session.useAbility(abilityId),
         onPressPlayer: (name) => this.session.pressPlayerName(name),
         onPressOwnFrame: () => this.session.pressOwnFrame(),
-        onClearTarget: () => this.session.select(undefined),
+        onClearTarget: () => this.session.clearTarget(),
         onShareQuest: (questId) => this.session.shareQuest(questId),
         onAbandonQuest: (questId) => this.session.abandonQuest(questId),
         onOpenSettings: () => this.present({ kind: 'gameMenu' }),
@@ -450,7 +453,7 @@ export class AppShell {
         this.toggleFullscreen();
         return;
       }
-      // Only while the world has the keyboard: under an overlay or in the chat field, Shift capitalizes and 1 is typed.
+      // Only while the world has the keyboard: under an overlay or in the chat field, R and 1 are typed.
       if (event.repeat || !this.session.predictor.gateIsOpen() || this.controller.isChatInputFocused) return;
       // Enter opens the chat, unless a control has the keyboard and takes Enter itself, as a focused button or an item row does.
       if (event.key === 'Enter') {
@@ -460,15 +463,12 @@ export class AppShell {
         this.hud.openChat();
         return;
       }
-      if (event.key === 'Shift') {
-        if (plainKey(event) !== undefined) this.session.toggleRun();
-        return;
-      }
       const key = plainKey(event);
       if (key === undefined) return;
       const windowId = windowOnKey(key);
       if (event.code === 'Digit1') this.session.toggleEngage();
       else if (key === GAZE_LOCK_KEY) this.session.toggleGazeLock();
+      else if (key === RUN_KEY) this.session.toggleRun();
       else if (windowId !== undefined) this.hud.toggleWindow(windowId);
       else this.useAbilityOnKey(event.code);
     });
@@ -493,7 +493,7 @@ export class AppShell {
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
-      this.aimAt(event);
+      this.faceCursorUnder(event);
       // The chat's faded lines let the pointer through to the world, so resting on them is seen here.
       this.hud.revealChatAt(event.clientX, event.clientY);
       // A pointer over a body, which a click selects or acts on, a drop, which a click picks up, or a fixture, which a click uses.
@@ -517,7 +517,7 @@ export class AppShell {
     // A long press on a touch screen would open the browser's menu over the play field.
     this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
-    // Pressing the play field blurs the chat input, or Shift keeps going into the text box after the
+    // Pressing the play field blurs the chat input, or R keeps going into the text box after the
     // player looks back at the world.
     this.canvas.addEventListener('pointerdown', (event) => {
       this.hud.chatInput.blur();
@@ -566,10 +566,10 @@ export class AppShell {
   private pressSecondary(event: PointerEvent): void {
     const target = this.pressTargetUnder(event);
     if (target?.kind === 'entity') this.session.selectEntity(target.entityId);
-    else if (target === undefined || target.kind === 'ground') this.session.select(undefined);
+    else if (target === undefined || target.kind === 'ground') this.session.clearTarget();
   }
 
-  /** A press of a mouse's left button, a finger, or a pen. */
+  /** A press of a mouse's left button, a finger, or a pen. With Shift, a mouse's press on a nightmare queues it instead. */
   private pressPrimary(event: PointerEvent): void {
     // A primary pointer begins a new gesture, so any pointer still recorded as down lost its `pointerup`.
     if (event.isPrimary && this.downPointers.size > 0) {
@@ -584,8 +584,8 @@ export class AppShell {
     this.pressPointerId = event.pointerId;
     this.pressPoint = pagePoint(event);
     this.pressLanded = this.pressPoint;
-    // A press with no move before it, such as a tap on a touch screen, still faces where it lands.
-    this.aimAt(event);
+    // A press with no move before it still records where it lands, which a freed facing on a mouse turns to.
+    this.faceCursorUnder(event);
     const target = this.pressTargetUnder(event);
     switch (target?.kind) {
       case undefined:
@@ -596,6 +596,7 @@ export class AppShell {
       case 'entity':
         // A finger or a pen has no right press, so it selects by resting on the body instead.
         if (event.pointerType === 'touch' || event.pointerType === 'pen') this.session.holdEntity(target.entityId, performance.now());
+        else if (event.shiftKey && this.controller.entities.get(target.entityId)?.kind === 'monster') this.session.queueEntity(target.entityId);
         else this.session.pressEntity(target.entityId);
         return;
       case 'fixture':
@@ -662,7 +663,7 @@ export class AppShell {
    * points on the ground are taken again before each tick.
    */
   private followPointer(): void {
-    if (this.cursorPoint !== undefined) this.aimAt(this.cursorPoint);
+    if (this.cursorPoint !== undefined) this.faceCursorUnder(this.cursorPoint);
     const ground = this.pressPoint === undefined ? undefined : this.groundUnder(this.pressPoint);
     if (ground !== undefined) this.session.moveHold(ground);
   }
@@ -694,26 +695,35 @@ export class AppShell {
     return { x: rect.left + ((point.x + 1) / 2) * rect.width, y: rect.top + ((1 - point.y) / 2) * rect.height };
   }
 
-  /** Turns the player toward what the cursor points at. */
-  private aimAt(pointer: PagePoint): void {
+  /**
+   * Keeps where the pointer is over the play field, and turns a player whose facing is free toward
+   * what the cursor points at. A held facing takes no pick, since nothing reads it.
+   */
+  private faceCursorUnder(pointer: PagePoint): void {
     this.cursorPoint = pagePoint(pointer);
-    this.session.aimAt(this.aimPointUnder(pointer));
+    if (this.session.facesCursor) this.session.faceCursorAt(this.facingPointUnder(pointer));
   }
 
-  /** The point under the pointer at body height, which the player faces. */
-  private aimPointUnder(pointer: PagePoint): Point | undefined {
+  /** What the player faces under the pointer: a body's feet, the ground, or nothing over their own body. */
+  private facingPointUnder(pointer: PagePoint): Point | undefined {
     const point = this.viewportPointOf(pointer);
-    return point === undefined ? undefined : this.scene?.aimPointAt(point.x, point.y);
+    return point === undefined ? undefined : this.scene?.cursorFacingAt(point.x, point.y);
   }
 
-  /** Throws an item toward where a drag let it go over the world, as the cursor now points there, or else as the session judges. */
+  /**
+   * Throws an item toward what lies where a drag let it go over the world. From the item card, with
+   * no drag, it throws toward what lies under the cursor's last place over the world on a fine pointer,
+   * and else the way the player faces.
+   */
   private dropItem(itemId: string, at: PagePoint | undefined): void {
     if (at === undefined) {
-      this.session.dropItem(itemId);
+      const cursor = this.coarsePointer ? undefined : this.cursorPoint;
+      this.session.dropItem(itemId, cursor === undefined ? undefined : this.facingPointUnder(cursor));
       return;
     }
-    this.aimAt(at);
-    this.session.dropItem(itemId, this.aimPointUnder(at));
+    // The cursor now rests there, so the next tick faces a freed player toward it again.
+    this.cursorPoint = pagePoint(at);
+    this.session.dropItem(itemId, this.facingPointUnder(at));
   }
 
   /** Where the pointer is over the canvas, in normalized device coordinates. */
@@ -766,7 +776,7 @@ export class AppShell {
       // held on the ground is the player walking on purpose, so Escape passes over it to the target.
       if (!this.session.groundPressHeld && this.session.stopWalk()) return;
       if (this.session.target !== undefined) {
-        this.session.select(undefined);
+        this.session.clearTarget();
         return;
       }
       this.present({ kind: 'gameMenu' });
@@ -1108,7 +1118,7 @@ export class AppShell {
     const target = this.session.target === undefined ? undefined : this.controller.entities.get(this.session.target);
     this.hud.renderPools(this.session.energy, this.session.winded);
     this.hud.renderRun(this.session.running, this.session.runHeldOff);
-    this.hud.renderGazeLock(this.session.gazeLocked, this.session.gazeLockable);
+    this.hud.renderGazeLock(!this.session.facingFree);
     this.hud.renderSlotOne(this.session.engaged, this.session.engageAction(), target?.condition === 'fallen', this.session.attackRefusal());
     this.hud.renderAbilities(this.session.abilitySlots());
     this.hud.renderLucidity(this.session.lucidity);

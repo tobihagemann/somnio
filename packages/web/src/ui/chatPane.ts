@@ -206,8 +206,8 @@ export class ChatPane {
    * again. Shift+Enter and Alt+Enter do nothing here, so Alt+Enter never toggles fullscreen from
    * the field.
    *
-   * The close does not depend on the text: Shift toggles Run only while the field lacks the
-   * keyboard, so a field that kept it would leave Shift toggling nothing.
+   * The close does not depend on the text: R toggles Run only while the field lacks the
+   * keyboard, so a field that kept it would leave R typed into it.
    */
   private handleKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Enter') return;

@@ -169,7 +169,6 @@ describe('the debug API', () => {
     expect(api.running()).toBe(false);
 
     app.session.select('monster:1');
-    app.session.gazeLocked = true;
     app.controller.dispatch({ tag: 'vitals', payload: { entityId: 'monster:1', health: 0.75 } });
     app.session.toggleEngage();
     app.session.toggleRun();
@@ -283,16 +282,19 @@ describe('the debug API', () => {
     expect(api.characterBody()).toEqual({ left: 964, top: 182, width: 256, height: 172, turnDegrees: expect.any(Number) });
   });
 
-  it('reports the gaze lock as a left press on a nightmare takes it and the lock toggle lets go of it', () => {
+  it('reports the gaze lock and the queue as a left press on a nightmare takes the lock, a Shift press lines another up, and the lock toggle lets go', () => {
     const app = shell();
     app.controller.dispatch({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'self', people: 'vigils', worldSeconds: 0 } });
     app.controller.entities.set('self', clientEntity());
     app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 12, z: 10 } }));
+    app.controller.entities.set('monster:2', clientEntity({ id: 'monster:2', kind: 'monster', name: 'Ghost', position: { x: 14, z: 10 } }));
     app.controller.presentedOverlay = undefined;
     const api = makeDebugAPI(app);
+    expect(api.queue()).toEqual([]);
 
     app.session.pressEntity('monster:1');
-    expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', true]);
+    app.session.queueEntity('monster:2');
+    expect([api.target(), api.gazeLocked(), api.queue()]).toEqual(['monster:1', true, ['monster:2']]);
     app.session.toggleGazeLock();
     expect([api.target(), api.gazeLocked()]).toEqual(['monster:1', false]);
   });

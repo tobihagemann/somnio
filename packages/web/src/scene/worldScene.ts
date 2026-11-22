@@ -235,6 +235,20 @@ interface PressMarker {
   liftsAtMs: number | undefined;
 }
 
+/** A body the queue's trail passes through: its feet as drawn, and how far from them the dots keep. */
+interface TrailMark {
+  at: Point;
+  clearance: number;
+}
+
+/** A leg of the queue's trail as last placed: its ends, their clearances, and its dots, each as x, y, z. */
+interface TrailLeg {
+  from: Point;
+  to: Point;
+  clearances: readonly [number, number];
+  dots: number[];
+}
+
 interface PlacedModel {
   node: THREE.Object3D;
   placement: Placement;
@@ -471,6 +485,21 @@ export class WorldScene implements WorldRenderSurface {
   private carriedBubble: Pick<SpeechBubble, 'request' | 'expiresAtMs'> | undefined;
   /** The ring round the player's target, as its mark says. Its id is the target whose plaque shows through the world. */
   private selection: { id: string; mesh: THREE.Mesh; mark: TargetMark } | undefined;
+  /** The faint ring under each nightmare lined up behind the target, by id in the queue's order. */
+  private queueRings = new Map<string, THREE.Mesh>();
+  /**
+   * The dotted trail from the target through the queue, in the space's coordinates. It hangs on the
+   * scene only while it has dots, and draws with a ring's settings, so it shares its program.
+   */
+  private readonly queueTrail = new THREE.Mesh(
+    queueTrailGeometry(TRAIL_DOT_CAPACITY),
+    groundRingMaterial(SELECTION_RING_COLOR, RING_OPACITY * QUEUE_RING_OPACITY_SHARE),
+  );
+  /** The trail's legs as last placed, so a leg whose ends have not moved samples no ground again. */
+  private trailLegs: TrailLeg[] = [];
+  /** What `layTrailDots` bounds the dots it writes with, kept from frame to frame. */
+  private readonly trailBounds = new THREE.Box3();
+  private readonly trailDot = new THREE.Vector3();
   /**
    * The rings presses dropped, the one held last and those still lifting away. They hang on the
    * scene rather than the space root, so a press held through a door keeps its ring.
@@ -733,6 +762,9 @@ export class WorldScene implements WorldRenderSurface {
     this.auras.clear();
     this.questMarkers.clear();
     this.selection = undefined;
+    this.queueRings.clear();
+    this.trailLegs = [];
+    this.queueTrail.removeFromParent();
     this.cameraFollowId = undefined;
     this.spaceBrightness = undefined;
     this.room = undefined;
@@ -1348,10 +1380,141 @@ export class WorldScene implements WorldRenderSurface {
       state.node.add(mesh);
       this.selection = { id: entityId, mesh, mark: { ...mark } };
     }
+    this.colorQueue();
     if (previous === state) return;
     for (const changed of new Set([previous, state])) {
       if (changed?.kind === 'monster' && changed.condition === 'hale') this.rebuildNamePlaque(changed, changed === state);
     }
+  }
+
+  /** A ring already under a nightmare still queued stays as it is; the trail follows on the next tick. */
+  showQueue(queued: readonly string[]): void {
+    const rings = new Map<string, THREE.Mesh>();
+    for (const entityId of queued) {
+      const state = this.entityStates.get(entityId);
+      let ring = this.queueRings.get(entityId);
+      if (ring === undefined && state !== undefined) {
+        ring = groundRingMesh(state.radius * SELECTION_RING_RADII, this.queueColor(), RING_OPACITY * QUEUE_RING_OPACITY_SHARE);
+        state.node.add(ring);
+      }
+      if (ring !== undefined) rings.set(entityId, ring);
+    }
+    for (const [entityId, ring] of this.queueRings) if (!rings.has(entityId)) disposeSubtree(ring);
+    this.queueRings = rings;
+    this.colorQueue();
+  }
+
+  /** The queue's rings and trail are in the target ring's colour. */
+  private queueColor(): number {
+    return this.selection?.mark.acting === true ? ACTING_RING_COLOR : SELECTION_RING_COLOR;
+  }
+
+  private colorQueue(): void {
+    const color = this.queueColor();
+    for (const mesh of [...this.queueRings.values(), this.queueTrail]) (mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+  }
+
+  /**
+   * Lays the trail's dots along its legs, from the target's feet through each queued nightmare's in
+   * order, clear of each mark. A leg whose ends and clearances are as the last frame left them keeps
+   * its dots, so a standing fight scans no ground and uploads nothing.
+   */
+  private placeQueueTrail(): void {
+    if (this.queueRings.size === 0 && this.trailLegs.length === 0) return;
+    const marks: TrailMark[] = [];
+    const target = this.selection === undefined ? undefined : this.entityStates.get(this.selection.id);
+    if (target !== undefined) {
+      const tick = this.selection?.mark.locked === true ? LOCK_TICK_LENGTH : 0;
+      marks.push({ at: target.node.position, clearance: target.radius * SELECTION_RING_RADII + GROUND_RING_WIDTH + tick + TRAIL_CLEARANCE });
+    }
+    for (const entityId of this.queueRings.keys()) {
+      const state = this.entityStates.get(entityId);
+      if (state !== undefined) marks.push({ at: state.node.position, clearance: state.radius * SELECTION_RING_RADII + GROUND_RING_WIDTH + TRAIL_CLEARANCE });
+    }
+    const legs: TrailLeg[] = [];
+    let changed = Math.max(marks.length - 1, 0) !== this.trailLegs.length;
+    for (let index = 1; index < marks.length; index += 1) {
+      const from = marks[index - 1]!;
+      const to = marks[index]!;
+      const last = this.trailLegs[index - 1];
+      const still =
+        last !== undefined &&
+        last.from.x === from.at.x &&
+        last.from.z === from.at.z &&
+        last.to.x === to.at.x &&
+        last.to.z === to.at.z &&
+        last.clearances[0] === from.clearance &&
+        last.clearances[1] === to.clearance;
+      if (still) {
+        legs.push(last);
+        continue;
+      }
+      legs.push(this.trailLeg(from, to));
+      changed = true;
+    }
+    this.trailLegs = legs;
+    if (changed) this.layTrailDots(marks);
+  }
+
+  /** The dots of the leg between two marks, every `TRAIL_DOT_SPACING` and centred between their clearances, each on the ground under it. */
+  private trailLeg(from: TrailMark, to: TrailMark): TrailLeg {
+    const dx = to.at.x - from.at.x;
+    const dz = to.at.z - from.at.z;
+    const length = Math.hypot(dx, dz);
+    // Ends whose clearances meet exactly leave room for one dot, however the sum rounds.
+    const room = Math.max(length - to.clearance - from.clearance, 0);
+    const dots: number[] = [];
+    if (length - to.clearance - from.clearance >= -EDGE_TOLERANCE) {
+      const count = Math.floor(room / TRAIL_DOT_SPACING) + 1;
+      const first = from.clearance + (room - (count - 1) * TRAIL_DOT_SPACING) / 2;
+      for (let index = 0; index < count; index += 1) {
+        const along = (first + index * TRAIL_DOT_SPACING) / length;
+        const point = { x: from.at.x + dx * along, z: from.at.z + dz * along };
+        dots.push(point.x, this.groundHeight(point) + GROUND_RING_LIFT, point.z);
+      }
+    }
+    return { from: { x: from.at.x, z: from.at.z }, to: { x: to.at.x, z: to.at.z }, clearances: [from.clearance, to.clearance], dots };
+  }
+
+  /**
+   * Writes every leg's dots clear of every mark into the trail's buffer, growing it when they
+   * outnumber its room. A leg keeps clear of its own ends, and a dot within another mark's
+   * clearance is left out, as where a queued nightmare stands on the leg between two others. The
+   * buffer's bounding sphere is set from the dots written, since three culls and sorts the trail by it.
+   */
+  private layTrailDots(marks: readonly TrailMark[]): void {
+    const count = this.trailLegs.reduce((sum, leg) => sum + leg.dots.length / 3, 0);
+    const room = (this.queueTrail.geometry.getAttribute('position') as THREE.BufferAttribute).count / TRAIL_DOT_CORNERS.length;
+    if (count > room) {
+      this.queueTrail.geometry.dispose();
+      this.queueTrail.geometry = queueTrailGeometry(Math.max(count, room * 2));
+    }
+    const positions = this.queueTrail.geometry.getAttribute('position') as THREE.BufferAttribute;
+    // Leg `index` runs from mark `index` to the next, which its own sampling keeps clear of already.
+    const clear = (index: number, x: number, z: number): boolean =>
+      marks.every((mark, at) => at === index || at === index + 1 || Math.hypot(x - mark.at.x, z - mark.at.z) >= mark.clearance);
+    this.trailBounds.makeEmpty();
+    let vertex = 0;
+    for (const [index, { dots }] of this.trailLegs.entries()) {
+      for (let dot = 0; dot < dots.length; dot += 3) {
+        const [x, y, z] = [dots[dot]!, dots[dot + 1]!, dots[dot + 2]!];
+        if (!clear(index, x, z)) continue;
+        this.trailBounds.expandByPoint(this.trailDot.set(x, y, z));
+        for (const corner of TRAIL_DOT_CORNERS) {
+          positions.setXYZ(vertex, x + corner.x, y, z + corner.z);
+          vertex += 1;
+        }
+      }
+    }
+    if (vertex === 0) {
+      this.queueTrail.removeFromParent();
+      return;
+    }
+    if (this.queueTrail.parent === null) this.scene.add(this.queueTrail);
+    positions.needsUpdate = true;
+    this.queueTrail.geometry.setDrawRange(0, vertex);
+    this.queueTrail.geometry.boundingSphere ??= new THREE.Sphere();
+    this.trailBounds.expandByScalar(TRAIL_DOT_RADIUS).getBoundingSphere(this.queueTrail.geometry.boundingSphere);
   }
 
   showPressMarker(point: Point): void {
@@ -1417,24 +1580,28 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * The entity drawn under a point of the viewport, in normalized device coordinates, other than
-   * the one the camera follows and a nightmare driven off, which a press passes through. An entity
-   * is picked as a capsule from its feet to its head as drawn, by the radius its body is drawn with,
-   * wider under a finger, and the one nearest the camera wins.
+   * the one the camera follows and a nightmare driven off, which a press passes through: the body
+   * the camera's ray enters first there.
    */
   entityAt(x: number, y: number): string | undefined {
-    const ray = this.rayAt(x, y);
-    const onRay = new THREE.Vector3();
-    let picked: string | undefined;
+    return this.nearestBodyAt(this.rayAt(x, y), this.cameraFollowId)?.id;
+  }
+
+  /**
+   * The body a ray enters first, other than `skipped` and a nightmare driven off: a capsule from its
+   * feet to its head as drawn, by the radius its body is drawn with, wider under a finger. Bodies
+   * overlap, so they are ranked by where the ray enters each rather than where it passes nearest
+   * its middle. `undefined` where the ray passes every body by.
+   */
+  private nearestBodyAt(ray: THREE.Ray, skipped?: string): { id: string; state: EntityRenderState } | undefined {
+    let picked: { id: string; state: EntityRenderState } | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
-      if (id === this.cameraFollowId || drivenOff(state)) continue;
-      const feet = state.node.position;
-      const top = this.headPoint(state);
+      if (id === skipped || drivenOff(state)) continue;
       const reach = this.coarsePointer ? Math.max(state.radius, COARSE_PICK_METRES) : state.radius;
-      if (ray.distanceSqToSegment(feet, top, onRay) > reach * reach) continue;
-      const along = onRay.distanceToSquared(ray.origin);
-      if (along >= nearest) continue;
-      picked = id;
+      const along = capsuleEntry(ray, state.node.position, this.headPoint(state), reach);
+      if (along === undefined || along >= nearest) continue;
+      picked = { id, state };
       nearest = along;
     }
     return picked;
@@ -1470,14 +1637,17 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * The point of the space under a point of the viewport at body height over the player's feet, which
-   * the player aims at: a body is drawn above its feet, so the floor under the cursor would lie
-   * beyond a body the cursor points at. `undefined` before a space is entered.
+   * What the player faces on a fine pointer while their facing is free, under a point of the
+   * viewport, in normalized device coordinates: the feet of the body the camera's ray enters first
+   * there, by the capsules `entityAt` picks with, the player's own body included, else the ground the
+   * walk would steer to. Where that body is the player's own, it is `undefined`, so they face the way
+   * they walk. `undefined` before a space is entered too.
    */
-  aimPointAt(x: number, y: number): Point | undefined {
-    if (this.ground === undefined) return undefined;
-    const feet = this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId)?.node.position.y;
-    return pointOnRayAt(this.rayAt(x, y), (feet ?? 0) + AIM_HEIGHT);
+  cursorFacingAt(x: number, y: number): Point | undefined {
+    const body = this.nearestBodyAt(this.rayAt(x, y));
+    if (body !== undefined) return body.id === this.cameraFollowId ? undefined : { x: body.state.node.position.x, z: body.state.node.position.z };
+    const ground = this.groundPointAt(x, y);
+    return ground === undefined ? undefined : { x: ground.x, z: ground.z };
   }
 
   /** The camera's ray through a point of the viewport, in normalized device coordinates. */
@@ -1767,6 +1937,7 @@ export class WorldScene implements WorldRenderSurface {
     this.bubbles.delete(entityId);
     this.effects.forget(entityId);
     if (this.selection?.id === entityId) this.selection = undefined;
+    this.queueRings.delete(entityId);
     if (state !== undefined) for (const slot of PORTRAIT_SLOTS) setPortraitLayer(state.modelHolder, PORTRAIT_LAYERS[slot], false);
     return state;
   }
@@ -1867,6 +2038,7 @@ export class WorldScene implements WorldRenderSurface {
       disposeSubtree(marker.mesh);
       return false;
     });
+    this.placeQueueTrail();
   }
 
   /**
@@ -2425,6 +2597,65 @@ function pointOnRayAt(ray: THREE.Ray, height: number): Point {
   return { x: ray.origin.x + ray.direction.x * along, z: ray.origin.z + ray.direction.z * along };
 }
 
+/**
+ * How far along a ray, its direction of unit length, it enters the capsule of `radius` round the
+ * segment from `a` to `b`: 0 from inside it, `undefined` where it passes it by. The capsule is the
+ * balls round its two ends and the side between them, so the ray enters it where it enters the
+ * first of the three.
+ */
+function capsuleEntry(ray: THREE.Ray, a: THREE.Vector3, b: THREE.Vector3, radius: number): number | undefined {
+  const axis = new THREE.Vector3().subVectors(b, a);
+  const length = axis.length();
+  const fromA = new THREE.Vector3().subVectors(ray.origin, a);
+  const ahead = ray.direction.dot(fromA);
+  const offsetSq = fromA.lengthSq();
+  let entry = enteringBall(ahead, offsetSq, radius);
+  if (length > 0) {
+    axis.divideScalar(length);
+    const along = ray.direction.dot(axis);
+    const at = fromA.dot(axis);
+    entry = Math.min(
+      entry,
+      enteringBall(ahead - length * along, offsetSq - 2 * length * at + length * length, radius),
+      enteringSide(ahead, offsetSq, along, at, length, radius),
+    );
+  }
+  return entry === Number.POSITIVE_INFINITY ? undefined : entry;
+}
+
+/** Where a ray enters a ball of `radius`: `ahead` is the ray's direction dotted with its origin's offset from the centre, and `offsetSq` that offset squared. */
+function enteringBall(ahead: number, offsetSq: number, radius: number): number {
+  const root = ahead * ahead - offsetSq + radius * radius;
+  return root < 0 ? Number.POSITIVE_INFINITY : entering(-ahead - Math.sqrt(root), -ahead + Math.sqrt(root));
+}
+
+/**
+ * Where a ray enters the side of a capsule: the stretch of it inside the endless cylinder round
+ * the axis, cut to where it runs between the planes across the axis at its ends. `along` is how far
+ * the ray runs along the axis per unit, and `at` how far along the axis its origin lies from the
+ * first end. `ahead` and `offsetSq` are what `enteringBall` takes for the ball at that end. Across
+ * the axis, then, the ray runs `1 − along²` per unit squared, starting `offsetSq − at²` off it
+ * squared. A ray along the axis meets no side, and enters the ball at the end it comes in by.
+ */
+function enteringSide(ahead: number, offsetSq: number, along: number, at: number, length: number, radius: number): number {
+  const across = 1 - along * along;
+  const acrossAhead = ahead - along * at;
+  const acrossOffsetSq = offsetSq - at * at - radius * radius;
+  const root = acrossAhead * acrossAhead - across * acrossOffsetSq;
+  if (across <= 0 || root < 0) return Number.POSITIVE_INFINITY;
+  const inside = (-acrossAhead - Math.sqrt(root)) / across;
+  const outside = (-acrossAhead + Math.sqrt(root)) / across;
+  if (along === 0) return at < 0 || at > length ? Number.POSITIVE_INFINITY : entering(inside, outside);
+  const [start, end] = [-at / along, (length - at) / along];
+  return entering(Math.max(inside, Math.min(start, end)), Math.min(outside, Math.max(start, end)));
+}
+
+/** Where a ray enters a shape it is inside of from `inside` to `outside` along it, 0 from inside it, and endless where that lies wholly behind it or nowhere. */
+function entering(inside: number, outside: number): number {
+  const from = Math.max(inside, 0);
+  return from <= outside ? from : Number.POSITIVE_INFINITY;
+}
+
 function entityPlaceholder(radius: number): THREE.Object3D {
   const box = new THREE.Mesh(new THREE.BoxGeometry(2 * radius, CHARACTER_SCALE, radius), PLACEHOLDER_MATERIAL);
   // Own geometry, shared material — disposing `PLACEHOLDER_MATERIAL` would blank every other one.
@@ -2504,6 +2735,21 @@ const ACTING_RING_COLOR = darker(RAISE_COLOR, 0.18);
  */
 const LOCK_TICK_LENGTH = 0.2;
 const LOCK_TICK_WIDTH = 0.14;
+/** The share of a ring's opacity a queued nightmare's faint ring and the queue's trail show at. */
+const QUEUE_RING_OPACITY_SHARE = 0.4;
+/** How far apart the dots of the queue's trail lie, each one's radius, and how far past a mark's outer edge their centres stop, in metres. */
+const TRAIL_DOT_SPACING = 0.3;
+const TRAIL_DOT_RADIUS = 0.05;
+const TRAIL_CLEARANCE = 0.12;
+/** How many dots the trail's buffer holds at first; it grows when a frame needs more. */
+const TRAIL_DOT_CAPACITY = 64;
+/** A dot's flat octagon as a fan of six triangles, by corner in the ground plane. */
+const TRAIL_DOT_CORNERS = [1, 2, 3, 4, 5, 6]
+  .flatMap((corner) => [0, corner, corner + 1])
+  .map((corner) => {
+    const angle = (corner * Math.PI) / 4;
+    return { x: Math.cos(angle) * TRAIL_DOT_RADIUS, z: Math.sin(angle) * TRAIL_DOT_RADIUS };
+  });
 /** The inner radius of the ring a press on the ground drops, in metres. */
 const PRESS_MARKER_RADIUS = 0.22;
 /** How long it takes to drop onto the ground, and to rise off it again. */
@@ -2512,8 +2758,6 @@ const PRESS_MARKER_SECONDS = 0.15;
 const PRESS_MARKER_DROP_METRES = 0.5;
 /** The least radius of the capsule an entity is picked by under a finger, which need not land on the body itself. */
 const COARSE_PICK_METRES = 0.6;
-/** How far over the feet the cursor's aim is taken: about the middle of a body as drawn. */
-const AIM_HEIGHT = 0.8;
 /** The longest a thrower winds up before the item leaves the hand: their throw starts part-way in, so a drop asked for flies soon. */
 const THROW_WINDUP_SECONDS = 0.25;
 /** How high over the ground a dreamer's throw leaves from where no hand of theirs is drawn: about a hand's height. */
@@ -2649,19 +2893,23 @@ function darker(color: number, by: number): number {
   return new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l - by, THREE.SRGBColorSpace).getHex();
 }
 
-/** A flat ring just above the ground round an entity's feet. */
-function groundRingMesh(innerRadius: number, color: number): THREE.Mesh {
-  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + GROUND_RING_WIDTH, RING_SEGMENTS, 1);
-  const material = new THREE.MeshBasicMaterial({
+/** What a ground ring draws with, which the queue's trail draws with too, so both share one program. */
+function groundRingMaterial(color: number, opacity: number): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
     color,
     side: THREE.DoubleSide,
     forceSinglePass: true,
     transparent: true,
-    opacity: RING_OPACITY,
+    opacity,
     depthWrite: false,
     toneMapped: false,
   });
-  const mesh = new THREE.Mesh(geometry, material);
+}
+
+/** A flat ring just above the ground round an entity's feet. */
+function groundRingMesh(innerRadius: number, color: number, opacity = RING_OPACITY): THREE.Mesh {
+  const geometry = new THREE.RingGeometry(innerRadius, innerRadius + GROUND_RING_WIDTH, RING_SEGMENTS, 1);
+  const mesh = new THREE.Mesh(geometry, groundRingMaterial(color, opacity));
   markOwned(mesh, { geometry: true, material: true });
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = GROUND_RING_LIFT;
@@ -2690,6 +2938,25 @@ function lockReticleMesh(innerRadius: number, color: number): THREE.Mesh {
   markOwned(ticks, { geometry: true, material: false });
   ring.add(ticks);
   return ring;
+}
+
+/**
+ * Room for `dots` of the trail's flat octagons, written in place as the trail moves. Its normals
+ * point up, unread by the material, since three keys a program on a geometry having them, and a
+ * ring has them.
+ */
+function queueTrailGeometry(dots: number): THREE.BufferGeometry {
+  const vertices = dots * TRAIL_DOT_CORNERS.length;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute(
+    'normal',
+    new THREE.BufferAttribute(
+      new Float32Array(vertices * 3).map((_, index) => (index % 3 === 1 ? 1 : 0)),
+      3,
+    ),
+  );
+  return geometry;
 }
 
 function flameHaloTexture(): THREE.Texture {

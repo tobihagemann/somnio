@@ -344,7 +344,7 @@ export class GameplayPredictor {
     // wall-slide keeps clip and speed mutually consistent. `undefined` on a stationary tick
     // preserves the renderer's held travel direction.
     const travel = course === undefined ? undefined : headingFromVector(course.x - selfEntity.position.x, course.z - selfEntity.position.z);
-    // Refreshed every tick, so a player standing still keeps turning with the cursor.
+    // Refreshed every tick, so a player standing still keeps turning to their target, or with the cursor while their facing is free.
     selfEntity.facing = headingToward(selfEntity.position, this.lookAt()) ?? travel ?? selfEntity.facing;
     selfEntity.gait = course === undefined ? 'jog' : gait;
     if (travel !== undefined) {

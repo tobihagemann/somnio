@@ -1000,7 +1000,7 @@
   color: rgb(255 217 138 / 0.45);
 }
 
-/* Lit in gold while the gaze is locked. */
+/* Lit in gold while the facing is held. */
 .hud-slot--lock,
 .hud-orb--lock {
   --hud-lit-plate: rgb(64 52 28 / 0.94);

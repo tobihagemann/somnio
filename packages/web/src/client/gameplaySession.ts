@@ -292,12 +292,18 @@ export class GameplaySession {
   /** The entity the player acts on, as the server was last told. */
   target: string | undefined;
   /**
-   * Whether the player faces their target: on a fine pointer whatever the cursor does, and on a finger
-   * at all, since a finger otherwise faces the way it walks. A left press on a body slot 1 can act on
-   * sets it, switching slot 1 on with it. The lock's button and its key set it or end it, leaving the
-   * target and slot 1 as they are, and it ends with the target. The 1 key switches slot 1 alone.
+   * Whether the player has freed their facing. Freed, it follows the cursor on a mouse and the walk on
+   * a finger. Held, the default, it turns to the target, else the way the player walks, and keeps its
+   * last heading while they stand. The lock's button and its key free it or hold it again. A left press
+   * on a body slot 1 can act on, a strike that targets the player, and the queue taking up its next
+   * nightmare hold it. It lasts through doors.
    */
-  gazeLocked = false;
+  facingFree = false;
+  /**
+   * The nightmares lined up behind the target, in the order they are taken up as it is lost. It never
+   * stands without a target: losing the target takes up the first, or clears it where the player cannot act.
+   */
+  queue: readonly string[] = [];
   /** Whether Run is on. A winded player walks whatever it says, and one an effect holds below a run jogs. */
   running = false;
   /**
@@ -346,8 +352,8 @@ export class GameplaySession {
   private readonly now: () => number;
   private readonly interpolation = new RemoteInterpolation();
   private readonly coarsePointer: boolean;
-  /** The point under the cursor the player aims at. */
-  private aimPoint: Point | undefined;
+  /** What `faceCursorAt` was last given. */
+  private cursorFacing: Point | undefined;
   /** The health share last sent of the target. */
   private targetHealth: number | undefined;
   /** The effects the server last sent of the player and of their target, the only ones it sends. */
@@ -359,6 +365,8 @@ export class GameplaySession {
   private cooldowns: Cooldowns = NO_COOLDOWNS;
   /** Until when no ability is used again, from a use until the `cooldowns` frame that answers it, or 0 with none awaited. */
   private awaitingUseUntilMs = 0;
+  /** Until when a use of a channelled ability waits for its answer, or 0 with none awaited. */
+  private awaitingChannelUntilMs = 0;
   /** The pace the client holds the player's lines to, within the server's speech budget. */
   private readonly speechPace: SpeechPace;
   /**
@@ -411,7 +419,7 @@ export class GameplaySession {
       // A press held through a door steers on in the space it leads to. What it pointed at belongs
       // to the space left, so it waits for the ground under the pointer there.
       if (this.hold !== undefined) this.hold = { ...this.hold, point: undefined, steering: true };
-      this.aimPoint = undefined;
+      this.cursorFacing = undefined;
       if (this.waking) this.controller.appendChat({ kind: 'wokeWeakened' });
       this.waking = false;
     };
@@ -420,8 +428,14 @@ export class GameplaySession {
       // The server lets go of a target leaving view as it leaves, so it is let go here on the same frame,
       // not on the next tick, by which time it may be back in view though no longer targeted there.
       // A nightmare driven off lies a while before it leaves, nothing to act on, so it is let go as it falls.
+      // A queued one goes from the queue the same way, and the first left is taken up in the same call.
       const entity = this.controller.entities.get(entityId);
-      if (entityId === this.target && (entity === undefined || drivenOff(entity))) this.select(undefined);
+      const gone = entity === undefined || drivenOff(entity);
+      if (gone) this.dequeue(entityId);
+      if (entityId === this.target && gone) {
+        this.select(undefined);
+        this.advanceQueue();
+      }
       // A fallen dreamer who leaves takes their raise along without a `raising` frame, so the player holds it no more.
       this.heldRaises.delete(entityId);
       if (!this.controller.entities.has(entityId)) {
@@ -441,6 +455,7 @@ export class GameplaySession {
       this.letGo();
       this.resetSpaceState();
       this.running = false;
+      this.facingFree = false;
       this.energy = ZERO_ENERGY;
       this.inventory = NO_INVENTORY;
       this.buyBackItems = [];
@@ -477,7 +492,7 @@ export class GameplaySession {
     this.tradeLockedUntilMs = 0;
     // The server holds the target per space, so a new space starts with nothing targeted there either.
     this.target = undefined;
-    this.gazeLocked = false;
+    this.clearQueue();
     this.engaged = false;
     this.targetHealth = undefined;
     // The join sends again the effects and cooldowns carried through a door or a wake.
@@ -490,6 +505,7 @@ export class GameplaySession {
     this.loot.clear();
     this.cooldowns = NO_COOLDOWNS;
     this.awaitingUseUntilMs = 0;
+    this.awaitingChannelUntilMs = 0;
     this.walkWaitsForChannel = false;
     this.markTarget();
   }
@@ -508,8 +524,9 @@ export class GameplaySession {
     // However the walk a press let go of ends, its ring goes with it.
     if (this.predictor.walk === undefined) this.liftDestinationMarker();
     this.closeServicePanelBeyondSpeakingDistance();
-    if (this.gazeLocked && !this.gazeHolds) this.unlockGaze();
     if (this.engaged && !this.engageable) this.stopEngaging();
+    // A quest taken on or a change of hand can stop slot 1 attacking a queued nightmare with no entity frame to say so.
+    if (this.queue.length > 0) this.pruneQueue();
     if (this.tradeLockedUntilMs !== 0 && !this.tradeLocked()) {
       this.tradeLockedUntilMs = 0;
       this.onStateChanged?.();
@@ -535,16 +552,22 @@ export class GameplaySession {
     return this.controller.connectionState === 'attached' && this.controller.presentedOverlay === undefined && this.self !== undefined && !this.fallen;
   }
 
+  /** Whether the player stands still of their own accord. */
+  private get standingStill(): boolean {
+    return this.predictor.walk === undefined && this.hold === undefined && this.approach === undefined;
+  }
+
   /**
    * A left press on an entity's body makes it the target. On an NPC it walks the player up beside it,
    * and asks it to go on as they come within speaking distance, which opens what it offers. On a body
-   * slot 1 can act on, it locks the gaze on it, switches slot 1 on, and walks the player up beside it,
+   * slot 1 can act on, it holds the facing on it, switches slot 1 on, and walks the player up beside it,
    * into touch. On another dreamer slot 1 cannot act on, it walks the player up beside them all the
-   * same. Any other body it only selects.
+   * same. Any other body it only selects. A press on another body than the target clears the queue.
    */
   pressEntity(entityId: string): void {
     const entity = this.controller.entities.get(entityId);
     if (this.self === undefined || entity === undefined || !this.acting) return;
+    if (this.target !== undefined && entityId !== this.target) this.clearQueue();
     this.select(entityId);
     if (entity.kind === 'npc') {
       this.approachEntity(entityId, reachDistance(entity.radius), () => this.interact(entityId), SOMNIO_CONSTANTS.speakingDistance);
@@ -554,12 +577,111 @@ export class GameplaySession {
       if (entity.kind === 'peer') this.approachEntity(entityId, reachDistance(entity.radius));
       return;
     }
-    this.gazeLocked = true;
-    if (this.engaged) {
-      this.markTarget();
-      this.onStateChanged?.();
-    } else this.toggleEngage();
+    this.engageBody(entityId);
     this.approachEntity(entityId, reachDistance(entity.radius));
+  }
+
+  /**
+   * Makes a body the target with the facing held on it, and switches slot 1 on where it can act
+   * there. The facing is held first, so the target is marked with it whichever path repaints.
+   */
+  private engageBody(entityId: string): void {
+    this.facingFree = false;
+    this.select(entityId);
+    if (!this.engaged && this.engageable) {
+      this.toggleEngage();
+      return;
+    }
+    this.markTarget();
+    this.onStateChanged?.();
+  }
+
+  /**
+   * A Shift press on a nightmare: it lines it up behind the target, or takes it out of the queue
+   * when it is lined up already. On the target it does nothing, and with no target it presses it.
+   */
+  queueEntity(entityId: string): void {
+    if (!this.acting) return;
+    if (this.target === undefined) {
+      this.pressEntity(entityId);
+      return;
+    }
+    if (entityId === this.target) return;
+    if (!this.dequeue(entityId)) {
+      if (!this.queueable(entityId)) return;
+      this.queue = [...this.queue, entityId];
+      this.showQueue();
+    }
+    this.onStateChanged?.();
+  }
+
+  /** Whether a body can be lined up: a nightmare in view, not driven off, that slot 1 can attack. */
+  private queueable(entityId: string): boolean {
+    const entity = this.controller.entities.get(entityId);
+    return (
+      entity?.kind === 'monster' &&
+      !drivenOff(entity) &&
+      engageAction('nightmare', this.lucidity.role, this.inventory.equipped, this.quests.active) === 'attack'
+    );
+  }
+
+  /**
+   * The target was lost: the first nightmare still queued is taken up as a left press takes it, though
+   * no walk starts while a press held on the ground steers. Where the player cannot act, or is taking
+   * a door, the queue is cleared instead.
+   */
+  private advanceQueue(): void {
+    if (this.queue.length === 0) return;
+    if (!this.acting || !this.predictor.arrivalsAct) {
+      this.clearQueue();
+      return;
+    }
+    this.pruneQueue();
+    const next = this.queue[0];
+    if (next === undefined) return;
+    this.engageBody(next);
+    const body = this.controller.entities.get(next);
+    if (body === undefined || this.groundPressHeld) return;
+    this.approachEntity(next, reachDistance(body.radius));
+    // No press asked for this walk, so the player's own channel under way keeps it waiting until it lands or breaks.
+    this.walkWaitsForChannel = this.channelUnderWay;
+  }
+
+  private pruneQueue(): void {
+    const queued = this.queue.filter((id) => this.queueable(id));
+    if (queued.length === this.queue.length) return;
+    this.queue = queued;
+    this.showQueue();
+  }
+
+  /** Takes a body out of the queue, and says whether it was there. */
+  private dequeue(entityId: string): boolean {
+    if (!this.queue.includes(entityId)) return false;
+    this.queue = this.queue.filter((id) => id !== entityId);
+    this.showQueue();
+    return true;
+  }
+
+  private clearQueue(): void {
+    if (this.queue.length === 0) return;
+    this.queue = [];
+    this.showQueue();
+  }
+
+  private showQueue(): void {
+    this.controller.renderSurface.showQueue(this.queue);
+  }
+
+  /**
+   * A nightmare's blow at a player who stands still, can act, has nothing targeted, and is not taking
+   * a door: the nightmare becomes the target, the facing held on it, and slot 1 switches on where it
+   * can act on it.
+   */
+  private answerStrike(attackerId: string, targetId: string): void {
+    if (targetId !== this.controller.selfId || this.target !== undefined || !this.acting || !this.standingStill || !this.predictor.arrivalsAct) return;
+    const attacker = this.controller.entities.get(attackerId);
+    if (attacker?.kind !== 'monster' || drivenOff(attacker)) return;
+    this.engageBody(attackerId);
   }
 
   /**
@@ -737,27 +859,17 @@ export class GameplaySession {
     return fixture === undefined ? undefined : { id: carrierId, name: undefined, position: fixture.position, service: fixture.fixture.service };
   }
 
-  /** Whether the gaze can lock on the target: one there to face, and not the player themselves. */
-  get gazeLockable(): boolean {
-    return this.target !== this.controller.selfId && this.gazeHolds;
+  /** Whether the player faces their target: their facing held, and a target there to face that is not themselves. */
+  get gazeLocked(): boolean {
+    return !this.facingFree && this.target !== this.controller.selfId && this.gazeHolds;
   }
 
-  /** The lock button and its key: locks the gaze on the target, or lets go of it, and leaves slot 1 as it is. */
+  /**
+   * The lock button and its key: frees the facing or holds it again, and leaves the target and slot 1
+   * as they are. It needs no standing player, so a fallen one can free or hold it too.
+   */
   toggleGazeLock(): void {
-    if (this.gazeLocked) {
-      this.unlockGaze();
-      return;
-    }
-    if (!this.acting || !this.gazeLockable) return;
-    this.gazeLocked = true;
-    this.markTarget();
-    this.onStateChanged?.();
-  }
-
-  /** Ends the gaze lock: the player faces the cursor again, or on a finger the way they walk, and keeps the target and slot 1 as they are. */
-  private unlockGaze(): void {
-    if (!this.gazeLocked) return;
-    this.gazeLocked = false;
+    this.facingFree = !this.facingFree;
     this.markTarget();
     this.onStateChanged?.();
   }
@@ -937,7 +1049,7 @@ export class GameplaySession {
    */
   private get channelUnderWay(): boolean {
     const selfId = this.controller.selfId;
-    return (selfId !== undefined && this.channels.has(selfId)) || this.now() < this.awaitingUseUntilMs;
+    return (selfId !== undefined && this.channels.has(selfId)) || this.now() < this.awaitingChannelUntilMs;
   }
 
   /** The channel the entity has under way, as far as the server has shown it. */
@@ -1099,11 +1211,13 @@ export class GameplaySession {
   useAbility(abilityId: AbilityId): void {
     if (this.abilityRefusal(abilityId) !== undefined) return;
     this.predictor.flush();
-    if (ability(abilityId).channelSeconds !== undefined) this.walkWaitsForChannel = true;
+    const channels = ability(abilityId).channelSeconds !== undefined;
+    if (channels) this.walkWaitsForChannel = true;
     this.send({ tag: 'useAbility', payload: { abilityId } });
     const now = this.now();
     this.cooldowns = { ...this.cooldowns, global: { startedAtMs: now, endsAtMs: now + GLOBAL_COOLDOWN_SECONDS * 1000, global: true } };
     this.awaitingUseUntilMs = now + ABILITY_ANSWER_TIMEOUT_MS;
+    if (channels) this.awaitingChannelUntilMs = this.awaitingUseUntilMs;
     this.onStateChanged?.();
   }
 
@@ -1129,11 +1243,18 @@ export class GameplaySession {
     if (this.target !== undefined && this.target !== this.controller.selfId) this.heldEffects.delete(this.target);
     this.targetHealth = undefined;
     this.target = entityId;
-    this.gazeLocked = false;
+    // A target is never lined up behind itself.
+    if (entityId !== undefined) this.dequeue(entityId);
     this.engaged &&= this.engageable;
     this.send({ tag: 'target', payload: entityId === undefined ? {} : { targetId: entityId } });
     this.markTarget();
     this.onStateChanged?.();
+  }
+
+  /** Clears the target and the queue behind it. */
+  clearTarget(): void {
+    this.clearQueue();
+    this.select(undefined);
   }
 
   /**
@@ -1173,6 +1294,7 @@ export class GameplaySession {
       this.offer = undefined;
       // Falling switches slot 1 off here as it does on the server, which sends no frame to say so.
       this.engaged = false;
+      this.clearQueue();
       this.markTarget();
       this.controller.appendChat({ kind: 'fell' });
     } else {
@@ -1192,19 +1314,23 @@ export class GameplaySession {
     this.predictor.reset();
   }
 
-  /** The point under the cursor at body height, which the player faces on a fine pointer. */
-  aimAt(point: Point | undefined): void {
-    this.aimPoint = point;
+  /** What lies under the cursor, which the player faces on a fine pointer while their facing is free: a body's feet, the ground, or nothing over their own body. */
+  faceCursorAt(point: Point | undefined): void {
+    this.cursorFacing = point;
+  }
+
+  get facesCursor(): boolean {
+    return this.facingFree && !this.coarsePointer;
   }
 
   /**
-   * What the player faces: their target where it is drawn while the gaze is locked on it, and
-   * otherwise the cursor on a fine pointer. A finger has no cursor, so on a coarse pointer they face
-   * the way they walk.
+   * What the player faces: their target where it is drawn while the gaze is locked on it, and the
+   * cursor on a fine pointer while the facing is free. Otherwise nothing, so they face the way they
+   * walk and keep their facing while they stand. A finger has no cursor, so a freed finger faces the walk.
    */
   private lookAt(): Point | undefined {
-    if (!this.gazeLocked) return this.coarsePointer ? undefined : this.aimPoint;
-    return this.target === undefined ? undefined : this.controller.entities.get(this.target)?.position;
+    if (this.gazeLocked) return this.target === undefined ? undefined : this.controller.entities.get(this.target)?.position;
+    return this.facesCursor ? this.cursorFacing : undefined;
   }
 
   /**
@@ -1294,18 +1420,17 @@ export class GameplaySession {
   }
 
   /**
-   * Throws an item the player carries or wears to the ground: toward `toward`, else toward the
-   * cursor on a fine pointer, else the way they face. They face the throw, and the held-back report
-   * goes first, since the server throws from where it judges they stand. A fallen player throws
+   * Throws an item the player carries or wears to the ground: toward `toward`, else the way they
+   * face. They face the throw until the next tick's facing rule turns them. The held-back report goes
+   * first, since the server throws from where it judges they stand. A fallen player throws
    * nothing. A worn item leaves its slot as it goes, so a full bag does not keep it.
    */
   dropItem(itemId: string, toward?: Point): void {
     const self = this.self;
     if (this.controller.connectionState !== 'attached' || this.fallen || self === undefined) return;
     if (droppableItem(this.inventory, itemId) === undefined) return;
-    const aim = toward ?? (this.coarsePointer ? undefined : this.aimPoint);
-    if (aim !== undefined && (aim.x !== self.position.x || aim.z !== self.position.z)) {
-      self.facing = headingFromVector(aim.x - self.position.x, aim.z - self.position.z);
+    if (toward !== undefined && (toward.x !== self.position.x || toward.z !== self.position.z)) {
+      self.facing = headingFromVector(toward.x - self.position.x, toward.z - self.position.z);
     }
     this.predictor.flush();
     this.send({ tag: 'dropItem', payload: { itemId, heading: self.facing } });
@@ -1498,6 +1623,7 @@ export class GameplaySession {
         // The server chooses the moment of a swing, so its slow starts when the swing is shown.
         if (message.payload.attackerId === this.controller.selfId) this.slowedUntilMs = this.now() + COMBAT.swingSlow.seconds * 1000;
         this.controller.renderSurface.showBlow(message.payload.attackerId, message.payload.targetId, message.payload.hit, message.payload.evaded === true);
+        this.answerStrike(message.payload.attackerId, message.payload.targetId);
         return;
       case 'raising':
         this.handleRaising(message.payload);
@@ -1551,6 +1677,7 @@ export class GameplaySession {
       case 'cooldowns':
         this.cooldowns = this.cooldownsFrom(message.payload);
         this.awaitingUseUntilMs = 0;
+        this.awaitingChannelUntilMs = 0;
         this.onStateChanged?.();
         return;
       case 'adminSay':

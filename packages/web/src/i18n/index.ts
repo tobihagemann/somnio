@@ -289,7 +289,6 @@ export const RENDERED_KEYS: readonly string[] = [
   'In the off hand, it lets a Healer mend and use their abilities.',
   'In the off hand, it lets a Mystic use their abilities.',
   'Run',
-  'Shift',
   'Lock facing',
   'held off',
   'Attack',
