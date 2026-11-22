@@ -23,7 +23,7 @@
           "Ranged_Magic_Spellcasting",
           "Ranged_Magic_Spellcasting_Long"
         ],
-        "stem": "WachenKaempfer"
+        "stem": "Dreamer"
       }
     },
     {
@@ -45,7 +45,7 @@
           "Walking_A",
           "Running_A"
         ],
-        "stem": "Kraemer"
+        "stem": "Merchant"
       }
     },
     {
@@ -56,7 +56,7 @@
           "Walking_A",
           "Running_A"
         ],
-        "stem": "KaempferMeister"
+        "stem": "FighterMaster"
       }
     },
     {
@@ -68,7 +68,7 @@
           "HitReact",
           "Punch"
         ],
-        "stem": "Gespenst"
+        "stem": "Ghost"
       }
     },
     {

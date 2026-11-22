@@ -33,16 +33,16 @@ describe('the committed registry parses', () => {
 
   it('resolves the player model', () => {
     const model = modelForCharacter(registry, registry.playerModel);
-    expect(model?.stem).toBe('WachenKaempfer');
+    expect(model?.stem).toBe('Dreamer');
     expect(model?.expectedClips).toContain('Walking_A');
     expect(model?.expectedClips).toContain('Running_Strafe_Left');
   });
 
   it('resolves the NPC and monster models by id', () => {
     expect(modelForCharacter(registry, 'libus')?.stem).toBe('Libus');
-    expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Kraemer');
-    expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('KaempferMeister');
-    expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Gespenst');
+    expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Merchant');
+    expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('FighterMaster');
+    expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Ghost');
     expect(modelForCharacter(registry, 'skeleton-warrior')?.stem).toBe('SkeletonWarrior');
     expect(modelForCharacter(registry, 'skeleton-minion')?.stem).toBe('SkeletonMinion');
     expect(modelForCharacter(registry, 'necromancer')?.stem).toBe('Necromancer');
@@ -100,7 +100,7 @@ describe('the committed registry parses', () => {
   it('lists every model once, character models before object models', () => {
     const stems = allModelEntries(registry).map((entry) => entry.stem);
     expect(new Set(stems).size).toBe(stems.length);
-    expect(stems[0]).toBe('WachenKaempfer');
+    expect(stems[0]).toBe('Dreamer');
     // Every character stem precedes every prop stem: the listing order the pipeline and the
     // editor pickers present.
     const lastCharacterIndex = Math.max(...registry.characterModels.map((rule) => stems.indexOf(rule.model.stem)));
